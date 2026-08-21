@@ -162,7 +162,7 @@ class LimitSpec(ManifestModel):
 
 
 class AgentSpec(ManifestModel):
-    runtime: Literal["claude-agent-sdk"]
+    runtime: Literal["claude-agent-sdk", "codex-app-server"]
     model: ModelSpec
     prompt: PromptSpec
     skills: tuple[str, ...] = ()

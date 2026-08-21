@@ -28,7 +28,9 @@ def test_compose_contains_deployable_application_and_infrastructure() -> None:
         "otel-collector",
     } <= services.keys()
     assert services["api"]["environment"]["HARNESS_ENVIRONMENT"] == "production"
-    assert services["api"]["environment"]["HARNESS_RUNTIME"] == "claude-sdk"
+    assert services["api"]["environment"]["HARNESS_RUNTIME"] == (
+        "${HARNESS_RUNTIME:-claude-sdk}"
+    )
     assert "build" in services["api"]
     assert services["api"]["image"] == (
         "${HARNESS_API_IMAGE_REPOSITORY:-claude-agent-harness-api}:"

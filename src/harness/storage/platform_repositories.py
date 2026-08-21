@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 
 from harness.core.errors import ConflictError, NotFoundError
 from harness.core.models import (
+    AgentRuntimeType,
     AgentVersion,
     AguiThreadBinding,
     ApprovalRequest,
@@ -245,8 +246,22 @@ class PostgresSessionRepository:
     async def bind_claude_session_id(
         self, tenant_id: str, session_id: str, claude_session_id: str
     ) -> Session:
-        if not claude_session_id:
-            raise ValueError("claude_session_id must be non-empty")
+        return await self.bind_runtime_thread(
+            tenant_id,
+            session_id,
+            "claude-agent-sdk",
+            claude_session_id,
+        )
+
+    async def bind_runtime_thread(
+        self,
+        tenant_id: str,
+        session_id: str,
+        runtime_type: AgentRuntimeType,
+        runtime_thread_id: str,
+    ) -> Session:
+        if not runtime_thread_id:
+            raise ValueError("runtime_thread_id must be non-empty")
         async with self._sessions() as session:
             row = await session.get(
                 SessionRow,
@@ -256,19 +271,41 @@ class PostgresSessionRepository:
             if row is None:
                 raise NotFoundError(f"session not found: {session_id}")
             current = Session.model_validate(row.payload)
-            if current.claude_session_id is not None:
-                if current.claude_session_id != claude_session_id:
+            if current.runtime_type != runtime_type:
+                raise ConflictError(
+                    f"session {session_id} is pinned to runtime {current.runtime_type}"
+                )
+            current_thread_id = current.resolved_runtime_thread_id
+            if current_thread_id is not None:
+                if current_thread_id != runtime_thread_id:
                     raise ConflictError(
-                        f"session {session_id} is already bound to another Claude session"
+                        f"session {session_id} is already bound to another runtime thread"
                     )
                 return current
-            updated = current.model_copy(update={"claude_session_id": claude_session_id})
+            update: dict[str, str] = {"runtime_thread_id": runtime_thread_id}
+            if runtime_type == "claude-agent-sdk":
+                update["claude_session_id"] = runtime_thread_id
+            updated = current.model_copy(update=update)
             row.payload = updated.model_dump(mode="json")
             await session.commit()
             return updated
 
     async def clear_claude_session_id(
         self, tenant_id: str, session_id: str, expected_claude_session_id: str
+    ) -> Session:
+        return await self.clear_runtime_thread(
+            tenant_id,
+            session_id,
+            "claude-agent-sdk",
+            expected_claude_session_id,
+        )
+
+    async def clear_runtime_thread(
+        self,
+        tenant_id: str,
+        session_id: str,
+        runtime_type: AgentRuntimeType,
+        expected_runtime_thread_id: str,
     ) -> Session:
         async with self._sessions() as session:
             row = await session.get(
@@ -279,9 +316,16 @@ class PostgresSessionRepository:
             if row is None:
                 raise NotFoundError(f"session not found: {session_id}")
             current = Session.model_validate(row.payload)
-            if current.claude_session_id != expected_claude_session_id:
-                raise ConflictError(f"session {session_id} Claude session changed during recovery")
-            updated = current.model_copy(update={"claude_session_id": None})
+            if current.runtime_type != runtime_type:
+                raise ConflictError(
+                    f"session {session_id} is pinned to runtime {current.runtime_type}"
+                )
+            if current.resolved_runtime_thread_id != expected_runtime_thread_id:
+                raise ConflictError(f"session {session_id} runtime thread changed during recovery")
+            update: dict[str, None] = {"runtime_thread_id": None}
+            if runtime_type == "claude-agent-sdk":
+                update["claude_session_id"] = None
+            updated = current.model_copy(update=update)
             row.payload = updated.model_dump(mode="json")
             await session.commit()
             return updated

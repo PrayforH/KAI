@@ -410,7 +410,7 @@ class AguiRunService:
             source = await self._sessions.get(tenant_id, binding.session_id)
             if source.user_id != user_id:
                 raise NotFoundError(f"AG-UI thread binding not found: {thread_id}")
-            if source.claude_session_id is None:
+            if source.resolved_runtime_thread_id is None:
                 raise ConflictError("context rebase requires at least one completed model Run")
             await self._require_no_active_runs(
                 tenant_id, [source.session_id], operation="rebase context"

@@ -23,7 +23,7 @@ class RuntimeExecutionTimeoutError(TimeoutError):
 
 
 class RuntimeResultError(RuntimeError):
-    """Raised when Claude SDK returns a terminal error result."""
+    """Raised when an Agent runtime returns a terminal error result."""
 
     def __init__(
         self,
@@ -37,7 +37,7 @@ class RuntimeResultError(RuntimeError):
         self.api_error_status = api_error_status
         self.error_code = error_code
         self.user_message = user_message
-        super().__init__(f"Claude SDK returned an error result: {subtype}")
+        super().__init__(f"Agent runtime returned an error result: {subtype}")
 
 
 class RuntimeContext(BaseModel):

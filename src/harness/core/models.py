@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+AgentRuntimeType = Literal["claude-agent-sdk", "codex-app-server"]
+
 
 class FrozenModel(BaseModel):
     """Base model for facts that are replaced instead of mutated."""
@@ -127,6 +129,9 @@ class Session(FrozenModel):
     created_at: datetime
     team_ids: tuple[str, ...] = ()
     api_key_id: str | None = None
+    runtime_type: AgentRuntimeType = "claude-agent-sdk"
+    runtime_thread_id: str | None = None
+    # Kept while stored sessions and API clients migrate to runtime_thread_id.
     claude_session_id: str | None = None
     workspace_snapshot_id: str | None = None
     environment: str | None = None
@@ -142,6 +147,11 @@ class Session(FrozenModel):
     def resolved_agent_owner_user_id(self) -> str:
         """Owner pinned for runtime lookup; legacy sessions fall back to task owner."""
         return self.agent_owner_user_id or self.user_id
+
+    @property
+    def resolved_runtime_thread_id(self) -> str | None:
+        """Return the native thread ID, including legacy Claude-only records."""
+        return self.runtime_thread_id or self.claude_session_id
 
 
 class Run(FrozenModel):

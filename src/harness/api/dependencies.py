@@ -116,11 +116,13 @@ from harness.reliability.repositories import InMemoryReliabilityRepository
 from harness.reliability.service import ReliabilityService
 from harness.runtime.base import AgentRuntime
 from harness.runtime.cc_switch import load_cc_switch_claude_config
+from harness.runtime.codex_tool_gate import CodexToolGate
 from harness.runtime.default_tools import (
     default_tool_resolver,
     server_secret_credential_provider,
 )
 from harness.runtime.fake import FakeRuntime
+from harness.runtime.registry_codex_runtime import RegistryCodexRuntime, RegistryRuntimeRouter
 from harness.runtime.registry_runtime import RegistryClaudeRuntime
 from harness.runtime.sdk_tool_gate import SdkToolGate
 from harness.sandbox.daytona import (
@@ -762,7 +764,7 @@ def build_memory_container(
         sandbox = LocalSandboxProvider()
     preflight_sandbox = sandbox
     if (
-        resolved_settings.runtime == "claude-sdk"
+        resolved_settings.runtime in {"claude-sdk", "multi"}
         and resolved_settings.sandbox_execution_mode == "worker_cli_deferred"
     ):
         if resolved_settings.sandbox_provider == "local":
@@ -788,7 +790,7 @@ def build_memory_container(
             credential_provider,
             catalogs=capability_catalogs,
         )
-        runtime = RegistryClaudeRuntime(
+        claude_runtime = RegistryClaudeRuntime(
             registry=registry,
             config=gateway,
             tool_resolver=tool_resolver,
@@ -806,6 +808,28 @@ def build_memory_container(
             knowledge=knowledge,
             remote_knowledge_mcp=remote_knowledge_mcp,
             observability=observability,
+        )
+        runtime = (
+            RegistryRuntimeRouter(
+                registry=registry,
+                runtimes={
+                    "claude-agent-sdk": claude_runtime,
+                    "codex-app-server": RegistryCodexRuntime(
+                        registry=registry,
+                        codex_path=Path(resolved_settings.codex_cli_path),
+                        model_by_route=resolved_settings.codex_model_by_route,
+                        provider_by_route=resolved_settings.codex_provider_by_route,
+                        approval_policy=resolved_settings.codex_approval_policy,
+                        network_access=resolved_settings.codex_network_access,
+                        server_request_handler=CodexToolGate(
+                            approvals=approval_service,
+                            events=event_service,
+                        ).authorize,
+                    ),
+                },
+            )
+            if resolved_settings.runtime == "multi"
+            else claude_runtime
         )
         model_probe = AnthropicSandboxModelProbe(gateway)
         mcp_probe = StreamableHttpMcpProbe(tool_resolver)
@@ -848,7 +872,7 @@ def build_memory_container(
         memory=memory_service,
         workspace_policy_resolver=workspace_policy_resolver,
         runtime_asset_stager=(
-            stage_runtime_assets if resolved_settings.runtime == "claude-sdk" else None
+            stage_runtime_assets if resolved_settings.runtime != "fake" else None
         ),
         policy_resolver=resolve_policy,
         output_artifact_max_bytes=resolved_settings.output_artifact_max_bytes,

@@ -43,7 +43,7 @@ from harness.application.workspaces import (
 from harness.context.checkpoint import ContextCheckpointService
 from harness.context.service import ContextService
 from harness.core.errors import ConflictError
-from harness.core.models import ExecutionIdentity, Run, RunStatus, Session
+from harness.core.models import AgentRuntimeType, ExecutionIdentity, Run, RunStatus, Session
 from harness.core.ports import CancellationWakeup, RunRepository, SessionRepository
 from harness.core.state_machine import transition
 from harness.deployments.boundaries import session_environment_policy
@@ -1198,7 +1198,10 @@ class RunOrchestrator:
                     session.user_id,
                     session.session_id,
                 )
-                if self._context_service is not None and session.claude_session_id is None
+                if (
+                    self._context_service is not None
+                    and session.resolved_runtime_thread_id is None
+                )
                 else ""
             )
             if context_projection:
@@ -1313,9 +1316,14 @@ class RunOrchestrator:
                     previous_session_id = payload.get("previous_session_id")
                     if not isinstance(previous_session_id, str) or not previous_session_id:
                         raise ValueError("session recovery event is missing previous_session_id")
-                    session = await self._sessions.clear_claude_session_id(
+                    raw_runtime_type = payload.get("runtime", session.runtime_type)
+                    if raw_runtime_type not in {"claude-agent-sdk", "codex-app-server"}:
+                        raise ValueError("session recovery event has an invalid runtime")
+                    runtime_type = cast(AgentRuntimeType, raw_runtime_type)
+                    session = await self._sessions.clear_runtime_thread(
                         tenant_id,
                         session.session_id,
+                        runtime_type,
                         previous_session_id,
                     )
                 if runtime_event.type == "runtime.result":
@@ -1328,11 +1336,25 @@ class RunOrchestrator:
                 if runtime_event.type in {"runtime.system", "runtime.result"}:
                     sdk_session_id = payload.get("session_id")
                     if isinstance(sdk_session_id, str) and sdk_session_id:
-                        session = await self._sessions.bind_claude_session_id(
+                        session = await self._sessions.bind_runtime_thread(
                             tenant_id,
                             session.session_id,
+                            "claude-agent-sdk",
                             sdk_session_id,
                         )
+                if runtime_event.type == "runtime.thread.started":
+                    runtime_thread_id = payload.get("thread_id")
+                    raw_runtime_type = payload.get("runtime")
+                    if not isinstance(runtime_thread_id, str) or not runtime_thread_id:
+                        raise ValueError("runtime thread event is missing thread_id")
+                    if raw_runtime_type not in {"claude-agent-sdk", "codex-app-server"}:
+                        raise ValueError("runtime thread event has an invalid runtime")
+                    session = await self._sessions.bind_runtime_thread(
+                        tenant_id,
+                        session.session_id,
+                        cast(AgentRuntimeType, raw_runtime_type),
+                        runtime_thread_id,
+                    )
                 original_tool_arguments: dict[str, Any] | None = None
                 if runtime_event.type == "tool.request":
                     raw_arguments = payload.get("arguments")

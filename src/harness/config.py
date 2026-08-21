@@ -16,11 +16,16 @@ class Settings(BaseSettings):
     )
 
     environment: Literal["local", "test", "production"] = "local"
-    runtime: Literal["fake", "claude-sdk"] = "fake"
+    runtime: Literal["fake", "claude-sdk", "multi"] = "fake"
     sandbox_provider: Literal["local", "daytona", "e2b", "kubernetes"] = "local"
     sandbox_execution_mode: Literal["remote_cli", "worker_cli_deferred"] = "remote_cli"
     allow_unsafe_local_sandbox: bool = False
     cc_switch_settings_path: str = "~/.claude/settings.json"
+    codex_cli_path: str = "/usr/local/bin/codex"
+    codex_model_by_route: dict[str, str] = Field(default_factory=dict)
+    codex_provider_by_route: dict[str, str] = Field(default_factory=dict)
+    codex_approval_policy: Literal["untrusted", "on-request", "never"] = "untrusted"
+    codex_network_access: bool = False
     otel_enabled: bool = False
     otel_content_capture: Literal["off", "redacted"] = "off"
     otel_content_max_chars: int = Field(default=12_000, ge=256, le=100_000)

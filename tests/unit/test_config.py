@@ -14,6 +14,8 @@ def test_local_defaults_disable_external_model_and_otel() -> None:
     assert settings.otel_content_capture == "off"
     assert settings.otel_content_max_chars == 12_000
     assert settings.cc_switch_settings_path == "~/.claude/settings.json"
+    assert settings.codex_cli_path == "/usr/local/bin/codex"
+    assert settings.codex_approval_policy == "untrusted"
     assert settings.new_api_compatibility == "full"
     assert settings.new_api_capabilities == "streaming,tool_use"
     assert settings.daytona_delete_on_destroy is True

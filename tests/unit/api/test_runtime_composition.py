@@ -11,6 +11,7 @@ from harness.core.manifest import AgentManifest
 from harness.core.models import ExecutionIdentity
 from harness.runtime.cc_switch import CcSwitchConfigError
 from harness.runtime.fake import FakeRuntime
+from harness.runtime.registry_codex_runtime import RegistryRuntimeRouter
 from harness.runtime.registry_runtime import RegistryClaudeRuntime
 from harness.runtime.tools import ToolResolver
 from harness.sandbox.kubernetes import KubernetesSandboxProvider
@@ -75,6 +76,35 @@ def test_claude_sdk_composition_loads_cc_switch_runtime(tmp_path: Path) -> None:
 
     assert isinstance(container.runtime, RegistryClaudeRuntime)
     assert "composition-secret" not in repr(container)
+
+
+def test_multi_runtime_composition_installs_claude_and_codex(tmp_path: Path) -> None:
+    path = tmp_path / "settings.json"
+    path.write_text(
+        json.dumps(
+            {
+                "env": {
+                    "ANTHROPIC_BASE_URL": "https://gateway.example",
+                    "ANTHROPIC_AUTH_TOKEN": "composition-secret",
+                    "ANTHROPIC_MODEL": "composition-model",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    container = build_memory_container(
+        settings=Settings(
+            runtime="multi",
+            cc_switch_settings_path=str(path),
+            codex_cli_path="/opt/codex",
+            codex_model_by_route={"default": "gpt-test"},
+        )
+    )
+
+    assert isinstance(container.runtime, RegistryRuntimeRouter)
+    installed = vars(container.runtime)["_runtimes"]
+    assert set(installed) == {"claude-agent-sdk", "codex-app-server"}
 
 
 @pytest.mark.asyncio

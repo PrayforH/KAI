@@ -63,7 +63,9 @@ class ContextCheckpointService:
         events: list[RunEvent],
         final_response: str,
     ) -> SessionContextDigest | None:
-        sdk_session_id = session.claude_session_id
+        if session.runtime_type != "claude-agent-sdk":
+            return None
+        sdk_session_id = session.resolved_runtime_thread_id
         if sdk_session_id is None:
             return None
         checkpoint = await self._transcripts.checkpoint(

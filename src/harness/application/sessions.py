@@ -126,6 +126,7 @@ class SessionService:
             agent_owner_user_id=resolved_agent_owner,
             team_ids=team_ids,
             api_key_id=api_key_id,
+            runtime_type=snapshot.manifest.spec.runtime,
             agent_name=agent_name,
             agent_version=agent_version,
             created_at=self._clock(),
@@ -146,6 +147,7 @@ class SessionService:
                 or existing.resolved_agent_owner_user_id != resolved_agent_owner
                 or existing.team_ids != team_ids
                 or existing.api_key_id != api_key_id
+                or existing.runtime_type != snapshot.manifest.spec.runtime
                 or existing.agent_name != agent_name
                 or existing.agent_version != agent_version
                 or existing.environment != (environment.value if environment is not None else None)
@@ -183,6 +185,7 @@ class SessionService:
         cloned = source.model_copy(
             update={
                 "session_id": session_id,
+                "runtime_thread_id": None,
                 "claude_session_id": None,
                 "created_at": self._clock(),
             }

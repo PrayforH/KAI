@@ -380,7 +380,7 @@ async def get_agui_thread_context(
             **overview.model_dump(),
             "previous_session_count": len(binding.previous_session_ids),
             "rebase_supported": (
-                session.claude_session_id is not None
+                session.resolved_runtime_thread_id is not None
                 and overview.state is not None
                 and overview.state.latest_digest_id is not None
             ),
