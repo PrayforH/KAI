@@ -1,0 +1,22 @@
+# Opt-in overlay for the Codex app-server runtime. Keep image selection in the
+# release or Harbor overlay so promotion can pin an immutable image digest.
+x-codex-runtime-environment: &codex-runtime-environment
+  HARNESS_RUNTIME: multi
+  HARNESS_CODEX_CLI_PATH: ${HARNESS_CODEX_CLI_PATH:-/usr/local/bin/codex}
+  HARNESS_CODEX_MODEL_BY_ROUTE: ${HARNESS_CODEX_MODEL_BY_ROUTE:-{}}
+  HARNESS_CODEX_PROVIDER_BY_ROUTE: ${HARNESS_CODEX_PROVIDER_BY_ROUTE:-{}}
+  HARNESS_CODEX_APPROVAL_POLICY: ${HARNESS_CODEX_APPROVAL_POLICY:-untrusted}
+  HARNESS_CODEX_NETWORK_ACCESS: ${HARNESS_CODEX_NETWORK_ACCESS:-false}
+
+services:
+  api:
+    environment:
+      <<: *codex-runtime-environment
+
+  worker:
+    environment:
+      <<: *codex-runtime-environment
+
+  quality-sync:
+    environment:
+      <<: *codex-runtime-environment
