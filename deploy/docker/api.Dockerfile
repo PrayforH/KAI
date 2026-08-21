@@ -2,17 +2,7 @@
 # with Cosign in CI before Docker is allowed to copy its binary into our image.
 ARG KUBECTL_IMAGE=cgr.dev/chainguard/kubectl@sha256:1e1aa9dedf0d9008e5a3710b23f2072bc2ab83117146d503c689b5d2592add3d
 ARG PYTHON_IMAGE=python:3.12-slim-bookworm@sha256:4766d8b510c428e595d74b9cc5bbb2fae8e26316fffb4adc89908d79aacd58a2
-ARG NODE_IMAGE=node:22-bookworm-slim@sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0c23dfb172dc3cc6436
 FROM ${KUBECTL_IMAGE} AS kubectl
-
-FROM ${NODE_IMAGE} AS codex
-
-ARG CODEX_VERSION=0.149.0
-ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org
-RUN npm install --global --registry="${NPM_CONFIG_REGISTRY}" \
-      "@openai/codex@${CODEX_VERSION}" \
-    && codex --version \
-    && npm cache clean --force
 
 FROM ${PYTHON_IMAGE} AS builder
 
@@ -25,6 +15,18 @@ RUN python -m pip install --no-cache-dir \
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_DEFAULT_INDEX=${UV_DEFAULT_INDEX}
+
+# The official platform package is a standalone musl binary plus its sandbox
+# resources. Verify the immutable npm artifact and avoid shipping Node/npm in
+# the Python runtime image.
+ARG CODEX_VERSION=0.149.0
+ARG CODEX_LINUX_X64_SHA256=e06f3d106fe8bb058a6bfd30075d89ea17deaee7c8425e0c5d23072df0fdd0e7
+ARG CODEX_NPM_REGISTRY=https://registry.npmmirror.com
+RUN python -c 'import os, urllib.request; version=os.environ["CODEX_VERSION"]; registry=os.environ["CODEX_NPM_REGISTRY"].rstrip("/"); urllib.request.urlretrieve(f"{registry}/@openai/codex/-/codex-{version}-linux-x64.tgz", "/tmp/codex.tgz")' \
+    && printf '%s  %s\n' "${CODEX_LINUX_X64_SHA256}" /tmp/codex.tgz | sha256sum --check --strict \
+    && mkdir -p /opt/codex \
+    && tar -xzf /tmp/codex.tgz --strip-components=1 -C /opt/codex \
+    && /opt/codex/vendor/x86_64-unknown-linux-musl/bin/codex --version
 
 COPY pyproject.toml uv.lock README.md ./
 RUN uv export \
@@ -73,12 +75,12 @@ COPY --from=builder --chown=harness:harness /app/alembic.ini /app/alembic.ini
 COPY --from=builder --chown=harness:harness /app/agents /app/agents
 COPY --from=builder --chown=harness:harness /app/scripts /app/scripts
 COPY --from=kubectl /bin/kubectl /usr/local/bin/kubectl
-COPY --from=codex /usr/local/bin/node /usr/local/bin/node
-COPY --from=codex /usr/local/bin/codex /usr/local/bin/codex
-COPY --from=codex /usr/local/lib/node_modules/@openai/codex \
-    /usr/local/lib/node_modules/@openai/codex
+COPY --from=builder /opt/codex /opt/codex
 COPY --chown=harness:harness deploy/docker/entrypoint-api.sh /usr/local/bin/entrypoint-api
 COPY --chown=harness:harness deploy/docker/entrypoint-worker.sh /usr/local/bin/entrypoint-worker
+
+RUN ln -s /opt/codex/vendor/x86_64-unknown-linux-musl/bin/codex /usr/local/bin/codex \
+    && codex --version
 
 USER harness
 EXPOSE 8000
