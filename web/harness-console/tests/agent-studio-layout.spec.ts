@@ -323,6 +323,12 @@ describe("Agent Studio management page", () => {
     expect(builderOverlays).toContain("NEW AGENT");
     expect(builderOverlays).toContain("描述任务，直接开始试跑");
     expect(builderOverlays).toContain("studioClient.createDraftFromTask");
+    expect(builderOverlays).toContain("服务端模板");
+    expect(builderOverlays).toContain("studioClient.createDraft");
+    expect(builderOverlays).toContain("脚手架来自能力目录模板");
+    expect(builderOverlays).toContain("前端默认草稿不会覆盖服务端脚手架");
+    expect(workbench).toContain("templates={options.templates}");
+    expect(workbench).toContain("setTryRunOpen(flow.autoRun)");
     expect(builderOverlays).not.toContain("从服务端模板开始");
     expect(builderOverlays).not.toContain("AgentBuilderCopilot");
     expect(workbench).not.toContain("createPersonalStudioDraft");
@@ -565,6 +571,16 @@ describe("Agent Studio management page", () => {
     expect(studioClient).toContain("toolExposureMode");
     expect(styles).toContain(".toolExposureControl");
     expect(styles).not.toContain(".toolExposureModal");
+  });
+
+  it("drives runtime choices and Codex capability copy from server runtime capabilities", () => {
+    expect(workbench).toContain("activeRuntimeCapabilities");
+    expect(workbench).toContain("activeRuntimeCapability");
+    expect(workbench).toContain("MODEL_API_FORMAT_LABELS");
+    expect(workbench).toContain("targetCapability.modelApiFormats.includes");
+    expect(workbench).not.toContain('option value="codex-app-server"');
+    expect(workbench).not.toContain("Codex P0 已支持 Responses、线程续接");
+    expect(workbench).toContain("接受 ${activeRuntimeCapability.modelApiFormats");
   });
 
   it("keeps runtime and permission surfaces on shared light/dark theme tokens", () => {

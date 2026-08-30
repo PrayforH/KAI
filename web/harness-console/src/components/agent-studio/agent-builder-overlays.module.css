@@ -779,3 +779,112 @@
     flex-direction: column;
   }
 }
+
+.modeTabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.modeTabs > button {
+  min-height: 30px;
+  padding: 5px 13px;
+  border: 1px solid var(--overlay-line);
+  border-radius: 999px;
+  color: var(--overlay-muted);
+  background: var(--overlay-panel-subtle);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 620;
+}
+
+.modeTabs > button:disabled {
+  cursor: not-allowed;
+  opacity: .5;
+}
+
+.modeTabs > button[aria-selected="true"] {
+  border-color: var(--overlay-accent);
+  color: var(--overlay-ink);
+  background: var(--overlay-panel);
+}
+
+.templatePane {
+  display: grid;
+  gap: 12px;
+}
+
+.templateList {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px;
+}
+
+.templateCard,
+.templateCardActive {
+  display: grid;
+  gap: 5px;
+  padding: 12px 13px;
+  border: 1px solid var(--overlay-line);
+  border-radius: 11px;
+  color: var(--overlay-muted);
+  background: var(--overlay-panel-subtle);
+  cursor: pointer;
+  text-align: left;
+}
+
+.templateCard:hover {
+  color: var(--overlay-ink);
+}
+
+.templateCardActive {
+  border-color: var(--overlay-accent);
+  color: var(--overlay-ink);
+  background: var(--overlay-panel);
+}
+
+.templateCard strong,
+.templateCardActive strong {
+  font-size: 13px;
+}
+
+.templateCard small,
+.templateCardActive small {
+  color: var(--overlay-faint);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.builderFields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px 14px;
+}
+
+.builderFields label {
+  display: grid;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--overlay-muted);
+}
+
+.builderFields label > span {
+  color: var(--overlay-faint);
+  font-size: 10px;
+  letter-spacing: .06em;
+}
+
+.builderFields input,
+.builderFields textarea {
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid var(--overlay-line-strong);
+  border-radius: var(--codex-control-radius, 8px);
+  color: var(--overlay-ink);
+  background: var(--overlay-panel);
+  font: inherit;
+}
+
+.builderFields .monoField {
+  font: 600 12px var(--codex-font-mono, ui-monospace, monospace);
+}

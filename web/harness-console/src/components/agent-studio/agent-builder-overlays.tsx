@@ -23,12 +23,24 @@ export function NewAgentDialog({
   open,
   onClose,
   onCreated,
+  templates,
 }: {
   open: boolean;
   onClose: () => void;
   onCreated: (flow: CreatedAgentFlow) => void;
+  templates: Array<{
+    template: StudioDraft["template"];
+    label: string;
+    description: string;
+  }>;
 }) {
+  const [mode, setMode] = useState<"task" | "template">("task");
   const [task, setTask] = useState("");
+  const [selectedTemplate, setSelectedTemplate] = useState("");
+  const [agentId, setAgentId] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [domain, setDomain] = useState("");
+  const [description, setDescription] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   if (!open) return null;
@@ -55,22 +67,111 @@ export function NewAgentDialog({
     }
   }
 
+  async function createFromTemplate() {
+    const template = templates.find((item) => item.template === selectedTemplate);
+    if (!template || agentId.trim().length < 2) return;
+    setBusy(true);
+    setError("");
+    try {
+      const created = await studioClient.createDraft({
+        name: agentId.trim(),
+        domain: domain.trim(),
+        displayName: displayName.trim() || template.label,
+        description: description.trim(),
+        template: template.template,
+      });
+      onCreated({
+        draft: apiDraftToStudioDraft(created),
+        prompt: "",
+        recommendation: null,
+        autoRun: false,
+      });
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "创建失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return <div className={styles.backdrop} role="presentation">
     <section className={`${styles.dialog} ${styles.builderDialog}`} role="dialog" aria-modal="true" aria-labelledby="new-agent-title">
-      <header><div><span>NEW AGENT</span><h2 id="new-agent-title">描述任务，直接开始试跑</h2></div><button type="button" onClick={onClose}>×</button></header>
-      <p>名称、运行时和基础权限由控制面自动生成。外部 MCP 不会根据关键词自动接入。</p>
-      <div className={styles.builderLayout}>
-        <div className={styles.taskBrief}>
-          <label><span>你希望它完成什么？</span><textarea autoFocus value={task} onChange={(event) => setTask(event.target.value)} placeholder="例如：整理指定公司的公开信息，给出投资风险摘要和证据链接。" /></label>
-        </div>
-        <aside className={styles.builderPromise}>
-          <span>创建后会自动完成</span>
-          <ol><li>生成任务契约与身份</li><li>匹配模型和最小工具权限</li><li>生成基础评测</li><li>启动隔离试跑</li><li>记录可观测执行轨迹</li></ol>
-          <p>只有成功试跑才能固化为不可变版本。</p>
-        </aside>
+      <header><div><span>NEW AGENT</span><h2 id="new-agent-title">{mode === "task" ? "描述任务，直接开始试跑" : "从服务端模板新建"}</h2></div><button type="button" onClick={onClose}>×</button></header>
+      <div className={styles.modeTabs} role="tablist" aria-label="新建方式">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === "task"}
+          onClick={() => { setMode("task"); setError(""); }}
+        >任务直建</button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === "template"}
+          disabled={templates.length === 0}
+          title={templates.length === 0 ? "能力目录暂无可用模板" : undefined}
+          onClick={() => { setMode("template"); setError(""); }}
+        >服务端模板</button>
       </div>
+      {mode === "task" ? <>
+        <p>名称、运行时和基础权限由控制面自动生成。外部 MCP 不会根据关键词自动接入。</p>
+        <div className={styles.builderLayout}>
+          <div className={styles.taskBrief}>
+            <label><span>你希望它完成什么？</span><textarea autoFocus value={task} onChange={(event) => setTask(event.target.value)} placeholder="例如：整理指定公司的公开信息，给出投资风险摘要和证据链接。" /></label>
+          </div>
+          <aside className={styles.builderPromise}>
+            <span>创建后会自动完成</span>
+            <ol><li>生成任务契约与身份</li><li>匹配模型和最小工具权限</li><li>生成基础评测</li><li>启动隔离试跑</li><li>记录可观测执行轨迹</li></ol>
+            <p>只有成功试跑才能固化为不可变版本。</p>
+          </aside>
+        </div>
+      </> : <>
+        <p>脚手架来自能力目录模板；Builder 会直接进入服务端生成的草稿，不会覆盖模板内容。</p>
+        <div className={styles.builderLayout}>
+          <div className={styles.templatePane}>
+            <div className={styles.templateList} role="radiogroup" aria-label="选择模板">
+              {templates.map((template) => (
+                <button
+                  key={template.template}
+                  type="button"
+                  role="radio"
+                  aria-checked={selectedTemplate === template.template}
+                  className={selectedTemplate === template.template ? styles.templateCardActive : styles.templateCard}
+                  onClick={() => {
+                    setSelectedTemplate(template.template);
+                    setDisplayName((current) => current || template.label);
+                  }}
+                >
+                  <strong>{template.label}</strong>
+                  <small>{template.description}</small>
+                </button>
+              ))}
+            </div>
+            <div className={styles.builderFields}>
+              <label><span>Agent ID</span><input autoFocus className={styles.monoField} value={agentId} onChange={(event) => setAgentId(event.target.value)} placeholder="小写字母、数字或连字符" /></label>
+              <label><span>显示名称</span><input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="对外展示的名称" /></label>
+              <label><span>业务领域</span><input value={domain} onChange={(event) => setDomain(event.target.value)} placeholder="例如 accounts-payable" /></label>
+              <label><span>场景说明</span><textarea rows={2} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="它负责什么边界？可选。" /></label>
+            </div>
+          </div>
+          <aside className={styles.builderPromise}>
+            <span>模板创建的行为</span>
+            <ol><li>使用服务端脚手架生成草稿</li><li>保留模板 Prompt、Skills 与工具上限</li><li>进入五阶段 Builder 的目标与契约</li><li>试跑与发布仍走既有门禁</li></ol>
+            <p>前端默认草稿不会覆盖服务端脚手架。</p>
+          </aside>
+        </div>
+      </>}
       {error && <p className={styles.error}>{error}</p>}
-      <footer><button type="button" onClick={onClose}>取消</button><button type="button" className={styles.primary} disabled={busy || task.trim().length < 2} onClick={() => void createFromTask()}>{busy ? "正在创建…" : "创建并试跑"}</button></footer>
+      <footer>
+        <button type="button" onClick={onClose}>取消</button>
+        {mode === "task"
+          ? <button type="button" className={styles.primary} disabled={busy || task.trim().length < 2} onClick={() => void createFromTask()}>{busy ? "正在创建…" : "创建并试跑"}</button>
+          : <button
+              type="button"
+              className={styles.primary}
+              disabled={busy || !selectedTemplate || agentId.trim().length < 2}
+              onClick={() => void createFromTemplate()}
+            >{busy ? "正在创建…" : "从模板创建"}</button>}
+      </footer>
     </section>
   </div>;
 }

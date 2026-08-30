@@ -159,6 +159,13 @@ const previewStatusLabels: Record<string, string> = {
   expired: "已过期",
 };
 
+const MODEL_API_FORMAT_LABELS: Record<string, string> = {
+  anthropic_compatible: "Anthropic-compatible",
+  openai_compatible: "OpenAI Responses",
+  openai_images: "OpenAI Images",
+  openai_videos: "OpenAI Videos",
+};
+
 const preflightErrorLabels: Record<string, string> = {
   execution_profile_sandbox_provider_mismatch:
     "当前 Preview Sandbox 与所选执行档位不一致。Local 模式请选择“本地开发 Preview”，保存并重新检查后再试。",
@@ -1676,6 +1683,10 @@ export function AgentStudioWorkbench() {
     blocked: "有阻塞",
     pending: "待完成",
   };
+  const activeRuntimeCapabilities = options.runtimes;
+  const activeRuntimeCapability = activeRuntimeCapabilities.find(
+    (item) => item.runtime === draft.runtime,
+  ) ?? null;
 
   useEffect(() => {
     if (!activePreview || !["queued", "provisioning", "cancelling"].includes(activePreview.status)) return;
@@ -2411,9 +2422,13 @@ export function AgentStudioWorkbench() {
                   </Field>
                 </div>
                 <InfoStrip tone="neutral">
-                  {draft.runtime === "codex-app-server"
-                    ? "Codex App Server 只接受 Responses 协议；发布检查会拒绝不兼容路由。"
-                    : "Claude Agent SDK 使用已完成 Anthropic-compatible、流式输出和工具调用验证的组合。"}
+                  {activeRuntimeCapability
+                    ? `${activeRuntimeCapability.label} 接受 ${activeRuntimeCapability.modelApiFormats
+                        .map((format) => MODEL_API_FORMAT_LABELS[format] ?? format)
+                        .join(" / ")} 模型协议；发布检查会拒绝不兼容路由。`
+                    : draft.runtime === "codex-app-server"
+                      ? "Codex App Server 只接受 Responses 协议；发布检查会拒绝不兼容路由。"
+                      : "Claude Agent SDK 使用已完成 Anthropic-compatible、流式输出和工具调用验证的组合。"}
                 </InfoStrip>
               </section>
             )}
@@ -3184,32 +3199,73 @@ export function AgentStudioWorkbench() {
                       value={draft.runtime}
                       onChange={(event) => {
                         const runtime = event.target.value as StudioDraft["runtime"];
-                        const compatibleRoute = options.routes.find((route) =>
-                          runtime === "codex-app-server"
-                            ? route.apiFormat === "openai_compatible"
-                            : route.apiFormat !== "openai_images",
+                        const targetCapability = activeRuntimeCapabilities.find(
+                          (item) => item.runtime === runtime,
                         );
+                        const compatibleRoute = options.routes.find((route) =>
+                          targetCapability
+                            ? targetCapability.modelApiFormats.includes(
+                                route.apiFormat ?? "anthropic_compatible",
+                              )
+                            : runtime !== "codex-app-server",
+                        );
+                        const currentRouteCompatible = selectedRoute
+                          ? targetCapability
+                            ? targetCapability.modelApiFormats.includes(
+                                selectedRoute.apiFormat ?? "anthropic_compatible",
+                              )
+                            : runtime !== "codex-app-server"
+                          : false;
                         updateDraft({
                           runtime,
-                          ...(runtime === "codex-app-server"
-                            && selectedRoute?.apiFormat !== "openai_compatible"
-                            && compatibleRoute
-                            ? {
+                          ...(currentRouteCompatible || !compatibleRoute
+                            ? {}
+                            : {
                                 modelRoute: compatibleRoute.id,
                                 model: compatibleRoute.models[0],
-                              }
-                            : {}),
+                              }),
                         });
                       }}
                     >
-                      <option value="claude-agent-sdk">Claude Agent SDK · 完整 Studio 能力</option>
-                      <option value="codex-app-server">Codex App Server · Codex Loop</option>
+                      {(activeRuntimeCapabilities.length > 0
+                        ? activeRuntimeCapabilities
+                        : [
+                            {
+                              runtime: "claude-agent-sdk" as const,
+                              label: "Claude Agent SDK",
+                              stability: "stable" as const,
+                              capabilities: [],
+                              modelApiFormats: ["anthropic_compatible" as const],
+                              limitations: [],
+                            },
+                            {
+                              runtime: "codex-app-server" as const,
+                              label: "Codex App Server",
+                              stability: "preview" as const,
+                              capabilities: [],
+                              modelApiFormats: ["openai_compatible" as const],
+                              limitations: [],
+                            },
+                          ]
+                      ).map((runtimeCapability) => (
+                        <option key={runtimeCapability.runtime} value={runtimeCapability.runtime}>
+                          {runtimeCapability.label}
+                          {runtimeCapability.stability !== "stable"
+                            ? ` · ${runtimeCapability.stability === "preview" ? "预览" : "实验"}`
+                            : ""}
+                        </option>
+                      ))}
                     </select>
                   </Field>
                 </div>
-                {draft.runtime === "codex-app-server" && (
+                {activeRuntimeCapability && activeRuntimeCapability.limitations.length > 0 && (
                   <InfoStrip tone="warning">
-                    Codex P0 已支持 Responses、线程续接、Shell/文件操作与审批事件；Studio MCP、自定义算子、Knowledge、按需工具和 Sub Agent 尚未接通，发布检查会明确阻止这些组合。
+                    <strong>{activeRuntimeCapability.label}当前限制：</strong>
+                    <ul>
+                      {activeRuntimeCapability.limitations.map((limitation) => (
+                        <li key={limitation}>{limitation}</li>
+                      ))}
+                    </ul>
                   </InfoStrip>
                 )}
                 <div className={styles.runtimeRecommendation}>
@@ -4026,13 +4082,16 @@ export function AgentStudioWorkbench() {
             autoStart: flow.autoRun,
             recommendation: flow.recommendation,
           });
-          setTryRunOpen(true);
+          setTryRunOpen(flow.autoRun);
           setNotice(
             flow.recommendation
               ? `已按任务生成 ${flow.recommendation.runtime} 草稿，正在启动真实试跑`
-              : `已创建 ${created.displayName}`,
+              : flow.autoRun
+                ? `已创建 ${created.displayName}`
+                : `已从模板创建 ${created.displayName}；服务端脚手架已就位，可继续配置`,
           );
         }}
+        templates={options.templates}
       />
       <TryRunPanel
         open={tryRunOpen}
