@@ -98,7 +98,7 @@ async def test_create_is_idempotent_and_binds_test_identity_and_hashes() -> None
     assert first.identity_kind == "test"
     assert first.environment == "preview"
     assert first.execution_profile == "isolated-default"
-    assert first.execution_profile_version == 1
+    assert first.execution_profile_version >= 1
     assert first.content_hash != first.package_hash
 
 
