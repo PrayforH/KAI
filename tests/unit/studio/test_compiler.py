@@ -83,11 +83,7 @@ def test_default_draft_compiles_to_existing_reproducible_bundle_contract() -> No
     assert directory.catalog_revision == 1
     assert studio_metadata.description == draft().spec.description
     assert studio_metadata.execution_profile == draft().spec.execution_profile
-    assert {entry.name for entry in directory.entries} == {
-        "Read",
-        "Glob",
-        "Grep",
-    }
+    assert {entry.name for entry in directory.entries} == set(draft().spec.builtin_tools)
 
 
 def test_codex_runtime_compiles_and_round_trips_with_a_responses_route() -> None:
@@ -332,9 +328,11 @@ def test_nexau_export_is_deterministic_and_round_trips_editable_assets() -> None
         assert extensions["unmapped_builtin_tools"] == []
         assert {tool["name"] for tool in config["tools"]} == {
             "read_file",
+            "write_file",
             "list_directory",
             "search_file_content",
             "replace",
+            "run_shell_command",
             "normalize_score",
         }
         assert config["mcp_servers"] == [
@@ -671,7 +669,14 @@ def test_tavily_is_a_controlled_external_mcp_capability_not_general_network() ->
     compiler = AgentDraftCompiler(default_capability_catalog())
     current = draft()
     enabled = current.model_copy(
-        update={"spec": current.spec.model_copy(update={"mcp_servers": ("tavily-readonly",)})}
+        update={
+            "spec": current.spec.model_copy(
+                update={
+                    "builtin_tools": ("Read", "Glob", "Grep", "Write"),
+                    "mcp_servers": ("tavily-readonly",),
+                }
+            )
+        }
     )
 
     validation = compiler.validate(enabled)
@@ -737,7 +742,7 @@ def test_on_demand_bundle_pins_reviewed_tool_directory_and_route_capability() ->
 
     assert validation.ready is True
     assert validation.contract.tool_exposure_mode == "on_demand"
-    assert validation.contract.tool_directory_entries == 5
+    assert validation.contract.tool_directory_entries == 7
     assert "toolExposureMode: on_demand" in validation.manifest_yaml
     assert "tool_search" in validation.manifest_yaml
     with ZipFile(BytesIO(compiled.bundle)) as bundle:
@@ -880,7 +885,7 @@ def test_disabled_catalog_resources_fail_closed() -> None:
             ),
             "policies": tuple(
                 item.model_copy(update={"enabled": False})
-                if item.policy_id == "production-read-only"
+                if item.policy_id == "production-standard"
                 else item
                 for item in catalog.policies
             ),
