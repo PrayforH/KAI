@@ -93,6 +93,7 @@ from harness.runtime.default_tools import (
     server_secret_credential_provider,
 )
 from harness.runtime.fake import FakeRuntime
+from harness.runtime.installed import INSTALLED_AGENT_RUNTIMES
 from harness.runtime.mcp_credentials import DynamicMcpCredentialProvider
 from harness.runtime.registry_codex_runtime import RegistryCodexRuntime, RegistryRuntimeRouter
 from harness.runtime.registry_runtime import RegistryClaudeRuntime
@@ -908,24 +909,29 @@ def build_production_container(
         runtime = (
             RegistryRuntimeRouter(
                 registry=registry,
-                runtimes={
-                    "claude-agent-sdk": claude_runtime,
-                    "codex-app-server": RegistryCodexRuntime(
-                        registry=registry,
-                        codex_path=Path(settings.codex_cli_path),
-                        model_configurations=model_configurations,
-                        tool_resolver=tool_resolver,
-                        model_by_route=settings.codex_model_by_route,
-                        provider_by_route=settings.codex_provider_by_route,
-                        approval_policy=settings.codex_approval_policy,
-                        network_access=settings.codex_network_access,
-                        tool_output_token_limit=settings.codex_tool_output_token_limit,
-                        server_request_handler=CodexToolGate(
-                            approvals=approval_service,
-                            events=events,
-                        ).authorize,
-                    ),
-                },
+                runtimes=dict(
+                    zip(
+                        INSTALLED_AGENT_RUNTIMES,
+                        (
+                            claude_runtime,
+                            RegistryCodexRuntime(
+                                registry=registry,
+                                codex_path=Path(settings.codex_cli_path),
+                                model_configurations=model_configurations,
+                                tool_resolver=tool_resolver,
+                                model_by_route=settings.codex_model_by_route,
+                                provider_by_route=settings.codex_provider_by_route,
+                                approval_policy=settings.codex_approval_policy,
+                                network_access=settings.codex_network_access,
+                                tool_output_token_limit=settings.codex_tool_output_token_limit,
+                                server_request_handler=CodexToolGate(
+                                    approvals=approval_service,
+                                    events=events,
+                                ).authorize,
+                            ),
+                        ),
+                    )
+                ),
             )
             if settings.runtime == "multi"
             else claude_runtime

@@ -1,0 +1,48 @@
+[
+  {
+    "runtime": "claude-agent-sdk",
+    "label": "Claude Agent SDK",
+    "stability": "stable",
+    "capabilities": [
+      "skills",
+      "builtin_tools",
+      "python_tools",
+      "mcp_http",
+      "mcp_sse",
+      "knowledge",
+      "subagents",
+      "tool_search",
+      "session_resume",
+      "approvals",
+      "artifacts"
+    ],
+    "modelApiFormats": [
+      "anthropic_compatible",
+      "openai_compatible"
+    ],
+    "limitations": []
+  },
+  {
+    "runtime": "codex-app-server",
+    "label": "Codex App Server",
+    "stability": "stable",
+    "capabilities": [
+      "skills",
+      "builtin_tools",
+      "mcp_http",
+      "subagents",
+      "session_resume",
+      "approvals",
+      "artifacts"
+    ],
+    "modelApiFormats": [
+      "openai_compatible"
+    ],
+    "limitations": [
+      "Studio Python tools are not connected",
+      "Knowledge references are not connected",
+      "On-demand tool search is not connected",
+      "Only streamable HTTP MCP registrations are supported"
+    ]
+  }
+]
