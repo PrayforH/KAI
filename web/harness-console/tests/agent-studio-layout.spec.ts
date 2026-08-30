@@ -246,6 +246,8 @@ describe("Agent Studio management page", () => {
     expect(page).toContain("AgentStudioWorkbench");
     expect(workbench).toContain("<StudioSidebar");
     expect(workbench).toContain("有效运行契约");
+    expect(workbench).toContain("activeStageBlocked");
+    expect(workbench).toContain("阶段有 {activeStageBlocked.length} 项阻塞");
     expect(sidebar).toContain("<ProductBrandMark");
     expect(sidebar).toContain("<ProductBrandCopy");
     expect(productBrand).toContain('PRODUCT_NAME = "AXIS"');
@@ -660,6 +662,8 @@ describe("Agent Studio management page", () => {
       expect(workbench).toContain(stage);
     }
     expect(workbench).toContain("有效运行契约");
+    expect(workbench).toContain("activeStageBlocked");
+    expect(workbench).toContain("阶段有 {activeStageBlocked.length} 项阻塞");
     expect(workbench).toContain("随版本固化");
     expect(workbench).toContain("运行时引用 · 凭据托管");
     expect(workbench).toContain("运行时引用 · 外部快照");

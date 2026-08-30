@@ -6634,3 +6634,67 @@
   color: var(--studio-faint);
   background: var(--studio-panel-subtle);
 }
+
+.stageBlocking {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 20px;
+  padding: 13px 16px;
+  border: 1px solid rgb(192 57 43 / 34%);
+  border-radius: 10px;
+  background: color-mix(in srgb, #c0392b 5%, var(--studio-panel));
+}
+
+.stageBlocking header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.stageBlocking header strong {
+  color: var(--studio-ink);
+  font-size: 12px;
+}
+
+.stageBlocking header small {
+  color: var(--studio-muted);
+  font-size: 9.5px;
+}
+
+.stageBlocking ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stageBlocking li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.stageBlocking li > span {
+  min-width: 0;
+  color: var(--studio-ink-soft, var(--studio-muted));
+  font-size: 11px;
+}
+
+.stageBlocking li > button {
+  flex: 0 0 auto;
+  min-height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--studio-line);
+  border-radius: 7px;
+  color: var(--studio-muted);
+  background: var(--studio-panel-subtle);
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.stageBlocking li > button:hover {
+  color: var(--studio-ink);
+  border-color: var(--studio-line-strong);
+}

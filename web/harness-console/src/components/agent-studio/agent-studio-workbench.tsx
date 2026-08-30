@@ -1683,6 +1683,21 @@ export function AgentStudioWorkbench() {
     blocked: "有阻塞",
     pending: "待完成",
   };
+  const activeStageBlocked = useMemo(() => {
+    const items: Array<{ code: string; message: string; section: StudioSection }> = [];
+    for (const issue of serverValidation?.issues ?? []) {
+      if (issue.severity !== "error") continue;
+      const section = validationIssueSection(issue);
+      if (stageForSection(section) !== activeStage) continue;
+      items.push({ code: issue.code, message: validationIssueMessage(issue), section });
+    }
+    if (activeStage === "goal" && !contract.ready) {
+      for (const message of contract.issues) {
+        items.push({ code: `contract:${message}`, message, section: "identity" });
+      }
+    }
+    return items;
+  }, [serverValidation, activeStage, contract]);
   const activeRuntimeCapabilities = options.runtimes;
   const activeRuntimeCapability = activeRuntimeCapabilities.find(
     (item) => item.runtime === draft.runtime,
@@ -2317,6 +2332,24 @@ export function AgentStudioWorkbench() {
                     <small>{sectionSummary(section)}</small>
                   </button>
                 ))}
+              </div>
+            )}
+            {activeStageBlocked.length > 0 && (
+              <div className={styles.stageBlocking} role="alert">
+                <header>
+                  <strong>{activeStageMeta.label}阶段有 {activeStageBlocked.length} 项阻塞</strong>
+                  <small>阻塞不解除，试跑与发布都会被门禁拦下。</small>
+                </header>
+                <ul>
+                  {activeStageBlocked.map((item) => (
+                    <li key={item.code}>
+                      <span>{item.message}</span>
+                      <button type="button" onClick={() => setActiveSection(item.section)}>
+                        去 {sectionLabels[item.section]}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
             {activeSection === "identity" && (
