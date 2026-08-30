@@ -4,13 +4,15 @@ import {
   TaskModelControl,
   TaskModelProvider,
 } from "../src/components/task-model-context";
+import type { TaskModelRoute } from "../src/lib/task-model-catalog";
 
-const routes = [
+const routes: TaskModelRoute[] = [
   {
     id: "deepseek-v4-flash",
     label: "DeepSeek V4 Flash",
     provider: "deepseek",
     model: "deepseek-v4-flash",
+    modelType: "chat" as const,
     capabilities: ["streaming", "tool_use"],
   },
   {
@@ -18,6 +20,7 @@ const routes = [
     label: "DeepSeek V4 Pro",
     provider: "deepseek",
     model: "deepseek-v4-pro",
+    modelType: "chat" as const,
     capabilities: ["streaming", "tool_use"],
   },
 ];

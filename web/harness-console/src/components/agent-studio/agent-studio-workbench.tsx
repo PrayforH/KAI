@@ -11,12 +11,15 @@ import { StudioSidebar } from "./studio-sidebar";
 import {
   DEFAULT_STUDIO_DRAFT,
   REQUIRED_PROMPT_HEADINGS,
+  STUDIO_STAGES,
   applyStudioDraftUpdate,
   evaluateStudioDraft,
   mcpOptionsForDraft,
+  stageForSection,
   type StudioDraft,
   type StudioEvalCase,
   type StudioSection,
+  type StudioStage,
   type StudioSubagent,
 } from "../../lib/agent-studio";
 import {
@@ -59,16 +62,17 @@ import {
 } from "./agent-builder-overlays";
 import styles from "./agent-studio.module.css";
 
-const sections: Array<{ id: StudioSection; label: string; hint: string }> = [
-  { id: "identity", label: "基本信息", hint: "边界与用途" },
-  { id: "model", label: "模型", hint: "路由与能力" },
-  { id: "prompt", label: "System Prompt", hint: "稳定行为契约" },
-  { id: "orchestration", label: "协同编排", hint: "Lead + Sub Agents" },
-  { id: "skills", label: "Skills", hint: "领域工作流" },
-  { id: "capabilities", label: "Tools 与联网", hint: "确定性能力" },
-  { id: "runtime", label: "运行与权限", hint: "隔离和审批" },
-  { id: "evaluation", label: "测试与发布", hint: "质量门禁" },
-];
+const sectionLabels: Record<StudioSection, string> = {
+  identity: "基本信息",
+  model: "模型",
+  prompt: "System Prompt",
+  orchestration: "协同编排",
+  skills: "Skills",
+  capabilities: "Tools 与联网",
+  runtime: "运行与权限",
+  trial: "隔离试跑",
+  evaluation: "测试与发布",
+};
 
 const lifecycleStages = [
   { id: "draft", label: "草稿", detail: "可编辑" },
@@ -169,17 +173,6 @@ function preflightProgress(checks: StudioPreflightCheck[]) {
     ? `${passed} 通过 · ${skipped} 跳过`
     : `${passed}/${checks.length} 通过`;
 }
-
-const validationSectionLabels: Record<StudioSection, string> = {
-  identity: "基本信息",
-  model: "模型",
-  prompt: "System Prompt",
-  orchestration: "协同编排",
-  skills: "Skills",
-  capabilities: "Tools 与联网",
-  runtime: "运行与权限",
-  evaluation: "测试与发布",
-};
 
 const evaluationCoverageLabels: Record<StudioEvalCase["tag"], string> = {
   happy: "正常场景",
@@ -321,7 +314,7 @@ export function AgentStudioWorkbench() {
   const [serverValidation, setServerValidation] = useState<StudioValidation | null>(null);
   const [releaseFeedbackOpen, setReleaseFeedbackOpen] = useState(false);
   const [activeSection, setActiveSection] =
-    useState<StudioSection>("capabilities");
+    useState<StudioSection>("identity");
   const [agentQuery, setAgentQuery] = useState("");
   const [inspected, setInspected] = useState(false);
   const [promptFocusMode, setPromptFocusMode] = useState(false);
@@ -523,7 +516,7 @@ export function AgentStudioWorkbench() {
         const targetDraft = requestedDraftId
           ? serverDrafts.find((item) => item.draftId === requestedDraftId)
           : null;
-        if (sections.some((section) => section.id === requestedSection)) {
+        if (requestedSection && requestedSection in sectionLabels) {
           setActiveSection(requestedSection as StudioSection);
         }
         const migration = await migrateLegacyStudioDraft(
@@ -1478,6 +1471,12 @@ export function AgentStudioWorkbench() {
         return `${contract.toolCount} 项`;
       case "runtime":
         return "平台锁定";
+      case "trial":
+        return activePreview?.preflightResult?.status === "passed"
+          ? "预检通过"
+          : activePreview
+            ? "进行中"
+            : "待试跑";
       case "evaluation":
         return draft.evaluationEnabled ? `${draft.evalCases.length} 用例` : "已关闭";
     }
@@ -1632,6 +1631,51 @@ export function AgentStudioWorkbench() {
     : validationWarnings.length && serverValidation?.ready
       ? `${validationWarnings.length} 项提醒`
       : lifecycleStages[activeLifecycleIndex]?.detail;
+
+  const activeStage = stageForSection(activeSection);
+  const activeStageMeta = STUDIO_STAGES.find((stage) => stage.id === activeStage)
+    ?? STUDIO_STAGES[0];
+  const stageBlockedCounts = useMemo(() => {
+    const counts: Record<StudioStage, number> = {
+      goal: 0,
+      capabilities: 0,
+      behavior: 0,
+      trial: 0,
+      publish: 0,
+    };
+    for (const issue of serverValidation?.issues ?? []) {
+      if (issue.severity !== "error") continue;
+      counts[stageForSection(validationIssueSection(issue))] += 1;
+    }
+    if (!contract.ready) counts.goal += contract.issues.length;
+    return counts;
+  }, [serverValidation, contract]);
+  const stageState = (stageId: StudioStage): "complete" | "blocked" | "pending" => {
+    if (stageBlockedCounts[stageId] > 0) return "blocked";
+    switch (stageId) {
+      case "goal":
+        return Boolean(draft.name) && Boolean(draft.model) && contract.ready
+          ? "complete"
+          : "pending";
+      case "capabilities":
+        return draft.builtinTools.length > 0
+          || draft.mcpServers.length > 0
+          || draft.subagents.length > 0
+          ? "complete"
+          : "pending";
+      case "behavior":
+        return contract.promptSections === 5 ? "complete" : "pending";
+      case "trial":
+        return activePreview?.preflightResult?.status === "passed" ? "complete" : "pending";
+      case "publish":
+        return publishedCurrent ? "complete" : "pending";
+    }
+  };
+  const stageStateText: Record<"complete" | "blocked" | "pending", string> = {
+    complete: "已完成",
+    blocked: "有阻塞",
+    pending: "待完成",
+  };
 
   useEffect(() => {
     if (!activePreview || !["queued", "provisioning", "cancelling"].includes(activePreview.status)) return;
@@ -2062,7 +2106,7 @@ export function AgentStudioWorkbench() {
                           <strong>{validationIssueMessage(issue)}</strong>
                           <small>
                             {issue.stage === "production" ? "生产部署" : "发布"}
-                            {" · "}{validationSectionLabels[section]}
+                            {" · "}{sectionLabels[section]}
                           </small>
                         </div>
                         <button
@@ -2220,63 +2264,77 @@ export function AgentStudioWorkbench() {
           </div>
         )}
 
-        <section className={styles.lifecycleBar} aria-label="从草稿到部署的生命周期">
-          <div className={styles.lifecycleSummary}>
-            <span>发布状态</span>
-            <strong>{lifecycleLabel}</strong>
-            <small>{lifecycleDetail}</small>
-          </div>
-          <details className={styles.lifecycleDetails}>
-            <summary>
-              <span>查看完整发布链</span>
-              <small>{activeLifecycleIndex + 1}/{lifecycleStages.length}</small>
-            </summary>
-            <ol>
-              {lifecycleStages.map((stage, index) => {
-                const state = index < activeLifecycleIndex
-                  ? "complete"
-                  : index === activeLifecycleIndex
-                    ? "active"
-                    : "pending";
-                return (
-                  <li key={stage.id} data-state={state}>
-                    <i aria-hidden="true" />
-                    <span>{stage.label}</span>
-                  </li>
-                );
-              })}
-            </ol>
-          </details>
-        </section>
-
         <div className={styles.editorBody}>
-          <nav className={styles.sectionNav} aria-label="Agent 配置章节">
-            {sections.map((section) => (
-              <button
-                type="button"
-                key={section.id}
-                className={activeSection === section.id ? styles.sectionActive : styles.sectionButton}
-                onClick={() => setActiveSection(section.id)}
-                aria-current={activeSection === section.id ? "step" : undefined}
-              >
-                <span>{section.label}</span>
-                <span className={styles.sectionMeta}>
-                  <small>{section.hint}</small>
-                  <em>{sectionSummary(section.id)}</em>
-                </span>
-              </button>
-            ))}
+          <nav className={styles.stageNav} aria-label="Agent 构建五阶段">
+            {STUDIO_STAGES.map((stage) => {
+              const state = stageState(stage.id);
+              return (
+                <button
+                  type="button"
+                  key={stage.id}
+                  className={activeStage === stage.id ? styles.stageStepActive : styles.stageStep}
+                  data-state={state}
+                  onClick={() => setActiveSection(stage.sections[0])}
+                  aria-current={activeStage === stage.id ? "step" : undefined}
+                >
+                  <span className={styles.stageIndex} aria-hidden="true">
+                    {String(stage.index).padStart(2, "0")}
+                  </span>
+                  <span className={styles.stageCopy}>
+                    <strong>{stage.label}</strong>
+                    <small>{stage.hint}</small>
+                  </span>
+                  <em>{stageStateText[state]}</em>
+                </button>
+              );
+            })}
           </nav>
 
           <fieldset className={styles.panelViewport} disabled={!canEdit}>
+            {activeStageMeta.sections.length > 1 && (
+              <div className={styles.stageTabs} role="tablist" aria-label={`${activeStageMeta.label}阶段分区`}>
+                {activeStageMeta.sections.map((section) => (
+                  <button
+                    type="button"
+                    key={section}
+                    role="tab"
+                    aria-selected={activeSection === section}
+                    className={activeSection === section ? styles.stageTabActive : styles.stageTab}
+                    onClick={() => setActiveSection(section)}
+                  >
+                    <span>{sectionLabels[section]}</span>
+                    <small>{sectionSummary(section)}</small>
+                  </button>
+                ))}
+              </div>
+            )}
             {activeSection === "identity" && (
               <section className={styles.configPanel} aria-labelledby="identity-title">
                 <PanelHeading
                   id="identity-title"
-                  kicker="01 / Identity"
+                  kicker="阶段 1 · 目标与契约"
                   title="定义清楚它负责什么"
                   description="名称和边界会进入不可变 Agent 版本；不要把实现细节写进业务说明。"
                 />
+                <div className={styles.contractSummary} data-ready={contract.ready}>
+                  <div className={styles.contractSummaryHead}>
+                    <div>
+                      <span>有效运行契约</span>
+                      <strong>{contract.ready ? "契约就绪" : `${contract.issues.length} 项待补齐`}</strong>
+                    </div>
+                    <button type="button" onClick={() => setContractOpen(true)}>
+                      查看完整契约
+                    </button>
+                  </div>
+                  <ul>
+                    <li><span>模型路由</span><strong>{contract.routeLabel}</strong></li>
+                    <li><span>能力装配</span><strong>{contract.toolCount} 项工具 · {contract.skillCount} 个 Skill</strong></li>
+                    <li><span>协同</span><strong>{contract.collaborationLabel}</strong></li>
+                    <li><span>行为契约</span><strong>{contract.promptSections} / 5 章节</strong></li>
+                    <li><span>网络边界</span><strong>{contract.networkLabel}</strong></li>
+                    <li><span>审批语义</span><strong>{contract.approvalLabel}</strong></li>
+                  </ul>
+                </div>
                 <div className={styles.formGrid}>
                   <Field label="显示名称">
                     <input
@@ -2320,7 +2378,7 @@ export function AgentStudioWorkbench() {
               <section className={styles.configPanel} aria-labelledby="model-title">
                 <PanelHeading
                   id="model-title"
-                  kicker="02 / Model"
+                  kicker="阶段 1 · 模型路由"
                   title="选择经过平台验证的模型路由"
                   description="Agent 只引用路由和模型；Endpoint 与凭据始终由平台托管。"
                 />
@@ -2364,7 +2422,7 @@ export function AgentStudioWorkbench() {
               <section className={styles.configPanel} aria-labelledby="prompt-title">
                 <PanelHeading
                   id="prompt-title"
-                  kicker="03 / System Prompt"
+                  kicker="阶段 3 · Prompt"
                   title="写稳定行为契约，不堆易变知识"
                   description="生产门禁要求五个章节。业务 SOP 放入 Skills，确定性约束留给 Tools 和 Policy。"
                 />
@@ -2464,7 +2522,7 @@ export function AgentStudioWorkbench() {
               <section className={styles.configPanel} aria-labelledby="orchestration-title">
                 <PanelHeading
                   id="orchestration-title"
-                  kicker="04 / Collaboration"
+                  kicker="阶段 2 · 委托面"
                   title="让 Lead 负责决策，让专家并行取证"
                   description="Lead 是唯一面向用户的主线；Sub Agent 可直接绑定并打开构建草稿编辑，正式发布 Lead 时再固定依赖版本。"
                 />
@@ -2637,7 +2695,7 @@ export function AgentStudioWorkbench() {
               <section className={styles.configPanel} aria-labelledby="skills-title">
                 <PanelHeading
                   id="skills-title"
-                  kicker="05 / Skills"
+                  kicker="阶段 3 · Skills"
                   title="沉淀可复用的领域工作流"
                   description="发布时 Skill 及 references、scripts、assets 会一同进入不可变快照。"
                 />
@@ -2722,6 +2780,7 @@ export function AgentStudioWorkbench() {
                     <strong>{skill.name}</strong>
                     <span>Agent 内置 Skill · 随版本发布</span>
                   </div>
+                  <span className={styles.bindingBadge} data-binding="bundle">随版本固化</span>
                   <button
                     type="button"
                     aria-expanded={skillConversationOpen}
@@ -2847,7 +2906,7 @@ export function AgentStudioWorkbench() {
               <section className={styles.configPanel} aria-labelledby="capabilities-title">
                 <PanelHeading
                   id="capabilities-title"
-                  kicker="06 / Capabilities"
+                  kicker="阶段 2 · 行动面"
                   title="只授予完成场景所需的能力"
                   description="能力是显式上限。没有选择的工具不会在运行时注入。"
                 />
@@ -2945,6 +3004,7 @@ export function AgentStudioWorkbench() {
                           <strong>{tool.label}</strong>
                           <small>{tool.description}</small>
                           <em data-risk={tool.risk}>{tool.approval}</em>
+                          <span className={styles.bindingBadge} data-binding="platform">平台内置 · 沙箱执行</span>
                         </span>
                         <code>{tool.id}</code>
                       </label>
@@ -2973,6 +3033,7 @@ export function AgentStudioWorkbench() {
                           <span>PY {String(index + 1).padStart(2, "0")}</span>
                           <strong>{tool.name || "未命名算子"}</strong>
                         </div>
+                        <span className={styles.bindingBadge} data-binding="bundle">随版本固化</span>
                         <button
                           type="button"
                           onClick={() => removePythonTool(index)}
@@ -3050,7 +3111,7 @@ export function AgentStudioWorkbench() {
                         <span className={styles.mcpTitleLine}>
                           <strong>{mcp.label}</strong>
                           <span>只读</span>
-                          <span>外部服务</span>
+                          <span className={styles.bindingBadge} data-binding="runtime">运行时引用 · 凭据托管</span>
                         </span>
                         <small>{mcp.description}</small>
                         <code>{mcp.tools.join(" · ")}</code>
@@ -3069,7 +3130,7 @@ export function AgentStudioWorkbench() {
                   <>
                     <div className={styles.groupHeading}>
                       <div>
-                        <h3>外部知识库</h3>
+                        <h3>事实面 · 外部知识库</h3>
                         <p>通过已审核的 MCP 检索工具访问；资料、切片与向量均保留在外部系统。</p>
                       </div>
                       <span>
@@ -3094,7 +3155,7 @@ export function AgentStudioWorkbench() {
                           <span className={styles.mcpCopy}>
                             <span className={styles.mcpTitleLine}>
                               <strong>{mcp.label}</strong>
-                              <span>外部检索</span>
+                              <span className={styles.bindingBadge} data-binding="snapshot">运行时引用 · 外部快照</span>
                               <span>{mcp.tools.length} 个工具</span>
                             </span>
                             <small>{mcp.description}</small>
@@ -3113,7 +3174,7 @@ export function AgentStudioWorkbench() {
               <section className={styles.configPanel} aria-labelledby="runtime-title">
                 <PanelHeading
                   id="runtime-title"
-                  kicker="07 / Runtime"
+                  kicker="阶段 3 · 运行语义"
                   title="隔离是生产基线，不是 Agent 开关"
                   description="构建者声明能力，平台把执行档位绑定到 Daytona、gVisor 或其他安全后端。"
                 />
@@ -3414,14 +3475,105 @@ export function AgentStudioWorkbench() {
               </section>
             )}
 
+            {activeSection === "trial" && (
+              <section className={styles.configPanel} aria-labelledby="trial-title">
+                <PanelHeading
+                  id="trial-title"
+                  kicker="阶段 4 · 试跑"
+                  title="在隔离环境证明它真的能跑"
+                  description="结构门禁通过后创建临时 Preview；真实 Preflight 与首个满足输出契约的试跑都发生在这里。"
+                />
+                <div className={styles.trialSummary}>
+                  <div>
+                    <span>真实 Preflight</span>
+                    <strong data-state={activePreview?.preflightResult?.status === "passed" ? "ready" : "pending"}>
+                      {activePreview?.preflightResult
+                        ? preflightProgress(activePreview.preflightResult.checks)
+                        : "尚未运行"}
+                    </strong>
+                    <small>
+                      {activePreview?.preflightResult?.status === "passed"
+                        ? "模型 / MCP / Sandbox 全部通过"
+                        : "创建 Preview 后自动执行真实预检"}
+                    </small>
+                  </div>
+                  <div>
+                    <span>隔离试跑环境</span>
+                    <strong>
+                      {activePreview && !activePreview.stale
+                        ? previewStatusLabels[activePreview.status] ?? activePreview.status
+                        : "无活跃 Preview"}
+                    </strong>
+                    <small>TTL 60 分钟 · 测试身份 · 失败不污染正式版本</small>
+                  </div>
+                  <div>
+                    <span>基础评测基线</span>
+                    <strong>{draft.evaluationEnabled ? `${draft.evalCases.length} 用例` : "已关闭"}</strong>
+                    <small>
+                      {draft.evaluationEnabled
+                        ? "happy / ambiguous / safety 参与发布检查"
+                        : "开启 Eval 后参与发布门禁"}
+                    </small>
+                  </div>
+                </div>
+                <div className={styles.trialActions}>
+                  <button
+                    type="button"
+                    className={styles.trialPrimary}
+                    disabled={!draft.id || creatingPreview || saving || inspecting || dirty}
+                    onClick={() => void createPreview()}
+                  >
+                    {creatingPreview
+                      ? "正在创建…"
+                      : activePreview && !activePreview.stale
+                        ? "重建隔离环境"
+                        : "创建隔离试跑环境"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!draft.id || dirty}
+                    onClick={() => setTryRunOpen(true)}
+                  >
+                    开始对话试跑
+                  </button>
+                  {dirty && <small>有未保存修改；保存并检查后才能创建 Preview 或试跑。</small>}
+                </div>
+                <InfoStrip tone="neutral">
+                  出口条件：真实 Preflight 通过，并完成首个满足输出契约的试跑。失败结果只属于当前 Draft revision，不会进入正式版本。
+                </InfoStrip>
+              </section>
+            )}
+
             {activeSection === "evaluation" && (
               <section className={styles.configPanel} aria-labelledby="evaluation-title">
                 <PanelHeading
                   id="evaluation-title"
-                  kicker="08 / Quality gate"
+                  kicker="阶段 5 · 发布"
                   title="用真实失败路径证明它可以发布"
                   description="结构检查只是第一层；上线前仍要在固定版本和真实 Sandbox 中跑 live eval。"
                 />
+                <div className={styles.publishChain} aria-label="发布链状态">
+                  <div className={styles.publishChainSummary}>
+                    <span>发布状态</span>
+                    <strong>{lifecycleLabel}</strong>
+                    <small>{lifecycleDetail}</small>
+                  </div>
+                  <ol>
+                    {lifecycleStages.map((stage, index) => {
+                      const state = index < activeLifecycleIndex
+                        ? "complete"
+                        : index === activeLifecycleIndex
+                          ? "active"
+                          : "pending";
+                      return (
+                        <li key={stage.id} data-state={state}>
+                          <i aria-hidden="true" />
+                          <span>{stage.label}</span>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </div>
                 {taskHref && (
                   <div className={styles.releaseTaskShortcut}>
                     <div>

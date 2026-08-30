@@ -634,13 +634,19 @@ describe("Agent Studio management page", () => {
   });
 
   it("makes the draft-to-deployment lifecycle explicit without hiding failures", () => {
-    expect(workbench).toContain('aria-label="从草稿到部署的生命周期"');
-    expect(workbench).toContain("查看完整发布链");
-    expect(workbench).toContain("lifecycleDetails");
-    expect(styles).toContain(".lifecycleDetails");
-    expect(styles).toMatch(
-      /\.lifecycleDetails ol \{[\s\S]*?position: absolute;/,
-    );
+    expect(workbench).toContain('aria-label="Agent 构建五阶段"');
+    expect(workbench).toContain("stageForSection");
+    expect(workbench).toContain('aria-label="发布链状态"');
+    expect(styles).toContain(".publishChain");
+    expect(styles).toContain(".stageNav");
+    expect(styles).toContain(".stageStepActive");
+    for (const stage of ["目标与契约", "能力", "行为", "试跑", "发布"]) {
+      expect(workbench).toContain(stage);
+    }
+    expect(workbench).toContain("有效运行契约");
+    expect(workbench).toContain("随版本固化");
+    expect(workbench).toContain("运行时引用 · 凭据托管");
+    expect(workbench).toContain("运行时引用 · 外部快照");
     for (const label of ["隔离试跑", "不可变 Bundle", "按环境晋级"]) {
       expect(workbench).toContain(label);
     }

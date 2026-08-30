@@ -6,7 +6,63 @@ export type StudioSection =
   | "skills"
   | "capabilities"
   | "runtime"
+  | "trial"
   | "evaluation";
+
+export type StudioStage = "goal" | "capabilities" | "behavior" | "trial" | "publish";
+
+export interface StudioStageMeta {
+  id: StudioStage;
+  index: number;
+  label: string;
+  hint: string;
+  sections: StudioSection[];
+}
+
+export const STUDIO_STAGES: StudioStageMeta[] = [
+  {
+    id: "goal",
+    index: 1,
+    label: "目标与契约",
+    hint: "边界、路由与输出契约",
+    sections: ["identity", "model"],
+  },
+  {
+    id: "capabilities",
+    index: 2,
+    label: "能力",
+    hint: "行动、事实与委托装配",
+    sections: ["capabilities", "orchestration"],
+  },
+  {
+    id: "behavior",
+    index: 3,
+    label: "行为",
+    hint: "Prompt、Skills 与运行语义",
+    sections: ["prompt", "skills", "runtime"],
+  },
+  {
+    id: "trial",
+    index: 4,
+    label: "试跑",
+    hint: "预检与隔离试跑",
+    sections: ["trial"],
+  },
+  {
+    id: "publish",
+    index: 5,
+    label: "发布",
+    hint: "版本、门禁与晋级",
+    sections: ["evaluation"],
+  },
+];
+
+export function stageForSection(section: StudioSection): StudioStage {
+  for (const stage of STUDIO_STAGES) {
+    if (stage.sections.includes(section)) return stage.id;
+  }
+  return "goal";
+}
 
 export type StudioRisk = "low" | "medium" | "high";
 export type NetworkAccess = "none" | "internal" | "external";
