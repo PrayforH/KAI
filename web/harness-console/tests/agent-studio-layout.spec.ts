@@ -678,6 +678,10 @@ describe("Agent Studio management page", () => {
     expect(operationsWorkspace).toContain("导入题库");
     expect(operationsWorkspace).toContain("importEvalDataset");
     expect(operationsWorkspace).toContain("通过率");
+    expect(operationsWorkspace).toContain("用例级结果分析");
+    expect(operationsWorkspace).toContain("caseStatusLabel");
+    expect(operationsWorkspace).toContain("caseAnalysis.counts.passed");
+    expect(operationsWorkspace).toContain("item.failures.join");
     expect(operationsWorkspace).toContain("studioClient.createEvalRun");
     expect(workbench).toContain("运行质量门禁");
     expect(workbench).toContain("发布版本后生效");
