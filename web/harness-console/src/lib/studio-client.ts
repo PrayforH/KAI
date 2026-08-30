@@ -496,6 +496,15 @@ export type StudioPolicyPublication = {
   publishedAt: string;
 };
 
+export type StudioAgentBuilderPatch = {
+  baseRevision: number;
+  taskContract: NonNullable<StudioDraft["taskContract"]>;
+  systemPrompt: string;
+  evaluationCases: StudioEvalCase[];
+  explanation: string[];
+  validation: StudioValidation;
+};
+
 export type StudioValidation = {
   ready: boolean;
   productionEligible: boolean;
@@ -1622,6 +1631,48 @@ export const studioClient = {
     rememberStudioDraft(result.draft);
     return result;
   }),
+  createAgentBuilderPatch: async (
+    draftId: string,
+    body: {
+      expectedRevision: number;
+      goal: string;
+      audience?: string;
+      inputs: string[];
+      outputs: string[];
+      constraints?: string[];
+    },
+  ): Promise<StudioAgentBuilderPatch> => {
+    const raw = await request<{
+      baseRevision: number;
+      taskContract: NonNullable<StudioDraft["taskContract"]>;
+      systemPrompt: string;
+      evaluationCases: Array<{
+        id: string;
+        tags: string[];
+        prompt: string;
+        expect: StudioEvalCase["expect"];
+      }>;
+      explanation: string[];
+      validation: StudioValidation;
+    }>(`drafts/${encodeURIComponent(draftId)}/builder-patch`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    return {
+      baseRevision: raw.baseRevision,
+      taskContract: raw.taskContract,
+      systemPrompt: raw.systemPrompt,
+      evaluationCases: raw.evaluationCases.map((item) => ({
+        id: item.id,
+        label: item.id,
+        tag: (item.tags.find((tag) => ["happy", "ambiguous", "safety"].includes(tag)) ?? "happy") as StudioEvalCase["tag"],
+        prompt: item.prompt,
+        expect: item.expect,
+      })),
+      explanation: raw.explanation,
+      validation: raw.validation,
+    };
+  },
   async importBundle(file: Blob): Promise<StudioImportedAgentBundle> {
     const response = requireAuthenticatedResponse(
       await fetch("/api/studio/drafts/import", {

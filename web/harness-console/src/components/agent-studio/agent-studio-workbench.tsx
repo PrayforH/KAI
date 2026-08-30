@@ -54,6 +54,7 @@ import {
 import { useDialogFocus } from "../../lib/use-dialog-focus";
 import { useDismissablePopovers } from "../../lib/use-dismissable-popovers";
 import { GovernanceControlPlane } from "./governance-control-plane";
+import { CopilotDrawer } from "./copilot-drawer";
 import { SkillConversationBuilder } from "./skill-conversation-builder";
 import { StudioCodeEditor } from "./studio-code-editor";
 import {
@@ -333,6 +334,7 @@ export function AgentStudioWorkbench() {
     warnings: string[];
   } | null>(null);
   const [contractOpen, setContractOpen] = useState(false);
+  const [copilotOpen, setCopilotOpen] = useState(false);
   const [newAgentOpen, setNewAgentOpen] = useState(false);
   const [tryRunOpen, setTryRunOpen] = useState(false);
   const [tryRunSeed, setTryRunSeed] = useState<{
@@ -1965,6 +1967,17 @@ export function AgentStudioWorkbench() {
             >
               <HeaderActionIcon name="release" />
               <span>{releaseActionLabel}</span>
+            </button>
+            <button
+              type="button"
+              className={`${styles.headerActionButton} ${styles.contractToggleButton}`}
+              aria-expanded={copilotOpen}
+              aria-controls="copilot-drawer"
+              onClick={() => setCopilotOpen(true)}
+            >
+              <span aria-hidden="true">✦</span>
+              <span>Copilot</span>
+              <small>按块 Patch</small>
             </button>
             <button
               type="button"
@@ -4084,6 +4097,20 @@ export function AgentStudioWorkbench() {
           页面不保存 Endpoint、Token 或任意 MCP URL。凭据只在运行时按租户与执行身份注入。
         </p>
       </aside>
+      <CopilotDrawer
+        open={copilotOpen}
+        draft={draft}
+        canEdit={canEdit}
+        dirty={dirty}
+        onClose={() => setCopilotOpen(false)}
+        onApply={(update, acceptedBlocks) => {
+          updateDraft(update);
+          setNotice(
+            `Copilot Patch 已按块应用 ${acceptedBlocks} 块；保存并检查后生效`,
+          );
+        }}
+        onSave={() => void saveDraft()}
+      />
       <NewAgentDialog
         open={newAgentOpen}
         onClose={() => setNewAgentOpen(false)}
