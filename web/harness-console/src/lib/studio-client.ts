@@ -1843,6 +1843,23 @@ export const studioClient = {
       required: true,
     }),
   }),
+  importEvalDataset: (
+    draftId: string,
+    expectedRevision: number,
+    name: string,
+    format: "json" | "csv",
+    content: string,
+  ) => request<StudioEvalDataset>("eval-datasets/import", {
+    method: "POST",
+    body: JSON.stringify({
+      draftId,
+      expectedRevision,
+      name,
+      required: true,
+      format,
+      content,
+    }),
+  }),
   listEvalRuns: () => request<StudioEvalRun[]>("eval-runs"),
   createEvalRun: (
     dataset: StudioEvalDataset,

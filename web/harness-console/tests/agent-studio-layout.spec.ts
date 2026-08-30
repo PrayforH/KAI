@@ -675,6 +675,9 @@ describe("Agent Studio management page", () => {
     expect(workbench).toContain("打开 Evaluate &amp; Operate");
     expect(workbench).not.toContain("耐久 Eval 控制面");
     expect(operationsWorkspace).toContain("耐久 Dataset 与固定版本评测");
+    expect(operationsWorkspace).toContain("导入题库");
+    expect(operationsWorkspace).toContain("importEvalDataset");
+    expect(operationsWorkspace).toContain("通过率");
     expect(operationsWorkspace).toContain("studioClient.createEvalRun");
     expect(workbench).toContain("运行质量门禁");
     expect(workbench).toContain("发布版本后生效");

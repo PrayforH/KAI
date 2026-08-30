@@ -38,6 +38,7 @@ from harness.deployments.service import DeploymentService
 from harness.evals.controller import EvalController
 from harness.evals.models import (
     CreateEvalDatasetVersionRequest,
+    ImportEvalDatasetRequest,
     CreateEvalRunRequest,
     EvalDatasetVersion,
     EvalGateResult,
@@ -655,6 +656,30 @@ async def create_eval_dataset(
 ) -> EvalDatasetVersion:
     try:
         return await service.create_dataset_version(
+            tenant_id=actor.tenant_id, user_id=actor.user_id, request=body
+        )
+    except (ConflictError, NotFoundError) as error:
+        raise _translate_domain_error(error) from error
+    except DraftCompilationError as error:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "draft_not_ready", "message": str(error)},
+        ) from error
+
+
+@router.post(
+    "/eval-datasets/import",
+    response_model=EvalDatasetVersion,
+    status_code=status.HTTP_201_CREATED,
+)
+async def import_eval_dataset(
+    body: ImportEvalDatasetRequest,
+    actor: Annotated[StudioActor, Depends(require_studio_writer)],
+    service: Annotated[EvalControlPlaneService, Depends(get_eval_service)],
+) -> EvalDatasetVersion:
+    """Import an uploaded question bank as a new durable Dataset version."""
+    try:
+        return await service.import_dataset_version(
             tenant_id=actor.tenant_id, user_id=actor.user_id, request=body
         )
     except (ConflictError, NotFoundError) as error:

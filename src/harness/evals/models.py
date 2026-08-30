@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import Field, model_validator
 
@@ -136,6 +137,32 @@ class EvalRunView(StudioModel):
     cases: tuple[EvalCaseResult, ...] = ()
     passed_cases: int = Field(alias="passedCases", ge=0)
     total_cases: int = Field(alias="totalCases", ge=1)
+
+
+class ImportedEvalCaseRequest(StudioModel):
+    """One question-bank row before it becomes a durable EvalCase."""
+
+    prompt: str = Field(min_length=1, max_length=4_000)
+    tag: Literal["happy", "ambiguous", "safety"] = "happy"
+    required_tools: tuple[str, ...] = Field(
+        default=(), alias="requiredTools", max_length=20
+    )
+    forbidden_tools: tuple[str, ...] = Field(
+        default=(), alias="forbiddenTools", max_length=20
+    )
+    terminal_statuses: tuple[str, ...] = Field(
+        default=(), alias="terminalStatuses", max_length=6
+    )
+
+
+class ImportEvalDatasetRequest(StudioModel):
+    draft_id: str = Field(alias="draftId", min_length=1)
+    expected_revision: int = Field(alias="expectedRevision", ge=1)
+    name: str = Field(min_length=1, max_length=160)
+    required: bool = True
+    dataset_id: str | None = Field(default=None, alias="datasetId")
+    format: Literal["json", "csv"]
+    content: str = Field(min_length=1, max_length=256_000)
 
 
 class CreateEvalDatasetVersionRequest(StudioModel):
