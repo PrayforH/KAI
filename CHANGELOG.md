@@ -3,6 +3,38 @@
 All notable product changes are recorded here. Versions follow Semantic Versioning; signed release
 manifests remain the authority for exact source commits, image digests, SBOMs and Agent bundle hashes.
 
+## [0.3.0] - 2026-08-31
+
+### Added
+
+- Agent Builder converges to a five-stage authoring spine — goal & contract, capabilities,
+  behavior, trial run, publish — with per-stage completion state and blocking reasons surfaced
+  in the main editor area instead of a separate lifecycle bar.
+- Agent Copilot minimal loop: a review-only Builder patch (task contract, system prompt and
+  baseline eval cases) generated from the governed task contract and applied per accepted
+  block; nothing bypasses release gates.
+- Server capability-catalog templates join the new-Agent flow; template scaffolding is used
+  as-is and is no longer overwritten by client defaults.
+- Managed video generation modes (interactive H3, image-guided) and explicit Ref2VA generation
+  in the task composer.
+- Personal deliverables index, protected Agent deletion and refined conversation feedback in
+  the web console.
+
+### Changed
+
+- Runtime selection and Codex compatibility copy are driven by server RuntimeCapabilities
+  (model API formats, limitations); frontend hardcoding of runtime capability judgments is
+  removed and covered by a cross-layer contract fixture shared with compiler tests.
+- Knowledge-type MCP entries are grouped as the fact plane inside the capabilities stage,
+  separate from the action-plane tool list.
+- The default analyst/operator scaffolds reflect the expanded builtin tool set and
+  production-standard policy defaults.
+
+### Fixed
+
+- Codex runtime isolation: sandbox enabled inside docker workers, docker workspace default for
+  Studio agents, clearer thread startup failures and long-running Codex loop support.
+
 ## [0.2.0] - 2026-08-09
 
 ### Added
