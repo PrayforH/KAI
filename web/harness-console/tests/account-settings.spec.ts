@@ -38,27 +38,25 @@ const productIcons = readFileSync(
 );
 
 describe("account settings", () => {
-  it("keeps help, settings and logout available from the account menu", () => {
-    expect(menu).toContain("产品使用手册");
-    expect(menu).toContain("DdiCdPFcroUpUXxOumNcQpIin1g");
-    expect(menu).toContain('target="_blank"');
+  it("keeps settings and logout available from the account menu", () => {
+    expect(menu).not.toContain("产品使用手册");
+    expect(menu).not.toContain("DdiCdPFcroUpUXxOumNcQpIin1g");
+    expect(menu).not.toContain('className="account-role"');
     expect(menu).toContain('href="/settings"');
     expect(menu).toContain("个人设置");
     expect(menu).toContain('href="/api/auth/logout"');
     expect(menu).toContain("退出登录");
-    expect(styles).toMatch(/\.account-help,\s*\.account-settings,/s);
-    expect(menu).toContain('<ProductIcon name="book" />');
+    expect(menu).not.toContain('<ProductIcon name="book" />');
     expect(menu).toContain('<ProductIcon name="settings" />');
     expect(menu).toContain('<ProductIcon name="logout" />');
   });
 
-  it("groups MCP, knowledge and collaboration under the bottom account control", () => {
-    expect(menu).toContain('aria-label="资源与协作"');
+  it("keeps governance links out of the simplified task account menu", () => {
+    expect(menu).not.toContain('aria-label="资源与协作"');
     expect(menu).not.toContain('href: "/studio/files"');
-    expect(menu).toContain('href: "/studio/capabilities"');
-    expect(menu).toContain('href: "/studio/knowledge"');
-    expect(menu).toContain('href: "/studio/spaces"');
-    expect(menu).toContain('aria-current={current ? "page" : undefined}');
+    expect(menu).not.toContain('href: "/studio/capabilities"');
+    expect(menu).not.toContain('href: "/studio/knowledge"');
+    expect(menu).not.toContain('href: "/studio/spaces"');
     expect(styles).toContain(".account-workspaces");
     expect(styles).toContain(".account-workspace-link");
   });
@@ -77,10 +75,10 @@ describe("account settings", () => {
     );
   });
 
-  it("anchors the user control at the bottom of expanded and collapsed task rails", () => {
+  it("anchors the user control at the bottom of the expanded task rail", () => {
     expect(taskSidebar).toContain('className="task-sidebar-account"');
-    expect(taskSidebar).toContain('className="task-rail-account"');
-    expect(taskSidebar.match(/<AccountMenu \/>/g)).toHaveLength(2);
+    expect(taskSidebar).not.toContain('className="task-rail-account"');
+    expect(taskSidebar.match(/<AccountMenu \/>/g)).toHaveLength(1);
     expect(studioSidebar).toContain("<AccountMenu />");
     expect(workbench).not.toContain("<AccountMenu />");
     expect(styles).toMatch(/\.task-rail-account\s*\{[^}]*margin-top:\s*auto;/s);

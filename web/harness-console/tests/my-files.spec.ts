@@ -33,8 +33,9 @@ describe("my files", () => {
     expect(files).toContain("download");
   });
 
-  it("keeps the entry below agents in the main navigation and proxies downloads through authenticated routes", () => {
-    expect(taskSidebar).toContain('visible={["agents", "files"]}');
+  it("removes the files entry from the task shell while preserving its authenticated direct route", () => {
+    expect(taskSidebar).toContain('visible={["agents", "capabilities"]}');
+    expect(taskSidebar).not.toContain('visible={["agents", "files"]}');
     expect(workspaceNavigation.indexOf('id: "files"')).toBeGreaterThan(
       workspaceNavigation.indexOf('id: "agents"'),
     );

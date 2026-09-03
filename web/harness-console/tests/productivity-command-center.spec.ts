@@ -72,9 +72,12 @@ describe("productivity command center", () => {
   });
 
   it("searches Chinese labels, technical aliases and task status", () => {
-    expect(productivityCommandResults("MCP", tasks, agents)).toEqual([
-      expect.objectContaining({ kind: "action", id: "studio-capabilities" }),
-    ]);
+    expect(productivityCommandResults("MCP", tasks, agents)).toEqual([]);
+    expect(productivityCommandResults("智能体", tasks, agents)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "action", id: "studio-agents" }),
+      ]),
+    );
     expect(productivityCommandResults("运行中", tasks, agents)).toEqual([
       expect.objectContaining({ kind: "task", id: "thread-new" }),
     ]);

@@ -3,10 +3,7 @@ import type { TaskSummary } from "./task-history";
 
 export type ProductivityActionId =
   | "new-task"
-  | "studio-agents"
-  | "studio-capabilities"
-  | "studio-knowledge"
-  | "studio-spaces";
+  | "studio-agents";
 
 export type ProductivityCommandResult =
   | {
@@ -47,27 +44,6 @@ const actionCommands: ReadonlyArray<
     title: "创建或调整智能体",
     description: "进入构建区定义工作、能力和版本",
     keywords: "agent studio 智能体 助手 创建 编辑 发布",
-  },
-  {
-    kind: "action",
-    id: "studio-spaces",
-    title: "打开协作空间",
-    description: "使用团队共享的智能体、知识和成员",
-    keywords: "space workspace team 团队 协作 空间 共享",
-  },
-  {
-    kind: "action",
-    id: "studio-capabilities",
-    title: "管理 MCP 能力",
-    description: "连接并配置智能体可使用的工具",
-    keywords: "mcp tool tools 工具 能力 连接器",
-  },
-  {
-    kind: "action",
-    id: "studio-knowledge",
-    title: "整理知识库",
-    description: "管理任务可引用的文档与知识源",
-    keywords: "knowledge docs file 知识 文档 文件 资料",
   },
 ];
 

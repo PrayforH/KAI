@@ -1,18 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { AgentThread } from "../components/agent-thread";
 import { AuthProvider, useAuth } from "../components/auth-provider";
 import { AssistantRuntimeShell } from "../components/assistant-runtime-shell";
-import { ContextRecoveryPanel } from "../components/context-recovery-panel";
-import { DeveloperDrawer } from "../components/developer-drawer";
 import { ProductivityCommandCenter } from "../components/productivity-command-center";
-import { RunDetailsProvider } from "../components/run-details-context";
 import {
-  TaskAgentSwitcher,
   taskAgentSwitchMode,
 } from "../components/task-agent-switcher";
 import { TaskSidebar } from "../components/task-sidebar";
+import { WorkbenchRail } from "../components/workbench-rail";
 import { useRunViewModel } from "../lib/activity-store";
 import { useRunStream } from "../lib/run-stream-store";
 import {
@@ -41,9 +44,186 @@ import {
   resolveTaskLaunchMode,
   type TaskThreadState,
 } from "../lib/task-launch";
-import type { RunActivity } from "../lib/activity-schema";
 
 const TASK_SIDEBAR_COMPACT_QUERY = "(max-width: 820px)";
+
+const HELP_MANUAL_URL = "https://my.feishu.cn/docx/DdiCdPFcroUpUXxOumNcQpIin1g";
+
+function SidebarPanelIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <rect x="2.75" y="4.25" width="14.5" height="11.5" rx="2.5" />
+      <path d="M13.5 4.25v11.5" />
+    </svg>
+  );
+}
+
+function SidebarLeftIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <rect x="2.75" y="4.25" width="14.5" height="11.5" rx="2.5" />
+      <path d="M6.75 4.25v11.5" />
+      <path d="m10.5 10-1.5-1.5 1.5-1.5" />
+    </svg>
+  );
+}
+
+function HelpIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <circle cx="10" cy="10" r="7.25" />
+      <path d="M8.1 8.15a1.95 1.95 0 0 1 3.8.55c0 1.3-1.9 1.55-1.9 2.7" />
+      <path d="M10 13.85h.01" />
+    </svg>
+  );
+}
+
+function BookIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M10 5.7C8.9 4.8 7.3 4.35 5.45 4.35c-.6 0-1.15.05-1.7.15v10.15c.55-.1 1.1-.15 1.7-.15 1.85 0 3.45.45 4.55 1.35 1.1-.9 2.7-1.35 4.55-1.35.6 0 1.15.05 1.7.15V4.5c-.55-.1-1.1-.15-1.7-.15-1.85 0-3.45.45-4.55 1.35Z" />
+      <path d="M10 5.7v10.15" />
+    </svg>
+  );
+}
+
+function SidebarPanelToggle({
+  expanded,
+  onToggle,
+}: {
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="header-icon-button"
+      aria-label={expanded ? "收起任务上下文" : "打开任务上下文"}
+      aria-expanded={expanded}
+      title={expanded ? "收起任务上下文" : "打开任务上下文"}
+      onClick={onToggle}
+    >
+      <SidebarPanelIcon />
+    </button>
+  );
+}
+
+function SidebarExpandToggle({ onToggle }: { onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      className="header-icon-button header-sidebar-toggle"
+      aria-label="展开任务列表"
+      aria-expanded="false"
+      title="展开任务列表"
+      onClick={onToggle}
+    >
+      <SidebarLeftIcon />
+    </button>
+  );
+}
+
+function HelpMenu() {
+  const [open, setOpen] = useState(false);
+  const [host, setHost] = useState("");
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setHost(window.location.host);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    function closeOnOutsideClick(event: PointerEvent) {
+      if (!menuRef.current?.contains(event.target as Node)) setOpen(false);
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  return (
+    <div className="header-help" ref={menuRef}>
+      <button
+        type="button"
+        className="header-icon-button"
+        aria-label="帮助"
+        aria-expanded={open}
+        title="帮助"
+        onClick={() => setOpen((value) => !value)}
+      >
+        <HelpIcon />
+      </button>
+      {open && (
+        <div className="help-popover" role="dialog" aria-label="帮助与环境信息">
+          <div className="help-popover-env">
+            <small>当前环境</small>
+            <code>{host || "—"}</code>
+          </div>
+          <a
+            className="help-popover-link"
+            href={HELP_MANUAL_URL}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <BookIcon />
+            产品使用手册
+          </a>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HeaderUtilities({
+  taskRailOpen,
+  onToggleTaskRail,
+}: {
+  taskRailOpen: boolean;
+  onToggleTaskRail: () => void;
+}) {
+  return (
+    <div className="header-utilities">
+      <HelpMenu />
+      <SidebarPanelToggle expanded={taskRailOpen} onToggle={onToggleTaskRail} />
+    </div>
+  );
+}
+
+function TaskContextBar({
+  taskTitle,
+  agent,
+}: {
+  taskTitle: string;
+  agent: TaskAgent | null;
+}) {
+  return (
+    <div className="task-context-bar" aria-label="当前任务、项目与版本">
+      <strong className="task-context-title">{taskTitle}</strong>
+      <span className="task-context-chip task-context-project">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M2.75 5.75a2 2 0 0 1 2-2h3.1l1.7 1.9h5.7a2 2 0 0 1 2 2v6.5a2 2 0 0 1-2 2H4.75a2 2 0 0 1-2-2Z" />
+        </svg>
+        {agent?.name ?? "agent-studio"}
+      </span>
+      <span className="task-context-chip task-context-version">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <circle cx="5" cy="5" r="2" />
+          <circle cx="15" cy="5" r="2" />
+          <circle cx="8" cy="15" r="2" />
+          <path d="M7 5h4a4 4 0 0 1 4 4v1M5 7v3a5 5 0 0 0 3 4.6" />
+        </svg>
+        {agent?.version ?? "current"}
+      </span>
+    </div>
+  );
+}
 
 export default function Home() {
   return (
@@ -64,10 +244,11 @@ function AuthenticatedHome() {
   const [agentsError, setAgentsError] = useState("");
   const [catalogRefreshKey, setCatalogRefreshKey] = useState(0);
   const [taskSidebarOpen, setTaskSidebarOpen] = useState(true);
+  const [taskRailOpen, setTaskRailOpen] = useState(false);
   const [compactTaskSidebar, setCompactTaskSidebar] = useState(false);
+  const [currentTaskTitle, setCurrentTaskTitle] = useState("新任务");
   const [currentThreadState, setCurrentThreadState] =
     useState<TaskThreadState>("unknown");
-  const [inspectedActivity, setInspectedActivity] = useState<RunActivity | null>(null);
   const runView = useRunViewModel();
   const runStream = useRunStream();
   const currentTaskBusy = runStream.status === "running" || (
@@ -89,10 +270,6 @@ function AuthenticatedHome() {
     compactViewport.addEventListener("change", handleViewportChange);
     return () => compactViewport.removeEventListener("change", handleViewportChange);
   }, []);
-
-  useEffect(() => {
-    setInspectedActivity(null);
-  }, [threadId]);
 
   useEffect(() => {
     let active = true;
@@ -166,6 +343,7 @@ function AuthenticatedHome() {
         const currentTask = taskHistory.tasks.find(
           (task) => task.thread_id === currentThreadId,
         );
+        setCurrentTaskTitle(currentTask?.title ?? "新任务");
         setCurrentThreadState(
           currentTask ? "durable" : taskHistory.available ? "empty" : "unknown",
         );
@@ -196,7 +374,9 @@ function AuthenticatedHome() {
             : catalog.defaultAgent);
         // Historical coordinates remain selected for replay, but deleted or
         // revoked Agents never return to the new-task/version selector.
-        const chatUsable = chatUsableAgents(catalog.agents);
+        const chatUsable = chatUsableAgents(catalog.agents).filter(
+          (agent) => agent.scope !== "team",
+        );
         setTaskAgents(chatUsable);
         setModelRoutes(routes);
         setSelectedAgent(selected);
@@ -205,9 +385,11 @@ function AuthenticatedHome() {
           currentThreadId,
         );
         setModelRouteOverride(
-          routes.some((route) => route.id === storedModelRoute)
-            ? storedModelRoute
-            : null,
+          routes.some((route) => route.id === "deepseek-v4-flash")
+            ? "deepseek-v4-flash"
+            : routes.some((route) => route.id === storedModelRoute)
+              ? storedModelRoute
+              : null,
         );
         bindThreadAgent(storage, currentThreadId, selected);
         setAgentsError("");
@@ -255,6 +437,7 @@ function AuthenticatedHome() {
     bindThreadAgent(storage, nextThreadId, nextAgent);
     setSelectedAgent(nextAgent);
     setThreadId(nextThreadId);
+    setCurrentTaskTitle("新任务");
     setCurrentThreadState("empty");
     setModelRouteOverride(null);
     closeCompactTaskSidebar();
@@ -272,6 +455,28 @@ function AuthenticatedHome() {
     }
     createTaskWithAgent(nextAgent);
   }, [createTaskWithAgent, currentThreadState, focusTaskComposer, threadId, user.user_id]);
+
+  const startTaskInProject = useCallback((projectTask: TaskSummary) => {
+    const projectAgent =
+      taskAgents.find(
+        (agent) =>
+          agent.name === projectTask.agent_name &&
+          agent.version === projectTask.agent_version &&
+          agent.ownerUserId === projectTask.agent_owner_user_id &&
+          agent.spaceId === (projectTask.space_id ?? undefined),
+      ) ?? {
+        name: projectTask.agent_name,
+        version: projectTask.agent_version,
+        displayName: projectTask.agent_name,
+        domain: "historical" as const,
+        ownerUserId: projectTask.agent_owner_user_id,
+        scope: projectTask.space_id
+          ? ("team" as const)
+          : ("personal" as const),
+        spaceId: projectTask.space_id ?? undefined,
+      };
+    startTaskWithAgent(projectAgent);
+  }, [startTaskWithAgent, taskAgents]);
 
   const startNewTask = useCallback(() => {
     const nextAgent = selectedAgent && taskAgents.some(
@@ -312,11 +517,14 @@ function AuthenticatedHome() {
       task.thread_id,
     );
     setModelRouteOverride(
-      modelRoutes.some((route) => route.id === storedModelRoute)
-        ? storedModelRoute
-        : null,
+      modelRoutes.some((route) => route.id === "deepseek-v4-flash")
+        ? "deepseek-v4-flash"
+        : modelRoutes.some((route) => route.id === storedModelRoute)
+          ? storedModelRoute
+          : null,
     );
     setCurrentThreadState("durable");
+    setCurrentTaskTitle(task.title);
     setThreadId(selectThread(storage, task.thread_id));
     closeCompactTaskSidebar();
   }
@@ -332,21 +540,12 @@ function AuthenticatedHome() {
     startTaskWithAgent(nextAgent);
   }
 
-  function openRunDetails(activity: RunActivity) {
-    if (compactTaskSidebar) setTaskSidebarOpen(false);
-    setInspectedActivity(activity);
-  }
-
   return (
     <main
-      className="console-shell"
+      className={`console-shell${taskRailOpen ? " is-rail-open" : ""}`}
       id="main-content"
       data-task-thread-state={currentThreadState}
     >
-      <RunDetailsProvider
-        selectedRunId={inspectedActivity?.run_id ?? null}
-        onOpen={openRunDetails}
-      >
       <div
         className={`workspace-stage ${taskSidebarOpen ? "tasks-open" : ""}`}
       >
@@ -364,34 +563,37 @@ function AuthenticatedHome() {
           collapsed={!taskSidebarOpen}
           overlayOpen={compactTaskSidebar && taskSidebarOpen}
           onToggle={() => {
-            if (compactTaskSidebar) setInspectedActivity(null);
             setTaskSidebarOpen((current) => !current);
           }}
           onSelect={switchTask}
           onNewTask={startNewTask}
+          onNewTaskWithProject={startTaskInProject}
+          searchControl={(
+            <ProductivityCommandCenter
+              agents={availableTaskAgents}
+              onNewTask={startNewTask}
+              onSelectTask={switchTask}
+              onStartWithAgent={startTaskWithAgent}
+            />
+          )}
         />
         <div
           className="task-content-shell"
           aria-hidden={compactTaskSidebar && taskSidebarOpen ? true : undefined}
         >
           <header className="console-header">
-            <TaskAgentSwitcher
-              agents={availableTaskAgents}
-              selected={selectedAgent}
-              loading={agentsLoading}
-              currentTaskBusy={currentTaskBusy}
-              onChange={switchAgent}
-            />
-
-            <div className="header-actions">
-              <ProductivityCommandCenter
-                agents={availableTaskAgents}
-                onNewTask={startNewTask}
-                onSelectTask={switchTask}
-                onStartWithAgent={startTaskWithAgent}
-              />
-              <ContextRecoveryPanel threadId={threadId} />
+            <div className="header-leading">
+              {!taskSidebarOpen && (
+                <SidebarExpandToggle onToggle={() => setTaskSidebarOpen(true)} />
+              )}
+              <TaskContextBar taskTitle={currentTaskTitle} agent={selectedAgent} />
             </div>
+            <HeaderUtilities
+              taskRailOpen={taskRailOpen}
+              onToggleTaskRail={() => {
+                setTaskRailOpen((current) => !current);
+              }}
+            />
           </header>
           <section className="chat-stage" aria-label="Agent 任务对话">
             <div className="chat-surface">
@@ -411,7 +613,15 @@ function AuthenticatedHome() {
                     setModelRouteOverride(routeId);
                   }}
                 >
-                  <AgentThread userId={user.user_id} threadId={threadId} />
+                  <AgentThread
+                    userId={user.user_id}
+                    threadId={threadId}
+                    agents={availableTaskAgents}
+                    selectedAgent={selectedAgent}
+                    agentsLoading={agentsLoading}
+                    currentTaskBusy={currentTaskBusy}
+                    onAgentChange={switchAgent}
+                  />
                 </AssistantRuntimeShell>
               ) : (
                 <div
@@ -446,15 +656,18 @@ function AuthenticatedHome() {
             </div>
           </section>
         </div>
-        {inspectedActivity ? (
-          <DeveloperDrawer
-            threadId={threadId}
-            activity={inspectedActivity}
-            onClose={() => setInspectedActivity(null)}
-          />
-        ) : null}
+        <WorkbenchRail
+          open={taskRailOpen}
+          onClose={() => setTaskRailOpen(false)}
+          taskTitle={currentTaskTitle}
+          agentDisplay={selectedAgent?.displayName ?? selectedAgent?.name ?? "—"}
+          agentKey={selectedAgent ? `${selectedAgent.name}@${selectedAgent.version}` : "—"}
+          agentScope={selectedAgent?.scope ?? "personal"}
+          modelRoute={modelRouteOverride ?? selectedAgent?.modelRoute ?? null}
+          runPhase={runView?.phase ?? null}
+          threadId={threadId}
+        />
       </div>
-      </RunDetailsProvider>
     </main>
   );
 }

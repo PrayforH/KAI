@@ -1,14 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AccountMenu } from "./account-menu";
-import { ProductIcon } from "./product-icon";
-import { PRODUCT_NAME, ProductBrandCopy, ProductBrandMark } from "./product-brand";
-import {
-  WorkspaceCollapseIcon,
-  WorkspaceNavigation,
-} from "./workspace-navigation";
+import { useAuth } from "./auth-provider";
+import { PRODUCT_NAME } from "./product-brand";
+import { WorkspaceNavigation } from "./workspace-navigation";
 import { useRunViewModel } from "../lib/activity-store";
 import { approvalStore } from "../lib/approval-store";
 import { useDialogFocus } from "../lib/use-dialog-focus";
@@ -19,6 +16,9 @@ import {
   type TaskSummary,
 } from "../lib/task-history";
 import { taskListRefreshDelay } from "../lib/task-list-refresh";
+import { createUserScopedStorage } from "../lib/thread-store";
+
+const READ_TIMESTAMPS_KEY = "read-timestamps";
 
 const statusLabels: Record<string, string> = {
   idle: "新任务",
@@ -33,14 +33,18 @@ const statusLabels: Record<string, string> = {
   timed_out: "已超时",
 };
 
-function relativeTime(value: string) {
-  const elapsed = Math.max(0, Date.now() - new Date(value).getTime());
-  if (elapsed < 60_000) return "刚刚";
-  if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)} 分钟前`;
-  if (elapsed < 86_400_000) return `${Math.floor(elapsed / 3_600_000)} 小时前`;
-  return new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric" }).format(
-    new Date(value),
-  );
+// Wall-clock time by default: today shows HH:MM, older entries show the date.
+function formatTaskTime(value: string) {
+  const then = new Date(value);
+  const now = new Date();
+  const sameDay =
+    then.getFullYear() === now.getFullYear()
+    && then.getMonth() === now.getMonth()
+    && then.getDate() === now.getDate();
+  if (sameDay) {
+    return `${String(then.getHours()).padStart(2, "0")}:${String(then.getMinutes()).padStart(2, "0")}`;
+  }
+  return `${then.getMonth() + 1}月${then.getDate()}日`;
 }
 
 function NewTaskIcon() {
@@ -48,6 +52,24 @@ function NewTaskIcon() {
     <svg className="task-new-icon" viewBox="0 0 20 20" aria-hidden="true">
       <rect x="3.5" y="5.5" width="11" height="11" rx="2" />
       <path d="M8 13.2 8.5 11l6.8-6.8a1.4 1.4 0 0 1 2 2L10.5 13Z" />
+    </svg>
+  );
+}
+
+function AddToProjectIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M8 3.5v9M3.5 8h9" />
+    </svg>
+  );
+}
+
+function SidebarCollapseIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <rect x="2.75" y="4.25" width="14.5" height="11.5" rx="2.5" />
+      <path d="M9.5 4.25v11.5" />
+      <path d="m6.75 10 1.5-1.5-1.5-1.5" />
     </svg>
   );
 }
@@ -62,6 +84,15 @@ function ArchiveIcon() {
   );
 }
 
+function ProjectFolderIcon({ open = false }: { open?: boolean }) {
+  return (
+    <svg className="task-project-folder" viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M2.75 5.75a2 2 0 0 1 2-2h3.1l1.7 1.9h5.7a2 2 0 0 1 2 2v6.5a2 2 0 0 1-2 2H4.75a2 2 0 0 1-2-2Z" />
+      {open && <path d="M5.5 9.75h9" />}
+    </svg>
+  );
+}
+
 const activeStatuses = new Set(["queued", "running", "waiting_approval", "cancelling"]);
 
 export function TaskSidebar({
@@ -71,6 +102,8 @@ export function TaskSidebar({
   onToggle,
   onSelect,
   onNewTask,
+  onNewTaskWithProject,
+  searchControl,
 }: {
   currentThreadId: string;
   collapsed: boolean;
@@ -78,18 +111,57 @@ export function TaskSidebar({
   onToggle: () => void;
   onSelect: (task: TaskSummary) => void;
   onNewTask: () => void;
+  /** Start a task inside an explicit project, using any row of that group. */
+  onNewTaskWithProject?: (projectTask: TaskSummary) => void;
+  searchControl?: ReactNode;
 }) {
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [query, setQuery] = useState("");
   const [updatingThreadId, setUpdatingThreadId] = useState("");
+  const [collapsedProjects, setCollapsedProjects] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const [readTimestamps, setReadTimestamps] = useState<Record<string, string>>({});
   const sidebarRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const expandButtonRef = useRef<HTMLButtonElement>(null);
   const wasOverlayOpenRef = useRef(false);
   const runView = useRunViewModel();
+  const { user } = useAuth();
+
+  useEffect(() => {
+    try {
+      const raw = createUserScopedStorage(
+        window.localStorage,
+        user.user_id,
+      ).getItem(READ_TIMESTAMPS_KEY);
+      if (raw) setReadTimestamps(JSON.parse(raw) as Record<string, string>);
+    } catch {
+      // Fall back to an empty read map when storage is unavailable.
+    }
+  }, [user.user_id]);
+
+  // Mark the currently-open thread as read once its result is known, so the
+  // blue "unread" dot disappears after the user opens the task.
+  useEffect(() => {
+    const current = tasks.find((task) => task.thread_id === currentThreadId);
+    if (!current || current.thread_id !== currentThreadId) return;
+    setReadTimestamps((prev) => {
+      if (prev[currentThreadId] === current.updated_at) return prev;
+      const next = { ...prev, [currentThreadId]: current.updated_at };
+      try {
+        createUserScopedStorage(window.localStorage, user.user_id).setItem(
+          READ_TIMESTAMPS_KEY,
+          JSON.stringify(next),
+        );
+      } catch {
+        // Ignore storage failures; the in-memory map still works this session.
+      }
+      return next;
+    });
+  }, [currentThreadId, tasks, user.user_id]);
 
   useDialogFocus({
     open: overlayOpen,
@@ -204,17 +276,19 @@ export function TaskSidebar({
     () => tasks.find((task) => task.thread_id === currentThreadId),
     [currentThreadId, tasks],
   );
-  const filteredTasks = useMemo(() => {
-    const normalized = query.trim().toLocaleLowerCase();
-    if (!normalized) return tasks;
-    return tasks.filter((task) =>
-      [task.title, statusLabels[task.status] ?? task.status, task.agent_name]
-        .join(" ")
-        .toLocaleLowerCase()
-        .includes(normalized),
-    );
-  }, [query, tasks]);
-
+  const taskProjects = useMemo(() => {
+    const groups = new Map<string, TaskSummary[]>();
+    for (const task of tasks) {
+      const project = task.agent_name || "agent-studio";
+      const group = groups.get(project);
+      if (group) group.push(task);
+      else groups.set(project, [task]);
+    }
+    return [...groups].map(([name, projectTasks]) => ({
+      name,
+      tasks: projectTasks,
+    }));
+  }, [tasks]);
   useEffect(() => {
     if (!selected) return;
     if (selected.pending_approval) {
@@ -223,6 +297,63 @@ export function TaskSidebar({
       approvalStore.clear(undefined, selected.thread_id);
     }
   }, [runView?.phase, selected]);
+
+  function renderTaskRow(task: TaskSummary) {
+    const unreadResult =
+      task.status === "succeeded" &&
+      task.thread_id !== currentThreadId &&
+      readTimestamps[task.thread_id] !== task.updated_at;
+    const showStatusDot = activeStatuses.has(task.status) || unreadResult;
+    return (
+      <div
+        role="listitem"
+        key={task.thread_id}
+        className="task-list-row"
+      >
+        <button
+          type="button"
+          className={`task-list-item ${task.thread_id === currentThreadId ? "is-active" : ""} ${task.pending_approval ? "needs-approval" : ""}`}
+          onPointerEnter={() => {
+            void prefetchThreadHistory(task.thread_id).catch(() => {});
+          }}
+          onFocus={() => {
+            void prefetchThreadHistory(task.thread_id).catch(() => {});
+          }}
+          onClick={() => onSelect(task)}
+        >
+          {showStatusDot && (
+            <span
+              className={`task-status ${activeStatuses.has(task.status) ? `status-${task.status}` : "status-unread"}`}
+              aria-hidden="true"
+            >
+              {statusLabels[task.status] ?? task.status}
+            </span>
+          )}
+          <span className="task-list-title">{task.title}</span>
+          <span className="task-list-meta">
+            <time dateTime={task.updated_at}>{formatTaskTime(task.updated_at)}</time>
+          </span>
+        </button>
+        <button
+          type="button"
+          className="task-list-archive"
+          onClick={() => void archiveTask(task)}
+          disabled={
+            updatingThreadId === task.thread_id
+            || activeStatuses.has(task.status)
+          }
+          aria-label={`归档 ${task.title}`}
+          title={
+            activeStatuses.has(task.status)
+              ? "任务结束后可归档"
+              : "归档任务"
+          }
+        >
+          <ArchiveIcon />
+        </button>
+      </div>
+    );
+  }
 
   return (
     <aside
@@ -234,133 +365,100 @@ export function TaskSidebar({
       role={overlayOpen ? "dialog" : undefined}
     >
       {collapsed ? (
-        <div className="task-sidebar-rail">
-          <Link
-            className="task-rail-brand"
-            href="/"
-            aria-label={`${PRODUCT_NAME}任务首页`}
-          >
-            <ProductBrandMark />
-          </Link>
-          <button
-            ref={expandButtonRef}
-            className="task-rail-toggle"
-            type="button"
-            onClick={onToggle}
-            aria-label="展开任务列表"
-            aria-expanded="false"
-            title="展开任务列表"
-          >
-            <WorkspaceCollapseIcon collapsed />
-          </button>
-          <WorkspaceNavigation active="tasks" collapsed visible={["agents", "files"]} />
-          <button
-            className="task-rail-action"
-            type="button"
-            onClick={onNewTask}
-            aria-label="新建任务"
-            title="新建任务"
-          >
-            <NewTaskIcon />
-          </button>
-          <div className="task-rail-account">
-            <AccountMenu />
-          </div>
-        </div>
+        <div className="task-sidebar-rail" />
       ) : (
         <>
           <div className="task-sidebar-brand">
             <Link className="task-sidebar-brand-link" href="/" aria-label={`${PRODUCT_NAME}任务首页`}>
-              <ProductBrandMark className="task-sidebar-brand-mark" />
-              <ProductBrandCopy className="task-sidebar-brand-copy" />
+              <span className="task-sidebar-brand-copy task-workbench-name">
+                <strong>{PRODUCT_NAME}</strong>
+              </span>
             </Link>
             <button
               ref={closeButtonRef}
               type="button"
+              className="task-sidebar-collapse"
               onClick={onToggle}
               aria-label="收起任务列表"
               aria-expanded="true"
               title="收起任务列表"
             >
-              <WorkspaceCollapseIcon collapsed={false} />
+              <SidebarCollapseIcon />
             </button>
           </div>
           <div className="task-sidebar-primary">
-            <button type="button" onClick={onNewTask}>
+            <button type="button" className="task-sidebar-create" onClick={onNewTask}>
               <NewTaskIcon />
               <span>新建任务</span>
             </button>
+            {searchControl ? <div className="task-sidebar-search-control">{searchControl}</div> : null}
           </div>
           <div className="task-sidebar-mode">
             <WorkspaceNavigation
               active="tasks"
-              visible={["agents", "files"]}
+              visible={["agents", "capabilities"]}
+              labelOverrides={{ capabilities: "技能 / MCP" }}
             />
           </div>
           <div className="task-list-toolbar">
             <div className="task-list-heading">
               <span className="task-list-heading-copy">
-                <ProductIcon name="clock" />
-                最近
+                <ProjectFolderIcon />
+                项目
               </span>
-              <small>{query ? `${filteredTasks.length} / ${tasks.length}` : tasks.length}</small>
             </div>
-            <label className="task-list-search">
-              <span aria-hidden="true" />
-              <input
-                type="search"
-                value={query}
-                placeholder="搜索任务或智能体"
-                aria-label="搜索最近任务"
-                onChange={(event) => setQuery(event.target.value)}
-              />
-            </label>
           </div>
           <div className="task-list" role="list">
-            {filteredTasks.map((task) => (
-              <div
-                role="listitem"
-                key={task.thread_id}
-                className="task-list-row"
-              >
-                <button
-                  type="button"
-                  className={`task-list-item ${task.thread_id === currentThreadId ? "is-active" : ""} ${task.pending_approval ? "needs-approval" : ""}`}
-                  onPointerEnter={() => {
-                    void prefetchThreadHistory(task.thread_id).catch(() => {});
-                  }}
-                  onFocus={() => {
-                    void prefetchThreadHistory(task.thread_id).catch(() => {});
-                  }}
-                  onClick={() => onSelect(task)}
+            {taskProjects.map((project) => {
+              const projectCollapsed = collapsedProjects.has(project.name);
+              return (
+                <section
+                  className={`task-project-group${projectCollapsed ? " is-collapsed" : ""}`}
+                  key={project.name}
+                  aria-label={project.name}
                 >
-                  <span className="task-list-title">{task.title}</span>
-                  <span className="task-list-meta">
-                    <span className={`task-status status-${task.status}`}>
-                      {statusLabels[task.status] ?? task.status}
-                    </span>
-                    <time dateTime={task.updated_at}>{relativeTime(task.updated_at)}</time>
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className="task-list-archive"
-                  onClick={() => void archiveTask(task)}
-                  disabled={
-                    updatingThreadId === task.thread_id
-                    || activeStatuses.has(task.status)
-                  }
-                  aria-label={`归档 ${task.title}`}
-                  title={
-                    activeStatuses.has(task.status)
-                      ? "任务结束后可归档"
-                      : "归档任务"
-                  }
-                >
-                  <ArchiveIcon />
-                </button>
-              </div>
-            ))}
+                  <div className="task-project-head">
+                    <button
+                      type="button"
+                      className="task-project-heading"
+                      aria-expanded={!projectCollapsed}
+                      aria-label={`${projectCollapsed ? "展开" : "收起"}项目 ${project.name}`}
+                      title={`${projectCollapsed ? "展开" : "收起"}项目 ${project.name}`}
+                      onClick={() => {
+                        setCollapsedProjects((current) => {
+                          const next = new Set(current);
+                          if (next.has(project.name)) next.delete(project.name);
+                          else next.add(project.name);
+                          return next;
+                        });
+                      }}
+                    >
+                      <ProjectFolderIcon open={!projectCollapsed} />
+                      <strong>{project.name}</strong>
+                    </button>
+                    <button
+                      type="button"
+                      className="task-project-add"
+                      aria-label={`在 ${project.name} 下新建任务`}
+                      title={`在 ${project.name} 下新建任务`}
+                      disabled={!onNewTaskWithProject || !project.tasks[0]}
+                      onClick={() => {
+                        if (onNewTaskWithProject && project.tasks[0]) {
+                          onNewTaskWithProject(project.tasks[0]);
+                        }
+                      }}
+                    >
+                      <AddToProjectIcon />
+                    </button>
+                  </div>
+                  {!projectCollapsed && (
+                    <div className="task-project-items">
+                      {project.tasks.map(renderTaskRow)}
+                    </div>
+                  )}
+                </section>
+              );
+            })}
             {loading && tasks.length === 0 && (
               <div className="task-list-state" aria-live="polite">
                 <span className="task-list-spinner" aria-hidden="true" />
@@ -373,13 +471,6 @@ export function TaskSidebar({
                 <strong>从第一个任务开始</strong>
                 <small>描述目标，Agent 会规划步骤并保留执行记录。</small>
                 <button type="button" onClick={onNewTask}>开始新任务</button>
-              </div>
-            )}
-            {!loading && tasks.length > 0 && filteredTasks.length === 0 && (
-              <div className="task-list-state task-list-empty">
-                <strong>没有匹配的任务</strong>
-                <small>换一个标题、状态或智能体名称试试。</small>
-                <button type="button" onClick={() => setQuery("")}>清除搜索</button>
               </div>
             )}
             {error && (

@@ -92,7 +92,11 @@ export function TaskModelControl({
             </option>
           ))}
         </select>
-        <span className="task-model-control-chevron" aria-hidden="true" />
+        <span className="task-model-control-chevron" aria-hidden="true">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
+          </svg>
+        </span>
       </label>
       <span className="task-model-control-status">
         {selected?.modelType === "video_generation" ? "视频生成" : selected ? "仅本次任务" : "跟随 Agent"}

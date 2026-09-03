@@ -37,6 +37,7 @@ import {
   UserMessage,
 } from "@assistant-ui/react-ui";
 import { ActivitySummary } from "./activity-summary";
+import { TaskAgentSwitcher } from "./task-agent-switcher";
 import { ApprovalCard, type ApprovalDetails } from "./approval-card";
 import { ArtifactCard, type ArtifactDetails } from "./artifact-list";
 import { MarkdownText } from "./markdown-text";
@@ -69,6 +70,7 @@ import {
 } from "../lib/run-stream-store";
 import { normalizeMessageText } from "../lib/message-text";
 import { inputArtifactIdFromAttachment } from "../lib/input-attachment-adapter";
+import type { TaskAgent } from "../lib/task-agent-catalog";
 import {
   VIDEO_GENERATION_PART_NAME,
   VideoGenerationControls,
@@ -333,6 +335,7 @@ function HarnessComposer() {
   const stream = useRunStream();
   const runView = useRunViewModel();
   const pendingApproval = usePendingApproval();
+  const agentSelection = useContext(AgentSelectionContext);
   const reuseNotice = useRunReuseNotice();
   const runLocked = selectComposerDisabled(runView);
   useTaskComposerDraft(composerText);
@@ -515,7 +518,18 @@ function HarnessComposer() {
           }}
         />
         <div className="composer-toolbar">
-          <Composer.AddAttachment />
+          <Composer.AddAttachment>
+            <svg className="aui-composer-attach-icon" viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M10 4.5v11M4.5 10h11" />
+            </svg>
+          </Composer.AddAttachment>
+          <TaskAgentSwitcher
+            agents={agentSelection.agents}
+            selected={agentSelection.selected}
+            loading={agentSelection.loading}
+            currentTaskBusy={agentSelection.currentTaskBusy}
+            onChange={agentSelection.onChange}
+          />
           <TaskModelControl disabled={runLocked || showStop || videoGenerating} />
         </div>
         {showStop ? (
@@ -540,7 +554,11 @@ function HarnessComposer() {
             {videoGenerating ? "生成中" : "生成视频"}
           </button>
         ) : (
-          <Composer.Send />
+          <Composer.Send>
+            <svg className="aui-composer-send-icon" viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M10 16.5v-11M5.5 9.5 10 5l4.5 4.5" />
+            </svg>
+          </Composer.Send>
         )}
       </Composer.Root>
     </div>
@@ -553,6 +571,22 @@ type ComposerDraftScope = {
 };
 
 const ComposerDraftContext = createContext<ComposerDraftScope | null>(null);
+
+type AgentSelectionContextValue = {
+  agents: readonly TaskAgent[];
+  selected: TaskAgent | null;
+  loading: boolean;
+  currentTaskBusy: boolean;
+  onChange: (agent: TaskAgent) => void;
+};
+
+const AgentSelectionContext = createContext<AgentSelectionContextValue>({
+  agents: [],
+  selected: null,
+  loading: true,
+  currentTaskBusy: false,
+  onChange: () => undefined,
+});
 
 function useTaskComposerDraft(text: string) {
   const scope = useContext(ComposerDraftContext);
@@ -619,73 +653,18 @@ function ApprovalToolBridge({
   return null;
 }
 
-const welcomeTasks = [
-  {
-    code: "PLAN",
-    title: "分析与规划",
-    description: "梳理复杂问题，输出有优先级的行动方案",
-    prompt: "分析这个仓库的架构风险，并给出可执行、带优先级的重构顺序",
-  },
-  {
-    code: "READ",
-    title: "阅读与整理",
-    description: "读取附件，提取事实、证据和结构化摘要",
-    prompt: "读取我附加的文档，提取关键事实并标出证据位置",
-  },
-  {
-    code: "ACT",
-    title: "执行与协作",
-    description: "调用工具或子 Agent，完成多步骤任务",
-    prompt: "把复杂任务拆给子 Agent，并汇总工具调用和最终结论",
-  },
-] as const;
-
 export function UserTaskWelcome() {
   return (
     <ThreadWelcome.Root className="user-task-welcome">
       <ThreadWelcome.Center className="user-task-hero">
         <div className="user-task-intro">
-          <p className="user-task-kicker"><span aria-hidden="true" />开始一项任务</p>
-          <h1>把目标交给 Agent</h1>
+          <p className="user-task-kicker"><span aria-hidden="true" />Agent Studio</p>
+          <h1>把目标交给智能体，让它替你完成</h1>
           <p>
-            描述期望结果，或附上资料。Agent 会规划步骤、调用工具；常规操作自动完成，仅在高风险边界需要你确认。
+            描述要达成的结果，或附上资料。执行过程、工具调用和产出，都会留在这段对话里。
           </p>
         </div>
       </ThreadWelcome.Center>
-
-      <div className="user-task-grid" aria-label="推荐任务">
-        {welcomeTasks.map((task) => (
-          <ThreadWelcome.Suggestion
-            key={task.code}
-            suggestion={{
-              prompt: task.prompt,
-              text: (
-                <span className="user-task-card-copy">
-                  <small>{task.code}</small>
-                  <strong>{task.title}</strong>
-                  <span>{task.description}</span>
-                </span>
-              ),
-            }}
-          />
-        ))}
-      </div>
-
-      <nav className="user-task-shortcuts" aria-label="生产力快捷入口">
-        <Link href="/studio/spaces">
-          <span aria-hidden="true">→</span>
-          从团队空间选择智能体
-        </Link>
-        <Link href="/studio/agents">
-          <span aria-hidden="true">+</span>
-          创建或调整智能体
-        </Link>
-      </nav>
-
-      <p className="user-task-trust">
-        <span aria-hidden="true" />
-        隔离执行 · 自动风险分级 · 产物可直接下载
-      </p>
     </ThreadWelcome.Root>
   );
 }
@@ -1492,20 +1471,41 @@ function HarnessUserMessage() {
 export function AgentThread({
   userId,
   threadId,
+  agents = [],
+  selectedAgent = null,
+  agentsLoading = false,
+  currentTaskBusy = false,
+  onAgentChange = () => undefined,
 }: {
   userId: string;
   threadId: string;
+  agents?: readonly TaskAgent[];
+  selectedAgent?: TaskAgent | null;
+  agentsLoading?: boolean;
+  currentTaskBusy?: boolean;
+  onAgentChange?: (agent: TaskAgent) => void;
 }) {
   const [editor, setEditor] = useState<MessageEditorState>(null);
   const composerDraftScope = useMemo(
     () => ({ userId, threadId }),
     [threadId, userId],
   );
+  const agentSelection = useMemo(
+    () => ({
+      agents,
+      selected: selectedAgent,
+      loading: agentsLoading,
+      currentTaskBusy,
+      onChange: onAgentChange,
+    }),
+    [agents, agentsLoading, currentTaskBusy, onAgentChange, selectedAgent],
+  );
   return (
-    <ComposerDraftContext.Provider value={composerDraftScope}>
-      <MessageEditorContext.Provider value={{ editor, setEditor }}>
-        <VideoGenerationProvider>
-          <Thread
+    <AgentSelectionContext.Provider value={agentSelection}>
+      <ComposerDraftContext.Provider value={composerDraftScope}>
+        <MessageEditorContext.Provider value={{ editor, setEditor }}>
+          <VideoGenerationProvider>
+            <Thread
             assistantMessage={{
               allowCopy: false,
               allowReload: false,
@@ -1543,9 +1543,10 @@ export function AgentThread({
               },
               editComposer: { send: { label: "更新" }, cancel: { label: "取消" } },
             }}
-          />
-        </VideoGenerationProvider>
-      </MessageEditorContext.Provider>
-    </ComposerDraftContext.Provider>
+            />
+          </VideoGenerationProvider>
+        </MessageEditorContext.Provider>
+      </ComposerDraftContext.Provider>
+    </AgentSelectionContext.Provider>
   );
 }

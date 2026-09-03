@@ -90,13 +90,14 @@ it("registers the approval renderer through the assistant-ui Thread config", () 
 it("presents task-first guidance through a custom assistant-ui welcome", () => {
   const html = renderToStaticMarkup(<AgentThread userId="user-a" threadId="thread-a" />);
 
-  expect(html).toContain("把目标交给 Agent");
-  expect(html).toContain("分析与规划");
-  expect(html).toContain("阅读与整理");
-  expect(html).toContain("执行与协作");
-  expect(html).toContain("常规操作自动完成");
-  expect(html).toContain("仅在高风险边界需要你确认");
-  expect(html).toContain("隔离执行 · 自动风险分级 · 产物可直接下载");
+  expect(html).toContain("把目标交给智能体，让它替你完成");
+  expect(html).toContain("执行过程、工具调用和产出，都会留在这段对话里");
+  expect(html).not.toContain("常规操作自动完成");
+  expect(html).not.toContain("隔离执行 · 自动风险分级");
+  expect(html).not.toContain("分析与规划");
+  expect(html).not.toContain("阅读与整理");
+  expect(html).not.toContain("执行与协作");
+  expect(html).not.toContain("创建或调整智能体");
   expect(html).not.toContain("支持人工审批");
 });
 
@@ -158,7 +159,7 @@ it("switches the composer action to stop for an active run", () => {
   expect(agentThreadSource).toContain('width="12" height="12"');
   expect(agentThreadSource).not.toContain('title="停止运行"');
   expect(agentThreadSource).toContain("aui.thread().cancelRun()");
-  expect(agentThreadSource).toContain("<Composer.Send />");
+  expect(agentThreadSource).toContain("aui-composer-send-icon");
   expect(agentThreadSource).not.toContain("<Composer.Action");
 });
 

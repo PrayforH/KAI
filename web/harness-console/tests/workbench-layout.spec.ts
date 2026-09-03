@@ -8,6 +8,10 @@ const codexStyles = readFileSync(
   join(process.cwd(), "src/app/codex-theme.css"),
   "utf8",
 );
+const webCodexStyles = readFileSync(
+  join(process.cwd(), "src/app/web-codex.css"),
+  "utf8",
+);
 const taskSidebar = readFileSync(
   join(process.cwd(), "src/components/task-sidebar.tsx"),
   "utf8",
@@ -121,17 +125,28 @@ describe("full-page agent workbench", () => {
     );
   });
 
-  it("uses a consistent product icon language in high-frequency navigation", () => {
-    expect(taskSidebar).toContain('<ProductIcon name="clock" />');
-    expect(styles).toMatch(
-      /\.task-list-heading-copy svg\s*\{[^}]*stroke-width:\s*1\.65;/s,
+  it("uses a compact project icon language in the task tree", () => {
+    expect(taskSidebar).toContain("function ProjectFolderIcon({ open = false }");
+    expect(taskSidebar).toContain("<ProjectFolderIcon />");
+    expect(taskSidebar).toContain('<ProjectFolderIcon open={!projectCollapsed} />');
+    expect(webCodexStyles).toMatch(
+      /\.task-project-heading svg,[\s\S]*?stroke-width:\s*1\.6;/s,
     );
   });
 
   it("presents a user task workspace instead of an internal validation console", () => {
-    expect(taskSidebar).toContain("<ProductBrandMark");
-    expect(taskSidebar).toContain("<ProductBrandCopy");
-    expect(page).toContain("<TaskAgentSwitcher");
+    expect(taskSidebar).not.toContain("<ProductBrandMark");
+    expect(taskSidebar).toContain("{PRODUCT_NAME}");
+    expect(taskSidebar).toContain('className="task-sidebar-collapse"');
+    expect(taskSidebar).not.toContain('className="task-rail-brand-text"');
+    expect(page).not.toContain("<TaskAgentSwitcher");
+    expect(agentThread).toContain("<TaskAgentSwitcher");
+    expect(page).toContain('className="task-context-bar"');
+    expect(page).toContain("<SidebarPanelToggle");
+    expect(page).toContain("<HelpMenu />");
+    expect(page).toContain("<WorkbenchRail");
+    expect(page).not.toContain("EnvironmentBadge");
+    expect(page).not.toContain("<ContextRecoveryPanel");
     expect(page).not.toContain('className="brand-lockup"');
     expect(page).toContain('className="task-content-shell"');
     expect(styles).toMatch(
@@ -141,21 +156,21 @@ describe("full-page agent workbench", () => {
     expect(page).not.toContain('<span>新任务</span>');
     expect(page).not.toContain("LangfuseTraceLink");
     expect(page).not.toContain("Langfuse Trace");
-    expect(page).toContain("<DeveloperDrawer");
+    expect(page).not.toContain("<DeveloperDrawer");
     expect(page).not.toContain("交互验证台");
     expect(page).not.toContain("切换开发者信息");
     expect(page).not.toContain("developerMode");
-    expect(agentThread).toContain("<h1>把目标交给 Agent</h1>");
-    expect(agentThread).not.toContain("<h2>把目标交给 Agent</h2>");
+    expect(agentThread).toContain("<h1>把目标交给智能体，让它替你完成</h1>");
+    expect(agentThread).not.toContain("<h2>从一个任务开始</h2>");
     expect(styles).toContain(".user-task-intro h1");
     expect(styles).not.toContain(".user-task-intro h2");
     expect(codexStyles).toContain(".user-task-intro h1");
     expect(codexStyles).not.toContain(".user-task-intro h2");
   });
 
-  it("opens observability from the exact run instead of a global operations link", () => {
-    expect(page).toContain("<RunDetailsProvider");
-    expect(page).toContain("activity={inspectedActivity}");
+  it("keeps activity in the conversation without mounting the developer drawer", () => {
+    expect(page).not.toContain("<RunDetailsProvider");
+    expect(page).not.toContain("activity={inspectedActivity}");
     expect(page).not.toContain('inspectedActivity ? " inspector-open" : ""');
     expect(agentThread).toContain("<ActivitySummary");
     expect(agentThread).toContain("可打开“运行详情”查看原因");
@@ -163,19 +178,21 @@ describe("full-page agent workbench", () => {
     expect(activitySummary).toContain("runDetails.open(activity)");
     expect(activitySummary).toContain('aria-controls="run-details-panel"');
     expect(styles).toContain(".execution-details-trigger");
-    expect(styles).toContain(".workspace-stage.tasks-open.inspector-open");
+    expect(page).not.toContain("<DeveloperDrawer");
   });
 
-  it("keeps collapse and expand controls inside the task rail", () => {
+  it("keeps collapse in the rail and moves expand into the header", () => {
     expect(page).not.toContain('className="icon-button task-sidebar-toggle"');
     expect(page).toContain("collapsed={!taskSidebarOpen}");
     expect(taskSidebar).toContain('className="task-sidebar-rail"');
-    expect(taskSidebar).toContain('aria-label="收起任务列表"');
-    expect(taskSidebar).toContain('aria-label="展开任务列表"');
-    expect(taskSidebar).toContain('aria-expanded="false"');
-    expect(taskSidebar).toContain('aria-expanded="true"');
-    expect(taskSidebar).toContain("<WorkspaceCollapseIcon collapsed={false} />");
-    expect(taskSidebar).toContain("<WorkspaceCollapseIcon collapsed />");
+    expect(taskSidebar).not.toContain('task-rail-toggle');
+    expect(taskSidebar).not.toContain('task-rail-action');
+    expect(taskSidebar).not.toContain('task-rail-brand');
+    expect(taskSidebar).not.toContain('task-rail-account');
+    expect(taskSidebar).toContain("<SidebarCollapseIcon />");
+    expect(taskSidebar).not.toContain('SidebarExpandIcon');
+    expect(page).toContain("<SidebarExpandToggle");
+    expect(page).toContain("!taskSidebarOpen && (");
     expect(styles).toMatch(
       /\.workspace-stage:not\(\.tasks-open\)\s*\{[^}]*grid-template-columns:\s*var\(--app-sidebar-collapsed-width,\s*52px\) minmax\(0,\s*1fr\);/s,
     );
@@ -205,11 +222,12 @@ describe("full-page agent workbench", () => {
     );
   });
 
-  it("keeps tasks, agents and files in the sidebar and moves resource governance to the account menu", () => {
+  it("keeps agents and capabilities in the simplified task sidebar", () => {
     expect(taskSidebar).not.toContain("WorkspaceModeSwitcher");
     expect(studioSidebar).not.toContain("WorkspaceModeSwitcher");
-    expect(taskSidebar).toContain('<WorkspaceNavigation active="tasks" collapsed visible={["agents", "files"]} />');
-    expect(taskSidebar).toContain('visible={["agents", "files"]}');
+    expect(taskSidebar).toContain('visible={["agents", "capabilities"]}');
+    expect(taskSidebar).toContain('labelOverrides={{ capabilities: "技能 / MCP" }}');
+    expect(taskSidebar).not.toContain('visible={["agents", "files"]}');
     expect(studioSidebar).toContain('visible={["tasks", "agents", "files"]}');
     expect(studioSidebar).not.toContain('"capabilities", "knowledge", "spaces"]');
     expect(studioSidebar).not.toContain('"usage",');
@@ -221,11 +239,12 @@ describe("full-page agent workbench", () => {
       ["/studio/files", "我的文件"],
       ["/studio/capabilities", "MCP 能力"],
       ["/studio/knowledge", "知识库"],
-      ["/studio/spaces", "协作空间"],
     ]) {
       expect(workspaceNavigation).toContain(`href: "${href}"`);
       expect(workspaceNavigation).toContain(`label: "${label}"`);
     }
+    expect(workspaceNavigation).not.toContain('href: "/studio/spaces"');
+    expect(workspaceNavigation).not.toContain('label: "协作空间"');
     expect(workspaceNavigation).not.toContain('href: "/studio/usage"');
     expect(workspaceNavigation).not.toContain('href: "/studio/data"');
     expect(workspaceNavigation).not.toContain("workspaceGroupLabels");
@@ -244,8 +263,8 @@ describe("full-page agent workbench", () => {
     expect(taskSidebar).toContain('className="task-list-heading"');
     expect(taskSidebar).not.toContain('role="tablist" aria-label="任务范围"');
     expect(taskSidebar).not.toContain("已归档");
-    expect(taskSidebar).toContain('aria-label="搜索最近任务"');
-    expect(taskSidebar).toContain("filteredTasks.map");
+    expect(taskSidebar).not.toContain('aria-label="搜索最近任务"');
+    expect(taskSidebar).toContain("tasks.map");
     expect(taskSidebar).toContain('className="task-list-archive"');
     expect(taskSidebar).toContain("setTaskArchived");
     expect(taskSidebar).toContain("loadTasks(false)");
@@ -381,7 +400,7 @@ describe("full-page agent workbench", () => {
     expect(styles).not.toContain("linear-gradient");
   });
 
-  it("styles a task brief instead of a generic chat welcome", () => {
+  it("uses a quiet task welcome without suggestion cards or shortcuts", () => {
     expect(styles).toMatch(
       /\.user-task-welcome\s*\{[^}]*max-width:\s*46rem;/s,
     );
@@ -391,15 +410,14 @@ describe("full-page agent workbench", () => {
     expect(styles).toMatch(
       /@media\s*\(max-width:\s*680px\)[\s\S]*?\.user-task-grid\s*\{[^}]*grid-template-columns:\s*1fr;/s,
     );
-    expect(agentThread).toContain('aria-label="生产力快捷入口"');
-    expect(agentThread).toContain("从团队空间选择智能体");
-    expect(agentThread).toContain("创建或调整智能体");
-    expect(styles).toContain(".user-task-shortcuts");
+    expect(agentThread).not.toContain('aria-label="生产力快捷入口"');
+    expect(agentThread).not.toContain("从团队空间选择智能体");
+    expect(agentThread).not.toContain("创建或调整智能体");
   });
 
   it("presents approvals as an exceptional risk boundary", () => {
-    expect(agentThread).toContain("常规操作自动完成");
-    expect(agentThread).toContain("隔离执行 · 自动风险分级");
+    expect(agentThread).not.toContain("常规操作自动完成");
+    expect(agentThread).not.toContain("隔离执行 · 自动风险分级");
     expect(agentThread).not.toContain("支持人工审批");
     expect(login).toContain("风险边界仍由你掌控");
     expect(login).toContain("仅高风险边界请求确认");
@@ -427,11 +445,25 @@ describe("full-page agent workbench", () => {
   });
 
   it("preserves unsent task text across refreshes and task switches", () => {
-    expect(page).toContain('<AgentThread userId={user.user_id} threadId={threadId} />');
+    expect(page).toContain("<AgentThread");
+    expect(page).toContain("threadId={threadId}");
     expect(agentThread).toContain("loadTaskComposerDraft");
     expect(agentThread).toContain("persistTaskComposerDraft");
     expect(agentThread).not.toContain("未发送内容已保存在当前浏览器");
     expect(agentThread).toContain("auiRef.current.composer().setText(saved)");
+  });
+
+  it("uses Codex neutrals and keeps the workbench strictly black, white and gray", () => {
+    expect(webCodexStyles).toContain("body.codex-theme-v1:has(.console-shell)");
+    expect(webCodexStyles).toContain("--codex-accent: #ececec");
+    expect(webCodexStyles).toContain(".harness-composer-shell .task-agent-switcher");
+    expect(webCodexStyles).toContain(".aui-thread-viewport:has(.user-task-welcome)");
+    expect(webCodexStyles).toContain("width: 100%;\n  height: 100dvh;");
+    expect(webCodexStyles).not.toContain("background-image: radial-gradient");
+    expect(webCodexStyles).not.toContain("#339cff");
+    expect(webCodexStyles).not.toContain("#16b364");
+    expect(webCodexStyles).not.toContain("#f36d21");
+    expect(webCodexStyles).not.toContain("#ff7d32");
   });
 
   it("runs managed video models through a dedicated conversation composer path", () => {
@@ -692,10 +724,10 @@ describe("full-page agent workbench", () => {
     );
   });
 
-  it("opens run details as an overlay instead of resizing the workspace", () => {
+  it("does not mount run details in the simplified task shell", () => {
     expect(page).not.toContain('inspectedActivity ? " inspector-open" : ""');
-    expect(page).toContain("<DeveloperDrawer");
-    expect(styles).toContain(".run-details-backdrop");
+    expect(page).not.toContain("<DeveloperDrawer");
+    expect(page).not.toContain("<RunDetailsProvider");
   });
 
   it("shows a lightweight recovery skeleton instead of a lone loading line", () => {

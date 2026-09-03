@@ -20,7 +20,7 @@ export default function NotFound() {
         <p className="recovery-code">404 · PAGE NOT FOUND</p>
         <h1 id="not-found-title">这个入口不存在</h1>
         <p className="recovery-copy">
-          地址可能已经改变。返回任务继续工作，或去构建区找到智能体与协作空间。
+          地址可能已经改变。返回任务继续工作，或去智能体中心查看可用智能体。
         </p>
         <div className="recovery-actions">
           <Link className="recovery-primary" href="/">返回任务</Link>

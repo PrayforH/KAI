@@ -1,0 +1,1589 @@
+/* Codex-aligned web task shell. This file only changes presentation; the
+   assistant-ui runtime, AG-UI transport and durable task stores stay intact. */
+
+body.codex-theme-v1:has(.console-shell),
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) {
+  --app-sidebar-expanded-width: 264px;
+  --app-sidebar-collapsed-width: 0px;
+  --codex-surface: #111111;
+  --codex-surface-deep: #0d0d0d;
+  --codex-surface-sidebar: #262626;
+  --codex-surface-subtle: #1b1b1b;
+  --codex-surface-raised: #242424;
+  --codex-surface-hover: #303030;
+  --codex-surface-active: #363636;
+  --codex-ink: #f5f5f5;
+  --codex-ink-soft: #d2d2d2;
+  --codex-muted: #a3a3a3;
+  --codex-faint: #727272;
+  --codex-line: #343434;
+  --codex-line-strong: #474747;
+  --codex-accent: #ececec;
+  --codex-accent-hover: #ffffff;
+  --codex-accent-soft: rgb(255 255 255 / 10%);
+  --codex-accent-faint: rgb(255 255 255 / 6%);
+  --codex-skill: #9a9a9a;
+  --codex-warning: #b8b8b8;
+  --codex-success: #58a66b;
+  --codex-success-soft: rgb(88 166 107 / 12%);
+  --codex-header-bg: #111111;
+  --codex-panel-solid: #242424;
+  --codex-field: #1d1d1d;
+  --codex-thread-bg: #101010;
+  --codex-thread-footer: rgb(16 16 16 / 97%);
+  --codex-on-accent: #141414;
+  margin: 0;
+  color-scheme: dark;
+  background: var(--codex-thread-bg);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto,
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-size: 14px;
+}
+
+/* The workbench stays strictly black, white and gray: the brand mark loses
+   its green axis everywhere and its strokes follow the surrounding ink. */
+body.codex-theme-v1 .product-brand-mark {
+  --product-brand-accent: currentColor;
+}
+
+body.codex-theme-v1:has(.console-shell) .product-brand-mark {
+  color: #f2f2f2;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+body.codex-theme-v1:has(.console-shell)::before {
+  display: none;
+}
+
+body.codex-theme-v1:has(.console-shell) ::selection {
+  color: var(--codex-ink);
+  background: rgb(255 255 255 / 22%);
+}
+
+body.codex-theme-v1:has(.console-shell) :where(button, a, input, textarea, select, summary):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--codex-accent) 72%, white);
+  outline-offset: 2px;
+}
+
+body.codex-theme-v1:has(.console-shell) .console-shell {
+  width: 100%;
+  height: 100dvh;
+  min-height: 560px;
+  margin: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: var(--codex-thread-bg);
+  box-shadow: none;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+body.codex-theme-v1:has(.console-shell) .workspace-stage {
+  min-width: 0;
+  min-height: 0;
+}
+
+body.codex-theme-v1:has(.console-shell) .workspace-stage.tasks-open {
+  grid-template-columns: var(--app-sidebar-expanded-width) minmax(0, 1fr);
+}
+
+body.codex-theme-v1:has(.console-shell) .workspace-stage:not(.tasks-open) {
+  grid-template-columns: var(--app-sidebar-collapsed-width) minmax(0, 1fr);
+}
+
+/* Right-hand context rail, toggled from the header like ZCode's side panel.
+   It overlays the right edge so the main stage keeps its full height. */
+.workbench-rail {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 90;
+  width: 300px;
+  overflow: hidden;
+  border-left: 1px solid #292929;
+  background: #141414;
+  box-shadow: -14px 0 44px rgb(0 0 0 / 38%);
+  transform: translateX(100%);
+  transition: transform 180ms ease;
+}
+
+body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-open .workbench-rail {
+  transform: translateX(0);
+}
+
+.workbench-rail-panel {
+  width: 300px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #141414;
+}
+
+.workbench-rail-header {
+  height: 48px;
+  min-height: 48px;
+  padding: 0 8px 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #292929;
+  color: #e8e8e8;
+}
+
+.workbench-rail-header strong {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.workbench-rail-close {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  color: #9c9c9c;
+  background: transparent;
+  cursor: pointer;
+  transition: color 140ms ease, background-color 140ms ease;
+}
+
+.workbench-rail-close:hover {
+  color: #ffffff;
+  background: #2b2b2b;
+}
+
+.workbench-rail-close svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.workbench-rail-body {
+  min-height: 0;
+  flex: 1 1 auto;
+  padding: 0 16px 16px;
+  overflow-y: auto;
+  scrollbar-color: #3d3d3d transparent;
+}
+
+.workbench-rail-section {
+  padding: 13px 0;
+  display: grid;
+  gap: 6px;
+  border-bottom: 1px solid #232323;
+}
+
+.workbench-rail-section > small {
+  color: #767676;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+}
+
+.workbench-rail-task {
+  color: #ececec;
+  font-size: 13.5px;
+  font-weight: 550;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.workbench-rail-files {
+  display: grid;
+  gap: 2px;
+}
+
+.workbench-rail-file {
+  min-width: 0;
+  padding: 6px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid #2b2b2b;
+  border-radius: 8px;
+  color: #cfcfcf;
+  text-decoration: none;
+  transition: color 140ms ease, border-color 140ms ease, background-color 140ms ease;
+}
+
+.workbench-rail-file:hover {
+  border-color: #474747;
+  color: #ffffff;
+  background: #1f1f1f;
+}
+
+.workbench-rail-file-name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench-rail-file-size {
+  flex: 0 0 auto;
+  color: #767676;
+  font: 11px/1 var(--codex-font-ui);
+  font-variant-numeric: tabular-nums;
+}
+
+.workbench-rail-files-empty {
+  color: #767676;
+  font-size: 12px;
+}
+
+.workbench-rail-rows {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.workbench-rail-rows code,
+.workbench-rail-thread {
+  overflow: hidden;
+  color: #a8a8a8;
+  font: 11.5px/1.5 var(--codex-font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench-rail-agent {
+  color: #dcdcdc;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.workbench-rail-chip {
+  justify-self: start;
+  padding: 2px 8px;
+  border: 1px solid #343434;
+  border-radius: 6px;
+  color: #b9b9b9;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.workbench-rail-phase {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #bdbdbd;
+  font-size: 11.5px;
+}
+
+.workbench-rail-phase i {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 50%;
+  background: #626262;
+}
+
+.workbench-rail-phase.is-running i {
+  background: #ececec;
+  animation: workbench-rail-pulse 1.6s ease-in-out infinite;
+}
+
+.workbench-rail-phase.is-queued i {
+  background: #8f8f8f;
+}
+
+.workbench-rail-phase.is-waiting_approval i {
+  background: #cf9f5e;
+}
+
+.workbench-rail-phase.is-succeeded i {
+  background: #58a66b;
+}
+
+.workbench-rail-phase.is-failed i,
+.workbench-rail-phase.is-rejected i,
+.workbench-rail-phase.is-timed_out i {
+  background: #e05a50;
+}
+
+.workbench-rail-phase.is-succeeded,
+.workbench-rail-phase.is-running {
+  color: #e6e6e6;
+}
+
+@keyframes workbench-rail-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.workbench-rail-manual {
+  margin-top: 14px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid #333333;
+  border-radius: 8px;
+  color: #c6c6c6;
+  font-size: 12.5px;
+  text-decoration: none;
+  transition: color 140ms ease, border-color 140ms ease, background-color 140ms ease;
+}
+
+.workbench-rail-manual:hover {
+  border-color: #4a4a4a;
+  color: #ffffff;
+  background: #1f1f1f;
+}
+
+.workbench-rail-footer {
+  margin-top: 16px;
+  padding-top: 10px;
+  border-top: 1px solid #222222;
+  color: #5a5a5a;
+  font-size: 9.5px;
+  font-weight: 650;
+  letter-spacing: 0.18em;
+}
+
+@media (max-width: 900px) {
+  .workbench-rail {
+    width: min(300px, calc(100vw - 40px));
+  }
+
+  .workbench-rail-panel {
+    width: 100%;
+  }
+}
+
+/* Sidebar: Codex-like density, neutral surfaces and a single icon weight. */
+
+body.codex-theme-v1:has(.console-shell) .task-sidebar,
+body.codex-theme-v1:has(.console-shell) .task-sidebar.is-collapsed {
+  border-right: 1px solid #303030;
+  background: var(--codex-surface-sidebar);
+  box-shadow: none;
+}
+
+/* Collapsed rail collapses to zero width so no gray strip is left behind. */
+body.codex-theme-v1:has(.console-shell) .task-sidebar.is-collapsed {
+  border-right: 0;
+  overflow: hidden;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-sidebar svg,
+body.codex-theme-v1:has(.console-shell) .console-header svg,
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell svg {
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-sidebar-brand {
+  min-height: 56px;
+  padding: 8px 12px 6px 22px;
+  border: 0;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-sidebar-brand-link {
+  gap: 0;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-workbench-name {
+  display: block;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-workbench-name strong {
+  color: #ededed;
+  font: 600 15px/1.1 var(--codex-font-ui);
+  letter-spacing: -0.02em;
+}
+
+/* Collapse toggle matches the header icon buttons (top-right). */
+body.codex-theme-v1:has(.console-shell) .task-sidebar-collapse {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  color: #a0a0a0;
+  background: transparent;
+  cursor: pointer;
+  transition: color 140ms ease, background-color 140ms ease;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-sidebar-collapse:hover {
+  color: #ffffff;
+  background: var(--codex-surface-hover);
+}
+
+body.codex-theme-v1:has(.console-shell) .task-sidebar-collapse svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Collapsed rail keeps only the expand control at the top. */
+body.codex-theme-v1:has(.console-shell) .task-rail-toggle {
+  width: 30px;
+  height: 30px;
+  margin: 0;
+  border-radius: 8px;
+  color: #a0a0a0;
+  background: transparent;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-rail-toggle:hover {
+  color: #ffffff;
+  background: var(--codex-surface-hover);
+}
+
+body.codex-theme-v1:has(.console-shell) .task-rail-toggle svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-sidebar-primary {
+  padding: 0 10px 4px;
+  display: grid;
+  gap: 2px;
+  border: 0;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-sidebar-primary > button,
+body.codex-theme-v1:has(.console-shell) .task-sidebar-search-control .command-center-trigger {
+  width: 100%;
+  min-height: 38px;
+  height: 38px;
+  padding: 0 12px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  justify-content: initial;
+  gap: 10px;
+  border: 0;
+  border-radius: 8px;
+  color: #d2d2d2;
+  background: transparent;
+  box-shadow: none;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  transition: color 140ms ease, background-color 140ms ease, transform 140ms ease;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-sidebar-primary > button:hover,
+body.codex-theme-v1:has(.console-shell) .task-sidebar-search-control .command-center-trigger:hover,
+body.codex-theme-v1:has(.console-shell) .task-sidebar-search-control .command-center-trigger[aria-expanded="true"] {
+  color: #ffffff;
+  background: var(--codex-surface-hover);
+}
+
+body.codex-theme-v1:has(.console-shell) .task-sidebar-primary > button:active,
+body.codex-theme-v1:has(.console-shell) .task-sidebar-search-control .command-center-trigger:active {
+  transform: scale(0.985);
+}
+
+body.codex-theme-v1:has(.console-shell) .task-sidebar-primary > button svg,
+body.codex-theme-v1:has(.console-shell) .task-sidebar-search-control .command-center-trigger svg {
+  width: 19px;
+  height: 19px;
+  color: currentColor;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-sidebar-mode {
+  padding: 0 10px 8px;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-sidebar-mode [data-workspace-navigation="expanded"] {
+  margin: 0;
+  gap: 2px;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-sidebar-mode a {
+  min-height: 38px;
+  padding: 0 12px;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 10px;
+  border-radius: 8px;
+  color: #d2d2d2;
+  background: transparent;
+  box-shadow: none;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-sidebar-mode a:hover {
+  color: #ffffff;
+  background: var(--codex-surface-hover);
+}
+
+body.codex-theme-v1:has(.console-shell) .task-sidebar-mode a svg {
+  width: 19px;
+  height: 19px;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-list-toolbar {
+  padding: 6px 0 2px;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-list-toolbar .task-list-heading {
+  min-height: 26px;
+  padding: 4px 10px 3px 22px;
+  color: #9a9a9a;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-list-heading-copy {
+  gap: 0;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-list-heading-copy > svg {
+  display: none;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-list-heading small {
+  display: none;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-list {
+  padding: 0 10px 14px;
+  scrollbar-color: #494949 transparent;
+}
+
+.task-project-group + .task-project-group {
+  margin-top: 6px;
+}
+
+.task-project-group.is-collapsed + .task-project-group {
+  margin-top: 2px;
+}
+
+.task-project-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.task-project-heading {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 30px;
+  padding: 4px 30px 4px 10px;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  border-radius: 7px;
+  color: #9a9a9a;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 140ms ease;
+}
+
+.task-project-heading:hover {
+  background: #2b2b2b;
+}
+
+.task-project-heading svg,
+.task-project-folder {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.task-project-heading svg.task-project-folder {
+  color: #8f8f8f;
+}
+
+.task-project-heading:hover svg.task-project-folder {
+  color: #b4b4b4;
+}
+
+.task-project-heading strong {
+  overflow: hidden;
+  color: #cfcfcf;
+  font-size: 13px;
+  font-weight: 550;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-project-add {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  color: #d0d0d0;
+  background: #363636;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity 120ms ease, color 120ms ease, background-color 120ms ease;
+}
+
+.task-project-group:hover .task-project-add,
+.task-project-add:focus-visible {
+  opacity: 1;
+}
+
+.task-project-add:hover {
+  color: #ffffff;
+  background: #454545;
+}
+
+.task-project-add:disabled {
+  display: none;
+}
+
+.task-project-add svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.task-project-items {
+  display: grid;
+  gap: 1px;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-list-row {
+  min-width: 0;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-list-item,
+body.codex-theme-v1:has(.console-shell) .task-list-item:hover,
+body.codex-theme-v1:has(.console-shell) .task-list-item.is-active {
+  position: relative;
+  min-height: 30px;
+  padding: 5px 6px 5px 35px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  box-shadow: none;
+  transition: color 140ms ease, background-color 140ms ease, transform 140ms ease;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-list-item:hover {
+  background: #2f2f2f;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-list-item:active {
+  transform: scale(0.99);
+}
+
+body.codex-theme-v1:has(.console-shell) .task-list-item.is-active {
+  background: #3a3a3a;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-list-item.is-active::before {
+  display: none;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-list-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: #c9c9c9;
+  font-size: 14px;
+  font-weight: 450;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-list-item:hover .task-list-title,
+body.codex-theme-v1:has(.console-shell) .task-list-item.is-active .task-list-title {
+  color: #efefef;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-list-meta {
+  flex: 0 0 auto;
+  margin-left: auto;
+  gap: 7px;
+  color: #7d7d7d;
+  font: 11px/1.2 var(--codex-font-ui);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transition: opacity 120ms ease;
+}
+
+/* On hover the archive control takes over the row's right edge, so the time
+   (and status dot) step aside instead of overlapping the archive button. */
+body.codex-theme-v1:has(.console-shell) .task-list-row:hover .task-list-meta {
+  opacity: 0;
+}
+
+/* Active tasks show a small status dot to the left of the title; finished
+   tasks carry no dot except a blue unread marker. Text label stays hidden. */
+body.codex-theme-v1:has(.console-shell) .task-status {
+  position: absolute;
+  left: 22px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  min-width: 6px;
+  margin: 0;
+  border-radius: 50%;
+  background: #8f8f8f;
+  font-size: 0;
+  transform: translateY(-50%);
+}
+
+body.codex-theme-v1:has(.console-shell) .task-status.status-running {
+  background: #ececec;
+  animation: task-status-pulse 1.6s ease-in-out infinite;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-status.status-queued {
+  background: #8f8f8f;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-status.status-waiting_approval {
+  background: #cf9f5e;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-status.status-cancelling {
+  background: #9a9a9a;
+}
+
+/* Blue dot marks a completed task the user has not opened yet. */
+body.codex-theme-v1:has(.console-shell) .task-status.status-unread {
+  background: #4c9aff;
+}
+
+@keyframes task-status-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* Archive only appears while hovering the task row (or on keyboard focus). */
+body.codex-theme-v1:has(.console-shell) .task-list-archive {
+  top: 50%;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: #a0a0a0;
+  background: transparent;
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity 120ms ease, color 120ms ease, background-color 120ms ease;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-list-row:hover .task-list-archive,
+body.codex-theme-v1:has(.console-shell) .task-list-archive:focus-visible {
+  opacity: 1;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-list-archive:hover {
+  color: #ffffff;
+  background: #3b3b3b;
+}
+
+/* Account footer blends into the sidebar instead of reading as a separate
+   card: no own background, compact row, neutral avatar. */
+body.codex-theme-v1:has(.console-shell) .task-sidebar-account,
+body.codex-theme-v1:has(.console-shell) .task-rail-account {
+  padding: 6px 8px 8px;
+  border-top: 1px solid #2e2e2e;
+  background: transparent;
+}
+
+body.codex-theme-v1:has(.console-shell) .account-trigger {
+  min-height: 38px;
+  padding: 0 8px;
+  gap: 8px;
+  border-radius: 8px;
+  color: #d6d6d6;
+  background: transparent;
+}
+
+body.codex-theme-v1:has(.console-shell) .account-trigger:hover,
+body.codex-theme-v1:has(.console-shell) .account-trigger[aria-expanded="true"] {
+  background: var(--codex-surface-hover);
+}
+
+body.codex-theme-v1:has(.console-shell) .account-trigger-avatar {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  border: 0;
+  color: #e8e8e8;
+  background: #3a3a3a;
+  box-shadow: none;
+  font-size: 10.5px;
+}
+
+body.codex-theme-v1:has(.console-shell) .account-trigger-copy {
+  gap: 0;
+}
+
+body.codex-theme-v1:has(.console-shell) .account-trigger-copy strong {
+  color: #e4e4e4;
+  font-size: 12.5px;
+  font-weight: 550;
+  line-height: 1.25;
+}
+
+/* The role line under the user name is not part of the workbench identity. */
+body.codex-theme-v1:has(.console-shell) .account-trigger-copy small {
+  display: none;
+}
+
+body.codex-theme-v1:has(.console-shell) .account-trigger-chevron {
+  color: #8a8a8a;
+  opacity: 1;
+}
+
+body.codex-theme-v1:has(.console-shell) .account-popover,
+body.codex-theme-v1:has(.console-shell) .command-center-dialog {
+  border-color: #444444;
+  color: var(--codex-ink-soft);
+  background: #252525;
+  box-shadow: 0 24px 80px rgb(0 0 0 / 46%);
+}
+
+body.codex-theme-v1:has(.console-shell) .command-center-search {
+  border-bottom: 0;
+  background: #1d1d1d;
+}
+
+/* Header: readable project and task context without tool-like chrome. */
+
+body.codex-theme-v1:has(.console-shell) .console-header {
+  z-index: 60;
+  min-height: 48px;
+  height: 48px;
+  padding: 6px 16px 6px 18px;
+  border-bottom: 1px solid #292929;
+  background: var(--codex-header-bg);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.task-context-bar {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.task-context-title {
+  max-width: min(34vw, 420px);
+  overflow: hidden;
+  color: #efefef;
+  font-size: 14px;
+  font-weight: 580;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-context-chip {
+  min-width: 0;
+  height: 30px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid #303030;
+  border-radius: 7px;
+  color: #999999;
+  background: #181818;
+  font: 12px/1 var(--codex-font-ui);
+  white-space: nowrap;
+}
+
+.task-context-chip svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+}
+
+.task-context-project {
+  max-width: min(24vw, 300px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.task-context-project svg {
+  color: #8f8f8f;
+}
+
+.task-context-version {
+  max-width: 190px;
+  color: #969696;
+}
+
+.header-leading {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.header-utilities {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #8c8c8c;
+}
+
+.header-icon-button {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  color: #a0a0a0;
+  background: transparent;
+  cursor: pointer;
+  transition: color 140ms ease, background-color 140ms ease;
+}
+
+.header-icon-button:hover,
+.header-icon-button[aria-expanded="true"],
+.header-icon-button:focus-visible {
+  color: #ffffff;
+  background: var(--codex-surface-hover);
+}
+
+.header-icon-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.header-help {
+  position: relative;
+}
+
+.help-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 90;
+  width: 250px;
+  padding: 6px;
+  border: 1px solid #444444;
+  border-radius: 12px;
+  background: #252525;
+  box-shadow: 0 24px 80px rgb(0 0 0 / 46%);
+}
+
+.help-popover-env {
+  padding: 8px 10px 10px;
+  display: grid;
+  gap: 4px;
+  border-bottom: 1px solid #3a3a3a;
+}
+
+.help-popover-env small {
+  color: #8a8a8a;
+  font-size: 11px;
+}
+
+.help-popover-env code {
+  overflow: hidden;
+  color: #d6d6d6;
+  font: 12px/1.3 var(--codex-font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.help-popover-link {
+  margin-top: 6px;
+  min-height: 34px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border-radius: 8px;
+  color: #d2d2d2;
+  font-size: 13px;
+  text-decoration: none;
+  transition: color 140ms ease, background-color 140ms ease;
+}
+
+.help-popover-link:hover {
+  color: #ffffff;
+  background: var(--codex-surface-hover);
+}
+
+.help-popover-link svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Conversation and composer: Codex typography, ZCode empty-state geometry. */
+
+body.codex-theme-v1:has(.console-shell) .chat-stage,
+body.codex-theme-v1:has(.console-shell) .aui-thread-root,
+body.codex-theme-v1:has(.console-shell) .aui-thread-viewport {
+  background: var(--codex-thread-bg);
+}
+
+body.codex-theme-v1:has(.console-shell) .aui-thread-root {
+  --aui-thread-max-width: 800px;
+}
+
+body.codex-theme-v1:has(.console-shell) .aui-thread-root .aui-thread-viewport {
+  padding-inline: clamp(24px, 5vw, 72px);
+  scroll-behavior: auto;
+  scrollbar-color: #444444 transparent;
+}
+
+body.codex-theme-v1:has(.console-shell) .aui-thread-viewport > :first-child {
+  padding-top: 30px;
+}
+
+body.codex-theme-v1:has(.console-shell) .aui-assistant-message-content,
+body.codex-theme-v1:has(.console-shell) .aui-md {
+  color: #d1d1d1;
+  font-size: 14px;
+  line-height: 1.72;
+}
+
+body.codex-theme-v1:has(.console-shell) .aui-md h1,
+body.codex-theme-v1:has(.console-shell) .aui-md h2,
+body.codex-theme-v1:has(.console-shell) .aui-md h3 {
+  color: #f1f1f1;
+  letter-spacing: -0.02em;
+}
+
+body.codex-theme-v1:has(.console-shell) .aui-user-message-content {
+  border-color: #3a3a3a;
+  color: #ededed;
+  background: #242424;
+  box-shadow: none;
+}
+
+body.codex-theme-v1:has(.console-shell) .aui-thread-viewport-footer {
+  width: min(800px, 100%);
+  max-width: 800px;
+  margin-top: 0;
+  padding: 2px 0 10px;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell {
+  width: 100%;
+  max-width: 800px;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-root,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-root {
+  min-height: 88px;
+  padding: 6px 12px 8px;
+  align-items: flex-end;
+  border: 1px solid #383838;
+  border-radius: 16px;
+  color: #ededed;
+  background: #1f1f1f;
+  box-shadow: 0 14px 44px rgb(0 0 0 / 20%);
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-root:focus-within,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-root:focus-within {
+  border-color: #616161;
+  box-shadow: 0 16px 48px rgb(0 0 0 / 24%);
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell[data-run-locked="true"] .aui-composer-root,
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell[data-run-locked="true"] .aui-composer-root:focus-within {
+  border-color: #333333;
+  background: #1b1b1b;
+  box-shadow: none;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-input {
+  min-height: 48px;
+  padding: 2px 8px 10px;
+  border: 0;
+  outline: none;
+  color: #efefef;
+  background: transparent;
+  box-shadow: none;
+  caret-color: #e8e8e8;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-input:focus,
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-input:not(:placeholder-shown) {
+  border: 0;
+  outline: none;
+  background: transparent;
+  box-shadow: none;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-input::placeholder {
+  color: #767676;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .composer-toolbar {
+  min-height: 36px;
+  gap: 4px;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-attach {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  min-height: 34px;
+  flex-basis: 34px;
+  border-radius: 8px;
+  color: #b0b0b0;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-attach:hover {
+  color: #ffffff;
+  background: #333333;
+}
+
+/* Attachment uses one plus glyph, matching the rest of the composer icons. */
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-attach .aui-composer-attach-icon {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-send,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-send {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  min-height: 34px;
+  flex: 0 0 34px;
+  align-self: center;
+  border-radius: 999px;
+  color: #141414;
+  background: #ececec;
+  box-shadow: none;
+}
+
+/* Codex-style send affordance: a plain upward arrow on the light disc. */
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-send .aui-composer-send-icon {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-send:hover {
+  background: #ffffff;
+  transform: translateY(-1px);
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-cancel {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  min-height: 34px;
+  flex: 0 0 34px;
+  align-self: center;
+  border: 0;
+  border-radius: 999px;
+  color: #141414;
+  background: #ececec;
+  box-shadow: none;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-cancel:hover {
+  border-color: transparent;
+  color: #141414;
+  background: #ffffff;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-cancel:focus-visible {
+  outline: 2px solid #8a8a8a;
+  outline-offset: 2px;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .task-agent-switcher {
+  width: auto;
+  min-width: 0;
+  max-width: min(330px, 34vw);
+  margin: 0 2px;
+  flex: 0 1 auto;
+}
+
+/* The agent picker sits inside the composer surface, so it stays a borderless
+   ghost control: no nested boxes, only a hover tint. */
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .task-agent-switcher-trigger {
+  min-height: 34px;
+  padding: 4px 24px 4px 7px;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 7px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .task-agent-switcher-trigger:hover,
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .task-agent-switcher-trigger:focus-visible,
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .task-agent-switcher[data-open] .task-agent-switcher-trigger {
+  border: 0;
+  background: #2f2f2f;
+  box-shadow: none;
+}
+
+.harness-composer-shell .task-agent-switcher-mark {
+  width: 20px;
+  height: 20px;
+  color: #a8a8a8;
+  background: transparent;
+}
+
+.harness-composer-shell .task-agent-switcher-mark i {
+  width: 8px;
+  height: 8px;
+  border-color: currentColor;
+}
+
+.harness-composer-shell .task-agent-switcher-copy small {
+  display: none;
+}
+
+.harness-composer-shell .task-agent-switcher-copy strong {
+  color: #c4c4c4;
+  font-size: 12px;
+  font-weight: 520;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .task-agent-switcher-chevron {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  width: 12px;
+  height: 12px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  color: #8a8a8a;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .task-agent-switcher-chevron svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .task-agent-switcher[data-open] .task-agent-switcher-chevron {
+  transform: translateY(-50%) rotate(180deg);
+}
+
+.harness-composer-shell .task-agent-menu {
+  top: auto;
+  bottom: calc(100% + 10px);
+  left: 0;
+  border-color: #444444;
+  background: #252525;
+}
+
+/* Dropdowns use one border only: their search fields sit borderless on a
+   subtle field background instead of nesting another outline. */
+body.codex-theme-v1:has(.console-shell) .task-agent-search {
+  border: 0;
+  background: #1d1d1d;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-agent-search:focus-within {
+  border: 0;
+  box-shadow: none;
+  background: #1f1f1f;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-model-control {
+  margin-left: auto;
+  margin-right: 2px;
+  color: #9a9a9a;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-model-control label {
+  min-height: 34px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-model-control label:hover {
+  background: transparent;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-model-control select {
+  height: 34px;
+  max-width: 250px;
+  padding: 0 20px 0 10px;
+  border: 0;
+  border-radius: 0;
+  color: #a9a9a9;
+  background: transparent;
+  box-shadow: none;
+  font-size: 12px;
+  font-weight: 480;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-model-control[data-overridden="true"] select,
+body.codex-theme-v1:has(.console-shell) .task-model-control select:hover:not(:disabled),
+body.codex-theme-v1:has(.console-shell) .task-model-control select:focus-visible {
+  color: #e2e2e2;
+  background: transparent;
+  box-shadow: none;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-model-control select:focus-visible {
+  outline: none;
+}
+
+/* The model picker is a plain text control next to the agent picker: no
+   stacked box glyphs or status divider inside the composer. */
+body.codex-theme-v1:has(.console-shell) .task-model-control-mark {
+  display: none;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-model-control-chevron {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  width: 12px;
+  height: 12px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  color: #8a8a8a;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-model-control-chevron svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-model-control-status {
+  display: none;
+}
+
+body.codex-theme-v1:has(.console-shell) .aui-thread-scroll-to-bottom {
+  border-color: #3c3c3c;
+  color: #a0a0a0;
+  background: #242424;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 22%);
+}
+
+/* The welcome component only exists for an empty task. Group the headline and
+   composer in the optical center, as in ZCode, without adding suggestion chips. */
+
+body.codex-theme-v1:has(.console-shell) .aui-thread-viewport:has(.user-task-welcome) {
+  justify-content: center;
+  padding-top: 0;
+  padding-bottom: clamp(72px, 14vh, 168px);
+}
+
+body.codex-theme-v1:has(.console-shell) .aui-thread-viewport:has(.user-task-welcome) > :first-child {
+  padding-top: 0;
+}
+
+body.codex-theme-v1:has(.console-shell) .user-task-welcome {
+  max-width: 760px;
+  padding: 0 0 28px;
+  flex-grow: 0;
+  gap: 0;
+}
+
+body.codex-theme-v1:has(.console-shell) .user-task-hero {
+  flex-grow: 0;
+}
+
+body.codex-theme-v1:has(.console-shell) .user-task-kicker,
+body.codex-theme-v1:has(.console-shell) .user-task-intro > p:last-child {
+  display: none;
+}
+
+body.codex-theme-v1:has(.console-shell) .user-task-intro h1 {
+  max-width: 760px;
+  margin: 0;
+  color: #d8d8d8;
+  font-size: clamp(26px, 2.4vw, 36px);
+  font-weight: 610;
+  line-height: 1.15;
+  letter-spacing: -0.035em;
+  text-align: center;
+  text-wrap: balance;
+}
+
+body.codex-theme-v1:has(.console-shell) .aui-thread-viewport:has(.user-task-welcome) .aui-thread-viewport-footer {
+  position: relative;
+  bottom: auto;
+  width: min(760px, 100%);
+  max-width: 760px;
+  margin: 0;
+  padding: 0;
+}
+
+body.codex-theme-v1:has(.console-shell) .aui-thread-viewport:has(.user-task-welcome) .harness-composer-shell {
+  max-width: 760px;
+}
+
+@media (max-width: 820px) {
+  body.codex-theme-v1:has(.console-shell) .console-shell {
+    min-height: 0;
+  }
+
+  body.codex-theme-v1:has(.console-shell) .task-sidebar[data-task-sidebar-overlay="true"] {
+    width: min(264px, calc(100vw - 36px));
+  }
+
+  body.codex-theme-v1:has(.console-shell) .task-sidebar-scrim {
+    background: rgb(0 0 0 / 58%);
+  }
+}
+
+@media (max-width: 680px) {
+  .task-context-project,
+  .task-context-version {
+    display: none;
+  }
+
+  .task-context-title {
+    max-width: 52vw;
+  }
+
+  .header-icon-button {
+    width: 34px;
+    height: 34px;
+  }
+
+  .help-popover {
+    width: min(250px, calc(100vw - 24px));
+  }
+
+  body.codex-theme-v1:has(.console-shell) .aui-thread-root .aui-thread-viewport {
+    padding-inline: 14px;
+  }
+
+  body.codex-theme-v1:has(.console-shell) .user-task-intro h1 {
+    font-size: 27px;
+  }
+
+  .harness-composer-shell .task-agent-switcher {
+    width: 34px;
+    min-width: 34px;
+  }
+
+  .harness-composer-shell .task-agent-switcher-trigger {
+    width: 34px;
+    padding: 7px;
+    grid-template-columns: 20px;
+  }
+
+  .harness-composer-shell .task-agent-switcher-copy,
+  .harness-composer-shell .task-agent-switcher-chevron {
+    display: none;
+  }
+
+  .harness-composer-shell .task-agent-menu {
+    position: fixed;
+    top: auto;
+    right: 10px;
+    bottom: 94px;
+    left: 10px;
+    width: auto;
+  }
+
+  body.codex-theme-v1:has(.console-shell) .task-model-control select {
+    max-width: 42vw;
+  }
+}

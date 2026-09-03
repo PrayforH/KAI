@@ -5,7 +5,6 @@ import { describe, expect, it } from "vitest";
 const errorPage = readFileSync(join(process.cwd(), "src/app/error.tsx"), "utf8");
 const notFoundPage = readFileSync(join(process.cwd(), "src/app/not-found.tsx"), "utf8");
 const styles = readFileSync(join(process.cwd(), "src/app/styles.css"), "utf8");
-const spacesPage = readFileSync(join(process.cwd(), "src/app/studio/spaces/page.tsx"), "utf8");
 const knowledgePage = readFileSync(join(process.cwd(), "src/app/studio/knowledge/page.tsx"), "utf8");
 
 describe("release recovery surfaces", () => {
@@ -25,8 +24,6 @@ describe("release recovery surfaces", () => {
   });
 
   it("lets the root title template add the brand exactly once", () => {
-    expect(spacesPage).toContain('title: "协作空间"');
-    expect(spacesPage).not.toContain("协作空间 · Agent Studio");
     expect(knowledgePage).toContain('title: "知识库"');
     expect(knowledgePage).not.toContain("知识库 · Agent Studio");
   });

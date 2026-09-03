@@ -20,9 +20,6 @@ import { loadTasks, type TaskSummary } from "../lib/task-history";
 
 const actionDestinations: Partial<Record<ProductivityActionId, string>> = {
   "studio-agents": "/studio/agents",
-  "studio-capabilities": "/studio/capabilities",
-  "studio-knowledge": "/studio/knowledge",
-  "studio-spaces": "/studio/spaces",
 };
 
 const groupLabels: Record<ProductivityCommandResult["kind"], string> = {
@@ -209,11 +206,10 @@ export function ProductivityCommandCenter({
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? "productivity-command-center" : undefined}
-        title="搜索任务、智能体和工作入口（Command 或 Ctrl + K）"
+        title="搜索任务和智能体"
       >
         <SearchGlyph />
-        <span>搜索与命令</span>
-        <kbd>⌘K</kbd>
+        <span>搜索</span>
       </button>
       {open
         ? createPortal(
@@ -231,7 +227,7 @@ export function ProductivityCommandCenter({
                 aria-modal="true"
                 aria-labelledby="command-center-title"
               >
-                <h2 id="command-center-title" className="command-center-title">搜索与命令</h2>
+                <h2 id="command-center-title" className="command-center-title">搜索</h2>
                 <label className="command-center-search">
                   <SearchGlyph />
                   <input
@@ -239,8 +235,8 @@ export function ProductivityCommandCenter({
                     type="search"
                     role="combobox"
                     value={query}
-                    placeholder="搜索任务、智能体或工作入口"
-                    aria-label="搜索任务、智能体或工作入口"
+                    placeholder="搜索任务或智能体"
+                    aria-label="搜索任务或智能体"
                     aria-controls="command-center-results"
                     aria-expanded="true"
                     aria-activedescendant={
@@ -254,7 +250,6 @@ export function ProductivityCommandCenter({
                     }}
                     onKeyDown={onInputKeyDown}
                   />
-                  <kbd>Esc</kbd>
                 </label>
                 <div
                   id="command-center-results"
@@ -299,13 +294,12 @@ export function ProductivityCommandCenter({
                   {results.length === 0 ? (
                     <div className="command-center-empty">
                       <strong>没有匹配结果</strong>
-                      <span>试试任务标题、智能体名称、MCP 或协作空间。</span>
+                      <span>试试任务标题或智能体名称。</span>
                     </div>
                   ) : null}
                 </div>
                 <footer className="command-center-footer">
                   <span>{loading ? "正在同步最近任务…" : error || `${results.length} 个可用结果`}</span>
-                  <span><kbd>↑↓</kbd> 选择 <kbd>↵</kbd> 打开</span>
                 </footer>
               </section>
             </div>,

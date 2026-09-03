@@ -21,7 +21,6 @@ export const workspaceItems: ReadonlyArray<{
   { id: "files", href: "/studio/files", label: "我的文件" },
   { id: "capabilities", href: "/studio/capabilities", label: "MCP 能力" },
   { id: "knowledge", href: "/studio/knowledge", label: "知识库" },
-  { id: "spaces", href: "/studio/spaces", label: "协作空间" },
 ];
 
 export function WorkspaceIcon({ workspace }: { workspace: WorkspaceId }) {
@@ -112,10 +111,12 @@ export function WorkspaceNavigation({
   active,
   collapsed = false,
   visible,
+  labelOverrides,
 }: {
   active: WorkspaceId;
   collapsed?: boolean;
   visible?: readonly WorkspaceId[];
+  labelOverrides?: Partial<Record<WorkspaceId, string>>;
 }) {
   const items = visible
     ? workspaceItems.filter((workspace) => visible.includes(workspace.id))
@@ -123,16 +124,17 @@ export function WorkspaceNavigation({
 
   function renderWorkspaceLink(workspace: (typeof workspaceItems)[number]) {
     const current = workspace.id === active;
+    const label = labelOverrides?.[workspace.id] ?? workspace.label;
     return (
       <Link
         className={current ? styles.navigationActive : styles.navigationLink}
         href={workspace.href}
         aria-current={current ? "page" : undefined}
-        title={collapsed ? workspace.label : undefined}
+        title={collapsed ? label : undefined}
         key={workspace.id}
       >
         <WorkspaceIcon workspace={workspace.id} />
-        {!collapsed && <span>{workspace.label}</span>}
+        {!collapsed && <span>{label}</span>}
       </Link>
     );
   }

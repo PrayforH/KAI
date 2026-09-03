@@ -1,4 +1,4 @@
-export const PRODUCT_NAME = "AXIS";
+export const PRODUCT_NAME = "KAI WORKBENCH";
 export const PRODUCT_DESCRIPTOR = "AGENT OPERATIONS";
 export const PRODUCT_DESCRIPTION = "面向组织的智能体任务、能力与运行治理平台";
 

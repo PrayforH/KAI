@@ -171,7 +171,11 @@ export function TaskAgentSwitcher({
               : (loading ? "正在读取…" : "暂无可用版本")}
           </strong>
         </span>
-        <span className="task-agent-switcher-chevron" aria-hidden="true" />
+        <span className="task-agent-switcher-chevron" aria-hidden="true">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
+          </svg>
+        </span>
       </button>
 
       {open && (
@@ -225,7 +229,6 @@ export function TaskAgentSwitcher({
                             <strong>{group.displayName}</strong>
                             <span>
                               {group.name} · {group.domain}
-                              {preferred.scope === "team" ? ` · ${preferred.spaceName ?? "团队空间"}` : " · 个人"}
                             </span>
                           </span>
                           {group.agents.length === 1 && (
