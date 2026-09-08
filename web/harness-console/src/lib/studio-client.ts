@@ -375,17 +375,45 @@ export type StudioKnowledgeSource = {
   updatedAt: string;
 };
 
+export type KnowledgeBaseType = "rag" | "wiki" | "hybrid";
+export type KnowledgeBaseEngine = "legacy" | "weknora";
+
 export type StudioKnowledgeBase = {
   tenantId: string;
   reference: string;
   displayName: string;
   description: string;
   sourceReferences: string[];
+  kbType: KnowledgeBaseType;
+  engine: KnowledgeBaseEngine;
+  engineRef: string;
   revision: number;
   createdBy: string;
   updatedBy: string;
   createdAt: string;
   updatedAt: string;
+};
+
+export type StudioKnowledgeDocumentStatus = {
+  tenantId: string;
+  sourceReference: string;
+  documentId: string;
+  title: string;
+  parseStatus: string;
+  summaryStatus: string;
+  fileType: string;
+  fileSize: number;
+  enabled: boolean;
+};
+
+export type StudioKnowledgeDocumentChunk = {
+  tenantId: string;
+  sourceReference: string;
+  documentId: string;
+  chunkId: string;
+  title: string;
+  content: string;
+  seq: number;
 };
 
 export type StudioKnowledgeSync = {
@@ -1122,6 +1150,18 @@ async function errorFrom(response: Response): Promise<StudioApiError> {
   return new StudioApiError(response.status, code, message);
 }
 
+async function requestForm<T>(path: string, form: FormData): Promise<T> {
+  const response = requireAuthenticatedResponse(
+    await fetch(`/api/studio/${path.replace(/^\//, "")}`, {
+      method: "POST",
+      cache: "no-store",
+      body: form,
+    }),
+  );
+  if (!response.ok) throw await errorFrom(response);
+  return response.json() as Promise<T>;
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = requireAuthenticatedResponse(
     await fetch(`/api/studio/${path.replace(/^\//, "")}`, {
@@ -1512,15 +1552,60 @@ export const studioClient = {
     ),
   listKnowledgeBases: () =>
     request<StudioKnowledgeBase[]>("knowledge/bases"),
+  getKnowledgeBase: (reference: string) =>
+    request<StudioKnowledgeBase>(
+      `knowledge/bases/${encodeURIComponent(reference)}`,
+    ),
   createKnowledgeBase: (
     values: Pick<
       StudioKnowledgeBase,
       "reference" | "displayName" | "description" | "sourceReferences"
-    >,
+    > & {
+      kbType?: KnowledgeBaseType;
+      engine?: KnowledgeBaseEngine;
+    },
   ) => request<StudioKnowledgeBase>("knowledge/bases", {
     method: "POST",
     body: JSON.stringify(values),
   }),
+  listKnowledgeDocuments: (baseReference: string) =>
+    request<StudioKnowledgeDocumentStatus[]>(
+      `knowledge/sources/${encodeURIComponent(baseReference)}/documents`,
+    ),
+  createKnowledgeDocument: (
+    baseReference: string,
+    body: { title: string; content: string },
+  ) =>
+    request<StudioKnowledgeDocumentStatus>(
+      `knowledge/sources/${encodeURIComponent(baseReference)}/documents`,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+  uploadKnowledgeDocument: (baseReference: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return requestForm<StudioKnowledgeDocumentStatus>(
+      `knowledge/sources/${encodeURIComponent(baseReference)}/documents/upload`,
+      form,
+    );
+  },
+  deleteKnowledgeDocument: (baseReference: string, documentId: string) =>
+    request<void>(
+      `knowledge/sources/${encodeURIComponent(baseReference)}/documents/${encodeURIComponent(documentId)}`,
+      { method: "DELETE" },
+    ),
+  reparseKnowledgeDocument: (baseReference: string, documentId: string) =>
+    request<StudioKnowledgeDocumentStatus>(
+      `knowledge/sources/${encodeURIComponent(baseReference)}/documents/${encodeURIComponent(documentId)}/reparse`,
+      { method: "POST" },
+    ),
+  listKnowledgeDocumentChunks: (baseReference: string, documentId: string) =>
+    request<StudioKnowledgeDocumentChunk[]>(
+      `knowledge/sources/${encodeURIComponent(baseReference)}/documents/${encodeURIComponent(documentId)}/chunks`,
+    ),
+  getKnowledgeDocumentChunk: (baseReference: string, chunkId: string) =>
+    request<StudioKnowledgeDocumentChunk>(
+      `knowledge/sources/${encodeURIComponent(baseReference)}/chunks/${encodeURIComponent(chunkId)}`,
+    ),
   replaceKnowledgeBase: (
     value: StudioKnowledgeBase,
     update: Pick<
