@@ -237,7 +237,14 @@ class KnowledgeSource(KnowledgeModel):
     def config_matches_kind(self) -> KnowledgeSource:
         if self.kind.value != self.config.type:
             raise ValueError("knowledge source kind does not match connector config")
-        if self.health is KnowledgeSourceHealth.HEALTHY and self.active_snapshot_id is None:
+        # Engine-backed sources keep documents and chunks inside the remote
+        # engine, so a healthy WeKnora source legitimately has no local
+        # snapshot. Re-validating the stored payload would otherwise reject it.
+        if (
+            self.kind is not KnowledgeSourceKind.WEKNORA
+            and self.health is KnowledgeSourceHealth.HEALTHY
+            and self.active_snapshot_id is None
+        ):
             raise ValueError("healthy knowledge source requires an active snapshot")
         return self
 

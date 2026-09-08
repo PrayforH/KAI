@@ -454,3 +454,41 @@ async def test_member_batch_reports_unresolved_emails() -> None:
     )
     assert len(result.members) == 1
     assert result.unresolved == ("ghost@axis.test",)
+
+
+def test_healthy_weknora_source_round_trips_without_local_snapshot() -> None:
+    """Postgres re-validates stored payloads; a healthy engine source has no
+    local snapshot, so the model must accept that shape."""
+    from harness.knowledge.models import KnowledgeSource
+
+    payload = {
+        "tenantId": "local",
+        "reference": "cases",
+        "displayName": "案例库",
+        "description": "",
+        "kind": "weknora",
+        "config": {"type": "weknora", "weknoraBaseId": "remote-1"},
+        "acl": {"visibility": "restricted", "userIds": ["u1"], "workloadIds": []},
+        "revision": 2,
+        "health": "healthy",
+        "activeSnapshotId": None,
+        "checkpoint": {},
+        "lastSyncId": "sync-1",
+        "lastSyncAt": "2026-09-08T15:39:37Z",
+        "lastError": None,
+        "createdBy": "u1",
+        "updatedBy": "u1",
+        "createdAt": "2026-09-08T15:39:00Z",
+        "updatedAt": "2026-09-08T15:39:37Z",
+    }
+    source = KnowledgeSource.model_validate(payload)
+    assert source.health.value == "healthy"
+    assert source.active_snapshot_id is None
+
+    legacy = dict(payload, kind="file")
+    legacy["config"] = {
+        "type": "file",
+        "documents": [{"documentId": "d1", "title": "t", "content": "c"}],
+    }
+    with pytest.raises(ValueError, match="requires an active snapshot"):
+        KnowledgeSource.model_validate(legacy)
