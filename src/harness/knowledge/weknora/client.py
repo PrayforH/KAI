@@ -142,18 +142,25 @@ class WeknoraClient:
         name: str,
         description: str,
         indexing_strategy: dict[str, bool],
+        embedding_model: str = "",
+        summary_model_id: str = "",
+        wiki_config: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        payload = await self.post_data(
-            "/knowledge-bases",
-            json={
-                "name": name,
-                "description": description,
-                "config": {
-                    "indexing_strategy": indexing_strategy,
-                    "embedding_model_id": self._settings.embedding_model,
-                },
-            },
-        )
+        body: dict[str, Any] = {
+            "name": name,
+            "description": description,
+            # WeKnora binds the create request flat (not nested under "config");
+            # a nested embedding_model_id is silently dropped, which leaves the
+            # base without an embedding model and stalls document parsing.
+            "indexing_strategy": indexing_strategy,
+        }
+        if embedding_model:
+            body["embedding_model_id"] = embedding_model
+        if summary_model_id:
+            body["summary_model_id"] = summary_model_id
+        if wiki_config:
+            body["wiki_config"] = wiki_config
+        payload = await self.post_data("/knowledge-bases", json=body)
         if not isinstance(payload, dict) or not cast(dict[str, Any], payload).get("id"):
             raise WeknoraError("weknora knowledge base creation returned no id")
         return cast(dict[str, Any], payload)
@@ -218,7 +225,9 @@ class WeknoraClient:
     ) -> dict[str, Any]:
         payload = await self.post_data(
             f"/knowledge-bases/{base_id}/knowledge/manual",
-            json={"title": title, "content": content},
+            # WeKnora keeps manual documents as drafts unless published; a draft
+            # is never parsed, so it would never yield chunks or citations.
+            json={"title": title, "content": content, "status": "publish"},
         )
         if not isinstance(payload, dict) or not cast(dict[str, Any], payload).get("id"):
             raise WeknoraError("weknora manual document creation returned no id")

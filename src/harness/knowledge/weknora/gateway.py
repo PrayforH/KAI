@@ -49,12 +49,27 @@ class WeknoraKnowledgeEngine:
             raise KnowledgeEngineError(f"unsupported knowledge base type: {kb_type}")
         return {name: True for name in switches}
 
+    def wiki_config(self, kb_type: str) -> dict[str, Any] | None:
+        """Wiki page synthesis config; required for WeKnora to generate pages."""
+        strategy = self._settings.kb_type_strategies.get(kb_type)
+        if strategy is None or "wiki_enabled" not in strategy:
+            return None
+        if not self._settings.wiki_synthesis_model_id:
+            return None
+        return {
+            "synthesis_model_id": self._settings.wiki_synthesis_model_id,
+            "max_pages_per_ingest": self._settings.wiki_max_pages_per_ingest,
+        }
+
     async def create_base(self, *, name: str, description: str, kb_type: str) -> str:
         try:
             payload = await self._client.create_knowledge_base(
                 name=name,
                 description=description,
                 indexing_strategy=self.indexing_strategy(kb_type),
+                embedding_model=self._settings.embedding_model,
+                summary_model_id=self._settings.summary_model_id,
+                wiki_config=self.wiki_config(kb_type),
             )
         except WeknoraError as error:
             raise KnowledgeEngineError(f"weknora create base failed: {error}") from error

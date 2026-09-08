@@ -558,6 +558,8 @@ def build_production_container(
         email=settings.weknora_email,
         password=settings.weknora_password,
         embedding_model=settings.weknora_embedding_model,
+        summary_model_id=settings.weknora_summary_model_id,
+        wiki_synthesis_model_id=settings.weknora_wiki_synthesis_model_id,
     )
     weknora_engine = WeknoraKnowledgeEngine(weknora_settings) if weknora_settings.enabled else None
     knowledge = KnowledgeService(

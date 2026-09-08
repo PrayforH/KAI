@@ -169,7 +169,15 @@ async def test_gateway_create_base_maps_kb_type_strategy() -> None:
         )
 
     client = make_client(handler)
-    engine = WeknoraKnowledgeEngine(WeknoraSettings(base_url="http://weknora.test"), client)
+    engine = WeknoraKnowledgeEngine(
+        WeknoraSettings(
+            base_url="http://weknora.test",
+            embedding_model="builtin-bge-m3-v2",
+            summary_model_id="summary-1",
+            wiki_synthesis_model_id="wiki-1",
+        ),
+        client,
+    )
     try:
         base_id = await engine.create_base(
             name="混合库",
@@ -181,13 +189,74 @@ async def test_gateway_create_base_maps_kb_type_strategy() -> None:
     finally:
         await engine.aclose()
     assert base_id == "kb-new"
-    strategy = bodies[0]["config"]["indexing_strategy"]
-    assert strategy == {
+    body = bodies[0]
+    # WeKnora binds the create request flat; nesting under "config" silently
+    # drops embedding_model_id and leaves the base unable to parse documents.
+    assert "config" not in body
+    assert body["embedding_model_id"] == "builtin-bge-m3-v2"
+    assert body["indexing_strategy"] == {
         "vector_enabled": True,
         "keyword_enabled": True,
         "wiki_enabled": True,
         "graph_enabled": True,
     }
+    # Wiki page synthesis needs an explicit model, otherwise WeKnora creates the
+    # base but never generates any wiki pages.
+    assert body["summary_model_id"] == "summary-1"
+    assert body["wiki_config"] == {
+        "synthesis_model_id": "wiki-1",
+        "max_pages_per_ingest": 12,
+    }
+
+
+@pytest.mark.asyncio
+async def test_gateway_rag_base_omits_wiki_config() -> None:
+    bodies: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/auth/login":
+            return login_response()
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json={"success": True, "data": {"id": "kb-rag"}})
+
+    client = make_client(handler)
+    engine = WeknoraKnowledgeEngine(
+        WeknoraSettings(
+            base_url="http://weknora.test",
+            wiki_synthesis_model_id="wiki-1",
+        ),
+        client,
+    )
+    try:
+        await engine.create_base(name="RAG 库", description="", kb_type="rag")
+    finally:
+        await engine.aclose()
+    body = bodies[0]
+    assert "wiki_config" not in body
+    assert body["indexing_strategy"] == {
+        "vector_enabled": True,
+        "keyword_enabled": True,
+    }
+
+
+@pytest.mark.asyncio
+async def test_gateway_manual_document_publishes_to_trigger_parsing() -> None:
+    bodies: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/auth/login":
+            return login_response()
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json={"success": True, "data": {"id": "doc-9"}})
+
+    client = make_client(handler)
+    engine = WeknoraKnowledgeEngine(WeknoraSettings(base_url="http://weknora.test"), client)
+    try:
+        doc_id = await engine.create_manual_document("kb-1", title="t", content="c")
+    finally:
+        await engine.aclose()
+    assert doc_id == "doc-9"
+    assert bodies[0]["status"] == "publish"
 
 
 @pytest.mark.asyncio

@@ -14,6 +14,9 @@ class WeknoraSettings:
     password: SecretStr = SecretStr("")
     timeout_seconds: float = 30.0
     embedding_model: str = ""
+    summary_model_id: str = ""
+    wiki_synthesis_model_id: str = ""
+    wiki_max_pages_per_ingest: int = 12
     rag_search_limit: int = 25
     # Product-level kb_type -> WeKnora indexing strategy switches.
     kb_type_strategies: dict[str, tuple[str, ...]] = field(
