@@ -128,8 +128,10 @@ export function WorkspaceNavigation({
   visible?: readonly WorkspaceId[];
   labelOverrides?: Partial<Record<WorkspaceId, string>>;
 }) {
+  // `visible` is an ordered allowlist: callers that reorder their sidebar (for
+  // example putting the knowledge base directly under 新建任务) get that order.
   const items = visible
-    ? workspaceItems.filter((workspace) => visible.includes(workspace.id))
+    ? visible.flatMap((id) => workspaceItems.filter((workspace) => workspace.id === id))
     : workspaceItems;
 
   function renderWorkspaceLink(workspace: (typeof workspaceItems)[number]) {
