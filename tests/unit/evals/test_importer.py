@@ -34,9 +34,7 @@ def test_parses_a_json_array_of_cases_with_camel_case_keys() -> None:
 
 
 def test_parses_a_json_object_with_a_cases_wrapper() -> None:
-    rows = parse_imported_cases(
-        "json", json.dumps({"cases": [{"prompt": "核对发票例外标记"}]})
-    )
+    rows = parse_imported_cases("json", json.dumps({"cases": [{"prompt": "核对发票例外标记"}]}))
     assert len(rows) == 1
     assert rows[0].tag == "happy"
 
@@ -62,7 +60,9 @@ def test_csv_without_prompt_column_is_rejected() -> None:
 
 def test_invalid_tag_is_rejected_with_row_position() -> None:
     with pytest.raises(EvalImportError, match="case #2 is invalid"):
-        parse_imported_cases("json", json.dumps([{"prompt": "a"}, {"prompt": "b", "tag": "grumpy"}]))
+        parse_imported_cases(
+            "json", json.dumps([{"prompt": "a"}, {"prompt": "b", "tag": "grumpy"}])
+        )
 
 
 def test_empty_bank_and_limit_are_rejected() -> None:
