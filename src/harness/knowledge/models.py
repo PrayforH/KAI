@@ -36,6 +36,22 @@ class KnowledgeModel(BaseModel):
 class KnowledgeSourceKind(StrEnum):
     FILE = "file"
     WEB = "web"
+    WEKNORA = "weknora"
+
+
+class KnowledgeBaseType(StrEnum):
+    """Product-level knowledge base flavor rendered as cards in the console."""
+
+    RAG = "rag"
+    WIKI = "wiki"
+    HYBRID = "hybrid"
+
+
+class KnowledgeBaseEngine(StrEnum):
+    """Which retrieval backend owns a knowledge base's documents and indexes."""
+
+    LEGACY = "legacy"
+    WEKNORA = "weknora"
 
 
 class KnowledgeSourceHealth(StrEnum):
@@ -131,8 +147,15 @@ class WebKnowledgeConfig(KnowledgeModel):
     )
 
 
+class WeknoraKnowledgeConfig(KnowledgeModel):
+    """Connector config for a knowledge source backed by a WeKnora base."""
+
+    type: Literal["weknora"] = "weknora"
+    weknora_base_id: str = Field(alias="weknoraBaseId", min_length=1, max_length=128)
+
+
 KnowledgeSourceConfig = Annotated[
-    FileKnowledgeConfig | WebKnowledgeConfig,
+    FileKnowledgeConfig | WebKnowledgeConfig | WeknoraKnowledgeConfig,
     Field(discriminator="type"),
 ]
 
@@ -146,6 +169,15 @@ class KnowledgeBase(KnowledgeModel):
         default=(),
         alias="sourceReferences",
     )
+    kb_type: KnowledgeBaseType = Field(
+        default=KnowledgeBaseType.RAG,
+        alias="kbType",
+    )
+    engine: KnowledgeBaseEngine = Field(
+        default=KnowledgeBaseEngine.LEGACY,
+        alias="engine",
+    )
+    engine_ref: str = Field(default="", alias="engineRef", max_length=128)
     revision: int = Field(ge=1)
     created_by: str = Field(alias="createdBy", min_length=1)
     updated_by: str = Field(alias="updatedBy", min_length=1)
@@ -351,6 +383,43 @@ class CreateKnowledgeBaseRequest(KnowledgeModel):
         default=(),
         alias="sourceReferences",
     )
+    kb_type: KnowledgeBaseType = Field(
+        default=KnowledgeBaseType.RAG,
+        alias="kbType",
+    )
+    engine: KnowledgeBaseEngine = Field(
+        default=KnowledgeBaseEngine.LEGACY,
+        alias="engine",
+    )
+
+
+class KnowledgeDocumentStatus(KnowledgeModel):
+    """Mirror of a WeKnora document's ingestion state for the console."""
+
+    tenant_id: str = Field(alias="tenantId")
+    source_reference: KnowledgeReference = Field(alias="sourceReference")
+    document_id: str = Field(alias="documentId")
+    title: str
+    parse_status: str = Field(alias="parseStatus")
+    summary_status: str = Field(alias="summaryStatus")
+    file_type: str = Field(default="", alias="fileType")
+    file_size: int = Field(default=0, alias="fileSize", ge=0)
+    enabled: bool = True
+
+
+class CreateKnowledgeDocumentRequest(KnowledgeModel):
+    title: str = Field(min_length=1, max_length=500)
+    content: str = Field(min_length=1, max_length=2 * 1024 * 1024)
+
+
+class KnowledgeDocumentChunk(KnowledgeModel):
+    tenant_id: str = Field(alias="tenantId")
+    source_reference: KnowledgeReference = Field(alias="sourceReference")
+    document_id: str = Field(alias="documentId")
+    chunk_id: str = Field(alias="chunkId")
+    title: str
+    content: str
+    seq: int = Field(ge=0)
 
 
 class ReplaceKnowledgeBaseRequest(KnowledgeModel):

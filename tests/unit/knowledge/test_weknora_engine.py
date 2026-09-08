@@ -1,0 +1,223 @@
+"""Unit tests for the WeKnora engine gateway and its HTTP client."""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+import httpx
+import pytest
+from pydantic import SecretStr
+
+from harness.knowledge.ports import KnowledgeEngineError
+from harness.knowledge.weknora.client import WeknoraClient
+from harness.knowledge.weknora.configuration import WeknoraSettings
+from harness.knowledge.weknora.gateway import WeknoraKnowledgeEngine
+
+
+def make_client(
+    handler: Any,
+    *,
+    base_url: str = "http://weknora.test",
+) -> WeknoraClient:
+    settings = WeknoraSettings(
+        base_url=base_url,
+        email="svc@axis.test",
+        password=SecretStr("secret-pass"),
+    )
+    transport = httpx.MockTransport(handler)
+    client = WeknoraClient(settings)
+    client._client = httpx.AsyncClient(  # noqa: SLF001 - test seam
+        base_url=f"{base_url}/api/v1",
+        transport=transport,
+        timeout=httpx.Timeout(5),
+    )
+    return client
+
+
+def login_response() -> httpx.Response:
+    return httpx.Response(
+        200,
+        json={"success": True, "token": "jwt-token", "refresh_token": "refresh"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_client_logs_in_and_unwraps_envelope() -> None:
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        if request.url.path == "/api/v1/auth/login":
+            return login_response()
+        assert request.headers["Authorization"] == "Bearer jwt-token"
+        return httpx.Response(
+            200,
+            json={"success": True, "data": [{"id": "kb-1", "name": "demo"}]},
+        )
+
+    client = make_client(handler)
+    try:
+        payload = await client.get_data("/knowledge-bases")
+    finally:
+        await client.aclose()
+    assert payload == [{"id": "kb-1", "name": "demo"}]
+    assert calls == ["/api/v1/auth/login", "/api/v1/knowledge-bases"]
+
+
+@pytest.mark.asyncio
+async def test_client_reauthenticates_once_on_401() -> None:
+    logins: list[str] = []
+    data_calls: list[int] = [0]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/auth/login":
+            logins.append("login")
+            return login_response()
+        data_calls[0] += 1
+        if data_calls[0] == 1:
+            # Simulate an expired cached token on the first data request.
+            return httpx.Response(401, json={"error": {"message": "expired"}})
+        assert request.headers["Authorization"] == "Bearer jwt-token"
+        return httpx.Response(200, json={"data": []})
+
+    client = make_client(handler)
+    try:
+        await client.get_data("/knowledge-bases/kb-1/knowledge")
+    finally:
+        await client.aclose()
+    assert logins == ["login", "login"]
+    assert data_calls[0] == 2
+
+
+@pytest.mark.asyncio
+async def test_client_surfaces_error_envelope() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/auth/login":
+            return login_response()
+        return httpx.Response(
+            200,
+            json={"success": False, "error": {"message": "query_text is required"}},
+        )
+
+    client = make_client(handler)
+    try:
+        with pytest.raises(Exception, match="query_text is required"):
+            await client.hybrid_search("kb-1", "q", limit=5)
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_gateway_search_normalizes_scores_and_titles() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/auth/login":
+            return login_response()
+        assert request.url.path == "/api/v1/knowledge-bases/kb-1/hybrid-search"
+        body = json.loads(request.content)
+        assert body["query_text"] == "非法集资"
+        assert body["match_count"] == 5
+        return httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": [
+                    {
+                        "id": "chunk-1",
+                        "knowledge_id": "doc-1",
+                        "knowledge_title": "起诉书.pdf",
+                        "content": "片段一",
+                        "score": 0.02,
+                        "knowledge_base_id": "kb-1",
+                    },
+                    {
+                        "id": "chunk-2",
+                        "knowledge_id": "doc-2",
+                        "knowledge_title": "判决书.pdf",
+                        "content": "片段二",
+                        "score": 0.01,
+                        "knowledge_base_id": "kb-1",
+                    },
+                ],
+            },
+        )
+
+    client = make_client(handler)
+    engine = WeknoraKnowledgeEngine(WeknoraSettings(base_url="http://weknora.test"), client)
+    try:
+        hits = await engine.search(["kb-1"], "非法集资", limit=5)
+    finally:
+        await engine.aclose()
+    assert [hit.chunk_id for hit in hits] == ["chunk-1", "chunk-2"]
+    # Raw engine scores are preserved; the service normalizes to 0..1.
+    assert hits[0].score == pytest.approx(0.02)
+    assert hits[1].score == pytest.approx(0.01)
+    assert hits[0].document_title == "起诉书.pdf"
+
+
+@pytest.mark.asyncio
+async def test_gateway_create_base_maps_kb_type_strategy() -> None:
+    bodies: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/auth/login":
+            return login_response()
+        bodies.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={"success": True, "data": {"id": "kb-new", "name": bodies[-1]["name"]}},
+        )
+
+    client = make_client(handler)
+    engine = WeknoraKnowledgeEngine(WeknoraSettings(base_url="http://weknora.test"), client)
+    try:
+        base_id = await engine.create_base(
+            name="混合库",
+            description="",
+            kb_type="hybrid",
+        )
+        with pytest.raises(KnowledgeEngineError):
+            await engine.create_base(name="x", description="", kb_type="bogus")
+    finally:
+        await engine.aclose()
+    assert base_id == "kb-new"
+    strategy = bodies[0]["config"]["indexing_strategy"]
+    assert strategy == {
+        "vector_enabled": True,
+        "keyword_enabled": True,
+        "wiki_enabled": True,
+        "graph_enabled": True,
+    }
+
+
+@pytest.mark.asyncio
+async def test_gateway_list_documents_maps_statuses() -> None:
+    rows: list[dict[str, Any]] = [
+        {
+            "id": "doc-1",
+            "title": "手册.pdf",
+            "parse_status": "completed",
+            "summary_status": "completed",
+            "file_type": "pdf",
+            "file_size": 123,
+            "enable_status": "enabled",
+            "knowledge_base_id": "kb-1",
+        }
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/auth/login":
+            return login_response()
+        return httpx.Response(200, json={"success": True, "data": rows})
+
+    client = make_client(handler)
+    engine = WeknoraKnowledgeEngine(WeknoraSettings(base_url="http://weknora.test"), client)
+    try:
+        documents = await engine.list_documents("kb-1")
+        assert documents[0].title == "手册.pdf"
+        assert documents[0].parse_status == "completed"
+        rows.append({"id": "", "title": "broken"})
+        with pytest.raises(KnowledgeEngineError):
+            await engine.list_documents("kb-1")
+    finally:
+        await engine.aclose()
