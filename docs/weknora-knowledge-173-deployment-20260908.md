@@ -4,7 +4,7 @@
 - 分支：`feature/weknora-knowledge-base`
 - 目标环境：`172.20.109.173`（KAI WORKBENCH 黑色主题，Web `:3301`，API `:8800`）
 - 知识数据面：`172.20.109.174:8180` WeKnora（服务账号，终端用户不直连）
-- 发布 tag：`weknora-kb-20260908-b2f87bf`（api 与 web 同 tag）
+- 发布 tag：`weknora-kb-20260908-0d33e98`（api 与 web 同 tag）
 - 配套设计：[2026-09-08-weknora-knowledge-base-design.md](2026-09-08-weknora-knowledge-base-design.md)、[实现计划](2026-09-08-weknora-knowledge-base-implementation-plan.md)
 
 ## 1. 交付内容
@@ -89,11 +89,11 @@ $COMPOSE up -d --no-build --force-recreate api worker web
 | Wiki 页签 | 分类树（索引/摘要/实体/概念）+ 索引页 + 统计「共 6 页 · 引用 17 条」 | 通过 |
 | 图谱页签 | G6 力导向图，图例（摘要蓝/概念橙/实体绿/索引灰），6/6 节点 · 17 引用 | 通过 |
 | 成员管理 | 目录搜索命中真实用户 → 添加为查看者 → 成员（1）列表 + 角色下拉 + 移除 | 通过 |
-| 问答引用切片 | 需在对话中绑定知识库的智能体上验证（见 §4） | 待验证 |
+| 问答引用切片 | 发布测试智能体 `kb-citation-verify@0.1.0`（绑定本知识库）→ 提问 → 工具命中 1 项 → 回答带 [1][2] → 回复下方引用徽标 ①1.00/②0.99 → 点击打开切片抽屉（含全文） | 通过 |
 
 ## 4. 待验证项与后续动作
 
-1. **问答引用切片（需求 5）**：需一个 `knowledge_references` 绑定本知识库的智能体，在 173 对话页提问后确认引用徽标与切片抽屉。后端链路（工具返回结构化 citation → activity 投影 → 前端徽标/抽屉）已由单测覆盖，缺一次真实对话端到端。
+1. **测试智能体**：`kb-citation-verify@0.1.0` 是本次验证产物，绑定 `weknora-173-verify` 知识库；如需清理，删除该草稿/版本即可（不影响其他智能体）。
 2. **质量同步容器**：`agent-studio-173-quality-sync-1` 仍为旧镜像，本轮未纳入发布（与知识库无关）。
 3. **IDaaS 组织树**：二期，`kb_members` 已预留 `org_unit`/`org_path`。
 
