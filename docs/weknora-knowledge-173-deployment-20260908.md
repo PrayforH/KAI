@@ -4,7 +4,7 @@
 - 分支：`feature/weknora-knowledge-base`
 - 目标环境：`172.20.109.173`（KAI WORKBENCH 黑色主题，Web `:3301`，API `:8800`）
 - 知识数据面：`172.20.109.174:8180` WeKnora（服务账号，终端用户不直连）
-- 发布 tag：`weknora-kb-20260908-0d33e98`（api 与 web 同 tag）
+- 发布 tag：`weknora-kb-20260908-bbd40e6`（api 与 web 同 tag）
 - 配套设计：[2026-09-08-weknora-knowledge-base-design.md](2026-09-08-weknora-knowledge-base-design.md)、[实现计划](2026-09-08-weknora-knowledge-base-implementation-plan.md)
 
 ## 1. 交付内容
@@ -90,6 +90,8 @@ $COMPOSE up -d --no-build --force-recreate api worker web
 | 图谱页签 | G6 力导向图，图例（摘要蓝/概念橙/实体绿/索引灰），6/6 节点 · 17 引用 | 通过 |
 | 成员管理 | 目录搜索命中真实用户 → 添加为查看者 → 成员（1）列表 + 角色下拉 + 移除 | 通过 |
 | 问答引用切片 | 发布测试智能体 `kb-citation-verify@0.1.0`（绑定本知识库）→ 提问 → 工具命中 1 项 → 回答带 [1][2] → 回复下方引用徽标 ①1.00/②0.99 → 点击打开切片抽屉（含全文） | 通过 |
+| 侧栏搜索位置 | 搜索入口移到侧栏头部，位于收起按钮左侧（紧凑图标按钮）；原位置改为「知识库」导航项 | 通过 |
+| 登录页 logo | 中间卡片左上角由字母占位改为真实产品标识 `/brand/kai-mark-v2.png` | 通过 |
 
 ## 4. 待验证项与后续动作
 
