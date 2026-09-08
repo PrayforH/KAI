@@ -24,11 +24,6 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from pydantic import SecretStr
 
-from harness.studio.mcp_credential_store import (
-    McpCredentialService, McpCredentialCipher, InMemoryMcpCredentialRepository,
-)
-from harness.studio.web_configuration import WebConfigurationService, ConfigureWebRequest
-
 import harness.runtime.claude_sdk as claude_runtime
 from harness.config import Settings
 from harness.core.manifest import ToolSpec, load_manifest
@@ -56,6 +51,12 @@ from harness.runtime.tools import (
     ToolResolver,
 )
 from harness.sandbox.base import SandboxCommandResult
+from harness.studio.mcp_credential_store import (
+    InMemoryMcpCredentialRepository,
+    McpCredentialCipher,
+    McpCredentialService,
+)
+from harness.studio.web_configuration import ConfigureWebRequest, WebConfigurationService
 
 
 class RecordingToolGate:
