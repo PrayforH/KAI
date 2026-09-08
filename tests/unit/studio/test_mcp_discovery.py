@@ -198,6 +198,39 @@ async def test_discovery_accepts_a_transient_page_credential() -> None:
 
 
 @pytest.mark.asyncio
+async def test_discovery_merges_public_headers_with_managed_authentication() -> None:
+    connector = RecordingConnector()
+    service = McpDiscoveryService(
+        connector=connector,
+        host_resolver=private_host,
+    )
+
+    await service.discover(
+        request(
+            endpointUrl="http://company-mcp:8080/mcp",
+            networkAccess="internal",
+            customHeaders={"X-Tenant-ID": "tenant-public"},
+            authMode="header",
+            authName="X-API-Key",
+            credentialValue="page-only-secret",
+        ),
+        tenant_id="tenant-a",
+        user_id="owner-a",
+    )
+
+    assert connector.headers == {
+        "X-Tenant-ID": "tenant-public",
+        "X-API-Key": "page-only-secret",
+    }
+
+
+@pytest.mark.parametrize("name", ("Authorization", "Cookie", "X-API-Key"))
+def test_discovery_rejects_secrets_in_custom_headers(name: str) -> None:
+    with pytest.raises(ValueError, match="managed authentication"):
+        request(customHeaders={name: "must-not-be-stored-here"})
+
+
+@pytest.mark.asyncio
 async def test_auto_detect_falls_back_to_sse_and_reports_transport() -> None:
     streamable = RecordingConnector(fail=True)
     sse = RecordingConnector(transport="sse")

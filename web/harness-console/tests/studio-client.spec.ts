@@ -17,6 +17,8 @@ function apiDraft(): ApiAgentDraft {
   });
   return {
     draftId: "draft-api",
+    agentId: "agent-api",
+    spaceId: null,
     tenantId: "tenant-a",
     revision: 3,
     spec,
@@ -82,6 +84,110 @@ describe("Studio typed API mapping", () => {
     expect(saved.limits.maxModelTokens).toBeNull();
   });
 
+  it("prefetches a draft once and reuses it when the selected revision matches", async () => {
+    const prefetched = {
+      ...apiDraft(),
+      draftId: "draft-prefetch",
+      revision: 7,
+    };
+    const fetchMock = vi.fn().mockResolvedValue(Response.json(prefetched));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await studioClient.prefetchDraft(prefetched.draftId, prefetched.revision);
+    const selected = await studioClient.getDraft(prefetched.draftId, {
+      expectedRevision: prefetched.revision,
+    });
+
+    expect(selected).toEqual(prefetched);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("combines personal and accessible workspace drafts for the Studio list", async () => {
+    const personal = {
+      draftId: "draft-personal",
+      agentId: "agent-personal",
+      spaceId: null,
+      name: "personal-agent",
+      displayName: "个人智能体",
+      domain: "general",
+      version: "0.1.0",
+      template: "analyst" as const,
+      revision: 2,
+      updatedAt: "2026-08-12T01:00:00Z",
+      publishedVersion: "0.1.0",
+    };
+    const shared = {
+      ...personal,
+      draftId: "draft-shared",
+      agentId: "agent-shared",
+      spaceId: "space-team",
+      name: "shared-agent",
+      displayName: "协作智能体",
+      updatedAt: "2026-08-12T02:00:00Z",
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/studio/drafts") return Response.json([personal]);
+      if (url === "/api/spaces") {
+        return Response.json([{ space: { spaceId: "space-team" } }]);
+      }
+      if (url === "/api/studio/drafts?spaceId=space-team") {
+        return Response.json([shared]);
+      }
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const drafts = await studioClient.listAccessibleDrafts();
+
+    expect(drafts.map((item) => item.draftId)).toEqual([
+      "draft-shared",
+      "draft-personal",
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("falls back to the stable draft endpoint when task-first creation is unavailable", async () => {
+    const created = apiDraft();
+    const calls: Array<{ url: string; method: string; body: unknown }> = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({
+        url: String(input),
+        method: init?.method ?? "GET",
+        body: init?.body ? JSON.parse(String(init.body)) : null,
+      });
+      if (String(input).endsWith("/drafts/from-task")) {
+        return Response.json({ detail: "Method Not Allowed" }, { status: 405 });
+      }
+      return Response.json(created);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await studioClient.createDraftFromTask({
+      task: "股票投资助手",
+      runtimePreference: "auto",
+    });
+
+    expect(result).toEqual({ draft: created, recommendation: null });
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toMatchObject({
+      url: "/api/studio/drafts/from-task",
+      method: "POST",
+      body: { task: "股票投资助手", runtimePreference: "auto" },
+    });
+    expect(calls[1]).toMatchObject({
+      url: "/api/studio/drafts",
+      method: "POST",
+      body: {
+        domain: "general",
+        displayName: "股票投资助手",
+        description: "股票投资助手",
+        template: "analyst",
+      },
+    });
+    expect((calls[1].body as { name: string }).name).toMatch(/^task-agent-[a-f0-9]{8}$/);
+  });
+
   it("imports a ZIP bundle without converting it to JSON", async () => {
     let captured: { url: string; contentType: string | null; body: BodyInit | null } | null = null;
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -143,6 +249,40 @@ describe("Studio typed API mapping", () => {
       body: skill,
     });
     expect(imported.skill.name).toBe("ppt-master");
+  });
+
+  it("lists platform Skill packages and installs an exact revision", async () => {
+    const calls: Array<{ url: string; method: string; body: unknown }> = [];
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({
+        url: String(input),
+        method: init?.method ?? "GET",
+        body: init?.body ? JSON.parse(String(init.body)) : null,
+      });
+      if (!init?.method) return Response.json({ revision: 1, packages: [] });
+      return Response.json({
+        draft: apiDraft(),
+        skillName: "evidence-reporting",
+        sourceContentHash: "a".repeat(64),
+        riskLevel: "low",
+        findings: [],
+        warnings: [],
+        fileCount: 1,
+        binaryFileCount: 0,
+      });
+    });
+
+    await studioClient.listPlatformSkills();
+    await studioClient.installPlatformSkill("draft-1", 4, "evidence-reporting", 2);
+
+    expect(calls).toEqual([
+      { url: "/api/studio/skills/catalog", method: "GET", body: null },
+      {
+        url: "/api/studio/drafts/draft-1/skills/catalog/evidence-reporting/install",
+        method: "POST",
+        body: { expectedRevision: 4, packageRevision: 2 },
+      },
+    ]);
   });
 
   it("reads usage and replaces quota policy with revision CAS", async () => {
@@ -232,6 +372,7 @@ describe("Studio typed API mapping", () => {
       description: "查询企业内部资料",
       endpointUrl: "https://mcp.example.com/mcp",
       transport: "http" as const,
+      customHeaders: {},
       tools: ["mcp__company__search"],
       risk: "medium" as const,
       networkAccess: "internal" as const,
@@ -289,6 +430,7 @@ describe("Studio typed API mapping", () => {
       serverName: "company",
       endpointUrl: "http://company-mcp:4174/mcp",
       networkAccess: "internal",
+      customHeaders: {},
       authMode: "none",
       authName: null,
       authKey: "authorization",
@@ -324,6 +466,7 @@ describe("Studio typed API mapping", () => {
       serverName: "company",
       endpointUrl: "https://mcp.example.com/mcp",
       networkAccess: "external",
+      customHeaders: {},
       authMode: "none",
       authName: null,
       authKey: "authorization",
@@ -338,6 +481,7 @@ describe("Studio typed API mapping", () => {
           serverName: "company",
           endpointUrl: "https://mcp.example.com/mcp",
           networkAccess: "external",
+          customHeaders: {},
           authMode: "none",
           authName: null,
           authKey: "authorization",
@@ -368,6 +512,31 @@ describe("Studio typed API mapping", () => {
     } satisfies Partial<StudioApiError>);
   });
 
+  it("deletes a draft with revision protection and invalidates its cache", async () => {
+    const source = apiDraft();
+    const calls: Array<{ url: string; method: string }> = [];
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), method: init?.method ?? "GET" });
+      if ((init?.method ?? "GET") === "DELETE") {
+        return new Response(null, { status: 204 });
+      }
+      return Response.json(source);
+    });
+
+    await studioClient.getDraft(source.draftId, { maxAgeMs: 0 });
+    await studioClient.deleteDraft(source.draftId, source.revision);
+    await studioClient.getDraft(source.draftId);
+
+    expect(calls).toEqual([
+      { url: "/api/studio/drafts/draft-api", method: "GET" },
+      {
+        url: "/api/studio/drafts/draft-api?expectedRevision=3",
+        method: "DELETE",
+      },
+      { url: "/api/studio/drafts/draft-api", method: "GET" },
+    ]);
+  });
+
   it("publishes the exact server revision and preserves a version conflict", async () => {
     const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       expect(init?.method).toBe("POST");
@@ -387,6 +556,30 @@ describe("Studio typed API mapping", () => {
       "/api/studio/drafts/draft-api/publish",
       expect.objectContaining({ method: "POST" }),
     );
+  });
+
+  it("lists and promotes a personal immutable Agent version through the BFF", async () => {
+    const calls: Array<{ url: string; method: string }> = [];
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), method: init?.method ?? "GET" });
+      return Response.json({
+        agent_id: "agent-api",
+        name: "productivity-agent",
+        version: "0.1.0",
+        display_name: "生产力智能体",
+        manifest_hash: "a".repeat(64),
+        package_hash: "b".repeat(64),
+        created_at: "2026-08-11T00:00:00Z",
+        current_version: "0.1.0",
+      });
+    });
+
+    await studioClient.promotePersonalAgentVersion("agent-api", "0.1.0");
+
+    expect(calls).toEqual([{
+      url: "/api/harness/agents/agent-api/versions/0.1.0/promote",
+      method: "POST",
+    }]);
   });
 
   it("creates a Preview bound to the exact Draft revision and stable key", async () => {

@@ -117,6 +117,28 @@ def knowledge_search_read_rules() -> list[PolicyRule]:
     ]
 
 
+def sentiment_query_read_rules() -> list[PolicyRule]:
+    """Allow only the reviewed read-only public-opinion MCP surface."""
+
+    return [
+        PolicyRule(
+            name=f"sentiment-query-{tool_name}",
+            tool=f"mcp__sentiment_query_mcp__{tool_name}",
+            decision=PolicyDecision.ALLOW,
+        )
+        for tool_name in (
+            "get_risk_dashboard",
+            "search_risk_subjects",
+            "get_risk_subject",
+            "query_legal_entity_directory",
+            "search_risk_opinions",
+            "get_risk_opinion",
+            "search_risk_events",
+            "get_risk_event",
+        )
+    ]
+
+
 def default_policy_rules() -> list[PolicyRule]:
     return [
         PolicyRule(
@@ -129,11 +151,15 @@ def default_policy_rules() -> list[PolicyRule]:
             tool="MCPSearch",
             decision=PolicyDecision.ALLOW,
         ),
+        PolicyRule(name="web-search", tool="WebSearch", decision=PolicyDecision.ALLOW),
+        PolicyRule(name="web-fetch", tool="WebFetch", decision=PolicyDecision.ALLOW),
         PolicyRule(name="read", tool="Read", decision=PolicyDecision.ALLOW),
         PolicyRule(name="glob", tool="Glob", decision=PolicyDecision.ALLOW),
         PolicyRule(name="grep", tool="Grep", decision=PolicyDecision.ALLOW),
         PolicyRule(name="delegate", tool="Task", decision=PolicyDecision.ALLOW),
         PolicyRule(name="delegate-agent", tool="Agent", decision=PolicyDecision.ALLOW),
+        PolicyRule(name="memory-search", tool="mcp__harness-memory__search_memory", decision=PolicyDecision.ALLOW),
+        PolicyRule(name="memory-read", tool="mcp__harness-memory__read_memory", decision=PolicyDecision.ALLOW),
         PolicyRule(
             name="untrusted-memory-deny",
             tool="mcp__harness-memory__propose_memory",
@@ -169,6 +195,7 @@ def default_policy_rules() -> list[PolicyRule]:
             decision=PolicyDecision.ALLOW,
         ),
         *knowledge_search_read_rules(),
+        *sentiment_query_read_rules(),
         PolicyRule(name="workspace-write", tool="Write", decision=PolicyDecision.ALLOW),
         PolicyRule(name="workspace-edit", tool="Edit", decision=PolicyDecision.ALLOW),
         PolicyRule(
@@ -178,5 +205,9 @@ def default_policy_rules() -> list[PolicyRule]:
             sandbox_isolation=SandboxIsolation.WORKSPACE,
             decision=PolicyDecision.DENY,
         ),
-        PolicyRule(name="bash-review", tool="Bash", decision=PolicyDecision.ASK),
+        PolicyRule(
+            name="sandbox-bash",
+            tool="Bash",
+            decision=PolicyDecision.ALLOW,
+        ),
     ]

@@ -1,0 +1,729 @@
+"use client";
+
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import dynamic from "next/dynamic";
+import { usePathname, useRouter } from "next/navigation";
+import { TooltipProvider } from "@/components/ui/tooltip";
+// NavRail removed — navigation merged into ChatListPanel
+import { ChatListPanel } from "./ChatListPanel";
+import { SettingsSidebar } from "./SettingsSidebar";
+import { CardFrame, CardSurface, ResizeGutter } from "./card-primitives";
+import { UnifiedTopBar } from "./UnifiedTopBar";
+import { WorkspaceSidebarProvider, useWorkspaceSidebar, useWorkspaceSidebarOptional } from "@/hooks/useWorkspaceSidebar";
+import { PanelContext, usePanel, type PreviewViewMode, type PreviewSource } from "@/hooks/usePanel";
+import { SplitContext, type SplitSession } from "@/hooks/useSplit";
+import { ErrorBoundary } from "./ErrorBoundary";
+import { SentryInit } from "./SentryInit";
+import { useGitWorkspace } from "@/hooks/useGitWorkspace";
+import { Toaster } from '@/components/ui/toast';
+import { useGlobalSearchShortcut } from '@/hooks/useGlobalSearchShortcut';
+import { GlobalSearchDialog } from './GlobalSearchDialog';
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
+import { useCompactViewport } from '@/hooks/useCompactViewport';
+import { useAppServerSelector } from '@/codex-web/AppServerProvider';
+import { useAppServerActions } from '@/codex-web/AppServerProvider';
+import { appServerConnectionNotice } from '@/codex-web/connection-notice';
+import { ErrorBanner } from '@/components/ui/error-banner';
+
+// AppShell 静态导入约束（Phase A 内存优化，2026-05-08）：以下三个组件
+// 仅在对应路由、状态或弹窗触发时渲染。使用 next/dynamic + ssr:false 可避免
+// 它们进入首次 /chat 开发编译图；改回静态导入会造成明显内存回归。
+// 每个加载器保留具名导出的形状，避免影响下游 JSX。
+const SplitChatContainer = dynamic(
+  () => import('./SplitChatContainer').then((m) => ({ default: m.SplitChatContainer })),
+  { ssr: false },
+);
+const WorkspaceSidebar = dynamic(
+  () => import('./WorkspaceSidebar').then((m) => ({ default: m.WorkspaceSidebar })),
+  { ssr: false },
+);
+const PanelZone = dynamic(
+  () => import('./PanelZone').then((m) => ({ default: m.PanelZone })),
+  { ssr: false },
+);
+const SPLIT_SESSIONS_KEY = "codepilot:split-sessions";
+const SPLIT_ACTIVE_COLUMN_KEY = "codepilot:split-active-column";
+
+function loadSplitSessions(): SplitSession[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(SPLIT_SESSIONS_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {
+    // ignore
+  }
+  return [];
+}
+
+function saveSplitSessions(sessions: SplitSession[]) {
+  if (sessions.length >= 2) {
+    localStorage.setItem(SPLIT_SESSIONS_KEY, JSON.stringify(sessions));
+  } else {
+    localStorage.removeItem(SPLIT_SESSIONS_KEY);
+    localStorage.removeItem(SPLIT_ACTIVE_COLUMN_KEY);
+  }
+}
+
+function loadActiveColumn(): string {
+  if (typeof window === "undefined") return "";
+  return localStorage.getItem(SPLIT_ACTIVE_COLUMN_KEY) || "";
+}
+
+const EMPTY_SET = new Set<string>();
+const CHATLIST_MIN = 248;
+const CHATLIST_MAX = 340;
+const CHATLIST_DEFAULT = 276;
+
+/**
+ * Extensions that default to "rendered" view mode when a file is opened
+ * via setPreviewSource / setPreviewFile. Keeping this list aligned with
+ * PreviewPanel's RENDERABLE_EXTENSIONS so anything we can actually
+ * render in Preview mode also lands there by default — previously .jsx
+ * / .tsx fell through to Source even though Sandpack can render them,
+ * which made the DiffSummary "Open preview" button surface source code
+ * when the user clicked a TSX card.
+ */
+const RENDERED_EXTENSIONS = new Set([".md", ".mdx", ".html", ".htm", ".jsx", ".tsx", ".csv", ".tsv"]);
+
+function defaultViewMode(filePath: string): PreviewViewMode {
+  const dot = filePath.lastIndexOf(".");
+  const ext = dot >= 0 ? filePath.slice(dot).toLowerCase() : "";
+  return RENDERED_EXTENSIONS.has(ext) ? "rendered" : "source";
+}
+
+const LG_BREAKPOINT = 1024;
+
+/**
+ * Inner row that holds the chat main area + the two right-rail
+ * surfaces:
+ *   - `<PanelZone>` mounts the lightweight FileTreePanel (independent
+ *     topbar entry) and the AssistantPanel.
+ *   - `<WorkspaceSidebar>` mounts the unified Tab shell that owns
+ *     Git / Widget / Markdown / Artifact / file preview Tabs.
+ *
+ * Reads PanelContext + WorkspaceSidebarContext to derive whether any
+ * rail is visible and toggles a top border accordingly:
+ *   - file tree open OR sidebar open OR both → border-t between
+ *     topbar chrome and the work area
+ *   - both collapsed → no border (chat reads uncluttered)
+ *
+ * v13 product decision: the two right-rail panels are additive — both
+ * can be open simultaneously (file tree on the inner edge, sidebar on
+ * the outer edge), and chat shrinks accordingly. The topbar onClick
+ * handlers each flip their own panel only; no auto-close of the other.
+ */
+
+/**
+ * v13 — Right-rail panels (FileTreePanel + WorkspaceSidebar) are
+ * **additive**, not mutex. Earlier rounds (and v11) treated them as
+ * mutually exclusive: opening one would auto-close the other, both
+ * via topbar onClick handlers and via a `RightRailMutexEnforcer`
+ * effect that plugged the event-driven sidebar-open path. That choice
+ * was reversed: the user wants both panels openable at once so they
+ * can browse files in the tree while a markdown / artifact preview is
+ * pinned on the sidebar tab. The v11 enforcer was removed entirely,
+ * and the topbar onClick mutex lines were dropped (each toggle now
+ * just flips its own panel state). The flexbox layout below already
+ * supported coexistence — only the behavior was wrong.
+ */
+
+function ChatContentRow({
+  isChatDetailRoute,
+  isSplitActive,
+  compactViewport,
+  compactViewportConfirmed,
+  children,
+}: {
+  isChatDetailRoute: boolean;
+  isSplitActive: boolean;
+  compactViewport: boolean;
+  compactViewportConfirmed: boolean;
+  children: React.ReactNode;
+}) {
+  // Phase 7c-C — main column and workspace sidebar both wrapped in
+  // CardFrame + CardSurface. WorkspaceSidebar is now just inner TabBar
+  // + TabPanel content; its width state and ResizeHandle wiring live
+  // here so the row's layout geometry is in one place.
+  const ws = useWorkspaceSidebar();
+  const setWorkspaceOpen = ws.setOpen;
+  useEffect(() => {
+    if (compactViewportConfirmed) setWorkspaceOpen(false);
+  }, [compactViewportConfirmed, setWorkspaceOpen]);
+  const handleWorkspaceResize = useCallback(
+    (delta: number) => {
+      ws.setWidth(ws.state.width - delta);
+    },
+    [ws],
+  );
+
+  return (
+    <>
+      <CardFrame kind="main">
+        <CardSurface kind="main">
+          <main className="relative flex-1 overflow-hidden">
+            {isSplitActive ? (
+              <SplitChatContainer />
+            ) : (
+              <ErrorBoundary>{children}</ErrorBoundary>
+            )}
+          </main>
+        </CardSurface>
+      </CardFrame>
+      {/* Workspace sidebar: ResizeGutter as sibling of the frame so
+          its visible line lands in the gap between main and workspace. */}
+      {isChatDetailRoute && ws.state.open && (compactViewport ? (
+        <Sheet open modal={false} onOpenChange={ws.setOpen}>
+          <SheetContent
+            side="right"
+            showCloseButton={false}
+            className="w-[min(92vw,420px)] max-w-none gap-0 p-0"
+          >
+            <SheetTitle className="sr-only">Workspace</SheetTitle>
+            <SheetDescription className="sr-only">
+              在移动端显示工作区侧栏内容。
+            </SheetDescription>
+            <CardSurface kind="workspace">
+              <WorkspaceSidebar />
+            </CardSurface>
+          </SheetContent>
+        </Sheet>
+      ) : (
+        <>
+          <ResizeGutter
+            onResize={handleWorkspaceResize}
+            onReset={() => ws.setWidth(360)}
+          />
+          <CardFrame kind="workspace" width={ws.state.width}>
+            <CardSurface kind="workspace">
+              <WorkspaceSidebar />
+            </CardSurface>
+          </CardFrame>
+        </>
+      ))}
+      {isChatDetailRoute && <PanelZone compactViewport={compactViewport} />}
+    </>
+  );
+}
+
+export function AppShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const activeTurnsByThreadId = useAppServerSelector((state) => state.activeTurnsByThreadId);
+  const pendingApprovals = useAppServerSelector((state) => state.pendingApprovals);
+  const connectionData = useAppServerSelector((state) => state.connection.data);
+  const { reconnect } = useAppServerActions();
+
+  const [chatListOpenRaw, setChatListOpenRaw] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const compactViewportState = useCompactViewport();
+  const compactViewport = compactViewportState !== false;
+
+  useGlobalSearchShortcut(() => setSearchOpen(true));
+
+  // Record the last non-settings pathname for SettingsSidebar's Back button.
+  // Without this, deep-linking into /settings/providers (or any /settings
+  // sub-route) and pressing Back would call router.back() and escape the app
+  // (e.g. to about:blank). sessionStorage scopes per-tab so it doesn't leak
+  // across windows.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!pathname.startsWith('/settings')) {
+      const fullPath = pathname + window.location.search + window.location.hash;
+      sessionStorage.setItem('codepilot:last-non-settings-path', fullPath);
+    }
+  }, [pathname]);
+
+  // Hash 桥接：旧错误消息或外部深链仍可能带着 #providers。
+  // 在 Codex-only UI 中，它会进入 Codex 设置页。/settings 页面自身
+  // 已由根页面负责 hash 到路由的转换，这里提前返回以避免来回跳转。
+  useEffect(() => {
+    const maybeRedirectFromHash = () => {
+      if (typeof window === 'undefined') return;
+      if (window.location.pathname.startsWith('/settings')) return;
+      if (window.location.hash === '#providers') {
+        history.replaceState(null, '', window.location.pathname + window.location.search);
+        router.replace('/settings/codex');
+      }
+    };
+    maybeRedirectFromHash();
+    window.addEventListener('hashchange', maybeRedirectFromHash);
+    return () => window.removeEventListener('hashchange', maybeRedirectFromHash);
+  }, [router]);
+
+  // Listen for open-global-search events from ChatListPanel
+  useEffect(() => {
+    const handler = () => setSearchOpen(true);
+    window.addEventListener('open-global-search', handler);
+    return () => window.removeEventListener('open-global-search', handler);
+  }, []);
+
+  // Sync with viewport after hydration to avoid SSR mismatch
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    setChatListOpenRaw(window.matchMedia(`(min-width: ${LG_BREAKPOINT}px)`).matches);
+  }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  // Panel width state with localStorage persistence
+  const [chatListWidth, setChatListWidth] = useState(CHATLIST_DEFAULT);
+
+  // Restore persisted width after hydration
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    const saved = localStorage.getItem("codepilot_chatlist_width");
+    if (saved) {
+      const parsed = Number.parseInt(saved, 10);
+      if (Number.isFinite(parsed)) {
+        setChatListWidth(Math.min(CHATLIST_MAX, Math.max(CHATLIST_MIN, parsed)));
+      }
+    }
+  }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  const handleChatListResize = useCallback((delta: number) => {
+    setChatListWidth((w) => Math.min(CHATLIST_MAX, Math.max(CHATLIST_MIN, w + delta)));
+  }, []);
+  const handleChatListResizeEnd = useCallback(() => {
+    setChatListWidth((w) => {
+      localStorage.setItem("codepilot_chatlist_width", String(w));
+      return w;
+    });
+  }, []);
+
+  // Panel state — chatListOpen is no longer gated by route (sidebar always visible)
+  const isChatRoute = pathname.startsWith("/chat/") || pathname === "/chat";
+  const isHomeRoute = pathname === "/chat";
+  const connectionNotice = appServerConnectionNotice(connectionData, reconnect);
+  const chatListOpen = chatListOpenRaw;
+
+  const setChatListOpen = useCallback((open: boolean) => {
+    setChatListOpenRaw(open);
+  }, []);
+
+  // --- Right-rail panel states ---
+  // Phase 2 (2026-04-30): gitPanelOpen / dashboardPanelOpen / previewOpen
+  // were removed — those surfaces moved into the Workspace Sidebar
+  // (Git + Widget fixed Tabs, Markdown / Artifact / file preview as
+  // dynamic Tabs). Only fileTreeOpen remains as the lightweight
+  // independent topbar entry, plus assistantPanelOpen which doesn't
+  // fit the AI-work-surface Tab model.
+  const [fileTreeOpen, setFileTreeOpen] = useState(false);
+  const [assistantPanelOpen, setAssistantPanelOpen] = useState(false);
+  const [isAssistantWorkspace, setIsAssistantWorkspace] = useState(false);
+
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (compactViewportState !== true) return;
+    setChatListOpenRaw(false);
+    setFileTreeOpen(false);
+  }, [compactViewportState]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  // --- Git summary (derived from polling hook, no setState needed) ---
+  const [currentWorktreeLabel, setCurrentWorktreeLabel] = useState("");
+
+  const [workingDirectory, setWorkingDirectory] = useState("");
+  const [sessionId, setSessionId] = useState("");
+  const [sessionTitle, setSessionTitle] = useState("");
+  const [streamingSessionId, setStreamingSessionId] = useState("");
+  const [pendingApprovalSessionId, setPendingApprovalSessionId] = useState("");
+
+  const { status: gitStatusFromHook } = useGitWorkspace(workingDirectory, false);
+  const currentBranch = gitStatusFromHook?.branch ?? "";
+  const gitDirtyCount = gitStatusFromHook?.changedFiles.filter(f => f.status !== 'untracked').length ?? 0;
+
+  const activeStreamingSessions = useMemo(() => {
+    const ids = Object.values(activeTurnsByThreadId)
+      .filter(({ data }) => data.status === 'starting' || data.status === 'running')
+      .map(({ data }) => data.threadId)
+      .filter(Boolean);
+    return ids.length > 0 ? new Set(ids) : EMPTY_SET;
+  }, [activeTurnsByThreadId]);
+  const pendingApprovalSessionIds = useMemo(() => {
+    const ids = pendingApprovals
+      .map((approval) => approval.threadId)
+      .filter((threadId): threadId is string => !!threadId);
+    return ids.length > 0 ? new Set(ids) : EMPTY_SET;
+  }, [pendingApprovals]);
+
+  // --- Split-screen state ---
+  const [splitSessions, setSplitSessions] = useState<SplitSession[]>(() => loadSplitSessions());
+  const [activeColumnId, setActiveColumnIdRaw] = useState<string>(() => loadActiveColumn());
+  const isSplitActive = splitSessions.length >= 2;
+  const isChatWorkspaceRoute = isChatRoute || isSplitActive;
+
+  // Persist split sessions to localStorage
+  useEffect(() => {
+    saveSplitSessions(splitSessions);
+    if (activeColumnId) {
+      localStorage.setItem(SPLIT_ACTIVE_COLUMN_KEY, activeColumnId);
+    }
+  }, [splitSessions, activeColumnId]);
+
+  // URL sync: when activeColumn changes, update router
+  useEffect(() => {
+    if (isSplitActive && activeColumnId) {
+      const target = `/chat/${activeColumnId}`;
+      if (pathname !== target) {
+        router.replace(target);
+      }
+    }
+  }, [isSplitActive, activeColumnId, pathname, router]);
+
+  const setActiveColumn = useCallback((sessionId: string) => {
+    setActiveColumnIdRaw(sessionId);
+  }, []);
+
+  const addToSplit = useCallback((session: SplitSession) => {
+    setSplitSessions((prev) => {
+      if (prev.some((s) => s.sessionId === session.sessionId)) return prev;
+
+      if (prev.length < 2) {
+        const currentSessionId = sessionId;
+        if (currentSessionId && currentSessionId !== session.sessionId) {
+          const currentSession: SplitSession = {
+            sessionId: currentSessionId,
+            title: sessionTitle || "New Conversation",
+            workingDirectory: workingDirectory || "",
+            projectName: "",
+            mode: "code",
+          };
+          const hasCurrentAlready = prev.some((s) => s.sessionId === currentSessionId);
+          const next = hasCurrentAlready ? [...prev, session] : [...prev, currentSession, session];
+          setActiveColumnIdRaw(session.sessionId);
+          return next;
+        }
+      }
+
+      const next = [...prev, session];
+      setActiveColumnIdRaw(session.sessionId);
+      return next;
+    });
+  }, [sessionId, sessionTitle, workingDirectory]);
+
+  const pendingNavigateRef = useRef<string | null>(null);
+
+  const removeFromSplit = useCallback((removeId: string) => {
+    setSplitSessions((prev) => {
+      const next = prev.filter((s) => s.sessionId !== removeId);
+      if (next.length <= 1) {
+        if (next.length === 1) {
+          pendingNavigateRef.current = next[0].sessionId;
+        }
+        return [];
+      }
+      setActiveColumnIdRaw((currentActive) =>
+        currentActive === removeId ? next[0].sessionId : currentActive
+      );
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (pendingNavigateRef.current) {
+      const target = pendingNavigateRef.current;
+      pendingNavigateRef.current = null;
+      router.replace(`/chat/${target}`);
+    }
+  }, [splitSessions, router]);
+
+  const exitSplit = useCallback(() => {
+    const firstSession = splitSessions[0];
+    setSplitSessions([]);
+    setActiveColumnIdRaw("");
+    if (firstSession) {
+      router.replace(`/chat/${firstSession.sessionId}`);
+    }
+  }, [splitSessions, router]);
+
+  const isInSplit = useCallback((sid: string) => {
+    return splitSessions.some((s) => s.sessionId === sid);
+  }, [splitSessions]);
+
+  useEffect(() => {
+    const handler = () => {
+      setSplitSessions((prev) => prev);
+    };
+    window.addEventListener("session-deleted", handler);
+    return () => window.removeEventListener("session-deleted", handler);
+  }, []);
+
+  useEffect(() => {
+    if (isSplitActive && !pathname.startsWith("/chat")) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSplitSessions([]);
+      setActiveColumnIdRaw("");
+    }
+  }, [pathname, isSplitActive]);
+
+  const splitContextValue = useMemo(
+    () => ({
+      splitSessions,
+      activeColumnId,
+      isSplitActive,
+      addToSplit,
+      removeFromSplit,
+      setActiveColumn,
+      exitSplit,
+      isInSplit,
+    }),
+    [splitSessions, activeColumnId, isSplitActive, addToSplit, removeFromSplit, setActiveColumn, exitSplit, isInSplit]
+  );
+
+  // Warn before closing window/tab while any session is streaming
+  useEffect(() => {
+    if (activeStreamingSessions.size === 0) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [activeStreamingSessions]);
+
+  // --- Doc Preview state ---
+  // `previewSource` is the discriminated union (file / inline-html /
+  // inline-jsx / inline-datatable) that the WorkspaceSidebar's
+  // dynamic-Tab content reads. `previewFile` is a derived path-only
+  // view for code paths (FileTreePanel toggle logic, etc.) that only
+  // care about the file kind — when the active source is inline-*,
+  // `previewFile` is null.
+  const [previewSource, setPreviewSourceRaw] = useState<PreviewSource | null>(null);
+  const [previewViewMode, setPreviewViewMode] = useState<PreviewViewMode>("source");
+  // Track the last filePath we routed through setPreviewSource so we can
+  // distinguish "file change" (reset view mode) from "metadata update"
+  // (Phase 4 UX — same-file presentationTemplate / anchor / trust
+  // promotions must NOT bounce the user out of Edit mode).
+  const lastPreviewFilePathRef = useRef<string | null>(null);
+
+  const previewFile: string | null =
+    previewSource?.kind === "file" ? previewSource.filePath : null;
+
+  const setPreviewSource = useCallback((source: PreviewSource | null) => {
+    setPreviewSourceRaw(source);
+    if (!source) {
+      lastPreviewFilePathRef.current = null;
+      return;
+    }
+    // File sources respect the extension-based default view mode — but
+    // ONLY on actual file changes. A same-file metadata update keeps
+    // whatever view mode the user is in. Inline sources are always
+    // "rendered" — there's no raw path to show for source view, and
+    // all inline variants are meaningful only rendered.
+    if (source.kind === "file") {
+      if (lastPreviewFilePathRef.current !== source.filePath) {
+        setPreviewViewMode(defaultViewMode(source.filePath));
+        lastPreviewFilePathRef.current = source.filePath;
+      }
+    } else {
+      setPreviewViewMode("rendered");
+      lastPreviewFilePathRef.current = null;
+    }
+    // Right-rail routing: on chat-detail routes we dispatch a
+    // `workspace-tab-open-request` event so the WorkspaceSidebar
+    // creates / focuses the matching dynamic Tab. Non-chat-detail
+    // routes (settings, skills, plugins, etc.) don't mount the
+    // sidebar at all; the source sits in context unused, which is
+    // intentional — there is no preview panel outside chat-detail.
+    if (isChatWorkspaceRoute && typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("workspace-tab-open-request", { detail: { source } }),
+      );
+    }
+  }, [isChatWorkspaceRoute]);
+
+  const setPreviewFile = useCallback(
+    (path: string | null) => {
+      if (path === null) {
+        setPreviewSource(null);
+      } else {
+        // Legacy file-only entry point — used by FileTreePanel toggles
+        // and any other code that thinks in path-strings only. All known
+        // callers operate on workspace files (the file tree is scoped to
+        // workingDirectory), so we stamp the workspace trust tier and
+        // pass workingDirectory as baseDir. Callers that need a
+        // different trust (e.g. agent-referenced) must use
+        // setPreviewSource directly.
+        setPreviewSource({
+          kind: "file",
+          filePath: path,
+          trust: "workspace",
+          baseDir: workingDirectory || undefined,
+        });
+      }
+    },
+    [setPreviewSource, workingDirectory],
+  );
+
+  // Reset doc preview when navigating between pages/sessions
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    setPreviewSourceRaw(null);
+  }, [pathname]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  // Keep chat list state in sync when resizing across the breakpoint
+  useEffect(() => {
+    const mql = window.matchMedia(`(min-width: ${LG_BREAKPOINT}px)`);
+    const handler = (e: MediaQueryListEvent) => setChatListOpenRaw(e.matches);
+    mql.addEventListener("change", handler);
+    return () => mql.removeEventListener("change", handler);
+  }, []);
+
+  const panelContextValue = useMemo(
+    () => ({
+      chatListOpen,
+      setChatListOpen,
+      fileTreeOpen,
+      setFileTreeOpen,
+      assistantPanelOpen,
+      setAssistantPanelOpen,
+      isAssistantWorkspace,
+      setIsAssistantWorkspace,
+      currentBranch,
+      gitDirtyCount,
+      currentWorktreeLabel,
+      setCurrentWorktreeLabel,
+      workingDirectory,
+      setWorkingDirectory,
+      sessionId,
+      setSessionId,
+      sessionTitle,
+      setSessionTitle,
+      streamingSessionId,
+      setStreamingSessionId,
+      pendingApprovalSessionId,
+      setPendingApprovalSessionId,
+      activeStreamingSessions,
+      pendingApprovalSessionIds,
+      previewSource,
+      setPreviewSource,
+      previewFile,
+      setPreviewFile,
+      previewViewMode,
+      setPreviewViewMode,
+    }),
+    [chatListOpen, setChatListOpen, fileTreeOpen, assistantPanelOpen, isAssistantWorkspace, currentBranch, gitDirtyCount, currentWorktreeLabel, workingDirectory, sessionId, sessionTitle, streamingSessionId, pendingApprovalSessionId, activeStreamingSessions, pendingApprovalSessionIds, previewSource, setPreviewSource, previewFile, setPreviewFile, previewViewMode]
+  );
+
+  return (
+    <>
+      <SentryInit />
+      <PanelContext.Provider value={panelContextValue}>
+        <WorkspaceSidebarProvider workingDirectory={workingDirectory} sessionId={sessionId}>
+        <SplitContext.Provider value={splitContextValue}>
+        <TooltipProvider delayDuration={300}>
+          {/* Round 20 — layout reorganized so the four floating cards
+              (left sidebar, main content, workspace sidebar, file
+              tree) all start at the same y under a SHARED topbar.
+              Previously the topbar sat inside the main column, which
+              made the left sidebar visually taller than the other
+              three (it included the topbar's vertical space inside
+              its own card). UnifiedTopBar is now a sibling above the
+              content row; traffic-light safe area and sidebar toggle
+              both live there.
+              `data-app-shell` is now on the outer flex-col so
+              globals.css can inset the whole window the same way. */}
+          <div
+            className="flex h-screen flex-col overflow-hidden"
+            data-app-shell
+            data-home-shell={isHomeRoute ? "" : undefined}
+          >
+            {(!isHomeRoute || !chatListOpen) && <UnifiedTopBar />}
+            {connectionNotice && (!isChatRoute || isSplitActive) && (
+              <ErrorBanner
+                message={connectionNotice.message}
+                description={connectionNotice.description}
+                actions={connectionNotice.actions}
+                className="mx-3 mb-2"
+              />
+            )}
+            <div className="flex flex-1 min-h-0 overflow-hidden" data-app-content-row>
+              {/* Phase 7c closeout — the left sidebar is now a
+                  row-level card, exactly like main / workspace /
+                  fileTree: its CardFrame and ResizeGutter sit FLAT in
+                  data-app-content-row with no extra wrapper.
+
+                  The old `<div className="flex h-full shrink-0">`
+                  wrapper was a vestige of the Round 22 `gap: 4px` era,
+                  when it grouped the sidebar + handle into one flex
+                  item so the row gap wouldn't double up around the
+                  handle. Phase 7c-F set the darwin content-row gap to
+                  0 (the 8px ResizeGutter now owns the only visible
+                  gap), so the wrapper had no layout job left.
+
+                  Removing it was previously blamed for dataPlatform=
+                  null (tech-debt #29). That was a misattribution: the
+                  data-platform attribute is stamped on <html> by the
+                  anti-FOUC <head> script before hydration and has no
+                  causal link to a layout <div> deep in <body>. See
+                  tech-debt #29's resolution for the real cause. */}
+              {chatListOpen && compactViewport ? (
+                <Sheet open onOpenChange={setChatListOpen}>
+                  <SheetContent
+                    side="left"
+                    className="w-[min(88vw,320px)] max-w-none gap-0 p-0 pt-10"
+                  >
+                    <SheetTitle className="sr-only">Navigation</SheetTitle>
+                    <SheetDescription className="sr-only">
+                      在移动端显示会话列表与导航。
+                    </SheetDescription>
+                    <CardSurface
+                      kind="sidebar"
+                      variant={pathname.startsWith('/settings') ? 'settings' : 'chat-list'}
+                    >
+                      <ErrorBoundary>
+                        {pathname.startsWith('/settings') ? (
+                          <SettingsSidebar open={chatListOpen} />
+                        ) : (
+                          <ChatListPanel open={chatListOpen} />
+                        )}
+                      </ErrorBoundary>
+                    </CardSurface>
+                  </SheetContent>
+                </Sheet>
+              ) : chatListOpen ? (
+                <CardFrame kind="sidebar" width={chatListWidth}>
+                  <CardSurface
+                    kind="sidebar"
+                    variant={pathname.startsWith('/settings') ? 'settings' : 'chat-list'}
+                  >
+                    <ErrorBoundary>
+                      {pathname.startsWith('/settings') ? (
+                        <SettingsSidebar open={chatListOpen} />
+                      ) : (
+                        <ChatListPanel open={chatListOpen} />
+                      )}
+                    </ErrorBoundary>
+                  </CardSurface>
+                </CardFrame>
+              ) : null}
+              {chatListOpen && !compactViewport && (
+                <ResizeGutter
+                  onResize={handleChatListResize}
+                  onResizeEnd={handleChatListResizeEnd}
+                  onReset={() => {
+                    setChatListWidth(CHATLIST_DEFAULT);
+                    localStorage.setItem("codepilot_chatlist_width", String(CHATLIST_DEFAULT));
+                  }}
+                />
+              )}
+              <ChatContentRow
+                isChatDetailRoute={isChatWorkspaceRoute}
+                isSplitActive={isSplitActive}
+                compactViewport={compactViewport}
+                compactViewportConfirmed={compactViewportState === true}
+              >
+                {children}
+              </ChatContentRow>
+            </div>
+          </div>
+          <Toaster />
+          <GlobalSearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
+        </TooltipProvider>
+        </SplitContext.Provider>
+        </WorkspaceSidebarProvider>
+      </PanelContext.Provider>
+    </>
+  );
+}

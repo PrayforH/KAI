@@ -98,6 +98,26 @@ async def exercise_repository_contract(repository: AgentDraftRepository) -> None
     else:
         raise AssertionError("stale revision must conflict")
 
+    try:
+        await repository.delete(
+            "tenant-a", "builder-a", tenant_a.draft_id, expected_revision=1
+        )
+    except ConflictError:
+        pass
+    else:
+        raise AssertionError("stale delete revision must conflict")
+
+    await repository.delete(
+        "tenant-a", "builder-a", tenant_a.draft_id, expected_revision=2
+    )
+    try:
+        await repository.get("tenant-a", "builder-a", tenant_a.draft_id)
+    except NotFoundError:
+        pass
+    else:
+        raise AssertionError("deleted draft must not remain readable")
+    assert await repository.get("tenant-b", "builder-a", tenant_b.draft_id) == tenant_b
+
 
 async def exercise_concurrent_replace(repository: AgentDraftRepository) -> None:
     original = draft(draft_id="draft-concurrent")

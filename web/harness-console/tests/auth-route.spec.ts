@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   authenticatedAuthMutation,
   authenticatedAuthProxy,
+  currentSession,
 } from "../src/lib/auth-route";
+import { refreshSession } from "../src/lib/auth-session";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -48,6 +50,83 @@ describe("authenticated workspace member requests", () => {
         body: '{"role":"admin"}',
       },
     ]);
+  });
+});
+
+describe("current browser session", () => {
+  it("coalesces concurrent refreshes of the same rotating token", async () => {
+    const payload = {
+      access_token: "replacement-access",
+      refresh_token: "replacement-refresh",
+      token_type: "bearer" as const,
+      expires_in: 1_800,
+      user: {
+        user_id: "user-a",
+        email: "user@example.com",
+        display_name: "User A",
+        email_verified: true,
+      },
+      membership: {
+        tenant_id: "tenant-a",
+        user_id: "user-a",
+        role: "owner" as const,
+      },
+    };
+    const fetcher = vi.fn(async () => Response.json(payload));
+    const request = new Request("http://console.test/api/auth/session", {
+      headers: { Cookie: "harness_refresh_token=rotating-token" },
+    });
+    const config = {
+      apiUrl: "http://harness.internal:8000",
+      agentName: "lead-agent",
+      agentVersion: "1.0.0",
+      aguiUrl: "http://harness.internal:8000/v1/agui",
+      serviceHeaders: {},
+      cookieSecure: false,
+      refreshCookieDays: 30,
+      googleClientId: "",
+      githubClientId: "",
+      publicUrl: "",
+    };
+
+    const [first, second] = await Promise.all([
+      refreshSession(request, config, fetcher),
+      refreshSession(request, config, fetcher),
+    ]);
+    const duringCookieUpdate = await refreshSession(request, config, fetcher);
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(first).toEqual(payload);
+    expect(second).toEqual(payload);
+    expect(duringCookieUpdate).toEqual(payload);
+  });
+
+  it("preserves the replaced-session reason while clearing stale cookies", async () => {
+    vi.stubEnv("HARNESS_API_URL", "http://harness.internal:8000");
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      if (String(input).endsWith("/v1/auth/refresh")) {
+        return Response.json({ error: { code: "refresh_invalid" } }, { status: 401 });
+      }
+      return Response.json(
+        { error: { code: "session_replaced" } },
+        {
+          status: 401,
+          headers: { "X-Harness-Auth-Error": "session_replaced" },
+        },
+      );
+    });
+
+    const response = await currentSession(
+      new Request("http://console.test/api/auth/session", {
+        headers: {
+          Cookie: "harness_access_token=old-jwt; harness_refresh_token=old-refresh",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get("x-harness-auth-error")).toBe("session_replaced");
+    expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
   });
 });
 

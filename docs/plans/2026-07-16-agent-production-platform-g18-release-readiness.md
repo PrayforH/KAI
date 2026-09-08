@@ -40,9 +40,9 @@ Sigstore 身份。参考官方
 
 ## 3. 不可变 Release 与同制品晋级
 
-`harness.release/v1` manifest 包含：
+`harness.release/v2` manifest 包含：
 
-- source commit 与 canonical `releaseId`；
+- 平台 SemVer、hash-bound Release Notes、source commit 与 canonical `releaseId`；
 - 每个 Agent 的 name/version、archive SHA、manifest hash、package hash；
 - API/Web/Sandbox 的 registry reference、digest、SBOM path/hash。
 

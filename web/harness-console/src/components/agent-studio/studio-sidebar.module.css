@@ -6,8 +6,8 @@
   --sidebar-panel: var(--codex-surface-sidebar, #151515);
   --sidebar-raised: var(--codex-surface-raised, #242424);
   --sidebar-hover: var(--codex-surface-hover, #2a2a2a);
-  --sidebar-accent: var(--codex-accent, #339cff);
-  --sidebar-accent-soft: var(--codex-accent-soft, rgb(51 156 255 / 14%));
+  --sidebar-accent: var(--codex-accent, #ececec);
+  --sidebar-accent-soft: var(--codex-accent-soft, rgb(236 236 236 / 14%));
   position: sticky;
   z-index: 20;
   top: 0;
@@ -17,9 +17,11 @@
   display: flex;
   flex-direction: column;
   overflow: visible;
-  border-right: 1px solid var(--sidebar-line);
+  border-right: 1px solid color-mix(in srgb, var(--sidebar-line) 72%, transparent);
   color: var(--sidebar-ink);
-  background: var(--sidebar-panel);
+  background:
+    radial-gradient(circle at 0 0, var(--sidebar-accent-soft), transparent 190px),
+    var(--sidebar-panel);
   transition: width 180ms cubic-bezier(.2, .8, .2, 1), box-shadow 180ms ease;
 }
 
@@ -31,12 +33,12 @@
 
 .brand {
   min-height: 64px;
-  padding: 10px 11px;
+  padding: 11px 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  border-bottom: 1px solid var(--sidebar-line);
+  border-bottom: 0;
 }
 
 .brandLink {
@@ -51,9 +53,9 @@
 
 .brandMark {
   position: relative;
-  width: 34px;
-  height: 34px;
-  flex: 0 0 auto;
+  width: var(--app-sidebar-brand-mark-size, 36px);
+  height: var(--app-sidebar-brand-mark-size, 36px);
+  flex: 0 0 var(--app-sidebar-brand-mark-size, 36px);
   display: grid;
   place-items: center;
   overflow: hidden;
@@ -65,15 +67,7 @@
 }
 
 .brandMark::after {
-  position: absolute;
-  right: 3px;
-  bottom: 3px;
-  width: 5px;
-  height: 5px;
-  border-radius: 2px;
-  content: "";
-  background: var(--sidebar-accent);
-  box-shadow: 0 0 10px rgb(51 156 255 / 48%);
+  display: none;
 }
 
 .brandCopy {
@@ -91,9 +85,9 @@
 
 .brandCopy strong {
   color: var(--sidebar-ink);
-  font-size: 14px;
-  font-weight: 650;
-  letter-spacing: -0.02em;
+  font-size: 15px;
+  font-weight: 680;
+  letter-spacing: -0.025em;
 }
 
 .brandCopy small {
@@ -162,7 +156,7 @@
   flex: 1 1 auto;
   flex-direction: column;
   overflow: hidden;
-  border-top: 1px solid var(--sidebar-line);
+  border-top: 0;
 }
 
 .sidebarFooter {
@@ -172,7 +166,8 @@
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  border-top: 1px solid var(--sidebar-line);
+  border-top: 0;
+  background: linear-gradient(to bottom, transparent, var(--sidebar-panel) 28%);
 }
 
 .accountSlot {
@@ -230,22 +225,47 @@
   display: none;
 }
 
+.sidebar[data-studio-sidebar="collapsed"] .accountSlot :global(.account-trigger-chevron) {
+  display: none;
+}
+
+.sidebar[data-studio-sidebar="collapsed"] .accountSlot :global(.account-popover) {
+  right: auto;
+  bottom: 0;
+  left: calc(100% + 10px);
+  width: 240px;
+}
+
 :global(html[data-color-mode="light"]) .brandMark {
   border-color: #303030;
   color: #ffffff;
   background: #202020;
 }
 
+:global(html[data-color-mode="light"]) .sidebar {
+  border-right-color: var(--codex-line, #e5eae6);
+  background: var(--codex-surface-sidebar, #f8faf8);
+}
+
+:global(html[data-color-mode="light"]) .sidebarFooter {
+  background: var(--codex-surface-sidebar, #f8faf8);
+}
+
+:global(html[data-color-mode="light"]) .collapseButton:hover {
+  border-color: transparent;
+  background: var(--codex-surface-hover, #edf2ee);
+}
+
 @media (max-width: 980px) {
   .sidebar[data-studio-sidebar="expanded"] {
     position: fixed;
     inset: 0 auto 0 0;
-    width: min(86vw, 300px);
+    width: min(86vw, var(--studio-sidebar-mobile-max-width));
     box-shadow: 22px 0 64px rgb(0 0 0 / 26%);
   }
 
   .sidebar[data-studio-sidebar="collapsed"] {
-    width: 52px;
+    width: var(--studio-sidebar-collapsed-width);
   }
 }
 

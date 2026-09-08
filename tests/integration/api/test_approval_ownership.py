@@ -6,13 +6,14 @@ from httpx import ASGITransport, AsyncClient
 from harness.api.app import create_app
 from harness.api.dependencies import build_memory_container
 from harness.core.models import ApprovalStatus, RunStatus
+from tests.support.policies import fake_runtime_review_profiles
 
 FIXTURE = Path("tests/fixtures/agents/echo-agent/agent.yaml")
 
 
 @pytest.mark.asyncio
 async def test_only_the_run_owner_can_decide_an_approval() -> None:
-    container = build_memory_container()
+    container = build_memory_container(policy_profiles=fake_runtime_review_profiles())
     await container.agents.publish("tenant-a", "owner", FIXTURE)
     session = await container.sessions.create("tenant-a", "owner", "echo-agent", "0.1.0")
     run = await container.runs.create(

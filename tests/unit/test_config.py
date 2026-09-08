@@ -14,6 +14,9 @@ def test_local_defaults_disable_external_model_and_otel() -> None:
     assert settings.otel_content_capture == "off"
     assert settings.otel_content_max_chars == 12_000
     assert settings.cc_switch_settings_path == "~/.claude/settings.json"
+    assert settings.codex_cli_path == "/usr/local/bin/codex"
+    assert settings.codex_approval_policy == "untrusted"
+    assert settings.codex_tool_output_token_limit == 32_000
     assert settings.new_api_compatibility == "full"
     assert settings.new_api_capabilities == "streaming,tool_use"
     assert settings.daytona_delete_on_destroy is True
@@ -42,6 +45,8 @@ def test_observability_content_capture_rejects_implicit_or_unbounded_modes() -> 
         Settings(sandbox_execution_mode="implicit")  # type: ignore[arg-type]
     with pytest.raises(ValueError):
         Settings(worker_deferred_max_active_runs=0)
+    with pytest.raises(ValueError):
+        Settings(codex_tool_output_token_limit=999)
 
 
 def test_daytona_cleanup_intervals_must_be_positive() -> None:

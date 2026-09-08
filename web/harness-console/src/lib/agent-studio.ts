@@ -6,11 +6,68 @@ export type StudioSection =
   | "skills"
   | "capabilities"
   | "runtime"
+  | "trial"
   | "evaluation";
+
+export type StudioStage = "goal" | "capabilities" | "behavior" | "trial" | "publish";
+
+export interface StudioStageMeta {
+  id: StudioStage;
+  index: number;
+  label: string;
+  hint: string;
+  sections: StudioSection[];
+}
+
+export const STUDIO_STAGES: StudioStageMeta[] = [
+  {
+    id: "goal",
+    index: 1,
+    label: "目标与契约",
+    hint: "边界、路由与输出契约",
+    sections: ["identity"],
+  },
+  {
+    id: "capabilities",
+    index: 2,
+    label: "能力",
+    hint: "行动、事实与委托装配",
+    sections: ["capabilities", "orchestration"],
+  },
+  {
+    id: "behavior",
+    index: 3,
+    label: "行为",
+    hint: "Prompt、Skills 与运行语义",
+    sections: ["prompt", "skills", "runtime"],
+  },
+  {
+    id: "trial",
+    index: 4,
+    label: "试跑",
+    hint: "预检与隔离试跑",
+    sections: ["trial"],
+  },
+  {
+    id: "publish",
+    index: 5,
+    label: "发布",
+    hint: "版本、门禁与晋级",
+    sections: ["evaluation"],
+  },
+];
+
+export function stageForSection(section: StudioSection): StudioStage {
+  for (const stage of STUDIO_STAGES) {
+    if (stage.sections.includes(section)) return stage.id;
+  }
+  return "goal";
+}
 
 export type StudioRisk = "low" | "medium" | "high";
 export type NetworkAccess = "none" | "internal" | "external";
 export type ToolExposureMode = "eager" | "on_demand";
+export type AgentRuntime = "claude-agent-sdk" | "codex-app-server";
 
 export interface ModelRouteOption {
   id: string;
@@ -18,6 +75,7 @@ export interface ModelRouteOption {
   provider: string;
   models: string[];
   capabilities: string[];
+  apiFormat?: "anthropic_compatible" | "openai_compatible" | "openai_images";
 }
 
 export interface BuiltinToolOption {
@@ -65,6 +123,16 @@ export interface StudioSkill {
     contentSha256?: string | null;
     binary?: boolean;
   }>;
+  source?: {
+    kind: "platform";
+    packageId: string;
+    packageRevision: number;
+    sourceUrl: string;
+    sourceRevision: string;
+    license: string;
+    contentHash: string;
+    modified: boolean;
+  } | null;
 }
 
 export interface StudioEvalCase {
@@ -97,7 +165,10 @@ export interface StudioPythonTool {
 }
 
 export interface StudioDraft {
+  parentDraftId?: string | null;
   id: string;
+  agentId: string | null;
+  spaceId: string | null;
   revision: number;
   publishedVersion: string | null;
   publishedHash: string | null;
@@ -108,8 +179,18 @@ export interface StudioDraft {
   domain: string;
   version: string;
   template: "analyst" | "operator" | "orchestrator";
+  taskContract: {
+    goal: string;
+    audience: string;
+    inputs: string[];
+    outputs: string[];
+    constraints: string[];
+    examples: string[];
+  } | null;
+  runtime: AgentRuntime;
   modelRoute: string;
   model: string;
+  reasoningEffort: "minimal" | "low" | "medium" | "high" | "xhigh" | null;
   requiredCapabilities: string[];
   systemPrompt: string;
   skills: StudioSkill[];
@@ -124,6 +205,7 @@ export interface StudioDraft {
   restoreSession: boolean;
   archiveOnComplete: boolean;
   maxTurns: number | null;
+  maxToolCalls: number | null;
   timeoutSeconds: number | null;
   maxBudgetUsd: number | null;
   maxModelTokens: number | null;
@@ -181,6 +263,7 @@ export const MODEL_ROUTES: ModelRouteOption[] = [
     provider: "deepseek",
     models: ["deepseek-v4-flash"],
     capabilities: ["streaming", "tool_use"],
+    apiFormat: "anthropic_compatible",
   },
   {
     id: "deepseek-v4-pro",
@@ -188,6 +271,7 @@ export const MODEL_ROUTES: ModelRouteOption[] = [
     provider: "deepseek",
     models: ["deepseek-v4-pro"],
     capabilities: ["streaming", "tool_use"],
+    apiFormat: "anthropic_compatible",
   },
   {
     id: "minimax-m3",
@@ -195,17 +279,13 @@ export const MODEL_ROUTES: ModelRouteOption[] = [
     provider: "minimax",
     models: ["MiniMax-M3"],
     capabilities: ["streaming", "tool_use", "vision"],
-  },
-  {
-    id: "anthropic-official",
-    label: "Anthropic 官方",
-    provider: "anthropic",
-    models: ["claude-sonnet-4-6"],
-    capabilities: ["streaming", "tool_use", "tool_search"],
+    apiFormat: "anthropic_compatible",
   },
 ];
 
 export const BUILTIN_TOOLS: BuiltinToolOption[] = [
+  { id: "WebSearch", label: "搜索公开网页", description: "平台统一搜索，只发送公开关键词，无需配置 MCP。", risk: "low", approval: "公开关键词自动允许" },
+  { id: "WebFetch", label: "读取公开网页", description: "直接读取公网正文，不携带登录信息。", risk: "low", approval: "公开网页自动允许" },
   {
     id: "Read",
     label: "读取文件",
@@ -246,7 +326,7 @@ export const BUILTIN_TOOLS: BuiltinToolOption[] = [
     label: "运行命令",
     description: "运行受策略约束的沙箱命令。",
     risk: "high",
-    approval: "默认人工审批",
+    approval: "自动风险分级，必要时确认",
   },
   {
     id: "Task",
@@ -277,7 +357,7 @@ export const POLICY_OPTIONS = [
   {
     id: "production-standard",
     label: "生产标准",
-    description: "工作区文件写入自动允许，命令默认审批。",
+    description: "工作区写入及策略允许的命令自动执行；高风险、越界或不确定动作拒绝或确认。",
   },
   {
     id: "production-orchestrator",
@@ -332,6 +412,8 @@ const GENERAL_LEAD_SKILL = `# 通用任务编排
 
 export const DEFAULT_STUDIO_DRAFT: StudioDraft = {
   id: "draft-lead-agent",
+  agentId: null,
+  spaceId: null,
   revision: 0,
   publishedVersion: null,
   publishedHash: null,
@@ -342,8 +424,18 @@ export const DEFAULT_STUDIO_DRAFT: StudioDraft = {
   domain: "general-assistant",
   version: "1.0.0",
   template: "orchestrator",
+  taskContract: {
+    goal: "理解用户目标，利用当前实际可用的工具完成工作，并交付可核验的结果。",
+    audience: "需要完成通用知识工作与文件任务的用户",
+    inputs: ["用户目标、约束、附件与工作区材料"],
+    outputs: ["可核验的回答、变更或 outputs/ 下的交付文件"],
+    constraints: ["不得伪造工具结果，不得绕过平台权限、审批或沙箱边界"],
+    examples: [],
+  },
+  runtime: "claude-agent-sdk",
   modelRoute: "deepseek-v4-pro",
   model: "deepseek-v4-pro",
+  reasoningEffort: null,
   requiredCapabilities: ["streaming", "tool_use"],
   systemPrompt: GENERAL_LEAD_SYSTEM_PROMPT,
   skills: [
@@ -365,6 +457,7 @@ export const DEFAULT_STUDIO_DRAFT: StudioDraft = {
   restoreSession: true,
   archiveOnComplete: true,
   maxTurns: 80,
+  maxToolCalls: 256,
   timeoutSeconds: null,
   maxBudgetUsd: null,
   maxModelTokens: null,
@@ -419,6 +512,33 @@ export const DEFAULT_STUDIO_DRAFT: StudioDraft = {
   ],
 };
 
+export function createPersonalStudioDraft(
+  existingNames: readonly string[] = [],
+): StudioDraft {
+  const occupied = new Set(existingNames);
+  const baseName = "productivity-agent";
+  let name = baseName;
+  let sequence = 2;
+  while (occupied.has(name)) {
+    name = `${baseName}-${sequence}`;
+    sequence += 1;
+  }
+  const suffix = name === baseName ? "" : ` ${sequence - 1}`;
+  return {
+    ...DEFAULT_STUDIO_DRAFT,
+    id: "",
+    revision: 0,
+    publishedVersion: null,
+    publishedHash: null,
+    publishedPackageHash: null,
+    displayName: `生产力智能体${suffix}`,
+    name,
+    description: "说明它要完成的工作、可以使用的资料，以及最终需要交付的结果。",
+    domain: "productivity",
+    version: "0.1.0",
+  };
+}
+
 export function restoreStudioDraft(value: unknown): StudioDraft | null {
   if (!value || typeof value !== "object") return null;
   const raw = value as Partial<StudioDraft>;
@@ -463,11 +583,15 @@ export function restoreStudioDraft(value: unknown): StudioDraft | null {
   return {
     ...DEFAULT_STUDIO_DRAFT,
     ...raw,
+    agentId: typeof raw.agentId === "string" ? raw.agentId : null,
+    spaceId: typeof raw.spaceId === "string" ? raw.spaceId : null,
     subagents,
     pythonTools: Array.isArray(raw.pythonTools) ? raw.pythonTools : [],
     evalCases,
     toolExposureMode:
       raw.toolExposureMode === "on_demand" ? "on_demand" : "eager",
+    runtime:
+      raw.runtime === "codex-app-server" ? "codex-app-server" : "claude-agent-sdk",
     restoreSession:
       typeof raw.restoreSession === "boolean"
         ? raw.restoreSession
@@ -508,7 +632,9 @@ export function evaluateStudioDraft(
   if (promptSections !== REQUIRED_PROMPT_HEADINGS.length) {
     issues.push("System Prompt 缺少必需章节");
   }
-  if (draft.skills.length === 0) issues.push("至少需要一个 Skill");
+  // Runtime compatibility is intentionally not duplicated here. The server
+  // Compiler returns the authoritative RuntimeCompatibility and issues after
+  // resolving the tenant capability catalog.
   if (draft.toolExposureMode === "on_demand" && draft.pythonTools.length > 0) {
     issues.push("自定义算子仅支持启动时加载");
   }
@@ -584,7 +710,8 @@ export function evaluateStudioDraft(
   const selectedMcp = mcpOptions.filter((item) =>
     draft.mcpServers.includes(item.id),
   );
-  const network: NetworkAccess = selectedMcp.some(
+  const builtinWeb = draft.builtinTools.some((tool) => ["WebSearch", "WebFetch"].includes(tool));
+  const network: NetworkAccess = builtinWeb || selectedMcp.some(
     (item) => item.network === "external",
   )
     ? "external"
@@ -622,13 +749,13 @@ export function evaluateStudioDraft(
     network,
     networkLabel:
       network === "external"
-        ? "受控外部 MCP"
+        ? (builtinWeb ? "公开网页检索" : "受控外部 MCP")
         : network === "internal"
           ? "内部 MCP"
           : "不联网",
     sandboxLabel: "隔离执行 · 平台托管",
     approvalLabel: draft.builtinTools.includes("Bash")
-      ? "安全 Bash 自动放行"
+      ? "安全 Bash 自动执行 · 高风险才确认"
       : draft.builtinTools.some((tool) => ["Write", "Edit"].includes(tool))
         ? "文件写入按隔离策略"
         : "只读能力自动允许",

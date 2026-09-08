@@ -9,13 +9,39 @@ from httpx import ASGITransport, AsyncClient
 
 from harness.api.app import create_memory_app
 from harness.core.models import RunStatus
+from harness.policy.models import PolicyDecision, PolicyRule
+from harness.policy.profiles import PolicyProfileRegistry, read_only_policy_rules
+from harness.policy.rules import PolicyEngine, default_policy_rules
 
 HEADERS = {"X-Tenant-ID": "local", "X-User-ID": "e2e"}
 MANIFEST = Path("tests/fixtures/agents/echo-agent/agent.yaml")
 
 
+def _fake_runtime_review_profiles() -> PolicyProfileRegistry:
+    review = PolicyEngine(
+        [
+            *default_policy_rules(),
+            PolicyRule(
+                name="fake-runtime-reviewed-command",
+                tool="Bash",
+                command_contains="printf 'reviewed operation'",
+                decision=PolicyDecision.ASK,
+                priority=1_000,
+            ),
+        ]
+    )
+    return PolicyProfileRegistry(
+        {
+            "production-read-only": PolicyEngine(read_only_policy_rules()),
+            "production-standard": review,
+            "production-orchestrator": review,
+            "local-standard": review,
+        }
+    )
+
+
 async def run_fake_e2e() -> dict[str, Any]:
-    app = create_memory_app()
+    app = create_memory_app(policy_profiles=_fake_runtime_review_profiles())
     container = app.state.container
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         published = await client.post("/v1/agents", json={"path": str(MANIFEST)}, headers=HEADERS)

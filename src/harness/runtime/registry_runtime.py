@@ -8,7 +8,10 @@ from harness.core.errors import ConflictError
 from harness.core.manifest import AgentManifestSnapshot
 from harness.core.models import ModelRoute, Session
 from harness.core.ports import AgentRegistry
-from harness.deployments.boundaries import enforce_runtime_environment
+from harness.deployments.boundaries import (
+    enforce_runtime_environment,
+    enforce_runtime_model_route,
+)
 from harness.execution.credentials import (
     CredentialBroker,
     CredentialLease,
@@ -25,6 +28,7 @@ from harness.runtime.claude_sdk import ClaudeSdkRuntime, QueryFactory
 from harness.runtime.mcp_credentials import DynamicMcpCredentialProvider
 from harness.runtime.sdk_tool_gate import ToolGate
 from harness.runtime.tools import ToolResolver
+from harness.studio.model_configuration import ModelConfigurationService
 
 
 class RegistryClaudeRuntime:
@@ -32,7 +36,7 @@ class RegistryClaudeRuntime:
         self,
         *,
         registry: AgentRegistry,
-        config: CcSwitchClaudeConfig,
+        config: CcSwitchClaudeConfig | None = None,
         fallback_config: CcSwitchClaudeConfig | None = None,
         route_configs: Sequence[CcSwitchClaudeConfig] = (),
         query_factory: QueryFactory | None = None,
@@ -47,16 +51,26 @@ class RegistryClaudeRuntime:
         session_store_factory: Callable[[Session], object] | None = None,
         observability: Observability | None = None,
         credential_broker: CredentialBroker | None = None,
+        model_configurations: ModelConfigurationService | None = None,
     ) -> None:
+        if config is None and model_configurations is None:
+            raise ValueError(
+                "RegistryClaudeRuntime requires a static model or the model control plane"
+            )
         self._registry = registry
         self._config = config
         self._fallback_config = fallback_config
         ordered_configs = (
-            config,
-            *(item for item in route_configs if item.route_id != config.route_id),
+            *((config,) if config is not None else ()),
+            *(
+                item
+                for item in route_configs
+                if config is None or item.route_id != config.route_id
+            ),
             *(
                 (fallback_config,)
-                if fallback_config is not None and fallback_config.route_id != config.route_id
+                if fallback_config is not None
+                and (config is None or fallback_config.route_id != config.route_id)
                 else ()
             ),
         )
@@ -74,6 +88,7 @@ class RegistryClaudeRuntime:
         self._session_store_factory = session_store_factory
         self._observability = observability
         self._credential_broker = credential_broker
+        self._model_configurations = model_configurations
 
     def _config_for_route(
         self,
@@ -97,6 +112,8 @@ class RegistryClaudeRuntime:
             return self._fallback_config
         if strict:
             raise ConflictError(f"task model route is not configured: {route_id}")
+        if self._config is None:
+            raise ConflictError(f"task model route is not configured: {route_id}")
         return self._config
 
     async def execute(self, context: RuntimeContext) -> AsyncIterator[RuntimeEvent]:
@@ -107,6 +124,7 @@ class RegistryClaudeRuntime:
             owner_user_id=session.resolved_agent_owner_user_id,
             agent_name=session.agent_name,
             agent_version=session.agent_version,
+            allow_validated_graph=session.environment == "preview",
         )
         snapshot = AgentManifestSnapshot.model_validate(agent_version.snapshot)
         enforce_runtime_environment(session, snapshot)
@@ -114,10 +132,27 @@ class RegistryClaudeRuntime:
         raw_override = context.run.input.get("model_route_override")
         route_override = raw_override if isinstance(raw_override, str) else None
         route_id = route_override or configured_route
-        selected_config = self._config_for_route(
-            route_id,
-            strict=route_override is not None,
-        )
+        dynamic_config: CcSwitchClaudeConfig | None = None
+        if self._model_configurations is not None:
+            dynamic_config = await self._model_configurations.resolve_runtime(
+                session.tenant_id,
+                session.agent_name,
+                route_id,
+                apply_agent_binding=route_override is None,
+            )
+            if dynamic_config is None:
+                raise ConflictError(
+                    f"task model route is unavailable in the control plane: {route_id}"
+                )
+            selected_config = dynamic_config
+            assert selected_config.route_id is not None
+            route_id = selected_config.route_id
+        else:
+            selected_config = self._config_for_route(
+                route_id,
+                strict=route_override is not None,
+            )
+        enforce_runtime_model_route(session, route_id)
         route = ModelRoute(
             route_id=route_id,
             provider=selected_config.provider,
@@ -132,7 +167,7 @@ class RegistryClaudeRuntime:
         )
         routes = [route]
         issued_leases: list[CredentialLease] = []
-        if self._credential_broker is None:
+        if dynamic_config is not None or self._credential_broker is None:
             route_secret = selected_config.credential.get_secret_value()
         else:
             assert context.identity is not None
@@ -151,14 +186,22 @@ class RegistryClaudeRuntime:
         )
         selected_fallback: CcSwitchClaudeConfig | None = None
         if fallback_route_id is not None:
-            try:
-                selected_fallback = self._config_for_route(
+            if self._model_configurations is not None:
+                selected_fallback = await self._model_configurations.resolve_runtime(
+                    session.tenant_id,
+                    session.agent_name,
                     fallback_route_id,
-                    legacy_fallback=True,
-                    strict=True,
+                    apply_agent_binding=False,
                 )
-            except ConflictError:
-                pass
+            else:
+                try:
+                    selected_fallback = self._config_for_route(
+                        fallback_route_id,
+                        legacy_fallback=True,
+                        strict=True,
+                    )
+                except ConflictError:
+                    pass
         if selected_fallback is not None:
             assert fallback_route_id is not None
             fallback_route = ModelRoute(
@@ -171,7 +214,7 @@ class RegistryClaudeRuntime:
                 auth_scheme=selected_fallback.resolved_auth_scheme,
             )
             routes.append(fallback_route)
-            if self._credential_broker is None:
+            if self._model_configurations is not None or self._credential_broker is None:
                 fallback_secret = selected_fallback.credential.get_secret_value()
             else:
                 assert context.identity is not None
@@ -233,5 +276,19 @@ class RegistryClaudeRuntime:
                 type="credential.lease.issued",
                 payload=lease.audit_record(),
             )
-        async for event in runtime.execute(context):
+        effective_context = context
+        if route_override is None and route_id != configured_route:
+            effective_context = context.model_copy(
+                update={
+                    "run": context.run.model_copy(
+                        update={
+                            "input": {
+                                **context.run.input,
+                                "model_route_override": route_id,
+                            }
+                        }
+                    )
+                }
+            )
+        async for event in runtime.execute(effective_context):
             yield event

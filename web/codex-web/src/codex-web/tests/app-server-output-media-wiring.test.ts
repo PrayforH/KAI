@@ -1,0 +1,92 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+import { describe, expect, it } from "vitest";
+
+describe("app-server 输出媒体接线", () => {
+  it("通过 fs/readFile 加载本地图片，不再请求遗留 media API", () => {
+    const preview = readFileSync(
+      resolve(process.cwd(), "src/components/chat/MediaPreview.tsx"),
+      "utf8",
+    );
+
+    expect(preview).toContain("useAppServerActions");
+    expect(preview).toContain("getCachedMediaObjectUrl(path, readFileLimited)");
+    expect(preview).not.toContain("/api/media/serve");
+  });
+
+  it("保留加载中与失败状态，避免图片区域静默消失", () => {
+    const preview = readFileSync(
+      resolve(process.cwd(), "src/components/chat/MediaPreview.tsx"),
+      "utf8",
+    );
+
+    expect(preview).toContain("media.outputLoading");
+    expect(preview).toContain("media.outputLoadFailed");
+  });
+
+  it("Markdown 图片状态使用段落内合法的 phrasing content", () => {
+    const markdown = readFileSync(
+      resolve(process.cwd(), "src/components/chat/markdown-components.tsx"),
+      "utf8",
+    );
+
+    expect(markdown).toContain('<span className="my-3 flex min-h-16');
+    expect(markdown).toContain('<span className="my-3 block h-32');
+    expect(markdown).not.toContain('<div className="my-3 flex min-h-16');
+    expect(markdown).not.toContain('<div className="my-3 h-32');
+  });
+
+  it("Markdown 本地绝对路径通过 app-server 读取后转成 Blob URL", () => {
+    const markdown = readFileSync(
+      resolve(process.cwd(), "src/components/chat/markdown-components.tsx"),
+      "utf8",
+    );
+    expect(markdown).toContain("getCachedMediaObjectUrl(path, readFileLimited)");
+    expect(markdown).toContain("resolveToolPath(source.replace(/^\\.[/\\\\]/, \"\"), baseDirectory ?? workingDirectory)");
+    expect(markdown).toContain("图片加载失败，请检查文件后重试");
+  });
+
+  it("用户消息中的路径型图片通过 app-server 读取后显示缩略图", () => {
+    const attachments = readFileSync(
+      resolve(process.cwd(), "src/components/chat/FileAttachmentDisplay.tsx"),
+      "utf8",
+    );
+
+    expect(attachments).toContain("getCachedMediaObjectUrl(path, readFileLimited)");
+    expect(attachments).toContain("fileUrl(f, pathUrls)");
+    expect(attachments).toContain("!fileUrl(f, pathUrls)");
+  });
+
+  it("图片灯箱提供可访问性描述", () => {
+    const lightbox = readFileSync(
+      resolve(process.cwd(), "src/components/chat/ImageLightbox.tsx"),
+      "utf8",
+    );
+
+    expect(lightbox).toContain("DialogDescription");
+    expect(lightbox).toContain("{current.alt}");
+  });
+
+  it("完成态工具图片显示在默认折叠的处理区域之外", () => {
+    const item = readFileSync(
+      resolve(process.cwd(), "src/components/chat/MessageItem.tsx"),
+      "utf8",
+    );
+    const processStart = item.indexOf("{hasAssistantProcess && (");
+    const processEnd = item.indexOf("</ProcessCollapseGroup>", processStart);
+    const mediaRender = item.indexOf("{processMedia.length > 0 && <MediaPreview media={processMedia} />}");
+
+    expect(processStart).toBeGreaterThan(-1);
+    expect(processEnd).toBeGreaterThan(processStart);
+    expect(mediaRender).toBeGreaterThan(processEnd);
+  });
+
+  it("新 app-server turn 保留历史消息仍引用的媒体 URL", () => {
+    const chatView = readFileSync(
+      resolve(process.cwd(), "src/components/chat/ChatView.tsx"),
+      "utf8",
+    );
+    expect(chatView).not.toContain("clearAllCachedMediaObjectUrls");
+  });
+});

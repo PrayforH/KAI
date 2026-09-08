@@ -17,7 +17,7 @@ function applyColorMode(mode: ColorMode) {
   document
     .querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')
     .forEach((meta) => {
-      meta.content = mode === "dark" ? "#181818" : "#f7f7f7";
+      meta.content = mode === "dark" ? "#181818" : "#ffffff";
     });
 }
 
@@ -64,7 +64,7 @@ export function ThemeSelector() {
       data-mode={mode ?? undefined}
     >
       {([
-        ["light", "浅色", "明亮画布，适合白天和高照度环境"],
+        ["light", "浅色", "清爽白底与克制蓝色强调，适合日常协作"],
         ["dark", "深色", "Codex 深色画布，适合长时间专注"],
       ] as const).map(([value, label, description]) => (
         <button

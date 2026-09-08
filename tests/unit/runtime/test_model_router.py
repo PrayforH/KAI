@@ -2,6 +2,7 @@ import pytest
 
 from harness.core.errors import ConflictError
 from harness.core.models import ModelCompatibility, ModelRoute
+from harness.runtime.claude_sdk import permission_mode_for_route
 from harness.runtime.model_router import ModelRouter
 
 
@@ -82,3 +83,42 @@ def test_missing_capability_without_explicit_fallback_fails() -> None:
             "new-api-default",
             required_capabilities=frozenset({"tool_use"}),
         )
+
+
+@pytest.mark.parametrize("model", ["claude-sonnet-4-6", "claude-opus-4-6", "claude-opus-4-7"])
+def test_official_supported_claude_route_uses_auto_permissions(model: str) -> None:
+    configured = ModelRoute(
+        route_id="anthropic-official",
+        provider="anthropic",
+        base_url="https://api.anthropic.com/",
+        model=model,
+        compatibility=ModelCompatibility.FULL,
+        capabilities=frozenset({"streaming", "tool_use"}),
+    )
+
+    assert permission_mode_for_route(configured) == "auto"
+
+
+@pytest.mark.parametrize(
+    ("provider", "base_url", "model"),
+    [
+        ("new-api", "https://api.anthropic.com", "claude-sonnet-4-6"),
+        ("anthropic", "https://gateway.example/v1", "claude-sonnet-4-6"),
+        ("anthropic", "https://api.anthropic.com", "claude-haiku-4-5"),
+    ],
+)
+def test_noneligible_route_keeps_harness_permissions(
+    provider: str,
+    base_url: str,
+    model: str,
+) -> None:
+    configured = ModelRoute(
+        route_id="route-a",
+        provider=provider,
+        base_url=base_url,
+        model=model,
+        compatibility=ModelCompatibility.FULL,
+        capabilities=frozenset({"streaming", "tool_use"}),
+    )
+
+    assert permission_mode_for_route(configured) == "dontAsk"

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Mecha icon · 16px simplified variant: heavier strokes, no detached node -->
+  <rect width="64" height="64" rx="15" fill="#202823"/>
+  <rect x="14" y="26" width="32" height="26" rx="8.5" fill="none" stroke="#F5FAF7" stroke-width="6.6"/>
+  <path d="M6 39 H58" fill="none" stroke="#25C878" stroke-width="6.6" stroke-linecap="round"/>
+</svg>

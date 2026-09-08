@@ -21,13 +21,16 @@ from harness.studio.models import (
     AgentTemplate,
     CapabilityRisk,
     DraftPythonTool,
+    DraftSkill,
     DraftSkillFile,
     DraftSubagent,
     McpCapability,
+    ModelRouteCapability,
     NetworkAccess,
     ValidationSeverity,
 )
 from harness.studio.nexau_export import export_nexau_agent
+from harness.studio.platform_skills import platform_skill_package
 
 NOW = datetime(2026, 7, 16, tzinfo=UTC)
 
@@ -68,7 +71,6 @@ def test_default_draft_compiles_to_existing_reproducible_bundle_contract() -> No
             "bundle.json",
             "studio.json",
             "prompts/system.md",
-            "skills/invoice-reviewer-core/SKILL.md",
             "evals/suite.yaml",
             "tool-directory.json",
         }.issubset(names)
@@ -76,31 +78,174 @@ def test_default_draft_compiles_to_existing_reproducible_bundle_contract() -> No
         directory = ToolDirectorySnapshot.model_validate_json(bundle.read("tool-directory.json"))
         studio_metadata = StudioBundleMetadata.model_validate_json(bundle.read("studio.json"))
     assert "route: deepseek-v4-pro" in manifest
+    assert "runtime: claude-agent-sdk" in manifest
     assert "mode: isolated" in manifest
     assert directory.exposure_mode == "eager"
     assert directory.catalog_revision == 1
     assert studio_metadata.description == draft().spec.description
     assert studio_metadata.execution_profile == draft().spec.execution_profile
-    assert {entry.name for entry in directory.entries} == {
-        "Read",
-        "Glob",
-        "Grep",
-    }
+    assert {entry.name for entry in directory.entries} == set(draft().spec.builtin_tools)
+
+
+def test_platform_skill_provenance_round_trips_through_the_immutable_bundle() -> None:
+    compiler = AgentDraftCompiler(default_capability_catalog())
+    source = draft()
+    package = platform_skill_package("evidence-reporting", 1)
+    source = source.model_copy(
+        update={
+            "spec": source.spec.model_copy(
+                update={
+                    "skills": (package.skill,),
+                    "evaluation_cases": (
+                        *source.spec.evaluation_cases,
+                        *package.evaluation_cases,
+                    ),
+                }
+            )
+        }
+    )
+
+    imported = parse_agent_bundle(compiler.compile(source).bundle)
+
+    assert imported.spec.skills[0].source == package.skill.source
+    assert imported.spec.skills[0].source is not None
+    assert imported.spec.skills[0].source.modified is False
+    assert any("skill:evidence-reporting" in case.tags for case in imported.spec.evaluation_cases)
+
+
+def test_codex_runtime_compiles_and_round_trips_with_a_responses_route() -> None:
+    catalog = default_capability_catalog()
+    responses_route = ModelRouteCapability(
+        routeId="codex-deepseek-v4-flash",
+        label="Codex DeepSeek V4 Flash",
+        provider="new-api",
+        models=("deepseek-v4-flash",),
+        capabilities=("streaming", "tool_use"),
+        apiFormat="openai_compatible",
+        credentialReference="CODEX_GATEWAY_KEY",
+    )
+    compiler = AgentDraftCompiler(
+        catalog.model_copy(update={"model_routes": (*catalog.model_routes, responses_route)})
+    )
+    source = draft()
+    source = source.model_copy(
+        update={
+            "spec": source.spec.model_copy(
+                update={
+                    "runtime": "codex-app-server",
+                    "model": source.spec.model.model_copy(
+                        update={
+                            "route_id": responses_route.route_id,
+                            "model": "deepseek-v4-flash",
+                            "reasoning_effort": "low",
+                        }
+                    ),
+                    "mcp_servers": ("tavily-readonly",),
+                }
+            )
+        }
+    )
+
+    compiled = compiler.compile(source)
+    imported = parse_agent_bundle(compiled.bundle)
+
+    assert "runtime: codex-app-server" in compiled.manifest_yaml
+    assert "codex-reasoning-effort: low" in compiled.manifest_yaml
+    assert imported.spec.runtime == "codex-app-server"
+    assert imported.spec.model.route_id == responses_route.route_id
+    assert imported.spec.model.reasoning_effort == "low"
+    assert imported.spec.mcp_servers == ("tavily-readonly",)
+
+
+def test_codex_runtime_rejects_capabilities_other_than_http_mcp() -> None:
+    catalog = default_capability_catalog()
+    responses_route = ModelRouteCapability(
+        routeId="codex-deepseek-v4-flash",
+        label="Codex DeepSeek V4 Flash",
+        provider="new-api",
+        models=("deepseek-v4-flash",),
+        capabilities=("streaming", "tool_use", "tool_search"),
+        apiFormat="openai_compatible",
+        credentialReference="CODEX_GATEWAY_KEY",
+    )
+    compiler = AgentDraftCompiler(
+        catalog.model_copy(update={"model_routes": (*catalog.model_routes, responses_route)})
+    )
+    source = draft()
+    python_tool = DraftPythonTool(
+        name="normalize_score",
+        description="Normalize a score.",
+        inputSchema={"type": "object", "properties": {}},
+        code="def run(arguments):\n    return {'ok': True}\n",
+    )
+    source = source.model_copy(
+        update={
+            "spec": source.spec.model_copy(
+                update={
+                    "runtime": "codex-app-server",
+                    "model": source.spec.model.model_copy(
+                        update={
+                            "route_id": responses_route.route_id,
+                            "model": "deepseek-v4-flash",
+                        }
+                    ),
+                    "builtin_tools": (*source.spec.builtin_tools, "Task"),
+                    "python_tools": (python_tool,),
+                    "mcp_servers": ("tavily-readonly",),
+                    "knowledge_references": ("company-policy",),
+                    "subagents": (
+                        DraftSubagent(
+                            alias="fact-checker",
+                            ref="helper-agent@1.0.0",
+                            responsibility="核验事实。",
+                        ),
+                    ),
+                    "tool_exposure_mode": "on_demand",
+                }
+            )
+        }
+    )
+
+    validation = compiler.validate(source)
+    codes = {issue.code for issue in validation.issues}
+
+    assert validation.ready is False
+    assert {
+        "codex_python_tools_unsupported",
+        "codex_knowledge_unsupported",
+        "codex_tool_search_unsupported",
+    }.issubset(codes)
+    assert "codex_subagents_unsupported" not in codes
+    assert "codex_mcp_unsupported" not in codes
+
+
+def test_codex_runtime_rejects_anthropic_route() -> None:
+    compiler = AgentDraftCompiler(default_capability_catalog())
+    source = draft()
+    source = source.model_copy(
+        update={"spec": source.spec.model_copy(update={"runtime": "codex-app-server"})}
+    )
+
+    validation = compiler.validate(source)
+
+    assert validation.ready is False
+    assert any(issue.code == "codex_responses_route_required" for issue in validation.issues)
 
 
 def test_binary_skill_asset_survives_compile_and_studio_round_trip() -> None:
     compiler = AgentDraftCompiler(default_capability_catalog())
     source = draft()
     payload = b"\x89PNG\r\n\x1a\n\x00\xff"
-    skill = source.spec.skills[0].model_copy(
-        update={
-            "files": (
-                DraftSkillFile(
-                    path="assets/template.png",
-                    contentBase64=base64.b64encode(payload).decode("ascii"),
-                ),
-            )
-        }
+    skill = DraftSkill(
+        name="invoice-reviewer-core",
+        description="Review invoice evidence.",
+        instructions="Verify the invoice before reporting a result.",
+        files=(
+            DraftSkillFile(
+                path="assets/template.png",
+                contentBase64=base64.b64encode(payload).decode("ascii"),
+            ),
+        ),
     )
     source = source.model_copy(update={"spec": source.spec.model_copy(update={"skills": (skill,)})})
 
@@ -117,15 +262,16 @@ def test_binary_skill_asset_survives_compile_and_studio_round_trip() -> None:
 def test_nexau_export_is_deterministic_and_round_trips_editable_assets() -> None:
     source = draft()
     payload = b"\x89PNG\r\n\x1a\n\x00\xff"
-    skill = source.spec.skills[0].model_copy(
-        update={
-            "files": (
-                DraftSkillFile(
-                    path="assets/template.png",
-                    contentBase64=base64.b64encode(payload).decode("ascii"),
-                ),
-            )
-        }
+    skill = DraftSkill(
+        name="invoice-reviewer-core",
+        description="Review invoice evidence.",
+        instructions="Verify the invoice before reporting a result.",
+        files=(
+            DraftSkillFile(
+                path="assets/template.png",
+                contentBase64=base64.b64encode(payload).decode("ascii"),
+            ),
+        ),
     )
     python_tool = DraftPythonTool(
         name="normalize_score",
@@ -169,8 +315,8 @@ def test_nexau_export_is_deterministic_and_round_trips_editable_assets() -> None
         description="只读公网搜索。",
         endpointUrl="https://mcp.tavily.com/mcp/",
         tools=("mcp__tavily__tavily_search",),
-        risk="medium",
-        networkAccess="external",
+        risk=CapabilityRisk.MEDIUM,
+        networkAccess=NetworkAccess.EXTERNAL,
         sendsUserData=True,
         readOnly=True,
         executionLocation="external-mcp",
@@ -211,9 +357,11 @@ def test_nexau_export_is_deterministic_and_round_trips_editable_assets() -> None
         assert extensions["unmapped_builtin_tools"] == []
         assert {tool["name"] for tool in config["tools"]} == {
             "read_file",
+            "write_file",
             "list_directory",
             "search_file_content",
             "replace",
+            "run_shell_command",
             "normalize_score",
         }
         assert config["mcp_servers"] == [
@@ -239,14 +387,10 @@ def test_nexau_export_is_deterministic_and_round_trips_editable_assets() -> None
         assert "subagents/fact-researcher/agent.yaml" in archive.namelist()
         assert "subagents/fact-researcher/systemprompt.md" in archive.namelist()
         assert "NAC-DEPLOYMENT.md" in archive.namelist()
-        assert "skills 根目录位于 /home/user/.skills/" in archive.read(
-            "systemprompt.md"
-        ).decode()
+        assert "skills 根目录位于 /home/user/.skills/" in archive.read("systemprompt.md").decode()
         deployment_guide = archive.read("NAC-DEPLOYMENT.md").decode()
         assert "`LLM_MODEL`" in deployment_guide
-        subagent_config = yaml.safe_load(
-            archive.read("subagents/fact-researcher/agent.yaml")
-        )
+        subagent_config = yaml.safe_load(archive.read("subagents/fact-researcher/agent.yaml"))
         assert subagent_config["llm_config"]["model"] == "${env.LLM_MODEL}"
         assert subagent_config["skills"] == []
 
@@ -275,9 +419,7 @@ def test_studio_bundle_round_trips_into_an_editable_spec() -> None:
     assert imported.spec.description == source.spec.description
     assert imported.spec.execution_profile == source.spec.execution_profile
     assert imported.spec.system_prompt == source.spec.system_prompt
-    assert (
-        imported.spec.skills[0].instructions.strip() == source.spec.skills[0].instructions.strip()
-    )
+    assert imported.spec.skills == source.spec.skills
     assert rebuilt_bundle.report.package_hash == compiled.report.package_hash
 
 
@@ -444,6 +586,7 @@ def test_nexau_export_imports_python_bindings_skills_and_unlimited_runtime() -> 
     assert "def run(arguments)" in imported.spec.python_tools[0].code
     assert imported.spec.skills[0].name == "grid-system"
     assert imported.spec.skills[0].files[0].path == "scripts/grid.py"
+    assert imported.spec.skills[0].files[0].content is not None
     assert "outputs/detection_output/grid.jpg" in imported.spec.skills[0].files[0].content
     assert imported.spec.skills[1].name.startswith("imported-skill-")
     assert imported.spec.limits.max_turns is None
@@ -553,7 +696,14 @@ def test_tavily_is_a_controlled_external_mcp_capability_not_general_network() ->
     compiler = AgentDraftCompiler(default_capability_catalog())
     current = draft()
     enabled = current.model_copy(
-        update={"spec": current.spec.model_copy(update={"mcp_servers": ("tavily-readonly",)})}
+        update={
+            "spec": current.spec.model_copy(
+                update={
+                    "builtin_tools": ("Read", "Glob", "Grep", "Write"),
+                    "mcp_servers": ("tavily-readonly",),
+                }
+            )
+        }
     )
 
     validation = compiler.validate(enabled)
@@ -571,8 +721,24 @@ def test_tavily_is_a_controlled_external_mcp_capability_not_general_network() ->
 
 
 def test_on_demand_bundle_pins_reviewed_tool_directory_and_route_capability() -> None:
+    catalog = default_capability_catalog()
+    catalog = catalog.model_copy(
+        update={
+            "model_routes": (
+                *catalog.model_routes,
+                ModelRouteCapability(
+                    routeId="on-demand-test",
+                    label="On-demand test route",
+                    provider="test",
+                    models=("deepseek-v4-pro",),
+                    capabilities=("streaming", "tool_use", "tool_search"),
+                    credentialReference="NEW_API_KEY",
+                ),
+            )
+        }
+    )
     compiler = AgentDraftCompiler(
-        default_capability_catalog(),
+        catalog,
         catalog_revision=9,
     )
     current = draft()
@@ -582,8 +748,8 @@ def test_on_demand_bundle_pins_reviewed_tool_directory_and_route_capability() ->
                 update={
                     "model": current.spec.model.model_copy(
                         update={
-                            "route_id": "anthropic-official",
-                            "model": "claude-sonnet-4-6",
+                            "route_id": "on-demand-test",
+                            "model": "deepseek-v4-pro",
                             "required_capabilities": (
                                 "streaming",
                                 "tool_use",
@@ -603,7 +769,7 @@ def test_on_demand_bundle_pins_reviewed_tool_directory_and_route_capability() ->
 
     assert validation.ready is True
     assert validation.contract.tool_exposure_mode == "on_demand"
-    assert validation.contract.tool_directory_entries == 5
+    assert validation.contract.tool_directory_entries == 7
     assert "toolExposureMode: on_demand" in validation.manifest_yaml
     assert "tool_search" in validation.manifest_yaml
     with ZipFile(BytesIO(compiled.bundle)) as bundle:
@@ -667,8 +833,19 @@ def test_sandbox_is_mandatory_and_provider_is_not_authored_by_domain_agent() -> 
 
     assert contract.sandbox == "isolated"
     assert contract.risk is CapabilityRisk.HIGH
-    assert "Bash 默认进入人工审批" in contract.approval_summary
+    assert "常规 Bash 自动允许" in contract.approval_summary
     assert "sandbox_provider" not in AgentDraftSpec.model_fields
+
+
+def test_operator_contract_uses_the_shared_sandbox_risk_copy() -> None:
+    compiler = AgentDraftCompiler(default_capability_catalog())
+    operator = draft(AgentTemplate.OPERATOR)
+
+    contract = compiler.effective_contract(operator)
+
+    assert contract.risk is CapabilityRisk.HIGH
+    assert "常规 Bash 自动允许" in contract.approval_summary
+    assert "高风险、越界或不确定动作" in contract.approval_summary
 
 
 def test_local_development_profile_is_explicitly_preview_only() -> None:
@@ -711,16 +888,16 @@ def test_local_development_profile_is_explicitly_preview_only() -> None:
     assert profile.allowed_mcp_references == ("tavily-readonly",)
 
 
-def test_orchestrator_compiles_role_descriptions_and_background_mode() -> None:
+def test_orchestrator_starts_without_implicit_subagents() -> None:
     compiler = AgentDraftCompiler(default_capability_catalog())
+    current = draft(AgentTemplate.ORCHESTRATOR)
 
-    validation = compiler.validate(draft(AgentTemplate.ORCHESTRATOR))
+    validation = compiler.validate(current)
 
     assert validation.ready is True
-    assert "alias: evidence-researcher" in validation.manifest_yaml
-    assert "description: 并行收集证据" in validation.manifest_yaml
-    assert "background: true" in validation.manifest_yaml
-    assert "alias: quality-reviewer" in validation.manifest_yaml
+    assert current.spec.subagents == ()
+    assert "subagents: []" in validation.manifest_yaml
+    assert "builtin: Task" not in validation.manifest_yaml
 
 
 def test_disabled_catalog_resources_fail_closed() -> None:
@@ -735,7 +912,7 @@ def test_disabled_catalog_resources_fail_closed() -> None:
             ),
             "policies": tuple(
                 item.model_copy(update={"enabled": False})
-                if item.policy_id == "production-read-only"
+                if item.policy_id == "production-standard"
                 else item
                 for item in catalog.policies
             ),
@@ -783,6 +960,40 @@ def test_model_and_execution_profile_capabilities_must_be_compatible() -> None:
         "model_capability_missing",
         "execution_profile_network_incompatible",
     }
+
+
+def test_image_generation_route_cannot_be_used_as_agent_chat_model() -> None:
+    catalog = default_capability_catalog()
+    image_route = catalog.model_routes[0].model_copy(
+        update={
+            "route_id": "image-primary",
+            "label": "图像生成",
+            "models": ("image-1",),
+            "model_type": "image_generation",
+            "api_format": "openai_images",
+            "capabilities": ("image_generation",),
+        }
+    )
+    with_image = catalog.model_copy(update={"model_routes": (*catalog.model_routes, image_route)})
+    current = draft()
+    image_draft = current.model_copy(
+        update={
+            "spec": current.spec.model_copy(
+                update={
+                    "model": current.spec.model.model_copy(
+                        update={
+                            "route_id": "image-primary",
+                            "model": "image-1",
+                        }
+                    )
+                }
+            )
+        }
+    )
+
+    validation = AgentDraftCompiler(with_image).validate(image_draft)
+
+    assert "model_route_not_conversational" in {issue.code for issue in validation.issues}
 
 
 def test_execution_profile_egress_allows_only_registered_mcp_associations() -> None:
@@ -845,3 +1056,29 @@ def test_execution_profile_reports_network_and_egress_mismatches_together() -> N
     assert issues["execution_profile_network_incompatible"].related_references == (
         "tavily-readonly",
     )
+
+
+def test_all_new_and_imported_templates_have_no_operational_limits() -> None:
+    from harness.studio.models import DraftLimits
+
+    compiler = AgentDraftCompiler(default_capability_catalog())
+    for template in AgentTemplate:
+        source = draft(template)
+        legacy_limits = DraftLimits.model_validate({
+            "maxBudgetUsd": 4, "maxModelTokens": 400_000,
+            "maxSubagentUsageUnits": 300_000, "timeoutSeconds": 300,
+        })
+        assert legacy_limits.max_budget_usd is None
+        assert legacy_limits.max_model_tokens is None
+        assert legacy_limits.max_subagent_usage_units is None
+        source = source.model_copy(
+            update={"spec": source.spec.model_copy(update={"limits": legacy_limits})}
+        )
+        compiled = compiler.compile(source)
+        limits = yaml.safe_load(compiled.manifest_yaml)["spec"]["limits"]
+        assert "maxBudgetUsd" not in limits
+        assert "maxModelTokens" not in limits
+        assert "maxSubagentUsageUnits" not in limits
+        assert limits["timeoutSeconds"] == 300
+        imported = parse_agent_bundle(compiled.bundle)
+        assert imported.spec.limits.max_budget_usd is None

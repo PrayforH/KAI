@@ -64,14 +64,12 @@ export function EnvironmentPolicyControlPlane({
     [environments, selectedName],
   );
   const [draft, setDraft] = useState<StudioEnvironmentResourcePolicy | null>(null);
-  const [knowledgeText, setKnowledgeText] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
     if (!selected) return;
     setDraft(copyPolicy(selected.resourcePolicy));
-    setKnowledgeText(selected.resourcePolicy.allowedKnowledgeReferences.join(", "));
     setMessage("");
   }, [selected]);
 
@@ -89,8 +87,7 @@ export function EnvironmentPolicyControlPlane({
   );
   const activeRoutes = capabilities.modelRoutes.filter((item) => item.enabled);
   const activeMcp = capabilities.mcpServers.filter((item) => item.enabled);
-  const dirty = JSON.stringify(draft) !== JSON.stringify(selected.resourcePolicy)
-    || knowledgeText !== selected.resourcePolicy.allowedKnowledgeReferences.join(", ");
+  const dirty = JSON.stringify(draft) !== JSON.stringify(selected.resourcePolicy);
 
   function toggleList(
     field: "allowedModelRoutes" | "allowedMcpReferences",
@@ -140,17 +137,10 @@ export function EnvironmentPolicyControlPlane({
     setSaving(true);
     setMessage("");
     try {
-      const policy: StudioEnvironmentResourcePolicy = {
-        ...draft,
-        allowedKnowledgeReferences: knowledgeText
-          .split(",")
-          .map((item) => item.trim())
-          .filter((item, index, values) => item && values.indexOf(item) === index),
-      };
       const updated = await studioClient.replaceEnvironmentPolicy(
         agentName,
         selected,
-        policy,
+        draft,
       );
       onUpdated(updated);
       setMessage(`策略 r${updated.policyRevision} 已生效`);
@@ -211,8 +201,8 @@ export function EnvironmentPolicyControlPlane({
           <code>运行时租约</code>
         </div>
         <div>
-          <span>单次运行上限</span>
-          <strong>${draft.quota.maxRunBudgetUsd ?? "—"} · {(draft.quota.maxModelTokens ?? 0).toLocaleString("zh-CN")}</strong>
+          <span>模型用量</span>
+          <strong>费用与 Token 不设执行额度</strong>
           <code>Artifact {(draft.quota.maxArtifactBytes ?? 0).toLocaleString("zh-CN")} B</code>
         </div>
       </div>
@@ -293,52 +283,20 @@ export function EnvironmentPolicyControlPlane({
             ))}
           </fieldset>
 
-          <label className={styles.knowledgeField}>
-            <span>知识资源引用</span>
-            <input
-              value={knowledgeText}
-              disabled={!canManage}
-              placeholder="暂无；Phase 4 接入后填写逻辑 ID，以逗号分隔"
-              onChange={(event) => setKnowledgeText(event.target.value)}
-            />
-            <small>仅接受平台注册的逻辑引用，不接受 URL 或内联密钥。</small>
-          </label>
+          <div className={styles.knowledgeBoundary}>
+            <div>
+              <span>外部知识边界</span>
+              <strong>随 MCP 资源统一授权</strong>
+              <small>知识库连接与检索工具在上方按已登记的 MCP 引用选择，不在环境策略中手工填写逻辑 ID。</small>
+            </div>
+            {draft.allowedKnowledgeReferences.length > 0 && (
+              <code>
+                兼容引用 · {draft.allowedKnowledgeReferences.join(" · ")}
+              </code>
+            )}
+          </div>
 
           <div className={styles.quotaFields}>
-            <label>
-              <span>Run 预算（USD）</span>
-              <input
-                type="number"
-                min="0.01"
-                step="0.01"
-                value={draft.quota.maxRunBudgetUsd ?? ""}
-                disabled={!canManage}
-                onChange={(event) => setDraft((current) => current && ({
-                  ...current,
-                  quota: {
-                    ...current.quota,
-                    maxRunBudgetUsd: optionalNumber(event.target.value),
-                  },
-                }))}
-              />
-            </label>
-            <label>
-              <span>模型 Token</span>
-              <input
-                type="number"
-                min="1"
-                step="1000"
-                value={draft.quota.maxModelTokens ?? ""}
-                disabled={!canManage}
-                onChange={(event) => setDraft((current) => current && ({
-                  ...current,
-                  quota: {
-                    ...current.quota,
-                    maxModelTokens: optionalNumber(event.target.value),
-                  },
-                }))}
-              />
-            </label>
             <label>
               <span>Artifact Bytes</span>
               <input

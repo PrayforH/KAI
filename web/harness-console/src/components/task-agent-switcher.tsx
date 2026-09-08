@@ -1,16 +1,30 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
-  agentCoordinate,
+  agentIdentity,
+  agentItemKey,
   type TaskAgent,
 } from "../lib/task-agent-catalog";
 
 export interface TaskAgentGroup {
+  key: string;
   name: string;
   displayName: string;
   domain: string;
   agents: TaskAgent[];
+}
+
+export type TaskAgentSwitchMode = "current" | "version" | "new-task";
+
+export function taskAgentSwitchMode(
+  selected: TaskAgent | null,
+  next: TaskAgent,
+): TaskAgentSwitchMode {
+  if (!selected || agentIdentity(selected) !== agentIdentity(next)) {
+    return "new-task";
+  }
+  return agentItemKey(selected) === agentItemKey(next) ? "current" : "version";
 }
 
 export function groupTaskAgents(
@@ -28,12 +42,13 @@ export function groupTaskAgents(
     : agents;
   const groups = new Map<string, TaskAgentGroup>();
   for (const agent of matching) {
-    const groupKey = `${agent.scope ?? "personal"}:${agent.spaceId ?? "-"}:${agent.ownerUserId ?? "-"}:${agent.name}`;
+    const groupKey = agentIdentity(agent);
     const group = groups.get(groupKey);
     if (group) {
       group.agents.push(agent);
     } else {
       groups.set(groupKey, {
+        key: groupKey,
         name: agent.name,
         displayName: agent.displayName,
         domain: agent.domain,
@@ -42,12 +57,12 @@ export function groupTaskAgents(
     }
   }
   return [...groups.values()]
-    .map((group) => ({
-      ...group,
-      agents: group.agents.toSorted((left, right) =>
+    .map((group) => {
+      const sorted = group.agents.toSorted((left, right) =>
         right.version.localeCompare(left.version, undefined, { numeric: true }),
-      ),
-    }))
+      );
+      return { ...group, displayName: sorted[0].displayName, domain: sorted[0].domain, agents: sorted };
+    })
     .toSorted((left, right) =>
       left.displayName.localeCompare(right.displayName, "zh-CN"),
     );
@@ -57,65 +72,106 @@ export function TaskAgentSwitcher({
   agents,
   selected,
   loading,
+  currentTaskBusy,
   onChange,
+  onRefresh,
+  kind = "agent",
 }: {
   agents: readonly TaskAgent[];
   selected: TaskAgent | null;
   loading: boolean;
+  currentTaskBusy: boolean;
   onChange: (agent: TaskAgent) => void;
+  onRefresh?: () => void;
+  kind?: "agent" | "version";
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const listboxId = useId();
-  const groups = useMemo(() => groupTaskAgents(agents, query), [agents, query]);
+  const groups = useMemo(() => groupTaskAgents(agents), [agents]);
+  const visibleGroups = groups.filter((group) => `${group.displayName} ${group.name} ${group.agents[0]?.spaceName ?? ""}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
+  const versions = groups.find((group) => selected && group.key === agentIdentity(selected))?.agents ?? [];
+  const [menuHeight, setMenuHeight] = useState(280);
+  const [mobileLeft, setMobileLeft] = useState<number>();
   const disabled = loading || agents.length === 0;
 
-  useEffect(() => {
+  const closeMenu = useCallback((restoreTrigger = false) => {
+    setOpen(false);
+    setQuery("");
+    if (restoreTrigger) {
+      window.requestAnimationFrame(() => triggerRef.current?.focus());
+    }
+  }, []);
+
+  useLayoutEffect(() => {
     if (!open) return;
-    searchRef.current?.focus();
-    const close = (event: MouseEvent) => {
+    searchRef.current?.focus({ preventScroll: true });
+    const measure = () => {
+      const rect = rootRef.current?.getBoundingClientRect();
+      if (rect) {
+        setMenuHeight(Math.max(64, Math.min(280, kind === "version" ? window.innerHeight - rect.bottom - 16 : rect.top - 16)));
+        setMobileLeft(window.innerWidth <= 760 ? 12 - rect.left : undefined);
+      }
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    const closeFromPointer = (event: MouseEvent) => {
       if (
         event.target instanceof Node &&
         !rootRef.current?.contains(event.target)
       ) {
-        setOpen(false);
+        closeMenu();
+      }
+    };
+    const closeFromFocus = (event: FocusEvent) => {
+      if (
+        event.target instanceof Node &&
+        !rootRef.current?.contains(event.target)
+      ) {
+        closeMenu();
       }
     };
     const escape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        setOpen(false);
+        event.preventDefault();
+        closeMenu(true);
       }
     };
-    document.addEventListener("mousedown", close);
+    document.addEventListener("mousedown", closeFromPointer);
+    document.addEventListener("focusin", closeFromFocus);
     document.addEventListener("keydown", escape);
     return () => {
-      document.removeEventListener("mousedown", close);
+      window.removeEventListener("resize", measure);
+      document.removeEventListener("mousedown", closeFromPointer);
+      document.removeEventListener("focusin", closeFromFocus);
       document.removeEventListener("keydown", escape);
     };
-  }, [open]);
+  }, [closeMenu, open, kind]);
 
   const choose = (agent: TaskAgent) => {
-    setOpen(false);
-    setQuery("");
-    if (agentCoordinate(agent) !== (selected ? agentCoordinate(selected) : "")) {
-      onChange(agent);
-    }
+    const mode = taskAgentSwitchMode(selected, agent);
+    if (mode === "version" && currentTaskBusy) return;
+    closeMenu(true);
+    if (mode !== "current") onChange(agent);
   };
 
   return (
-    <div className="task-agent-switcher" ref={rootRef} data-open={open || undefined}>
+    <div className={`task-agent-switcher${kind === "version" ? " task-version-switcher" : ""}`} ref={rootRef} data-open={open || undefined}>
       <button
+        ref={triggerRef}
         className="task-agent-switcher-trigger"
         type="button"
         disabled={disabled}
         aria-expanded={open}
         aria-controls={listboxId}
-        aria-haspopup="listbox"
-        aria-label="切换任务智能体或版本"
+        aria-haspopup="dialog"
+        aria-label={kind === "version" ? "切换当前智能体版本" : "切换任务智能体"}
         title="同一智能体可在当前任务切换版本；切换其他智能体会创建新任务"
         onClick={() => {
+          if (!open) onRefresh?.();
           setQuery("");
           setOpen((current) => !current);
         }}
@@ -127,95 +183,40 @@ export function TaskAgentSwitcher({
         <span className="task-agent-switcher-copy">
           <small>当前智能体</small>
           <strong>
-            {selected
-              ? `${selected.displayName} · ${selected.version}`
-              : (loading ? "正在读取…" : "暂无可用版本")}
+            {kind === "version" ? (selected ? `v${selected.version}` : "版本") : selected?.displayName ?? (loading ? "正在读取…" : "选择智能体")}
           </strong>
         </span>
-        <span className="task-agent-switcher-chevron" aria-hidden="true" />
+        <span className="task-agent-switcher-chevron" aria-hidden="true">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
+          </svg>
+        </span>
       </button>
 
       {open && (
-        <div className="task-agent-menu">
-          <header>
-            <div>
-              <strong>选择智能体</strong>
-              <small>{agents.length} 个已发布版本</small>
-            </div>
-            <span>同 Agent 换版本可续聊</span>
-          </header>
+        <div className="task-agent-menu" role="dialog" aria-label={kind === "version" ? "选择版本" : "选择智能体"} id={listboxId} style={{height: menuHeight, left: mobileLeft}}>
           <label className="task-agent-search">
-            <span aria-hidden="true" />
-            <input
-              ref={searchRef}
-              type="search"
-              value={query}
-              placeholder="搜索名称、标识或版本"
-              aria-label="搜索智能体"
-              onChange={(event) => setQuery(event.target.value)}
-            />
+            <input ref={searchRef} type="search" value={query} placeholder={kind === "version" ? "搜索版本…" : "搜索智能体…"}
+              aria-label={kind === "version" ? "搜索版本" : "搜索智能体"} onChange={(event) => setQuery(event.target.value)} />
           </label>
-          <div className="task-agent-options" id={listboxId} role="listbox">
-            {groups.length === 0 ? (
-              <p className="task-agent-empty">没有匹配的智能体</p>
-            ) : (
-              groups.map((group) => (
-                <section className="task-agent-group" key={group.name}>
-                  {(() => {
-                    const selectedCoordinate = selected ? agentCoordinate(selected) : "";
-                    const activeAgent = group.agents.find(
-                      (agent) => agentCoordinate(agent) === selectedCoordinate,
-                    );
-                    const preferred = activeAgent ?? group.agents[0];
-                    const groupActive = Boolean(activeAgent);
-                    return (
-                      <>
-                        <button
-                          type="button"
-                          role="option"
-                          aria-selected={groupActive}
-                          className={`task-agent-group-choice${groupActive ? " is-active" : ""}`}
-                          onClick={() => choose(preferred)}
-                        >
-                          <span className="task-agent-group-copy">
-                            <strong>{group.displayName}</strong>
-                            <span>
-                              {group.name} · {group.domain}
-                              {preferred.scope === "team" ? ` · ${preferred.spaceName ?? "团队空间"}` : " · 个人"}
-                            </span>
-                          </span>
-                          {group.agents.length === 1 && (
-                            <small>{preferred.version}{groupActive ? " · 当前" : ""}</small>
-                          )}
-                        </button>
-                        {group.agents.length > 1 && (
-                          <label className="task-agent-version-select">
-                            <select
-                              aria-label={`${group.displayName} 版本`}
-                              value={agentCoordinate(preferred)}
-                              onChange={(event) => {
-                                const next = group.agents.find(
-                                  (agent) => agentCoordinate(agent) === event.target.value,
-                                );
-                                if (next) choose(next);
-                              }}
-                            >
-                              {group.agents.map((agent) => (
-                                <option key={agentCoordinate(agent)} value={agentCoordinate(agent)}>
-                                  {agent.version}
-                                  {agentCoordinate(agent) === selectedCoordinate ? " · 当前" : ""}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                        )}
-                      </>
-                    );
-                  })()}
-                </section>
-              ))
-            )}
+          <div className="task-agent-options">
+            {kind === "version" ? versions.filter((agent) => agent.version.includes(query.trim())).map((agent) => (
+              <button key={agentItemKey(agent)} type="button" className="task-agent-group-choice"
+                aria-pressed={Boolean(selected && agentItemKey(selected) === agentItemKey(agent))}
+                disabled={currentTaskBusy} onClick={() => choose(agent)}>
+                <strong>v{agent.version}</strong><small>{agent.version === selected?.version ? "当前" : agent === versions[0] ? "最新" : ""}</small>
+              </button>
+            )) : visibleGroups.map((group) => {
+              const preferred = group.agents[0];
+              const groupActive = Boolean(selected && group.key === agentIdentity(selected));
+              return <button key={group.key} type="button" className="task-agent-group-choice" aria-pressed={groupActive} onClick={() => choose(preferred)}>
+                <span className="task-agent-group-copy"><strong>{preferred.displayName}</strong>
+                {preferred.spaceName && <small>{preferred.spaceName}</small>}</span>
+              </button>;
+            })}
+            {((kind === "version" && !versions.some((agent) => agent.version.includes(query.trim()))) || (kind === "agent" && !visibleGroups.length)) && <p className="task-agent-empty">没有匹配项</p>}
           </div>
+          {kind === "version" && currentTaskBusy && <p className="task-agent-version-lock" role="status">当前任务运行中，版本暂锁定</p>}
         </div>
       )}
     </div>

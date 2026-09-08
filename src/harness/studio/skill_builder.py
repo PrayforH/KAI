@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
-from typing import Literal, Protocol, cast
+from typing import TYPE_CHECKING, Literal, Protocol, cast
 
 import httpx
 from pydantic import Field, model_validator
 
 from harness.runtime.cc_switch import CcSwitchClaudeConfig
 from harness.studio.models import DraftSkill, StudioModel
+
+if TYPE_CHECKING:
+    from harness.studio.model_configuration import ModelConfigurationService
 
 
 class SkillConversationMessage(StudioModel):
@@ -56,7 +59,9 @@ class SkillConversationReply(StudioModel):
 
 
 class SkillConversationService(Protocol):
-    async def respond(self, request: SkillConversationRequest) -> SkillConversationReply: ...
+    async def respond(
+        self, tenant_id: str, request: SkillConversationRequest
+    ) -> SkillConversationReply: ...
 
 
 class SkillConversationUnavailableError(RuntimeError):
@@ -179,7 +184,10 @@ class AnthropicCompatibleSkillConversationService:
             f"模型路由 {model_route} 尚未配置可用凭据"
         )
 
-    async def respond(self, request: SkillConversationRequest) -> SkillConversationReply:
+    async def respond(
+        self, tenant_id: str, request: SkillConversationRequest
+    ) -> SkillConversationReply:
+        del tenant_id
         gateway = self._gateway(request.model_route)
         secret = gateway.credential.get_secret_value()
         headers = {
@@ -244,3 +252,27 @@ class AnthropicCompatibleSkillConversationService:
             raise SkillConversationUpstreamError(
                 "Skill 模型返回的草稿未通过结构校验，请继续描述后重试"
             ) from error
+
+
+class ControlPlaneSkillConversationService:
+    """Resolve Skill authoring models from tenant model management."""
+
+    def __init__(self, models: ModelConfigurationService) -> None:
+        self._models = models
+
+    async def respond(
+        self, tenant_id: str, request: SkillConversationRequest
+    ) -> SkillConversationReply:
+        gateway = await self._models.resolve_runtime(
+            tenant_id,
+            request.context.agent_name,
+            request.model_route,
+            apply_agent_binding=False,
+        )
+        if gateway is None:
+            raise SkillConversationUnavailableError(
+                f"模型路由 {request.model_route} 尚未在模型管理中配置可用凭据"
+            )
+        return await AnthropicCompatibleSkillConversationService((gateway,)).respond(
+            tenant_id, request
+        )

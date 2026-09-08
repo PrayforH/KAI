@@ -1,9 +1,9 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from harness.core.errors import ConflictError
+from harness.core.errors import ConflictError, NotFoundError
 from harness.core.events import RunEvent
 from harness.core.models import (
     AgentVersion,
@@ -81,6 +81,36 @@ async def test_postgres_outbox_events_remain_ordered(database: DatabaseFixture) 
 
     assert await repository.list_after("tenant-a", "run-1", 0) == [first, second]
 
+    observed = second.model_copy(
+        update={
+            "event_id": "event-3",
+            "run_id": "run-2",
+            "sequence": 1,
+            "type": "context.window.observed",
+            "timestamp": now + timedelta(microseconds=1),
+        }
+    )
+    await repository.append(observed)
+
+    assert (
+        await repository.latest_for_session_type("tenant-a", "session-1", "context.window.observed")
+        == observed
+    )
+    assert (
+        await repository.latest_for_session_type(
+            "tenant-a", "session-other", "context.window.observed"
+        )
+        is None
+    )
+    assert (
+        await repository.latest_for_session_types(
+            "tenant-a",
+            "session-1",
+            ("context.window.observed", "context.window.unavailable"),
+        )
+        == observed
+    )
+
 
 @pytest.mark.asyncio
 async def test_postgres_platform_repositories_are_durable_and_tenant_scoped(
@@ -95,11 +125,30 @@ async def test_postgres_platform_repositories_are_durable_and_tenant_scoped(
         version="1.0.0",
         status=AgentVersionStatus.PUBLISHED,
         manifest_hash="a" * 64,
+        snapshot={
+            "manifest": {"metadata": {"name": "agent-a", "version": "1.0.0"}},
+            "files": {"large.bin": "x" * 1024},
+            "skill_snapshots": [
+                {
+                    "name": "skill-creator",
+                    "description": "Create",
+                    "instructions": "private",
+                    "files": [],
+                }
+            ],
+        },
         created_at=now,
     )
     agent_repository = PostgresAgentRegistry(sessions)
     await agent_repository.add(agent)
     assert await agent_repository.get("tenant-a", "user-a", "agent-a", "1.0.0") == agent
+    catalog_versions = await agent_repository.list_catalog_for_user("tenant-a", "user-a")
+    assert len(catalog_versions) == 1
+    assert catalog_versions[0].model_copy(update={"snapshot": agent.snapshot}) == agent
+    assert catalog_versions[0].snapshot == {
+        "manifest": agent.snapshot["manifest"],
+        "skill_snapshots": [{"name": "skill-creator", "description": "Create"}],
+    }
 
     thread = Session(
         session_id="session-a",
@@ -112,6 +161,13 @@ async def test_postgres_platform_repositories_are_durable_and_tenant_scoped(
     session_repository = PostgresSessionRepository(sessions)
     await session_repository.add(thread)
     assert await session_repository.get("tenant-a", "session-a") == thread
+    assert await session_repository.list_for_ids("tenant-a", ["session-a", "session-a"]) == [
+        thread,
+        thread,
+    ]
+    assert await session_repository.list_for_ids("tenant-a", []) == []
+    with pytest.raises(NotFoundError):
+        await session_repository.list_for_ids("tenant-a", ["session-a", "missing"])
     bound_thread = await session_repository.bind_claude_session_id(
         "tenant-a", "session-a", "claude-session-a"
     )
@@ -122,6 +178,14 @@ async def test_postgres_platform_repositories_are_durable_and_tenant_scoped(
     ) == bound_thread
     with pytest.raises(ConflictError, match="already bound"):
         await session_repository.bind_claude_session_id("tenant-a", "session-a", "claude-session-b")
+    cleared_thread = await session_repository.clear_claude_session_id(
+        "tenant-a", "session-a", "claude-session-a"
+    )
+    assert cleared_thread.claude_session_id is None
+    rebound_thread = await session_repository.bind_claude_session_id(
+        "tenant-a", "session-a", "claude-session-b"
+    )
+    assert rebound_thread.claude_session_id == "claude-session-b"
 
     approval = ApprovalRequest(
         approval_id="approval-a",
@@ -236,13 +300,10 @@ async def test_postgres_platform_repositories_are_durable_and_tenant_scoped(
         "tenant-a",
         "user-a",
         "thread-a",
+        expected_session_id="session-a",
         session_id="session-b",
         updated_at=now,
     )
     assert rebound.previous_session_ids == ("session-a",)
-    assert await binding_repository.get_by_session(
-        "tenant-a", "user-a", "session-a"
-    ) == rebound
-    assert await binding_repository.get_by_session(
-        "tenant-a", "user-a", "session-b"
-    ) == rebound
+    assert await binding_repository.get_by_session("tenant-a", "user-a", "session-a") == rebound
+    assert await binding_repository.get_by_session("tenant-a", "user-a", "session-b") == rebound

@@ -1,18 +1,25 @@
 import asyncio
 import os
 from collections import Counter
+from datetime import UTC, datetime
 from typing import cast
 
 import pytest
 from redis.asyncio import Redis
 
+from harness.core.events import RunEvent
 from harness.core.models import Run
 from harness.core.ports import RunTask, TaskQueue
 from harness.deployments.queue import DeploymentTask, DeploymentTaskQueue
 from harness.evals.queue import EvalTask, EvalTaskQueue
 from harness.quality.queue import QualityTask, QualityTaskQueue
 from harness.reliability.metrics import ReliabilityMetrics
-from harness.storage.redis import AsyncRedisClient, RedisTaskQueue
+from harness.storage.redis import (
+    AsyncRedisClient,
+    RedisCancellationWakeup,
+    RedisEventBus,
+    RedisTaskQueue,
+)
 from harness.studio.preview_queue import PreviewTask, PreviewTaskQueue
 from harness.worker.main import worker_loop
 
@@ -90,6 +97,64 @@ class MultiWorkerExecutor:
             if sum(self.calls.values()) == self._expected:
                 self._stop.set()
         return Run.model_construct()
+
+
+@pytest.mark.asyncio
+async def test_event_bus_wakeup_is_race_safe_and_replayable() -> None:
+    client: Redis = Redis.from_url(  # pyright: ignore[reportUnknownMemberType]
+        redis_url(15), decode_responses=True
+    )
+    await client.flushdb()  # pyright: ignore[reportUnknownMemberType]
+    bus = RedisEventBus(cast(AsyncRedisClient, client), namespace="event-wakeup-test")
+    event = RunEvent(
+        event_id="event-1",
+        run_id="run-1",
+        session_id="session-1",
+        tenant_id="tenant-a",
+        sequence=1,
+        type="message.delta",
+        timestamp=datetime.now(UTC),
+        payload={"text": "ready"},
+    )
+    try:
+        waiter = asyncio.create_task(bus.wait("tenant-a", "run-1", 0, timeout_seconds=0.5))
+        await asyncio.sleep(0.02)
+        await bus.publish(event)
+
+        assert await waiter is True
+        assert await bus.read("tenant-a", "run-1", 0) == [event]
+        assert await bus.wait("tenant-a", "run-1", 0, timeout_seconds=0.01) is True
+        assert await bus.wait("tenant-a", "run-1", 1, timeout_seconds=0.01) is False
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_cancellation_wakeup_is_race_safe_monotonic_and_expires() -> None:
+    client: Redis = Redis.from_url(  # pyright: ignore[reportUnknownMemberType]
+        redis_url(15), decode_responses=True
+    )
+    await client.flushdb()  # pyright: ignore[reportUnknownMemberType]
+    wakeup = RedisCancellationWakeup(
+        cast(AsyncRedisClient, client),
+        namespace="cancel-wakeup-test",
+        ttl_seconds=60,
+    )
+    try:
+        waiter = asyncio.create_task(wakeup.wait("tenant-a", "run-1", 4, timeout_seconds=0.5))
+        await asyncio.sleep(0.02)
+        await wakeup.publish("tenant-a", "run-1", 5)
+
+        assert await waiter is True
+        assert await wakeup.wait("tenant-a", "run-1", 4, timeout_seconds=0.01) is True
+        assert await wakeup.wait("tenant-a", "run-1", 5, timeout_seconds=0.01) is False
+
+        await wakeup.publish("tenant-a", "run-1", 3)
+        assert await wakeup.wait("tenant-a", "run-1", 5, timeout_seconds=0.01) is False
+        ttl = await client.ttl("cancel-wakeup-test:cancel:tenant-a:run-1")
+        assert 0 < ttl <= 60
+    finally:
+        await client.aclose()
 
 
 @pytest.mark.parametrize("operation", ["dequeue", "retry", "acknowledge"])

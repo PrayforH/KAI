@@ -62,7 +62,7 @@ def test_local_account_registration_login_profile_and_audit() -> None:
         )
         audit = client.get(
             "/v1/auth/audit-logs",
-            headers={"Authorization": f"Bearer {registered['access_token']}"},
+            headers={"Authorization": f"Bearer {login.json()['access_token']}"},
         )
 
     assert profile.status_code == 200
@@ -141,6 +141,33 @@ def test_refresh_tokens_rotate_and_reuse_revokes_the_family() -> None:
     assert replay.status_code == 401
     assert replay.json()["error"]["code"] == "refresh_invalid"
     assert replacement.status_code == 401
+
+
+def test_new_login_immediately_replaces_the_previous_device_session() -> None:
+    with _client() as client:
+        first = _register(client)
+        second = client.post(
+            "/v1/auth/login",
+            json={"email": "owner@example.com", "password": "SecurePass123"},
+        ).json()
+        old_access = client.get(
+            "/v1/auth/me",
+            headers={"Authorization": f"Bearer {first['access_token']}"},
+        )
+        old_refresh = client.post(
+            "/v1/auth/refresh",
+            json={"refresh_token": first["refresh_token"]},
+        )
+        current_access = client.get(
+            "/v1/auth/me",
+            headers={"Authorization": f"Bearer {second['access_token']}"},
+        )
+
+    assert old_access.status_code == 401
+    assert old_access.json()["error"]["code"] == "session_replaced"
+    assert old_access.headers["x-harness-auth-error"] == "session_replaced"
+    assert old_refresh.status_code == 401
+    assert current_access.status_code == 200
 
 
 def test_registration_can_be_disabled_without_disabling_login_endpoint() -> None:
@@ -230,6 +257,62 @@ def test_owner_can_list_members_and_update_roles() -> None:
     assert stale_access.status_code == 401
     assert refreshed.status_code == 200
     assert refreshed.json()["membership"]["role"] == "admin"
+
+
+def test_scoped_api_key_is_returned_once_enforces_permissions_and_can_be_revoked() -> None:
+    with _client() as client:
+        owner = _register(client)
+        owner_headers = {"Authorization": f"Bearer {owner['access_token']}"}
+        created = client.post(
+            "/v1/auth/api-keys",
+            headers=owner_headers,
+            json={"name": "只读集成", "permissions": ["tasks:read"]},
+        )
+        secret = created.json()["secret"]
+        listed = client.get("/v1/auth/api-keys", headers=owner_headers)
+        api_headers = {"X-API-Key": secret}
+        readable = client.get("/v1/agents", headers=api_headers)
+        denied = client.post(
+            "/v1/sessions",
+            headers=api_headers,
+            json={"agent_name": "missing-agent", "environment": "production"},
+        )
+        revoked = client.delete(
+            f"/v1/auth/api-keys/{created.json()['api_key']['key_id']}",
+            headers=owner_headers,
+        )
+        after_revoke = client.get("/v1/agents", headers=api_headers)
+
+    assert created.status_code == 201
+    assert secret.startswith("ask_")
+    assert secret not in listed.text
+    assert listed.json()[0]["prefix"] == secret[:12]
+    assert readable.status_code == 200
+    assert denied.status_code == 403
+    assert denied.json()["error"]["code"] == "permission_denied"
+    assert revoked.status_code == 200
+    assert revoked.json()["revoked_at"] is not None
+    assert after_revoke.status_code == 401
+    assert after_revoke.json()["error"]["code"] == "api_key_invalid"
+
+
+def test_members_cannot_manage_api_keys_and_unknown_permissions_are_rejected() -> None:
+    with _client() as client:
+        owner = _register(client)
+        member = _register(client, "member-api@example.com")
+        denied = client.get(
+            "/v1/auth/api-keys",
+            headers={"Authorization": f"Bearer {member['access_token']}"},
+        )
+        invalid = client.post(
+            "/v1/auth/api-keys",
+            headers={"Authorization": f"Bearer {owner['access_token']}"},
+            json={"name": "危险权限", "permissions": ["members:write"]},
+        )
+
+    assert denied.status_code == 403
+    assert invalid.status_code == 409
+    assert "unsupported API key permissions" in invalid.json()["error"]["message"]
 
 
 def test_workspace_cannot_demote_its_last_owner() -> None:

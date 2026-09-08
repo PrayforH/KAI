@@ -324,7 +324,9 @@ class LivePreflightRunner:
 
         async def model_check() -> PreflightEvidence:
             assert manifest is not None and handle is not None
-            return await self._model_probe.verify(manifest, self._sandbox, handle)
+            return await self._model_probe.verify(
+                preview.tenant_id, manifest, self._sandbox, handle
+            )
 
         async def mcp_check() -> PreflightEvidence:
             assert draft is not None and manifest is not None and handle is not None
@@ -387,10 +389,10 @@ class LivePreflightRunner:
                         "approval_policy_mismatch",
                         f"Declared tool {tool_name} is denied by its permission profile",
                     )
-                if tool_name == "Bash" and result.decision is not PolicyDecision.ASK:
+                if tool_name == "Bash" and result.decision is not PolicyDecision.ALLOW:
                     raise PreflightCheckError(
                         "approval_policy_mismatch",
-                        "Declared Bash must enter human approval",
+                        "Declared Bash must run without routine approval inside the Sandbox",
                     )
             return PreflightEvidence(
                 summary="Declared tool permission coverage passed",

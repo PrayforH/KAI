@@ -4,6 +4,8 @@ from typing import cast
 
 import pytest
 from claude_agent_sdk import McpSdkServerConfig, McpServerConfig
+from claude_agent_sdk.types import McpHttpServerConfig
+from pydantic import SecretStr
 
 from harness.core.manifest import (
     AgentManifest,
@@ -108,9 +110,66 @@ async def test_resolves_external_mcp_from_server_owned_registry() -> None:
 
     assert resolved.mcp_servers == {"crm-prod": config}
     assert resolved.allowed_tools == ("mcp__crm-prod__search",)
-    assert resolved.result_trust == {
-        "mcp__crm-prod__search": ContextTrust.UNTRUSTED
+    assert resolved.result_trust == {"mcp__crm-prod__search": ContextTrust.UNTRUSTED}
+
+
+@pytest.mark.asyncio
+async def test_merges_static_routing_headers_with_managed_credentials() -> None:
+    config = cast(
+        McpServerConfig,
+        {"type": "http", "url": "https://mcp.example.test"},
+    )
+
+    class CredentialProvider:
+        async def resolve(
+            self,
+            server_reference: str,
+            identity: ExecutionIdentity,
+            required_keys: frozenset[str],
+        ) -> CredentialValues:
+            del server_reference, identity
+            assert required_keys == frozenset({"api_key"})
+            return MappingProxyType({"api_key": SecretStr("managed-secret")})
+
+    resolver = ToolResolver(
+        mcp_registry={
+            "crm": McpServerRegistration(
+                server_name="crm-prod",
+                config=config,
+                static_headers=(("X-Tenant-ID", "tenant-public"),),
+                credential_headers=(("Authorization", "api_key"),),
+                credential_header_prefixes=(("Authorization", "Bearer "),),
+            )
+        },
+        credential_provider=CredentialProvider(),
+    )
+    identity = ExecutionIdentity(
+        tenant_id="tenant-a",
+        user_id="user-a",
+        project_id="project-a",
+        session_id="session-a",
+        run_id="run-a",
+        agent_name="domain-agent",
+        agent_version="0.1.0",
+    )
+
+    resolved = await resolver.resolve(manifest_fixture({"mcp": "crm"}), identity)
+
+    server = cast(McpHttpServerConfig, resolved.mcp_servers["crm-prod"])
+    assert server.get("headers") == {
+        "X-Tenant-ID": "tenant-public",
+        "Authorization": "Bearer managed-secret",
     }
+
+
+def test_rejects_static_headers_that_conflict_with_managed_authentication() -> None:
+    with pytest.raises(ToolResolutionError, match="conflicts with a credential header"):
+        McpServerRegistration(
+            server_name="crm",
+            config={"type": "http", "url": "https://mcp.example.test"},
+            static_headers=(("authorization", "public-value"),),
+            credential_headers=(("Authorization", "api_key"),),
+        )
 
 
 @pytest.mark.asyncio
@@ -248,9 +307,9 @@ def test_rejects_non_http_or_credentialed_mcp_registration(
 def test_published_tool_directory_filters_additions_and_rejects_missing_tools() -> None:
     manifest = manifest_fixture({"builtin": "Read"}, {"mcp": "crm"}).model_copy(
         update={
-            "spec": manifest_fixture(
-                {"builtin": "Read"}, {"mcp": "crm"}
-            ).spec.model_copy(update={"tool_exposure_mode": "on_demand"})
+            "spec": manifest_fixture({"builtin": "Read"}, {"mcp": "crm"}).spec.model_copy(
+                update={"tool_exposure_mode": "on_demand"}
+            )
         }
     )
     directory = ToolDirectorySnapshot.create(
@@ -292,9 +351,7 @@ def test_published_tool_directory_filters_additions_and_rejects_missing_tools() 
             mcp_servers=MappingProxyType({}),
             allowed_tools=allowed,
             mcp_smokes=MappingProxyType({}),
-            result_trust=MappingProxyType(
-                {tool: ContextTrust.SENSITIVE for tool in allowed}
-            ),
+            result_trust=MappingProxyType({tool: ContextTrust.SENSITIVE for tool in allowed}),
         )
 
     unchanged = enforce_published_tool_directory(snapshot, resolved())
@@ -310,9 +367,7 @@ def test_published_tool_directory_filters_additions_and_rejects_missing_tools() 
         snapshot,
         replace(
             resolved(allowed=()),
-            unavailable_mcp=MappingProxyType(
-                {"crm": ("mcp__crm-prod__search",)}
-            ),
+            unavailable_mcp=MappingProxyType({"crm": ("mcp__crm-prod__search",)}),
         ),
     )
     assert degraded.allowed_tools == ()
@@ -326,6 +381,4 @@ def test_published_tool_directory_filters_additions_and_rejects_missing_tools() 
         ),
     )
     assert filtered.allowed_tools == ("mcp__crm-prod__search",)
-    assert filtered.result_trust == {
-        "mcp__crm-prod__search": ContextTrust.SENSITIVE
-    }
+    assert filtered.result_trust == {"mcp__crm-prod__search": ContextTrust.SENSITIVE}

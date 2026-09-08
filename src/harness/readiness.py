@@ -11,9 +11,11 @@ from alembic.script import ScriptDirectory
 from pydantic import Field
 
 from harness.release import ReleaseModel
+from harness.versioning import audit_platform_version
 
 
 class ReadinessAudit(ReleaseModel):
+    platform_version: str = Field(alias="platformVersion")
     migration_head: str = Field(alias="migrationHead")
     goal_reports: tuple[str, ...] = Field(alias="goalReports")
     workflows: tuple[str, ...]
@@ -23,6 +25,7 @@ class ReadinessAudit(ReleaseModel):
 
 def audit_repository(root: Path) -> ReadinessAudit:
     repository = root.resolve()
+    version = audit_platform_version(repository)
     config = Config(str(repository / "alembic.ini"))
     config.set_main_option("script_location", str(repository / "migrations"))
     heads = ScriptDirectory.from_config(config).get_heads()
@@ -60,6 +63,7 @@ def audit_repository(root: Path) -> ReadinessAudit:
         raise ValueError("custom role extension decision is missing")
 
     return ReadinessAudit(
+        platformVersion=version.platform_version,
         migrationHead=heads[0],
         goalReports=tuple(sorted(report_ids)),
         workflows=workflow_names,

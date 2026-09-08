@@ -24,6 +24,7 @@ export function createUserScopedStorage(
 }
 
 export interface ThreadAgentBinding {
+  agentId?: string;
   name: string;
   version: string;
   displayName?: string;
@@ -32,6 +33,9 @@ export interface ThreadAgentBinding {
   scope?: "personal" | "team";
   spaceId?: string;
   spaceName?: string;
+  currentVersion?: string;
+  connectionMode?: "caller_owned" | "service_owned";
+  canChat?: boolean;
 }
 
 type IdFactory = () => string;
@@ -88,6 +92,9 @@ export function loadThreadAgent(
     return {
       name: value.name,
       version: value.version,
+      ...(typeof value.agentId === "string" && value.agentId
+        ? { agentId: value.agentId }
+        : {}),
       ...(typeof value.displayName === "string"
         ? { displayName: value.displayName }
         : {}),
@@ -96,6 +103,13 @@ export function loadThreadAgent(
       ...(value.scope === "personal" || value.scope === "team" ? { scope: value.scope } : {}),
       ...(typeof value.spaceId === "string" ? { spaceId: value.spaceId } : {}),
       ...(typeof value.spaceName === "string" ? { spaceName: value.spaceName } : {}),
+      ...(typeof value.currentVersion === "string"
+        ? { currentVersion: value.currentVersion }
+        : {}),
+      ...(value.connectionMode === "caller_owned" || value.connectionMode === "service_owned"
+        ? { connectionMode: value.connectionMode }
+        : {}),
+      ...(typeof value.canChat === "boolean" ? { canChat: value.canChat } : {}),
     };
   } catch {
     return null;

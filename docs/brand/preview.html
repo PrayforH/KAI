@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Mecha · 名称与标志设计</title>
+<style>
+  :root {
+    --paper: #F7F8F6;
+    --ink: #1A231E;
+    --muted: #5C6B61;
+    --faint: #8A978E;
+    --line: #E2E8E3;
+    --green: #25C878;
+    --green-deep: #15945A;
+    --tile: #202823;
+    --tile-light: #E7F1EA;
+    --mono: "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    --serif: "Songti SC", "STSong", "SimSun", serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #ECEFEC; font-family: var(--sans); color: var(--ink); padding: 28px 0; }
+  .sheet {
+    position: relative;
+    width: 1240px; margin: 0 auto;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    padding: 72px 84px 56px 84px;
+  }
+  .rail { position: absolute; left: 44px; top: 120px; bottom: 120px; width: 2px; background: var(--line); }
+  .rail i { position: absolute; left: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--paper); border: 2px solid var(--green); }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 2.4px; color: var(--muted); text-transform: uppercase; }
+  .eyebrow b { color: var(--green-deep); font-weight: 600; }
+  .hero { position: relative; margin-top: 26px; }
+  .hero-line { position: absolute; left: -12px; right: 34%; top: 84px; height: 3px; background: var(--green); }
+  .hero-node { position: absolute; right: 33.2%; top: 79px; width: 13px; height: 13px; border-radius: 50%; background: var(--green); }
+  h1 { position: relative; font-size: 96px; font-weight: 800; letter-spacing: 5px; line-height: 1.55; }
+  h1 .zh { font-family: var(--serif); font-weight: 600; font-size: 60px; letter-spacing: 0; margin-left: 26px; color: var(--green-deep); }
+  .hero-sub { font-size: 21px; font-weight: 600; color: var(--ink); margin-top: 2px; }
+  .thesis {
+    margin-top: 30px; max-width: 900px;
+    border-left: 3px solid var(--green); padding: 4px 0 4px 20px;
+    font-size: 15.5px; line-height: 1.75; color: var(--ink);
+  }
+  .thesis .src { display: block; margin-top: 6px; font-family: var(--mono); font-size: 11px; color: var(--faint); }
+  .thesis .no { color: var(--muted); font-size: 13.5px; }
+  .chain { margin-top: 34px; display: flex; align-items: center; }
+  .chain .bar { flex: 1; height: 2px; background: var(--green); }
+  .chain .st { display: flex; align-items: center; }
+  .chain .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--paper); border: 2.5px solid var(--green); margin-right: 8px; }
+  .chain .st:last-child .dot { background: var(--green); }
+  .chain .st span { font-family: var(--mono); font-size: 12.5px; color: var(--ink); margin-right: 22px; }
+  section { margin-top: 64px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; border-bottom: 1px solid var(--line); padding-bottom: 12px; }
+  .sec-head .no { font-family: var(--mono); font-size: 12px; color: var(--green-deep); letter-spacing: 2px; }
+  .sec-head h2 { font-size: 22px; font-weight: 700; letter-spacing: 1px; }
+  .sec-head .en { font-family: var(--mono); font-size: 11px; color: var(--faint); letter-spacing: 2px; text-transform: uppercase; }
+  .cards { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; margin-top: 22px; }
+  .card { background: #FFFFFF; border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px 16px; }
+  .card h3 { font-size: 13px; font-family: var(--mono); color: var(--green-deep); letter-spacing: 1.5px; margin-bottom: 10px; }
+  .card p { font-size: 13.5px; line-height: 1.72; color: var(--ink); }
+  .card p b { color: var(--ink); }
+  .card p .dim { color: var(--muted); }
+  .card .old-name { text-decoration: line-through; text-decoration-color: rgba(250,66,62,.55); text-decoration-thickness: 2px; }
+  .suite { margin-top: 16px; background: #FFFFFF; border: 1px solid var(--line); border-radius: 10px; padding: 16px 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .suite .s { border-left: 2px solid var(--green); padding-left: 12px; }
+  .suite .s b { display: block; font-size: 14.5px; font-weight: 700; }
+  .suite .s b small { font-family: var(--serif); font-size: 13px; color: var(--green-deep); margin-left: 6px; font-weight: 600; }
+  .suite .s small { display: block; margin-top: 3px; font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+  .alt { margin-top: 16px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #fff; }
+  .alt table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .alt th { font-family: var(--mono); font-size: 11px; letter-spacing: 1.5px; color: var(--faint); text-align: left; font-weight: 500; padding: 10px 20px; background: #FBFCFB; border-bottom: 1px solid var(--line); }
+  .alt td { padding: 11px 20px; border-bottom: 1px solid var(--line); line-height: 1.6; vertical-align: top; }
+  .alt tr:last-child td { border-bottom: none; }
+  .alt td b { font-size: 14px; }
+  .alt td .dim { color: var(--muted); }
+  .concepts { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; margin-top: 22px; }
+  .concept { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; }
+  .concept.primary { border: 1.5px solid var(--green); }
+  .concept .tile { width: 132px; height: 132px; border-radius: 30px; display: block; }
+  .concept .row { display: flex; align-items: center; gap: 12px; }
+  .tag { font-family: var(--mono); font-size: 10.5px; letter-spacing: 1.5px; color: #fff; background: var(--green-deep); border-radius: 4px; padding: 3px 8px; }
+  .tag.alt2 { background: #fff; color: var(--faint); border: 1px solid var(--line); }
+  .concept h3 { font-size: 15.5px; font-weight: 700; margin-top: 14px; }
+  .concept h3 span { font-family: var(--mono); font-size: 11px; color: var(--faint); font-weight: 500; margin-left: 8px; letter-spacing: 1px; }
+  .concept p { font-size: 12.8px; line-height: 1.7; color: var(--muted); margin-top: 7px; }
+  .concept p b { color: var(--ink); font-weight: 600; }
+  .sys { display: grid; grid-template-columns: 380px 1fr; gap: 14px; margin-top: 22px; }
+  .spec { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 26px; }
+  .spec .big { width: 220px; height: 220px; border-radius: 50px; display: block; margin: 0 auto; }
+  .callouts { margin-top: 22px; display: grid; gap: 9px; }
+  .callouts .c { display: flex; gap: 10px; font-size: 12.8px; line-height: 1.6; color: var(--muted); }
+  .callouts .c i { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; background: var(--ink); }
+  .callouts .c.g i { background: var(--green); }
+  .callouts .c b { color: var(--ink); font-weight: 600; }
+  .col { display: grid; gap: 14px; }
+  .panel { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; }
+  .panel h4 { font-family: var(--mono); font-size: 11px; letter-spacing: 1.8px; color: var(--faint); font-weight: 500; text-transform: uppercase; margin-bottom: 14px; }
+  .variants { display: flex; gap: 14px; align-items: center; }
+  .variants img { border-radius: 15px; display: block; }
+  .variants .v { text-align: center; }
+  .variants .v small { display: block; margin-top: 8px; font-family: var(--mono); font-size: 10px; color: var(--faint); letter-spacing: 1px; }
+  .sizes { display: flex; gap: 26px; align-items: flex-end; }
+  .sizes .v { text-align: center; }
+  .sizes img { border-radius: 4px; display: block; }
+  .sizes small { display: block; margin-top: 8px; font-family: var(--mono); font-size: 10px; color: var(--faint); }
+  .strips { display: grid; gap: 12px; }
+  .strip { border-radius: 10px; padding: 22px 26px; display: flex; align-items: center; }
+  .strip.dark { background: #181818; }
+  .strip.light { background: #FFFFFF; border: 1px solid var(--line); }
+  .strip img { height: 52px; display: block; }
+  .palette { display: flex; gap: 12px; }
+  .chip { flex: 1; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .chip .sw { height: 46px; }
+  .chip small { display: block; padding: 8px 10px; font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 0.5px; }
+  .chip small b { display: block; color: var(--ink); font-size: 10.5px; margin-bottom: 2px; }
+  .rules { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 22px; }
+  .donts { display: flex; gap: 18px; }
+  .dont { text-align: center; position: relative; }
+  .dont .bx { width: 84px; height: 84px; border-radius: 18px; background: var(--tile); display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
+  .dont .bx::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to bottom right, transparent 46%, rgba(250,66,62,.85) 48%, rgba(250,66,62,.85) 52%, transparent 54%); }
+  .dont img.stretch { width: 84px; height: 60px; }
+  .dont img.recolor, .dont img.shadowed { width: 60px; height: 60px; border-radius: 13px; }
+  .dont small { display: block; margin-top: 8px; font-size: 11px; color: var(--muted); }
+  .landing { font-family: var(--mono); font-size: 12.5px; line-height: 2.1; color: var(--muted); }
+  .landing b { color: var(--ink); font-weight: 600; }
+  .landing em { font-style: normal; color: var(--green-deep); }
+  footer { margin-top: 64px; border-top: 1px solid var(--line); padding-top: 18px; display: flex; justify-content: space-between; align-items: baseline; }
+  footer p { font-size: 12.5px; color: var(--muted); }
+  footer .mono { font-family: var(--mono); font-size: 10.5px; letter-spacing: 1.5px; color: var(--faint); }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <div class="rail"><i style="top:0"></i><i style="top:33%"></i><i style="top:66%"></i><i style="bottom:0"></i></div>
+
+  <!-- ================= HEADER ================= -->
+  <p class="eyebrow"><b>MECHA</b> · BRAND SHEET · 2026-08 · 输入：飞书《AXIS 开源生态对标与后续发展建议》 + 两轮评审（要能看出干啥 · 要组装模式）</p>
+  <div class="hero">
+    <h1>MECHA<span class="zh">机甲</span></h1>
+    <div class="hero-line"></div>
+    <div class="hero-node"></div>
+    <p class="hero-sub">命名与标志设计 —— 给智能体装上有驾驶舱的机甲</p>
+  </div>
+  <p class="thesis">
+    锚定一句话：<b>「企业可治理的多运行时 AgentOps 控制面 —— 构建、运行、评测、晋级、审计一条链。」</b>
+    <span class="no">机甲翻译：模块（prompt / skills / tools / subagents / MCP）组装成机体；驾驶舱里始终坐着人——审批、暂停、恢复；过测的机体放行下线，黑匣子全程留档。</span>
+    <span class="src">SOURCE · docs/agent-production-platform-design.md · 飞书定位与叙事章节（六・四） · 评审记录 2026-08-30</span>
+  </p>
+  <div class="chain">
+    <div class="st"><i class="dot"></i><span>构建</span></div><div class="bar"></div>
+    <div class="st"><i class="dot"></i><span>运行</span></div><div class="bar"></div>
+    <div class="st"><i class="dot"></i><span>评测</span></div><div class="bar"></div>
+    <div class="st"><i class="dot"></i><span>晋级</span></div><div class="bar"></div>
+    <div class="st"><i class="dot"></i><span>审计</span></div><div class="bar"></div>
+  </div>
+
+  <!-- ================= 01 NAME ================= -->
+  <section>
+    <div class="sec-head"><span class="no">01</span><h2>名称 · Mecha 智能体机甲</h2><span class="en">NAMING</span></div>
+    <div class="cards">
+      <div class="card">
+        <h3>命名铁律（两轮评审沉淀）</h3>
+        <p>第一轮否 <span class="old-name">AXIS</span>：<b>听不出品类</b>；第二轮否 Agentline：线的意象不足。<b>铁律：名字要自己说出「给谁用、管什么」。</b>Mecha 一听就懂：组装出来的、能干的大家伙。</p>
+      </div>
+      <div class="card">
+        <h3>机甲叙事</h3>
+        <p><b>组装</b>：平台把模块装成机体——即 Manifest 的确定性 Bundle；<b>驾驶舱</b>：关键动作由人决策——即审批/暂停/恢复；<b>出厂放行</b>：试车过门禁才能晋级——即 Eval/质量门禁。</p>
+      </div>
+      <div class="card">
+        <h3>风险与规避</h3>
+        <p>语气偏玩心 → 企业语境一律带描述符 <b>AGENTOPS CONTROL PLANE</b> 压稳；对外全称 <b>Mecha · 智能体机甲</b>；游戏/玩具类同名多但软件治理类无巨头，注册前仍需第 9/42 类检索。</p>
+      </div>
+    </div>
+    <div class="suite">
+      <div class="s"><b>Mecha Frame<small>骨架</small></b><small>定义面 · Draft / 能力目录 / Bundle 编译（组装机体的车间）</small></div>
+      <div class="s"><b>Mecha Trial<small>试车台</small></b><small>质量面 · Preflight / Eval / 质量门禁（出厂前的试车）</small></div>
+      <div class="s"><b>Mecha Cockpit<small>驾驶舱</small></b><small>运行面 · 耐久 Run / 审批恢复 / Sandbox（人始终在舱内）</small></div>
+      <div class="s"><b>Mecha Blackbox<small>黑匣子</small></b><small>运营面 · 晋级证据 / Trace / 审计账本（全程留档）</small></div>
+    </div>
+    <div class="alt">
+      <table>
+        <tr><th style="width:150px">落选候选 · 留档</th><th>一眼读到什么</th><th style="width:42%">落选原因</th></tr>
+        <tr><td><b>Governor</b> <span class="dim">调速器/御</span></td><td>控制论原点装置 + 治理者双关</td><td class="dim">语义最准但仍需一句解释，输给「机甲」的零解释度</td></tr>
+        <tr><td><b>Greenlight</b> <span class="dim">绿灯</span></td><td>审批放行</td><td class="dim">只讲了放行动作，平台感弱；美国同名金融卡跨类风险</td></tr>
+        <tr><td><b>Combiner</b> <span class="dim">合体</span></td><td>组合器</td><td class="dim">合体意象同源但更平淡，作为机甲的温和替补</td></tr>
+        <tr><td><b>榫卯 Sunmao</b></td><td>严丝合缝的确定性组装</td><td class="dim">寓意深但海外拗口，已有同名开源框架</td></tr>
+      </table>
+    </div>
+    <div class="cards" style="grid-template-columns: 1fr;">
+      <div class="card">
+        <h3>中文述名</h3>
+        <p>对外全称 <b>Mecha · 智能体机甲</b>；一句话介绍沿用控制台文案「面向组织的智能体任务、能力与运行治理平台」；口头即叫<b>「机甲」</b>。子系统按部件命名，随模块发布逐步启用。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 02 MARK ================= -->
+  <section>
+    <div class="sec-head"><span class="no">02</span><h2>标志 · 机甲头与护目轴</h2><span class="en">MARK</span></div>
+    <div class="concepts">
+      <div class="concept primary">
+        <div class="row">
+          <img class="tile" src="mark/mecha-mark-primary.svg" alt="Concept A">
+          <span class="tag">主推 · A</span>
+        </div>
+        <h3>机甲头 · 护目轴<span>COCKPIT</span></h3>
+        <p>横向圆角机体 = <b>组装完成的机甲头盔</b>（驾驶舱）；绿轴从左入线、贯穿机体即<b>护目镜</b>（驾驶舱视线）、右侧出线，末端脱离一枚节点：<b>放行下线的机体</b>。保留线上标识的单线笔画与贯穿绿轴 DNA。</p>
+      </div>
+      <div class="concept">
+        <div class="row">
+          <img class="tile" src="concepts/concept-b-modules.svg" alt="Concept B">
+          <span class="tag alt2">备选 · B</span>
+        </div>
+        <h3>轴上合体<span>ASSEMBLY</span></h3>
+        <p>模块沿绿轴<b>推入组装</b>，完成即以节点离线。组装语义最直给；但图形偏「流水线」，机甲的机体感弱。</p>
+      </div>
+      <div class="concept">
+        <div class="row">
+          <img class="tile" src="concepts/concept-c-seam.svg" alt="Concept C">
+          <span class="tag alt2">备选 · C</span>
+        </div>
+        <h3>合体缝<span>SEAM</span></h3>
+        <p>两块机体咬合，<b>接缝发光</b>——合体瞬间。构图对称有力量感；但丢了贯穿绿轴的叙事线，与系列标识连续性弱。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 03 SYSTEM ================= -->
+  <section>
+    <div class="sec-head"><span class="no">03</span><h2>系统 · 主标规格</h2><span class="en">SYSTEM</span></div>
+    <div class="sys">
+      <div class="spec">
+        <img class="big" src="mark/mecha-mark-primary.svg" alt="Mecha primary mark">
+        <div class="callouts">
+          <div class="c"><i></i><span><b>机体</b>：横向圆角方 30×24/64，描边 4.4，与控制台线性图标同语言——不画五官，机体感靠比例</span></div>
+          <div class="c g"><i></i><span><b>护目轴 = 产线</b>：左右贯通、两端不顶格，是全标唯一彩色；既是驾驶舱视线，也是那条链</span></div>
+          <div class="c g"><i></i><span><b>脱线节点 = 放行</b>：半笔画间隙，过测的机体离线下线</span></div>
+          <div class="c"><i></i><span><b>净空与简化</b>：四周留 1/8 图高；≤16px 换用简化变体（加粗笔画、省略节点）</span></div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="panel">
+          <h4>Variants</h4>
+          <div class="variants">
+            <div class="v"><img src="mark/mecha-mark-primary.svg" width="96" height="96"><small>DARK</small></div>
+            <div class="v"><img src="mark/mecha-mark-primary-light.svg" width="96" height="96"><small>LIGHT</small></div>
+            <div class="v"><img src="mark/mecha-mark-mono.svg" width="96" height="96" style="background:#fff;border:1px solid var(--line);border-radius:15px"><small>MONO</small></div>
+            <div class="v"><img src="mark/mecha-icon-64.svg" width="96" height="96"><small>APP ICON</small></div>
+          </div>
+        </div>
+        <div class="panel">
+          <h4>Sizes</h4>
+          <div class="sizes">
+            <div class="v"><img src="mark/mecha-icon-64.svg" width="64" height="64"><small>64</small></div>
+            <div class="v"><img src="mark/mecha-icon-64.svg" width="32" height="32"><small>32</small></div>
+            <div class="v"><img src="mark/mecha-icon-64.svg" width="24" height="24"><small>24</small></div>
+            <div class="v"><img src="mark/mecha-icon-16.svg" width="16" height="16"><small>16·简化</small></div>
+          </div>
+        </div>
+        <div class="strips">
+          <div class="strip dark"><img src="lockup/mecha-lockup-dark.svg" alt="lockup dark"></div>
+          <div class="strip light"><img src="lockup/mecha-lockup-light.svg" alt="lockup light"></div>
+        </div>
+        <div class="panel">
+          <h4>Palette</h4>
+          <div class="palette">
+            <div class="chip"><div class="sw" style="background:#202823"></div><small><b>MECHA INK-0</b>#202823</small></div>
+            <div class="chip"><div class="sw" style="background:#F5FAF7;border-bottom:1px solid var(--line)"></div><small><b>MECHA PAPER</b>#F5FAF7</small></div>
+            <div class="chip"><div class="sw" style="background:#25C878"></div><small><b>MECHA AXIS</b>#25C878</small></div>
+            <div class="chip"><div class="sw" style="background:#15945A"></div><small><b>MECHA DEEP</b>#15945A</small></div>
+            <div class="chip"><div class="sw" style="background:#E7F1EA"></div><small><b>MECHA MIST</b>#E7F1EA</small></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 04 RULES ================= -->
+  <section>
+    <div class="sec-head"><span class="no">04</span><h2>规则与落地</h2><span class="en">RULES</span></div>
+    <div class="rules">
+      <div class="panel">
+        <h4>Don't</h4>
+        <div class="donts">
+          <div class="dont"><div class="bx"><img class="stretch" src="mark/mecha-icon-64.svg"></div><small>不拉伸变形</small></div>
+          <div class="dont"><div class="bx"><img class="recolor" src="mark/mecha-icon-64.svg" style="filter:hue-rotate(160deg)"></div><small>不动绿轴色</small></div>
+          <div class="dont"><div class="bx"><img class="shadowed" src="mark/mecha-icon-64.svg" style="box-shadow:0 0 0 3px #fff, 0 10px 24px rgba(0,0,0,.8)"></div><small>不加投影描边</small></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h4>Landing · 落地路径</h4>
+        <p class="landing">
+          1. <b>web/harness-console</b> → PRODUCT_NAME=<em>Mecha</em>，描述符=AGENTOPS CONTROL PLANE，换主标笔画与 icon.svg<br>
+          2. <b>README.md</b> → 标题改为 <em>Mecha · 可治理的多运行时 AgentOps 控制面</em><br>
+          3. <b>代码层</b> → harness-* 模块名/包名本轮不动，随发版逐步对齐<br>
+          4. <b>商标</b> → 第 9/42 类「Mecha」检索后注册；企业语境始终带描述符
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p>组装成机体，人在驾驶舱 —— 构建、运行、评测、晋级、审计，一条链。</p>
+    <p class="mono">MECHA BRAND · 2026-08 · DOCS/BRAND</p>
+  </footer>
+</div>
+</body>
+</html>

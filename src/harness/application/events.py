@@ -38,6 +38,30 @@ class EventService:
     ) -> list[RunEvent]:
         return await self._repository.list_after(tenant_id, run_id, after_sequence)
 
+    async def latest_for_session_type(
+        self,
+        tenant_id: str,
+        session_id: str,
+        event_type: str,
+    ) -> RunEvent | None:
+        return await self._repository.latest_for_session_type(
+            tenant_id,
+            session_id,
+            event_type,
+        )
+
+    async def latest_for_session_types(
+        self,
+        tenant_id: str,
+        session_id: str,
+        event_types: tuple[str, ...],
+    ) -> RunEvent | None:
+        return await self._repository.latest_for_session_types(
+            tenant_id,
+            session_id,
+            event_types,
+        )
+
     async def append(
         self,
         *,
@@ -57,19 +81,14 @@ class EventService:
             timestamp=self._clock(),
             payload=payload or {},
             trace_id=(
-                self._trace_context.current_trace_id()
-                if self._trace_context is not None
-                else None
+                self._trace_context.current_trace_id() if self._trace_context is not None else None
             ),
             span_id=(
-                self._trace_context.current_span_id()
-                if self._trace_context is not None
-                else None
+                self._trace_context.current_span_id() if self._trace_context is not None else None
             ),
         )
         while True:
-            current = await self._repository.list_after(tenant_id, run_id, 0)
-            sequence = current[-1].sequence + 1 if current else 1
+            sequence = await self._repository.latest_sequence(tenant_id, run_id) + 1
             event = event.model_copy(update={"sequence": sequence})
             try:
                 await self._repository.append(event)

@@ -1,0 +1,1038 @@
+{
+  "configuration": {
+    "api_url": "http://127.0.0.1:18000",
+    "tenant_id": "cancel-benchmark-5e037eea8a9e",
+    "runs": 100,
+    "warmups": 5,
+    "poll_seconds": 0.005,
+    "cancelled_from": "running"
+  },
+  "samples": [
+    {
+      "run": 1,
+      "run_id": "run_ab7d25c5acca47939f4c8a7414f9119a",
+      "cancel_response_ms": 25.43974993750453,
+      "convergence_ms": 30.39508406072855,
+      "durable_convergence_ms": 4.041,
+      "status_polls": 1,
+      "cancelling_sequence": 8,
+      "terminal_sequence": 9
+    },
+    {
+      "run": 2,
+      "run_id": "run_d736ca0138114c819f914e6dbdd16019",
+      "cancel_response_ms": 7.1392906829714775,
+      "convergence_ms": 10.698665864765644,
+      "durable_convergence_ms": 5.481,
+      "status_polls": 1,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 3,
+      "run_id": "run_57e0b62c75854609be4518b36f5a74b6",
+      "cancel_response_ms": 11.131332721561193,
+      "convergence_ms": 14.406499918550253,
+      "durable_convergence_ms": 7.059,
+      "status_polls": 1,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 4,
+      "run_id": "run_c7e279e7e0c043f8ad50169ef6a40761",
+      "cancel_response_ms": 8.540624752640724,
+      "convergence_ms": 12.455749791115522,
+      "durable_convergence_ms": 2.601,
+      "status_polls": 1,
+      "cancelling_sequence": 7,
+      "terminal_sequence": 8
+    },
+    {
+      "run": 5,
+      "run_id": "run_1ab75b378d9840809eba9c260960406f",
+      "cancel_response_ms": 7.338542025536299,
+      "convergence_ms": 10.572959203273058,
+      "durable_convergence_ms": 5.172000000000001,
+      "status_polls": 1,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 6,
+      "run_id": "run_f951cb578a3d4b7787d2c8ee7a321c1e",
+      "cancel_response_ms": 8.023624774068594,
+      "convergence_ms": 10.878915898501873,
+      "durable_convergence_ms": 3.522,
+      "status_polls": 1,
+      "cancelling_sequence": 7,
+      "terminal_sequence": 8
+    },
+    {
+      "run": 7,
+      "run_id": "run_8fdb18f15df5413e86e795c82f6d927b",
+      "cancel_response_ms": 16.218874603509903,
+      "convergence_ms": 20.39574971422553,
+      "durable_convergence_ms": 8.031,
+      "status_polls": 1,
+      "cancelling_sequence": 8,
+      "terminal_sequence": 9
+    },
+    {
+      "run": 8,
+      "run_id": "run_91499e931df941cabc0ea277ab9bf427",
+      "cancel_response_ms": 13.91345914453268,
+      "convergence_ms": 30.302791856229305,
+      "durable_convergence_ms": 10.234,
+      "status_polls": 2,
+      "cancelling_sequence": 8,
+      "terminal_sequence": 9
+    },
+    {
+      "run": 9,
+      "run_id": "run_85e1f654a890418ba5b24af84fc80839",
+      "cancel_response_ms": 11.668541934341192,
+      "convergence_ms": 14.852917287498713,
+      "durable_convergence_ms": 5.482,
+      "status_polls": 1,
+      "cancelling_sequence": 8,
+      "terminal_sequence": 9
+    },
+    {
+      "run": 10,
+      "run_id": "run_a21b019ba571425d8004062e8e6cdd59",
+      "cancel_response_ms": 8.156416937708855,
+      "convergence_ms": 11.573833879083395,
+      "durable_convergence_ms": 5.024,
+      "status_polls": 1,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 11,
+      "run_id": "run_4070ee7967e04ae9b8825fb7cd65f8cb",
+      "cancel_response_ms": 9.311292320489883,
+      "convergence_ms": 12.869792059063911,
+      "durable_convergence_ms": 3.126,
+      "status_polls": 1,
+      "cancelling_sequence": 7,
+      "terminal_sequence": 8
+    },
+    {
+      "run": 12,
+      "run_id": "run_340d5ddb13a849e1ae6917b824e4bed7",
+      "cancel_response_ms": 10.90354099869728,
+      "convergence_ms": 14.32562479749322,
+      "durable_convergence_ms": 5.43,
+      "status_polls": 1,
+      "cancelling_sequence": 8,
+      "terminal_sequence": 9
+    },
+    {
+      "run": 13,
+      "run_id": "run_697078f07c3f4c6a9fee47f3452b3bc5",
+      "cancel_response_ms": 7.756750099360943,
+      "convergence_ms": 11.919583193957806,
+      "durable_convergence_ms": 3.474,
+      "status_polls": 1,
+      "cancelling_sequence": 7,
+      "terminal_sequence": 8
+    },
+    {
+      "run": 14,
+      "run_id": "run_13974cf75729437c85c03d1a6603ae0f",
+      "cancel_response_ms": 10.618541855365038,
+      "convergence_ms": 13.793916907161474,
+      "durable_convergence_ms": 3.767,
+      "status_polls": 1,
+      "cancelling_sequence": 8,
+      "terminal_sequence": 9
+    },
+    {
+      "run": 15,
+      "run_id": "run_d9adc9f0e3d34b268f6487146c064fe5",
+      "cancel_response_ms": 17.15929200872779,
+      "convergence_ms": 23.543791845440865,
+      "durable_convergence_ms": 6.505999999999999,
+      "status_polls": 1,
+      "cancelling_sequence": 7,
+      "terminal_sequence": 8
+    },
+    {
+      "run": 16,
+      "run_id": "run_36a143802f654dc39d24d47dc60af60b",
+      "cancel_response_ms": 8.701874874532223,
+      "convergence_ms": 12.30233395472169,
+      "durable_convergence_ms": 4.071,
+      "status_polls": 1,
+      "cancelling_sequence": 7,
+      "terminal_sequence": 8
+    },
+    {
+      "run": 17,
+      "run_id": "run_49b913e7b5ee49479c355d33a74a2221",
+      "cancel_response_ms": 10.831582825630903,
+      "convergence_ms": 14.591957908123732,
+      "durable_convergence_ms": 6.835,
+      "status_polls": 1,
+      "cancelling_sequence": 8,
+      "terminal_sequence": 9
+    },
+    {
+      "run": 18,
+      "run_id": "run_80c9ca937a774a7e99676601b7459394",
+      "cancel_response_ms": 9.825000073760748,
+      "convergence_ms": 14.609749894589186,
+      "durable_convergence_ms": 3.629,
+      "status_polls": 1,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 19,
+      "run_id": "run_6b37437dcf5c4e199330888d65d806b0",
+      "cancel_response_ms": 8.531208150088787,
+      "convergence_ms": 12.41666590794921,
+      "durable_convergence_ms": 4.564,
+      "status_polls": 1,
+      "cancelling_sequence": 8,
+      "terminal_sequence": 9
+    },
+    {
+      "run": 20,
+      "run_id": "run_eb6cd753b8fb4e0eadf4fc394159f2ea",
+      "cancel_response_ms": 8.54712538421154,
+      "convergence_ms": 23.900125175714493,
+      "durable_convergence_ms": 6.0600000000000005,
+      "status_polls": 2,
+      "cancelling_sequence": 7,
+      "terminal_sequence": 8
+    },
+    {
+      "run": 21,
+      "run_id": "run_c11ff5a40fb742ef91e8e58e4f7ba4a0",
+      "cancel_response_ms": 7.678249850869179,
+      "convergence_ms": 10.654457844793797,
+      "durable_convergence_ms": 3.7390000000000003,
+      "status_polls": 1,
+      "cancelling_sequence": 8,
+      "terminal_sequence": 9
+    },
+    {
+      "run": 22,
+      "run_id": "run_ff45b480a3fa4c92a547b3964c336d2b",
+      "cancel_response_ms": 7.70616577938199,
+      "convergence_ms": 12.112249620258808,
+      "durable_convergence_ms": 4.742999999999999,
+      "status_polls": 1,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 23,
+      "run_id": "run_12201afe4dcc407790812d5d2ec44960",
+      "cancel_response_ms": 7.585249841213226,
+      "convergence_ms": 10.698374826461077,
+      "durable_convergence_ms": 2.383,
+      "status_polls": 1,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 24,
+      "run_id": "run_d628e50d0abd460a88d9c63c7d08fdda",
+      "cancel_response_ms": 10.025875177234411,
+      "convergence_ms": 23.96520785987377,
+      "durable_convergence_ms": 8.056000000000001,
+      "status_polls": 2,
+      "cancelling_sequence": 7,
+      "terminal_sequence": 8
+    },
+    {
+      "run": 25,
+      "run_id": "run_66a28e5657f849a8b4ab83fabb6f4f27",
+      "cancel_response_ms": 8.743666112422943,
+      "convergence_ms": 11.85833290219307,
+      "durable_convergence_ms": 5.878,
+      "status_polls": 1,
+      "cancelling_sequence": 7,
+      "terminal_sequence": 8
+    },
+    {
+      "run": 26,
+      "run_id": "run_8ec5878e43cd4742b13145e4f39543a5",
+      "cancel_response_ms": 7.84824974834919,
+      "convergence_ms": 11.495584156364202,
+      "durable_convergence_ms": 3.821,
+      "status_polls": 1,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 27,
+      "run_id": "run_bcb4c609481a4055ad07d86823105d79",
+      "cancel_response_ms": 8.420249912887812,
+      "convergence_ms": 11.913207825273275,
+      "durable_convergence_ms": 4.867,
+      "status_polls": 1,
+      "cancelling_sequence": 8,
+      "terminal_sequence": 9
+    },
+    {
+      "run": 28,
+      "run_id": "run_50f6bbbd7c624aceaf67c078e5005cea",
+      "cancel_response_ms": 8.540499955415726,
+      "convergence_ms": 12.458958197385073,
+      "durable_convergence_ms": 4.286,
+      "status_polls": 1,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 29,
+      "run_id": "run_33853ced2ad641158c353c2d99517e05",
+      "cancel_response_ms": 8.913833182305098,
+      "convergence_ms": 12.232291977852583,
+      "durable_convergence_ms": 3.871,
+      "status_polls": 1,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 30,
+      "run_id": "run_8930fd3378ed4cfba53843b32e9b76bf",
+      "cancel_response_ms": 8.29512532800436,
+      "convergence_ms": 12.239458039402962,
+      "durable_convergence_ms": 2.271,
+      "status_polls": 1,
+      "cancelling_sequence": 7,
+      "terminal_sequence": 8
+    },
+    {
+      "run": 31,
+      "run_id": "run_1876caf1003d4aeb826ab0c03604cc5c",
+      "cancel_response_ms": 7.886833045631647,
+      "convergence_ms": 20.443167071789503,
+      "durable_convergence_ms": 6.495,
+      "status_polls": 2,
+      "cancelling_sequence": 8,
+      "terminal_sequence": 9
+    },
+    {
+      "run": 32,
+      "run_id": "run_d9472e0311f846fea8874b1a2d2b46f0",
+      "cancel_response_ms": 8.919999934732914,
+      "convergence_ms": 12.693790718913078,
+      "durable_convergence_ms": 4.887,
+      "status_polls": 1,
+      "cancelling_sequence": 8,
+      "terminal_sequence": 9
+    },
+    {
+      "run": 33,
+      "run_id": "run_4bfc53b8ea734570b316bc5e724e8dff",
+      "cancel_response_ms": 6.786833982914686,
+      "convergence_ms": 10.100250132381916,
+      "durable_convergence_ms": 3.9769999999999994,
+      "status_polls": 1,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 34,
+      "run_id": "run_6824da7cfd6240f4976c8976cee8e0f5",
+      "cancel_response_ms": 7.912250235676765,
+      "convergence_ms": 11.077208910137415,
+      "durable_convergence_ms": 3.397,
+      "status_polls": 1,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 35,
+      "run_id": "run_4e2d737959e8400d9199bf93d2abc6cd",
+      "cancel_response_ms": 8.58624977990985,
+      "convergence_ms": 34.134333953261375,
+      "durable_convergence_ms": 8.403,
+      "status_polls": 2,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 8
+    },
+    {
+      "run": 36,
+      "run_id": "run_a17849c45f7149c88ea7c3ea76abf669",
+      "cancel_response_ms": 8.367916103452444,
+      "convergence_ms": 11.561166029423475,
+      "durable_convergence_ms": 3.019,
+      "status_polls": 1,
+      "cancelling_sequence": 7,
+      "terminal_sequence": 8
+    },
+    {
+      "run": 37,
+      "run_id": "run_2801e3c0713f456da98e1a5b1299472d",
+      "cancel_response_ms": 9.617875330150127,
+      "convergence_ms": 12.330375146120787,
+      "durable_convergence_ms": 5.477,
+      "status_polls": 1,
+      "cancelling_sequence": 7,
+      "terminal_sequence": 8
+    },
+    {
+      "run": 38,
+      "run_id": "run_6609713febe54a8782b3d406842161eb",
+      "cancel_response_ms": 8.98045813664794,
+      "convergence_ms": 12.32000021263957,
+      "durable_convergence_ms": 4.5009999999999994,
+      "status_polls": 1,
+      "cancelling_sequence": 7,
+      "terminal_sequence": 8
+    },
+    {
+      "run": 39,
+      "run_id": "run_25886164534243e789bc856b160ed0d0",
+      "cancel_response_ms": 7.7172922901809216,
+      "convergence_ms": 22.19433430582285,
+      "durable_convergence_ms": 6.6160000000000005,
+      "status_polls": 2,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 40,
+      "run_id": "run_801cc319d001421a86175a75d82f7447",
+      "cancel_response_ms": 10.026208125054836,
+      "convergence_ms": 13.709542341530323,
+      "durable_convergence_ms": 5.093,
+      "status_polls": 1,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 41,
+      "run_id": "run_6cc7429609f245239185dfa4071d3a37",
+      "cancel_response_ms": 6.803582888096571,
+      "convergence_ms": 20.920000039041042,
+      "durable_convergence_ms": 6.437,
+      "status_polls": 2,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 42,
+      "run_id": "run_4f39a44f9c3d46e6a9a8391a312f94b1",
+      "cancel_response_ms": 9.548999834805727,
+      "convergence_ms": 12.904834002256393,
+      "durable_convergence_ms": 4.938,
+      "status_polls": 1,
+      "cancelling_sequence": 8,
+      "terminal_sequence": 9
+    },
+    {
+      "run": 43,
+      "run_id": "run_6dcbef13cad041cb83637bd92086b6e6",
+      "cancel_response_ms": 7.963583339005709,
+      "convergence_ms": 11.368208099156618,
+      "durable_convergence_ms": 3.678,
+      "status_polls": 1,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 44,
+      "run_id": "run_a72e38675afc4c918497e760e0924088",
+      "cancel_response_ms": 7.0757088251411915,
+      "convergence_ms": 10.021166875958443,
+      "durable_convergence_ms": 3.18,
+      "status_polls": 1,
+      "cancelling_sequence": 7,
+      "terminal_sequence": 8
+    },
+    {
+      "run": 45,
+      "run_id": "run_546b47bef21d45be82bc5cf8edb22bc0",
+      "cancel_response_ms": 10.367124807089567,
+      "convergence_ms": 13.301374856382608,
+      "durable_convergence_ms": 5.948,
+      "status_polls": 1,
+      "cancelling_sequence": 8,
+      "terminal_sequence": 9
+    },
+    {
+      "run": 46,
+      "run_id": "run_53dc45d9b6ce494cae8d31867598c8ba",
+      "cancel_response_ms": 8.759292308241129,
+      "convergence_ms": 13.112416956573725,
+      "durable_convergence_ms": 3.8930000000000002,
+      "status_polls": 1,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 47,
+      "run_id": "run_69605bae06c54effac340a12ca119352",
+      "cancel_response_ms": 7.409209385514259,
+      "convergence_ms": 20.614709239453077,
+      "durable_convergence_ms": 5.714,
+      "status_polls": 2,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 48,
+      "run_id": "run_abdc4f180d544879b9b27568f588238f",
+      "cancel_response_ms": 7.6790000312030315,
+      "convergence_ms": 11.921999976038933,
+      "durable_convergence_ms": 2.4459999999999997,
+      "status_polls": 1,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 49,
+      "run_id": "run_08493771fff6405c8d61d1d7a9eccfd1",
+      "cancel_response_ms": 6.936832796782255,
+      "convergence_ms": 22.032917011529207,
+      "durable_convergence_ms": 4.633,
+      "status_polls": 2,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 50,
+      "run_id": "run_54f5169c5ff047dca890d9d6443994c6",
+      "cancel_response_ms": 8.707040920853615,
+      "convergence_ms": 12.483915779739618,
+      "durable_convergence_ms": 4.301,
+      "status_polls": 1,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 51,
+      "run_id": "run_b625dc9328fc474395ae8b57bd7dc963",
+      "cancel_response_ms": 16.21670788154006,
+      "convergence_ms": 23.91604194417596,
+      "durable_convergence_ms": 6.9319999999999995,
+      "status_polls": 1,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 52,
+      "run_id": "run_a2819f10f92f4bc3a6281da262bd4f04",
+      "cancel_response_ms": 9.237791877239943,
+      "convergence_ms": 12.206874787807465,
+      "durable_convergence_ms": 4.731,
+      "status_polls": 1,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 53,
+      "run_id": "run_ee2e8d2d4974423d9b52817be0c680de",
+      "cancel_response_ms": 8.563125040382147,
+      "convergence_ms": 12.057916726917028,
+      "durable_convergence_ms": 3.973,
+      "status_polls": 1,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 54,
+      "run_id": "run_9ac4ecff785f4be1ae9823234711516f",
+      "cancel_response_ms": 11.850459035485983,
+      "convergence_ms": 15.649042092263699,
+      "durable_convergence_ms": 5.446999999999999,
+      "status_polls": 1,
+      "cancelling_sequence": 8,
+      "terminal_sequence": 9
+    },
+    {
+      "run": 55,
+      "run_id": "run_0095df80c2914ee8be38ca61955222df",
+      "cancel_response_ms": 8.646083064377308,
+      "convergence_ms": 11.70575013384223,
+      "durable_convergence_ms": 3.155,
+      "status_polls": 1,
+      "cancelling_sequence": 8,
+      "terminal_sequence": 9
+    },
+    {
+      "run": 56,
+      "run_id": "run_ed52bea3618b48c191662cdba116026f",
+      "cancel_response_ms": 6.7870840430259705,
+      "convergence_ms": 10.268916841596365,
+      "durable_convergence_ms": 3.09,
+      "status_polls": 1,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 57,
+      "run_id": "run_f6594c31b550401e9376054f8e6c0a49",
+      "cancel_response_ms": 13.057916890829802,
+      "convergence_ms": 28.64608308300376,
+      "durable_convergence_ms": 7.887,
+      "status_polls": 2,
+      "cancelling_sequence": 7,
+      "terminal_sequence": 8
+    },
+    {
+      "run": 58,
+      "run_id": "run_db7569a6dd594725a62c0909a4fdd014",
+      "cancel_response_ms": 7.104041986167431,
+      "convergence_ms": 10.57733315974474,
+      "durable_convergence_ms": 4.598,
+      "status_polls": 1,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 59,
+      "run_id": "run_8b561a8be8d94bdfa9bc7ff0fffe959f",
+      "cancel_response_ms": 11.415374930948019,
+      "convergence_ms": 25.61145881190896,
+      "durable_convergence_ms": 7.89,
+      "status_polls": 2,
+      "cancelling_sequence": 7,
+      "terminal_sequence": 8
+    },
+    {
+      "run": 60,
+      "run_id": "run_cd0e57e555904a5cb5a5f00a97f2fcde",
+      "cancel_response_ms": 8.382708299905062,
+      "convergence_ms": 11.257875245064497,
+      "durable_convergence_ms": 3.572,
+      "status_polls": 1,
+      "cancelling_sequence": 7,
+      "terminal_sequence": 8
+    },
+    {
+      "run": 61,
+      "run_id": "run_0537a1c7ec1d431499e86f1a7276f43b",
+      "cancel_response_ms": 16.30216697230935,
+      "convergence_ms": 20.72266675531864,
+      "durable_convergence_ms": 9.991,
+      "status_polls": 1,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 62,
+      "run_id": "run_9f509756db2e4cfb9efdcf7510cfde73",
+      "cancel_response_ms": 9.043625090271235,
+      "convergence_ms": 24.15508311241865,
+      "durable_convergence_ms": 10.081,
+      "status_polls": 2,
+      "cancelling_sequence": 7,
+      "terminal_sequence": 9
+    },
+    {
+      "run": 63,
+      "run_id": "run_5b436c6309844e789a78bb393f05b43e",
+      "cancel_response_ms": 7.650166749954224,
+      "convergence_ms": 20.424374844878912,
+      "durable_convergence_ms": 5.641,
+      "status_polls": 2,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 64,
+      "run_id": "run_790692a9ff97468fa2a5b21b6d36dd7d",
+      "cancel_response_ms": 9.453792124986649,
+      "convergence_ms": 22.33491698279977,
+      "durable_convergence_ms": 7.9959999999999996,
+      "status_polls": 2,
+      "cancelling_sequence": 8,
+      "terminal_sequence": 9
+    },
+    {
+      "run": 65,
+      "run_id": "run_91a9c75f7c72476aae3a2fc95555d747",
+      "cancel_response_ms": 6.990958005189896,
+      "convergence_ms": 20.38304228335619,
+      "durable_convergence_ms": 5.297,
+      "status_polls": 2,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 66,
+      "run_id": "run_95078d92d1de4455b3512ac4a44e41db",
+      "cancel_response_ms": 8.427291177213192,
+      "convergence_ms": 23.601041175425053,
+      "durable_convergence_ms": 8.222999999999999,
+      "status_polls": 2,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 8
+    },
+    {
+      "run": 67,
+      "run_id": "run_69dabb6dc812430ca5f4c06457d5c739",
+      "cancel_response_ms": 7.717750035226345,
+      "convergence_ms": 11.49391708895564,
+      "durable_convergence_ms": 4.244000000000001,
+      "status_polls": 1,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 68,
+      "run_id": "run_46f5b6527fdf47c086441eacfd1908d8",
+      "cancel_response_ms": 8.135125041007996,
+      "convergence_ms": 11.436499655246735,
+      "durable_convergence_ms": 4.891,
+      "status_polls": 1,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 69,
+      "run_id": "run_a77a7a3db02449259a157648aa878f85",
+      "cancel_response_ms": 14.828999992460012,
+      "convergence_ms": 19.522791728377342,
+      "durable_convergence_ms": 11.395999999999999,
+      "status_polls": 1,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 70,
+      "run_id": "run_deeedfa5ccf74779ab16014b54edd303",
+      "cancel_response_ms": 9.921666234731674,
+      "convergence_ms": 12.822791002690792,
+      "durable_convergence_ms": 4.481,
+      "status_polls": 1,
+      "cancelling_sequence": 7,
+      "terminal_sequence": 8
+    },
+    {
+      "run": 71,
+      "run_id": "run_807deb0c733841878fdcb0bdf5583416",
+      "cancel_response_ms": 9.913083165884018,
+      "convergence_ms": 13.494000304490328,
+      "durable_convergence_ms": 5.4990000000000006,
+      "status_polls": 1,
+      "cancelling_sequence": 7,
+      "terminal_sequence": 8
+    },
+    {
+      "run": 72,
+      "run_id": "run_1e5a740b63d34f03abd765068c5932b4",
+      "cancel_response_ms": 9.329082909971476,
+      "convergence_ms": 24.47237493470311,
+      "durable_convergence_ms": 7.139,
+      "status_polls": 2,
+      "cancelling_sequence": 8,
+      "terminal_sequence": 9
+    },
+    {
+      "run": 73,
+      "run_id": "run_e691f81bd3204b89ae70dfd34c73d5a8",
+      "cancel_response_ms": 9.691624902188778,
+      "convergence_ms": 13.201833236962557,
+      "durable_convergence_ms": 3.913,
+      "status_polls": 1,
+      "cancelling_sequence": 7,
+      "terminal_sequence": 8
+    },
+    {
+      "run": 74,
+      "run_id": "run_268b49d76edd400795601c81f28dd2fe",
+      "cancel_response_ms": 7.230999879539013,
+      "convergence_ms": 18.86320812627673,
+      "durable_convergence_ms": 7.397,
+      "status_polls": 2,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 8
+    },
+    {
+      "run": 75,
+      "run_id": "run_7c94429ae0b443c6baaa1d63988c6553",
+      "cancel_response_ms": 12.552749831229448,
+      "convergence_ms": 27.36179204657674,
+      "durable_convergence_ms": 10.325000000000001,
+      "status_polls": 2,
+      "cancelling_sequence": 8,
+      "terminal_sequence": 9
+    },
+    {
+      "run": 76,
+      "run_id": "run_96bfa2b1014d47f4a74b65930d3fade6",
+      "cancel_response_ms": 9.43654216825962,
+      "convergence_ms": 12.522208038717508,
+      "durable_convergence_ms": 4.01,
+      "status_polls": 1,
+      "cancelling_sequence": 7,
+      "terminal_sequence": 8
+    },
+    {
+      "run": 77,
+      "run_id": "run_30d7c1da5dc049d5ad5aba3327d22f79",
+      "cancel_response_ms": 8.48987465724349,
+      "convergence_ms": 36.0817089676857,
+      "durable_convergence_ms": 19.915,
+      "status_polls": 2,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 8
+    },
+    {
+      "run": 78,
+      "run_id": "run_ebc1b4f7fa6e4888baf4eff6ff1e910e",
+      "cancel_response_ms": 19.996166694909334,
+      "convergence_ms": 24.85699998214841,
+      "durable_convergence_ms": 8.207,
+      "status_polls": 1,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 79,
+      "run_id": "run_79e9573e20824421985d162410d1723c",
+      "cancel_response_ms": 9.79624968022108,
+      "convergence_ms": 13.867917004972696,
+      "durable_convergence_ms": 6.0169999999999995,
+      "status_polls": 1,
+      "cancelling_sequence": 8,
+      "terminal_sequence": 9
+    },
+    {
+      "run": 80,
+      "run_id": "run_42c80827a0e74656a94f64d3e08154b8",
+      "cancel_response_ms": 7.695500273257494,
+      "convergence_ms": 10.809875093400478,
+      "durable_convergence_ms": 4.32,
+      "status_polls": 1,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 81,
+      "run_id": "run_25e7ba6b54894d2bb03c783160cde8fe",
+      "cancel_response_ms": 9.468458127230406,
+      "convergence_ms": 15.576375182718039,
+      "durable_convergence_ms": 5.412,
+      "status_polls": 1,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 82,
+      "run_id": "run_3ee9b1033da241f896bd74b9eafc0c1c",
+      "cancel_response_ms": 9.097459260374308,
+      "convergence_ms": 13.21070920675993,
+      "durable_convergence_ms": 6.359,
+      "status_polls": 1,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 83,
+      "run_id": "run_2e2c51906e7b43879edd9dc68699a3c4",
+      "cancel_response_ms": 10.501000098884106,
+      "convergence_ms": 15.083124861121178,
+      "durable_convergence_ms": 5.92,
+      "status_polls": 1,
+      "cancelling_sequence": 7,
+      "terminal_sequence": 8
+    },
+    {
+      "run": 84,
+      "run_id": "run_151785a608584cd79bcb9e0c9ddebc24",
+      "cancel_response_ms": 9.733208920806646,
+      "convergence_ms": 12.958833947777748,
+      "durable_convergence_ms": 5.806,
+      "status_polls": 1,
+      "cancelling_sequence": 7,
+      "terminal_sequence": 8
+    },
+    {
+      "run": 85,
+      "run_id": "run_ce566eaf833344ebadcdcaafd219d415",
+      "cancel_response_ms": 8.325499948114157,
+      "convergence_ms": 22.121042013168335,
+      "durable_convergence_ms": 6.103,
+      "status_polls": 2,
+      "cancelling_sequence": 8,
+      "terminal_sequence": 9
+    },
+    {
+      "run": 86,
+      "run_id": "run_1c3ba916c40f4538930ba13b5e263724",
+      "cancel_response_ms": 7.84941716119647,
+      "convergence_ms": 11.266750283539295,
+      "durable_convergence_ms": 2.677,
+      "status_polls": 1,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 87,
+      "run_id": "run_757e5fc1ddc94016b0e36a0761dfa272",
+      "cancel_response_ms": 10.3089171461761,
+      "convergence_ms": 15.229000244289637,
+      "durable_convergence_ms": 5.178999999999999,
+      "status_polls": 1,
+      "cancelling_sequence": 6,
+      "terminal_sequence": 7
+    },
+    {
+      "run": 88,
+      "run_id": "run_d2dcdce7219a40da93c9646295430fa3",
+      "cancel_response_ms": 10.988084133714437,
+      "convergence_ms": 14.37179185450077,
+      "durable_convergence_ms": 5.009,
+      "status_polls": 1,
+      "cancelling_sequence": 7,
+      "terminal_sequence": 8
+    },
+    {
+      "run": 89,
+      "run_id": "run_df743287f23e41ecbc654b05a7ae5375",
+      "cancel_response_ms": 11.273832991719246,
+      "convergence_ms": 15.522500034421682,
+      "durable_convergence_ms": 4.188,
+      "status_polls": 1,
+      "cancelling_sequence": 7,
+      "terminal_sequence": 8
+    },
+    {
+      "run": 90,
+      "run_id": "run_814d0562c5194701ae1e67ee3bf6e035",
+      "cancel_response_ms": 12.076083105057478,
+      "convergence_ms": 16.097417101264,
+      "durable_convergence_ms": 4.611,
+      "status_polls": 1,
+      "cancelling_sequence": 8,
+      "terminal_sequence": 9
+    },
+    {
+      "run": 91,
+      "run_id": "run_d7f44970dba9422a961c597f85291301",
+      "cancel_response_ms": 8.865667041391134,
+      "convergence_ms": 12.37229211255908,
+      "durable_convergence_ms": 4.114999999999999,
+      "status_polls": 1,
+      "cancelling_sequence": 7,
+      "terminal_sequence": 8
+    },
+    {
+      "run": 92,
+      "run_id": "run_46d420f871e647ee93d68e7b42967b4b",
+      "cancel_response_ms": 13.667500112205744,
+      "convergence_ms": 29.246416874229908,
+      "durable_convergence_ms": 9.121,
+      "status_polls": 2,
+      "cancelling_sequence": 8,
+      "terminal_sequence": 9
+    },
+    {
+      "run": 93,
+      "run_id": "run_92e0ae246a344221b4bc70c492c191c3",
+      "cancel_response_ms": 11.46279089152813,
+      "convergence_ms": 15.51895821467042,
+      "durable_convergence_ms": 4.921,
+      "status_polls": 1,
+      "cancelling_sequence": 8,
+      "terminal_sequence": 9
+    },
+    {
+      "run": 94,
+      "run_id": "run_7bfe5233212c44f0ac9442e3b5e40242",
+      "cancel_response_ms": 8.314916864037514,
+      "convergence_ms": 11.180332861840725,
+      "durable_convergence_ms": 4.545000000000001,
+      "status_polls": 1,
+      "cancelling_sequence": 7,
+      "terminal_sequence": 8
+    },
+    {
+      "run": 95,
+      "run_id": "run_538cd2163a52439081a62a7da015c286",
+      "cancel_response_ms": 8.54529207572341,
+      "convergence_ms": 12.423875275999308,
+      "durable_convergence_ms": 5.2379999999999995,
+      "status_polls": 1,
+      "cancelling_sequence": 7,
+      "terminal_sequence": 8
+    },
+    {
+      "run": 96,
+      "run_id": "run_5ae2e28705d44e098673f7fc0349caac",
+      "cancel_response_ms": 8.985375054180622,
+      "convergence_ms": 12.637249659746885,
+      "durable_convergence_ms": 2.72,
+      "status_polls": 1,
+      "cancelling_sequence": 7,
+      "terminal_sequence": 8
+    },
+    {
+      "run": 97,
+      "run_id": "run_bbe356da1e514bf39dad5b72c5cc2216",
+      "cancel_response_ms": 10.558624751865864,
+      "convergence_ms": 27.62608416378498,
+      "durable_convergence_ms": 7.749,
+      "status_polls": 2,
+      "cancelling_sequence": 8,
+      "terminal_sequence": 9
+    },
+    {
+      "run": 98,
+      "run_id": "run_5186f13664a64417994beac3c4316fb2",
+      "cancel_response_ms": 11.689458042383194,
+      "convergence_ms": 26.21758310124278,
+      "durable_convergence_ms": 7.101,
+      "status_polls": 2,
+      "cancelling_sequence": 8,
+      "terminal_sequence": 9
+    },
+    {
+      "run": 99,
+      "run_id": "run_a4497abe062d425aa2b466b9f4f65eb7",
+      "cancel_response_ms": 10.548749938607216,
+      "convergence_ms": 14.207750093191862,
+      "durable_convergence_ms": 5.064,
+      "status_polls": 1,
+      "cancelling_sequence": 7,
+      "terminal_sequence": 8
+    },
+    {
+      "run": 100,
+      "run_id": "run_dabec73d12534f7c8e0904152ac344c1",
+      "cancel_response_ms": 12.023666873574257,
+      "convergence_ms": 15.27258288115263,
+      "durable_convergence_ms": 5.799,
+      "status_polls": 1,
+      "cancelling_sequence": 8,
+      "terminal_sequence": 9
+    }
+  ],
+  "summary": {
+    "cancel_response_ms": {
+      "min": 6.786833982914686,
+      "p50": 8.913833182305098,
+      "p95": 16.21670788154006,
+      "p99": 19.996166694909334,
+      "max": 25.43974993750453,
+      "mean": 9.777148342691362
+    },
+    "convergence_ms": {
+      "min": 10.021166875958443,
+      "p50": 13.301374856382608,
+      "p95": 28.64608308300376,
+      "p99": 34.134333953261375,
+      "max": 36.0817089676857,
+      "mean": 16.32147549185902
+    },
+    "durable_convergence_ms": {
+      "min": 2.271,
+      "p50": 5.024,
+      "p95": 9.991,
+      "p99": 11.395999999999999,
+      "max": 19.915,
+      "mean": 5.52952
+    }
+  }
+}

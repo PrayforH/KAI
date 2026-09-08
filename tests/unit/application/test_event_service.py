@@ -37,19 +37,32 @@ class RacingEventRepository:
     async def append(self, event: RunEvent) -> None:
         await self._repository.append(event)
 
+    async def latest_sequence(self, tenant_id: str, run_id: str) -> int:
+        if self._readers < 2:
+            self._readers += 1
+            if self._readers == 2:
+                self._both_reading.set()
+            await self._both_reading.wait()
+            return 0
+        return await self._repository.latest_sequence(tenant_id, run_id)
+
     async def list_after(
         self,
         tenant_id: str,
         run_id: str,
         after_sequence: int,
     ) -> list[RunEvent]:
-        if self._readers < 2:
-            self._readers += 1
-            if self._readers == 2:
-                self._both_reading.set()
-            await self._both_reading.wait()
-            return []
         return await self._repository.list_after(tenant_id, run_id, after_sequence)
+
+    async def latest_for_session_type(
+        self, tenant_id: str, session_id: str, event_type: str
+    ) -> RunEvent | None:
+        return await self._repository.latest_for_session_type(tenant_id, session_id, event_type)
+
+    async def latest_for_session_types(
+        self, tenant_id: str, session_id: str, event_types: tuple[str, ...]
+    ) -> RunEvent | None:
+        return await self._repository.latest_for_session_types(tenant_id, session_id, event_types)
 
 
 @pytest.mark.asyncio

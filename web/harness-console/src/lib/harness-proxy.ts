@@ -29,6 +29,9 @@ const RESPONSE_HEADERS = [
   "x-harness-run-deduplicated",
   "x-harness-run-id",
   "x-harness-run-reused",
+  "x-harness-auth-error",
+  "x-inference-time-s",
+  "x-request-id",
 ];
 
 const TRACE_HEADERS = ["traceparent", "tracestate", "baggage"] as const;
@@ -273,10 +276,15 @@ export async function proxyAgentCatalogRequest(
   request: Request,
   config: HarnessServerConfig,
   fetcher: typeof fetch = fetch,
+  path = "",
 ) {
+  const url = new URL(
+    `${config.apiUrl}/v1/agents${path ? `/${path.replace(/^\//, "")}` : ""}`,
+  );
+  url.search = new URL(request.url).search;
   return forward(
     request,
-    `${config.apiUrl}/v1/agents`,
+    url.toString(),
     config,
     fetcher,
     "harness.web.agent_catalog",
@@ -424,4 +432,9 @@ export async function proxyMemoryBankRequest(
     fetcher,
     "harness.web.memory_bank",
   );
+}
+
+export async function proxyRunRequest(request: Request, config: HarnessServerConfig, fetcher: typeof fetch = fetch, path = "") {
+  const url = new URL(`${config.apiUrl}/v1/runs/${path}`);
+  return forward(request, url.toString(), config, fetcher, "harness.web.run_control");
 }

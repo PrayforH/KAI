@@ -14,7 +14,7 @@ from tests.contracts.capability_catalog_repository import (
 DatabaseFixture = tuple[AsyncEngine, SessionFactory]
 DATABASE_URL = os.getenv(
     "HARNESS_TEST_DATABASE_URL",
-    "postgresql+asyncpg://harness:harness@localhost:5432/harness",
+    "postgresql+asyncpg://harness:harness@127.0.0.1:5432/harness_test",
 )
 
 
@@ -23,9 +23,7 @@ async def test_postgres_capability_catalog_repository_contract(
     database: DatabaseFixture,
 ) -> None:
     _, sessions = database
-    await exercise_catalog_repository_contract(
-        PostgresCapabilityCatalogRepository(sessions)
-    )
+    await exercise_catalog_repository_contract(PostgresCapabilityCatalogRepository(sessions))
 
 
 @pytest.mark.asyncio
@@ -33,9 +31,7 @@ async def test_postgres_capability_catalog_concurrent_replace(
     database: DatabaseFixture,
 ) -> None:
     _, sessions = database
-    await exercise_catalog_concurrent_replace(
-        PostgresCapabilityCatalogRepository(sessions)
-    )
+    await exercise_catalog_concurrent_replace(PostgresCapabilityCatalogRepository(sessions))
 
 
 @pytest.mark.asyncio

@@ -28,9 +28,22 @@ from harness.runtime.cc_switch import CcSwitchClaudeConfig
 from harness.runtime.registry_runtime import RegistryClaudeRuntime
 from harness.runtime.tools import McpServerRegistration, ToolResolver
 from harness.studio.catalog import default_capability_catalog
+from harness.studio.catalog_repository import InMemoryCapabilityCatalogRepository
+from harness.studio.catalog_service import CapabilityCatalogService
 from harness.studio.compiler import AgentDraftCompiler
 from harness.studio.factory import create_draft_spec
-from harness.studio.models import AgentDraft, AgentTemplate
+from harness.studio.mcp_credential_store import (
+    InMemoryMcpCredentialRepository,
+    McpCredentialCipher,
+    McpCredentialService,
+)
+from harness.studio.model_configuration import (
+    BindAgentModelRequest,
+    ConfigureModelRequest,
+    ModelConfigurationService,
+)
+from harness.studio.models import AgentDraft, AgentTemplate, ModelRouteCapability
+from harness.studio.repositories import InMemoryAgentDraftRepository
 
 
 @pytest.mark.asyncio
@@ -127,6 +140,123 @@ async def test_model_route_uses_run_scoped_broker_lease_without_secret_events(
 
 
 @pytest.mark.asyncio
+async def test_admin_model_binding_replaces_manifest_gateway_at_runtime(
+    tmp_path: Path,
+) -> None:
+    snapshot = load_manifest("agents/helper-agent/agent.yaml")
+    registry = InMemoryAgentRegistry()
+    await registry.add(
+        AgentVersion(
+            tenant_id="tenant-a",
+            owner_user_id="user-a",
+            name="helper-agent",
+            version="1.0.0",
+            status=AgentVersionStatus.PUBLISHED,
+            manifest_hash=snapshot.content_hash,
+            snapshot=snapshot.model_dump(mode="json"),
+            created_at=datetime.now(UTC),
+        )
+    )
+    catalogs = CapabilityCatalogService(
+        InMemoryCapabilityCatalogRepository(),
+        InMemoryAgentDraftRepository(),
+    )
+    model_configurations = ModelConfigurationService(
+        catalogs,
+        McpCredentialService(
+            InMemoryMcpCredentialRepository(),
+            McpCredentialCipher(SecretStr("test-model-encryption")),
+        ),
+        environment="test",
+    )
+    configured = await model_configurations.configure(
+        "tenant-a",
+        "admin-a",
+        "frontend-vision",
+        ConfigureModelRequest(
+            expectedRevision=1,
+            label="Frontend Vision",
+            modelType="vision",
+            provider="Example",
+            model="vision-from-settings",
+            baseUrl="https://models.example.test/v1",
+            apiFormat="openai_compatible",
+            authScheme="bearer",
+            apiKey=SecretStr("settings-secret"),
+        ),
+    )
+    bound = await model_configurations.bind_agent(
+        "tenant-a",
+        "admin-a",
+        "helper-agent",
+        BindAgentModelRequest(
+            expectedRevision=configured.revision,
+            routeId="frontend-vision",
+        ),
+    )
+    captured: list[ClaudeAgentOptions] = []
+
+    async def fake_query(_prompt: str, options: ClaudeAgentOptions) -> AsyncIterator[object]:
+        captured.append(options)
+        yield ResultMessage(
+            subtype="success",
+            duration_ms=1,
+            duration_api_ms=1,
+            is_error=False,
+            num_turns=1,
+            session_id="sdk-session",
+        )
+
+    runtime = RegistryClaudeRuntime(
+        registry=registry,
+        config=CcSwitchClaudeConfig(
+            base_url="https://static.example.test",
+            model="static-model",
+            provider="new-api",
+            credential=SecretStr("static-secret"),
+        ),
+        query_factory=fake_query,
+        model_configurations=model_configurations,
+    )
+    now = datetime.now(UTC)
+    context = RuntimeContext(
+        run=Run(
+            run_id="run-configured-model",
+            session_id="session-configured-model",
+            tenant_id="tenant-a",
+            status=RunStatus.RUNNING,
+            idempotency_key="configured-model",
+            created_at=now,
+            updated_at=now,
+            input={"prompt": "inspect this image"},
+        ),
+        session=Session(
+            session_id="session-configured-model",
+            tenant_id="tenant-a",
+            user_id="developer",
+            agent_owner_user_id="user-a",
+            agent_name="helper-agent",
+            agent_version="1.0.0",
+            created_at=now,
+        ),
+        workspace=tmp_path,
+    )
+
+    events = [event async for event in runtime.execute(context)]
+
+    assert captured[0].model == "vision-from-settings"
+    assert captured[0].env["ANTHROPIC_AUTH_TOKEN"] == "settings-secret"
+    selected = next(event for event in events if event.type == "model.route.selected")
+    assert selected.payload["route_id"] == "frontend-vision"
+
+    await model_configurations.disable(
+        "tenant-a", "admin-a", "frontend-vision", bound.revision
+    )
+    with pytest.raises(ConflictError, match="unavailable in the control plane"):
+        _events = [event async for event in runtime.execute(context)]
+
+
+@pytest.mark.asyncio
 async def test_on_demand_runtime_enables_native_tool_search_and_emits_safe_directory_fact(
     tmp_path: Path,
 ) -> None:
@@ -146,8 +276,8 @@ async def test_on_demand_runtime_enables_native_tool_search_and_emits_safe_direc
             update={
                 "model": base_spec.model.model_copy(
                     update={
-                        "route_id": "anthropic-official",
-                        "model": "claude-sonnet-4-6",
+                        "route_id": "on-demand-test",
+                        "model": "deepseek-v4-pro",
                         "required_capabilities": (
                             "streaming",
                             "tool_use",
@@ -164,8 +294,24 @@ async def test_on_demand_runtime_enables_native_tool_search_and_emits_safe_direc
         createdAt=now,
         updatedAt=now,
     )
+    catalog = default_capability_catalog()
+    catalog = catalog.model_copy(
+        update={
+            "model_routes": (
+                *catalog.model_routes,
+                ModelRouteCapability(
+                    routeId="on-demand-test",
+                    label="On-demand test route",
+                    provider="test",
+                    models=("deepseek-v4-pro",),
+                    capabilities=("streaming", "tool_use", "tool_search"),
+                    credentialReference="NEW_API_KEY",
+                ),
+            )
+        }
+    )
     compiled = AgentDraftCompiler(
-        default_capability_catalog(),
+        catalog,
         catalog_revision=4,
     ).compile(draft)
     snapshot = compiled.report.snapshot
@@ -199,9 +345,10 @@ async def test_on_demand_runtime_enables_native_tool_search_and_emits_safe_direc
     runtime = RegistryClaudeRuntime(
         registry=registry,
         config=CcSwitchClaudeConfig(
-            base_url="https://api.anthropic.com",
-            model="claude-sonnet-4-6",
-            provider="anthropic",
+            route_id="on-demand-test",
+            base_url="https://new-api.example",
+            model="deepseek-v4-pro",
+            provider="new-api",
             credential=SecretStr("directory-route-secret"),
             capabilities=frozenset({"streaming", "tool_use", "tool_search"}),
         ),
@@ -252,7 +399,7 @@ async def test_on_demand_runtime_enables_native_tool_search_and_emits_safe_direc
         "exposure_mode": "on_demand",
         "catalog_revision": 4,
         "content_hash": snapshot.tool_directory.content_hash,
-        "entry_count": 5,
+        "entry_count": 7,
     }
     degraded_event = next(event for event in events if event.type == "tool.directory.degraded")
     assert degraded_event.payload == {
@@ -260,6 +407,7 @@ async def test_on_demand_runtime_enables_native_tool_search_and_emits_safe_direc
         "tool_count": 2,
         "reason": "credential_unavailable",
     }
+    assert isinstance(captured[0].mcp_servers, dict)
     assert "tavily" not in captured[0].mcp_servers
     assert "directory-route-secret" not in repr(events)
     assert "api.anthropic.com" not in repr(directory_event.payload)
@@ -285,8 +433,8 @@ async def test_manifest_primary_route_selects_its_route_bound_gateway(
             update={
                 "model": base_spec.model.model_copy(
                     update={
-                        "route_id": "anthropic-official",
-                        "model": "claude-sonnet-4-6",
+                        "route_id": "glm-5-2",
+                        "model": "shdata-glm",
                     }
                 )
             }
@@ -335,12 +483,12 @@ async def test_manifest_primary_route_selects_its_route_bound_gateway(
             credential=SecretStr("new-api-secret"),
         ),
         fallback_config=CcSwitchClaudeConfig(
-            route_id="anthropic-official",
-            base_url="https://api.anthropic.com",
-            model="claude-sonnet-4-6",
-            provider="anthropic",
-            credential=SecretStr("anthropic-secret"),
-            capabilities=frozenset({"streaming", "tool_use", "tool_search"}),
+            route_id="glm-5-2",
+            base_url="https://glm.example",
+            model="shdata-glm",
+            provider="new-api",
+            credential=SecretStr("glm-secret"),
+            capabilities=frozenset({"streaming", "tool_use"}),
         ),
         route_configs=(
             CcSwitchClaudeConfig(
@@ -378,14 +526,19 @@ async def test_manifest_primary_route_selects_its_route_bound_gateway(
 
     events = [event async for event in runtime.execute(context)]
 
-    assert captured[0].env["ANTHROPIC_BASE_URL"] == "https://api.anthropic.com"
-    assert captured[0].model == "claude-sonnet-4-6"
-    assert captured[0].env["ANTHROPIC_API_KEY"] == "anthropic-secret"
-    assert "ANTHROPIC_AUTH_TOKEN" not in captured[0].env
+    assert captured[0].env["ANTHROPIC_BASE_URL"] == "https://glm.example"
+    assert captured[0].model == "shdata-glm"
+    assert captured[0].permission_mode == "dontAsk"
+    assert captured[0].allowed_tools == []
+    assert captured[0].env["ANTHROPIC_AUTH_TOKEN"] == "glm-secret"
+    assert "ANTHROPIC_API_KEY" not in captured[0].env
     assert (
         next(event for event in events if event.type == "model.route.selected").payload["route_id"]
-        == "anthropic-official"
+        == "glm-5-2"
     )
+    assert next(
+        event for event in events if event.type == "model.route.selected"
+    ).payload["permission_mode"] == "dontAsk"
 
     override_context = RuntimeContext(
         run=Run(
@@ -417,11 +570,12 @@ async def test_manifest_primary_route_selects_its_route_bound_gateway(
 
     assert captured[1].env["ANTHROPIC_BASE_URL"] == "https://new-api.example"
     assert captured[1].model == "shdata-glm"
+    assert captured[1].permission_mode == "dontAsk"
     selected = next(event for event in override_events if event.type == "model.route.selected")
     assert selected.payload["route_id"] == "deepseek-v4-pro"
     assert selected.payload["model"] == "shdata-glm"
     assert selected.payload["selection_source"] == "task_override"
-    assert selected.payload["agent_default_route"] == "anthropic-official"
+    assert selected.payload["agent_default_route"] == "glm-5-2"
 
 
 @pytest.mark.asyncio
@@ -937,6 +1091,7 @@ async def test_subagent_receives_its_declared_mcp_tools(tmp_path: Path) -> None:
 
     options = captured[0]
     assert options.agents is not None
+    assert options.agents["helper"].tools is not None
     assert "mcp__crm__search" in options.agents["helper"].tools
     assert options.allowed_tools == ["mcp__crm__search"]
     assert options.mcp_servers == {"crm": config}

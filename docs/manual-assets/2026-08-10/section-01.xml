@@ -1,0 +1,5 @@
+<p>Agent Studio 有三条主路径：在“任务”中交付结果，在“Studio”中构建能力，在“协作空间”中把经过发布的能力交给团队使用。日常使用不需要理解底层运行时、事件协议或容器配置。</p>
+<table><thead><tr><th background-color="light-gray">你要做的事</th><th background-color="light-gray">从哪里进入</th><th background-color="light-gray">完成标志</th></tr></thead><tbody><tr><td>让 Agent 完成一项工作</td><td>任务</td><td>看到最终答复、制品与运行状态</td></tr><tr><td>创建或调整 Agent</td><td>Studio → 智能体</td><td>版本通过检查并发布</td></tr><tr><td>连接工具或知识</td><td>Studio → MCP 能力 / 知识库</td><td>能力已绑定到目标 Agent</td></tr><tr><td>与团队共享</td><td>Studio → 协作空间</td><td>团队 Release 可运行</td></tr></tbody></table>
+<ol><li seq="auto">使用公司网络访问 Agent Studio，注册或登录账户。</li><li seq="auto">在任务页确认当前智能体和模型，输入清晰目标；需要参考资料时先附加文件。</li><li seq="auto">发送任务后查看实时响应。遇到高风险操作时先阅读影响范围，再批准或拒绝。</li><li seq="auto">任务完成后下载制品、继续追问，或保留当前智能体新建任务。</li></ol>
+<p><b>访问地址：</b><a href="http://172.20.109.174:3301">http://172.20.109.174:3301</a>（仅在可访问 174 环境的网络中使用）。</p>
+<button action="OpenLink" src="http://172.20.109.174:3301">打开 Agent Studio</button>

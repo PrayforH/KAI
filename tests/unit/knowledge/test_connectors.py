@@ -11,10 +11,12 @@ from harness.knowledge.models import WebKnowledgeConfig
 
 
 def web_config(url: str, *, max_bytes: int = 1_024) -> WebKnowledgeConfig:
-    return WebKnowledgeConfig(
-        url=url,
-        title="Reviewed page",
-        maxBytes=max_bytes,
+    return WebKnowledgeConfig.model_validate(
+        {
+            "url": url,
+            "title": "Reviewed page",
+            "maxBytes": max_bytes,
+        }
     )
 
 

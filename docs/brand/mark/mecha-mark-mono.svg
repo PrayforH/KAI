@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="4.5 24.5 54 29">
+  <!-- Mecha primary mark · single-colour glyph, transparent background.
+       Swap both #1A231E values to currentColor for CSS control. -->
+  <rect x="15" y="27" width="30" height="24" rx="7.5" fill="none" stroke="#1A231E" stroke-width="4.4"/>
+  <path d="M7 39 H46.5" fill="none" stroke="#1A231E" stroke-width="4.4" stroke-linecap="round"/>
+  <circle cx="55" cy="39" r="3.1" fill="#1A231E"/>
+</svg>

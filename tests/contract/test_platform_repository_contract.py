@@ -136,6 +136,7 @@ async def test_agui_binding_round_trips_in_both_directions() -> None:
         "tenant-a",
         "user-a",
         "thread-a",
+        expected_session_id="session-a",
         session_id="session-b",
         updated_at=NOW + timedelta(seconds=2),
     )
@@ -147,13 +148,22 @@ async def test_agui_binding_round_trips_in_both_directions() -> None:
     assert await repository.get_by_session(
         "tenant-a", "user-a", "session-b"
     ) == rebound
+    with pytest.raises(ConflictError, match="changed concurrently"):
+        await repository.rebind_session(
+            "tenant-a",
+            "user-a",
+            "thread-a",
+            expected_session_id="session-a",
+            session_id="session-c",
+            updated_at=NOW + timedelta(seconds=3),
+        )
     archived = await repository.set_archived(
         "tenant-a",
         "user-a",
         "thread-a",
-        archived_at=NOW + timedelta(seconds=3),
+        archived_at=NOW + timedelta(seconds=4),
     )
-    assert archived.archived_at == NOW + timedelta(seconds=3)
+    assert archived.archived_at == NOW + timedelta(seconds=4)
     assert await repository.list_for_user(
         "tenant-a", "user-a", limit=10
     ) == []

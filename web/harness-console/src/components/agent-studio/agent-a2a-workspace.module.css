@@ -4,7 +4,7 @@
   --a2a-base: var(--codex-surface, #181818);
   min-height: 100dvh;
   display: grid;
-  grid-template-columns: 244px minmax(0, 1fr);
+  grid-template-columns: var(--studio-sidebar-expanded-width) minmax(0, 1fr);
   color: var(--codex-ink, #fff);
   background: var(--codex-canvas, #111);
 }
@@ -42,15 +42,15 @@
 
 .protocolBadge {
   padding: 5px 8px;
-  border: 1px solid color-mix(in srgb, var(--codex-accent, #339cff) 45%, transparent);
+  border: 1px solid color-mix(in srgb, var(--codex-accent, #ececec) 45%, transparent);
   border-radius: 999px;
-  color: var(--codex-accent, #339cff);
+  color: var(--codex-accent, #ececec);
   font: 700 10px/1 var(--font-code, ui-monospace, monospace);
   letter-spacing: 0.08em;
 }
 
 .content {
-  width: min(1120px, 100%);
+  width: min(var(--studio-page-content-max, 1320px), 100%);
   margin: 0 auto;
   padding: 42px 28px 64px;
   display: grid;
@@ -71,7 +71,7 @@
 }
 
 .eyebrow {
-  color: var(--codex-accent, #339cff);
+  color: var(--codex-accent, #ececec);
   font: 700 11px/1.2 var(--font-code, ui-monospace, monospace);
   letter-spacing: 0.12em;
 }
@@ -144,7 +144,7 @@
 }
 
 .guide article > span {
-  color: var(--codex-accent, #339cff);
+  color: var(--codex-accent, #ececec);
   font: 700 10px/1.3 var(--font-code, ui-monospace, monospace);
 }
 
@@ -181,7 +181,7 @@
   display: grid;
   place-items: center;
   border-radius: 9px;
-  color: var(--codex-accent, #339cff);
+  color: var(--codex-accent, #ececec);
   background: var(--a2a-base);
   font: 700 11px/1 var(--font-code, ui-monospace, monospace);
 }
@@ -202,7 +202,7 @@
 
 @media (max-width: 980px) {
   .shell {
-    grid-template-columns: 52px minmax(0, 1fr);
+    grid-template-columns: var(--studio-sidebar-collapsed-width) minmax(0, 1fr);
   }
 
   .hero {

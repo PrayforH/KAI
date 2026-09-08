@@ -75,6 +75,7 @@ class AccessClaims(BaseModel):
     iat: int
     exp: int
     jti: str
+    sid: str
 
 
 class AuditEntry(BaseModel):

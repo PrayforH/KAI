@@ -6,6 +6,7 @@ export interface TaskModelRoute {
   provider: string;
   model: string;
   capabilities: string[];
+  modelType: "chat" | "vision" | "video_generation";
 }
 
 interface CapabilityResponse {
@@ -15,6 +16,7 @@ interface CapabilityResponse {
     provider: string;
     models: string[];
     capabilities: string[];
+    modelType?: "chat" | "vision" | "image_generation" | "video_generation";
     enabled: boolean;
   }>;
 }
@@ -29,14 +31,31 @@ export async function loadTaskModelRoutes(): Promise<TaskModelRoute[]> {
   const catalog = (await response.json()) as CapabilityResponse;
   return catalog.modelRoutes
     // A task override is a route ID, so selectable routes must resolve to one
-    // unambiguous provider model. Legacy grouped routes remain runtime-only.
-    .filter((route) => route.enabled && route.models.length === 1)
+    // unambiguous provider model. Video routes use the dedicated composer
+    // path and never reach the conversational Agent runtime.
+    // Keep retired platform routes out during rolling upgrades where an older
+    // API instance may still return them from its durable catalog projection.
+    .filter(
+      (route) =>
+        route.routeId !== "anthropic-official" &&
+        route.routeId !== "new-api-default" &&
+        route.enabled &&
+        route.models.length === 1 &&
+        (route.modelType === undefined || ["chat", "vision", "video_generation"].includes(route.modelType)) &&
+        !route.capabilities.includes("image_generation") &&
+        (route.modelType === "video_generation" || !route.capabilities.includes("video_generation")),
+    )
     .map((route) => ({
       id: route.routeId,
       label: route.label,
       provider: route.provider,
       model: route.models[0],
       capabilities: route.capabilities,
+      modelType: route.modelType === "video_generation"
+        ? "video_generation"
+        : route.modelType === "vision" || route.capabilities.includes("vision")
+          ? "vision"
+          : "chat",
     }));
 }
 

@@ -3,15 +3,16 @@
 import Link from "next/link";
 import { type ReactNode, useEffect, useState } from "react";
 import { AccountMenu } from "../account-menu";
+import { PRODUCT_NAME, ProductBrandCopy, ProductBrandMark } from "../product-brand";
 import {
   WorkspaceCollapseIcon,
-  WorkspaceModeSwitcher,
   WorkspaceNavigation,
   type WorkspaceId,
 } from "../workspace-navigation";
 import styles from "./studio-sidebar.module.css";
 
 const STORAGE_KEY = "agent-studio-sidebar-collapsed";
+const COMPACT_MEDIA_QUERY = "(max-width: 980px)";
 
 type StudioWorkspace = Exclude<WorkspaceId, "tasks">;
 
@@ -25,25 +26,37 @@ export function StudioSidebar({
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
-    try {
-      const stored = window.localStorage.getItem(STORAGE_KEY);
-      setCollapsed(
-        stored === "true" ||
-          (stored === null &&
-            window.matchMedia("(max-width: 980px)").matches),
-      );
-    } catch {
-      setCollapsed(window.matchMedia("(max-width: 980px)").matches);
+    const compactViewport = window.matchMedia(COMPACT_MEDIA_QUERY);
+
+    function syncSidebarToViewport() {
+      if (compactViewport.matches) {
+        setCollapsed(true);
+        return;
+      }
+
+      try {
+        setCollapsed(window.localStorage.getItem(STORAGE_KEY) === "true");
+      } catch {
+        setCollapsed(false);
+      }
     }
+
+    syncSidebarToViewport();
+    compactViewport.addEventListener("change", syncSidebarToViewport);
+    return () => {
+      compactViewport.removeEventListener("change", syncSidebarToViewport);
+    };
   }, []);
 
   function toggleSidebar() {
     setCollapsed((current) => {
       const next = !current;
-      try {
-        window.localStorage.setItem(STORAGE_KEY, String(next));
-      } catch {
-        // The layout still works when storage is unavailable.
+      if (!window.matchMedia(COMPACT_MEDIA_QUERY).matches) {
+        try {
+          window.localStorage.setItem(STORAGE_KEY, String(next));
+        } catch {
+          // The layout still works when storage is unavailable.
+        }
       }
       return next;
     });
@@ -54,23 +67,18 @@ export function StudioSidebar({
       className={styles.sidebar}
       data-studio-sidebar={collapsed ? "collapsed" : "expanded"}
       aria-label={
-        collapsed ? "Agent Studio 快捷栏" : "Agent Studio 控制面导航"
+        collapsed ? `${PRODUCT_NAME}快捷栏` : `${PRODUCT_NAME}控制面导航`
       }
     >
       <header className={styles.brand}>
         <Link
           className={styles.brandLink}
           href="/studio/agents"
-          aria-label="Agent Studio 首页"
+          aria-label={`${PRODUCT_NAME}首页`}
         >
-          <span className={styles.brandMark} aria-hidden="true">
-            AS
-          </span>
+          <ProductBrandMark className={styles.brandMark} />
           {!collapsed && (
-            <span className={styles.brandCopy}>
-              <strong>Agent Studio</strong>
-              <small>智能体控制面</small>
-            </span>
+            <ProductBrandCopy className={styles.brandCopy} />
           )}
         </Link>
         {!collapsed && (
@@ -78,7 +86,7 @@ export function StudioSidebar({
             className={styles.collapseButton}
             type="button"
             aria-expanded={!collapsed}
-            aria-label="收起 Agent Studio 侧栏"
+            aria-label={`收起${PRODUCT_NAME}侧栏`}
             title="收起侧栏"
             onClick={toggleSidebar}
           >
@@ -95,7 +103,7 @@ export function StudioSidebar({
               type="button"
               aria-expanded={!collapsed}
               aria-label={
-                collapsed ? "展开 Agent Studio 侧栏" : "收起 Agent Studio 侧栏"
+                collapsed ? `展开${PRODUCT_NAME}侧栏` : `收起${PRODUCT_NAME}侧栏`
               }
               title={collapsed ? "展开侧栏" : "收起侧栏"}
               onClick={toggleSidebar}
@@ -106,16 +114,10 @@ export function StudioSidebar({
         </div>
       )}
 
-      {!collapsed && <WorkspaceModeSwitcher mode="studio" />}
-
       <WorkspaceNavigation
         active={active}
         collapsed={collapsed}
-        visible={
-          collapsed
-            ? undefined
-            : ["agents", "capabilities", "knowledge", "data"]
-        }
+        visible={["tasks", "agents"]}
       />
 
       {!collapsed && children && (

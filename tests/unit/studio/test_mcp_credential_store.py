@@ -2,6 +2,7 @@ import base64
 import hashlib
 import json
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -19,6 +20,34 @@ from harness.studio.mcp_credential_store import (
     StoredMcpCredential,
     StoredMcpCredentialProvider,
 )
+
+
+def test_cryptography_vex_is_limited_to_the_unreachable_pkcs7_path() -> None:
+    source_imports: set[str] = set()
+    source_text = ""
+    for path in Path("src").rglob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        source_text += text
+        for line in text.splitlines():
+            if line.startswith(("import cryptography", "from cryptography")):
+                source_imports.add(line)
+
+    assert source_imports == {
+        "from cryptography.exceptions import InvalidTag",
+        "from cryptography.hazmat.primitives.ciphers.aead import AESGCM",
+    }
+    assert "pkcs7" not in source_text.lower()
+
+    vex = json.loads(
+        Path("security/vex/cryptography-49.0.0.openvex.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    statement = vex["statements"][0]
+    assert statement["vulnerability"]["name"] == "CVE-2026-69247"
+    assert statement["products"] == [{"@id": "pkg:pypi/cryptography@49.0.0"}]
+    assert statement["status"] == "not_affected"
+    assert statement["justification"] == "vulnerable_code_not_in_execute_path"
 
 
 def identity(tenant_id: str = "tenant-a") -> ExecutionIdentity:
@@ -76,6 +105,61 @@ async def test_credentials_are_encrypted_user_scoped_and_never_audited() -> None
 
     assert await service.delete("tenant-a", "owner-a", "company-search") is True
     assert await repository.get("tenant-a", "owner-a", "company-search") is None
+
+
+@pytest.mark.asyncio
+async def test_service_owned_mode_resolves_space_credentials_without_leaking_personal() -> None:
+    repository = InMemoryMcpCredentialRepository()
+    service = McpCredentialService(
+        repository,
+        McpCredentialCipher(SecretStr("encryption-key-for-tests")),
+    )
+    provider = StoredMcpCredentialProvider(service, EmptyMcpCredentialProvider())
+    # The running user has personal credentials that must NOT leak into a
+    # service_owned shared run.
+    await service.configure(
+        "tenant-a",
+        "member-a",
+        "company-search",
+        ConfigureMcpCredentialRequest(authKey="authorization", value=SecretStr("personal-token")),
+    )
+    # The space provides the shared credential under its own owner identity.
+    await service.configure(
+        "tenant-a",
+        "space:space-1",
+        "company-search",
+        ConfigureMcpCredentialRequest(authKey="authorization", value=SecretStr("shared-token")),
+    )
+    service_owned = ExecutionIdentity(
+        tenant_id="tenant-a",
+        user_id="member-a",
+        team_ids=("space-1",),
+        project_id="agent-a",
+        session_id="session-a",
+        run_id="run-a",
+        agent_name="agent-a",
+        agent_version="1",
+        connection_mode="service_owned",
+    )
+    resolved = await provider.resolve(
+        "company-search", service_owned, frozenset({"authorization"})
+    )
+    assert resolved["authorization"].get_secret_value() == "shared-token"
+
+    # A caller_owned identity keeps resolving the caller's personal store.
+    caller_owned = service_owned.model_copy(update={"connection_mode": "caller_owned"})
+    resolved = await provider.resolve(
+        "company-search", caller_owned, frozenset({"authorization"})
+    )
+    assert resolved["authorization"].get_secret_value() == "personal-token"
+
+    # Removing the space credential makes service_owned runs fail closed even
+    # though the caller still has personal credentials.
+    await service.delete("tenant-a", "space:space-1", "company-search")
+    with pytest.raises(McpCredentialError, match="missing MCP credentials"):
+        await provider.resolve(
+            "company-search", service_owned, frozenset({"authorization"})
+        )
 
 
 def test_cipher_can_read_pre_isolation_tenant_scoped_ciphertext() -> None:

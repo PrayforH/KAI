@@ -17,10 +17,11 @@ from ag_ui.core import (
 )
 from fastapi import APIRouter, Depends, Header, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from harness.agui.activity import build_run_activity
 from harness.agui.mapper import map_harness_event
+from harness.agui.response import active_response_text, final_response_text
 from harness.api.dependencies import (
     ApiContainer,
     Identity,
@@ -29,11 +30,13 @@ from harness.api.dependencies import (
     require_identity,
     require_owned_run,
 )
-from harness.core.errors import ConflictError
+from harness.api.event_streaming import wait_for_run_event
+from harness.context.models import SessionContextDigest, SessionContextOverview
+from harness.context.window import context_window_view
+from harness.core.errors import ConflictError, NotFoundError
 from harness.core.events import RunEvent
-from harness.core.models import ApprovalRequest, ApprovalStatus, Run
+from harness.core.models import AguiThreadBinding, ApprovalRequest, ApprovalStatus, Run
 from harness.runtime.input_redaction import redact_internal_agent_asset_events
-from harness.runtime.message_mapper import safe_model_text
 
 router = APIRouter(prefix="/agui", tags=["ag-ui"])
 
@@ -45,7 +48,6 @@ _TERMINAL_EVENT_TYPES = {
     "run.timed_out",
 }
 
-_RESPONSE_BOUNDARY_PREFIXES = ("approval.", "subagent.", "tool.")
 _STREAM_HEARTBEAT_SECONDS = 10.0
 
 
@@ -65,25 +67,6 @@ def _projected_event_cursor(last_event_id: str | None) -> tuple[int, int]:
     except ValueError:
         return 0, 0
     return sequence, child_count
-
-
-def final_response_text(events: list[RunEvent]) -> str:
-    """Return only the answer emitted after the last auditable action.
-
-    Providers stream progress commentary and final prose through the same
-    message.delta channel. Activity renders the former in the execution
-    timeline; history must not concatenate it into the final answer again.
-    """
-
-    last_action_index = -1
-    for index, event in enumerate(events):
-        if event.type.startswith(_RESPONSE_BOUNDARY_PREFIXES):
-            last_action_index = index
-    return "".join(
-        safe_model_text(str(event.payload.get("text", "")))
-        for index, event in enumerate(events)
-        if index > last_action_index and event.type == "message.delta"
-    )
 
 
 def _stream_response_message_id(run_id: str) -> str:
@@ -115,9 +98,7 @@ def _terminal_artifact_projection(
 
     message_id = _response_message_id(event.run_id, run_events)
     projection: list[BaseEvent] = []
-    for artifact_event in (
-        item for item in run_events if item.type == "artifact.ready"
-    ):
+    for artifact_event in (item for item in run_events if item.type == "artifact.ready"):
         payload = dict(artifact_event.payload)
         payload["message_id"] = message_id
         projection.extend(
@@ -194,7 +175,17 @@ class AguiThreadSummary(BaseModel):
     created_at: datetime
     updated_at: datetime
     archived_at: datetime | None = None
+    last_read_at: datetime | None = None
     pending_approval: ApprovalRequest | None = None
+
+
+class AguiThreadReadInput(BaseModel):
+    updated_at: AwareDatetime
+
+
+class AguiThreadReadResult(BaseModel):
+    thread_id: str
+    last_read_at: datetime
 
 
 class AguiThreadArchiveInput(BaseModel):
@@ -205,6 +196,21 @@ class AguiThreadArchiveResult(BaseModel):
     thread_id: str
     archived: bool
     archived_at: datetime | None = None
+
+
+class AguiContextRebaseResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    thread_id: str
+    previous_session_id: str
+    session_id: str
+    digest: SessionContextDigest
+
+
+class AguiThreadContextOverview(SessionContextOverview):
+    previous_session_count: int = Field(default=0, ge=0)
+    rebase_supported: bool = False
+    rollback_supported: bool = False
 
 
 class AguiHistoryFunction(BaseModel):
@@ -260,16 +266,125 @@ class AguiHistoryMessage(BaseModel):
     tool_calls: list[AguiHistoryToolCall] | None = Field(
         default=None, serialization_alias="toolCalls"
     )
-    tool_call_id: str | None = Field(
-        default=None, serialization_alias="toolCallId"
-    )
+    tool_call_id: str | None = Field(default=None, serialization_alias="toolCallId")
 
 
 class AguiThreadHistory(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     thread_id: str
+    status: str
+    run_id: str | None = None
     messages: list[AguiHistoryMessage]
+
+
+@router.get(
+    "/threads/{thread_id}/context",
+    response_model=AguiThreadContextOverview,
+)
+async def get_agui_thread_context(
+    thread_id: str,
+    identity: Annotated[Identity, Depends(require_identity)],
+    container: Annotated[ApiContainer, Depends(get_container)],
+    before_version: Annotated[int | None, Query(ge=2)] = None,
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+) -> AguiThreadContextOverview:
+    ensure_permission(identity, "tasks:read")
+    binding = await container.agui.get_binding(
+        tenant_id=identity.tenant_id,
+        user_id=identity.user_id,
+        thread_id=thread_id,
+    )
+    overview = await container.context.overview(
+        identity.tenant_id,
+        identity.user_id,
+        binding.session_id,
+        before_version=before_version,
+        limit=limit,
+    )
+    session = await container.sessions.get(identity.tenant_id, binding.session_id)
+    window_event = await container.events.latest_for_session_types(
+        identity.tenant_id,
+        binding.session_id,
+        ("context.window.observed", "context.window.unavailable"),
+    )
+    window, window_status = context_window_view(window_event)
+    return AguiThreadContextOverview.model_validate(
+        {
+            **overview.model_dump(),
+            "previous_session_count": len(binding.previous_session_ids),
+            "rebase_supported": (
+                session.resolved_runtime_thread_id is not None
+                and overview.state is not None
+                and overview.state.latest_digest_id is not None
+            ),
+            "rollback_supported": (
+                binding.session_id.startswith("session_ctx_") and bool(binding.previous_session_ids)
+            ),
+            "window": window,
+            "window_status": window_status,
+        }
+    )
+
+
+@router.post(
+    "/threads/{thread_id}/context/rebase",
+    response_model=AguiContextRebaseResult,
+)
+async def rebase_agui_thread_context(
+    thread_id: str,
+    identity: Annotated[Identity, Depends(require_identity)],
+    container: Annotated[ApiContainer, Depends(get_container)],
+) -> AguiContextRebaseResult:
+    ensure_permission(identity, "tasks:write")
+    result = await container.agui.rebase_context(
+        tenant_id=identity.tenant_id,
+        user_id=identity.user_id,
+        thread_id=thread_id,
+    )
+    await container.audit.record(
+        tenant_id=identity.tenant_id,
+        user_id=identity.user_id,
+        action="task.context.rebase",
+        resource_type="agui_thread",
+        resource_id=thread_id,
+        details={
+            "previous_session_id": result.previous_session_id,
+            "session_id": result.session_id,
+            "digest_id": result.digest.digest_id,
+        },
+    )
+    return AguiContextRebaseResult(**result.__dict__)
+
+
+@router.post(
+    "/threads/{thread_id}/context/rebase/rollback",
+    response_model=AguiContextRebaseResult,
+)
+async def rollback_agui_thread_context_rebase(
+    thread_id: str,
+    identity: Annotated[Identity, Depends(require_identity)],
+    container: Annotated[ApiContainer, Depends(get_container)],
+) -> AguiContextRebaseResult:
+    ensure_permission(identity, "tasks:write")
+    result = await container.agui.rollback_context_rebase(
+        tenant_id=identity.tenant_id,
+        user_id=identity.user_id,
+        thread_id=thread_id,
+    )
+    await container.audit.record(
+        tenant_id=identity.tenant_id,
+        user_id=identity.user_id,
+        action="task.context.rebase.rollback",
+        resource_type="agui_thread",
+        resource_id=thread_id,
+        details={
+            "previous_session_id": result.previous_session_id,
+            "session_id": result.session_id,
+            "digest_id": result.digest.digest_id,
+        },
+    )
+    return AguiContextRebaseResult(**result.__dict__)
 
 
 def _encode_event(event_id: str, event: object) -> str:
@@ -292,8 +407,9 @@ async def run_agui_agent(
 ) -> StreamingResponse:
     ensure_permission(identity, "tasks:write")
     resolved_owner = agent_owner_user_id or identity.user_id
+    connection_mode = "caller_owned"
     if space_id is not None:
-        await container.team_spaces.require_agent_access(
+        release = await container.team_spaces.require_agent_access(
             identity.tenant_id,
             identity.user_id,
             space_id,
@@ -301,6 +417,7 @@ async def run_agui_agent(
             agent_name,
             agent_version,
         )
+        connection_mode = release.connection_mode.value
     elif resolved_owner != identity.user_id:
         raise ConflictError("agent_owner_user_id requires a team space grant")
     creation = await container.agui.create_run_with_result(
@@ -311,6 +428,7 @@ async def run_agui_agent(
         request=body,
         agent_owner_user_id=resolved_owner,
         space_id=space_id,
+        connection_mode=connection_mode,
     )
     run = creation.run
     worker_task = (
@@ -358,7 +476,13 @@ async def run_agui_agent(
                 # long model/tool turn as an abandoned response.
                 yield ": keep-alive\n\n"
                 last_emission = time.monotonic()
-            await asyncio.sleep(0.02)
+            await wait_for_run_event(
+                container.event_wakeup,
+                identity.tenant_id,
+                run.run_id,
+                sequence,
+                fallback_poll_seconds=0.02,
+            )
         if worker_task is not None:
             await worker_task
 
@@ -393,22 +517,19 @@ async def list_agui_threads(
         limit=limit,
         archived=archived,
     )
-    sessions = {
-        binding.session_id: await container.sessions.get(
-            identity.tenant_id, binding.session_id
-        )
-        for binding in bindings
-    }
-    all_session_ids = [
-        session_id
-        for binding in bindings
-        for session_id in binding.session_ids
-    ]
-    runs = await container.runs.list_for_sessions(
-        identity.tenant_id,
-        all_session_ids,
-        limit=max(limit * 20, 200),
+    all_session_ids = [session_id for binding in bindings for session_id in binding.session_ids]
+    resolved_sessions, runs = await asyncio.gather(
+        container.sessions.list_for_ids(
+            identity.tenant_id,
+            [binding.session_id for binding in bindings],
+        ),
+        container.runs.list_for_sessions(
+            identity.tenant_id,
+            all_session_ids,
+            limit=max(limit * 20, 200),
+        ),
     )
+    sessions = {session.session_id: session for session in resolved_sessions}
     runs_by_session: dict[str, list[Run]] = {}
     for run in runs:
         runs_by_session.setdefault(run.session_id, []).append(run)
@@ -422,12 +543,9 @@ async def list_agui_threads(
         if approval.status is ApprovalStatus.PENDING and approval.expires_at > now
     }
 
-    summaries: list[AguiThreadSummary] = []
-    for binding in bindings:
+    async def summarize(binding: AguiThreadBinding) -> AguiThreadSummary:
         thread_runs = [
-            run
-            for session_id in binding.session_ids
-            for run in runs_by_session.get(session_id, [])
+            run for session_id in binding.session_ids for run in runs_by_session.get(session_id, [])
         ]
         visible_runs = _visible_thread_runs(thread_runs)
         latest = max(
@@ -449,29 +567,30 @@ async def list_agui_threads(
         )
         session = sessions[binding.session_id]
         prompts = _conversation_prompts(visible_runs)
-        summaries.append(
-            AguiThreadSummary(
-                thread_id=binding.thread_id,
-                session_id=binding.session_id,
-                title=await container.agui.resolve_title(binding, prompts),
-                agent_name=session.agent_name,
-                agent_version=session.agent_version,
-                agent_owner_user_id=session.resolved_agent_owner_user_id,
-                space_id=session.team_ids[0] if session.team_ids else None,
-                status=(
-                    "waiting_approval"
-                    if pending is not None
-                    else latest.status.value
-                    if latest
-                    else "idle"
-                ),
-                run_id=pending.run_id if pending is not None else latest.run_id if latest else None,
-                created_at=binding.created_at,
-                updated_at=latest.updated_at if latest is not None else binding.updated_at,
-                archived_at=binding.archived_at,
-                pending_approval=pending,
-            )
+        return AguiThreadSummary(
+            thread_id=binding.thread_id,
+            session_id=binding.session_id,
+            title=await container.agui.resolve_title(binding, prompts),
+            agent_name=session.agent_name,
+            agent_version=session.agent_version,
+            agent_owner_user_id=session.resolved_agent_owner_user_id,
+            space_id=session.team_ids[0] if session.team_ids else None,
+            status=(
+                "waiting_approval"
+                if pending is not None
+                else latest.status.value
+                if latest
+                else "idle"
+            ),
+            run_id=pending.run_id if pending is not None else latest.run_id if latest else None,
+            created_at=binding.created_at,
+            updated_at=latest.updated_at if latest is not None else binding.updated_at,
+            archived_at=binding.archived_at,
+            last_read_at=binding.last_read_at,
+            pending_approval=pending,
         )
+
+    summaries = await asyncio.gather(*(summarize(binding) for binding in bindings))
     return sorted(
         summaries,
         key=lambda item: (
@@ -481,6 +600,36 @@ async def list_agui_threads(
         ),
         reverse=True,
     )[:limit]
+
+
+@router.put("/threads/{thread_id}/read", response_model=AguiThreadReadResult)
+async def mark_agui_thread_read(
+    thread_id: str,
+    body: AguiThreadReadInput,
+    identity: Annotated[Identity, Depends(require_identity)],
+    container: Annotated[ApiContainer, Depends(get_container)],
+) -> AguiThreadReadResult:
+    ensure_permission(identity, "tasks:read")
+    binding = await container.agui.get_thread_record(
+        tenant_id=identity.tenant_id, user_id=identity.user_id, thread_id=thread_id,
+    )
+    runs = await container.runs.list_for_sessions(
+        identity.tenant_id, list(binding.session_ids), limit=200,
+    )
+    latest = max(
+        (run.updated_at for run in _visible_thread_runs(runs)),
+        default=binding.updated_at,
+    )
+    # A delayed device acknowledges only the version it actually displayed.
+    # Clamp to the server's latest version; never mark future results as read.
+    read_at = min(body.updated_at, latest)
+    updated = await container.agui.mark_read(
+        tenant_id=identity.tenant_id, user_id=identity.user_id,
+        thread_id=thread_id, read_at=read_at,
+    )
+    return AguiThreadReadResult(
+        thread_id=thread_id, last_read_at=updated.last_read_at or read_at,
+    )
 
 
 @router.patch(
@@ -543,6 +692,11 @@ async def get_agui_thread_history(
         identity.tenant_id, list(binding.session_ids), limit=200
     )
     runs = _visible_thread_runs(runs)
+    latest = max(
+        runs,
+        key=lambda item: (item.updated_at, item.run_id),
+        default=None,
+    )
     messages: list[AguiHistoryMessage] = []
     for run in sorted(runs, key=lambda item: (item.created_at, item.run_id)):
         prompt = run.input.get("prompt")
@@ -557,15 +711,20 @@ async def get_agui_thread_history(
                 if isinstance(raw_input_ids, list)
                 else []
             )
-            input_artifacts = (
-                await container.input_artifacts.resolve_for_run(
-                    tenant_id=identity.tenant_id,
-                    user_id=identity.user_id,
-                    input_artifact_ids=input_ids,
-                )
-                if input_ids
-                else []
-            )
+            input_artifacts = []
+            missing_inputs = False
+            for input_id in input_ids:
+                try:
+                    input_artifacts.extend(await container.input_artifacts.resolve_for_run(
+                        tenant_id=identity.tenant_id,
+                        user_id=identity.user_id,
+                        input_artifact_ids=[input_id],
+                    ))
+                except NotFoundError:
+                    # Attachment retention must not erase the conversation itself.
+                    missing_inputs = True
+            if missing_inputs:
+                prompt += "\n\n（此消息的部分历史附件已不可用。）"
             content: str | list[AguiHistoryTextPart | AguiHistoryInputPart]
             if input_artifacts:
                 content = [
@@ -577,9 +736,7 @@ async def get_agui_thread_history(
                                 value=artifact.input_artifact_id,
                                 mime_type=artifact.media_type,
                             ),
-                            metadata=AguiHistoryInputMetadata(
-                                filename=artifact.name
-                            ),
+                            metadata=AguiHistoryInputMetadata(filename=artifact.name),
                         )
                         for artifact in input_artifacts
                     ),
@@ -587,27 +744,29 @@ async def get_agui_thread_history(
             else:
                 content = prompt
             messages.append(
-                AguiHistoryMessage(
-                    id=f"user-{run.run_id}", role="user", content=content
-                )
+                AguiHistoryMessage(id=f"user-{run.run_id}", role="user", content=content)
             )
-        events = await container.observed_events.list_after(
-            identity.tenant_id, run.run_id, 0
-        )
+        events = await container.observed_events.list_after(identity.tenant_id, run.run_id, 0)
         events = redact_internal_agent_asset_events(events)
-        response = final_response_text(events)
-        artifacts = await container.artifacts.list_for_run(
-            identity.tenant_id, run.run_id
+        for guidance in events:
+            if guidance.type == "run.steer.accepted":
+                messages.append(AguiHistoryMessage(
+                    id=f"steer-{guidance.payload.get('request_id', guidance.event_id)}",
+                    role="user", content=str(guidance.payload.get("text", "")),
+                ))
+        response = (
+            final_response_text(events)
+            if run.status.is_terminal
+            else active_response_text(events)
         )
+        artifacts = await container.artifacts.list_for_run(identity.tenant_id, run.run_id)
         activity = build_run_activity(events)
         activity_tool_call = (
             AguiHistoryToolCall(
                 id=f"harness-activity-{run.run_id}",
                 function=AguiHistoryFunction(
                     name="harness_run_activity",
-                    arguments=json.dumps(
-                        {"activity": activity}, separators=(",", ":")
-                    ),
+                    arguments=json.dumps({"activity": activity}, separators=(",", ":")),
                 ),
             )
             if activity is not None
@@ -652,9 +811,7 @@ async def get_agui_thread_history(
                 AguiHistoryMessage(
                     id=f"tool-activity-{run.run_id}",
                     role="tool",
-                    content=json.dumps(
-                        {"status": "ready"}, separators=(",", ":")
-                    ),
+                    content=json.dumps({"status": "ready"}, separators=(",", ":")),
                     tool_call_id=activity_tool_call.id,
                 )
             )
@@ -667,7 +824,12 @@ async def get_agui_thread_history(
             )
             for artifact in artifacts
         )
-    return AguiThreadHistory(thread_id=thread_id, messages=messages)
+    return AguiThreadHistory(
+        thread_id=thread_id,
+        status=latest.status.value if latest is not None else "idle",
+        run_id=latest.run_id if latest is not None else None,
+        messages=messages,
+    )
 
 
 def _history_input_type(
@@ -803,3 +965,16 @@ async def stream_agui_events(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post("/runs/{run_id}/cancel", response_model=Run)
+async def cancel_agui_run_by_server_id(
+    run_id: str,
+    identity: Annotated[Identity, Depends(require_identity)],
+    container: Annotated[ApiContainer, Depends(get_container)],
+) -> Run:
+    """Cancel a resumed run when the browser no longer has its AG-UI client ID."""
+
+    ensure_permission(identity, "tasks:write")
+    await require_owned_run(container, identity, run_id)
+    return await container.runs.cancel(identity.tenant_id, run_id)

@@ -34,6 +34,10 @@ EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 class AuthenticationError(ValueError):
     """Raised when credentials or session tokens cannot be trusted."""
 
+    def __init__(self, message: str, *, code: str = "access_token_invalid") -> None:
+        super().__init__(message)
+        self.code = code
+
 
 class RegistrationDisabledError(ValueError):
     """Raised when public email registration is disabled."""
@@ -241,6 +245,7 @@ class AuthService:
             user=user,
             membership=membership,
             refresh_token=replacement_raw,
+            family_id=replacement.family_id,
         )
 
     async def logout(self, raw_token: str) -> None:
@@ -264,6 +269,13 @@ class AuthService:
         return claims
 
     async def current_user(self, claims: AccessClaims) -> tuple[AuthUser, Membership]:
+        if not await self._repository.is_token_family_active(
+            claims.sub, claims.tenant_id, claims.sid, datetime.now(UTC)
+        ):
+            raise AuthenticationError(
+                "This account was signed in on another device. Sign in again to continue.",
+                code="session_replaced",
+            )
         user = await self._repository.get_user(claims.sub)
         if user.disabled:
             raise AuthenticationError("this account is disabled")
@@ -356,11 +368,21 @@ class AuthService:
 
     async def _issue_session(self, user: AuthUser, membership: Membership) -> AuthSession:
         raw_refresh, stored_refresh = self._new_refresh_token(user, membership)
-        await self._repository.add_refresh_token(stored_refresh)
-        return self._session_response(user=user, membership=membership, refresh_token=raw_refresh)
+        await self._repository.replace_user_refresh_token(stored_refresh, datetime.now(UTC))
+        return self._session_response(
+            user=user,
+            membership=membership,
+            refresh_token=raw_refresh,
+            family_id=stored_refresh.family_id,
+        )
 
     def _session_response(
-        self, *, user: AuthUser, membership: Membership, refresh_token: str
+        self,
+        *,
+        user: AuthUser,
+        membership: Membership,
+        refresh_token: str,
+        family_id: str,
     ) -> AuthSession:
         now = datetime.now(UTC)
         payload = {
@@ -375,6 +397,7 @@ class AuthService:
             "iat": int(now.timestamp()),
             "exp": int((now + timedelta(seconds=self._access_token_seconds)).timestamp()),
             "jti": f"access_{uuid4().hex}",
+            "sid": family_id,
         }
         access_token = jwt.encode(payload, self._jwt_secret.get_secret_value(), algorithm="HS256")
         return AuthSession(

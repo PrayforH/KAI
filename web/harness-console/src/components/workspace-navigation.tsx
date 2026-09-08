@@ -4,12 +4,13 @@ import styles from "./workspace-navigation.module.css";
 export type WorkspaceId =
   | "tasks"
   | "agents"
+  | "files"
   | "capabilities"
   | "knowledge"
+  | "skills"
   | "spaces"
   | "usage"
   | "data";
-export type WorkspaceMode = "tasks" | "studio";
 
 export const workspaceItems: ReadonlyArray<{
   id: WorkspaceId;
@@ -18,9 +19,10 @@ export const workspaceItems: ReadonlyArray<{
 }> = [
   { id: "tasks", href: "/", label: "任务" },
   { id: "agents", href: "/studio/agents", label: "智能体" },
-  { id: "capabilities", href: "/studio/capabilities", label: "MCP" },
+  { id: "files", href: "/studio/files", label: "我的文件" },
+  { id: "capabilities", href: "/studio/capabilities", label: "MCP 能力" },
   { id: "knowledge", href: "/studio/knowledge", label: "知识库" },
-  { id: "data", href: "/studio/data", label: "数据" },
+  { id: "skills", href: "/studio/skills", label: "技能" },
 ];
 
 export function WorkspaceIcon({ workspace }: { workspace: WorkspaceId }) {
@@ -38,6 +40,14 @@ export function WorkspaceIcon({ workspace }: { workspace: WorkspaceId }) {
         <circle cx="14" cy="6" r="2" />
         <circle cx="10" cy="14" r="2" />
         <path d="m7.7 7.1 1.4 4.8m3.2-4.8-1.4 4.8M8 6h4" />
+      </svg>
+    );
+  }
+  if (workspace === "files") {
+    return (
+      <svg viewBox="0 0 20 20" aria-hidden="true">
+        <path d="M4.5 3.5h7l4 4v9h-11z" />
+        <path d="M11.5 3.5v4h4M7.5 11h5m-5 2.8h5" />
       </svg>
     );
   }
@@ -61,6 +71,14 @@ export function WorkspaceIcon({ workspace }: { workspace: WorkspaceId }) {
       <svg viewBox="0 0 20 20" aria-hidden="true">
         <path d="M4.5 4.5h7a3 3 0 0 1 3 3v8h-7a3 3 0 0 1-3-3z" />
         <path d="M7.5 7.5h4m-4 3h4" />
+      </svg>
+    );
+  }
+  if (workspace === "skills") {
+    return (
+      <svg viewBox="0 0 20 20" aria-hidden="true">
+        <path d="M4.5 4h7.5a3.5 3.5 0 0 1 3.5 3.5v8.5H6.5A2 2 0 0 1 4.5 14z" />
+        <path d="M8 8.5h4M8 11h4" />
       </svg>
     );
   }
@@ -103,14 +121,33 @@ export function WorkspaceNavigation({
   active,
   collapsed = false,
   visible,
+  labelOverrides,
 }: {
   active: WorkspaceId;
   collapsed?: boolean;
   visible?: readonly WorkspaceId[];
+  labelOverrides?: Partial<Record<WorkspaceId, string>>;
 }) {
   const items = visible
     ? workspaceItems.filter((workspace) => visible.includes(workspace.id))
     : workspaceItems;
+
+  function renderWorkspaceLink(workspace: (typeof workspaceItems)[number]) {
+    const current = workspace.id === active;
+    const label = labelOverrides?.[workspace.id] ?? workspace.label;
+    return (
+      <Link
+        className={current ? styles.navigationActive : styles.navigationLink}
+        href={workspace.href}
+        aria-current={current ? "page" : undefined}
+        title={collapsed ? label : undefined}
+        key={workspace.id}
+      >
+        <WorkspaceIcon workspace={workspace.id} />
+        {!collapsed && <span>{label}</span>}
+      </Link>
+    );
+  }
 
   return (
     <nav
@@ -118,48 +155,7 @@ export function WorkspaceNavigation({
       data-workspace-navigation={collapsed ? "collapsed" : "expanded"}
       aria-label="工作区"
     >
-      {items.map((workspace) => {
-        const current = workspace.id === active;
-        return (
-          <Link
-            className={current ? styles.navigationActive : styles.navigationLink}
-            href={workspace.href}
-            aria-current={current ? "page" : undefined}
-            title={collapsed ? workspace.label : undefined}
-            key={workspace.id}
-          >
-            <WorkspaceIcon workspace={workspace.id} />
-            {!collapsed && <span>{workspace.label}</span>}
-          </Link>
-        );
-      })}
-    </nav>
-  );
-}
-
-export function WorkspaceModeSwitcher({
-  mode,
-}: {
-  mode: WorkspaceMode;
-}) {
-  return (
-    <nav className={styles.modeSwitcher} aria-label="工作模式">
-      <Link
-        className={mode === "tasks" ? styles.modeActive : styles.modeLink}
-        href="/"
-        aria-current={mode === "tasks" ? "page" : undefined}
-      >
-        <WorkspaceIcon workspace="tasks" />
-        <span>任务</span>
-      </Link>
-      <Link
-        className={mode === "studio" ? styles.modeActive : styles.modeLink}
-        href="/studio/agents"
-        aria-current={mode === "studio" ? "page" : undefined}
-      >
-        <WorkspaceIcon workspace="agents" />
-        <span>Studio</span>
-      </Link>
+      {items.map(renderWorkspaceLink)}
     </nav>
   );
 }

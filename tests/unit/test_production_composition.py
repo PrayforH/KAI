@@ -1,3 +1,5 @@
+# pyright: reportPrivateUsage=false
+
 import json
 import os
 import subprocess
@@ -155,9 +157,13 @@ async def test_production_container_uses_durable_event_and_queue_adapters() -> N
         assert isinstance(container.task_queue, RedisTaskQueue)
         assert container.auto_execute is False
         runtime = cast(RegistryClaudeRuntime, container.runtime)
-        gateway = vars(runtime)["_config"]
-        assert gateway.compatibility.value == "degraded"
-        assert gateway.capabilities == frozenset({"streaming"})
+        assert vars(runtime)["_config"] is None
+        assert vars(runtime)["_route_configs"] == ()
+        assert vars(runtime)["_model_configurations"] is container.model_configurations
+        imported = vars(container.model_configurations)["_server_routes"]
+        assert set(imported) == {"deepseek-v4-flash", "deepseek-v4-pro"}
+        assert imported["deepseek-v4-flash"].compatibility.value == "degraded"
+        assert imported["deepseek-v4-flash"].capabilities == frozenset({"streaming"})
     finally:
         assert container.close is not None
         await container.close()
@@ -165,9 +171,7 @@ async def test_production_container_uses_durable_event_and_queue_adapters() -> N
 
 @pytest.mark.asyncio
 async def test_production_container_can_disable_all_quota_enforcement() -> None:
-    container = build_production_container(
-        production_settings(quota_enforcement_enabled=False)
-    )
+    container = build_production_container(production_settings(quota_enforcement_enabled=False))
 
     try:
         runtime = cast(RegistryClaudeRuntime, container.runtime)
@@ -221,20 +225,38 @@ async def test_production_composition_uses_server_owned_mcp_registry() -> None:
         resolved = await resolver.resolve(tavily_manifest(), execution_identity())
 
         tavily = cast(dict[str, object], resolved.mcp_servers["tavily"])
-        assert tavily.get("url") == ("https://mcp.tavily.com/mcp/?tavilyApiKey=production-key")
+        assert tavily.get("url") == "https://mcp.tavily.com/mcp/"
+        assert tavily.get("headers") == {"Authorization": "Bearer production-key"}
     finally:
         assert container.close is not None
         await container.close()
 
 
-def test_production_container_fails_fast_without_gateway_credentials() -> None:
-    with pytest.raises(ValueError, match="production requires HARNESS_NEW_API"):
-        build_production_container(production_settings(new_api_key=SecretStr(""), new_api_model=""))
+@pytest.mark.asyncio
+async def test_production_container_starts_without_gateway_credentials() -> None:
+    container = build_production_container(
+        production_settings(new_api_key=SecretStr(""), new_api_model="")
+    )
+    try:
+        runtime = cast(RegistryClaudeRuntime, container.runtime)
+        assert vars(runtime)["_config"] is None
+        assert vars(runtime)["_model_configurations"] is container.model_configurations
+    finally:
+        assert container.close is not None
+        await container.close()
 
 
-def test_production_container_rejects_empty_gateway_capabilities() -> None:
-    with pytest.raises(ValueError, match="CAPABILITIES must not be empty"):
-        build_production_container(production_settings(new_api_capabilities=" , "))
+@pytest.mark.asyncio
+async def test_production_container_imports_empty_gateway_capabilities() -> None:
+    container = build_production_container(
+        production_settings(new_api_capabilities=" , ")
+    )
+    try:
+        imported = vars(container.model_configurations)["_server_routes"]
+        assert imported["deepseek-v4-flash"].capabilities == frozenset()
+    finally:
+        assert container.close is not None
+        await container.close()
 
 
 def test_production_container_rejects_implicit_local_sandbox() -> None:
@@ -322,7 +344,7 @@ async def test_production_container_wires_kubernetes_reaper_without_local_fallba
 
 
 @pytest.mark.asyncio
-async def test_production_composition_configures_optional_anthropic_fallback() -> None:
+async def test_production_composition_ignores_legacy_anthropic_environment() -> None:
     container = build_production_container(
         production_settings(
             anthropic_api_key=SecretStr("anthropic-secret"),
@@ -331,20 +353,15 @@ async def test_production_composition_configures_optional_anthropic_fallback() -
     )
     try:
         runtime = cast(RegistryClaudeRuntime, container.runtime)
-        fallback = vars(runtime)["_fallback_config"]
-        assert fallback is not None
-        assert fallback.route_id == "anthropic-official"
-        assert fallback.provider == "anthropic"
-        assert fallback.model == "claude-fallback"
-        assert "tool_search" in fallback.capabilities
-        assert "anthropic-secret" not in repr(fallback)
+        assert vars(runtime)["_fallback_config"] is None
+        assert vars(runtime)["_route_configs"] == ()
     finally:
         assert container.close is not None
         await container.close()
 
 
 @pytest.mark.asyncio
-async def test_production_composition_registers_minimax_m3_as_selectable_route() -> None:
+async def test_production_composition_imports_minimax_into_model_control_plane() -> None:
     container = build_production_container(
         production_settings(
             minimax_m3_base_url="https://api.minimaxi.com/anthropic",
@@ -353,25 +370,19 @@ async def test_production_composition_registers_minimax_m3_as_selectable_route()
     )
     try:
         runtime = cast(RegistryClaudeRuntime, container.runtime)
-        primary = vars(runtime)["_config"]
-        selectable = vars(runtime)["_fallback_config"]
-        routes = {item.route_id: item for item in vars(runtime)["_route_configs"]}
-        assert primary.route_id == "new-api-default"
-        assert routes["deepseek-v4-flash"].model == "deepseek-v4-flash"
-        assert routes["deepseek-v4-pro"].model == "deepseek-v4-pro"
-        assert selectable is not None
-        assert selectable.route_id == "minimax-m3"
-        assert selectable.provider == "anthropic"
-        assert selectable.model == "MiniMax-M3"
-        assert "vision" in selectable.capabilities
-        assert "minimax-secret" not in repr(selectable)
+        assert vars(runtime)["_config"] is None
+        assert vars(runtime)["_fallback_config"] is None
+        assert vars(runtime)["_route_configs"] == ()
+        imported = vars(container.model_configurations)["_server_routes"]
+        assert imported["minimax-m3"].base_url == "https://api.minimaxi.com/anthropic"
+        assert imported["minimax-m3"].model == "MiniMax-M3"
     finally:
         assert container.close is not None
         await container.close()
 
 
 @pytest.mark.asyncio
-async def test_production_composition_registers_glm_5_2_as_selectable_route() -> None:
+async def test_production_composition_imports_glm_into_model_control_plane() -> None:
     container = build_production_container(
         production_settings(
             glm_5_2_base_url="http://172.20.109.112:31300",
@@ -380,13 +391,11 @@ async def test_production_composition_registers_glm_5_2_as_selectable_route() ->
     )
     try:
         runtime = cast(RegistryClaudeRuntime, container.runtime)
-        routes = {item.route_id: item for item in vars(runtime)["_route_configs"]}
-        glm = routes["glm-5-2"]
-        assert glm.provider == "new-api"
-        assert glm.model == "shdata-glm"
-        assert glm.resolved_auth_scheme == "bearer"
-        assert glm.capabilities == frozenset({"streaming", "tool_use"})
-        assert "glm-secret" not in repr(glm)
+        assert vars(runtime)["_config"] is None
+        assert vars(runtime)["_route_configs"] == ()
+        imported = vars(container.model_configurations)["_server_routes"]
+        assert imported["glm-5-2"].base_url == "http://172.20.109.112:31300"
+        assert imported["glm-5-2"].model == "shdata-glm"
     finally:
         assert container.close is not None
         await container.close()

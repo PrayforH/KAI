@@ -7,7 +7,6 @@ from sqlalchemy.exc import IntegrityError
 
 from harness.core.errors import ConflictError, NotFoundError
 from harness.sharing.models import (
-    SharedAgentVersion,
     SharedKnowledgeBase,
     TeamSpace,
     TeamSpaceMember,
@@ -15,7 +14,6 @@ from harness.sharing.models import (
 from harness.sharing.repositories import TeamSpaceRepository
 from harness.storage.database import SessionFactory
 from harness.storage.models import (
-    SharedAgentVersionRow,
     SharedKnowledgeBaseRow,
     TeamSpaceMemberRow,
     TeamSpaceRow,
@@ -132,86 +130,6 @@ class PostgresTeamSpaceRepository(TeamSpaceRepository):
                     TeamSpaceMemberRow.tenant_id == tenant_id,
                     TeamSpaceMemberRow.space_id == space_id,
                     TeamSpaceMemberRow.user_id == user_id,
-                )
-            )
-            await session.commit()
-            return bool(cast(CursorResult[Any], result).rowcount)
-
-    async def add_shared_agent(self, shared: SharedAgentVersion) -> None:
-        async with self._sessions() as session:
-            session.add(
-                SharedAgentVersionRow(
-                    tenant_id=shared.tenant_id,
-                    space_id=shared.space_id,
-                    agent_owner_user_id=shared.agent_owner_user_id,
-                    agent_name=shared.agent_name,
-                    agent_version=shared.agent_version,
-                    created_at=shared.created_at,
-                    payload=shared.model_dump(mode="json", by_alias=True),
-                )
-            )
-            try:
-                await session.commit()
-            except IntegrityError as error:
-                await session.rollback()
-                raise ConflictError(
-                    f"agent is already shared: {shared.agent_name}@{shared.agent_version}"
-                ) from error
-
-    async def get_shared_agent(
-        self,
-        tenant_id: str,
-        space_id: str,
-        owner_user_id: str,
-        name: str,
-        version: str,
-    ) -> SharedAgentVersion:
-        async with self._sessions() as session:
-            row = await session.get(
-                SharedAgentVersionRow,
-                (tenant_id, space_id, owner_user_id, name, version),
-            )
-            if row is None:
-                raise NotFoundError(f"shared agent not found: {name}@{version}")
-            return SharedAgentVersion.model_validate(row.payload)
-
-    async def list_shared_agents(
-        self, tenant_id: str, space_id: str
-    ) -> list[SharedAgentVersion]:
-        statement = (
-            select(SharedAgentVersionRow.payload)
-            .where(
-                SharedAgentVersionRow.tenant_id == tenant_id,
-                SharedAgentVersionRow.space_id == space_id,
-            )
-            .order_by(
-                SharedAgentVersionRow.agent_name,
-                SharedAgentVersionRow.agent_version,
-                SharedAgentVersionRow.agent_owner_user_id,
-            )
-        )
-        async with self._sessions() as session:
-            return [
-                SharedAgentVersion.model_validate(payload)
-                for payload in (await session.scalars(statement)).all()
-            ]
-
-    async def delete_shared_agent(
-        self,
-        tenant_id: str,
-        space_id: str,
-        owner_user_id: str,
-        name: str,
-        version: str,
-    ) -> bool:
-        async with self._sessions() as session:
-            result = await session.execute(
-                delete(SharedAgentVersionRow).where(
-                    SharedAgentVersionRow.tenant_id == tenant_id,
-                    SharedAgentVersionRow.space_id == space_id,
-                    SharedAgentVersionRow.agent_owner_user_id == owner_user_id,
-                    SharedAgentVersionRow.agent_name == name,
-                    SharedAgentVersionRow.agent_version == version,
                 )
             )
             await session.commit()

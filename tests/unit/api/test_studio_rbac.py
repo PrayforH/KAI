@@ -15,7 +15,7 @@ STUDIO_PERMISSIONS = (
 
 ROLE_MATRIX = {
     "viewer": {"studio:read"},
-    "member": {"studio:read", "studio:write", "studio:preview"},
+    "member": {"studio:read", "studio:write", "studio:preview", "studio:publish"},
     "admin": set(STUDIO_PERMISSIONS),
     "owner": set(STUDIO_PERMISSIONS),
 }

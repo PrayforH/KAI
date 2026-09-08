@@ -1,0 +1,23 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://agent-studio.local/security/vex/cryptography-49.0.0-cve-2026-69247",
+  "author": "Agent Studio Security",
+  "role": "Document Creator",
+  "timestamp": "2026-08-09T13:15:00Z",
+  "version": 1,
+  "statements": [
+    {
+      "vulnerability": {
+        "name": "CVE-2026-69247"
+      },
+      "products": [
+        {
+          "@id": "pkg:pypi/cryptography@49.0.0"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "Agent Studio imports only InvalidTag and AESGCM for tenant-scoped MCP credential encryption. It does not import or invoke pkcs7_decrypt_der, pkcs7_decrypt_pem, pkcs7_decrypt_smime, or any PKCS#7 decryption API required to expose CVE-2026-69247. The security regression test fails if a new cryptography import or PKCS#7 reference is added under src/."
+    }
+  ]
+}

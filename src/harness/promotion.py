@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
+import re
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import cast
 
@@ -22,6 +25,12 @@ class PromotionEntry(ReleaseModel):
 
 class PromotionPlan(ReleaseModel):
     release_id: str = Field(alias="releaseId")
+    operation_id: str = Field(
+        alias="operationId",
+        min_length=1,
+        max_length=64,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+    )
     environment: str
     entries: tuple[PromotionEntry, ...]
 
@@ -34,6 +43,21 @@ def _object(value: object, context: str) -> dict[str, object]:
     if not isinstance(value, dict):
         raise PromotionError(f"{context} returned a non-object response")
     return cast(dict[str, object], value)
+
+
+def _operation_key(
+    kind: str,
+    *,
+    release_id: str,
+    operation_id: str,
+    environment: str,
+    agent_name: str,
+    snapshot_id: str = "",
+) -> str:
+    material = "\0".join(
+        (release_id, operation_id, environment, agent_name, snapshot_id)
+    ).encode()
+    return f"{kind}:{environment}:{hashlib.sha256(material).hexdigest()}"
 
 
 class ReleasePromotionClient:
@@ -213,12 +237,16 @@ class ReleasePromotionClient:
         *,
         artifact_root: Path,
         manifest: ReleaseManifest,
+        operation_id: str,
         environment: str,
         execution_profile: str,
         canary_percent: int,
+        checkpoint: Callable[[PromotionPlan], None] | None = None,
     ) -> PromotionPlan:
         if environment not in {"test", "canary", "production"}:
             raise ValueError("environment must be test, canary, or production")
+        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,63}", operation_id) is None:
+            raise ValueError("operation_id must be a safe identifier of at most 64 characters")
         self._publish(artifact_root, manifest)
         image = image_for(manifest, "sandbox")
         entries: list[PromotionEntry] = []
@@ -248,8 +276,12 @@ class ReleasePromotionClient:
                         "imageDigest": image.digest,
                         "executionProfile": execution_profile,
                         "config": {"RELEASE_ID": manifest.release_id},
-                        "idempotencyKey": (
-                            f"release:{manifest.release_id}:{environment}:{bundle.name}"
+                        "idempotencyKey": _operation_key(
+                            "promotion",
+                            release_id=manifest.release_id,
+                            operation_id=operation_id,
+                            environment=environment,
+                            agent_name=bundle.name,
                         ),
                     },
                 )
@@ -272,14 +304,28 @@ class ReleasePromotionClient:
                         deploymentId=deployment_id,
                     )
                 )
+                partial = PromotionPlan(
+                    releaseId=manifest.release_id,
+                    operationId=operation_id,
+                    environment=environment,
+                    entries=tuple(entries),
+                )
+                if checkpoint is not None:
+                    checkpoint(partial)
                 completed = self._wait(deployment_id)
                 target = _object(completed.get("target"), "deployment target")
                 if target.get("imageDigest") != image.digest:
                     raise PromotionError("deployment changed the signed sandbox image digest")
+                promoted_environment = self._environment(bundle.name, environment)
+                if promoted_environment.get("healthySnapshotId") != target_id:
+                    raise PromotionError(
+                        "deployment succeeded without advancing the healthy environment snapshot"
+                    )
         except Exception:
             if entries:
                 partial = PromotionPlan(
                     releaseId=manifest.release_id,
+                    operationId=operation_id,
                     environment=environment,
                     entries=tuple(entries),
                 )
@@ -292,12 +338,12 @@ class ReleasePromotionClient:
             raise
         return PromotionPlan(
             releaseId=manifest.release_id,
+            operationId=operation_id,
             environment=environment,
             entries=tuple(entries),
         )
 
     def rollback(self, plan: PromotionPlan) -> PromotionPlan:
-        restored: list[PromotionEntry] = []
         for entry in reversed(plan.entries):
             if entry.previous_snapshot_id is None:
                 continue
@@ -314,8 +360,13 @@ class ReleasePromotionClient:
                 body={
                     "snapshotId": entry.previous_snapshot_id,
                     "expectedEnvironmentRevision": revision,
-                    "idempotencyKey": (
-                        f"rollback:{plan.release_id}:{entry.environment}:{entry.agent_name}"
+                    "idempotencyKey": _operation_key(
+                        "rollback",
+                        release_id=plan.release_id,
+                        operation_id=plan.operation_id,
+                        environment=entry.environment,
+                        agent_name=entry.agent_name,
+                        snapshot_id=entry.previous_snapshot_id,
                     ),
                 },
             )
@@ -328,17 +379,12 @@ class ReleasePromotionClient:
             target_id = final_deployment.get("targetSnapshotId")
             if target_id != entry.previous_snapshot_id:
                 raise PromotionError("rollback did not restore the requested snapshot")
-            restored.append(
-                PromotionEntry(
-                    agentName=entry.agent_name,
-                    environment=entry.environment,
-                    previousSnapshotId=entry.target_snapshot_id,
-                    targetSnapshotId=entry.previous_snapshot_id,
-                    deploymentId=deployment_id,
+            restored_environment = self._environment(entry.agent_name, entry.environment)
+            if restored_environment.get("healthySnapshotId") != entry.previous_snapshot_id:
+                raise PromotionError(
+                    "rollback succeeded without restoring the healthy environment snapshot"
                 )
-            )
-        return PromotionPlan(
-            releaseId=plan.release_id,
-            environment=plan.environment,
-            entries=tuple(restored),
-        )
+        # Keep the original recovery targets immutable. Re-running rollback with
+        # the same plan therefore resolves to the same idempotent deployments
+        # instead of accidentally promoting the failed targets again.
+        return plan

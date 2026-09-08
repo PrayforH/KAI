@@ -1,0 +1,683 @@
+"use client";
+
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import Link from "next/link";
+import { motion, AnimatePresence } from "motion/react";
+import {
+  CaretDown,
+  CaretRight,
+} from "@/components/ui/icon";
+import { CodexWebIcon, type CodexWebIconName } from "@/components/ui/semantic-icon";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { usePanel } from "@/hooks/usePanel";
+import { useSplit } from "@/hooks/useSplit";
+import { useTranslation } from "@/hooks/useTranslation";
+import type { TranslationKey } from "@/i18n";
+import { createNewChatHref } from "@/lib/new-chat-url";
+import { COMPACT_VIEWPORT_QUERY } from "@/hooks/useCompactViewport";
+import { cn } from "@/lib/utils";
+import { useAppServerActions, useAppServerSelector } from "@/codex-web/AppServerProvider";
+import { threadToChatSession } from "@/codex-web/thread-history-adapter";
+// ConnectionStatus removed from header — CLI status now lives in Settings > Claude CLI
+// ImportSessionDialog moved to Settings page
+import { SessionListItem } from "./SessionListItem";
+import { ProjectGroupHeader } from "./ProjectGroupHeader";
+import { FolderPicker } from "@/components/chat/FolderPicker";
+import {
+  formatRelativeTime,
+  groupSessionsByProject,
+  loadCollapsedProjects,
+  loadPinnedProjects,
+  loadPinnedSessions,
+  partitionPinnedSidebar,
+  saveCollapsedProjects,
+  savePinnedProjects,
+  savePinnedSessions,
+  COLLAPSED_INITIALIZED_KEY,
+} from "./chat-list-utils";
+import type { ProjectGroup } from "./chat-list-utils";
+import type { ChatSession } from "@/types";
+import { MonolithIcon } from "@/components/brand/MonolithIcon";
+
+interface ChatListPanelProps {
+  open: boolean;
+}
+
+
+export function ChatListPanel({ open }: ChatListPanelProps) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const { streamingSessionId, pendingApprovalSessionId, activeStreamingSessions, pendingApprovalSessionIds, workingDirectory, setChatListOpen } = usePanel();
+  const threads = useAppServerSelector((state) => state.threads);
+  const connectionData = useAppServerSelector((state) => state.connection.data);
+  const { refreshThreads, setThreadName, archiveThread } = useAppServerActions();
+  const { removeFromSplit, isInSplit } = useSplit();
+  const { t } = useTranslation();
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [hoveredSession, setHoveredSession] = useState<string | null>(null);
+  const [archivingSession, setArchivingSession] = useState<string | null>(null);
+  const [expandedSessionGroups, setExpandedSessionGroups] = useState<Set<string>>(new Set());
+  const SESSION_TRUNCATE_LIMIT = 10;
+  const appServerSessions = useMemo(
+    () => threads?.data.data.map(threadToChatSession) ?? [],
+    [threads],
+  );
+  // importDialogOpen removed — Import CLI moved to Settings
+  const [folderPickerOpen, setFolderPickerOpen] = useState(false);
+  const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(
+    () => loadCollapsedProjects()
+  );
+  const [pinStorageUserId, setPinStorageUserId] = useState<string | null>(null);
+  const [pinnedProjects, setPinnedProjects] = useState<Set<string>>(new Set());
+  const [pinnedSessions, setPinnedSessions] = useState<Set<string>>(new Set());
+  const [pinnedCollapsed, setPinnedCollapsed] = useState(false);
+  const [hoveredFolder, setHoveredFolder] = useState<string | null>(null);
+  // CodexWeb 只保留项目维度的会话列表。
+  const [projectsCollapsed, setProjectsCollapsed] = useState(false);
+  const [projectListExpanded, setProjectListExpanded] = useState(false);
+  const PROJECT_LIST_TRUNCATE_LIMIT = 10;
+
+  useEffect(() => {
+    let disposed = false;
+    fetch("/api/auth/me", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Web 用户身份不可用");
+        return response.json() as Promise<{ user?: { id?: unknown } }>;
+      })
+      .then((payload) => {
+        const userId = typeof payload.user?.id === "string" ? payload.user.id.trim() : "";
+        if (!userId || disposed) return;
+        setPinnedProjects(loadPinnedProjects(userId));
+        setPinnedSessions(loadPinnedSessions(userId));
+        setPinStorageUserId(userId);
+      })
+      .catch(() => {
+        if (disposed) return;
+        setPinnedProjects(new Set());
+        setPinnedSessions(new Set());
+        setPinStorageUserId(null);
+      });
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
+  const handleFolderSelect = useCallback(async (path: string) => {
+    localStorage.setItem('codepilot:last-working-directory', path);
+    window.dispatchEvent(new CustomEvent('project-directory-changed', { detail: { path } }));
+    router.replace(createNewChatHref());
+  }, [router]);
+
+  const openFolderPicker = useCallback(() => {
+    setFolderPickerOpen(true);
+  }, []);
+
+  const handleNewChat = useCallback(async () => {
+    router.replace(createNewChatHref());
+  }, [router]);
+
+  const toggleProject = useCallback((wd: string) => {
+    setCollapsedProjects((prev) => {
+      const next = new Set(prev);
+      if (next.has(wd)) next.delete(wd);
+      else next.add(wd);
+      saveCollapsedProjects(next);
+      return next;
+    });
+  }, []);
+
+  const togglePinnedProject = useCallback((workingDirectory: string) => {
+    if (!pinStorageUserId) return;
+    setPinnedProjects((previous) => {
+      const next = new Set(previous);
+      if (next.has(workingDirectory)) next.delete(workingDirectory);
+      else next.add(workingDirectory);
+      savePinnedProjects(pinStorageUserId, next);
+      return next;
+    });
+  }, [pinStorageUserId]);
+
+  const togglePinnedSession = useCallback((sessionId: string) => {
+    if (!pinStorageUserId) return;
+    setPinnedSessions((previous) => {
+      const next = new Set(previous);
+      if (next.has(sessionId)) next.delete(sessionId);
+      else next.add(sessionId);
+      savePinnedSessions(pinStorageUserId, next);
+      return next;
+    });
+  }, [pinStorageUserId]);
+
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const fetchSessions = useCallback(async () => {
+    if (connectionData === 'connected') {
+      try {
+        const threads = await refreshThreads();
+        setSessions(threads.data.map(threadToChatSession));
+      } catch {
+        setSessions(appServerSessions);
+      }
+      return;
+    }
+
+    setSessions(appServerSessions);
+  }, [appServerSessions, connectionData, refreshThreads]);
+
+  useEffect(() => {
+    if (connectionData === 'connected') {
+      setSessions(appServerSessions);
+    }
+  }, [appServerSessions, connectionData]);
+
+  const debouncedFetchSessions = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      fetchSessions();
+    }, 300);
+  }, [fetchSessions]);
+
+  // Fetch on mount
+  useEffect(() => {
+    fetchSessions();
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [fetchSessions]);
+
+  // Refresh session list when a session is created or updated (debounced)
+  useEffect(() => {
+    const handler = () => debouncedFetchSessions();
+    window.addEventListener("session-created", handler);
+    window.addEventListener("session-updated", handler);
+    return () => {
+      window.removeEventListener("session-created", handler);
+      window.removeEventListener("session-updated", handler);
+    };
+  }, [debouncedFetchSessions]);
+
+  // Periodic poll to catch sessions created server-side (e.g. bridge)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchSessions();
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [fetchSessions]);
+
+  const handleArchiveSession = async (
+    e: React.MouseEvent,
+    sessionId: string
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const session = sessions.find((s) => s.id === sessionId);
+    if (!session?.codex_thread_id) return;
+    if (!confirm(t("chatList.archiveConfirm" as TranslationKey))) return;
+    setArchivingSession(sessionId);
+    try {
+      await archiveThread(sessionId);
+      setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+      if (isInSplit(sessionId)) {
+        removeFromSplit(sessionId);
+      }
+      if (pathname === `/chat/${sessionId}`) {
+        router.push("/chat");
+      }
+    } catch {
+      // Silently fail
+    } finally {
+      setArchivingSession(null);
+    }
+  };
+
+  const handleRenameSession = async (sessionId: string, newTitle: string) => {
+    const session = sessions.find((s) => s.id === sessionId);
+    if (!session?.codex_thread_id) return;
+    try {
+      await setThreadName({ threadId: sessionId, name: newTitle });
+      setSessions((prev) =>
+        prev.map((s) => (s.id === sessionId ? { ...s, title: newTitle } : s))
+      );
+      window.dispatchEvent(new CustomEvent("session-updated"));
+    } catch {
+      // Silently fail
+    }
+  };
+
+  const handleRemoveProject = async (workingDirectory: string) => {
+    if (!confirm(t("chatList.archiveProjectConfirm" as TranslationKey, {
+      project: workingDirectory.split('/').pop() || workingDirectory,
+    }))) return;
+    const projectSessions = sessions.filter((s) =>
+      s.working_directory === workingDirectory
+      && !!s.codex_thread_id
+    );
+    const archivedIds = new Set<string>();
+    for (const session of projectSessions) {
+      try {
+        await archiveThread(session.id);
+        archivedIds.add(session.id);
+        if (isInSplit(session.id)) {
+          removeFromSplit(session.id);
+        }
+      } catch {
+        // Continue with remaining
+      }
+    }
+    if (archivedIds.size > 0) {
+      setSessions((prev) => prev.filter((s) => !archivedIds.has(s.id)));
+      if (pathname?.startsWith('/chat/')) {
+        const currentSessionId = pathname.split('/chat/')[1];
+        if (archivedIds.has(currentSessionId)) {
+          router.push("/chat");
+        }
+      }
+    }
+  };
+
+  const handleCreateSessionInProject = async (
+    e: React.MouseEvent,
+    workingDirectory: string
+  ) => {
+    e.stopPropagation();
+    localStorage.setItem('codepilot:last-working-directory', workingDirectory);
+    window.dispatchEvent(new CustomEvent('project-directory-changed', { detail: { path: workingDirectory } }));
+    if (window.matchMedia(COMPACT_VIEWPORT_QUERY).matches) setChatListOpen(false);
+    router.replace(createNewChatHref());
+  };
+
+  const filteredSessions = sessions;
+
+  const projectGroups = useMemo(() => {
+    return groupSessionsByProject(filteredSessions, workingDirectory);
+  }, [filteredSessions, workingDirectory]);
+
+  const sidebarGroups = useMemo(
+    () => partitionPinnedSidebar(projectGroups, pinnedProjects, pinnedSessions),
+    [pinnedProjects, pinnedSessions, projectGroups],
+  );
+
+  // Auto-collapse: only expand the project with the most recent session activity.
+  // Runs on first use AND whenever the project list changes (new projects added).
+  useEffect(() => {
+    if (projectGroups.length <= 1) return;
+    // Find the project with the latest session (highest latestUpdatedAt), ignoring pin order
+    const sorted = [...projectGroups].sort((a, b) => b.latestUpdatedAt - a.latestUpdatedAt);
+    const mostRecentWd = sorted[0]?.workingDirectory;
+    const toCollapse = new Set(
+      projectGroups
+        .filter(g => g.workingDirectory !== mostRecentWd)
+        .map(g => g.workingDirectory)
+    );
+    // Only update if collapsed set actually changed (avoid infinite loop)
+    const currentKeys = [...collapsedProjects].sort().join(',');
+    const newKeys = [...toCollapse].sort().join(',');
+    // v2: re-initialize with improved logic (pin-aware)
+    const initKey = COLLAPSED_INITIALIZED_KEY + '-v2';
+    if (currentKeys !== newKeys && !localStorage.getItem(initKey)) {
+      setCollapsedProjects(toCollapse);
+      saveCollapsedProjects(toCollapse);
+      localStorage.setItem(initKey, "1");
+    }
+  }, [projectGroups, collapsedProjects]);
+
+  if (!open) return null;
+
+  // Phase 2D.4 (2026-05-01): Skills / MCP / CLI Tools collapsed into
+  // a single "Plugins" entry — see ExtensionsPage for the unified UI.
+  // Bridge moved to `/settings/bridge` (2026-05-02) — channel configs
+  // are settings, not a primary destination.
+  const navItems: Array<{ href: string; label: string; icon: CodexWebIconName }> = [
+    { href: "/plugins", label: t('nav.plugins' as TranslationKey), icon: "plugin" },
+  ];
+
+  const renderSessionItem = (session: ChatSession, showPinShortcut = false) => {
+    const isActive = pathname === `/chat/${session.id}`;
+    const isReadOnly = !!session.read_only || session.origin === 'codex_rollout';
+    return (
+      <SessionListItem
+        key={session.id}
+        session={session}
+        isActive={isActive}
+        isHovered={hoveredSession === session.id}
+        isArchiving={archivingSession === session.id}
+        isSessionStreaming={activeStreamingSessions.has(session.id) || streamingSessionId === session.id}
+        needsApproval={pendingApprovalSessionIds.has(session.id) || pendingApprovalSessionId === session.id}
+        readOnly={isReadOnly}
+        canManage={!!session.codex_thread_id}
+        isPinned={pinnedSessions.has(session.id)}
+        showPinShortcut={showPinShortcut}
+        isWorkspace={false}
+        formatRelativeTime={formatRelativeTime}
+        t={t}
+        onMouseEnter={() => setHoveredSession(session.id)}
+        onMouseLeave={() => setHoveredSession(null)}
+        onArchive={handleArchiveSession}
+        onRename={handleRenameSession}
+        onTogglePin={pinStorageUserId ? togglePinnedSession : undefined}
+      />
+    );
+  };
+
+  const renderProjectGroup = (group: ProjectGroup, isPinned: boolean) => {
+    const isCollapsed = collapsedProjects.has(group.workingDirectory);
+    const isFolderHovered = hoveredFolder === group.workingDirectory;
+    const isSessionsExpanded = expandedSessionGroups.has(group.workingDirectory);
+    const shouldTruncate = group.sessions.length > SESSION_TRUNCATE_LIMIT;
+    let visibleSessions = group.sessions;
+    if (shouldTruncate && !isSessionsExpanded) {
+      const truncated = group.sessions.slice(0, SESSION_TRUNCATE_LIMIT);
+      const activeSession = group.sessions.find((session) => pathname === `/chat/${session.id}`);
+      if (activeSession && !truncated.includes(activeSession)) truncated.push(activeSession);
+      visibleSessions = truncated;
+    }
+    const hiddenCount = group.sessions.length - visibleSessions.length;
+
+    return (
+      <div key={group.workingDirectory || "__no_project"}>
+        <ProjectGroupHeader
+          workingDirectory={group.workingDirectory}
+          displayName={group.displayName}
+          isCollapsed={isCollapsed}
+          isFolderHovered={isFolderHovered}
+          isWorkspace={false}
+          hideCaret
+          isPinned={isPinned}
+          onToggle={() => toggleProject(group.workingDirectory)}
+          onTogglePin={pinStorageUserId ? togglePinnedProject : undefined}
+          onMouseEnter={() => setHoveredFolder(group.workingDirectory)}
+          onMouseLeave={() => setHoveredFolder(null)}
+          onCreateSession={(event) => handleCreateSessionInProject(event, group.workingDirectory)}
+          onRemoveProject={handleRemoveProject}
+        />
+
+        <AnimatePresence initial={false}>
+          {!isCollapsed && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              style={{ overflow: 'hidden' }}
+            >
+              <div className="flex flex-col">
+                {visibleSessions.map((session) => renderSessionItem(session))}
+                {shouldTruncate && (
+                  <button
+                    type="button"
+                    onClick={() => setExpandedSessionGroups((previous) => {
+                      const next = new Set(previous);
+                      if (next.has(group.workingDirectory)) next.delete(group.workingDirectory);
+                      else next.add(group.workingDirectory);
+                      return next;
+                    })}
+                    className="w-full py-1.5 pl-3 text-left text-xs font-semibold text-sidebar-foreground/70 hover:text-sidebar-foreground transition-colors"
+                  >
+                    {isSessionsExpanded
+                      ? t('chatList.showLess' as TranslationKey)
+                      : t('chatList.showMore' as TranslationKey, { count: String(hiddenCount) })}
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  };
+
+  // Phase 7c-B — surface chrome (data-platform-sidebar attribute, bg
+  // token, backdrop-filter, overflow-hidden, width inset) moved to
+  // <CardSurface kind="sidebar"> in AppShell. This inner block now
+  // only owns the column layout for its own children.
+  return (
+    <aside className="flex h-full w-full flex-col" data-dsh-sidebar>
+      {/* Round 20 — the h-12 traffic-light-safe-area + collapse
+          button used to live at the top of this panel. Both moved
+          to UnifiedTopBar so the four floating cards (this sidebar,
+          main, workspace, file tree) share the same y-origin under
+          the topbar. Sidebar toggle is now the topbar's
+          `sidebarToggleButton` (handles open AND close). */}
+
+      <header className="flex h-16 shrink-0 items-center gap-3 px-4">
+        <span className="flex size-8 items-center justify-center rounded-lg bg-foreground text-background shadow-sm">
+          <MonolithIcon className="size-[18px] text-current" />
+        </span>
+        <span className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-[-0.01em] text-sidebar-foreground">
+          Codex Web
+        </span>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => setChatListOpen(false)}
+              aria-label={t('chatList.collapseSidebar' as TranslationKey)}
+              className="text-muted-foreground hover:text-sidebar-foreground"
+            >
+              <CodexWebIcon name="panel_left_close" size="md" aria-hidden />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            {t('chatList.collapseSidebar' as TranslationKey)}
+          </TooltipContent>
+        </Tooltip>
+      </header>
+
+      <div className="px-3 pb-3 pt-1">
+        <Button
+          size="sm"
+          data-dsh-new-task
+          className="h-11 w-full justify-center gap-2 rounded-xl border border-sidebar-border/70 bg-sidebar-accent text-sm font-medium text-sidebar-accent-foreground shadow-none transition hover:-translate-y-px hover:bg-sidebar-accent/80 active:translate-y-0"
+          onClick={handleNewChat}
+        >
+          <CodexWebIcon name="chat" size="md" className="text-inherit" aria-hidden />
+          {t('chatList.newConversation')}
+        </Button>
+      </div>
+
+      {/* Sectioned list: 置顶 / 项目 */}
+      <ScrollArea className="flex-1 min-h-0 [&>[data-slot=scroll-area-viewport]>div]:!block">
+        <div className="flex flex-col pb-3">
+
+          {(sidebarGroups.pinnedSessions.length > 0 || sidebarGroups.pinnedProjects.length > 0) && (
+            <div className="px-2 pt-2 pb-1">
+              <button
+                type="button"
+                aria-expanded={!pinnedCollapsed}
+                aria-label={t((pinnedCollapsed ? 'chatList.expandPinned' : 'chatList.collapsePinned') as TranslationKey)}
+                onClick={() => setPinnedCollapsed((collapsed) => !collapsed)}
+                className={cn(
+                  "flex w-full items-center gap-1 px-3 h-7 cursor-pointer select-none rounded-xl",
+                  "transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+                )}
+              >
+                <span className="text-[13px] font-semibold text-sidebar-foreground/55">
+                  {t('chatList.pinned' as TranslationKey)}
+                </span>
+                <span className="text-muted-foreground/80">
+                  {pinnedCollapsed ? <CaretRight size={12} /> : <CaretDown size={12} />}
+                </span>
+              </button>
+
+              <AnimatePresence initial={false}>
+                {!pinnedCollapsed && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2, ease: 'easeOut' }}
+                    style={{ overflow: 'hidden' }}
+                  >
+                    <div className="flex flex-col">
+                      {sidebarGroups.pinnedSessions.map((session) => renderSessionItem(session, true))}
+                      {sidebarGroups.pinnedProjects.map((group) => renderProjectGroup(group, true))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
+
+          {/* ─── 项目 section ─── */}
+          <div className="px-2 pt-2 pb-1">
+            {/* Section header — chevron always visible (was hover-revealed
+                and "太不显眼"); button itself takes a hover background
+                so the toggle reads as a tappable affordance, not as
+                plain text. */}
+            <div className="flex h-9 items-center gap-1 px-2">
+              <button
+                type="button"
+                onClick={() => setProjectsCollapsed(c => !c)}
+                className="flex min-w-0 flex-1 items-center gap-1 rounded-lg px-1 py-1 text-left transition-colors hover:text-sidebar-foreground"
+              >
+                <span className="truncate text-[13px] font-medium text-sidebar-foreground/55">
+                  {t('chatList.projects' as TranslationKey)}
+                </span>
+                <span className="text-muted-foreground/75">
+                  {projectsCollapsed ? <CaretRight size={12} /> : <CaretDown size={12} />}
+                </span>
+              </button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => window.dispatchEvent(new CustomEvent('open-global-search'))}
+                    className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                    aria-label={t('chatList.searchSessions' as TranslationKey)}
+                  >
+                    <CodexWebIcon name="search" size="md" aria-hidden />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right">{t('chatList.searchSessions' as TranslationKey)}</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={openFolderPicker}
+                    className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                    aria-label={t('chatList.newProject' as TranslationKey)}
+                  >
+                    <CodexWebIcon name="folder_add" size="md" aria-hidden />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right">{t('chatList.newProject' as TranslationKey)}</TooltipContent>
+              </Tooltip>
+            </div>
+
+            <AnimatePresence initial={false}>
+              {!projectsCollapsed && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2, ease: 'easeOut' }}
+                  style={{ overflow: 'hidden' }}
+                >
+                  <div className="flex flex-col">
+                    {/* Project folders — truncate when more than PROJECT_LIST_TRUNCATE_LIMIT */}
+                    {(() => {
+                      const regularProjects = sidebarGroups.regularProjects;
+                      const projectsShouldTruncate = regularProjects.length > PROJECT_LIST_TRUNCATE_LIMIT;
+                      let visibleProjects = regularProjects;
+                      if (projectsShouldTruncate && !projectListExpanded) {
+                        const truncated = regularProjects.slice(0, PROJECT_LIST_TRUNCATE_LIMIT);
+                        // Always include the project containing the currently active session
+                        const activeProject = regularProjects.find(g =>
+                          g.sessions.some(s => pathname === `/chat/${s.id}`)
+                        );
+                        if (activeProject && !truncated.includes(activeProject)) {
+                          truncated.push(activeProject);
+                        }
+                        visibleProjects = truncated;
+                      }
+                      const projectsHiddenCount = regularProjects.length - visibleProjects.length;
+                      return (
+                        <>
+                          {visibleProjects.map((group) => renderProjectGroup(group, false))}
+
+                          {/* Project-list show more / show less */}
+                          {projectsShouldTruncate && (
+                            <button
+                              onClick={() => setProjectListExpanded(v => !v)}
+                              className="w-full py-1.5 pl-3 text-left text-xs font-semibold text-sidebar-foreground/70 hover:text-sidebar-foreground transition-colors"
+                            >
+                              {projectListExpanded
+                                ? t('chatList.showLess' as TranslationKey)
+                                : t('chatList.showMore' as TranslationKey, { count: String(projectsHiddenCount) })}
+                            </button>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* Empty state */}
+          {filteredSessions.length === 0 && (
+            <p className="px-2.5 py-3 text-[11px] text-muted-foreground/60">
+              {t('chatList.noSessions')}
+            </p>
+          )}
+        </div>
+      </ScrollArea>
+
+      <div className="shrink-0 border-t border-sidebar-border/50 p-2">
+        {navItems.map((item) => {
+          const isActive = pathname.startsWith(item.href);
+          return (
+            <Link key={item.href} href={item.href}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  'h-9 w-full justify-start gap-2 rounded-lg px-3 text-[13px] font-normal',
+                  isActive
+                    ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                    : 'text-sidebar-foreground',
+                )}
+              >
+                <CodexWebIcon name={item.icon} size="md" strokeWidth={isActive ? 2 : undefined} aria-hidden />
+                {item.label}
+              </Button>
+            </Link>
+          );
+        })}
+        <Link href="/settings">
+          <Button
+            variant="ghost"
+            size="sm"
+            className={`w-full justify-start gap-2 h-9 px-3 rounded-lg text-[13px] ${
+              pathname.startsWith("/settings")
+                ? "bg-accent text-accent-foreground font-medium"
+                : "text-sidebar-foreground font-normal"
+            }`}
+          >
+            <CodexWebIcon name="settings" size="md" strokeWidth={pathname.startsWith("/settings") ? 2 : undefined} className="text-inherit" aria-hidden />
+            {t('nav.settings' as TranslationKey)}
+          </Button>
+        </Link>
+      </div>
+
+      {/* Folder Picker Dialog */}
+      <FolderPicker
+        open={folderPickerOpen}
+        onOpenChange={setFolderPickerOpen}
+        onSelect={handleFolderSelect}
+      />
+
+    </aside>
+  );
+}

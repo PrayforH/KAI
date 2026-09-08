@@ -12,7 +12,20 @@ Rollback never rebuilds, retags or edits an Agent version. It uses the previous 
 there; there is nothing valid to restore, so the incident requires manual containment rather than an
 invented rollback target.
 
-## Manual Agent rollback
+## Personal Agent version rollback
+
+For a personal Agent, open Studio, choose **版本历史**, select the target immutable version and confirm
+**设为当前版本**. The operation only updates `workspace_agents.current_version`; it does not rebuild,
+edit or delete a Release. Verify that a newly created task pins the selected version. Tasks and Sessions
+created before the change must retain their original version. To roll forward again, select the newer
+immutable version in the same drawer.
+
+The equivalent API is
+`POST /v1/agents/{agent_id}/versions/{version}/promote`. It is owner-scoped and records
+`agent.promote` audit evidence. Do not implement rollback by editing `agent_versions`, changing a task's
+pinned version or deleting a newer Release.
+
+## Manual environment Agent rollback
 
 1. Stop new promotion runs for the affected environment.
 2. Identify the last healthy snapshot from the deployment audit record.

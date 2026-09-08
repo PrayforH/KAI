@@ -14,7 +14,7 @@ from typing import Any, Protocol, cast
 import anyio
 from claude_agent_sdk import ClaudeAgentOptions, Transport
 from claude_agent_sdk._internal.session_resume import materialize_resume_session
-from claude_agent_sdk._version import __version__ as CLAUDE_AGENT_SDK_VERSION  # noqa: N812
+from claude_agent_sdk._version import __version__ as claude_agent_sdk_version
 
 from harness.runtime.audit_redaction import redact_text
 
@@ -81,8 +81,6 @@ def build_remote_claude_command(
         command.extend(["--allowedTools", ",".join(options.allowed_tools)])
     if options.max_turns:
         command.extend(["--max-turns", str(options.max_turns)])
-    if options.max_budget_usd is not None:
-        command.extend(["--max-budget-usd", str(options.max_budget_usd)])
     if options.model:
         command.extend(["--model", options.model])
     if options.permission_mode:
@@ -168,7 +166,7 @@ class DaytonaClaudeTransport(Transport):
         environment = {
             **self._options.env,
             "CLAUDE_CODE_ENTRYPOINT": "sdk-py",
-            "CLAUDE_AGENT_SDK_VERSION": CLAUDE_AGENT_SDK_VERSION,
+            "CLAUDE_AGENT_SDK_VERSION": claude_agent_sdk_version,
             # Daytona's stdout demultiplexer retains a short suffix while it
             # waits to rule out a stream marker. The remote wrapper adds a
             # harmless padding line after each CLI protocol line so the JSON

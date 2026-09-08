@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Mecha primary mark · "机甲头 · 护目轴"
+       横向圆角机体 = 组装完成的机甲头盔/驾驶舱；
+       绿轴从左入、贯穿机体（即护目镜/驾驶舱视线）、右侧出线，
+       末端脱离一枚节点 = 组装完成、放行下线。 -->
+  <rect width="64" height="64" rx="15" fill="#202823"/>
+  <rect x="15" y="27" width="30" height="24" rx="7.5" fill="none" stroke="#F5FAF7" stroke-width="4.4"/>
+  <path d="M7 39 H46.5" fill="none" stroke="#25C878" stroke-width="4.4" stroke-linecap="round"/>
+  <circle cx="55" cy="39" r="3.1" fill="#25C878"/>
+</svg>

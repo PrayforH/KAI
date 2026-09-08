@@ -277,6 +277,8 @@ async def test_agui_thread_list_and_history_restore_owned_tasks() -> None:
     assert tasks["thread-history-a"]["title"] == "first task"
     assert tasks["thread-history-a"]["status"] == "succeeded"
     assert history.status_code == 200
+    assert history.json()["status"] == "succeeded"
+    assert history.json()["run_id"] == run_id
     messages = history.json()["messages"]
     assert messages[0] == {
         "id": f"user-{run_id}",
@@ -483,6 +485,40 @@ async def test_cancel_agui_run_resolves_protocol_ids_to_harness_run() -> None:
 
         response = await client.post(
             "/v1/agui/threads/thread-cancel/runs/client-run-cancel/cancel",
+            headers=HEADERS,
+        )
+
+    assert response.status_code == 200
+    assert response.json()["run_id"] == run.run_id
+    assert response.json()["status"] == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_cancel_resumed_agui_run_by_server_id() -> None:
+    app = create_memory_app()
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        await client.post(
+            "/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS
+        )
+        request = RunAgentInput.model_validate(
+            _request(
+                thread_id="thread-resumed",
+                run_id="client-run-resumed",
+                prompt="wait",
+            )
+        )
+        run = await app.state.container.agui.create_run(
+            tenant_id="tenant-a",
+            user_id="user-1",
+            agent_name="echo-agent",
+            agent_version="0.1.0",
+            request=request,
+        )
+
+        response = await client.post(
+            f"/v1/agui/runs/{run.run_id}/cancel",
             headers=HEADERS,
         )
 
@@ -759,3 +795,42 @@ async def test_agui_run_accepts_assistant_ui_image_transport_envelope() -> None:
 
     assert run.input["input_artifact_ids"] == [input_artifact_id]
     assert run.input["required_model_capabilities"] == ["vision"]
+
+
+@pytest.mark.asyncio
+async def test_history_keeps_messages_and_valid_files_when_old_attachment_is_missing() -> None:
+    from harness.adapters.memory import InMemoryInputArtifactRepository
+
+    app = create_memory_app(auto_execute=True)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS)
+        attachments = []
+        ids = []
+        for filename in ("missing.txt", "valid.txt"):
+            upload = await client.post("/v1/input-artifacts",
+                files={"file": (filename, b"historical attachment", "text/plain")}, headers=HEADERS)
+            assert upload.status_code == 201
+            input_id = upload.json()["input_artifact_id"]
+            ids.append(input_id)
+            attachments.append({"type": "document", "source": {
+                "type": "data", "value": input_id, "mimeType": "text/plain"},
+                "metadata": {"filename": filename}})
+        request = _request(thread_id="old-files", run_id="old-run", prompt="保留历史对话")
+        request["messages"] = [{"id": "m", "role": "user", "content": [
+            {"type": "text", "text": "保留历史对话"}, *attachments]}]
+        result = await client.post("/v1/agui?agent_name=echo-agent&agent_version=0.1.0",
+            json=request, headers=HEADERS)
+        assert result.status_code == 200
+        repository = app.state.container.input_artifacts._repository
+        assert isinstance(repository, InMemoryInputArtifactRepository)
+        repository._items.pop(("tenant-a", ids[0]))
+        history = await client.get("/v1/agui/threads/old-files/history", headers=HEADERS)
+        assert history.status_code == 200
+        messages = history.json()["messages"]
+        assert len(messages) >= 2
+        assert "保留历史对话" in messages[0]["content"][0]["text"]
+        assert "部分历史附件已不可用" in messages[0]["content"][0]["text"]
+        assert messages[0]["content"][1]["source"]["value"] == ids[1]
+        denied = await client.get("/v1/agui/threads/old-files/history",
+            headers={**HEADERS, "X-User-ID": "someone-else"})
+        assert denied.status_code == 404

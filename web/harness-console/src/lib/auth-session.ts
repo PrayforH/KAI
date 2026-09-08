@@ -1,5 +1,19 @@
 import type { HarnessServerConfig } from "./server-config";
 
+const REFRESH_RESULT_GRACE_MS = 3_000;
+
+type RefreshFlight = {
+  promise: Promise<AuthSessionPayload | undefined>;
+  expiresAt: number;
+};
+
+// Access-token expiry can make several browser requests refresh at once. The
+// upstream refresh token is single-use, so forwarding every request would make
+// a legitimate concurrent request look like token reuse and revoke the whole
+// session family. Coalesce the in-flight refresh and briefly share its result
+// while the browser applies the replacement cookies.
+const refreshFlights = new Map<string, RefreshFlight>();
+
 export const ACCESS_COOKIE = "harness_access_token";
 export const REFRESH_COOKIE = "harness_refresh_token";
 
@@ -98,12 +112,41 @@ export async function refreshSession(
 ): Promise<AuthSessionPayload | undefined> {
   const refreshToken = readCookie(request, REFRESH_COOKIE);
   if (!refreshToken) return undefined;
-  const response = await fetcher(`${config.apiUrl}/v1/auth/refresh`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refresh_token: refreshToken }),
-    cache: "no-store",
+  const now = Date.now();
+  const existing = refreshFlights.get(refreshToken);
+  if (existing && existing.expiresAt > now) return existing.promise;
+  if (existing) refreshFlights.delete(refreshToken);
+
+  const flight: RefreshFlight = {
+    expiresAt: Number.POSITIVE_INFINITY,
+    promise: (async () => {
+      const response = await fetcher(`${config.apiUrl}/v1/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+        cache: "no-store",
+      });
+      if (!response.ok) return undefined;
+      return (await response.json()) as AuthSessionPayload;
+    })(),
+  };
+  refreshFlights.set(refreshToken, flight);
+  void flight.promise.then((session) => {
+    if (refreshFlights.get(refreshToken) !== flight) return;
+    if (!session) {
+      refreshFlights.delete(refreshToken);
+      return;
+    }
+    flight.expiresAt = Date.now() + REFRESH_RESULT_GRACE_MS;
+    globalThis.setTimeout(() => {
+      if (refreshFlights.get(refreshToken) === flight) {
+        refreshFlights.delete(refreshToken);
+      }
+    }, REFRESH_RESULT_GRACE_MS);
+  }).catch(() => {
+    if (refreshFlights.get(refreshToken) === flight) {
+      refreshFlights.delete(refreshToken);
+    }
   });
-  if (!response.ok) return undefined;
-  return (await response.json()) as AuthSessionPayload;
+  return flight.promise;
 }

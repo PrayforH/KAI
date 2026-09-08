@@ -1,0 +1,17 @@
+<p><b>第一次使用</b></p>
+<checkbox done="false">能够在任务与 Studio 两种模式之间切换</checkbox>
+<checkbox done="false">能够选择智能体、模型并提交一个测试任务</checkbox>
+<checkbox done="false">知道在哪里查看审批、制品和任务历史</checkbox>
+<checkbox done="false">按 Command/Ctrl + K 打开命令中心</checkbox>
+<p><b>发布智能体前</b></p>
+<checkbox done="false">名称、版本、说明和期望交付物清晰</checkbox>
+<checkbox done="false">Prompt、Skills、Tools、MCP 资源和运行档位已经保存</checkbox>
+<checkbox done="false">本地结构、真实预检、固定版本评测和运行质量门禁无阻塞项，并完成真实 Preview</checkbox>
+<checkbox done="false">新版本不会改变既有不可变任务快照</checkbox>
+<p><b>团队交付前</b></p>
+<checkbox done="false">目标协作空间、Release 和成员角色正确</checkbox>
+<checkbox done="false">Viewer/Member 的运行权限符合预期</checkbox>
+<checkbox done="false">知识授权和 MCP 凭据范围遵循最小权限</checkbox>
+<checkbox done="false">撤销、移除或审批操作已阅读影响说明</checkbox>
+<hr/>
+<p>手册版本：2026-08-11 · 对应 174 环境 gray31 产品形态。界面持续演进时，以页面实际权限提示和发布检查结果为准。</p>

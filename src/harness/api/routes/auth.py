@@ -1,5 +1,6 @@
 """Public authentication endpoints and authenticated profile access."""
 
+from datetime import datetime
 from typing import Annotated, Literal, TypedDict
 
 import httpx
@@ -13,6 +14,7 @@ from harness.api.dependencies import (
     get_container,
     require_identity,
 )
+from harness.auth.api_access import ApiAccessKey
 from harness.auth.models import (
     AuditEntry,
     AuthSession,
@@ -63,6 +65,38 @@ class ChangePasswordRequest(BaseModel):
 
 class UpdateMemberRoleRequest(BaseModel):
     role: Role
+
+
+class CreateApiKeyRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+    permissions: tuple[str, ...] = Field(min_length=1, max_length=3)
+
+
+class ApiKeyView(BaseModel):
+    key_id: str
+    name: str
+    prefix: str
+    permissions: tuple[str, ...]
+    created_at: datetime
+    last_used_at: datetime | None
+    revoked_at: datetime | None
+
+    @classmethod
+    def from_value(cls, value: ApiAccessKey) -> "ApiKeyView":
+        return cls(
+            key_id=value.key_id,
+            name=value.name,
+            prefix=value.prefix,
+            permissions=value.permissions,
+            created_at=value.created_at,
+            last_used_at=value.last_used_at,
+            revoked_at=value.revoked_at,
+        )
+
+
+class CreatedApiKeyView(BaseModel):
+    api_key: ApiKeyView
+    secret: str
 
 
 class AuthProfile(BaseModel):
@@ -316,6 +350,45 @@ async def audit_logs(
 ) -> list[AuditEntry]:
     ensure_permission(identity, "audit:read")
     return await container.audit.list_for_tenant(identity.tenant_id, limit=max(1, min(limit, 500)))
+
+
+@router.get("/api-keys", response_model=list[ApiKeyView])
+async def list_api_keys(
+    identity: Annotated[Identity, Depends(require_identity)],
+    container: Annotated[ApiContainer, Depends(get_container)],
+) -> list[ApiKeyView]:
+    ensure_permission(identity, "members:write")
+    values = await container.api_access.list(identity.tenant_id)
+    return [ApiKeyView.from_value(value) for value in values]
+
+
+@router.post("/api-keys", response_model=CreatedApiKeyView, status_code=201)
+async def create_api_key(
+    body: CreateApiKeyRequest,
+    identity: Annotated[Identity, Depends(require_identity)],
+    container: Annotated[ApiContainer, Depends(get_container)],
+) -> CreatedApiKeyView:
+    ensure_permission(identity, "members:write")
+    value, secret = await container.api_access.create(
+        identity.tenant_id,
+        identity.user_id,
+        body.name,
+        body.permissions,
+    )
+    return CreatedApiKeyView(api_key=ApiKeyView.from_value(value), secret=secret)
+
+
+@router.delete("/api-keys/{key_id}", response_model=ApiKeyView)
+async def revoke_api_key(
+    key_id: str,
+    identity: Annotated[Identity, Depends(require_identity)],
+    container: Annotated[ApiContainer, Depends(get_container)],
+) -> ApiKeyView:
+    ensure_permission(identity, "members:write")
+    value = await container.api_access.revoke(
+        identity.tenant_id, identity.user_id, key_id
+    )
+    return ApiKeyView.from_value(value)
 
 
 @router.get("/members", response_model=list[TenantMember])

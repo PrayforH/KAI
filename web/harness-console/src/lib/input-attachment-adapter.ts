@@ -18,6 +18,25 @@ type ServerBackedPendingAttachment = PendingAttachment & {
   harnessInputArtifactId?: string;
 };
 
+export function inputArtifactIdFromAttachment(value: unknown): string | null {
+  if (!value || typeof value !== "object") return null;
+  const attachment = value as {
+    harnessInputArtifactId?: unknown;
+    id?: unknown;
+    content?: Array<{ type?: unknown; data?: unknown }>;
+  };
+  if (typeof attachment.harnessInputArtifactId === "string") {
+    return attachment.harnessInputArtifactId;
+  }
+  const filePart = attachment.content?.find(
+    (part) => part.type === "file" && typeof part.data === "string",
+  );
+  if (typeof filePart?.data === "string") return filePart.data;
+  return typeof attachment.id === "string" && attachment.id.startsWith("input_artifact_")
+    ? attachment.id
+    : null;
+}
+
 function isUpload(value: unknown): value is InputArtifactUpload {
   if (!value || typeof value !== "object") return false;
   const upload = value as Record<string, unknown>;

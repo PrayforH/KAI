@@ -5,7 +5,6 @@ from typing import Protocol
 
 from harness.core.errors import ConflictError, NotFoundError
 from harness.sharing.models import (
-    SharedAgentVersion,
     SharedKnowledgeBase,
     TeamSpace,
     TeamSpaceMember,
@@ -22,26 +21,6 @@ class TeamSpaceRepository(Protocol):
     async def list_members(self, tenant_id: str, space_id: str) -> list[TeamSpaceMember]: ...
     async def put_member(self, member: TeamSpaceMember) -> None: ...
     async def delete_member(self, tenant_id: str, space_id: str, user_id: str) -> bool: ...
-    async def add_shared_agent(self, shared: SharedAgentVersion) -> None: ...
-    async def get_shared_agent(
-        self,
-        tenant_id: str,
-        space_id: str,
-        owner_user_id: str,
-        name: str,
-        version: str,
-    ) -> SharedAgentVersion: ...
-    async def list_shared_agents(
-        self, tenant_id: str, space_id: str
-    ) -> list[SharedAgentVersion]: ...
-    async def delete_shared_agent(
-        self,
-        tenant_id: str,
-        space_id: str,
-        owner_user_id: str,
-        name: str,
-        version: str,
-    ) -> bool: ...
     async def add_shared_knowledge(self, shared: SharedKnowledgeBase) -> None: ...
     async def list_shared_knowledge(
         self, tenant_id: str, space_id: str
@@ -55,7 +34,6 @@ class InMemoryTeamSpaceRepository:
     def __init__(self) -> None:
         self._spaces: dict[tuple[str, str], TeamSpace] = {}
         self._members: dict[tuple[str, str, str], TeamSpaceMember] = {}
-        self._agents: dict[tuple[str, str, str, str, str], SharedAgentVersion] = {}
         self._knowledge: dict[tuple[str, str, str], SharedKnowledgeBase] = {}
         self._lock = asyncio.Lock()
 
@@ -108,58 +86,6 @@ class InMemoryTeamSpaceRepository:
 
     async def delete_member(self, tenant_id: str, space_id: str, user_id: str) -> bool:
         return self._members.pop((tenant_id, space_id, user_id), None) is not None
-
-    async def add_shared_agent(self, shared: SharedAgentVersion) -> None:
-        key = (
-            shared.tenant_id,
-            shared.space_id,
-            shared.agent_owner_user_id,
-            shared.agent_name,
-            shared.agent_version,
-        )
-        async with self._lock:
-            if key in self._agents:
-                raise ConflictError(
-                    f"agent is already shared: {shared.agent_name}@{shared.agent_version}"
-                )
-            self._agents[key] = shared
-
-    async def get_shared_agent(
-        self,
-        tenant_id: str,
-        space_id: str,
-        owner_user_id: str,
-        name: str,
-        version: str,
-    ) -> SharedAgentVersion:
-        try:
-            return self._agents[(tenant_id, space_id, owner_user_id, name, version)]
-        except KeyError as error:
-            raise NotFoundError(f"shared agent not found: {name}@{version}") from error
-
-    async def list_shared_agents(
-        self, tenant_id: str, space_id: str
-    ) -> list[SharedAgentVersion]:
-        return sorted(
-            [
-                shared
-                for (stored_tenant, stored_space, *_), shared in self._agents.items()
-                if stored_tenant == tenant_id and stored_space == space_id
-            ],
-            key=lambda item: (item.agent_name, item.agent_version, item.agent_owner_user_id),
-        )
-
-    async def delete_shared_agent(
-        self,
-        tenant_id: str,
-        space_id: str,
-        owner_user_id: str,
-        name: str,
-        version: str,
-    ) -> bool:
-        return self._agents.pop(
-            (tenant_id, space_id, owner_user_id, name, version), None
-        ) is not None
 
     async def add_shared_knowledge(self, shared: SharedKnowledgeBase) -> None:
         key = (shared.tenant_id, shared.space_id, shared.knowledge_base_reference)

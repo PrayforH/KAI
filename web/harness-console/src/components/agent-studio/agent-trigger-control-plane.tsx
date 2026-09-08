@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
   StudioApiError,
@@ -66,11 +65,6 @@ export function AgentTriggerControlPlane({
     () => triggers.filter((item) => isA2A ? item.kind === "a2a" : item.kind !== "a2a"),
     [isA2A, triggers],
   );
-  const a2aTriggers = useMemo(
-    () => triggers.filter((item) => item.kind === "a2a"),
-    [triggers],
-  );
-
   useEffect(() => {
     if (isA2A) setKind("a2a");
   }, [isA2A]);
@@ -218,23 +212,6 @@ export function AgentTriggerControlPlane({
         </div>
         <em>{visibleTriggers.filter((item) => item.enabled).length} 个启用</em>
       </header>
-
-      {!isA2A && publishedVersion && (
-        <aside className={styles.a2aEntry}>
-          <div>
-            <span>A2A 1.0</span>
-            <strong>Agent 间协议接入</strong>
-            <small>
-              {a2aTriggers.length > 0
-                ? `${a2aTriggers.length} 个入口 · ${a2aTriggers.filter((item) => item.enabled).length} 个启用`
-                : "配置 Agent Card、消息端点和独立访问密钥。"}
-            </small>
-          </div>
-          <Link href={`/studio/agents/${encodeURIComponent(agentName)}/a2a`}>
-            打开 A2A 控制台
-          </Link>
-        </aside>
-      )}
 
       {!publishedVersion ? (
         <p className={styles.empty}>发布不可变版本后才能创建外部入口。</p>

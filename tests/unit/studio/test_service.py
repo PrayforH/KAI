@@ -20,8 +20,10 @@ from harness.studio.compiler import AgentDraftCompiler, DraftCompilationError
 from harness.studio.models import (
     AgentTemplate,
     CreateAgentDraftRequest,
+    DraftSubagent,
     ReplaceAgentDraftRequest,
 )
+from harness.studio.platform_skills import imported_platform_skill, platform_skill_package
 from harness.studio.repositories import InMemoryAgentDraftRepository
 from harness.studio.service import AgentStudioService
 
@@ -105,6 +107,56 @@ async def test_replace_uses_optimistic_revision_and_preserves_publication_identi
 
 
 @pytest.mark.asyncio
+async def test_editing_an_imported_platform_skill_marks_package_provenance_modified() -> None:
+    service = studio()
+    created = await service.create(
+        tenant_id="tenant-a", user_id="builder", request=create_request()
+    )
+    package = platform_skill_package("evidence-reporting", 1)
+    installed = await service.install_skill(
+        tenant_id="tenant-a",
+        user_id="builder",
+        draft_id=created.draft_id,
+        expected_revision=created.revision,
+        imported=imported_platform_skill(package),
+        evaluation_cases=package.evaluation_cases,
+    )
+    skill = installed.spec.skills[0].model_copy(update={"description": "租户定制报告规范。"})
+    updated = await service.replace(
+        tenant_id="tenant-a",
+        user_id="builder",
+        draft_id=created.draft_id,
+        request=ReplaceAgentDraftRequest(
+            expectedRevision=installed.revision,
+            spec=installed.spec.model_copy(update={"skills": (skill,)}),
+        ),
+    )
+
+    assert installed.spec.skills[0].source is not None
+    assert any(
+        "skill:evidence-reporting" in case.tags
+        for case in installed.spec.evaluation_cases
+    )
+    assert updated.spec.skills[0].source is not None
+    assert updated.spec.skills[0].source.modified is True
+
+    uninstalled = await service.replace(
+        tenant_id="tenant-a",
+        user_id="builder",
+        draft_id=created.draft_id,
+        request=ReplaceAgentDraftRequest(
+            expectedRevision=updated.revision,
+            spec=updated.spec.model_copy(update={"skills": ()}),
+        ),
+    )
+
+    assert not any(
+        "skill:evidence-reporting" in case.tags
+        for case in uninstalled.spec.evaluation_cases
+    )
+
+
+@pytest.mark.asyncio
 async def test_publish_reuses_production_bundle_gate_and_marks_draft() -> None:
     registry = InMemoryAgentRegistry()
     publisher = AgentService(
@@ -179,6 +231,26 @@ async def test_unpublished_subagent_blocks_validation_and_publication() -> None:
         tenant_id="tenant-a",
         user_id="builder",
         request=create_request(template=AgentTemplate.ORCHESTRATOR),
+    )
+    created = await service.replace(
+        tenant_id="tenant-a",
+        user_id="builder",
+        draft_id=created.draft_id,
+        request=ReplaceAgentDraftRequest(
+            expectedRevision=created.revision,
+            spec=created.spec.model_copy(
+                update={
+                    "builtin_tools": (*created.spec.builtin_tools, "Task"),
+                    "subagents": (
+                        DraftSubagent(
+                            alias="risk-reviewer",
+                            ref="helper-agent@1.0.0",
+                            responsibility="独立复核风险结论。",
+                        ),
+                    ),
+                }
+            ),
+        ),
     )
 
     validation = await service.validate("tenant-a", "builder", created.draft_id)
@@ -313,6 +385,20 @@ class DriftRegistry:
     async def list_for_user(self, tenant_id: str, owner_user_id: str) -> list[AgentVersion]:
         return await self._delegate.list_for_user(tenant_id, owner_user_id)
 
+    async def list_catalog_for_user(
+        self, tenant_id: str, owner_user_id: str
+    ) -> list[AgentVersion]:
+        return await self._delegate.list_catalog_for_user(tenant_id, owner_user_id)
+
+    async def move_owner(
+        self,
+        tenant_id: str,
+        from_user_id: str,
+        to_user_id: str,
+        name: str,
+    ) -> int:
+        return await self._delegate.move_owner(tenant_id, from_user_id, to_user_id, name)
+
 
 @pytest.mark.asyncio
 async def test_subagent_hash_drift_blocks_lead_publication() -> None:
@@ -356,6 +442,26 @@ async def test_subagent_hash_drift_blocks_lead_publication() -> None:
         tenant_id="tenant-a",
         user_id="builder",
         request=create_request(name="contract-lead", template=AgentTemplate.ORCHESTRATOR),
+    )
+    lead = await lead_service.replace(
+        tenant_id="tenant-a",
+        user_id="builder",
+        draft_id=lead.draft_id,
+        request=ReplaceAgentDraftRequest(
+            expectedRevision=lead.revision,
+            spec=lead.spec.model_copy(
+                update={
+                    "builtin_tools": (*lead.spec.builtin_tools, "Task"),
+                    "subagents": (
+                        DraftSubagent(
+                            alias="risk-reviewer",
+                            ref="helper-agent@1.0.0",
+                            responsibility="独立复核风险结论。",
+                        ),
+                    ),
+                }
+            ),
+        ),
     )
 
     validation = await lead_service.validate("tenant-a", "builder", lead.draft_id)

@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+AgentRuntimeType = Literal["claude-agent-sdk", "codex-app-server"]
+
 
 class FrozenModel(BaseModel):
     """Base model for facts that are replaced instead of mutated."""
@@ -93,6 +95,9 @@ class ExecutionIdentity(FrozenModel):
     run_id: str
     agent_name: str
     agent_version: str
+    # caller_owned resolves MCP credentials by the running user;
+    # service_owned resolves them by the pinned team space.
+    connection_mode: Literal["caller_owned", "service_owned"] = "caller_owned"
 
     @property
     def resolved_agent_owner_user_id(self) -> str:
@@ -109,6 +114,9 @@ class AgentVersion(FrozenModel):
     package_hash: str | None = None
     snapshot: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
+    # Stable Agent identity assigned by the workspace model. None only for
+    # versions persisted before the 0023 migration backfill.
+    agent_id: str | None = None
 
 
 class Session(FrozenModel):
@@ -121,17 +129,29 @@ class Session(FrozenModel):
     created_at: datetime
     team_ids: tuple[str, ...] = ()
     api_key_id: str | None = None
+    runtime_type: AgentRuntimeType = "claude-agent-sdk"
+    runtime_thread_id: str | None = None
+    # Kept while stored sessions and API clients migrate to runtime_thread_id.
     claude_session_id: str | None = None
     workspace_snapshot_id: str | None = None
     environment: str | None = None
     deployment_snapshot_id: str | None = None
     environment_snapshot: dict[str, Any] | None = None
     knowledge_snapshot_bindings: tuple[dict[str, Any], ...] = ()
+    # Credential resolution mode of the pinned shared Agent: caller_owned
+    # resolves MCP credentials by the running user; service_owned uses
+    # workspace-provided shared credentials.
+    connection_mode: Literal["caller_owned", "service_owned"] = "caller_owned"
 
     @property
     def resolved_agent_owner_user_id(self) -> str:
         """Owner pinned for runtime lookup; legacy sessions fall back to task owner."""
         return self.agent_owner_user_id or self.user_id
+
+    @property
+    def resolved_runtime_thread_id(self) -> str | None:
+        """Return the native thread ID, including legacy Claude-only records."""
+        return self.runtime_thread_id or self.claude_session_id
 
 
 class Run(FrozenModel):
@@ -254,6 +274,7 @@ class AguiThreadBinding(FrozenModel):
     title_source: Literal["fallback", "model"] | None = None
     title_updated_at: datetime | None = None
     archived_at: datetime | None = None
+    last_read_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 

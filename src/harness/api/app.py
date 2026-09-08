@@ -14,7 +14,7 @@ from starlette.responses import Response
 
 from harness.agent_package import AgentBundleValidationError, AgentPackageCheckError
 from harness.agui import routes as agui_routes
-from harness.api.dependencies import ApiContainer, build_memory_container
+from harness.api.dependencies import ApiContainer, Identity, build_memory_container
 from harness.api.routes import agents, approvals, artifacts, auth, input_artifacts, runs, sessions
 from harness.config import Settings
 from harness.core.errors import (
@@ -29,9 +29,11 @@ from harness.knowledge import api as knowledge_routes
 from harness.lifecycle import api as lifecycle_routes
 from harness.memory_bank import api as memory_bank_routes
 from harness.platform_mcp import api as platform_mcp_routes
+from harness.policy.profiles import PolicyProfileRegistry
 from harness.quota.repositories import QuotaExceededError
 from harness.reliability import api as reliability_routes
 from harness.sharing import api as sharing_routes
+from harness.sharing import groups_api as group_routes
 from harness.studio import api as studio_routes
 from harness.triggers import a2a as a2a_routes
 from harness.triggers import api as trigger_routes
@@ -44,7 +46,11 @@ async def _http_error(_request: Request, error: Exception) -> JSONResponse:
         payload = detail
     else:
         payload = {"code": "http_error", "message": str(detail)}
-    return JSONResponse(status_code=error.status_code, content={"error": payload})
+    return JSONResponse(
+        status_code=error.status_code,
+        content={"error": payload},
+        headers=error.headers,
+    )
 
 
 async def _request_validation_error(_request: Request, error: Exception) -> JSONResponse:
@@ -172,6 +178,27 @@ async def _authenticate_request(request: Request, call_next: RequestResponseEndp
     if not protected or path.startswith("/v1/auth"):
         return await call_next(request)
     container: ApiContainer = request.app.state.container
+    api_key = request.headers.get("X-API-Key", "")
+    if api_key:
+        record = await container.api_access.authenticate(api_key)
+        if record is None:
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "error": {
+                        "code": "api_key_invalid",
+                        "message": "API key is invalid or has been revoked",
+                    }
+                },
+            )
+        request.state.api_key_identity = Identity(
+            tenant_id=record.tenant_id,
+            user_id=record.user_id,
+            roles=frozenset(),
+            authentication_method="api_key",
+            permissions=frozenset(record.permissions),
+        )
+        return await call_next(request)
     expected = container.api_bearer_token.get_secret_value()
     if not expected:
         return await call_next(request)
@@ -304,6 +331,7 @@ def create_app(container: ApiContainer) -> FastAPI:
         memory_bank_routes.router,
         reliability_routes.router,
         sharing_routes.router,
+        group_routes.router,
         agui_routes.router,
     ):
         app.include_router(router, prefix="/v1")
@@ -322,8 +350,15 @@ def create_memory_app(
     *,
     auto_execute: bool = False,
     settings: Settings | None = None,
+    policy_profiles: PolicyProfileRegistry | None = None,
 ) -> FastAPI:
-    return create_app(build_memory_container(auto_execute=auto_execute, settings=settings))
+    return create_app(
+        build_memory_container(
+            auto_execute=auto_execute,
+            settings=settings,
+            policy_profiles=policy_profiles,
+        )
+    )
 
 
 def create_configured_app(settings: Settings) -> FastAPI:

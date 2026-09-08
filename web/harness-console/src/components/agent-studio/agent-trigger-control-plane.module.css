@@ -21,7 +21,7 @@
 
 .controlPlane > header span,
 .secretCard span {
-  color: var(--codex-accent, #339cff);
+  color: var(--codex-accent, #ececec);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -93,7 +93,7 @@
 }
 
 .a2aEntry span {
-  color: var(--codex-accent, #339cff);
+  color: var(--codex-accent, #ececec);
   font: 700 10px/1.2 var(--font-code, ui-monospace, monospace);
   letter-spacing: 0.08em;
 }
@@ -111,16 +111,16 @@
 .a2aEntry a {
   flex: 0 0 auto;
   padding: 9px 12px;
-  border: 1px solid color-mix(in srgb, var(--codex-accent, #339cff) 55%, transparent);
+  border: 1px solid color-mix(in srgb, var(--codex-accent, #ececec) 55%, transparent);
   border-radius: 8px;
-  color: var(--codex-accent, #339cff);
+  color: var(--codex-accent, #ececec);
   font-size: 12px;
   font-weight: 700;
   text-decoration: none;
 }
 
 .a2aEntry a:hover {
-  background: color-mix(in srgb, var(--codex-accent, #339cff) 10%, transparent);
+  background: color-mix(in srgb, var(--codex-accent, #ececec) 10%, transparent);
 }
 
 .scheduleFields {
@@ -166,8 +166,8 @@
 }
 
 .creator > button {
-  border-color: color-mix(in srgb, var(--codex-accent, #339cff) 70%, transparent);
-  background: var(--codex-accent, #339cff);
+  border-color: color-mix(in srgb, var(--codex-accent, #ececec) 70%, transparent);
+  background: var(--codex-accent, #ececec);
   color: #07121d;
   font-weight: 700;
 }
@@ -182,9 +182,9 @@
   display: grid;
   gap: 12px;
   padding: 14px;
-  border: 1px solid color-mix(in srgb, var(--codex-accent, #339cff) 55%, transparent);
+  border: 1px solid color-mix(in srgb, var(--codex-accent, #ececec) 55%, transparent);
   border-radius: 12px;
-  background: color-mix(in srgb, var(--codex-accent, #339cff) 8%, var(--codex-surface, #181818));
+  background: color-mix(in srgb, var(--codex-accent, #ececec) 8%, var(--codex-surface, #181818));
 }
 
 .secretCard > div:first-child {

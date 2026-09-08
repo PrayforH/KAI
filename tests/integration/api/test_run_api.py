@@ -4,6 +4,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from harness.api.app import create_memory_app
+from harness.config import Settings
 from harness.quota.models import QuotaResource, QuotaScope, ReplaceQuotaPolicyRequest
 
 FIXTURE_MANIFEST = Path("tests/fixtures/agents/echo-agent/agent.yaml")
@@ -95,7 +96,7 @@ async def test_local_console_origin_is_allowed() -> None:
 
 @pytest.mark.asyncio
 async def test_run_quota_rejection_is_stable_creates_no_half_run_and_cancel_releases() -> None:
-    app = create_memory_app()
+    app = create_memory_app(settings=Settings(quota_enforcement_enabled=True))
     await app.state.container.quotas.replace_policy(
         tenant_id="tenant-a",
         user_id="owner-a",

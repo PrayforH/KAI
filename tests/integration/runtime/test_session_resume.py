@@ -8,7 +8,7 @@ from harness.storage.database import create_database, create_schema, drop_schema
 
 DATABASE_URL = os.getenv(
     "HARNESS_TEST_DATABASE_URL",
-    "postgresql+asyncpg://harness:harness@localhost:5432/harness",
+    "postgresql+asyncpg://harness:harness@127.0.0.1:5432/harness_test",
 )
 
 

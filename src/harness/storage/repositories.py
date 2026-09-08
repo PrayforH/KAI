@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any, cast
 
-from sqlalchemy import CursorResult, select, update
+from sqlalchemy import CursorResult, func, select, update
 from sqlalchemy.exc import IntegrityError
 
 from harness.core.errors import ConflictError, EventSequenceConflictError, NotFoundError
@@ -83,20 +83,16 @@ class PostgresRunRepository:
     ) -> list[Run]:
         if not session_ids:
             return []
-        statement = (
-            select(RunRow.payload)
-            .where(
-                RunRow.tenant_id == tenant_id,
-                RunRow.session_id.in_(session_ids),
-            )
-        )
+        statement = select(RunRow.payload).where(
+            RunRow.tenant_id == tenant_id,
+            RunRow.session_id.in_(session_ids),
+        ).order_by(
+            RunRow.updated_at.desc(),
+            RunRow.run_id.desc(),
+        ).limit(limit)
         async with self._sessions() as session:
             payloads = (await session.execute(statement)).scalars().all()
-            return sorted(
-                (Run.model_validate(payload) for payload in payloads),
-                key=lambda run: (run.updated_at, run.run_id),
-                reverse=True,
-            )[:limit]
+            return [Run.model_validate(payload) for payload in payloads]
 
     async def list_for_tenant(self, tenant_id: str, *, limit: int) -> list[Run]:
         statement = (
@@ -161,6 +157,15 @@ class PostgresEventRepository:
                     f"event sequence already exists: {event.sequence}"
                 ) from error
 
+    async def latest_sequence(self, tenant_id: str, run_id: str) -> int:
+        statement = select(func.max(EventRow.sequence)).where(
+            EventRow.tenant_id == tenant_id,
+            EventRow.run_id == run_id,
+        )
+        async with self._sessions() as session:
+            value = await session.scalar(statement)
+        return int(value or 0)
+
     async def list_after(self, tenant_id: str, run_id: str, after_sequence: int) -> list[RunEvent]:
         statement = (
             select(EventRow)
@@ -174,3 +179,27 @@ class PostgresEventRepository:
         async with self._sessions() as session:
             rows = (await session.execute(statement)).scalars().all()
             return [RunEvent.model_validate(row.payload) for row in rows]
+
+    async def latest_for_session_type(
+        self, tenant_id: str, session_id: str, event_type: str
+    ) -> RunEvent | None:
+        return await self.latest_for_session_types(tenant_id, session_id, (event_type,))
+
+    async def latest_for_session_types(
+        self, tenant_id: str, session_id: str, event_types: tuple[str, ...]
+    ) -> RunEvent | None:
+        if not event_types:
+            return None
+        statement = (
+            select(EventRow)
+            .where(
+                EventRow.tenant_id == tenant_id,
+                EventRow.payload["session_id"].as_string() == session_id,
+                EventRow.payload["type"].as_string().in_(event_types),
+            )
+            .order_by(EventRow.timestamp.desc(), EventRow.run_id.desc(), EventRow.sequence.desc())
+            .limit(1)
+        )
+        async with self._sessions() as session:
+            row = (await session.execute(statement)).scalar_one_or_none()
+            return None if row is None else RunEvent.model_validate(row.payload)

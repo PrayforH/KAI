@@ -94,7 +94,7 @@ def test_standard_profile_uses_trusted_sandbox_facts() -> None:
         )
         is PolicyDecision.ALLOW
     )
-    assert _decision("production-standard", "Bash") is PolicyDecision.ASK
+    assert _decision("production-standard", "Bash") is PolicyDecision.ALLOW
     assert (
         _decision("production-standard", "mcp__novel-search__sag_get_document")
         is PolicyDecision.ALLOW
@@ -106,6 +106,17 @@ def test_standard_profile_uses_trusted_sandbox_facts() -> None:
     assert (
         _decision("production-standard", "mcp__knowledge-search__sag_explain_search")
         is PolicyDecision.ALLOW
+    )
+    assert (
+        _decision(
+            "production-standard",
+            "mcp__sentiment_query_mcp__search_risk_subjects",
+        )
+        is PolicyDecision.ALLOW
+    )
+    assert (
+        _decision("production-standard", "mcp__sentiment_query_mcp__unknown")
+        is PolicyDecision.DENY
     )
 
 

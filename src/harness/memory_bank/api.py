@@ -23,6 +23,7 @@ from harness.memory_bank.models import (
     SearchMemoryRequest,
     UpdateMemoryRequest,
 )
+from harness.memory_bank.scope import policy_key
 
 router = APIRouter(prefix="/memory-bank", tags=["memory-bank"])
 
@@ -52,7 +53,11 @@ async def propose(
         tenant_id=identity.tenant_id,
         user_id=identity.user_id,
         agent_name=body.agent_name,
+        owner_id=body.agent_owner_user_id or identity.user_id,
         content=body.content,
+        memory_type=body.memory_type,
+        topic=body.topic,
+        conditions=body.conditions,
         source_kind=body.source_kind,
         source_label=body.source_label,
         confidence=body.confidence,
@@ -133,6 +138,7 @@ async def search(
             body.agent_name,
             body.query,
             limit=body.limit,
+            owner_id=body.agent_owner_user_id or identity.user_id,
         )
     )
 
@@ -144,9 +150,7 @@ async def export_user(
     response: Response,
 ) -> dict[str, object]:
     ensure_permission(identity, "tasks:read")
-    response.headers["Content-Disposition"] = (
-        'attachment; filename="harness-memory-export.json"'
-    )
+    response.headers["Content-Disposition"] = 'attachment; filename="harness-memory-export.json"'
     response.headers["Cache-Control"] = "private, no-store"
     return await container.memory_bank.export_user(identity.tenant_id, identity.user_id)
 
@@ -159,10 +163,11 @@ async def policy(
     agent_name: str,
     identity: Annotated[Identity, Depends(require_identity)],
     container: Annotated[ApiContainer, Depends(get_container)],
+    owner_id: Annotated[str | None, Query(alias="agentOwnerUserId")] = None,
 ) -> dict[str, MemoryConsent | MemoryRetention | None]:
     ensure_permission(identity, "tasks:read")
     consent, retention = await container.memory_bank.get_policy(
-        identity.tenant_id, identity.user_id, agent_name
+        identity.tenant_id, identity.user_id, policy_key(identity.user_id, agent_name, owner_id)
     )
     return {"consent": consent, "retention": retention}
 
@@ -173,12 +178,13 @@ async def replace_consent(
     body: ReplaceConsentRequest,
     identity: Annotated[Identity, Depends(require_identity)],
     container: Annotated[ApiContainer, Depends(get_container)],
+    owner_id: Annotated[str | None, Query(alias="agentOwnerUserId")] = None,
 ) -> MemoryConsent:
     ensure_permission(identity, "tasks:write")
     return await container.memory_bank.replace_consent(
         identity.tenant_id,
         identity.user_id,
-        agent_name,
+        policy_key(identity.user_id, agent_name, owner_id),
         expected_version=body.expected_version,
         allow_agent_personal=body.allow_agent_personal,
     )
@@ -190,12 +196,13 @@ async def replace_retention(
     body: ReplaceRetentionRequest,
     identity: Annotated[Identity, Depends(require_identity)],
     container: Annotated[ApiContainer, Depends(get_container)],
+    owner_id: Annotated[str | None, Query(alias="agentOwnerUserId")] = None,
 ) -> MemoryRetention:
     ensure_permission(identity, "tasks:write")
     return await container.memory_bank.replace_retention(
         identity.tenant_id,
         identity.user_id,
-        agent_name,
+        policy_key(identity.user_id, agent_name, owner_id),
         expected_version=body.expected_version,
         default_days=body.default_days,
         max_days=body.max_days,

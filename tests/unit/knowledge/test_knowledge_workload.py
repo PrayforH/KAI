@@ -5,7 +5,7 @@ import pytest
 from pydantic import SecretStr
 
 from harness.core.models import ExecutionIdentity
-from harness.knowledge.models import KnowledgeSnapshotBinding
+from harness.knowledge.models import KnowledgeResultTrust, KnowledgeSnapshotBinding
 from harness.knowledge.workload import KnowledgeWorkloadTokenService
 
 
@@ -26,7 +26,7 @@ def binding() -> KnowledgeSnapshotBinding:
         knowledgeBaseReference="company-policy",
         sourceReference="handbook",
         snapshotId="snapshot-a",
-        trust="sensitive",
+        trust=KnowledgeResultTrust.SENSITIVE,
     )
 
 

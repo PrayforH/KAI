@@ -130,6 +130,10 @@ it("uses a browser-local elapsed anchor instead of subtracting server wall time"
       elapsedMs: 500,
     }),
   ).toBe(1_500);
+  const started = Date.parse(view.startedAt);
+  expect(activeElapsedMs(view, started + 30_000, {
+    runId: view.runId, observedAt: started + 29_000, elapsedMs: 500,
+  })).toBe(1_500);
 });
 
 afterEach(() => {
@@ -147,20 +151,23 @@ describe("execution ribbon", () => {
     expect(formatResultPreview("{not-json}")).toBe("{not-json}");
   });
 
-  it("expands active work before the assistant starts responding", () => {
+  it("expands the observable process by default while work is active", () => {
     const html = renderToStaticMarkup(<ActivitySummary activity={activity} />);
 
     expect(html).toContain(
       '<section class="execution-ribbon phase-running" aria-label="执行进度 run-ribbon" data-run-id="run-ribbon" data-response-started="false" data-open="true">',
     );
     expect(html).toContain("正在处理");
+    expect(html).toContain("已持续 6s");
+    expect(html).toContain('aria-expanded="true"');
     expect(html).not.toContain('class="execution-state-mark"');
+    expect(html).not.toContain('class="execution-summary-icon"');
     expect(html).toContain("运行了 2 个子任务");
     expect(html).toContain("搜索了 1 次内容 · 读取了 1 个文件");
     expect(html).toContain("6s");
   });
 
-  it("keeps active work expanded when the first real response text arrives", () => {
+  it("keeps active work expanded when response text starts", () => {
     const html = renderToStaticMarkup(
       <ActivitySummary activity={activity} responseStarted />,
     );
@@ -296,6 +303,8 @@ describe("execution ribbon", () => {
     );
 
     expect(html).toContain("我先读取 <strong>设计文档</strong>，再检查发布边界。");
+    expect(html).not.toContain('<strong>进展</strong>');
+    expect(html).toContain('data-active="false"');
     expect(html).not.toContain("最终结论已经整理完成。");
     expect(completedHtml).not.toContain("最终结论已经整理完成。");
     expect(html.indexOf("我先读取")).toBeLessThan(
@@ -387,11 +396,141 @@ describe("execution ribbon", () => {
     });
     const html = renderToStaticMarkup(<ActivitySummary activity={textOnly} />);
 
-    expect(html).toContain("正在准备运行环境");
-    expect(html).not.toContain("模型正在处理");
+    expect(html).not.toContain("已准备运行环境");
+    expect(html).not.toContain("已生成回复");
+    expect(html).toContain("处理完成");
     expect(html).not.toContain("正在生成本轮回复");
-    expect(html).toContain("模型执行完成");
+    expect(html).not.toContain("模型执行完成");
     expect(html).not.toContain("这是单独渲染的最终回答。");
+  });
+
+  it("renders provider reasoning summaries as real expandable thought content", () => {
+    const withReasoningSummary = runActivitySchema.parse({
+      ...activity,
+      items: [
+        ...activity.items,
+        {
+          id: "reasoning-summary",
+          event_type: "reasoning.summary.delta",
+          kind: "analysis",
+          status: "succeeded",
+          title: "思考摘要",
+          summary: "先核对配置，再运行测试。",
+          timestamp: "2026-07-14T00:00:06.500Z",
+          sequence: 7,
+          metadata: { item_id: "reasoning-1" },
+        },
+      ],
+    });
+
+    const html = renderToStaticMarkup(
+      <ActivitySummary activity={withReasoningSummary} />,
+    );
+
+    expect(html).toContain('data-commentary-source="reasoning_summary"');
+    expect(html).toContain('data-active="true"');
+    expect(html).toContain("先核对配置，再运行测试。");
+    expect(html).not.toContain("模型摘要");
+  });
+
+  it("stops the current thought icon when answer output starts", () => {
+    const withReasoningSummary = runActivitySchema.parse({
+      ...activity,
+      items: [
+        ...activity.items,
+        {
+          id: "reasoning-before-response",
+          event_type: "reasoning.summary.delta",
+          kind: "analysis",
+          status: "succeeded",
+          title: "思考摘要",
+          summary: "已经完成方案判断，准备输出。",
+          timestamp: "2026-07-14T00:00:06.500Z",
+          sequence: 7,
+          metadata: { item_id: "reasoning-before-response" },
+        },
+      ],
+    });
+
+    const html = renderToStaticMarkup(
+      <ActivitySummary activity={withReasoningSummary} responseStarted />,
+    );
+
+    expect(html).toContain('data-commentary-source="reasoning_summary"');
+    expect(html).toContain('data-active="false"');
+  });
+
+  it("stops the thought icon when the model is no longer running", () => {
+    const completed = runActivitySchema.parse({
+      ...activity,
+      status: "succeeded",
+      items: [
+        ...activity.items,
+        {
+          id: "reasoning-before-approval",
+          event_type: "reasoning.summary.delta",
+          kind: "analysis",
+          status: "succeeded",
+          title: "思考摘要",
+          summary: "需要等待确认。",
+          timestamp: "2026-07-14T00:00:06.500Z",
+          sequence: 7,
+          metadata: { item_id: "reasoning-waiting" },
+        },
+        {
+          id: "run-succeeded-after-reasoning",
+          event_type: "run.succeeded",
+          kind: "run",
+          status: "succeeded",
+          title: "运行完成",
+          timestamp: "2026-07-14T00:00:07Z",
+          sequence: 8,
+          metadata: {},
+        },
+      ],
+    });
+
+    const html = renderToStaticMarkup(<ActivitySummary activity={completed} />);
+
+    expect(html).toContain('data-commentary-source="reasoning_summary"');
+    expect(html).toContain('data-active="false"');
+  });
+
+  it("ends environment preparation as soon as the run starts", () => {
+    const modelPending = runActivitySchema.parse({
+      run_id: "run-model-pending",
+      status: "running",
+      started_at: "2026-07-14T00:00:00Z",
+      metrics: {},
+      items: [
+        {
+          id: "provisioning",
+          event_type: "run.provisioning",
+          kind: "run",
+          status: "running",
+          title: "正在准备运行环境",
+          timestamp: "2026-07-14T00:00:00.100Z",
+          sequence: 1,
+          metadata: {},
+        },
+        {
+          id: "running",
+          event_type: "run.running",
+          kind: "run",
+          status: "running",
+          title: "Agent 开始执行",
+          timestamp: "2026-07-14T00:00:00.300Z",
+          sequence: 2,
+          metadata: {},
+        },
+      ],
+    });
+    const html = renderToStaticMarkup(<ActivitySummary activity={modelPending} />);
+
+    expect(html).not.toContain("已准备运行环境");
+    expect(html).toContain("正在处理");
+    expect(html).not.toContain("run-pulse");
+    expect(html).not.toContain(">正在准备运行环境<");
   });
 
   it("renders tasks and tools as flat Codex actions without nested disclosures", () => {
@@ -433,7 +572,8 @@ describe("execution ribbon", () => {
     });
     const html = renderToStaticMarkup(<ActivitySummary activity={routed} />);
 
-    expect(html).toContain('aria-label="处理过程"');
+    expect(html).toContain('aria-label="运行过程，仅展示可观察事件"');
+    expect(html).toContain("运行过程");
     expect(html).not.toContain("运行模型");
     expect(html).not.toContain("<h4>");
   });

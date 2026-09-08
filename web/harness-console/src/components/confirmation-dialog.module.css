@@ -1,0 +1,221 @@
+.backdrop {
+  position: fixed;
+  z-index: 120;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(8 10 12 / 62%);
+  backdrop-filter: blur(8px) saturate(.8);
+  animation: backdrop-in 160ms ease-out both;
+}
+
+.dialog {
+  position: relative;
+  width: min(460px, 100%);
+  overflow: hidden;
+  padding: 26px 26px 22px;
+  color: var(--codex-ink);
+  background: var(--codex-panel-solid);
+  border: 1px solid var(--codex-line-strong);
+  border-radius: 14px;
+  box-shadow: var(--codex-shadow);
+  animation: dialog-in 190ms cubic-bezier(.2, .8, .2, 1) both;
+}
+
+.dialog::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 2px;
+  content: "";
+  background: var(--codex-accent);
+}
+
+.dialog[data-tone="danger"]::before {
+  background: var(--codex-danger);
+}
+
+.signal {
+  position: absolute;
+  top: 24px;
+  left: 24px;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  color: var(--codex-accent);
+  background: var(--codex-accent-soft);
+  border: 1px solid color-mix(in srgb, var(--codex-accent) 42%, transparent);
+  border-radius: 9px;
+  font: 700 14px/1 var(--codex-font-mono);
+}
+
+.dialog[data-tone="danger"] .signal {
+  color: var(--codex-danger);
+  background: var(--codex-danger-soft);
+  border-color: color-mix(in srgb, var(--codex-danger) 42%, transparent);
+}
+
+.copy {
+  display: grid;
+  gap: 8px;
+  padding-left: 50px;
+}
+
+.eyebrow {
+  color: var(--codex-faint);
+  font: 700 9px/1.2 var(--codex-font-mono);
+  letter-spacing: .13em;
+}
+
+.copy h2 {
+  margin: 0;
+  color: var(--codex-ink);
+  font-size: clamp(19px, 4vw, 23px);
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: -.025em;
+  text-wrap: balance;
+}
+
+.copy p {
+  max-width: 54ch;
+  margin: 0;
+  color: var(--codex-muted);
+  font-size: 13px;
+  line-height: 1.7;
+  text-wrap: pretty;
+}
+
+.context {
+  margin-top: 6px;
+  padding: 10px 12px;
+  color: var(--codex-ink-soft);
+  background: var(--codex-inset);
+  border: 1px solid var(--codex-line);
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.context code {
+  color: inherit;
+  font-family: var(--codex-font-mono);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  margin-top: 24px;
+}
+
+.actions button {
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: var(--codex-control-radius);
+  cursor: pointer;
+  font: 600 12px/1 var(--codex-font-ui);
+  transition: transform 140ms ease, background-color 140ms ease, border-color 140ms ease;
+}
+
+.actions button:hover {
+  transform: translateY(-1px);
+}
+
+.actions button:active {
+  transform: translateY(1px) scale(.98);
+}
+
+.actions button:focus-visible {
+  outline: 2px solid var(--codex-accent);
+  outline-offset: 3px;
+}
+
+.cancel {
+  color: var(--codex-ink-soft);
+  background: transparent;
+  border-color: var(--codex-line-strong) !important;
+}
+
+.cancel:hover {
+  background: var(--codex-surface-hover);
+}
+
+.discard {
+  margin-right: auto;
+  color: var(--codex-danger);
+  background: transparent;
+}
+
+.discard:hover {
+  background: var(--codex-danger-soft);
+}
+
+.confirm {
+  color: var(--codex-on-accent);
+  background: var(--codex-accent);
+}
+
+.confirm:hover {
+  background: var(--codex-accent-hover);
+}
+
+.dialog[data-tone="danger"] .confirm {
+  color: #fff;
+  background: var(--codex-danger);
+}
+
+@keyframes backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes dialog-in {
+  from { opacity: 0; transform: translateY(10px) scale(.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (max-width: 520px) {
+  .backdrop {
+    place-items: end center;
+    padding: 12px;
+  }
+
+  .dialog {
+    padding: 24px 20px 18px;
+    border-radius: 14px 14px 10px 10px;
+  }
+
+  .signal {
+    top: 22px;
+    left: 20px;
+  }
+
+  .actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .actions:has(.discard) {
+    grid-template-columns: 1fr;
+  }
+
+  .discard {
+    margin-right: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backdrop,
+  .dialog {
+    animation: none;
+  }
+
+  .actions button {
+    transition: none;
+  }
+}

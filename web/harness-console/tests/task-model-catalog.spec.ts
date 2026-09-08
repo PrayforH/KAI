@@ -26,7 +26,7 @@ describe("task model selection", () => {
           provider: "deepseek",
           models: ["deepseek-v4-pro"],
           capabilities: ["streaming", "tool_use"],
-          enabled: false,
+          enabled: true,
         },
         {
           routeId: "deepseek-v4-flash",
@@ -42,6 +42,14 @@ describe("task model selection", () => {
           provider: "deepseek",
           models: ["deepseek-v4-pro"],
           capabilities: ["streaming", "tool_use"],
+          enabled: true,
+        },
+        {
+          routeId: "anthropic-official",
+          label: "Anthropic official",
+          provider: "anthropic",
+          models: ["claude-sonnet-4-6"],
+          capabilities: ["streaming", "tool_use", "tool_search"],
           enabled: true,
         },
       ],
@@ -60,6 +68,45 @@ describe("task model selection", () => {
 
     expect(loadTaskModelOverride(storage, "thread-1")).toBe("minimax-m3");
     expect(loadTaskModelOverride(storage, "thread-2")).toBeNull();
+  });
+
+  it("exposes video generation in the task composer while keeping image routes out", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      modelRoutes: [
+        {
+          routeId: "vision-primary",
+          label: "视觉主模型",
+          provider: "example",
+          models: ["vision-1"],
+          modelType: "vision",
+          capabilities: ["streaming", "tool_use", "vision"],
+          enabled: true,
+        },
+        {
+          routeId: "image-primary",
+          label: "图像生成",
+          provider: "example",
+          models: ["image-1"],
+          modelType: "image_generation",
+          capabilities: ["image_generation"],
+          enabled: true,
+        },
+        {
+          routeId: "video-primary",
+          label: "视频生成",
+          provider: "MiniMax",
+          models: ["/model"],
+          modelType: "video_generation",
+          capabilities: ["video_generation"],
+          enabled: true,
+        },
+      ],
+    }), { status: 200 })));
+
+    await expect(loadTaskModelRoutes()).resolves.toEqual([
+      expect.objectContaining({ id: "vision-primary", modelType: "vision" }),
+      expect.objectContaining({ id: "video-primary", modelType: "video_generation" }),
+    ]);
   });
 
   it("clears follow-Agent selection and rejects malformed stored routes", () => {

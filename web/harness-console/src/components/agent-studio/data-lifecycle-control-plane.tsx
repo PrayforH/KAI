@@ -2,7 +2,7 @@
 
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { useAuth } from "../auth-provider";
-import { StudioSidebar } from "./studio-sidebar";
+import { useConfirmationDialog } from "../confirmation-dialog";
 import {
   lifecycleClient,
   type DataLifecycleJob,
@@ -67,8 +67,9 @@ function Jobs({ jobs, refresh }: { jobs: DataLifecycleJob[]; refresh: () => Prom
   ))}</div>;
 }
 
-export function DataLifecycleControlPlane() {
+export function DataLifecycleControlPlane({ embedded = false }: { embedded?: boolean }) {
   const { user, membership } = useAuth();
+  const { requestConfirmation, confirmationDialog } = useConfirmationDialog();
   const canAdmin = membership.role === "owner" || membership.role === "admin";
   const [overview, setOverview] = useState<DataLifecycleOverview | null>(null);
   const [selfJobs, setSelfJobs] = useState<DataLifecycleJob[]>([]);
@@ -130,7 +131,13 @@ export function DataLifecycleControlPlane() {
   }
 
   async function run(kind: DataLifecycleJob["kind"], scope: LifecycleScope) {
-    if (kind === "delete" && !window.confirm("删除后无法恢复。确认删除你的 Harness 数据？")) return;
+    if (kind === "delete" && !(await requestConfirmation({
+      title: "删除你的 Harness 数据？",
+      description: "删除任务会级联处理会话、文件、记忆与观测副本，且无法恢复。Legal Hold、审计与部署证据仍按治理规则保留。",
+      confirmLabel: "确认删除",
+      context: <span>范围：当前用户 <code>{user.user_id}</code></span>,
+      tone: "danger",
+    }))) return;
     setBusy(true);
     try {
       await lifecycleClient.createJob(kind, scope, key(kind));
@@ -141,12 +148,10 @@ export function DataLifecycleControlPlane() {
     } finally { setBusy(false); }
   }
 
-  if (!overview && canAdmin && !error) return <main className={styles.state} id="main-content" aria-busy="true"><strong>正在读取数据边界</strong><span>核对保留策略、Legal Hold 与外部删除状态…</span></main>;
+  if (!overview && canAdmin && !error) return <div className={`${styles.state}${embedded ? ` ${styles.embeddedState}` : ""}`} aria-busy="true"><strong>正在读取数据边界</strong><span>核对保留策略、Legal Hold 与外部删除状态…</span></div>;
 
-  return <main className={styles.shell} id="main-content">
-    <StudioSidebar active="data">
-      <div className={styles.railCopy}><strong>数据生命周期</strong><p>导出与删除按外部系统顺序级联。任何失败都会留下可审计断点，不把“请求已受理”误报为“已删除”。</p></div>
-    </StudioSidebar>
+  return <div className={embedded ? `${styles.shell} ${styles.embedded}` : undefined}>
+    <div className={styles.railCopy}><strong>数据生命周期</strong><p>导出与删除按外部系统顺序级联。任何失败都会留下可审计断点，不把“请求已受理”误报为“已删除”。</p></div>
 
     <section className={styles.content}>
       <header className={styles.header}><div><p>Data lifecycle ledger</p><h1>控制数据留下多久，以及如何离开</h1><span>覆盖 PostgreSQL、对象存储、SDK 会话、长期记忆与 Langfuse；审计和部署证据不会随业务数据一起消失。</span></div><div className={styles.headerActions}><button disabled={busy} onClick={() => void run("export", { kind: "user", subjectId: user.user_id })}>导出我的数据</button><button className={styles.danger} disabled={busy} onClick={() => void run("delete", { kind: "user", subjectId: user.user_id })}>删除我的数据</button></div></header>
@@ -167,5 +172,6 @@ export function DataLifecycleControlPlane() {
 
       <section className={styles.history}><div className={styles.historyHead}><div><p>Lifecycle jobs</p><h2>{canAdmin ? "租户处理记录" : "我的处理记录"}</h2></div><button onClick={() => void load()}>刷新</button></div><Jobs jobs={jobs} refresh={load}/></section>
     </section>
-  </main>;
+    {confirmationDialog}
+  </div>;
 }

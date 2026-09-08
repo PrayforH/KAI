@@ -10,6 +10,7 @@ from harness.studio.models import (
     ModelRouteCapability,
     NetworkAccess,
     PolicyCapability,
+    RuntimeCapability,
     TemplateCapability,
 )
 
@@ -19,16 +20,6 @@ def default_capability_catalog() -> CapabilityCatalog:
 
     return CapabilityCatalog(
         modelRoutes=(
-            ModelRouteCapability(
-                routeId="new-api-default",
-                label="DeepSeek V4（兼容路由）",
-                provider="deepseek",
-                models=("deepseek-v4-pro",),
-                capabilities=("streaming", "tool_use"),
-                credentialReference="NEW_API_KEY",
-                version=2,
-                enabled=False,
-            ),
             ModelRouteCapability(
                 routeId="deepseek-v4-flash",
                 label="DeepSeek V4 Flash",
@@ -51,26 +42,31 @@ def default_capability_catalog() -> CapabilityCatalog:
                 provider="minimax",
                 models=("MiniMax-M3",),
                 capabilities=("streaming", "tool_use", "vision"),
+                modelType="vision",
                 credentialReference="MINIMAX_M3_API_KEY",
             ),
             ModelRouteCapability(
-                routeId="glm-5-2",
-                label="GLM-5.2",
+                routeId="glm-5-3-flash",
+                label="GLM-5.3-Flash",
                 provider="glm",
-                models=("shdata-glm",),
-                capabilities=("streaming", "tool_use"),
-                credentialReference="GLM_5_2_API_KEY",
-            ),
-            ModelRouteCapability(
-                routeId="anthropic-official",
-                label="Anthropic official",
-                provider="anthropic",
-                models=("claude-sonnet-4-6",),
-                capabilities=("streaming", "tool_use", "tool_search"),
-                credentialReference="ANTHROPIC_API_KEY",
+                models=("glm-5.3-flash",),
+                modelType="vision",
+                capabilities=("streaming", "tool_use", "vision"),
             ),
         ),
         builtinTools=(
+            BuiltinToolCapability(
+                name="WebSearch", label="搜索公开网页",
+                description="平台内置搜索，无需配置 MCP；仅发送公开关键词，结果带来源。",
+                risk=CapabilityRisk.LOW, executionLocation="platform",
+                approvalBehavior="公开关键词自动检索，疑似敏感信息拒绝外发",
+            ),
+            BuiltinToolCapability(
+                name="WebFetch", label="读取公开网页",
+                description="直接读取公开网页正文，拦截内网地址，限制跳转和内容大小。",
+                risk=CapabilityRisk.LOW, executionLocation="platform",
+                approvalBehavior="公开网页自动读取，不携带登录信息",
+            ),
             BuiltinToolCapability(
                 name="Read",
                 label="读取文件",
@@ -145,9 +141,9 @@ def default_capability_catalog() -> CapabilityCatalog:
                 readOnly=True,
                 executionLocation="external-mcp",
                 credentialReference="TAVILY_API_KEY",
-                authMode="query",
-                authName="tavilyApiKey",
+                authMode="bearer",
                 authKey="api_key",
+                version=2,
             ),
         ),
         policies=(
@@ -160,7 +156,9 @@ def default_capability_catalog() -> CapabilityCatalog:
             PolicyCapability(
                 policyId="production-standard",
                 label="生产标准",
-                description="允许受控文件写入，命令和高风险动作进入审批。",
+                description=(
+                    "工作区写入及策略允许的命令自动执行；高风险、越界或不确定动作拒绝或确认。"
+                ),
                 risk=CapabilityRisk.MEDIUM,
             ),
             PolicyCapability(
@@ -199,23 +197,27 @@ def default_capability_catalog() -> CapabilityCatalog:
             ExecutionProfileMetadata.model_validate(
                 {
                     "profileId": "isolated-default",
-                    "label": "生产隔离执行",
-                    "description": "在平台托管的隔离 Sandbox 中执行文件、命令和工具。",
-                    "sandboxProvider": "daytona",
+                    "label": "Docker 容器工作区",
+                    "description": (
+                        "在平台 Worker 的 Docker 容器工作区中执行文件、命令和工具；"
+                        "保留租户、会话、产物和策略边界。"
+                    ),
+                    "sandboxProvider": "local",
                     "networkAccess": (
                         NetworkAccess.NONE,
                         NetworkAccess.INTERNAL,
                         NetworkAccess.EXTERNAL,
                     ),
-                    "risk": CapabilityRisk.MEDIUM,
+                    "risk": CapabilityRisk.HIGH,
                     "cpuMillis": 2000,
                     "memoryMiB": 4096,
                     "diskMiB": 20480,
                     "ttlSeconds": 3600,
                     "networkPolicyId": "registered-mcp-only",
                     "allowedMcpReferences": ("tavily-readonly",),
-                    "providerConfigReference": "daytona-managed",
+                    "providerConfigReference": "docker-worker-local",
                     "productionAllowed": True,
+                    "version": 2,
                 }
             ),
             ExecutionProfileMetadata.model_validate(
@@ -271,12 +273,54 @@ def default_capability_catalog() -> CapabilityCatalog:
             TemplateCapability(
                 template=AgentTemplate.OPERATOR,
                 label="执行型",
-                description="在隔离工作区中生成或修改文件，高风险操作需审批。",
+                description=(
+                    "在隔离工作区中生成或修改文件；常规操作自动完成，仅在高风险边界需要确认。"
+                ),
             ),
             TemplateCapability(
                 template=AgentTemplate.ORCHESTRATOR,
                 label="编排型",
                 description="将可独立验收的任务委派给固定版本子 Agent。",
+            ),
+        ),
+        runtimeCapabilities=(
+            RuntimeCapability(
+                runtime="claude-agent-sdk",
+                label="Claude Agent SDK",
+                capabilities=(
+                    "skills",
+                    "builtin_tools",
+                    "python_tools",
+                    "mcp_http",
+                    "mcp_sse",
+                    "knowledge",
+                    "subagents",
+                    "tool_search",
+                    "session_resume",
+                    "approvals",
+                    "artifacts",
+                ),
+                modelApiFormats=("anthropic_compatible", "openai_compatible"),
+            ),
+            RuntimeCapability(
+                runtime="codex-app-server",
+                label="Codex App Server",
+                capabilities=(
+                    "skills",
+                    "builtin_tools",
+                    "mcp_http",
+                    "subagents",
+                    "session_resume",
+                    "approvals",
+                    "artifacts",
+                ),
+                modelApiFormats=("openai_compatible",),
+                limitations=(
+                    "Studio Python tools are not connected",
+                    "Knowledge references are not connected",
+                    "On-demand tool search is not connected",
+                    "Only streamable HTTP MCP registrations are supported",
+                ),
             ),
         ),
     )

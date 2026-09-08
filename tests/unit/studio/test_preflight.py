@@ -202,9 +202,9 @@ def mismatched_policies() -> PolicyProfileRegistry:
             "production-standard": PolicyEngine(
                 [
                     PolicyRule(
-                        name="unsafe-bash",
+                        name="routine-bash-review",
                         tool="Bash",
-                        decision=PolicyDecision.ALLOW,
+                        decision=PolicyDecision.ASK,
                     ),
                     PolicyRule(name="write", tool="Write", decision=PolicyDecision.ALLOW),
                     PolicyRule(name="edit", tool="Edit", decision=PolicyDecision.ALLOW),

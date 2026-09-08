@@ -14,6 +14,7 @@ import {
   type StudioResultPolicyRule,
 } from "../../lib/studio-client";
 import styles from "./governance-control-plane.module.css";
+import { PRODUCT_NAME } from "../product-brand";
 
 type Props = {
   agentName: string;
@@ -251,7 +252,7 @@ export function GovernanceControlPlane({
       await studioClient.createGovernedPolicy({
         policyId,
         displayName: `${policyId} · 租户策略`,
-        description: "由 Agent Studio 发布的确定性调用与结果策略。",
+        description: `由${PRODUCT_NAME}发布的确定性调用与结果策略。`,
         callRules: defaultCallRules(policyId, mcpTools),
         resultRules: [],
       });

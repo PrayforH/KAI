@@ -11,6 +11,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from harness.adapters.memory import (
     InMemoryArtifactRepository,
     InMemoryArtifactStore,
+    InMemoryCancellationWakeup,
     InMemoryEventBus,
     InMemoryEventRepository,
     InMemoryRunRepository,
@@ -23,8 +24,17 @@ from harness.application.events import EventService
 from harness.application.runs import RunService
 from harness.application.workspaces import WorkspaceService
 from harness.config import Settings
+from harness.context.checkpoint import ContextCheckpointService, TranscriptCheckpoint
+from harness.context.models import (
+    ContextDigestCreator,
+    ContextDigestEntry,
+    ContextDigestSource,
+)
+from harness.context.repositories import InMemoryContextRepository
+from harness.context.service import ContextService
 from harness.core.events import RunEvent
 from harness.core.models import Run, RunStatus, Session
+from harness.core.ports import StoredObject
 from harness.observability.provider import Observability, build_observability
 from harness.observability.redaction import correlation_hash
 from harness.policy.models import ContextTrust, PolicyDecision, PolicyRule, ToolResultPolicyRule
@@ -57,6 +67,62 @@ from harness.worker.orchestrator import (
 )
 
 NOW = datetime(2026, 7, 11, tzinfo=UTC)
+
+
+class CountingEventRepository(InMemoryEventRepository):
+    def __init__(self) -> None:
+        super().__init__()
+        self.list_after_calls = 0
+
+    async def list_after(self, tenant_id: str, run_id: str, after_sequence: int) -> list[RunEvent]:
+        self.list_after_calls += 1
+        return await super().list_after(tenant_id, run_id, after_sequence)
+
+
+class FailingCancellationWakeup:
+    async def wait(
+        self,
+        tenant_id: str,
+        run_id: str,
+        after_fencing_token: int,
+        *,
+        timeout_seconds: float,
+    ) -> bool:
+        raise ConnectionError("redis unavailable")
+
+    async def publish(self, tenant_id: str, run_id: str, fencing_token: int) -> None:
+        raise ConnectionError("redis unavailable")
+
+
+class BlockingPutArtifactStore(InMemoryArtifactStore):
+    def __init__(self) -> None:
+        super().__init__()
+        self.put_started = asyncio.Event()
+
+    async def put(self, tenant_id: str, artifact_id: str, content: bytes) -> StoredObject:
+        self.put_started.set()
+        await asyncio.Event().wait()
+        raise AssertionError("blocking test store unexpectedly resumed")
+
+
+class StubTranscriptCheckpoints:
+    def __init__(self, *, fail: bool = False) -> None:
+        self._fail = fail
+
+    async def checkpoint(
+        self,
+        tenant_id: str,
+        project_id: str,
+        sdk_session_id: str,
+    ) -> TranscriptCheckpoint | None:
+        del tenant_id, project_id, sdk_session_id
+        if self._fail:
+            raise ConnectionError("checkpoint unavailable")
+        return TranscriptCheckpoint(
+            sdk_session_id_hash=f"sha256:{'a' * 64}",
+            transcript_checkpoint_hash=f"sha256:{'b' * 64}",
+            entry_count=2,
+        )
 
 
 def test_runtime_artifact_reader_is_workspace_scoped_and_bounded(
@@ -224,6 +290,56 @@ class SessionAwareRuntime(FakeRuntime):
             type="runtime.result",
             payload={"subtype": "success", "session_id": sdk_session_id},
         )
+
+
+class SessionRecoveryRuntime(SessionAwareRuntime):
+    async def execute(self, context: RuntimeContext) -> AsyncIterator[RuntimeEvent]:
+        self.contexts.append(context)
+        if len(self.contexts) == 2:
+            yield RuntimeEvent(
+                type="runtime.session.recovered",
+                payload={"previous_session_id": "sdk-session-1"},
+            )
+            sdk_session_id = "sdk-session-2"
+        else:
+            sdk_session_id = context.session.claude_session_id or "sdk-session-1"
+        yield RuntimeEvent(
+            type="runtime.system",
+            payload={"subtype": "init", "session_id": sdk_session_id},
+        )
+        yield RuntimeEvent(type="message.start")
+        yield RuntimeEvent(type="message.delta", payload={"text": "ok"})
+        yield RuntimeEvent(type="message.completed")
+        yield RuntimeEvent(
+            type="runtime.result",
+            payload={"subtype": "success", "session_id": sdk_session_id},
+        )
+
+
+class ThreadInvalidatingRuntime(FakeRuntime):
+    def __init__(self) -> None:
+        super().__init__()
+        self.contexts: list[RuntimeContext] = []
+
+    async def execute(self, context: RuntimeContext) -> AsyncIterator[RuntimeEvent]:
+        self.contexts.append(context)
+        if len(self.contexts) == 1:
+            yield RuntimeEvent(
+                type="runtime.thread.started",
+                payload={"thread_id": "sdk-poisoned", "runtime": "claude-agent-sdk"},
+            )
+            yield RuntimeEvent(
+                type="runtime.thread.invalidated",
+                payload={
+                    "thread_id": "sdk-poisoned",
+                    "runtime": "claude-agent-sdk",
+                    "reason_code": "turn_failed",
+                },
+            )
+            raise RuntimeResultError("turn_failed")
+        yield RuntimeEvent(type="message.start")
+        yield RuntimeEvent(type="message.delta", payload={"text": "fresh thread"})
+        yield RuntimeEvent(type="message.completed")
 
 
 class FencingRefreshRuntime(FakeRuntime):
@@ -411,10 +527,13 @@ async def arrange(
     workspaces: WorkspaceService | None = None,
     clock: Callable[[], datetime] = lambda: NOW,
     metrics: ReliabilityMetrics | None = None,
+    events_override: InMemoryEventRepository | None = None,
+    context_checkpoints: ContextCheckpointService | None = None,
+    context_service: ContextService | None = None,
 ):
     sessions = InMemorySessionRepository()
     runs = InMemoryRunRepository()
-    event_repository = InMemoryEventRepository()
+    event_repository = events_override or InMemoryEventRepository()
     runtime = runtime_override or FakeRuntime(fail=fail_runtime)
     sandbox = sandbox_override or LocalSandboxProvider(root=tmp_path)
     session = Session(
@@ -468,8 +587,113 @@ async def arrange(
         quotas=quotas,
         workspaces=workspaces,
         metrics=metrics,
+        context_checkpoints=context_checkpoints,
+        context_service=context_service,
     )
     return orchestrator, runtime, runs, event_repository
+
+
+def context_checkpoints(*, fail: bool = False) -> ContextCheckpointService:
+    contexts = ContextService(
+        InMemoryContextRepository(),
+        clock=lambda: NOW,
+        id_generator=ids(),
+    )
+    return ContextCheckpointService(
+        contexts,
+        StubTranscriptCheckpoints(fail=fail),
+    )
+
+
+@pytest.mark.asyncio
+async def test_successful_run_publishes_context_digest_before_terminal(
+    tmp_path: Path,
+) -> None:
+    orchestrator, _, _, events = await arrange(
+        tmp_path,
+        runtime_override=SessionAwareRuntime(),
+        context_checkpoints=context_checkpoints(),
+    )
+
+    result = await orchestrator.execute("tenant-a", "run-1")
+
+    assert result.status is RunStatus.SUCCEEDED
+    emitted = await events.list_after("tenant-a", "run-1", 0)
+    event_types = [event.type for event in emitted]
+    assert "context.digest.created" in event_types
+    assert event_types.index("context.digest.created") < event_types.index("run.succeeded")
+    created = next(event for event in emitted if event.type == "context.digest.created")
+    assert created.payload["version"] == 1
+    assert created.payload["trust_high_watermark"] == "safe"
+
+
+@pytest.mark.asyncio
+async def test_context_checkpoint_failure_is_observable_and_does_not_fail_answer(
+    tmp_path: Path,
+) -> None:
+    orchestrator, _, _, events = await arrange(
+        tmp_path,
+        runtime_override=SessionAwareRuntime(),
+        context_checkpoints=context_checkpoints(fail=True),
+    )
+
+    result = await orchestrator.execute("tenant-a", "run-1")
+
+    assert result.status is RunStatus.SUCCEEDED
+    emitted = await events.list_after("tenant-a", "run-1", 0)
+    failed = next(event for event in emitted if event.type == "context.digest.failed")
+    assert failed.payload == {
+        "error_code": "context_checkpoint_failed",
+        "error_type": "ConnectionError",
+    }
+
+
+@pytest.mark.asyncio
+async def test_fresh_rebased_session_loads_digest_projection_before_runtime(
+    tmp_path: Path,
+) -> None:
+    contexts = ContextService(
+        InMemoryContextRepository(),
+        clock=lambda: NOW,
+        id_generator=ids(),
+    )
+    await contexts.create_digest(
+        tenant_id="tenant-a",
+        owner_user_id="user-1",
+        session_id="session-1",
+        source=ContextDigestSource(
+            sdk_session_id_hash=f"sha256:{'a' * 64}",
+            through_run_id="run-before-rebase",
+            through_event_sequence=12,
+            transcript_checkpoint_hash=f"sha256:{'b' * 64}",
+        ),
+        created_by=ContextDigestCreator(
+            route_id="context-rebase-v1",
+            model="deterministic",
+            prompt_revision="context-rebase-v1",
+        ),
+        facts=(
+            ContextDigestEntry(
+                text="The release target is P1",
+                source_refs=("run:run-before-rebase:event:12",),
+                trust=ContextTrust.SAFE,
+            ),
+        ),
+    )
+    runtime = CapturingRuntime()
+    orchestrator, _, _, events = await arrange(
+        tmp_path,
+        runtime_override=runtime,
+        context_service=contexts,
+    )
+
+    result = await orchestrator.execute("tenant-a", "run-1")
+
+    assert result.status is RunStatus.SUCCEEDED
+    assert "The release target is P1" in runtime.contexts[0].context_projection
+    emitted = await events.list_after("tenant-a", "run-1", 0)
+    loaded = next(event for event in emitted if event.type == "context.recovery.loaded")
+    assert loaded.payload == {"mode": "durable_digest"}
 
 
 @pytest.mark.asyncio
@@ -645,9 +869,7 @@ async def test_workspace_archive_failure_after_model_success_is_non_terminal(
 
     assert completed.status is RunStatus.SUCCEEDED
     assert any(event.type == "artifact.ready" for event in recorded)
-    archive_failure = next(
-        event for event in recorded if event.type == "workspace.archive.failed"
-    )
+    archive_failure = next(event for event in recorded if event.type == "workspace.archive.failed")
     assert archive_failure.payload == {
         "error_code": "workspace_archive_failed",
         "error_type": "ValueError",
@@ -800,6 +1022,7 @@ async def test_runtime_assets_are_staged_before_sandbox_prepare(tmp_path: Path) 
         _agent_name: str,
         _agent_version: str,
         workspace: Path,
+        _allow_validated_graph: bool,
     ) -> tuple[str, ...]:
         target = workspace / ".claude/skills/domain-core"
         target.mkdir(parents=True)
@@ -934,6 +1157,23 @@ async def test_executes_run_and_cleans_sandbox(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_known_tool_result_does_not_rescan_durable_event_history(
+    tmp_path: Path,
+) -> None:
+    events = CountingEventRepository()
+    orchestrator, _, _, _ = await arrange(
+        tmp_path,
+        runtime_override=ToolRuntime(),
+        events_override=events,
+    )
+
+    result = await orchestrator.execute("tenant-a", "run-1")
+
+    assert result.status is RunStatus.SUCCEEDED
+    assert events.list_after_calls == 0
+
+
+@pytest.mark.asyncio
 async def test_records_queue_wait_first_runtime_event_and_first_text(
     tmp_path: Path,
 ) -> None:
@@ -942,6 +1182,7 @@ async def test_records_queue_wait_first_runtime_event_and_first_text(
     class StageTimingRuntime(FakeRuntime):
         async def execute(self, context: RuntimeContext) -> AsyncIterator[RuntimeEvent]:
             del context
+            yield RuntimeEvent(type="model.route.selected", payload={"route_id": "fast"})
             current[0] = NOW + timedelta(seconds=3)
             yield RuntimeEvent(type="runtime.system", payload={"subtype": "init"})
             current[0] = NOW + timedelta(seconds=5)
@@ -968,7 +1209,17 @@ async def test_records_queue_wait_first_runtime_event_and_first_text(
     assert metrics.quantile(
         "harness_run_stage_duration_seconds",
         0.95,
+        labels={"stage": "environment_prepare"},
+    ) == (0, 1)
+    assert metrics.quantile(
+        "harness_run_stage_duration_seconds",
+        0.95,
         labels={"stage": "runtime_first_event"},
+    ) == (0, 1)
+    assert metrics.quantile(
+        "harness_run_stage_duration_seconds",
+        0.95,
+        labels={"stage": "provider_first_event"},
     ) == (1, 1)
     assert metrics.quantile(
         "harness_run_stage_duration_seconds",
@@ -1046,6 +1297,66 @@ async def test_next_run_receives_bound_claude_session_for_resume(
     assert second.status is RunStatus.SUCCEEDED
     assert runtime.contexts[0].session.claude_session_id is None
     assert runtime.contexts[1].session.claude_session_id == "sdk-session-1"
+
+
+@pytest.mark.asyncio
+async def test_stale_sdk_session_is_atomically_rebound_after_recovery(
+    tmp_path: Path,
+) -> None:
+    runtime = SessionRecoveryRuntime()
+    orchestrator, _, runs, events = await arrange(tmp_path, runtime_override=runtime)
+
+    results = [await orchestrator.execute("tenant-a", "run-1")]
+    for sequence in (2, 3):
+        run = Run(
+            run_id=f"run-{sequence}",
+            session_id="session-1",
+            tenant_id="tenant-a",
+            status=RunStatus.QUEUED,
+            idempotency_key=f"idem-{sequence}",
+            created_at=NOW,
+            updated_at=NOW,
+            input={"prompt": f"turn {sequence}"},
+        )
+        await runs.add(run)
+        results.append(await orchestrator.execute("tenant-a", run.run_id))
+
+    assert [result.status for result in results] == [
+        RunStatus.SUCCEEDED,
+        RunStatus.SUCCEEDED,
+        RunStatus.SUCCEEDED,
+    ]
+    assert runtime.contexts[0].session.claude_session_id is None
+    assert runtime.contexts[1].session.claude_session_id == "sdk-session-1"
+    assert runtime.contexts[2].session.claude_session_id == "sdk-session-2"
+    recovered_events = await events.list_after("tenant-a", "run-2", 0)
+    assert any(event.type == "runtime.session.recovered" for event in recovered_events)
+
+
+@pytest.mark.asyncio
+async def test_failed_runtime_can_invalidate_thread_before_next_run(tmp_path: Path) -> None:
+    runtime = ThreadInvalidatingRuntime()
+    orchestrator, _, runs, events = await arrange(tmp_path, runtime_override=runtime)
+
+    first = await orchestrator.execute("tenant-a", "run-1")
+    second_run = Run(
+        run_id="run-2",
+        session_id="session-1",
+        tenant_id="tenant-a",
+        status=RunStatus.QUEUED,
+        idempotency_key="idem-2",
+        created_at=NOW,
+        updated_at=NOW,
+        input={"prompt": "retry"},
+    )
+    await runs.add(second_run)
+    second = await orchestrator.execute("tenant-a", "run-2")
+
+    assert first.status is RunStatus.FAILED
+    assert second.status is RunStatus.SUCCEEDED
+    assert runtime.contexts[1].session.resolved_runtime_thread_id is None
+    first_events = await events.list_after("tenant-a", "run-1", 0)
+    assert any(event.type == "runtime.thread.invalidated" for event in first_events)
 
 
 @pytest.mark.asyncio
@@ -1308,6 +1619,24 @@ class BackgroundSubRuntime:
             raise
 
 
+class SlowCancellationCleanupRuntime(BackgroundSubRuntime):
+    def __init__(self) -> None:
+        super().__init__()
+        self.cleanup_started = asyncio.Event()
+        self.cleanup_release = asyncio.Event()
+        self.cleanup_finished = asyncio.Event()
+
+    async def execute(self, context: RuntimeContext) -> AsyncIterator[RuntimeEvent]:
+        try:
+            async for event in super().execute(context):
+                yield event
+        except asyncio.CancelledError:
+            self.cleanup_started.set()
+            await self.cleanup_release.wait()
+            self.cleanup_finished.set()
+            raise
+
+
 class FailureAfterSubRuntime(FakeRuntime):
     async def execute(self, context: RuntimeContext) -> AsyncIterator[RuntimeEvent]:
         del context
@@ -1448,6 +1777,8 @@ async def test_cancellation_interrupts_background_sub_and_emits_child_terminal(
     await sessions.add(session)
     await runs.add(run)
     metrics = ReliabilityMetrics()
+    cancellation_wakeup = InMemoryCancellationWakeup()
+    workspace_store = BlockingPutArtifactStore()
     event_service = EventService(events, InMemoryEventBus(), clock=lambda: NOW, id_generator=ids())
     orchestrator = RunOrchestrator(
         sessions=sessions,
@@ -1456,8 +1787,13 @@ async def test_cancellation_interrupts_background_sub_and_emits_child_terminal(
         runtime=runtime,
         sandbox=LocalSandboxProvider(root=tmp_path),
         clock=lambda: NOW,
-        cancellation_poll_interval_seconds=0.01,
+        cancellation_poll_interval_seconds=1.0,
+        cancellation_wakeup=cancellation_wakeup,
         metrics=metrics,
+        workspaces=WorkspaceService(
+            workspace_store,
+            snapshots=InMemoryWorkspaceSnapshotRepository(),
+        ),
     )
     run_service = RunService(
         sessions,
@@ -1467,6 +1803,7 @@ async def test_cancellation_interrupts_background_sub_and_emits_child_terminal(
         clock=lambda: NOW,
         id_generator=ids(),
         metrics=metrics,
+        cancellation_wakeup=cancellation_wakeup,
     )
 
     execution = asyncio.create_task(orchestrator.execute("tenant-a", "run-1"))
@@ -1474,12 +1811,13 @@ async def test_cancellation_interrupts_background_sub_and_emits_child_terminal(
     cancelling = await run_service.cancel("tenant-a", "run-1")
     assert cancelling.status is RunStatus.CANCELLING
 
-    result = await asyncio.wait_for(execution, timeout=1)
+    result = await asyncio.wait_for(execution, timeout=0.1)
     emitted = await events.list_after("tenant-a", "run-1", 0)
     child_terminal = next(event for event in emitted if event.type == "subagent.failed")
 
     assert result.status is RunStatus.CANCELLED
     assert runtime.cancelled is True
+    assert workspace_store.put_started.is_set() is False
     assert child_terminal.payload["task_id"] == "background-one"
     assert child_terminal.payload["error_code"] == "parent_cancelled"
     assert emitted[-1].type == "run.cancelled"
@@ -1490,6 +1828,71 @@ async def test_cancellation_interrupts_background_sub_and_emits_child_terminal(
     )
     assert convergence == 0
     assert count == 1
+
+
+@pytest.mark.asyncio
+async def test_cancellation_does_not_wait_for_slow_runtime_cleanup(
+    tmp_path: Path,
+) -> None:
+    sessions = InMemorySessionRepository()
+    runs = InMemoryRunRepository()
+    events = InMemoryEventRepository()
+    runtime = SlowCancellationCleanupRuntime()
+    session = Session(
+        session_id="session-1",
+        tenant_id="tenant-a",
+        user_id="user-1",
+        agent_name="echo-agent",
+        agent_version="1.0.0",
+        created_at=NOW,
+    )
+    run = Run(
+        run_id="run-1",
+        session_id=session.session_id,
+        tenant_id=session.tenant_id,
+        status=RunStatus.QUEUED,
+        idempotency_key="cancel-slow-runtime-cleanup",
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    await sessions.add(session)
+    await runs.add(run)
+    cancellation_wakeup = InMemoryCancellationWakeup()
+    event_service = EventService(events, InMemoryEventBus(), clock=lambda: NOW, id_generator=ids())
+    orchestrator = RunOrchestrator(
+        sessions=sessions,
+        runs=runs,
+        events=event_service,
+        runtime=runtime,
+        sandbox=LocalSandboxProvider(root=tmp_path),
+        clock=lambda: NOW,
+        cancellation_poll_interval_seconds=1.0,
+        cancellation_wakeup=cancellation_wakeup,
+    )
+    run_service = RunService(
+        sessions,
+        runs,
+        InMemoryTaskQueue(),
+        event_service,
+        clock=lambda: NOW,
+        id_generator=ids(),
+        cancellation_wakeup=cancellation_wakeup,
+    )
+
+    execution = asyncio.create_task(orchestrator.execute("tenant-a", "run-1"))
+    await runtime.started.wait()
+    await run_service.cancel("tenant-a", "run-1")
+
+    result = await asyncio.wait_for(execution, timeout=0.1)
+    assert result.status is RunStatus.CANCELLED
+    assert runtime.cleanup_started.is_set()
+    assert runtime.cleanup_finished.is_set() is False
+    assert [event.type for event in await events.list_after("tenant-a", "run-1", 0)][
+        -1
+    ] == "run.cancelled"
+
+    runtime.cleanup_release.set()
+    await asyncio.wait_for(runtime.cleanup_finished.wait(), timeout=0.1)
 
 
 @pytest.mark.asyncio
@@ -1526,7 +1929,9 @@ async def test_cancellation_polling_keeps_runtime_context_on_one_producer_task(
 
 
 @pytest.mark.asyncio
-async def test_cancellation_interrupts_sandbox_prepare(tmp_path: Path) -> None:
+async def test_cancellation_interrupts_sandbox_prepare_when_wakeup_is_unavailable(
+    tmp_path: Path,
+) -> None:
     sessions = InMemorySessionRepository()
     runs = InMemoryRunRepository()
     events = InMemoryEventRepository()
@@ -1563,6 +1968,7 @@ async def test_cancellation_interrupts_sandbox_prepare(tmp_path: Path) -> None:
         sandbox=sandbox,
         clock=lambda: NOW,
         cancellation_poll_interval_seconds=0.01,
+        cancellation_wakeup=FailingCancellationWakeup(),
     )
 
     execution = asyncio.create_task(orchestrator.execute("tenant-a", "run-1"))

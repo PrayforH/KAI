@@ -84,7 +84,8 @@ jobs:
           uv run alembic upgrade head
           uv run alembic downgrade -1
           uv run alembic upgrade head
-          # Dedicated DB for storage tests that restart engines mid-test.
+          # Storage integration tests deliberately restart engines; keep their
+          # database independent from the migration/e2e database.
           uv run python - <<'PY'
           import asyncio
 
@@ -92,12 +93,14 @@ jobs:
 
 
           async def main() -> None:
-              conn = await asyncpg.connect("postgresql://harness:harness@localhost:5432/harness")
+              connection = await asyncpg.connect(
+                  "postgresql://harness:harness@localhost:5432/harness"
+              )
               try:
-                  await conn.execute("CREATE DATABASE harness_test")
+                  await connection.execute("CREATE DATABASE harness_test")
               except asyncpg.exceptions.DuplicateDatabaseError:
                   pass
-              await conn.close()
+              await connection.close()
 
 
           asyncio.run(main())
@@ -137,12 +140,24 @@ jobs:
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
           cosign-release: v3.0.6
-      - name: Build the three production images without pushing
+      - name: Verify the immutable kubectl source image
+        env:
+          KUBECTL_IMAGE: cgr.dev/chainguard/kubectl@sha256:1e1aa9dedf0d9008e5a3710b23f2072bc2ab83117146d503c689b5d2592add3d
         run: |
           set -euo pipefail
-          docker build -f deploy/docker/api.Dockerfile -t harness-api:ci .
-          docker build -f deploy/docker/web.Dockerfile -t harness-web:ci .
-          docker build -f deploy/docker/sandbox.Dockerfile -t harness-sandbox:ci .
+          cosign verify \
+            --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
+            --certificate-identity=https://github.com/chainguard-images/images/.github/workflows/release.yaml@refs/heads/main \
+            "$KUBECTL_IMAGE" >/dev/null
+      - name: Build the three production images without pushing
+        env:
+          KUBECTL_IMAGE: cgr.dev/chainguard/kubectl@sha256:1e1aa9dedf0d9008e5a3710b23f2072bc2ab83117146d503c689b5d2592add3d
+        run: |
+          set -euo pipefail
+          docker build --pull --build-arg KUBECTL_IMAGE="$KUBECTL_IMAGE" \
+            -f deploy/docker/api.Dockerfile -t harness-api:ci .
+          docker build --pull -f deploy/docker/web.Dockerfile -t harness-web:ci .
+          docker build --pull -f deploy/docker/sandbox.Dockerfile -t harness-sandbox:ci .
       - name: Verify the scanner and block HIGH/CRITICAL vulnerabilities
         env:
           TRIVY_IMAGE: ghcr.io/aquasecurity/trivy:0.69.2
@@ -153,8 +168,11 @@ jobs:
             --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
             "$TRIVY_IMAGE" >/dev/null
           for image in harness-api:ci harness-web:ci harness-sandbox:ci; do
-            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            docker run --rm \
+              -v /var/run/docker.sock:/var/run/docker.sock \
+              -v "$PWD:/workspace:ro" \
               "$TRIVY_IMAGE" image --scanners vuln --ignore-unfixed \
+              --vex /workspace/security/vex/cryptography-49.0.0.openvex.json \
               --severity HIGH,CRITICAL --exit-code 1 "$image"
           done
           docker run --rm -v "$PWD:/workspace" -w /workspace \

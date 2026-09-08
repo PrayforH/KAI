@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { activityOverview, type ActivityItem } from "../lib/activity-schema";
-import { useRunActivity } from "../lib/activity-store";
-import { isHiddenByCollapsedDetails } from "../lib/focus-target";
+import { useRef } from "react";
+import { createPortal } from "react-dom";
+import {
+  activityOverview,
+  type ActivityItem,
+  type RunActivity,
+} from "../lib/activity-schema";
+import { useDialogFocus } from "../lib/use-dialog-focus";
 
 const statusLabels: Record<string, string> = {
   queued: "排队中",
@@ -14,16 +18,6 @@ const statusLabels: Record<string, string> = {
   cancelled: "已停止",
   rejected: "已拒绝",
   timed_out: "已超时",
-};
-
-const kindLabels: Record<string, string> = {
-  run: "运行",
-  analysis: "分析",
-  tool: "工具",
-  subagent: "子任务",
-  artifact: "文件",
-  result: "完成",
-  error: "错误",
 };
 
 const noisyEventTypes = new Set([
@@ -58,12 +52,6 @@ interface TraceEntry {
 function traceDuration(start: string, end: string) {
   const duration = Date.parse(end) - Date.parse(start);
   return Number.isFinite(duration) && duration >= 0 ? duration : undefined;
-}
-
-function traceDurationLabel(durationMs?: number) {
-  if (durationMs === undefined) return undefined;
-  if (durationMs < 1_000) return `${durationMs}ms`;
-  return `${(durationMs / 1_000).toFixed(durationMs < 10_000 ? 1 : 0)}s`;
 }
 
 function traceToolTitle(name: string, argumentsValue: Record<string, unknown>) {
@@ -214,20 +202,6 @@ export function traceActivityEntries(items: readonly ActivityItem[]): TraceEntry
   return entries.sort((left, right) => left.sequence - right.sequence);
 }
 
-function traceStatusLabel(status: string) {
-  if (["succeeded", "completed"].includes(status)) return "成功";
-  if (["failed", "rejected", "timed_out"].includes(status)) return "失败";
-  if (status === "waiting") return "待审批";
-  if (status === "cancelled") return "已停止";
-  return "运行中";
-}
-
-function traceBytes(value?: number) {
-  if (value === undefined) return undefined;
-  if (value < 1_024) return `${value} B`;
-  return `${(value / 1_024).toFixed(1)} KB`;
-}
-
 export function notableActivityItems(items: readonly ActivityItem[]) {
   return items
     .filter((item) => {
@@ -241,101 +215,41 @@ export function notableActivityItems(items: readonly ActivityItem[]) {
     .slice(-12);
 }
 
-function useNarrowRunPanel() {
-  const [isModal, setIsModal] = useState(false);
-
-  useEffect(() => {
-    const query = window.matchMedia("(max-width: 980px)");
-    const update = () => setIsModal(query.matches);
-    update();
-    query.addEventListener("change", update);
-    return () => query.removeEventListener("change", update);
-  }, []);
-
-  return isModal;
-}
-
 export function DeveloperDrawer({
   threadId,
+  activity,
   onClose,
 }: {
   threadId: string;
+  activity: RunActivity;
   onClose?: () => void;
 }) {
-  const activity = useRunActivity();
   const overview = activity ? activityOverview(activity) : undefined;
-  const isModal = useNarrowRunPanel();
-  const traceEntries = activity ? traceActivityEntries(activity.items) : [];
   const panelRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
-  useEffect(() => {
-    if (!isModal) return;
-    const panel = panelRef.current;
-    const previouslyFocused =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const backgroundState = Array.from(
-      document.querySelectorAll<HTMLElement>(".console-header, .chat-stage"),
-      (background) => [background, background.inert] as const,
-    );
-    for (const [background] of backgroundState) background.inert = true;
-    closeButtonRef.current?.focus();
+  useDialogFocus({
+    open: true,
+    panelRef,
+    initialFocusRef: closeButtonRef,
+    onEscape: () => onClose?.(),
+  });
 
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onClose?.();
-        return;
-      }
-      if (event.key !== "Tab" || !panel) return;
-      const focusable = Array.from(
-        panel.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), summary, [tabindex]:not([tabindex="-1"])',
-        ),
-      ).filter((element) => {
-        if (
-          element.hidden ||
-          element.inert ||
-          element.closest('[hidden], [inert], [aria-hidden="true"]') ||
-          isHiddenByCollapsedDetails(element)
-        ) return false;
-        const style = window.getComputedStyle(element);
-        return (
-          style.display !== "none" &&
-          style.visibility !== "hidden" &&
-          element.getClientRects().length > 0
-        );
-      });
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      const active = document.activeElement;
-      if (event.shiftKey && (active === first || !panel.contains(active))) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && (active === last || !panel.contains(active))) {
-        event.preventDefault();
-        first.focus();
-      }
-    }
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-      for (const [background, wasInert] of backgroundState) {
-        background.inert = wasInert;
-      }
-      previouslyFocused?.focus();
-    };
-  }, [isModal, onClose]);
-
-  return (
+  return createPortal(
+    <div
+      className="run-details-backdrop"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose?.();
+      }}
+    >
     <aside
       ref={panelRef}
+      id="run-details-panel"
       className="developer-drawer"
       aria-label="运行详情"
-      role={isModal ? "dialog" : undefined}
-      aria-modal={isModal || undefined}
+      role="dialog"
+      aria-modal="true"
     >
       <header className="inspector-header">
         <div className="inspector-title">
@@ -396,87 +310,6 @@ export function DeveloperDrawer({
             )}
           </section>
 
-          <details className="inspector-activity inspector-trace" open>
-            <summary>
-              <span>Trace · {traceEntries.length} 个步骤</span>
-              <small>{activity.items.length} 条原始事件</small>
-              <span className="inspector-disclosure-chevron" aria-hidden="true" />
-            </summary>
-            <div className="trace-ledger" aria-label="完整执行 Trace">
-              {traceEntries.map((entry, index) => (
-                <details
-                  className={`trace-step trace-kind-${entry.kind} trace-status-${entry.status}`}
-                  key={entry.id}
-                  open={entry.status === "failed"}
-                >
-                  <summary>
-                    <span className="trace-index" aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
-                    <span className="trace-step-copy">
-                      <span className="trace-step-title">{entry.title}</span>
-                      <span className="trace-step-meta">
-                        {kindLabels[entry.kind] ?? "步骤"}
-                        {entry.summary ? ` · ${entry.summary}` : ""}
-                      </span>
-                    </span>
-                    <span className="trace-step-facts">
-                      {traceDurationLabel(entry.durationMs) && <time>{traceDurationLabel(entry.durationMs)}</time>}
-                      <span>{traceStatusLabel(entry.status)}</span>
-                    </span>
-                    <span className="trace-chevron" aria-hidden="true" />
-                  </summary>
-                  <div className="trace-step-detail">
-                    <div className="trace-step-clock">
-                      <span>事件 #{entry.sequence}</span>
-                      <time>{new Date(entry.timestamp).toLocaleTimeString("zh-CN", { hour12: false })}</time>
-                    </div>
-                    {entry.input && (
-                      <section>
-                        <h3>输入</h3>
-                        <pre>{entry.input}</pre>
-                      </section>
-                    )}
-                    {entry.output && (
-                      <section>
-                        <h3>返回</h3>
-                        <pre>{entry.output}</pre>
-                      </section>
-                    )}
-                    {!entry.output && entry.summary && !entry.artifact && (
-                      <section>
-                        <h3>结果</h3>
-                        <p>{entry.summary}</p>
-                      </section>
-                    )}
-                    {entry.artifact && (
-                      <section className="trace-artifact">
-                        <h3>可访问产物</h3>
-                        <div>
-                          <span>
-                            <strong>{entry.artifact.name}</strong>
-                            <small>
-                              {[entry.artifact.mediaType, traceBytes(entry.artifact.sizeBytes)]
-                                .filter(Boolean)
-                                .join(" · ")}
-                            </small>
-                          </span>
-                          <a
-                            href={`/api/harness/artifacts/${encodeURIComponent(entry.artifact.id)}?preview=1`}
-                            target="_blank"
-                            rel="noreferrer"
-                          >预览</a>
-                          <a
-                            href={`/api/harness/artifacts/${encodeURIComponent(entry.artifact.id)}`}
-                            download={entry.artifact.name}
-                          >下载</a>
-                        </div>
-                      </section>
-                    )}
-                  </div>
-                </details>
-              ))}
-            </div>
-          </details>
-
           <details className="run-identifiers">
             <summary>运行标识</summary>
             <dl>
@@ -492,5 +325,7 @@ export function DeveloperDrawer({
         </div>
       )}
     </aside>
+    </div>,
+    document.body,
   );
 }

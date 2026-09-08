@@ -47,6 +47,8 @@ def read_only_policy_rules() -> list[PolicyRule]:
             tool="MCPSearch",
             decision=PolicyDecision.ALLOW,
         ),
+        PolicyRule(name="web-search", tool="WebSearch", decision=PolicyDecision.ALLOW),
+        PolicyRule(name="web-fetch", tool="WebFetch", decision=PolicyDecision.ALLOW),
         PolicyRule(name="read", tool="Read", decision=PolicyDecision.ALLOW),
         PolicyRule(name="glob", tool="Glob", decision=PolicyDecision.ALLOW),
         PolicyRule(name="grep", tool="Grep", decision=PolicyDecision.ALLOW),

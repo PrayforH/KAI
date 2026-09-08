@@ -1,0 +1,302 @@
+/* AXIS product layer --------------------------------------------------------
+   The functional architecture stays compatible. This layer aligns the
+   light workspace around one warm neutral family, one green product accent,
+   quiet separators and flat navigation instead of stacked dashboard cards. */
+
+html[data-color-mode="light"] {
+  --codex-surface: #fbfcfb;
+  --codex-surface-deep: #eef2ef;
+  --codex-surface-sidebar: #f8faf8;
+  --codex-surface-subtle: #f2f5f2;
+  --codex-surface-raised: #ffffff;
+  --codex-surface-hover: #edf2ee;
+  --codex-surface-active: #e5eee7;
+  --codex-ink: #17211b;
+  --codex-ink-soft: #35423a;
+  --codex-muted: #69756d;
+  --codex-faint: #929c95;
+  --codex-line: #e4e9e5;
+  --codex-line-strong: #d2dad4;
+  --codex-accent: #16b364;
+  --codex-accent-hover: #0f9954;
+  --codex-accent-soft: rgb(22 179 100 / 12%);
+  --codex-accent-faint: rgb(22 179 100 / 6%);
+  --codex-success: #16b364;
+  --codex-success-soft: rgb(22 179 100 / 11%);
+  --codex-skill: #6e618a;
+  --codex-skill-soft: rgb(110 97 138 / 10%);
+  --codex-warning: #9b6a1c;
+  --codex-warning-soft: rgb(155 106 28 / 10%);
+  --codex-danger: #b4433b;
+  --codex-danger-soft: rgb(180 67 59 / 9%);
+  --codex-shadow: 0 20px 58px rgb(36 60 45 / 12%);
+  --codex-shadow-soft: 0 8px 26px rgb(36 60 45 / 7%);
+  --codex-header-bg: rgb(251 252 251 / 92%);
+  --codex-panel-solid: #ffffff;
+  --codex-field: #ffffff;
+  --codex-inset: #f4f7f4;
+  --codex-thread-bg: #ffffff;
+  --codex-thread-footer: rgb(255 255 255 / 97%);
+  --codex-code-inline: #edf7f0;
+  --codex-on-accent: #ffffff;
+  --codex-glint: rgb(255 255 255 / 78%);
+}
+
+html[data-color-mode="light"] body {
+  background: var(--codex-surface);
+}
+
+html[data-color-mode="light"] body::before {
+  display: none;
+}
+
+html[data-color-mode="light"] ::selection {
+  color: var(--codex-ink);
+  background: rgb(22 179 100 / 22%);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1 .task-sidebar,
+html[data-color-mode="light"] body.codex-theme-v1 .task-sidebar.is-collapsed {
+  border-right-color: var(--codex-line);
+  background: var(--codex-surface-sidebar);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1 .task-sidebar-brand {
+  min-height: 64px;
+  padding: 11px 12px;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1 .task-sidebar-brand-mark {
+  width: var(--app-sidebar-brand-mark-size, 36px);
+  height: var(--app-sidebar-brand-mark-size, 36px);
+  border-color: #28332d;
+  border-radius: 10px;
+  color: #ffffff;
+  background: #202823;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1 .task-sidebar-brand-copy strong {
+  font-size: 15px;
+  font-weight: 680;
+  letter-spacing: -.025em;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1 .task-sidebar-primary {
+  padding: 5px 8px 2px;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1 .task-sidebar-primary button {
+  min-height: 42px;
+  padding-inline: 12px;
+  color: var(--codex-accent);
+  background: color-mix(in srgb, var(--codex-accent) 7%, #ffffff);
+  box-shadow: none;
+  font-size: 12.5px;
+  font-weight: 610;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1 .task-sidebar-primary button:hover {
+  background: color-mix(in srgb, var(--codex-accent) 11%, #ffffff);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1 .task-list-toolbar {
+  padding-top: 8px;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1 .task-list-toolbar .task-list-heading {
+  min-height: 30px;
+  padding-inline: 14px;
+  color: var(--codex-faint);
+  font-size: 10.5px;
+  letter-spacing: .01em;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1 .task-list-search {
+  height: 38px;
+  margin-inline: 8px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--codex-surface-subtle);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1 .task-list-search:focus-within {
+  background: var(--codex-surface-raised);
+  box-shadow: 0 0 0 2px var(--codex-accent-soft);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1 .task-list {
+  padding: 6px 7px 18px;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1 .task-list-row + .task-list-row {
+  margin-top: 2px;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1 .task-list-item {
+  min-height: 60px;
+  padding: 9px 34px 9px 11px;
+  border-radius: 9px;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1 .task-list-item:hover {
+  background: var(--codex-surface-hover);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1 .task-list-item.is-active {
+  color: var(--codex-ink);
+  background: color-mix(in srgb, var(--codex-accent) 6%, #ffffff);
+  box-shadow: none;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1 .task-list-title {
+  font-size: 12.5px;
+  font-weight: 590;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1 .task-sidebar-account {
+  border-top: 1px solid color-mix(in srgb, var(--codex-line) 72%, transparent);
+  background: var(--codex-surface-sidebar);
+}
+
+html[data-color-mode="light"] .account-trigger-avatar {
+  border-color: rgb(22 179 100 / 35%);
+  background: var(--codex-accent);
+  box-shadow: 0 0 0 3px var(--codex-accent-faint);
+}
+
+html[data-color-mode="light"] .account-popover {
+  border-color: var(--codex-line);
+  background: rgb(255 255 255 / 98%);
+  box-shadow: 0 20px 52px rgb(36 60 45 / 14%);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1 .console-header {
+  border-bottom-color: var(--codex-line);
+  background: var(--codex-header-bg);
+  box-shadow: 0 1px 0 rgb(36 60 45 / 2%);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1 .chat-stage,
+html[data-color-mode="light"] body.codex-theme-v1 .aui-thread-root,
+html[data-color-mode="light"] body.codex-theme-v1 .aui-thread-viewport {
+  background: var(--codex-thread-bg);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1 .aui-user-message-content {
+  border-color: transparent;
+  color: var(--codex-ink-soft);
+  background: color-mix(in srgb, var(--codex-accent) 6%, #ffffff);
+  box-shadow: none;
+}
+
+html[data-color-mode="light"] .harness-composer-shell .aui-composer-root,
+html[data-color-mode="light"] .harness-composer-shell[data-run-locked="true"] .aui-composer-root {
+  border-color: var(--codex-line);
+  background: #ffffff;
+  box-shadow: 0 12px 34px rgb(36 60 45 / 9%), 0 1px 2px rgb(36 60 45 / 4%);
+}
+
+html[data-color-mode="light"] .harness-composer-shell .aui-composer-send {
+  color: #ffffff;
+  background: var(--codex-accent);
+}
+
+html[data-color-mode="light"] .harness-composer-shell .aui-composer-cancel {
+  color: #ffffff;
+  background: var(--codex-ink);
+}
+
+html[data-color-mode="light"] .harness-composer-shell .aui-composer-cancel:hover {
+  color: #ffffff;
+  background: var(--codex-danger);
+}
+
+html[data-color-mode="light"] main#main-content:has(> [data-studio-sidebar]) {
+  background: var(--codex-surface);
+}
+
+html[data-color-mode="light"] [data-studio-sidebar] {
+  border-right-color: var(--codex-line);
+  background: var(--codex-surface-sidebar);
+}
+
+html[data-color-mode="light"] [data-studio-sidebar] > footer {
+  border-top: 1px solid color-mix(in srgb, var(--codex-line) 72%, transparent);
+  background: var(--codex-surface-sidebar);
+}
+
+html[data-color-mode="light"] .settings-shell {
+  background: var(--codex-surface);
+}
+
+html[data-color-mode="light"] .settings-header {
+  border-bottom-color: var(--codex-line);
+  background: var(--codex-header-bg);
+  box-shadow: 0 1px 0 rgb(36 60 45 / 2%);
+}
+
+html[data-color-mode="light"] .settings-dialog {
+  border-color: var(--codex-line);
+  background: #ffffff;
+  box-shadow: 0 30px 90px rgb(36 60 45 / 14%);
+}
+
+html[data-color-mode="light"] .settings-layout {
+  grid-template-columns: 220px minmax(0, 1fr);
+}
+
+html[data-color-mode="light"] .settings-index a {
+  min-height: 38px;
+  border-left: 0;
+  border-radius: 8px;
+  color: var(--codex-muted);
+}
+
+html[data-color-mode="light"] .settings-index a:hover,
+html[data-color-mode="light"] .settings-index a:focus-visible,
+html[data-color-mode="light"] .settings-index a[aria-current="page"] {
+  border-color: var(--codex-line);
+  color: var(--codex-accent);
+  background: #ffffff;
+}
+
+html[data-color-mode="light"] .settings-section {
+  border-top-color: var(--codex-line);
+}
+
+html[data-color-mode="light"] .settings-form {
+  border-color: var(--codex-line);
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgb(36 60 45 / 5%);
+}
+
+html[data-color-mode="light"] .settings-form input {
+  border-color: var(--codex-line-strong);
+  background: #ffffff;
+}
+
+html[data-color-mode="light"] .settings-form-action button {
+  color: #ffffff;
+}
+
+html[data-color-mode="light"] .settings-facts > span {
+  border-color: var(--codex-accent);
+  background: var(--codex-accent-faint);
+}
+
+html[data-color-mode="light"] .settings-facts strong,
+html[data-color-mode="light"] .settings-facts code {
+  color: var(--codex-ink-soft);
+}
+
+@media (max-width: 760px) {
+  html[data-color-mode="light"] .settings-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  html[data-color-mode="light"] .settings-index a {
+    min-height: 36px;
+    border-bottom: 0;
+  }
+}

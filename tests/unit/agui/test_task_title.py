@@ -1,4 +1,5 @@
 import json
+from typing import cast
 
 import httpx
 import pytest
@@ -7,8 +8,14 @@ from pydantic import SecretStr
 from harness.agui.task_title import (
     MAX_TASK_TITLE_LENGTH,
     AnthropicCompatibleTaskTitleGenerator,
+    ControlPlaneTaskTitleGenerator,
     summarize_task_title,
     summarize_task_title_from_prompts,
+)
+from harness.studio.model_configuration import (
+    ModelConfiguration,
+    ModelConfigurationList,
+    ModelConfigurationService,
 )
 
 
@@ -92,7 +99,11 @@ async def test_model_generator_requests_a_semantic_title_and_cleans_response() -
         http_client=client,
     )
 
-    title = await generator.generate(["不写入了", "先单次生成可下载报告"])
+    title = await generator.generate(
+        "tenant-a",
+        "user-a",
+        ["不写入了", "先单次生成可下载报告"],
+    )
     await client.aclose()
 
     assert title == "生成可下载报告"
@@ -100,3 +111,70 @@ async def test_model_generator_requests_a_semantic_title_and_cleans_response() -
     assert requests[0].headers["authorization"] == "Bearer secret-token"
     assert "最终想完成的目标或产物".encode() in requests[0].content
     assert json.loads(requests[0].content)["thinking"] == {"type": "disabled"}
+
+
+@pytest.mark.asyncio
+async def test_control_plane_generator_prefers_a_configured_lightweight_route() -> None:
+    calls: list[tuple[str, str]] = []
+
+    class FakeModels:
+        async def list(self, tenant_id: str) -> ModelConfigurationList:
+            assert tenant_id == "tenant-a"
+            return ModelConfigurationList(
+                revision=1,
+                models=(
+                    ModelConfiguration(
+                        routeId="large-model",
+                        label="Large",
+                        modelType="chat",
+                        provider="example",
+                        model="large-model",
+                        baseUrl="https://models.example/v1",
+                        apiFormat="openai_compatible",
+                        authScheme="bearer",
+                        capabilities=("streaming", "tool_use"),
+                        enabled=True,
+                        credentialConfigured=True,
+                        deletable=True,
+                        version=1,
+                    ),
+                    ModelConfiguration(
+                        routeId="deepseek-flash",
+                        label="Flash",
+                        modelType="chat",
+                        provider="example",
+                        model="deepseek-v4-flash",
+                        baseUrl="https://models.example/v1",
+                        apiFormat="openai_compatible",
+                        authScheme="bearer",
+                        capabilities=("streaming", "tool_use"),
+                        enabled=True,
+                        credentialConfigured=True,
+                        deletable=True,
+                        version=1,
+                    ),
+                ),
+                agentModelBindings={},
+            )
+
+        async def complete_text(
+            self,
+            tenant_id: str,
+            route_id: str,
+            **kwargs: object,
+        ) -> str:
+            calls.append((tenant_id, route_id))
+            assert "最终想完成的目标或产物" in cast(str, kwargs["system_prompt"])
+            return "标题：生成视频宣传片"
+
+    generator = ControlPlaneTaskTitleGenerator(
+        cast(ModelConfigurationService, FakeModels())
+    )
+    title = await generator.generate(
+        "tenant-a",
+        "user-a",
+        ["先做图片", "改为生成视频宣传片"],
+    )
+
+    assert title == "生成视频宣传片"
+    assert calls == [("tenant-a", "deepseek-flash")]

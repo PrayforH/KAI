@@ -5,11 +5,16 @@ import yaml
 
 ROOT = Path(__file__).parents[3]
 COMPOSE_PATH = ROOT / "deploy/docker-compose/compose.yaml"
+CODEX_RUNTIME_COMPOSE_PATH = ROOT / "deploy/docker-compose/compose.codex-runtime.yaml"
 COLLECTOR_PATH = ROOT / "deploy/otel-collector/collector.yaml"
 
 
 def compose() -> dict[str, Any]:
     return cast(dict[str, Any], yaml.safe_load(COMPOSE_PATH.read_text()))
+
+
+def codex_runtime_compose() -> dict[str, Any]:
+    return cast(dict[str, Any], yaml.safe_load(CODEX_RUNTIME_COMPOSE_PATH.read_text()))
 
 
 def test_compose_contains_deployable_application_and_infrastructure() -> None:
@@ -28,7 +33,9 @@ def test_compose_contains_deployable_application_and_infrastructure() -> None:
         "otel-collector",
     } <= services.keys()
     assert services["api"]["environment"]["HARNESS_ENVIRONMENT"] == "production"
-    assert services["api"]["environment"]["HARNESS_RUNTIME"] == "claude-sdk"
+    assert services["api"]["environment"]["HARNESS_RUNTIME"] == (
+        "${HARNESS_RUNTIME:-claude-sdk}"
+    )
     assert "build" in services["api"]
     assert services["api"]["image"] == (
         "${HARNESS_API_IMAGE_REPOSITORY:-claude-agent-harness-api}:"
@@ -42,7 +49,7 @@ def test_compose_contains_deployable_application_and_infrastructure() -> None:
         assert "build" not in services[name]
         assert services[name]["image"] == services["api"]["image"]
     assert services["worker"]["environment"]["HARNESS_ENVIRONMENT"] == "production"
-    assert "HARNESS_NEW_API_KEY" in services["worker"]["environment"]
+    assert "HARNESS_NEW_API_KEY" not in services["worker"]["environment"]
     assert "HARNESS_DAYTONA_API_KEY" in services["worker"]["environment"]
     assert "HARNESS_MCP_SERVER_SECRETS_JSON" in services["worker"]["environment"]
     assert services["worker"]["environment"]["HARNESS_PREFLIGHT_TIMEOUT_SECONDS"] == (
@@ -52,10 +59,9 @@ def test_compose_contains_deployable_application_and_infrastructure() -> None:
         assert services[name]["environment"]["HARNESS_QUOTA_ENFORCEMENT_ENABLED"] == (
             "${HARNESS_QUOTA_ENFORCEMENT_ENABLED:-false}"
         )
-    # The control plane uses the compatible model route for semantic task titles.
-    # Sandbox and business MCP credentials remain worker-only. The control plane
-    # receives only an optional outbound proxy URL for manual MCP discovery.
-    assert "HARNESS_NEW_API_KEY" in services["api"]["environment"]
+    # Model endpoints and credentials are stored by model management, never injected
+    # into API, Worker, or Web container environments.
+    assert "HARNESS_NEW_API_KEY" not in services["api"]["environment"]
     assert "HARNESS_NEW_API_KEY" not in services["web"]["environment"]
     assert "HARNESS_DAYTONA_API_KEY" not in services["api"]["environment"]
     assert "HARNESS_MCP_SERVER_SECRETS_JSON" not in services["api"]["environment"]
@@ -74,7 +80,6 @@ def test_compose_contains_deployable_application_and_infrastructure() -> None:
     assert "public-opinion-agent/agent.yaml" not in seed_manifests
     studio_manifests = services["seed"]["environment"]["HARNESS_SEED_STUDIO_MANIFESTS"]
     for manifest in (
-        "public-opinion-agent/agent.yaml",
         "similar-case-analysis-agent/agent.yaml",
         "govdoc-writer-agent/agent.yaml",
         "archive-assistant-agent/agent.yaml",
@@ -84,6 +89,7 @@ def test_compose_contains_deployable_application_and_infrastructure() -> None:
     optional_studio_manifests = services["seed"]["environment"][
         "HARNESS_SEED_OPTIONAL_STUDIO_MANIFESTS"
     ]
+    assert "public-opinion-agent/agent.yaml" in optional_studio_manifests
     assert "networked-knowledge-research-agent/agent.yaml" in optional_studio_manifests
     assert services["otel-collector"]["profiles"] == ["observability"]
     assert services["postgres"]["image"] == "postgres:18.4-bookworm"
@@ -94,6 +100,28 @@ def test_compose_contains_deployable_application_and_infrastructure() -> None:
     assert "postgres18-cluster-data" in compose()["volumes"]
     assert "redis-data" in compose()["volumes"]
     assert "minio-data" in compose()["volumes"]
+
+
+def test_codex_runtime_overlay_is_explicit_and_scoped_to_python_services() -> None:
+    overlay = codex_runtime_compose()
+    services = cast(dict[str, Any], overlay["services"])
+
+    assert set(services) == {"api", "worker", "quality-sync"}
+    for service in services.values():
+        environment = cast(dict[str, str], service["environment"])
+        assert environment["HARNESS_RUNTIME"] == "multi"
+        assert environment["HARNESS_CODEX_CLI_PATH"] == (
+            "${HARNESS_CODEX_CLI_PATH:-/usr/local/bin/codex}"
+        )
+        assert environment["HARNESS_CODEX_APPROVAL_POLICY"] == (
+            "${HARNESS_CODEX_APPROVAL_POLICY:-untrusted}"
+        )
+        assert environment["HARNESS_CODEX_NETWORK_ACCESS"] == (
+            "${HARNESS_CODEX_NETWORK_ACCESS:-false}"
+        )
+    assert services["worker"]["security_opt"] == ["seccomp=unconfined"]
+    assert "security_opt" not in services["api"]
+    assert "security_opt" not in services["quality-sync"]
 
 
 def test_images_run_as_non_root_and_expose_health_checks() -> None:
@@ -110,8 +138,34 @@ def test_images_run_as_non_root_and_expose_health_checks() -> None:
     assert "--no-emit-project" in api
     assert '.venv/bin/pip install --no-cache-dir' in api
     assert "uv sync" not in api
+    assert "/usr/local/bin/codex-linux-sandbox" in api
+    assert "codex-linux-sandbox --help" in api
     assert "registry.npmmirror.com" in web
     assert 'output: "standalone"' in (ROOT / "web/harness-console/next.config.ts").read_text()
+
+
+def test_harbor_gray_build_reads_cache_but_pushes_one_immutable_tag() -> None:
+    script = (ROOT / "scripts/build_harbor_174.sh").read_text()
+
+    assert "docker buildx build" in script
+    assert "--push" in script
+    assert "--provenance=mode=max" in script
+    assert "--sbom=true" in script
+    assert "--provenance=false" in script
+    assert "--sbom=false" in script
+    assert '--cache-from "type=registry,ref=${cache_ref}"' in script
+    assert '--tag "${cache_ref}"' not in script
+    assert script.count('--tag "${image}"') == 1
+    assert '--cache-to "type=inline"' in script
+    assert "HARNESS_ALLOW_DIRTY_BUILD" in script
+    assert "status --porcelain" in script
+    assert '--build-arg "KUBECTL_IMAGE=${KUBECTL_IMAGE}"' in script
+
+
+def test_docker_context_excludes_macos_appledouble_metadata() -> None:
+    dockerignore = (ROOT / ".dockerignore").read_text()
+
+    assert "**/._*" in dockerignore
 
 
 def test_background_services_override_the_api_http_healthcheck() -> None:
@@ -135,8 +189,12 @@ def test_runtime_entrypoints_and_environment_template_exist() -> None:
 
     assert "uvicorn harness.api.app:app" in api_entrypoint.read_text()
     assert "harness-worker" in worker_entrypoint.read_text()
+    assert "--unshare-user --uid 0 --gid 0 --ro-bind / / /bin/true" in (
+        worker_entrypoint.read_text()
+    )
     values = environment.read_text()
-    assert "HARNESS_NEW_API_BASE_URL=" in values
+    assert "HARNESS_NEW_API_BASE_URL=" not in values
+    assert "Settings → Model Management" in values
     assert "HARNESS_API_IMAGE_REPOSITORY=claude-agent-harness-api" in values
     assert "HARNESS_WEB_IMAGE_REPOSITORY=claude-agent-harness-web" in values
     assert "HARNESS_IMAGE_TAG=local" in values

@@ -1,4 +1,5 @@
 import { downloadArtifact } from "../../../../../lib/harness-server";
+import { inlineContentDisposition } from "../../../../../lib/content-disposition";
 
 const FORWARDED_HEADERS = [
   "Content-Type",
@@ -20,7 +21,10 @@ export async function GET(
   const setCookie = upstream.headers.get("set-cookie");
   if (setCookie) headers.set("Set-Cookie", setCookie);
   if (new URL(request.url).searchParams.get("preview") === "1") {
-    headers.set("Content-Disposition", "inline");
+    headers.set(
+      "Content-Disposition",
+      inlineContentDisposition(headers.get("Content-Disposition")),
+    );
   }
   return new Response(upstream.body, { status: upstream.status, headers });
 }

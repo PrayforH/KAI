@@ -6,6 +6,7 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from harness.adapters.memory import (
+    InMemoryCancellationWakeup,
     InMemoryEventBus,
     InMemoryEventRepository,
     InMemoryRunRepository,
@@ -27,6 +28,21 @@ from harness.observability.provider import build_observability
 NOW = datetime(2026, 7, 11, tzinfo=UTC)
 
 
+class FailingCancellationWakeup:
+    async def publish(self, tenant_id: str, run_id: str, fencing_token: int) -> None:
+        raise ConnectionError("redis unavailable")
+
+    async def wait(
+        self,
+        tenant_id: str,
+        run_id: str,
+        after_fencing_token: int,
+        *,
+        timeout_seconds: float,
+    ) -> bool:
+        raise ConnectionError("redis unavailable")
+
+
 def id_generator() -> Callable[[str], str]:
     counters: dict[str, int] = {}
 
@@ -37,7 +53,7 @@ def id_generator() -> Callable[[str], str]:
     return generate
 
 
-def test_environment_snapshot_clamps_agent_run_budget() -> None:
+def test_environment_snapshot_cannot_reintroduce_operational_limits() -> None:
     policy = EnvironmentResourcePolicy(
         quota=EnvironmentQuotaBoundary(
             maxRunBudgetUsd=0.4,
@@ -75,8 +91,8 @@ def test_environment_snapshot_clamps_agent_run_budget() -> None:
     )
 
     assert result == RunQuotaPlan(
-        max_budget_usd=0.4,
-        max_model_tokens=80_000,
+        max_budget_usd=None,
+        max_model_tokens=None,
         ttl_seconds=1_200,
     )
 
@@ -277,9 +293,7 @@ async def test_create_run_annotates_the_api_trace_with_session_identity() -> Non
     assert span.attributes["langfuse.trace.metadata.run_id"] == run.run_id
     assert span.attributes["session.id"] == "session-1"
     assert span.attributes["run.id"] == run.run_id
-    assert span.attributes["langfuse.trace.input"] == (
-        "用户问题 token=[REDACTED]"
-    )
+    assert span.attributes["langfuse.trace.input"] == ("用户问题 token=[REDACTED]")
     assert "traceparent" in run.trace_context
 
 
@@ -308,6 +322,7 @@ async def test_cancel_queued_run_reaches_cancelled_without_worker_owner() -> Non
         EventService(events, bus, clock=lambda: NOW, id_generator=ids),
         clock=lambda: NOW,
         id_generator=ids,
+        cancellation_wakeup=FailingCancellationWakeup(),
     )
     run = await service.create("tenant-a", "session-1", "idem-1")
 
@@ -330,6 +345,7 @@ async def test_cancel_active_run_waits_for_worker_terminal_and_is_idempotent() -
     runs = InMemoryRunRepository()
     queue = InMemoryTaskQueue()
     events = InMemoryEventRepository()
+    cancellation_wakeup = InMemoryCancellationWakeup()
     ids = id_generator()
     await sessions.add(
         Session(
@@ -348,6 +364,7 @@ async def test_cancel_active_run_waits_for_worker_terminal_and_is_idempotent() -
         EventService(events, InMemoryEventBus(), clock=lambda: NOW, id_generator=ids),
         clock=lambda: NOW,
         id_generator=ids,
+        cancellation_wakeup=cancellation_wakeup,
     )
     queued = await service.create("tenant-a", "session-1", "idem-1")
     running = queued.model_copy(
@@ -362,6 +379,12 @@ async def test_cancel_active_run_waits_for_worker_terminal_and_is_idempotent() -
 
     assert cancelling.status is RunStatus.CANCELLING
     assert await runs.get("tenant-a", queued.run_id) == cancelling
+    assert await cancellation_wakeup.wait(
+        "tenant-a",
+        queued.run_id,
+        running.fencing_token,
+        timeout_seconds=0.01,
+    )
     assert await service.cancel("tenant-a", queued.run_id) == cancelling
     stored_events = await events.list_after("tenant-a", queued.run_id, 0)
     assert [(item.sequence, item.type) for item in stored_events] == [

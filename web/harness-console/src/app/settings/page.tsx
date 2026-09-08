@@ -1,9 +1,22 @@
 "use client";
 
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { AuthProvider, useAuth } from "../../components/auth-provider";
+import { WebConfiguration } from "../../components/web-configuration";
+import { MemoryBank } from "../../components/memory-bank/memory-bank";
+import { DataLifecycleControlPlane } from "../../components/agent-studio/data-lifecycle-control-plane";
+import { ApiIntegration } from "../../components/api-integration";
+import { ModelManagement } from "../../components/model-management";
+import {
+  PRODUCT_NAME,
+} from "../../components/product-brand";
+import {
+  ProductIcon,
+  type ProductIconName,
+} from "../../components/product-icon";
+import { SecretInput } from "../../components/secret-input";
 import { ThemeSelector } from "../../components/theme-toggle";
-import { WorkspaceMembers } from "../../components/workspace-members";
+import { useFollowUpPreference, useInternalAgentsPreference } from "../../lib/interface-preferences";
 import {
   loadTasks,
   setTaskArchived,
@@ -18,6 +31,98 @@ const ROLE_LABELS = {
 } as const;
 
 type Message = { kind: "success" | "error"; text: string } | null;
+
+type SettingsSectionId =
+  | "profile"
+  | "members"
+  | "models"
+  | "api"
+  | "configuration"
+  | "appearance"
+  | "security"
+  | "data"
+  | "memory"
+  | "session"
+  | "archived";
+
+const SETTINGS_NAV: ReadonlyArray<{
+  id: SettingsSectionId;
+  href: string;
+  label: string;
+  description: string;
+  icon: ProductIconName;
+}> = [
+  {
+    id: "profile",
+    href: "#profile",
+    label: "个人资料",
+    description: "管理显示名称、登录邮箱和当前工作区身份。",
+    icon: "profile",
+  },
+  {
+    id: "models",
+    href: "#models",
+    label: "模型管理",
+    description: "配置对话、视觉、图像和视频生成模型，并指定内置 Agent 的默认模型。",
+    icon: "agent",
+  },
+  {
+    id: "api",
+    href: "#api",
+    label: "API 集成",
+    description: "创建按能力授权的 API 密钥，将对话、任务和 Agent 安全接入外部系统。",
+    icon: "api",
+  },
+  {
+    id: "configuration",
+    href: "#configuration",
+    label: "配置",
+    description: "管理个人对话与智能体显示偏好。",
+    icon: "settings",
+  },
+  {
+    id: "appearance",
+    href: "#appearance",
+    label: "外观",
+    description: `选择整个${PRODUCT_NAME}使用的界面主题。`,
+    icon: "appearance",
+  },
+  {
+    id: "security",
+    href: "#security",
+    label: "账户安全",
+    description: "修改密码后会撤销所有刷新会话。",
+    icon: "security",
+  },
+  {
+    id: "data",
+    href: "#data",
+    label: "我的数据",
+    description: "导出或删除当前用户产生的会话、文件、记忆与观测数据。",
+    icon: "data",
+  },
+  {
+    id: "memory",
+    href: "#memory",
+    label: "长期记忆",
+    description: "查看智能体建议保存的内容，并逐条确认、纠正或删除。",
+    icon: "memory",
+  },
+  {
+    id: "session",
+    href: "#session",
+    label: "登录会话",
+    description: "查看当前浏览器会话或安全退出登录。",
+    icon: "session",
+  },
+  {
+    id: "archived",
+    href: "#archived",
+    label: "已归档",
+    description: "查看并恢复从最近任务中移出的记录。",
+    icon: "archive",
+  },
+];
 
 function errorMessage(payload: unknown, fallback: string): string {
   if (
@@ -106,10 +211,41 @@ function ArchivedTasksSettings() {
 
 function SettingsContent() {
   const { user, membership, passwordEnabled } = useAuth();
+  const [followUpBehavior, setFollowUpBehavior] = useFollowUpPreference();
+  const [showInternalAgents, setShowInternalAgents] = useInternalAgentsPreference();
+  const canManageModels =
+    membership.role === "owner" || membership.role === "admin";
+  const visibleNavigation = SETTINGS_NAV.filter(
+    (item) => !(["models", "api"] as SettingsSectionId[]).includes(item.id) || canManageModels,
+  );
+  const [activeSection, setActiveSection] =
+    useState<SettingsSectionId>("profile");
+  const contentRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (contentRef.current) contentRef.current.scrollTop = 0; }, [activeSection]);
   const [profileMessage, setProfileMessage] = useState<Message>(null);
   const [passwordMessage, setPasswordMessage] = useState<Message>(null);
   const [profilePending, setProfilePending] = useState(false);
   const [passwordPending, setPasswordPending] = useState(false);
+
+  useEffect(() => {
+    function syncSectionFromHash() {
+      const requested = window.location.hash.slice(1) as SettingsSectionId;
+      const canOpenRequested = SETTINGS_NAV.some(
+        (item) =>
+          item.id === requested && (!["models", "api"].includes(item.id) || canManageModels),
+      );
+      const next = canOpenRequested ? requested : "profile";
+      setActiveSection(next);
+    }
+
+    syncSectionFromHash();
+    window.addEventListener("hashchange", syncSectionFromHash);
+    return () => window.removeEventListener("hashchange", syncSectionFromHash);
+  }, [canManageModels]);
+
+  const activeNavigation =
+    visibleNavigation.find((item) => item.id === activeSection) ??
+    visibleNavigation[0];
 
   async function saveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -120,11 +256,16 @@ function SettingsContent() {
       const response = await fetch("/api/auth/profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ display_name: String(form.get("display_name") ?? "") }),
+        body: JSON.stringify({
+          display_name: String(form.get("display_name") ?? ""),
+        }),
       });
       const payload = (await response.json()) as unknown;
       if (!response.ok) {
-        setProfileMessage({ kind: "error", text: errorMessage(payload, "个人资料未能保存。") });
+        setProfileMessage({
+          kind: "error",
+          text: errorMessage(payload, "个人资料未能保存。"),
+        });
         return;
       }
       setProfileMessage({ kind: "success", text: "个人资料已保存。" });
@@ -159,7 +300,10 @@ function SettingsContent() {
       });
       if (!response.ok) {
         const payload = (await response.json()) as unknown;
-        setPasswordMessage({ kind: "error", text: errorMessage(payload, "密码未能更新。") });
+        setPasswordMessage({
+          kind: "error",
+          text: errorMessage(payload, "密码未能更新。"),
+        });
         return;
       }
       window.location.replace("/login?password=changed");
@@ -172,150 +316,245 @@ function SettingsContent() {
 
   return (
     <main className="settings-shell" id="main-content">
-      <header className="settings-header">
-        <a className="settings-brand" href="/" aria-label="返回 Agent Studio">
-          <span className="brand-mark" aria-hidden="true">AS</span>
-          <span><strong>Agent Studio</strong><small>智能任务工作台</small></span>
-        </a>
-        <div className="settings-header-actions">
-          <a className="settings-back" href="/">返回工作台</a>
-        </div>
-      </header>
+      <div
+        className="settings-dialog"
+        aria-labelledby="settings-page-title"
+      >
+        <div className="settings-layout">
+          <aside className="settings-index" aria-label="设置目录">
+            <a className="settings-return-app" href="/" aria-label="返回应用"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 10H4m5-5-5 5 5 5" /></svg><span>返回应用</span></a>
+            <p>设置</p>
+            {visibleNavigation.map((item) => (
+              <a
+                aria-current={activeSection === item.id ? "page" : undefined}
+                href={item.href}
+                key={item.href}
+                onClick={(event) => {
+                  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                  event.preventDefault();
+                  window.history.pushState(null, "", item.href);
+                  setActiveSection(item.id);
+                  if (contentRef.current) contentRef.current.scrollTop = 0;
+                }}
+              >
+                <ProductIcon name={item.icon} />
+                <span>{item.label}</span>
+              </a>
+            ))}
+          </aside>
 
-      <div className="settings-layout">
-        <aside className="settings-index" aria-label="设置目录">
-          <p>设置</p>
-          <a href="#profile">个人资料</a>
-          <a href="#members">工作区成员</a>
-          <a href="#appearance">外观</a>
-          <a href="#security">账户安全</a>
-          <a href="#data">我的数据</a>
-          <a href="#memory">长期记忆</a>
-          <a href="#session">登录会话</a>
-          <a href="#archived">已归档</a>
-        </aside>
+          <div className="settings-content" ref={contentRef}>
+            <header className="settings-title">
+              <p>设置中心</p>
+              <h1 id="settings-page-title">{activeNavigation.label}</h1>
+              <span>{activeNavigation.description}</span>
+            </header>
 
-        <div className="settings-content">
-          <header className="settings-title">
-            <p>账户设置</p>
-            <h1>管理账户、工作区成员与登录安全</h1>
-            <span>个人设置只影响当前用户；工作区角色管理仅对 Owner / Admin 开放。</span>
-          </header>
-
-          <section className="settings-section" id="profile">
-            <div className="settings-section-copy">
-              <h2>个人资料</h2>
-              <p>显示名称会出现在账户菜单和审计记录中。</p>
-            </div>
-            <form className="settings-form" onSubmit={saveProfile}>
-              <label>
-                显示名称
-                <input name="display_name" defaultValue={user.display_name} required maxLength={160} autoComplete="name" />
-              </label>
-              <label>
-                登录邮箱
-                <input value={user.email} readOnly aria-readonly="true" />
-                <small>邮箱暂不支持自行修改。</small>
-              </label>
-              <div className="settings-facts">
-                <span><small>工作区角色</small><strong>{ROLE_LABELS[membership.role]}</strong></span>
-                <span><small>工作区</small><code>{membership.tenant_id}</code></span>
-              </div>
-              {profileMessage && <p className={`settings-message ${profileMessage.kind}`} role="status">{profileMessage.text}</p>}
-              <div className="settings-form-action">
-                <button type="submit" disabled={profilePending}>{profilePending ? "正在保存…" : "保存资料"}</button>
-              </div>
-            </form>
-          </section>
-
-          <section className="settings-section" id="members">
-            <div className="settings-section-copy">
-              <h2>工作区成员</h2>
-              <p>Owner 管理全部角色；Admin 可管理普通成员和只读成员。至少保留一位 Owner。</p>
-            </div>
-            <WorkspaceMembers
-              currentUserId={user.user_id}
-              currentRole={membership.role}
-            />
-          </section>
-
-          <section className="settings-section" id="appearance">
-            <div className="settings-section-copy">
-              <h2>外观</h2>
-              <p>整个 Agent Studio 使用同一主题偏好。</p>
-            </div>
-            <div className="settings-form settings-appearance">
-              <div>
-                <strong>界面主题</strong>
-                <small>选择后立即应用，并在刷新和跨页面导航后保持一致。</small>
-              </div>
-              <ThemeSelector />
-            </div>
-          </section>
-
-          <section className="settings-section" id="security">
-            <div className="settings-section-copy">
-              <h2>账户安全</h2>
-              <p>修改密码后会撤销所有刷新会话；其他设备的短期凭证到期后无法续期。</p>
-            </div>
-            {passwordEnabled ? (
-              <form className="settings-form" onSubmit={changePassword}>
-                <label>当前密码<input name="current_password" type="password" required autoComplete="current-password" /></label>
-                <label>新密码<input name="new_password" type="password" required minLength={10} autoComplete="new-password" placeholder="至少 10 位，含大小写字母和数字" /></label>
-                <label>确认新密码<input name="confirm_password" type="password" required minLength={10} autoComplete="new-password" /></label>
-                {passwordMessage && <p className={`settings-message ${passwordMessage.kind}`} role="alert">{passwordMessage.text}</p>}
+            <section
+              className="settings-section"
+              id="profile"
+              hidden={activeSection !== "profile"}
+            >
+              <form className="settings-form" onSubmit={saveProfile}>
+                <label>
+                  显示名称
+                  <input
+                    name="display_name"
+                    defaultValue={user.display_name}
+                    required
+                    maxLength={160}
+                    autoComplete="name"
+                  />
+                </label>
+                <label>
+                  登录邮箱
+                  <input value={user.email} readOnly aria-readonly="true" />
+                  <small>邮箱暂不支持自行修改。</small>
+                </label>
+                <div className="settings-facts">
+                  <span>
+                    <small>工作区角色</small>
+                    <strong>{ROLE_LABELS[membership.role]}</strong>
+                  </span>
+                  <span>
+                    <small>工作区</small>
+                    <code>{membership.tenant_id}</code>
+                  </span>
+                </div>
+                {profileMessage && (
+                  <p
+                    className={`settings-message ${profileMessage.kind}`}
+                    role="status"
+                  >
+                    {profileMessage.text}
+                  </p>
+                )}
                 <div className="settings-form-action">
-                  <button type="submit" disabled={passwordPending}>{passwordPending ? "正在更新…" : "修改密码"}</button>
+                  <button type="submit" disabled={profilePending}>
+                    {profilePending ? "正在保存…" : "保存资料"}
+                  </button>
                 </div>
               </form>
-            ) : (
-              <div className="settings-form settings-empty">
-                <strong>当前账户通过单点登录验证</strong>
-                <p>请在 Google 或 GitHub 中管理密码。本系统不会直接保存第三方账户密码。</p>
-              </div>
+            </section>
+
+
+
+            {canManageModels && (
+              <section
+                className="settings-section settings-section-models"
+                id="models"
+                hidden={activeSection !== "models"}
+              >
+                <ModelManagement />
+              </section>
             )}
-          </section>
 
-          <section className="settings-section" id="data">
-            <div className="settings-section-copy">
-              <h2>我的数据</h2>
-              <p>导出或删除当前用户在 Harness 中产生的会话、文件、记忆与观测数据。</p>
-            </div>
-            <div className="settings-form settings-session">
-              <div><span className="settings-session-dot" aria-hidden="true" /><span><strong>数据生命周期</strong><small>删除操作会先检查 Legal Hold，再按外部系统逐项执行。</small></span></div>
-              <a href="/studio/data">管理我的数据</a>
-            </div>
-          </section>
+            {canManageModels && (
+              <section
+                className="settings-section"
+                id="api"
+                hidden={activeSection !== "api"}
+              >
+                <ApiIntegration />
+              </section>
+            )}
 
-          <section className="settings-section" id="memory">
-            <div className="settings-section-copy">
-              <h2>长期记忆</h2>
-              <p>查看智能体建议保存的内容，并逐条确认、纠正或删除。</p>
-            </div>
-            <div className="settings-form settings-session">
-              <div><span className="settings-session-dot" aria-hidden="true" /><span><strong>受管记忆</strong><small>默认不自动保存敏感信息；每条记录保留来源与到期时间。</small></span></div>
-              <a href="/settings/memory">管理长期记忆</a>
-            </div>
-          </section>
+            <section className="settings-section" id="configuration" hidden={activeSection !== "configuration"}>
+              <div className="settings-form settings-configuration">
+                <label className="settings-preference-row">
+                  <span><strong>运行中的补充消息</strong><small>Enter 使用所选方式，Alt Enter 临时切换。带附件的消息会加入队列。</small></span>
+                  <select aria-label="补充消息默认行为" value={followUpBehavior} onChange={(event) => setFollowUpBehavior(event.target.value === "steer" ? "steer" : "queue")}>
+                    <option value="queue">加入队列</option><option value="steer">调整方向</option>
+                  </select>
+                </label>
+                <label className="settings-preference-toggle">
+                  <input type="checkbox" checked={showInternalAgents} onChange={(event) => setShowInternalAgents(event.target.checked)} />
+                  <span><strong>显示内部子智能体</strong><small>在智能体列表和各处选择框中显示内部子智能体，默认关闭。</small></span>
+                </label>
+                {activeSection === "configuration" && <WebConfiguration />}
+              </div>
+            </section>
 
-          <section className="settings-section" id="session">
-            <div className="settings-section-copy">
-              <h2>登录会话</h2>
-              <p>退出后将清除当前浏览器凭证，并撤销本次刷新令牌。</p>
-            </div>
-            <div className="settings-form settings-session">
-              <div><span className="settings-session-dot" aria-hidden="true" /><span><strong>当前浏览器</strong><small>会话有效</small></span></div>
-              <a href="/api/auth/logout">退出登录</a>
-            </div>
-          </section>
+            <section
+              className="settings-section"
+              id="appearance"
+              hidden={activeSection !== "appearance"}
+            >
+              <div className="settings-form settings-appearance">
+                <div>
+                  <strong>界面主题</strong>
+                  <small>
+                    选择后立即应用，并在刷新和跨页面导航后保持一致。
+                  </small>
+                </div>
+                <ThemeSelector />
 
-          <section className="settings-section" id="archived">
-            <div className="settings-section-copy">
-              <h2>已归档</h2>
-              <p>归档只从最近任务中移出，不会删除消息、处理过程、附件或产物。</p>
-            </div>
-            <ArchivedTasksSettings />
-          </section>
+              </div>
+            </section>
+
+            <section
+              className="settings-section"
+              id="security"
+              hidden={activeSection !== "security"}
+            >
+              {passwordEnabled ? (
+                <form className="settings-form" onSubmit={changePassword}>
+                  <label>
+                    当前密码
+                    <SecretInput
+                      name="current_password"
+                      required
+                      autoComplete="current-password"
+                      revealLabel="当前密码"
+                    />
+                  </label>
+                  <label>
+                    新密码
+                    <SecretInput
+                      name="new_password"
+                      required
+                      minLength={10}
+                      autoComplete="new-password"
+                      placeholder="至少 10 位，含大小写字母和数字"
+                      revealLabel="新密码"
+                    />
+                  </label>
+                  <label>
+                    确认新密码
+                    <SecretInput
+                      name="confirm_password"
+                      required
+                      minLength={10}
+                      autoComplete="new-password"
+                      revealLabel="确认密码"
+                    />
+                  </label>
+                  {passwordMessage && (
+                    <p
+                      className={`settings-message ${passwordMessage.kind}`}
+                      role="alert"
+                    >
+                      {passwordMessage.text}
+                    </p>
+                  )}
+                  <div className="settings-form-action">
+                    <button type="submit" disabled={passwordPending}>
+                      {passwordPending ? "正在更新…" : "修改密码"}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div className="settings-form settings-empty">
+                  <strong>当前账户通过单点登录验证</strong>
+                  <p>
+                    请在 Google 或 GitHub
+                    中管理密码。本系统不会直接保存第三方账户密码。
+                  </p>
+                </div>
+              )}
+            </section>
+
+            <section
+              className="settings-section"
+              id="data"
+              hidden={activeSection !== "data"}
+            >
+              {activeSection === "data" && <DataLifecycleControlPlane embedded />}
+            </section>
+
+            <section
+              className="settings-section"
+              id="memory"
+              hidden={activeSection !== "memory"}
+            >
+              {activeSection === "memory" && <MemoryBank embedded />}
+            </section>
+
+            <section
+              className="settings-section"
+              id="session"
+              hidden={activeSection !== "session"}
+            >
+              <div className="settings-form settings-session">
+                <div>
+                  <span className="settings-session-dot" aria-hidden="true" />
+                  <span>
+                    <strong>当前浏览器</strong>
+                    <small>会话有效</small>
+                  </span>
+                </div>
+                <a href="/api/auth/logout">退出登录</a>
+              </div>
+            </section>
+
+            <section
+              className="settings-section"
+              id="archived"
+              hidden={activeSection !== "archived"}
+            >
+              <ArchivedTasksSettings />
+            </section>
+          </div>
         </div>
       </div>
     </main>
@@ -323,5 +562,9 @@ function SettingsContent() {
 }
 
 export default function SettingsPage() {
-  return <AuthProvider><SettingsContent /></AuthProvider>;
+  return (
+    <AuthProvider>
+      <SettingsContent />
+    </AuthProvider>
+  );
 }

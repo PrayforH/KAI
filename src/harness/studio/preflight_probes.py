@@ -21,6 +21,7 @@ from harness.runtime.cc_switch import CcSwitchClaudeConfig
 from harness.runtime.mcp_credentials import McpCredentialError
 from harness.runtime.tools import ToolResolutionError, ToolResolver
 from harness.sandbox.base import SandboxHandle, SandboxProvider
+from harness.studio.model_configuration import ModelConfigurationService
 
 
 class PreflightCheckError(RuntimeError):
@@ -42,6 +43,7 @@ class PreflightEvidence:
 class ModelPreflightProbe(Protocol):
     async def verify(
         self,
+        tenant_id: str,
         manifest: AgentManifest,
         sandbox: SandboxProvider,
         handle: SandboxHandle,
@@ -65,11 +67,12 @@ class FakeModelPreflightProbe:
 
     async def verify(
         self,
+        tenant_id: str,
         manifest: AgentManifest,
         sandbox: SandboxProvider,
         handle: SandboxHandle,
     ) -> PreflightEvidence:
-        del manifest, sandbox, handle
+        del tenant_id, manifest, sandbox, handle
         if self._delay_seconds:
             await asyncio.sleep(self._delay_seconds)
         if self._fail_code is not None:
@@ -142,10 +145,12 @@ class AnthropicSandboxModelProbe:
 
     async def verify(
         self,
+        tenant_id: str,
         manifest: AgentManifest,
         sandbox: SandboxProvider,
         handle: SandboxHandle,
     ) -> PreflightEvidence:
+        del tenant_id
         config = next(
             (item for item in self._configs if item.route_id == manifest.spec.model.route),
             self._configs[0],
@@ -257,6 +262,41 @@ class AnthropicSandboxModelProbe:
                 "toolUse": True,
             },
         )
+
+
+class ControlPlaneModelPreflightProbe:
+    """Resolve the tenant model at probe time instead of reading deployment env."""
+
+    def __init__(
+        self,
+        models: ModelConfigurationService,
+        *,
+        timeout_seconds: float = 45,
+    ) -> None:
+        self._models = models
+        self._timeout_seconds = timeout_seconds
+
+    async def verify(
+        self,
+        tenant_id: str,
+        manifest: AgentManifest,
+        sandbox: SandboxProvider,
+        handle: SandboxHandle,
+    ) -> PreflightEvidence:
+        config = await self._models.resolve_runtime(
+            tenant_id,
+            manifest.metadata.name,
+            manifest.spec.model.route,
+        )
+        if config is None:
+            raise PreflightCheckError(
+                "model_control_plane_unavailable",
+                f"Model route is not configured in model management: {manifest.spec.model.route}",
+            )
+        return await AnthropicSandboxModelProbe(
+            config,
+            timeout_seconds=self._timeout_seconds,
+        ).verify(tenant_id, manifest, sandbox, handle)
 
 
 def _curl_config(url: str, headers: Mapping[str, str]) -> str:

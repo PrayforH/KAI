@@ -3,6 +3,7 @@ import type { PendingAttachment } from "@assistant-ui/react";
 import {
   createInputAttachmentAdapter,
   inputAttachmentType,
+  inputArtifactIdFromAttachment,
 } from "../src/lib/input-attachment-adapter";
 import { uploadFeedbackStore, uploadKey } from "../src/lib/upload-feedback-store";
 
@@ -72,6 +73,8 @@ describe("Harness input attachment adapter", () => {
         filename: "facts.txt",
       },
     ]);
+    expect(inputArtifactIdFromAttachment(pending)).toBe("input_artifact_abc123");
+    expect(inputArtifactIdFromAttachment(complete)).toBe("input_artifact_abc123");
     expect(JSON.stringify(complete)).not.toContain("local file content");
     expect(uploadFeedbackStore.getSnapshot()).toEqual([]);
   });

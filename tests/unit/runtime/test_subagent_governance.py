@@ -209,7 +209,7 @@ def test_unbound_alias_and_concurrency_fail_closed() -> None:
         governor.process(_started("two", "risk-reviewer"), run_id="run-1")
 
 
-def test_subagent_budget_and_missing_terminal_are_explicit() -> None:
+def test_subagent_usage_is_observational_and_missing_terminal_is_explicit() -> None:
     version = _version()
     governor = SubagentRuntimeGovernor(
         root=_root(tokens=10),
@@ -217,14 +217,14 @@ def test_subagent_budget_and_missing_terminal_are_explicit() -> None:
     )
     governor.process(_started("one", "fact-checker"), run_id="run-1")
 
-    with pytest.raises(SubagentGovernanceError, match="token budget"):
-        governor.process(
-            RuntimeEvent(
-                type="subagent.updated",
-                payload={"task_id": "one", "usage": {"total_tokens": 11}},
-            ),
-            run_id="run-1",
-        )
+    updated = governor.process(
+        RuntimeEvent(
+            type="subagent.updated",
+            payload={"task_id": "one", "usage": {"total_tokens": 1_000_000}},
+        ),
+        run_id="run-1",
+    )
+    assert updated[0].payload["usage"]["total_tokens"] == 1_000_000
 
     failed = governor.fail_unfinished(reason="stream_closed", run_id="run-1")
     assert [(event.type, event.payload["error_code"]) for event in failed] == [

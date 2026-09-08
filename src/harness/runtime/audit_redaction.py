@@ -6,7 +6,7 @@ from typing import Any, cast
 _AUTHORIZATION_TEXT = re.compile(r"(?i)\b(authorization\s*[:=]\s*)([^'\"\n]+)")
 _BEARER_TEXT = re.compile(r"(?i)\b(bearer\s+)([^\s'\"&]+)")
 _SECRET_ASSIGNMENT = re.compile(
-    r"(?i)\b(token|api[_-]?key|secret|password)(\s*[:=]\s*)([^\s'\"&]+)"
+    r"(?i)\b(token|api[_-]?key|secret|password)(\s*(?:[:=]\s*|\s+))([^\s'\"&]+)"
 )
 _SENSITIVE_KEY_MARKERS = (
     "api_key",

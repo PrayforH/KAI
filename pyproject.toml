@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "claude-agent-harness"
-version = "0.1.0"
+version = "0.3.0"
 description = "Production-shaped harness for Claude Agent SDK applications"
 requires-python = ">=3.12,<3.14"
 dependencies = [
@@ -12,13 +12,14 @@ dependencies = [
     "alembic>=1.16,<2",
     "argon2-cffi>=23.1,<26",
     "asyncpg>=0.30,<1",
-    "claude-agent-sdk>=0.2.128,<0.3",
+    "claude-agent-sdk>=0.2.152,<0.3",
     "certifi>=2025.6",
     "cryptography>=45,<50",
     "daytona>=0.196,<1",
     "e2b>=2.33,<3",
     "fastapi>=0.116,<1",
     "httpx>=0.28,<1",
+    "httpcore>=1.0,<2",
     "mcp>=1.28,<2",
     "minio>=7.2,<8",
     "openpyxl>=3.1,<4",
@@ -35,6 +36,8 @@ dependencies = [
     "redis>=6.2,<7",
     "sqlalchemy[asyncio]>=2.0.41,<3",
     "uvicorn[standard]>=0.35,<1",
+    "libarchive-c>=5.3,<6",
+    "pgvector>=0.4,<0.5",
 ]
 
 [project.scripts]

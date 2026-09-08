@@ -1,0 +1,56 @@
+{
+  "checks": [
+    {
+      "checkId": "repository.release-runner-variable",
+      "detail": "HARNESS_RELEASE_RUNNER is missing",
+      "passed": false
+    },
+    {
+      "checkId": "repository.registry-variable",
+      "detail": "HARNESS_RELEASE_REGISTRY must equal harbor.shdata.com:5000",
+      "passed": false
+    },
+    {
+      "checkId": "repository.namespace-variable",
+      "detail": "HARNESS_RELEASE_NAMESPACE must equal agent-studio/amd64",
+      "passed": false
+    },
+    {
+      "checkId": "repository.registry-secret-names",
+      "detail": "missing secret names: HARNESS_RELEASE_REGISTRY_PASSWORD, HARNESS_RELEASE_REGISTRY_USERNAME",
+      "passed": false
+    },
+    {
+      "checkId": "environment.test.exists",
+      "detail": "GitHub environment test is missing",
+      "passed": false
+    },
+    {
+      "checkId": "environment.canary.exists",
+      "detail": "GitHub environment canary is missing",
+      "passed": false
+    },
+    {
+      "checkId": "environment.production.exists",
+      "detail": "GitHub environment production is missing",
+      "passed": false
+    },
+    {
+      "checkId": "runner.release",
+      "detail": "no online Linux self-hosted runner has the configured release label",
+      "passed": false
+    },
+    {
+      "checkId": "runner.deployment",
+      "detail": "no online runner has self-hosted, linux and harness-deploy labels",
+      "passed": false
+    },
+    {
+      "checkId": "registry.tls",
+      "detail": "TLS-verified registry API is not reachable at https://harbor.shdata.com:5000/v2/",
+      "passed": false
+    }
+  ],
+  "ready": false,
+  "repository": "PrayforH/agent-studio"
+}

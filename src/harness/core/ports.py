@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict
 
 from harness.core.events import RunEvent
 from harness.core.models import (
+    AgentRuntimeType,
     AgentVersion,
     AguiThreadBinding,
     ApprovalRequest,
@@ -49,14 +50,88 @@ class AgentRegistry(Protocol):
 
     async def list_for_user(self, tenant_id: str, owner_user_id: str) -> list[AgentVersion]: ...
 
+    async def list_catalog_for_user(self, tenant_id: str, owner_user_id: str) -> list[AgentVersion]:
+        """List versions with only the manifest portion of ``snapshot`` loaded.
+
+        Runtime callers that need packaged files must continue to use ``get``.
+        """
+        ...
+
+    async def move_owner(
+        self, tenant_id: str, from_user_id: str, to_user_id: str, name: str
+    ) -> int:
+        """Re-key every immutable version of one personal Agent to a new owner.
+
+        The stable agent_id is preserved, so version history follows the
+        identity. Raises ConflictError when the target already owns a version
+        with the same name@version coordinate. Returns the number of moved
+        rows.
+        """
+        ...
+
+
+class AgentIdentityProvider(Protocol):
+    """Assigns stable personal Agent identities to publications."""
+
+    async def get_or_create_personal_agent_id(
+        self, tenant_id: str, owner_user_id: str, name: str
+    ) -> str: ...
+
+    async def promote_personal_agent_version(
+        self,
+        tenant_id: str,
+        owner_user_id: str,
+        agent_id: str,
+        name: str,
+        version: str,
+    ) -> None:
+        """Move a personal Agent's current pointer after a new publication.
+
+        Workspace-scoped identities are ignored because their release pointer
+        is governed by the owning team space.
+        """
+        ...
+
+    async def archive_personal_agent(
+        self,
+        tenant_id: str,
+        owner_user_id: str,
+        agent_id: str,
+        name: str,
+    ) -> None:
+        """Hide a personal Agent while retaining immutable releases for history."""
+        ...
+
 
 class SessionRepository(Protocol):
     async def add(self, session: Session) -> None: ...
 
     async def get(self, tenant_id: str, session_id: str) -> Session: ...
 
+    async def list_for_ids(self, tenant_id: str, session_ids: list[str]) -> list[Session]: ...
+
+    async def bind_runtime_thread(
+        self,
+        tenant_id: str,
+        session_id: str,
+        runtime_type: AgentRuntimeType,
+        runtime_thread_id: str,
+    ) -> Session: ...
+
+    async def clear_runtime_thread(
+        self,
+        tenant_id: str,
+        session_id: str,
+        runtime_type: AgentRuntimeType,
+        expected_runtime_thread_id: str,
+    ) -> Session: ...
+
     async def bind_claude_session_id(
         self, tenant_id: str, session_id: str, claude_session_id: str
+    ) -> Session: ...
+
+    async def clear_claude_session_id(
+        self, tenant_id: str, session_id: str, expected_claude_session_id: str
     ) -> Session: ...
 
 
@@ -101,9 +176,19 @@ class ApprovalRepository(Protocol):
 class EventRepository(Protocol):
     async def append(self, event: RunEvent) -> None: ...
 
+    async def latest_sequence(self, tenant_id: str, run_id: str) -> int: ...
+
     async def list_after(
         self, tenant_id: str, run_id: str, after_sequence: int
     ) -> list[RunEvent]: ...
+
+    async def latest_for_session_type(
+        self, tenant_id: str, session_id: str, event_type: str
+    ) -> RunEvent | None: ...
+
+    async def latest_for_session_types(
+        self, tenant_id: str, session_id: str, event_types: tuple[str, ...]
+    ) -> RunEvent | None: ...
 
 
 class EventBus(Protocol):
@@ -112,6 +197,39 @@ class EventBus(Protocol):
     async def read(
         self, tenant_id: str, run_id: str, after_sequence: int = 0
     ) -> list[RunEvent]: ...
+
+
+class EventWakeup(Protocol):
+    """Best-effort notification that durable events may be ready to read."""
+
+    async def wait(
+        self,
+        tenant_id: str,
+        run_id: str,
+        after_sequence: int,
+        *,
+        timeout_seconds: float,
+    ) -> bool: ...
+
+
+class CancellationWakeup(Protocol):
+    """Best-effort cancellation signal guarded by a durable fencing token."""
+
+    async def publish(
+        self,
+        tenant_id: str,
+        run_id: str,
+        fencing_token: int,
+    ) -> None: ...
+
+    async def wait(
+        self,
+        tenant_id: str,
+        run_id: str,
+        after_fencing_token: int,
+        *,
+        timeout_seconds: float,
+    ) -> bool: ...
 
 
 class ArtifactStore(Protocol):
@@ -130,6 +248,8 @@ class ArtifactRepository(Protocol):
     async def update(self, artifact: Artifact) -> None: ...
 
     async def list_for_run(self, tenant_id: str, run_id: str) -> list[Artifact]: ...
+
+    async def list_for_runs(self, tenant_id: str, run_ids: list[str]) -> list[Artifact]: ...
 
 
 class InputArtifactRepository(Protocol):
@@ -196,6 +316,10 @@ class AguiThreadBindingRepository(Protocol):
         generated_at: datetime,
     ) -> AguiThreadBinding: ...
 
+    async def mark_read(
+        self, tenant_id: str, user_id: str, thread_id: str, *, read_at: datetime
+    ) -> AguiThreadBinding: ...
+
     async def set_archived(
         self,
         tenant_id: str,
@@ -211,6 +335,7 @@ class AguiThreadBindingRepository(Protocol):
         user_id: str,
         thread_id: str,
         *,
+        expected_session_id: str,
         session_id: str,
         updated_at: datetime,
     ) -> AguiThreadBinding: ...

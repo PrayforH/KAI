@@ -1,4 +1,4 @@
-export type MemoryStatus = "pending" | "active" | "rejected" | "deleted" | "expired";
+export type MemoryStatus = "pending" | "active" | "rejected" | "deleted" | "expired" | "superseded";
 export type MemorySensitivity = "personal" | "sensitive" | "prohibited";
 
 export interface MemorySource {
@@ -8,6 +8,8 @@ export interface MemorySource {
   runId: string | null;
   sessionId: string | null;
   capturedAt: string;
+  evidence?: string;
+  extractionJobId?: string | null;
 }
 
 export interface MemoryEntry {
@@ -27,6 +29,11 @@ export interface MemoryEntry {
   updatedAt: string;
   expiresAt: string | null;
   deletedAt: string | null;
+  agentOwnerUserId?: string | null;
+  memoryType?: "preference" | "fact" | "entity" | "decision";
+  topic?: string;
+  conditions?: string;
+  supersedes?: string | null;
 }
 
 export interface MemoryConsent {
@@ -74,7 +81,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+export interface MemorySearchHit { entry: MemoryEntry; score: number; matchedTerms: string[] }
+
 export const memoryClient = {
+  search(agentName: string, query: string, agentOwnerUserId?: string) {
+    return request<MemorySearchHit[]>("search", {
+      method: "POST", body: JSON.stringify({ agentName, query, agentOwnerUserId, limit: 8 }),
+    });
+  },
+  propose(agentName: string, content: string, agentOwnerUserId?: string) {
+    return request<MemoryEntry>("proposals", {
+      method: "POST", body: JSON.stringify({ agentName, content, agentOwnerUserId, sourceKind: "user" }),
+    });
+  },
   list(agentName?: string) {
     const query = agentName ? `?agentName=${encodeURIComponent(agentName)}` : "";
     return request<MemoryEntry[]>(`entries${query}`);
@@ -97,17 +116,17 @@ export const memoryClient = {
   remove(entry: MemoryEntry) {
     return request<void>(`entries/${encodeURIComponent(entry.entryId)}?expectedVersion=${entry.version}`, { method: "DELETE" });
   },
-  policy(agentName: string) {
-    return request<MemoryPolicy>(`agents/${encodeURIComponent(agentName)}/policy`);
+  policy(agentName: string, ownerId?: string) {
+    return request<MemoryPolicy>(`agents/${encodeURIComponent(agentName)}/policy${ownerId ? `?agentOwnerUserId=${encodeURIComponent(ownerId)}` : ""}`);
   },
-  saveConsent(agentName: string, policy: MemoryPolicy, allowAgentPersonal: boolean) {
-    return request<MemoryConsent>(`agents/${encodeURIComponent(agentName)}/consent`, {
+  saveConsent(agentName: string, policy: MemoryPolicy, allowAgentPersonal: boolean, ownerId?: string) {
+    return request<MemoryConsent>(`agents/${encodeURIComponent(agentName)}/consent${ownerId ? `?agentOwnerUserId=${encodeURIComponent(ownerId)}` : ""}`, {
       method: "PUT",
       body: JSON.stringify({ expectedVersion: policy.consent?.version ?? 0, allowAgentPersonal }),
     });
   },
-  saveRetention(agentName: string, policy: MemoryPolicy, defaultDays: number, maxDays: number) {
-    return request<MemoryRetention>(`agents/${encodeURIComponent(agentName)}/retention`, {
+  saveRetention(agentName: string, policy: MemoryPolicy, defaultDays: number, maxDays: number, ownerId?: string) {
+    return request<MemoryRetention>(`agents/${encodeURIComponent(agentName)}/retention${ownerId ? `?agentOwnerUserId=${encodeURIComponent(ownerId)}` : ""}`, {
       method: "PUT",
       body: JSON.stringify({ expectedVersion: policy.retention?.version ?? 0, defaultDays, maxDays }),
     });

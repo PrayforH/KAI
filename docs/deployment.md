@@ -1,5 +1,9 @@
 # Docker deployment
 
+仅替换 174 验证环境的 AXIS Web（保留现有 API 与数据服务）时，使用
+[AXIS Web 构建与 174 部署手册](axis-web-174-build-deployment-runbook.md)，
+不要执行本页的全栈 Compose 重建流程。
+
 认证、可选 Google/GitHub SSO、RBAC 与生产安全配置见
 [authentication.md](authentication.md)。
 
@@ -15,12 +19,7 @@ cp deploy/docker-compose/.env.docker.example deploy/docker-compose/.env.docker
 
 - `POSTGRES_PASSWORD`
 - `MINIO_ROOT_PASSWORD`
-- `HARNESS_NEW_API_BASE_URL`
-- `HARNESS_NEW_API_KEY`
-- `HARNESS_NEW_API_MODEL`
 - `HARNESS_API_BEARER_TOKEN`（至少 32 个随机字符）
-- `HARNESS_NEW_API_COMPATIBILITY`
-- `HARNESS_NEW_API_CAPABILITIES`
 - `HARNESS_SANDBOX_PROVIDER`（`daytona`、`e2b`、`kubernetes` 或显式不安全的 `local`）
 - `HARNESS_SANDBOX_EXECUTION_MODE`：`remote_cli` 让 Claude CLI 在沙箱中运行；
   `worker_cli_deferred` 让 CLI 常驻 Worker，首次文件或 Bash 工具调用时才创建远端沙箱，
@@ -33,9 +32,9 @@ cp deploy/docker-compose/.env.docker.example deploy/docker-compose/.env.docker
 任意 stdio 命令。只有管理员显式设置 `readOnly=true` 的 MCP 才允许由 Worker
 直接调用，其余 MCP 会随 Run 回退到远端 Sandbox CLI。
 
-`HARNESS_NEW_API_*` 直接连接 Anthropic-compatible 网关，包括 new-api；生产链路不依赖 cc-switch。凭据只通过容器环境注入，不应写进镜像或提交到 Git。`HARNESS_API_BEARER_TOKEN` 用于 Web BFF、seed、E2E 与 API 之间的服务认证，不进入浏览器 bundle。`COMPATIBILITY` 可取 `full/degraded/unsupported`，`CAPABILITIES` 是逗号分隔的已验证能力（例如 `streaming,tool_use`）。只声明实际通过 `uv run python scripts/smoke_new_api.py` 黑盒验证的能力；Manifest 要求的能力不在该集合时，Run 会在模型请求前 fail closed。
+生产模型端点、模型名和凭据不再通过环境变量注入。服务启动后由系统管理员在“设置 → 模型管理”中配置；运行时、Preflight 与 Skill 共创均按租户实时读取模型管理数据。API Key 加密保存且不会返回前端。`HARNESS_API_BEARER_TOKEN` 只用于 Web BFF、seed、E2E 与 API 之间的服务认证，不进入浏览器 bundle。
 
-如需在 Manifest 使用 `fallbackRoute`，同时配置 `HARNESS_ANTHROPIC_BASE_URL`、`HARNESS_ANTHROPIC_API_KEY` 与 `HARNESS_ANTHROPIC_MODEL`。主 new-api 路由不满足能力画像时才会切换；未配置官方回退时会返回明确的配置冲突，不会静默改用其他模型。
+新建智能体不再提供 `anthropic-official` 路由或官方回退配置；发布模型从已验证的 DeepSeek、MiniMax 与 GLM 路由中选择。运行时仍能读取历史不可变版本中已固定的兼容路由，但不会把它重新加入 Studio 或任务模型目录。
 
 如果网关运行在 Docker 宿主机：
 
@@ -53,6 +52,23 @@ NPM_CONFIG_REGISTRY=https://registry.npmmirror.com
 ```
 
 它们分别用于 Python/uv 与 Node/npm 的镜像构建阶段，可在 `.env.docker` 中覆盖。Docker 基础镜像（Python、Node、PostgreSQL 等）的拉取由 Docker daemon 控制；如网络受限，应另行给 Docker/Colima 配置 registry mirror，或预先导入基础镜像。
+
+### 容器供应链基线
+
+- API 固定到 Python 3.12 Bookworm 的不可变 digest；Web/Sandbox 固定到 Node 22 的不可变
+  digest。Web 与 Sandbox 的运行层删除 npm，只保留运行所需的 Node/standalone/Claude CLI。
+- API 的 kubectl 来自经过 Cosign 身份验证的 Chainguard 不可变镜像 digest，不在构建时从
+  未验证 URL 下载二进制。当前客户端为 1.36.3，项目声明并验证的 Kubernetes 目标版本为
+  1.35～1.36；升级集群或客户端时必须重新执行版本偏差、Sandbox 创建/删除与取消测试。
+- CI 对三张最终镜像执行 Trivy HIGH/CRITICAL fail-closed 扫描。`cryptography 49.0.0`
+  对应的暂未有上游修复版本的报告项，只能由仓库内精确 PURL 的 OpenVEX 判断抑制；回归测试
+  禁止引入该漏洞涉及的 PKCS7 decrypt 调用。Release 会签名 VEX 原始字节并附加 image-bound
+  attestation，Promotion 同时验证两者。
+- 本地开发与交叉构建使用 Colima；用于 174 的镜像平台必须显式为 `linux/amd64`。arm64
+  上的 QEMU 结果不替代真实 amd64 主机 smoke。
+
+扫描与二进制核验原始证据见
+[`docs/results/security-20260809/README.md`](results/security-20260809/README.md)。
 
 ## 3. 构建并启动
 
@@ -213,9 +229,11 @@ HARNESS_MEMORY_WORKLOAD_TOKEN_SECRET=replace-with-an-independent-32-character-se
 HARNESS_MEMORY_MCP_PUBLIC_URL=https://harness.example.com/mcp/memory/mcp
 ```
 
-Manifest 已声明的 `Write/Edit` 只能操作本次 Run 的 workspace，默认自动允许；越界路径由运行时直接拒绝。`Bash` 在本地 workspace 和 Daytona 中仍需审批，本地 workspace 中包含 `rm ` 的命令默认拒绝。隔离级别来自实际 provision 结果；不得从用户请求或 Agent Manifest 接受该字段。
+Manifest 已声明的 `Write/Edit` 只能操作本次 Run 的 workspace，默认自动允许；越界路径由运行时直接拒绝。常规 `Bash` 在本地 workspace 与隔离容器内由 Harness 自动放行，工作区不可逆删除、未知工具及显式策略拒绝仍会在执行前阻断；敏感记忆写入等真正需要用户决策的边界才进入人工审批。隔离级别来自实际 provision 结果；不得从用户请求或 Agent Manifest 接受该字段。
 
-Daytona 隔离宿主机，但同一 Claude CLI 进程内的 `Bash` 仍可能读取该进程可见的环境变量。Harness 已通过关闭回显的 stdin 帧传入 CLI 参数与环境，避免把系统提示词、模型/MCP secret 写入 Daytona 命令行与 session metadata；但“需要审批”并不等于“凭据不可见”。面向不受信 Agent 时，应进一步使用 Daytona Secrets、域名级出口白名单或凭据注入型 egress proxy，让通用 shell 不直接持有模型网关和业务 MCP 的原始密钥。
+历史不可变版本若仍固定到受支持的 Anthropic 官方 Claude 路由，Runtime 会继续按其原始契约选择 Claude Code `auto` 权限模式；这只是兼容行为，不再作为新建智能体或任务的可选模型。当前 DeepSeek、MiniMax、GLM 等兼容网关继续使用 `dontAsk` + Harness 决策。每次 `model.route.selected` 事件记录实际 `permission_mode`，模型 Span 同步记录 `harness.model.permission_mode`。
+
+Daytona 隔离宿主机，但同一 Claude CLI 进程内的 `Bash` 仍可能读取该进程可见的环境变量。Harness 已通过关闭回显的 stdin 帧传入 CLI 参数与环境，避免把系统提示词、模型/MCP secret 写入 Daytona 命令行与 session metadata；但“Auto 判断或 Harness 放行”不等于“凭据不可见”。面向不受信 Agent 时，应进一步使用 Daytona Secrets、域名级出口白名单或凭据注入型 egress proxy，让通用 shell 不直接持有模型网关和业务 MCP 的原始密钥。
 
 Claude SDK 的 `create_sdk_mcp_server()` 保存的是 worker 进程内 Python 对象，不能穿过自定义 Transport 搬到 Daytona。Daytona 模式会拒绝 Manifest 的 `python_entry`，并不注入 worker 本地的 artifact SDK MCP；业务工具应部署为带租户身份认证、可从 sandbox 访问的 HTTP MCP。内置 Memory Bank 是该模式的参考实现：Worker 用独立密钥签发绑定完整 Run 身份、5 分钟有效的令牌，Sandbox 通过 `HARNESS_MEMORY_MCP_PUBLIC_URL` 访问 API 的 `/mcp/memory/mcp`，且只能提议、不能直接写入永久记忆。该密钥不能复用登录 JWT 密钥，公网入口必须使用 TLS 并限制到所需 MCP 路径。内置文件工具仍在 Daytona 内执行，Run 结束时 workspace 会同步回受信控制面；Agent 写入 `outputs/` 的普通文件会在大小、数量和路径复核后自动发布为可下载 Artifact。
 
@@ -235,7 +253,7 @@ Workspace 使用分层存储，不把 Worker 本地目录或 Daytona 沙箱当�
 
 自托管 Daytona 如果以 gVisor `runsc` 作为底层 OCI runtime，Harness 的 Manifest、SDK Transport、审批和文件同步协议无需改变。部署门禁必须重新验证 Claude CLI、shell/coreutils、CA/DNS、streaming、HTTP MCP、取消、超时和 `outputs/` 收集；依赖 `ptrace`、eBPF、内核模块、特权容器、Docker-in-Docker、部分 FUSE/GPU 或未实现 syscall 的 Agent 应 fail closed。gVisor 也不负责打通内网网关或隔离同一 CLI 进程可见的密钥。
 
-生产 provider 应从可信 provision 结果记录实际 OCI runtime/attestation（例如 `gvisor/runsc`）供审计和 Policy 使用，不能接受 Manifest 或用户请求自报。当前 `container` 隔离级别只表示远端容器边界，不等同于已经证明使用 gVisor；在 attestation 尚未接入前，`Bash` 继续保持审批策略，并按实测冷启动与 I/O 开销重新标定 Run timeout 和队列 lease。
+生产 provider 应从可信 provision 结果记录实际 OCI runtime/attestation（例如 `gvisor/runsc`）供审计和 Policy 使用，不能接受 Manifest 或用户请求自报。当前 `container` 隔离级别只表示远端容器边界，不等同于已经证明使用 gVisor；常规 `Bash` 仍按低打扰策略放行，但不可逆删除、越界路径、未知操作和显式策略拒绝不会因容器隔离而放宽。应按实测冷启动与 I/O 开销重新标定 Run timeout 和队列 lease。
 
 Daytona Cloud 无法访问部署机的 loopback 或未打通路由的私网 new-api 地址；模型网关必须是 sandbox 可达且受 TLS、鉴权和网络策略保护的端点。内网 new-api 应配合同网段/VPN/VPC 内的自托管 Daytona，并分别验证 worker → Daytona API 与 sandbox → new-api 两段网络。部署前运行 `make smoke-daytona`，以一次性 sandbox 完成无模型凭据的连通性探针。
 

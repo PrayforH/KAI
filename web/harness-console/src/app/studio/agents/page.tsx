@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { AgentStudioWorkbench } from "../../../components/agent-studio/agent-studio-workbench";
-import { AuthProvider } from "../../../components/auth-provider";
 
 export const metadata: Metadata = {
   title: "智能体",
@@ -8,5 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function AgentStudioPage() {
-  return <AuthProvider><AgentStudioWorkbench /></AuthProvider>;
+  return <AgentStudioWorkbench />;
 }

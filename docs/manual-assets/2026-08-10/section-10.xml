@@ -1,0 +1,4 @@
+<p>Agent Studio 把高风险动作停在人工确认前，而不是让模型直接执行。审批卡片会展示操作类型、安全上下文和影响范围；用户可以批准或拒绝，决定会进入任务执行轨迹。</p>
+<table><thead><tr><th background-color="light-gray">角色</th><th background-color="light-gray">典型权限</th></tr></thead><tbody><tr><td>Owner</td><td>管理空间、成员角色、发布和授权；至少保留一位 Owner</td></tr><tr><td>Admin</td><td>管理普通成员以及获授权的空间资源</td></tr><tr><td>Member</td><td>运行可见智能体，使用获授权知识和工具</td></tr><tr><td>Viewer</td><td>按空间策略查看或运行明确开放的版本</td></tr></tbody></table>
+<p>服务端始终是权限权威，前端隐藏按钮只用于减少误操作，不能替代鉴权。搜索、任务深链和空间切换都会重新校验 owner、space、version 与 ACL；无效或越权坐标会被忽略。</p>
+<p>遇到成员移除、Release 撤销、ACL 撤销和知识授权撤销时，应先阅读内联说明。撤销团队可运行能力不会转移或删除已有个人任务历史，但可能阻止后续新任务继续使用该资源。</p>

@@ -97,7 +97,7 @@ async def test_skill_conversation_returns_a_valid_reviewable_draft() -> None:
             (gateway(),),
             http_client=client,
         )
-        reply = await service.respond(request())
+        reply = await service.respond("tenant-a", request())
 
     assert reply.status == "ready"
     assert reply.skill is not None
@@ -118,7 +118,7 @@ async def test_skill_conversation_rejects_an_unconfigured_route_before_calling_m
         SkillConversationUnavailableError,
         match="new-api-default",
     ):
-        await service.respond(request())
+        await service.respond("tenant-a", request())
 
 
 @pytest.mark.asyncio
@@ -135,4 +135,4 @@ async def test_skill_conversation_rejects_invalid_model_json() -> None:
             http_client=client,
         )
         with pytest.raises(SkillConversationUpstreamError, match="JSON"):
-            await service.respond(request("tenant-route"))
+            await service.respond("tenant-a", request("tenant-route"))

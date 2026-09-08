@@ -31,6 +31,8 @@ def main() -> None:
     subparsers = parser.add_subparsers(dest="command", required=True)
     create = subparsers.add_parser("create")
     create.add_argument("--artifact-root", type=Path, required=True)
+    create.add_argument("--platform-version", required=True)
+    create.add_argument("--release-notes", type=Path, required=True)
     create.add_argument("--source-commit", required=True)
     create.add_argument("--image", action="append", default=[])
     create.add_argument("--sbom", action="append", default=[])
@@ -39,6 +41,7 @@ def main() -> None:
     verify.add_argument("--artifact-root", type=Path, required=True)
     verify.add_argument("--manifest", type=Path, required=True)
     verify.add_argument("--expected-commit")
+    verify.add_argument("--required-schema-version")
     args = parser.parse_args()
 
     if args.command == "create":
@@ -48,6 +51,8 @@ def main() -> None:
         }
         manifest = create_release_manifest(
             artifact_root=args.artifact_root,
+            platform_version=args.platform_version,
+            release_notes_path=args.release_notes,
             source_commit=args.source_commit,
             bundle_paths=sorted((args.artifact_root / "agents").glob("*.zip")),
             image_references=images,
@@ -62,6 +67,7 @@ def main() -> None:
         manifest,
         artifact_root=args.artifact_root,
         expected_commit=args.expected_commit,
+        required_schema_version=args.required_schema_version,
     )
     print(f"VERIFIED release-sha256:{manifest.release_id}")
 

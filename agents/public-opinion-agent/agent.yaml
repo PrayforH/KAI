@@ -2,19 +2,19 @@ apiVersion: harness/v1alpha1
 kind: Agent
 metadata:
   name: public-opinion-agent
-  version: 0.3.5
+  version: 0.3.22
   labels:
     domain: public-opinion
     template: orchestrator
-    display-name: 舆情分析
-    description: 基于专用舆情数据、用户材料与受控公网搜索，生成可追溯的中文舆情研判和报告。
-    execution-profile: isolated-default
-    source: legacy-public-opinion-migration
+    display-name: 涉非舆情分析（Codex）
+    description: Codex 0.3.22：明确“涉非”仅指涉及非法集资，禁止误扩展为非洲；延续快速首动作、深度报告与主体化文件命名。
+    codex-reasoning-effort: low
+    evaluation-enabled: "true"
 spec:
-  runtime: claude-agent-sdk
+  runtime: codex-app-server
   model:
-    route: deepseek-v4-pro
-    model: deepseek-v4-pro
+    route: codex-deepseek-v4-flash
+    model: deepseek-v4-flash-vision-exp
     requiredCapabilities: [streaming, tool_use]
   prompt:
     system: prompts/system.md
@@ -28,7 +28,9 @@ spec:
     - builtin: Edit
     - builtin: Bash
     - builtin: Task
-    - mcp: tavily-readonly
+    - mcp: sentiment_query_mcp
+  toolExposureMode: eager
+  knowledgeReferences: []
   subagents:
     - ref: helper-agent@1.0.0
       alias: fact-researcher
@@ -50,8 +52,9 @@ spec:
     restoreSession: true
     archiveOnComplete: true
   limits:
-    maxTurns: 36
-    timeoutSeconds: 2400
+    maxTurns: 128
+    maxToolCalls: 512
+    timeoutSeconds: 7200
     maxBudgetUsd: 4
     maxModelTokens: 400000
     maxSubagents: 8

@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  BUILTIN_TOOLS,
   DEFAULT_STUDIO_DRAFT,
   MODEL_ROUTES,
+  POLICY_OPTIONS,
   applyStudioDraftUpdate,
+  createPersonalStudioDraft,
   evaluateStudioDraft,
   mcpOptionsForDraft,
   restoreStudioDraft,
@@ -31,6 +34,28 @@ describe("Agent Studio effective contract", () => {
     },
   ];
 
+  it("creates a unique personal draft without colliding with the runtime Lead", () => {
+    expect(createPersonalStudioDraft()).toMatchObject({
+      name: "productivity-agent",
+      displayName: "生产力智能体",
+      version: "0.1.0",
+      domain: "productivity",
+      id: "",
+      revision: 0,
+      publishedVersion: null,
+    });
+    expect(
+      createPersonalStudioDraft([
+        "productivity-agent",
+        "productivity-agent-2",
+      ]),
+    ).toMatchObject({
+      name: "productivity-agent-3",
+      displayName: "生产力智能体 3",
+    });
+    expect(DEFAULT_STUDIO_DRAFT.name).toBe("lead-agent");
+  });
+
   it("auto-increments the patch version on the first edit after publish", () => {
     const published = {
       ...DEFAULT_STUDIO_DRAFT,
@@ -53,6 +78,7 @@ describe("Agent Studio effective contract", () => {
 
     expect(flash?.models).toEqual(["deepseek-v4-flash"]);
     expect(pro?.models).toEqual(["deepseek-v4-pro"]);
+    expect(MODEL_ROUTES.some((item) => item.id === "anthropic-official")).toBe(false);
   });
 
   it("uses a neutral general Lead instead of a business Agent template", () => {
@@ -80,6 +106,33 @@ describe("Agent Studio effective contract", () => {
     expect(contract.risk).toBe("high");
     expect(contract.collaborationLabel).toBe("单 Agent");
     expect(contract.subagentCount).toBe(0);
+  });
+
+  it("treats Skills as an optional workflow enhancement", () => {
+    const contract = evaluateStudioDraft({
+      ...DEFAULT_STUDIO_DRAFT,
+      skills: [],
+    });
+
+    expect(contract.ready).toBe(true);
+    expect(contract.skillCount).toBe(0);
+    expect(contract.issues).not.toContain("至少需要一个 Skill");
+  });
+
+  it("describes routine commands as automatic without a retired provider exception", () => {
+    const bash = BUILTIN_TOOLS.find((item) => item.id === "Bash");
+    const standard = POLICY_OPTIONS.find((item) => item.id === "production-standard");
+    const gateway = evaluateStudioDraft({
+      ...DEFAULT_STUDIO_DRAFT,
+      modelRoute: "deepseek-v4-pro",
+      model: "deepseek-v4-pro",
+    });
+
+    expect(bash?.approval).toBe("自动风险分级，必要时确认");
+    expect(bash?.approval).not.toContain("默认人工审批");
+    expect(standard?.description).toContain("策略允许的命令自动执行");
+    expect(standard?.description).not.toContain("命令默认审批");
+    expect(gateway.approvalLabel).toBe("安全 Bash 自动执行 · 高风险才确认");
   });
 
   it("does not offer business MCP or knowledge services to the personal Lead", () => {
@@ -158,12 +211,20 @@ describe("Agent Studio effective contract", () => {
     });
     const supported = evaluateStudioDraft({
       ...DEFAULT_STUDIO_DRAFT,
-      modelRoute: "anthropic-official",
+      modelRoute: "on-demand-test",
       toolExposureMode: "on_demand",
       requiredCapabilities: [
         ...DEFAULT_STUDIO_DRAFT.requiredCapabilities,
         "tool_search",
       ],
+    }, {
+      routes: [{
+        id: "on-demand-test",
+        label: "On-demand test route",
+        provider: "test",
+        models: [DEFAULT_STUDIO_DRAFT.model],
+        capabilities: ["streaming", "tool_use", "tool_search"],
+      }],
     });
 
     expect(unsupported.ready).toBe(false);

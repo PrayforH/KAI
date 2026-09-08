@@ -9,6 +9,7 @@ from harness.studio.catalog_service import CapabilityCatalogService
 from harness.studio.models import (
     AgentTemplate,
     CapabilityCatalogRecord,
+    CapabilityRisk,
     CreateAgentDraftRequest,
     McpCapability,
     ModelRouteCapability,
@@ -26,8 +27,98 @@ def test_default_catalog_exposes_separate_deepseek_v4_routes() -> None:
 
     assert routes["deepseek-v4-flash"].models == ("deepseek-v4-flash",)
     assert routes["deepseek-v4-pro"].models == ("deepseek-v4-pro",)
-    assert routes["new-api-default"].enabled is False
-    assert routes["glm-5-2"].models == ("shdata-glm",)
+    assert "new-api-default" not in routes
+    assert routes["glm-5-3-flash"].models == ("glm-5.3-flash",)
+    assert "anthropic-official" not in routes
+
+
+def test_catalog_accepts_existing_unauthenticated_video_route() -> None:
+    route = ModelRouteCapability(
+        routeId="minimax-h3-video",
+        label="MiniMax H3 Video",
+        provider="MiniMax",
+        models=("/model",),
+        capabilities=("video_generation",),
+        modelType="video_generation",
+        baseUrl="http://video-service:8000/v1",
+        apiFormat="openai_videos",
+        authScheme="none",
+    )
+
+    assert route.model_type == "video_generation"
+    assert route.api_format == "openai_videos"
+    assert route.auth_scheme == "none"
+
+
+@pytest.mark.asyncio
+async def test_get_retires_anthropic_official_from_system_catalog() -> None:
+    repository = InMemoryCapabilityCatalogRepository()
+    catalog = default_capability_catalog()
+    retired = ModelRouteCapability(
+        routeId="anthropic-official",
+        label="Anthropic official",
+        provider="anthropic",
+        models=("claude-sonnet-4-6",),
+        capabilities=("streaming", "tool_use", "tool_search"),
+        credentialReference="ANTHROPIC_API_KEY",
+    )
+    await repository.seed(
+        CapabilityCatalogRecord(
+            tenantId="tenant-a",
+            revision=8,
+            catalog=catalog.model_copy(update={"model_routes": (*catalog.model_routes, retired)}),
+            updatedBy="system-route-migration",
+            updatedAt=NOW,
+        )
+    )
+    service = CapabilityCatalogService(
+        repository,
+        InMemoryAgentDraftRepository(),
+        clock=lambda: NOW,
+    )
+
+    upgraded = await service.get("tenant-a")
+    repeated = await service.get("tenant-a")
+
+    assert upgraded.revision == 9
+    assert "anthropic-official" not in {route.route_id for route in upgraded.catalog.model_routes}
+    assert repeated == upgraded
+
+
+@pytest.mark.asyncio
+async def test_get_retires_anthropic_official_from_tenant_managed_catalog() -> None:
+    repository = InMemoryCapabilityCatalogRepository()
+    catalog = default_capability_catalog()
+    retired = ModelRouteCapability(
+        routeId="anthropic-official",
+        label="Tenant copy of retired platform route",
+        provider="anthropic",
+        models=("claude-sonnet-4-6",),
+        capabilities=("streaming", "tool_use"),
+        credentialReference="ANTHROPIC_API_KEY",
+    )
+    await repository.seed(
+        CapabilityCatalogRecord(
+            tenantId="tenant-a",
+            revision=12,
+            catalog=catalog.model_copy(update={"model_routes": (*catalog.model_routes, retired)}),
+            updatedBy="tenant-admin",
+            updatedAt=NOW,
+        )
+    )
+    service = CapabilityCatalogService(
+        repository,
+        InMemoryAgentDraftRepository(),
+        clock=lambda: NOW,
+    )
+
+    upgraded = await service.get("tenant-a")
+    repeated = await service.get("tenant-a")
+
+    assert upgraded.revision == 13
+    assert upgraded.updated_by == "tenant-admin"
+    assert "anthropic-official" not in {route.route_id for route in upgraded.catalog.model_routes}
+    assert repeated == upgraded
 
 
 def previous_system_catalog():
@@ -71,6 +162,95 @@ async def test_get_upgrades_an_untouched_system_catalog() -> None:
 
 
 @pytest.mark.asyncio
+async def test_get_migrates_legacy_daytona_default_to_docker_worker_profile() -> None:
+    repository = InMemoryCapabilityCatalogRepository()
+    catalog = default_capability_catalog()
+    profiles = tuple(
+        profile.model_copy(
+            update={
+                "label": "生产隔离执行",
+                "description": "在平台托管的隔离 Sandbox 中执行文件、命令和工具。",
+                "sandbox_provider": "daytona",
+                "risk": CapabilityRisk.MEDIUM,
+                "provider_config_reference": "daytona-managed",
+                "version": 1,
+            }
+        )
+        if profile.profile_id == "isolated-default"
+        else profile
+        for profile in catalog.execution_profiles
+    )
+    await repository.seed(
+        CapabilityCatalogRecord(
+            tenantId="tenant-a",
+            revision=4,
+            catalog=catalog.model_copy(update={"execution_profiles": profiles}),
+            updatedBy="tenant-admin",
+            updatedAt=NOW,
+        )
+    )
+    service = CapabilityCatalogService(
+        repository,
+        InMemoryAgentDraftRepository(),
+        clock=lambda: NOW,
+    )
+
+    upgraded = await service.get("tenant-a")
+    repeated = await service.get("tenant-a")
+
+    profile = next(
+        item
+        for item in upgraded.catalog.execution_profiles
+        if item.profile_id == "isolated-default"
+    )
+    assert upgraded.revision == 5
+    assert upgraded.updated_by == "tenant-admin"
+    assert profile.label == "Docker 容器工作区"
+    assert profile.sandbox_provider == "local"
+    assert profile.provider_config_reference == "docker-worker-local"
+    assert profile.production_allowed is True
+    assert profile.version == 2
+    assert repeated == upgraded
+
+
+@pytest.mark.asyncio
+async def test_get_migrates_legacy_platform_tavily_query_auth_to_bearer() -> None:
+    repository = InMemoryCapabilityCatalogRepository()
+    catalog = default_capability_catalog()
+    tavily = catalog.mcp_servers[0].model_copy(
+        update={
+            "auth_mode": "query",
+            "auth_name": "tavilyApiKey",
+            "version": 1,
+        }
+    )
+    await repository.seed(
+        CapabilityCatalogRecord(
+            tenantId="tenant-a",
+            revision=7,
+            catalog=catalog.model_copy(update={"mcp_servers": (tavily,)}),
+            updatedBy="system-route-migration",
+            updatedAt=NOW,
+        )
+    )
+    service = CapabilityCatalogService(
+        repository,
+        InMemoryAgentDraftRepository(),
+        clock=lambda: NOW,
+    )
+
+    upgraded = await service.get("tenant-a")
+    repeated = await service.get("tenant-a")
+
+    migrated = upgraded.catalog.mcp_servers[0]
+    assert upgraded.revision == 8
+    assert migrated.auth_mode == "bearer"
+    assert migrated.auth_name is None
+    assert migrated.version == 2
+    assert repeated == upgraded
+
+
+@pytest.mark.asyncio
 async def test_get_never_drops_tenant_mcp_from_a_system_authored_catalog() -> None:
     repository = InMemoryCapabilityCatalogRepository()
     catalog = previous_system_catalog()
@@ -81,15 +261,13 @@ async def test_get_never_drops_tenant_mcp_from_a_system_authored_catalog() -> No
         description="Read-only internal sentiment data.",
         endpointUrl="http://sentiment-mcp:8001/mcp",
         tools=("mcp__sentiment_query_mcp__search_risk_subjects",),
-        risk="medium",
-        networkAccess="internal",
+        risk=CapabilityRisk.MEDIUM,
+        networkAccess=NetworkAccess.INTERNAL,
         sendsUserData=True,
         readOnly=True,
         executionLocation="external-mcp",
     )
-    catalog = catalog.model_copy(
-        update={"mcp_servers": (*catalog.mcp_servers, tenant_mcp)}
-    )
+    catalog = catalog.model_copy(update={"mcp_servers": (*catalog.mcp_servers, tenant_mcp)})
     await repository.seed(
         CapabilityCatalogRecord(
             tenantId="tenant-a",
@@ -140,7 +318,158 @@ async def test_get_preserves_a_tenant_managed_catalog() -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_splits_legacy_deepseek_route_in_system_migrated_catalog() -> None:
+async def test_get_adds_platform_runtime_capabilities_to_tenant_legacy_catalog() -> None:
+    repository = InMemoryCapabilityCatalogRepository()
+    catalog = default_capability_catalog().model_copy(update={"runtime_capabilities": ()})
+    await repository.seed(
+        CapabilityCatalogRecord(
+            tenantId="tenant-a",
+            revision=9,
+            catalog=catalog,
+            updatedBy="tenant-admin",
+            updatedAt=NOW,
+        )
+    )
+    service = CapabilityCatalogService(
+        repository,
+        InMemoryAgentDraftRepository(),
+        clock=lambda: NOW,
+    )
+
+    upgraded = await service.get("tenant-a")
+    repeated = await service.get("tenant-a")
+
+    assert upgraded.revision == 10
+    assert upgraded.updated_by == "tenant-admin"
+    assert {item.runtime for item in upgraded.catalog.runtime_capabilities} == {
+        "claude-agent-sdk",
+        "codex-app-server",
+    }
+    assert repeated == upgraded
+
+
+@pytest.mark.asyncio
+async def test_get_refreshes_exact_legacy_copy_in_tenant_managed_catalog() -> None:
+    repository = InMemoryCapabilityCatalogRepository()
+    catalog = previous_system_catalog()
+    policies = tuple(
+        policy.model_copy(
+            update={
+                "description": "允许受控文件写入，命令和高风险动作进入审批。",
+                "version": 6,
+            }
+        )
+        if policy.policy_id == "production-standard"
+        else policy
+        for policy in catalog.policies
+    )
+    templates = tuple(
+        template.model_copy(
+            update={"description": "在隔离工作区中生成或修改文件，高风险操作需审批。"}
+        )
+        if template.template is AgentTemplate.OPERATOR
+        else template
+        for template in catalog.templates
+    )
+    previous = CapabilityCatalogRecord(
+        tenantId="tenant-a",
+        revision=12,
+        catalog=catalog.model_copy(update={"policies": policies, "templates": templates}),
+        updatedBy="tenant-admin",
+        updatedAt=NOW,
+    )
+    await repository.seed(previous)
+    service = CapabilityCatalogService(
+        repository,
+        InMemoryAgentDraftRepository(),
+        clock=lambda: NOW,
+    )
+
+    upgraded = await service.get("tenant-a")
+    repeated = await service.get("tenant-a")
+
+    policy = next(
+        item for item in upgraded.catalog.policies if item.policy_id == "production-standard"
+    )
+    operator = next(
+        item for item in upgraded.catalog.templates if item.template is AgentTemplate.OPERATOR
+    )
+    assert upgraded.revision == 13
+    assert upgraded.updated_by == "tenant-admin"
+    assert policy.version == 7
+    assert policy.description == (
+        "工作区写入及策略允许的命令自动执行；高风险、越界或不确定动作拒绝或确认。"
+    )
+    assert operator.description == (
+        "在隔离工作区中生成或修改文件；常规操作自动完成，仅在高风险边界需要确认。"
+    )
+    assert "local-development" not in {
+        profile.profile_id for profile in upgraded.catalog.execution_profiles
+    }
+    assert repeated == upgraded
+
+
+@pytest.mark.asyncio
+async def test_get_refreshes_only_known_legacy_system_permission_copy() -> None:
+    repository = InMemoryCapabilityCatalogRepository()
+    catalog = default_capability_catalog()
+    policies = tuple(
+        policy.model_copy(
+            update={
+                "description": "允许受控文件写入，命令和高风险动作进入审批。",
+                "version": 4,
+            }
+        )
+        if policy.policy_id == "production-standard"
+        else policy
+        for policy in catalog.policies
+    )
+    templates = tuple(
+        template.model_copy(
+            update={"description": "在隔离工作区中生成或修改文件，高风险操作需审批。"}
+        )
+        if template.template is AgentTemplate.OPERATOR
+        else template
+        for template in catalog.templates
+    )
+    await repository.seed(
+        CapabilityCatalogRecord(
+            tenantId="tenant-a",
+            revision=8,
+            catalog=catalog.model_copy(update={"policies": policies, "templates": templates}),
+            updatedBy="system-profile-compatibility",
+            updatedAt=NOW,
+        )
+    )
+    service = CapabilityCatalogService(
+        repository,
+        InMemoryAgentDraftRepository(),
+        clock=lambda: NOW,
+    )
+
+    upgraded = await service.get("tenant-a")
+    repeated = await service.get("tenant-a")
+
+    policy = next(
+        item for item in upgraded.catalog.policies if item.policy_id == "production-standard"
+    )
+    operator = next(
+        item for item in upgraded.catalog.templates if item.template is AgentTemplate.OPERATOR
+    )
+    assert upgraded.revision == 9
+    assert upgraded.updated_by == "system-route-migration"
+    assert policy.version == 5
+    assert policy.description == (
+        "工作区写入及策略允许的命令自动执行；高风险、越界或不确定动作拒绝或确认。"
+    )
+    assert operator.description == (
+        "在隔离工作区中生成或修改文件；常规操作自动完成，仅在高风险边界需要确认。"
+    )
+    assert repeated == upgraded
+
+
+@pytest.mark.asyncio
+async def test_get_retires_legacy_deepseek_route_in_system_migrated_catalog() -> None:
     repository = InMemoryCapabilityCatalogRepository()
     catalog = default_capability_catalog()
     legacy_route = ModelRouteCapability(
@@ -188,11 +517,11 @@ async def test_get_splits_legacy_deepseek_route_in_system_migrated_catalog() -> 
     routes = {route.route_id: route for route in upgraded.catalog.model_routes}
     assert upgraded.revision == 25
     assert upgraded.updated_by == "system-route-migration"
-    assert routes["new-api-default"].enabled is False
+    assert "new-api-default" not in routes
     assert routes["deepseek-v4-flash"].models == ("deepseek-v4-flash",)
     assert routes["deepseek-v4-pro"].models == ("deepseek-v4-pro",)
     assert routes["deepseek-v4-flash"].credential_reference == "CUSTOM_NEW_API_KEY"
-    assert routes["glm-5-2"].models == ("shdata-glm",)
+    assert routes["glm-5-3-flash"].models == ("glm-5.3-flash",)
 
 
 @pytest.mark.asyncio
@@ -281,7 +610,7 @@ async def test_personal_mcp_capabilities_are_visible_only_to_their_owner() -> No
 
 
 @pytest.mark.asyncio
-async def test_new_users_do_not_inherit_platform_mcp_capabilities() -> None:
+async def test_new_users_receive_platform_mcp_but_not_personal_capabilities() -> None:
     service = CapabilityCatalogService(
         InMemoryCapabilityCatalogRepository(),
         InMemoryAgentDraftRepository(),
@@ -289,9 +618,11 @@ async def test_new_users_do_not_inherit_platform_mcp_capabilities() -> None:
     )
     catalog = await service.get_for_user("tenant-a", "new-user")
 
-    assert catalog.catalog.mcp_servers == ()
-    assert all(
-        "tavily-readonly" not in profile.allowed_mcp_references
+    assert {item.reference for item in catalog.catalog.mcp_servers} == {
+        item.reference for item in default_capability_catalog().mcp_servers
+    }
+    assert any(
+        "tavily-readonly" in profile.allowed_mcp_references
         for profile in catalog.catalog.execution_profiles
     )
 
@@ -398,3 +729,33 @@ async def test_mcp_upsert_rejects_profile_without_required_network_access() -> N
                 allowedExecutionProfileIds=("e2b-public-egress",),
             ),
         )
+
+
+@pytest.mark.asyncio
+async def test_admin_edited_catalog_receives_web_tools_without_replacing_custom_entries():
+    defaults = default_capability_catalog()
+    existing = defaults.model_copy(
+        update={
+            "builtin_tools": tuple(
+                tool
+                for tool in defaults.builtin_tools
+                if tool.name not in {"WebSearch", "WebFetch"}
+            ),
+        }
+    )
+    repository = InMemoryCapabilityCatalogRepository()
+    await repository.seed(
+        CapabilityCatalogRecord(
+            tenantId="admin-catalog",
+            revision=5,
+            catalog=existing,
+            updatedBy="user-admin",
+            updatedAt=NOW,
+        )
+    )
+    service = CapabilityCatalogService(repository, InMemoryAgentDraftRepository())
+    upgraded = await service.get("admin-catalog")
+    assert {"WebSearch", "WebFetch"} <= {tool.name for tool in upgraded.catalog.builtin_tools}
+    assert upgraded.catalog.builtin_tools[: len(existing.builtin_tools)] == existing.builtin_tools
+    assert upgraded.updated_by == "user-admin"
+    assert (await service.get("admin-catalog")).revision == upgraded.revision

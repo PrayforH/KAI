@@ -12,6 +12,7 @@ from scripts.bootstrap_local_agent import (
     local_client_options,
 )
 from scripts.e2e_fake_runtime import run_fake_e2e
+from tests.support.policies import fake_runtime_review_profiles
 
 
 @pytest.mark.asyncio
@@ -121,7 +122,7 @@ def test_local_lifecycle_tracks_the_real_server_processes() -> None:
 
 @pytest.mark.asyncio
 async def test_approval_resume_closes_message_and_uses_a_new_message_id() -> None:
-    container = build_memory_container()
+    container = build_memory_container(policy_profiles=fake_runtime_review_profiles())
     await container.agents.publish(
         "local", "developer", "tests/fixtures/agents/echo-agent/agent.yaml"
     )

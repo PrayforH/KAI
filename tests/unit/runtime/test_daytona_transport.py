@@ -335,3 +335,11 @@ async def test_close_is_bounded_even_if_remote_termination_hangs() -> None:
 
     assert session.terminated is True
     assert transport.is_ready() is False
+
+
+def test_remote_command_ignores_legacy_budget() -> None:
+    command = build_remote_claude_command(
+        replace(options(), max_budget_usd=0.001), cli_path="/home/daytona/.local/bin/claude"
+    )
+    assert "--max-budget-usd" not in command
+    assert "--permission-mode" in command

@@ -42,6 +42,7 @@ def test_execution_identity_is_immutable_and_contains_run_scope() -> None:
         "run_id": "run-a",
         "agent_name": "research-agent",
         "agent_version": "1.2.0",
+        "connection_mode": "caller_owned",
     }
     with pytest.raises(ValidationError):
         identity.run_id = "another-run"  # type: ignore[misc]

@@ -232,6 +232,29 @@ describe("Harness same-origin proxies", () => {
     expect(await response.json()).toHaveLength(1);
   });
 
+  it("forwards personal version history and promotion under the agent identity", async () => {
+    let upstreamUrl = "";
+    let upstreamMethod = "";
+    await proxyAgentCatalogRequest(
+      new Request(
+        "http://console.test/api/harness/agents/agent-one/versions/0.1.0/promote",
+        { method: "POST", headers: { Cookie: "harness_access_token=user-jwt" } },
+      ),
+      config,
+      async (input, init) => {
+        upstreamUrl = String(input);
+        upstreamMethod = init?.method ?? "";
+        return Response.json({ current_version: "0.1.0" });
+      },
+      "agent-one/versions/0.1.0/promote",
+    );
+
+    expect(upstreamUrl).toBe(
+      "http://harness.internal:8000/v1/agents/agent-one/versions/0.1.0/promote",
+    );
+    expect(upstreamMethod).toBe("POST");
+  });
+
   it("forwards multipart bytes without exposing internal identity in the response", async () => {
     let upstreamInit: RequestInit | undefined;
     const fetcher: typeof fetch = async (_input, init) => {

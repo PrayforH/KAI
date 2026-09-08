@@ -1,5 +1,8 @@
+import { TEAM_COLLABORATION_ENABLED } from "./agent-visibility";
+import type { RunActivity } from "./activity-schema";
 import { requireAuthenticatedResponse } from "./client-auth";
 import { createRandomId } from "./random-id";
+import { streamAgui } from "./agui";
 import type {
   BuiltinToolOption,
   McpOption,
@@ -135,15 +138,28 @@ export type StudioQuotaUsage = {
 };
 
 export type StudioDraftSummary = {
+  parentDraftId?: string | null;
   draftId: string;
+  agentId: string | null;
+  spaceId: string | null;
   name: string;
   displayName: string;
   domain: string;
   version: string;
   template: StudioDraft["template"];
+  goal?: string;
+  primaryOutput?: string;
+  primaryConstraint?: string | null;
+  skillCount?: number;
+  toolCount?: number;
+  networkToolsEnabled?: boolean;
   revision: number;
   updatedAt: string;
   publishedVersion: string | null;
+};
+
+type StudioSpaceSummary = {
+  space: { spaceId: string };
 };
 
 export type StudioSkillConversationMessage = {
@@ -177,6 +193,33 @@ export type StudioInstalledSkill = {
   binaryFileCount: number;
 };
 
+export type StudioPlatformSkillPackage = {
+  packageId: string;
+  revision: number;
+  displayName: string;
+  summary: string;
+  tags: string[];
+  compatibleRuntimes: StudioDraft["runtime"][];
+  license: string;
+  sourceUrl: string;
+  sourceRevision: string;
+  contentHash: string;
+  riskLevel: "low" | "review";
+  findings: string[];
+  skill: StudioSkill;
+  evaluationCases: Array<{
+    id: string;
+    tags: string[];
+    prompt: string;
+    expect: StudioEvalCase["expect"];
+  }>;
+};
+
+export type StudioPlatformSkillCatalog = {
+  revision: number;
+  packages: StudioPlatformSkillPackage[];
+};
+
 type ApiEvalCase = {
   id: string;
   tags: string[];
@@ -192,9 +235,12 @@ type ApiDraftSpec = {
   description: string;
   domain: string;
   template: StudioDraft["template"];
+  taskContract?: StudioDraft["taskContract"];
+  runtime?: StudioDraft["runtime"];
   model: {
     routeId: string;
     model: string;
+    reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh" | null;
     fallbackRouteId: string | null;
     fallbackModel: string | null;
     requiredCapabilities: string[];
@@ -227,6 +273,7 @@ type ApiDraftSpec = {
   workspace: { restoreSession: boolean; archiveOnComplete: boolean };
   limits: {
     maxTurns: number | null;
+    maxToolCalls: number | null;
     timeoutSeconds: number | null;
     maxBudgetUsd: number | null;
     maxModelTokens: number | null;
@@ -240,7 +287,10 @@ type ApiDraftSpec = {
 };
 
 export type ApiAgentDraft = {
+  parentDraftId?: string | null;
   draftId: string;
+  agentId: string | null;
+  spaceId: string | null;
   tenantId: string;
   revision: number;
   spec: ApiDraftSpec;
@@ -270,6 +320,17 @@ export type ApiAgentVersion = {
   manifest_hash: string;
   package_hash: string | null;
   created_at: string;
+};
+
+export type PersonalAgentVersion = {
+  agent_id: string;
+  name: string;
+  version: string;
+  display_name: string;
+  manifest_hash: string;
+  package_hash: string | null;
+  created_at: string;
+  current_version: string | null;
 };
 
 export type StudioKnowledgeAcl = {
@@ -473,6 +534,36 @@ export type StudioPolicyPublication = {
   publishedAt: string;
 };
 
+export type StudioAgentBuilderPatch = {
+  baseRevision: number;
+  taskContract: NonNullable<StudioDraft["taskContract"]>;
+  systemPrompt: string;
+  evaluationCases: StudioEvalCase[];
+  explanation: string[];
+  validation: StudioValidation;
+};
+
+export type StudioBuilderChanges = {
+  displayName?: string;
+  description?: string;
+  systemPrompt?: string;
+  taskContract?: NonNullable<StudioDraft["taskContract"]>;
+  builtinTools?: string[];
+  mcpServers?: string[];
+  knowledgeReferences?: string[];
+  skillInstructions?: { name: string; instructions: string }[];
+  removeSkills?: string[];
+  roleResponsibilities?: { alias: string; responsibility: string }[];
+};
+export type StudioBuilderReply = {
+  baseRevision: number;
+  reply: string;
+  changedFields: string[];
+  changes: StudioBuilderChanges;
+  action?: "edit" | "run" | "rerun" | "ask" | "reply";
+  task?: string;
+};
+
 export type StudioValidation = {
   ready: boolean;
   productionEligible: boolean;
@@ -487,6 +578,14 @@ export type StudioValidation = {
   }>;
   contentHash: string | null;
   packageHash: string | null;
+  runtimeCompatibility: {
+    runtime: StudioDraft["runtime"];
+    label: string;
+    stability: "stable" | "preview" | "experimental";
+    compatible: boolean;
+    capabilities: string[];
+    limitations: string[];
+  };
 };
 
 export type StudioPreflightCheck = {
@@ -548,6 +647,72 @@ export type StudioPreview = {
   staleReason: string | null;
 };
 
+export type StudioTaskDrivenRecommendation = {
+  runtime: StudioDraft["runtime"];
+  modelRouteId: string;
+  model: string;
+  template: StudioDraft["template"];
+  builtinTools: string[];
+  mcpServers: string[];
+  permissionPolicy: string;
+  executionProfile: string;
+  reasons: string[];
+  validation: StudioValidation;
+};
+
+export type StudioTaskDrivenDraftResult = {
+  draft: ApiAgentDraft;
+  recommendation: StudioTaskDrivenRecommendation | null;
+};
+
+export type CodexLoopStage = {
+  id: "plan" | "tools" | "correction" | "verification" | "result";
+  label: string;
+  status: "pending" | "active" | "completed" | "skipped" | "failed";
+  summary: string;
+  evidence: Array<{
+    eventType: string;
+    sequence: number;
+    summary: string;
+  }>;
+};
+
+export type StudioTryRun = {
+  activity?: RunActivity | null;
+  draftId: string;
+  draftRevision: number;
+  run: {
+    run_id: string;
+    session_id: string;
+    status: "queued" | "provisioning" | "running" | "waiting_approval" | "cancelling" | "cancelled" | "succeeded" | "failed" | "timed_out" | "rejected";
+    error_code: string | null;
+  };
+  events: Array<{
+    event_id: string;
+    sequence: number;
+    type: string;
+    timestamp: string;
+    payload: Record<string, unknown>;
+  }>;
+  approvals: Array<{
+    approval_id: string;
+    status: "pending" | "approved" | "rejected" | "expired" | "cancelled";
+    tool_name: string | null;
+    reason: string;
+    argument_summary: Record<string, unknown>;
+    risk: string | null;
+  }>;
+  artifacts: Array<{
+    artifact_id: string;
+    name: string;
+    media_type: string;
+    status: "pending" | "ready" | "failed";
+    size_bytes: number | null;
+  }>;
+  finalText: string;
+  loop: CodexLoopStage[];
+};
+
 export type StudioEvalDataset = {
   tenantId: string;
   datasetId: string;
@@ -569,6 +734,13 @@ export type StudioEvalDataset = {
   }>;
   createdBy: string;
   createdAt: string;
+};
+
+export type StudioSolidifiedAgentResult = {
+  draft: ApiAgentDraft;
+  version: ApiAgentVersion;
+  dataset: StudioEvalDataset;
+  loop: CodexLoopStage[];
 };
 
 export type StudioEvalCaseResult = {
@@ -808,6 +980,8 @@ export type StudioCapabilities = {
     provider: string;
     models: string[];
     capabilities: string[];
+    modelType?: "chat" | "vision" | "image_generation" | "video_generation";
+    apiFormat: "anthropic_compatible" | "openai_compatible" | "openai_images" | "openai_videos";
     enabled: boolean;
   }>;
   builtinTools: Array<{
@@ -827,6 +1001,7 @@ export type StudioCapabilities = {
     description: string;
     endpointUrl: string | null;
     transport: "http" | "sse";
+    customHeaders: Record<string, string>;
     tools: string[];
     risk: StudioRisk;
     networkAccess: McpOption["network"];
@@ -859,6 +1034,19 @@ export type StudioCapabilities = {
     productionAllowed: boolean;
     version: number;
     enabled: boolean;
+  }>;
+  templates: Array<{
+    template: StudioDraft["template"];
+    label: string;
+    description: string;
+  }>;
+  runtimeCapabilities: Array<{
+    runtime: StudioDraft["runtime"];
+    label: string;
+    stability: "stable" | "preview" | "experimental";
+    capabilities: string[];
+    modelApiFormats: Array<"anthropic_compatible" | "openai_compatible" | "openai_images">;
+    limitations: string[];
   }>;
 };
 
@@ -949,6 +1137,114 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+async function listAccessibleDrafts(): Promise<StudioDraftSummary[]> {
+  if (!TEAM_COLLABORATION_ENABLED) {
+    const personal = await request<StudioDraftSummary[]>("drafts");
+    return personal.filter((draft) => !draft.spaceId);
+  }
+  const personalRequest = request<StudioDraftSummary[]>("drafts");
+  try {
+    const [personal, response] = await Promise.all([
+      personalRequest,
+      fetch("/api/spaces", { cache: "no-store" }).then(requireAuthenticatedResponse),
+    ]);
+    if (!response.ok) return personal;
+    const spaces = await response.json() as StudioSpaceSummary[];
+    const workspace = await Promise.all(
+      spaces.map((item) => request<StudioDraftSummary[]>(
+        `drafts?spaceId=${encodeURIComponent(item.space.spaceId)}`,
+      )),
+    );
+    const unique = new Map(
+      [...personal, ...workspace.flat()].map((draft) => [draft.draftId, draft]),
+    );
+    return [...unique.values()].sort((left, right) =>
+      right.updatedAt.localeCompare(left.updatedAt)
+    );
+  } catch {
+    // Personal Studio remains usable if collaboration is temporarily degraded.
+    return personalRequest;
+  }
+}
+
+const studioDraftRequests = new Map<string, Promise<ApiAgentDraft>>();
+const studioDraftSnapshots = new Map<
+  string,
+  { receivedAt: number; draft: ApiAgentDraft }
+>();
+const STUDIO_DRAFT_CACHE_MS = 10_000;
+
+function rememberStudioDraft(draft: ApiAgentDraft): ApiAgentDraft {
+  studioDraftSnapshots.set(draft.draftId, {
+    receivedAt: Date.now(),
+    draft,
+  });
+  return draft;
+}
+
+function forgetStudioDraft(draftId: string) {
+  studioDraftSnapshots.delete(draftId);
+}
+
+function getStudioDraft(
+  draftId: string,
+  options: { expectedRevision?: number; maxAgeMs?: number } = {},
+): Promise<ApiAgentDraft> {
+  const cached = studioDraftSnapshots.get(draftId);
+  const maxAgeMs = options.maxAgeMs ?? STUDIO_DRAFT_CACHE_MS;
+  if (
+    cached
+    && Date.now() - cached.receivedAt < maxAgeMs
+    && (
+      options.expectedRevision === undefined
+      || cached.draft.revision === options.expectedRevision
+    )
+  ) {
+    return Promise.resolve(cached.draft);
+  }
+  const inFlight = studioDraftRequests.get(draftId);
+  if (inFlight) return inFlight;
+  const requestDraft = request<ApiAgentDraft>(
+    `drafts/${encodeURIComponent(draftId)}`,
+  ).then(rememberStudioDraft).finally(() => {
+    if (studioDraftRequests.get(draftId) === requestDraft) {
+      studioDraftRequests.delete(draftId);
+    }
+  });
+  studioDraftRequests.set(draftId, requestDraft);
+  return requestDraft;
+}
+
+async function agentRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = requireAuthenticatedResponse(
+    await fetch(`/api/harness/agents/${path.replace(/^\//, "")}`, {
+      ...init,
+      cache: "no-store",
+      headers: {
+        ...(init.body ? { "Content-Type": "application/json" } : {}),
+        ...init.headers,
+      },
+    }),
+  );
+  if (!response.ok) throw await errorFrom(response);
+  return response.json() as Promise<T>;
+}
+
+async function harnessRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = requireAuthenticatedResponse(
+    await fetch(`/api/harness/${path.replace(/^\//, "")}`, {
+      ...init,
+      cache: "no-store",
+      headers: {
+        ...(init.body ? { "Content-Type": "application/json" } : {}),
+        ...init.headers,
+      },
+    }),
+  );
+  if (!response.ok) throw await errorFrom(response);
+  return response.json() as Promise<T>;
+}
+
 async function lifecycleRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = requireAuthenticatedResponse(
     await fetch(`/api/data-lifecycle/${path.replace(/^\//, "")}`, {
@@ -1008,7 +1304,10 @@ export const lifecycleClient = {
 export function apiDraftToStudioDraft(source: ApiAgentDraft): StudioDraft {
   const spec = source.spec;
   return {
+    parentDraftId: source.parentDraftId ?? null,
     id: source.draftId,
+    agentId: source.agentId ?? null,
+    spaceId: source.spaceId ?? null,
     revision: source.revision,
     publishedVersion: source.publishedVersion,
     publishedHash: source.publishedHash,
@@ -1019,8 +1318,11 @@ export function apiDraftToStudioDraft(source: ApiAgentDraft): StudioDraft {
     domain: spec.domain,
     version: spec.version,
     template: spec.template,
+    taskContract: spec.taskContract ?? null,
+    runtime: spec.runtime ?? "claude-agent-sdk",
     modelRoute: spec.model.routeId,
     model: spec.model.model,
+    reasoningEffort: spec.model.reasoningEffort ?? null,
     requiredCapabilities: spec.model.requiredCapabilities,
     systemPrompt: spec.systemPrompt,
     skills: spec.skills,
@@ -1035,6 +1337,7 @@ export function apiDraftToStudioDraft(source: ApiAgentDraft): StudioDraft {
     restoreSession: spec.workspace.restoreSession,
     archiveOnComplete: spec.workspace.archiveOnComplete,
     maxTurns: spec.limits.maxTurns,
+    maxToolCalls: spec.limits.maxToolCalls ?? 256,
     timeoutSeconds: spec.limits.timeoutSeconds,
     maxBudgetUsd: spec.limits.maxBudgetUsd,
     maxModelTokens: spec.limits.maxModelTokens,
@@ -1061,9 +1364,12 @@ export function studioDraftToSpec(draft: StudioDraft): ApiDraftSpec {
     description: draft.description,
     domain: draft.domain,
     template: draft.template,
+    taskContract: draft.taskContract,
+    runtime: draft.runtime,
     model: {
       routeId: draft.modelRoute,
       model: draft.model,
+      reasoningEffort: draft.reasoningEffort,
       fallbackRouteId: null,
       fallbackModel: null,
       requiredCapabilities: draft.requiredCapabilities,
@@ -1084,6 +1390,7 @@ export function studioDraftToSpec(draft: StudioDraft): ApiDraftSpec {
     },
     limits: {
       maxTurns: draft.maxTurns,
+      maxToolCalls: draft.maxToolCalls,
       timeoutSeconds: draft.timeoutSeconds,
       maxBudgetUsd: draft.maxBudgetUsd,
       maxModelTokens: draft.maxModelTokens,
@@ -1276,9 +1583,26 @@ export const studioClient = {
     method: "PUT",
     body: JSON.stringify({ expectedRevision, scope, limits }),
   }),
+  createInternalSubagent: (parentId: string, expectedRevision: number, displayName: string, responsibility: string) =>
+    request<{ parent: ApiAgentDraft; child: ApiAgentDraft }>(`drafts/${encodeURIComponent(parentId)}/subagents`, {
+      method: "POST", body: JSON.stringify({ expectedRevision, displayName, responsibility }),
+    }).then((result) => {
+      rememberStudioDraft(result.parent);
+      rememberStudioDraft(result.child);
+      return result;
+    }),
+  setDraftPlacement: (draftId: string, expectedRevision: number, parentDraftId: string | null) =>
+    request<ApiAgentDraft>(`drafts/${encodeURIComponent(draftId)}/placement`, {
+      method: "PUT", body: JSON.stringify({ expectedRevision, parentDraftId }),
+    }).then(rememberStudioDraft),
   listDrafts: () => request<StudioDraftSummary[]>("drafts"),
-  getDraft: (draftId: string) =>
-    request<ApiAgentDraft>(`drafts/${encodeURIComponent(draftId)}`),
+  listAccessibleDrafts,
+  getDraft: (
+    draftId: string,
+    options?: { expectedRevision?: number; maxAgeMs?: number },
+  ) => getStudioDraft(draftId, options),
+  prefetchDraft: (draftId: string, expectedRevision?: number) =>
+    getStudioDraft(draftId, { expectedRevision }).then(() => undefined),
   capabilities: () => request<StudioCapabilities>("capabilities"),
   continueSkillConversation: (body: {
     modelRoute: string;
@@ -1304,6 +1628,7 @@ export const studioClient = {
     serverName: string;
     endpointUrl: string;
     networkAccess: "internal" | "external";
+    customHeaders: Record<string, string>;
     authMode: "none" | "bearer" | "header" | "query";
     authName: string | null;
     authKey: string;
@@ -1355,7 +1680,12 @@ export const studioClient = {
       `catalog/mcp/${encodeURIComponent(reference)}?expected_revision=${expectedRevision}`,
       { method: "DELETE" },
     ),
-  createDraft: (draft: StudioDraft) =>
+  deleteMcp: (reference: string, expectedRevision: number) =>
+    request<StudioCatalogMutationResult>(
+      `catalog/mcp/${encodeURIComponent(reference)}/permanent?expected_revision=${expectedRevision}`,
+      { method: "DELETE" },
+    ),
+  createDraft: (draft: Pick<StudioDraft, "name" | "domain" | "displayName" | "description" | "template">) =>
     request<ApiAgentDraft>("drafts", {
       method: "POST",
       body: JSON.stringify({
@@ -1365,18 +1695,120 @@ export const studioClient = {
         description: draft.description,
         template: draft.template,
       }),
-    }),
+    }).then(rememberStudioDraft),
+  createDraftFromTask: async (body: {
+    task: string;
+    audience?: string;
+    sampleInput?: string;
+    runtimePreference: "auto" | StudioDraft["runtime"];
+  }): Promise<StudioTaskDrivenDraftResult> => {
+    try {
+      const result = await request<StudioTaskDrivenDraftResult>("drafts/from-task", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      rememberStudioDraft(result.draft);
+      return result;
+    } catch (error) {
+      if (!(error instanceof StudioApiError) || ![404, 405].includes(error.status)) {
+        throw error;
+      }
+
+      // Older control-plane deployments do not expose /drafts/from-task yet.
+      // Keep task-first creation available by falling back to the stable draft
+      // endpoint; the Builder can still refine and run the resulting draft.
+      const task = body.task.trim();
+      const firstLine = task.split(/\r?\n/, 1)[0]?.trim() || "新智能体";
+      const displayName = firstLine.length > 28
+        ? `${firstLine.slice(0, 27)}…`
+        : firstLine;
+      const draft = await request<ApiAgentDraft>("drafts", {
+        method: "POST",
+        body: JSON.stringify({
+          name: `task-agent-${createRandomId().slice(0, 8)}`,
+          domain: "general",
+          displayName,
+          description: task,
+          template: "analyst",
+        }),
+      });
+      rememberStudioDraft(draft);
+      return { draft, recommendation: null };
+    }
+  },
+  readBuilderMaterials: (inputArtifactIds: string[], modelRoute?: string): Promise<{context: string}> => request("builder-materials", {method: "POST", body: JSON.stringify({inputArtifactIds, modelRoute})}),
+  converseBuilder: (draftId: string, body: {
+    expectedRevision: number;
+    messages: { role: "user" | "assistant"; content: string }[];
+    runContext: string;
+    intent?: "auto" | "edit";
+  }): Promise<StudioBuilderReply> => request(`drafts/${encodeURIComponent(draftId)}/builder-conversation`, {
+    method: "POST", body: JSON.stringify(body),
+  }),
+  applyBuilderEdit: async (draftId: string, body: {
+    expectedRevision: number; changes: StudioBuilderChanges;
+  }): Promise<ApiAgentDraft> => {
+    const draft = await request<ApiAgentDraft>(`drafts/${encodeURIComponent(draftId)}/builder-apply`, {
+      method: "POST", body: JSON.stringify(body),
+    });
+    rememberStudioDraft(draft);
+    return draft;
+  },
+  createAgentBuilderPatch: async (
+    draftId: string,
+    body: {
+      expectedRevision: number;
+      goal: string;
+      audience?: string;
+      inputs: string[];
+      outputs: string[];
+      constraints?: string[];
+    },
+  ): Promise<StudioAgentBuilderPatch> => {
+    const raw = await request<{
+      baseRevision: number;
+      taskContract: NonNullable<StudioDraft["taskContract"]>;
+      systemPrompt: string;
+      evaluationCases: Array<{
+        id: string;
+        tags: string[];
+        prompt: string;
+        expect: StudioEvalCase["expect"];
+      }>;
+      explanation: string[];
+      validation: StudioValidation;
+    }>(`drafts/${encodeURIComponent(draftId)}/builder-patch`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    return {
+      baseRevision: raw.baseRevision,
+      taskContract: raw.taskContract,
+      systemPrompt: raw.systemPrompt,
+      evaluationCases: raw.evaluationCases.map((item) => ({
+        id: item.id,
+        label: item.id,
+        tag: (item.tags.find((tag) => ["happy", "ambiguous", "safety"].includes(tag)) ?? "happy") as StudioEvalCase["tag"],
+        prompt: item.prompt,
+        expect: item.expect,
+      })),
+      explanation: raw.explanation,
+      validation: raw.validation,
+    };
+  },
   async importBundle(file: Blob): Promise<StudioImportedAgentBundle> {
     const response = requireAuthenticatedResponse(
       await fetch("/api/studio/drafts/import", {
         method: "POST",
         cache: "no-store",
-        headers: { "Content-Type": "application/zip" },
+        headers: { "Content-Type": (file instanceof File && file.name.toLowerCase().endsWith(".rar")) ? "application/vnd.rar" : "application/zip" },
         body: file,
       }),
     );
     if (!response.ok) throw await errorFrom(response);
-    return response.json() as Promise<StudioImportedAgentBundle>;
+    const imported = await response.json() as StudioImportedAgentBundle;
+    rememberStudioDraft(imported.draft);
+    return imported;
   },
   async importSkill(file: File): Promise<StudioImportedSkill> {
     const markdown = file.name.toLowerCase().endsWith(".md");
@@ -1395,6 +1827,25 @@ export const studioClient = {
     );
     if (!response.ok) throw await errorFrom(response);
     return response.json() as Promise<StudioImportedSkill>;
+  },
+  listPlatformSkills: () =>
+    request<StudioPlatformSkillCatalog>("skills/catalog"),
+  async installPlatformSkill(
+    draftId: string,
+    expectedRevision: number,
+    packageId: string,
+    packageRevision: number,
+  ): Promise<StudioInstalledSkill> {
+    const installed = await request<StudioInstalledSkill>(
+      `drafts/${encodeURIComponent(draftId)}/skills/catalog/`
+        + `${encodeURIComponent(packageId)}/install`,
+      {
+        method: "POST",
+        body: JSON.stringify({ expectedRevision, packageRevision }),
+      },
+    );
+    rememberStudioDraft(installed.draft);
+    return installed;
   },
   async installSkill(
     draftId: string,
@@ -1418,7 +1869,9 @@ export const studioClient = {
       ),
     );
     if (!response.ok) throw await errorFrom(response);
-    return response.json() as Promise<StudioInstalledSkill>;
+    const installed = await response.json() as StudioInstalledSkill;
+    rememberStudioDraft(installed.draft);
+    return installed;
   },
   replaceDraft: (draft: StudioDraft) =>
     request<ApiAgentDraft>(`drafts/${encodeURIComponent(draft.id)}`, {
@@ -1427,16 +1880,105 @@ export const studioClient = {
         expectedRevision: draft.revision,
         spec: studioDraftToSpec(draft),
       }),
-    }),
+    }).then(rememberStudioDraft),
+  async deleteDraft(draftId: string, expectedRevision: number): Promise<void> {
+    const response = requireAuthenticatedResponse(
+      await fetch(
+        `/api/studio/drafts/${encodeURIComponent(draftId)}`
+          + `?expectedRevision=${expectedRevision}`,
+        { method: "DELETE", cache: "no-store" },
+      ),
+    );
+    if (!response.ok) throw await errorFrom(response);
+    forgetStudioDraft(draftId);
+  },
   validateDraft: (draftId: string) =>
     request<StudioValidation>(`drafts/${encodeURIComponent(draftId)}/validate`, {
       method: "POST",
     }),
+  createTryRun: (
+    draftId: string,
+    expectedRevision: number,
+    prompt: string,
+    idempotencyKey: string,
+    options: { continueFromRunId?: string; inputArtifactIds?: string[] } = {},
+  ) => request<StudioTryRun>(`drafts/${encodeURIComponent(draftId)}/try-runs`, {
+    method: "POST",
+    body: JSON.stringify({ expectedRevision, prompt, idempotencyKey, ...options }),
+  }),
+  getTryRun: (draftId: string, draftRevision: number, runId: string) =>
+    request<StudioTryRun>(
+      `drafts/${encodeURIComponent(draftId)}/try-runs/${encodeURIComponent(runId)}`
+        + `?draftRevision=${draftRevision}`,
+    ),
+  async streamTryRunEvents(
+    draftId: string,
+    draftRevision: number,
+    runId: string,
+    afterSequence: number,
+    onEvent: (event: StudioTryRun["events"][number]) => void,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const headers = new Headers({ Accept: "text/event-stream" });
+    if (afterSequence > 0) headers.set("Last-Event-ID", String(afterSequence));
+    const response = requireAuthenticatedResponse(await fetch(
+      `/api/studio/drafts/${encodeURIComponent(draftId)}`
+        + `/try-runs/${encodeURIComponent(runId)}/events`
+        + `?draftRevision=${draftRevision}`,
+      { headers, cache: "no-store", signal },
+    ));
+    await streamAgui(response, (_id, event) => {
+      if (
+        typeof event.event_id === "string"
+        && typeof event.sequence === "number"
+        && typeof event.type === "string"
+        && typeof event.timestamp === "string"
+        && event.payload
+        && typeof event.payload === "object"
+      ) {
+        onEvent(event as StudioTryRun["events"][number]);
+      }
+    });
+  },
+  solidifyTryRun: (
+    draftId: string,
+    expectedRevision: number,
+    draftRevision: number,
+    runId: string,
+  ) => request<StudioSolidifiedAgentResult>(
+    `drafts/${encodeURIComponent(draftId)}/solidify`,
+    {
+      method: "POST",
+      body: JSON.stringify({ expectedRevision, draftRevision, runId }),
+    },
+  ).then((result) => {
+    rememberStudioDraft(result.draft);
+    return result;
+  }),
+  decideTryRunApproval: (approvalId: string, decision: "approved" | "rejected") =>
+    harnessRequest(`approvals/${encodeURIComponent(approvalId)}`, {
+      method: "PUT",
+      body: JSON.stringify({ decision }),
+    }),
+  cancelTryRun: (runId: string) =>
+    harnessRequest(`runs/${encodeURIComponent(runId)}/cancel`, { method: "POST" }),
+  tryRunArtifactHref: (artifactId: string) =>
+    `/api/harness/artifacts/${encodeURIComponent(artifactId)}/content`,
   publishDraft: (draftId: string, expectedRevision: number) =>
     request<ApiAgentVersion>(`drafts/${encodeURIComponent(draftId)}/publish`, {
       method: "POST",
       body: JSON.stringify({ expectedRevision }),
+    }).then((version) => {
+      forgetStudioDraft(draftId);
+      return version;
     }),
+  listPersonalAgentVersions: (agentId: string) =>
+    agentRequest<PersonalAgentVersion[]>(`${encodeURIComponent(agentId)}/versions`),
+  promotePersonalAgentVersion: (agentId: string, version: string) =>
+    agentRequest<PersonalAgentVersion>(
+      `${encodeURIComponent(agentId)}/versions/${encodeURIComponent(version)}/promote`,
+      { method: "POST" },
+    ),
   listPreviews: () => request<StudioPreview[]>("previews"),
   createPreview: (
     draftId: string,
@@ -1471,6 +2013,23 @@ export const studioClient = {
       name,
       ...(datasetId ? { datasetId } : {}),
       required: true,
+    }),
+  }),
+  importEvalDataset: (
+    draftId: string,
+    expectedRevision: number,
+    name: string,
+    format: "json" | "csv",
+    content: string,
+  ) => request<StudioEvalDataset>("eval-datasets/import", {
+    method: "POST",
+    body: JSON.stringify({
+      draftId,
+      expectedRevision,
+      name,
+      required: true,
+      format,
+      content,
     }),
   }),
   listEvalRuns: () => request<StudioEvalRun[]>("eval-runs"),
@@ -1687,14 +2246,25 @@ export function capabilityOptions(catalog: StudioCapabilities): {
   tools: BuiltinToolOption[];
   mcp: McpOption[];
   profiles: StudioCapabilities["executionProfiles"];
+  templates: StudioCapabilities["templates"];
+  runtimes: StudioCapabilities["runtimeCapabilities"];
 } {
   return {
-    routes: catalog.modelRoutes.filter((item) => item.enabled).map((item) => ({
+    routes: catalog.modelRoutes.filter(
+      (item) =>
+        item.enabled &&
+        (item.modelType === undefined || ["chat", "vision"].includes(item.modelType)) &&
+        item.apiFormat !== "openai_images" &&
+        item.apiFormat !== "openai_videos" &&
+        !item.capabilities.includes("image_generation") &&
+        !item.capabilities.includes("video_generation"),
+    ).map((item) => ({
       id: item.routeId,
       label: item.label,
       provider: item.provider,
       models: item.models,
       capabilities: item.capabilities,
+      apiFormat: item.apiFormat === "openai_videos" ? undefined : item.apiFormat,
     })),
     tools: catalog.builtinTools.map((item) => ({
       id: item.name,
@@ -1713,5 +2283,7 @@ export function capabilityOptions(catalog: StudioCapabilities): {
       sendsUserData: item.sendsUserData,
     })),
     profiles: catalog.executionProfiles.filter((item) => item.enabled),
+    templates: catalog.templates ?? [],
+    runtimes: catalog.runtimeCapabilities ?? [],
   };
 }

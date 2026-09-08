@@ -62,7 +62,10 @@ import {
   inputArtifactDownloadHref,
   isIntermediateAssistantTextPart,
   messageOwnsRun,
+  turnOwnsRun,
+  normalizeMessageText,
   ownsLiveResponse,
+  shouldOfferIncompleteRetry,
   shouldSuppressNativeAssistantText,
   shouldShowComposerStop,
   shouldShowPreResponseActivity,
@@ -74,7 +77,7 @@ const agentThreadSource = readFileSync(
 );
 
 it("registers the approval renderer through the assistant-ui Thread config", () => {
-  renderToStaticMarkup(<AgentThread />);
+  renderToStaticMarkup(<AgentThread userId="user-a" threadId="thread-a" />);
 
   expect(agentThreadSource).toContain('part.toolName === "harness_request_approval"');
   expect(agentThreadSource).toContain("<ApprovalToolBridge");
@@ -85,13 +88,17 @@ it("registers the approval renderer through the assistant-ui Thread config", () 
 });
 
 it("presents task-first guidance through a custom assistant-ui welcome", () => {
-  const html = renderToStaticMarkup(<AgentThread />);
+  const html = renderToStaticMarkup(<AgentThread userId="user-a" threadId="thread-a" />);
 
-  expect(html).toContain("把目标交给 Agent");
-  expect(html).toContain("分析与规划");
-  expect(html).toContain("阅读与整理");
-  expect(html).toContain("执行与协作");
-  expect(html).toContain("在关键操作前请求确认");
+  expect(html).toContain("开始一个新任务");
+  expect(html).toContain("执行过程、工具调用和产出，都会留在这段对话里");
+  expect(html).not.toContain("常规操作自动完成");
+  expect(html).not.toContain("隔离执行 · 自动风险分级");
+  expect(html).not.toContain("分析与规划");
+  expect(html).not.toContain("阅读与整理");
+  expect(html).not.toContain("执行与协作");
+  expect(html).not.toContain("创建或调整智能体");
+  expect(html).not.toContain("支持人工审批");
 });
 
 it("uses the current run control name in incomplete-run guidance", () => {
@@ -100,6 +107,17 @@ it("uses the current run control name in incomplete-run guidance", () => {
   expect(agentThreadSource).toContain('className="run-retry-button"');
   expect(agentThreadSource).toContain("重新运行");
   expect(agentThreadSource).not.toContain("请查看运行详情");
+});
+
+it("keeps user-stopped runs neutral and only offers retry for actual failures", () => {
+  expect(shouldOfferIncompleteRetry({ type: "incomplete", reason: "cancelled" })).toBe(false);
+  expect(shouldOfferIncompleteRetry({ type: "incomplete", reason: "error" })).toBe(true);
+  expect(shouldOfferIncompleteRetry({ type: "complete", reason: "unknown" })).toBe(false);
+  expect(agentThreadSource).toContain(
+    "const showIncompleteRecovery = shouldOfferIncompleteRetry(messageStatus)",
+  );
+  expect(agentThreadSource).toContain("{showIncompleteRecovery ? (");
+  expect(agentThreadSource).not.toContain('<circle\n                cx="12"');
 });
 
 it("uses interactive answer branch primitives for regenerated responses", () => {
@@ -119,12 +137,10 @@ it("distinguishes a historical failed turn from the current run", () => {
   );
 });
 
-it("keeps sandbox and keyboard guidance adjacent to the composer", () => {
-  expect(agentThreadSource).toContain('className="composer-meta"');
-  expect(agentThreadSource).toContain("隔离工作区");
-  expect(agentThreadSource).toContain("Enter 发送 · Shift + Enter 换行");
-  expect(agentThreadSource).toContain("处理审批后，Agent 会从当前步骤继续");
-  expect(agentThreadSource).toContain("Agent 正在执行，可随时停止");
+it("keeps implementation status out of the composer footer", () => {
+  expect(agentThreadSource).not.toContain('className="composer-meta"');
+  expect(agentThreadSource).not.toContain("隔离工作区");
+  expect(agentThreadSource).not.toContain("未发送内容已保存在当前浏览器");
   expect(agentThreadSource).not.toContain('className="composer-stop-button"');
   expect(agentThreadSource).toContain('cancel: { tooltip: "停止运行" }');
 });
@@ -133,14 +149,19 @@ it("switches the composer action to stop for an active run", () => {
   expect(shouldShowComposerStop(true, "idle")).toBe(true);
   expect(shouldShowComposerStop(false, "running")).toBe(true);
   expect(shouldShowComposerStop(false, "complete")).toBe(false);
+  expect(shouldShowComposerStop(false, "idle", "running")).toBe(true);
+  expect(shouldShowComposerStop(false, "complete", "queued")).toBe(true);
   expect(shouldShowComposerStop(false, "error")).toBe(false);
   expect(shouldShowComposerStop(true, "running", "failed")).toBe(false);
   expect(shouldShowComposerStop(true, "running", "cancelled")).toBe(false);
   expect(agentThreadSource).toContain(
-    'className="aui-button aui-button-primary aui-button-icon aui-composer-cancel"',
+    'className="aui-button aui-button-icon aui-composer-cancel"',
   );
+  expect(agentThreadSource).toContain('aria-label="停止运行"');
+  expect(agentThreadSource).toContain('width="12" height="12"');
+  expect(agentThreadSource).toContain('className="composer-stop-secondary"');
   expect(agentThreadSource).toContain("aui.thread().cancelRun()");
-  expect(agentThreadSource).toContain("<Composer.Send />");
+  expect(agentThreadSource).toContain("aui-composer-send-icon");
   expect(agentThreadSource).not.toContain("<Composer.Action");
 });
 
@@ -164,16 +185,34 @@ it("keeps assistant output avatar-free so activity rows cannot overlap it", () =
 it("places copy before edit below the user message content", () => {
   const content = agentThreadSource.indexOf("<UserMessage.Content />");
   const actions = agentThreadSource.indexOf("<ActionBarPrimitive.Root", content);
-  const copy = agentThreadSource.indexOf("<ActionBarPrimitive.Copy", actions);
+  const copy = agentThreadSource.indexOf("<MessageCopyButton", actions);
   const edit = agentThreadSource.indexOf('aria-label="编辑消息"', actions);
   expect(content).toBeGreaterThan(-1);
   expect(actions).toBeGreaterThan(content);
   expect(copy).toBeGreaterThan(actions);
   expect(edit).toBeGreaterThan(copy);
   expect(agentThreadSource).toContain("onClick={beginEdit}");
-  expect(agentThreadSource).toContain("<ActionBarPrimitive.Copy");
+  expect(agentThreadSource).toContain("<MessageCopyButton");
   expect(agentThreadSource).toContain('aria-label="编辑消息"');
-  expect(agentThreadSource).toContain('aria-label="复制消息"');
+  expect(agentThreadSource).toContain('label="复制消息"');
+});
+
+it("normalizes copied message text and provides an HTTP-safe clipboard fallback", () => {
+  expect(normalizeMessageText(" 第一行\r\n\r\n\r\n第二行  \n")).toBe("第一行\n\n第二行");
+  expect(normalizeMessageText("标题\n　\n​\n\n正文\u2029\u2029结尾")).toBe(
+    "标题\n\n正文\n\n结尾",
+  );
+  expect(normalizeMessageText("上海贤创广告有限公司 下钻")).toBe("上海贤创广告有限公司 下钻");
+  expect(agentThreadSource).toContain('document.execCommand("copy")');
+  expect(agentThreadSource).toContain('data-copy-state={copyState}');
+  expect(agentThreadSource).toContain('className="message-copy-status"');
+  expect(agentThreadSource).not.toContain('className="sr-only"');
+});
+
+it("removes answer regeneration while preserving failed-run recovery", () => {
+  expect(agentThreadSource).toContain("allowReload: false");
+  expect(agentThreadSource).not.toContain("<AssistantActionBar.Reload");
+  expect(agentThreadSource).toContain("<ActionBarPrimitive.Reload");
 });
 
 it("only edits the latest user turn and allows unchanged text to start a new run", () => {
@@ -215,13 +254,14 @@ it("renders uploaded images in an in-app original-size preview", () => {
     inputArtifactDownloadHref("input_artifact_123", "history-index"),
   ).toBe("/api/input-artifacts/input_artifact_123/content");
   expect(agentThreadSource).toContain("HarnessMessageAttachment");
-  expect(agentThreadSource).toContain("点击下载");
-  expect(agentThreadSource).toContain('data-kind={isImage ? "image" : "file"}');
-  expect(agentThreadSource).toContain("message-attachment-preview");
-  expect(agentThreadSource).toContain("message-attachment-open");
-  expect(agentThreadSource).toContain("image-lightbox");
-  expect(agentThreadSource).toContain("上传原图");
-  expect(agentThreadSource).toContain("下载原图");
+  const attachmentSource = readFileSync(new URL("../src/components/message-attachment-view.tsx", import.meta.url), "utf8");
+  expect(attachmentSource).toContain("点击下载");
+  expect(attachmentSource).toContain('data-kind={isImage ? "image" : "file"}');
+  expect(attachmentSource).toContain("message-attachment-preview");
+  expect(attachmentSource).toContain("message-attachment-open");
+  expect(attachmentSource).toContain("image-lightbox");
+  expect(attachmentSource).toContain("上传原图");
+  expect(attachmentSource).toContain("下载原图");
   expect(agentThreadSource).not.toContain('target: "_blank"');
 });
 
@@ -322,5 +362,11 @@ it("keeps interrupted run activity attached to its own answer branch", () => {
   expect(messageOwnsRun("assistant-run_2", "run_2")).toBe(true);
   expect(messageOwnsRun("assistant-run_2-message_a", "run_2")).toBe(true);
   expect(messageOwnsRun("assistant-run_1-message_a", "run_2")).toBe(false);
-  expect(agentThreadSource).toContain("messageOwnsRun(messageId, activity.run_id)");
+  expect(agentThreadSource).toContain("turnOwnsRun(");
+});
+
+it("attaches a resumed run to the latest optimistic assistant turn", () => {
+  expect(turnOwnsRun("__optimistic__42", "run_2", true, "run_2")).toBe(true);
+  expect(turnOwnsRun("__optimistic__42", "run_2", false, "run_2")).toBe(false);
+  expect(turnOwnsRun("__optimistic__42", "run_2", true, "run_3")).toBe(false);
 });

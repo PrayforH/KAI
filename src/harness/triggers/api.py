@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 from collections.abc import AsyncIterator
@@ -22,6 +21,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from harness.api.dependencies import Identity, ensure_permission, require_identity
 from harness.api.downloads import attachment_content_disposition
+from harness.api.event_streaming import wait_for_run_event
 from harness.core.errors import NotFoundError
 from harness.core.models import ArtifactStatus, Run
 from harness.triggers.models import (
@@ -585,7 +585,13 @@ async def _run_event_stream(
         if current.status.is_terminal:
             terminal = True
         else:
-            await asyncio.sleep(0.05)
+            await wait_for_run_event(
+                request.app.state.container.event_wakeup,
+                run.tenant_id,
+                run.run_id,
+                sequence,
+                fallback_poll_seconds=0.05,
+            )
 
 
 def bearer_secret(authorization: str) -> str:

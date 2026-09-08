@@ -689,7 +689,7 @@ Manifest 只保存逻辑 ID，例如 `tavily-readonly`。服务端 Registration 
 | Profile | 用途 | 约束 |
 | --- | --- | --- |
 | local-unsafe | 纯开发测试 | 必须显式开启，生产禁止 |
-| daytona-standard | 当前生产基线 | 远端 Workspace、受控生命周期、Bash 默认审批 |
+| daytona-standard | 当前生产基线 | 远端 Workspace、受控生命周期、常规 Bash 自动允许，敏感边界审批 |
 | e2b-public-egress | 公网模型/MCP | 每 Run 隔离沙箱、显式公网出口、TTL 自动回收 |
 | gvisor-standard | [规划] 私有化执行 | gVisor 容器、网络策略、只读基础镜像、临时写层 |
 | high-isolation | [规划] 高风险任务 | 每 Run 独立实例、更严格出口、短 TTL、无共享缓存 |
@@ -713,7 +713,7 @@ Agent Builder 只能选择平台暴露的 Execution Profile，不能关闭隔离
 | Profile | 典型 Agent | 默认行为 |
 | --- | --- | --- |
 | production-read-only | 分析、检索、报告 | Read/Glob/Grep 与审核只读 MCP；其他拒绝 |
-| production-standard | 文件生成和有限执行 | Workspace Write/Edit 自动允许且禁止越界；Bash 默认 ask |
+| production-standard | 文件生成和有限执行 | Workspace Write/Edit 与常规 Bash 自动允许且禁止越界；敏感边界 ask |
 | production-orchestrator | Lead + Sub | 在只读基础上允许固定版本 Task 委派 |
 
 ### 14.2 决策模型
@@ -881,6 +881,8 @@ assistant-ui 负责通用对话组件；Harness 自定义执行条、审批卡�
 - 任务列表始终可达，待审批任务有明确标记；
 - 用户消息的编辑/复制按钮位于消息下方，非默认大面积展开；
 - 代码、JSON、Diff 使用专门渲染和复制按钮；
+- 草稿切换、能力卸载和删除等高影响操作统一使用产品级确认层，不调用原生浏览器弹窗；
+- 确认层默认聚焦取消，说明影响范围，支持 Escape、焦点环和关闭后焦点归还；
 - 页面刷新后以 Run/Event/Thread API 恢复，不重复创建 Run。
 
 ## 18. 可观测与 Langfuse
@@ -985,7 +987,10 @@ Sandbox。
 
 | API | 用途 |
 | --- | --- |
+| `GET /v1/agents` | 查询当前用户可见的稳定 Agent 身份、历史版本和真实当前指针 |
 | `POST /v1/agents/bundles` | 发布经过校验的 Agent Bundle |
+| `GET /v1/agents/{agent_id}/versions` | 查询个人 Agent 的 owner-scoped 不可变版本历史 |
+| `POST /v1/agents/{agent_id}/versions/{version}/promote` | 移动个人 Agent 当前指针；只影响后续新任务并写入审计 |
 | `POST /v1/sessions` | 创建固定 Agent Version 的 Session |
 | `POST /v1/runs` | 创建幂等 Run |
 | `GET /v1/runs/{run_id}` | 查询 Run 状态 |
@@ -1277,7 +1282,7 @@ Artifact Registry
 ### 26.3 安全运行
 
 - 文件/Bash 在 Sandbox 中执行；
-- Bash 默认审批；
+- 常规 Bash 自动允许；不可逆删除、越界、未知操作与显式策略规则继续拒绝或审批；
 - 审批刷新后仍可处理；
 - 取消最终收敛到 `cancelled`；
 - 过期审批自动回收；

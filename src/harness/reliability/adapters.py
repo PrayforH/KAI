@@ -32,9 +32,10 @@ class ObservedEventRepository:
     async def append(self, event: RunEvent) -> None:
         await self._delegate.append(event)
 
-    async def list_after(
-        self, tenant_id: str, run_id: str, after_sequence: int
-    ) -> list[RunEvent]:
+    async def latest_sequence(self, tenant_id: str, run_id: str) -> int:
+        return await self._delegate.latest_sequence(tenant_id, run_id)
+
+    async def list_after(self, tenant_id: str, run_id: str, after_sequence: int) -> list[RunEvent]:
         events = await self._delegate.list_after(tenant_id, run_id, after_sequence)
         if after_sequence <= 0:
             return events
@@ -52,3 +53,13 @@ class ObservedEventRepository:
                 max(0.0, (now - event.timestamp).total_seconds()),
             )
         return events
+
+    async def latest_for_session_type(
+        self, tenant_id: str, session_id: str, event_type: str
+    ) -> RunEvent | None:
+        return await self._delegate.latest_for_session_type(tenant_id, session_id, event_type)
+
+    async def latest_for_session_types(
+        self, tenant_id: str, session_id: str, event_types: tuple[str, ...]
+    ) -> RunEvent | None:
+        return await self._delegate.latest_for_session_types(tenant_id, session_id, event_types)

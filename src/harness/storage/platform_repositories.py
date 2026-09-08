@@ -3,11 +3,14 @@
 from datetime import datetime
 from typing import Any, Literal, cast
 
-from sqlalchemy import CursorResult, delete, select, update
+from sqlalchemy import CursorResult, column, delete, func, select, update
+from sqlalchemy import cast as sql_cast
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
 
 from harness.core.errors import ConflictError, NotFoundError
 from harness.core.models import (
+    AgentRuntimeType,
     AgentVersion,
     AguiThreadBinding,
     ApprovalRequest,
@@ -53,6 +56,16 @@ class PostgresAgentRegistry:
                     owner_user_id=version.owner_user_id,
                     name=version.name,
                     version=version.version,
+                    agent_id=version.agent_id,
+                    status=version.status.value,
+                    manifest_hash=version.manifest_hash,
+                    package_hash=version.package_hash,
+                    created_at=version.created_at,
+                    catalog_manifest=(
+                        version.snapshot.get("manifest", {})
+                        if isinstance(version.snapshot.get("manifest"), dict)
+                        else {}
+                    ),
                     payload=version.model_dump(mode="json"),
                 )
             )
@@ -68,11 +81,16 @@ class PostgresAgentRegistry:
             row = await session.get(AgentVersionRow, (tenant_id, owner_user_id, name, version))
             if row is None:
                 raise NotFoundError(f"agent version not found: {name}@{version}")
-            return AgentVersion.model_validate(row.payload)
+            loaded = AgentVersion.model_validate(row.payload)
+            if loaded.agent_id is None and row.agent_id is not None:
+                # Legacy rows backfilled by migration 0023 carry the identity in
+                # the envelope column only.
+                loaded = loaded.model_copy(update={"agent_id": row.agent_id})
+            return loaded
 
     async def list_for_user(self, tenant_id: str, owner_user_id: str) -> list[AgentVersion]:
         statement = (
-            select(AgentVersionRow.payload)
+            select(AgentVersionRow.payload, AgentVersionRow.agent_id)
             .where(
                 AgentVersionRow.tenant_id == tenant_id,
                 AgentVersionRow.owner_user_id == owner_user_id,
@@ -80,8 +98,134 @@ class PostgresAgentRegistry:
             .order_by(AgentVersionRow.name, AgentVersionRow.version)
         )
         async with self._sessions() as session:
-            payloads = (await session.scalars(statement)).all()
-            return [AgentVersion.model_validate(payload) for payload in payloads]
+            rows = (await session.execute(statement)).all()
+            result: list[AgentVersion] = []
+            for payload, envelope_agent_id in rows:
+                loaded = AgentVersion.model_validate(payload)
+                if loaded.agent_id is None and envelope_agent_id is not None:
+                    loaded = loaded.model_copy(update={"agent_id": envelope_agent_id})
+                result.append(loaded)
+            return result
+
+    async def list_catalog_for_user(self, tenant_id: str, owner_user_id: str) -> list[AgentVersion]:
+        """Load the task-catalog projection without transferring package files.
+
+        Published versions may embed large reproducible assets under
+        ``snapshot.files``. Navigation only needs the manifest, so selecting
+        JSON fields server-side prevents a single historical release from
+        turning every task-page transition into a multi-megabyte read.
+        """
+        skill = func.jsonb_array_elements(
+            func.coalesce(
+                sql_cast(AgentVersionRow.payload, JSONB)["snapshot"]["skill_snapshots"],
+                sql_cast("[]", JSONB),
+            )
+        ).table_valued(column("value", JSONB))
+        skill_metadata = (
+            select(
+                func.jsonb_agg(
+                    func.jsonb_build_object(
+                        "name",
+                        skill.c.value["name"].astext,
+                        "description",
+                        skill.c.value["description"].astext,
+                    )
+                )
+            )
+            .select_from(skill)
+            .correlate(AgentVersionRow)
+            .scalar_subquery()
+        )
+        statement = (
+            select(
+                AgentVersionRow.name,
+                AgentVersionRow.version,
+                AgentVersionRow.agent_id,
+                AgentVersionRow.status,
+                AgentVersionRow.manifest_hash,
+                AgentVersionRow.package_hash,
+                AgentVersionRow.created_at,
+                AgentVersionRow.catalog_manifest,
+                skill_metadata,
+            )
+            .where(
+                AgentVersionRow.tenant_id == tenant_id,
+                AgentVersionRow.owner_user_id == owner_user_id,
+            )
+            .order_by(AgentVersionRow.name, AgentVersionRow.version)
+        )
+        async with self._sessions() as session:
+            rows = (await session.execute(statement)).all()
+            return [
+                AgentVersion(
+                    tenant_id=tenant_id,
+                    owner_user_id=owner_user_id,
+                    name=name,
+                    version=version,
+                    agent_id=agent_id,
+                    status=status,
+                    manifest_hash=manifest_hash,
+                    package_hash=package_hash,
+                    created_at=created_at,
+                    snapshot={
+                        "manifest": manifest or {},
+                        **({"skill_snapshots": skills} if skills else {}),
+                    },
+                )
+                for (
+                    name,
+                    version,
+                    agent_id,
+                    status,
+                    manifest_hash,
+                    package_hash,
+                    created_at,
+                    manifest,
+                    skills,
+                ) in rows
+            ]
+
+    async def move_owner(
+        self, tenant_id: str, from_user_id: str, to_user_id: str, name: str
+    ) -> int:
+        if from_user_id == to_user_id:
+            return 0
+        async with self._sessions() as session:
+            rows = (
+                await session.scalars(
+                    select(AgentVersionRow)
+                    .where(
+                        AgentVersionRow.tenant_id == tenant_id,
+                        AgentVersionRow.owner_user_id == from_user_id,
+                        AgentVersionRow.name == name,
+                    )
+                    .with_for_update()
+                )
+            ).all()
+            for row in rows:
+                conflict = await session.get(
+                    AgentVersionRow, (tenant_id, to_user_id, name, row.version)
+                )
+                if conflict is not None:
+                    raise ConflictError(
+                        f"target user already owns an Agent version: {name}@{row.version}"
+                    )
+            for row in rows:
+                payload = dict(row.payload)
+                payload["owner_user_id"] = to_user_id
+                session.add(
+                    AgentVersionRow(
+                        tenant_id=tenant_id,
+                        owner_user_id=to_user_id,
+                        name=name,
+                        version=row.version,
+                        agent_id=row.agent_id,
+                        payload=payload,
+                    )
+                )
+                await session.delete(row)
+            await session.commit()
+            return len(rows)
 
 
 class PostgresSessionRepository:
@@ -107,11 +251,45 @@ class PostgresSessionRepository:
                 raise NotFoundError(f"session not found: {session_id}")
             return Session.model_validate(row.payload)
 
+    async def list_for_ids(self, tenant_id: str, session_ids: list[str]) -> list[Session]:
+        if not session_ids:
+            return []
+        wanted = list(dict.fromkeys(session_ids))
+        statement = select(SessionRow.payload).where(
+            SessionRow.tenant_id == tenant_id,
+            SessionRow.session_id.in_(wanted),
+        )
+        async with self._sessions() as session:
+            payloads = (await session.execute(statement)).scalars().all()
+        found = {
+            item.session_id: item
+            for payload in payloads
+            for item in (Session.model_validate(payload),)
+        }
+        for session_id in wanted:
+            if session_id not in found:
+                raise NotFoundError(f"session not found: {session_id}")
+        return [found[session_id] for session_id in session_ids]
+
     async def bind_claude_session_id(
         self, tenant_id: str, session_id: str, claude_session_id: str
     ) -> Session:
-        if not claude_session_id:
-            raise ValueError("claude_session_id must be non-empty")
+        return await self.bind_runtime_thread(
+            tenant_id,
+            session_id,
+            "claude-agent-sdk",
+            claude_session_id,
+        )
+
+    async def bind_runtime_thread(
+        self,
+        tenant_id: str,
+        session_id: str,
+        runtime_type: AgentRuntimeType,
+        runtime_thread_id: str,
+    ) -> Session:
+        if not runtime_thread_id:
+            raise ValueError("runtime_thread_id must be non-empty")
         async with self._sessions() as session:
             row = await session.get(
                 SessionRow,
@@ -121,13 +299,61 @@ class PostgresSessionRepository:
             if row is None:
                 raise NotFoundError(f"session not found: {session_id}")
             current = Session.model_validate(row.payload)
-            if current.claude_session_id is not None:
-                if current.claude_session_id != claude_session_id:
+            if current.runtime_type != runtime_type:
+                raise ConflictError(
+                    f"session {session_id} is pinned to runtime {current.runtime_type}"
+                )
+            current_thread_id = current.resolved_runtime_thread_id
+            if current_thread_id is not None:
+                if current_thread_id != runtime_thread_id:
                     raise ConflictError(
-                        f"session {session_id} is already bound to another Claude session"
+                        f"session {session_id} is already bound to another runtime thread"
                     )
                 return current
-            updated = current.model_copy(update={"claude_session_id": claude_session_id})
+            update: dict[str, str] = {"runtime_thread_id": runtime_thread_id}
+            if runtime_type == "claude-agent-sdk":
+                update["claude_session_id"] = runtime_thread_id
+            updated = current.model_copy(update=update)
+            row.payload = updated.model_dump(mode="json")
+            await session.commit()
+            return updated
+
+    async def clear_claude_session_id(
+        self, tenant_id: str, session_id: str, expected_claude_session_id: str
+    ) -> Session:
+        return await self.clear_runtime_thread(
+            tenant_id,
+            session_id,
+            "claude-agent-sdk",
+            expected_claude_session_id,
+        )
+
+    async def clear_runtime_thread(
+        self,
+        tenant_id: str,
+        session_id: str,
+        runtime_type: AgentRuntimeType,
+        expected_runtime_thread_id: str,
+    ) -> Session:
+        async with self._sessions() as session:
+            row = await session.get(
+                SessionRow,
+                (tenant_id, session_id),
+                with_for_update=True,
+            )
+            if row is None:
+                raise NotFoundError(f"session not found: {session_id}")
+            current = Session.model_validate(row.payload)
+            if current.runtime_type != runtime_type:
+                raise ConflictError(
+                    f"session {session_id} is pinned to runtime {current.runtime_type}"
+                )
+            if current.resolved_runtime_thread_id != expected_runtime_thread_id:
+                raise ConflictError(f"session {session_id} runtime thread changed during recovery")
+            update: dict[str, None] = {"runtime_thread_id": None}
+            if runtime_type == "claude-agent-sdk":
+                update["claude_session_id"] = None
+            updated = current.model_copy(update=update)
             row.payload = updated.model_dump(mode="json")
             await session.commit()
             return updated
@@ -268,6 +494,19 @@ class PostgresArtifactRepository:
     async def list_for_run(self, tenant_id: str, run_id: str) -> list[Artifact]:
         statement = select(ArtifactRow.payload).where(
             ArtifactRow.tenant_id == tenant_id, ArtifactRow.run_id == run_id
+        )
+        async with self._sessions() as session:
+            return [
+                Artifact.model_validate(payload)
+                for payload in (await session.scalars(statement)).all()
+            ]
+
+    async def list_for_runs(self, tenant_id: str, run_ids: list[str]) -> list[Artifact]:
+        if not run_ids:
+            return []
+        statement = select(ArtifactRow.payload).where(
+            ArtifactRow.tenant_id == tenant_id,
+            ArtifactRow.run_id.in_(list(dict.fromkeys(run_ids))),
         )
         async with self._sessions() as session:
             return [
@@ -540,18 +779,21 @@ class PostgresAguiThreadBindingRepository:
     async def list_for_user(
         self, tenant_id: str, user_id: str, *, limit: int, archived: bool = False
     ) -> list[AguiThreadBinding]:
-        statement = select(AguiThreadBindingRow.payload).where(
-            AguiThreadBindingRow.tenant_id == tenant_id,
-            AguiThreadBindingRow.user_id == user_id,
+        archived_at = AguiThreadBindingRow.payload["archived_at"].as_string()
+        updated_at = AguiThreadBindingRow.payload["updated_at"].as_string()
+        statement = (
+            select(AguiThreadBindingRow.payload)
+            .where(
+                AguiThreadBindingRow.tenant_id == tenant_id,
+                AguiThreadBindingRow.user_id == user_id,
+                archived_at.is_not(None) if archived else archived_at.is_(None),
+            )
+            .order_by(updated_at.desc(), AguiThreadBindingRow.thread_id.desc())
+            .limit(limit)
         )
         async with self._sessions() as session:
             payloads = (await session.execute(statement)).scalars().all()
-            bindings = (AguiThreadBinding.model_validate(payload) for payload in payloads)
-            return sorted(
-                (binding for binding in bindings if (binding.archived_at is not None) is archived),
-                key=lambda binding: (binding.updated_at, binding.thread_id),
-                reverse=True,
-            )[:limit]
+            return [AguiThreadBinding.model_validate(payload) for payload in payloads]
 
     async def update_title(
         self,
@@ -564,7 +806,9 @@ class PostgresAguiThreadBindingRepository:
         generated_at: datetime,
     ) -> AguiThreadBinding:
         async with self._sessions() as session:
-            row = await session.get(AguiThreadBindingRow, (tenant_id, user_id, thread_id))
+            row = await session.get(
+                AguiThreadBindingRow, (tenant_id, user_id, thread_id), with_for_update=True
+            )
             if row is None:
                 raise NotFoundError(f"AG-UI thread binding not found: {thread_id}")
             binding = AguiThreadBinding.model_validate(row.payload)
@@ -582,6 +826,27 @@ class PostgresAguiThreadBindingRepository:
             await session.commit()
             return updated
 
+    async def mark_read(
+        self, tenant_id: str, user_id: str, thread_id: str, *, read_at: datetime
+    ) -> AguiThreadBinding:
+        async with self._sessions() as session:
+            row = await session.get(
+                AguiThreadBindingRow, (tenant_id, user_id, thread_id), with_for_update=True
+            )
+            if row is None:
+                raise NotFoundError(f"AG-UI thread binding not found: {thread_id}")
+            binding = AguiThreadBinding.model_validate(row.payload)
+            updated = binding.model_copy(
+                update={
+                    "last_read_at": max(binding.last_read_at, read_at)
+                    if binding.last_read_at is not None
+                    else read_at,
+                }
+            )
+            row.payload = updated.model_dump(mode="json")
+            await session.commit()
+            return updated
+
     async def set_archived(
         self,
         tenant_id: str,
@@ -591,7 +856,9 @@ class PostgresAguiThreadBindingRepository:
         archived_at: datetime | None,
     ) -> AguiThreadBinding:
         async with self._sessions() as session:
-            row = await session.get(AguiThreadBindingRow, (tenant_id, user_id, thread_id))
+            row = await session.get(
+                AguiThreadBindingRow, (tenant_id, user_id, thread_id), with_for_update=True
+            )
             if row is None:
                 raise NotFoundError(f"AG-UI thread binding not found: {thread_id}")
             binding = AguiThreadBinding.model_validate(row.payload)
@@ -613,15 +880,28 @@ class PostgresAguiThreadBindingRepository:
         user_id: str,
         thread_id: str,
         *,
+        expected_session_id: str,
         session_id: str,
         updated_at: datetime,
     ) -> AguiThreadBinding:
         async with self._sessions() as session:
-            row = await session.get(AguiThreadBindingRow, (tenant_id, user_id, thread_id))
+            row = await session.get(
+                AguiThreadBindingRow,
+                (tenant_id, user_id, thread_id),
+                with_for_update=True,
+            )
             if row is None:
                 raise NotFoundError(f"AG-UI thread binding not found: {thread_id}")
             binding = AguiThreadBinding.model_validate(row.payload)
-            previous = tuple(dict.fromkeys((*binding.previous_session_ids, binding.session_id)))
+            if binding.session_id != expected_session_id:
+                raise ConflictError("AG-UI thread Session changed concurrently")
+            if binding.session_id == session_id:
+                return binding
+            previous = tuple(
+                value
+                for value in dict.fromkeys((*binding.previous_session_ids, binding.session_id))
+                if value != session_id
+            )
             updated = binding.model_copy(
                 update={
                     "session_id": session_id,

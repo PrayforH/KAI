@@ -6,6 +6,7 @@ import {
 } from "@assistant-ui/react-markdown";
 import remarkGfm from "remark-gfm";
 import { memo, useState, type ComponentPropsWithoutRef } from "react";
+import { normalizeMessageText } from "../lib/message-text";
 import { MermaidCodeHeader, MermaidDiagram } from "./mermaid-diagram";
 import { SourceLink } from "./source-link";
 
@@ -46,6 +47,7 @@ function MarkdownTextImpl() {
     <MarkdownTextPrimitive
       className="aui-md"
       remarkPlugins={[remarkGfm]}
+      preprocess={normalizeMessageText}
       // The live response store already batches network deltas per animation
       // frame. A second character-by-character reveal exposes incomplete
       // Markdown delimiters (for example `**`) until their closing token is

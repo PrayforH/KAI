@@ -31,14 +31,13 @@ describe("developer drawer", () => {
     expect(JSON.stringify(rows)).not.toContain("developer");
   });
 
-  it("keeps the overview concise and provides a detailed local audit trace", () => {
+  it("keeps the overview concise without exposing the local event timeline", () => {
     expect(panel).toContain("运行详情");
     expect(panel).toContain("本次运行");
     expect(panel).toContain("打开 Trace");
-    expect(panel).toContain("完整执行 Trace");
-    expect(panel).toContain("可访问产物");
-    expect(panel).toContain("result_preview");
-    expect(panel).toContain("download={entry.artifact.name}");
+    expect(panel).not.toContain("完整执行 Trace");
+    expect(panel).not.toContain("Trace · {traceEntries.length} 个步骤");
+    expect(panel).not.toContain('className="trace-ledger"');
     expect(panel).toContain("Trace 尚未生成");
     expect(panel).toContain("还没有运行记录");
     expect(panel).not.toContain("inspector-title-mark");
@@ -48,6 +47,7 @@ describe("developer drawer", () => {
     expect(panel).not.toContain("Harness activity");
     expect(panel).not.toContain("Run inspector");
     expect(panel).not.toContain("协议与原始事件");
+    expect(panel).not.toContain("条原始事件");
   });
 
   it("uses a compact metric grid and quiet observability row", () => {
@@ -72,6 +72,7 @@ describe("developer drawer", () => {
     expect(panel).toContain("activity.trace_id");
     expect(panel.slice(identifiersStart)).toContain("activity.run_id");
     expect(panel.slice(identifiersStart)).toContain("threadId");
+    expect(panel).toContain('id="run-details-panel"');
     expect(panel).not.toContain("developerRows(threadId)");
   });
 
@@ -166,10 +167,11 @@ describe("developer drawer", () => {
     });
   });
 
-  it("uses a desktop side panel and a mobile bottom sheet", () => {
-    expect(styles).toContain("grid-template-columns: minmax(0, 1fr) 340px");
-    expect(styles).toMatch(/@media \(max-width: 980px\)[\s\S]*\.workspace-stage\.inspector-open \.developer-drawer[\s\S]*max-height: min\(78dvh, 760px\)/);
-    expect(styles).toMatch(/\.workspace-stage\.inspector-open \.developer-drawer[\s\S]*inset: auto 0 0/);
+  it("uses the same modal shell and width as the context panel", () => {
+    expect(panel).toContain("createPortal");
+    expect(panel).toContain('className="run-details-backdrop"');
+    expect(panel).toContain('event.target === event.currentTarget');
+    expect(styles).toMatch(/\.context-recovery-panel,\s*\.run-details-backdrop \.developer-drawer\s*\{[^}]*width:\s*min\(440px, 100vw\);/s);
   });
 
   it("uses semantic pulse colors for waiting and terminal states", () => {
@@ -181,15 +183,11 @@ describe("developer drawer", () => {
     );
   });
 
-  it("gives the narrow bottom sheet modal focus behavior", () => {
-    expect(panel).toContain('window.matchMedia("(max-width: 980px)")');
-    expect(panel).toContain('role={isModal ? "dialog" : undefined}');
-    expect(panel).toContain("aria-modal={isModal || undefined}");
-    expect(panel).toContain('event.key === "Escape"');
-    expect(panel).toContain("background.inert = true");
-    expect(panel).toContain("closeButtonRef.current?.focus()");
-    expect(panel).toContain("previouslyFocused?.focus()");
-    expect(panel).toContain("isHiddenByCollapsedDetails(element)");
-    expect(panel).toContain("element.getClientRects().length > 0");
+  it("uses the shared dialog focus contract", () => {
+    expect(panel).toContain("useDialogFocus");
+    expect(panel).toContain('role="dialog"');
+    expect(panel).toContain('aria-modal="true"');
+    expect(panel).toContain("onEscape: () => onClose?.()");
+    expect(panel).toContain("initialFocusRef: closeButtonRef");
   });
 });

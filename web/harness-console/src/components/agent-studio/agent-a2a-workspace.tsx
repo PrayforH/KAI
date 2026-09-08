@@ -9,8 +9,8 @@ import {
   type StudioEnvironment,
 } from "../../lib/studio-client";
 import { AgentTriggerControlPlane } from "./agent-trigger-control-plane";
-import { StudioSidebar } from "./studio-sidebar";
 import styles from "./agent-a2a-workspace.module.css";
+import { PRODUCT_NAME } from "../product-brand";
 
 export function AgentA2AWorkspace({ agentName }: { agentName: string }) {
   const { membership } = useAuth();
@@ -48,12 +48,10 @@ export function AgentA2AWorkspace({ agentName }: { agentName: string }) {
   }, [agentName]);
 
   return (
-    <main className={styles.shell} id="main-content">
-      <StudioSidebar active="agents" />
-      <section className={styles.workspace}>
+    <section className={styles.workspace}>
         <header className={styles.topbar}>
           <Link href={`/studio/agents?draft=${encodeURIComponent(agent?.draftId ?? "")}&section=release`}>
-            <span aria-hidden="true">←</span> 返回 Agent Studio
+            <span aria-hidden="true">←</span> 返回{PRODUCT_NAME}
           </Link>
           <span className={styles.protocolBadge}>A2A 1.0</span>
         </header>
@@ -120,7 +118,6 @@ export function AgentA2AWorkspace({ agentName }: { agentName: string }) {
             />
           </div>
         )}
-      </section>
-    </main>
+    </section>
   );
 }

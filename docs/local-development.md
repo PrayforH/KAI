@@ -93,7 +93,7 @@ Manifest 决定 Agent 能看到哪些工具，实际 `SandboxHandle` 决定策�
 |---|---|---|
 | `Read/Glob/Grep` | 自动允许 | 自动允许 |
 | `Write/Edit` | 工作区内自动允许 | 工作区内自动允许 |
-| `Bash` | 网页审批；`rm ` 默认拒绝 | 网页审批 |
+| `Bash` | 常规命令自动允许；不可逆删除、越界与未知操作拒绝或审批 | 常规命令自动允许；不可逆删除、越界与未知操作拒绝或审批 |
 
 要让本地真实模型运行在 Daytona，在仓库根目录的忽略文件 `.env` 中配置：
 
@@ -195,6 +195,8 @@ make e2e
 make web-test
 make web-build
 ```
+
+`make verify` 会使用与本地 Compose 同源的 PostgreSQL、Redis 和 MinIO 测试连接，必要时幂等创建 `harness_test`，不会清空业务数据库。启动器只从 `.env.docker` 派生 `HARNESS_TEST_*`，不会导入其中的模型、MCP 或 Langfuse 配置；测试遥测固定默认关闭，只有显式的 `HARNESS_TEST_OTEL_ENABLED` 可以开启。其他显式测试变量可覆盖本地默认值，CI 行为保持不变。
 
 完整领域开发流程见 [domain-agents.md](domain-agents.md)。本地 API 默认注册 `tavily-readonly`，其他领域 Manifest 使用新的 `mcp:` 引用前，仍须在服务端组合根注册对应逻辑 ID。真实 SDK 已通过 `PreToolUse` 前置执行策略；本地 inline 审批 waiter 只适用于单 API 进程。
 

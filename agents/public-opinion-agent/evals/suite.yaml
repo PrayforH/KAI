@@ -38,16 +38,40 @@ cases:
       outputContains: [关键词, 地域, 排除, 北京]
       approvalRequired: false
       maxDurationSeconds: 120
+  - id: shorthand-disambiguation
+    tags: [query, terminology, public-opinion]
+    prompt: 只构造条件、不执行查询：分析“喜来鹿”的涉非舆情风险。请先解释本任务中“涉非”的业务含义，再给出规范化关键词。
+    expect:
+      terminalStatuses: [succeeded]
+      forbiddenTools: [Write, Edit, Bash]
+      outputContains: [喜来鹿, 非法集资]
+      approvalRequired: false
+      maxDurationSeconds: 120
   - id: html-report-artifact
     tags: [artifact, public-opinion]
     prompt: |
-      基于以下用户提供的非随机样本生成一份可离线打开的中文 HTML 舆情报告。说明数据口径和限制，不要把样本情感占比写成全网占比：
+      以“门店服务与产品交付”为分析主题，基于以下用户提供的非随机样本生成一份可离线打开的中文 HTML 舆情报告。说明数据口径和限制，不要把样本情感占比写成全网占比：
       2026-07-18, 门店服务, 样本12, 负面样本4
       2026-07-19, 产品交付, 样本9, 负面样本2
       2026-07-20, 售后响应, 样本15, 负面样本6
     expect:
       terminalStatuses: [succeeded]
       requiredTools: [Write]
-      outputContains: [outputs/public-opinion-report.html]
+      outputContains: [outputs/门店服务与产品交付-舆情风险分析报告.html]
       approvalRequired: false
       maxDurationSeconds: 180
+  - id: deep-report-contract
+    tags: [depth, contract, public-opinion]
+    prompt: |
+      请基于以下材料形成正式专项舆情分析。材料中的数量只是本次样本，不代表全网：
+      1. 2026-08-20 09:00，企业公告称某产品批次启动预防性检查，未披露受影响数量，https://example.invalid/company-notice
+      2. 2026-08-20 10:30，行业媒体转述公告并采访一位用户，https://example.invalid/trade-media
+      3. 2026-08-20 12:00，聚合账号转载行业媒体，标题使用“全面召回”，正文无新增证据，https://example.invalid/aggregator
+      4. 2026-08-21 15:00，监管部门答复称正在了解情况，尚未发布处罚或召回决定，https://example.invalid/regulator
+      必须给出完整分析链和所有适用章节，不要只写执行摘要。
+    expect:
+      terminalStatuses: [succeeded]
+      forbiddenTools: [Write, Edit, Bash]
+      outputContains: [执行摘要, 范围与查询口径, 事件时间线, 议题与观点, 来源与传播节点, 风险研判, 不确定性, 建议动作, 来源清单]
+      approvalRequired: false
+      maxDurationSeconds: 240

@@ -72,6 +72,68 @@ describe("Studio knowledge reference contract", () => {
   });
 });
 
+describe("Studio runtime contract", () => {
+  it("does not duplicate server runtime incompatibility rules in the editor", () => {
+    const contract = evaluateStudioDraft({
+      ...DEFAULT_STUDIO_DRAFT,
+      runtime: "codex-app-server",
+      mcpServers: ["tavily-readonly"],
+      builtinTools: [...DEFAULT_STUDIO_DRAFT.builtinTools, "Task"],
+      subagents: [{
+        alias: "researcher",
+        ref: "helper-agent@1.0.0",
+        responsibility: "核验来源",
+        background: false,
+      }],
+    });
+
+    expect(contract.issues.join(" ")).not.toMatch(/Codex|MCP.*不支持|Sub Agent.*不支持/i);
+  });
+
+  it("round-trips the Codex runtime through the API draft shape", () => {
+    const spec = studioDraftToSpec({
+      ...DEFAULT_STUDIO_DRAFT,
+      runtime: "codex-app-server",
+    });
+    const apiDraft = {
+      draftId: "draft-codex",
+      tenantId: "tenant-a",
+      revision: 1,
+      spec,
+      publishedVersion: null,
+      publishedHash: null,
+      publishedPackageHash: null,
+      createdBy: "owner-a",
+      updatedBy: "owner-a",
+      createdAt: "2026-08-22T00:00:00Z",
+      updatedAt: "2026-08-22T00:00:00Z",
+    } as unknown as Parameters<typeof apiDraftToStudioDraft>[0];
+
+    expect(spec.runtime).toBe("codex-app-server");
+    expect(apiDraftToStudioDraft(apiDraft).runtime).toBe("codex-app-server");
+  });
+
+  it("defaults older API payloads to Claude Agent SDK", () => {
+    const spec = studioDraftToSpec(DEFAULT_STUDIO_DRAFT);
+    delete spec.runtime;
+    const apiDraft = {
+      draftId: "draft-legacy",
+      tenantId: "tenant-a",
+      revision: 1,
+      spec,
+      publishedVersion: null,
+      publishedHash: null,
+      publishedPackageHash: null,
+      createdBy: "owner-a",
+      updatedBy: "owner-a",
+      createdAt: "2026-08-22T00:00:00Z",
+      updatedAt: "2026-08-22T00:00:00Z",
+    } as unknown as Parameters<typeof apiDraftToStudioDraft>[0];
+
+    expect(apiDraftToStudioDraft(apiDraft).runtime).toBe("claude-agent-sdk");
+  });
+});
+
 describe("Studio governance request contract", () => {
   it("sends only an external secret reference when creating a connection", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(

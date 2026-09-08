@@ -10,7 +10,7 @@ from typing import cast
 
 import httpx
 from pydantic import SecretStr
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 
 from harness.core.models import Run, Session
 from harness.core.ports import ArtifactStore
@@ -34,12 +34,15 @@ from harness.storage.models import (
     InputArtifactRow,
     MemoryConsentRow,
     MemoryEntryRow,
+    MemoryExtractionJobRow,
     MemoryRetentionRow,
     QualityIncidentRow,
     QualityRuleRow,
     QualityScoreRow,
     RunRow,
     SdkSessionEntryRow,
+    SessionContextDigestRow,
+    SessionContextStateRow,
     SessionRow,
     ThreadFileRow,
     UserMemoryRow,
@@ -334,6 +337,16 @@ class MemoryLifecycleAdapter:
                         UserMemoryRow.agent_name == agent_name,
                     )
                 )
+            job_filter = [MemoryExtractionJobRow.tenant_id == job.tenant_id]
+            if job.scope.kind is LifecycleScopeKind.USER:
+                job_filter.append(MemoryExtractionJobRow.user_id == job.scope.subject_id)
+            elif job.scope.kind is LifecycleScopeKind.AGENT:
+                job_filter.append(MemoryExtractionJobRow.agent_name == job.scope.subject_id)
+            elif job.scope.kind is LifecycleScopeKind.SESSION:
+                job_filter.append(MemoryExtractionJobRow.session_id == job.scope.subject_id)
+            # Keep cancelled tombstones so reconciliation cannot re-extract old runs.
+            await db.execute(update(MemoryExtractionJobRow).where(*job_filter).values(
+                status="cancelled", error_code="source_removed"))
             for row in managed:
                 await db.delete(row)
             for row in (*consents, *retentions):
@@ -436,6 +449,31 @@ class PostgresLifecycleAdapter:
                 if index.artifact_ids
                 else []
             )
+            session_ids = [item.session_id for item in index.sessions]
+            context_states = (
+                (
+                    await db.scalars(
+                        select(SessionContextStateRow).where(
+                            SessionContextStateRow.tenant_id == job.tenant_id,
+                            SessionContextStateRow.session_id.in_(session_ids),
+                        )
+                    )
+                ).all()
+                if session_ids
+                else []
+            )
+            context_digests = (
+                (
+                    await db.scalars(
+                        select(SessionContextDigestRow).where(
+                            SessionContextDigestRow.tenant_id == job.tenant_id,
+                            SessionContextDigestRow.session_id.in_(session_ids),
+                        )
+                    )
+                ).all()
+                if session_ids
+                else []
+            )
             eval_runs = (
                 (
                     await db.scalars(
@@ -477,6 +515,8 @@ class PostgresLifecycleAdapter:
             "events": [row.payload for row in events],
             "approvals": [row.payload for row in approvals],
             "artifacts": [row.payload for row in artifacts],
+            "contextStates": [row.payload for row in context_states],
+            "contextDigests": [row.payload for row in context_digests],
             "evalRuns": [row.payload for row in eval_runs],
             "audit": audit_payloads,
         }
@@ -528,6 +568,14 @@ class PostgresLifecycleAdapter:
                         delete(AguiThreadBindingRow).where(
                             AguiThreadBindingRow.tenant_id == job.tenant_id,
                             AguiThreadBindingRow.session_id.in_(session_ids),
+                        ),
+                        delete(SessionContextDigestRow).where(
+                            SessionContextDigestRow.tenant_id == job.tenant_id,
+                            SessionContextDigestRow.session_id.in_(session_ids),
+                        ),
+                        delete(SessionContextStateRow).where(
+                            SessionContextStateRow.tenant_id == job.tenant_id,
+                            SessionContextStateRow.session_id.in_(session_ids),
                         ),
                         delete(SessionRow).where(
                             SessionRow.tenant_id == job.tenant_id,

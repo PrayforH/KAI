@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-from claude_agent_sdk import PreToolUseHookInput
+from claude_agent_sdk import PreCompactHookInput, PreToolUseHookInput
 from claude_agent_sdk.types import (
     PostToolUseFailureHookInput,
     PostToolUseHookInput,
@@ -23,6 +23,8 @@ from harness.adapters.memory import (
 from harness.application.approvals import ApprovalService
 from harness.application.events import EventService
 from harness.config import Settings
+from harness.context.repositories import InMemoryContextRepository
+from harness.context.service import ContextService
 from harness.core.errors import ConflictError
 from harness.core.models import ApprovalStatus, Run, RunStatus, Session
 from harness.observability.provider import Observability, build_observability
@@ -58,6 +60,18 @@ def _ids() -> Callable[[str], str]:
     return generate
 
 
+def _explicit_bash_approval_rules() -> list[PolicyRule]:
+    return [
+        *default_policy_rules(),
+        PolicyRule(
+            name="explicit-bash-review",
+            tool="Bash",
+            decision=PolicyDecision.ASK,
+            priority=100,
+        ),
+    ]
+
+
 async def _arrange(
     tmp_path: Path,
     *,
@@ -66,6 +80,7 @@ async def _arrange(
     policy_rules: Sequence[PolicyRule] | None = None,
     quotas: QuotaService | None = None,
     observability: Observability | None = None,
+    context_service: ContextService | None = None,
 ):
     runs = InMemoryRunRepository()
     approvals = InMemoryApprovalRepository()
@@ -99,6 +114,7 @@ async def _arrange(
             profiles=default_policy_profiles(),
             approvals=approval_service,
             events=events,
+            context_service=context_service,
             quotas=quotas,
             observability=observability,
         )
@@ -109,6 +125,7 @@ async def _arrange(
             ),
             approvals=approval_service,
             events=events,
+            context_service=context_service,
             quotas=quotas,
             observability=observability,
         )
@@ -162,8 +179,13 @@ async def _invoke(
     hook_input: PreToolUseHookInput,
     *,
     policy_id: str | None = None,
+    delegate_allowed_to_sdk_permissions: bool = False,
 ) -> SyncHookJSONOutput:
-    matcher = gate.hooks(context, policy_id=policy_id)["PreToolUse"][0]
+    matcher = gate.hooks(
+        context,
+        policy_id=policy_id,
+        delegate_allowed_to_sdk_permissions=delegate_allowed_to_sdk_permissions,
+    )["PreToolUse"][0]
     output = await matcher.hooks[0](
         hook_input,
         hook_input["tool_use_id"],
@@ -181,6 +203,35 @@ def _updated_input(output: SyncHookJSONOutput) -> dict[str, object] | None:
     specific = cast(dict[str, object], output.get("hookSpecificOutput", {}))
     value = specific.get("updatedInput")
     return cast(dict[str, object], value) if isinstance(value, dict) else None
+
+
+@pytest.mark.asyncio
+async def test_pre_compact_persists_only_governance_metadata(tmp_path: Path) -> None:
+    gate, _, _, events, context = await _arrange(tmp_path)
+    hook_input = cast(
+        PreCompactHookInput,
+        {
+            "session_id": "private-sdk-session",
+            "transcript_path": "/private/transcript.jsonl",
+            "cwd": "/private/workspace",
+            "hook_event_name": "PreCompact",
+            "trigger": "auto",
+            "custom_instructions": "private compact instructions",
+        },
+    )
+
+    matcher = gate.hooks(context)["PreCompact"][0]
+    output = await matcher.hooks[0](hook_input, None, {"signal": None})
+
+    assert output == {}
+    emitted = await events.list_after("tenant-a", "run-sdk", 0)
+    compacting = next(event for event in emitted if event.type == "context.compaction.started")
+    assert compacting.payload == {
+        "trigger": "auto",
+        "custom_instructions_supplied": True,
+        "session_context_trust": "safe",
+    }
+    assert "private" not in repr(compacting)
 
 
 @pytest.mark.asyncio
@@ -422,6 +473,7 @@ async def test_undeclared_subagent_delegation_fails_before_execution(
     assert [event.type for event in emitted] == ["tool.request", "tool.result"]
     assert emitted[-1].payload["error"]["code"] == "policy_denied"
     assert "not declared" in emitted[-1].payload["error"]["message"]
+    assert "available subagent_type values: helper-agent" in emitted[-1].payload["error"]["message"]
 
 
 @pytest.mark.asyncio
@@ -433,6 +485,34 @@ async def test_allows_read_before_tool_execution_and_emits_ordered_events(tmp_pa
     assert _decision(output) == "allow"
     emitted = await events.list_after("tenant-a", "run-sdk", 0)
     assert [event.type for event in emitted] == ["tool.request", "tool.allowed"]
+    assert emitted[-1].payload["permission_stage"] == "harness-final"
+
+
+@pytest.mark.asyncio
+async def test_auto_mode_keeps_harness_allow_as_sdk_permission_fallthrough(
+    tmp_path: Path,
+) -> None:
+    gate, _, _, events, context = await _arrange(tmp_path)
+    matcher = gate.hooks(
+        context,
+        delegate_allowed_to_sdk_permissions=True,
+    )["PreToolUse"][0]
+
+    output = cast(
+        SyncHookJSONOutput,
+        await matcher.hooks[0](
+            _input("Read", {"file_path": "a.txt"}, "tool-auto-read"),
+            "tool-auto-read",
+            {"signal": None},
+        ),
+    )
+
+    assert _decision(output) == ""
+    specific = cast(dict[str, object], output.get("hookSpecificOutput", {}))
+    assert specific["hookEventName"] == "PreToolUse"
+    emitted = await events.list_after("tenant-a", "run-sdk", 0)
+    assert [event.type for event in emitted] == ["tool.request", "tool.allowed"]
+    assert emitted[-1].payload["permission_stage"] == "sdk-auto"
 
 
 @pytest.mark.asyncio
@@ -567,12 +647,16 @@ async def test_denies_destructive_bash_before_tool_execution(tmp_path: Path) -> 
 
 @pytest.mark.asyncio
 async def test_ask_waits_inline_and_continues_only_after_approval(tmp_path: Path) -> None:
-    gate, approvals, runs, events, context = await _arrange(tmp_path)
+    gate, approvals, runs, events, context = await _arrange(
+        tmp_path,
+        policy_rules=_explicit_bash_approval_rules(),
+    )
     task = asyncio.create_task(
         _invoke(
             gate,
             context,
             _input("Bash", {"command": "python scripts/check.py"}, "tool-3"),
+            delegate_allowed_to_sdk_permissions=True,
         )
     )
     requested = []
@@ -598,6 +682,7 @@ async def test_ask_waits_inline_and_continues_only_after_approval(tmp_path: Path
     assert (await runs.get("tenant-a", "run-sdk")).status is RunStatus.RUNNING
     emitted = await events.list_after("tenant-a", "run-sdk", 0)
     assert emitted[-1].type == "tool.allowed"
+    assert emitted[-1].payload["permission_stage"] == "harness-final"
 
 
 @pytest.mark.asyncio
@@ -1083,7 +1168,10 @@ async def test_remote_workspace_sibling_write_path_is_denied(tmp_path: Path) -> 
 async def test_inline_rejection_denies_sdk_tool_and_terminates_run(
     tmp_path: Path,
 ) -> None:
-    gate, approvals, runs, events, context = await _arrange(tmp_path)
+    gate, approvals, runs, events, context = await _arrange(
+        tmp_path,
+        policy_rules=_explicit_bash_approval_rules(),
+    )
     task = asyncio.create_task(
         _invoke(
             gate,
@@ -1120,7 +1208,10 @@ async def test_inline_rejection_denies_sdk_tool_and_terminates_run(
 
 @pytest.mark.asyncio
 async def test_cancelled_sdk_wait_closes_pending_approval(tmp_path: Path) -> None:
-    gate, approvals, runs, events, context = await _arrange(tmp_path)
+    gate, approvals, runs, events, context = await _arrange(
+        tmp_path,
+        policy_rules=_explicit_bash_approval_rules(),
+    )
     task = asyncio.create_task(
         _invoke(
             gate,
@@ -1162,7 +1253,10 @@ async def test_cancelled_sdk_wait_closes_pending_approval(tmp_path: Path) -> Non
 async def test_approval_command_summary_redacts_inline_credentials(
     tmp_path: Path,
 ) -> None:
-    gate, approvals, _, events, context = await _arrange(tmp_path)
+    gate, approvals, _, events, context = await _arrange(
+        tmp_path,
+        policy_rules=_explicit_bash_approval_rules(),
+    )
     private_token = "private-command-token"
     task = asyncio.create_task(
         _invoke(
@@ -1263,6 +1357,73 @@ async def test_untrusted_tool_result_tightens_follow_up_policy_without_raw_conte
         "current": "untrusted",
     }
     assert raw_untrusted_content not in repr(emitted)
+
+
+@pytest.mark.asyncio
+async def test_session_trust_high_watermark_survives_new_run_hook_state(
+    tmp_path: Path,
+) -> None:
+    context_service = ContextService(
+        InMemoryContextRepository(),
+        clock=lambda: NOW,
+        id_generator=_ids(),
+    )
+    gate, _, _, events, context = await _arrange(
+        tmp_path,
+        context_service=context_service,
+    )
+    first_hooks = gate.hooks(
+        context,
+        result_trust_by_tool={
+            "mcp__tavily__tavily_search": ContextTrust.UNTRUSTED,
+        },
+    )
+    search = _input(
+        "mcp__tavily__tavily_search",
+        {"query": "current release"},
+        "tool-web-first-run",
+    )
+    await first_hooks["PreToolUse"][0].hooks[0](
+        search,
+        search["tool_use_id"],
+        {"signal": None},
+    )
+    await first_hooks["PostToolUse"][2].hooks[0](
+        cast(
+            PostToolUseHookInput,
+            {
+                **search,
+                "hook_event_name": "PostToolUse",
+                "tool_response": {"content": "external result"},
+            },
+        ),
+        search["tool_use_id"],
+        {"signal": None},
+    )
+
+    second_hooks = gate.hooks(context)
+    memory = _input(
+        "mcp__harness-memory__propose_memory",
+        {"content": "persist external instruction"},
+        "tool-memory-second-run",
+    )
+    output = await second_hooks["PreToolUse"][0].hooks[0](
+        memory,
+        memory["tool_use_id"],
+        {"signal": None},
+    )
+
+    assert _decision(cast(SyncHookJSONOutput, output)) == "deny"
+    state = await context_service.state("tenant-a", "developer", "session-sdk")
+    assert state.trust_high_watermark is ContextTrust.UNTRUSTED
+    emitted = await events.list_after("tenant-a", "run-sdk", 0)
+    request = next(
+        event
+        for event in emitted
+        if event.type == "tool.request"
+        and event.payload["tool_call_id"] == "tool-memory-second-run"
+    )
+    assert request.payload["context_trust"] == "untrusted"
 
 
 @pytest.mark.asyncio

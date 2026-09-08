@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
 
 import pytest
@@ -13,11 +14,13 @@ from harness.knowledge.models import (
     KnowledgeResultTrust,
     KnowledgeSnapshot,
     KnowledgeSnapshotBinding,
+    KnowledgeSource,
+    KnowledgeSyncRun,
     KnowledgeVisibility,
     ReplaceKnowledgeSourceRequest,
 )
 from harness.knowledge.repositories import InMemoryKnowledgeRepository
-from harness.knowledge.search import HybridKnowledgeSearch
+from harness.knowledge.search import HybridKnowledgeSearch, RankedChunk
 from harness.knowledge.service import KnowledgeService
 
 
@@ -27,23 +30,37 @@ class CapturingSearch(HybridKnowledgeSearch):
 
     def search(
         self,
-        chunks: tuple[KnowledgeChunk, ...],
+        chunks: Sequence[KnowledgeChunk],
         query: str,
         *,
         limit: int,
-    ):  # type: ignore[no-untyped-def]
-        self.visible_chunks = chunks
+    ) -> tuple[RankedChunk, ...]:
+        self.visible_chunks = tuple(chunks)
         return super().search(chunks, query, limit=limit)
 
 
 class ConflictingSnapshotRepository(InMemoryKnowledgeRepository):
     fail_next_publish = False
 
-    async def publish_snapshot(self, **kwargs):  # type: ignore[no-untyped-def]
+    async def publish_snapshot(
+        self,
+        *,
+        expected_source_revision: int,
+        source: KnowledgeSource,
+        snapshot: KnowledgeSnapshot,
+        chunks: Sequence[KnowledgeChunk],
+        sync: KnowledgeSyncRun,
+    ) -> bool:
         if self.fail_next_publish:
             self.fail_next_publish = False
             return False
-        return await super().publish_snapshot(**kwargs)
+        return await super().publish_snapshot(
+            expected_source_revision=expected_source_revision,
+            source=source,
+            snapshot=snapshot,
+            chunks=chunks,
+            sync=sync,
+        )
 
 
 def file_source(
@@ -182,9 +199,7 @@ async def test_team_space_grant_allows_restricted_knowledge_only_for_bound_team(
             and reference == "company"
         )
 
-    service = KnowledgeService(
-        InMemoryKnowledgeRepository(), team_grant_checker=grants
-    )
+    service = KnowledgeService(InMemoryKnowledgeRepository(), team_grant_checker=grants)
     await service.create_source(
         "tenant",
         "owner",

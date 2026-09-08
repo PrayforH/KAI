@@ -1,3 +1,9 @@
+# Pyright stops control-flow analysis for the deliberately centralized `_execute`
+# state machine once it exceeds its complexity budget, then misreports every
+# symbol below that point as unused. Ruff remains the authoritative unused-code
+# check for this module until the state machine is split into typed phases.
+# pyright: reportUnusedImport=false, reportUnusedVariable=false, reportUnusedFunction=false
+
 """Coordinates one Run across repositories, Sandbox and Agent runtime."""
 
 import asyncio
@@ -34,9 +40,11 @@ from harness.application.workspaces import (
     WorkspacePolicyResolver,
     WorkspaceService,
 )
+from harness.context.checkpoint import ContextCheckpointService
+from harness.context.service import ContextService
 from harness.core.errors import ConflictError
-from harness.core.models import ExecutionIdentity, Run, RunStatus, Session
-from harness.core.ports import RunRepository, SessionRepository
+from harness.core.models import AgentRuntimeType, ExecutionIdentity, Run, RunStatus, Session
+from harness.core.ports import CancellationWakeup, RunRepository, SessionRepository
 from harness.core.state_machine import transition
 from harness.deployments.boundaries import session_environment_policy
 from harness.execution.credentials import CredentialLeaseError
@@ -53,6 +61,7 @@ from harness.runtime.audit_redaction import redact_text, redact_tool_arguments
 from harness.runtime.base import (
     AgentRuntime,
     RuntimeContext,
+    RuntimeEvent,
     RuntimeExecutionTimeoutError,
     RuntimeResultError,
 )
@@ -67,6 +76,7 @@ from harness.runtime.input_redaction import (
     staged_read_path,
 )
 from harness.runtime.mcp_credentials import McpCredentialError
+from harness.runtime.steering import SteeringInbox
 from harness.runtime.subagent_governance import SubagentGovernanceError
 from harness.runtime.tools import ToolResolutionError
 from harness.sandbox.base import (
@@ -76,7 +86,7 @@ from harness.sandbox.base import (
     SandboxProvider,
 )
 
-RuntimeAssetStager = Callable[[str, str, str, str, Path], Awaitable[tuple[str, ...]]]
+RuntimeAssetStager = Callable[[str, str, str, str, Path, bool], Awaitable[tuple[str, ...]]]
 PolicyResolver = Callable[
     [str, str, str, str],
     Awaitable[PolicyEngine | ResolvedPolicy],
@@ -173,13 +183,11 @@ def final_artifact_paths(workspace: Path, response: str) -> tuple[str, ...]:
     return tuple(resolved)
 
 
-def terminal_runtime_result(event: Any) -> bool:
+def terminal_runtime_result(event: object) -> bool:
     """Recognize an SDK result that cannot be followed by more model work."""
-    if getattr(event, "type", None) != "runtime.result":
+    if not isinstance(event, RuntimeEvent) or event.type != "runtime.result":
         return False
-    payload = getattr(event, "payload", None)
-    if not isinstance(payload, Mapping):
-        return False
+    payload = cast(dict[str, object], event.payload)
     return (
         payload.get("subtype") == "success"
         and payload.get("is_error") is not True
@@ -215,7 +223,15 @@ class RunOrchestrator:
         quotas: QuotaService | None = None,
         quota_plan_resolver: RunQuotaPlanResolver | None = None,
         metrics: ReliabilityMetrics | None = None,
+        cancellation_wakeup: CancellationWakeup | None = None,
+        cancellation_wakeup_timeout_seconds: float = 30.0,
+        context_checkpoints: ContextCheckpointService | None = None,
+        context_service: ContextService | None = None,
     ) -> None:
+        if cancellation_poll_interval_seconds <= 0:
+            raise ValueError("cancellation poll interval must be positive")
+        if cancellation_wakeup_timeout_seconds <= 0:
+            raise ValueError("cancellation wakeup timeout must be positive")
         self._sessions = sessions
         self._runs = runs
         self._events = events
@@ -240,6 +256,10 @@ class RunOrchestrator:
         self._quotas = quotas
         self._quota_plan_resolver = quota_plan_resolver
         self._metrics = metrics
+        self._cancellation_wakeup = cancellation_wakeup
+        self._cancellation_wakeup_timeout_seconds = cancellation_wakeup_timeout_seconds
+        self._context_checkpoints = context_checkpoints
+        self._context_service = context_service
 
     def _stage(
         self,
@@ -340,8 +360,23 @@ class RunOrchestrator:
         finally:
             if not producer.done():
                 producer.cancel()
-            with suppress(asyncio.CancelledError):
-                await producer
+                # Deliver cancellation promptly, but do not put provider/SDK
+                # shutdown latency on the durable user-cancellation path.
+                # The producer no longer writes durable events after this
+                # generator exits; sandbox destruction and credential
+                # revocation below remain the authoritative hard stop.
+                await asyncio.sleep(0)
+            if producer.done():
+                with suppress(asyncio.CancelledError):
+                    await producer
+            else:
+                producer.add_done_callback(self._consume_background_task)
+
+    @staticmethod
+    def _consume_background_task(task: asyncio.Task[None]) -> None:
+        """Observe a detached runtime shutdown so it cannot leak an exception."""
+        with suppress(asyncio.CancelledError):
+            task.exception()
 
     async def _fail_active_subagents(
         self,
@@ -567,22 +602,75 @@ class RunOrchestrator:
         run_id: str,
         operation: Awaitable[T],
     ) -> T:
-        """Await a long stage while observing durable Run cancellation state."""
+        """Await a long stage with low-latency hints and durable status checks."""
         task = asyncio.ensure_future(operation)
+        notification: asyncio.Task[bool] | None = None
+        observed_fencing_token = 0
         try:
-            while True:
-                done, _ = await asyncio.wait(
-                    {task}, timeout=self._cancellation_poll_interval_seconds
-                )
-                if task in done:
-                    return await task
+            if self._cancellation_wakeup is not None:
                 latest = await self._runs.get(tenant_id, run_id)
+                observed_fencing_token = latest.fencing_token
                 if latest.status in {RunStatus.CANCELLING, RunStatus.CANCELLED}:
                     task.cancel()
                     with suppress(asyncio.CancelledError):
                         await task
                     raise _RunCancellationRequestedError
+            while True:
+                if self._cancellation_wakeup is not None and notification is None:
+                    notification = asyncio.create_task(
+                        self._cancellation_wakeup.wait(
+                            tenant_id,
+                            run_id,
+                            observed_fencing_token,
+                            timeout_seconds=self._cancellation_wakeup_timeout_seconds,
+                        )
+                    )
+                waiters: set[asyncio.Future[Any]] = {cast(asyncio.Future[Any], task)}
+                if notification is not None:
+                    waiters.add(cast(asyncio.Future[Any], notification))
+                done, _ = await asyncio.wait(
+                    waiters,
+                    timeout=self._cancellation_poll_interval_seconds,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if task in done:
+                    return await task
+                wakeup_failed = False
+                if notification is not None and notification in done:
+                    try:
+                        await notification
+                    except Exception:
+                        wakeup_failed = True
+                        logger.debug(
+                            "cancellation wakeup failed; using durable polling run_id=%s",
+                            run_id,
+                            exc_info=True,
+                        )
+                    notification = None
+                latest = await self._runs.get(tenant_id, run_id)
+                observed_fencing_token = max(
+                    observed_fencing_token,
+                    latest.fencing_token,
+                )
+                if latest.status in {RunStatus.CANCELLING, RunStatus.CANCELLED}:
+                    task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await task
+                    raise _RunCancellationRequestedError
+                if wakeup_failed:
+                    # Avoid a hot Redis reconnect loop while retaining the
+                    # existing bounded PostgreSQL fallback.
+                    done, _ = await asyncio.wait(
+                        {task},
+                        timeout=self._cancellation_poll_interval_seconds,
+                    )
+                    if task in done:
+                        return await task
         finally:
+            if notification is not None and not notification.done():
+                notification.cancel()
+                with suppress(asyncio.CancelledError):
+                    await notification
             if not task.done():
                 task.cancel()
                 with suppress(asyncio.CancelledError):
@@ -770,6 +858,65 @@ class RunOrchestrator:
         if result.status.is_terminal and self._quotas is not None:
             await self._quotas.release_subject(result.tenant_id, result.run_id)
 
+    async def _checkpoint_context(
+        self,
+        *,
+        session: Session,
+        run: Run,
+        final_response: str,
+    ) -> None:
+        if self._context_checkpoints is None:
+            return
+        try:
+            context_events = await self._events.list_after(
+                run.tenant_id,
+                run.run_id,
+                0,
+            )
+            digest = await self._context_checkpoints.checkpoint_run(
+                session=session,
+                run=run,
+                events=context_events,
+                final_response=final_response,
+            )
+            if digest is None or any(
+                event.type == "context.digest.created"
+                and event.payload.get("digest_id") == digest.digest_id
+                for event in context_events
+            ):
+                return
+            await self._events.append(
+                tenant_id=run.tenant_id,
+                run_id=run.run_id,
+                session_id=run.session_id,
+                event_type="context.digest.created",
+                payload={
+                    "digest_id": digest.digest_id,
+                    "version": digest.version,
+                    "content_hash": digest.content_hash,
+                    "transcript_checkpoint_hash": (digest.source.transcript_checkpoint_hash),
+                    "through_event_sequence": digest.source.through_event_sequence,
+                    "trust_high_watermark": digest.trust_high_watermark.value,
+                },
+            )
+        except Exception as error:  # noqa: BLE001 - answer is already durable
+            logger.warning(
+                "context checkpoint failed after successful runtime run_id=%s error_type=%s",
+                run.run_id,
+                type(error).__name__,
+            )
+            with suppress(Exception):
+                await self._events.append(
+                    tenant_id=run.tenant_id,
+                    run_id=run.run_id,
+                    session_id=run.session_id,
+                    event_type="context.digest.failed",
+                    payload={
+                        "error_code": "context_checkpoint_failed",
+                        "error_type": type(error).__name__,
+                    },
+                )
+
     async def execute(self, tenant_id: str, run_id: str) -> Run:
         if self._observability is None:
             result = await self._execute(tenant_id, run_id)
@@ -840,7 +987,9 @@ class RunOrchestrator:
                         pass
                 return result
 
-    async def _execute(self, tenant_id: str, run_id: str) -> Run:
+    async def _execute(  # pyright: ignore[reportGeneralTypeIssues]
+        self, tenant_id: str, run_id: str
+    ) -> Run:
         run = await self._runs.get(tenant_id, run_id)
         if run.status.is_terminal:
             return run
@@ -864,6 +1013,7 @@ class RunOrchestrator:
         workspace_policy = WorkspacePolicy()
         workspace_durable = True
         latest_runtime_result_payload: Mapping[str, Any] | None = None
+        provisioning_started_at = None
 
         try:
             if not is_resume:
@@ -871,6 +1021,7 @@ class RunOrchestrator:
                     run = await self._reclaim(run)
                 else:
                     run = await self._move(run, RunStatus.PROVISIONING)
+                    provisioning_started_at = run.updated_at
                     self._observe_run_stage(
                         "queue_wait",
                         (run.updated_at - run.created_at).total_seconds(),
@@ -940,10 +1091,12 @@ class RunOrchestrator:
                 run_id=run.run_id,
                 agent_name=session.agent_name,
                 agent_version=session.agent_version,
+                connection_mode=session.connection_mode,
             )
             with self._stage("harness.memory.load", {"run.id": run_id}):
                 memory_projection = (
-                    await self._memory.projection(identity) if self._memory is not None else ""
+                    await self._memory.projection(identity, str(run.input.get("prompt", "")))
+                    if self._memory is not None else ""
                 )
             raw_input_artifact_ids: object = run.input.get("input_artifact_ids", [])
             if not isinstance(raw_input_artifact_ids, list):
@@ -990,6 +1143,7 @@ class RunOrchestrator:
                         session.agent_name,
                         session.agent_version,
                         handle.path,
+                        session.environment == "preview",
                     )
                 await self._events.append(
                     tenant_id=tenant_id,
@@ -1009,6 +1163,11 @@ class RunOrchestrator:
             internal_asset_tool_calls: set[str] = set()
             if not is_resume:
                 run = await self._move(run, RunStatus.RUNNING)
+                if provisioning_started_at is not None:
+                    self._observe_run_stage(
+                        "environment_prepare",
+                        (run.updated_at - provisioning_started_at).total_seconds(),
+                    )
             else:
                 await self._events.append(
                     tenant_id=tenant_id,
@@ -1036,6 +1195,29 @@ class RunOrchestrator:
                 else None
             )
 
+            context_projection = (
+                await self._context_service.recovery_projection(
+                    tenant_id,
+                    session.user_id,
+                    session.session_id,
+                )
+                if (
+                    self._context_service is not None
+                    and (
+                        session.resolved_runtime_thread_id is None
+                        or session.runtime_type == "codex-app-server"
+                    )
+                )
+                else ""
+            )
+            if context_projection:
+                await self._events.append(
+                    tenant_id=tenant_id,
+                    run_id=run_id,
+                    session_id=run.session_id,
+                    event_type="context.recovery.loaded",
+                    payload={"mode": "durable_digest"},
+                )
             context = RuntimeContext(
                 run=run,
                 session=session,
@@ -1044,11 +1226,13 @@ class RunOrchestrator:
                 sandbox_isolation=handle.isolation_level,
                 remote_workspace=handle.remote_workspace,
                 assistant_message_id=f"assistant-{run_id}-{uuid4().hex}",
+                steering=SteeringInbox(run, self._runs, self._events),
                 input_files=tuple(
                     path for item in staged_inputs for path in (item.path, *item.processed_paths)
                 ),
                 identity=identity,
                 memory_projection=memory_projection,
+                context_projection=context_projection,
                 processed_input_paths=tuple(
                     path for item in staged_inputs for path in item.processed_paths
                 ),
@@ -1077,20 +1261,32 @@ class RunOrchestrator:
             active_message_id: str | None = context.assistant_message_id
             last_completed_message_id: str | None = None
             active_message_text = ""
+            known_tool_calls: dict[str, tuple[bool, bool]] = {}
             runtime_started_at = self._clock()
             first_runtime_event_observed = False
+            first_provider_event_observed = False
             first_runtime_text_observed = False
 
             def observe_runtime_event(runtime_event: Any) -> None:
-                nonlocal first_runtime_event_observed, first_runtime_text_observed
+                nonlocal first_runtime_event_observed
+                nonlocal first_provider_event_observed
+                nonlocal first_runtime_text_observed
                 observed_at = self._clock()
                 elapsed = (observed_at - runtime_started_at).total_seconds()
+                event_type = getattr(runtime_event, "type", None)
                 if not first_runtime_event_observed:
                     self._observe_run_stage("runtime_first_event", elapsed)
                     first_runtime_event_observed = True
+                if not first_provider_event_observed and event_type not in {
+                    "model.route.selected",
+                    "tool.directory.loaded",
+                    "tool.directory.degraded",
+                }:
+                    self._observe_run_stage("provider_first_event", elapsed)
+                    first_provider_event_observed = True
                 if (
                     not first_runtime_text_observed
-                    and getattr(runtime_event, "type", None) == "message.delta"
+                    and event_type == "message.delta"
                     and str(getattr(runtime_event, "payload", {}).get("text", "")).strip()
                 ):
                     self._observe_run_stage("runtime_first_text", elapsed)
@@ -1123,6 +1319,33 @@ class RunOrchestrator:
                     return latest
                 run = latest
                 payload = dict(runtime_event.payload)
+                if runtime_event.type == "runtime.session.recovered":
+                    previous_session_id = payload.get("previous_session_id")
+                    if not isinstance(previous_session_id, str) or not previous_session_id:
+                        raise ValueError("session recovery event is missing previous_session_id")
+                    raw_runtime_type = payload.get("runtime", session.runtime_type)
+                    if raw_runtime_type not in {"claude-agent-sdk", "codex-app-server"}:
+                        raise ValueError("session recovery event has an invalid runtime")
+                    runtime_type = cast(AgentRuntimeType, raw_runtime_type)
+                    session = await self._sessions.clear_runtime_thread(
+                        tenant_id,
+                        session.session_id,
+                        runtime_type,
+                        previous_session_id,
+                    )
+                if runtime_event.type == "runtime.thread.invalidated":
+                    invalid_thread_id = payload.get("thread_id")
+                    if not isinstance(invalid_thread_id, str) or not invalid_thread_id:
+                        raise ValueError("thread invalidation event is missing thread_id")
+                    raw_runtime_type = payload.get("runtime", session.runtime_type)
+                    if raw_runtime_type not in {"claude-agent-sdk", "codex-app-server"}:
+                        raise ValueError("thread invalidation event has an invalid runtime")
+                    session = await self._sessions.clear_runtime_thread(
+                        tenant_id,
+                        session.session_id,
+                        cast(AgentRuntimeType, raw_runtime_type),
+                        invalid_thread_id,
+                    )
                 if runtime_event.type == "runtime.result":
                     # The SDK can emit more than one cumulative ResultMessage
                     # around an inline approval/background-task continuation.
@@ -1133,11 +1356,25 @@ class RunOrchestrator:
                 if runtime_event.type in {"runtime.system", "runtime.result"}:
                     sdk_session_id = payload.get("session_id")
                     if isinstance(sdk_session_id, str) and sdk_session_id:
-                        session = await self._sessions.bind_claude_session_id(
+                        session = await self._sessions.bind_runtime_thread(
                             tenant_id,
                             session.session_id,
+                            "claude-agent-sdk",
                             sdk_session_id,
                         )
+                if runtime_event.type == "runtime.thread.started":
+                    runtime_thread_id = payload.get("thread_id")
+                    raw_runtime_type = payload.get("runtime")
+                    if not isinstance(runtime_thread_id, str) or not runtime_thread_id:
+                        raise ValueError("runtime thread event is missing thread_id")
+                    if raw_runtime_type not in {"claude-agent-sdk", "codex-app-server"}:
+                        raise ValueError("runtime thread event has an invalid runtime")
+                    session = await self._sessions.bind_runtime_thread(
+                        tenant_id,
+                        session.session_id,
+                        cast(AgentRuntimeType, raw_runtime_type),
+                        runtime_thread_id,
+                    )
                 original_tool_arguments: dict[str, Any] | None = None
                 if runtime_event.type == "tool.request":
                     raw_arguments = payload.get("arguments")
@@ -1161,11 +1398,17 @@ class RunOrchestrator:
                         if tool_call_id:
                             internal_asset_tool_calls.add(tool_call_id)
                         payload[INTERNAL_AGENT_ASSET_MARKER] = True
+                    tool_call_id = str(payload.get("tool_call_id", ""))
+                    if tool_call_id:
+                        known_tool_calls[tool_call_id] = (
+                            tool_call_id in staged_read_tool_calls,
+                            tool_call_id in internal_asset_tool_calls,
+                        )
                 elif runtime_event.type == "tool.result":
                     tool_call_id = str(payload.get("tool_call_id", ""))
-                    redact_result = tool_call_id in staged_read_tool_calls
-                    redact_internal_asset = tool_call_id in internal_asset_tool_calls
-                    if not redact_result and tool_call_id:
+                    known_redaction = known_tool_calls.get(tool_call_id)
+                    redact_result, redact_internal_asset = known_redaction or (False, False)
+                    if known_redaction is None and tool_call_id:
                         prior_events = await self._events.list_after(
                             tenant_id,
                             run_id,
@@ -1419,6 +1662,11 @@ class RunOrchestrator:
                     )
             else:
                 workspace_durable = True
+            await self._checkpoint_context(
+                session=session,
+                run=run,
+                final_response=final_response_text,
+            )
             latest = await self._runs.get(tenant_id, run_id)
             if latest.status is RunStatus.CANCELLING:
                 return await self._move(latest, RunStatus.CANCELLED)
@@ -1431,6 +1679,28 @@ class RunOrchestrator:
                     trace_level=True,
                 )
             return await self._move(latest, RunStatus.SUCCEEDED)
+        except _RunCancellationRequestedError:
+            # Cancellation is an explicit request to stop, not a failed Run
+            # whose partial workspace must be synchronously recovered. The
+            # The runtime producer has already received cancellation before
+            # this boundary. Provider/SDK shutdown may finish in the background;
+            # persist child terminals and the parent terminal immediately while
+            # credential revocation and sandbox destruction still run in
+            # ``finally``. This keeps provider cleanup and MinIO/archive latency
+            # out of the cancellation SLO and deliberately discards partial
+            # workspace mutations from the cancelled Run.
+            workspace_durable = True
+            latest = await self._runs.get(tenant_id, run_id)
+            if latest.status is RunStatus.CANCELLING:
+                await self._fail_active_subagents(
+                    tenant_id=tenant_id,
+                    run=latest,
+                    error_code="parent_cancelled",
+                )
+                return await self._move(latest, RunStatus.CANCELLED)
+            if latest.status.is_terminal:
+                return latest
+            raise
         except RuntimeExecutionTimeoutError:
             workspace_durable = await self._recover_failed_workspace(
                 tenant_id=tenant_id,

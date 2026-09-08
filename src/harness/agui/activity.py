@@ -134,9 +134,17 @@ def _activity_item(event: RunEvent) -> dict[str, Any] | None:
             title="工作区已恢复",
             summary="已载入本会话上次保存的工作区",
         )
+    if event.type == "context.recovery.loaded":
+        return _item(
+            event,
+            kind="analysis",
+            status="succeeded",
+            title="上下文恢复点已载入",
+            summary="已从脱敏摘要恢复事实、决定、待办与耐久对象引用",
+        )
     if event.type == "agent.assets.staged":
         skills = payload.get("skills")
-        skill_count = len(skills) if isinstance(skills, list) else 0
+        skill_count = len(cast(list[object], skills)) if isinstance(skills, list) else 0
         return _item(
             event,
             kind="analysis",
@@ -175,7 +183,7 @@ def _activity_item(event: RunEvent) -> dict[str, Any] | None:
     if event.type == "tool.directory.degraded":
         references = payload.get("references")
         safe_references = (
-            [str(item) for item in references if isinstance(item, str)]
+            [str(item) for item in cast(list[object], references) if isinstance(item, str)]
             if isinstance(references, list)
             else []
         )
@@ -245,6 +253,9 @@ def _activity_item(event: RunEvent) -> dict[str, Any] | None:
         elif subtype == "error_max_turns":
             title = "达到最大执行回合数"
             summary = "Agent 多次调用工具后仍未完成任务，请查看处理过程中的失败动作。"
+        elif subtype == "error_max_budget_usd":
+            title = "达到运行费用上限"
+            summary = "此历史运行触发了费用额度上限；平台现已取消费用和 Token 执行限制。"
         elif (
             error_type == "ToolResolutionError"
             and raw_message is not None
@@ -285,6 +296,24 @@ def _activity_item(event: RunEvent) -> dict[str, Any] | None:
                 used_fallback=payload.get("used_fallback"),
             ),
         )
+    if event.type == "context.compaction.started":
+        trigger = str(payload.get("trigger", "auto"))
+        return _item(
+            event,
+            kind="analysis",
+            status="running",
+            title="正在压缩长上下文",
+            summary=(
+                "上下文接近模型窗口上限，正在保留关键事实并释放空间"
+                if trigger == "auto"
+                else "正在按请求整理并压缩历史上下文"
+            ),
+            metadata=_metadata(
+                trigger=trigger,
+                run_context_trust=payload.get("run_context_trust"),
+                custom_instructions_supplied=payload.get("custom_instructions_supplied"),
+            ),
+        )
     if event.type == "runtime.system":
         subtype = str(payload.get("subtype", ""))
         if subtype == "thinking_tokens":
@@ -293,6 +322,8 @@ def _activity_item(event: RunEvent) -> dict[str, Any] | None:
         title = (
             "运行时与工具已连接"
             if subtype == "init"
+            else "正在压缩长上下文"
+            if status == "compacting"
             else "模型正在处理"
             if status == "requesting"
             else "运行时状态更新"
@@ -306,6 +337,8 @@ def _activity_item(event: RunEvent) -> dict[str, Any] | None:
             summary=(
                 f"{tool_count} 项工具可用"
                 if subtype == "init" and tool_count is not None
+                else "正在生成可恢复的上下文摘要"
+                if status == "compacting"
                 else "正在等待本轮模型结果"
                 if status == "requesting"
                 else status or None
@@ -314,15 +347,27 @@ def _activity_item(event: RunEvent) -> dict[str, Any] | None:
         )
     if event.type == "message.delta":
         text = safe_model_text(str(payload.get("text", "")))
-        if not text.strip():
+        if not text:
             return None
         return _item(
             event,
             kind="analysis",
             status="succeeded",
             title="进展说明",
-            summary=redact_text(text, limit=2_000),
+            summary=redact_text(text, limit=max(1, len(text))),
             metadata=_metadata(message_id=payload.get("message_id")),
+        )
+    if event.type == "reasoning.summary.delta":
+        text = safe_model_text(str(payload.get("text", "")))
+        if not text:
+            return None
+        return _item(
+            event,
+            kind="analysis",
+            status="succeeded",
+            title="思考摘要",
+            summary=redact_text(text, limit=max(1, len(text))),
+            metadata=_metadata(item_id=payload.get("item_id")),
         )
     if event.type == "message.start":
         return _item(
@@ -445,6 +490,8 @@ def _activity_item(event: RunEvent) -> dict[str, Any] | None:
                 if isinstance(turns, int)
                 else "已达到最大模型回合数，任务尚未完成"
             )
+        if failed and subtype == "error_max_budget_usd":
+            summary = "此历史运行触发了费用额度上限；平台现已取消费用和 Token 执行限制。"
         return _item(
             event,
             kind="result",
@@ -452,6 +499,8 @@ def _activity_item(event: RunEvent) -> dict[str, Any] | None:
             title=(
                 "达到最大模型回合数"
                 if failed and subtype == "error_max_turns"
+                else "达到运行费用上限"
+                if failed and subtype == "error_max_budget_usd"
                 else "模型执行失败"
                 if failed
                 else "模型执行完成"

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import fcntl
 import os
+import stat
 import subprocess
 import tempfile
 from collections.abc import Callable, Generator, Mapping, Sequence
@@ -41,6 +42,11 @@ class ReleaseComposeDeployer:
             raise ValueError("environment must be test, canary, or production")
         if not compose_env_file.is_file():
             raise ValueError("the pre-provisioned Compose environment file is unavailable")
+        file_mode = stat.S_IMODE(compose_env_file.stat().st_mode)
+        if file_mode & 0o077:
+            raise ValueError(
+                "the Compose environment file must not be accessible by group or others"
+            )
         self._root = repository_root.resolve()
         self._env_file = compose_env_file.resolve()
         self._state = state_root.resolve() / environment_name
@@ -118,10 +124,17 @@ class ReleaseComposeDeployer:
             current = self._state / "current.json"
             previous = self._state / "previous.json"
             candidate = self._state / "candidate.json"
-            _atomic_copy(manifest_path, candidate)
+            failed = self._state / "failed.json"
             if current.is_file():
                 _atomic_copy(current, previous)
-            self._activate(manifest, migrate=True, seed=True)
+            _atomic_copy(manifest_path, candidate)
+            try:
+                self._activate(manifest, migrate=True, seed=True)
+            except Exception:
+                # Preserve the manifest that actually failed. The active pointer is
+                # not advanced until activation and seeding have both succeeded.
+                _atomic_copy(candidate, failed)
+                raise
             _atomic_copy(candidate, current)
             candidate.unlink(missing_ok=True)
         return manifest
@@ -134,10 +147,14 @@ class ReleaseComposeDeployer:
                 raise ValueError("no previous verified release is available for rollback")
             manifest = load_release_manifest(previous)
             failed = self._state / "failed.json"
-            if current.is_file():
+            candidate = self._state / "candidate.json"
+            if candidate.is_file():
+                _atomic_copy(candidate, failed)
+            elif current.is_file():
                 _atomic_copy(current, failed)
             # Database migrations are expand/contract and remain forward-compatible;
             # image rollback never performs an automatic destructive downgrade.
             self._activate(manifest, migrate=False, seed=False)
             _atomic_copy(previous, current)
+            candidate.unlink(missing_ok=True)
         return manifest

@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import Field
 
-from harness.studio.models import StudioModel
+from harness.studio.models import DraftTaskContract, StudioModel
 
 STUDIO_BUNDLE_METADATA_FILENAME = "studio.json"
 
@@ -15,6 +15,7 @@ class StudioBundleMetadata(StudioModel):
     api_version: Literal["harness.studio/v1"] = Field(alias="apiVersion")
     kind: Literal["AgentDraftMetadata"]
     description: str = Field(min_length=1, max_length=500)
+    task_contract: DraftTaskContract | None = Field(default=None, alias="taskContract")
     execution_profile: str = Field(
         alias="executionProfile",
         min_length=1,

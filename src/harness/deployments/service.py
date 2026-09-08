@@ -146,11 +146,7 @@ class DeploymentService:
         eligible_profiles = [
             item
             for item in catalog.catalog.execution_profiles
-            if item.enabled
-            and (
-                name is not EnvironmentName.PRODUCTION
-                or (item.production_allowed and item.sandbox_provider != "local")
-            )
+            if item.enabled and (name is not EnvironmentName.PRODUCTION or item.production_allowed)
         ]
         preferred = next(
             (item for item in eligible_profiles if item.profile_id == "isolated-default"),
@@ -353,10 +349,8 @@ class DeploymentService:
             tenant_id,
             request.policy.allowed_knowledge_references,
         )
-        if environment_name is EnvironmentName.PRODUCTION and (
-            profile.sandbox_provider == "local" or not profile.production_allowed
-        ):
-            raise ConflictError("Production Environment requires an isolated production Profile")
+        if environment_name is EnvironmentName.PRODUCTION and not profile.production_allowed:
+            raise ConflictError("Production Environment requires a production-enabled Profile")
         for route in current.routes:
             snapshot = await self._deployments.get_snapshot_for_user(
                 tenant_id, user_id, route.snapshot_id
@@ -450,10 +444,8 @@ class DeploymentService:
         )
         if not profile.enabled:
             raise ConflictError("Execution Profile is disabled")
-        if request.environment is EnvironmentName.PRODUCTION and (
-            profile.sandbox_provider == "local" or not profile.production_allowed
-        ):
-            raise ConflictError("Local or unsafe Execution Profile cannot target production")
+        if request.environment is EnvironmentName.PRODUCTION and not profile.production_allowed:
+            raise ConflictError("Execution Profile is not enabled for production")
         if (
             profile.profile_id != policy_profile.profile_id
             or profile.version != policy_profile.version

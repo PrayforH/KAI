@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from harness.core.models import ExecutionIdentity, Run, Session
 from harness.policy.runtime import ResolvedPolicy
 from harness.runtime.artifact_tools import ArtifactPublisher
+from harness.runtime.steering import SteeringInbox
 from harness.sandbox.base import SandboxCommandResult, SandboxIsolation
 
 RuntimeTransportFactory = Callable[[object], object]
@@ -23,7 +24,7 @@ class RuntimeExecutionTimeoutError(TimeoutError):
 
 
 class RuntimeResultError(RuntimeError):
-    """Raised when Claude SDK returns a terminal error result."""
+    """Raised when an Agent runtime returns a terminal error result."""
 
     def __init__(
         self,
@@ -37,7 +38,7 @@ class RuntimeResultError(RuntimeError):
         self.api_error_status = api_error_status
         self.error_code = error_code
         self.user_message = user_message
-        super().__init__(f"Claude SDK returned an error result: {subtype}")
+        super().__init__(f"Agent runtime returned an error result: {subtype}")
 
 
 class RuntimeContext(BaseModel):
@@ -53,6 +54,7 @@ class RuntimeContext(BaseModel):
     input_files: tuple[str, ...] = ()
     identity: ExecutionIdentity | None = None
     memory_projection: str = Field(default="", exclude=True, repr=False)
+    context_projection: str = Field(default="", exclude=True, repr=False)
     processed_input_paths: tuple[str, ...] = ()
     runtime_transport_factory: RuntimeTransportFactory | None = Field(
         default=None, exclude=True, repr=False
@@ -61,6 +63,7 @@ class RuntimeContext(BaseModel):
         default=None, exclude=True, repr=False
     )
     artifact_publisher: ArtifactPublisher | None = Field(default=None, exclude=True, repr=False)
+    steering: SteeringInbox | None = Field(default=None, exclude=True, repr=False)
     resolved_policy: ResolvedPolicy | None = Field(default=None, exclude=True, repr=False)
 
     @model_validator(mode="after")
@@ -85,6 +88,7 @@ class RuntimeContext(BaseModel):
                     run_id=self.run.run_id,
                     agent_name=self.session.agent_name,
                     agent_version=self.session.agent_version,
+                    connection_mode=self.session.connection_mode,
                 ),
             )
         assert self.identity is not None

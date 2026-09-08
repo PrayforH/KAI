@@ -1,7 +1,7 @@
 """Server-owned registrations for capabilities exposed by Agent Manifests."""
 
 import json
-from typing import cast
+from typing import Literal, cast
 
 from claude_agent_sdk import McpServerConfig
 from pydantic import SecretStr
@@ -14,6 +14,7 @@ from harness.runtime.mcp_credentials import (
 from harness.runtime.tools import McpServerRegistration, McpSmokeCheck, ToolResolver
 from harness.studio.catalog_service import CapabilityCatalogService
 from harness.studio.models import McpCapability
+from harness.studio.web_configuration import WebConfigurationService
 
 TAVILY_REFERENCE = "tavily-readonly"
 TAVILY_ALLOWED_TOOLS = (
@@ -52,6 +53,10 @@ def default_tool_resolver(
     credential_provider: DynamicMcpCredentialProvider | None = None,
     *,
     catalogs: CapabilityCatalogService | None = None,
+    web_search_api_key: str = "",
+    web_search_provider: Literal["tavily", "minimax"] = "tavily",
+    web_enabled: bool = True,
+    web_configurations: WebConfigurationService | None = None,
 ) -> ToolResolver:
     """Build the reviewed capability registry shared by every composition root."""
 
@@ -77,7 +82,8 @@ def default_tool_resolver(
                     {"type": "http", "url": "https://mcp.tavily.com/mcp/"},
                 ),
                 allowed_tools=TAVILY_ALLOWED_TOOLS,
-                credential_query_parameters=(("tavilyApiKey", "api_key"),),
+                credential_headers=(("Authorization", "api_key"),),
+                credential_header_prefixes=(("Authorization", "Bearer "),),
                 result_trust=ContextTrust.UNTRUSTED,
                 preflight_smoke=McpSmokeCheck(
                     tool="tavily_search",
@@ -91,6 +97,10 @@ def default_tool_resolver(
         },
         mcp_registry_provider=tenant_registry if catalogs is not None else None,
         credential_provider=credential_provider,
+        web_search_api_key=web_search_api_key,
+        web_search_provider=web_search_provider,
+        web_enabled=web_enabled,
+        web_configurations=web_configurations,
     )
 
 
@@ -128,6 +138,7 @@ def _catalog_registration(
             {"type": capability.transport, "url": capability.endpoint_url},
         ),
         allowed_tools=capability.tools,
+        static_headers=tuple(capability.custom_headers.items()),
         credential_headers=credential_headers,
         credential_header_prefixes=credential_header_prefixes,
         credential_query_parameters=credential_query_parameters,

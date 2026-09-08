@@ -19,4 +19,15 @@ describe("client authentication response handling", () => {
     ).toBe(false);
     expect(replace).not.toHaveBeenCalled();
   });
+
+  it("explains when a newer device replaced the current session", () => {
+    const replace = vi.fn();
+    const response = new Response(null, {
+      status: 401,
+      headers: { "X-Harness-Auth-Error": "session_replaced" },
+    });
+
+    expect(redirectOnUnauthorized(response, { replace })).toBe(true);
+    expect(replace).toHaveBeenCalledWith("/login?error=session_replaced");
+  });
 });

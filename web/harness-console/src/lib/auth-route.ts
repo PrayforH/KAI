@@ -61,6 +61,8 @@ export async function currentSession(request: Request): Promise<Response> {
   const headers = new Headers({ "Content-Type": "application/json" });
   if (refreshed) appendSessionCookies(headers, refreshed, config);
   if (!upstream.ok) {
+    const authError = upstream.headers.get("x-harness-auth-error");
+    if (authError) headers.set("X-Harness-Auth-Error", authError);
     appendClearedSessionCookies(headers, config);
     return Response.json({ user: null }, { status: 401, headers });
   }

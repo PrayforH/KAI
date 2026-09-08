@@ -16,12 +16,14 @@ from claude_agent_sdk.types import (
     HookJSONOutput,
     PostToolUseFailureHookInput,
     PostToolUseHookInput,
+    PreCompactHookInput,
     PreToolUseHookInput,
     SyncHookJSONOutput,
 )
 
 from harness.application.approvals import ApprovalService
 from harness.application.events import EventService
+from harness.context.service import ContextService
 from harness.core.models import ApprovalStatus
 from harness.observability.provider import Observability
 from harness.policy.bash_safety import sandboxed_bash_is_low_risk
@@ -57,6 +59,7 @@ class ToolGate(Protocol):
         policy_id: str | None = None,
         subagent_policy_ids: Mapping[str, str] | None = None,
         result_trust_by_tool: Mapping[str, ContextTrust] | None = None,
+        delegate_allowed_to_sdk_permissions: bool = False,
     ) -> dict[HookEvent, list[HookMatcher]]: ...
 
 
@@ -104,16 +107,15 @@ def _approval_risk(tool_name: str) -> str:
 
 
 def _hook_output(
-    decision: str,
+    decision: str | None,
     reason: str,
     *,
     updated_input: dict[str, Any] | None = None,
 ) -> SyncHookJSONOutput:
-    specific: dict[str, Any] = {
-        "hookEventName": "PreToolUse",
-        "permissionDecision": decision,
-        "permissionDecisionReason": reason,
-    }
+    specific: dict[str, Any] = {"hookEventName": "PreToolUse"}
+    if decision is not None:
+        specific["permissionDecision"] = decision
+        specific["permissionDecisionReason"] = reason
     if updated_input is not None:
         specific["updatedInput"] = updated_input
     return cast(
@@ -297,6 +299,7 @@ class SdkToolGate:
         profiles: PolicyProfileRegistry | None = None,
         approvals: ApprovalService,
         events: EventService,
+        context_service: ContextService | None = None,
         quotas: QuotaService | None = None,
         observability: Observability | None = None,
     ) -> None:
@@ -306,6 +309,7 @@ class SdkToolGate:
         self._profiles = profiles
         self._approvals = approvals
         self._events = events
+        self._context_service = context_service
         self._quotas = quotas
         self._observability = observability
 
@@ -316,6 +320,7 @@ class SdkToolGate:
         policy_id: str | None = None,
         subagent_policy_ids: Mapping[str, str] | None = None,
         result_trust_by_tool: Mapping[str, ContextTrust] | None = None,
+        delegate_allowed_to_sdk_permissions: bool = False,
     ) -> dict[HookEvent, list[HookMatcher]]:
         active_policy_id = (
             context.resolved_policy.policy_id
@@ -344,9 +349,24 @@ class SdkToolGate:
         implicit_deny = PolicyEngine([])
         file_capabilities = _RunFileCapabilities(context)
         tool_traces: dict[str, tuple[int, str, dict[str, Any], str]] = {}
-        current_context_trust = ContextTrust.SAFE
+        current_context_trust: ContextTrust | None = None
         pending_result_trust: dict[str, tuple[str, ContextTrust, str]] = {}
         declared_result_trust = dict(result_trust_by_tool or {})
+
+        async def load_context_trust() -> ContextTrust:
+            nonlocal current_context_trust
+            if current_context_trust is not None:
+                return current_context_trust
+            if self._context_service is None:
+                current_context_trust = ContextTrust.SAFE
+            else:
+                state = await self._context_service.state(
+                    context.run.tenant_id,
+                    context.session.user_id,
+                    context.run.session_id,
+                )
+                current_context_trust = state.trust_high_watermark
+            return current_context_trust
 
         def finish_tool_trace(
             hook_input: PostToolUseHookInput | PostToolUseFailureHookInput,
@@ -457,6 +477,7 @@ class SdkToolGate:
                 ),
                 selected_policy_id,
             )
+            context_trust = await load_context_trust()
             output = await self._authorize(
                 context,
                 typed_input,
@@ -465,7 +486,8 @@ class SdkToolGate:
                 file_capabilities=file_capabilities,
                 allowed_subagent_aliases=frozenset(subagent_policies),
                 declared_tools=frozenset(declared_result_trust),
-                context_trust=current_context_trust,
+                context_trust=context_trust,
+                delegate_allowed_to_sdk_permissions=delegate_allowed_to_sdk_permissions,
             )
             specific = cast(dict[str, Any], output).get("hookSpecificOutput", {})
             decision = (
@@ -489,6 +511,31 @@ class SdkToolGate:
                     error_type="policy_denied",
                 )
             return output
+
+        async def pre_compact(
+            hook_input: HookInput,
+            _tool_use_id: str | None,
+            _hook_context: HookContext,
+        ) -> HookJSONOutput:
+            """Record a content-free boundary before the SDK rewrites its transcript."""
+
+            typed_input = cast(PreCompactHookInput, hook_input)
+            custom_instructions = typed_input.get("custom_instructions")
+            context_trust = await load_context_trust()
+            await self._events.append(
+                tenant_id=context.run.tenant_id,
+                run_id=context.run.run_id,
+                session_id=context.run.session_id,
+                event_type="context.compaction.started",
+                payload={
+                    "trigger": typed_input["trigger"],
+                    "custom_instructions_supplied": bool(
+                        isinstance(custom_instructions, str) and custom_instructions.strip()
+                    ),
+                    "session_context_trust": context_trust.value,
+                },
+            )
+            return cast(HookJSONOutput, {})
 
         async def post_tool_use(
             hook_input: HookInput,
@@ -514,13 +561,22 @@ class SdkToolGate:
             nonlocal current_context_trust
             typed_input = cast(PostToolUseHookInput, hook_input)
             pending = pending_result_trust.pop(typed_input["tool_use_id"], None)
-            if (
-                pending is not None
-                and _TRUST_PRECEDENCE[pending[1]] > _TRUST_PRECEDENCE[current_context_trust]
+            loaded_trust = await load_context_trust()
+            if pending is not None and (
+                _TRUST_PRECEDENCE[pending[1]] > _TRUST_PRECEDENCE[loaded_trust]
             ):
                 tool_name, next_trust, result_policy_rule = pending
-                previous_trust = current_context_trust
-                current_context_trust = next_trust
+                previous_trust = loaded_trust
+                if self._context_service is None:
+                    current_context_trust = next_trust
+                else:
+                    state = await self._context_service.promote_trust(
+                        context.run.tenant_id,
+                        context.session.user_id,
+                        context.run.session_id,
+                        next_trust,
+                    )
+                    current_context_trust = state.trust_high_watermark
                 trust_payload = {
                     "tool_call_id": typed_input["tool_use_id"],
                     "tool_name": tool_name,
@@ -570,6 +626,7 @@ class SdkToolGate:
             return cast(HookJSONOutput, {})
 
         return {
+            "PreCompact": [HookMatcher(matcher=None, hooks=[pre_compact], timeout=30.0)],
             "PreToolUse": [HookMatcher(matcher=None, hooks=[pre_tool_use], timeout=900.0)],
             "PostToolUse": [
                 HookMatcher(
@@ -600,6 +657,7 @@ class SdkToolGate:
         allowed_subagent_aliases: frozenset[str] = frozenset(),
         declared_tools: frozenset[str] = frozenset(),
         context_trust: ContextTrust = ContextTrust.SAFE,
+        delegate_allowed_to_sdk_permissions: bool = False,
     ) -> SyncHookJSONOutput:
         raw_tool_name = hook_input["tool_name"]
         tool_name = canonical_tool_name(raw_tool_name)
@@ -663,7 +721,12 @@ class SdkToolGate:
                 "",
             )
             if requested_alias not in allowed_subagent_aliases:
-                reason = "subagent role is not declared by the published Agent Manifest"
+                reason = (
+                    "subagent role is not declared by the published Agent Manifest; "
+                    "available subagent_type values: "
+                    + ", ".join(sorted(allowed_subagent_aliases))
+                    + ". Use a declared role only when its tools support the task."
+                )
                 await self._append_denied(context, tool_call_id, reason)
                 return _hook_output("deny", reason)
         write_target: Path | None = None
@@ -735,6 +798,7 @@ class SdkToolGate:
             await self._append_denied(context, tool_call_id, result.reason)
             return _hook_output("deny", result.reason)
 
+        human_approved = False
         if result.decision is PolicyDecision.ASK:
             approval = await self._approvals.request(
                 tenant_id=context.run.tenant_id,
@@ -763,6 +827,7 @@ class SdkToolGate:
                 raise
             if decision is not ApprovalStatus.APPROVED:
                 return _hook_output("deny", "tool use was not approved")
+            human_approved = True
 
         if tool_name == "Write" and write_target is not None:
             file_capabilities.note_authorized_write(tool_call_id, write_target)
@@ -800,10 +865,17 @@ class SdkToolGate:
             run_id=context.run.run_id,
             session_id=context.run.session_id,
             event_type="tool.allowed",
-            payload={"tool_call_id": tool_call_id},
+            payload={
+                "tool_call_id": tool_call_id,
+                "permission_stage": (
+                    "sdk-auto"
+                    if delegate_allowed_to_sdk_permissions and not human_approved
+                    else "harness-final"
+                ),
+            },
         )
         return _hook_output(
-            "allow",
+            None if delegate_allowed_to_sdk_permissions and not human_approved else "allow",
             result.reason,
             updated_input=updated_arguments,
         )

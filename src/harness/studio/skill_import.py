@@ -9,6 +9,7 @@ import re
 import stat
 import zipfile
 from pathlib import PurePosixPath
+from typing import cast
 
 import yaml
 
@@ -63,19 +64,18 @@ def _parse_skill_markdown(
     except StopIteration as error:
         raise SkillImportError("SKILL.md frontmatter 未闭合") from error
     try:
-        metadata = yaml.safe_load("\n".join(lines[1:end])) or {}
+        raw_metadata = cast(object, yaml.safe_load("\n".join(lines[1:end])))
     except yaml.YAMLError as error:
         raise SkillImportError("SKILL.md frontmatter 不是有效 YAML") from error
-    if not isinstance(metadata, dict):
+    if not isinstance(raw_metadata, dict):
         raise SkillImportError("SKILL.md frontmatter 必须是对象")
+    metadata = {str(key): value for key, value in cast(dict[object, object], raw_metadata).items()}
     raw_name = str(metadata.get("name") or fallback_name).strip()
     name = raw_name if _SKILL_NAME.fullmatch(raw_name) else _safe_name(raw_name)
     warnings: list[str] = []
     if name != raw_name:
         warnings.append(f"Skill 名称已规范化为 {name}")
-    description = str(
-        metadata.get("description") or f"从上传文件安装的 {name} Skill"
-    ).strip()
+    description = str(metadata.get("description") or f"从上传文件安装的 {name} Skill").strip()
     instructions = "\n".join(lines[end + 1 :]).strip()
     if not instructions:
         raise SkillImportError("SKILL.md 工作流说明为空")

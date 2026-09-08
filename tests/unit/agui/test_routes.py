@@ -1,6 +1,10 @@
 from datetime import UTC, datetime
 
-from harness.agui.routes import final_response_text, project_stream_event
+from harness.agui.routes import (
+    active_response_text,
+    final_response_text,
+    project_stream_event,
+)
 from harness.core.events import RunEvent
 
 
@@ -39,6 +43,47 @@ def test_final_response_excludes_progress_commentary_before_last_action() -> Non
     ]
 
     assert final_response_text(events) == "检查完成：工作区正常。"
+
+
+def test_active_response_keeps_progress_in_activity_during_tool_pause() -> None:
+    events = [
+        _event("message.start", 1, message_id="progress-1"),
+        _event(
+            "message.delta",
+            2,
+            message_id="progress-1",
+            text="我先检查工作区。",
+        ),
+        _event("message.completed", 3, message_id="progress-1"),
+        _event("tool.request", 4, tool_name="Read"),
+        _event("tool.allowed", 5, tool_name="Read"),
+    ]
+
+    assert final_response_text(events) == ""
+    assert active_response_text(events) == ""
+
+
+def test_active_response_restores_message_before_any_tool_starts() -> None:
+    events = [
+        _event("message.start", 1, message_id="answer"),
+        _event("message.delta", 2, message_id="answer", text="正在组织答案："),
+        _event("message.delta", 3, message_id="answer", text="第一部分。"),
+    ]
+
+    assert active_response_text(events) == "正在组织答案：第一部分。"
+
+
+def test_active_response_replaces_progress_with_new_partial_answer() -> None:
+    events = [
+        _event("message.delta", 1, message_id="progress", text="正在查询。"),
+        _event("tool.request", 2, tool_name="Read"),
+        _event("tool.result", 3, tool_name="Read"),
+        _event("message.start", 4, message_id="answer"),
+        _event("message.delta", 5, message_id="answer", text="查询完成："),
+        _event("message.delta", 6, message_id="answer", text="结果正常。"),
+    ]
+
+    assert active_response_text(events) == "查询完成：结果正常。"
 
 
 def test_live_projection_streams_response_then_emits_terminal_artifact() -> None:

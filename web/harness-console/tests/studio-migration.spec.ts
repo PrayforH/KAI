@@ -20,6 +20,8 @@ class MemoryStorage {
 function apiDraft(revision: number): ApiAgentDraft {
   return {
     draftId: "draft-imported",
+    agentId: "agent-imported",
+    spaceId: null,
     tenantId: "tenant-a",
     revision,
     spec: studioDraftToSpec({

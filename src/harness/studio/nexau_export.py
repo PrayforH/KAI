@@ -204,6 +204,8 @@ def _mcp_config(
         "url": url,
         "timeout": 30,
     }
+    if capability is not None and capability.custom_headers:
+        server["headers"] = dict(capability.custom_headers)
     if capability is None or capability.auth_mode == "none":
         return server, tuple(required_environment)
 
@@ -213,9 +215,15 @@ def _mcp_config(
     if capability.auth_mode == "query" and capability.auth_name:
         server["url"] = f"{url}?{quote(capability.auth_name, safe='')}={placeholder}"
     elif capability.auth_mode == "bearer":
-        server["headers"] = {"Authorization": f"Bearer {placeholder}"}
+        server["headers"] = {
+            **dict(capability.custom_headers),
+            "Authorization": f"Bearer {placeholder}",
+        }
     elif capability.auth_mode == "header" and capability.auth_name:
-        server["headers"] = {capability.auth_name: placeholder}
+        server["headers"] = {
+            **dict(capability.custom_headers),
+            capability.auth_name: placeholder,
+        }
     return server, tuple(required_environment)
 
 

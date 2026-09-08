@@ -38,6 +38,28 @@ describe("HarnessHttpAgent", () => {
     });
   });
 
+  it("requests a durable-history refresh after a run succeeds", async () => {
+    const onRunSucceeded = vi.fn();
+    const agent = new HarnessHttpAgent({
+      url: "http://harness/v1/agui",
+      onRunSucceeded,
+      fetch: async () => new Response(
+        [
+          'data: {"type":"RUN_STARTED","threadId":"thread-history","runId":"run-history"}',
+          "",
+          'data: {"type":"RUN_FINISHED","threadId":"thread-history","runId":"run-history"}',
+          "",
+          "",
+        ].join("\n"),
+        { headers: { "Content-Type": "text/event-stream" } },
+      ),
+    });
+
+    await agent.runAgent({ runId: "run-history" });
+
+    expect(onRunSucceeded).toHaveBeenCalledTimes(1);
+  });
+
   it("notifies Harness when CopilotRuntime stops an active thread", () => {
     let cancelUrl = "";
     let cancelInit: RequestInit | undefined;
@@ -78,6 +100,24 @@ describe("HarnessHttpAgent", () => {
       runId: "run/1",
       status: "complete",
     });
+  });
+
+  it("cancels a resumed run by its durable server ID", () => {
+    let cancelUrl = "";
+    const agent = new HarnessHttpAgent({
+      url: "http://harness/v1/agui?agent_name=echo-agent&agent_version=0.1.0",
+      cancelFetch: async (input) => {
+        cancelUrl = String(input);
+        return new Response(null, { status: 200 });
+      },
+    });
+
+    agent.adoptActiveRun("thread-resumed", "server/run-resumed");
+    agent.cancelActiveRun();
+
+    expect(cancelUrl).toBe(
+      "http://harness/v1/agui/runs/server%2Frun-resumed/cancel",
+    );
   });
 
   it("notifies Harness when assistant-ui aborts its run signal", async () => {
@@ -324,6 +364,7 @@ describe("HarnessHttpAgent", () => {
 
   it("shows a completed response before a post-processing run error", async () => {
     liveResponseStore.clear();
+    const onRunSucceeded = vi.fn();
     const streamFetch: typeof fetch = async () =>
       new Response(
         [
@@ -344,6 +385,7 @@ describe("HarnessHttpAgent", () => {
     const agent = new HarnessHttpAgent({
       url: "http://harness/v1/agui",
       fetch: streamFetch,
+      onRunSucceeded,
     });
 
     await agent.runAgent({ runId: "run-error" });
@@ -354,6 +396,7 @@ describe("HarnessHttpAgent", () => {
       status: "error",
       visible: true,
     });
+    expect(onRunSucceeded).not.toHaveBeenCalled();
   });
 
   it("publishes the first text chunk before the response stream finishes", async () => {

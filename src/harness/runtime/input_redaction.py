@@ -65,7 +65,7 @@ def redact_internal_agent_asset_events(
     protected_tool_call_ids: set[str] | None = None,
 ) -> list[RunEvent]:
     """Hide internal instruction bodies, including during historical replay."""
-    protected = protected_tool_call_ids if protected_tool_call_ids is not None else set()
+    protected: set[str] = protected_tool_call_ids if protected_tool_call_ids is not None else set()
     projected: list[RunEvent] = []
     for event in events:
         payload = event.payload
@@ -85,10 +85,7 @@ def redact_internal_agent_asset_events(
 
 
 def staged_input_paths(workspace: Path, input_files: tuple[str, ...]) -> dict[Path, str]:
-    return {
-        (workspace / relative_path).resolve(): relative_path
-        for relative_path in input_files
-    }
+    return {(workspace / relative_path).resolve(): relative_path for relative_path in input_files}
 
 
 def staged_read_path(
@@ -122,10 +119,7 @@ def redact_workspace_paths(value: Any, workspace: Path) -> Any:
     if isinstance(value, str):
         return value.replace(workspace_path, "/workspace")
     if isinstance(value, list):
-        return [
-            redact_workspace_paths(item, workspace)
-            for item in cast(list[Any], value)
-        ]
+        return [redact_workspace_paths(item, workspace) for item in cast(list[Any], value)]
     if isinstance(value, dict):
         return {
             key: redact_workspace_paths(item, workspace)

@@ -140,6 +140,21 @@ function taskNodes(items: readonly ActivityItem[]): RunTaskNode[] {
     }),
   );
   for (const item of items) {
+    // A denied Agent/Task never emits SDK subagent lifecycle events.
+    // Its tool.result still owns the terminal state of the attempted delegation.
+    if (item.event_type === "tool.result") {
+      const callId = item.metadata.tool_call_id;
+      const attempted = typeof callId === "string" ? tasks.get(callId) : undefined;
+      if (attempted) {
+        const detail = item.metadata.result_preview ?? item.metadata.result_summary;
+        tasks.set(attempted.id, {
+          ...attempted,
+          status: workStatus(item),
+          title: typeof detail === "string" && detail ? detail : attempted.title,
+        });
+      }
+      continue;
+    }
     if (item.kind !== "subagent") continue;
     const realTaskId = item.metadata.task_id;
     const toolCallId = item.metadata.tool_call_id;

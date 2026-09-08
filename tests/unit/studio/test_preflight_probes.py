@@ -129,7 +129,7 @@ async def test_model_probe_requires_streaming_tool_use_without_leaking_secret(
         tmp_path, SandboxCommandResult(exit_code=0, stdout=valid_stream())
     )
     evidence = await AnthropicSandboxModelProbe(gateway()).verify(
-        manifest(), sandbox, await handle(sandbox)
+        "tenant-a", manifest(), sandbox, await handle(sandbox)
     )
 
     assert evidence.details["streaming"] is True
@@ -149,7 +149,7 @@ async def test_model_probe_supports_anthropic_api_key_auth_for_compatible_gatewa
     )
 
     await AnthropicSandboxModelProbe(gateway(auth_scheme="x-api-key")).verify(
-        manifest(), sandbox, await handle(sandbox)
+        "tenant-a", manifest(), sandbox, await handle(sandbox)
     )
 
     assert sandbox.environment["HARNESS_PREFLIGHT_AUTH_HEADER"] == f"x-api-key: {SECRET}"
@@ -199,7 +199,7 @@ async def test_model_probe_returns_stable_compatibility_errors(
     sandbox = CommandSandbox(tmp_path, result)
     with pytest.raises(PreflightCheckError) as captured:
         await AnthropicSandboxModelProbe(config).verify(
-            manifest(), sandbox, await handle(sandbox)
+            "tenant-a", manifest(), sandbox, await handle(sandbox)
         )
     assert captured.value.error_code == error_code
     assert SECRET not in str(captured.value)

@@ -58,7 +58,7 @@ def _factory() -> Callable[..., ToolResolver]:
 
 
 @pytest.mark.asyncio
-async def test_default_resolver_injects_tavily_query_key_and_exact_allowlist() -> None:
+async def test_default_resolver_injects_tavily_bearer_key_and_exact_allowlist() -> None:
     provider = ServerSecretReferenceProvider(
         references={"tavily-readonly": {"api_key": "TAVILY_API_KEY"}},
         secrets={"TAVILY_API_KEY": SecretStr("test-key")},
@@ -72,10 +72,11 @@ async def test_default_resolver_injects_tavily_query_key_and_exact_allowlist() -
     )
     assert resolved.mcp_servers["tavily"] == {
         "type": "http",
-        "url": "https://mcp.tavily.com/mcp/?tavilyApiKey=test-key",
+        "url": "https://mcp.tavily.com/mcp/",
+        "headers": {"Authorization": "Bearer test-key"},
     }
-    assert resolved.sensitive_names == frozenset({"tavilyApiKey"})
-    assert resolved.sensitive_values == frozenset({"test-key"})
+    assert resolved.sensitive_names == frozenset({"Authorization"})
+    assert resolved.sensitive_values == frozenset({"Bearer test-key"})
     assert set(resolved.result_trust.values()) == {ContextTrust.UNTRUSTED}
 
 

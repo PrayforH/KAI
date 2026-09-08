@@ -61,9 +61,10 @@
 
 | 项 | 值 |
 | --- | --- |
-| 源码提交（main） | 待填 |
-| release workflow run ID | 待填 |
-| GitHub Release URL | 待填 |
-| test 晋级结果 | 待填 |
+| 源码提交（tag 指向） | `26b672f`（main 合并提交 `dd5996d`，内容一致） |
+| release workflow run ID | 31122494040（queued 时记录；完成后核对 quality/build/sign 结果） |
+| GitHub Release URL | https://github.com/PrayforH/agent-studio/releases/tag/v0.1.0 |
+| CI 状态 | backend `make verify` 全绿（首次）；web job 因公共 runner 分配失败 2 次，本地已验证（296 tests + next build 通过）；Dependabot 并发挤占 runner 池 |
+| test 晋级结果 | 待填（需自托管 runner） |
 | canary 晋级结果 | 待填 |
 | production 晋级结果 | 待填 |

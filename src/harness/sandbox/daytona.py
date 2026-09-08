@@ -34,6 +34,10 @@ from daytona._async.sandbox import AsyncSandbox
 from daytona.common.process import SessionExecuteRequest
 
 from harness.core.models import Run
+from harness.runtime.codex_app_server import (
+    CodexAppServerOptions,
+    DaytonaCodexAppServerProcess,
+)
 from harness.runtime.daytona_transport import (
     DaytonaClaudeTransport,
     RemoteClaudeSession,
@@ -51,9 +55,7 @@ logger = logging.getLogger(__name__)
 def configure_default_ca_bundle() -> None:
     """Use certifi when this Python installation has no usable default CA file."""
     default_ca_file: object = getattr(ssl.get_default_verify_paths(), "cafile", None)
-    default_ca_is_usable = isinstance(default_ca_file, str) and Path(
-        default_ca_file
-    ).is_file()
+    default_ca_is_usable = isinstance(default_ca_file, str) and Path(default_ca_file).is_file()
     if "SSL_CERT_FILE" not in os.environ and not default_ca_is_usable:
         os.environ["SSL_CERT_FILE"] = certifi.where()
 
@@ -71,9 +73,7 @@ class DaytonaRemoteSandbox(Protocol):
 
     async def upload(self, remote_path: str, content: bytes) -> None: ...
 
-    async def list_files(
-        self, remote_path: str
-    ) -> list[tuple[str, bool, int | None]]: ...
+    async def list_files(self, remote_path: str) -> list[tuple[str, bool, int | None]]: ...
 
     async def download(self, remote_path: str) -> bytes: ...
 
@@ -104,9 +104,7 @@ class SdkDaytonaRemoteSession:
         self._stderr: asyncio.Queue[bytes | None] = asyncio.Queue()
         self._logs_task: asyncio.Task[None] | None = None
 
-    async def stage_config(
-        self, remote_directory: str, files: dict[str, bytes]
-    ) -> None:
+    async def stage_config(self, remote_directory: str, files: dict[str, bytes]) -> None:
         quoted_directory = shlex.quote(remote_directory)
         prepared = await self._sandbox.process.exec(
             f"rm -rf -- {quoted_directory} && mkdir -p -- {quoted_directory}"
@@ -119,9 +117,7 @@ class SdkDaytonaRemoteSession:
                 raise ValueError("remote Claude config path escaped config directory")
             remote_path = str(PurePosixPath(remote_directory) / relative_path)
             parent = str(PurePosixPath(remote_path).parent)
-            created = await self._sandbox.process.exec(
-                f"mkdir -p -- {shlex.quote(parent)}"
-            )
+            created = await self._sandbox.process.exec(f"mkdir -p -- {shlex.quote(parent)}")
             if created.exit_code != 0:
                 raise RuntimeError("failed to create remote Claude config directory")
             await self._sandbox.fs.upload_file(content, remote_path)
@@ -136,8 +132,7 @@ class SdkDaytonaRemoteSession:
             encoded = base64.b64encode(value.encode("utf-8")).decode("ascii")
             environment_lines.append(f"{key}={encoded}")
         argument_lines = [
-            base64.b64encode(argument.encode("utf-8")).decode("ascii")
-            for argument in argv
+            base64.b64encode(argument.encode("utf-8")).decode("ascii") for argument in argv
         ]
         await self._sandbox.process.create_session(self._session_id)
         environment_marker = f"__HARNESS_END_ENV_{uuid4().hex}__"
@@ -163,8 +158,8 @@ class SdkDaytonaRemoteSession:
             "unset HARNESS_CLAUDE_MCP_CONFIG; "
             'set -- "$@" --mcp-config "$mcp_config_path"; '
             "fi; "
-            "trap '[ -z \"$mcp_config_path\" ] || "
-            "rm -f -- \"$mcp_config_path\"' EXIT; "
+            'trap \'[ -z "$mcp_config_path" ] || '
+            'rm -f -- "$mcp_config_path"\' EXIT; '
             "unset CLAUDECODE; "
             'stdout_flush_padding="${HARNESS_DAYTONA_STDOUT_FLUSH_PADDING:-}"; '
             "unset HARNESS_DAYTONA_STDOUT_FLUSH_PADDING; "
@@ -175,12 +170,12 @@ class SdkDaytonaRemoteSession:
             "done; "
             "}; "
             'if [ "$stdout_flush_padding" = "1" ]; then '
-            "forward_stdin | \"$@\" | "
-            "while IFS= read -r output_line || [ -n \"$output_line\" ]; do "
+            'forward_stdin | "$@" | '
+            'while IFS= read -r output_line || [ -n "$output_line" ]; do '
             'printf "%s\\n                \\n" "$output_line"; '
             "done; "
             "else "
-            "forward_stdin | \"$@\"; "
+            'forward_stdin | "$@"; '
             "fi"
         )
         wrapped_argv = [
@@ -300,25 +295,19 @@ class SdkDaytonaRemoteSandbox:
             raise RuntimeError("Daytona Claude CLI version verification failed")
 
     async def create_folder(self, path: str) -> None:
-        response = await self._sandbox.process.exec(
-            f"mkdir -p -- {shlex.quote(path)}"
-        )
+        response = await self._sandbox.process.exec(f"mkdir -p -- {shlex.quote(path)}")
         if response.exit_code != 0:
             raise RuntimeError("failed to create Daytona workspace directory")
 
     async def remove_tree(self, path: str) -> None:
-        response = await self._sandbox.process.exec(
-            f"rm -rf -- {shlex.quote(path)}"
-        )
+        response = await self._sandbox.process.exec(f"rm -rf -- {shlex.quote(path)}")
         if response.exit_code != 0:
             raise RuntimeError("failed to clean Daytona workspace directory")
 
     async def upload(self, remote_path: str, content: bytes) -> None:
         await self._sandbox.fs.upload_file(content, remote_path)
 
-    async def list_files(
-        self, remote_path: str
-    ) -> list[tuple[str, bool, int | None]]:
+    async def list_files(self, remote_path: str) -> list[tuple[str, bool, int | None]]:
         files = await self._sandbox.fs.list_files(remote_path, depth=100)
         return [
             (
@@ -336,8 +325,7 @@ class SdkDaytonaRemoteSandbox:
         archive_path = f"/tmp/harness-workspace-{uuid4().hex}.tar"
         try:
             response = await self._sandbox.process.exec(
-                "tar -C "
-                f"{shlex.quote(remote_path)} -cf {shlex.quote(archive_path)} ."
+                f"tar -C {shlex.quote(remote_path)} -cf {shlex.quote(archive_path)} ."
             )
             if response.exit_code != 0:
                 raise RuntimeError("failed to archive Daytona workspace")
@@ -365,16 +353,10 @@ class SdkDaytonaClient:
         cls, *, api_key: str, api_url: str | None = None, target: str | None = None
     ) -> SdkDaytonaClient:
         configure_default_ca_bundle()
-        return cls(
-            AsyncDaytona(
-                DaytonaConfig(api_key=api_key, api_url=api_url, target=target)
-            )
-        )
+        return cls(AsyncDaytona(DaytonaConfig(api_key=api_key, api_url=api_url, target=target)))
 
     async def create(self, **parameters: Any) -> DaytonaRemoteSandbox:
-        sandbox = await self._sdk.create(
-            CreateSandboxFromSnapshotParams.model_validate(parameters)
-        )
+        sandbox = await self._sdk.create(CreateSandboxFromSnapshotParams.model_validate(parameters))
         return SdkDaytonaRemoteSandbox(sandbox)
 
     async def get(self, sandbox_id: str) -> DaytonaRemoteSandbox:
@@ -478,6 +460,11 @@ class DaytonaSandboxProvider:
         remote_workspace_root: str = "/home/daytona/harness",
         cli_version: str = "2.1.206",
         cli_path: str = "/home/daytona/.local/bin/claude",
+        codex_cli_version: str = "0.149.0",
+        codex_cli_path: str = "/home/daytona/.local/bin/codex",
+        codex_cli_sha256: str = (
+            "1c08ba262820b78d49ea7a93f326b6b430b72e5fe46830e433edef12e5123244"
+        ),
         delete_on_destroy: bool = False,
         auto_stop_interval_minutes: int = 15,
         auto_delete_interval_minutes: int = 60,
@@ -503,6 +490,9 @@ class DaytonaSandboxProvider:
         self._remote_workspace_root = remote_workspace_root.rstrip("/")
         self._cli_version = cli_version
         self._cli_path = cli_path
+        self._codex_cli_version = codex_cli_version
+        self._codex_cli_path = codex_cli_path
+        self._codex_cli_sha256 = codex_cli_sha256
         self._delete_on_destroy = delete_on_destroy
         self._auto_stop_interval_minutes = auto_stop_interval_minutes
         self._auto_delete_interval_minutes = auto_delete_interval_minutes
@@ -521,9 +511,7 @@ class DaytonaSandboxProvider:
     @staticmethod
     def _session_name(session_key: SessionKey) -> str:
         tenant_id, session_id = session_key
-        digest = hashlib.sha256(
-            f"{tenant_id}\0{session_id}".encode()
-        ).hexdigest()[:24]
+        digest = hashlib.sha256(f"{tenant_id}\0{session_id}".encode()).hexdigest()[:24]
         return f"harness-session-{digest}"
 
     def _drop_entry(self, entry: _SandboxEntry) -> None:
@@ -550,9 +538,7 @@ class DaytonaSandboxProvider:
             return
         self._drop_entry(entry)
 
-    async def _create_session_sandbox(
-        self, run: Run, session_key: SessionKey
-    ) -> _SandboxEntry:
+    async def _create_session_sandbox(self, run: Run, session_key: SessionKey) -> _SandboxEntry:
         name = self._session_name(session_key)
         try:
             sandbox = await self._client.get(name)
@@ -569,9 +555,7 @@ class DaytonaSandboxProvider:
                     },
                     auto_stop_interval=self._auto_stop_interval_minutes,
                     auto_delete_interval=(
-                        self._auto_delete_interval_minutes
-                        if self._delete_on_destroy
-                        else None
+                        self._auto_delete_interval_minutes if self._delete_on_destroy else None
                     ),
                 )
             except DaytonaConflictError:
@@ -589,9 +573,7 @@ class DaytonaSandboxProvider:
         self._session_sandboxes[session_key] = sandbox.id
         return entry
 
-    async def _acquire_session_entry(
-        self, run: Run, session_key: SessionKey
-    ) -> _SandboxEntry:
+    async def _acquire_session_entry(self, run: Run, session_key: SessionKey) -> _SandboxEntry:
         sandbox_id = self._session_sandboxes.get(session_key)
         entry = self._sandboxes.get(sandbox_id) if sandbox_id is not None else None
         if entry is not None:
@@ -608,14 +590,10 @@ class DaytonaSandboxProvider:
     async def provision(self, run: Run) -> SandboxHandle:
         existing = run.input.get("daytona_sandbox_id")
         session_key = (run.tenant_id, run.session_id)
-        reusable = self._session_reuse_enabled and not (
-            isinstance(existing, str) and existing
-        )
+        reusable = self._session_reuse_enabled and not (isinstance(existing, str) and existing)
         session_lock: asyncio.Lock | None = None
         if reusable:
-            session_lock = self._session_locks.setdefault(
-                session_key, asyncio.Lock()
-            )
+            session_lock = self._session_locks.setdefault(session_key, asyncio.Lock())
             await session_lock.acquire()
         try:
             if isinstance(existing, str) and existing:
@@ -641,9 +619,7 @@ class DaytonaSandboxProvider:
                     },
                     auto_stop_interval=self._auto_stop_interval_minutes,
                     auto_delete_interval=(
-                        self._auto_delete_interval_minutes
-                        if self._delete_on_destroy
-                        else None
+                        self._auto_delete_interval_minutes if self._delete_on_destroy else None
                     ),
                 )
                 entry = _SandboxEntry(
@@ -661,18 +637,23 @@ class DaytonaSandboxProvider:
             if session_lock is not None and session_lock.locked():
                 session_lock.release()
             raise
-        path = Path(
-            tempfile.mkdtemp(prefix=f"{run.run_id}-", dir=self._local_root)
-        )
+        path = Path(tempfile.mkdtemp(prefix=f"{run.run_id}-", dir=self._local_root))
         remote_workspace = f"{self._remote_workspace_root}/{run.run_id}"
-        config_digest = hashlib.sha256(
-            f"{run.tenant_id}\0{run.session_id}".encode()
-        ).hexdigest()[:24]
-        remote_config_dir = (
-            f"{self._remote_workspace_root}/.claude-config/{config_digest}"
-        )
+        config_digest = hashlib.sha256(f"{run.tenant_id}\0{run.session_id}".encode()).hexdigest()[
+            :24
+        ]
+        remote_config_dir = f"{self._remote_workspace_root}/.claude-config/{config_digest}"
 
         def transport_factory(raw_options: object) -> object:
+            if isinstance(raw_options, CodexAppServerOptions):
+                return DaytonaCodexAppServerProcess(
+                    session=sandbox.remote_session(),
+                    options=raw_options,
+                    remote_workspace=remote_workspace,
+                    cli_path=self._codex_cli_path,
+                    cli_version=self._codex_cli_version,
+                    cli_sha256=self._codex_cli_sha256,
+                )
             options = cast(ClaudeAgentOptions, raw_options)
             options.env = {
                 **options.env,
@@ -727,11 +708,7 @@ class DaytonaSandboxProvider:
             raise ValueError("Daytona workspace exceeds collection size limit")
         content = await sandbox.download_archive(
             handle.remote_workspace,
-            max_bytes=(
-                self._max_collect_bytes
-                + self._max_collect_members * 1024
-                + 10_240
-            ),
+            max_bytes=(self._max_collect_bytes + self._max_collect_members * 1024 + 10_240),
         )
         _extract_daytona_workspace_archive(
             content,
@@ -852,10 +829,7 @@ class DaytonaSandboxProvider:
             current = self._sandboxes.get(entry.sandbox.id)
             if current is not entry or entry.released_at is None:
                 return False
-            if (
-                entry.recovery_until is not None
-                and entry.recovery_until > self._monotonic()
-            ):
+            if entry.recovery_until is not None and entry.recovery_until > self._monotonic():
                 return False
             if released_before is not None and entry.released_at > released_before:
                 return False
@@ -872,10 +846,7 @@ class DaytonaSandboxProvider:
                 entry
                 for entry in self._sandboxes.values()
                 if entry.released_at is not None
-                and (
-                    entry.recovery_until is None
-                    or entry.recovery_until <= self._monotonic()
-                )
+                and (entry.recovery_until is None or entry.recovery_until <= self._monotonic())
             ),
             key=lambda entry: cast(float, entry.released_at),
         )
@@ -900,18 +871,14 @@ class DaytonaSandboxProvider:
         expired = [
             entry
             for entry in tuple(self._sandboxes.values())
-            if entry.released_at is not None and entry.released_at <= cutoff
-            and (
-                entry.recovery_until is None
-                or entry.recovery_until <= self._monotonic()
-            )
+            if entry.released_at is not None
+            and entry.released_at <= cutoff
+            and (entry.recovery_until is None or entry.recovery_until <= self._monotonic())
         ]
         reaped = 0
         for entry in expired:
             try:
-                retired = await self._reap_warm_entry(
-                    entry, released_before=cutoff
-                )
+                retired = await self._reap_warm_entry(entry, released_before=cutoff)
             except Exception:  # noqa: BLE001 - retry on the next maintenance pass
                 logger.exception(
                     "failed to reap expired warm Daytona sandbox",

@@ -17,6 +17,7 @@ from fastapi import APIRouter, Request, status
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from harness.api.downloads import attachment_content_disposition
+from harness.api.event_streaming import wait_for_run_event
 from harness.core.errors import ConflictError, NotFoundError
 from harness.core.events import RunEvent
 from harness.core.models import ArtifactStatus, Run, RunStatus
@@ -680,7 +681,13 @@ async def _stream_events(
             if event.type in _TERMINAL_EVENTS or current.status is RunStatus.WAITING_APPROVAL:
                 terminal = True
         if not terminal:
-            await asyncio.sleep(0.05)
+            await wait_for_run_event(
+                request.app.state.container.event_wakeup,
+                run.tenant_id,
+                run.run_id,
+                sequence,
+                fallback_poll_seconds=0.05,
+            )
 
 
 def _query_int(

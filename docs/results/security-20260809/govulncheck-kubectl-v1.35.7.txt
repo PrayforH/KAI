@@ -1,0 +1,150 @@
+=== Symbol Results ===
+
+Vulnerability #1: GO-2026-5970
+    Infinite loop on invalid input in golang.org/x/text
+  More info: https://pkg.go.dev/vuln/GO-2026-5970
+  Module: golang.org/x/text
+    Found in: golang.org/x/text@v0.31.0
+    Fixed in: golang.org/x/text@v0.39.0
+    Vulnerable symbols found:
+      #1: norm.Form.Append
+      #2: norm.Form.AppendString
+      #3: norm.Form.Bytes
+      #4: norm.Form.FirstBoundary
+      #5: norm.Form.FirstBoundaryInString
+      Use '-show traces' to see the other 19 found symbols
+
+Vulnerability #2: GO-2026-5942
+    Parsing an invalid SVCB or HTTPS RR can panic in
+    golang.org/x/net/dns/dnsmessage
+  More info: https://pkg.go.dev/vuln/GO-2026-5942
+  Module: golang.org/x/net
+    Found in: golang.org/x/net@v0.47.0
+    Fixed in: golang.org/x/net@v0.56.0
+    Vulnerable symbols found:
+      #1: dnsmessage.Message.Unpack
+      #2: dnsmessage.Parser.Additional
+      #3: dnsmessage.Parser.AllAdditionals
+      #4: dnsmessage.Parser.AllAnswers
+      #5: dnsmessage.Parser.AllAuthorities
+      Use '-show traces' to see the other 4 found symbols
+
+Vulnerability #3: GO-2026-5158
+    Opentelemetry-go's baggage parsing no longer caps raw header length in
+    go.opentelemetry.io/otel
+  More info: https://pkg.go.dev/vuln/GO-2026-5158
+  Module: go.opentelemetry.io/otel
+    Found in: go.opentelemetry.io/otel@v1.41.0
+    Fixed in: go.opentelemetry.io/otel@v1.42.0
+    Vulnerable symbols found:
+      #1: baggage.New
+      #2: baggage.Parse
+      #3: propagation.Baggage.Extract
+
+Vulnerability #4: GO-2026-5030
+    Invoking duplicate attributes can cause XSS in golang.org/x/net/html
+  More info: https://pkg.go.dev/vuln/GO-2026-5030
+  Module: golang.org/x/net
+    Found in: golang.org/x/net@v0.47.0
+    Fixed in: golang.org/x/net@v0.55.0
+    Vulnerable symbols found:
+      #1: html.Parse
+      #2: html.Parse
+      #3: html.Parse
+      #4: html.Parse
+      #5: html.Parse
+      Use '-show traces' to see the other 15 found symbols
+
+Vulnerability #5: GO-2026-5029
+    Invoking incorrect handling of character references in DOCTYPE nodes in
+    golang.org/x/net/html
+  More info: https://pkg.go.dev/vuln/GO-2026-5029
+  Module: golang.org/x/net
+    Found in: golang.org/x/net@v0.47.0
+    Fixed in: golang.org/x/net@v0.55.0
+    Vulnerable symbols found:
+      #1: html.Parse
+      #2: html.Parse
+      #3: html.Parse
+      #4: html.Parse
+      #5: html.Parse
+      Use '-show traces' to see the other 15 found symbols
+
+Vulnerability #6: GO-2026-5028
+    Invoking denial of service when parsing arbitrary HTML in
+    golang.org/x/net/html
+  More info: https://pkg.go.dev/vuln/GO-2026-5028
+  Module: golang.org/x/net
+    Found in: golang.org/x/net@v0.47.0
+    Fixed in: golang.org/x/net@v0.55.0
+    Vulnerable symbols found:
+      #1: html.Parse
+      #2: html.Parse
+      #3: html.Parse
+      #4: html.Parse
+      #5: html.Parse
+      Use '-show traces' to see the other 15 found symbols
+
+Vulnerability #7: GO-2026-5027
+    Invoking incorrect handling of HTML elements in foreign content in
+    golang.org/x/net/html
+  More info: https://pkg.go.dev/vuln/GO-2026-5027
+  Module: golang.org/x/net
+    Found in: golang.org/x/net@v0.47.0
+    Fixed in: golang.org/x/net@v0.55.0
+    Vulnerable symbols found:
+      #1: html.Parse
+      #2: html.Parse
+      #3: html.Parse
+      #4: html.Parse
+      #5: html.Parse
+      Use '-show traces' to see the other 15 found symbols
+
+Vulnerability #8: GO-2026-5026
+    Invoking failure to reject ASCII-only Punycode-encoded labels in
+    golang.org/x/net/idna
+  More info: https://pkg.go.dev/vuln/GO-2026-5026
+  Module: golang.org/x/net
+    Found in: golang.org/x/net@v0.47.0
+    Fixed in: golang.org/x/net@v0.55.0
+    Vulnerable symbols found:
+      #1: idna.Profile.ToASCII
+      #2: idna.Profile.ToUnicode
+      #3: idna.ToASCII
+      #4: idna.ToUnicode
+
+Vulnerability #9: GO-2026-5025
+    Invoking incorrect handling of namespaced elements in foreign content in
+    golang.org/x/net/html
+  More info: https://pkg.go.dev/vuln/GO-2026-5025
+  Module: golang.org/x/net
+    Found in: golang.org/x/net@v0.47.0
+    Fixed in: golang.org/x/net@v0.55.0
+    Vulnerable symbols found:
+      #1: html.Parse
+      #2: html.Parse
+      #3: html.Parse
+      #4: html.Parse
+      #5: html.Parse
+      Use '-show traces' to see the other 15 found symbols
+
+Vulnerability #10: GO-2026-4918
+    Infinite loop in HTTP/2 transport when given bad SETTINGS_MAX_FRAME_SIZE in
+    net/http/internal/http2 in golang.org/x/net
+  More info: https://pkg.go.dev/vuln/GO-2026-4918
+  Module: golang.org/x/net
+    Found in: golang.org/x/net@v0.47.0
+    Fixed in: golang.org/x/net@v0.53.0
+    Vulnerable symbols found:
+      #1: http2.Transport.NewClientConn
+      #2: http2.Transport.RoundTrip
+      #3: http2.Transport.RoundTripOpt
+      #4: http2.clientConnPool.GetClientConn
+      #5: http2.noDialClientConnPool.GetClientConn
+      Use '-show traces' to see the other 3 found symbols
+
+Your code is affected by 10 vulnerabilities from 3 modules.
+This scan also found 0 vulnerabilities in packages you import and 2
+vulnerabilities in modules you require, but your code doesn't appear to call
+these vulnerabilities.
+Use '-show verbose' for more details.

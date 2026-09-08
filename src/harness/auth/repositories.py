@@ -1,6 +1,7 @@
 """Persistence adapters for authentication and audit state."""
 
 from collections.abc import Sequence
+from datetime import datetime
 from typing import Protocol, cast
 
 from sqlalchemy import CursorResult, func, select, update
@@ -54,6 +55,8 @@ class AuthRepository(Protocol):
 
     async def add_refresh_token(self, token: RefreshToken) -> None: ...
 
+    async def replace_user_refresh_token(self, token: RefreshToken, revoked_at: object) -> None: ...
+
     async def get_refresh_token(self, token_hash: str) -> RefreshToken | None: ...
 
     async def rotate_refresh_token(
@@ -63,6 +66,10 @@ class AuthRepository(Protocol):
     async def revoke_token_family(self, family_id: str, revoked_at: object) -> None: ...
 
     async def revoke_user_tokens(self, user_id: str, revoked_at: object) -> None: ...
+
+    async def is_token_family_active(
+        self, user_id: str, tenant_id: str, family_id: str, now: object
+    ) -> bool: ...
 
 
 class AuditRepository(Protocol):
@@ -162,6 +169,10 @@ class InMemoryAuthRepository:
     async def add_refresh_token(self, token: RefreshToken) -> None:
         self.refresh_tokens[token.token_hash] = token
 
+    async def replace_user_refresh_token(self, token: RefreshToken, revoked_at: object) -> None:
+        await self.revoke_user_tokens(token.user_id, revoked_at)
+        self.refresh_tokens[token.token_hash] = token
+
     async def get_refresh_token(self, token_hash: str) -> RefreshToken | None:
         return self.refresh_tokens.get(token_hash)
 
@@ -177,6 +188,15 @@ class InMemoryAuthRepository:
                 "replaced_by_hash": replacement.token_hash,
             }
         )
+        for token_hash, token in tuple(self.refresh_tokens.items()):
+            if (
+                token.user_id == replacement.user_id
+                and token.family_id != replacement.family_id
+                and token.revoked_at is None
+            ):
+                self.refresh_tokens[token_hash] = token.model_copy(
+                    update={"revoked_at": revoked_at}
+                )
         self.refresh_tokens[replacement.token_hash] = replacement
         return True
 
@@ -193,6 +213,18 @@ class InMemoryAuthRepository:
                 self.refresh_tokens[token_hash] = token.model_copy(
                     update={"revoked_at": revoked_at}
                 )
+
+    async def is_token_family_active(
+        self, user_id: str, tenant_id: str, family_id: str, now: object
+    ) -> bool:
+        return any(
+            token.user_id == user_id
+            and token.tenant_id == tenant_id
+            and token.family_id == family_id
+            and token.revoked_at is None
+            and token.expires_at > cast(datetime, now)
+            for token in self.refresh_tokens.values()
+        )
 
 
 class InMemoryAuditRepository:
@@ -383,6 +415,28 @@ class PostgresAuthRepository:
             session.add(_refresh_row(token))
             await session.commit()
 
+    async def replace_user_refresh_token(self, token: RefreshToken, revoked_at: object) -> None:
+        from datetime import datetime
+
+        async with self._sessions() as session:
+            # Serialize competing logins for one user so the last completed
+            # login is the only active browser/device session.
+            await session.execute(
+                select(UserRow.user_id)
+                .where(UserRow.user_id == token.user_id)
+                .with_for_update()
+            )
+            await session.execute(
+                update(RefreshTokenRow)
+                .where(
+                    RefreshTokenRow.user_id == token.user_id,
+                    RefreshTokenRow.revoked_at.is_(None),
+                )
+                .values(revoked_at=cast(datetime, revoked_at))
+            )
+            session.add(_refresh_row(token))
+            await session.commit()
+
     async def get_refresh_token(self, token_hash: str) -> RefreshToken | None:
         async with self._sessions() as session:
             row = await session.get(RefreshTokenRow, token_hash)
@@ -394,6 +448,11 @@ class PostgresAuthRepository:
         from datetime import datetime
 
         async with self._sessions() as session:
+            await session.execute(
+                select(UserRow.user_id)
+                .where(UserRow.user_id == replacement.user_id)
+                .with_for_update()
+            )
             result = await session.execute(
                 update(RefreshTokenRow)
                 .where(
@@ -408,6 +467,15 @@ class PostgresAuthRepository:
             if not cast(CursorResult[object], result).rowcount:
                 await session.rollback()
                 return False
+            await session.execute(
+                update(RefreshTokenRow)
+                .where(
+                    RefreshTokenRow.user_id == replacement.user_id,
+                    RefreshTokenRow.family_id != replacement.family_id,
+                    RefreshTokenRow.revoked_at.is_(None),
+                )
+                .values(revoked_at=cast(datetime, revoked_at))
+            )
             session.add(_refresh_row(replacement))
             await session.commit()
             return True
@@ -439,6 +507,25 @@ class PostgresAuthRepository:
                 .values(revoked_at=cast(datetime, revoked_at))
             )
             await session.commit()
+
+    async def is_token_family_active(
+        self, user_id: str, tenant_id: str, family_id: str, now: object
+    ) -> bool:
+        from datetime import datetime
+
+        statement = (
+            select(func.count())
+            .select_from(RefreshTokenRow)
+            .where(
+                RefreshTokenRow.user_id == user_id,
+                RefreshTokenRow.tenant_id == tenant_id,
+                RefreshTokenRow.family_id == family_id,
+                RefreshTokenRow.revoked_at.is_(None),
+                RefreshTokenRow.expires_at > cast(datetime, now),
+            )
+        )
+        async with self._sessions() as session:
+            return int((await session.execute(statement)).scalar_one()) > 0
 
 
 class PostgresAuditRepository:

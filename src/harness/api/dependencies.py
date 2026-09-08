@@ -17,6 +17,7 @@ from harness.adapters.memory import (
     InMemoryApprovalRepository,
     InMemoryArtifactRepository,
     InMemoryArtifactStore,
+    InMemoryCancellationWakeup,
     InMemoryEventBus,
     InMemoryEventRepository,
     InMemoryInputArtifactRepository,
@@ -39,6 +40,7 @@ from harness.application.memory import UserMemoryService
 from harness.application.runs import RunQuotaPlan, RunService
 from harness.application.sessions import SessionService
 from harness.application.workspaces import WorkspacePolicy, WorkspaceService
+from harness.auth.api_access import ApiAccessService, InMemoryApiAccessKeyRepository
 from harness.auth.audit import AuditService
 from harness.auth.repositories import InMemoryAuditRepository, InMemoryAuthRepository
 from harness.auth.service import (
@@ -47,10 +49,12 @@ from harness.auth.service import (
     OAuthProviderConfig,
 )
 from harness.config import Settings
+from harness.context.repositories import InMemoryContextRepository
+from harness.context.service import ContextService
 from harness.core.errors import NotFoundError
 from harness.core.manifest import AgentManifestSnapshot
 from harness.core.models import Run, RunStatus, Session
-from harness.core.ports import EventRepository, TaskQueue
+from harness.core.ports import EventRepository, EventWakeup, TaskQueue
 from harness.deployments.controller import DeploymentController
 from harness.deployments.queue import DeploymentTaskQueue
 from harness.deployments.repositories import (
@@ -84,6 +88,7 @@ from harness.lifecycle.controller import DataLifecycleController
 from harness.lifecycle.models import LifecycleScope, LifecycleScopeKind
 from harness.lifecycle.repositories import InMemoryDataLifecycleRepository
 from harness.lifecycle.service import DataLifecycleService
+from harness.memory_bank.configuration import embedding_client
 from harness.memory_bank.repositories import InMemoryMemoryBankRepository
 from harness.memory_bank.service import MemoryBankService
 from harness.memory_bank.workload import (
@@ -96,7 +101,7 @@ from harness.platform_mcp.workload import (
     PlatformMcpTokenService,
     build_platform_mcp_app,
 )
-from harness.policy.profiles import default_policy_profiles
+from harness.policy.profiles import PolicyProfileRegistry, default_policy_profiles
 from harness.policy.runtime import ResolvedPolicy
 from harness.quality.controller import QualitySyncController
 from harness.quality.langfuse import DisabledQualityExporter
@@ -113,11 +118,14 @@ from harness.reliability.repositories import InMemoryReliabilityRepository
 from harness.reliability.service import ReliabilityService
 from harness.runtime.base import AgentRuntime
 from harness.runtime.cc_switch import load_cc_switch_claude_config
+from harness.runtime.codex_tool_gate import CodexToolGate
 from harness.runtime.default_tools import (
     default_tool_resolver,
     server_secret_credential_provider,
 )
 from harness.runtime.fake import FakeRuntime
+from harness.runtime.installed import INSTALLED_AGENT_RUNTIMES
+from harness.runtime.registry_codex_runtime import RegistryCodexRuntime, RegistryRuntimeRouter
 from harness.runtime.registry_runtime import RegistryClaudeRuntime
 from harness.runtime.sdk_tool_gate import SdkToolGate
 from harness.sandbox.daytona import (
@@ -130,6 +138,11 @@ from harness.sandbox.kubernetes import KubectlKubernetesClient, KubernetesSandbo
 from harness.sandbox.local import LocalSandboxProvider
 from harness.sharing.repositories import InMemoryTeamSpaceRepository
 from harness.sharing.service import TeamSpaceService
+from harness.sharing.workspace_repositories import (
+    AgentIdentityService,
+    InMemoryWorkspaceAgentRepository,
+    WorkspaceAgentRepository,
+)
 from harness.studio.catalog_repository import InMemoryCapabilityCatalogRepository
 from harness.studio.catalog_service import CapabilityCatalogService
 from harness.studio.mcp_credential_store import (
@@ -142,6 +155,7 @@ from harness.studio.mcp_discovery import (
     AutoDetectMcpConnector,
     McpDiscoveryService,
 )
+from harness.studio.model_configuration import ModelConfigurationService
 from harness.studio.preflight import LivePreflightProvisioner, LivePreflightRunner
 from harness.studio.preflight_probes import (
     AnthropicSandboxModelProbe,
@@ -165,6 +179,7 @@ from harness.studio.skill_builder import (
     AnthropicCompatibleSkillConversationService,
     SkillConversationService,
 )
+from harness.studio.web_configuration import WebConfigurationService
 from harness.triggers.repositories import InMemoryAgentTriggerRepository
 from harness.triggers.service import AgentTriggerService
 from harness.worker.orchestrator import RunOrchestrator
@@ -178,6 +193,7 @@ class Identity:
     email: str = ""
     display_name: str = ""
     authentication_method: str = "service"
+    permissions: frozenset[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -185,11 +201,14 @@ class ApiContainer:
     environment: str
     api_bearer_token: SecretStr
     auth: AuthService
+    api_access: ApiAccessService
     audit: AuditService
     agent_drafts: AgentDraftRepository
     capability_catalogs: CapabilityCatalogService
     mcp_discovery: McpDiscoveryService
     mcp_credentials: McpCredentialService
+    web_configurations: WebConfigurationService
+    model_configurations: ModelConfigurationService
     studio: AgentStudioService
     preview_repository: PreviewRepository
     previews: PreviewService
@@ -213,6 +232,8 @@ class ApiContainer:
     reliability_controller: ReliabilityController
     agents: AgentService
     team_spaces: TeamSpaceService
+    workspace_agents: WorkspaceAgentRepository
+    context: ContextService
     sessions: SessionService
     runs: RunService
     triggers: AgentTriggerService
@@ -238,6 +259,7 @@ class ApiContainer:
     worker: RunOrchestrator
     agui: AguiRunService
     auto_execute: bool
+    event_wakeup: EventWakeup | None = None
     skill_conversation: SkillConversationService | None = None
     sandbox_maintenance: Callable[[], Awaitable[object]] | None = None
     close: Callable[[], Awaitable[None]] | None = None
@@ -247,10 +269,12 @@ def build_memory_container(
     *,
     auto_execute: bool = False,
     settings: Settings | None = None,
+    policy_profiles: PolicyProfileRegistry | None = None,
 ) -> ApiContainer:
     resolved_settings = settings or Settings()
     registry = InMemoryAgentRegistry()
     team_space_repository = InMemoryTeamSpaceRepository()
+    workspace_agent_repository = InMemoryWorkspaceAgentRepository()
     sessions = InMemorySessionRepository()
     runs = InMemoryRunRepository()
     approvals = InMemoryApprovalRepository()
@@ -265,6 +289,7 @@ def build_memory_container(
     artifact_store = InMemoryArtifactStore()
     raw_events = InMemoryEventRepository()
     bus = InMemoryEventBus()
+    cancellation_wakeup = InMemoryCancellationWakeup()
     queue = InMemoryTaskQueue()
     observability = build_observability(resolved_settings)
     reliability_metrics = ReliabilityMetrics()
@@ -288,10 +313,11 @@ def build_memory_container(
         ),
     )
     audit = AuditService(InMemoryAuditRepository())
-    policy_profiles = default_policy_profiles()
+    api_access = ApiAccessService(InMemoryApiAccessKeyRepository(), audit=audit)
+    active_policy_profiles = policy_profiles or default_policy_profiles()
     governance = GovernanceService(
         governance_repository,
-        static_profiles=policy_profiles,
+        static_profiles=active_policy_profiles,
         audit=audit,
     )
     agent_drafts = InMemoryAgentDraftRepository()
@@ -312,6 +338,12 @@ def build_memory_container(
 
     def id_generator(prefix: str) -> str:
         return f"{prefix}_{uuid4().hex}"
+
+    context_service = ContextService(
+        InMemoryContextRepository(),
+        clock=clock,
+        id_generator=id_generator,
+    )
 
     knowledge = KnowledgeService(
         knowledge_repository,
@@ -359,10 +391,23 @@ def build_memory_container(
         clock=clock,
     )
 
-    agent_service = AgentService(registry, clock=clock, environment=resolved_settings.environment)
+    agent_ids = AgentIdentityService(
+        workspace_agent_repository,
+        clock=clock,
+        id_generator=id_generator,
+    )
+    agent_service = AgentService(
+        registry,
+        clock=clock,
+        environment=resolved_settings.environment,
+        agent_ids=agent_ids,
+    )
     team_spaces = TeamSpaceService(
         team_space_repository,
+        workspace_agent_repository,
         registry,
+        drafts=agent_drafts,
+        audit=audit,
         clock=clock,
         id_generator=id_generator,
     )
@@ -381,6 +426,14 @@ def build_memory_container(
         McpCredentialCipher(resolved_settings.auth_jwt_secret),
         audit=audit,
     )
+    web_configurations = WebConfigurationService(mcp_credential_service,
+        enabled=resolved_settings.web_tools_enabled, provider=resolved_settings.web_search_provider,
+        api_key=resolved_settings.web_search_api_key.get_secret_value())
+    model_configurations = ModelConfigurationService(
+        capability_catalogs,
+        mcp_credential_service,
+        environment=resolved_settings.environment,
+    )
     mcp_credentials = StoredMcpCredentialProvider(
         mcp_credential_service,
         environment_mcp_credentials,
@@ -398,6 +451,8 @@ def build_memory_container(
         registry=registry,
         knowledge=knowledge,
         audit=audit,
+        agent_ids=agent_ids,
+        draft_permissions=team_spaces,
         clock=clock,
         id_generator=lambda: id_generator("draft"),
     )
@@ -447,6 +502,7 @@ def build_memory_container(
         metrics=reliability_metrics,
         admission=enforced_quotas,
         quota_plan_resolver=run_quota_plan,
+        cancellation_wakeup=cancellation_wakeup,
     )
     session_service = SessionService(
         registry,
@@ -567,6 +623,8 @@ def build_memory_container(
     )
     memory_bank = MemoryBankService(
         memory_bank_repository,
+        embedder=embedding_client(resolved_settings),
+        semantic_threshold=resolved_settings.memory_semantic_threshold,
         audit=audit,
         clock=clock,
         id_generator=id_generator,
@@ -613,6 +671,7 @@ def build_memory_container(
         agent_name: str,
         agent_version: str,
         workspace: Path,
+        allow_validated_graph: bool,
     ) -> tuple[str, ...]:
         return await stage_published_agent_assets(
             registry,
@@ -621,6 +680,7 @@ def build_memory_container(
             agent_name=agent_name,
             agent_version=agent_version,
             workspace=workspace,
+            allow_validated_graph=allow_validated_graph,
         )
 
     async def resolve_policy(
@@ -633,7 +693,7 @@ def build_memory_container(
         manifest = AgentManifestSnapshot.model_validate(version.snapshot).manifest
         return await governance.resolve_runtime(tenant_id, manifest.spec.permissions.policy)
 
-    policy = policy_profiles.resolve("local-standard")
+    policy = active_policy_profiles.resolve("local-standard")
     sandbox_maintenance: Callable[[], Awaitable[object]] | None = None
     if resolved_settings.sandbox_provider == "daytona":
         daytona_api_key = resolved_settings.daytona_api_key.get_secret_value()
@@ -726,7 +786,7 @@ def build_memory_container(
         sandbox = LocalSandboxProvider()
     preflight_sandbox = sandbox
     if (
-        resolved_settings.runtime == "claude-sdk"
+        resolved_settings.runtime in {"claude-sdk", "multi"}
         and resolved_settings.sandbox_execution_mode == "worker_cli_deferred"
     ):
         if resolved_settings.sandbox_provider == "local":
@@ -751,15 +811,18 @@ def build_memory_container(
         tool_resolver = default_tool_resolver(
             credential_provider,
             catalogs=capability_catalogs,
+            web_configurations=web_configurations,
         )
-        runtime = RegistryClaudeRuntime(
+        claude_runtime = RegistryClaudeRuntime(
             registry=registry,
             config=gateway,
+            model_configurations=model_configurations,
             tool_resolver=tool_resolver,
             tool_gate=SdkToolGate(
-                profiles=policy_profiles,
+                profiles=active_policy_profiles,
                 approvals=approval_service,
                 events=event_service,
+                context_service=context_service,
                 quotas=enforced_quotas,
                 observability=observability,
             ),
@@ -770,6 +833,37 @@ def build_memory_container(
             remote_knowledge_mcp=remote_knowledge_mcp,
             observability=observability,
         )
+        runtime = (
+            RegistryRuntimeRouter(
+                registry=registry,
+                runtimes=dict(
+                    zip(
+                        INSTALLED_AGENT_RUNTIMES,
+                        (
+                            claude_runtime,
+                            RegistryCodexRuntime(
+                                registry=registry,
+                                remote_memory_mcp=remote_memory_mcp,
+                                codex_path=Path(resolved_settings.codex_cli_path),
+                                model_configurations=model_configurations,
+                                tool_resolver=tool_resolver,
+                                model_by_route=resolved_settings.codex_model_by_route,
+                                provider_by_route=resolved_settings.codex_provider_by_route,
+                                approval_policy=resolved_settings.codex_approval_policy,
+                                network_access=resolved_settings.codex_network_access,
+                                tool_output_token_limit=(resolved_settings.codex_tool_output_token_limit),
+                                server_request_handler=CodexToolGate(
+                                    approvals=approval_service,
+                                    events=event_service,
+                                ).authorize,
+                            ),
+                        ),
+                    )
+                ),
+            )
+            if resolved_settings.runtime == "multi"
+            else claude_runtime
+        )
         model_probe = AnthropicSandboxModelProbe(gateway)
         mcp_probe = StreamableHttpMcpProbe(tool_resolver)
     preflight_runner = LivePreflightRunner(
@@ -777,7 +871,7 @@ def build_memory_container(
         sandbox=preflight_sandbox,
         model_probe=model_probe,
         mcp_probe=mcp_probe,
-        policies=policy_profiles,
+        policies=active_policy_profiles,
         policy_resolver=governance.resolve_runtime,
         observability=observability,
         timeout_seconds=resolved_settings.preflight_timeout_seconds,
@@ -811,7 +905,7 @@ def build_memory_container(
         memory=memory_service,
         workspace_policy_resolver=workspace_policy_resolver,
         runtime_asset_stager=(
-            stage_runtime_assets if resolved_settings.runtime == "claude-sdk" else None
+            stage_runtime_assets if resolved_settings.runtime != "fake" else None
         ),
         policy_resolver=resolve_policy,
         output_artifact_max_bytes=resolved_settings.output_artifact_max_bytes,
@@ -819,11 +913,14 @@ def build_memory_container(
         quotas=enforced_quotas,
         quota_plan_resolver=run_quota_plan,
         metrics=reliability_metrics,
+        cancellation_wakeup=cancellation_wakeup,
+        context_service=context_service,
     )
     agui = AguiRunService(
         sessions=session_service,
         runs=run_service,
         input_artifacts=input_artifact_service,
+        contexts=context_service,
     )
 
     async def lifecycle_reap() -> int:
@@ -852,6 +949,7 @@ def build_memory_container(
         MaintenanceReaper("quota-reservation", "quota", quotas.reap_expired_all),
         MaintenanceReaper("workspace-retention", "workspace", lifecycle_reap),
         MaintenanceReaper("memory-expiry", "memory", memory_bank.reap_expired),
+        MaintenanceReaper("memory-index", "memory", memory_bank.reindex_pending),
     ]
     if sandbox_maintenance is not None:
         maintenance.append(MaintenanceReaper("sandbox-expiry", "sandbox", sandbox_maintenance))
@@ -876,11 +974,14 @@ def build_memory_container(
         environment=resolved_settings.environment,
         api_bearer_token=resolved_settings.api_bearer_token,
         auth=auth,
+        api_access=api_access,
         audit=audit,
         agent_drafts=agent_drafts,
         capability_catalogs=capability_catalogs,
         mcp_discovery=mcp_discovery,
         mcp_credentials=mcp_credential_service,
+        web_configurations=web_configurations,
+        model_configurations=model_configurations,
         studio=studio_service,
         preview_repository=preview_repository,
         previews=preview_service,
@@ -904,6 +1005,8 @@ def build_memory_container(
         reliability_controller=reliability_controller,
         agents=agent_service,
         team_spaces=team_spaces,
+        workspace_agents=workspace_agent_repository,
+        context=context_service,
         sessions=session_service,
         runs=run_service,
         triggers=trigger_service,
@@ -929,6 +1032,7 @@ def build_memory_container(
         worker=worker,
         agui=agui,
         auto_execute=auto_execute,
+        event_wakeup=bus,
         skill_conversation=skill_conversation,
         sandbox_maintenance=sandbox_maintenance,
     )
@@ -945,6 +1049,10 @@ async def require_identity(
     user_id: Annotated[str | None, Header(alias="X-User-ID")] = None,
 ) -> Identity:
     container: ApiContainer = request.app.state.container
+    api_key_identity = getattr(request.state, "api_key_identity", None)
+    if isinstance(api_key_identity, Identity):
+        request.state.identity = api_key_identity
+        return api_key_identity
     scheme, separator, credential = (authorization or "").partition(" ")
     service_authenticated = bool(getattr(request.state, "service_authenticated", False))
     if separator and scheme.lower() == "bearer" and credential.count(".") == 2:
@@ -954,8 +1062,11 @@ async def require_identity(
         except AuthenticationError as error:
             raise HTTPException(
                 status_code=401,
-                detail={"code": "access_token_invalid", "message": str(error)},
-                headers={"WWW-Authenticate": "Bearer"},
+                detail={"code": error.code, "message": str(error)},
+                headers={
+                    "WWW-Authenticate": "Bearer",
+                    "X-Harness-Auth-Error": error.code,
+                },
             ) from error
         identity = Identity(
             tenant_id=membership.tenant_id,
@@ -1013,6 +1124,7 @@ _ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
             "studio:read",
             "studio:write",
             "studio:preview",
+            "studio:publish",
             "data:lifecycle:self",
             "operations:read",
         }
@@ -1022,6 +1134,16 @@ _ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
 
 
 def ensure_permission(identity: Identity, permission: str) -> None:
+    if identity.permissions is not None:
+        if permission not in identity.permissions:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "permission_denied",
+                    "message": f"API key permission required: {permission}",
+                },
+            )
+        return
     granted: set[str] = set()
     for role in identity.roles:
         granted.update(_ROLE_PERMISSIONS.get(role, frozenset()))

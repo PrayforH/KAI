@@ -4,6 +4,8 @@ import { TextMessagePartProvider } from "@assistant-ui/react";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import type { RunActivity } from "../lib/activity-schema";
 import { useRunViewModel } from "../lib/activity-store";
+import { activeElapsedMs, elapsedAnchorFor, type ElapsedAnchor } from "../lib/run-elapsed";
+export { activeElapsedMs } from "../lib/run-elapsed";
 import {
   reduceRunViewModel,
   type RunPhase,
@@ -14,6 +16,7 @@ import {
 } from "../lib/run-view-model";
 import { toolActivitySentence } from "../lib/tool-presentation";
 import { MarkdownText } from "./markdown-text";
+import { useRunDetails } from "./run-details-context";
 
 const phaseLabels: Record<RunPhase, string> = {
   queued: "等待处理",
@@ -58,11 +61,11 @@ function rememberDisclosure(runId: string, open: boolean) {
   }
 }
 
-function durationLabel(elapsedMs: number) {
+export function durationLabel(elapsedMs: number) {
   if (elapsedMs < 1_000) return `${elapsedMs}ms`;
   if (elapsedMs < 60_000) return `${Math.round(elapsedMs / 1_000)}s`;
   const minutes = Math.floor(elapsedMs / 60_000);
-  const seconds = Math.round((elapsedMs % 60_000) / 1_000);
+  const seconds = Math.floor((elapsedMs % 60_000) / 1_000);
   return `${minutes}m ${seconds}s`;
 }
 
@@ -70,6 +73,7 @@ interface CommentaryNode {
   id: string;
   text: string;
   sequence: number;
+  source: "progress" | "reasoning_summary";
 }
 
 type ProcessCategory = "setup" | "model" | "result";
@@ -124,6 +128,8 @@ const visibleProcessEvents = new Set([
   "credential.lease.issued",
   "tool.directory.loaded",
   "tool.directory.degraded",
+  "runtime.system",
+  "message.start",
   "runtime.result",
   "workspace.archived",
   "workspace.recovery_retained",
@@ -131,7 +137,23 @@ const visibleProcessEvents = new Set([
 ]);
 
 function processCategory(eventType: string): ProcessCategory {
-  if (["runtime.system", "message.start"].includes(eventType)) return "model";
+  // `run.running` is emitted only after provisioning, workspace restore and
+  // runtime preparation have finished. Treating it as setup kept the UI on
+  // “正在准备运行环境” throughout provider startup and model thinking, even
+  // though the environment was already ready.
+  if (
+    [
+      "run.running",
+      "policy.resolved",
+      "credential.lease.issued",
+      "tool.directory.loaded",
+      "tool.directory.degraded",
+      "runtime.system",
+      "message.start",
+    ].includes(eventType)
+  ) {
+    return "model";
+  }
   if (["runtime.result", "workspace.archived", "artifact.ready"].includes(eventType)) {
     return "result";
   }
@@ -174,33 +196,61 @@ function commentaryNodes(view: RunViewModel): CommentaryNode[] {
     )
     .map((item) => item.sequence)
     .sort((left, right) => left - right);
-  const grouped = new Map<number, CommentaryNode>();
+  const grouped = new Map<string, CommentaryNode>();
 
   for (const item of view.items) {
-    if (item.event_type !== "message.delta" || !item.summary?.trim()) continue;
+    if (!item.summary) continue;
+    if (item.event_type === "reasoning.summary.delta") {
+      const itemId = typeof item.metadata.item_id === "string"
+        ? item.metadata.item_id
+        : "run";
+      const groupKey = `reasoning:${itemId}`;
+      const existing = grouped.get(groupKey);
+      grouped.set(groupKey, {
+        id: existing?.id ?? item.id,
+        sequence: existing?.sequence ?? item.sequence,
+        text: `${existing?.text ?? ""}${item.summary}`,
+        source: "reasoning_summary",
+      });
+      continue;
+    }
+    if (item.event_type !== "message.delta") continue;
     const nextAction = actionSequences.find((sequence) => sequence > item.sequence);
     // A trailing message is still ambiguous while the Run is active: the
     // live response owns it so Markdown can stream without duplication. Only
     // text proven to precede an auditable action belongs in the process log.
     if (nextAction === undefined) continue;
-    const groupKey = nextAction;
+    const groupKey = `progress:${nextAction}`;
     const existing = grouped.get(groupKey);
     grouped.set(groupKey, {
       id: existing?.id ?? item.id,
       sequence: existing?.sequence ?? item.sequence,
       text: `${existing?.text ?? ""}${item.summary}`,
+      source: "progress",
     });
   }
   return [...grouped.values()];
 }
 
-function ExecutionCommentary({ text }: { text: string }) {
+function ExecutionCommentary({
+  commentary,
+  active,
+}: {
+  commentary: CommentaryNode;
+  active: boolean;
+}) {
   return (
-    <div className="execution-commentary">
-      <TextMessagePartProvider text={text} isRunning={false}>
-        <MarkdownText />
-      </TextMessagePartProvider>
-    </div>
+    <article
+      className="execution-commentary"
+      data-commentary-source={commentary.source}
+      data-active={active ? "true" : "false"}
+    >
+      <div className="execution-commentary-content">
+        <TextMessagePartProvider text={commentary.text} isRunning={false}>
+          <MarkdownText />
+        </TextMessagePartProvider>
+      </div>
+    </article>
   );
 }
 
@@ -240,14 +290,26 @@ function processAction(processes: readonly ProcessNode[]): ActionNode {
   const category = processes[0]?.category ?? "setup";
   const status = combinedStatus(processes.map((item) => item.status));
   const active = status === "running" || status === "waiting";
+  const transientTitles = new Set([
+    "正在准备运行环境",
+    "Agent 开始执行",
+    "模型正在处理",
+    "正在生成本轮回复",
+    "正在等待本轮模型结果",
+  ]);
   const detailParts = processes
     .flatMap((item) => [item.title, item.summary])
-    .filter((value, index, values): value is string => Boolean(value) && values.indexOf(value) === index);
+    .filter(
+      (value, index, values): value is string =>
+        Boolean(value) &&
+        !transientTitles.has(value ?? "") &&
+        values.indexOf(value) === index,
+    );
   const label =
     category === "setup"
       ? active ? "正在准备运行环境" : "已准备运行环境"
       : category === "model"
-        ? active ? "模型正在处理" : "模型处理完成"
+        ? active ? "正在生成回复" : "已生成回复"
         : active ? "正在整理本轮结果" : "已完成本轮处理";
   return {
     id: processes.map((item) => item.id).join("-"),
@@ -391,13 +453,7 @@ function taskAction(tasks: readonly RunTaskNode[]): ActionNode {
 }
 
 function activityHeading(view: RunViewModel) {
-  if (view.phase !== "completed") return phaseLabels[view.phase];
-  if (view.tools.length > 0) return toolGroupLabel(view.tools);
-  if (view.tasks.length === 1) {
-    return `完成子任务 ${view.tasks[0].alias ?? view.tasks[0].title}`;
-  }
-  if (view.tasks.length > 1) return `完成 ${view.tasks.length} 个子任务`;
-  return phaseLabels.completed;
+  return phaseLabels[view.phase];
 }
 
 function failureDetails(view: RunViewModel) {
@@ -421,8 +477,14 @@ function failureDetails(view: RunViewModel) {
 }
 
 function displayTimeline(view: RunViewModel): DisplayTimelineNode[] {
-  const raw = rawTimeline(view);
+  // Successful infrastructure/model lifecycle events belong in run details.
+  // Keeping them out of the transcript prevents old rows changing every turn.
+  const raw = rawTimeline(view).filter((entry) =>
+    entry.kind !== "process" || entry.process.status === "failed" ||
+    entry.process.eventType === "tool.directory.degraded",
+  );
   const display: DisplayTimelineNode[] = [];
+  const renderedProcessCategories = new Set<ProcessCategory>();
   for (let index = 0; index < raw.length;) {
     const current = raw[index];
     if (current.kind === "commentary") {
@@ -431,20 +493,20 @@ function displayTimeline(view: RunViewModel): DisplayTimelineNode[] {
       continue;
     }
     if (current.kind === "process") {
-      const group = [current.process];
-      let cursor = index + 1;
-      while (cursor < raw.length) {
-        const candidate = raw[cursor];
-        if (
-          candidate.kind !== "process" ||
-          candidate.process.category !== current.process.category
-        ) break;
-        group.push(candidate.process);
-        cursor += 1;
+      if (renderedProcessCategories.has(current.process.category)) {
+        index += 1;
+        continue;
       }
+      const group = raw.flatMap((candidate) =>
+        candidate.kind === "process" &&
+        candidate.process.category === current.process.category
+          ? [candidate.process]
+          : [],
+      );
+      renderedProcessCategories.add(current.process.category);
       const action = processAction(group);
       display.push({ kind: "action", sequence: action.sequence, action });
-      index = cursor;
+      index += 1;
       continue;
     }
     if (current.kind === "tool") {
@@ -591,25 +653,6 @@ function ActionRow({ action }: { action: ActionNode }) {
   );
 }
 
-export interface ElapsedAnchor {
-  runId: string;
-  observedAt: number;
-  elapsedMs: number;
-}
-
-export function activeElapsedMs(
-  view: RunViewModel,
-  now: number | null,
-  anchor: ElapsedAnchor,
-) {
-  if (now === null) return view.elapsedMs;
-  if (anchor.runId !== view.runId) return view.elapsedMs;
-  return Math.max(
-    view.elapsedMs,
-    anchor.elapsedMs + Math.max(0, now - anchor.observedAt),
-  );
-}
-
 export function ActivitySummary({
   activity,
   responseStarted = false,
@@ -645,45 +688,63 @@ export function ActivitySummary({
     view.phase === "queued" ||
     view.phase === "running" ||
     view.phase === "waiting_approval";
-  const observedActive = useRef({ runId: view.runId, value: active });
-  if (observedActive.current.runId !== view.runId) {
-    observedActive.current = { runId: view.runId, value: active };
-  } else if (active) {
-    observedActive.current.value = true;
-  }
-  const elapsedAnchor = useRef<ElapsedAnchor>({
+  const thinkingActive = view.phase === "running";
+  const phaseAnchor = useRef<{ runId: string; phase: RunPhase }>({
     runId: view.runId,
-    observedAt: Date.now(),
-    elapsedMs: view.elapsedMs,
+    phase: view.phase,
   });
-  if (elapsedAnchor.current.runId !== view.runId) {
-    elapsedAnchor.current = {
-      runId: view.runId,
-      observedAt: Date.now(),
-      elapsedMs: view.elapsedMs,
-    };
+  if (phaseAnchor.current.runId !== view.runId) {
+    phaseAnchor.current = { runId: view.runId, phase: view.phase };
   }
+  const justFinished =
+    ["queued", "running", "waiting_approval"].includes(phaseAnchor.current.phase) &&
+    ["completed", "rejected", "cancelled"].includes(view.phase);
+  useEffect(() => {
+    if (justFinished) {
+      rememberDisclosure(view.runId, false);
+      setManualDisclosure({ runId: view.runId, open: false });
+    }
+    phaseAnchor.current = { runId: view.runId, phase: view.phase };
+  }, [justFinished, view.phase, view.runId]);
+  const elapsedAnchor = useRef<ElapsedAnchor | null>(null);
   const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
     if (!active) {
       setNow(null);
       return;
     }
-    const tick = () => setNow(Date.now());
+    const tick = () => {
+      const observedAt = Date.now();
+      elapsedAnchor.current = elapsedAnchorFor(view, observedAt);
+      setNow(observedAt);
+    };
     tick();
     const timer = window.setInterval(tick, 1_000);
     return () => window.clearInterval(timer);
-  }, [active, view.runId]);
-  // Do not make an in-flight transcript disappear as soon as the final answer
-  // settles. A reloaded historical run may start collapsed, while the run the
-  // user just watched stays open until they explicitly close it.
-  const open = manuallyOpen ?? (
-    active || view.phase === "failed" || observedActive.current.value
-  );
-  const elapsed = activeElapsedMs(view, now, elapsedAnchor.current);
+  }, [active, view.runId, view.elapsedMs]);
+  // Show the observable process while work is active, then fold successful or
+  // cancelled work as soon as the Run reaches a terminal state. A user can
+  // still reopen the finished transcript afterwards; failures stay open so
+  // their diagnostic is not hidden.
+  const defaultOpen = active || view.phase === "failed";
+  const open = justFinished ? false : manuallyOpen ?? defaultOpen;
+  const elapsed = elapsedAnchor.current
+    ? activeElapsedMs(view, now, elapsedAnchor.current)
+    : view.elapsedMs;
   const timeline = displayTimeline(view);
+  const latestTimelineEntry = timeline.at(-1);
+  const activeCommentaryId =
+    thinkingActive &&
+    !responseStarted &&
+    latestTimelineEntry?.kind === "commentary"
+      ? latestTimelineEntry.commentary.id
+      : null;
   const heading = activityHeading(view);
+  const elapsedCopy = active
+    ? `已持续 ${elapsed < 1_000 ? "0s" : durationLabel(elapsed)}`
+    : `持续了 ${durationLabel(elapsed)}`;
   const failure = view.phase === "failed" ? failureDetails(view) : null;
+  const runDetails = useRunDetails();
 
   function toggleDisclosure(_event: MouseEvent<HTMLButtonElement>) {
     const nextOpen = !open;
@@ -706,9 +767,21 @@ export function ActivitySummary({
         aria-expanded={open}
       >
         <span className="execution-phase">{heading}</span>
-        <span className="execution-duration">{durationLabel(elapsed)}</span>
+        <span className="execution-duration">· {elapsedCopy}</span>
         <span className="execution-chevron" aria-hidden="true" />
       </button>
+      {runDetails ? (
+        <button
+          type="button"
+          className="execution-details-trigger"
+          aria-haspopup="dialog"
+          aria-expanded={runDetails.selectedRunId === activity.run_id}
+          aria-controls="run-details-panel"
+          onClick={() => runDetails.open(activity)}
+        >
+          运行详情
+        </button>
+      ) : null}
       <div className="execution-tree" hidden={!open}>
         {failure ? (
           <section className="execution-failure-diagnostic" aria-label="失败定位">
@@ -728,12 +801,13 @@ export function ActivitySummary({
           </section>
         ) : null}
         {timeline.length > 0 ? (
-          <section className="execution-log" aria-label="处理过程">
+          <section className="execution-log" aria-label="运行过程，仅展示可观察事件">
             {timeline.map((entry) =>
               entry.kind === "commentary" ? (
                 <ExecutionCommentary
                   key={entry.commentary.id}
-                  text={entry.commentary.text}
+                  commentary={entry.commentary}
+                  active={entry.commentary.id === activeCommentaryId}
                 />
               ) : (
                 <ActionRow key={entry.action.id} action={entry.action} />
@@ -741,7 +815,7 @@ export function ActivitySummary({
             )}
           </section>
         ) : (
-          <p className="execution-empty">{view.summary}</p>
+          null
         )}
       </div>
     </section>

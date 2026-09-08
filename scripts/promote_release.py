@@ -34,6 +34,7 @@ def main() -> None:
     parser.add_argument("--artifact-root", type=Path)
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--environment", choices=("test", "canary", "production"))
+    parser.add_argument("--operation-id")
     parser.add_argument("--execution-profile", default="isolated-default")
     parser.add_argument("--canary-percent", type=int)
     args = parser.parse_args()
@@ -49,20 +50,34 @@ def main() -> None:
             source = PromotionPlan.model_validate_json(args.plan.read_text(encoding="utf-8"))
             _write(client.rollback(source), args.plan)
             return
-        if args.artifact_root is None or args.manifest is None or args.environment is None:
-            parser.error("promote requires --artifact-root, --manifest, and --environment")
+        if (
+            args.artifact_root is None
+            or args.manifest is None
+            or args.environment is None
+            or args.operation_id is None
+        ):
+            parser.error(
+                "promote requires --artifact-root, --manifest, --environment, "
+                "and --operation-id"
+            )
         manifest = load_release_manifest(args.manifest)
         verify_release_manifest(manifest, artifact_root=args.artifact_root)
         default_percent = 10 if args.environment == "canary" else 100
-        percent = args.canary_percent or default_percent
+        percent = (
+            args.canary_percent
+            if args.canary_percent is not None
+            else default_percent
+        )
         if not 1 <= percent <= 100:
             parser.error("--canary-percent must be between 1 and 100")
         plan = client.promote(
             artifact_root=args.artifact_root,
             manifest=manifest,
+            operation_id=args.operation_id,
             environment=args.environment,
             execution_profile=args.execution_profile,
             canary_percent=percent,
+            checkpoint=lambda value: _write(value, args.plan),
         )
         _write(plan, args.plan)
     finally:

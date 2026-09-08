@@ -65,7 +65,7 @@ def test_default_policy_classifies_builtin_tools(
         (SandboxIsolation.WORKSPACE, "Grep", {}, PolicyDecision.ALLOW),
         (SandboxIsolation.WORKSPACE, "Write", {}, PolicyDecision.ALLOW),
         (SandboxIsolation.WORKSPACE, "Edit", {}, PolicyDecision.ALLOW),
-        (SandboxIsolation.WORKSPACE, "Bash", {"command": "pwd"}, PolicyDecision.ASK),
+        (SandboxIsolation.WORKSPACE, "Bash", {"command": "pwd"}, PolicyDecision.ALLOW),
         (
             SandboxIsolation.WORKSPACE,
             "Bash",
@@ -77,12 +77,12 @@ def test_default_policy_classifies_builtin_tools(
         (SandboxIsolation.CONTAINER, "Grep", {}, PolicyDecision.ALLOW),
         (SandboxIsolation.CONTAINER, "Write", {}, PolicyDecision.ALLOW),
         (SandboxIsolation.CONTAINER, "Edit", {}, PolicyDecision.ALLOW),
-        (SandboxIsolation.CONTAINER, "Bash", {"command": "pwd"}, PolicyDecision.ASK),
+        (SandboxIsolation.CONTAINER, "Bash", {"command": "pwd"}, PolicyDecision.ALLOW),
         (
             SandboxIsolation.CONTAINER,
             "Bash",
             {"command": "rm -rf build"},
-            PolicyDecision.ASK,
+            PolicyDecision.ALLOW,
         ),
         (SandboxIsolation.CONTAINER, "Unknown", {}, PolicyDecision.DENY),
     ],

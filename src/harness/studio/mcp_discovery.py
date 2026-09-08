@@ -349,8 +349,9 @@ class McpDiscoveryService:
         tenant_id: str,
         user_id: str,
     ) -> tuple[dict[str, str], str]:
+        headers = dict(request.custom_headers)
         if request.auth_mode == "none":
-            return {}, endpoint
+            return headers, endpoint
         if request.credential_value is not None:
             secret = request.credential_value.get_secret_value()
         else:
@@ -379,7 +380,8 @@ class McpDiscoveryService:
                 ) from error
             secret = values[request.auth_key].get_secret_value()
         if request.auth_mode == "bearer":
-            return {"Authorization": f"Bearer {secret}"}, endpoint
+            headers["Authorization"] = f"Bearer {secret}"
+            return headers, endpoint
         if not request.auth_name:
             raise McpDiscoveryError(
                 "mcp_auth_name_required",
@@ -388,7 +390,8 @@ class McpDiscoveryService:
         if "\n" in request.auth_name or "\r" in request.auth_name:
             raise McpDiscoveryError("mcp_auth_name_invalid", "鉴权参数名称不合法。")
         if request.auth_mode == "header":
-            return {request.auth_name: secret}, endpoint
+            headers[request.auth_name] = secret
+            return headers, endpoint
         parsed = urlsplit(endpoint)
         endpoint = urlunsplit(
             parsed._replace(
@@ -397,7 +400,7 @@ class McpDiscoveryService:
                 )
             )
         )
-        return {}, endpoint
+        return headers, endpoint
 
     @staticmethod
     def _public_endpoint(endpoint: str) -> str:

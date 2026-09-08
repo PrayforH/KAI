@@ -1,0 +1,264 @@
+{
+  "SchemaVersion": 2,
+  "Trivy": {
+    "Version": "0.69.2"
+  },
+  "ReportID": "019fe6a5-8f37-752a-a9ec-687b40f1727c",
+  "CreatedAt": "2026-08-09T13:10:37.623342517Z",
+  "ArtifactID": "sha256:bb8efa520d5022b106ad49417bf65599e164de9657e50ecddd40e50c05078fd6",
+  "ArtifactName": "harness-chainguard-kubectl:security",
+  "ArtifactType": "container_image",
+  "Metadata": {
+    "Size": 60134912,
+    "OS": {
+      "Family": "wolfi",
+      "Name": "20230201"
+    },
+    "ImageID": "sha256:076e8fc1c1184666a154d529667f02a51df9230f9f15be2017ff6635967a191e",
+    "DiffIDs": [
+      "sha256:f45b2bc67f55edbface7c03db280857c7b18c5a70da650ded9c02a86b641aef1",
+      "sha256:caaccf89b8660b925e0e0266ffdc4f3e3cc7e98e121742c233f199ec167a4920",
+      "sha256:849ba4e8026ecf808a3d48adb0a7f5ccd5871e2200372d54deacc77d5d041ee4",
+      "sha256:b167366532d90b390b2b7ae1018b00cb0331357789add9ac65253205695305c2"
+    ],
+    "RepoTags": [
+      "harness-chainguard-kubectl:security"
+    ],
+    "RepoDigests": [
+      "harness-chainguard-kubectl@sha256:076e8fc1c1184666a154d529667f02a51df9230f9f15be2017ff6635967a191e"
+    ],
+    "Reference": "harness-chainguard-kubectl:security",
+    "ImageConfig": {
+      "architecture": "amd64",
+      "author": "github.com/chainguard-dev/apko",
+      "created": "2026-08-05T12:15:13Z",
+      "history": [
+        {
+          "created": "2026-08-05T12:15:13Z",
+          "created_by": "apko",
+          "comment": "kubectl by Chainguard"
+        },
+        {
+          "created": "2026-08-05T12:15:13Z",
+          "created_by": "apko",
+          "comment": "kubectl by Chainguard"
+        },
+        {
+          "created": "2026-08-05T12:15:13Z",
+          "created_by": "apko",
+          "comment": "kubectl by Chainguard"
+        },
+        {
+          "created": "2026-08-05T12:15:13Z",
+          "created_by": "apko",
+          "comment": "kubectl by Chainguard"
+        }
+      ],
+      "os": "linux",
+      "rootfs": {
+        "type": "layers",
+        "diff_ids": [
+          "sha256:f45b2bc67f55edbface7c03db280857c7b18c5a70da650ded9c02a86b641aef1",
+          "sha256:caaccf89b8660b925e0e0266ffdc4f3e3cc7e98e121742c233f199ec167a4920",
+          "sha256:849ba4e8026ecf808a3d48adb0a7f5ccd5871e2200372d54deacc77d5d041ee4",
+          "sha256:b167366532d90b390b2b7ae1018b00cb0331357789add9ac65253205695305c2"
+        ]
+      },
+      "config": {
+        "Cmd": [
+          "--help"
+        ],
+        "Entrypoint": [
+          "/usr/bin/kubectl"
+        ],
+        "Env": [
+          "PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin",
+          "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt"
+        ],
+        "Labels": {
+          "dev.chainguard.image.title": "kubectl",
+          "dev.chainguard.package.main": "",
+          "org.opencontainers.image.authors": "Chainguard Team https://www.chainguard.dev/",
+          "org.opencontainers.image.created": "2026-08-05T12:15:13Z",
+          "org.opencontainers.image.source": "https://github.com/chainguard-images/images/tree/main/images/kubectl",
+          "org.opencontainers.image.title": "kubectl",
+          "org.opencontainers.image.url": "https://images.chainguard.dev/directory/image/kubectl/overview",
+          "org.opencontainers.image.vendor": "Chainguard"
+        },
+        "User": "65532"
+      }
+    },
+    "Layers": [
+      {
+        "Size": 59790848,
+        "Digest": "sha256:dac33846b34a96c88a041087b08fa16a41cdc8596f4e9e750e8f58305af88b2a",
+        "DiffID": "sha256:f45b2bc67f55edbface7c03db280857c7b18c5a70da650ded9c02a86b641aef1"
+      },
+      {
+        "Size": 238592,
+        "Digest": "sha256:9201e51fe8c1f99c6602ba89bc6cbd3895501936ba9f62f705bb8f150d9bbace",
+        "DiffID": "sha256:caaccf89b8660b925e0e0266ffdc4f3e3cc7e98e121742c233f199ec167a4920"
+      },
+      {
+        "Size": 60416,
+        "Digest": "sha256:e7d8c9b2d002802ca4eeea1d388205004511e4ce0840b85808f468581810e3d7",
+        "DiffID": "sha256:849ba4e8026ecf808a3d48adb0a7f5ccd5871e2200372d54deacc77d5d041ee4"
+      },
+      {
+        "Size": 45056,
+        "Digest": "sha256:0acb74da7d82bb1614fb3b319f00121d3e70a6ec0593139a32e98652f68bc74a",
+        "DiffID": "sha256:b167366532d90b390b2b7ae1018b00cb0331357789add9ac65253205695305c2"
+      }
+    ]
+  },
+  "Results": [
+    {
+      "Target": "harness-chainguard-kubectl:security (wolfi 20230201)",
+      "Class": "os-pkgs",
+      "Type": "wolfi",
+      "Packages": [
+        {
+          "ID": "ca-certificates-bundle@20260413-r0",
+          "Name": "ca-certificates-bundle",
+          "Identifier": {
+            "PURL": "pkg:apk/wolfi/ca-certificates-bundle@20260413-r0?arch=x86_64\u0026distro=20230201",
+            "UID": "ebab806008154318"
+          },
+          "Version": "20260413-r0",
+          "Arch": "x86_64",
+          "SrcName": "ca-certificates",
+          "SrcVersion": "20260413-r0",
+          "Licenses": [
+            "MPL-2.0",
+            "MIT"
+          ],
+          "Maintainer": "wolfi",
+          "DependsOn": [
+            "wolfi-baselayout@20230201-r29"
+          ],
+          "Layer": {
+            "Digest": "sha256:9201e51fe8c1f99c6602ba89bc6cbd3895501936ba9f62f705bb8f150d9bbace",
+            "DiffID": "sha256:caaccf89b8660b925e0e0266ffdc4f3e3cc7e98e121742c233f199ec167a4920"
+          },
+          "Digest": "sha1:2b209d10bdb420a13e07b0ca5bdec62d7bb640b3",
+          "InstalledFiles": [
+            "etc/pki/tls/certs/ca-bundle.crt",
+            "etc/ssl/cert.pem",
+            "etc/ssl/certs/ca-bundle.crt",
+            "etc/ssl/certs/ca-certificates.crt",
+            "var/lib/db/sbom/ca-certificates-bundle-20260413-r0.spdx.json"
+          ],
+          "AnalyzedBy": "apk"
+        },
+        {
+          "ID": "kubectl-1.36@1.36.3-r2",
+          "Name": "kubectl-1.36",
+          "Identifier": {
+            "PURL": "pkg:apk/wolfi/kubectl-1.36@1.36.3-r2?arch=x86_64\u0026distro=20230201",
+            "UID": "1aa81ca4f1dff7ad"
+          },
+          "Version": "1.36.3-r2",
+          "Arch": "x86_64",
+          "SrcName": "kubernetes-1.36",
+          "SrcVersion": "1.36.3-r2",
+          "Licenses": [
+            "Apache-2.0"
+          ],
+          "Maintainer": "wolfi",
+          "Layer": {
+            "Digest": "sha256:dac33846b34a96c88a041087b08fa16a41cdc8596f4e9e750e8f58305af88b2a",
+            "DiffID": "sha256:f45b2bc67f55edbface7c03db280857c7b18c5a70da650ded9c02a86b641aef1"
+          },
+          "Digest": "sha1:d81bfd3950f70d486f4bd997e3e217a9740cac81",
+          "InstalledFiles": [
+            "usr/bin/kubectl-1.36",
+            "var/lib/db/sbom/kubectl-1.36-1.36.3-r2.spdx.json"
+          ],
+          "AnalyzedBy": "apk"
+        },
+        {
+          "ID": "kubectl-1.36-default@1.36.3-r2",
+          "Name": "kubectl-1.36-default",
+          "Identifier": {
+            "PURL": "pkg:apk/wolfi/kubectl-1.36-default@1.36.3-r2?arch=x86_64\u0026distro=20230201",
+            "UID": "cc253440ec9d3e57"
+          },
+          "Version": "1.36.3-r2",
+          "Arch": "x86_64",
+          "SrcName": "kubernetes-1.36",
+          "SrcVersion": "1.36.3-r2",
+          "Licenses": [
+            "Apache-2.0"
+          ],
+          "Maintainer": "wolfi",
+          "DependsOn": [
+            "kubectl-1.36@1.36.3-r2"
+          ],
+          "Layer": {
+            "Digest": "sha256:dac33846b34a96c88a041087b08fa16a41cdc8596f4e9e750e8f58305af88b2a",
+            "DiffID": "sha256:f45b2bc67f55edbface7c03db280857c7b18c5a70da650ded9c02a86b641aef1"
+          },
+          "Digest": "sha1:d05a1c8cca5cb5d811993ce223cccf16133b0d6d",
+          "InstalledFiles": [
+            "usr/bin/kubectl",
+            "var/lib/db/sbom/kubectl-1.36-default-1.36.3-r2.spdx.json"
+          ],
+          "AnalyzedBy": "apk"
+        },
+        {
+          "ID": "wolfi-baselayout@20230201-r29",
+          "Name": "wolfi-baselayout",
+          "Identifier": {
+            "PURL": "pkg:apk/wolfi/wolfi-baselayout@20230201-r29?arch=x86_64\u0026distro=20230201",
+            "UID": "c978bcececcb7891"
+          },
+          "Version": "20230201-r29",
+          "Arch": "x86_64",
+          "SrcName": "wolfi-baselayout",
+          "SrcVersion": "20230201-r29",
+          "Licenses": [
+            "MIT"
+          ],
+          "Maintainer": "wolfi",
+          "DependsOn": [
+            "ca-certificates-bundle@20260413-r0"
+          ],
+          "Layer": {
+            "Digest": "sha256:e7d8c9b2d002802ca4eeea1d388205004511e4ce0840b85808f468581810e3d7",
+            "DiffID": "sha256:849ba4e8026ecf808a3d48adb0a7f5ccd5871e2200372d54deacc77d5d041ee4"
+          },
+          "Digest": "sha1:9b1560903e3eaf5712512796a3a0a5920351d480",
+          "InstalledFiles": [
+            "bin",
+            "lib",
+            "lib64",
+            "sbin",
+            "etc/group",
+            "etc/host.conf",
+            "etc/hosts",
+            "etc/mtab",
+            "etc/nsswitch.conf",
+            "etc/os-release",
+            "etc/passwd",
+            "etc/profile",
+            "etc/protocols",
+            "etc/services",
+            "etc/shadow",
+            "etc/shells",
+            "etc/profile.d/locale.sh",
+            "etc/secfixes.d/wolfi",
+            "usr/lib64",
+            "usr/sbin",
+            "usr/tmp",
+            "usr/local/lib64",
+            "var/lock",
+            "var/run",
+            "var/lib/db/sbom/wolfi-baselayout-20230201-r29.spdx.json",
+            "var/spool/mail"
+          ],
+          "AnalyzedBy": "apk"
+        }
+      ]
+    }
+  ]
+}

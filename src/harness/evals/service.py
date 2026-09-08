@@ -6,14 +6,21 @@ import zipfile
 from collections.abc import Callable
 from datetime import UTC, datetime
 from io import BytesIO
+from typing import cast
 from uuid import uuid4
 
 from harness.auth.audit import AuditService
 from harness.core.errors import ConflictError, NotFoundError
 from harness.core.models import AgentVersionStatus
 from harness.core.ports import AgentRegistry, ArtifactStore
+from harness.evals.importer import (
+    EvalImportError,
+    cases_from_imported,
+    parse_imported_cases,
+)
 from harness.evals.models import (
     CreateEvalDatasetVersionRequest,
+    ImportEvalDatasetRequest,
     CreateEvalRunRequest,
     EvalDatasetVersion,
     EvalFixture,
@@ -37,12 +44,15 @@ def _published_evaluation_enabled(snapshot: dict[str, object]) -> bool:
     manifest = snapshot.get("manifest")
     if not isinstance(manifest, dict):
         return True
+    manifest = cast(dict[str, object], manifest)
     metadata = manifest.get("metadata")
     if not isinstance(metadata, dict):
         return True
+    metadata = cast(dict[str, object], metadata)
     labels = metadata.get("labels")
     if not isinstance(labels, dict):
         return True
+    labels = cast(dict[str, object], labels)
     return str(labels.get("evaluation-enabled", "true")).lower() != "false"
 
 
@@ -79,23 +89,81 @@ class EvalControlPlaneService:
         user_id: str,
         request: CreateEvalDatasetVersionRequest,
     ) -> EvalDatasetVersion:
-        draft = await self._studio.get(tenant_id, user_id, request.draft_id)
-        if draft.revision != request.expected_revision:
+        draft = await self._require_evaluable_draft(
+            tenant_id, user_id, request.draft_id, request.expected_revision
+        )
+        return await self._create_version(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            draft=draft,
+            name=request.name,
+            required=request.required,
+            dataset_id=request.dataset_id,
+            cases=draft.spec.evaluation_cases,
+            action="studio.eval_dataset.create",
+        )
+
+    async def import_dataset_version(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        request: ImportEvalDatasetRequest,
+    ) -> EvalDatasetVersion:
+        draft = await self._require_evaluable_draft(
+            tenant_id, user_id, request.draft_id, request.expected_revision
+        )
+        try:
+            imported = parse_imported_cases(request.format, request.content)
+        except EvalImportError as error:
+            raise ConflictError(f"question bank import rejected: {error}") from error
+        return await self._create_version(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            draft=draft,
+            name=request.name,
+            required=request.required,
+            dataset_id=request.dataset_id,
+            cases=cases_from_imported(imported),
+            action="studio.eval_dataset.import",
+        )
+
+    async def _require_evaluable_draft(
+        self, tenant_id: str, user_id: str, draft_id: str, expected_revision: int
+    ):
+        draft = await self._studio.get(tenant_id, user_id, draft_id)
+        if draft.revision != expected_revision:
             raise ConflictError(
                 "Agent draft revision changed before Eval Dataset creation: "
-                f"expected={request.expected_revision} actual={draft.revision}"
+                f"expected={expected_revision} actual={draft.revision}"
             )
         if not draft.spec.evaluation_enabled:
             raise ConflictError("Agent Eval is disabled for this draft")
-        compiled = await self._studio.bundle(tenant_id, user_id, request.draft_id)
-        dataset_id = request.dataset_id or self._id_generator("dataset")
-        version = await self._datasets.next_version(tenant_id, user_id, dataset_id)
+        return draft
+
+    async def _create_version(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        draft,
+        name: str,
+        required: bool,
+        dataset_id: str | None,
+        cases,
+        action: str,
+    ) -> EvalDatasetVersion:
+        if not cases:
+            raise ConflictError("evaluation dataset needs at least one case")
+        compiled = await self._studio.bundle(tenant_id, user_id, draft.draft_id)
+        resolved_dataset_id = dataset_id or self._id_generator("dataset")
+        version = await self._datasets.next_version(tenant_id, user_id, resolved_dataset_id)
         fixtures: list[EvalFixture] = []
         with zipfile.ZipFile(BytesIO(compiled.bundle)) as archive:
             for path, media_type in sorted(
                 {
                     (item.path, item.media_type)
-                    for case in draft.spec.evaluation_cases
+                    for case in cases
                     for item in case.input_files
                 }
             ):
@@ -118,16 +186,16 @@ class EvalControlPlaneService:
                 )
         dataset = EvalDatasetVersion(
             tenantId=tenant_id,
-            datasetId=dataset_id,
+            datasetId=resolved_dataset_id,
             version=version,
-            name=request.name,
+            name=name,
             agentName=draft.spec.name,
-            required=request.required,
+            required=required,
             sourceDraftId=draft.draft_id,
             sourceDraftRevision=draft.revision,
             sourceContentHash=compiled.report.snapshot.content_hash,
             sourcePackageHash=compiled.report.package_hash,
-            cases=draft.spec.evaluation_cases,
+            cases=cases,
             fixtures=tuple(fixtures),
             createdBy=user_id,
             createdAt=self._clock(),
@@ -136,7 +204,7 @@ class EvalControlPlaneService:
         await self._record(
             tenant_id=tenant_id,
             user_id=user_id,
-            action="studio.eval_dataset.create",
+            action=action,
             resource_type="eval_dataset_version",
             resource_id=f"{dataset.dataset_id}@{dataset.version}",
             details={

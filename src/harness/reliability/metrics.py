@@ -100,7 +100,13 @@ LABEL_VALUE_ALLOWLISTS: dict[tuple[str, str], frozenset[str]] = {
         {"run.cancel", "approval.decide"}
     ),
     ("harness_run_stage_duration_seconds", "stage"): frozenset(
-        {"queue_wait", "runtime_first_event", "runtime_first_text"}
+        {
+            "queue_wait",
+            "environment_prepare",
+            "runtime_first_event",
+            "provider_first_event",
+            "runtime_first_text",
+        }
     ),
     ("harness_worker_queue_failures_total", "operation"): frozenset(
         {"dequeue", "acknowledge", "retry", "extend_lease"}

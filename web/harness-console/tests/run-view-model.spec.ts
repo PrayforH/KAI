@@ -341,3 +341,23 @@ describe("run view model", () => {
     expect(selectComposerDisabled({ phase: "failed" })).toBe(false);
   });
 });
+
+
+describe("denied delegation", () => {
+  it("finishes an Agent attempt from tool.result without a child lifecycle", async () => {
+    const { reduceRunViewModel } = await moduleUnderTest();
+    const view = reduceRunViewModel(undefined, activity("failed", [
+      { id: "request", event_type: "tool.request", kind: "subagent", sequence: 1,
+        title: "调用 Agent", metadata: { tool_call_id: "denied-call", name: "Agent" } },
+      { id: "allowed", event_type: "tool.allowed", kind: "tool", status: "succeeded", sequence: 2,
+        metadata: { tool_call_id: "denied-call" } },
+      { id: "result", event_type: "tool.result", kind: "tool", status: "failed", sequence: 3,
+        metadata: { tool_call_id: "denied-call", result_preview: "subagent role is not declared" } },
+      { id: "failed", event_type: "run.failed", status: "failed", sequence: 4 },
+    ]));
+    expect(view.tasks).toHaveLength(1);
+    expect(view.tasks[0].status).toBe("failed");
+    expect(view.tasks[0].title).toContain("subagent role is not declared");
+    expect(view.tools).toHaveLength(0);
+  });
+});

@@ -60,8 +60,15 @@ async def test_session_repository_is_tenant_scoped() -> None:
     await repository.add(session)
 
     assert await repository.get("tenant-a", "session-1") == session
+    assert await repository.list_for_ids("tenant-a", ["session-1", "session-1"]) == [
+        session,
+        session,
+    ]
+    assert await repository.list_for_ids("tenant-a", []) == []
     with pytest.raises(NotFoundError):
         await repository.get("tenant-b", "session-1")
+    with pytest.raises(NotFoundError):
+        await repository.list_for_ids("tenant-a", ["session-1", "missing"])
 
 
 @pytest.mark.asyncio
@@ -85,6 +92,67 @@ async def test_session_repository_binds_claude_session_once() -> None:
     ) == bound
     with pytest.raises(ConflictError, match="already bound"):
         await repository.bind_claude_session_id("tenant-a", "session-1", "claude-session-2")
+    cleared = await repository.clear_claude_session_id("tenant-a", "session-1", "claude-session-1")
+    assert cleared.claude_session_id is None
+    rebound = await repository.bind_claude_session_id("tenant-a", "session-1", "claude-session-2")
+    assert rebound.claude_session_id == "claude-session-2"
+    assert rebound.runtime_thread_id == "claude-session-2"
+
+
+@pytest.mark.asyncio
+async def test_session_repository_binds_runtime_thread_once() -> None:
+    repository = InMemorySessionRepository()
+    session = Session(
+        session_id="session-codex",
+        tenant_id="tenant-a",
+        user_id="user-1",
+        agent_name="echo-agent",
+        agent_version="1.0.0",
+        runtime_type="codex-app-server",
+        created_at=now(),
+    )
+    await repository.add(session)
+
+    bound = await repository.bind_runtime_thread(
+        "tenant-a",
+        "session-codex",
+        "codex-app-server",
+        "thread-codex-1",
+    )
+
+    assert bound.runtime_thread_id == "thread-codex-1"
+    assert bound.claude_session_id is None
+    assert (
+        await repository.bind_runtime_thread(
+            "tenant-a",
+            "session-codex",
+            "codex-app-server",
+            "thread-codex-1",
+        )
+        == bound
+    )
+    with pytest.raises(ConflictError, match="already bound"):
+        await repository.bind_runtime_thread(
+            "tenant-a",
+            "session-codex",
+            "codex-app-server",
+            "thread-codex-2",
+        )
+    with pytest.raises(ConflictError, match="pinned to runtime"):
+        await repository.bind_runtime_thread(
+            "tenant-a",
+            "session-codex",
+            "claude-agent-sdk",
+            "claude-session-1",
+        )
+
+    cleared = await repository.clear_runtime_thread(
+        "tenant-a",
+        "session-codex",
+        "codex-app-server",
+        "thread-codex-1",
+    )
+    assert cleared.runtime_thread_id is None
 
 
 @pytest.mark.asyncio

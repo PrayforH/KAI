@@ -51,19 +51,14 @@ class ArtifactService:
             if self._sessions is not None
             else None
         )
-        boundary = (
-            environment_quota_boundary(session)
-            if session is not None
-            else None
-        )
+        boundary = environment_quota_boundary(session) if session is not None else None
         if (
             boundary is not None
             and boundary.max_artifact_bytes is not None
             and len(content) > boundary.max_artifact_bytes
         ):
             raise ConflictError(
-                "artifact exceeds Environment maximum size of "
-                f"{boundary.max_artifact_bytes} bytes"
+                f"artifact exceeds Environment maximum size of {boundary.max_artifact_bytes} bytes"
             )
         artifact_id = self._id_generator("artifact")
         reservation: ResourceReservation | None = None
@@ -117,6 +112,9 @@ class ArtifactService:
     async def list_for_run(self, tenant_id: str, run_id: str) -> list[Artifact]:
         await self._runs.get(tenant_id, run_id)
         return await self._repository.list_for_run(tenant_id, run_id)
+
+    async def list_for_runs(self, tenant_id: str, run_ids: list[str]) -> list[Artifact]:
+        return await self._repository.list_for_runs(tenant_id, run_ids)
 
     async def get(self, tenant_id: str, artifact_id: str) -> Artifact:
         return await self._repository.get(tenant_id, artifact_id)

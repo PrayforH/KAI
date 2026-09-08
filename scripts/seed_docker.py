@@ -174,9 +174,11 @@ def studio_spec_from_manifest(manifest_path: Path) -> dict[str, object]:
         "description": labels.get("description", manifest.metadata.name),
         "domain": labels.get("domain", manifest.metadata.name),
         "template": template,
+        "runtime": manifest.spec.runtime,
         "model": {
             "routeId": manifest.spec.model.route,
             "model": manifest.spec.model.model,
+            "reasoningEffort": labels.get("codex-reasoning-effort"),
             "fallbackRouteId": manifest.spec.model.fallback_route,
             "fallbackModel": manifest.spec.model.fallback_model,
             "requiredCapabilities": list(
@@ -384,7 +386,6 @@ def main() -> None:
     raw_studio_manifests = os.getenv(
         "HARNESS_SEED_STUDIO_MANIFESTS",
         (
-            "/app/agents/public-opinion-agent/agent.yaml,"
             "/app/agents/similar-case-analysis-agent/agent.yaml,"
             "/app/agents/govdoc-writer-agent/agent.yaml,"
             "/app/agents/archive-assistant-agent/agent.yaml"
@@ -403,7 +404,10 @@ def main() -> None:
         )
     raw_optional_studio_manifests = os.getenv(
         "HARNESS_SEED_OPTIONAL_STUDIO_MANIFESTS",
-        "/app/agents/networked-knowledge-research-agent/agent.yaml",
+        (
+            "/app/agents/public-opinion-agent/agent.yaml,"
+            "/app/agents/networked-knowledge-research-agent/agent.yaml"
+        ),
     )
     for value in raw_optional_studio_manifests.split(","):
         value = value.strip()

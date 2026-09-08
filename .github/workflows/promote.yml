@@ -34,6 +34,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ inputs.source_commit }}
+          fetch-depth: 0
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-${{ inputs.source_commit }}
@@ -47,9 +48,15 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.12"
+      - uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        with:
+          registry: ${{ vars.HARNESS_RELEASE_REGISTRY || 'ghcr.io' }}
+          username: ${{ secrets.HARNESS_RELEASE_REGISTRY_USERNAME || github.actor }}
+          password: ${{ secrets.HARNESS_RELEASE_REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
           cosign-release: v3.0.6
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
       - run: uv sync --frozen --group dev
         env:
           UV_DEFAULT_INDEX: https://pypi.tuna.tsinghua.edu.cn/simple
@@ -67,13 +74,68 @@ jobs:
           uv run python scripts/release_manifest.py verify \
             --artifact-root dist/release \
             --manifest dist/release/release-manifest.json \
+            --required-schema-version harness.release/v2 \
             --expected-commit "$EXPECTED_COMMIT"
-          while IFS= read -r image; do
+          mkdir -p work/verified-attestations
+          while IFS=$'\t' read -r component image; do
             cosign verify \
               --certificate-identity-regexp "^https://github.com/$REPOSITORY/.github/workflows/release.yml@" \
               --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
               "$image" >/dev/null
-          done < <(jq -r '.images[] | .reference + "@" + .digest' dist/release/release-manifest.json)
+            cosign verify-attestation \
+              --type spdxjson \
+              --certificate-identity-regexp "^https://github.com/$REPOSITORY/.github/workflows/release.yml@" \
+              --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+              "$image" >"work/verified-attestations/$component.spdx-attestation.json"
+            cosign verify-blob \
+              --certificate-identity-regexp "^https://github.com/$REPOSITORY/.github/workflows/release.yml@" \
+              --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+              --bundle "dist/release/sbom/$component.sigstore.json" \
+              "dist/release/sbom/$component.spdx.json"
+            if [[ "$component" == api ]]; then
+              cosign verify-attestation \
+                --type openvex \
+                --certificate-identity-regexp "^https://github.com/$REPOSITORY/.github/workflows/release.yml@" \
+                --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+                "$image" >"work/verified-attestations/api.openvex-attestation.json"
+              cosign verify-blob \
+                --certificate-identity-regexp "^https://github.com/$REPOSITORY/.github/workflows/release.yml@" \
+                --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+                --bundle dist/release/vex/cryptography-49.0.0.sigstore.json \
+                dist/release/vex/cryptography-49.0.0.openvex.json
+            fi
+            docker buildx imagetools inspect "$image" \
+              --format '{{ json .Provenance.SLSA }}' \
+              >"work/verified-attestations/$component.provenance.json"
+            jq -e --arg expected "$EXPECTED_COMMIT" '
+              .buildType == "https://mobyproject.org/buildkit@v1" and
+              (.materials | type == "array" and length > 0) and
+              ((
+                .metadata["https://mobyproject.org/buildkit@v1#metadata"].vcs.revision //
+                .invocation.parameters.root.configSource.request.args["vcs:revision"]
+              ) == $expected)
+            ' "work/verified-attestations/$component.provenance.json" >/dev/null
+          done < <(
+            jq -r '.images[] | [.component, (.reference + "@" + .digest)] | @tsv' \
+              dist/release/release-manifest.json
+          )
+      - name: Require an exact signed tag draft before any production mutation
+        if: inputs.environment == 'production'
+        env:
+          EXPECTED_COMMIT: ${{ inputs.source_commit }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          tag="v$version"
+          test "$(git rev-list -n 1 "$tag")" = "$EXPECTED_COMMIT"
+          draft="$(curl --fail --silent --show-error \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header 'Accept: application/vnd.github+json' \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$tag" \
+            | jq -r .draft)"
+          test "$draft" = true
       - name: Deploy exact image digests and run forward migration/seed
         id: deploy
         env:
@@ -95,37 +157,74 @@ jobs:
           HARNESS_API_BEARER_TOKEN: ${{ secrets.HARNESS_API_BEARER_TOKEN }}
           HARNESS_BASE_URL: ${{ vars.HARNESS_BASE_URL }}
           HARNESS_TENANT_ID: ${{ vars.HARNESS_TENANT_ID }}
+          HARNESS_RELEASE_USER_ID: ${{ vars.HARNESS_SMOKE_USER_ID }}
           TARGET_ENVIRONMENT: ${{ inputs.environment }}
           EXECUTION_PROFILE: ${{ vars.HARNESS_EXECUTION_PROFILE }}
+          PROMOTION_OPERATION_ID: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set -euo pipefail
-          test -n "$HARNESS_BASE_URL" && test -n "$HARNESS_TENANT_ID"
+          test -n "$HARNESS_BASE_URL" && test -n "$HARNESS_TENANT_ID" \
+            && test -n "$HARNESS_RELEASE_USER_ID"
           uv run python scripts/promote_release.py promote \
             --base-url "$HARNESS_BASE_URL" \
             --tenant "$HARNESS_TENANT_ID" \
+            --user "$HARNESS_RELEASE_USER_ID" \
             --artifact-root dist/release \
             --manifest dist/release/release-manifest.json \
             --environment "$TARGET_ENVIRONMENT" \
+            --operation-id "$PROMOTION_OPERATION_ID" \
             --execution-profile "${EXECUTION_PROFILE:-isolated-default}" \
             --plan work/promotion-plan.json
-      - name: Black-box health gate
+      - name: Black-box AG-UI chat and Web gate
         env:
+          HARNESS_API_BEARER_TOKEN: ${{ secrets.HARNESS_API_BEARER_TOKEN }}
           HARNESS_BASE_URL: ${{ vars.HARNESS_BASE_URL }}
           HARNESS_WEB_URL: ${{ vars.HARNESS_WEB_URL }}
+          HARNESS_TENANT_ID: ${{ vars.HARNESS_TENANT_ID }}
+          HARNESS_SMOKE_USER_ID: ${{ vars.HARNESS_SMOKE_USER_ID }}
+          HARNESS_SMOKE_AGENT_NAME: ${{ vars.HARNESS_SMOKE_AGENT_NAME }}
+          HARNESS_SMOKE_AGENT_VERSION: ${{ vars.HARNESS_SMOKE_AGENT_VERSION }}
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error "$HARNESS_BASE_URL/healthz" >/dev/null
-          curl --fail --silent --show-error "$HARNESS_WEB_URL/studio/agents" >/dev/null
+          for value in HARNESS_BASE_URL HARNESS_WEB_URL HARNESS_TENANT_ID \
+            HARNESS_SMOKE_USER_ID HARNESS_SMOKE_AGENT_NAME HARNESS_SMOKE_AGENT_VERSION; do
+            test -n "${!value}"
+          done
+          jq -e \
+            --arg name "$HARNESS_SMOKE_AGENT_NAME" \
+            --arg version "$HARNESS_SMOKE_AGENT_VERSION" \
+            'any(.agentBundles[]; .name == $name and .version == $version)' \
+            dist/release/release-manifest.json >/dev/null
+          mkdir -p work/promotion-evidence
+          curl --fail --silent --show-error \
+            --output work/promotion-evidence/api-health.json \
+            "$HARNESS_BASE_URL/healthz"
+          curl --fail --silent --show-error --output /dev/null \
+            --write-out '%{http_code}\n' "$HARNESS_WEB_URL/studio/agents" \
+            >work/promotion-evidence/web-status.txt
+          acceptance_marker="RELEASE_GATE_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+          uv run python scripts/benchmark_chat_latency.py \
+            --api-url "$HARNESS_BASE_URL" \
+            --agent-name "$HARNESS_SMOKE_AGENT_NAME" \
+            --agent-version "$HARNESS_SMOKE_AGENT_VERSION" \
+            --tenant-id "$HARNESS_TENANT_ID" \
+            --user-id "$HARNESS_SMOKE_USER_ID" \
+            --runs 1 --warmups 0 --skip-publish \
+            --prompt "Reply with exactly: $acceptance_marker" \
+            --require-text "$acceptance_marker" \
+            --output work/promotion-evidence/agui-chat.json
       - name: Roll back Agent snapshots after a failed post-promotion gate
         if: failure() && hashFiles('work/promotion-plan.json') != ''
         env:
           HARNESS_API_BEARER_TOKEN: ${{ secrets.HARNESS_API_BEARER_TOKEN }}
           HARNESS_BASE_URL: ${{ vars.HARNESS_BASE_URL }}
           HARNESS_TENANT_ID: ${{ vars.HARNESS_TENANT_ID }}
+          HARNESS_RELEASE_USER_ID: ${{ vars.HARNESS_SMOKE_USER_ID }}
         run: |
           uv run python scripts/promote_release.py rollback \
             --base-url "$HARNESS_BASE_URL" \
             --tenant "$HARNESS_TENANT_ID" \
+            --user "$HARNESS_RELEASE_USER_ID" \
             --plan work/promotion-plan.json
       - name: Roll back application images after any failed deployment gate
         if: failure() && steps.deploy.outcome != 'skipped'
@@ -138,3 +237,34 @@ jobs:
             --compose-env "$COMPOSE_ENV_FILE" \
             --state-root "$RELEASE_STATE_ROOT" \
             --environment "$TARGET_ENVIRONMENT"
+      - name: Retain promotion and rollback evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: promotion-evidence-${{ inputs.environment }}-${{ inputs.source_commit }}-${{ github.run_attempt }}
+          path: work
+          if-no-files-found: error
+          retention-days: 90
+
+  publish-production-release:
+    if: inputs.environment == 'production'
+    needs: promote
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.source_commit }}
+          fetch-depth: 0
+      - name: Publish the signed draft only after production acceptance
+        env:
+          EXPECTED_COMMIT: ${{ inputs.source_commit }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          tag="v$version"
+          test "$(git rev-list -n 1 "$tag")" = "$EXPECTED_COMMIT"
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = true
+          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false --latest

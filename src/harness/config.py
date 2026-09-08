@@ -16,11 +16,20 @@ class Settings(BaseSettings):
     )
 
     environment: Literal["local", "test", "production"] = "local"
-    runtime: Literal["fake", "claude-sdk"] = "fake"
+    runtime: Literal["fake", "claude-sdk", "multi"] = "fake"
     sandbox_provider: Literal["local", "daytona", "e2b", "kubernetes"] = "local"
     sandbox_execution_mode: Literal["remote_cli", "worker_cli_deferred"] = "remote_cli"
     allow_unsafe_local_sandbox: bool = False
     cc_switch_settings_path: str = "~/.claude/settings.json"
+    codex_cli_path: str = "/usr/local/bin/codex"
+    codex_model_by_route: dict[str, str] = Field(default_factory=dict)
+    codex_provider_by_route: dict[str, str] = Field(default_factory=dict)
+    codex_approval_policy: Literal["untrusted", "on-request", "never"] = "untrusted"
+    codex_network_access: bool = False
+    web_tools_enabled: bool = True
+    web_search_api_key: SecretStr = SecretStr("")
+    web_search_provider: Literal["tavily", "minimax"] = "tavily"
+    codex_tool_output_token_limit: int = Field(default=32_000, ge=1_000, le=200_000)
     otel_enabled: bool = False
     otel_content_capture: Literal["off", "redacted"] = "off"
     otel_content_max_chars: int = Field(default=12_000, ge=256, le=100_000)
@@ -97,6 +106,11 @@ class Settings(BaseSettings):
     daytona_remote_workspace_root: str = "/home/daytona/harness"
     daytona_claude_cli_version: str = "2.1.206"
     daytona_claude_cli_path: str = "/home/daytona/.local/bin/claude"
+    daytona_codex_cli_version: str = "0.149.0"
+    daytona_codex_cli_path: str = "/home/daytona/.local/bin/codex"
+    daytona_codex_cli_sha256: str = (
+        "1c08ba262820b78d49ea7a93f326b6b430b72e5fe46830e433edef12e5123244"
+    )
     daytona_delete_on_destroy: bool = True
     daytona_auto_stop_interval_minutes: int = Field(default=15, ge=1)
     daytona_auto_delete_interval_minutes: int = Field(default=60, ge=1)
@@ -162,4 +176,14 @@ class Settings(BaseSettings):
     langfuse_secret_key: SecretStr = SecretStr("")
     langfuse_dashboard_url: str = ""
     memory_mcp_public_url: str = ""
+    memory_embedding_base_url: str = ""
+    memory_embedding_api_key: SecretStr = SecretStr("")
+    memory_embedding_model: str = "shdata-bge-m3"
+    memory_embedding_dimensions: int = Field(default=1024, ge=1024, le=1024)
+    memory_semantic_threshold: float = Field(default=0.5, ge=0, le=1)
+    memory_extraction_enabled: bool = False
+    memory_extraction_since: str = ""
+    memory_extraction_base_url: str = ""
+    memory_extraction_api_key: SecretStr = SecretStr("")
+    memory_extraction_model: str = ""
     knowledge_mcp_public_url: str = ""

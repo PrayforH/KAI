@@ -24,6 +24,18 @@ def environment_quota_boundary(
     return None if snapshot is None else snapshot.resource_policy.quota
 
 
+def enforce_runtime_model_route(session: Session, route_id: str) -> None:
+    """Apply the pinned Environment allow-list to task and admin overrides."""
+
+    snapshot = session_environment_policy(session)
+    if snapshot is None:
+        return
+    if route_id not in snapshot.resource_policy.allowed_model_routes:
+        raise ConflictError(
+            f"Session Environment snapshot denies model routes: {route_id}"
+        )
+
+
 def enforce_runtime_environment(
     session: Session,
     agent: AgentManifestSnapshot,

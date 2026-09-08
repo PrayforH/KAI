@@ -24,7 +24,7 @@ def production_settings() -> Settings:
         api_bearer_token=SecretStr(SERVICE_TOKEN),
         database_url=os.getenv(
             "HARNESS_TEST_DATABASE_URL",
-            "postgresql+asyncpg://harness:harness@localhost:5432/harness",
+            "postgresql+asyncpg://harness:harness@127.0.0.1:5432/harness_test",
         ),
         redis_url=f"{os.getenv('HARNESS_TEST_REDIS_BASE_URL', 'redis://localhost:6379')}/0",
         minio_access_key=SecretStr("test-minio-access"),
@@ -66,6 +66,22 @@ async def test_production_studio_api_restores_draft_after_container_restart(
         async with AsyncClient(
             transport=ASGITransport(app=first_app), base_url="http://test"
         ) as client:
+            configured = await client.put(
+                "/v1/studio/models/test-default",
+                headers=headers(),
+                json={
+                    "expectedRevision": 1,
+                    "label": "Test default model",
+                    "modelType": "chat",
+                    "provider": "Test provider",
+                    "model": "test-model",
+                    "baseUrl": "https://models.example.test/v1",
+                    "apiFormat": "openai_compatible",
+                    "authScheme": "bearer",
+                    "apiKey": "test-model-secret",
+                    "enabled": True,
+                },
+            )
             first_catalog = await client.get("/v1/studio/catalog", headers=headers())
             second_seed = await client.get("/v1/studio/catalog", headers=headers())
             created = await client.post(
@@ -82,14 +98,15 @@ async def test_production_studio_api_restores_draft_after_container_restart(
                 },
             )
             disabled = await client.delete(
-                "/v1/studio/catalog/modelRoute/new-api-default",
+                "/v1/studio/models/test-default",
                 headers=headers(),
-                params={"expected_revision": 1},
+                params={"expectedRevision": configured.json()["revision"]},
             )
     finally:
         await close(first)
 
     assert created.status_code == 201
+    assert configured.status_code == 200
     assert preview.status_code == 202
     assert preview.json()["status"] == "queued"
     assert first_catalog.json() == second_seed.json()
@@ -125,10 +142,10 @@ async def test_production_studio_api_restores_draft_after_container_restart(
     assert reconciled_preview.preflight_result is not None
     assert reconciled_preview.preflight_result.status.value == "failed"
     assert restored_catalog.status_code == 200
-    assert restored_catalog.json()["revision"] == 2
+    assert restored_catalog.json()["revision"] == configured.json()["revision"] + 1
     route = next(
         item
         for item in restored_catalog.json()["catalog"]["modelRoutes"]
-        if item["routeId"] == "new-api-default"
+        if item["routeId"] == "test-default"
     )
     assert route["enabled"] is False
