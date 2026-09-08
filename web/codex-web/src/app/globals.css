@@ -1,0 +1,748 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+  /* Status semantic colors */
+  --color-status-success: var(--status-success);
+  --color-status-success-foreground: var(--status-success-foreground);
+  --color-status-success-muted: var(--status-success-muted);
+  --color-status-success-border: var(--status-success-border);
+  --color-status-warning: var(--status-warning);
+  --color-status-warning-foreground: var(--status-warning-foreground);
+  --color-status-warning-muted: var(--status-warning-muted);
+  --color-status-warning-border: var(--status-warning-border);
+  --color-status-error: var(--status-error);
+  --color-status-error-foreground: var(--status-error-foreground);
+  --color-status-error-muted: var(--status-error-muted);
+  --color-status-error-border: var(--status-error-border);
+  --color-status-info: var(--status-info);
+  --color-status-info-foreground: var(--status-info-foreground);
+  --color-status-info-muted: var(--status-info-muted);
+  --color-status-info-border: var(--status-info-border);
+}
+
+:root {
+  /* Luma Style baseline (2026-04-25). macOS Tahoe-inspired rounded geometry.
+     Bumped from 0.75rem. Propagates via @theme inline calc rules above to
+     --radius-sm/md/lg/xl/2xl/3xl/4xl, so all `rounded-*` token references
+     in components/ui/* automatically inherit the new scale without per-file
+     edits. CDP-verify the 6 core pages and tighten/loosen as needed. */
+  --radius: 1rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.147 0.004 49.25);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.147 0.004 49.25);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.147 0.004 49.25);
+  /* Brand primary: #252525 (monochrome charcoal). Was blue oklch(0.546 0.245 262.881). */
+  --primary: oklch(0.262 0 0);
+  --primary-foreground: oklch(0.985 0.001 106.423);
+  /* Bumped from 0.97 to 0.95 — hover/secondary surfaces are now visibly distinct
+     from sidebar bg (0.985) and base bg (1). Closer to Luma default feel. */
+  --secondary: oklch(0.95 0.002 106.424);
+  --secondary-foreground: oklch(0.216 0.006 56.043);
+  --muted: oklch(0.95 0.002 106.424);
+  --muted-foreground: oklch(0.553 0.013 58.071);
+  --accent: oklch(0.95 0.002 106.424);
+  --accent-foreground: oklch(0.216 0.006 56.043);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.923 0.003 48.717);
+  --input: oklch(0.923 0.003 48.717);
+  /* Focus ring follows primary brand color */
+  --ring: oklch(0.262 0 0);
+  --chart-1: oklch(0.546 0.245 262.881);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --sidebar: oklch(0.985 0.001 106.423);
+  --sidebar-foreground: oklch(0.147 0.004 49.25);
+  /* Sidebar brand follows primary */
+  --sidebar-primary: oklch(0.262 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0.001 106.423);
+  --sidebar-accent: oklch(0.95 0.002 106.424);
+  --sidebar-accent-foreground: oklch(0.216 0.006 56.043);
+  --sidebar-border: oklch(0.923 0.003 48.717);
+  --sidebar-ring: oklch(0.262 0 0);
+  --user-bubble: oklch(0.22 0.005 250);
+  --user-bubble-foreground: oklch(0.985 0.001 106.423);
+  /* Status semantic tokens */
+  --status-success: oklch(0.527 0.154 150.069);
+  --status-success-foreground: oklch(0.393 0.124 148.697);
+  --status-success-muted: oklch(0.527 0.154 150.069 / 10%);
+  --status-success-border: oklch(0.527 0.154 150.069 / 20%);
+  --status-warning: oklch(0.705 0.213 47.604);
+  --status-warning-foreground: oklch(0.646 0.222 41.116);
+  --status-warning-muted: oklch(0.705 0.213 47.604 / 10%);
+  --status-warning-border: oklch(0.705 0.213 47.604 / 20%);
+  --status-error: oklch(0.577 0.245 27.325);
+  --status-error-foreground: oklch(0.577 0.245 27.325);
+  --status-error-muted: oklch(0.577 0.245 27.325 / 10%);
+  --status-error-border: oklch(0.577 0.245 27.325 / 20%);
+  --status-info: oklch(0.546 0.245 262.881);
+  --status-info-foreground: oklch(0.546 0.245 262.881);
+  --status-info-muted: oklch(0.546 0.245 262.881 / 10%);
+  --status-info-border: oklch(0.546 0.245 262.881 / 20%);
+  /* Terminal / code-block (bash) tokens */
+  --terminal-bg: oklch(0.13 0.004 49.25);
+  --terminal-foreground: oklch(0.87 0.006 106);
+  --terminal-muted: oklch(0.55 0.01 58);
+  --terminal-border: oklch(0.30 0.005 49);
+  --terminal-accent: oklch(0.55 0.17 155);
+  --terminal-hover-bg: oklch(0.25 0.005 49);
+  --terminal-gradient-from: oklch(0.13 0.004 49.25);
+  /* Composer surface elevation — soft two-layer diffuse shadow used by
+     the chat input box and its attached popovers. Negative spread
+     feathers the edge so it doesn't look like a hard cutout. */
+  --shadow-diffuse: 0 12px 40px -8px rgba(0, 0, 0, 0.10), 0 4px 12px -4px rgba(0, 0, 0, 0.04);
+  /* Phase 6 — Context Usage Breakdown dot colors.
+   * Low-chroma OKLCH palette distributed around the hue wheel for 10
+   * categories. Same palette serves light + dark theme — the lightness
+   * range (0.55-0.80) reads on both backgrounds. Variable names use
+   * kebab-case (`files-attachments` not `files_attachments`) so they
+   * compose with CSS custom property syntax. */
+  --context-dot-system-prompt: oklch(0.62 0.04 252);
+  --context-dot-tools: oklch(0.62 0.08 288);
+  --context-dot-rules: oklch(0.66 0.08 144);
+  --context-dot-skills: oklch(0.72 0.10 80);
+  --context-dot-mcp: oklch(0.66 0.10 0);
+  --context-dot-memory: oklch(0.66 0.08 200);
+  --context-dot-files-attachments: oklch(0.68 0.10 40);
+  /* Conversation = largest category, warm-brown anchor (chroma 0.07). */
+  --context-dot-conversation: oklch(0.55 0.07 70);
+  /* Pending-next-turn renders as dashed outline (no fill); the variable
+   * is kept for completeness but the value is no longer consumed. */
+  --context-dot-pending-next-turn: oklch(0.70 0.02 0);
+  /* Cache = secondary but distinct, cool blue-gray (chroma 0.05). */
+  --context-dot-cache-or-previous: oklch(0.78 0.05 220);
+}
+
+.dark {
+  --background: oklch(0.147 0.004 49.25);
+  --foreground: oklch(0.985 0.001 106.423);
+  --card: oklch(0.216 0.006 56.043);
+  --card-foreground: oklch(0.985 0.001 106.423);
+  --popover: oklch(0.216 0.006 56.043);
+  --popover-foreground: oklch(0.985 0.001 106.423);
+  /* Brand primary inverts in dark mode: near-white on dark background.
+     Was blue oklch(0.623 0.214 259.815). */
+  --primary: oklch(0.985 0.001 106.423);
+  --primary-foreground: oklch(0.262 0 0);
+  --secondary: oklch(0.268 0.007 34.298);
+  --secondary-foreground: oklch(0.985 0.001 106.423);
+  --muted: oklch(0.268 0.007 34.298);
+  --muted-foreground: oklch(0.709 0.01 56.259);
+  --accent: oklch(0.268 0.007 34.298);
+  --accent-foreground: oklch(0.985 0.001 106.423);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  /* Focus ring follows primary brand color (now near-white in dark mode) */
+  --ring: oklch(0.985 0.001 106.423);
+  --chart-1: oklch(0.623 0.214 259.815);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --sidebar: oklch(0.216 0.006 56.043);
+  --sidebar-foreground: oklch(0.985 0.001 106.423);
+  /* Sidebar brand follows primary (inverted for dark mode) */
+  --sidebar-primary: oklch(0.985 0.001 106.423);
+  --sidebar-primary-foreground: oklch(0.262 0 0);
+  --sidebar-accent: oklch(0.268 0.007 34.298);
+  --sidebar-accent-foreground: oklch(0.985 0.001 106.423);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.985 0.001 106.423);
+  --user-bubble: oklch(0.90 0.003 106);
+  --user-bubble-foreground: oklch(0.147 0.004 49.25);
+  /* Status semantic tokens */
+  --status-success: oklch(0.527 0.154 150.069);
+  --status-success-foreground: oklch(0.448 0.133 148.697);
+  --status-success-muted: oklch(0.527 0.154 150.069 / 10%);
+  --status-success-border: oklch(0.527 0.154 150.069 / 20%);
+  --status-warning: oklch(0.705 0.213 47.604);
+  --status-warning-foreground: oklch(0.705 0.213 47.604);
+  --status-warning-muted: oklch(0.705 0.213 47.604 / 10%);
+  --status-warning-border: oklch(0.705 0.213 47.604 / 20%);
+  --status-error: oklch(0.704 0.191 22.216);
+  --status-error-foreground: oklch(0.704 0.191 22.216);
+  --status-error-muted: oklch(0.704 0.191 22.216 / 10%);
+  --status-error-border: oklch(0.704 0.191 22.216 / 20%);
+  --status-info: oklch(0.623 0.214 259.815);
+  --status-info-foreground: oklch(0.623 0.214 259.815);
+  --status-info-muted: oklch(0.623 0.214 259.815 / 10%);
+  --status-info-border: oklch(0.623 0.214 259.815 / 20%);
+  /* Terminal tokens — dark mode: stronger border contrast against dark page bg */
+  --terminal-bg: oklch(0.10 0.002 49);
+  --terminal-foreground: oklch(0.87 0.006 106);
+  --terminal-muted: oklch(0.60 0.01 58);
+  --terminal-border: oklch(0.35 0.006 49);
+  --terminal-accent: oklch(0.62 0.17 155);
+  --terminal-hover-bg: oklch(0.22 0.005 49);
+  --terminal-gradient-from: oklch(0.10 0.002 49);
+  /* Dark mode: bump the alpha so the soft elevation reads against a
+     dark background (otherwise the shadow vanishes). */
+  --shadow-diffuse: 0 12px 40px -8px rgba(0, 0, 0, 0.45), 0 4px 12px -4px rgba(0, 0, 0, 0.25);
+}
+
+/* Browser shell tokens. Product content tokens remain unchanged. */
+:root {
+  /* 构建期不联网下载 Google Fonts，保留原变量名并映射到系统字体栈。 */
+  --font-geist-sans: ui-sans-serif, system-ui, -apple-system,
+    BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-geist-mono: ui-monospace, "SFMono-Regular", Consolas,
+    "Liberation Mono", monospace;
+
+  /* Font used by browser navigation and controls. */
+  --platform-font-ui: var(--font-geist-sans);
+
+  /* Radius — separated from product `--radius` so window chrome can
+     read large rounded geometry without dragging every card with it. */
+  --platform-radius-window: var(--radius);
+  --platform-radius-control: calc(var(--radius) - 4px);
+
+  /* Hover fill alpha for browser navigation rows. */
+  --platform-hover-alpha: 1;
+
+  /* Shell surfaces. Defaults match what ChatListPanel / SettingsSidebar /
+     MessageInput / popover.tsx already render today (Phase 0 audit
+     pinned these to specific files + lines). Phase 2 will route these
+     surfaces through the tokens; before then, the tokens just exist
+     and produce no diff. */
+  --platform-surface-sidebar: color-mix(in oklch, var(--sidebar) 80%, transparent);
+  --platform-surface-bar: var(--background);
+  --platform-surface-popover: var(--popover);
+  --platform-surface-hud: var(--popover);
+  --platform-surface-tooltip: var(--foreground);
+
+  /* Subtle border for chrome edges. Default mirrors the `border/40`
+     hand-rolled value seen across WorkspaceSidebar / PanelZone today. */
+  --platform-border-subtle: color-mix(in oklch, var(--border) 40%, transparent);
+
+}
+
+.dark {
+  /* Dark sidebar surface — same alpha treatment, dark base. */
+  --platform-surface-sidebar: color-mix(in oklch, var(--sidebar) 80%, transparent);
+  --platform-surface-bar: var(--background);
+  --platform-surface-popover: var(--popover);
+  --platform-surface-hud: var(--popover);
+  --platform-surface-tooltip: var(--foreground);
+  --platform-border-subtle: color-mix(in oklch, var(--border) 40%, transparent);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  /* Selection color — derives from primary */
+  ::selection {
+    background: color-mix(in oklch, var(--primary) 30%, transparent);
+  }
+  .dark ::selection {
+    background: color-mix(in oklch, var(--primary) 35%, transparent);
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in oklch, var(--muted-foreground) 25%, transparent);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklch, var(--muted-foreground) 40%, transparent);
+  }
+  .dark ::-webkit-scrollbar-thumb {
+    background: color-mix(in oklch, var(--muted-foreground) 30%, transparent);
+  }
+  .dark ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklch, var(--muted-foreground) 50%, transparent);
+  }
+
+  /* Prose (markdown) refinements */
+  .prose {
+    --tw-prose-headings: var(--foreground);
+    line-height: 1.7;
+  }
+  .prose p {
+    margin-top: 0.75em;
+    margin-bottom: 0.75em;
+  }
+  .prose h1,
+  .prose h2,
+  .prose h3 {
+    margin-top: 1.25em;
+    margin-bottom: 0.5em;
+    font-weight: 600;
+  }
+  .prose ul,
+  .prose ol {
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
+  }
+  .prose li {
+    margin-top: 0.25em;
+    margin-bottom: 0.25em;
+  }
+  .prose blockquote {
+    border-left-color: color-mix(in oklch, var(--primary) 40%, transparent);
+    font-style: normal;
+  }
+  .prose a {
+    color: var(--primary);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .dark .prose a {
+    color: var(--primary);
+  }
+  .prose hr {
+    border-color: var(--border);
+  }
+  .prose table th {
+    font-weight: 600;
+  }
+}
+
+/* Search result highlight flash animation for messages */
+@keyframes search-highlight-pulse {
+  0% {
+    background-color: color-mix(in oklch, var(--primary) 40%, transparent);
+  }
+  50% {
+    background-color: color-mix(in oklch, var(--primary) 20%, transparent);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+@utility search-highlight-flash {
+  animation: search-highlight-pulse 2s ease-in-out 1;
+  border-radius: 2px;
+  padding: 0 2px;
+  margin: 0 -2px;
+}
+
+/* File tree item flash animation */
+@keyframes file-tree-pulse {
+  0% {
+    background-color: color-mix(in oklch, var(--primary) 35%, transparent);
+  }
+  50% {
+    background-color: color-mix(in oklch, var(--primary) 15%, transparent);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+@utility file-tree-flash {
+  animation: file-tree-pulse 2s ease-in-out 1;
+}
+
+/* Widget skeleton shimmer animation */
+@keyframes widget-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@utility animate-shimmer {
+  animation: widget-shimmer 2s ease-in-out infinite;
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklch, var(--muted-foreground) 8%, transparent) 40%,
+    color-mix(in oklch, var(--muted-foreground) 15%, transparent) 50%,
+    color-mix(in oklch, var(--muted-foreground) 8%, transparent) 60%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+}
+
+/*
+ * Override Streamdown's bash/shell code block inline Shiki token colors.
+ * Placed outside @layer to ensure highest CSS specificity.
+ * Streamdown sets inline style="color:..." on each token span; only
+ * !important at the top layer can override inline styles.
+ */
+[data-language="bash"] pre,
+[data-language="sh"] pre,
+[data-language="shell"] pre,
+[data-language="zsh"] pre,
+[data-language="console"] pre,
+[data-language="terminal"] pre {
+  background-color: var(--terminal-bg) !important;
+  color: var(--terminal-foreground) !important;
+}
+
+[data-language="bash"] pre span[style],
+[data-language="sh"] pre span[style],
+[data-language="shell"] pre span[style],
+[data-language="zsh"] pre span[style],
+[data-language="console"] pre span[style],
+[data-language="terminal"] pre span[style] {
+  color: inherit !important;
+  background-color: transparent !important;
+}
+
+/* 浅色主题下终端背景接近全局选区色，单独提高拖选区域的对比度。 */
+[data-language="bash"] ::selection,
+[data-language="sh"] ::selection,
+[data-language="shell"] ::selection,
+[data-language="zsh"] ::selection,
+[data-language="console"] ::selection,
+[data-language="terminal"] ::selection {
+  background: color-mix(in oklch, var(--terminal-foreground) 35%, transparent);
+}
+
+/*
+ * CodeMirror isolation — Phase 4 (POC 0.4 path C).
+ *
+ * Tailwind v4 preflight (@layer base) resets pre/code font/margin/
+ * white-space. CodeMirror's .cm-scroller / .cm-line reuse pre-style
+ * behavior, so unisolated they end up with wrong line heights + cursor
+ * offsets. `all: revert-layer` inside the same base layer undoes the
+ * reset for everything under .cm-editor while preserving design-token
+ * inheritance (--border / --radius / font vars still cascade).
+ *
+ * Do NOT move this to a higher-specificity layer — that would hide the
+ * reset instead of unwinding it, and downstream component themes
+ * applied by EditorView.theme() wouldn't be able to override.
+ */
+@layer base {
+  .cm-editor,
+  .cm-editor * {
+    all: revert-layer;
+  }
+}
+
+/*
+ * Obsidian-style callout blocks — Phase 4.A Markdown data layer.
+ *
+ * The callout pre-processor (src/lib/markdown/callout.ts) rewrites
+ * `> [!type]` blockquotes into <blockquote class="codepilot-callout
+ * codepilot-callout-<type>" data-callout=…>; these styles paint the
+ * left border + tinted background. Keep specificity low so theme
+ * overrides can win.
+ */
+.codepilot-callout {
+  border-left: 3px solid var(--border);
+  padding: 0.5rem 0.75rem 0.5rem 0.75rem;
+  margin: 0.75rem 0;
+  border-radius: 0 4px 4px 0;
+  background: var(--muted);
+}
+.codepilot-callout-note { border-left-color: #6b7280; background: rgba(107, 114, 128, 0.08); }
+.codepilot-callout-tip { border-left-color: #10b981; background: rgba(16, 185, 129, 0.08); }
+.codepilot-callout-important { border-left-color: #8b5cf6; background: rgba(139, 92, 246, 0.08); }
+.codepilot-callout-warning { border-left-color: #f59e0b; background: rgba(245, 158, 11, 0.08); }
+.codepilot-callout-caution { border-left-color: #ef4444; background: rgba(239, 68, 68, 0.08); }
+.codepilot-callout-info { border-left-color: #3b82f6; background: rgba(59, 130, 246, 0.08); }
+
+/*
+ * Codepilot wikilinks — Phase 4.A. The rewriter produces
+ * codepilot://wikilink/<Note> hrefs; the PreviewPanel click handler
+ * intercepts navigation, so a default underline is friendly to read
+ * but the cursor signals it's interactive.
+ */
+.codepilot-md-body a[href^="codepilot://wikilink/"] {
+  color: var(--primary);
+  text-decoration: underline dotted;
+  cursor: pointer;
+}
+
+/*
+ * Markdown presentation styles — Phase 4 UX.
+ *
+ * Applied in-place on the rendered Markdown body via a class on the
+ * `.codepilot-md-body` wrapper. The Markdown file remains the source
+ * of truth; switching styles is just a class change, no re-fetch,
+ * no new artifact tab, no source replacement.
+ *
+ * Five styles + smooth transitions so the change feels intentional
+ * rather than a flash.
+ */
+.codepilot-md-body { transition: padding 150ms ease, font-family 150ms ease, color 150ms ease; }
+.codepilot-md-body :where(h1,h2,h3,h4,h5,h6) { transition: color 150ms ease, font-size 150ms ease, margin 150ms ease; }
+
+/* default — minimal, basically v0.54 look. No-op. */
+.codepilot-md-template-default {}
+
+/* article — wider line height, serif body, accent headings. */
+.codepilot-md-template-article {
+  font-family: 'Georgia', 'Times New Roman', 'Songti SC', 'STSong', serif;
+  line-height: 1.75;
+  color: var(--foreground);
+}
+.codepilot-md-template-article :where(h1, h2, h3, h4, h5, h6) {
+  font-family: system-ui, -apple-system, 'PingFang SC', sans-serif;
+  color: rgb(30 58 138); /* slate blue accent */
+  letter-spacing: -0.005em;
+}
+.dark .codepilot-md-template-article :where(h1, h2, h3, h4, h5, h6) {
+  color: rgb(147 197 253);
+}
+.codepilot-md-template-article :where(p, li) { margin-bottom: 0.7em; }
+
+/* report — sans body, dense, structured. */
+.codepilot-md-template-report {
+  font-family: system-ui, -apple-system, 'Helvetica Neue', 'PingFang SC', sans-serif;
+  line-height: 1.6;
+  font-size: 0.95rem;
+}
+.codepilot-md-template-report :where(h1, h2, h3, h4, h5, h6) {
+  color: rgb(15 118 110);
+  border-bottom: 1px solid rgba(15, 118, 110, 0.15);
+  padding-bottom: 0.25em;
+  margin-top: 1.5em;
+}
+.dark .codepilot-md-template-report :where(h1, h2, h3, h4, h5, h6) {
+  color: rgb(94 234 212);
+  border-bottom-color: rgba(94, 234, 212, 0.2);
+}
+
+/* brief — tight spacing, prominent intro. */
+.codepilot-md-template-brief {
+  font-family: system-ui, -apple-system, 'PingFang SC', sans-serif;
+  line-height: 1.55;
+}
+.codepilot-md-template-brief :where(h1) {
+  color: rgb(180 83 9);
+  font-size: 1.6rem;
+  margin-bottom: 0.5em;
+}
+.codepilot-md-template-brief :where(h2, h3, h4, h5, h6) {
+  color: rgb(180 83 9);
+  margin-top: 1em;
+  margin-bottom: 0.4em;
+}
+.dark .codepilot-md-template-brief :where(h1, h2, h3, h4, h5, h6) {
+  color: rgb(252 211 77);
+}
+.codepilot-md-template-brief :where(p) { margin-bottom: 0.5em; }
+
+/* pitch — large headings, accent banner via first h1. */
+.codepilot-md-template-pitch {
+  font-family: system-ui, -apple-system, 'PingFang SC', sans-serif;
+  line-height: 1.65;
+}
+.codepilot-md-template-pitch :where(h1):first-child {
+  font-size: 2.1rem;
+  color: rgb(124 58 237);
+  background: linear-gradient(90deg, rgba(124, 58, 237, 0.08) 0%, transparent 100%);
+  padding: 0.5em 0.75em;
+  margin-left: -0.75em;
+  border-radius: 4px;
+}
+.codepilot-md-template-pitch :where(h2, h3, h4, h5, h6) {
+  color: rgb(124 58 237);
+  font-weight: 600;
+}
+.dark .codepilot-md-template-pitch :where(h1, h2, h3, h4, h5, h6) {
+  color: rgb(196 181 253);
+}
+
+/* DSH-inspired task home: keep the Codex runtime, simplify the product shell. */
+[data-home-shell] {
+  --dsh-canvas: #f7f8fa;
+  --dsh-sidebar: #f0f2f5;
+  --dsh-composer: rgba(255, 255, 255, 0.94);
+  --dsh-composer-border: rgba(18, 28, 45, 0.12);
+  --dsh-accent: #3377f6;
+  --primary: 218 91% 58%;
+}
+
+.dark [data-home-shell] {
+  --dsh-canvas: #090b0f;
+  --dsh-sidebar: #11141a;
+  --dsh-composer: rgba(24, 28, 35, 0.96);
+  --dsh-composer-border: rgba(255, 255, 255, 0.11);
+  --dsh-accent: #5595ff;
+  --primary: 217 100% 67%;
+}
+
+[data-home-shell] [data-app-content-row] {
+  background: var(--dsh-canvas);
+}
+
+[data-home-shell] [data-platform-card-frame="sidebar"] {
+  border-right: 1px solid hsl(var(--border) / 0.7);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+[data-home-shell] [data-platform-sidebar] {
+  background: var(--dsh-sidebar);
+  backdrop-filter: none;
+}
+
+[data-home-shell] [data-platform-main-content] {
+  position: relative;
+  isolation: isolate;
+  background: var(--dsh-canvas);
+}
+
+[data-home-shell] [data-platform-main-content]::before {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  content: "";
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 54%, color-mix(in srgb, var(--dsh-accent) 7%, transparent) 0, transparent 34%),
+    linear-gradient(180deg, color-mix(in srgb, var(--dsh-canvas) 96%, white) 0%, var(--dsh-canvas) 44%);
+}
+
+[data-dsh-sidebar] {
+  min-height: 0;
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+}
+
+[data-dsh-sidebar] [data-dsh-new-task] {
+  border-color: color-mix(in srgb, var(--dsh-accent) 24%, transparent);
+  color: color-mix(in srgb, var(--dsh-accent) 82%, white);
+  background: color-mix(in srgb, var(--dsh-accent) 12%, transparent);
+}
+
+[data-dsh-sidebar] [data-dsh-new-task]:hover {
+  background: color-mix(in srgb, var(--dsh-accent) 18%, transparent);
+}
+
+[data-dsh-home-welcome] {
+  animation: dsh-home-arrive 340ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+[data-home-shell] [data-chat-composer],
+[data-empty-session-home] [data-chat-composer] {
+  padding: 0;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+[data-home-shell] [data-chat-composer] > div,
+[data-empty-session-home] [data-chat-composer] > div {
+  max-width: none;
+}
+
+[data-home-shell] [data-chat-composer] [data-slot="input-group"],
+[data-empty-session-home] [data-chat-composer] [data-slot="input-group"] {
+  min-height: 164px;
+  overflow: hidden;
+  border: 1px solid var(--dsh-composer-border);
+  border-radius: 24px;
+  background: var(--dsh-composer);
+  box-shadow: 0 18px 54px rgba(3, 8, 18, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.dark [data-home-shell] [data-chat-composer] [data-slot="input-group"],
+.dark [data-empty-session-home] [data-chat-composer] [data-slot="input-group"] {
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+[data-home-shell] [data-chat-composer] [data-slot="input-group"]:focus-within,
+[data-empty-session-home] [data-chat-composer] [data-slot="input-group"]:focus-within {
+  border-color: color-mix(in srgb, var(--dsh-accent) 58%, transparent);
+  box-shadow: 0 22px 64px color-mix(in srgb, var(--dsh-accent) 15%, transparent);
+  transform: translateY(-1px);
+}
+
+[data-home-shell] [data-chat-composer] textarea,
+[data-empty-session-home] [data-chat-composer] textarea {
+  min-height: 94px;
+  padding: 1.15rem 1.15rem 0.4rem;
+  font-size: 1rem;
+  line-height: 1.55;
+}
+
+[data-home-shell] [data-chat-composer] [data-slot="input-group-addon"][data-align="block-end"],
+[data-empty-session-home] [data-chat-composer] [data-slot="input-group-addon"][data-align="block-end"] {
+  padding: 0.45rem 0.65rem 0.65rem;
+}
+
+[data-home-shell] [data-chat-composer] button[type="submit"],
+[data-empty-session-home] [data-chat-composer] button[type="submit"] {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 999px;
+  color: white;
+  background: var(--dsh-accent);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--dsh-accent) 28%, transparent);
+}
+
+@keyframes dsh-home-arrive {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-dsh-home-welcome] { animation: none; }
+  [data-home-shell] [data-chat-composer] [data-slot="input-group"],
+  [data-empty-session-home] [data-chat-composer] [data-slot="input-group"] { transition: none; }
+}
+
+@media (max-width: 767px) {
+  [data-home-shell] [data-platform-main-content]::before { opacity: 0.55; }
+  [data-home-shell] [data-chat-composer] [data-slot="input-group"],
+  [data-empty-session-home] [data-chat-composer] [data-slot="input-group"] {
+    min-height: 148px;
+    border-radius: 20px;
+  }
+}

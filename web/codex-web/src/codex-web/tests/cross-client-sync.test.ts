@@ -1,0 +1,151 @@
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+
+import type { Message } from "@/types";
+import {
+  CROSS_CLIENT_THREAD_ROLLBACK_METHOD,
+  CROSS_CLIENT_USER_MESSAGE_METHOD,
+  initialCrossClientUserMessageState,
+  mergeCrossClientUserMessages,
+  readCrossClientUserMessage,
+  readCrossClientThreadRollback,
+  reduceCrossClientUserMessage,
+  reduceCrossClientUserMessageEvent,
+} from "../cross-client-sync";
+
+describe("readCrossClientThreadRollback", () => {
+  it("只接受正整数轮数和完整 thread/event id", () => {
+    expect(readCrossClientThreadRollback({
+      method: CROSS_CLIENT_THREAD_ROLLBACK_METHOD,
+      params: { eventId: "rollback-1", threadId: "thread-1", numTurns: 1 },
+    })).toEqual({ eventId: "rollback-1", threadId: "thread-1", numTurns: 1 });
+    expect(readCrossClientThreadRollback({
+      method: CROSS_CLIENT_THREAD_ROLLBACK_METHOD,
+      params: { eventId: "rollback-2", threadId: "thread-1", numTurns: 0 },
+    })).toBeNull();
+  });
+});
+
+function message(id: string, threadId = "thread-1"): Message {
+  return {
+    id,
+    session_id: threadId,
+    role: "user",
+    content: `消息 ${id}`,
+    created_at: `2026-07-19T00:00:${id.padStart(2, "0")}Z`,
+    token_usage: null,
+  };
+}
+
+function notification(id: string, threadId = "thread-1", isNewThread = false) {
+  return {
+    method: CROSS_CLIENT_USER_MESSAGE_METHOD,
+    params: {
+      threadId,
+      turnId: `turn-${id}`,
+      isNewThread,
+      message: message(id, threadId),
+    },
+  };
+}
+
+describe("readCrossClientUserMessage", () => {
+  it("读取合法事件并拒绝错误 method 或不匹配的 session", () => {
+    expect(readCrossClientUserMessage(notification("1")))?.toMatchObject({
+      threadId: "thread-1",
+      turnId: "turn-1",
+      isNewThread: false,
+    });
+    expect(readCrossClientUserMessage({ method: "turn/started", params: {} })).toBeNull();
+    expect(readCrossClientUserMessage({
+      ...notification("2"),
+      params: { ...notification("2").params, message: message("2", "thread-2") },
+    })).toBeNull();
+  });
+});
+
+describe("reduceCrossClientUserMessage", () => {
+  it("按 thread 隔离、按消息 id 去重并记录最新事件", () => {
+    const first = reduceCrossClientUserMessage(initialCrossClientUserMessageState, notification("1", "thread-1", true));
+    const duplicate = reduceCrossClientUserMessage(first, notification("1", "thread-1", true));
+    const secondThread = reduceCrossClientUserMessage(duplicate, notification("2", "thread-2"));
+
+    expect(secondThread.byThreadId["thread-1"]).toHaveLength(1);
+    expect(secondThread.byThreadId["thread-2"]?.[0].message.id).toBe("2");
+    expect(secondThread.latest?.threadId).toBe("thread-2");
+  });
+
+  it("每个 thread 只保留最近 50 条", () => {
+    let state = initialCrossClientUserMessageState;
+    for (let index = 0; index < 55; index += 1) {
+      state = reduceCrossClientUserMessage(state, notification(String(index)));
+    }
+
+    expect(state.byThreadId["thread-1"]).toHaveLength(50);
+    expect(state.byThreadId["thread-1"]?.[0].message.id).toBe("5");
+    expect(state.byThreadId["thread-1"]?.[49].message.id).toBe("54");
+  });
+
+  it("非法事件不改变状态对象", () => {
+    expect(reduceCrossClientUserMessage(initialCrossClientUserMessageState, {
+      method: CROSS_CLIENT_USER_MESSAGE_METHOD,
+      params: { threadId: "thread-1" },
+    })).toBe(initialCrossClientUserMessageState);
+  });
+});
+
+describe("发送端本地同步", () => {
+  it("发送端无需等待 bridge 回送即可保存已接受的用户消息", () => {
+    const event = readCrossClientUserMessage(notification("1", "thread-1", true))!;
+    const state = reduceCrossClientUserMessageEvent(initialCrossClientUserMessageState, event);
+
+    expect(state.byThreadId["thread-1"]?.[0]).toEqual(event);
+    expect(state.latest).toEqual(event);
+
+    const provider = readFileSync(new URL("../AppServerProvider.tsx", import.meta.url), "utf8");
+    const publish = provider.slice(
+      provider.indexOf("const publishCrossClientUserMessage"),
+      provider.indexOf("const rollbackThread"),
+    );
+    expect(publish).toContain("reduceCrossClientUserMessageEvent");
+    expect(publish.indexOf("reduceCrossClientUserMessageEvent")).toBeLessThan(publish.indexOf("client.notify"));
+  });
+});
+
+describe("mergeCrossClientUserMessages", () => {
+  it("保留现有顺序，只追加尚未显示的用户消息", () => {
+    const existing = [message("1")];
+    const events = [
+      readCrossClientUserMessage(notification("1")),
+      readCrossClientUserMessage(notification("2")),
+    ].filter((event): event is NonNullable<typeof event> => event !== null);
+
+    expect(mergeCrossClientUserMessages(existing, events).map((entry) => entry.id)).toEqual(["1", "2"]);
+  });
+
+  it("历史已包含同一 Turn 时不追加临时消息，但保留不同 Turn 的相同内容", () => {
+    const existing = [{ ...message("real-user"), turn_id: "turn-1", content: "重复内容" }];
+    const sameTurn = readCrossClientUserMessage({
+      ...notification("1"),
+      params: {
+        ...notification("1").params,
+        message: { ...message("temp-user-turn-1"), content: "重复内容" },
+      },
+    });
+    const nextTurn = readCrossClientUserMessage({
+      ...notification("2"),
+      params: {
+        ...notification("2").params,
+        message: { ...message("temp-user-turn-2"), content: "重复内容" },
+      },
+    });
+    const events = [sameTurn, nextTurn].filter(
+      (event): event is NonNullable<typeof event> => event !== null,
+    );
+
+    expect(mergeCrossClientUserMessages(existing, events).map((entry) => entry.id)).toEqual([
+      "real-user",
+      "temp-user-turn-2",
+    ]);
+  });
+});

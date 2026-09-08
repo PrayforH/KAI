@@ -1,0 +1,14 @@
+name: kai-webui-protocol
+
+services:
+  web:
+    image: kai/webui:0.6.5-http-id.1
+    container_name: kai-webui-0.6.5-http-id.1
+    restart: unless-stopped
+    ports:
+      - "3501:80"
+    labels:
+      com.kai.product: "webui"
+      com.kai.version: "0.6.5-http-id.1"
+      com.kai.ui.baseline: "deepseek-harness"
+      com.kai.web.protocol: "kai-web-session-v1"
