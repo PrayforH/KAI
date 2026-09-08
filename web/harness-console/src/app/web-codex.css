@@ -2276,7 +2276,14 @@ body.codex-theme-v1:has(.console-shell) .task-sidebar-brand .task-sidebar-search
 /* Search and collapse are one trailing control pair: keep them adjacent
    instead of spreading across the row gap. */
 body.codex-theme-v1:has(.console-shell) .task-sidebar-brand {
-  gap: 2px;
+  gap: 0;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-sidebar-brand .task-sidebar-search-control .command-center-trigger {
+  width: 26px;
+  min-height: 26px;
+  height: 26px;
+  margin-right: 0;
 }
 
 body.codex-theme-v1:has(.console-shell) .task-sidebar-brand .task-sidebar-search-control .command-center-trigger {
