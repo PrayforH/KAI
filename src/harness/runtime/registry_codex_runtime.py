@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import cast
 from urllib.parse import urlsplit
 
-from harness.memory_bank.workload import RemoteMemoryMcpProvider
 from harness.core.errors import ConflictError
 from harness.core.manifest import AgentManifestSnapshot
 from harness.core.models import AgentRuntimeType
@@ -18,6 +17,7 @@ from harness.deployments.boundaries import (
     enforce_runtime_environment,
     enforce_runtime_model_route,
 )
+from harness.memory_bank.workload import RemoteMemoryMcpProvider
 from harness.runtime.base import AgentRuntime, RuntimeContext, RuntimeEvent
 from harness.runtime.codex_runtime import (
     CodexAppServerRuntime,

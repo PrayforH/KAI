@@ -23,6 +23,12 @@ def test_agent_catalog_projection_backfills_before_tightening(
     def drop_column(_table: str, column: str) -> None:
         dropped.append(column)
 
+    class _Inspector:
+        def get_columns(self, _table: str) -> list[dict[str, str]]:
+            return [{"name": "id"}, {"name": "tenant_id"}, {"name": "payload"}]
+
+    monkeypatch.setattr(migration.sa, "inspect", lambda _bind: _Inspector())
+    monkeypatch.setattr(migration.op, "get_bind", lambda: object())
     monkeypatch.setattr(migration.op, "add_column", add_column)
     monkeypatch.setattr(migration.op, "alter_column", alter_column)
     monkeypatch.setattr(migration.op, "drop_column", drop_column)
