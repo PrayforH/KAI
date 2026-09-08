@@ -33,6 +33,7 @@ class EngineDocumentStatus:
     file_size: int = 0
     enabled: bool = True
     knowledge_base_id: str = ""
+    created_at: str = ""
 
 
 @dataclass(frozen=True)

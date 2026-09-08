@@ -938,6 +938,7 @@ class KnowledgeService:
                 fileType=item.file_type,
                 fileSize=item.file_size,
                 enabled=item.enabled,
+                createdAt=item.created_at,
             )
             for item in documents
         ]
@@ -1011,6 +1012,7 @@ class KnowledgeService:
             fileType=item.file_type,
             fileSize=item.file_size,
             enabled=item.enabled,
+            createdAt=item.created_at,
         )
 
     async def delete_source_document(

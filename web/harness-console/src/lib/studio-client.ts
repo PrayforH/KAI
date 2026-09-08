@@ -404,6 +404,7 @@ export type StudioKnowledgeDocumentStatus = {
   fileType: string;
   fileSize: number;
   enabled: boolean;
+  createdAt: string;
 };
 
 export type StudioKnowledgeWikiPage = {

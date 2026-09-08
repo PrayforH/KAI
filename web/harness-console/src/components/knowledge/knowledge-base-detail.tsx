@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   studioClient,
   type StudioKnowledgeBase,
@@ -14,6 +14,17 @@ import { KnowledgeWikiPanel } from "./knowledge-wiki-panel";
 import styles from "./knowledge-base-detail.module.css";
 
 type Tab = "docs" | "wiki" | "graph" | "members";
+
+/** WeKnora returns RFC3339 timestamps; fall back to a dash when absent. */
+function formatDocumentDate(value: string): string {
+  if (!value) return "—";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "—";
+  const pad = (input: number) => String(input).padStart(2, "0");
+  return `${String(parsed.getFullYear()).slice(2)}-${pad(parsed.getMonth() + 1)}-${pad(
+    parsed.getDate(),
+  )} ${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
+}
 
 const PARSE_LABELS: Record<string, string> = {
   pending: "排队中",
@@ -39,6 +50,12 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
   const [creating, setCreating] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [graphFocus, setGraphFocus] = useState<string | null>(null);
+  const [docQuery, setDocQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "completed" | "processing" | "failed">(
+    "all",
+  );
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -182,6 +199,69 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
     [loadDocuments, reference],
   );
 
+  const visibleDocuments = useMemo(() => {
+    const query = docQuery.trim().toLowerCase();
+    return documents.filter((doc) => {
+      if (query && !doc.title.toLowerCase().includes(query)) return false;
+      if (statusFilter === "all") return true;
+      if (statusFilter === "completed") return doc.parseStatus === "completed";
+      if (statusFilter === "processing") {
+        return doc.parseStatus === "processing" || doc.parseStatus === "pending";
+      }
+      return doc.parseStatus === "failed";
+    });
+  }, [documents, docQuery, statusFilter]);
+
+  const toggleSelect = useCallback((documentId: string) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(documentId)) next.delete(documentId);
+      else next.add(documentId);
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
+
+  const bulkReparse = useCallback(async () => {
+    if (selectedIds.size === 0) return;
+    setBulkBusy(true);
+    setError("");
+    try {
+      for (const documentId of selectedIds) {
+        await studioClient.reparseKnowledgeDocument(reference, documentId);
+      }
+      setNotice(`已触发 ${selectedIds.size} 个文档重新解析`);
+      clearSelection();
+      await loadDocuments();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "批量重建失败");
+    } finally {
+      setBulkBusy(false);
+    }
+  }, [clearSelection, loadDocuments, reference, selectedIds]);
+
+  const bulkDelete = useCallback(async () => {
+    if (selectedIds.size === 0) return;
+    if (!window.confirm(`删除选中的 ${selectedIds.size} 个文档？WeKnora 中的切片将一并删除。`)) {
+      return;
+    }
+    setBulkBusy(true);
+    setError("");
+    try {
+      for (const documentId of selectedIds) {
+        await studioClient.deleteKnowledgeDocument(reference, documentId);
+      }
+      setNotice(`已删除 ${selectedIds.size} 个文档`);
+      clearSelection();
+      await loadDocuments();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "批量删除失败");
+    } finally {
+      setBulkBusy(false);
+    }
+  }, [clearSelection, loadDocuments, reference, selectedIds]);
+
   if (loading) {
     return (
       <section className={styles.content}>
@@ -285,41 +365,127 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
 
         {tab === "docs" ? (
           <section>
+            <p className={styles.uploadHint}>
+              支持点击或拖拽上传，多格式文档自动解析并智能分块，快速构建可检索的知识库
+            </p>
+
+            <div className={styles.toolbar}>
+              <input
+                className={styles.toolbarSearch}
+                value={docQuery}
+                onChange={(event) => setDocQuery(event.target.value)}
+                placeholder="搜索文档名称…"
+              />
+              <select
+                className={styles.toolbarSelect}
+                value={statusFilter}
+                onChange={(event) =>
+                  setStatusFilter(event.target.value as typeof statusFilter)
+                }
+              >
+                <option value="all">全部状态</option>
+                <option value="completed">已完成</option>
+                <option value="processing">解析中</option>
+                <option value="failed">失败</option>
+              </select>
+              <span className={styles.toolbarCount}>
+                共 {visibleDocuments.length} / {documents.length} 个文档
+              </span>
+            </div>
+
             {documents.length === 0 ? (
               <p className={styles.empty}>
                 还没有文档。上传文件或手动创建文档，WeKnora 将自动解析并切片。
               </p>
+            ) : visibleDocuments.length === 0 ? (
+              <p className={styles.empty}>没有符合筛选条件的文档。</p>
             ) : (
-              <div className={styles.docList}>
-                {documents.map((doc) => (
-                  <button
-                    key={doc.documentId}
-                    type="button"
-                    className={styles.docRow}
-                    onClick={() => void openDocument(doc)}
-                  >
-                    <div style={{ minWidth: 0 }}>
-                      <p className={styles.docTitle}>{doc.title}</p>
-                    </div>
-                    <div className={styles.docMeta}>
-                      {doc.fileType ? <span>{doc.fileType}</span> : null}
-                      <span
-                        className={`${styles.statusChip} ${
-                          doc.parseStatus === "completed"
-                            ? styles.statusCompleted
-                            : doc.parseStatus === "processing" || doc.parseStatus === "pending"
-                              ? styles.statusProcessing
-                              : styles.statusFailed
-                        }`}
-                      >
-                        {PARSE_LABELS[doc.parseStatus] ?? doc.parseStatus}
-                      </span>
-                      <span>{doc.summaryStatus === "completed" ? "含摘要" : ""}</span>
-                    </div>
-                  </button>
-                ))}
+              <div className={styles.docGrid}>
+                {visibleDocuments.map((doc) => {
+                  const isSelected = selectedIds.has(doc.documentId);
+                  return (
+                    <article
+                      key={doc.documentId}
+                      className={`${styles.docCard} ${isSelected ? styles.docCardSelected : ""}`}
+                    >
+                      <header className={styles.docCardHead}>
+                        <input
+                          type="checkbox"
+                          className={styles.docCheckbox}
+                          checked={isSelected}
+                          onChange={() => toggleSelect(doc.documentId)}
+                          aria-label={`选择 ${doc.title}`}
+                        />
+                        <h3 className={styles.docCardTitle} title={doc.title}>
+                          {doc.title}
+                        </h3>
+                        <button
+                          type="button"
+                          className={styles.docCardOpen}
+                          onClick={() => void openDocument(doc)}
+                          title="查看切片"
+                        >
+                          ⋯
+                        </button>
+                      </header>
+                      <p className={styles.docCardDesc}>
+                        {doc.summaryStatus === "completed"
+                          ? "已生成摘要，可查看切片与引用"
+                          : "点击查看解析切片"}
+                      </p>
+                      <footer className={styles.docCardFoot}>
+                        <span className={styles.docCardDate}>
+                          {formatDocumentDate(doc.createdAt)}
+                        </span>
+                        <span className={styles.docCardTags}>
+                          <span
+                            className={`${styles.statusChip} ${
+                              doc.parseStatus === "completed"
+                                ? styles.statusCompleted
+                                : doc.parseStatus === "processing" ||
+                                    doc.parseStatus === "pending"
+                                  ? styles.statusProcessing
+                                  : styles.statusFailed
+                            }`}
+                          >
+                            {PARSE_LABELS[doc.parseStatus] ?? doc.parseStatus}
+                          </span>
+                          <span className={styles.fileBadge}>
+                            {(doc.fileType || "manual").toUpperCase()}
+                          </span>
+                        </span>
+                      </footer>
+                    </article>
+                  );
+                })}
               </div>
             )}
+
+            {selectedIds.size > 0 ? (
+              <div className={styles.bulkBar}>
+                <span className={styles.bulkCount}>已选 {selectedIds.size} 项</span>
+                <button type="button" className={styles.bulkLink} onClick={clearSelection}>
+                  取消选择
+                </button>
+                <span className={styles.bulkSpacer} />
+                <button
+                  type="button"
+                  className={styles.ghost}
+                  disabled={bulkBusy}
+                  onClick={() => void bulkReparse()}
+                >
+                  重建知识
+                </button>
+                <button
+                  type="button"
+                  className={styles.bulkDanger}
+                  disabled={bulkBusy}
+                  onClick={() => void bulkDelete()}
+                >
+                  批量删除
+                </button>
+              </div>
+            ) : null}
           </section>
         ) : tab === "wiki" ? (
           <KnowledgeWikiPanel

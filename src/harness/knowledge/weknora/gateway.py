@@ -289,6 +289,7 @@ def _document_status(row: dict[str, Any]) -> EngineDocumentStatus:
         file_size=int(row.get("file_size") or 0),
         enabled=_text(row.get("enable_status")) != "disabled",
         knowledge_base_id=_text(row.get("knowledge_base_id")),
+        created_at=_text(row.get("created_at")) or _text(row.get("updated_at")),
     )
 
 
