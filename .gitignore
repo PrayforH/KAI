@@ -15,3 +15,5 @@ node_modules/
 *.tsbuildinfo
 work/
 dist/
+.zcode/
+/lark-search-auth*.png

@@ -3,7 +3,7 @@
 All notable product changes are recorded here. Versions follow Semantic Versioning; signed release
 manifests remain the authority for exact source commits, image digests, SBOMs and Agent bundle hashes.
 
-## [0.3.0] - 2026-08-31
+## [0.3.0] - 2026-09-08
 
 ### Added
 
@@ -19,6 +19,28 @@ manifests remain the authority for exact source commits, image digests, SBOMs an
   in the task composer.
 - Personal deliverables index, protected Agent deletion and refined conversation feedback in
   the web console.
+- Monochrome "KAI WORKBENCH" task workspace: black/white/gray Codex-style theme, left-aligned
+  collapsible sidebar with project groups, a right-hand context rail (task/file/agent/model/run
+  info) toggled from the header, compact task rows with unread and active dots, and a ghost
+  composer with up-arrow send.
+- Case-level Eval result analysis in Evaluate & Operate; question banks import as durable
+  dataset versions.
+- Long-term memory v2: hybrid keyword + semantic recall backed by pgvector inside the existing
+  PostgreSQL instance, `search_memory`/`read_memory`/`propose_memory` tools on both Claude and
+  Codex runtimes, and post-run extraction of preferences, project facts, entities and decisions
+  into confirmable candidates with versioned replace semantics.
+- Run steering for in-flight user guidance, and built-in public-web `WebSearch`/`WebFetch`
+  capabilities (Claude SDK) selectable per Agent without an MCP connection.
+- Unified Builder workbench entry: create and edit share one build workspace with an assets
+  rail, builder conversation with block-level materials, a platform skills catalog with
+  in-product skill authoring, and streaming try-run.
+- NexAU Agent package import (ZIP/RAR4/RAR5 via sandboxed in-memory libarchive extraction) with
+  root-Agent detection and inline `system_prompt` support.
+- Cross-device task read-state sync through the server (`PUT /v1/agui/threads/{id}/read`),
+  replacing localStorage as the source of truth; task groups collapse beyond five rows with
+  expand/collapse controls.
+- Image inputs in the build workbench: vision-capable model selection when the registered model
+  lacks vision, and shared attachment thumbnails with original-image preview before and after send.
 
 ### Changed
 
@@ -29,11 +51,17 @@ manifests remain the authority for exact source commits, image digests, SBOMs an
   separate from the action-plane tool list.
 - The default analyst/operator scaffolds reflect the expanded builtin tool set and
   production-standard policy defaults.
+- The system default lead-agent lists its tasks directly under Tasks; business agents keep
+  grouped display, and the account menu is trimmed to settings and logout.
 
 ### Fixed
 
 - Codex runtime isolation: sandbox enabled inside docker workers, docker workspace default for
   Studio agents, clearer thread startup failures and long-running Codex loop support.
+- Anthropic-compatible direct endpoints now receive the required `/v1` prefix exactly once;
+  `glm-5-3-flash` is registered as a vision model and GLM-5.2 is removed from seeded catalogs.
+- Build workbench layout: wider builder/asset panels, composer columns keep attachments inside
+  their own pane, and processing progress renders above the answer and collapses after success.
 
 ## [0.2.0] - 2026-08-09
 
