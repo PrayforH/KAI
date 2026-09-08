@@ -10,11 +10,13 @@ import {
   reduceRunViewModel,
   type RunPhase,
   type RunTaskNode,
+  type RunCitation,
   type RunToolNode,
   type RunViewModel,
   type WorkStatus,
 } from "../lib/run-view-model";
 import { toolActivitySentence } from "../lib/tool-presentation";
+import { KnowledgeCitations } from "./knowledge/knowledge-citations";
 import { MarkdownText } from "./markdown-text";
 import { useRunDetails } from "./run-details-context";
 
@@ -102,6 +104,7 @@ interface ActionNode {
   detail?: string;
   entries?: ActionEntry[];
   resultPreview?: string;
+  citations?: RunCitation[];
   icon: ActionIconKind;
   status: WorkStatus;
   sequence: number;
@@ -112,6 +115,7 @@ interface ActionEntry {
   label: string;
   result: string;
   preview?: string;
+  citations?: RunCitation[];
   status: WorkStatus;
 }
 
@@ -420,12 +424,14 @@ function toolAction(tools: readonly RunToolNode[]): ActionNode {
     label: toolGroupLabel(tools),
     detail: tools.length === 1 ? tools[0].resultSummary : undefined,
     resultPreview: tools.length === 1 ? tools[0].resultPreview : undefined,
+    citations: tools.length === 1 ? tools[0].citations : undefined,
     entries: tools.length > 1
       ? tools.map((tool) => ({
           id: tool.id,
           label: completeToolSentence(tool),
           result: toolResultLabel(tool),
           preview: tool.resultPreview,
+          citations: tool.citations,
           status: tool.status,
         }))
       : undefined,
@@ -611,6 +617,9 @@ function ActionRow({ action }: { action: ActionNode }) {
           {action.resultPreview}
         </ResultPreview>
       )}
+      {action.citations && action.citations.length > 0 ? (
+        <KnowledgeCitations citations={action.citations} />
+      ) : null}
       {action.entries && (
         <div className="execution-action-details">
           {action.entries.map((entry) => (
@@ -627,6 +636,9 @@ function ActionRow({ action }: { action: ActionNode }) {
                   {entry.preview}
                 </ResultPreview>
               )}
+              {entry.citations && entry.citations.length > 0 ? (
+                <KnowledgeCitations citations={entry.citations} />
+              ) : null}
             </div>
           ))}
         </div>

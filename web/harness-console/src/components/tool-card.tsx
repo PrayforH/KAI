@@ -1,4 +1,5 @@
 import { StructuredValue } from "./structured-value";
+import { KnowledgeCitations } from "./knowledge/knowledge-citations";
 import { useRunViewModel } from "../lib/activity-store";
 import type { RunToolNode, RunViewModel } from "../lib/run-view-model";
 import {
@@ -92,6 +93,9 @@ export function ToolCard({
   const batchIndex = toolCallId
     ? batch.findIndex((tool) => tool.id === toolCallId)
     : -1;
+  const citations = toolCallId
+    ? view?.tools.find((tool) => tool.id === toolCallId)?.citations
+    : undefined;
 
   if (!isError && status === "complete" && batch.length > 1 && batchIndex >= 0) {
     return batchIndex === 0 ? <CompletedToolBatch tools={batch} /> : null;
@@ -111,6 +115,9 @@ export function ToolCard({
       <div className="tool-card-body">
         <StructuredValue value={args} label="输入" />
         {result !== undefined && <StructuredValue value={result} label="输出" />}
+        {citations && citations.length > 0 ? (
+          <KnowledgeCitations citations={citations} />
+        ) : null}
       </div>
     </details>
   );

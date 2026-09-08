@@ -26,6 +26,20 @@ export interface RunTaskNode {
   errorCode?: string;
 }
 
+export interface RunCitation {
+  index: number;
+  chunkId: string;
+  documentId?: string;
+  sourceReference: string;
+  knowledgeBaseReference?: string;
+  sourceDisplayName?: string;
+  snapshotId?: string;
+  title?: string;
+  uri?: string;
+  score?: number;
+  content: string;
+}
+
 export interface RunToolNode {
   id: string;
   name: string;
@@ -34,6 +48,7 @@ export interface RunToolNode {
   arguments?: Record<string, unknown>;
   resultSummary?: string;
   resultPreview?: string;
+  citations?: RunCitation[];
 }
 
 export interface RunViewModel {
@@ -209,6 +224,36 @@ function taskNodes(items: readonly ActivityItem[]): RunTaskNode[] {
   return [...tasks.values()].sort((left, right) => left.sequence - right.sequence);
 }
 
+function runCitations(value: unknown): RunCitation[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const citations: RunCitation[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const record = entry as Record<string, unknown>;
+    if (typeof record.chunkId !== "string" || typeof record.sourceReference !== "string") {
+      continue;
+    }
+    citations.push({
+      index: typeof record.index === "number" ? record.index : citations.length + 1,
+      chunkId: record.chunkId,
+      documentId: typeof record.documentId === "string" ? record.documentId : undefined,
+      sourceReference: record.sourceReference,
+      knowledgeBaseReference:
+        typeof record.knowledgeBaseReference === "string"
+          ? record.knowledgeBaseReference
+          : undefined,
+      sourceDisplayName:
+        typeof record.sourceDisplayName === "string" ? record.sourceDisplayName : undefined,
+      snapshotId: typeof record.snapshotId === "string" ? record.snapshotId : undefined,
+      title: typeof record.title === "string" ? record.title : undefined,
+      uri: typeof record.uri === "string" ? record.uri : undefined,
+      score: typeof record.score === "number" ? record.score : undefined,
+      content: typeof record.content === "string" ? record.content : "",
+    });
+  }
+  return citations.length > 0 ? citations : undefined;
+}
+
 function toolNodes(items: readonly ActivityItem[]): RunToolNode[] {
   const tools = new Map<string, RunToolNode>();
   for (const item of items) {
@@ -255,6 +300,7 @@ function toolNodes(items: readonly ActivityItem[]): RunToolNode[] {
             typeof item.metadata.result_preview === "string"
               ? item.metadata.result_preview
               : undefined,
+          citations: runCitations(item.metadata.citations),
         });
       }
     }

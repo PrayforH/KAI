@@ -89,6 +89,79 @@ def _tool_result_preview(payload: dict[str, Any]) -> str | None:
     return redact_text(stripped, limit=1_200)
 
 
+_MAX_CITATIONS = 12
+_MAX_CITATION_CONTENT = 4_000
+
+
+def _tool_citations(payload: dict[str, Any]) -> list[dict[str, Any]] | None:
+    """Extract structured citations from a knowledge retrieval tool result.
+
+    The console renders these as clickable chips so a reader can open the exact
+    chunk that grounded an answer, instead of parsing the raw JSON preview. The
+    shape check (``hits[].citation.chunkId``) identifies knowledge retrieval
+    results without depending on which runtime emitted the tool result.
+    """
+    if payload.get("is_error") is True:
+        return None
+    if payload.get("redacted") is True:
+        return None
+    content = payload.get("content")
+    texts: list[str] = []
+    if isinstance(content, str):
+        texts.append(content)
+    elif isinstance(content, list):
+        for block in cast(list[Any], content):
+            if isinstance(block, dict):
+                block_values = cast(dict[str, Any], block)
+                text = block_values.get("text")
+                if isinstance(text, str):
+                    texts.append(text)
+    citations: list[dict[str, Any]] = []
+    for text in texts:
+        try:
+            parsed = json.loads(text)
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(parsed, dict):
+            continue
+        hits = parsed.get("hits")
+        if not isinstance(hits, list):
+            continue
+        for index, hit in enumerate(cast(list[Any], hits), start=1):
+            if not isinstance(hit, dict):
+                continue
+            hit_values = cast(dict[str, Any], hit)
+            citation = hit_values.get("citation")
+            if not isinstance(citation, dict):
+                continue
+            citation_values = cast(dict[str, Any], citation)
+            chunk_id = citation_values.get("chunkId")
+            source_reference = citation_values.get("sourceReference")
+            if not isinstance(chunk_id, str) or not isinstance(source_reference, str):
+                continue
+            citations.append(
+                {
+                    "index": index,
+                    "chunkId": chunk_id,
+                    "documentId": citation_values.get("documentId"),
+                    "sourceReference": source_reference,
+                    "knowledgeBaseReference": citation_values.get("knowledgeBaseReference"),
+                    "sourceDisplayName": citation_values.get("sourceDisplayName"),
+                    "snapshotId": citation_values.get("snapshotId"),
+                    "title": citation_values.get("title"),
+                    "uri": citation_values.get("uri"),
+                    "score": hit_values.get("score"),
+                    "content": redact_text(
+                        str(hit_values.get("content") or ""),
+                        limit=_MAX_CITATION_CONTENT,
+                    ),
+                }
+            )
+            if len(citations) >= _MAX_CITATIONS:
+                return citations
+    return citations or None
+
+
 def _item(
     event: RunEvent,
     *,
@@ -409,6 +482,7 @@ def _activity_item(event: RunEvent) -> dict[str, Any] | None:
                 tool_call_id=payload.get("tool_call_id"),
                 result_summary=_tool_result_summary(payload),
                 result_preview=_tool_result_preview(payload),
+                citations=_tool_citations(payload),
             ),
         )
     if event.type == "approval.requested":
