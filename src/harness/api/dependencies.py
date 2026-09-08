@@ -858,6 +858,7 @@ def build_memory_container(
                                 ).authorize,
                             ),
                         ),
+                        strict=False,
                     )
                 ),
             )

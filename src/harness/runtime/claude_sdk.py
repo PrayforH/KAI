@@ -863,7 +863,10 @@ class ClaudeSdkRuntime:
             if "harness-memory" in mcp_servers:
                 raise ToolResolutionError("duplicate MCP server name: harness-memory")
             mcp_servers["harness-memory"] = create_memory_mcp_server()
-            allowed_tools.extend(f"mcp__harness-memory__{name}" for name in ("propose_memory", "search_memory", "read_memory"))
+            allowed_tools.extend(
+                f"mcp__harness-memory__{name}"
+                for name in ("propose_memory", "search_memory", "read_memory")
+            )
         if knowledge_bindings and not remote_transport:
             if self._knowledge is None:
                 raise ToolResolutionError(

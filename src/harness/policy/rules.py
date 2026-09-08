@@ -158,8 +158,16 @@ def default_policy_rules() -> list[PolicyRule]:
         PolicyRule(name="grep", tool="Grep", decision=PolicyDecision.ALLOW),
         PolicyRule(name="delegate", tool="Task", decision=PolicyDecision.ALLOW),
         PolicyRule(name="delegate-agent", tool="Agent", decision=PolicyDecision.ALLOW),
-        PolicyRule(name="memory-search", tool="mcp__harness-memory__search_memory", decision=PolicyDecision.ALLOW),
-        PolicyRule(name="memory-read", tool="mcp__harness-memory__read_memory", decision=PolicyDecision.ALLOW),
+        PolicyRule(
+            name="memory-search",
+            tool="mcp__harness-memory__search_memory",
+            decision=PolicyDecision.ALLOW,
+        ),
+        PolicyRule(
+            name="memory-read",
+            tool="mcp__harness-memory__read_memory",
+            decision=PolicyDecision.ALLOW,
+        ),
         PolicyRule(
             name="untrusted-memory-deny",
             tool="mcp__harness-memory__propose_memory",

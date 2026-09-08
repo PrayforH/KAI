@@ -2888,90 +2888,209 @@ def test_studio_routes_are_exposed_once_in_openapi() -> None:
 @pytest.mark.asyncio
 async def test_preview_continuation_reuses_owned_session_and_preserves_raw_prompts() -> None:
     application, _ = app_and_container(auto_execute=True)
-    headers = {"Authorization": f"Bearer {SERVICE_TOKEN}", "X-Tenant-ID": "preview-multi", "X-User-ID": "builder-a"}
-    async with AsyncClient(transport=ASGITransport(app=application), base_url="http://test") as client:
-        draft = (await client.post("/v1/studio/drafts", headers=headers, json=draft_request("multi-preview"))).json()
+    headers = {
+        "Authorization": f"Bearer {SERVICE_TOKEN}",
+        "X-Tenant-ID": "preview-multi",
+        "X-User-ID": "builder-a",
+    }
+    async with AsyncClient(
+        transport=ASGITransport(app=application), base_url="http://test"
+    ) as client:
+        draft = (
+            await client.post(
+                "/v1/studio/drafts", headers=headers, json=draft_request("multi-preview")
+            )
+        ).json()
         url = f"/v1/studio/drafts/{draft['draftId']}/try-runs"
-        first = await client.post(url, headers=headers, json={"expectedRevision": 1, "prompt": "记住项目：北斗", "idempotencyKey": "first"})
-        second_body = {"expectedRevision": 1, "prompt": "它叫什么？", "idempotencyKey": "second", "continueFromRunId": first.json()["run"]["run_id"]}
+        first = await client.post(
+            url,
+            headers=headers,
+            json={"expectedRevision": 1, "prompt": "记住项目：北斗", "idempotencyKey": "first"},
+        )
+        second_body = {
+            "expectedRevision": 1,
+            "prompt": "它叫什么？",
+            "idempotencyKey": "second",
+            "continueFromRunId": first.json()["run"]["run_id"],
+        }
         second = await client.post(url, headers=headers, json=second_body)
         assert second.status_code == 202, second.text
         assert second.json()["run"]["session_id"] == first.json()["run"]["session_id"]
-        assert second.json()["run"]["input"]["conversation_prompts"] == ["记住项目：北斗", "它叫什么？"]
+        assert second.json()["run"]["input"]["conversation_prompts"] == [
+            "记住项目：北斗",
+            "它叫什么？",
+        ]
         assert second.json()["run"]["input"]["prompt"] == "它叫什么？"
         replay = await client.post(url, headers=headers, json=second_body)
         assert replay.json()["run"]["run_id"] == second.json()["run"]["run_id"]
-        fresh = await client.post(url, headers=headers, json={"expectedRevision": 1, "prompt": "重新测试", "idempotencyKey": "fresh"})
+        fresh = await client.post(
+            url,
+            headers=headers,
+            json={"expectedRevision": 1, "prompt": "重新测试", "idempotencyKey": "fresh"},
+        )
         assert fresh.json()["run"]["session_id"] != first.json()["run"]["session_id"]
-        view = await client.get(f"{url}/{second.json()['run']['run_id']}?draftRevision=1", headers=headers)
+        view = await client.get(
+            f"{url}/{second.json()['run']['run_id']}?draftRevision=1", headers=headers
+        )
         assert view.json()["activity"]["run_id"] == second.json()["run"]["run_id"]
         assert view.json()["loop"][3]["status"] == "skipped"
-        changed = await client.put(f"/v1/studio/drafts/{draft['draftId']}", headers=headers, json={"expectedRevision": 1, "spec": draft["spec"]})
+        changed = await client.put(
+            f"/v1/studio/drafts/{draft['draftId']}",
+            headers=headers,
+            json={"expectedRevision": 1, "spec": draft["spec"]},
+        )
         assert changed.status_code == 200, changed.text
-        stale = await client.post(url, headers=headers, json={**second_body, "expectedRevision": 2, "idempotencyKey": "stale"})
+        stale = await client.post(
+            url,
+            headers=headers,
+            json={**second_body, "expectedRevision": 2, "idempotencyKey": "stale"},
+        )
         assert stale.status_code == 404, stale.text
 
 
 @pytest.mark.asyncio
 async def test_preview_cannot_continue_running_or_foreign_draft_session() -> None:
     application, _ = app_and_container(auto_execute=False)
-    headers = {"Authorization": f"Bearer {SERVICE_TOKEN}", "X-Tenant-ID": "preview-isolation", "X-User-ID": "builder-a"}
-    async with AsyncClient(transport=ASGITransport(app=application), base_url="http://test") as client:
-        first_draft = (await client.post("/v1/studio/drafts", headers=headers, json=draft_request("first-preview"))).json()
-        second_draft = (await client.post("/v1/studio/drafts", headers=headers, json=draft_request("second-preview"))).json()
+    headers = {
+        "Authorization": f"Bearer {SERVICE_TOKEN}",
+        "X-Tenant-ID": "preview-isolation",
+        "X-User-ID": "builder-a",
+    }
+    async with AsyncClient(
+        transport=ASGITransport(app=application), base_url="http://test"
+    ) as client:
+        first_draft = (
+            await client.post(
+                "/v1/studio/drafts", headers=headers, json=draft_request("first-preview")
+            )
+        ).json()
+        second_draft = (
+            await client.post(
+                "/v1/studio/drafts", headers=headers, json=draft_request("second-preview")
+            )
+        ).json()
         url = f"/v1/studio/drafts/{first_draft['draftId']}/try-runs"
-        first = await client.post(url, headers=headers, json={"expectedRevision": 1, "prompt": "hello", "idempotencyKey": "first"})
-        body = {"expectedRevision": 1, "prompt": "next", "idempotencyKey": "next", "continueFromRunId": first.json()["run"]["run_id"]}
+        first = await client.post(
+            url,
+            headers=headers,
+            json={"expectedRevision": 1, "prompt": "hello", "idempotencyKey": "first"},
+        )
+        body = {
+            "expectedRevision": 1,
+            "prompt": "next",
+            "idempotencyKey": "next",
+            "continueFromRunId": first.json()["run"]["run_id"],
+        }
         active = await client.post(url, headers=headers, json=body)
         assert active.status_code == 409, active.text
-        other_draft = await client.post(f"/v1/studio/drafts/{second_draft['draftId']}/try-runs", headers=headers, json=body)
+        other_draft = await client.post(
+            f"/v1/studio/drafts/{second_draft['draftId']}/try-runs", headers=headers, json=body
+        )
         assert other_draft.status_code == 404, other_draft.text
         foreign = await client.post(url, headers={**headers, "X-User-ID": "builder-b"}, json=body)
         assert foreign.status_code in {403, 404}, foreign.text
-        missing_file = await client.post(url, headers=headers, json={"expectedRevision": 1, "prompt": "read", "idempotencyKey": "file", "inputArtifactIds": ["input_artifact_missing"]})
+        missing_file = await client.post(
+            url,
+            headers=headers,
+            json={
+                "expectedRevision": 1,
+                "prompt": "read",
+                "idempotencyKey": "file",
+                "inputArtifactIds": ["input_artifact_missing"],
+            },
+        )
         assert missing_file.status_code == 404, missing_file.text
 
 
 @pytest.mark.asyncio
 async def test_preview_accepts_owned_attachments_and_rejects_other_users_files() -> None:
     application, _ = app_and_container(auto_execute=False)
-    headers = {"Authorization": f"Bearer {SERVICE_TOKEN}", "X-Tenant-ID": "preview-files", "X-User-ID": "builder-a"}
-    async with AsyncClient(transport=ASGITransport(app=application), base_url="http://test") as client:
-        draft = (await client.post("/v1/studio/drafts", headers=headers, json=draft_request("files-preview"))).json()
-        upload = await client.post("/v1/input-artifacts", headers=headers, files={"file": ("notes.txt", b"original material", "text/plain")})
+    headers = {
+        "Authorization": f"Bearer {SERVICE_TOKEN}",
+        "X-Tenant-ID": "preview-files",
+        "X-User-ID": "builder-a",
+    }
+    async with AsyncClient(
+        transport=ASGITransport(app=application), base_url="http://test"
+    ) as client:
+        draft = (
+            await client.post(
+                "/v1/studio/drafts", headers=headers, json=draft_request("files-preview")
+            )
+        ).json()
+        upload = await client.post(
+            "/v1/input-artifacts",
+            headers=headers,
+            files={"file": ("notes.txt", b"original material", "text/plain")},
+        )
         assert upload.status_code == 201, upload.text
         artifact_id = upload.json()["input_artifact_id"]
         url = f"/v1/studio/drafts/{draft['draftId']}/try-runs"
-        body = {"expectedRevision": 1, "prompt": "Read attached material", "idempotencyKey": "own-file", "inputArtifactIds": [artifact_id]}
+        body = {
+            "expectedRevision": 1,
+            "prompt": "Read attached material",
+            "idempotencyKey": "own-file",
+            "inputArtifactIds": [artifact_id],
+        }
         accepted = await client.post(url, headers=headers, json=body)
         assert accepted.status_code == 202, accepted.text
         assert accepted.json()["run"]["input"]["input_artifact_ids"] == [artifact_id]
-        foreign_upload = await client.post("/v1/input-artifacts", headers={**headers, "X-User-ID": "builder-b"}, files={"file": ("private.txt", b"private", "text/plain")})
-        rejected = await client.post(url, headers=headers, json={**body, "idempotencyKey": "foreign-file", "inputArtifactIds": [foreign_upload.json()["input_artifact_id"]]})
+        foreign_upload = await client.post(
+            "/v1/input-artifacts",
+            headers={**headers, "X-User-ID": "builder-b"},
+            files={"file": ("private.txt", b"private", "text/plain")},
+        )
+        rejected = await client.post(
+            url,
+            headers=headers,
+            json={
+                **body,
+                "idempotencyKey": "foreign-file",
+                "inputArtifactIds": [foreign_upload.json()["input_artifact_id"]],
+            },
+        )
         assert rejected.status_code == 404, rejected.text
 
 
 @pytest.mark.asyncio
 async def test_preview_images_route_to_vision_and_followups_keep_that_route() -> None:
     from unittest.mock import AsyncMock
+
     from harness.studio.api import get_model_configuration_service
 
     application, container = app_and_container(auto_execute=False)
     models = AsyncMock()
     models.resolve_runtime.return_value = object()
     application.dependency_overrides[get_model_configuration_service] = lambda: models
-    headers = {"Authorization": f"Bearer {SERVICE_TOKEN}",
-               "X-Tenant-ID": "preview-image", "X-User-ID": "builder-a"}
-    async with AsyncClient(transport=ASGITransport(app=application), base_url="http://test") as client:
-        draft = (await client.post("/v1/studio/drafts", headers=headers,
-                                   json=draft_request("image-preview"))).json()
-        upload = await client.post("/v1/input-artifacts", headers=headers,
-                                   files={"file": ("red.png", image_bytes(), "image/png")})
+    headers = {
+        "Authorization": f"Bearer {SERVICE_TOKEN}",
+        "X-Tenant-ID": "preview-image",
+        "X-User-ID": "builder-a",
+    }
+    async with AsyncClient(
+        transport=ASGITransport(app=application), base_url="http://test"
+    ) as client:
+        draft = (
+            await client.post(
+                "/v1/studio/drafts", headers=headers, json=draft_request("image-preview")
+            )
+        ).json()
+        upload = await client.post(
+            "/v1/input-artifacts",
+            headers=headers,
+            files={"file": ("red.png", image_bytes(), "image/png")},
+        )
         url = f"/v1/studio/drafts/{draft['draftId']}/try-runs"
-        response = await client.post(url, headers=headers, json={
-            "expectedRevision": 1, "prompt": "describe", "idempotencyKey": "image",
-            "inputArtifactIds": [upload.json()["input_artifact_id"]],
-        })
+        response = await client.post(
+            url,
+            headers=headers,
+            json={
+                "expectedRevision": 1,
+                "prompt": "describe",
+                "idempotencyKey": "image",
+                "inputArtifactIds": [upload.json()["input_artifact_id"]],
+            },
+        )
         assert response.status_code == 202, response.text
         started = await container.runs.get("preview-image", response.json()["run"]["run_id"])
         assert started.input["required_model_capabilities"] == ["vision"]
@@ -2979,17 +3098,32 @@ async def test_preview_images_route_to_vision_and_followups_keep_that_route() ->
         models.resolve_runtime.assert_awaited()
         assert models.resolve_runtime.call_args.kwargs["apply_agent_binding"] is False
         await container.worker.execute("preview-image", started.run_id)
-        followup = await client.post(url, headers=headers, json={
-            "expectedRevision": 1, "prompt": "继续解释", "idempotencyKey": "followup-image",
-            "continueFromRunId": started.run_id,
-        })
+        followup = await client.post(
+            url,
+            headers=headers,
+            json={
+                "expectedRevision": 1,
+                "prompt": "继续解释",
+                "idempotencyKey": "followup-image",
+                "continueFromRunId": started.run_id,
+            },
+        )
         assert followup.status_code == 202, followup.text
-        assert followup.json()["run"]["input"]["model_route_override"] == started.input["model_route_override"]
+        assert (
+            followup.json()["run"]["input"]["model_route_override"]
+            == started.input["model_route_override"]
+        )
         models.resolve_runtime.return_value = None
-        rejected = await client.post(url, headers=headers, json={
-            "expectedRevision": 1, "prompt": "describe", "idempotencyKey": "no-vision-credential",
-            "inputArtifactIds": [upload.json()["input_artifact_id"]],
-        })
+        rejected = await client.post(
+            url,
+            headers=headers,
+            json={
+                "expectedRevision": 1,
+                "prompt": "describe",
+                "idempotencyKey": "no-vision-credential",
+                "inputArtifactIds": [upload.json()["input_artifact_id"]],
+            },
+        )
         assert rejected.status_code == 409, rejected.text
         assert "凭据" in rejected.text
 
@@ -2997,41 +3131,69 @@ async def test_preview_images_route_to_vision_and_followups_keep_that_route() ->
 @pytest.mark.asyncio
 async def test_builder_materials_reads_owned_text_and_rejects_other_owner() -> None:
     application, _ = app_and_container(auto_execute=False)
-    headers = {"Authorization": f"Bearer {SERVICE_TOKEN}",
-               "X-Tenant-ID": "builder-materials", "X-User-ID": "builder-a"}
-    async with AsyncClient(transport=ASGITransport(app=application), base_url="http://test") as client:
-        upload = await client.post("/v1/input-artifacts", headers=headers,
-            files={"file": ("reference.txt", b"Use a three-column table", "text/plain")})
+    headers = {
+        "Authorization": f"Bearer {SERVICE_TOKEN}",
+        "X-Tenant-ID": "builder-materials",
+        "X-User-ID": "builder-a",
+    }
+    async with AsyncClient(
+        transport=ASGITransport(app=application), base_url="http://test"
+    ) as client:
+        upload = await client.post(
+            "/v1/input-artifacts",
+            headers=headers,
+            files={"file": ("reference.txt", b"Use a three-column table", "text/plain")},
+        )
         body = {"inputArtifactIds": [upload.json()["input_artifact_id"]]}
         result = await client.post("/v1/studio/builder-materials", headers=headers, json=body)
         assert result.status_code == 200, result.text
         assert "three-column table" in result.json()["context"]
-        foreign = await client.post("/v1/studio/builder-materials",
-            headers={**headers, "X-User-ID": "builder-b"}, json=body)
+        foreign = await client.post(
+            "/v1/studio/builder-materials", headers={**headers, "X-User-ID": "builder-b"}, json=body
+        )
         assert foreign.status_code == 404, foreign.text
 
 
-
 @pytest.mark.asyncio
-@pytest.mark.parametrize('kind,media_type', [('zip','application/zip'), ('rar','application/vnd.rar')])
+@pytest.mark.parametrize(
+    "kind,media_type", [("zip", "application/zip"), ("rar", "application/vnd.rar")]
+)
 async def test_nexau_archive_import_opens_an_editable_draft(kind: str, media_type: str) -> None:
     from tests.unit.studio.test_nexau_import import archive_bytes
+
     application, _ = app_and_container(auto_execute=False)
-    headers = {"Authorization": f"Bearer {SERVICE_TOKEN}",
-               "X-Tenant-ID": "archive-import", "X-User-ID": "builder-a"}
-    content = archive_bytes({'bundle/code_agent.yaml':
-        b'name: archive-demo\nsystem_prompt_type: string\nsystem_prompt: Answer briefly.\n'}, kind)
-    async with AsyncClient(transport=ASGITransport(app=application), base_url='http://test') as client:
-        imported = await client.post('/v1/studio/drafts/import', content=content,
-            headers={**headers,'Content-Type':media_type})
+    headers = {
+        "Authorization": f"Bearer {SERVICE_TOKEN}",
+        "X-Tenant-ID": "archive-import",
+        "X-User-ID": "builder-a",
+    }
+    content = archive_bytes(
+        {
+            "bundle/code_agent.yaml": (
+                b"name: archive-demo\nsystem_prompt_type: string\nsystem_prompt: Answer briefly.\n"
+            )
+        },
+        kind,
+    )
+    async with AsyncClient(
+        transport=ASGITransport(app=application), base_url="http://test"
+    ) as client:
+        imported = await client.post(
+            "/v1/studio/drafts/import",
+            content=content,
+            headers={**headers, "Content-Type": media_type},
+        )
         assert imported.status_code == 201, imported.text
-        draft = imported.json()['draft']
-        assert draft['spec']['name'] == 'archive-demo'
-        assert draft['spec']['skills'] == []
-        saved = await client.get(f"/v1/studio/drafts/{draft['draftId']}",headers=headers)
+        draft = imported.json()["draft"]
+        assert draft["spec"]["name"] == "archive-demo"
+        assert draft["spec"]["skills"] == []
+        saved = await client.get(f"/v1/studio/drafts/{draft['draftId']}", headers=headers)
         assert saved.status_code == 200
-        assert 'Answer briefly.' in saved.json()['spec']['systemPrompt']
-        invalid = await client.post('/v1/studio/drafts/import',content=b'Rar!\x1a\x07\x00broken',
-            headers={**headers,'Content-Type':'application/vnd.rar'})
+        assert "Answer briefly." in saved.json()["spec"]["systemPrompt"]
+        invalid = await client.post(
+            "/v1/studio/drafts/import",
+            content=b"Rar!\x1a\x07\x00broken",
+            headers={**headers, "Content-Type": "application/vnd.rar"},
+        )
         assert invalid.status_code == 422, invalid.text
-        assert 'RAR' in invalid.text
+        assert "RAR" in invalid.text
