@@ -428,6 +428,28 @@ export type StudioKnowledgeWikiStats = {
   totalLinks: number;
 };
 
+export type KnowledgeMemberRole = "viewer" | "editor";
+
+export type StudioKnowledgeBaseMember = {
+  tenantId: string;
+  memberId: string;
+  knowledgeBaseReference: string;
+  subjectType: "user" | "org_unit";
+  subjectId: string;
+  orgPath: string;
+  role: KnowledgeMemberRole;
+  displayName: string;
+  email: string;
+  grantedBy: string;
+  grantedAt: string;
+};
+
+export type StudioDirectoryUser = {
+  userId: string;
+  email: string;
+  displayName: string;
+};
+
 export type StudioKnowledgeDocumentChunk = {
   tenantId: string;
   sourceReference: string;
@@ -1650,6 +1672,39 @@ export const studioClient = {
   getWikiStats: (baseReference: string) =>
     request<StudioKnowledgeWikiStats>(
       `knowledge/sources/${encodeURIComponent(baseReference)}/wiki/stats`,
+    ),
+  listKnowledgeMembers: (baseReference: string) =>
+    request<StudioKnowledgeBaseMember[]>(
+      `knowledge/bases/${encodeURIComponent(baseReference)}/members`,
+    ),
+  addKnowledgeMembers: (
+    baseReference: string,
+    body: { userIds?: string[]; emails?: string[]; role: KnowledgeMemberRole },
+  ) =>
+    request<{
+      members: StudioKnowledgeBaseMember[];
+      unresolved: string[];
+    }>(`knowledge/bases/${encodeURIComponent(baseReference)}/members`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateKnowledgeMemberRole: (
+    baseReference: string,
+    memberId: string,
+    role: KnowledgeMemberRole,
+  ) =>
+    request<StudioKnowledgeBaseMember>(
+      `knowledge/bases/${encodeURIComponent(baseReference)}/members/${encodeURIComponent(memberId)}`,
+      { method: "PUT", body: JSON.stringify({ role }) },
+    ),
+  removeKnowledgeMember: (baseReference: string, memberId: string) =>
+    request<void>(
+      `knowledge/bases/${encodeURIComponent(baseReference)}/members/${encodeURIComponent(memberId)}`,
+      { method: "DELETE" },
+    ),
+  searchDirectoryUsers: (query: string) =>
+    request<StudioDirectoryUser[]>(
+      `knowledge/directory/users?q=${encodeURIComponent(query)}`,
     ),
   replaceKnowledgeBase: (
     value: StudioKnowledgeBase,

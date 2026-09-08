@@ -9,10 +9,11 @@ import {
   type StudioKnowledgeDocumentStatus,
 } from "../../lib/studio-client";
 import { KnowledgeGraphPanel } from "./knowledge-graph-panel";
+import { KnowledgeMembersPanel } from "./knowledge-members-panel";
 import { KnowledgeWikiPanel } from "./knowledge-wiki-panel";
 import styles from "./knowledge-base-detail.module.css";
 
-type Tab = "docs" | "wiki" | "graph";
+type Tab = "docs" | "wiki" | "graph" | "members";
 
 const PARSE_LABELS: Record<string, string> = {
   pending: "排队中",
@@ -270,6 +271,13 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
           >
             图谱
           </button>
+          <button
+            type="button"
+            className={`${styles.tab} ${tab === "members" ? styles.tabActive : ""}`}
+            onClick={() => setTab("members")}
+          >
+            成员管理
+          </button>
         </div>
 
         {error ? <p className={styles.error}>{error}</p> : null}
@@ -321,8 +329,10 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
               setTab("graph");
             }}
           />
-        ) : (
+        ) : tab === "graph" ? (
           <KnowledgeGraphPanel reference={reference} focusSlug={graphFocus} />
+        ) : (
+          <KnowledgeMembersPanel reference={reference} />
         )}
 
         {showManual ? (
