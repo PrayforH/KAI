@@ -2283,13 +2283,6 @@ body.codex-theme-v1:has(.console-shell) .task-sidebar-brand .task-sidebar-search
   width: 26px;
   min-height: 26px;
   height: 26px;
-  margin-right: 0;
-}
-
-body.codex-theme-v1:has(.console-shell) .task-sidebar-brand .task-sidebar-search-control .command-center-trigger {
-  width: 34px;
-  min-height: 34px;
-  height: 34px;
   padding: 0;
   display: grid;
   place-items: center;
