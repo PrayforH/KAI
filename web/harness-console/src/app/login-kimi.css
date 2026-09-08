@@ -1,0 +1,449 @@
+/* Kimi-inspired login: a wide access panel over a muted workbench preview. */
+
+body.codex-theme-v1 .login-shell,
+html[data-color-mode="light"] body.codex-theme-v1 .login-shell {
+  --login-background: #080909;
+  --login-card: #181818;
+  --login-card-border: #2b2b2b;
+  --login-field: #272727;
+  --login-field-border: #3a3a3a;
+  --login-ink: #f1f1f1;
+  --login-muted: #969696;
+  --login-faint: #666666;
+  position: relative;
+  min-height: 100dvh;
+  padding: 10px;
+  display: grid;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  overflow: hidden;
+  color: var(--login-ink);
+  color-scheme: dark;
+  background: var(--login-background);
+}
+
+body.codex-theme-v1 .login-workspace-preview {
+  position: absolute;
+  inset: 8px;
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid #272727;
+  border-radius: 18px;
+  color: #a7a7a7;
+  background: #0d0d0d;
+  opacity: 0.34;
+  pointer-events: none;
+  user-select: none;
+}
+
+body.codex-theme-v1 .login-workspace-preview > aside {
+  padding: 22px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  border-right: 1px solid #292929;
+  background: #151515;
+}
+
+body.codex-theme-v1 .login-preview-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+body.codex-theme-v1 .login-preview-brand > span {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  color: #161616;
+  background: #d5d5d5;
+  font: 700 13px/1 var(--codex-font-mono);
+}
+
+body.codex-theme-v1 .login-preview-brand > strong {
+  font-size: 11px;
+  letter-spacing: 0.13em;
+}
+
+body.codex-theme-v1 .login-preview-action {
+  min-height: 50px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  border: 1px solid #323232;
+  border-radius: 13px;
+  font-size: 14px;
+}
+
+body.codex-theme-v1 .login-workspace-preview nav {
+  display: grid;
+  gap: 5px;
+}
+
+body.codex-theme-v1 .login-workspace-preview nav > span {
+  min-height: 42px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  border-radius: 9px;
+  font-size: 13px;
+}
+
+body.codex-theme-v1 .login-workspace-preview nav > span:first-child {
+  background: #242424;
+}
+
+body.codex-theme-v1 .login-preview-lines {
+  display: grid;
+  gap: 14px;
+}
+
+body.codex-theme-v1 .login-preview-lines > i,
+body.codex-theme-v1 .login-preview-thread > i {
+  height: 10px;
+  display: block;
+  border-radius: 999px;
+  background: #2e2e2e;
+}
+
+body.codex-theme-v1 .login-preview-lines > i:nth-child(1) { width: 72%; }
+body.codex-theme-v1 .login-preview-lines > i:nth-child(2) { width: 86%; }
+body.codex-theme-v1 .login-preview-lines > i:nth-child(3) { width: 58%; }
+
+body.codex-theme-v1 .login-workspace-preview > section {
+  position: relative;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 56% 38%, rgb(255 255 255 / 3%), transparent 28rem),
+    #0c0c0c;
+}
+
+body.codex-theme-v1 .login-preview-thread {
+  width: min(44rem, 64%);
+  display: grid;
+  gap: 18px;
+}
+
+body.codex-theme-v1 .login-preview-thread > i:nth-child(1) { width: 38%; }
+body.codex-theme-v1 .login-preview-thread > i:nth-child(2) { width: 76%; height: 14px; }
+body.codex-theme-v1 .login-preview-thread > i:nth-child(3) { width: 58%; }
+
+body.codex-theme-v1 .login-preview-composer {
+  position: absolute;
+  left: 50%;
+  bottom: 34px;
+  width: min(46rem, calc(100% - 64px));
+  min-height: 78px;
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid #333333;
+  border-radius: 18px;
+  color: #6c6c6c;
+  background: #1b1b1b;
+  transform: translateX(-50%);
+}
+
+body.codex-theme-v1 .login-preview-composer > span {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #171717;
+  background: #bdbdbd;
+}
+
+body.codex-theme-v1 .login-panel {
+  position: relative;
+  z-index: 1;
+  min-height: 0;
+  padding: clamp(28px, 6vh, 68px) clamp(20px, 4vw, 64px);
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 58%);
+  backdrop-filter: blur(1.5px);
+}
+
+body.codex-theme-v1 .login-card,
+html[data-color-mode="light"] body.codex-theme-v1 .login-card {
+  width: min(100%, 880px);
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--login-card-border);
+  border-radius: 18px;
+  color: var(--login-ink);
+  background: var(--login-card);
+  box-shadow: 0 34px 100px rgb(0 0 0 / 52%);
+}
+
+body.codex-theme-v1 .login-card > .login-card-banner {
+  min-height: 92px;
+  margin: 0;
+  padding: 24px 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+  border-bottom: 1px solid #292929;
+  background:
+    radial-gradient(circle, rgb(255 255 255 / 13%) 1px, transparent 1.4px) right -14px top -42px / 13px 13px,
+    linear-gradient(105deg, #1b1b1b 0 52%, #202020 100%);
+  text-align: left;
+}
+
+body.codex-theme-v1 .login-card-brand {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+body.codex-theme-v1 .login-card-brand .login-brand-mark,
+html[data-color-mode="light"] body.codex-theme-v1 .login-card-brand .login-brand-mark {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  border-color: #3d3d3d;
+  color: #ededed;
+  background: #252525;
+  font-size: 13px;
+}
+
+body.codex-theme-v1 .login-card-brand > strong {
+  overflow: hidden;
+  color: #eeeeee;
+  font-size: 19px;
+  font-weight: 660;
+  letter-spacing: 0.08em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.codex-theme-v1 .login-card-body {
+  min-height: 430px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(350px, 0.92fr);
+  align-items: stretch;
+  gap: 0;
+}
+
+body.codex-theme-v1 .login-access-context {
+  position: relative;
+  min-width: 0;
+  min-height: 378px;
+  margin: 26px 0 26px 26px;
+  overflow: hidden;
+  border: 1px solid #303236;
+  border-radius: 14px;
+  background: #0e1116;
+}
+
+body.codex-theme-v1 .login-access-context::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background:
+    linear-gradient(180deg, rgb(8 10 14 / 4%) 35%, rgb(8 10 14 / 84%) 100%),
+    linear-gradient(90deg, transparent 62%, rgb(8 10 14 / 18%));
+  pointer-events: none;
+}
+
+body.codex-theme-v1 .login-access-context > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: 40% center;
+  filter: saturate(0.72) contrast(1.06) brightness(0.82);
+}
+
+body.codex-theme-v1 .login-image-caption {
+  position: absolute;
+  z-index: 1;
+  right: 24px;
+  bottom: 24px;
+  left: 24px;
+  display: grid;
+  gap: 6px;
+}
+
+body.codex-theme-v1 .login-image-caption > span {
+  color: rgb(231 236 244 / 62%);
+  font: 550 9px/1 var(--codex-font-mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+body.codex-theme-v1 .login-image-caption > strong {
+  color: #f3f5f8;
+  font-size: 18px;
+  font-weight: 570;
+  letter-spacing: -0.02em;
+}
+
+body.codex-theme-v1 .login-auth-panel {
+  min-width: 0;
+  padding: 48px 42px 42px;
+  border-left: 0;
+}
+
+body.codex-theme-v1 .login-auth-panel > header {
+  margin: 0 0 26px;
+  display: block;
+  text-align: left;
+}
+
+body.codex-theme-v1 .login-auth-panel h2 {
+  margin: 0;
+  color: #e6e6e6;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+body.codex-theme-v1 .login-auth-panel header > span:last-child {
+  margin-top: 7px;
+  color: #7e7e7e;
+  font-size: 11.5px;
+}
+
+body.codex-theme-v1 .login-card form {
+  gap: 18px;
+}
+
+body.codex-theme-v1 .login-card label {
+  color: #bcbcbc;
+}
+
+body.codex-theme-v1 .login-card input,
+html[data-color-mode="light"] body.codex-theme-v1 .login-card input {
+  height: 48px;
+  border-color: var(--login-field-border);
+  border-radius: 11px;
+  color: var(--login-ink);
+  background: var(--login-field);
+}
+
+body.codex-theme-v1 .login-submit,
+html[data-color-mode="light"] body.codex-theme-v1 .login-submit {
+  min-height: 48px;
+  border-color: #ececec;
+  color: #161616;
+  background: #eeeeee;
+}
+
+body.codex-theme-v1 .login-submit:hover:not(:disabled),
+html[data-color-mode="light"] body.codex-theme-v1 .login-submit:hover:not(:disabled) {
+  border-color: #ffffff;
+  background: #ffffff;
+}
+
+body.codex-theme-v1 .login-card-footer {
+  min-height: 72px;
+  padding: 18px 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px 28px;
+  border-top: 1px solid #292929;
+  color: #686868;
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+
+body.codex-theme-v1 .login-card-footer nav {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px 20px;
+}
+
+@media (max-width: 780px) {
+  body.codex-theme-v1 .login-shell,
+  html[data-color-mode="light"] body.codex-theme-v1 .login-shell {
+    min-height: 100dvh;
+    padding: 0;
+    overflow: auto;
+  }
+
+  body.codex-theme-v1 .login-workspace-preview {
+    display: none;
+  }
+
+  body.codex-theme-v1 .login-panel {
+    min-height: 100dvh;
+    padding: 18px;
+    background: #090909;
+    backdrop-filter: none;
+  }
+
+  body.codex-theme-v1 .login-card,
+  html[data-color-mode="light"] body.codex-theme-v1 .login-card {
+    width: 100%;
+    max-width: 500px;
+  }
+
+  body.codex-theme-v1 .login-card > .login-card-banner {
+    min-height: 76px;
+    padding: 18px 22px;
+  }
+
+  body.codex-theme-v1 .login-card-brand > strong {
+    font-size: 15px;
+  }
+
+  body.codex-theme-v1 .login-card-body {
+    min-height: 0;
+    padding: 32px 26px 30px;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  body.codex-theme-v1 .login-access-context {
+    display: none;
+  }
+
+  body.codex-theme-v1 .login-auth-panel {
+    padding: 0;
+    border-left: 0;
+  }
+
+  body.codex-theme-v1 .login-card-footer {
+    padding: 18px 22px;
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  body.codex-theme-v1 .login-card-footer nav {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 440px) {
+  body.codex-theme-v1 .login-panel {
+    padding: 0;
+  }
+
+  body.codex-theme-v1 .login-card,
+  html[data-color-mode="light"] body.codex-theme-v1 .login-card {
+    max-width: none;
+    min-height: 100dvh;
+    border: 0;
+    border-radius: 0;
+  }
+
+  body.codex-theme-v1 .login-system-status {
+    font-size: 0;
+  }
+
+  body.codex-theme-v1 .login-card-body {
+    padding-inline: 22px;
+  }
+}

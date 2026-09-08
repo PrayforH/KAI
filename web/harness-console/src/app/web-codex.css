@@ -1,10 +1,11 @@
 /* Codex-aligned web task shell. This file only changes presentation; the
    assistant-ui runtime, AG-UI transport and durable task stores stay intact. */
 
-body.codex-theme-v1:has(.console-shell),
-html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) {
-  --app-sidebar-expanded-width: 264px;
-  --app-sidebar-collapsed-width: 0px;
+/* Monochrome workbench tokens — shared by the task shell and every Studio
+   route. These override codex-theme.css's blue :root for the whole product,
+   giving one neutral black/white/gray language with restrained semantic
+   status colors. */
+body.codex-theme-v1 {
   --codex-surface: #111111;
   --codex-surface-deep: #0d0d0d;
   --codex-surface-sidebar: #262626;
@@ -23,15 +24,79 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) {
   --codex-accent-soft: rgb(255 255 255 / 10%);
   --codex-accent-faint: rgb(255 255 255 / 6%);
   --codex-skill: #9a9a9a;
-  --codex-warning: #b8b8b8;
+  --codex-skill-soft: rgb(255 255 255 / 9%);
+  --codex-warning: #cf9f5e;
+  --codex-warning-soft: rgb(207 159 94 / 13%);
   --codex-success: #58a66b;
   --codex-success-soft: rgb(88 166 107 / 12%);
+  --codex-danger: #e05a50;
+  --codex-danger-soft: rgb(224 90 80 / 13%);
+  --codex-shadow: 0 18px 56px rgb(0 0 0 / 38%);
+  --codex-shadow-soft: 0 8px 28px rgb(0 0 0 / 24%);
   --codex-header-bg: #111111;
   --codex-panel-solid: #242424;
   --codex-field: #1d1d1d;
+  --codex-inset: #171717;
   --codex-thread-bg: #101010;
   --codex-thread-footer: rgb(16 16 16 / 97%);
+  --codex-code-inline: #1d1d1d;
+  --codex-code-surface: #101010;
   --codex-on-accent: #141414;
+  --codex-glint: rgb(255 255 255 / 3%);
+  --codex-control-height: 40px;
+  --codex-control-radius: 8px;
+  --codex-control-transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+}
+
+/* Light mode follows the quiet, cool-white hierarchy used by Doubao: a
+   barely tinted navigation rail, a white reading canvas, soft selection
+   surfaces, and blue reserved for focus and primary actions. */
+html[data-color-mode="light"] body.codex-theme-v1 {
+  --codex-surface: #ffffff;
+  --codex-surface-deep: #f1f1f2;
+  --codex-surface-sidebar: #f7f7f8;
+  --codex-surface-subtle: #f4f4f5;
+  --codex-surface-raised: #ffffff;
+  --codex-surface-hover: #eeeeef;
+  --codex-surface-active: #e9e9eb;
+  --codex-ink: #171719;
+  --codex-ink-soft: #3f3f43;
+  --codex-muted: #66666b;
+  --codex-faint: #909096;
+  --codex-line: #e8e8ea;
+  --codex-line-strong: #d9d9dc;
+  --codex-accent: #2f75e8;
+  --codex-accent-hover: #2468d5;
+  --codex-accent-soft: rgb(47 117 232 / 10%);
+  --codex-accent-faint: rgb(47 117 232 / 6%);
+  --codex-skill: #6a6a6a;
+  --codex-skill-soft: rgb(0 0 0 / 6%);
+  --codex-warning: #996510;
+  --codex-warning-soft: rgb(153 101 16 / 11%);
+  --codex-success: #00a240;
+  --codex-success-soft: rgb(0 162 64 / 11%);
+  --codex-danger: #ba2623;
+  --codex-danger-soft: rgb(186 38 35 / 10%);
+  --codex-shadow: 0 20px 60px rgb(25 25 32 / 13%);
+  --codex-shadow-soft: 0 8px 28px rgb(25 25 32 / 8%);
+  --codex-header-bg: rgb(255 255 255 / 96%);
+  --codex-panel-solid: #ffffff;
+  --codex-field: #ffffff;
+  --codex-inset: #f7f7f8;
+  --codex-thread-bg: #ffffff;
+  --codex-thread-footer: rgb(255 255 255 / 97%);
+  --codex-code-inline: #f2f2f3;
+  --codex-code-surface: #171717;
+  --codex-on-accent: #ffffff;
+  --codex-glint: rgb(255 255 255 / 72%);
+}
+
+/* Task shell page-level chrome stays scoped so Studio keeps its own font and
+   background from --studio-*. */
+body.codex-theme-v1:has(.console-shell),
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) {
+  --app-sidebar-expanded-width: 264px;
+  --app-sidebar-collapsed-width: 0px;
   margin: 0;
   color-scheme: dark;
   background: var(--codex-thread-bg);
@@ -40,6 +105,10 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   font-size: 14px;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) {
+  color-scheme: light;
 }
 
 /* The workbench stays strictly black, white and gray: the brand mark loses
@@ -418,8 +487,8 @@ body.codex-theme-v1:has(.console-shell) .task-workbench-name strong {
 
 /* Collapse toggle matches the header icon buttons (top-right). */
 body.codex-theme-v1:has(.console-shell) .task-sidebar-collapse {
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   display: grid;
   place-items: center;
   padding: 0;
@@ -798,6 +867,30 @@ body.codex-theme-v1:has(.console-shell) .task-status.status-cancelling {
 /* Blue dot marks a completed task the user has not opened yet. */
 body.codex-theme-v1:has(.console-shell) .task-status.status-unread {
   background: #4c9aff;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-status.status-failed,
+body.codex-theme-v1:has(.console-shell) .task-status.status-timed_out,
+body.codex-theme-v1:has(.console-shell) .task-status.status-rejected {
+  background: #e87979;
+  animation: none;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-error-label {
+  flex: 0 0 auto;
+  color: #e87979;
+  font: 11px/1.2 var(--codex-font-ui);
+  white-space: nowrap;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-error-label {
+  color: #b42318;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-status.status-failed,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-status.status-timed_out,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-status.status-rejected {
+  background: #b42318;
 }
 
 @keyframes task-status-pulse {
@@ -1192,6 +1285,62 @@ body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-in
   color: #767676;
 }
 
+body.codex-theme-v1:has(.console-shell) .composer-skill-context {
+  width: fit-content;
+  max-width: calc(100% - 16px);
+  min-height: 28px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  margin: 2px 6px 4px;
+  padding: 0 9px;
+  border: 1px solid #3b4650;
+  border-radius: 7px;
+  color: #a9d2f5;
+  background: #202a32;
+  font-size: 11px;
+}
+
+body.codex-theme-v1:has(.console-shell) .composer-skill-context > span {
+  font-size: 17px;
+  line-height: 1;
+}
+
+body.codex-theme-v1:has(.console-shell) .composer-skill-context > strong {
+  color: inherit;
+  font-weight: 650;
+}
+
+body.codex-theme-v1:has(.console-shell) .composer-skill-context > small {
+  overflow: hidden;
+  color: #8f9ba5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.codex-theme-v1:has(.console-shell) .composer-skill-context > button {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  margin-left: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  color: #8f9ba5;
+  background: transparent;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+body.codex-theme-v1:has(.console-shell) .composer-skill-context > button:hover {
+  color: #fff;
+  background: rgb(255 255 255 / 10%);
+}
+
 body.codex-theme-v1:has(.console-shell) .harness-composer-shell .composer-toolbar {
   min-height: 36px;
   gap: 4px;
@@ -1531,6 +1680,64 @@ body.codex-theme-v1:has(.console-shell) .aui-thread-viewport:has(.user-task-welc
   }
 }
 
+/* Keep the light project/task tree on one predictable indentation grid. The
+   former nested guide plus reduced row padding put status dots on top of task
+   titles and made each project appear to use a different alignment. */
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-list {
+  padding: 4px 8px 16px;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-group + .task-project-group {
+  margin-top: 8px;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-head {
+  min-height: 34px;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-heading {
+  min-height: 34px;
+  padding: 5px 30px 5px 8px;
+  grid-template-columns: 17px minmax(0, 1fr);
+  gap: 8px;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-heading strong {
+  color: #46464b;
+  font-size: 13px;
+  font-weight: 590;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-items {
+  margin: 2px 0 7px 24px;
+  padding: 0;
+  gap: 2px;
+  border-left: 0;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-items .task-list-row {
+  width: 100%;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-items .task-list-item,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-items .task-list-item:hover,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-items .task-list-item.is-active {
+  min-height: 36px;
+  padding: 6px 8px 6px 26px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-items .task-list-item.is-active {
+  border-color: #e1e1e4;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgb(28 28 34 / 7%);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-items .task-status {
+  left: 11px;
+}
+
 @media (max-width: 680px) {
   .task-context-project,
   .task-context-version {
@@ -1585,5 +1792,466 @@ body.codex-theme-v1:has(.console-shell) .aui-thread-viewport:has(.user-task-welc
 
   body.codex-theme-v1:has(.console-shell) .task-model-control select {
     max-width: 42vw;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Unified Studio shell: reuse the conversation-window sidebar as the single,
+   fixed left rail across every Studio route. The shell carries the
+   `.console-shell` class so the monochrome task-chrome styles apply; only the
+   grid columns and the center surface are overridden here.
+---------------------------------------------------------------------------- */
+body.codex-theme-v1:has(.console-shell) .console-shell.studio-unified {
+  grid-template-columns: var(--app-sidebar-expanded-width) minmax(0, 1fr);
+  background: var(--codex-surface);
+}
+
+body.codex-theme-v1:has(.console-shell) .console-shell.studio-unified:has(> .task-sidebar.is-collapsed) {
+  grid-template-columns: var(--app-sidebar-collapsed-width) minmax(0, 1fr);
+}
+
+.studio-unified-content {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--codex-surface);
+}
+
+.studio-sidebar-expand {
+  position: fixed;
+  z-index: 90;
+  top: 12px;
+  left: 12px;
+}
+
+.studio-sidebar-expand svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .console-shell.studio-unified,
+html[data-color-mode="light"] .studio-unified-content {
+  background: var(--codex-surface);
+}
+
+/* ---------------------------------------------------------------------------
+   Doubao-inspired light task shell
+
+   Keep the dark workbench above unchanged. The light branch deliberately
+   uses fewer visible containers: a cool-gray navigation plane, a white
+   reading plane, hairline dividers, and one softly elevated composer.
+---------------------------------------------------------------------------- */
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) {
+  background: #ffffff;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) ::selection {
+  color: var(--codex-ink);
+  background: rgb(47 117 232 / 18%);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .product-brand-mark {
+  color: var(--codex-ink);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-sidebar,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-sidebar.is-collapsed {
+  border-right-color: #e9e9eb;
+  background: #f7f7f8;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-workbench-name strong {
+  color: #1c1c1f;
+  font-weight: 650;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-sidebar-collapse,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-rail-toggle {
+  color: #747478;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-sidebar-collapse:hover,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-rail-toggle:hover {
+  color: #1c1c1f;
+  background: #ececee;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-sidebar-primary > button,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-sidebar-search-control .command-center-trigger,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-sidebar-mode a {
+  color: #29292d;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-sidebar-primary > button:hover,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-sidebar-search-control .command-center-trigger:hover,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-sidebar-search-control .command-center-trigger[aria-expanded="true"],
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-sidebar-mode a:hover {
+  color: #111113;
+  background: #ececee;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-list-toolbar .task-list-heading {
+  color: #8b8b91;
+  font-weight: 540;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-list {
+  scrollbar-color: #d1d1d4 transparent;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-heading {
+  color: #85858a;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-heading:hover {
+  background: #eeeeef;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-heading svg.task-project-folder {
+  color: #838388;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-heading:hover svg.task-project-folder {
+  color: #55555a;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-heading strong {
+  color: #56565b;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-group {
+  display: grid;
+  gap: 1px;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-items {
+  margin-left: 17px;
+  padding-left: 8px;
+  border-left: 1px solid #e1e1e3;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-items .task-list-item,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-items .task-list-item:hover,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-items .task-list-item.is-active {
+  padding-left: 10px;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-add {
+  color: #606066;
+  background: #e9e9eb;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-add:hover {
+  color: #171719;
+  background: #dedee1;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-list-item:hover {
+  background: #eeeeef;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-list-item.is-active {
+  background: #e9e9eb;
+  box-shadow: none;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-list-title {
+  color: #404045;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-list-item:hover .task-list-title,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-list-item.is-active .task-list-title {
+  color: #171719;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-list-meta {
+  color: #96969b;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-status {
+  background: #9b9ba0;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-status.status-running,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-status.status-unread {
+  background: var(--codex-accent);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-list-archive {
+  color: #85858a;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-list-archive:hover {
+  color: #303034;
+  background: #e3e3e5;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-sidebar-account,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-rail-account {
+  border-top-color: #e9e9eb;
+  background: #f7f7f8;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .account-trigger {
+  color: #3d3d42;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .account-trigger-avatar {
+  color: #5b6574;
+  background: #e8eef8;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .account-trigger-copy strong {
+  color: #252529;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .account-trigger-chevron {
+  color: #8b8b90;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .account-popover,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .command-center-dialog,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .help-popover {
+  border-color: #dedee1;
+  color: var(--codex-ink-soft);
+  background: rgb(255 255 255 / 98%);
+  box-shadow: 0 18px 54px rgb(28 28 35 / 13%);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .command-center-search,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-agent-search {
+  background: #f5f5f6;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .console-header {
+  min-height: 56px;
+  height: 56px;
+  border-bottom-color: #ededee;
+  background: var(--codex-header-bg);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-context-title {
+  color: #202024;
+  font-weight: 620;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-context-chip {
+  border-color: #e5e5e7;
+  color: #77777c;
+  background: #f7f7f8;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-context-project svg,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .header-utilities,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .header-icon-button {
+  color: #747479;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .header-icon-button:hover,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .header-icon-button[aria-expanded="true"],
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .header-icon-button:focus-visible {
+  color: #202024;
+  background: #f0f0f1;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .help-popover-env {
+  border-bottom-color: #ebebed;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .help-popover-env small,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .help-popover-link {
+  color: #77777c;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .help-popover-env code {
+  color: #35353a;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .help-popover-link:hover {
+  color: #171719;
+  background: #f1f1f2;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .aui-thread-root .aui-thread-viewport {
+  scrollbar-color: #d6d6d9 transparent;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .aui-assistant-message-content,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .aui-md {
+  color: #242428;
+  font-size: 15px;
+  line-height: 1.78;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .aui-md h1,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .aui-md h2,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .aui-md h3 {
+  color: #111113;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .aui-user-message-content {
+  border-color: transparent;
+  color: #29292d;
+  background: #f3f3f4;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-root {
+  border-color: #dedee1;
+  border-radius: 16px;
+  color: #202024;
+  background: #ffffff;
+  box-shadow: 0 10px 34px rgb(27 27 34 / 10%), 0 1px 2px rgb(27 27 34 / 5%);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-root:focus-within {
+  border-color: #c8d6ed;
+  box-shadow: 0 0 0 2px rgb(47 117 232 / 8%), 0 12px 38px rgb(27 27 34 / 11%);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell[data-run-locked="true"] .aui-composer-root,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell[data-run-locked="true"] .aui-composer-root:focus-within {
+  border-color: #e5e5e7;
+  background: #fafafa;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-input {
+  color: #1f1f23;
+  caret-color: var(--codex-accent);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-input::placeholder {
+  color: #a0a0a5;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .composer-skill-context {
+  border-color: #c9d9e8;
+  color: #3574a8;
+  background: #edf5fb;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .composer-skill-context > small {
+  color: #718597;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .composer-skill-context > button {
+  color: #718597;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .composer-skill-context > button:hover {
+  color: #1f1f23;
+  background: rgb(53 116 168 / 10%);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-attach,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .task-agent-switcher-mark,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .task-agent-switcher-chevron,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-model-control,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-model-control-chevron {
+  color: #6f6f74;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-attach:hover,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .task-agent-switcher-trigger:hover,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .task-agent-switcher-trigger:focus-visible,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .task-agent-switcher[data-open] .task-agent-switcher-trigger {
+  color: #202024;
+  background: #f3f3f4;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .task-agent-switcher-copy strong,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-model-control select {
+  color: #55555a;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-model-control[data-overridden="true"] select,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-model-control select:hover:not(:disabled),
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-model-control select:focus-visible {
+  color: #202024;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-send {
+  color: #ffffff;
+  background: var(--codex-accent);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-send:hover:not(:disabled) {
+  background: var(--codex-accent-hover);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-send:disabled {
+  color: #99999e;
+  background: #eeeeef;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-cancel {
+  color: #ffffff;
+  background: #27272b;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-cancel:hover {
+  color: #ffffff;
+  background: var(--codex-danger);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .task-agent-menu {
+  border-color: #dedee1;
+  background: #ffffff;
+  box-shadow: 0 18px 54px rgb(28 28 35 / 13%);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-agent-search:focus-within {
+  background: #f1f1f2;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .aui-thread-scroll-to-bottom {
+  border-color: #dedee1;
+  color: #69696e;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgb(27 27 34 / 10%);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .user-task-intro h1 {
+  color: #202024;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .workbench-rail,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .workbench-rail-panel {
+  border-left-color: #e7e7e9;
+  color: var(--codex-ink-soft);
+  background: #fafafa;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .workbench-rail {
+  box-shadow: -14px 0 44px rgb(28 28 35 / 12%);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .workbench-rail-header {
+  border-bottom-color: #e7e7e9;
+  color: #252529;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .workbench-rail-close {
+  color: #747479;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .workbench-rail-close:hover {
+  color: #202024;
+  background: #ededee;
+}
+
+@media (max-width: 820px) {
+  html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-sidebar-scrim {
+    background: rgb(28 28 35 / 20%);
+    backdrop-filter: blur(2px);
+  }
+
+  html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .aui-thread-root .aui-thread-viewport {
+    padding-inline: 18px;
   }
 }

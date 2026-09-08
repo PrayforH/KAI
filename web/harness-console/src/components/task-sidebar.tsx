@@ -1,24 +1,25 @@
 "use client";
 
 import Link from "next/link";
+import { PanelResizeHandle } from "./panel-resize-handle";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AccountMenu } from "./account-menu";
 import { useAuth } from "./auth-provider";
-import { PRODUCT_NAME } from "./product-brand";
-import { WorkspaceNavigation } from "./workspace-navigation";
+import { ProductBrandMark, PRODUCT_NAME } from "./product-brand";
+import { WorkspaceNavigation, type WorkspaceId } from "./workspace-navigation";
 import { useRunViewModel } from "../lib/activity-store";
 import { approvalStore } from "../lib/approval-store";
 import { useDialogFocus } from "../lib/use-dialog-focus";
 import {
   loadTasks,
+  markTaskRead,
+  isTaskRead,
   prefetchThreadHistory,
   setTaskArchived,
   type TaskSummary,
 } from "../lib/task-history";
 import { taskListRefreshDelay } from "../lib/task-list-refresh";
-import { createUserScopedStorage } from "../lib/thread-store";
 
-const READ_TIMESTAMPS_KEY = "read-timestamps";
 
 const statusLabels: Record<string, string> = {
   idle: "新任务",
@@ -28,7 +29,7 @@ const statusLabels: Record<string, string> = {
   cancelling: "取消中",
   cancelled: "已取消",
   succeeded: "已完成",
-  failed: "失败",
+  failed: "处理错误",
   rejected: "已拒绝",
   timed_out: "已超时",
 };
@@ -68,8 +69,7 @@ function SidebarCollapseIcon() {
   return (
     <svg viewBox="0 0 20 20" aria-hidden="true">
       <rect x="2.75" y="4.25" width="14.5" height="11.5" rx="2.5" />
-      <path d="M9.5 4.25v11.5" />
-      <path d="m6.75 10 1.5-1.5-1.5-1.5" />
+      <path d="M6.75 4.25v11.5" />
     </svg>
   );
 }
@@ -93,7 +93,37 @@ function ProjectFolderIcon({ open = false }: { open?: boolean }) {
   );
 }
 
+function ScrollingTaskTitle({ title }: { title: string }) {
+  const viewportRef = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    const text = viewport?.firstElementChild as HTMLElement | null;
+    const button = viewport?.closest("button");
+    if (!viewport || !text || !button) return;
+    const measure = () => {
+      const overflow = Math.max(0, text.scrollWidth - viewport.clientWidth);
+      viewport.style.setProperty("--task-title-overflow", `${-overflow}px`);
+      viewport.style.setProperty("--task-title-duration", `${Math.max(3, overflow / 28 + 2)}s`);
+      viewport.dataset.overflow = String(overflow > 0);
+    };
+    measure();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    observer?.observe(viewport);
+    button.addEventListener("pointerenter", measure);
+    button.addEventListener("focus", measure);
+    return () => {
+      observer?.disconnect();
+      button.removeEventListener("pointerenter", measure);
+      button.removeEventListener("focus", measure);
+    };
+  }, [title]);
+  return <span ref={viewportRef} className="task-list-title task-title-viewport" title={title}>
+    <span className="task-title-text">{title}</span>
+  </span>;
+}
+
 const activeStatuses = new Set(["queued", "running", "waiting_approval", "cancelling"]);
+const errorStatuses = new Set(["failed", "timed_out", "rejected"]);
 
 export function TaskSidebar({
   currentThreadId,
@@ -104,6 +134,7 @@ export function TaskSidebar({
   onNewTask,
   onNewTaskWithProject,
   searchControl,
+  activeNav = "tasks",
 }: {
   currentThreadId: string;
   collapsed: boolean;
@@ -114,16 +145,19 @@ export function TaskSidebar({
   /** Start a task inside an explicit project, using any row of that group. */
   onNewTaskWithProject?: (projectTask: TaskSummary) => void;
   searchControl?: ReactNode;
+  /** Which workspace nav item is highlighted; defaults to the task page. */
+  activeNav?: WorkspaceId;
 }) {
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
   const [updatingThreadId, setUpdatingThreadId] = useState("");
+  const [showAllProjects, setShowAllProjects] = useState(false);
   const [collapsedProjects, setCollapsedProjects] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
-  const [readTimestamps, setReadTimestamps] = useState<Record<string, string>>({});
+  const [expandedTaskGroups, setExpandedTaskGroups] = useState<ReadonlySet<string>>(() => new Set());
   const sidebarRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const expandButtonRef = useRef<HTMLButtonElement>(null);
@@ -131,37 +165,20 @@ export function TaskSidebar({
   const runView = useRunViewModel();
   const { user } = useAuth();
 
-  useEffect(() => {
-    try {
-      const raw = createUserScopedStorage(
-        window.localStorage,
-        user.user_id,
-      ).getItem(READ_TIMESTAMPS_KEY);
-      if (raw) setReadTimestamps(JSON.parse(raw) as Record<string, string>);
-    } catch {
-      // Fall back to an empty read map when storage is unavailable.
-    }
-  }, [user.user_id]);
-
-  // Mark the currently-open thread as read once its result is known, so the
-  // blue "unread" dot disappears after the user opens the task.
+  // Acknowledge only the version displayed on a visible task page. Server
+  // watermarks are shared across devices; failed writes retry on list refresh.
   useEffect(() => {
     const current = tasks.find((task) => task.thread_id === currentThreadId);
-    if (!current || current.thread_id !== currentThreadId) return;
-    setReadTimestamps((prev) => {
-      if (prev[currentThreadId] === current.updated_at) return prev;
-      const next = { ...prev, [currentThreadId]: current.updated_at };
-      try {
-        createUserScopedStorage(window.localStorage, user.user_id).setItem(
-          READ_TIMESTAMPS_KEY,
-          JSON.stringify(next),
-        );
-      } catch {
-        // Ignore storage failures; the in-memory map still works this session.
-      }
-      return next;
-    });
-  }, [currentThreadId, tasks, user.user_id]);
+    if (activeNav !== "tasks" || document.visibilityState === "hidden"
+      || !current || activeStatuses.has(current.status) || isTaskRead(current)) return;
+    let active = true;
+    void markTaskRead(current.thread_id, current.updated_at).then((readAt) => {
+      if (!active) return;
+      setTasks((previous) => previous.map((task) => task.thread_id === current.thread_id
+        ? { ...task, last_read_at: readAt } : task));
+    }).catch(() => { /* Keep server truth; the next list refresh retries. */ });
+    return () => { active = false; };
+  }, [activeNav, currentThreadId, tasks, user.user_id]);
 
   useDialogFocus({
     open: overlayOpen,
@@ -246,7 +263,7 @@ export function TaskSidebar({
       document.removeEventListener("visibilitychange", refreshWhenVisible);
       window.removeEventListener("focus", refreshWhenVisible);
     };
-  }, [refreshKey, runView?.phase]);
+  }, [refreshKey, runView?.phase, user.user_id]);
 
   function retryTasks() {
     setError("");
@@ -299,11 +316,19 @@ export function TaskSidebar({
   }, [runView?.phase, selected]);
 
   function renderTaskRow(task: TaskSummary) {
+    let status = task.status;
+    if (runView && task.thread_id === currentThreadId && task.run_id === runView.runId) {
+      if (runView.phase === "completed") status = "succeeded";
+      else if (runView.phase === "failed") status = task.status === "timed_out" ? "timed_out" : "failed";
+      else if (task.status !== "cancelling" || !activeStatuses.has(runView.phase)) status = runView.phase;
+    }
+    const hasError = errorStatuses.has(status);
+    const statusLabel = statusLabels[status] ?? status;
     const unreadResult =
-      task.status === "succeeded" &&
+      status === "succeeded" &&
       task.thread_id !== currentThreadId &&
-      readTimestamps[task.thread_id] !== task.updated_at;
-    const showStatusDot = activeStatuses.has(task.status) || unreadResult;
+      !isTaskRead(task);
+    const showStatusDot = activeStatuses.has(status) || hasError || unreadResult;
     return (
       <div
         role="listitem"
@@ -313,6 +338,8 @@ export function TaskSidebar({
         <button
           type="button"
           className={`task-list-item ${task.thread_id === currentThreadId ? "is-active" : ""} ${task.pending_approval ? "needs-approval" : ""}`}
+          aria-label={`${task.title}，${statusLabel}`}
+          title={hasError ? `${statusLabel}，点击查看详情` : undefined}
           onPointerEnter={() => {
             void prefetchThreadHistory(task.thread_id).catch(() => {});
           }}
@@ -323,13 +350,14 @@ export function TaskSidebar({
         >
           {showStatusDot && (
             <span
-              className={`task-status ${activeStatuses.has(task.status) ? `status-${task.status}` : "status-unread"}`}
+              className={`task-status ${unreadResult ? "status-unread" : `status-${status}`}`}
               aria-hidden="true"
             >
-              {statusLabels[task.status] ?? task.status}
+              {statusLabel}
             </span>
           )}
-          <span className="task-list-title">{task.title}</span>
+          <ScrollingTaskTitle title={task.title} />
+          {hasError && <span className="task-error-label">{statusLabel}</span>}
           <span className="task-list-meta">
             <time dateTime={task.updated_at}>{formatTaskTime(task.updated_at)}</time>
           </span>
@@ -364,12 +392,14 @@ export function TaskSidebar({
       data-task-sidebar-overlay={overlayOpen ? "true" : undefined}
       role={overlayOpen ? "dialog" : undefined}
     >
+      {!collapsed && <PanelResizeHandle panel="sidebar" />}
       {collapsed ? (
         <div className="task-sidebar-rail" />
       ) : (
         <>
           <div className="task-sidebar-brand">
             <Link className="task-sidebar-brand-link" href="/" aria-label={`${PRODUCT_NAME}任务首页`}>
+              <ProductBrandMark />
               <span className="task-sidebar-brand-copy task-workbench-name">
                 <strong>{PRODUCT_NAME}</strong>
               </span>
@@ -395,7 +425,7 @@ export function TaskSidebar({
           </div>
           <div className="task-sidebar-mode">
             <WorkspaceNavigation
-              active="tasks"
+              active={activeNav}
               visible={["agents", "capabilities"]}
               labelOverrides={{ capabilities: "技能 / MCP" }}
             />
@@ -404,13 +434,36 @@ export function TaskSidebar({
             <div className="task-list-heading">
               <span className="task-list-heading-copy">
                 <ProjectFolderIcon />
-                项目
+                任务
               </span>
             </div>
           </div>
           <div className="task-list" role="list">
-            {taskProjects.map((project) => {
+            {taskProjects.filter((project) => project.name === "lead-agent").map((project) => {
+              const tasksExpanded = expandedTaskGroups.has(project.name);
+              return <section className="task-project-group task-default-group" key={project.name} aria-label="任务">
+                <div className="task-project-items">
+                  {(tasksExpanded ? project.tasks : project.tasks.slice(0, 5)).map(renderTaskRow)}
+                  {project.tasks.length > 5 && <button type="button" className="task-list-item tasks-show-more"
+                    aria-label={`${tasksExpanded ? "收起" : "展开"}通用任务`} aria-expanded={tasksExpanded}
+                    onClick={() => setExpandedTaskGroups((current) => {
+                      const next = new Set(current);
+                      if (next.has(project.name)) next.delete(project.name); else next.add(project.name);
+                      return next;
+                    })}><span className="task-list-title">{tasksExpanded ? "收起显示" : `展开显示（${project.tasks.length - 5}）`}</span></button>}
+                </div>
+              </section>;
+            })}
+            {taskProjects.some((project) => project.name !== "lead-agent") && (
+              <div className="task-list-toolbar task-agent-section-heading">
+                <div className="task-list-heading">
+                  <span className="task-list-heading-copy">智能体</span>
+                </div>
+              </div>
+            )}
+            {(showAllProjects ? taskProjects.filter((project) => project.name !== "lead-agent") : taskProjects.filter((project) => project.name !== "lead-agent").slice(0, 5)).map((project) => {
               const projectCollapsed = collapsedProjects.has(project.name);
+              const tasksExpanded = expandedTaskGroups.has(project.name);
               return (
                 <section
                   className={`task-project-group${projectCollapsed ? " is-collapsed" : ""}`}
@@ -434,7 +487,10 @@ export function TaskSidebar({
                       }}
                     >
                       <ProjectFolderIcon open={!projectCollapsed} />
-                      <strong>{project.name}</strong>
+                      <strong className="project-name-viewport"><span onMouseEnter={(event) => {
+                        const node = event.currentTarget;
+                        node.style.setProperty("--name-overflow", `${Math.min(0, node.parentElement!.clientWidth - node.scrollWidth)}px`);
+                      }}>{project.name}</span></strong>
                     </button>
                     <button
                       type="button"
@@ -453,12 +509,27 @@ export function TaskSidebar({
                   </div>
                   {!projectCollapsed && (
                     <div className="task-project-items">
-                      {project.tasks.map(renderTaskRow)}
+                      {(tasksExpanded ? project.tasks : project.tasks.slice(0, 5)).map(renderTaskRow)}
+                      {project.tasks.length > 5 && <button
+                        type="button"
+                        className="task-list-item tasks-show-more"
+                        aria-label={`${tasksExpanded ? "收起" : "展开"} ${project.name} 的任务`}
+                        aria-expanded={tasksExpanded}
+                        onClick={() => setExpandedTaskGroups((current) => {
+                          const next = new Set(current);
+                          if (next.has(project.name)) next.delete(project.name);
+                          else next.add(project.name);
+                          return next;
+                        })}
+                      ><span className="task-list-title">{tasksExpanded ? "收起显示" : `展开显示（${project.tasks.length - 5}）`}</span></button>}
                     </div>
                   )}
                 </section>
               );
             })}
+            {taskProjects.filter((project) => project.name !== "lead-agent").length > 5 && <button type="button" className="projects-show-more" aria-expanded={showAllProjects} onClick={() => setShowAllProjects((value) => !value)}>
+              {showAllProjects ? "收起智能体" : `展示更多（${taskProjects.filter((project) => project.name !== "lead-agent").length - 5}）`}
+            </button>}
             {loading && tasks.length === 0 && (
               <div className="task-list-state" aria-live="polite">
                 <span className="task-list-spinner" aria-hidden="true" />

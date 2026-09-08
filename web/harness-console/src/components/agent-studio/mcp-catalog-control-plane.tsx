@@ -21,7 +21,6 @@ import {
   type StudioMcpCredentialStatus,
   type StudioMcpDiscoveryResult,
 } from "../../lib/studio-client";
-import { StudioSidebar } from "./studio-sidebar";
 import styles from "./mcp-catalog-control-plane.module.css";
 
 type McpCapability = StudioCapabilities["mcpServers"][number];
@@ -101,6 +100,21 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
+type McpStatusTone = "success" | "disabled" | "warning";
+
+function derivedStatus(
+  item: McpCapability,
+  credentialConfigured: boolean,
+): { key: string; label: string; tone: McpStatusTone } {
+  if (!item.enabled) {
+    return { key: "disabled", label: "已禁用", tone: "disabled" };
+  }
+  if (item.authMode !== "none" && !credentialConfigured) {
+    return { key: "needs-auth", label: "需要配置凭据", tone: "warning" };
+  }
+  return { key: "enabled", label: "已启用", tone: "success" };
+}
+
 export function McpCatalogControlPlane({
   mode = "mcp",
 }: {
@@ -119,6 +133,7 @@ export function McpCatalogControlPlane({
   const [discovery, setDiscovery] =
     useState<StudioMcpDiscoveryResult | null>(null);
   const [toolQuery, setToolQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [customHeaderRows, setCustomHeaderRows] = useState<Array<{
     key: string;
     value: string;
@@ -140,9 +155,11 @@ export function McpCatalogControlPlane({
   const [credentialStatuses, setCredentialStatuses] = useState<
     Record<string, StudioMcpCredentialStatus>
   >({});
+  const [detailReference, setDetailReference] = useState<string | null>(null);
   const editorDialogRef = useRef<HTMLElement>(null);
   const syncDialogRef = useRef<HTMLElement>(null);
   const deleteDialogRef = useRef<HTMLElement>(null);
+  const detailDrawerRef = useRef<HTMLElement>(null);
 
   const load = useCallback(async () => {
     try {
@@ -172,6 +189,7 @@ export function McpCatalogControlPlane({
 
   const closeSync = useCallback(() => setPendingSync(null), []);
   const closeDelete = useCallback(() => setPendingDelete(null), []);
+  const closeDetail = useCallback(() => setDetailReference(null), []);
 
   useDialogFocus({
     open: Boolean(showForm && canManage),
@@ -188,6 +206,11 @@ export function McpCatalogControlPlane({
     panelRef: deleteDialogRef,
     onEscape: closeDelete,
   });
+  useDialogFocus({
+    open: Boolean(detailReference),
+    panelRef: detailDrawerRef,
+    onEscape: closeDetail,
+  });
 
   const entries = useMemo(
     () =>
@@ -198,6 +221,45 @@ export function McpCatalogControlPlane({
   const activeCount = useMemo(
     () => entries.filter((item) => item.enabled).length,
     [entries],
+  );
+  const visibleEntries = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return entries;
+    return entries.filter((item) => {
+      const haystack = [
+        item.label,
+        item.reference,
+        item.description,
+        item.endpointUrl ?? "",
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [entries, searchQuery]);
+
+  const groupedEntries = useMemo(() => {
+    const groups = [
+      {
+        key: "personal",
+        label: "个人",
+        items: visibleEntries.filter((item) => item.ownerUserId),
+      },
+      {
+        key: "builtin",
+        label: "内置",
+        items: visibleEntries.filter((item) => !item.ownerUserId),
+      },
+    ];
+    return groups.filter((group) => group.items.length > 0);
+  }, [visibleEntries]);
+
+  const selectedDetail = useMemo(
+    () =>
+      detailReference
+        ? entries.find((item) => item.reference === detailReference) ?? null
+        : null,
+    [detailReference, entries],
   );
 
   function startCreate() {
@@ -567,6 +629,7 @@ export function McpCatalogControlPlane({
     try {
       const impact = await studioClient.catalogImpact("mcp", item.reference);
       setDeleteConfirmation("");
+      setDetailReference(null);
       setPendingDelete({ impact, item });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "删除影响范围读取失败。");
@@ -602,48 +665,24 @@ export function McpCatalogControlPlane({
   }
 
   return (
-    <main className={styles.shell} id="main-content">
-      <StudioSidebar active={knowledgeMode ? "knowledge" : "capabilities"} />
-
+    <div className={styles.resourceRoot}>
       <section className={styles.content}>
         <header className={styles.hero}>
-          <div>
-            <p>{knowledgeMode ? "External knowledge connections" : "Governed capability catalog"}</p>
-            <h1>{knowledgeMode ? "接入外部知识库" : "MCP 能力目录"}</h1>
-            <span>
-              {knowledgeMode
-                ? "通过 MCP 地址连接已有知识平台，手动检测并选择检索工具，再由智能体按引用绑定。文档、切片、Embedding 与向量索引均留在外部系统。"
-                : "先登记可调用工具和数据边界，再由智能体按引用绑定；目录变更采用 revision 校验，避免覆盖并发修改。"}
-            </span>
-          </div>
-          <dl>
-            <div>
-              <dt>已登记</dt>
-              <dd>{record ? entries.length : "—"}</dd>
-            </div>
-            <div>
-              <dt>启用中</dt>
-              <dd>{record ? activeCount : "—"}</dd>
-            </div>
-            <div>
-              <dt>目录版本</dt>
-              <dd>{record ? `r${record.revision}` : "—"}</dd>
-            </div>
-          </dl>
-          {canManage && (
-            <button className={styles.primary} type="button" onClick={startCreate}>
-              {knowledgeMode ? "连接知识库" : "注册 MCP"}
-            </button>
-          )}
+          <h1>{knowledgeMode ? "接入外部知识库" : "MCP 服务器"}</h1>
         </header>
 
-        <div className={styles.scopeNote}>
-          <strong>个人能力目录</strong>
-          <span>
-            {knowledgeMode
-              ? "连接定义、检索工具和凭据只属于当前用户，不会因共享智能体而共享；需要在个人智能体草稿中显式绑定。"
-              : "用户注册的 MCP、已审核工具、执行授权和凭据只属于当前用户；平台内置 MCP 可见但不可修改。"}
-          </span>
+        <div className={styles.catalogToolbar}>
+          <span className={styles.scopeChip}>个人</span>
+          <span className={styles.toolbarDivider} aria-hidden="true" />
+          <strong>{knowledgeMode ? "知识库" : "MCP"} {record ? entries.length : "—"}</strong>
+          <input
+            className={styles.searchInput}
+            type="search"
+            value={searchQuery}
+            placeholder={knowledgeMode ? "搜索知识服务…" : "搜索 MCP 服务器…"}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            aria-label="搜索能力"
+          />
         </div>
 
         {!canManage && (
@@ -781,138 +820,66 @@ export function McpCatalogControlPlane({
         )}
 
         <section className={styles.catalog} aria-label={knowledgeMode ? "外部知识库连接列表" : "MCP 能力列表"}>
-          <header>
+          <header className={styles.catalogHeader}>
             <div>
-              <p>Registry</p>
-              <h2>{knowledgeMode ? "已连接的知识服务" : "已登记 MCP"}</h2>
+              <h2>{knowledgeMode ? "已连接" : "已安装"}</h2>
+              <span>{record ? activeCount : "—"}</span>
             </div>
-            {record && (
-              <span>
-                更新于 {formatDate(record.updatedAt)} · {record.updatedBy}
-              </span>
-            )}
+            <div className={styles.catalogActions}>
+              <button type="button" onClick={() => void load()} aria-label="刷新目录">↻</button>
+              {canManage && (
+                <button className={styles.primary} type="button" onClick={startCreate}>
+                  ＋ {knowledgeMode ? "连接" : "新建"}
+                </button>
+              )}
+            </div>
           </header>
           {!record ? (
             <div className={styles.empty}>正在读取能力目录…</div>
           ) : entries.length === 0 ? (
-            <button className={styles.emptyAction} type="button" onClick={startCreate}>
-              <strong>{knowledgeMode ? "还没有外部知识库" : "还没有 MCP 能力"}</strong>
-              <span>{canManage ? (knowledgeMode ? "连接已有知识服务并检测检索工具" : "登记第一个服务及其工具边界") : "请联系工作区管理员完成登记"}</span>
-            </button>
+            <div className={styles.emptyAction}>
+              <strong>{knowledgeMode ? "尚未连接外部知识库" : "尚未安装 MCP 服务器"}</strong>
+              <span>手动新建服务器，或导入已有配置。</span>
+              {canManage && (
+                <button type="button" onClick={startCreate}>
+                  {knowledgeMode ? "连接知识库" : "新建 MCP 服务器"}
+                </button>
+              )}
+            </div>
+          ) : visibleEntries.length === 0 ? (
+            <div className={styles.empty}>没有匹配的能力条目</div>
           ) : (
-            <div className={styles.cards}>
-              {entries.map((item) => {
-                const authorizedProfiles = record.catalog.executionProfiles.filter(
-                  (profile) =>
-                    profile.enabled
-                    && profile.allowedMcpReferences.includes(item.reference),
-                );
-                return (
-                <article key={item.reference} data-enabled={item.enabled}>
-                  <div className={styles.cardHead}>
-                    <span className={styles.capabilityMark} aria-hidden="true">
-                      {knowledgeMode ? "KB" : "MCP"}
-                    </span>
-                    <div>
-                      <strong>{item.label}</strong>
-                      <code>{item.reference}</code>
-                    </div>
-                    <span className={styles.status}>
-                      {item.enabled ? "已启用" : "已停用"}
-                    </span>
-                  </div>
-                  <p>{item.description}</p>
-                  {item.endpointUrl && <code className={styles.endpoint}>{item.endpointUrl}</code>}
-                  <div className={styles.badges}>
-                    <span>{item.ownerUserId ? "个人" : "平台内置"}</span>
-                    <span>{TRANSPORT_LABELS[item.transport]}</span>
-                    <span data-risk={item.risk}>{RISK_LABELS[item.risk]}</span>
-                    <span>{NETWORK_LABELS[item.networkAccess]}</span>
-                    <span>
-                      {authorizedProfiles.length > 0
-                        ? `${authorizedProfiles.length} 个 Profile 已授权`
-                        : "尚未授权 Profile"}
-                    </span>
-                    <span>{item.sendsUserData ? "发送用户数据" : "不发送用户数据"}</span>
-                    <span>v{item.version}</span>
-                  </div>
-                  <details>
-                    <summary>{item.tools.length} 个工具</summary>
-                    <div className={styles.tools}>
-                      {item.tools.map((tool) => <code key={tool}>{tool}</code>)}
-                    </div>
-                  </details>
-                  <footer>
-                    <span>
-                      {item.authMode === "none"
-                        ? "无需认证"
-                        : credentialStatuses[item.reference]?.configured
-                          ? "凭据已配置"
-                          : "等待配置凭据"}
-                    </span>
-                    {canManage && (item.ownerUserId || EDITABLE_PLATFORM_MCP_REFERENCES.has(item.reference)) && (
-                      <div>
-                        <button type="button" onClick={() => startEdit(item)}>
-                          编辑
-                        </button>
-                        <details className={styles.actionMenu} data-dismiss-on-outside>
-                          <summary aria-label={`${item.label} 更多操作`}>更多</summary>
-                          <div>
-                            {item.enabled ? (
-                              <button
-                                type="button"
-                                disabled={busy === item.reference}
-                                onClick={() => void inspectDisable(item.reference)}
-                              >
-                                停用
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                disabled={busy === item.reference}
-                                onClick={() => void enable(item)}
-                              >
-                                重新启用
-                              </button>
-                            )}
-                            <button
-                              className={styles.deleteAction}
-                              type="button"
-                              disabled={busy === item.reference}
-                              onClick={() => void inspectDelete(item)}
-                            >
-                              删除
-                            </button>
-                          </div>
-                        </details>
+            <div className={styles.groups}>
+              {groupedEntries.map((group) => (
+                <section className={styles.group} key={group.key}>
+                  <header className={styles.groupHeader}>
+                    <span>{group.label}</span>
+                    <small>{group.items.length}</small>
+                  </header>
+                  {group.items.map((item) => (
+                    <button
+                      className={styles.row}
+                      type="button"
+                      key={item.reference}
+                      onClick={() => setDetailReference(item.reference)}
+                    >
+                      <span className={styles.capabilityGlyph} aria-hidden="true">M</span>
+                      <div className={styles.rowCopy}>
+                        <strong>{item.label}</strong>
+                        <span>{item.description}</span>
                       </div>
-                    )}
-                  </footer>
-                  {pendingDisable?.resourceId === item.reference && (
-                    <div className={styles.impact}>
-                      <div>
-                        <strong>确认停用？</strong>
-                        <span>
-                          {pendingDisable.draftIds.length === 0
-                            ? "没有草稿引用此能力。"
-                            : `${pendingDisable.draftIds.length} 个草稿仍在引用：${pendingDisable.draftIds.join("、")}`}
-                        </span>
-                      </div>
-                      <button type="button" onClick={() => setPendingDisable(null)}>
-                        取消
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busy === item.reference}
-                        onClick={() => void disable(item.reference)}
+                      <code className={styles.rowReference}>{item.reference}</code>
+                      <span
+                        className={styles.rowStatus}
+                        data-tone={derivedStatus(item, credentialStatuses[item.reference]?.configured ?? false).tone}
                       >
-                        确认停用
-                      </button>
-                    </div>
-                  )}
-                </article>
-                );
-              })}
+                        {derivedStatus(item, credentialStatuses[item.reference]?.configured ?? false).label}
+                      </span>
+                      <span className={styles.rowArrow} aria-hidden="true">›</span>
+                    </button>
+                  ))}
+                </section>
+              ))}
             </div>
           )}
         </section>
@@ -1402,28 +1369,188 @@ export function McpCatalogControlPlane({
           </section>
           </div>
         )}
-
-        <section className={styles.runtime}>
-          <div>
-            <p>Runtime boundary</p>
-            <h2>凭据如何保存？</h2>
-            <span>
-              地址和工具保存在 MCP 目录；认证值单独加密托管，页面与接口只返回配置状态，不返回原值。
-            </span>
-          </div>
-          <ol>
-            <li><span>1</span><div><strong>地址检测</strong><p>服务端连接 MCP 地址，读取 initialize 与 tools/list。</p></div></li>
-              <li><span>2</span><div><strong>加密托管</strong><p>需要认证时直接在页面填写，服务端加密保存并按租户与用户双重隔离。</p></div></li>
-            <li><span>3</span><div><strong>工具审核与绑定</strong><p>只勾选需要暴露的工具，再到智能体编辑页绑定 MCP。</p></div></li>
-          </ol>
-          <details>
-            <summary>部署环境兼容方式</summary>
-            <pre>{`HARNESS_MCP_SECRET_REFERENCES_JSON={"company-search":{"authorization":"COMPANY_MCP_TOKEN"}}
-HARNESS_MCP_SERVER_SECRETS_JSON={"COMPANY_MCP_TOKEN":"<server-managed-secret>"}`}</pre>
-            <p>已有环境变量配置仍可继续使用；页面配置优先，且无需重建 API / Worker 容器。</p>
-          </details>
-        </section>
       </section>
-    </main>
+
+      {selectedDetail && (
+        <div
+          className={styles.detailBackdrop}
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeDetail();
+          }}
+        >
+          <aside
+            className={styles.detailDrawer}
+            ref={detailDrawerRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${selectedDetail.label} 详情`}
+            tabIndex={-1}
+          >
+            <header className={styles.detailHeader}>
+              <div>
+                <span className={styles.capabilityMark} aria-hidden="true">
+                  {knowledgeMode ? "KB" : "MCP"}
+                </span>
+                <div>
+                  <strong>{selectedDetail.label}</strong>
+                  <code>{selectedDetail.reference}</code>
+                </div>
+              </div>
+              <button type="button" onClick={closeDetail} aria-label="关闭详情">
+                ×
+              </button>
+            </header>
+            <div className={styles.detailBody}>
+            <p>{selectedDetail.description}</p>
+            <dl className={styles.detailFacts}>
+              <div>
+                <dt>状态</dt>
+                <dd>
+                  <span
+                    className={styles.status}
+                    data-tone={derivedStatus(
+                      selectedDetail,
+                      credentialStatuses[selectedDetail.reference]?.configured ?? false,
+                    ).tone}
+                  >
+                    <i className={styles.statusDot} aria-hidden="true" />
+                    {derivedStatus(
+                      selectedDetail,
+                      credentialStatuses[selectedDetail.reference]?.configured ?? false,
+                    ).label}
+                  </span>
+                </dd>
+              </div>
+              <div><dt>传输</dt><dd>{TRANSPORT_LABELS[selectedDetail.transport]}</dd></div>
+              <div><dt>网络</dt><dd>{NETWORK_LABELS[selectedDetail.networkAccess]}</dd></div>
+              <div><dt>风险</dt><dd>{RISK_LABELS[selectedDetail.risk]}</dd></div>
+              <div><dt>版本</dt><dd>v{selectedDetail.version}</dd></div>
+              <div><dt>来源</dt><dd>{selectedDetail.ownerUserId ? "个人" : "平台内置"}</dd></div>
+              <div>
+                <dt>认证</dt>
+                <dd>
+                  {selectedDetail.authMode === "none"
+                    ? "无需认证"
+                    : credentialStatuses[selectedDetail.reference]?.configured
+                      ? "凭据已配置"
+                      : "等待配置凭据"}
+                </dd>
+              </div>
+              <div>
+                <dt>Profile 授权</dt>
+                <dd>
+                  {(record?.catalog.executionProfiles ?? []).filter(
+                    (profile) =>
+                      profile.enabled
+                      && profile.allowedMcpReferences.includes(selectedDetail.reference),
+                  ).length > 0
+                    ? `${(record?.catalog.executionProfiles ?? []).filter(
+                        (profile) =>
+                          profile.enabled
+                          && profile.allowedMcpReferences.includes(selectedDetail.reference),
+                      ).length} 个 Profile 已授权`
+                    : "尚未授权 Profile"}
+                </dd>
+              </div>
+            </dl>
+            {selectedDetail.endpointUrl && (
+              <section className={styles.detailSection}>
+                <h4>MCP 地址</h4>
+                <code>{selectedDetail.endpointUrl}</code>
+              </section>
+            )}
+            <section className={styles.detailSection}>
+              <h4>引用工具（{selectedDetail.tools.length}）</h4>
+              <div className={styles.tools}>
+                {selectedDetail.tools.map((tool) => <code key={tool}>{tool}</code>)}
+              </div>
+            </section>
+            {Object.keys(selectedDetail.customHeaders).length > 0 && (
+              <section className={styles.detailSection}>
+                <h4>自定义 Header</h4>
+                <ul className={styles.detailHeaders}>
+                  {Object.entries(selectedDetail.customHeaders).map(([key, value]) => (
+                    <li key={key}>
+                      <code>{key}</code>
+                      <span>{value}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+            <section className={styles.detailSection}>
+              <h4>最近状态</h4>
+              <span>
+                {credentialStatuses[selectedDetail.reference]?.updatedAt
+                  ? `凭据更新于 ${formatDate(credentialStatuses[selectedDetail.reference]!.updatedAt!)} · ${credentialStatuses[selectedDetail.reference]!.updatedBy ?? "—"}`
+                  : "暂无凭据更新记录"}
+              </span>
+            </section>
+            {pendingDisable?.resourceId === selectedDetail.reference && (
+              <div className={styles.impact}>
+                <div>
+                  <strong>确认停用？</strong>
+                  <span>
+                    {pendingDisable.draftIds.length === 0
+                      ? "没有草稿引用此能力。"
+                      : `${pendingDisable.draftIds.length} 个草稿仍在引用：${pendingDisable.draftIds.join("、")}`}
+                  </span>
+                </div>
+                <button type="button" onClick={() => setPendingDisable(null)}>
+                  取消
+                </button>
+                <button
+                  type="button"
+                  disabled={busy === selectedDetail.reference}
+                  onClick={() => void disable(selectedDetail.reference)}
+                >
+                  确认停用
+                </button>
+              </div>
+            )}
+            </div>
+            {canManage
+              && (selectedDetail.ownerUserId
+                || EDITABLE_PLATFORM_MCP_REFERENCES.has(selectedDetail.reference)) && (
+              <footer className={styles.drawerActions}>
+              <button type="button" onClick={() => startEdit(selectedDetail)}>
+                编辑
+              </button>
+              {selectedDetail.enabled ? (
+                <button
+                  type="button"
+                  disabled={busy === selectedDetail.reference}
+                  onClick={() => void inspectDisable(selectedDetail.reference)}
+                >
+                  停用
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={busy === selectedDetail.reference}
+                  onClick={() => void enable(selectedDetail)}
+                >
+                  重新启用
+                </button>
+              )}
+              <details className={styles.actionMenu} data-dismiss-on-outside>
+                <summary aria-label={`${selectedDetail.label} 更多操作`}>更多</summary>
+                <div>
+                  <button
+                    className={styles.deleteAction}
+                    type="button"
+                    disabled={busy === selectedDetail.reference}
+                    onClick={() => void inspectDelete(selectedDetail)}
+                  >
+                    删除
+                  </button>
+                </div>
+              </details>
+              </footer>
+            )}
+          </aside>
+        </div>
+      )}
+    </div>
   );
 }

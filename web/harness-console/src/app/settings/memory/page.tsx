@@ -1,8 +1,5 @@
-"use client";
-
-import { AuthProvider } from "../../../components/auth-provider";
-import { MemoryBank } from "../../../components/memory-bank/memory-bank";
+import { redirect } from "next/navigation";
 
 export default function MemorySettingsPage() {
-  return <AuthProvider><MemoryBank /></AuthProvider>;
+  redirect("/settings#memory");
 }

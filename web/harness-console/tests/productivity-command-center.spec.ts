@@ -4,6 +4,7 @@ import { join } from "node:path";
 import {
   productivityCommandKey,
   productivityCommandResults,
+  searchableTaskAgents,
 } from "../src/lib/productivity-command-center";
 import type { TaskAgent } from "../src/lib/task-agent-catalog";
 import type { TaskSummary } from "../src/lib/task-history";
@@ -92,10 +93,42 @@ describe("productivity command center", () => {
     expect(productivityCommandKey(result!)).toContain("team:space-1:user-2:researcher@1.2.0");
   });
 
+  it("counts Agent identities once and searches the promoted current version", () => {
+    const versioned: TaskAgent[] = [
+      {
+        agentId: "agent-research",
+        name: "researcher",
+        version: "1.3.0",
+        currentVersion: "1.2.0",
+        displayName: "研究助手",
+        domain: "research",
+      },
+      {
+        agentId: "agent-research",
+        name: "researcher",
+        version: "1.2.0",
+        currentVersion: "1.2.0",
+        displayName: "研究助手",
+        domain: "research",
+      },
+    ];
+
+    expect(searchableTaskAgents(versioned)).toHaveLength(1);
+    expect(searchableTaskAgents(versioned)[0]?.version).toBe("1.2.0");
+    expect(productivityCommandResults("研究助手", [], versioned)).toEqual([
+      expect.objectContaining({
+        kind: "agent",
+        description: "个人智能体 · 当前版本 1.2.0",
+      }),
+    ]);
+  });
+
   it("traps modal focus and restores the element that opened it", () => {
     expect(commandCenterComponent).toContain("previousFocusRef");
     expect(commandCenterComponent).toContain("dialogRef.current?.querySelectorAll");
     expect(commandCenterComponent).toContain('event.key === "Escape"');
     expect(commandCenterComponent).toContain("previous?.isConnected");
+    expect(commandCenterComponent).toContain("availableAgentCount");
+    expect(commandCenterComponent).toContain("个可用智能体");
   });
 });

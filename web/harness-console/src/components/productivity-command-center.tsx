@@ -12,6 +12,7 @@ import { createPortal } from "react-dom";
 import {
   productivityCommandKey,
   productivityCommandResults,
+  searchableTaskAgents,
   type ProductivityActionId,
   type ProductivityCommandResult,
 } from "../lib/productivity-command-center";
@@ -63,6 +64,11 @@ export function ProductivityCommandCenter({
     () => productivityCommandResults(query, tasks, agents),
     [agents, query, tasks],
   );
+  const availableAgentCount = useMemo(
+    () => searchableTaskAgents(agents).length,
+    [agents],
+  );
+  const matchingAgentCount = results.filter((result) => result.kind === "agent").length;
 
   useEffect(() => {
     function onShortcut(event: KeyboardEvent) {
@@ -265,6 +271,7 @@ export function ProductivityCommandCenter({
                         {showGroup ? (
                           <p className="command-center-group" aria-hidden="true">
                             {groupLabels[result.kind]}
+                            {result.kind === "agent" ? ` · ${matchingAgentCount}` : ""}
                           </p>
                         ) : null}
                         <button
@@ -299,7 +306,7 @@ export function ProductivityCommandCenter({
                   ) : null}
                 </div>
                 <footer className="command-center-footer">
-                  <span>{loading ? "正在同步最近任务…" : error || `${results.length} 个可用结果`}</span>
+                  <span>{loading ? "正在同步最近任务…" : error || `${availableAgentCount} 个可用智能体 · ${tasks.length} 个最近任务`}</span>
                 </footer>
               </section>
             </div>,

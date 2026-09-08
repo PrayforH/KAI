@@ -8,8 +8,8 @@
   --space-panel: var(--codex-surface-raised, #242424);
   --space-panel-subtle: var(--codex-surface-subtle, #1e1e1e);
   --space-field: var(--codex-field, #171717);
-  --space-accent: var(--codex-accent, #339cff);
-  --space-accent-soft: var(--codex-accent-soft, rgb(51 156 255 / 14%));
+  --space-accent: var(--codex-accent, #ececec);
+  --space-accent-soft: var(--codex-accent-soft, rgb(236 236 236 / 14%));
   --space-danger: var(--codex-danger, #fa423e);
   --space-danger-soft: var(--codex-danger-soft, rgb(250 66 62 / 13%));
   min-height: 100dvh;
@@ -212,7 +212,7 @@
 }
 
 .createDrawer > header button:hover {
-  border-color: rgb(51 156 255 / 45%);
+  border-color: rgb(236 236 236 / 45%);
   background: var(--space-accent-soft);
 }
 

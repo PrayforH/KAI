@@ -22,7 +22,7 @@
 
 /* AXIS brand system: one compact execution mark across navigation and states. */
 .product-brand-mark {
-  --product-brand-accent: #25c878;
+  --product-brand-accent: #ececec;
   width: 34px;
   height: 34px;
   flex: 0 0 auto;
@@ -1941,7 +1941,7 @@ textarea:not(.aui-composer-input):focus-visible {
 .task-list-search:focus-within {
   border-color: var(--codex-accent, var(--rail));
   background: var(--codex-surface-raised, var(--surface-raised));
-  box-shadow: 0 0 0 3px var(--codex-accent-faint, rgb(51 156 255 / 8%));
+  box-shadow: 0 0 0 3px var(--codex-accent-faint, rgb(236 236 236 / 8%));
 }
 
 .task-list-heading small {
@@ -6881,10 +6881,14 @@ textarea.user-message-editor-input:focus-visible {
   padding: 0 24px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   border-bottom: 1px solid var(--line);
   background: rgb(255 255 255 / 94%);
   backdrop-filter: blur(12px);
+}
+
+.settings-dialog :where(button, input, select, textarea) {
+  font-family: var(--codex-font-ui);
 }
 
 .settings-brand {
@@ -6925,9 +6929,18 @@ textarea.user-message-editor-input:focus-visible {
   border-radius: 10px;
   color: #49544f;
   background: white;
-  font: 400 24px/1 sans-serif;
+  font: inherit;
   text-decoration: none;
   transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease;
+}
+
+.settings-back svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
 }
 
 .settings-back:hover {
@@ -7430,7 +7443,7 @@ textarea.user-message-editor-input:focus-visible {
   color: var(--ink);
   background: transparent;
   cursor: pointer;
-  font: 600 10px/1 inherit;
+  font: 600 12px/1 var(--codex-font-ui);
 }
 
 .archived-task-row button:hover:not(:disabled) {
@@ -8915,12 +8928,12 @@ textarea.user-message-editor-input:focus-visible {
   border: 0;
   border-radius: 8px;
   color: #fff;
-  background: var(--codex-accent, #339cff);
+  background: var(--codex-accent, #ececec);
   cursor: pointer;
   font: 680 11px/1 var(--codex-font-ui, sans-serif);
 }
 
 .auth-session-blocker button:focus-visible {
-  outline: 3px solid rgb(51 156 255 / 28%);
+  outline: 3px solid rgb(236 236 236 / 28%);
   outline-offset: 2px;
 }

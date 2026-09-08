@@ -108,6 +108,17 @@ describe("Agent Studio effective contract", () => {
     expect(contract.subagentCount).toBe(0);
   });
 
+  it("treats Skills as an optional workflow enhancement", () => {
+    const contract = evaluateStudioDraft({
+      ...DEFAULT_STUDIO_DRAFT,
+      skills: [],
+    });
+
+    expect(contract.ready).toBe(true);
+    expect(contract.skillCount).toBe(0);
+    expect(contract.issues).not.toContain("至少需要一个 Skill");
+  });
+
   it("describes routine commands as automatic without a retired provider exception", () => {
     const bash = BUILTIN_TOOLS.find((item) => item.id === "Bash");
     const standard = POLICY_OPTIONS.find((item) => item.id === "production-standard");

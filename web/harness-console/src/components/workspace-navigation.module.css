@@ -37,14 +37,14 @@
 
 .navigationActive {
   color: var(--codex-ink, #ffffff);
-  background: color-mix(in srgb, var(--codex-accent, #339cff) 9%, var(--codex-surface-raised, #242424));
+  background: color-mix(in srgb, var(--codex-accent, #ececec) 9%, var(--codex-surface-raised, #242424));
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 3%),
     0 8px 20px rgb(0 0 0 / 10%);
 }
 
 .navigationActive svg {
-  color: var(--codex-accent, #339cff);
+  color: var(--codex-accent, #ececec);
 }
 
 .navigation svg,
@@ -68,8 +68,8 @@
 }
 
 :global(html[data-color-mode="light"]) .navigationActive {
-  color: var(--codex-accent, #16b364);
-  background: color-mix(in srgb, var(--codex-accent, #16b364) 8%, #ffffff);
+  color: var(--codex-accent, #ececec);
+  background: color-mix(in srgb, var(--codex-accent, #ececec) 8%, #ffffff);
   box-shadow: none;
 }
 

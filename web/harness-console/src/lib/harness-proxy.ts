@@ -433,3 +433,8 @@ export async function proxyMemoryBankRequest(
     "harness.web.memory_bank",
   );
 }
+
+export async function proxyRunRequest(request: Request, config: HarnessServerConfig, fetcher: typeof fetch = fetch, path = "") {
+  const url = new URL(`${config.apiUrl}/v1/runs/${path}`);
+  return forward(request, url.toString(), config, fetcher, "harness.web.run_control");
+}

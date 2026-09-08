@@ -29,7 +29,7 @@
 
 .hero p {
   margin: 0 0 8px;
-  color: var(--codex-accent, #339cff);
+  color: var(--codex-accent, #ececec);
   font: 650 10px/1.2 var(--codex-font-mono, ui-monospace, monospace);
   letter-spacing: .14em;
 }
@@ -88,8 +88,8 @@
 }
 
 .controls label input:focus {
-  border-color: var(--codex-accent, #339cff);
-  box-shadow: 0 0 0 3px var(--codex-accent-faint, rgb(51 156 255 / 12%));
+  border-color: var(--codex-accent, #ececec);
+  box-shadow: 0 0 0 3px var(--codex-accent-faint, rgb(236 236 236 / 12%));
 }
 
 .filters {
@@ -191,7 +191,7 @@
   padding-bottom: 8px;
   border: 1px solid var(--line);
   border-radius: 5px 11px 5px 5px;
-  color: var(--codex-accent, #339cff);
+  color: var(--codex-accent, #ececec);
   background: var(--subtle);
   font: 700 7px/1 var(--codex-font-mono, ui-monospace, monospace);
   font-style: normal;
@@ -248,9 +248,9 @@
 }
 
 .actions a:last-child {
-  border-color: var(--codex-accent, #339cff);
+  border-color: var(--codex-accent, #ececec);
   color: #fff;
-  background: var(--codex-accent, #339cff);
+  background: var(--codex-accent, #ececec);
 }
 
 .state {

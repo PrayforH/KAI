@@ -2,8 +2,9 @@
 
 import { type FormEvent, useEffect, useState } from "react";
 import { publishAuthEvent } from "../../lib/auth-coordination";
-import { PRODUCT_NAME, ProductBrandCopy, ProductBrandMark } from "../../components/product-brand";
+import { PRODUCT_NAME } from "../../components/product-brand";
 import { SecretInput } from "../../components/secret-input";
+import alpinePeak from "./assets/alpine-peak.jpg";
 
 type AuthConfig = {
   registration_enabled: boolean;
@@ -25,12 +26,16 @@ export default function LoginPage() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [configUnavailable, setConfigUnavailable] = useState(false);
 
   useEffect(() => {
     fetch("/api/auth/config", { cache: "no-store" })
       .then((response) => response.json())
       .then((value: AuthConfig) => setConfig(value))
-      .catch(() => setError("认证服务暂时不可用。"));
+      .catch(() => {
+        setConfigUnavailable(true);
+        setError("认证服务暂时不可用。");
+      });
     const code = new URLSearchParams(window.location.search).get("error");
     if (code) setError(ERROR_MESSAGES[code] ?? "登录没有完成，请重新尝试。");
     if (new URLSearchParams(window.location.search).get("password") === "changed") {
@@ -76,59 +81,104 @@ export default function LoginPage() {
   }
 
   const hasSso = Boolean(config?.providers.google || config?.providers.github);
+  const systemStatus = configUnavailable
+    ? "认证服务待恢复"
+    : config
+      ? "系统就绪"
+      : "正在连接";
   return (
     <main className="login-shell" id="main-content">
-      <section className="login-context" aria-label={`${PRODUCT_NAME}简介`}>
-        <div className="login-brand">
-          <ProductBrandMark />
-          <ProductBrandCopy />
-        </div>
-        <div className="login-thesis">
-          <p className="login-eyebrow">从意图到可审计的执行</p>
-          <h1>把复杂任务交给 Agent，风险边界仍由你掌控。</h1>
-          <p>任务、工具、风险处置与制品在同一条执行轨迹中留痕。</p>
-        </div>
-        <ol className="login-trace" aria-label="示例执行轨迹">
-          <li><span>01</span><div><strong>理解任务</strong><small>建立范围与执行计划</small></div><em>完成</em></li>
-          <li><span>02</span><div><strong>隔离执行</strong><small>工具与文件在沙箱运行</small></div><em>受控</em></li>
-          <li><span>03</span><div><strong>风险确认</strong><small>仅高风险边界请求确认</small></div><em>可审计</em></li>
-        </ol>
-      </section>
+      <div className="login-workspace-preview" aria-hidden="true">
+        <aside>
+          <div className="login-preview-brand">
+            <span>K</span>
+            <strong>{PRODUCT_NAME}</strong>
+          </div>
+          <div className="login-preview-action">＋&nbsp;&nbsp;新建任务</div>
+          <nav>
+            <span>智能体</span>
+            <span>技能 / MCP</span>
+            <span>项目</span>
+          </nav>
+          <div className="login-preview-lines"><i /><i /><i /></div>
+        </aside>
+        <section>
+          <div className="login-preview-thread"><i /><i /><i /></div>
+          <div className="login-preview-composer">描述你要完成的任务… <span>↑</span></div>
+        </section>
+      </div>
 
       <section className="login-panel" aria-label={mode === "login" ? "登录" : "创建账户"}>
-        <div className="login-card">
-          <header>
-            <p>{mode === "login" ? "欢迎回来" : "开始使用"}</p>
-            <h2>{mode === "login" ? "登录工作台" : "创建账户"}</h2>
-            <span>{mode === "login" ? "继续处理你的任务与待确认操作。" : "首位注册用户将成为工作区所有者。"}</span>
+        <article className="login-card">
+          <header className="login-card-banner">
+            <div className="login-card-brand">
+              <span className="login-brand-mark" aria-hidden="true">K</span>
+              <strong>{PRODUCT_NAME}</strong>
+            </div>
+            <p
+              className="login-system-status"
+              data-state={configUnavailable ? "unavailable" : config ? "ready" : "loading"}
+              role="status"
+            >
+              <span aria-hidden="true" />
+              {systemStatus}
+            </p>
           </header>
 
-          {hasSso && (
-            <div className="sso-actions">
-              {config?.providers.google && <a href="/api/auth/oauth/google/start"><GoogleIcon />使用 Google 登录</a>}
-              {config?.providers.github && <a href="/api/auth/oauth/github/start"><GithubIcon />使用 GitHub 登录</a>}
-            </div>
-          )}
-          {hasSso && <div className="login-divider"><span>或使用邮箱</span></div>}
+          <div className="login-card-body">
+            <section className="login-access-context" aria-label="阿尔卑斯雪峰">
+              <img src={alpinePeak.src} alt="晨光中的阿尔卑斯雪峰" />
+              <div className="login-image-caption">
+                <span>Agent workbench</span>
+                <strong>让复杂任务保持清晰。</strong>
+              </div>
+            </section>
 
-          <form onSubmit={submit}>
-            {mode === "register" && (
-              <label>姓名<input name="display_name" autoComplete="name" required placeholder="你希望显示的名称" /></label>
-            )}
-            <label>邮箱<input name="email" type="email" autoComplete="email" required placeholder="name@company.com" /></label>
-            <label>密码<SecretInput name="password" autoComplete={mode === "login" ? "current-password" : "new-password"} required minLength={10} placeholder="至少 10 位，含大小写与数字" revealLabel="密码" /></label>
-            {error && <p className="login-error" role="alert">{error}</p>}
-            {notice && <p className="login-notice" role="status">{notice}</p>}
-            <button className="login-submit" type="submit" disabled={pending}>{pending ? "正在验证…" : mode === "login" ? "登录" : "创建并登录"}</button>
-          </form>
+            <section className="login-auth-panel">
+              <header>
+                <h2>{mode === "login" ? "邮箱登录" : "创建工作区账户"}</h2>
+                <span>{mode === "login" ? "使用你的工作区账户继续。" : "首位注册用户将成为工作区所有者。"}</span>
+              </header>
 
-          {config?.registration_enabled && (
-            <button className="auth-mode-switch" type="button" onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(""); }}>
-              {mode === "login" ? "没有账户？创建一个" : "已有账户？返回登录"}
-            </button>
-          )}
-        </div>
-        <p className="login-security-note"><span aria-hidden="true">●</span> 登录会话使用 HttpOnly Cookie，身份由 API 验签。</p>
+              {hasSso && (
+                <div className="sso-actions">
+                  {config?.providers.google && <a href="/api/auth/oauth/google/start"><GoogleIcon />使用 Google 登录</a>}
+                  {config?.providers.github && <a href="/api/auth/oauth/github/start"><GithubIcon />使用 GitHub 登录</a>}
+                </div>
+              )}
+              {hasSso && <div className="login-divider"><span>或使用邮箱</span></div>}
+
+              <form onSubmit={submit}>
+                {mode === "register" && (
+                  <label>姓名<input name="display_name" autoComplete="name" required placeholder="你希望显示的名称" /></label>
+                )}
+                <label>企业邮箱地址<input name="email" type="email" autoComplete="email" required placeholder="name@company.com" /></label>
+                <label>安全通行密码<SecretInput name="password" autoComplete={mode === "login" ? "current-password" : "new-password"} required minLength={10} placeholder="至少 10 位，含大小写与数字" revealLabel="密码" /></label>
+                {error && <p className="login-error" role="alert">{error}</p>}
+                {notice && <p className="login-notice" role="status">{notice}</p>}
+                <button className="login-submit" type="submit" disabled={pending}>
+                  <span>{pending ? "正在验证…" : mode === "login" ? "登录工作台" : "创建并登录"}</span>
+                  {!pending && <span aria-hidden="true">→</span>}
+                </button>
+              </form>
+
+              {config?.registration_enabled && (
+                <button className="auth-mode-switch" type="button" onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(""); }}>
+                  {mode === "login" ? "没有账户？创建一个" : "已有账户？返回登录"}
+                </button>
+              )}
+            </section>
+          </div>
+
+          <footer className="login-card-footer">
+            <span>继续即表示你已了解工作区的数据与安全策略</span>
+            <nav aria-label="登录页说明">
+              <span>服务条款</span>
+              <span>隐私保护</span>
+              <span>会话由 API 安全验签</span>
+            </nav>
+          </footer>
+        </article>
       </section>
     </main>
   );

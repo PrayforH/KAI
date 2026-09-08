@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   agentCoordinate,
+  currentSystemAssistant,
   agentIdentity,
   agentItemKey,
   chatUsableAgents,
@@ -10,6 +11,29 @@ import {
 } from "../src/lib/task-agent-catalog";
 
 describe("task agent catalog", () => {
+  it("hides internal collaborators and team releases, and reveals only internal personal agents when enabled", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => new Response(JSON.stringify(
+      url.endsWith("runtime-config") ? { name: "lead", version: "1.0.0" }
+        : url.endsWith("/drafts") ? [{
+          draftId: "child", agentId: "child-agent", parentDraftId: "parent",
+          name: "helper", displayName: "内部核验", publishedVersion: "1.0.0", version: "1.0.1",
+        }]
+          : [
+            { agent_id: "child-agent", name: "helper", version: "1.0.0", display_name: "内部核验",
+              owner_user_id: "me", scope: "personal", domain: "general" },
+            { agent_id: "another-agent", name: "helper", version: "1.0.0", display_name: "共享核验",
+              owner_user_id: "another", scope: "team", space_id: "team", domain: "general" },
+          ],
+    ), { status: 200 })));
+    const result = await loadTaskAgentCatalog("me");
+    expect(result.agents.filter((agent) => agent.name === "helper")).toEqual([]);
+    const revealed = await loadTaskAgentCatalog("me", true);
+    expect(revealed.agents.filter((agent) => agent.name === "helper")).toEqual([
+      expect.objectContaining({ agentId: "child-agent", internal: true }),
+    ]);
+    expect(revealed.hiddenAgents).toEqual([expect.objectContaining({agentId: "another-agent"})]);
+  });
+
   afterEach(() => {
     vi.unstubAllGlobals();
   });
@@ -317,11 +341,19 @@ describe("task agent catalog", () => {
         agent.name === "productivity-agent" && agent.version === "0.1.0",
     );
 
-    expect(matching).toHaveLength(2);
+    expect(matching).toHaveLength(1);
     expect(matching.map(agentItemKey)).toEqual([
       "agent-personal@0.1.0",
-      "agent-team@0.1.0",
     ]);
     expect(matching.some((agent) => !agent.ownerUserId)).toBe(false);
   });
 });
+
+ it("new system tasks use the platform version without changing team agents", () => {
+  const current: TaskAgent = {name:"lead-agent",version:"1.0.2",displayName:"系统助手",domain:"general",scope:"personal",ownerUserId:"me"};
+  expect(currentSystemAssistant({...current,version:"1.0.0"},current)).toBe(current);
+  const shared: TaskAgent = {...current,version:"1.0.0",scope:"team",spaceId:"space"};
+  expect(currentSystemAssistant(shared,current)).toBe(shared);
+  const other: TaskAgent = {...current,ownerUserId:"someone"};
+  expect(currentSystemAssistant(other,current)).toBe(other);
+ });

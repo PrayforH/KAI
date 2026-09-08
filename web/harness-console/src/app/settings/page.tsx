@@ -1,13 +1,14 @@
 "use client";
 
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { AuthProvider, useAuth } from "../../components/auth-provider";
+import { WebConfiguration } from "../../components/web-configuration";
+import { MemoryBank } from "../../components/memory-bank/memory-bank";
+import { DataLifecycleControlPlane } from "../../components/agent-studio/data-lifecycle-control-plane";
 import { ApiIntegration } from "../../components/api-integration";
 import { ModelManagement } from "../../components/model-management";
 import {
   PRODUCT_NAME,
-  ProductBrandCopy,
-  ProductBrandMark,
 } from "../../components/product-brand";
 import {
   ProductIcon,
@@ -15,7 +16,7 @@ import {
 } from "../../components/product-icon";
 import { SecretInput } from "../../components/secret-input";
 import { ThemeSelector } from "../../components/theme-toggle";
-import { WorkspaceMembers } from "../../components/workspace-members";
+import { useFollowUpPreference, useInternalAgentsPreference } from "../../lib/interface-preferences";
 import {
   loadTasks,
   setTaskArchived,
@@ -36,6 +37,7 @@ type SettingsSectionId =
   | "members"
   | "models"
   | "api"
+  | "configuration"
   | "appearance"
   | "security"
   | "data"
@@ -58,13 +60,6 @@ const SETTINGS_NAV: ReadonlyArray<{
     icon: "profile",
   },
   {
-    id: "members",
-    href: "#members",
-    label: "工作区成员",
-    description: "管理成员角色与工作区访问权限；至少保留一位 Owner。",
-    icon: "members",
-  },
-  {
     id: "models",
     href: "#models",
     label: "模型管理",
@@ -77,6 +72,13 @@ const SETTINGS_NAV: ReadonlyArray<{
     label: "API 集成",
     description: "创建按能力授权的 API 密钥，将对话、任务和 Agent 安全接入外部系统。",
     icon: "api",
+  },
+  {
+    id: "configuration",
+    href: "#configuration",
+    label: "配置",
+    description: "管理个人对话与智能体显示偏好。",
+    icon: "settings",
   },
   {
     id: "appearance",
@@ -209,6 +211,8 @@ function ArchivedTasksSettings() {
 
 function SettingsContent() {
   const { user, membership, passwordEnabled } = useAuth();
+  const [followUpBehavior, setFollowUpBehavior] = useFollowUpPreference();
+  const [showInternalAgents, setShowInternalAgents] = useInternalAgentsPreference();
   const canManageModels =
     membership.role === "owner" || membership.role === "admin";
   const visibleNavigation = SETTINGS_NAV.filter(
@@ -216,6 +220,8 @@ function SettingsContent() {
   );
   const [activeSection, setActiveSection] =
     useState<SettingsSectionId>("profile");
+  const contentRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (contentRef.current) contentRef.current.scrollTop = 0; }, [activeSection]);
   const [profileMessage, setProfileMessage] = useState<Message>(null);
   const [passwordMessage, setPasswordMessage] = useState<Message>(null);
   const [profilePending, setProfilePending] = useState(false);
@@ -312,35 +318,24 @@ function SettingsContent() {
     <main className="settings-shell" id="main-content">
       <div
         className="settings-dialog"
-        role="dialog"
-        aria-modal="true"
         aria-labelledby="settings-page-title"
       >
-        <header className="settings-header">
-          <a
-            className="settings-brand"
-            href="/"
-            aria-label={`返回${PRODUCT_NAME}`}
-          >
-            <ProductBrandMark />
-            <ProductBrandCopy />
-          </a>
-          <div className="settings-header-actions">
-            <a className="settings-back" href="/" aria-label="关闭设置">
-              ×
-            </a>
-          </div>
-        </header>
-
         <div className="settings-layout">
           <aside className="settings-index" aria-label="设置目录">
+            <a className="settings-return-app" href="/" aria-label="返回应用"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 10H4m5-5-5 5 5 5" /></svg><span>返回应用</span></a>
             <p>设置</p>
             {visibleNavigation.map((item) => (
               <a
                 aria-current={activeSection === item.id ? "page" : undefined}
                 href={item.href}
                 key={item.href}
-                onClick={() => setActiveSection(item.id)}
+                onClick={(event) => {
+                  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                  event.preventDefault();
+                  window.history.pushState(null, "", item.href);
+                  setActiveSection(item.id);
+                  if (contentRef.current) contentRef.current.scrollTop = 0;
+                }}
               >
                 <ProductIcon name={item.icon} />
                 <span>{item.label}</span>
@@ -348,7 +343,7 @@ function SettingsContent() {
             ))}
           </aside>
 
-          <div className="settings-content">
+          <div className="settings-content" ref={contentRef}>
             <header className="settings-title">
               <p>设置中心</p>
               <h1 id="settings-page-title">{activeNavigation.label}</h1>
@@ -402,16 +397,7 @@ function SettingsContent() {
               </form>
             </section>
 
-            <section
-              className="settings-section"
-              id="members"
-              hidden={activeSection !== "members"}
-            >
-              <WorkspaceMembers
-                currentUserId={user.user_id}
-                currentRole={membership.role}
-              />
-            </section>
+
 
             {canManageModels && (
               <section
@@ -433,6 +419,22 @@ function SettingsContent() {
               </section>
             )}
 
+            <section className="settings-section" id="configuration" hidden={activeSection !== "configuration"}>
+              <div className="settings-form settings-configuration">
+                <label className="settings-preference-row">
+                  <span><strong>运行中的补充消息</strong><small>Enter 使用所选方式，Alt Enter 临时切换。带附件的消息会加入队列。</small></span>
+                  <select aria-label="补充消息默认行为" value={followUpBehavior} onChange={(event) => setFollowUpBehavior(event.target.value === "steer" ? "steer" : "queue")}>
+                    <option value="queue">加入队列</option><option value="steer">调整方向</option>
+                  </select>
+                </label>
+                <label className="settings-preference-toggle">
+                  <input type="checkbox" checked={showInternalAgents} onChange={(event) => setShowInternalAgents(event.target.checked)} />
+                  <span><strong>显示内部子智能体</strong><small>在智能体列表和各处选择框中显示内部子智能体，默认关闭。</small></span>
+                </label>
+                {activeSection === "configuration" && <WebConfiguration />}
+              </div>
+            </section>
+
             <section
               className="settings-section"
               id="appearance"
@@ -446,6 +448,7 @@ function SettingsContent() {
                   </small>
                 </div>
                 <ThemeSelector />
+
               </div>
             </section>
 
@@ -516,18 +519,7 @@ function SettingsContent() {
               id="data"
               hidden={activeSection !== "data"}
             >
-              <div className="settings-form settings-session">
-                <div>
-                  <span className="settings-session-dot" aria-hidden="true" />
-                  <span>
-                    <strong>数据生命周期</strong>
-                    <small>
-                      删除操作会先检查 Legal Hold，再按外部系统逐项执行。
-                    </small>
-                  </span>
-                </div>
-                <a href="/studio/data">管理我的数据</a>
-              </div>
+              {activeSection === "data" && <DataLifecycleControlPlane embedded />}
             </section>
 
             <section
@@ -535,18 +527,7 @@ function SettingsContent() {
               id="memory"
               hidden={activeSection !== "memory"}
             >
-              <div className="settings-form settings-session">
-                <div>
-                  <span className="settings-session-dot" aria-hidden="true" />
-                  <span>
-                    <strong>受管记忆</strong>
-                    <small>
-                      默认不自动保存敏感信息；每条记录保留来源与到期时间。
-                    </small>
-                  </span>
-                </div>
-                <a href="/settings/memory">管理长期记忆</a>
-              </div>
+              {activeSection === "memory" && <MemoryBank embedded />}
             </section>
 
             <section

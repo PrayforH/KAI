@@ -1,6 +1,6 @@
 /* codex-theme-v1 -----------------------------------------------------------
-   Dark: surface #181818 · ink #ffffff · accent #339cff · contrast 60
-   Light: surface #ffffff · ink #1a1c1f · accent #339cff · contrast 45
+   Dark: surface #181818 · ink #ffffff · accent #ececec · contrast 60
+   Light: surface #ffffff · ink #1a1c1f · accent #ececec · contrast 45
 */
 
 :root {
@@ -18,16 +18,16 @@
   --codex-faint: #737373;
   --codex-line: #303030;
   --codex-line-strong: #444444;
-  --codex-accent: #339cff;
-  --codex-accent-hover: #5aafff;
-  --codex-accent-soft: rgb(51 156 255 / 14%);
-  --codex-accent-faint: rgb(51 156 255 / 7%);
+  --codex-accent: #ececec;
+  --codex-accent-hover: #ffffff;
+  --codex-accent-soft: rgb(236 236 236 / 14%);
+  --codex-accent-faint: rgb(236 236 236 / 7%);
   --codex-success: #40c977;
   --codex-success-soft: rgb(64 201 119 / 13%);
   --codex-danger: #fa423e;
   --codex-danger-soft: rgb(250 66 62 / 13%);
-  --codex-skill: #ad7bf9;
-  --codex-skill-soft: rgb(173 123 249 / 14%);
+  --codex-skill: #9a9a9a;
+  --codex-skill-soft: rgb(154 154 154 / 14%);
   --codex-warning: #e6aa4a;
   --codex-warning-soft: rgb(230 170 74 / 14%);
   --codex-shadow: 0 18px 56px rgb(0 0 0 / 38%);
@@ -94,16 +94,16 @@ html[data-color-mode="light"] {
   --codex-faint: #858b92;
   --codex-line: #e0e0e0;
   --codex-line-strong: #c9c9c9;
-  --codex-accent: #339cff;
-  --codex-accent-hover: #1687e8;
-  --codex-accent-soft: rgb(51 156 255 / 13%);
-  --codex-accent-faint: rgb(51 156 255 / 7%);
+  --codex-accent: #ececec;
+  --codex-accent-hover: #000000;
+  --codex-accent-soft: rgb(236 236 236 / 13%);
+  --codex-accent-faint: rgb(236 236 236 / 7%);
   --codex-success: #00a240;
   --codex-success-soft: rgb(0 162 64 / 11%);
   --codex-danger: #ba2623;
   --codex-danger-soft: rgb(186 38 35 / 10%);
-  --codex-skill: #924ff7;
-  --codex-skill-soft: rgb(146 79 247 / 12%);
+  --codex-skill: #6a6a6a;
+  --codex-skill-soft: rgb(106 106 106 / 12%);
   --codex-warning: #996510;
   --codex-warning-soft: rgb(230 170 74 / 14%);
   --codex-shadow: 0 18px 54px rgb(27 31 35 / 14%);
@@ -128,7 +128,7 @@ html {
 body {
   color: var(--codex-ink);
   background:
-    radial-gradient(circle at 52% -24%, rgb(51 156 255 / 9%), transparent 36rem),
+    radial-gradient(circle at 52% -24%, rgb(236 236 236 / 9%), transparent 36rem),
     var(--codex-surface);
   font-family: var(--codex-font-ui);
   -webkit-font-smoothing: antialiased;
@@ -154,7 +154,7 @@ html[data-color-mode="light"] body::before {
 
 ::selection {
   color: var(--codex-ink);
-  background: rgb(51 156 255 / 34%);
+  background: rgb(236 236 236 / 34%);
 }
 
 * {
@@ -276,7 +276,7 @@ select:not([multiple]):not(.task-model-control select):not(.task-agent-version-s
   border-radius: 2px;
   content: "";
   background: var(--codex-accent);
-  box-shadow: 0 0 12px rgb(51 156 255 / 58%);
+  box-shadow: 0 0 12px rgb(236 236 236 / 58%);
 }
 
 .brand-lockup > div {
@@ -461,7 +461,7 @@ select:not([multiple]):not(.task-model-control select):not(.task-agent-version-s
 }
 
 .account-trigger-avatar {
-  border-color: rgb(51 156 255 / 45%);
+  border-color: rgb(236 236 236 / 45%);
   color: var(--codex-ink);
   background: linear-gradient(145deg, #256eb2, var(--codex-accent));
   box-shadow: 0 0 0 3px var(--codex-accent-faint);
@@ -523,7 +523,7 @@ select:not([multiple]):not(.task-model-control select):not(.task-agent-version-s
 
 .account-help:hover,
 .account-settings:hover {
-  border-color: rgb(51 156 255 / 36%);
+  border-color: rgb(236 236 236 / 36%);
   color: var(--codex-ink);
   background: var(--codex-accent-soft);
 }
@@ -545,7 +545,7 @@ select:not([multiple]):not(.task-model-control select):not(.task-agent-version-s
 
 .task-agent-switcher:hover,
 .task-agent-switcher:focus-within {
-  border-color: rgb(51 156 255 / 48%);
+  border-color: rgb(236 236 236 / 48%);
   color: var(--codex-ink);
   background: var(--codex-surface-raised);
   box-shadow: 0 0 0 3px var(--codex-accent-faint), var(--codex-shadow-soft);
@@ -572,7 +572,7 @@ select:not([multiple]):not(.task-model-control select):not(.task-agent-version-s
 .chat-stage {
   position: relative;
   background:
-    radial-gradient(circle at 50% 12%, rgb(51 156 255 / 4.5%), transparent 30rem),
+    radial-gradient(circle at 50% 12%, rgb(236 236 236 / 4.5%), transparent 30rem),
     var(--codex-surface);
 }
 
@@ -609,7 +609,7 @@ select:not([multiple]):not(.task-model-control select):not(.task-agent-version-s
 
 .user-task-kicker > span {
   background: var(--codex-accent);
-  box-shadow: 0 0 0 4px var(--codex-accent-soft), 0 0 18px rgb(51 156 255 / 40%);
+  box-shadow: 0 0 0 4px var(--codex-accent-soft), 0 0 18px rgb(236 236 236 / 40%);
 }
 
 .user-task-intro h1 {
@@ -653,13 +653,13 @@ select:not([multiple]):not(.task-model-control select):not(.task-agent-version-s
   grid-row: 1 / span 2;
   min-height: 177px;
   background:
-    radial-gradient(circle at 86% 16%, rgb(51 156 255 / 16%), transparent 10rem),
-    linear-gradient(145deg, rgb(51 156 255 / 8%), transparent 56%),
+    radial-gradient(circle at 86% 16%, rgb(236 236 236 / 16%), transparent 10rem),
+    linear-gradient(145deg, rgb(236 236 236 / 8%), transparent 56%),
     var(--codex-surface-subtle);
 }
 
 .user-task-grid .aui-thread-welcome-suggestion:hover {
-  border-color: rgb(51 156 255 / 52%);
+  border-color: rgb(236 236 236 / 52%);
   color: var(--codex-ink);
   background-color: var(--codex-surface-raised);
   box-shadow: 0 12px 34px rgb(0 0 0 / 22%), inset 0 1px 0 rgb(255 255 255 / 4%);
@@ -811,9 +811,9 @@ select:not([multiple]):not(.task-model-control select):not(.task-agent-version-s
 }
 
 .aui-user-message-content {
-  border-color: rgb(51 156 255 / 22%);
+  border-color: rgb(236 236 236 / 22%);
   color: var(--codex-ink-soft);
-  background: rgb(51 156 255 / 10%);
+  background: rgb(236 236 236 / 10%);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 2%);
 }
 
@@ -962,7 +962,7 @@ body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments {
 .aui-md a,
 .chat-surface [data-testid="copilot-assistant-message"] a {
   color: var(--codex-accent-hover);
-  text-decoration-color: rgb(51 156 255 / 44%);
+  text-decoration-color: rgb(236 236 236 / 44%);
 }
 
 .aui-md blockquote,
@@ -999,13 +999,13 @@ body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments {
 }
 
 .source-link {
-  border-color: rgb(51 156 255 / 28%);
+  border-color: rgb(236 236 236 / 28%);
   color: var(--codex-accent-hover);
   background: var(--codex-accent-faint);
 }
 
 .source-link:hover {
-  border-color: rgb(51 156 255 / 52%);
+  border-color: rgb(236 236 236 / 52%);
   background: var(--codex-accent-soft);
 }
 
@@ -1034,7 +1034,7 @@ body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments {
 .code-block-header button:hover,
 .structured-value-header button:hover,
 .structured-value-header button[aria-pressed="true"] {
-  border-color: rgb(51 156 255 / 44%);
+  border-color: rgb(236 236 236 / 44%);
   color: var(--codex-ink);
   background: var(--codex-accent-soft);
 }
@@ -1111,7 +1111,7 @@ body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments {
 
 .execution-ribbon.phase-running,
 .execution-ribbon.phase-queued {
-  border-color: rgb(51 156 255 / 30%);
+  border-color: rgb(236 236 236 / 30%);
   background: linear-gradient(90deg, var(--codex-accent-faint), transparent 58%), var(--codex-surface-subtle);
 }
 
@@ -1401,12 +1401,12 @@ body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments {
 }
 
 .observability-link {
-  border-color: rgb(51 156 255 / 28%);
+  border-color: rgb(236 236 236 / 28%);
   background: var(--codex-accent-faint);
 }
 
 .observability-link:hover {
-  border-color: rgb(51 156 255 / 52%);
+  border-color: rgb(236 236 236 / 52%);
   background: var(--codex-accent-soft);
 }
 
@@ -1433,7 +1433,7 @@ body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments {
 
 .empty-orbit::after {
   background: var(--codex-accent);
-  box-shadow: 0 0 14px rgb(51 156 255 / 52%);
+  box-shadow: 0 0 14px rgb(236 236 236 / 52%);
 }
 
 .chat-loading {
@@ -1538,7 +1538,7 @@ body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments {
 .login-panel {
   color: var(--codex-ink);
   background:
-    radial-gradient(circle at 78% 10%, rgb(173 123 249 / 7%), transparent 20rem),
+    radial-gradient(circle at 78% 10%, rgb(154 154 154 / 7%), transparent 20rem),
     var(--codex-surface);
 }
 
@@ -1577,7 +1577,7 @@ body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments {
 }
 
 .sso-actions a:hover {
-  border-color: rgb(51 156 255 / 45%);
+  border-color: rgb(236 236 236 / 45%);
   background: var(--codex-accent-faint);
 }
 
@@ -1606,7 +1606,7 @@ body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments {
 .login-submit:hover:not(:disabled) {
   border-color: var(--codex-accent-hover);
   background: var(--codex-accent-hover);
-  box-shadow: 0 10px 28px rgb(51 156 255 / 20%);
+  box-shadow: 0 10px 28px rgb(236 236 236 / 20%);
 }
 
 .login-submit:active:not(:disabled) {
@@ -1635,7 +1635,7 @@ body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments {
 .settings-shell {
   color: var(--codex-ink);
   background:
-    radial-gradient(circle at 50% 0, rgb(51 156 255 / 5%), transparent 30rem),
+    radial-gradient(circle at 50% 0, rgb(236 236 236 / 5%), transparent 30rem),
     var(--codex-surface);
 }
 
@@ -1676,7 +1676,7 @@ body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments {
 }
 
 .settings-back:hover {
-  border-color: rgb(51 156 255 / 40%);
+  border-color: rgb(236 236 236 / 40%);
   color: var(--codex-ink);
   background: var(--codex-accent-soft);
 }
@@ -1875,7 +1875,7 @@ body.codex-theme-v1 .task-sidebar-brand-mark::after {
   border-radius: 2px;
   content: "";
   background: var(--codex-accent);
-  box-shadow: 0 0 10px rgb(51 156 255 / 48%);
+  box-shadow: 0 0 10px rgb(236 236 236 / 48%);
 }
 
 body.codex-theme-v1 .task-sidebar-brand-copy strong {
@@ -2539,7 +2539,7 @@ body.codex-theme-v1 .mermaid-card-actions button[aria-pressed="true"] {
 }
 
 body.codex-theme-v1 .mermaid-card-actions button:focus-visible {
-  outline: 2px solid rgb(51 156 255 / 44%);
+  outline: 2px solid rgb(236 236 236 / 44%);
   outline-offset: 1px;
 }
 
@@ -2641,7 +2641,7 @@ body.codex-theme-v1
   border-radius: 1px;
   content: "";
   background: var(--codex-accent);
-  box-shadow: 0 0 8px rgb(51 156 255 / 30%);
+  box-shadow: 0 0 8px rgb(236 236 236 / 30%);
   vertical-align: -0.08em;
   animation: codex-stream-caret 0.9s steps(1, end) infinite;
 }
@@ -2778,6 +2778,7 @@ body.codex-theme-v1 .account-logout {
   }
 }
 
+
 @keyframes codex-stream-caret {
   0%,
   52% {
@@ -2869,6 +2870,25 @@ body.codex-theme-v1 .execution-phase {
   color: var(--codex-ink-soft);
   font-size: 12px;
   font-weight: 590;
+}
+
+body.codex-theme-v1 .execution-summary-icon {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  color: var(--codex-faint);
+}
+
+body.codex-theme-v1 .execution-summary-icon svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.55;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 body.codex-theme-v1
@@ -3667,7 +3687,7 @@ body.codex-theme-v1 .observability-link {
 }
 
 body.codex-theme-v1 .observability-link:hover {
-  border-color: rgb(51 156 255 / 46%);
+  border-color: rgb(236 236 236 / 46%);
   background: var(--codex-surface-hover);
 }
 
@@ -3788,7 +3808,7 @@ body.codex-theme-v1 .trace-index {
 
 body.codex-theme-v1 .trace-status-running .trace-index,
 body.codex-theme-v1 .trace-status-waiting .trace-index {
-  border-color: rgb(51 156 255 / 52%);
+  border-color: rgb(236 236 236 / 52%);
   color: var(--codex-accent);
 }
 
@@ -4092,9 +4112,9 @@ body.codex-theme-v1 .execution-phase {
 body.codex-theme-v1 .execution-duration {
   flex: 0 0 auto;
   color: var(--codex-faint);
-  font-family: var(--codex-font-mono);
-  font-size: 11px;
-  font-weight: 500;
+  font-family: var(--codex-font-ui);
+  font-size: 12px;
+  font-weight: 450;
   line-height: 1.4;
 }
 
@@ -4132,6 +4152,13 @@ body.codex-theme-v1 .execution-log {
   box-shadow: none;
 }
 
+body.codex-theme-v1 .execution-log-label {
+  color: var(--codex-faint);
+  font-size: 11px;
+  font-weight: 520;
+  line-height: 1.4;
+}
+
 body.codex-theme-v1 .execution-commentary {
   min-width: 0;
   margin: 0;
@@ -4143,6 +4170,62 @@ body.codex-theme-v1 .execution-commentary {
   letter-spacing: 0;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+
+body.codex-theme-v1 .execution-commentary-heading {
+  margin-bottom: 7px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--codex-muted);
+}
+
+body.codex-theme-v1 .execution-commentary-heading strong {
+  font-size: 13px;
+  font-weight: 590;
+}
+
+body.codex-theme-v1 .execution-commentary-heading small {
+  color: var(--codex-faint);
+  font-size: 11px;
+  font-weight: 450;
+}
+
+body.codex-theme-v1 .execution-commentary-icon {
+  width: 17px;
+  height: 17px;
+  display: grid;
+  place-items: center;
+  color: var(--codex-faint);
+}
+
+body.codex-theme-v1 .execution-commentary-icon svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.55;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+body.codex-theme-v1
+  .execution-commentary[data-active="true"]
+  .execution-commentary-icon {
+  animation: execution-thinking-spin 1.35s linear infinite;
+  transform-origin: center;
+}
+
+@keyframes execution-thinking-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+body.codex-theme-v1 .execution-commentary-content {
+  margin-left: 8px;
+  padding-left: 25px;
+  border-left: 1px solid var(--codex-line);
 }
 
 body.codex-theme-v1

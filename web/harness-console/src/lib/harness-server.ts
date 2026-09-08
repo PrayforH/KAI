@@ -42,9 +42,12 @@ export function downloadArtifact(
   environment: ServerEnvironment = process.env,
 ): Promise<Response> {
   const config = getHarnessServerConfig(environment);
+  const url = new URL(`${config.apiUrl}/v1/artifacts/${encodeURIComponent(artifactId)}/content`);
+  const threadId = new URL(request.url).searchParams.get("thread_id");
+  if (threadId) url.searchParams.set("thread_id", threadId);
   return authenticatedFetch(
     request,
-    `${config.apiUrl}/v1/artifacts/${encodeURIComponent(artifactId)}/content`,
+    url.toString(),
     {},
     config,
     fetcher,

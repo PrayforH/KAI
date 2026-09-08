@@ -2,7 +2,6 @@
 
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../auth-provider";
-import { StudioSidebar } from "./studio-sidebar";
 import {
   studioClient,
   type QuotaResource,
@@ -19,8 +18,6 @@ const RESOURCES: Array<{
   { id: "concurrent_runs", label: "并发 Run", description: "当前租户同时运行的任务", unit: "count" },
   { id: "concurrent_subagents", label: "并发 Sub Agent", description: "Lead 同时委派的子任务", unit: "count" },
   { id: "active_previews", label: "活动 Preview", description: "未过期的隔离试跑环境", unit: "count" },
-  { id: "model_tokens", label: "模型 Token", description: "本月已提交与预留用量", unit: "tokens" },
-  { id: "model_cost_micro_usd", label: "模型成本", description: "本月可确认的模型费用", unit: "usd" },
   { id: "mcp_requests", label: "MCP QPS", description: "当前秒的受控外部调用", unit: "count" },
   { id: "artifact_bytes", label: "制品写入", description: "本月生成的报告与文件", unit: "bytes" },
   { id: "snapshot_bytes", label: "快照写入", description: "本月保存的工作区快照", unit: "bytes" },
@@ -96,10 +93,8 @@ export function QuotaControlPlane() {
   }
 
   return (
-    <main className={styles.shell} id="main-content">
-      <StudioSidebar active="usage">
-        <div className={styles.railCopy}><strong>容量与成本</strong><p>配额在 API 与 Worker 两条路径执行。页面展示的是控制面事实，不是估算值。</p></div>
-      </StudioSidebar>
+    <>
+      <div className={styles.railCopy}><strong>容量与成本</strong><p>配额在 API 与 Worker 两条路径执行。页面展示的是控制面事实，不是估算值。</p></div>
 
       <section className={styles.content}>
         <header className={styles.header}>
@@ -153,6 +148,6 @@ export function QuotaControlPlane() {
           </details>
         )}
       </section>
-    </main>
+    </>
   );
 }

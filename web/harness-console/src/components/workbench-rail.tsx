@@ -2,9 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { requireAuthenticatedResponse } from "../lib/client-auth";
-import { PRODUCT_NAME } from "./product-brand";
+import { PanelResizeHandle } from "./panel-resize-handle";
 
-const HELP_MANUAL_URL = "https://my.feishu.cn/docx/DdiCdPFcroUpUXxOumNcQpIin1g";
 
 const PHASE_LABELS: Record<string, string> = {
   idle: "空闲",
@@ -14,6 +13,7 @@ const PHASE_LABELS: Record<string, string> = {
   cancelling: "取消中",
   cancelled: "已取消",
   succeeded: "已完成",
+  completed: "已完成",
   failed: "失败",
   rejected: "已拒绝",
   timed_out: "已超时",
@@ -71,15 +71,17 @@ export function WorkbenchRail({
   runPhase: string | null;
   threadId: string;
 }) {
-  const [host, setHost] = useState("");
-  const [files, setFiles] = useState<RailFile[]>([]);
+  const [tab, setTab] = useState<"files" | "details">("files");
+  const [query, setQuery] = useState("");
+  const [fileError, setFileError] = useState("");
+  const [refresh, setRefresh] = useState(0);
+  const [loadedFiles, setFiles] = useState<RailFile[]>([]);
+  // Scope again at render time: effects run after task-switch renders.
+  const files = loadedFiles.filter((file) => file.thread_id === threadId);
   const [filesLoading, setFilesLoading] = useState(true);
 
   useEffect(() => {
-    setHost(window.location.host);
-  }, []);
-
-  useEffect(() => {
+    if (!open) return;
     if (!threadId) {
       setFiles([]);
       setFilesLoading(false);
@@ -87,26 +89,28 @@ export function WorkbenchRail({
     }
     const controller = new AbortController();
     setFilesLoading(true);
+    setFiles([]);
+    setFileError("");
     async function load() {
       try {
         const response = requireAuthenticatedResponse(
-          await fetch("/api/harness/artifacts?limit=500", {
+          await fetch(`/api/harness/artifacts?thread_id=${encodeURIComponent(threadId)}&limit=500`, {
             cache: "no-store",
             signal: controller.signal,
           }),
         );
         if (!response.ok) throw new Error();
         const all = (await response.json()) as RailFile[];
-        setFiles(all.filter((file) => file.thread_id === threadId));
+        if (!controller.signal.aborted) setFiles(all.filter((file) => file.thread_id === threadId));
       } catch {
-        if (!controller.signal.aborted) setFiles([]);
+        if (!controller.signal.aborted) setFileError("文件暂时无法读取，请重试。");
       } finally {
         if (!controller.signal.aborted) setFilesLoading(false);
       }
     }
     void load();
     return () => controller.abort();
-  }, [threadId]);
+  }, [threadId, runPhase, open, refresh]);
 
   const phaseKnown = runPhase && runPhase in PHASE_LABELS;
   const phaseKey = (phaseKnown ? runPhase : "unknown") as
@@ -118,12 +122,14 @@ export function WorkbenchRail({
     <aside
       className="workbench-rail"
       aria-hidden={open ? undefined : true}
-      aria-label="任务上下文"
+      aria-label="任务工作区"
+      inert={!open}
       tabIndex={-1}
     >
+      {open && <PanelResizeHandle panel="rail" />}
       <div className="workbench-rail-panel" aria-hidden={!open}>
         <header className="workbench-rail-header">
-          <strong>任务上下文</strong>
+          <strong>任务工作区</strong>
           <button
             type="button"
             className="workbench-rail-close"
@@ -134,30 +140,35 @@ export function WorkbenchRail({
             <CloseIcon />
           </button>
         </header>
+        <nav className="rail-tabs" aria-label="工作区视图">
+          <button type="button" aria-pressed={tab === "files"} onClick={() => setTab("files")}>文件</button>
+          <button type="button" aria-pressed={tab === "details"} onClick={() => setTab("details")}>任务详情</button>
+        </nav>
         <div className="workbench-rail-body">
           <section className="workbench-rail-section">
             <small>当前任务</small>
             <strong className="workbench-rail-task">{taskTitle}</strong>
           </section>
-          <section className="workbench-rail-section">
-            <small>文件</small>
-            {filesLoading ? (
+          <section className="workbench-rail-section" hidden={tab !== "files"}>
+            <div className="rail-file-toolbar"><small>本任务的历史文件</small><button type="button" aria-label="刷新文件" onClick={() => setRefresh((value) => value + 1)}>↻</button></div>
+            <input className="rail-file-search" type="search" aria-label="搜索任务文件" placeholder="搜索文件…" value={query} onChange={(event) => setQuery(event.target.value)} />
+            {fileError ? <p role="alert">{fileError} <button type="button" onClick={() => setRefresh((value) => value + 1)}>重试</button></p> : filesLoading ? (
               <span className="workbench-rail-files-empty">正在读取文件…</span>
             ) : files.length === 0 ? (
-              <span className="workbench-rail-files-empty">暂无文件</span>
+              <span className="workbench-rail-files-empty">生成的文档、图片与其他成果会保存在这里。</span>
             ) : (
               <div className="workbench-rail-files">
-                {files.map((file) => {
+                {!files.some((file) => file.name.toLowerCase().includes(query.toLowerCase())) && <p>没有匹配的文件</p>}
+                {files.filter((file) => file.name.toLowerCase().includes(query.toLowerCase())).map((file) => {
                   const previewable =
                     file.media_type.startsWith("text/") ||
                     file.media_type.startsWith("image/") ||
                     file.media_type === "application/json" ||
                     file.media_type === "application/pdf";
                   return (
-                    <a
-                      key={file.artifact_id}
+                    <div className="rail-file-row" key={file.artifact_id}><a
                       className="workbench-rail-file"
-                      href={`/api/harness/artifacts/${encodeURIComponent(file.artifact_id)}${previewable ? "?preview=1" : ""}`}
+                      href={`/api/harness/artifacts/${encodeURIComponent(file.artifact_id)}?thread_id=${encodeURIComponent(threadId)}${previewable ? "&preview=1" : ""}`}
                       target={previewable ? "_blank" : undefined}
                       rel={previewable ? "noreferrer" : undefined}
                       download={previewable ? undefined : file.name}
@@ -167,12 +178,13 @@ export function WorkbenchRail({
                       <span className="workbench-rail-file-size">
                         {formatFileSize(file.size_bytes)}
                       </span>
-                    </a>
+                    </a><a className="rail-download" href={`/api/harness/artifacts/${encodeURIComponent(file.artifact_id)}?thread_id=${encodeURIComponent(threadId)}`} download={file.name} title={`下载 ${file.name}`} aria-label={`下载 ${file.name}`}>↓</a></div>
                   );
                 })}
               </div>
             )}
           </section>
+          <div hidden={tab !== "details"}>
           <section className="workbench-rail-section">
             <small>智能体</small>
             <div className="workbench-rail-rows">
@@ -201,21 +213,7 @@ export function WorkbenchRail({
             <small>会话 ID</small>
             <code className="workbench-rail-thread">{threadId}</code>
           </section>
-          <section className="workbench-rail-section">
-            <small>环境</small>
-            <code className="workbench-rail-thread">{host || "—"}</code>
-          </section>
-          <a
-            className="workbench-rail-manual"
-            href={HELP_MANUAL_URL}
-            target="_blank"
-            rel="noreferrer"
-          >
-            产品使用手册
-          </a>
-          <footer className="workbench-rail-footer">
-            <span>{PRODUCT_NAME}</span>
-          </footer>
+          </div>
         </div>
       </div>
     </aside>

@@ -1,7 +1,9 @@
+import { isAgentVisible } from "./agent-visibility";
 import { requireAuthenticatedResponse } from "./client-auth";
 import type { StudioDraftSummary } from "./studio-client";
 
 export interface TaskAgent {
+  internal?: boolean;
   agentId?: string;
   name: string;
   version: string;
@@ -10,6 +12,7 @@ export interface TaskAgent {
   modelRoute?: string;
   model?: string;
   modelCapabilities?: string[];
+  skills?: Array<{ name: string; description: string }>;
   ownerUserId?: string;
   scope?: "personal" | "team";
   spaceId?: string;
@@ -36,6 +39,7 @@ interface PublishedAgent {
   model_route?: string | null;
   model?: string | null;
   model_capabilities?: string[];
+  skills?: Array<{ name: string; description: string }>;
   owner_user_id: string;
   scope: "personal" | "team";
   space_id?: string | null;
@@ -51,6 +55,7 @@ interface PublishedAgent {
 export interface TaskAgentCatalog {
   agents: TaskAgent[];
   defaultAgent: TaskAgent;
+  hiddenAgents?: TaskAgent[];
 }
 
 /**
@@ -144,6 +149,7 @@ function registryCoordinate(
 
 export async function loadTaskAgentCatalog(
   currentUserId: string | null = null,
+  showInternal = false,
 ): Promise<TaskAgentCatalog> {
   const [runtime, registry, drafts] = await Promise.all([
     json<RuntimeAgent>("/api/harness/runtime-config"),
@@ -162,6 +168,8 @@ export async function loadTaskAgentCatalog(
         Boolean(draft.publishedVersion),
     )
     .map((draft) => ({
+      internal: Boolean(draft.parentDraftId),
+      spaceId: draft.spaceId ?? undefined,
       name: draft.name,
       version: draft.publishedVersion!,
       displayName: draft.displayName,
@@ -173,11 +181,15 @@ export async function loadTaskAgentCatalog(
       agent,
     ]),
   );
+  const internalDrafts = drafts.filter((draft) => draft.parentDraftId);
   const registryVersions = registry.map((agent) => {
+    const internal = internalDrafts.some((draft) => draft.agentId ? draft.agentId === agent.agent_id
+      : agent.scope === "personal" && agent.owner_user_id === currentUserId && draft.name === agent.name);
     const studio = studioByCoordinate.get(
       registryCoordinate(agent, currentUserId),
     );
     const sharing = {
+      internal,
       agentId: agent.agent_id ?? undefined,
       ownerUserId: agent.owner_user_id,
       scope: agent.scope,
@@ -189,6 +201,7 @@ export async function loadTaskAgentCatalog(
       canView: agent.can_view ?? true,
       canChat: agent.can_chat ?? true,
       canEdit: agent.can_edit ?? false,
+      skills: agent.skills ?? [],
     } as const;
     return (
       studio
@@ -233,14 +246,15 @@ export async function loadTaskAgentCatalog(
     (agent) =>
       !currentUserRegistryReleases.has(`${agent.name}@${agent.version}`),
   );
-  const published = [...registryVersions, ...studioFallbackVersions].filter(
+  const published: TaskAgent[] = [...registryVersions, ...studioFallbackVersions].filter(
     (agent, index, values) =>
       values.findIndex(
         (candidate) => agentItemKey(candidate) === agentItemKey(agent),
       ) === index,
   );
   const runtimeMatch = published.find(
-    (agent) => agent.name === runtime.name && agent.version === runtime.version,
+    (agent) => agent.name === runtime.name && agent.version === runtime.version
+      && agent.scope !== "team" && (!currentUserId || !agent.ownerUserId || agent.ownerUserId === currentUserId),
   );
   const defaultAgent = runtimeMatch ?? {
     name: runtime.name,
@@ -253,11 +267,21 @@ export async function loadTaskAgentCatalog(
     : [defaultAgent, ...published];
   return {
     defaultAgent,
-    agents: agents.filter(
+    hiddenAgents: agents.filter((agent) => !isAgentVisible(agent, showInternal)),
+    agents: agents.filter((agent) => isAgentVisible(agent, showInternal)).filter(
       (agent, index, values) =>
         values.findIndex(
           (candidate) => agentItemKey(candidate) === agentItemKey(agent),
         ) === index,
     ),
   };
+}
+
+/** Use the platform release for new system-assistant tasks; keep team releases pinned. */
+export function currentSystemAssistant(agent: TaskAgent | null, current: TaskAgent | null): TaskAgent | null {
+  if (!agent) return current;
+  return current && agent.name === "lead-agent" && current.name === agent.name
+    && agent.scope !== "team" && !agent.spaceId && !current.spaceId
+    && (!agent.ownerUserId || agent.ownerUserId === current.ownerUserId)
+    ? current : agent;
 }

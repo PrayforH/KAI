@@ -1,4 +1,5 @@
 "use client";
+import { MessageAttachmentView } from "./message-attachment-view";
 
 import Link from "next/link";
 import {
@@ -36,6 +37,10 @@ import {
   ThreadWelcome,
   UserMessage,
 } from "@assistant-ui/react-ui";
+import { ConversationIndex } from "./conversation-index";
+import { PromptQueue } from "./prompt-queue";
+import { useFollowUpPreference } from "../lib/interface-preferences";
+import { ConversationInput } from "./conversation-input";
 import { ActivitySummary } from "./activity-summary";
 import { TaskAgentSwitcher } from "./task-agent-switcher";
 import { ApprovalCard, type ApprovalDetails } from "./approval-card";
@@ -44,7 +49,7 @@ import { MarkdownText } from "./markdown-text";
 import { SubagentCard } from "./subagent-card";
 import { ToolCard } from "./tool-card";
 import { useRunActivity, useRunViewModel } from "../lib/activity-store";
-import { selectComposerDisabled, type RunPhase } from "../lib/run-view-model";
+import { reduceRunViewModel, selectComposerDisabled, type RunPhase } from "../lib/run-view-model";
 import {
   TaskModelControl,
   TaskModelVisionNotice,
@@ -79,6 +84,10 @@ import {
   useVideoGeneration,
 } from "./video-generation";
 
+import { createRandomId } from "../lib/random-id";
+import { ComposerAssist, composerOptions } from "./composer-assist";
+import { composerTrigger, queueAttachments, queueMayDispatch, restorePromptQueue, type QueuedPrompt } from "../lib/composer-interactions";
+
 export { normalizeMessageText } from "../lib/message-text";
 import { runReuseStore, useRunReuseNotice } from "../lib/run-reuse-store";
 import {
@@ -90,6 +99,10 @@ import {
   uploadFeedbackStore,
   useUploadFeedback,
 } from "../lib/upload-feedback-store";
+import {
+  skillCreatorPrompt,
+  type SkillCreatorLaunch,
+} from "../lib/skill-creator-launch";
 
 export function UploadFeedbackContent({
   items,
@@ -147,7 +160,7 @@ export function shouldShowComposerStop(
   ) {
     return false;
   }
-  return threadRunning || streamStatus === "running";
+  return threadRunning || streamStatus === "running" || ["running", "queued", "waiting_approval"].includes(runPhase ?? "");
 }
 
 export function shouldShowPreResponseActivity(
@@ -336,9 +349,28 @@ function HarnessComposer() {
   const runView = useRunViewModel();
   const pendingApproval = usePendingApproval();
   const agentSelection = useContext(AgentSelectionContext);
+  const skillLaunchContext = useContext(SkillLaunchContext);
+  const activeSkillLaunch = skillLaunchContext.launch;
+  const selectedSkill = activeSkillLaunch?.name ?? /(?:^|\s)\$([a-zA-Z][\w-]*)(?=\s|$)/u.exec(composerText)?.[1];
+  const seededSkillLaunchRef = useRef<string | null>(null);
   const reuseNotice = useRunReuseNotice();
   const runLocked = selectComposerDisabled(runView);
   useTaskComposerDraft(composerText);
+  useEffect(() => {
+    if (!activeSkillLaunch) {
+      seededSkillLaunchRef.current = null;
+      return;
+    }
+    const launchKey = [
+      activeSkillLaunch.scope,
+      activeSkillLaunch.agentDraftId ?? "",
+      activeSkillLaunch.agentLabel ?? "",
+    ].join(":");
+    if (seededSkillLaunchRef.current === launchKey) return;
+    seededSkillLaunchRef.current = launchKey;
+    if (composerText.trim()) return;
+    aui.composer().setText(skillCreatorPrompt(activeSkillLaunch));
+  }, [activeSkillLaunch, aui, composerText]);
   const videoRoute = routes.find(
     (route) => route.id === overrideRouteId && route.modelType === "video_generation",
   );
@@ -362,6 +394,186 @@ function HarnessComposer() {
     runView?.phase,
   );
   const videoGenerating = videoGeneration.generating;
+  const threadRuntime = useThreadRuntime();
+  const scope = useContext(ComposerDraftContext);
+  const queueKey = scope ? `harness:prompt-queue:${scope.userId}:${scope.threadId}` : null;
+  const [queue, setQueue] = useState<QueuedPrompt[]>([]);
+  const [followUpBehavior] = useFollowUpPreference();
+  const [queueLoaded, setQueueLoaded] = useState(false);
+  const [queuePaused, setQueuePaused] = useState(false);
+  const [inputError, setInputError] = useState("");
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [caret, setCaret] = useState(0);
+  const [suggestionIndex, setSuggestionIndex] = useState(0);
+  const [dismissedText, setDismissedText] = useState<string | null>(null);
+  const dispatching = useRef(false);
+  const [steerAvailable, setSteerAvailable] = useState(false);
+  const [steeringIds, setSteeringIds] = useState<string[]>([]);
+  const [steeringNotice, setSteeringNotice] = useState("");
+  const steeringSentAt = useRef<Record<string, number>>({});
+  const steeringRunId = queue.find((item) => item.steerRunId)?.steerRunId ?? runView?.runId;
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const composingRef = useRef(false);
+  const options = dismissedText === composerText ? [] : composerOptions(composerText, caret, agentSelection.agents, agentSelection.selected?.skills);
+  const busy = threadRunning || showStop || runLocked || videoGenerating;
+  useEffect(() => {
+    if (!queueKey) return;
+    try {
+      const saved = restorePromptQueue(localStorage.getItem(queueKey));
+      setQueue(saved);
+      setSteeringIds(saved.filter((item) => item.steerRunId).map((item) => item.id));
+      setQueuePaused(saved.length > 0);
+    } catch { setQueue([]); }
+    setQueueLoaded(true);
+  }, [queueKey]);
+  useEffect(() => {
+    if (!queueLoaded || !queueKey) return;
+    try { localStorage.setItem(queueKey, JSON.stringify(queue)); } catch { /* Keep the in-memory queue. */ }
+  }, [queue, queueKey, queueLoaded]);
+  useEffect(() => { setSuggestionIndex(0); }, [composerText]);
+  const terminalRun = useRef("");
+  useEffect(() => {
+    if (!runView || !["failed", "rejected", "cancelled"].includes(runView.phase) || terminalRun.current === runView.runId) return;
+    terminalRun.current = runView.runId;
+    setQueuePaused(true);
+  }, [runView?.runId, runView?.phase]);
+  useEffect(() => {
+    if (busy) { dispatching.current = false; return; }
+    if (!queueLoaded || steeringIds.length > 0 || !queue.length || dispatching.current || !queueMayDispatch(busy, queuePaused, runView?.phase)) return;
+    // Allow terminal-state effects and durable history synchronization to settle.
+    const timer = window.setTimeout(() => {
+      if (threadRuntime.getState().isRunning || dispatching.current) return;
+      dispatching.current = true;
+      const next = queue[0];
+      try {
+        threadRuntime.append({ role: "user", content: [{ type: "text", text: next.text }], attachments: next.attachments });
+        setQueue((current) => current.filter((item) => item.id !== next.id));
+      } catch (error) {
+        dispatching.current = false;
+        setQueuePaused(true);
+        setInputError(error instanceof Error ? error.message : "发送失败，队列已暂停。");
+      }
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [busy, queue, queueLoaded, queuePaused, runView?.phase, steeringIds, threadRuntime]);
+  function command(value: string) {
+    if (value === "/stop") { void stopRun(); }
+    else if (value === "/files") window.dispatchEvent(new Event("harness:open-files"));
+    else if (value === "/help") setHelpOpen((current) => !current);
+    else if (value === "/new") window.dispatchEvent(new Event("harness:new-task"));
+    else if (value !== "/clear") return false;
+    aui.composer().setText("");
+    return true;
+  }
+  function chooseSuggestion(index: number) {
+    const option = options[index];
+    if (!option) return;
+    const trigger = composerTrigger(composerText, caret);
+    if (!trigger) return;
+    if (option.id.startsWith("/")) { command(option.id); return; }
+    const next = composerText.slice(0, trigger.start) + (option.agent ? "" : `${option.id} `) + composerText.slice(trigger.end);
+    aui.composer().setText(next);
+    setDismissedText(next);
+    if (option.agent) agentSelection.onChange(option.agent);
+    else inputRef.current?.focus();
+  }
+  async function enqueue(steer = false) {
+    if (!composerText.trim() && !composerAttachments.length) return;
+    if (queue.length >= 50) { setInputError("队列已满，请先处理或删除部分消息。"); return; }
+    try {
+      const next: QueuedPrompt = { id: createRandomId(), text: composerText.trim(), attachments: queueAttachments(composerAttachments) };
+      setQueue((current) => [...current, next]);
+      setInputError("");
+      aui.composer().setText("");
+      await threadRuntime.composer.clearAttachments();
+      if (steer && steerAvailable && !next.attachments.length) await guide(next);
+
+    } catch (error) { setInputError(error instanceof Error ? error.message : "无法加入队列"); }
+  }
+  useEffect(() => {
+    if (!steeringRunId) { setSteerAvailable(false); return; }
+    let active = true;
+    const controller = new AbortController();
+    async function pollSteering() {
+      try {
+        const response = requireAuthenticatedResponse(await fetch(`/api/harness/runs/${encodeURIComponent(steeringRunId!)}/steer`, { cache: "no-store", signal: controller.signal }));
+        if (!response.ok) { if (active) setSteerAvailable(false); return; }
+        const state = await response.json() as { available: boolean; requests: Array<{ request_id: string; status: string; error?: string }> };
+        if (!active) return;
+        setSteerAvailable(state.available && steeringRunId === runView?.runId);
+        for (const id of steeringIds) {
+          if (state.requests.some((item) => item.request_id === id)) continue;
+          steeringSentAt.current[id] ??= Date.now();
+          if (Date.now() - steeringSentAt.current[id] > 10_000) {
+            setSteeringIds((ids) => ids.filter((value) => value !== id));
+            setQueue((items) => items.map((entry) => entry.id === id ? { ...entry, steerRunId: undefined } : entry));
+            setQueuePaused(true);
+            setInputError("未查到引导接收记录，内容已保留，可再次点击引导核对。");
+          }
+        }
+        for (const item of state.requests) {
+          if (!steeringIds.includes(item.request_id)) continue;
+          if (item.status === "accepted") {
+            setQueue((items) => items.filter((entry) => entry.id !== item.request_id));
+            setSteeringIds((ids) => ids.filter((id) => id !== item.request_id));
+            setSteeringNotice("已送入当前运行，智能体会在后续处理时参考补充。");
+          } else if (["failed", "not_delivered", "unknown"].includes(item.status)) {
+            setSteeringIds((ids) => ids.filter((id) => id !== item.request_id));
+            setQueuePaused(true);
+            setQueue((items) => items.map((entry) => entry.id === item.request_id ? { ...entry, steerRunId: undefined } : entry));
+            setInputError(item.status === "unknown" ? "引导接收状态不确定，请先查看回复再决定是否重发。" : item.error || "运行已经结束，补充仍保留在队列中。");
+          }
+        }
+      } catch { if (active) setSteerAvailable(false); }
+    }
+    void pollSteering();
+    const timer = (busy && !steerAvailable) || steeringIds.length > 0
+      ? window.setInterval(() => void pollSteering(), 1500) : undefined;
+    return () => { active = false; controller.abort(); window.clearInterval(timer); };
+  }, [runView?.runId, runView?.phase, steeringIds, busy, steerAvailable, steeringRunId]);
+  async function guide(item: QueuedPrompt) {
+    if (!runView?.runId || !steerAvailable || steeringIds.includes(item.id)) return;
+    if (item.attachments.length) { setInputError("带附件的补充请加入队列；实时引导目前支持文本。"); return; }
+    setQueuePaused(true);
+    setSteeringIds((ids) => [...ids, item.id]);
+    steeringSentAt.current[item.id] = Date.now();
+    setQueue((items) => items.map((entry) => entry.id === item.id ? { ...entry, steerRunId: runView.runId } : entry));
+    setInputError("");
+    setSteeringNotice("");
+    try {
+      const response = requireAuthenticatedResponse(await fetch(`/api/harness/runs/${encodeURIComponent(runView.runId)}/steer`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ request_id: item.id, text: item.text }),
+      }));
+      if (!response.ok) {
+        setSteeringIds((ids) => ids.filter((id) => id !== item.id));
+        setQueue((items) => items.map((entry) => entry.id === item.id ? { ...entry, steerRunId: undefined } : entry));
+        setInputError("当前运行无法接收引导，内容仍保留在队列中。");
+      }
+    } catch { setInputError("引导请求状态待确认，正在核对接收结果；请勿重复发送。"); }
+  }
+  useEffect(() => {
+    if (queueLoaded && queue.length === 0 && steeringIds.length === 0) setQueuePaused(false);
+  }, [queueLoaded, queue.length, steeringIds.length]);
+  async function stopRun() {
+    setQueuePaused(true);
+    if (threadRunning) { aui.thread().cancelRun(); return; }
+    if (!runView?.runId || !showStop) return;
+    try {
+      const response = requireAuthenticatedResponse(await fetch(`/api/agui/runs/${encodeURIComponent(runView.runId)}/cancel`, { method: "POST" }));
+      if (!response.ok) throw new Error("停止请求未成功，请重试。");
+      setSteeringNotice("已请求停止，待发送内容已暂停。");
+    } catch (error) { setInputError(error instanceof Error ? error.message : "停止请求未成功，请重试。"); }
+  }
+  function submitComposer(alternate = false) {
+    if (command(composerText.trim())) return;
+    if (videoRoute) { void generateVideo(); return; }
+    if (busy || queue.length) {
+      const steer = alternate ? followUpBehavior !== "steer" : followUpBehavior === "steer";
+      void enqueue(busy && steer); return;
+    }
+    aui.composer().send();
+  }
+
   async function generateVideo() {
     const prompt = composerText.trim();
     if (!videoRoute || !prompt || videoGenerating) return;
@@ -501,19 +713,63 @@ function HarnessComposer() {
           ) : null}
         </>
       ) : null}
-      <Composer.Root>
+      <PromptQueue items={queue} paused={queuePaused} busy={busy} canSteer={steerAvailable} sendingIds={steeringIds}
+        onChange={setQueue} onPause={(value) => { dispatching.current = false; setQueuePaused(value); }} onGuide={(item) => void guide(item)}
+        onSend={(item) => {
+          if (busy || threadRuntime.getState().isRunning || steeringIds.length) return;
+          setQueuePaused(true);
+          try {
+            threadRuntime.append({ role: "user", content: [{ type: "text", text: item.text }], attachments: item.attachments });
+            setQueue((items) => items.filter((entry) => entry.id !== item.id));
+          } catch { setInputError("发送失败，消息仍保留在队列中。"); }
+        }} />
+      {steeringNotice && <p className="composer-status-announcement" role="status">{steeringNotice}</p>}
+      {inputError && <p className="composer-input-error" role="alert">{inputError}</p>}
+      <Composer.Root onSubmitCapture={(event: FormEvent) => { event.preventDefault(); event.stopPropagation(); if (!composingRef.current) submitComposer(); }}>
+        <ComposerAssist options={options} index={suggestionIndex} onChoose={chooseSuggestion} />
+        {helpOpen && <div className="composer-assist composer-help-popover" role="dialog" aria-label="输入帮助">
+          <button type="button" onClick={() => setHelpOpen(false)}>关闭</button>
+          <p>/ 执行命令 · @ 选择智能体 · $ 引用技能</p>
+          <p>运行中 Enter {followUpBehavior === "steer" ? "调整方向" : "加入队列"}，Alt Enter 使用另一种方式，Shift Enter 换行。可在个人设置的配置中更改默认行为。</p>
+        </div>}
+        {activeSkillLaunch && selectedSkill && (
+          <div className="composer-skill-context" aria-label="已识别的 Skill 提示" title="直接输入 $技能名 即可，无需额外点选；也可以直接描述需求。">
+            <span aria-hidden="true">$</span><strong>{selectedSkill}</strong>
+            <button type="button" aria-label={`移除技能 ${selectedSkill}`} onClick={() => {
+              aui.composer().setText(composerText.replace(new RegExp(`\\$${selectedSkill}(?=\\s|$)`, "u"), "").trimStart());
+              if (activeSkillLaunch) skillLaunchContext.onDismiss();
+            }}>×</button>
+          </div>
+        )}
         <Composer.Attachments />
-        <Composer.Input
-          autoFocus
+        <ConversationInput
+          ref={inputRef}
+          onComposingChange={(value) => { composingRef.current = value; }}
+          className="aui-composer-input"
+          aria-label="消息输入"
+          placeholder={busy ? "继续补充…" : "随心输入，/ 命令 · @ 智能体 · $ 技能"}
+          rows={Math.min(8, Math.max(2, composerText.split("\n").length))}
+          aria-controls={options.length ? "composer-suggestions" : undefined}
+          aria-activedescendant={options.length ? `composer-option-${suggestionIndex}` : undefined}
+          onChange={(event) => { if (!composingRef.current) setCaret(event.target.selectionStart); }}
+          onCompositionEnd={(event) => setCaret(event.currentTarget.selectionStart)}
+          onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
+          onPaste={(event) => {
+            const files = Array.from(event.clipboardData.files);
+            if (!files.length) return;
+            event.preventDefault();
+            for (const file of files) void threadRuntime.composer.addAttachment(file).catch(() => setInputError("附件添加失败，请重试。"));
+          }}
           onKeyDown={(event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
-            if (
-              videoRoute &&
-              event.key === "Enter" &&
-              !event.shiftKey &&
-              !event.nativeEvent.isComposing
-            ) {
+            if (options.length && ["ArrowDown", "ArrowUp", "Escape", "Enter", "Tab"].includes(event.key) && !event.shiftKey) {
               event.preventDefault();
-              void generateVideo();
+              if (event.key === "Escape") setDismissedText(composerText);
+              else if (event.key === "ArrowDown") setSuggestionIndex((value) => (value + 1) % options.length);
+              else if (event.key === "ArrowUp") setSuggestionIndex((value) => (value + options.length - 1) % options.length);
+              else chooseSuggestion(suggestionIndex);
+            } else if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              submitComposer(event.altKey);
             }
           }}
         />
@@ -529,15 +785,17 @@ function HarnessComposer() {
             loading={agentSelection.loading}
             currentTaskBusy={agentSelection.currentTaskBusy}
             onChange={agentSelection.onChange}
+            onRefresh={agentSelection.onRefresh}
           />
           <TaskModelControl disabled={runLocked || showStop || videoGenerating} />
+          {showStop && Boolean(composerText.trim() || composerAttachments.length) && <button type="button" className="composer-stop-secondary" aria-label="停止运行" title="停止运行" onClick={() => void stopRun()}><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="5" width="10" height="10" rx="2" fill="currentColor" /></svg></button>}
         </div>
-        {showStop ? (
+        {showStop && !composerText.trim() && !composerAttachments.length ? (
           <button
             type="button"
             className="aui-button aui-button-icon aui-composer-cancel"
             aria-label="停止运行"
-            onClick={() => aui.thread().cancelRun()}
+            onClick={() => void stopRun()}
           >
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <rect x="6" y="6" width="12" height="12" rx="2.5" fill="currentColor" />
@@ -554,13 +812,14 @@ function HarnessComposer() {
             {videoGenerating ? "生成中" : "生成视频"}
           </button>
         ) : (
-          <Composer.Send>
+          <button type="button" className="aui-button aui-button-icon aui-composer-send" aria-label={busy ? followUpBehavior === "steer" && steerAvailable && !composerAttachments.length ? "调整方向" : "加入队列" : queue.length ? "加入队列" : "发送消息"} title={busy ? `Enter ${followUpBehavior === "steer" ? "调整方向" : "加入队列"} · Alt Enter 切换` : "发送消息"} disabled={!composerText.trim() && !composerAttachments.length} onClick={() => submitComposer()}>
             <svg className="aui-composer-send-icon" viewBox="0 0 20 20" aria-hidden="true">
               <path d="M10 16.5v-11M5.5 9.5 10 5l4.5 4.5" />
             </svg>
-          </Composer.Send>
+          </button>
         )}
       </Composer.Root>
+
     </div>
   );
 }
@@ -571,6 +830,15 @@ type ComposerDraftScope = {
 };
 
 const ComposerDraftContext = createContext<ComposerDraftScope | null>(null);
+type SkillLaunchContextValue = {
+  launch: SkillCreatorLaunch | null;
+  onDismiss: () => void;
+};
+
+const SkillLaunchContext = createContext<SkillLaunchContextValue>({
+  launch: null,
+  onDismiss: () => undefined,
+});
 
 type AgentSelectionContextValue = {
   agents: readonly TaskAgent[];
@@ -578,6 +846,7 @@ type AgentSelectionContextValue = {
   loading: boolean;
   currentTaskBusy: boolean;
   onChange: (agent: TaskAgent) => void;
+  onRefresh?: () => void;
 };
 
 const AgentSelectionContext = createContext<AgentSelectionContextValue>({
@@ -659,7 +928,7 @@ export function UserTaskWelcome() {
       <ThreadWelcome.Center className="user-task-hero">
         <div className="user-task-intro">
           <p className="user-task-kicker"><span aria-hidden="true" />Agent Studio</p>
-          <h1>把目标交给智能体，让它替你完成</h1>
+          <h1>开始一个新任务</h1>
           <p>
             描述要达成的结果，或附上资料。执行过程、工具调用和产出，都会留在这段对话里。
           </p>
@@ -794,7 +1063,7 @@ function HarnessArtifactPart({
 }
 
 const ReasoningPart: ReasoningMessagePartComponent = ({ text, status }) => (
-  <details className="reasoning-card" open={status.type === "running"}>
+  <details className="reasoning-card" data-active={status.type === "running"} open={status.type === "running"}>
     <summary>
       <span className="reasoning-mark" aria-hidden="true" />
       <span>{status.type === "running" ? "正在思考" : "已思考"}</span>
@@ -1048,6 +1317,7 @@ function HarnessAssistantMessage() {
   return (
     <AssistantMessage.Root
       className="harness-assistant-message"
+      data-turn-answer={copyText.replace(/\s+/g, " ").slice(0, 360)}
       data-direct-stream={directStream ? "true" : "false"}
     >
       <TurnActivity
@@ -1093,11 +1363,28 @@ function HarnessAssistantMessage() {
               text={copyText}
             />
             <MessageFeedbackButtons runId={feedbackRun} />
+            <TurnCompletion />
           </AssistantActionBar.Root>
         </div>
       ) : null}
     </AssistantMessage.Root>
   );
+}
+
+function TurnCompletion() {
+  const content = useAuiState((state) => state.message.content);
+  const isLast = useAuiState((state) => state.message.isLast);
+  const observed = useRunViewModel();
+  const durable = content.find((part) => part.type === "tool-call" && part.toolName === "harness_run_activity");
+  const parsed = durable?.type === "tool-call" ? runActivitySchema.safeParse(durable.args.activity) : null;
+  const activity = parsed?.success ? parsed.data : null;
+  const view = isLast && observed ? observed : activity ? reduceRunViewModel(undefined, activity) : null;
+  if (!view || view.phase !== "completed") return null;
+  const date = new Date(view.updatedAt);
+  if (!Number.isFinite(date.getTime())) return null;
+  return <time className="turn-completion" dateTime={view.updatedAt} title={date.toLocaleString("zh-CN")}>
+    {date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false })}
+  </time>;
 }
 
 function HarnessBranchPicker() {
@@ -1173,157 +1460,11 @@ function ThumbDownIcon() {
   );
 }
 
-function AttachmentFileIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path d="M5.5 2.8h5.8l3.2 3.3v11.1H5.5Z" />
-      <path d="M11.2 2.8v3.5h3.3" />
-      <path d="M7.8 10h4.4M7.8 13h4.4" />
-    </svg>
-  );
-}
-
-export function inputArtifactDownloadHref(
-  data: string | undefined,
-  attachmentId: string,
-) {
-  const artifactId = data?.startsWith("input_artifact_")
-    ? data
-    : attachmentId.startsWith("input_artifact_")
-      ? attachmentId
-      : undefined;
-  return artifactId
-    ? `/api/input-artifacts/${encodeURIComponent(artifactId)}/content`
-    : undefined;
-}
+export { inputArtifactDownloadHref } from "./message-attachment-view";
 
 function HarnessMessageAttachment() {
   const attachment = useAttachment((state) => state);
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const filePart = attachment.content?.find((part) => part.type === "file");
-  const imagePart = attachment.content?.find((part) => part.type === "image");
-  const data = filePart?.type === "file"
-    ? filePart.data
-    : imagePart?.type === "image"
-      ? imagePart.image
-      : undefined;
-  const href = inputArtifactDownloadHref(data, attachment.id);
-  const extension = attachment.name.split(".").at(-1)?.toUpperCase() || "文件";
-  const contentType = attachment.contentType
-    ?? (filePart?.type === "file" ? filePart.mimeType : undefined);
-  const isImage =
-    attachment.type === "image"
-    || contentType?.startsWith("image/")
-    || ["AVIF", "GIF", "HEIC", "HEIF", "JPEG", "JPG", "PNG", "WEBP"].includes(
-      extension,
-    );
-  const imageSrc = isImage
-    ? href ?? (data?.startsWith("data:") || data?.startsWith("http") ? data : undefined)
-    : undefined;
-  const content = (
-    <>
-      {imageSrc ? (
-        <span className="message-attachment-preview">
-          {/* The same-origin artifact endpoint enforces the current user scope. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={imageSrc} alt={`${attachment.name} 缩略图`} />
-        </span>
-      ) : (
-        <span className="message-attachment-icon"><AttachmentFileIcon /></span>
-      )}
-      <span className="message-attachment-copy">
-        <strong>{attachment.name}</strong>
-        <small>
-          {extension} {isImage ? "图片" : "文件"}
-          {href ? (isImage ? " · 点击查看" : " · 点击下载") : ""}
-        </small>
-      </span>
-    </>
-  );
-  useEffect(() => {
-    if (!previewOpen) return;
-    const previousOverflow = document.body.style.overflow;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setPreviewOpen(false);
-    };
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [previewOpen]);
-
-  const preview = previewOpen && imageSrc
-    ? createPortal(
-        <div
-          className="image-lightbox"
-          role="dialog"
-          aria-modal="true"
-          aria-label={`${attachment.name} 原图预览`}
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setPreviewOpen(false);
-          }}
-        >
-          <header className="image-lightbox-toolbar">
-            <span className="image-lightbox-title">
-              <small>上传原图</small>
-              <strong>{attachment.name}</strong>
-            </span>
-            <span className="image-lightbox-actions">
-              {href ? (
-                <a href={href} download={attachment.name}>
-                  下载原图
-                </a>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => setPreviewOpen(false)}
-                aria-label="关闭原图预览"
-                autoFocus
-              >
-                ×
-              </button>
-            </span>
-          </header>
-          <div className="image-lightbox-stage">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={imageSrc} alt={attachment.name} />
-          </div>
-        </div>,
-        document.body,
-      )
-    : null;
-  return (
-    <>
-      <AttachmentPrimitive.Root
-        className="message-attachment-card"
-        data-kind={isImage ? "image" : "file"}
-      >
-        {isImage && imageSrc ? (
-          <button
-            className="message-attachment-open"
-            type="button"
-            onClick={() => setPreviewOpen(true)}
-            title={`放大查看 ${attachment.name}`}
-          >
-            {content}
-          </button>
-        ) : href ? (
-          <a
-            href={href}
-            download={attachment.name}
-            title={`下载 ${attachment.name}`}
-          >
-            {content}
-          </a>
-        ) : (
-          <span className="message-attachment-static">{content}</span>
-        )}
-      </AttachmentPrimitive.Root>
-      {preview}
-    </>
-  );
+  return <MessageAttachmentView attachment={attachment} />;
 }
 
 type MessageEditorState = {
@@ -1398,7 +1539,7 @@ function HarnessUserMessage() {
 
   return (
     <>
-      <UserMessage.Root className="harness-user-message">
+      <UserMessage.Root className="harness-user-message" data-turn-id={message.id} data-turn-label={(originalText || message.attachments?.map(item => item.name).join("、") || "附件消息").replace(/\s+/g, " ").slice(0, 180)} tabIndex={-1}>
         <UserMessage.Attachments
           components={{ Attachment: HarnessMessageAttachment }}
         />
@@ -1475,7 +1616,10 @@ export function AgentThread({
   selectedAgent = null,
   agentsLoading = false,
   currentTaskBusy = false,
+  activeSkillLaunch = null,
+  onDismissSkillLaunch = () => undefined,
   onAgentChange = () => undefined,
+  onRefreshAgents,
 }: {
   userId: string;
   threadId: string;
@@ -1483,8 +1627,12 @@ export function AgentThread({
   selectedAgent?: TaskAgent | null;
   agentsLoading?: boolean;
   currentTaskBusy?: boolean;
+  activeSkillLaunch?: SkillCreatorLaunch | null;
+  onDismissSkillLaunch?: () => void;
   onAgentChange?: (agent: TaskAgent) => void;
+  onRefreshAgents?: () => void;
 }) {
+  const frame = useRef<HTMLDivElement>(null);
   const [editor, setEditor] = useState<MessageEditorState>(null);
   const composerDraftScope = useMemo(
     () => ({ userId, threadId }),
@@ -1497,14 +1645,22 @@ export function AgentThread({
       loading: agentsLoading,
       currentTaskBusy,
       onChange: onAgentChange,
+      onRefresh: onRefreshAgents,
     }),
-    [agents, agentsLoading, currentTaskBusy, onAgentChange, selectedAgent],
+    [agents, agentsLoading, currentTaskBusy, onAgentChange, onRefreshAgents, selectedAgent],
+  );
+  const skillLaunch = useMemo(
+    () => ({ launch: activeSkillLaunch, onDismiss: onDismissSkillLaunch }),
+    [activeSkillLaunch, onDismissSkillLaunch],
   );
   return (
     <AgentSelectionContext.Provider value={agentSelection}>
-      <ComposerDraftContext.Provider value={composerDraftScope}>
-        <MessageEditorContext.Provider value={{ editor, setEditor }}>
-          <VideoGenerationProvider>
+      <SkillLaunchContext.Provider value={skillLaunch}>
+        <ComposerDraftContext.Provider value={composerDraftScope}>
+          <MessageEditorContext.Provider value={{ editor, setEditor }}>
+            <VideoGenerationProvider>
+            <div className="harness-thread-frame" ref={frame}>
+            <ConversationIndex frame={frame} threadId={threadId} />
             <Thread
             assistantMessage={{
               allowCopy: false,
@@ -1544,9 +1700,11 @@ export function AgentThread({
               editComposer: { send: { label: "更新" }, cancel: { label: "取消" } },
             }}
             />
-          </VideoGenerationProvider>
-        </MessageEditorContext.Provider>
-      </ComposerDraftContext.Provider>
+            </div>
+            </VideoGenerationProvider>
+          </MessageEditorContext.Provider>
+        </ComposerDraftContext.Provider>
+      </SkillLaunchContext.Provider>
     </AgentSelectionContext.Provider>
   );
 }

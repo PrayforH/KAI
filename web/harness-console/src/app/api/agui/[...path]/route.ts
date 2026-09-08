@@ -36,3 +36,10 @@ export async function PATCH(
 ) {
   return proxy(request, context);
 }
+
+export async function PUT(
+  request: Request,
+  context: { params: Promise<{ path: string[] }> },
+) {
+  return proxy(request, context);
+}

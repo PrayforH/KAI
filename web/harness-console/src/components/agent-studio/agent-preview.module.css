@@ -1,0 +1,17 @@
+.answer { color: var(--studio-ink, var(--codex-ink)); line-height: 1.8; overflow-wrap: anywhere; }
+.speaker { display: block; margin-bottom: 8px; color: var(--studio-ink-soft, var(--codex-ink-soft)); font-size: 11px; font-weight: 500; }
+.speaker span { color: var(--studio-muted, var(--codex-muted)); font-weight: 400; }
+.answer :global(.aui-md) { font-size: 13px; }
+.answer > a { display: block; margin-top: 8px; color: inherit; font-size: 12px; text-decoration: underline; }
+.diagnostics { margin: 12px 0 6px; font-size: 11px; color: var(--studio-muted, var(--codex-muted)); }
+.diagnostics summary { cursor: pointer; }
+.diagnostics pre { max-height: 260px; overflow: auto; white-space: pre-wrap; font-size: 10px; }
+.diagnostics p { font-size: 11px !important; }
+.improve { border: 0; background: transparent; color: var(--studio-muted, var(--codex-muted)); padding: 4px 0; font-size: 11px; cursor: pointer; }
+.improve:hover { color: var(--studio-ink, var(--codex-ink)); }
+
+.answer { min-width: 0; max-width: 100%; }
+.answer :global(.aui-md pre), .answer :global(.aui-md table) { max-width: 100%; overflow-x: auto; }
+.diagnostics > summary { list-style: none; }
+.diagnostics > summary::before { content: "›"; display: inline-block; margin-right: 6px; transition: transform 140ms; }
+.diagnostics[open] > summary::before { transform: rotate(90deg); }

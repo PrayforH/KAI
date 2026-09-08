@@ -201,8 +201,8 @@ export function EnvironmentPolicyControlPlane({
           <code>运行时租约</code>
         </div>
         <div>
-          <span>单次运行上限</span>
-          <strong>${draft.quota.maxRunBudgetUsd ?? "—"} · {(draft.quota.maxModelTokens ?? 0).toLocaleString("zh-CN")}</strong>
+          <span>模型用量</span>
+          <strong>费用与 Token 不设执行额度</strong>
           <code>Artifact {(draft.quota.maxArtifactBytes ?? 0).toLocaleString("zh-CN")} B</code>
         </div>
       </div>
@@ -297,40 +297,6 @@ export function EnvironmentPolicyControlPlane({
           </div>
 
           <div className={styles.quotaFields}>
-            <label>
-              <span>Run 预算（USD）</span>
-              <input
-                type="number"
-                min="0.01"
-                step="0.01"
-                value={draft.quota.maxRunBudgetUsd ?? ""}
-                disabled={!canManage}
-                onChange={(event) => setDraft((current) => current && ({
-                  ...current,
-                  quota: {
-                    ...current.quota,
-                    maxRunBudgetUsd: optionalNumber(event.target.value),
-                  },
-                }))}
-              />
-            </label>
-            <label>
-              <span>模型 Token</span>
-              <input
-                type="number"
-                min="1"
-                step="1000"
-                value={draft.quota.maxModelTokens ?? ""}
-                disabled={!canManage}
-                onChange={(event) => setDraft((current) => current && ({
-                  ...current,
-                  quota: {
-                    ...current.quota,
-                    maxModelTokens: optionalNumber(event.target.value),
-                  },
-                }))}
-              />
-            </label>
             <label>
               <span>Artifact Bytes</span>
               <input

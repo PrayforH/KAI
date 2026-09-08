@@ -12,13 +12,9 @@ export function ProductBrandMark({
       className={`product-brand-mark ${className}`.trim()}
       aria-hidden="true"
     >
-      <svg viewBox="0 0 32 32" focusable="false">
-        <path
-          className="product-brand-track"
-          d="M5.75 24 12 8l6.25 16M8.6 17h6.8"
-        />
-        <path className="product-brand-core" d="m18.5 8 7.5 16M26 8l-7.5 16" />
-      </svg>
+      {/* Native image keeps the same transparent mark in every brand surface. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/brand/kai-mark-v2.png" alt="" width="40" height="40" draggable={false} />
     </span>
   );
 }
@@ -36,4 +32,8 @@ export function ProductBrandCopy({
       {!compact && <small>{PRODUCT_DESCRIPTOR}</small>}
     </span>
   );
+}
+
+export function ProductLoading({ label = "正在加载…" }: { label?: string }) {
+  return <div className="product-loading"><ProductBrandMark /><span>{label}</span></div>;
 }

@@ -3,6 +3,7 @@
 import {
   AssistantRuntimeProvider,
   useThreadRuntime,
+  useAuiState,
 } from "@assistant-ui/react";
 import { useAgUiRuntime } from "@assistant-ui/react-ag-ui";
 import type { ReactNode } from "react";
@@ -36,14 +37,35 @@ function DurableHistorySync({
   history: ReturnType<typeof createThreadHistoryAdapter>;
 }) {
   const thread = useThreadRuntime();
+  const running = useAuiState((state) => state.thread.isRunning);
+  const view = useRunViewModel();
+  const needsRecovery = !running && ["running", "queued", "waiting_approval"].includes(view?.phase ?? "");
+  useEffect(() => {
+    if (!needsRecovery) return;
+    let disposed = false;
+    let pending = false;
+    async function refresh() {
+      if (pending || thread.getState().isRunning) return;
+      pending = true;
+      try {
+        await history.loadSnapshot((repository) => {
+          if (!disposed && !thread.getState().isRunning) thread.import(repository);
+        });
+      } catch (error) {
+        if (!disposed) console.error("[Harness Console] Failed to recover active task", error);
+      } finally { pending = false; }
+    }
+    const timer = window.setInterval(() => void refresh(), 1500);
+    void refresh();
+    return () => { disposed = true; window.clearInterval(timer); };
+  }, [history, needsRecovery, thread]);
+
 
   useEffect(() => {
-    if (revision === 0) return;
     let disposed = false;
     const timer = window.setTimeout(() => {
       void history
-        .load()
-        .then((repository) => {
+        .loadSnapshot((repository) => {
           if (!disposed && repository && !thread.getState().isRunning) {
             thread.import(repository);
           }

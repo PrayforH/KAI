@@ -10,6 +10,10 @@ const page = readFileSync(
   join(process.cwd(), "src/app/studio/knowledge/page.tsx"),
   "utf8",
 );
+const layout = readFileSync(
+  join(process.cwd(), "src/app/studio/layout.tsx"),
+  "utf8",
+);
 const styles = readFileSync(
   join(process.cwd(), "src/components/agent-studio/mcp-catalog-control-plane.module.css"),
   "utf8",
@@ -18,9 +22,9 @@ const styles = readFileSync(
 describe("Knowledge control plane", () => {
   it("is a first-class Studio page for external knowledge only", () => {
     expect(page).toContain('<McpCatalogControlPlane mode="knowledge"');
-    expect(component).toContain('active={knowledgeMode ? "knowledge" : "capabilities"}');
+    expect(layout).toContain("<StudioUnifiedShell>");
+    expect(page).not.toContain("<StudioUnifiedShell");
     expect(component).toContain("接入外部知识库");
-    expect(component).toContain("文档、切片、Embedding 与向量索引均留在外部系统");
   });
 
   it("uses governed MCP registration and manual tool discovery", () => {
@@ -30,19 +34,12 @@ describe("Knowledge control plane", () => {
     expect(component).toContain("已选择 {draft.tools.length} 个");
   });
 
-  it("keeps document processing in the external service", () => {
-    expect(component).toContain("文档、切片、Embedding 与向量索引均留在外部系统");
+  it("scopes catalog entries to the knowledge category", () => {
     expect(component).toContain('category === category');
   });
 
-  it("keeps connection definitions and credentials personal", () => {
-    expect(component).toContain("个人能力目录");
-    expect(component).toContain("只属于当前用户");
-    expect(component).toContain("不会因共享智能体而共享");
-  });
-
-  it("uses the shared Studio page header divider rhythm", () => {
-    expect(styles).toContain("var(--studio-page-content-max,1320px)");
-    expect(styles).toContain("var(--studio-page-header-divider-gap,20px)");
+  it("uses the shared centered management width", () => {
+    expect(styles).toContain("width: min(1160px, 100%)");
+    expect(styles).toContain("catalogToolbar");
   });
 });

@@ -6,6 +6,8 @@ import "./styles.css";
 import "./codex-theme.css";
 import "./weknora-theme.css";
 import "./web-codex.css";
+import "./login-kimi.css";
+import "./conversation-experience.css";
 import { PRODUCT_DESCRIPTION, PRODUCT_NAME } from "../components/product-brand";
 
 export const metadata: Metadata = {
@@ -20,7 +22,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   colorScheme: "light dark",
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#fbfcfb" },
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
     { media: "(prefers-color-scheme: dark)", color: "#101010" },
   ],
 };

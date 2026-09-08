@@ -25,7 +25,7 @@ export const STUDIO_STAGES: StudioStageMeta[] = [
     index: 1,
     label: "目标与契约",
     hint: "边界、路由与输出契约",
-    sections: ["identity", "model"],
+    sections: ["identity"],
   },
   {
     id: "capabilities",
@@ -123,6 +123,16 @@ export interface StudioSkill {
     contentSha256?: string | null;
     binary?: boolean;
   }>;
+  source?: {
+    kind: "platform";
+    packageId: string;
+    packageRevision: number;
+    sourceUrl: string;
+    sourceRevision: string;
+    license: string;
+    contentHash: string;
+    modified: boolean;
+  } | null;
 }
 
 export interface StudioEvalCase {
@@ -155,6 +165,7 @@ export interface StudioPythonTool {
 }
 
 export interface StudioDraft {
+  parentDraftId?: string | null;
   id: string;
   agentId: string | null;
   spaceId: string | null;
@@ -273,6 +284,8 @@ export const MODEL_ROUTES: ModelRouteOption[] = [
 ];
 
 export const BUILTIN_TOOLS: BuiltinToolOption[] = [
+  { id: "WebSearch", label: "搜索公开网页", description: "平台统一搜索，只发送公开关键词，无需配置 MCP。", risk: "low", approval: "公开关键词自动允许" },
+  { id: "WebFetch", label: "读取公开网页", description: "直接读取公网正文，不携带登录信息。", risk: "low", approval: "公开网页自动允许" },
   {
     id: "Read",
     label: "读取文件",
@@ -619,7 +632,6 @@ export function evaluateStudioDraft(
   if (promptSections !== REQUIRED_PROMPT_HEADINGS.length) {
     issues.push("System Prompt 缺少必需章节");
   }
-  if (draft.skills.length === 0) issues.push("至少需要一个 Skill");
   // Runtime compatibility is intentionally not duplicated here. The server
   // Compiler returns the authoritative RuntimeCompatibility and issues after
   // resolving the tenant capability catalog.
@@ -698,7 +710,8 @@ export function evaluateStudioDraft(
   const selectedMcp = mcpOptions.filter((item) =>
     draft.mcpServers.includes(item.id),
   );
-  const network: NetworkAccess = selectedMcp.some(
+  const builtinWeb = draft.builtinTools.some((tool) => ["WebSearch", "WebFetch"].includes(tool));
+  const network: NetworkAccess = builtinWeb || selectedMcp.some(
     (item) => item.network === "external",
   )
     ? "external"
@@ -736,7 +749,7 @@ export function evaluateStudioDraft(
     network,
     networkLabel:
       network === "external"
-        ? "受控外部 MCP"
+        ? (builtinWeb ? "公开网页检索" : "受控外部 MCP")
         : network === "internal"
           ? "内部 MCP"
           : "不联网",

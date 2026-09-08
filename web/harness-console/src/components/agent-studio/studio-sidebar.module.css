@@ -6,8 +6,8 @@
   --sidebar-panel: var(--codex-surface-sidebar, #151515);
   --sidebar-raised: var(--codex-surface-raised, #242424);
   --sidebar-hover: var(--codex-surface-hover, #2a2a2a);
-  --sidebar-accent: var(--codex-accent, #339cff);
-  --sidebar-accent-soft: var(--codex-accent-soft, rgb(51 156 255 / 14%));
+  --sidebar-accent: var(--codex-accent, #ececec);
+  --sidebar-accent-soft: var(--codex-accent-soft, rgb(236 236 236 / 14%));
   position: sticky;
   z-index: 20;
   top: 0;

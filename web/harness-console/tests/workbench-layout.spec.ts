@@ -12,6 +12,10 @@ const webCodexStyles = readFileSync(
   join(process.cwd(), "src/app/web-codex.css"),
   "utf8",
 );
+const loginStyles = readFileSync(
+  join(process.cwd(), "src/app/login-kimi.css"),
+  "utf8",
+);
 const taskSidebar = readFileSync(
   join(process.cwd(), "src/components/task-sidebar.tsx"),
   "utf8",
@@ -135,7 +139,7 @@ describe("full-page agent workbench", () => {
   });
 
   it("presents a user task workspace instead of an internal validation console", () => {
-    expect(taskSidebar).not.toContain("<ProductBrandMark");
+    expect(taskSidebar).toContain("<ProductBrandMark");
     expect(taskSidebar).toContain("{PRODUCT_NAME}");
     expect(taskSidebar).toContain('className="task-sidebar-collapse"');
     expect(taskSidebar).not.toContain('className="task-rail-brand-text"');
@@ -160,7 +164,7 @@ describe("full-page agent workbench", () => {
     expect(page).not.toContain("交互验证台");
     expect(page).not.toContain("切换开发者信息");
     expect(page).not.toContain("developerMode");
-    expect(agentThread).toContain("<h1>把目标交给智能体，让它替你完成</h1>");
+    expect(agentThread).toContain("<h1>开始一个新任务</h1>");
     expect(agentThread).not.toContain("<h2>从一个任务开始</h2>");
     expect(styles).toContain(".user-task-intro h1");
     expect(styles).not.toContain(".user-task-intro h2");
@@ -228,7 +232,7 @@ describe("full-page agent workbench", () => {
     expect(taskSidebar).toContain('visible={["agents", "capabilities"]}');
     expect(taskSidebar).toContain('labelOverrides={{ capabilities: "技能 / MCP" }}');
     expect(taskSidebar).not.toContain('visible={["agents", "files"]}');
-    expect(studioSidebar).toContain('visible={["tasks", "agents", "files"]}');
+    expect(studioSidebar).toContain('visible={["tasks", "agents"]}');
     expect(studioSidebar).not.toContain('"capabilities", "knowledge", "spaces"]');
     expect(studioSidebar).not.toContain('"usage",');
     expect(studioSidebar).not.toContain('"data",');
@@ -236,9 +240,9 @@ describe("full-page agent workbench", () => {
     for (const [href, label] of [
       ["/", "任务"],
       ["/studio/agents", "智能体"],
-      ["/studio/files", "我的文件"],
       ["/studio/capabilities", "MCP 能力"],
       ["/studio/knowledge", "知识库"],
+      ["/studio/skills", "技能"],
     ]) {
       expect(workspaceNavigation).toContain(`href: "${href}"`);
       expect(workspaceNavigation).toContain(`label: "${label}"`);
@@ -264,7 +268,7 @@ describe("full-page agent workbench", () => {
     expect(taskSidebar).not.toContain('role="tablist" aria-label="任务范围"');
     expect(taskSidebar).not.toContain("已归档");
     expect(taskSidebar).not.toContain('aria-label="搜索最近任务"');
-    expect(taskSidebar).toContain("tasks.map");
+    expect(taskSidebar).toContain("project.tasks.slice(0, 5)");
     expect(taskSidebar).toContain('className="task-list-archive"');
     expect(taskSidebar).toContain("setTaskArchived");
     expect(taskSidebar).toContain("loadTasks(false)");
@@ -419,10 +423,33 @@ describe("full-page agent workbench", () => {
     expect(agentThread).not.toContain("常规操作自动完成");
     expect(agentThread).not.toContain("隔离执行 · 自动风险分级");
     expect(agentThread).not.toContain("支持人工审批");
-    expect(login).toContain("风险边界仍由你掌控");
-    expect(login).toContain("仅高风险边界请求确认");
-    expect(login).toContain("任务与待确认操作");
+    expect(login).toContain("数据与安全策略");
     expect(login).not.toContain("继续处理你的任务与审批");
+  });
+
+  it("uses a responsive workbench login frame", () => {
+    expect(login).toContain('className="login-workspace-preview"');
+    expect(login).toContain('className="login-system-status"');
+    expect(login).toContain('className="login-card-banner"');
+    expect(login).toContain('className="login-card-body"');
+    expect(login).toContain('className="login-card-footer"');
+    expect(login).toContain('import alpinePeak from "./assets/alpine-peak.jpg"');
+    expect(login).toContain('aria-label="阿尔卑斯雪峰"');
+    expect(login).toContain("服务条款");
+    expect(login).toContain("隐私保护");
+    expect(login).not.toContain('className="login-context"');
+    expect(loginStyles).toMatch(
+      /Kimi-inspired login:[\s\S]*?body\.codex-theme-v1 \.login-card,[\s\S]*?width:\s*min\(100%, 880px\);/s,
+    );
+    expect(loginStyles).toMatch(/@media \(max-width:\s*780px\)[\s\S]*?\.login-card-body\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/s);
+  });
+
+  it("keeps the run headline icon-free and rotates only active thought content", () => {
+    expect(activitySummary).not.toContain('className="execution-summary-icon"');
+    expect(activitySummary).toContain('data-active={active ? "true" : "false"}');
+    expect(codexStyles).toMatch(
+      /\.execution-commentary\[data-active="true"\][\s\S]*?\.execution-commentary-icon\s*\{[^}]*animation:\s*execution-thinking-spin 1\.35s linear infinite;/s,
+    );
   });
 
   it("does not duplicate terminal status and existing navigation below answers", () => {
@@ -730,8 +757,8 @@ describe("full-page agent workbench", () => {
     expect(page).not.toContain("<RunDetailsProvider");
   });
 
-  it("shows a lightweight recovery skeleton instead of a lone loading line", () => {
-    expect(page).toContain('className="chat-loading-skeleton"');
+  it("shows the shared brand loading state during recovery", () => {
+    expect(page).toContain('<ProductLoading label="正在打开任务…"');
     expect(page).toContain("aria-busy={!agentsError}");
     expect(styles).toContain(".chat-loading-skeleton");
     expect(styles).toContain(".chat-loading-line");

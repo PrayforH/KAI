@@ -1,6 +1,9 @@
 "use client";
 
 import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { useAuth } from "./auth-provider";
+import { useInternalAgentsPreference } from "../lib/interface-preferences";
+import { loadTaskAgentCatalog } from "../lib/task-agent-catalog";
 import { SecretInput } from "./secret-input";
 import styles from "./model-management.module.css";
 
@@ -113,6 +116,8 @@ function providerPresetFor(model: ManagedModel | null): ProviderPreset {
 }
 
 export function ModelManagement() {
+  const { user } = useAuth();
+  const [showInternalAgents] = useInternalAgentsPreference();
   const [state, setState] = useState<ModelState>(EMPTY_STATE);
   const [agents, setAgents] = useState<AgentItem[]>([]);
   const [filter, setFilter] = useState<"all" | ModelType>("all");
@@ -124,7 +129,7 @@ export function ModelManagement() {
   async function refresh() {
     const [models, catalog] = await Promise.all([
       api<ModelState>("/api/studio/models"),
-      api<AgentItem[]>("/api/harness/agents").catch(() => []),
+      loadTaskAgentCatalog(user.user_id, showInternalAgents).then((catalog) => catalog.agents.map((agent) => ({name: agent.name, display_name: agent.displayName}))).catch(() => []),
     ]);
     setState(models);
     setAgents(
@@ -144,7 +149,7 @@ export function ModelManagement() {
         if (active) setLoading(false);
       });
     return () => { active = false; };
-  }, []);
+  }, [user.user_id, showInternalAgents]);
 
   const visible = useMemo(
     () => state.models.filter((model) => filter === "all" || model.modelType === filter),

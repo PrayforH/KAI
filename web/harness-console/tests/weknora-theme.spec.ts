@@ -27,9 +27,16 @@ const workspaceNavigationStyles = readFileSync(
   join(process.cwd(), "src/components/workspace-navigation.module.css"),
   "utf8",
 );
-const appStyles = readFileSync(join(process.cwd(), "src/app/styles.css"), "utf8");
 const codexStyles = readFileSync(
   join(process.cwd(), "src/app/codex-theme.css"),
+  "utf8",
+);
+const webCodexStyles = readFileSync(
+  join(process.cwd(), "src/app/web-codex.css"),
+  "utf8",
+);
+const loginStyles = readFileSync(
+  join(process.cwd(), "src/app/login-kimi.css"),
   "utf8",
 );
 
@@ -39,17 +46,34 @@ describe("Weknora-inspired product theme", () => {
       layout.indexOf('import "./codex-theme.css"'),
     );
     expect(layout).toContain('data-product-ui="xushu"');
-    expect(layout).toContain('color: "#fbfcfb"');
+    expect(layout).toContain('color: "#ffffff"');
   });
 
-  it("uses a warm light canvas with one green product accent", () => {
+  it("keeps the legacy product layer while the workbench uses a Doubao-like light shell", () => {
     expect(theme).toMatch(
       /html\[data-color-mode="light"\]\s*\{[^}]*--codex-surface:\s*#fbfcfb;[^}]*--codex-accent:\s*#16b364;/s,
     );
     expect(theme).toMatch(
       /html\[data-color-mode="light"\] body::before\s*\{[^}]*display:\s*none;/s,
     );
-    expect(themeSelector).toContain("温和白底与绿色强调");
+    expect(themeSelector).toContain("清爽白底与克制蓝色强调");
+    expect(webCodexStyles).toMatch(
+      /html\[data-color-mode="light"\] body\.codex-theme-v1\s*\{[^}]*--codex-surface:\s*#ffffff;[^}]*--codex-surface-sidebar:\s*#f7f7f8;[^}]*--codex-accent:\s*#2f75e8;/s,
+    );
+    expect(webCodexStyles).toMatch(
+      /Doubao-inspired light task shell[\s\S]*?\.task-list-item\.is-active\s*\{[^}]*background:\s*#e9e9eb;[^}]*box-shadow:\s*none;/s,
+    );
+    expect(webCodexStyles).toMatch(
+      /data-color-mode="light"[^}]*\.harness-composer-shell \.aui-composer-root\s*\{[^}]*border-radius:\s*16px;[^}]*background:\s*#ffffff;[^}]*box-shadow:/s,
+    );
+    expect(webCodexStyles).not.toContain("--aui-thread-max-width: 980px");
+    expect(webCodexStyles).not.toContain("width: min(980px, 100%)");
+    expect(webCodexStyles).toMatch(
+      /one predictable indentation grid[\s\S]*?data-color-mode="light"[^}]*\.task-project-items\s*\{[^}]*margin:\s*2px 0 7px 24px;[^}]*border-left:\s*0;/s,
+    );
+    expect(webCodexStyles).toMatch(
+      /data-color-mode="light"[^}]*\.task-project-items \.task-status\s*\{[^}]*left:\s*11px;/s,
+    );
   });
 
   it("flattens and enlarges high-frequency sidebar navigation", () => {
@@ -79,12 +103,9 @@ describe("Weknora-inspired product theme", () => {
     expect(studioStyles).toContain("--studio-green: var(--codex-accent)");
   });
 
-  it("uses a light product surface for the login introduction", () => {
-    expect(appStyles).toMatch(
-      /\.login-context\s*\{[^}]*color:\s*#17241e;[^}]*background:\s*#f1f5f2;/s,
-    );
-    expect(codexStyles).toMatch(
-      /\.login-context\s*\{[^}]*--codex-ink:\s*#17241e;[\s\S]*?linear-gradient\(145deg, #f4f8f5, #edf2ee 58%\);/,
+  it("keeps the Kimi-inspired login in one focused dark surface", () => {
+    expect(loginStyles).toMatch(
+      /Kimi-inspired login:[\s\S]*?data-color-mode="light"[^}]*\.login-shell\s*\{[^}]*--login-background:\s*#080909;[^}]*--login-card:\s*#181818;/s,
     );
   });
 

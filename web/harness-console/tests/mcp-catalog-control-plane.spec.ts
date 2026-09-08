@@ -29,7 +29,7 @@ describe("MCP capability catalog", () => {
   it("has a discoverable Studio navigation entry and dedicated page", () => {
     expect(navigation).toContain('href: "/studio/capabilities"');
     expect(navigation).toContain('label: "MCP 能力"');
-    expect(page).toContain("<McpCatalogControlPlane");
+    expect(page).toContain('<StudioCapabilityManager defaultTab="mcp"');
   });
 
   it("supports governed registration, impact inspection, disable and deletion", () => {
@@ -39,10 +39,9 @@ describe("MCP capability catalog", () => {
     expect(component).toContain("studioClient.deleteMcp");
     expect(component).toContain("确认停用？");
     expect(component).toContain("永久删除");
-    expect(component).toContain("平台内置 MCP 可见但不可修改");
-    expect(component).toContain("目录变更采用 revision");
     expect(component).toContain('EDITABLE_PLATFORM_MCP_REFERENCES = new Set(["tavily-readonly"])');
-    expect(component).toContain("item.ownerUserId || EDITABLE_PLATFORM_MCP_REFERENCES.has(item.reference)");
+    expect(component).toContain("selectedDetail.ownerUserId");
+    expect(component).toContain("EDITABLE_PLATFORM_MCP_REFERENCES.has(selectedDetail.reference)");
   });
 
   it("dismisses card action popovers when clicking outside", () => {
@@ -50,7 +49,7 @@ describe("MCP capability catalog", () => {
     expect(component).toContain("data-dismiss-on-outside");
   });
 
-  it("uses one right-side authoring drawer for MCP and knowledge connections", () => {
+  it("uses one centered authoring page for MCP and knowledge connections", () => {
     expect(component).toContain("styles.editorBackdrop");
     expect(component).toContain('aria-labelledby="catalog-editor-title"');
     expect(component).toContain('role="dialog"');
@@ -59,6 +58,24 @@ describe("MCP capability catalog", () => {
     expect(component).toContain("syncDialogRef");
     expect(component).toContain("deleteDialogRef");
     expect(component).toContain("closeEditor");
+    expect(styles).toMatch(/\.editorBackdrop\s*\{[^}]*inset:\s*44px 0 0 var\(--app-sidebar-expanded-width\);/s);
+    expect(styles).toMatch(/\.editorBackdrop \.editor\s*\{[^}]*width:\s*min\(1160px, 100%\);/s);
+  });
+
+  it("uses the same centered catalog toolbar and single-column row surface as Skills", () => {
+    expect(component).toContain("catalogToolbar");
+    expect(component).toContain("刷新目录");
+    expect(component).toContain("capabilityGlyph");
+    expect(styles).toContain("width: min(1160px, 100%)");
+    expect(styles).toMatch(/\.group\s*\{[^}]*border:\s*1px solid var\(--line\);/s);
+  });
+
+  it("opens MCP details in a centered dismissible modal", () => {
+    expect(component).toContain("detailBackdrop");
+    expect(component).toContain('aria-modal="true"');
+    expect(component).toContain("event.target === event.currentTarget");
+    expect(styles).toMatch(/\.detailBackdrop\s*\{[^}]*place-items:\s*center/s);
+    expect(styles).toMatch(/\.detailDrawer\s*\{[^}]*width:\s*min\(720px, 100%\)/s);
   });
 
   it("authorizes MCP access to explicit network-compatible execution profiles", () => {
@@ -129,14 +146,6 @@ describe("MCP capability catalog", () => {
     expect(component).toContain("<SecretInput");
     expect(component).toContain('revealLabel="认证凭据"');
     expect(component).toContain("凭据已加密保存；为安全起见不会回显原值");
-    expect(component).toContain("HARNESS_MCP_SECRET_REFERENCES_JSON");
     expect(component).not.toContain('placeholder="sk-');
-  });
-
-  it("explains personal ownership without implying agent-share inheritance", () => {
-    expect(component).toContain("个人能力目录");
-    expect(component).toContain("只属于当前用户");
-    expect(component).toContain("平台内置 MCP 可见但不可修改");
-    expect(component).toContain("按租户与用户双重隔离");
   });
 });

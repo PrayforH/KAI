@@ -75,6 +75,22 @@ describe("account settings", () => {
     );
   });
 
+  it("keeps the settings header quiet and aligns control typography", () => {
+    expect(settings).not.toContain("<ProductBrandMark");
+    expect(settings).not.toContain("<ProductBrandCopy");
+    expect(settings).toContain('className="settings-return-app"');
+    expect(settings).toContain('返回应用');
+    expect(styles).toMatch(
+      /\.settings-back svg\s*\{[^}]*width:\s*18px;[^}]*height:\s*18px;/s,
+    );
+    expect(styles).toMatch(
+      /\.archived-task-row button\s*\{[^}]*font:\s*600 12px\/1 var\(--codex-font-ui\);/s,
+    );
+    expect(styles).toMatch(
+      /\.settings-dialog :where\(button, input, select, textarea\)\s*\{[^}]*font-family:\s*var\(--codex-font-ui\);/s,
+    );
+  });
+
   it("anchors the user control at the bottom of the expanded task rail", () => {
     expect(taskSidebar).toContain('className="task-sidebar-account"');
     expect(taskSidebar).not.toContain('className="task-rail-account"');

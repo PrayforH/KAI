@@ -68,9 +68,9 @@
 }
 
 .shell[data-language="json"] .fileMark {
-  border-color: rgb(51 156 255 / 34%);
+  border-color: rgb(236 236 236 / 34%);
   color: var(--studio-blue, #58a6ff);
-  background: rgb(51 156 255 / 12%);
+  background: rgb(236 236 236 / 12%);
 }
 
 .headerActions {
@@ -109,8 +109,8 @@
 }
 
 .headerActions button:focus-visible {
-  border-color: var(--codex-accent, #339cff);
-  outline: 2px solid rgb(51 156 255 / 22%);
+  border-color: var(--codex-accent, #ececec);
+  outline: 2px solid rgb(236 236 236 / 22%);
   outline-offset: 2px;
 }
 
@@ -128,7 +128,7 @@
   position: absolute;
   z-index: 2;
   inset: 0;
-  border: 1px solid rgb(51 156 255 / 40%);
+  border: 1px solid rgb(236 236 236 / 40%);
   content: "";
   pointer-events: none;
 }
@@ -161,7 +161,7 @@
 
 .editor :global(.cm-search input:focus),
 .editor :global(.cm-search button:focus-visible) {
-  border-color: var(--codex-accent, #339cff);
+  border-color: var(--codex-accent, #ececec);
   outline: 0;
 }
 

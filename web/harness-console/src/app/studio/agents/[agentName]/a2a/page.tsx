@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { AgentA2AWorkspace } from "../../../../../components/agent-studio/agent-a2a-workspace";
-import { AuthProvider } from "../../../../../components/auth-provider";
 
 export const metadata: Metadata = {
   title: "A2A 接入",
@@ -13,9 +12,5 @@ export default async function AgentA2APage({
   params: Promise<{ agentName: string }>;
 }) {
   const { agentName } = await params;
-  return (
-    <AuthProvider>
-      <AgentA2AWorkspace agentName={agentName} />
-    </AuthProvider>
-  );
+  return <AgentA2AWorkspace agentName={agentName} />;
 }

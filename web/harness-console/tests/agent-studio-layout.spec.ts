@@ -6,6 +6,10 @@ const page = readFileSync(
   join(process.cwd(), "src/app/studio/agents/page.tsx"),
   "utf8",
 );
+const studioLayout = readFileSync(
+  join(process.cwd(), "src/app/studio/layout.tsx"),
+  "utf8",
+);
 const workbench = readFileSync(
   join(
     process.cwd(),
@@ -68,6 +72,19 @@ const skillConversationStyles = readFileSync(
     process.cwd(),
     "src/components/agent-studio/skill-conversation-builder.module.css",
   ),
+  "utf8",
+);
+const skillsCatalog = readFileSync(
+  join(process.cwd(), "src/components/agent-studio/skills-catalog-page.tsx"),
+  "utf8",
+);
+const skillCreatorLaunch = readFileSync(
+  join(process.cwd(), "src/lib/skill-creator-launch.ts"),
+  "utf8",
+);
+const homePage = readFileSync(join(process.cwd(), "src/app/page.tsx"), "utf8");
+const agentThread = readFileSync(
+  join(process.cwd(), "src/components/agent-thread.tsx"),
   "utf8",
 );
 const sidebar = readFileSync(
@@ -184,7 +201,7 @@ describe("Agent Studio management page", () => {
     expect(studioClient).toContain("/nexau-bundle");
   });
 
-  it("keeps release controls on one row and moves the read-only contract into a drawer", () => {
+  it("keeps release controls on one row and retains a focused version-history drawer", () => {
     expect(styles).toMatch(/\.headerActions\s*\{[^}]*display:\s*flex;/s);
     expect(styles).toMatch(
       /\.studioShell\s*\{[^}]*grid-template-columns:\s*var\(--studio-sidebar-expanded-width\) minmax\(680px, 1fr\);/s,
@@ -197,12 +214,11 @@ describe("Agent Studio management page", () => {
     expect(styles).toMatch(
       /\.contractRail\[data-open="true"\]\s*\{[^}]*visibility\s+0s linear 0s;/s,
     );
-    expect(workbench).toContain('aria-controls="effective-contract-drawer"');
+    expect(workbench).not.toContain('aria-controls="effective-contract-drawer"');
     expect(workbench).toContain("className={styles.contractBackdrop}");
     expect(workbench).toContain("useDialogFocus({");
-    expect(workbench).toContain("panelRef: contractRailRef");
-    expect(workbench).toContain("initialFocusRef: contractCloseRef");
-    expect(workbench).toContain("onEscape: () => setContractOpen(false)");
+    expect(workbench).toContain("panelRef: versionHistoryRailRef");
+    expect(workbench).toContain("initialFocusRef: versionHistoryCloseRef");
     expect(workbench).toContain('role="dialog"');
     expect(workbench).toContain('aria-modal="true"');
   });
@@ -236,6 +252,10 @@ describe("Agent Studio management page", () => {
     expect(mcpCatalogStyles).toContain(
       'shell:has(> [data-studio-sidebar="collapsed"])',
     );
+    expect(mcpCatalogStyles).toMatch(
+      /\.catalogActions \.primary\s*\{[^}]*color:\s*var\(--codex-on-accent,\s*#07111a\)/s,
+    );
+    expect(mcpCatalogStyles).toMatch(/\.resourceRoot\s*\{[^}]*--accent:/s);
     expect(a2aStyles).toContain(
       "grid-template-columns: var(--studio-sidebar-expanded-width) minmax(0, 1fr)",
     );
@@ -244,8 +264,12 @@ describe("Agent Studio management page", () => {
 
   it("is an independent control-plane route", () => {
     expect(page).toContain("AgentStudioWorkbench");
-    expect(workbench).toContain("<StudioSidebar");
-    expect(workbench).toContain("有效运行契约");
+    expect(studioLayout).toContain("<StudioUnifiedShell>");
+    expect(workbench).not.toContain("<StudioUnifiedShell");
+    expect(workbench).not.toContain("有效运行契约");
+    expect(workbench).toContain('className={styles.agentCatalogPurpose}');
+    expect(workbench).toContain('aria-label="运行能力摘要"');
+    expect(workbench).toContain('"无需 Skill"');
     expect(workbench).toContain("activeStageBlocked");
     expect(workbench).toContain("阶段有 {activeStageBlocked.length} 项阻塞");
     expect(sidebar).toContain("<ProductBrandMark");
@@ -255,7 +279,7 @@ describe("Agent Studio management page", () => {
     expect(workspaceNavigation).toContain('aria-label="工作区"');
     expect(workspaceNavigation).toContain('href: "/"');
     expect(workspaceNavigation).toContain('href: "/studio/agents"');
-    expect(page).toContain("AuthProvider");
+    expect(studioLayout).toContain("AuthProvider");
     expect(workbench).toContain('data-studio-integration="api"');
   });
 
@@ -267,11 +291,11 @@ describe("Agent Studio management page", () => {
     expect(studioClient).toContain("const [personal, response] = await Promise.all([");
   });
 
-  it("keeps contract drawer status and close actions compact and aligned", () => {
+  it("keeps version-history drawer status and close actions compact and aligned", () => {
     expect(styles).toContain(".contractHeader > .contractHeaderActions");
     expect(styles).toMatch(/\.contractHeader\s*>\s*\.contractHeaderActions\s*\{[^}]*display:\s*flex;/s);
     expect(styles).toMatch(/\.riskBadge\s*\{[^}]*min-height:\s*24px;[^}]*border-radius:\s*6px;/s);
-    expect(workbench.match(/m4\.5 4\.5 7 7m0-7-7 7/g)).toHaveLength(2);
+    expect(workbench.match(/m4\.5 4\.5 7 7m0-7-7 7/g)).toHaveLength(1);
   });
 
   it("keeps Studio focused and exposes the published Agent as a task action", () => {
@@ -281,7 +305,7 @@ describe("Agent Studio management page", () => {
     expect(workbench).toContain("version.agent_id === draft.agentId");
     expect(workbench).toContain("const taskHref = taskVersion");
     expect(workbench).toContain("owner=${encodeURIComponent(user.user_id)}");
-    expect(workbench).toContain("${styles.headerActionButton} ${styles.startTaskButton}");
+    expect(workbench).toContain("href={taskHref}");
     expect(workbench).toContain("className={styles.releaseTaskShortcut}");
     expect(workbench.match(/开始任务/g)).toHaveLength(2);
     expect(styles).toContain(".startTaskButton");
@@ -289,13 +313,12 @@ describe("Agent Studio management page", () => {
   });
 
   it("uses one action-button contract and structured overflow menu states", () => {
-    expect(workbench.match(/styles\.headerActionButton/g)).toHaveLength(7);
-    expect(workbench.match(/className=\{styles\.actionMenuItem\}/g)).toHaveLength(3);
-    expect(workbench).toContain("aria-controls=\"copilot-drawer\"");
-    expect(workbench).toContain("<HeaderActionIcon name=\"task\"");
-    expect(workbench).toContain("<HeaderActionIcon name=\"save\"");
+    expect(workbench.match(/styles\.headerActionButton/g)).toHaveLength(2);
+    expect(workbench.match(/className=\{styles\.actionMenuItem\}/g)).toHaveLength(10);
+    expect(workbench).not.toContain("copilot-drawer");
+    expect(workbench).not.toContain("CopilotDrawer");
     expect(workbench).toContain("<HeaderActionIcon name=\"release\"");
-    expect(workbench).toContain("<HeaderActionIcon name=\"contract\"");
+    expect(workbench).toContain("任务 · 导入与导出");
     expect(workbench).toContain("导入与导出");
     expect(styles).toContain(".headerActions .headerActionButton");
     expect(styles).toContain(".actionMenuItem:disabled");
@@ -321,18 +344,15 @@ describe("Agent Studio management page", () => {
     expect(workbench).toContain('cancelLabel: "继续编辑"');
     expect(workbench).toContain("const saved = await saveDraft()");
     expect(workbench).toContain("if (!saved) return");
-    expect(workbench).toContain("setNewAgentOpen(true)");
-    expect(workbench).toContain("<NewAgentDialog");
-    expect(builderOverlays).toContain("NEW AGENT");
-    expect(builderOverlays).toContain("描述任务，直接开始试跑");
+    expect(workbench).toContain('setBuilderAssistantMode("create")');
+    expect(workbench).toContain("<AgentBuilderAssistant");
+    expect(builderOverlays).toContain("描述你想创建的智能体");
+    expect(builderOverlays).toContain("在右侧测试效果");
     expect(builderOverlays).toContain("studioClient.createDraftFromTask");
-    expect(builderOverlays).toContain("服务端模板");
-    expect(builderOverlays).toContain("studioClient.createDraft");
-    expect(builderOverlays).toContain("脚手架来自能力目录模板");
-    expect(builderOverlays).toContain("前端默认草稿不会覆盖服务端脚手架");
-    expect(workbench).toContain("templates={options.templates}");
-    expect(workbench).toContain("setTryRunOpen(flow.autoRun)");
-    expect(builderOverlays).not.toContain("从服务端模板开始");
+    expect(builderOverlays).toContain("只使用 Worker 运行；不访问外部网络");
+    expect(builderOverlays).toContain('aria-label="发送消息"');
+    expect(workbench).toContain("setBuilderAssistantOpen(true)");
+    expect(workbench).toContain('data-builder-open={builderAssistantOpen}');
     expect(builderOverlays).not.toContain("AgentBuilderCopilot");
     expect(workbench).not.toContain("createPersonalStudioDraft");
     expect(workbench).toContain("disabled={!canEdit || saving}");
@@ -340,18 +360,22 @@ describe("Agent Studio management page", () => {
     expect(workbench).toContain(': "尚未保存"');
   });
 
-  it("shows the observable five-stage execution trace and success-only solidification", () => {
-    expect(builderOverlays).toContain("EXECUTION TRACE");
-    expect(builderOverlays).toContain("result.loop.map");
-    expect(builderOverlays).toContain("计划、工具、修正、验证都来自真实运行事件");
-    expect(builderOverlays).toContain('result.run.status === "succeeded"');
-    expect(builderOverlays).toContain("studioClient.solidifyTryRun");
-    expect(builderOverlays).toContain("required Eval Dataset");
-    expect(workbench).toContain("onSolidified={(result) =>");
-    expect(builderOverlays).toContain('aria-label={collapsed ? "展开试跑面板" : "收起试跑面板"}');
-    expect(builderOverlays).toContain("setCollapsed((value) => !value)");
-    expect(builderOverlayStyles).toContain(".tryPanelToggle");
-    expect(builderOverlayStyles).toContain(".tryPanelCollapsed");
+  it("uses a direct side conversation with expandable run evidence", () => {
+    expect(builderOverlays).not.toContain("执行计划");
+    expect(builderOverlays).not.toContain("result.loop.map");
+    expect(builderOverlays).toContain("PreviewRunResponse");
+    expect(builderOverlays).toContain("studioClient.createTryRun");
+    expect(builderOverlays).toContain("studioClient.cancelTryRun");
+    expect(builderOverlays).not.toContain("studioClient.solidifyTryRun");
+    expect(builderOverlays).not.toContain("固化版本");
+    expect(builderOverlays).toContain('aria-label="收起构建助手"');
+    expect(builderOverlays).toContain("Enter 发送 · Shift + Enter 换行");
+    expect(builderOverlayStyles).toContain(".transcript");
+    expect(builderOverlayStyles).toContain(".composer");
+    expect(builderOverlays).not.toContain("BuilderAssistantLauncher");
+    expect(builderOverlayStyles).not.toContain(".assistantLauncher");
+    expect(builderOverlayStyles).toContain("@media (max-width: 1199px)");
+    expect(styles).toContain('data-builder-open="true"');
   });
 
   it("aligns the new-task action with workspace navigation columns", () => {
@@ -382,8 +406,8 @@ describe("Agent Studio management page", () => {
     expect(workbench).toContain("if (!saved) return");
     expect(workbench).toContain("setSwitchingDraftId(draftId)");
     expect(workbench).toContain("draftSwitchingRef.current = false");
-    expect(workbench).toContain("disabled={saving || Boolean(switchingDraftId) || agent.draftId === draft.id}");
-    expect(workbench).toContain('? "正在切换…"');
+    expect(workbench).toContain("disabled={saving || Boolean(switchingDraftId)}");
+    expect(workbench).toContain('? "…" : "→"');
   });
 
   it("requires explicit destructive confirmation before replacing a conflicted local draft", () => {
@@ -400,7 +424,7 @@ describe("Agent Studio management page", () => {
 
   it("keeps the A2A implementation available while hiding its product entry", () => {
     expect(a2aPage).toContain("AgentA2AWorkspace");
-    expect(a2aPage).toContain("AuthProvider");
+    expect(studioLayout).toContain("AuthProvider");
     expect(a2aWorkspace).toContain('kindFilter="a2a"');
     expect(a2aWorkspace).toContain("Agent Card + message:send");
     expect(triggerControlPlane).not.toContain("打开 A2A 控制台");
@@ -449,7 +473,7 @@ describe("Agent Studio management page", () => {
     );
   });
 
-  it("organizes authoring as a capability chain instead of one giant form", () => {
+  it("keeps authoring direct and moves the essential runtime summary to Agent cards", () => {
     for (const label of [
       "基本信息",
       "System Prompt",
@@ -461,10 +485,12 @@ describe("Agent Studio management page", () => {
     ]) {
       expect(workbench).toContain(label);
     }
-    for (const node of ["Model", "Prompt", "Skills", "Tools", "Agents", "Isolation", "Release"]) {
-      expect(workbench).toContain(`label="${node}"`);
-    }
-    expect(styles).toContain(".capabilitySpine");
+    expect(workbench).not.toContain("有效运行契约");
+    expect(workbench).toContain("agent.primaryOutput");
+    expect(workbench).toContain("agent.toolCount");
+    expect(workbench).toContain("agent.skillCount");
+    expect(workbench).toContain("agent.networkToolsEnabled");
+    expect(styles).toContain(".agentCatalogCapabilities");
   });
 
   it("opens knowledge sync links on the affected agent and capability section", () => {
@@ -521,10 +547,21 @@ describe("Agent Studio management page", () => {
     );
   });
 
-  it("opens a review-before-apply model conversation for Skill authoring", () => {
-    expect(workbench).toContain("SkillConversationBuilder");
-    expect(workbench).toContain("对话创建");
-    expect(workbench).toContain("aria-expanded={skillConversationOpen}");
+  it("launches Skill creation from the home conversation with an explicit scope", () => {
+    expect(workbench).toContain('skillCreatorHref("agent"');
+    expect(skillsCatalog).toContain('skillCreatorHref("personal")');
+    expect(skillsCatalog).toContain('skillCreatorHref("platform")');
+    expect(skillsCatalog).toContain("SKILL_SCOPE_LABELS");
+    expect(skillCreatorLaunch).toContain('name: "skill-creator"');
+    expect(skillCreatorLaunch).toContain("个人 Skill");
+    expect(skillCreatorLaunch).toContain("平台 Skill");
+    expect(skillCreatorLaunch).toContain("Agent Skill");
+    expect(homePage).toContain("parseSkillCreatorLaunch");
+    expect(homePage).toContain("persistTaskComposerDraft");
+    expect(agentThread).toContain('className="composer-skill-context"');
+    expect(agentThread).toContain('aria-label={`移除技能 ${selectedSkill}`}');
+    expect(agentThread).toContain("seededSkillLaunchRef");
+    expect(agentThread).toContain("aui.composer().setText(skillCreatorPrompt(activeSkillLaunch))");
     expect(skillConversationBuilder).toContain('aria-label="Skill 对话共创"');
     expect(skillConversationBuilder).toContain("continueSkillConversation");
     expect(skillConversationBuilder).toContain("currentSkill: proposal ?? currentSkill");
@@ -534,15 +571,15 @@ describe("Agent Studio management page", () => {
     expect(skillConversationStyles).toContain("@media (prefers-reduced-motion: reduce)");
   });
 
-  it("shows a Lead topology with editable drafts and version-pinned releases", () => {
-    expect(workbench).toContain('aria-label="多智能体协同拓扑"');
-    expect(workbench).toContain("Lead 是唯一面向用户的主线");
-    expect(workbench).toContain("value={contract.collaborationLabel}");
-    expect(workbench).toContain("草稿可编辑；发布时固定版本");
+  it("manages internal collaborators inline with a return path to the parent", () => {
+    expect(workbench).toContain('id="collaboration-title"');
+    expect(workbench).toContain("创建并绑定");
+    expect(workbench).toContain("返回父智能体");
     expect(workbench).toContain("允许后台并行");
-    expect(workbench).toContain("同一通用 Agent 版本可绑定多个职责");
-    expect(workbench).toContain("打开并编辑");
-    expect(workbench).toContain("协同运行摘要");
+    expect(workbench).toContain("引用已有");
+    expect(workbench).toContain("编辑配置");
+    expect(workbench).toContain("useInternalAgentsPreference()");
+    expect(workbench).not.toContain("setShowInternalAgents");
     expect(workbench).toContain("subagentCandidates");
     expect(studioClient).toContain("publishedVersion");
     expect(styles).toContain(".orchestrationGraph");
@@ -550,40 +587,45 @@ describe("Agent Studio management page", () => {
     expect(styles).toContain(".leadAgentCard");
   });
 
-  it("keeps sandbox mandatory and presents Tavily as bounded external egress", () => {
-    expect(workbench).toContain("隔离是生产基线，不是 Agent 开关");
-    expect(workbench).toContain("Docker 容器工作区 · 平台托管");
-    expect(workbench).toContain("当前环境");
+  it("keeps sandbox mandatory and exposes platform web tools with MCP retained", () => {
+    expect(workbench).toContain("执行与权限");
+    expect(workbench).toContain("配置智能体运行时、执行方式和工具权限");
+    expect(workbench).toContain('<details className={styles.advancedRuntimeSettings}>');
+    expect(workbench).toContain("高级运行设置");
+    expect(workbench).toContain("执行档位、权限、资源上限、会话恢复与治理");
+    expect(styles).toContain(".advancedRuntimeSettings[open]");
+    expect(workbench).toContain("调用范围遵循已发布的权限设置");
     expect(workbench).not.toContain('type="checkbox" checked={sandbox');
     expect(studioConfig).toContain("公网搜索（Tavily）");
-    expect(workbench).toContain("这不会开放任意 Bash 网络访问");
+    expect(workbench).toContain("仅展示可配置工具");
+    expect(workbench).toContain('new Set(["Task"])');
+    expect(builderOverlays).toContain("builtinTools: generatedDraft.builtinTools");
     expect(workbench).toContain("独立工作负载身份");
     expect(workbench).toContain("恢复同一会话的运行时线程上下文");
     expect(workbench).toContain("不宣称支持任意工具步骤的持久化 checkpoint");
   });
 
-  it("offers governed eager and on-demand tool exposure without a new modal", () => {
-    expect(workbench).toContain('aria-label="工具加载方式"');
-    expect(workbench).toContain("启动时加载");
-    expect(workbench).toContain("按需发现");
-    expect(workbench).toContain("个 MCP Schema 命中后才进入上下文");
-    expect(workbench).toContain("当前路由未审核 Tool Search，按需模式已锁定");
-    expect(workbench).toContain('disabled={!toolSearchEligible}');
-    expect(workbench).toContain("达到 10 个时收益更明显");
+  it("offers compact Worker tool presets and inline selection without a modal", () => {
+    expect(workbench).toContain('aria-label="工具范围"');
+    expect(workbench).toContain("标准工具");
+    expect(workbench).toContain("只读工具");
+    expect(workbench).toContain("自定义可用工具");
+    expect(workbench).toContain("workerToolOptions.map");
+    expect(workbench).not.toContain('aria-label="工具加载方式"');
     expect(studioConfig).toContain('toolExposureMode: "eager"');
     expect(studioClient).toContain("toolExposureMode");
-    expect(styles).toContain(".toolExposureControl");
+    expect(styles).toContain(".workerToolPicker");
+    expect(styles).toContain(".compactToolGrid");
     expect(styles).not.toContain(".toolExposureModal");
   });
 
   it("drives runtime choices and Codex capability copy from server runtime capabilities", () => {
     expect(workbench).toContain("activeRuntimeCapabilities");
     expect(workbench).toContain("activeRuntimeCapability");
-    expect(workbench).toContain("MODEL_API_FORMAT_LABELS");
     expect(workbench).toContain("targetCapability.modelApiFormats.includes");
     expect(workbench).not.toContain('option value="codex-app-server"');
     expect(workbench).not.toContain("Codex P0 已支持 Responses、线程续接");
-    expect(workbench).toContain("接受 ${activeRuntimeCapability.modelApiFormats");
+    expect(workbench).toContain("activeRuntimeCapability.limitations");
   });
 
   it("keeps runtime and permission surfaces on shared light/dark theme tokens", () => {
@@ -615,7 +657,7 @@ describe("Agent Studio management page", () => {
     expect(workbench).toContain("async function uninstallSkill");
     expect(workbench).toContain("卸载当前 Skill");
     expect(workbench).toContain("已发布的不可变历史版本不会被修改");
-    expect(workbench).toContain('activeSection === "skills" && (');
+    expect(workbench).toContain('aria-labelledby="skills-title"');
     expect(workbench).toContain("当前草稿尚未安装 Skill");
     expect(styles).toContain(".skillUninstallButton");
     expect(styles).toContain(".skillEmpty");
@@ -652,28 +694,16 @@ describe("Agent Studio management page", () => {
     expect(styles).toContain(".publicationBadge");
   });
 
-  it("makes the draft-to-deployment lifecycle explicit without hiding failures", () => {
-    expect(workbench).toContain('aria-label="Agent 构建五阶段"');
+  it("keeps advanced lifecycle services while hiding them from the simplified builder", () => {
+    expect(workbench).toContain('aria-label="Agent 构建五阶段" hidden');
     expect(workbench).toContain("stageForSection");
-    expect(workbench).toContain('aria-label="发布链状态"');
-    expect(styles).toContain(".publishChain");
-    expect(styles).toContain(".stageNav");
-    expect(styles).toContain(".stageStepActive");
-    for (const stage of ["目标与契约", "能力", "行为", "试跑", "发布"]) {
-      expect(workbench).toContain(stage);
-    }
-    expect(workbench).toContain("有效运行契约");
-    expect(workbench).toContain("activeStageBlocked");
-    expect(workbench).toContain("阶段有 {activeStageBlocked.length} 项阻塞");
-    expect(workbench).toContain("随版本固化");
-    expect(workbench).toContain("运行时引用 · 凭据托管");
-    expect(workbench).toContain("运行时引用 · 外部快照");
-    for (const label of ["隔离试跑", "不可变 Bundle", "按环境晋级"]) {
-      expect(workbench).toContain(label);
-    }
-    expect(workbench).toContain("固定版本轨迹评测");
-    expect(workbench).toContain("打开 Evaluate &amp; Operate");
-    expect(workbench).not.toContain("耐久 Eval 控制面");
+    expect(styles).toMatch(/\.stageNav,[\s\S]*?\.previewBanner\s*\{\s*display:\s*none;/);
+    expect(styles).toContain(".configPanel + .configPanel");
+    expect(workbench).toContain("<HeaderActionIcon name=\"release\"");
+    expect(workbench).toContain('setActiveSection("identity")');
+    expect(workbench).toContain('!draft.parentDraftId && (');
+    expect(workbench).toContain('activeSection === "evaluation"');
+    expect(workbench).toContain('activeSection === "trial"');
     expect(operationsWorkspace).toContain("耐久 Dataset 与固定版本评测");
     expect(operationsWorkspace).toContain("导入题库");
     expect(operationsWorkspace).toContain("importEvalDataset");
@@ -683,31 +713,14 @@ describe("Agent Studio management page", () => {
     expect(operationsWorkspace).toContain("caseAnalysis.counts.passed");
     expect(operationsWorkspace).toContain("item.failures.join");
     expect(operationsWorkspace).toContain("studioClient.createEvalRun");
-    expect(workbench).toContain("运行质量门禁");
-    expect(workbench).toContain("发布版本后生效");
-    expect(workbench).not.toContain("规则 Score、人工反馈与 Alert");
-    expect(workbench).not.toContain("studioClient.listQualityScores");
-    expect(workbench).not.toContain("studioClient.listQualityIncidents");
-    expect(workbench).not.toContain("studioClient.listQualityRules");
     expect(workbench).toContain("studioClient.getQualityGate");
-    expect(workbench).not.toContain("查看 Dashboard");
-    expect(workbench).toContain("运行配置已从 Builder 分离");
     expect(operationsWorkspace).toContain("环境指针与部署历史");
     expect(operationsWorkspace).toContain("studioClient.promoteDeployment");
-    expect(workbench).toContain("评测集缺少");
-    expect(workbench).toContain("一键补齐");
-    expect(workbench).toContain("evaluationCoverageCase");
-    expect(workbench).toContain("Agent Eval");
-    expect(workbench).toContain("evaluationEnabled");
-    expect(workbench).not.toContain("评测集管理器");
-    expect(workbench).toContain("happy / ambiguous / safety 基线");
     expect(errorBoundary).toContain("{PRODUCT_NAME}没有正常加载");
     expect(errorBoundary).toContain("重新加载");
-    expect(loadingBoundary).toContain("正在恢复{PRODUCT_NAME}");
+    expect(loadingBoundary).toContain("ProductLoading");
     expect(styles).toContain(".studioStateShell");
     expect(styles).toContain(".deploymentControlPlane");
-    expect(styles).toContain(".environmentGrid");
-    expect(styles).not.toContain(".qualityControlPlane");
   });
 
   it("turns a deployed Agent into a governed external service", () => {
@@ -736,7 +749,8 @@ describe("Agent Studio management page", () => {
     expect(environmentPolicyControlPlane).not.toContain("Phase 4");
     expect(environmentPolicyControlPlane).not.toContain("setKnowledgeText");
     expect(environmentPolicyControlPlane).toContain("credentialScopes");
-    expect(environmentPolicyControlPlane).toContain("maxRunBudgetUsd");
+    expect(environmentPolicyControlPlane).not.toContain("maxRunBudgetUsd");
+    expect(environmentPolicyControlPlane).toContain("费用与 Token 不设执行额度");
     expect(environmentPolicyControlPlane).toContain("maxArtifactBytes");
     expect(environmentPolicyStyles).toContain("grid-template-columns: 0.72fr 1.35fr");
     expect(environmentPolicyStyles).not.toContain("linear-gradient");
@@ -791,17 +805,49 @@ describe("Agent Studio management page", () => {
   it("uses a quiet registry palette with no decorative gradient", () => {
     expect(styles).not.toContain("linear-gradient");
     expect(styles).not.toContain("radial-gradient");
-    expect(styles).toContain("--studio-green: #2e7058");
-    expect(styles).toContain("--studio-violet: #655a82");
+    expect(styles).toContain("--studio-green: var(--codex-accent)");
+    expect(styles).toContain("--studio-violet: var(--codex-skill)");
+    expect(styles).not.toContain("#2e7058");
     expect(styles).toMatch(/@media \(max-width: 900px\)/);
     expect(styles).toMatch(/@media \(prefers-reduced-motion: no-preference\)/);
   });
 
-  it("adds a restrained icon cue to the Agent collection heading", () => {
-    expect(workbench).toContain('<ProductIcon name="agent" />');
-    expect(workbench).toContain("styles.railHeadingLabel");
-    expect(styles).toMatch(
-      /\.railHeadingLabel svg\s*\{[^}]*stroke-width:\s*1\.65;/s,
-    );
+  it("opens on a clickable two-column Agent catalog before the single-column editor", () => {
+    expect(workbench).toContain('useState<"catalog" | "editor">("catalog")');
+    expect(workbench).not.toContain("StudioSectionNavigation");
+    expect(workbench).toContain('viewMode === "catalog"');
+    expect(workbench).toContain('aria-label="智能体目录"');
+    expect(workbench).toContain("openDraftEditor");
+    expect(workbench).toContain("打开${agent.displayName}");
+    expect(workbench).toContain('returnToCatalog');
+    expect(workbench).toContain('open={viewMode === "editor" && Boolean(workspaceTarget)}');
+    expect(styles).toContain(".agentCatalogCard");
+    expect(styles).toMatch(/\.agentCatalogList\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/s);
+    expect(styles).toMatch(/\.editorBody\s*\{[^}]*display:\s*block;/s);
+    expect(styles).toMatch(/\.stageNav\s*\{[^}]*flex-direction:\s*row;/s);
+  });
+
+  it("keeps the empty Agent catalog quiet until the user explicitly creates one", () => {
+    expect(workbench).not.toContain("if (canEdit) setNewAgentOpen(true)");
+    expect(workbench).toContain('setNotice(canEdit ? "当前没有草稿，可新建第一个 Agent"');
+    expect(workbench).toContain('className={`${styles.studioShell} ${styles.workbenchContent}`}');
+  });
+
+  it("uses compact gray cards and a constrained editor canvas", () => {
+    expect(styles).toMatch(/\.agentCatalogCard\s*\{[^}]*var\(--codex-surface-raised, #242424\)/s);
+    expect(styles).toMatch(/\.catalogCreateButton\s*\{[^}]*white-space:\s*nowrap;/s);
+    expect(styles).toContain(".agentCatalogMenu");
+    expect(workbench).toContain("deleteCatalogDraft(agent)");
+    expect(styles).toMatch(/\.codeEditor\s*\{[^}]*min-height:\s*250px;/s);
+    expect(styles).toMatch(/\.editorHeader\s*\{[^}]*width:\s*min\(1080px, 100%\);/s);
+    expect(styles).toMatch(/\.configPanel\s*\{[^}]*width:\s*min\(100%, 900px\);/s);
+  });
+
+  it("uses one model select inside basic information instead of a model page", () => {
+    expect(workbench).toContain('<Field label="模型" wide>');
+    expect(workbench).toContain("selectedModelValue");
+    expect(workbench).not.toContain('activeSection === "model"');
+    expect(workbench).not.toContain("styles.routeCards");
+    expect(studioConfig).toContain('sections: ["identity"]');
   });
 });

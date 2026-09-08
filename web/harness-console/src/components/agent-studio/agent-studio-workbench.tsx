@@ -1,13 +1,13 @@
 "use client";
+import { isAgentVisible } from "../../lib/agent-visibility";
+import { useInternalAgentsPreference } from "../../lib/interface-preferences";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useAuth } from "../auth-provider";
 import { useConfirmationDialog } from "../confirmation-dialog";
-import { ProductIcon } from "../product-icon";
 import { PRODUCT_NAME, ProductBrandMark } from "../product-brand";
-import { StudioSidebar } from "./studio-sidebar";
 import {
   DEFAULT_STUDIO_DRAFT,
   REQUIRED_PROMPT_HEADINGS,
@@ -54,12 +54,11 @@ import {
 import { useDialogFocus } from "../../lib/use-dialog-focus";
 import { useDismissablePopovers } from "../../lib/use-dismissable-popovers";
 import { GovernanceControlPlane } from "./governance-control-plane";
-import { CopilotDrawer } from "./copilot-drawer";
+import { skillCreatorHref } from "../../lib/skill-creator-launch";
 import { SkillConversationBuilder } from "./skill-conversation-builder";
 import { StudioCodeEditor } from "./studio-code-editor";
 import {
-  NewAgentDialog,
-  TryRunPanel,
+  AgentBuilderAssistant,
 } from "./agent-builder-overlays";
 import styles from "./agent-studio.module.css";
 
@@ -82,6 +81,10 @@ const lifecycleStages = [
   { id: "version", label: "版本", detail: "不可变 Bundle" },
   { id: "deploy", label: "部署", detail: "环境发布" },
 ] as const;
+
+const WORKER_STANDARD_TOOL_IDS = ["Read", "Glob", "Grep", "Write", "Edit", "Bash"] as const;
+const WORKER_READONLY_TOOL_IDS = ["Read", "Glob", "Grep"] as const;
+const UNAVAILABLE_WORKER_TOOL_IDS = new Set(["Task"]);
 
 function riskLabel(risk: "low" | "medium" | "high") {
   return risk === "high" ? "高" : risk === "medium" ? "中" : "低";
@@ -158,13 +161,6 @@ const previewStatusLabels: Record<string, string> = {
   failed: "失败",
   cancelled: "已取消",
   expired: "已过期",
-};
-
-const MODEL_API_FORMAT_LABELS: Record<string, string> = {
-  anthropic_compatible: "Anthropic-compatible",
-  openai_compatible: "OpenAI Responses",
-  openai_images: "OpenAI Images",
-  openai_videos: "OpenAI Videos",
 };
 
 const preflightErrorLabels: Record<string, string> = {
@@ -273,7 +269,7 @@ function validationIssueSection(
   ) {
     return "runtime";
   }
-  if (path.startsWith("model")) return "model";
+  if (path.startsWith("model")) return "identity";
   if (path.startsWith("prompt")) return "prompt";
   if (path.startsWith("skills")) return "skills";
   if (path.startsWith("subagents")) return "orchestration";
@@ -296,6 +292,13 @@ export function AgentStudioWorkbench() {
     revision: 0,
   });
   const [drafts, setDrafts] = useState<StudioDraftSummary[]>([]);
+  const [showInternalAgents] = useInternalAgentsPreference();
+  const [returnParentId, setReturnParentId] = useState<string | null>(null);
+  const [subagentFormOpen, setSubagentFormOpen] = useState(false);
+  const [subagentName, setSubagentName] = useState("");
+  const [subagentResponsibility, setSubagentResponsibility] = useState("");
+  const [subagentBusy, setSubagentBusy] = useState(false);
+  const [bindSubagentRef, setBindSubagentRef] = useState("");
   const [capabilities, setCapabilities] = useState<StudioCapabilities | null>(null);
   const [governedPolicies, setGovernedPolicies] = useState<StudioGovernedPolicy[]>([]);
   const [loading, setLoading] = useState(true);
@@ -305,6 +308,7 @@ export function AgentStudioWorkbench() {
   const [inspecting, setInspecting] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [importingBundle, setImportingBundle] = useState(false);
+  const [importFeedback, setImportFeedback] = useState<{message: string; error?: boolean} | null>(null);
   const [importingSkill, setImportingSkill] = useState(false);
   const [creatingPreview, setCreatingPreview] = useState(false);
   const [previews, setPreviews] = useState<StudioPreview[]>([]);
@@ -324,6 +328,9 @@ export function AgentStudioWorkbench() {
   const [activeSection, setActiveSection] =
     useState<StudioSection>("identity");
   const [agentQuery, setAgentQuery] = useState("");
+  const [viewMode, setViewMode] = useState<"catalog" | "editor">("catalog");
+  const workspaceVisibleRef = useRef(false);
+  workspaceVisibleRef.current = viewMode === "editor";
   const [inspected, setInspected] = useState(false);
   const [promptFocusMode, setPromptFocusMode] = useState(false);
   const [skillConversationOpen, setSkillConversationOpen] = useState(false);
@@ -333,10 +340,13 @@ export function AgentStudioWorkbench() {
     findings: string[];
     warnings: string[];
   } | null>(null);
-  const [contractOpen, setContractOpen] = useState(false);
-  const [copilotOpen, setCopilotOpen] = useState(false);
-  const [newAgentOpen, setNewAgentOpen] = useState(false);
-  const [tryRunOpen, setTryRunOpen] = useState(false);
+  const [workspaceTarget, setWorkspaceTarget] = useState<HTMLDivElement | null>(null);
+  const [configEditorOpen, setConfigEditorOpen] = useState(false);
+  const [testRequest, setTestRequest] = useState(0);
+  const [builderAssistantOpen, setBuilderAssistantOpen] = useState(false);
+  const [showPythonTools, setShowPythonTools] = useState(false);
+  const [builderAssistantMode, setBuilderAssistantMode] = useState<"create" | "run">("create");
+  const [builderCreationSession, setBuilderCreationSession] = useState(0);
   const [tryRunSeed, setTryRunSeed] = useState<{
     prompt: string;
     autoStart: boolean;
@@ -353,9 +363,6 @@ export function AgentStudioWorkbench() {
   const promptEditorRef = useRef<HTMLTextAreaElement>(null);
   const bundleInputRef = useRef<HTMLInputElement>(null);
   const skillInputRef = useRef<HTMLInputElement>(null);
-  const contractTriggerRef = useRef<HTMLButtonElement>(null);
-  const contractRailRef = useRef<HTMLElement>(null);
-  const contractCloseRef = useRef<HTMLButtonElement>(null);
   const versionHistoryTriggerRef = useRef<HTMLButtonElement>(null);
   const versionHistoryRailRef = useRef<HTMLElement>(null);
   const versionHistoryCloseRef = useRef<HTMLButtonElement>(null);
@@ -375,12 +382,6 @@ export function AgentStudioWorkbench() {
       : { routes: [], tools: [], mcp: [], profiles: [], templates: [], runtimes: [] },
     [capabilities],
   );
-  useDialogFocus({
-    open: contractOpen,
-    panelRef: contractRailRef,
-    initialFocusRef: contractCloseRef,
-    onEscape: () => setContractOpen(false),
-  });
   useDialogFocus({
     open: versionHistoryOpen,
     panelRef: versionHistoryRailRef,
@@ -445,9 +446,10 @@ export function AgentStudioWorkbench() {
     && draft.maxModelTokens === null;
   const subagentCandidates = useMemo(
     () => drafts
-      .filter((item) => item.draftId !== draft.id)
+      .filter((item) => isAgentVisible(item, showInternalAgents) && item.draftId !== draft.id && (!item.parentDraftId || item.parentDraftId === draft.id))
       .map((item) => ({
         draftId: item.draftId,
+        parentDraftId: item.parentDraftId,
         ref: `${item.name}@${item.version}`,
         label: item.displayName,
         description: `${item.domain} · ${item.publishedVersion ? "已发布版本" : `可编辑草稿 r${item.revision}`}`,
@@ -455,18 +457,19 @@ export function AgentStudioWorkbench() {
         tools: [] as string[],
         status: item.publishedVersion ? "approved" as const : "draft" as const,
       })),
-    [draft.id, drafts],
+    [draft.id, drafts, showInternalAgents],
   );
   const filteredAgentRows = useMemo(() => {
     const query = agentQuery.trim().toLocaleLowerCase();
-    if (!query) return drafts;
-    return drafts.filter((agent) =>
+    const visible = drafts.filter((agent) => isAgentVisible(agent, showInternalAgents));
+    if (!query) return visible;
+    return visible.filter((agent) =>
       [agent.displayName, agent.name, agent.version, agent.publishedVersion ?? "草稿"]
         .join(" ")
         .toLocaleLowerCase()
         .includes(query),
     );
-  }, [agentQuery, drafts]);
+  }, [agentQuery, drafts, showInternalAgents]);
 
   useEffect(() => {
     if (!releaseFeedbackOpen) return;
@@ -522,11 +525,15 @@ export function AgentStudioWorkbench() {
         const navigationState = new URLSearchParams(window.location.search);
         const requestedDraftId = navigationState.get("draft");
         const requestedSection = navigationState.get("section");
+        setViewMode(requestedDraftId || requestedSection ? "editor" : "catalog");
         const targetDraft = requestedDraftId
           ? serverDrafts.find((item) => item.draftId === requestedDraftId)
           : null;
         if (requestedSection && requestedSection in sectionLabels) {
-          setActiveSection(requestedSection as StudioSection);
+          // Builder is currently a single-page editor. Legacy deep links still
+          // open the draft, but no longer expose retired orchestration,
+          // evaluation, or publishing surfaces.
+          setActiveSection("identity");
         }
         const migration = await migrateLegacyStudioDraft(
           window.localStorage,
@@ -559,7 +566,6 @@ export function AgentStudioWorkbench() {
         } else {
           setDraft({ ...DEFAULT_STUDIO_DRAFT, id: "", revision: 0 });
           setActiveSection("identity");
-          if (canEdit) setNewAgentOpen(true);
           setNotice(canEdit ? "当前没有草稿，可新建第一个 Agent" : "当前没有可查看的草稿");
         }
       } catch (error) {
@@ -670,14 +676,6 @@ export function AgentStudioWorkbench() {
     });
   }
 
-  function toggleBuiltin(tool: string) {
-    updateDraft({
-      builtinTools: draft.builtinTools.includes(tool)
-        ? draft.builtinTools.filter((item) => item !== tool)
-        : [...draft.builtinTools, tool],
-    });
-  }
-
   function toggleMcp(reference: string) {
     updateDraft({
       mcpServers: draft.mcpServers.includes(reference)
@@ -747,9 +745,9 @@ export function AgentStudioWorkbench() {
       setNotice("单个 Lead 最多绑定 8 个 Sub Agent");
       return;
     }
-    const candidate = subagentCandidates[0];
+    const candidate = subagentCandidates.find((item) => item.ref === bindSubagentRef);
     if (!candidate) {
-      setNotice("请先新建另一个 Agent 草稿，再把它绑定为 Sub Agent");
+      setNotice("请选择要引用的智能体，或直接新建内部子智能体");
       return;
     }
     const sequence = draft.subagents.length + 1;
@@ -771,6 +769,7 @@ export function AgentStudioWorkbench() {
           ? "production-orchestrator"
           : draft.policy,
     });
+    setBindSubagentRef("");
   }
 
   async function editSubagentDraft(ref: string) {
@@ -780,9 +779,87 @@ export function AgentStudioWorkbench() {
       return;
     }
     if (dirty && !(await saveDraft())) return;
+    setReturnParentId(draft.id);
     await selectDraft(candidate.draftId);
     setActiveSection("identity");
     setNotice(`正在编辑 Sub Agent：${candidate.label}`);
+  }
+
+  async function createInternalSubagent() {
+    if (!canEdit || subagentBusy || !subagentName.trim() || !subagentResponsibility.trim()) return;
+    const parent = dirty ? await saveDraft() : draft;
+    if (!parent?.id) return;
+    setSubagentBusy(true);
+    try {
+      const created = await studioClient.createInternalSubagent(parent.id, parent.revision,
+        subagentName.trim(), subagentResponsibility.trim());
+      setDraft(apiDraftToStudioDraft(created.parent));
+      setDirty(false);
+      setServerValidation(null);
+      setDrafts(await studioClient.listAccessibleDrafts());
+      setSubagentFormOpen(false);
+      setSubagentName("");
+      setSubagentResponsibility("");
+      setNotice(`已创建并绑定“${created.child.spec.displayName}”，可在协作角色中编辑`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "创建子智能体失败");
+    } finally { setSubagentBusy(false); }
+  }
+
+  async function changePlacement(childId: string, parentId: string | null) {
+    if (!canEdit || subagentBusy) return;
+    if (dirty && !(await saveDraft())) return;
+    setSubagentBusy(true);
+    try {
+      const child = await studioClient.getDraft(childId, { maxAgeMs: 0 });
+      const updated = await studioClient.setDraftPlacement(childId, child.revision, parentId);
+      if (childId === draft.id) setDraft(apiDraftToStudioDraft(updated));
+      setDrafts(await studioClient.listAccessibleDrafts());
+      setNotice(parentId ? "已移入协作角色，普通列表不再显示；已有版本引用保持有效" : "已恢复独立智能体入口");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "更新展示位置失败");
+    } finally { setSubagentBusy(false); }
+  }
+
+  async function returnToCatalog() {
+    if (saving) return;
+    if (dirty) {
+      const decision = await requestDecision({ title: "有未保存的修改", description: "保存后返回智能体管理，或放弃这次修改。", confirmLabel: "保存并返回", cancelLabel: "继续编辑", discardLabel: "放弃修改并返回" });
+      if (decision === "cancel") return;
+      if (decision === "confirm" && !await saveDraft()) return;
+      if (decision === "discard") setDirty(false);
+    }
+    setBuilderAssistantOpen(false); setConfigEditorOpen(false); setReturnParentId(null); setViewMode("catalog");
+  }
+
+  async function returnToParent() {
+    const parentId = returnParentId ?? draft.parentDraftId;
+    if (!parentId) { setViewMode("catalog"); return; }
+    const child = dirty ? await saveDraft() : draft;
+    if (!child) return;
+    try {
+      let parent = apiDraftToStudioDraft(await studioClient.getDraft(parentId, { maxAgeMs: 0 }));
+      // Internal collaborators follow the edited draft when returning to their
+      // parent; independent references keep their explicitly selected version.
+      if (child.parentDraftId === parentId && parent.subagents.some((binding) =>
+        binding.ref.split("@")[0] === child.name && binding.ref !== `${child.name}@${child.version}`)) {
+        parent = apiDraftToStudioDraft(await studioClient.replaceDraft({ ...parent,
+          subagents: parent.subagents.map((binding) => binding.ref.split("@")[0] === child.name
+            ? { ...binding, ref: `${child.name}@${child.version}` } : binding),
+        }));
+      }
+      setDraft(parent);
+      setDrafts(await studioClient.listAccessibleDrafts());
+      setDirty(false);
+      setConflict(false);
+      setServerValidation(null);
+      setBuilderAssistantOpen(false);
+      setReturnParentId(null);
+      setActiveSection("identity");
+      setNotice("已返回父智能体，内部角色绑定已同步");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "返回父智能体失败，当前内容已保留");
+    }
   }
 
   function removeSubagent(index: number) {
@@ -807,8 +884,9 @@ export function AgentStudioWorkbench() {
     try {
       let saved;
       if (!candidate.id) {
-        setNewAgentOpen(true);
-        setNotice("请先选择服务端模板创建 Agent");
+        setBuilderAssistantMode("create");
+        setBuilderAssistantOpen(true);
+        setNotice("请先在构建助手中描述任务并创建草稿");
         return null;
       } else {
         saved = await studioClient.replaceDraft(candidate);
@@ -1003,7 +1081,10 @@ export function AgentStudioWorkbench() {
     }
   }
 
-  async function inspectDraft(): Promise<StudioValidation | null> {
+  async function inspectDraft(): Promise<{
+    draft: StudioDraft;
+    validation: StudioValidation;
+  } | null> {
     const current = dirty || !draft.id ? await saveDraft() : draft;
     if (!current?.id) return null;
     setInspecting(true);
@@ -1030,7 +1111,7 @@ export function AgentStudioWorkbench() {
             : "检查通过，可以发布"
           : `发布被阻止 · ${errors.length} 项需要处理`,
       );
-      return validation;
+      return { draft: current, validation };
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "检查失败");
       return null;
@@ -1041,11 +1122,11 @@ export function AgentStudioWorkbench() {
 
   async function handleReleaseAction() {
     if (!canEdit || saving || inspecting || publishing) return;
-    if (dirty || !serverValidation) {
-      await inspectDraft();
-      return;
-    }
-    if (!serverValidation.ready) {
+    const release = dirty || !serverValidation
+      ? await inspectDraft()
+      : { draft, validation: serverValidation };
+    if (!release) return;
+    if (!release.validation.ready) {
       setReleaseFeedbackOpen(true);
       return;
     }
@@ -1053,13 +1134,16 @@ export function AgentStudioWorkbench() {
       setNotice("检查已通过，但当前角色没有发布权限");
       return;
     }
-    await publishDraft();
+    await publishDraft(release.draft, release.validation);
   }
 
   async function startNewDraft() {
     if (!canEdit || saving) return;
     if (!dirty) {
-      setNewAgentOpen(true);
+      setDraft({ ...DEFAULT_STUDIO_DRAFT, id: "", revision: 0 }); setViewMode("editor"); setConfigEditorOpen(false);
+      setBuilderCreationSession((current) => current + 1);
+      setBuilderAssistantMode("create");
+      setBuilderAssistantOpen(true);
       return;
     }
     const confirmed = await requestConfirmation({
@@ -1072,10 +1156,23 @@ export function AgentStudioWorkbench() {
     if (!confirmed) return;
     const saved = await saveDraft();
     if (!saved) return;
-    setNewAgentOpen(true);
+    setDraft({ ...DEFAULT_STUDIO_DRAFT, id: "", revision: 0 }); setViewMode("editor"); setConfigEditorOpen(false);
+    setBuilderCreationSession((current) => current + 1);
+    setBuilderAssistantMode("create");
+    setBuilderAssistantOpen(true);
+  }
+
+  function openConfiguration(section: StudioSection, label?: string) {
+    setActiveSection(section); setConfigEditorOpen(true);
+    window.setTimeout(() => {
+      const root = document.querySelector(`[data-config-editor="true"]`);
+      const target = label ? Array.from(root?.querySelectorAll<HTMLElement>("h3,h4,strong") ?? []).find(node => node.textContent?.includes(label)) : root?.querySelector(`#${section}-title`);
+      target?.scrollIntoView({ block: "start", behavior: "smooth" });
+    }, 0);
   }
 
   async function openTryRun() {
+    setTestRequest(current => current + 1);
     const current = dirty ? await saveDraft() : draft;
     if (!current?.id) return;
     setTryRunSeed({
@@ -1083,7 +1180,8 @@ export function AgentStudioWorkbench() {
       autoStart: false,
       recommendation: null,
     });
-    setTryRunOpen(true);
+    setBuilderAssistantMode("run");
+    setBuilderAssistantOpen(true);
   }
 
   async function selectDraft(draftId: string) {
@@ -1115,11 +1213,66 @@ export function AgentStudioWorkbench() {
       setServerValidation(null);
       setReleaseFeedbackOpen(false);
       setNotice("已从控制面切换草稿");
+      setBuilderAssistantOpen(false);
+      return true;
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "加载草稿失败");
     } finally {
       setSwitchingDraftId("");
       draftSwitchingRef.current = false;
+    }
+  }
+
+  async function openDraftEditor(draftId: string) {
+    if (draftId !== draft.id) await selectDraft(draftId);
+    setBuilderAssistantMode("run");
+    setReturnParentId(null);
+    setConfigEditorOpen(false);
+    setViewMode("editor");
+  }
+
+  async function deleteCatalogDraft(target: StudioDraftSummary) {
+    if (!canEdit || deleting || saving || target.spaceId) return;
+    const confirmed = await requestConfirmation({
+      title: `删除“${target.displayName}”？`,
+      description: target.publishedVersion
+        ? "草稿会立即移除，智能体也不再出现在新任务目录。已发布的不可变版本、已有任务和审计记录会保留。"
+        : "草稿会立即移除且无法恢复。已有任务和审计记录不会被删除。",
+      confirmLabel: "删除智能体",
+      cancelLabel: "取消",
+      tone: "danger",
+      context: <span>{target.name}@{target.version}</span>,
+    });
+    if (!confirmed) return;
+
+    setDeleting(true);
+    try {
+      await studioClient.deleteDraft(target.draftId, target.revision);
+      const remaining = await studioClient.listAccessibleDrafts();
+      setDrafts(remaining);
+      if (target.draftId === draft.id) {
+        setDirty(false);
+        setConflict(false);
+        setVersionConflict(false);
+        setServerValidation(null);
+        setReleaseFeedbackOpen(false);
+        setPersonalVersions([]);
+        if (remaining.length > 0) {
+          const selected = await studioClient.getDraft(remaining[0].draftId, {
+            expectedRevision: remaining[0].revision,
+            maxAgeMs: 0,
+          });
+          setDraft(apiDraftToStudioDraft(selected));
+        } else {
+          setDraft({ ...DEFAULT_STUDIO_DRAFT, id: "", revision: 0 });
+          setActiveSection("identity");
+        }
+      }
+      setNotice(`已删除 ${target.displayName}`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "删除智能体失败");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -1163,7 +1316,6 @@ export function AgentStudioWorkbench() {
       } else {
         setDraft({ ...DEFAULT_STUDIO_DRAFT, id: "", revision: 0 });
         setActiveSection("identity");
-        setNewAgentOpen(true);
         setNotice(`已删除 ${draft.displayName}，可以新建智能体`);
       }
     } catch (error) {
@@ -1241,24 +1393,30 @@ export function AgentStudioWorkbench() {
       return;
     }
     setImportingBundle(true);
+    setImportFeedback({message: `正在导入 ${file.name}…`});
     try {
       const imported = await studioClient.importBundle(file);
-      const rows = await studioClient.listAccessibleDrafts();
+
       setDraft(apiDraftToStudioDraft(imported.draft));
-      setDrafts(rows);
+      setBuilderAssistantMode("run");
+      setBuilderAssistantOpen(true);
+      setTryRunSeed({prompt: "", autoStart: false, recommendation: null});
+      setConfigEditorOpen(false);
+      setViewMode("editor");
+      void studioClient.listAccessibleDrafts().then(setDrafts).catch(() => {});
       setDirty(false);
       setConflict(false);
       setVersionConflict(false);
       setServerValidation(null);
       setReleaseFeedbackOpen(false);
       setInspected(false);
-      setNotice(
-        imported.lossless && imported.roundTripVerified
+      const message = imported.lossless && imported.roundTripVerified
           ? `已无损导入 ${imported.draft.spec.name}@${imported.draft.spec.version}，可继续编辑`
-          : `已兼容导入 Agent；${imported.warnings.join("；") || "请保存并重新预检"}`,
-      );
+          : `已兼容导入 Agent；${imported.warnings.join("；") || "请保存并重新预检"}`;
+      setNotice(message); setImportFeedback({message});
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Bundle 导入失败");
+      const message = error instanceof Error ? error.message : "压缩包导入失败";
+      setNotice(message); setImportFeedback({message, error: true});
     } finally {
       setImportingBundle(false);
       if (bundleInputRef.current) bundleInputRef.current.value = "";
@@ -1332,7 +1490,6 @@ export function AgentStudioWorkbench() {
     const saved = await saveDraft({ ...draft, skills });
     if (!saved) return;
     setActiveSkillName(skills[0]?.name ?? "");
-    setSkillConversationOpen(false);
     setSkillImportReport((current) =>
       current?.skillName === name ? null : current
     );
@@ -1341,13 +1498,16 @@ export function AgentStudioWorkbench() {
     );
   }
 
-  async function publishDraft() {
-    if (!draft.id || dirty || !serverValidation?.ready || !canPublish) return;
+  async function publishDraft(
+    targetDraft: StudioDraft = draft,
+    validation: StudioValidation | null = serverValidation,
+  ) {
+    if (!targetDraft.id || !validation?.ready || !canPublish) return;
     setPublishing(true);
     try {
-      const version = await studioClient.publishDraft(draft.id, draft.revision);
+      const version = await studioClient.publishDraft(targetDraft.id, targetDraft.revision);
       const [refreshed, rows] = await Promise.all([
-        studioClient.getDraft(draft.id),
+        studioClient.getDraft(targetDraft.id),
         studioClient.listAccessibleDrafts(),
       ]);
       setDraft(apiDraftToStudioDraft(refreshed));
@@ -1493,15 +1653,31 @@ export function AgentStudioWorkbench() {
 
   const selectedRoute =
     options.routes.find((route) => route.id === draft.modelRoute) ?? options.routes[0];
-  const toolSearchCompatible =
-    selectedRoute?.capabilities.includes("tool_search") ?? false;
-  const toolSearchEligible = toolSearchCompatible
-    && draft.pythonTools.length === 0
-    && selectedMcpTools.length > 0;
-  const toolSearchRecommended = selectedMcpTools.length >= 10;
-  const toolDirectoryEntries = draft.builtinTools.length + options.mcp
-    .filter((item) => draft.mcpServers.includes(item.id))
-    .reduce((total, item) => total + item.tools.length, 0);
+  const selectedModelValue = `${draft.modelRoute}::${draft.model}`;
+  const modelChoices = options.routes.flatMap((route) =>
+    route.models.map((model) => ({
+      value: `${route.id}::${model}`,
+      label: route.models.length > 1 ? `${route.label} · ${model}` : route.label,
+      routeId: route.id,
+      model,
+    })),
+  );
+  const workerToolOptions = options.tools.filter(
+    (tool) => !UNAVAILABLE_WORKER_TOOL_IDS.has(tool.id) && !["WebSearch", "WebFetch"].includes(tool.id),
+  );
+  const enabledWorkerToolIds = workerToolOptions
+    .filter((tool) => draft.builtinTools.includes(tool.id))
+    .map((tool) => tool.id);
+  const matchesWorkerPreset = (preset: readonly string[]) => {
+    const availablePreset = preset.filter((tool) => workerToolOptions.some((item) => item.id === tool));
+    return enabledWorkerToolIds.length === availablePreset.length
+      && availablePreset.every((tool) => enabledWorkerToolIds.includes(tool));
+  };
+  const workerToolPreset = matchesWorkerPreset(WORKER_STANDARD_TOOL_IDS)
+    ? "standard"
+    : matchesWorkerPreset(WORKER_READONLY_TOOL_IDS)
+      ? "readonly"
+      : "custom";
   const skill = draft.skills.find((candidate) => candidate.name === activeSkillName)
     ?? draft.skills[0];
   const validationReady = serverValidation?.ready ?? contract.ready;
@@ -1817,75 +1993,142 @@ export function AgentStudioWorkbench() {
   }
 
   return (
-    <main className={styles.studioShell} id="main-content" data-studio-integration="api">
-      <StudioSidebar active="agents">
-        <div className={styles.railHeading}>
-          <span className={styles.railHeadingLabel}>
-            <ProductIcon name="agent" />
-            智能体
-          </span>
+    <main
+      className={`${styles.studioShell} ${styles.workbenchContent}`}
+      data-studio-integration="api"
+      data-view={viewMode}
+      data-build-workspace={viewMode === "editor"}
+      data-builder-open={builderAssistantOpen}
+    >
+      {viewMode === "catalog" ? (
+        <section className={styles.agentCatalog} aria-label="智能体目录">
+          <header className={styles.agentCatalogHeader}>
+            <div className={styles.agentCatalogIntro}>
+              <div className={styles.agentCatalogTitleLine}>
+                <h1>智能体</h1>
+                <span>{drafts.filter((agent) => isAgentVisible(agent, false)).length} 个智能体</span>
+              </div>
+              <span>选择智能体，继续配置或开始试跑</span>
+            </div>
+            <div className={styles.agentCatalogActions}>
+
+              <label className={styles.catalogSearch}>
+                <span className={styles.visuallyHidden}>搜索智能体</span>
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <circle cx="7" cy="7" r="3.75" />
+                  <path d="m10 10 3 3" />
+                </svg>
+                <input
+                  type="search"
+                  value={agentQuery}
+                  onChange={(event) => setAgentQuery(event.target.value)}
+                  placeholder="搜索智能体"
+                />
+              </label>
+              <button
+                type="button"
+                className={styles.catalogCreateButton}
+                disabled={!canEdit || saving}
+                onClick={() => void startNewDraft()}
+              >
+                <span aria-hidden="true">＋</span>
+                新建智能体
+              </button>
+            </div>
+          </header>
+          <div className={styles.agentCatalogList}>
+            {filteredAgentRows.map((agent) => (
+              <article
+                className={styles.agentCatalogCard}
+                key={agent.draftId}
+              >
+                <button
+                  className={styles.agentCatalogOpen}
+                  type="button"
+                  disabled={saving || Boolean(switchingDraftId)}
+                  aria-label={`打开${agent.displayName}`}
+                  onPointerEnter={() => {
+                    void studioClient.prefetchDraft(agent.draftId, agent.revision).catch(() => {});
+                  }}
+                  onFocus={() => {
+                    void studioClient.prefetchDraft(agent.draftId, agent.revision).catch(() => {});
+                  }}
+                  onClick={() => void openDraftEditor(agent.draftId)}
+                >
+                  <span className={styles.agentMonogram} aria-hidden="true">
+                    {agent.displayName.slice(0, 1)}
+                  </span>
+                  <div className={styles.agentCatalogCopy}>
+                    <div>
+                      <strong>{agent.displayName}</strong>
+                      <span className={styles.agentCatalogStatus} data-published={Boolean(agent.publishedVersion)}>
+                        {agent.parentDraftId ? "内部子智能体" : agent.publishedVersion ? "已发布" : "草稿"}
+                      </span>
+                    </div>
+                    <span>{agent.domain || "general"} · {agent.template === "operator" ? "执行型" : "分析型"}</span>
+                  </div>
+                  <div className={styles.agentCatalogPurpose}>
+                    <p>{agent.goal || "按已配置的 Prompt 和工具完成任务"}</p>
+                    <span title={agent.primaryOutput || undefined}>
+                      输出 · {agent.primaryOutput || "可核验的任务结果"}
+                    </span>
+                  </div>
+                  <div className={styles.agentCatalogCapabilities} aria-label="运行能力摘要">
+                    <span>{agent.toolCount ?? 0} 项工具</span>
+                    <span>{agent.skillCount ? `${agent.skillCount} 个 Skill` : "无需 Skill"}</span>
+                    <span>{agent.networkToolsEnabled ? "含联网工具" : "仅内部能力"}</span>
+                  </div>
+                  <div className={styles.agentCatalogFooter}>
+                    <code>{agent.name}@{agent.version}</code>
+                    <span className={styles.agentCardAction} aria-hidden="true">
+                      {switchingDraftId === agent.draftId ? "…" : "→"}
+                    </span>
+                  </div>
+                </button>
+                <details className={`${styles.actionMenu} ${styles.agentCatalogMenu}`} data-dismiss-on-outside>
+                  <summary aria-label={`${agent.displayName}的更多操作`} title="更多操作">
+                    <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" fill="currentColor"><circle cx="5" cy="10" r="1.2"/><circle cx="10" cy="10" r="1.2"/><circle cx="15" cy="10" r="1.2"/></svg>
+                  </summary>
+                  <div className={styles.actionMenuPopover}>
+                    <button
+                      type="button"
+                      className={`${styles.actionMenuItem} ${styles.actionMenuDanger}`}
+                      data-icon="×"
+                      disabled={!canEdit || deleting || saving || Boolean(agent.spaceId)}
+                      title={agent.spaceId ? "协作空间智能体需在协作空间中管理" : undefined}
+                      onClick={(event) => {
+                        event.currentTarget.closest("details")?.removeAttribute("open");
+                        void deleteCatalogDraft(agent);
+                      }}
+                    >
+                      <span>
+                        <strong>{deleting ? "正在删除智能体" : "删除智能体"}</strong>
+                        <small>{agent.spaceId ? "协作空间智能体不能在这里删除" : "保留已有任务与审计记录"}</small>
+                      </span>
+                    </button>
+                  </div>
+                </details>
+              </article>
+            ))}
+            {filteredAgentRows.length === 0 && (
+              <div className={styles.agentCatalogEmpty}>没有匹配的智能体</div>
+            )}
+          </div>
+        </section>
+      ) : (
+      <section className={styles.editorShell} data-readonly={!canEdit} data-config-editor={configEditorOpen}>
+        <header className={styles.editorHeader}>
           <button
             type="button"
-            aria-label="新建智能体"
-            disabled={!canEdit || saving}
-            onClick={() => void startNewDraft()}
+            className={styles.editorBackButton}
+            onClick={() => void returnToCatalog()}
           >
-            +
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 10H4m5-6-6 6 6 6" /></svg><span>智能体</span>
           </button>
-        </div>
-
-        <label className={styles.agentSearch}>
-          <span className={styles.visuallyHidden}>搜索智能体</span>
-          <input
-            type="search"
-            value={agentQuery}
-            onChange={(event) => setAgentQuery(event.target.value)}
-            placeholder="搜索名称、版本或状态"
-          />
-          <kbd>{filteredAgentRows.length}</kbd>
-        </label>
-
-        <nav className={styles.agentList} aria-label="智能体草稿和版本">
-          {filteredAgentRows.map((agent) => (
-            <button
-              type="button"
-              key={agent.draftId}
-              className={agent.draftId === draft.id ? styles.agentRowActive : styles.agentRow}
-              aria-current={agent.draftId === draft.id ? "page" : undefined}
-              disabled={saving || Boolean(switchingDraftId) || agent.draftId === draft.id}
-              onPointerEnter={() => {
-                void studioClient.prefetchDraft(agent.draftId, agent.revision).catch(() => {});
-              }}
-              onFocus={() => {
-                void studioClient.prefetchDraft(agent.draftId, agent.revision).catch(() => {});
-              }}
-              onClick={() => void selectDraft(agent.draftId)}
-            >
-              <span className={styles.agentMonogram} aria-hidden="true">
-                {agent.displayName.slice(0, 1)}
-              </span>
-              <span className={styles.agentRowCopy}>
-                <strong>{agent.displayName}</strong>
-                <small>
-                  {switchingDraftId === agent.draftId
-                    ? "正在切换…"
-                    : `${agent.spaceId ? "协作" : "个人"} · ${agent.version} · ${agent.publishedVersion ? `已发布 ${agent.publishedVersion}` : "草稿"} · r${agent.revision}`}
-                </small>
-              </span>
-            </button>
-          ))}
-          {filteredAgentRows.length === 0 && (
-            <div className={styles.agentListEmpty}>没有匹配的智能体</div>
-          )}
-        </nav>
-      </StudioSidebar>
-
-      <section className={styles.editorShell} data-readonly={!canEdit}>
-        <header className={styles.editorHeader}>
           <div className={styles.titleBlock}>
             <div className={styles.eyebrow}>
               <span className={styles.draftDot} />
-              {publishedCurrent ? "已发布" : "草稿"} · {draft.domain}
+              {publishedCurrent ? "已发布" : "草稿"} (v{draft.version})
               <span className={styles.syncState} data-dirty={dirty} role="status">
                 <span aria-hidden="true">·</span>
                 {saving
@@ -1904,6 +2147,11 @@ export function AgentStudioWorkbench() {
               <code>{draft.name}@{draft.version}</code>
             </div>
             <p>{draft.description}</p>
+            {draft.parentDraftId && <div className={styles.internalNotice}>
+              <button type="button" onClick={() => void returnToParent()}>返回父智能体</button><span>内部子智能体 · 归属 {drafts.find((item) => item.draftId === draft.parentDraftId)?.displayName ?? "父智能体"}</span>
+              <button type="button" disabled={!canEdit || subagentBusy}
+                onClick={() => void changePlacement(draft.id, null)}>转为独立智能体</button>
+            </div>}
             {draft.publishedVersion && (
               <div className={styles.publicationBadge} data-current={publishedCurrent}>
                 <span>{publishedCurrent ? "不可变版本已发布" : "存在历史发布版本"}</span>
@@ -1917,8 +2165,7 @@ export function AgentStudioWorkbench() {
                     aria-expanded={versionHistoryOpen}
                     aria-controls="personal-version-history"
                     onClick={() => {
-                      setContractOpen(false);
-                      setVersionHistoryOpen(true);
+                    setVersionHistoryOpen(true);
                     }}
                   >
                     版本历史
@@ -1929,93 +2176,52 @@ export function AgentStudioWorkbench() {
             )}
           </div>
           <div className={styles.headerActions}>
-            <button
-              type="button"
-              className={`${styles.headerActionButton} ${styles.startTaskButton}`}
-              disabled={!canEdit || !draft.id || saving}
-              onClick={() => void openTryRun()}
-            >
-              <HeaderActionIcon name="task" />
-              <span>试跑</span>
-            </button>
-            {taskHref && (
-              <Link
-                className={`${styles.headerActionButton} ${styles.startTaskButton}`}
-                href={taskHref}
-                title={`使用当前版本 ${draft.name}@${taskVersion} 开始新任务`}
-              >
-                <HeaderActionIcon name="task" />
-                <span>开始任务</span>
-              </Link>
-            )}
-            <button
-              type="button"
-              className={`${styles.headerActionButton} ${styles.secondaryButton}`}
-              disabled={!canEdit || saving || inspecting || !dirty}
-              onClick={() => void saveDraft()}
-            >
-              <HeaderActionIcon name="save" />
-              <span>{saving ? "保存中…" : "仅保存"}</span>
-            </button>
+
             <button
               type="button"
               className={`${styles.headerActionButton} ${styles.publishButton}`}
-              data-state={releaseTone}
-              disabled={!canEdit || saving || inspecting || publishing}
-              title="保存与检查会自动衔接；发布不可变版本前仍需一次明确点击"
+              data-state={serverValidation && !serverValidation.ready ? "blocked" : "ready"}
+              disabled={!canEdit || !draft.id || saving || inspecting || publishing}
               onClick={() => void handleReleaseAction()}
+              title="保存草稿、检查发布条件并发布当前版本"
             >
               <HeaderActionIcon name="release" />
-              <span>{releaseActionLabel}</span>
+              <span>{publishing ? "发布中…" : inspecting ? "检查中…" : "发布"}</span>
             </button>
-            <button
-              type="button"
-              className={`${styles.headerActionButton} ${styles.contractToggleButton}`}
-              aria-expanded={copilotOpen}
-              aria-controls="copilot-drawer"
-              onClick={() => setCopilotOpen(true)}
-            >
-              <span aria-hidden="true">✦</span>
-              <span>Copilot</span>
-              <small>按块 Patch</small>
-            </button>
-            <button
-              type="button"
-              ref={contractTriggerRef}
-              className={`${styles.headerActionButton} ${styles.contractToggleButton}`}
-              data-ready={contract.ready}
-              aria-expanded={contractOpen}
-              aria-controls="effective-contract-drawer"
-              onClick={() => setContractOpen(true)}
-            >
-              <i aria-hidden="true" />
-              <HeaderActionIcon name="contract" />
-              <span>运行契约</span>
-              <small>{contract.ready ? "就绪" : contract.issues.length}</small>
-            </button>
+                <input
+                  ref={bundleInputRef}
+                  hidden
+                  type="file"
+                  aria-label="导入 Agent 文件"
+                  accept=".zip,.rar,application/zip,application/vnd.rar,application/x-rar-compressed"
+                  onChange={(event) => {
+                    const file = event.currentTarget.files?.[0];
+                    if (file) void importBundle(file);
+                  }}
+                />
             <details className={styles.actionMenu} data-dismiss-on-outside>
               <summary
                 className={`${styles.headerActionButton} ${styles.iconActionButton}`}
                 aria-label="更多智能体操作"
                 title="更多操作"
               >
-                <span aria-hidden="true">•••</span>
+                <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" fill="currentColor"><circle cx="5" cy="10" r="1.2"/><circle cx="10" cy="10" r="1.2"/><circle cx="15" cy="10" r="1.2"/></svg>
               </summary>
               <div className={styles.actionMenuPopover}>
                 <header className={styles.actionMenuHeader}>
                   <strong>更多操作</strong>
-                  <small>导入与导出 · 删除</small>
+                  <small>任务 · 导入与导出</small>
                 </header>
-                <input
-                  ref={bundleInputRef}
-                  hidden
-                  type="file"
-                  accept=".zip,application/zip"
-                  onChange={(event) => {
-                    const file = event.currentTarget.files?.[0];
-                    if (file) void importBundle(file);
-                  }}
-                />
+                {taskHref && (
+                  <Link
+                    className={styles.actionMenuItem}
+                    data-icon="→"
+                    href={taskHref}
+                    title={`使用当前版本 ${draft.name}@${taskVersion} 开始新任务`}
+                  >
+                    <span><strong>开始任务</strong><small>使用当前发布版本进入对话</small></span>
+                  </Link>
+                )}
                 <button
                   type="button"
                   className={styles.actionMenuItem}
@@ -2026,7 +2232,7 @@ export function AgentStudioWorkbench() {
                     bundleInputRef.current?.click();
                   }}
                 >
-                  <span><strong>{importingBundle ? "正在导入 Agent" : "导入 Agent / NexAU"}</strong><small>支持 Harness Bundle 与 NexAU ZIP，导入后可继续编辑</small></span>
+                  <span><strong>{importingBundle ? "正在导入 Agent" : "导入 Agent / NexAU"}</strong><small>支持 Harness Bundle 与 NexAU ZIP / RAR，导入后进入构建工作台</small></span>
                 </button>
                 <button
                   type="button"
@@ -2303,8 +2509,11 @@ export function AgentStudioWorkbench() {
           </div>
         )}
 
-        <div className={styles.editorBody}>
-          <nav className={styles.stageNav} aria-label="Agent 构建五阶段">
+        <div className={styles.buildWorkspaceMount} ref={setWorkspaceTarget} />
+        {configEditorOpen && <button type="button" className={styles.configEditorBackdrop} aria-label="关闭完整配置" onClick={() => setConfigEditorOpen(false)} />}
+        <div className={styles.editorBody} hidden={!configEditorOpen}>
+          <header className={styles.configEditorHeading}><strong>完整配置 · {draft.displayName}</strong><div><button type="button" disabled={!dirty || saving} onClick={() => void saveDraft()}>保存配置</button><button type="button" aria-label="收起完整配置" onClick={() => setConfigEditorOpen(false)}>×</button></div></header>
+          <nav className={styles.stageNav} aria-label="Agent 构建五阶段" hidden>
             {STUDIO_STAGES.map((stage) => {
               const state = stageState(stage.id);
               return (
@@ -2330,7 +2539,7 @@ export function AgentStudioWorkbench() {
           </nav>
 
           <fieldset className={styles.panelViewport} disabled={!canEdit}>
-            {activeStageMeta.sections.length > 1 && (
+            {false && activeStageMeta.sections.length > 1 && (
               <div className={styles.stageTabs} role="tablist" aria-label={`${activeStageMeta.label}阶段分区`}>
                 {activeStageMeta.sections.map((section) => (
                   <button
@@ -2347,7 +2556,7 @@ export function AgentStudioWorkbench() {
                 ))}
               </div>
             )}
-            {activeStageBlocked.length > 0 && (
+            {false && activeStageBlocked.length > 0 && (
               <div className={styles.stageBlocking} role="alert">
                 <header>
                   <strong>{activeStageMeta.label}阶段有 {activeStageBlocked.length} 项阻塞</strong>
@@ -2365,33 +2574,14 @@ export function AgentStudioWorkbench() {
                 </ul>
               </div>
             )}
-            {activeSection === "identity" && (
+            {true && (
               <section className={styles.configPanel} aria-labelledby="identity-title">
                 <PanelHeading
                   id="identity-title"
-                  kicker="阶段 1 · 目标与契约"
-                  title="定义清楚它负责什么"
-                  description="名称和边界会进入不可变 Agent 版本；不要把实现细节写进业务说明。"
+                  kicker="基本信息"
+                  title="名称、模型和使用范围"
+                  description="其余标识与运行默认值由构建助手生成，通常不需要手动填写。"
                 />
-                <div className={styles.contractSummary} data-ready={contract.ready}>
-                  <div className={styles.contractSummaryHead}>
-                    <div>
-                      <span>有效运行契约</span>
-                      <strong>{contract.ready ? "契约就绪" : `${contract.issues.length} 项待补齐`}</strong>
-                    </div>
-                    <button type="button" onClick={() => setContractOpen(true)}>
-                      查看完整契约
-                    </button>
-                  </div>
-                  <ul>
-                    <li><span>模型路由</span><strong>{contract.routeLabel}</strong></li>
-                    <li><span>能力装配</span><strong>{contract.toolCount} 项工具 · {contract.skillCount} 个 Skill</strong></li>
-                    <li><span>协同</span><strong>{contract.collaborationLabel}</strong></li>
-                    <li><span>行为契约</span><strong>{contract.promptSections} / 5 章节</strong></li>
-                    <li><span>网络边界</span><strong>{contract.networkLabel}</strong></li>
-                    <li><span>审批语义</span><strong>{contract.approvalLabel}</strong></li>
-                  </ul>
-                </div>
                 <div className={styles.formGrid}>
                   <Field label="显示名称">
                     <input
@@ -2399,26 +2589,18 @@ export function AgentStudioWorkbench() {
                       onChange={(event) => updateDraft({ displayName: event.target.value })}
                     />
                   </Field>
-                  <Field label="Agent ID" hint="发布后不可原地修改">
-                    <input
-                      className={styles.monoInput}
-                      value={draft.name}
-                      onChange={(event) => updateDraft({ name: event.target.value })}
-                    />
-                  </Field>
-                  <Field label="业务领域">
-                    <input
-                      className={styles.monoInput}
-                      value={draft.domain}
-                      onChange={(event) => updateDraft({ domain: event.target.value })}
-                    />
-                  </Field>
-                  <Field label="版本" hint="修改已发布配置时自动递增补丁号，也可手动填写">
-                    <input
-                      className={styles.monoInput}
-                      value={draft.version}
-                      onChange={(event) => updateDraft({ version: event.target.value })}
-                    />
+                  <Field label="模型" wide>
+                    <select
+                      value={selectedModelValue}
+                      onChange={(event) => {
+                        const choice = modelChoices.find((item) => item.value === event.target.value);
+                        if (choice) updateDraft({ modelRoute: choice.routeId, model: choice.model });
+                      }}
+                    >
+                      {modelChoices.map((choice) => (
+                        <option key={choice.value} value={choice.value}>{choice.label}</option>
+                      ))}
+                    </select>
                   </Field>
                   <Field label="场景说明" wide>
                     <textarea
@@ -2431,61 +2613,13 @@ export function AgentStudioWorkbench() {
               </section>
             )}
 
-            {activeSection === "model" && (
-              <section className={styles.configPanel} aria-labelledby="model-title">
-                <PanelHeading
-                  id="model-title"
-                  kicker="阶段 1 · 模型路由"
-                  title="选择经过平台验证的模型路由"
-                  description="Agent 只引用路由和模型；Endpoint 与凭据始终由平台托管。"
-                />
-                <div className={styles.routeCards}>
-                  {options.routes.map((route) => (
-                    <button
-                      type="button"
-                      key={route.id}
-                      className={draft.modelRoute === route.id ? styles.routeCardActive : styles.routeCard}
-                      onClick={() =>
-                        updateDraft({ modelRoute: route.id, model: route.models[0] })
-                      }
-                    >
-                      <span className={styles.routeProvider}>{route.provider}</span>
-                      <strong>{route.label}</strong>
-                      <small>{route.capabilities.join(" · ")}</small>
-                    </button>
-                  ))}
-                </div>
-                <div className={styles.formGridSingle}>
-                  <Field label="执行模型">
-                    <select
-                      value={draft.model}
-                      onChange={(event) => updateDraft({ model: event.target.value })}
-                    >
-                      {(selectedRoute?.models ?? [draft.model]).map((model) => (
-                        <option key={model} value={model}>{model}</option>
-                      ))}
-                    </select>
-                  </Field>
-                </div>
-                <InfoStrip tone="neutral">
-                  {activeRuntimeCapability
-                    ? `${activeRuntimeCapability.label} 接受 ${activeRuntimeCapability.modelApiFormats
-                        .map((format) => MODEL_API_FORMAT_LABELS[format] ?? format)
-                        .join(" / ")} 模型协议；发布检查会拒绝不兼容路由。`
-                    : draft.runtime === "codex-app-server"
-                      ? "Codex App Server 只接受 Responses 协议；发布检查会拒绝不兼容路由。"
-                      : "Claude Agent SDK 使用已完成 Anthropic-compatible、流式输出和工具调用验证的组合。"}
-                </InfoStrip>
-              </section>
-            )}
-
-            {activeSection === "prompt" && (
+            {true && (
               <section className={styles.configPanel} aria-labelledby="prompt-title">
                 <PanelHeading
                   id="prompt-title"
-                  kicker="阶段 3 · Prompt"
-                  title="写稳定行为契约，不堆易变知识"
-                  description="生产门禁要求五个章节。业务 SOP 放入 Skills，确定性约束留给 Tools 和 Policy。"
+                  kicker="行为说明"
+                  title="System Prompt"
+                  description="描述角色、目标、边界和输出要求；常用工作流通过下方 Skills 绑定。"
                 />
                 <div
                   className={styles.promptWorkspace}
@@ -2494,7 +2628,7 @@ export function AgentStudioWorkbench() {
                   <aside className={styles.promptOutline} aria-label="System Prompt 结构">
                     <div className={styles.promptOutlineHeading}>
                       <div>
-                        <span>行为契约结构</span>
+                        <span>Prompt 结构</span>
                         <strong>{contract.promptSections} / 5 完整</strong>
                       </div>
                       <small>选择章节可定位；缺失章节会自动补到文末。</small>
@@ -2579,233 +2713,204 @@ export function AgentStudioWorkbench() {
               </section>
             )}
 
-            {activeSection === "orchestration" && (
-              <section className={styles.configPanel} aria-labelledby="orchestration-title">
-                <PanelHeading
-                  id="orchestration-title"
-                  kicker="阶段 2 · 委托面"
-                  title="让 Lead 负责决策，让专家并行取证"
-                  description="Lead 是唯一面向用户的主线；Sub Agent 可直接绑定并打开构建草稿编辑，正式发布 Lead 时再固定依赖版本。"
-                />
-
-                <div className={styles.orchestrationSummary} aria-label="协同运行摘要">
-                  <div><span>前台主线</span><strong>1 Lead</strong></div>
-                  <div><span>后台并行</span><strong>{contract.backgroundSubagentCount} Sub</strong></div>
-                  <div>
-                    <span>串行等待</span>
-                    <strong>{contract.subagentCount - contract.backgroundSubagentCount} Sub</strong>
-                  </div>
-                  <div><span>委派入口</span><strong>Task · 受策略约束</strong></div>
-                </div>
-
-                <div className={styles.orchestrationGraph} aria-label="多智能体协同拓扑">
-                  <article className={styles.leadAgentCard}>
-                    <span className={styles.agentRoleBadge}>LEAD</span>
-                    <div className={styles.agentIdentityMark} aria-hidden="true">L</div>
-                    <div>
-                      <strong>{draft.displayName}</strong>
-                      <code>{draft.name}@{draft.version}</code>
-                      <p>拆解任务、选择专家、交叉验证并汇总最终回答。</p>
-                    </div>
-                    <span className={styles.agentModeBadge}>前台主线</span>
-                  </article>
-
-                  {draft.subagents.length > 0 ? (
-                    <>
-                      <div className={styles.orchestrationFanout} aria-hidden="true">
-                        <i />
-                      </div>
-                      <div className={styles.subagentTopology}>
-                        {draft.subagents.map((subagent, index) => (
-                          <article className={styles.subagentNode} key={`${subagent.alias}-${index}`}>
-                            <div className={styles.subagentNodeHeader}>
-                              <span className={styles.agentIdentityMark} aria-hidden="true">
-                                {index + 1}
-                              </span>
-                              <span data-background={subagent.background}>
-                                {subagent.background ? "并行" : "等待"}
-                              </span>
-                            </div>
-                            <strong className={styles.subagentNodeName}>
-                              {subagent.alias || "未命名角色"}
-                            </strong>
-                            <code className={styles.subagentNodeRef}>
-                              {subagent.ref || "未固定版本"}
-                            </code>
-                            <p>{subagent.responsibility || "尚未定义职责"}</p>
-                          </article>
-                        ))}
-                      </div>
-                    </>
-                  ) : (
-                    <div className={styles.orchestrationEmpty}>
-                      <strong>当前为单 Agent</strong>
-                      <span>先新建另一个 Agent 草稿，即可绑定、编辑并在发布前完成检查。</span>
-                    </div>
-                  )}
-                </div>
-
+            {!draft.parentDraftId && (
+              <section className={styles.configPanel} aria-labelledby="collaboration-title">
                 <div className={styles.groupHeading}>
                   <div>
-                    <h3>角色绑定</h3>
-                    <p>角色别名用于 Lead 选择专家；同一通用 Agent 版本可绑定多个职责。</p>
+                    <h3 id="collaboration-title">协作角色</h3>
+                    <p>主智能体负责委派与汇总。内部子智能体在这里管理，不占独立入口。</p>
                   </div>
-                  <button type="button" className={styles.addSubagentButton} onClick={addSubagent}>
-                    + 添加 Sub Agent
+                  <button type="button" className={styles.addSubagentButton}
+                    disabled={!canEdit || saving || subagentBusy || Boolean(draft.spaceId)}
+                    title={draft.spaceId ? "协作空间可引用已有智能体" : undefined}
+                    onClick={() => setSubagentFormOpen((value) => !value)}>
+                    {subagentFormOpen ? "收起" : "＋ 新建子智能体"}
                   </button>
                 </div>
-
+                {subagentFormOpen && <div className={styles.subagentCreateForm}>
+                  <Field label="子智能体名称">
+                    <input value={subagentName} maxLength={100} placeholder="例如：事实核验助手"
+                      onChange={(event) => setSubagentName(event.target.value)} />
+                  </Field>
+                  <Field label="职责与返回要求">
+                    <textarea rows={3} value={subagentResponsibility} maxLength={500}
+                      placeholder="例如：核验材料中的事实，返回来源、日期和不一致之处"
+                      onChange={(event) => setSubagentResponsibility(event.target.value)} />
+                  </Field>
+                  <button type="button" className={styles.addSubagentButton}
+                    disabled={!canEdit || subagentBusy || !subagentName.trim() || subagentResponsibility.trim().length < 2}
+                    onClick={() => void createInternalSubagent()}>
+                    {subagentBusy ? "创建中…" : "创建并绑定"}
+                  </button>
+                </div>}
+                <div className={styles.subagentBindRow}>
+                  <select aria-label="引用已有智能体" value={bindSubagentRef}
+                    onChange={(event) => setBindSubagentRef(event.target.value)}>
+                    <option value="">选择已有智能体…</option>
+                    {subagentCandidates.map((item) => <option key={item.draftId} value={item.ref}>
+                      {item.label}{item.parentDraftId ? " · 内部" : " · 独立"}
+                    </option>)}
+                  </select>
+                  <button type="button" disabled={!canEdit || !bindSubagentRef || subagentBusy}
+                    onClick={addSubagent}>引用已有</button>
+                </div>
+                {!draft.subagents.length && <p className={styles.collaborationEmpty}>
+                  暂无协作角色。简单任务可以由当前智能体独立完成。
+                </p>}
                 <div className={styles.subagentEditors}>
                   {draft.subagents.map((subagent, index) => {
-                    const catalogAgent = subagentCandidates.find(
-                      (agent) => agent.ref === subagent.ref,
-                    );
-                    return (
-                    <article className={styles.subagentEditor} key={`${subagent.alias}-editor-${index}`}>
+                    const child = subagentCandidates.find((item) => item.ref === subagent.ref
+                      || item.ref.split("@")[0] === subagent.ref.split("@")[0]);
+                    return <article className={styles.subagentEditor} key={index}>
                       <header>
-                        <div>
-                          <span>SUB {String(index + 1).padStart(2, "0")}</span>
-                          <strong>{subagent.alias || "未命名角色"}</strong>
+                        <div><span>{child?.parentDraftId ? "内部子智能体" : "引用已有智能体"}</span>
+                          <strong>{child?.label ?? subagent.alias}</strong></div>
+                        <div className={styles.roleActions}>
+                          {child && <button type="button" disabled={saving || subagentBusy}
+                            onClick={() => void editSubagentDraft(child.ref)}>编辑配置</button>}
+                          <details className={styles.actionMenu} data-dismiss-on-outside>
+                            <summary aria-label={`${subagent.alias}的更多操作`}>•••</summary>
+                            <div className={styles.actionMenuPopover}>
+                              {child && <button type="button" className={styles.actionMenuItem}
+                                disabled={!canEdit || subagentBusy || Boolean(draft.spaceId)}
+                                onClick={() => void changePlacement(child.draftId, child.parentDraftId ? null : draft.id)}>
+                                {child.parentDraftId ? "转为独立智能体" : "移为内部子智能体"}
+                              </button>}
+                              <button type="button" className={styles.actionMenuItem} disabled={!canEdit}
+                                onClick={() => removeSubagent(index)}>解除角色绑定</button>
+                            </div>
+                          </details>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => removeSubagent(index)}
-                          aria-label={`移除 ${subagent.alias || `Sub Agent ${index + 1}`}`}
-                        >
-                          移除
-                        </button>
                       </header>
-                      <div className={styles.formGrid}>
-                        <Field label="角色别名" hint="Lead 调用名称">
-                          <input
-                            className={styles.monoInput}
-                            value={subagent.alias}
-                            onChange={(event) => updateSubagent(index, { alias: event.target.value })}
-                          />
+                      <Field label="职责与返回要求">
+                        <textarea rows={3} value={subagent.responsibility} disabled={!canEdit}
+                          onChange={(event) => updateSubagent(index, { responsibility: event.target.value })} />
+                      </Field>
+                      <details className={styles.roleAdvanced}>
+                        <summary>角色设置 · {subagent.background ? "允许并行" : "顺序执行"}</summary>
+                        <Field label="角色标识">
+                          <input value={subagent.alias} disabled={!canEdit}
+                            onChange={(event) => updateSubagent(index, { alias: event.target.value })} />
                         </Field>
-                        <Field label="Sub Agent 草稿" hint="草稿可编辑；发布时固定版本">
-                          <select
-                            className={styles.monoInput}
-                            value={subagent.ref}
-                            onChange={(event) => updateSubagent(index, { ref: event.target.value })}
-                          >
-                            {!subagentCandidates.some((agent) => agent.ref === subagent.ref) && (
-                              <option value={subagent.ref}>{subagent.ref || "未识别版本"}</option>
-                            )}
-                            {subagentCandidates.map((agent) => (
-                              <option key={agent.ref} value={agent.ref}>
-                                {agent.label} · {agent.ref}
-                              </option>
-                            ))}
-                          </select>
-                        </Field>
-                        <Field label="职责与返回契约" wide>
-                          <textarea
-                            rows={3}
-                            value={subagent.responsibility}
-                            onChange={(event) =>
-                              updateSubagent(index, { responsibility: event.target.value })
-                            }
-                          />
-                        </Field>
-                      </div>
-                      {catalogAgent && (
-                        <div className={styles.catalogBinding}>
-                          <span data-status={catalogAgent.status}>
-                            {catalogAgent.status === "approved" ? "已发布" : "草稿可编辑"}
-                          </span>
-                          <div>
-                            <strong>{catalogAgent.label}</strong>
-                            <small>{catalogAgent.description}</small>
-                          </div>
-                          <code>{catalogAgent.policy} · {catalogAgent.tools.join(" / ")}</code>
-                          <button
-                            type="button"
-                            onClick={() => void editSubagentDraft(subagent.ref)}
-                          >
-                            打开并编辑
-                          </button>
-                        </div>
-                      )}
-                      <label className={styles.backgroundMode}>
-                        <input
-                          type="checkbox"
-                          checked={subagent.background}
-                          onChange={(event) =>
-                            updateSubagent(index, { background: event.target.checked })
-                          }
-                        />
-                        <span aria-hidden="true"><i /></span>
-                        <div>
-                          <strong>允许后台并行</strong>
-                          <small>Lead 可同时派出多个独立任务；结果仍必须由 Lead 验收后汇总。</small>
-                        </div>
-                      </label>
-                    </article>
-                    );
+                        <code>{subagent.ref}</code>
+                        <label><input type="checkbox" checked={subagent.background} disabled={!canEdit}
+                          onChange={(event) => updateSubagent(index, { background: event.target.checked })} />
+                          允许后台并行</label>
+                      </details>
+                    </article>;
                   })}
                 </div>
-
-                <InfoStrip tone="neutral">
-                  每个 Sub Agent 继承自己的 Prompt、Skills、Builtin Tools、MCP、自定义算子、Policy 和轮次上限。草稿可以直接编辑；发布 Lead 时才要求依赖版本已发布且内容哈希固定。
-                </InfoStrip>
+                {subagentCandidates.filter((item) => item.parentDraftId === draft.id
+                  && !draft.subagents.some((binding) => binding.ref.split("@")[0] === item.ref.split("@")[0]))
+                  .map((child) => <div className={styles.internalNotice} key={child.draftId}>
+                    <span>{child.label} · 尚未绑定角色</span>
+                    <button type="button" onClick={() => void editSubagentDraft(child.ref)}>编辑配置</button>
+                    <button type="button" disabled={!canEdit || subagentBusy}
+                      onClick={() => void changePlacement(child.draftId, null)}>转为独立智能体</button>
+                  </div>)}
               </section>
             )}
 
-            {activeSection === "skills" && (
-              <section className={styles.configPanel} aria-labelledby="skills-title">
-                <PanelHeading
-                  id="skills-title"
-                  kicker="阶段 3 · Skills"
-                  title="沉淀可复用的领域工作流"
-                  description="发布时 Skill 及 references、scripts、assets 会一同进入不可变快照。"
+            {true && (
+              <section
+                className={styles.configPanel}
+                data-compact-skill="true"
+                data-has-skill={Boolean(skill)}
+                aria-labelledby="skills-title"
+              >
+                <input
+                  ref={skillInputRef}
+                  hidden
+                  type="file"
+                  accept=".zip,.md,application/zip,text/markdown"
+                  onChange={(event) => {
+                    const file = event.currentTarget.files?.[0];
+                    if (file) void installSkill(file);
+                  }}
                 />
-                <div className={styles.skillInstallBar}>
-                  <div className={styles.skillTabs} role="tablist" aria-label="已安装 Skills">
-                    {draft.skills.map((candidate) => (
+                <div className={styles.skillPanelHeading}>
+                  <PanelHeading
+                    id="skills-title"
+                    kicker="行为说明"
+                    title="Skills（可选）"
+                    description="仅在需要复用工作流、领域规则或脚本时绑定；普通 Agent 可以直接使用 System Prompt 与 Tools。"
+                  />
+                  <details className={`${styles.actionMenu} ${styles.skillActionsMenu}`} data-dismiss-on-outside>
+                    <summary aria-label="更多 Skill 操作" title="更多操作">
+                      <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" fill="currentColor"><circle cx="5" cy="10" r="1.2"/><circle cx="10" cy="10" r="1.2"/><circle cx="15" cy="10" r="1.2"/></svg>
+                    </summary>
+                    <div className={styles.actionMenuPopover}>
+                      <header className={styles.actionMenuHeader}>
+                        <strong>Skill 操作</strong>
+                        <small>创建、导入与管理</small>
+                      </header>
                       <button
-                        key={candidate.name}
                         type="button"
-                        role="tab"
-                        aria-selected={candidate.name === skill?.name}
-                        onClick={() => {
-                          setActiveSkillName(candidate.name);
-                          setSkillConversationOpen(false);
+                        className={styles.actionMenuItem}
+                        data-icon="↙"
+                        disabled={!canEdit || importingSkill || saving}
+                        onClick={(event) => {
+                          event.currentTarget.closest("details")?.removeAttribute("open");
+                          skillInputRef.current?.click();
                         }}
                       >
-                        <span aria-hidden="true">S</span>
-                        {candidate.name}
+                        <span><strong>{importingSkill ? "正在检查…" : "上传 Skill"}</strong><small>支持 SKILL.md 或 ZIP</small></span>
                       </button>
-                    ))}
-                  </div>
-                  <input
-                    ref={skillInputRef}
-                    hidden
-                    type="file"
-                    accept=".zip,.md,application/zip,text/markdown"
-                    onChange={(event) => {
-                      const file = event.currentTarget.files?.[0];
-                      if (file) void installSkill(file);
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className={styles.skillInstallButton}
-                    disabled={!canEdit || importingSkill || saving}
-                    onClick={() => skillInputRef.current?.click()}
-                  >
-                    {importingSkill ? "正在检查…" : "上传并安装 Skill"}
-                  </button>
-                  {skill && (
+                      <Link
+                        className={styles.actionMenuItem}
+                        data-icon="+"
+                        href={skillCreatorHref("agent", {
+                          agentDraftId: draft.id,
+                          agentLabel: draft.displayName,
+                        })}
+                        aria-label="使用 Skill Creator 创建 Agent Skill"
+                      >
+                        <span><strong>对话创建</strong><small>打开 Skill Creator</small></span>
+                      </Link>
+                      <Link
+                        className={styles.actionMenuItem}
+                        data-icon="↗"
+                        href="/studio/skills"
+                        aria-label="查看技能目录"
+                      >
+                        <span><strong>技能目录</strong><small>浏览和管理已有 Skill</small></span>
+                      </Link>
+                      {skill && (
+                        <button
+                          type="button"
+                          className={`${styles.actionMenuItem} ${styles.actionMenuDanger}`}
+                          data-icon="×"
+                          disabled={!canEdit || importingSkill || saving}
+                          onClick={(event) => {
+                            event.currentTarget.closest("details")?.removeAttribute("open");
+                            void uninstallSkill(skill.name);
+                          }}
+                        >
+                          <span><strong>卸载当前 Skill</strong><small>从当前草稿移除绑定</small></span>
+                        </button>
+                      )}
+                    </div>
+                  </details>
+                </div>
+                <div className={styles.skillList} role="listbox" aria-label="已安装 Skills">
+                  {draft.skills.map((candidate) => (
                     <button
+                      key={candidate.name}
                       type="button"
-                      className={styles.skillUninstallButton}
-                      disabled={!canEdit || importingSkill || saving}
-                      onClick={() => void uninstallSkill(skill.name)}
+                      role="option"
+                      aria-selected={candidate.name === skill?.name}
+                      onClick={() => setActiveSkillName(candidate.name)}
                     >
-                      卸载当前 Skill
+                      <span className={styles.skillRowGlyph} aria-hidden="true">S</span>
+                      <span className={styles.skillRowCopy}>
+                        <strong>{candidate.name}</strong>
+                        <small>{candidate.description || "暂无描述"}</small>
+                      </span>
+                      <span className={styles.skillRowMeta}>
+                        {candidate.fileCount ?? candidate.files?.length ?? 0} 个文件
+                      </span>
                     </button>
-                  )}
+                  ))}
                 </div>
                 <InfoStrip tone="neutral">
                   支持单个 SKILL.md 或 ZIP。声明式内容直接安装到当前草稿；脚本和依赖只进入不可变快照，实际执行与安装仍走 Sandbox 权限门。
@@ -2902,7 +3007,7 @@ export function AgentStudioWorkbench() {
                   <div className={styles.groupHeading}>
                     <div>
                       <h3>Skill 附加文件</h3>
-                      <p>风险规则、报告契约等内容会随 Skill 一起进入不可变 Bundle。</p>
+                      <p>风险规则、报告规范等内容会随 Skill 一起进入不可变 Bundle。</p>
                     </div>
                     <span>{skill.fileCount ?? skill.files?.length ?? 0} 个文件</span>
                   </div>
@@ -2963,116 +3068,118 @@ export function AgentStudioWorkbench() {
               </section>
             )}
 
-            {activeSection === "capabilities" && (
+            {true && (
               <section className={styles.configPanel} aria-labelledby="capabilities-title">
+                <div className={styles.skillPanelHeading}>
                 <PanelHeading
                   id="capabilities-title"
-                  kicker="阶段 2 · 行动面"
-                  title="只授予完成场景所需的能力"
-                  description="能力是显式上限。没有选择的工具不会在运行时注入。"
+                  kicker="可用能力"
+                  title="Tools 与知识库"
+                  description="选择智能体可使用的工具和知识库。"
                 />
+                  <details className={`${styles.actionMenu} ${styles.skillActionsMenu}`} data-dismiss-on-outside>
+                    <summary aria-label="Tools 与知识库的更多操作" title="更多">•••</summary>
+                    <div className={styles.actionMenuPopover}>
+                      <button type="button" className={styles.actionMenuItem} onClick={(event) => {
+                        event.currentTarget.closest("details")?.removeAttribute("open");
+                        setShowPythonTools((value) => !value);
+                      }}><span><strong>{showPythonTools ? "收起自定义算子" : "自定义算子"}</strong><small>{draft.pythonTools.length} 个 · 创建和管理 Python 算子</small></span></button>
+                    </div>
+                  </details>
+                </div>
+                <div className={styles.workerToolPicker} aria-label="公开联网工具">
+                  <h3>公开联网</h3>
+                  <p>由平台提供搜索和网页读取，无需配置 MCP。勾选后保存并发布生效，同时受个人设置中的联网开关控制。</p>
+                  <div className={styles.compactToolGrid}>
+                    {options.tools.filter((tool) => ["WebSearch", "WebFetch"].includes(tool.id)).map((tool) => (
+                      <label key={tool.id} data-enabled={draft.builtinTools.includes(tool.id)}>
+                        <input type="checkbox" aria-label={`${tool.id} · ${tool.label}`} checked={draft.builtinTools.includes(tool.id)}
+                          disabled={!canEdit || draft.runtime !== "claude-agent-sdk"}
+                          onChange={(event) => updateDraft({builtinTools: event.target.checked
+                            ? Array.from(new Set([...draft.builtinTools, tool.id]))
+                            : draft.builtinTools.filter((name) => name !== tool.id)})} />
+                        <span className={styles.toolCheck} aria-hidden="true">{draft.builtinTools.includes(tool.id) ? "✓" : ""}</span>
+                        <strong>{tool.id} · {tool.label}</strong>
+                      </label>
+                    ))}
+                  </div>
+                  {draft.runtime !== "claude-agent-sdk" && <p>内置联网当前支持 Claude SDK，其他运行时可使用 MCP。</p>}
+                </div>
 
-                <div className={styles.toolExposureControl}>
-                  <div className={styles.toolExposureSummary}>
-                    <span>工具加载</span>
-                    <strong>
-                      {draft.toolExposureMode === "on_demand"
-                        ? "按需发现"
-                        : "启动时加载"}
-                    </strong>
-                    <small>
-                      目录 {toolDirectoryEntries} 项 · {
-                        draft.toolExposureMode === "on_demand"
-                          ? `${selectedMcpTools.length} 个 MCP Schema 命中后才进入上下文`
-                          : "适合当前小型工具集"
-                      }
-                    </small>
+
+                <div className={styles.workerToolPicker}>
+                  <div className={styles.workerToolPickerHeader}>
+                    <label>
+                      <span>可用工具</span>
+                      <select
+                        aria-label="工具范围"
+                        value={workerToolPreset}
+                        onChange={(event) => {
+                          const preset = event.target.value === "readonly"
+                            ? WORKER_READONLY_TOOL_IDS
+                            : WORKER_STANDARD_TOOL_IDS;
+                          const preservedTools = draft.builtinTools.filter(
+                            (tool) => ["WebFetch", "WebSearch"].includes(tool)
+                              || !workerToolOptions.some((option) => option.id === tool),
+                          );
+                          updateDraft({
+                            builtinTools: Array.from(new Set([
+                              ...preservedTools,
+                              ...preset.filter((tool) => workerToolOptions.some((option) => option.id === tool)),
+                            ])),
+                            toolExposureMode: "eager",
+                            requiredCapabilities: draft.requiredCapabilities.filter(
+                              (item) => item !== "tool_search",
+                            ),
+                          });
+                        }}
+                      >
+                        <option value="standard">标准工具</option>
+                        <option value="readonly">只读工具</option>
+                        {workerToolPreset === "custom" && (
+                          <option value="custom" disabled>自定义可用工具</option>
+                        )}
+                      </select>
+                    </label>
+                    <p>控制这个智能体可调用的工具范围。</p>
+                    <span>{enabledWorkerToolIds.length}/{workerToolOptions.length}</span>
                   </div>
-                  <div
-                    className={styles.toolExposureChoices}
-                    role="group"
-                    aria-label="工具加载方式"
-                  >
-                    <button
-                      type="button"
-                      data-active={draft.toolExposureMode === "eager"}
-                      aria-pressed={draft.toolExposureMode === "eager"}
-                      onClick={() => updateDraft({
-                        toolExposureMode: "eager",
-                        requiredCapabilities: draft.requiredCapabilities.filter(
-                          (item) => item !== "tool_search",
-                        ),
-                      })}
-                    >
-                      <strong>启动时</strong>
-                      <small>直接可用</small>
-                    </button>
-                    <button
-                      type="button"
-                      data-active={draft.toolExposureMode === "on_demand"}
-                      aria-pressed={draft.toolExposureMode === "on_demand"}
-                      disabled={!toolSearchEligible}
-                      onClick={() => updateDraft({
-                        toolExposureMode: "on_demand",
-                        requiredCapabilities: Array.from(new Set([
-                          ...draft.requiredCapabilities,
-                          "tool_search",
-                        ])),
-                      })}
-                    >
-                      <strong>按需</strong>
-                      <small>目录搜索</small>
-                    </button>
-                  </div>
-                  <div
-                    className={styles.toolExposureCompatibility}
-                    data-ready={toolSearchEligible}
-                  >
+                  <div className={styles.workerBoundaryNote}>
                     <i aria-hidden="true" />
-                    <span>
-                      {!toolSearchCompatible
-                        ? "当前路由未审核 Tool Search，按需模式已锁定"
-                        : draft.pythonTools.length > 0
-                          ? "自定义算子必须启动时加载，移除后才可切换"
-                          : selectedMcpTools.length === 0
-                            ? "先选择至少一个 MCP 工具源"
-                            : toolSearchRecommended
-                              ? `${selectedMcpTools.length} 个 MCP 工具，建议按需加载`
-                              : `${selectedMcpTools.length} 个 MCP 工具；可按需加载，达到 10 个时收益更明显`}
-                    </span>
+                    仅展示可配置工具，调用范围遵循已发布的权限设置。
                   </div>
-                </div>
-
-                <div className={styles.groupHeading}>
-                  <div>
-                    <h3>工作区工具</h3>
-                    <p>实际在强制隔离的 Sandbox 中执行。</p>
-                  </div>
-                  <span>{draft.builtinTools.length} 项已启用</span>
-                </div>
-                <div className={styles.toolGrid}>
-                  {options.tools.map((tool) => {
+                  <div className={styles.compactToolGrid}>
+                  {workerToolOptions.map((tool) => {
                     const enabled = draft.builtinTools.includes(tool.id);
                     return (
-                      <label key={tool.id} className={enabled ? styles.toolCardEnabled : styles.toolCard}>
+                      <label key={tool.id} data-enabled={enabled}>
                         <input
                           type="checkbox"
                           checked={enabled}
-                          onChange={() => toggleBuiltin(tool.id)}
+                          onChange={() => {
+                            updateDraft({
+                              builtinTools: enabled
+                                ? draft.builtinTools.filter((item) => item !== tool.id)
+                                : [...draft.builtinTools, tool.id],
+                              toolExposureMode: "eager",
+                              requiredCapabilities: draft.requiredCapabilities.filter(
+                                (item) => item !== "tool_search",
+                              ),
+                            });
+                          }}
                         />
                         <span className={styles.toolCheck} aria-hidden="true">{enabled ? "✓" : ""}</span>
-                        <span className={styles.toolCopy}>
-                          <strong>{tool.label}</strong>
-                          <small>{tool.description}</small>
-                          <em data-risk={tool.risk}>{tool.approval}</em>
-                          <span className={styles.bindingBadge} data-binding="platform">平台内置 · 沙箱执行</span>
-                        </span>
-                        <code>{tool.id}</code>
+                        <strong>{tool.label}</strong>
+                        {tool.risk !== "low" && (
+                          <i data-risk={tool.risk} title={`${riskLabel(tool.risk)}风险 · ${tool.approval}`} />
+                        )}
                       </label>
                     );
                   })}
+                  </div>
                 </div>
 
+                {showPythonTools && <>
                 <div className={styles.groupHeading}>
                   <div>
                     <h3>自定义算子</h3>
@@ -3149,16 +3256,18 @@ export function AgentStudioWorkbench() {
                   )}
                 </div>
 
+                </>}
+
                 <div className={styles.groupHeading}>
                   <div>
-                    <h3>数据与联网能力</h3>
+                    <h3>MCP 配置</h3>
                     <p>通过平台注册的逻辑 MCP，不接受任意 URL 或内联密钥。</p>
                   </div>
                   <span>
                     {visibleMcpOptions.filter((item) => draft.mcpServers.includes(item.id)).length} 项已启用
                   </span>
                 </div>
-                {visibleMcpOptions.filter((mcp) => mcp.category !== "knowledge").map((mcp) => {
+                {visibleMcpOptions.filter((item) => item.category !== "knowledge").map((mcp) => {
                   const enabled = draft.mcpServers.includes(mcp.id);
                   return (
                     <label key={mcp.id} className={enabled ? styles.mcpCardEnabled : styles.mcpCard}>
@@ -3181,7 +3290,7 @@ export function AgentStudioWorkbench() {
                     </label>
                   );
                 })}
-                {draft.mcpServers.includes("tavily-readonly") && (
+                {false && draft.mcpServers.includes("tavily-readonly") && (
                   <InfoStrip tone="warning">
                     检索词和待抽取 URL 会发送给 Tavily。发布部署前必须从实际 Sandbox 检查凭据、MCP tools/list 与公网可达性；这不会开放任意 Bash 网络访问。
                   </InfoStrip>
@@ -3231,13 +3340,13 @@ export function AgentStudioWorkbench() {
               </section>
             )}
 
-            {activeSection === "runtime" && (
+            {true && (
               <section className={styles.configPanel} aria-labelledby="runtime-title">
                 <PanelHeading
                   id="runtime-title"
-                  kicker="阶段 3 · 运行语义"
-                  title="隔离是生产基线，不是 Agent 开关"
-                  description="构建者声明能力，平台把执行档位绑定到 Daytona、gVisor 或其他安全后端。"
+                  kicker="运行设置"
+                  title="执行与权限"
+                  description="配置智能体运行时、执行方式和工具权限。"
                 />
                 <div className={styles.formGridSingle}>
                   <Field label="Agent Runtime" hint="发布后固定到版本 Bundle">
@@ -3304,6 +3413,15 @@ export function AgentStudioWorkbench() {
                     </select>
                   </Field>
                 </div>
+                <details className={styles.advancedRuntimeSettings}>
+                  <summary>
+                    <span>
+                      <strong>高级运行设置</strong>
+                      <small>执行档位、权限、资源上限、会话恢复与治理</small>
+                    </span>
+                    <i aria-hidden="true">⌄</i>
+                  </summary>
+                  <div className={styles.advancedRuntimeBody}>
                 {activeRuntimeCapability && activeRuntimeCapability.limitations.length > 0 && (
                   <InfoStrip tone="warning">
                     <strong>{activeRuntimeCapability.label}当前限制：</strong>
@@ -3574,6 +3692,8 @@ export function AgentStudioWorkbench() {
                   policies={governedPolicies}
                   onPoliciesChanged={setGovernedPolicies}
                 />
+                  </div>
+                </details>
               </section>
             )}
 
@@ -3583,7 +3703,7 @@ export function AgentStudioWorkbench() {
                   id="trial-title"
                   kicker="阶段 4 · 试跑"
                   title="在隔离环境证明它真的能跑"
-                  description="结构门禁通过后创建临时 Preview；真实 Preflight 与首个满足输出契约的试跑都发生在这里。"
+                  description="结构门禁通过后创建临时 Preview；真实 Preflight 与首个满足输出要求的试跑都发生在这里。"
                 />
                 <div className={styles.trialSummary}>
                   <div>
@@ -3634,14 +3754,14 @@ export function AgentStudioWorkbench() {
                   <button
                     type="button"
                     disabled={!draft.id || dirty}
-                    onClick={() => setTryRunOpen(true)}
+                    onClick={() => void openTryRun()}
                   >
                     开始对话试跑
                   </button>
                   {dirty && <small>有未保存修改；保存并检查后才能创建 Preview 或试跑。</small>}
                 </div>
                 <InfoStrip tone="neutral">
-                  出口条件：真实 Preflight 通过，并完成首个满足输出契约的试跑。失败结果只属于当前 Draft revision，不会进入正式版本。
+                  出口条件：真实 Preflight 通过，并完成首个满足输出要求的试跑。失败结果只属于当前 Draft revision，不会进入正式版本。
                 </InfoStrip>
               </section>
             )}
@@ -3716,7 +3836,10 @@ export function AgentStudioWorkbench() {
                     {(["happy", "ambiguous", "safety"] as const).map((tag) => (
                       <span key={tag}>{evaluationCoverageLabels[tag]} {draft.evalCases.filter((item) => item.tag === tag).length}</span>
                     ))}
-                    <Link href={`/studio/agents/${encodeURIComponent(draft.name)}/operations?draft=${encodeURIComponent(draft.id)}`}>
+                    <Link
+                      className={styles.publishOperationsButton}
+                      href={`/studio/agents/${encodeURIComponent(draft.name)}/operations?draft=${encodeURIComponent(draft.id)}`}
+                    >
                       打开 Evaluate &amp; Operate
                     </Link>
                   </div>
@@ -3778,7 +3901,14 @@ export function AgentStudioWorkbench() {
                 </div>
                 <section className={styles.deploymentControlPlane} aria-label="运行控制面摘要">
                   <header><div><span>EVALUATE &amp; OPERATE</span><strong>运行配置已从 Builder 分离</strong><small>{latestDataset ? `Dataset ${latestDataset.name} v${latestDataset.version}` : "无耐久 Dataset"} · {agentEvalRuns.length} 次 Eval · {environments.length} 个环境 · {deployments.length} 次部署</small></div></header>
-                  <Link href={`/studio/agents/${encodeURIComponent(draft.name)}/operations?draft=${encodeURIComponent(draft.id)}`}>管理 Dataset、运行 Eval、环境策略、部署历史与触发器 →</Link>
+                  <Link
+                    className={styles.operationsFooterLink}
+                    href={`/studio/agents/${encodeURIComponent(draft.name)}/operations?draft=${encodeURIComponent(draft.id)}`}
+                  >
+                    <span>进入运行控制面</span>
+                    <small>Dataset · Eval · 环境 · 部署</small>
+                    <i aria-hidden="true">→</i>
+                  </Link>
                 </section>
               </section>
             )}
@@ -3791,15 +3921,9 @@ export function AgentStudioWorkbench() {
           <code>{draft.id ? `revision ${draft.revision}` : "unsaved"}</code>
         </footer>
       </section>
-
-      {contractOpen && (
-        <button
-          type="button"
-          className={styles.contractBackdrop}
-          aria-label="关闭有效运行契约"
-          onClick={() => setContractOpen(false)}
-        />
       )}
+
+      {importFeedback && <div className={styles.importFeedback} role={importFeedback.error ? "alert" : "status"} data-error={Boolean(importFeedback.error)}><span>{importFeedback.message}</span>{!importingBundle && <button type="button" aria-label="关闭导入提示" onClick={()=>setImportFeedback(null)}>×</button>}</div>}
       {versionHistoryOpen && (
         <button
           type="button"
@@ -3956,166 +4080,33 @@ export function AgentStudioWorkbench() {
           回退是移动当前指针，不会修改或删除任何不可变版本。
         </footer>
       </aside>
-      <aside
-        ref={contractRailRef}
-        id="effective-contract-drawer"
-        className={styles.contractRail}
-        aria-label="有效运行契约"
-        role="dialog"
-        aria-modal="true"
-        aria-hidden={!contractOpen}
-        data-open={contractOpen}
-      >
-        <div className={styles.contractHeader}>
-          <div>
-            <span>有效运行契约</span>
-            <strong>{contract.ready ? "结构就绪" : "需要处理"}</strong>
-          </div>
-          <div className={styles.contractHeaderActions}>
-            <span className={styles.riskBadge} data-risk={contract.risk}>
-              风险 {riskLabel(contract.risk)}
-            </span>
-            <button
-              type="button"
-              ref={contractCloseRef}
-              aria-label="关闭有效运行契约"
-              onClick={() => setContractOpen(false)}
-            >
-              <svg viewBox="0 0 16 16" aria-hidden="true">
-                <path d="m4.5 4.5 7 7m0-7-7 7" />
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        <div className={styles.capabilitySpine}>
-          <ContractNode
-            index="M"
-            label="Model"
-            value={contract.model}
-            detail={contract.routeLabel}
-            state="ready"
-          />
-          <ContractNode
-            index="P"
-            label="Prompt"
-            value={`${contract.promptSections} / 5 章节`}
-            detail="稳定行为契约"
-            state={contract.promptSections === 5 ? "ready" : "error"}
-          />
-          <ContractNode
-            index="S"
-            label="Skills"
-            value={`${contract.skillCount} 个领域工作流`}
-            detail={draft.skills.map((item) => item.name).join(", ")}
-            state={contract.skillCount > 0 ? "ready" : "error"}
-          />
-          <ContractNode
-            index="T"
-            label="Tools"
-            value={`${contract.toolCount} 项能力`}
-            detail={`${contract.networkLabel} · ${contract.approvalLabel}`}
-            state="ready"
-          />
-          <ContractNode
-            index="A"
-            label="Agents"
-            value={contract.collaborationLabel}
-            detail={
-              contract.subagentCount > 0
-                ? `${contract.backgroundSubagentCount} 个角色允许后台并行`
-                : "未启用 Task 委派"
-            }
-            state={
-              draft.builtinTools.includes("Task") === (contract.subagentCount > 0)
-                ? "ready"
-                : "error"
-            }
-          />
-          <ContractNode
-            index="I"
-            label="Isolation"
-            value={contract.sandboxLabel}
-            detail="独立身份 · Provider 由执行档位决定"
-            state="locked"
-          />
-          <ContractNode
-            index="R"
-            label="Release"
-            value={
-              publishedCurrent
-                ? `已发布 ${draft.name}@${draft.publishedVersion}`
-                : contract.ready
-                  ? "可生成不可变 Bundle"
-                  : "配置未通过"
-            }
-            detail={publishedCurrent ? `hash ${draft.publishedHash?.slice(0, 12)}` : "发布后版本不可覆盖"}
-            state={publishedCurrent || contract.ready ? "ready" : "error"}
-          />
-        </div>
-
-        <section className={styles.contractFacts}>
-          <h2>边界摘要</h2>
-          <dl>
-            <div><dt>联网</dt><dd>{contract.networkLabel}</dd></div>
-            <div><dt>文件</dt><dd>{draft.builtinTools.includes("Write") ? "可在沙箱生成" : "只读"}</dd></div>
-            <div><dt>命令</dt><dd>{draft.builtinTools.includes("Bash") ? "启用 · 沙箱安全命令自动执行" : "未启用"}</dd></div>
-            <div>
-              <dt>协同</dt>
-              <dd>{contract.collaborationLabel}</dd>
-            </div>
-            <div>
-              <dt>Sub 角色</dt>
-              <dd>
-                {draft.subagents.length
-                  ? draft.subagents.map((subagent) => subagent.alias).join(", ")
-                  : "无"}
-              </dd>
-            </div>
-            <div><dt>会话</dt><dd>{draft.restoreSession ? "允许恢复" : "每轮新建"}</dd></div>
-            <div><dt>归档</dt><dd>{draft.archiveOnComplete ? "运行结束归档" : "按 TTL 回收"}</dd></div>
-            <div><dt>身份</dt><dd>发布版本独立工作负载身份</dd></div>
-            <div><dt>运行限额</dt><dd>轮次、Token、预算与 Sub Usage 不限</dd></div>
-          </dl>
-        </section>
-
-        {inspected && (
-          <section className={contract.ready ? styles.validationReady : styles.validationIssues} role="status">
-            <strong>{validationReady ? "结构检查通过" : "发布被阻止"}</strong>
-            {validationReady ? (
-              <p>Manifest、Prompt、Skills、工具与评测覆盖已通过服务端编译前条件。</p>
-            ) : (
-              <ul>
-                {(serverValidation?.issues.map(validationIssueMessage) ?? contract.issues)
-                  .map((issue) => <li key={issue}>{issue}</li>)}
-              </ul>
-            )}
-          </section>
-        )}
-
-        <p className={styles.contractFootnote}>
-          页面不保存 Endpoint、Token 或任意 MCP URL。凭据只在运行时按租户与执行身份注入。
-        </p>
-      </aside>
-      <CopilotDrawer
-        open={copilotOpen}
+      <AgentBuilderAssistant
+        workspaceTarget={workspaceTarget}
+        testRequest={testRequest}
+        onEditConfiguration={(section, label) => openConfiguration(section ?? "identity", label)}
+        open={viewMode === "editor" && Boolean(workspaceTarget)}
+        mode={builderAssistantMode}
+        creationSession={builderCreationSession}
         draft={draft}
-        canEdit={canEdit}
-        dirty={dirty}
-        onClose={() => setCopilotOpen(false)}
-        onApply={(update, acceptedBlocks) => {
-          updateDraft(update);
-          setNotice(
-            `Copilot Patch 已按块应用 ${acceptedBlocks} 块；保存并检查后生效`,
-          );
+        initialPrompt={tryRunSeed.prompt}
+        recommendation={tryRunSeed.recommendation}
+        prepareDraft={() => dirty ? saveDraft() : Promise.resolve(draft)}
+        hasUnsavedChanges={dirty}
+        onUpdated={(updated) => {
+          setDraft(updated);
+          setDirty(false);
+          setConflict(false);
+          setServerValidation(null);
+          setNotice(`已通过对话更新 ${updated.displayName}，尚未发布`);
+          void studioClient.listAccessibleDrafts().then(setDrafts).catch(() => {
+            setNotice("草稿已保存，列表刷新失败；可稍后刷新列表");
+          });
         }}
-        onSave={() => void saveDraft()}
-      />
-      <NewAgentDialog
-        open={newAgentOpen}
-        onClose={() => setNewAgentOpen(false)}
+        knowledgeMcpReferences={options.mcp.filter((item) => item.category === "knowledge").map((item) => item.id)}
+        onClose={() => setBuilderAssistantOpen(false)}
         onCreated={(flow) => {
           const created = flow.draft;
+          setBuilderAssistantMode("run");
           setDraft(created);
           setDrafts((current) => [
             {
@@ -4127,6 +4118,12 @@ export function AgentStudioWorkbench() {
               domain: created.domain,
               version: created.version,
               template: created.template,
+              goal: created.taskContract?.goal || created.description,
+              primaryOutput: created.taskContract?.outputs[0] || "按 System Prompt 生成可核验结果",
+              primaryConstraint: created.taskContract?.constraints[0] || null,
+              skillCount: created.skills.length,
+              toolCount: created.builtinTools.length + created.pythonTools.length + created.mcpServers.length,
+              networkToolsEnabled: created.builtinTools.some((tool) => ["WebSearch", "WebFetch"].includes(tool)),
               revision: created.revision,
               updatedAt: new Date().toISOString(),
               publishedVersion: created.publishedVersion,
@@ -4135,57 +4132,15 @@ export function AgentStudioWorkbench() {
           ]);
           setDirty(false);
           setServerValidation(null);
-          setNewAgentOpen(false);
+          if (workspaceVisibleRef.current) setViewMode("editor");
           setActiveSection("identity");
           setTryRunSeed({
             prompt: flow.prompt,
             autoStart: flow.autoRun,
             recommendation: flow.recommendation,
           });
-          setTryRunOpen(flow.autoRun);
-          setNotice(
-            flow.recommendation
-              ? `已按任务生成 ${flow.recommendation.runtime} 草稿，正在启动真实试跑`
-              : flow.autoRun
-                ? `已创建 ${created.displayName}`
-                : `已从模板创建 ${created.displayName}；服务端脚手架已就位，可继续配置`,
-          );
-        }}
-        templates={options.templates}
-      />
-      <TryRunPanel
-        open={tryRunOpen}
-        draft={draft}
-        initialPrompt={tryRunSeed.prompt}
-        autoStart={tryRunSeed.autoStart}
-        recommendation={tryRunSeed.recommendation}
-        canSolidify={canPublish}
-        onClose={() => setTryRunOpen(false)}
-        onSolidified={(result) => {
-          const next = apiDraftToStudioDraft(result.draft);
-          setDraft(next);
-          setDrafts((current) => current.map((item) => item.draftId === next.id
-            ? {
-                ...item,
-                version: next.version,
-                revision: next.revision,
-                publishedVersion: next.publishedVersion,
-                updatedAt: new Date().toISOString(),
-              }
-            : item));
-          setEvalDatasets((current) => [
-            result.dataset,
-            ...current.filter((item) => !(
-              item.datasetId === result.dataset.datasetId
-              && item.version === result.dataset.version
-            )),
-          ]);
-          setDirty(false);
-          setServerValidation(null);
-          setNotice(
-            `已固化 ${result.version.name}@${result.version.version} · `
-            + `评测基线 ${result.dataset.datasetId}@${result.dataset.version}`,
-          );
+          setBuilderAssistantOpen(true);
+          setNotice(`已创建 ${created.displayName}；可继续修改配置，或在右侧输入测试问题`);
         }}
       />
       {confirmationDialog}
@@ -4326,29 +4281,4 @@ function InfoStrip({
   children: React.ReactNode;
 }) {
   return <div className={tone === "warning" ? styles.warningStrip : styles.infoStrip}>{children}</div>;
-}
-
-function ContractNode({
-  index,
-  label,
-  value,
-  detail,
-  state,
-}: {
-  index: string;
-  label: string;
-  value: string;
-  detail: string;
-  state: "ready" | "error" | "locked";
-}) {
-  return (
-    <div className={styles.contractNode} data-state={state}>
-      <span className={styles.nodeIndex}>{index}</span>
-      <div>
-        <span>{label}</span>
-        <strong>{value}</strong>
-        <small>{detail}</small>
-      </div>
-    </div>
-  );
 }

@@ -24,7 +24,9 @@ describe("managed memory user surface", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("makes consent, provenance, correction and deletion explicit", () => {
-    expect(settings).toContain('href="/settings/memory"');
+    expect(settings).toContain("<MemoryBank embedded />");
+    expect(component).toContain("<select");
+    expect(component).toContain("loadSequence");
     expect(component).toContain("你决定智能体记住什么");
     expect(component).toContain("来源 ·");
     expect(component).toContain("置信度");

@@ -1,5 +1,8 @@
+import { TEAM_COLLABORATION_ENABLED } from "./agent-visibility";
+import type { RunActivity } from "./activity-schema";
 import { requireAuthenticatedResponse } from "./client-auth";
 import { createRandomId } from "./random-id";
+import { streamAgui } from "./agui";
 import type {
   BuiltinToolOption,
   McpOption,
@@ -135,6 +138,7 @@ export type StudioQuotaUsage = {
 };
 
 export type StudioDraftSummary = {
+  parentDraftId?: string | null;
   draftId: string;
   agentId: string | null;
   spaceId: string | null;
@@ -143,6 +147,12 @@ export type StudioDraftSummary = {
   domain: string;
   version: string;
   template: StudioDraft["template"];
+  goal?: string;
+  primaryOutput?: string;
+  primaryConstraint?: string | null;
+  skillCount?: number;
+  toolCount?: number;
+  networkToolsEnabled?: boolean;
   revision: number;
   updatedAt: string;
   publishedVersion: string | null;
@@ -181,6 +191,33 @@ export type StudioInstalledSkill = {
   warnings: string[];
   fileCount: number;
   binaryFileCount: number;
+};
+
+export type StudioPlatformSkillPackage = {
+  packageId: string;
+  revision: number;
+  displayName: string;
+  summary: string;
+  tags: string[];
+  compatibleRuntimes: StudioDraft["runtime"][];
+  license: string;
+  sourceUrl: string;
+  sourceRevision: string;
+  contentHash: string;
+  riskLevel: "low" | "review";
+  findings: string[];
+  skill: StudioSkill;
+  evaluationCases: Array<{
+    id: string;
+    tags: string[];
+    prompt: string;
+    expect: StudioEvalCase["expect"];
+  }>;
+};
+
+export type StudioPlatformSkillCatalog = {
+  revision: number;
+  packages: StudioPlatformSkillPackage[];
 };
 
 type ApiEvalCase = {
@@ -250,6 +287,7 @@ type ApiDraftSpec = {
 };
 
 export type ApiAgentDraft = {
+  parentDraftId?: string | null;
   draftId: string;
   agentId: string | null;
   spaceId: string | null;
@@ -505,6 +543,27 @@ export type StudioAgentBuilderPatch = {
   validation: StudioValidation;
 };
 
+export type StudioBuilderChanges = {
+  displayName?: string;
+  description?: string;
+  systemPrompt?: string;
+  taskContract?: NonNullable<StudioDraft["taskContract"]>;
+  builtinTools?: string[];
+  mcpServers?: string[];
+  knowledgeReferences?: string[];
+  skillInstructions?: { name: string; instructions: string }[];
+  removeSkills?: string[];
+  roleResponsibilities?: { alias: string; responsibility: string }[];
+};
+export type StudioBuilderReply = {
+  baseRevision: number;
+  reply: string;
+  changedFields: string[];
+  changes: StudioBuilderChanges;
+  action?: "edit" | "run" | "rerun" | "ask" | "reply";
+  task?: string;
+};
+
 export type StudioValidation = {
   ready: boolean;
   productionEligible: boolean;
@@ -603,7 +662,7 @@ export type StudioTaskDrivenRecommendation = {
 
 export type StudioTaskDrivenDraftResult = {
   draft: ApiAgentDraft;
-  recommendation: StudioTaskDrivenRecommendation;
+  recommendation: StudioTaskDrivenRecommendation | null;
 };
 
 export type CodexLoopStage = {
@@ -619,6 +678,7 @@ export type CodexLoopStage = {
 };
 
 export type StudioTryRun = {
+  activity?: RunActivity | null;
   draftId: string;
   draftRevision: number;
   run: {
@@ -1078,6 +1138,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 async function listAccessibleDrafts(): Promise<StudioDraftSummary[]> {
+  if (!TEAM_COLLABORATION_ENABLED) {
+    const personal = await request<StudioDraftSummary[]>("drafts");
+    return personal.filter((draft) => !draft.spaceId);
+  }
   const personalRequest = request<StudioDraftSummary[]>("drafts");
   try {
     const [personal, response] = await Promise.all([
@@ -1240,6 +1304,7 @@ export const lifecycleClient = {
 export function apiDraftToStudioDraft(source: ApiAgentDraft): StudioDraft {
   const spec = source.spec;
   return {
+    parentDraftId: source.parentDraftId ?? null,
     id: source.draftId,
     agentId: source.agentId ?? null,
     spaceId: source.spaceId ?? null,
@@ -1518,6 +1583,18 @@ export const studioClient = {
     method: "PUT",
     body: JSON.stringify({ expectedRevision, scope, limits }),
   }),
+  createInternalSubagent: (parentId: string, expectedRevision: number, displayName: string, responsibility: string) =>
+    request<{ parent: ApiAgentDraft; child: ApiAgentDraft }>(`drafts/${encodeURIComponent(parentId)}/subagents`, {
+      method: "POST", body: JSON.stringify({ expectedRevision, displayName, responsibility }),
+    }).then((result) => {
+      rememberStudioDraft(result.parent);
+      rememberStudioDraft(result.child);
+      return result;
+    }),
+  setDraftPlacement: (draftId: string, expectedRevision: number, parentDraftId: string | null) =>
+    request<ApiAgentDraft>(`drafts/${encodeURIComponent(draftId)}/placement`, {
+      method: "PUT", body: JSON.stringify({ expectedRevision, parentDraftId }),
+    }).then(rememberStudioDraft),
   listDrafts: () => request<StudioDraftSummary[]>("drafts"),
   listAccessibleDrafts,
   getDraft: (
@@ -1619,18 +1696,64 @@ export const studioClient = {
         template: draft.template,
       }),
     }).then(rememberStudioDraft),
-  createDraftFromTask: (body: {
+  createDraftFromTask: async (body: {
     task: string;
     audience?: string;
     sampleInput?: string;
     runtimePreference: "auto" | StudioDraft["runtime"];
-  }) => request<StudioTaskDrivenDraftResult>("drafts/from-task", {
-    method: "POST",
-    body: JSON.stringify(body),
-  }).then((result) => {
-    rememberStudioDraft(result.draft);
-    return result;
+  }): Promise<StudioTaskDrivenDraftResult> => {
+    try {
+      const result = await request<StudioTaskDrivenDraftResult>("drafts/from-task", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      rememberStudioDraft(result.draft);
+      return result;
+    } catch (error) {
+      if (!(error instanceof StudioApiError) || ![404, 405].includes(error.status)) {
+        throw error;
+      }
+
+      // Older control-plane deployments do not expose /drafts/from-task yet.
+      // Keep task-first creation available by falling back to the stable draft
+      // endpoint; the Builder can still refine and run the resulting draft.
+      const task = body.task.trim();
+      const firstLine = task.split(/\r?\n/, 1)[0]?.trim() || "新智能体";
+      const displayName = firstLine.length > 28
+        ? `${firstLine.slice(0, 27)}…`
+        : firstLine;
+      const draft = await request<ApiAgentDraft>("drafts", {
+        method: "POST",
+        body: JSON.stringify({
+          name: `task-agent-${createRandomId().slice(0, 8)}`,
+          domain: "general",
+          displayName,
+          description: task,
+          template: "analyst",
+        }),
+      });
+      rememberStudioDraft(draft);
+      return { draft, recommendation: null };
+    }
+  },
+  readBuilderMaterials: (inputArtifactIds: string[], modelRoute?: string): Promise<{context: string}> => request("builder-materials", {method: "POST", body: JSON.stringify({inputArtifactIds, modelRoute})}),
+  converseBuilder: (draftId: string, body: {
+    expectedRevision: number;
+    messages: { role: "user" | "assistant"; content: string }[];
+    runContext: string;
+    intent?: "auto" | "edit";
+  }): Promise<StudioBuilderReply> => request(`drafts/${encodeURIComponent(draftId)}/builder-conversation`, {
+    method: "POST", body: JSON.stringify(body),
   }),
+  applyBuilderEdit: async (draftId: string, body: {
+    expectedRevision: number; changes: StudioBuilderChanges;
+  }): Promise<ApiAgentDraft> => {
+    const draft = await request<ApiAgentDraft>(`drafts/${encodeURIComponent(draftId)}/builder-apply`, {
+      method: "POST", body: JSON.stringify(body),
+    });
+    rememberStudioDraft(draft);
+    return draft;
+  },
   createAgentBuilderPatch: async (
     draftId: string,
     body: {
@@ -1678,7 +1801,7 @@ export const studioClient = {
       await fetch("/api/studio/drafts/import", {
         method: "POST",
         cache: "no-store",
-        headers: { "Content-Type": "application/zip" },
+        headers: { "Content-Type": (file instanceof File && file.name.toLowerCase().endsWith(".rar")) ? "application/vnd.rar" : "application/zip" },
         body: file,
       }),
     );
@@ -1704,6 +1827,25 @@ export const studioClient = {
     );
     if (!response.ok) throw await errorFrom(response);
     return response.json() as Promise<StudioImportedSkill>;
+  },
+  listPlatformSkills: () =>
+    request<StudioPlatformSkillCatalog>("skills/catalog"),
+  async installPlatformSkill(
+    draftId: string,
+    expectedRevision: number,
+    packageId: string,
+    packageRevision: number,
+  ): Promise<StudioInstalledSkill> {
+    const installed = await request<StudioInstalledSkill>(
+      `drafts/${encodeURIComponent(draftId)}/skills/catalog/`
+        + `${encodeURIComponent(packageId)}/install`,
+      {
+        method: "POST",
+        body: JSON.stringify({ expectedRevision, packageRevision }),
+      },
+    );
+    rememberStudioDraft(installed.draft);
+    return installed;
   },
   async installSkill(
     draftId: string,
@@ -1759,15 +1901,45 @@ export const studioClient = {
     expectedRevision: number,
     prompt: string,
     idempotencyKey: string,
+    options: { continueFromRunId?: string; inputArtifactIds?: string[] } = {},
   ) => request<StudioTryRun>(`drafts/${encodeURIComponent(draftId)}/try-runs`, {
     method: "POST",
-    body: JSON.stringify({ expectedRevision, prompt, idempotencyKey }),
+    body: JSON.stringify({ expectedRevision, prompt, idempotencyKey, ...options }),
   }),
   getTryRun: (draftId: string, draftRevision: number, runId: string) =>
     request<StudioTryRun>(
       `drafts/${encodeURIComponent(draftId)}/try-runs/${encodeURIComponent(runId)}`
         + `?draftRevision=${draftRevision}`,
     ),
+  async streamTryRunEvents(
+    draftId: string,
+    draftRevision: number,
+    runId: string,
+    afterSequence: number,
+    onEvent: (event: StudioTryRun["events"][number]) => void,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const headers = new Headers({ Accept: "text/event-stream" });
+    if (afterSequence > 0) headers.set("Last-Event-ID", String(afterSequence));
+    const response = requireAuthenticatedResponse(await fetch(
+      `/api/studio/drafts/${encodeURIComponent(draftId)}`
+        + `/try-runs/${encodeURIComponent(runId)}/events`
+        + `?draftRevision=${draftRevision}`,
+      { headers, cache: "no-store", signal },
+    ));
+    await streamAgui(response, (_id, event) => {
+      if (
+        typeof event.event_id === "string"
+        && typeof event.sequence === "number"
+        && typeof event.type === "string"
+        && typeof event.timestamp === "string"
+        && event.payload
+        && typeof event.payload === "object"
+      ) {
+        onEvent(event as StudioTryRun["events"][number]);
+      }
+    });
+  },
   solidifyTryRun: (
     draftId: string,
     expectedRevision: number,

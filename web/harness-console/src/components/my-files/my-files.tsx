@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { requireAuthenticatedResponse } from "../../lib/client-auth";
-import { StudioSidebar } from "../agent-studio/studio-sidebar";
 import styles from "./my-files.module.css";
 
 interface UserFile {
@@ -110,9 +109,7 @@ export function MyFiles() {
   }, [files, kind, query]);
 
   return (
-    <div className={styles.shell}>
-      <StudioSidebar active="files" />
-      <main className={styles.main} id="main-content">
+    <main className={styles.main} id="main-content">
         <header className={styles.hero}>
           <div>
             <p>MY DELIVERABLES</p>
@@ -196,7 +193,6 @@ export function MyFiles() {
             <div className={styles.state}><strong>没有匹配的文件</strong><span>换一个关键词或文件类型。</span><button type="button" onClick={() => { setQuery(""); setKind("all"); }}>清除筛选</button></div>
           )}
         </section>
-      </main>
-    </div>
+    </main>
   );
 }

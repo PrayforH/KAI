@@ -1,4 +1,8 @@
-import { agentItemKey, type TaskAgent } from "./task-agent-catalog";
+import {
+  agentIdentity,
+  agentItemKey,
+  type TaskAgent,
+} from "./task-agent-catalog";
 import type { TaskSummary } from "./task-history";
 
 export type ProductivityActionId =
@@ -89,6 +93,33 @@ function ranked<T>(
     .map((item) => item.value);
 }
 
+/** One searchable entry per Agent identity. Published history stays available
+ * in the version switcher, while global search follows the control plane's
+ * current-version pointer (falling back to the newest semantic version). */
+export function searchableTaskAgents(
+  agents: readonly TaskAgent[],
+): TaskAgent[] {
+  const preferred = new Map<string, TaskAgent>();
+  for (const agent of agents) {
+    const identity = agentIdentity(agent);
+    const current = preferred.get(identity);
+    if (!current) {
+      preferred.set(identity, agent);
+      continue;
+    }
+    const agentIsCurrent = agent.version === agent.currentVersion;
+    const currentIsCurrent = current.version === current.currentVersion;
+    if (
+      (agentIsCurrent && !currentIsCurrent) ||
+      (agentIsCurrent === currentIsCurrent &&
+        agent.version.localeCompare(current.version, undefined, { numeric: true }) > 0)
+    ) {
+      preferred.set(identity, agent);
+    }
+  }
+  return [...preferred.values()];
+}
+
 export function productivityCommandResults(
   query: string,
   tasks: readonly TaskSummary[],
@@ -118,16 +149,15 @@ export function productivityCommandResults(
       description: `${taskStatusLabels[task.status] ?? task.status} · ${task.agent_name}@${task.agent_version}`,
       task,
     }));
-  const agentResults = ranked(agents, needle, (agent) => ({
+  const agentResults = ranked(searchableTaskAgents(agents), needle, (agent) => ({
     title: agent.displayName,
     searchText: `${agent.displayName} ${agent.name} ${agent.version} ${agent.domain} ${agent.spaceName ?? ""} ${agent.scope === "team" ? "团队 协作 空间" : "个人"}`,
   }))
-    .slice(0, 6)
     .map((agent) => ({
       kind: "agent" as const,
       id: agentItemKey(agent),
       title: agent.displayName,
-      description: `${agent.spaceName ?? (agent.scope === "team" ? "团队智能体" : "个人智能体")} · ${agent.version}`,
+      description: `${agent.spaceName ?? (agent.scope === "team" ? "团队智能体" : "个人智能体")} · 当前版本 ${agent.version}`,
       agent,
     }));
   return [...actions, ...taskResults, ...agentResults];

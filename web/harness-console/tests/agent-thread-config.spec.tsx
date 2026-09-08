@@ -90,7 +90,7 @@ it("registers the approval renderer through the assistant-ui Thread config", () 
 it("presents task-first guidance through a custom assistant-ui welcome", () => {
   const html = renderToStaticMarkup(<AgentThread userId="user-a" threadId="thread-a" />);
 
-  expect(html).toContain("把目标交给智能体，让它替你完成");
+  expect(html).toContain("开始一个新任务");
   expect(html).toContain("执行过程、工具调用和产出，都会留在这段对话里");
   expect(html).not.toContain("常规操作自动完成");
   expect(html).not.toContain("隔离执行 · 自动风险分级");
@@ -149,6 +149,8 @@ it("switches the composer action to stop for an active run", () => {
   expect(shouldShowComposerStop(true, "idle")).toBe(true);
   expect(shouldShowComposerStop(false, "running")).toBe(true);
   expect(shouldShowComposerStop(false, "complete")).toBe(false);
+  expect(shouldShowComposerStop(false, "idle", "running")).toBe(true);
+  expect(shouldShowComposerStop(false, "complete", "queued")).toBe(true);
   expect(shouldShowComposerStop(false, "error")).toBe(false);
   expect(shouldShowComposerStop(true, "running", "failed")).toBe(false);
   expect(shouldShowComposerStop(true, "running", "cancelled")).toBe(false);
@@ -157,7 +159,7 @@ it("switches the composer action to stop for an active run", () => {
   );
   expect(agentThreadSource).toContain('aria-label="停止运行"');
   expect(agentThreadSource).toContain('width="12" height="12"');
-  expect(agentThreadSource).not.toContain('title="停止运行"');
+  expect(agentThreadSource).toContain('className="composer-stop-secondary"');
   expect(agentThreadSource).toContain("aui.thread().cancelRun()");
   expect(agentThreadSource).toContain("aui-composer-send-icon");
   expect(agentThreadSource).not.toContain("<Composer.Action");
@@ -252,13 +254,14 @@ it("renders uploaded images in an in-app original-size preview", () => {
     inputArtifactDownloadHref("input_artifact_123", "history-index"),
   ).toBe("/api/input-artifacts/input_artifact_123/content");
   expect(agentThreadSource).toContain("HarnessMessageAttachment");
-  expect(agentThreadSource).toContain("点击下载");
-  expect(agentThreadSource).toContain('data-kind={isImage ? "image" : "file"}');
-  expect(agentThreadSource).toContain("message-attachment-preview");
-  expect(agentThreadSource).toContain("message-attachment-open");
-  expect(agentThreadSource).toContain("image-lightbox");
-  expect(agentThreadSource).toContain("上传原图");
-  expect(agentThreadSource).toContain("下载原图");
+  const attachmentSource = readFileSync(new URL("../src/components/message-attachment-view.tsx", import.meta.url), "utf8");
+  expect(attachmentSource).toContain("点击下载");
+  expect(attachmentSource).toContain('data-kind={isImage ? "image" : "file"}');
+  expect(attachmentSource).toContain("message-attachment-preview");
+  expect(attachmentSource).toContain("message-attachment-open");
+  expect(attachmentSource).toContain("image-lightbox");
+  expect(attachmentSource).toContain("上传原图");
+  expect(attachmentSource).toContain("下载原图");
   expect(agentThreadSource).not.toContain('target: "_blank"');
 });
 

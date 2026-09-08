@@ -169,6 +169,20 @@ describe("thread history activity restoration", () => {
     expect(onActiveRun).toHaveBeenCalledWith("run-resume");
   });
 
+  it("recovers full snapshots when the runtime does not resume the history adapter", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(historyResponse("running", "第一段"))
+      .mockResolvedValueOnce(historyResponse("succeeded", "第一段第二段"));
+    vi.stubGlobal("fetch", fetchMock);
+    const adapter = createThreadHistoryAdapter("thread-snapshot-recovery");
+    const active = await adapter.loadSnapshot();
+    expect(active.messages.map((item) => item.message.id)).toEqual(["user-run-resume", "assistant-run-resume"]);
+    const final = await adapter.loadSnapshot();
+    expect(final.messages.at(-1)?.message.content).toEqual([{ type: "text", text: "第一段第二段" }]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    adapter.dispose();
+  });
+
   it("keeps refreshing the resumed response until the run is terminal", async () => {
     vi.useFakeTimers();
     const fetchMock = vi

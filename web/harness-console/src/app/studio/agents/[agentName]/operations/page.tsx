@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { AgentOperationsWorkspace } from "../../../../../components/agent-studio/agent-operations-workspace";
-import { AuthProvider } from "../../../../../components/auth-provider";
 
 export const metadata: Metadata = {
   title: "Evaluate & Operate",
@@ -9,5 +8,5 @@ export const metadata: Metadata = {
 
 export default async function AgentOperationsPage({ params }: { params: Promise<{ agentName: string }> }) {
   const { agentName } = await params;
-  return <AuthProvider><AgentOperationsWorkspace agentName={decodeURIComponent(agentName)} /></AuthProvider>;
+  return <AgentOperationsWorkspace agentName={decodeURIComponent(agentName)} />;
 }

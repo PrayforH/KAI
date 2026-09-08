@@ -50,7 +50,8 @@ describe("collaboration workspace product surface", () => {
     expect(taskPage).toContain('search.get("space")');
     expect(taskPage).toContain('search.get("agent")');
     expect(taskPage).toContain('search.get("version")');
-    expect(taskPage).toContain("requestedAgent\n          ? createNewThread(storage)");
+    expect(taskPage).toContain("requestedAgent || requestedSkillLaunch");
+    expect(taskPage).toContain("createNewThread(storage)");
     expect(taskPage).toContain('window.history.replaceState({}, "", "/")');
   });
 

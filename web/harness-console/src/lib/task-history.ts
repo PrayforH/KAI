@@ -22,6 +22,7 @@ export interface TaskSummary {
   run_id?: string;
   created_at: string;
   updated_at: string;
+  last_read_at?: string | null;
   pending_approval?: (ApprovalDetails & { status: string }) | null;
 }
 
@@ -218,6 +219,25 @@ export function loadTasks(archived = false): Promise<TaskSummary[]> {
   return request;
 }
 
+export async function markTaskRead(threadId: string, updatedAt: string): Promise<string> {
+  const response = requireAuthenticatedResponse(await fetch(
+    `/api/agui/threads/${encodeURIComponent(threadId)}/read`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ updated_at: updatedAt }),
+      signal: AbortSignal.timeout(TASK_LIST_REQUEST_TIMEOUT_MS),
+    },
+  ));
+  if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+  const result = await response.json() as { last_read_at: string };
+  taskListSnapshots.clear();
+  return result.last_read_at;
+}
+
+export function isTaskRead(task: TaskSummary): boolean {
+  return Boolean(task.last_read_at && Date.parse(task.last_read_at) >= Date.parse(task.updated_at));
+}
+
 export async function setTaskArchived(
   threadId: string,
   archived: boolean,
@@ -237,9 +257,18 @@ export async function setTaskArchived(
 export function createThreadHistoryAdapter(
   threadId: string,
   options: { onActiveRun?: (serverRunId: string) => void } = {},
-): ThreadHistoryAdapter & { dispose(): void } {
+): ThreadHistoryAdapter & { dispose(): void; loadSnapshot(onLoaded?: (repository: ReturnType<typeof ExportedMessageRepository.fromArray>) => void): Promise<ReturnType<typeof ExportedMessageRepository.fromArray>> } {
   const disposal = new AbortController();
   return {
+    async loadSnapshot(onLoaded) {
+      invalidateThreadHistory(threadId);
+      const history = await loadThreadHistory(threadId, disposal.signal);
+      const repository = ExportedMessageRepository.fromArray(history ? fromAgUiMessages(history.messages, { showThinking: true }) : []);
+      // Import terminal text before publishing the phase that stops recovery polling.
+      onLoaded?.(repository);
+      if (history) publishHistoryActivity(history, threadId);
+      return repository;
+    },
     async load() {
       const history = await loadThreadHistory(threadId, disposal.signal);
       if (!history) {

@@ -7,6 +7,7 @@ export type WorkspaceId =
   | "files"
   | "capabilities"
   | "knowledge"
+  | "skills"
   | "spaces"
   | "usage"
   | "data";
@@ -21,6 +22,7 @@ export const workspaceItems: ReadonlyArray<{
   { id: "files", href: "/studio/files", label: "我的文件" },
   { id: "capabilities", href: "/studio/capabilities", label: "MCP 能力" },
   { id: "knowledge", href: "/studio/knowledge", label: "知识库" },
+  { id: "skills", href: "/studio/skills", label: "技能" },
 ];
 
 export function WorkspaceIcon({ workspace }: { workspace: WorkspaceId }) {
@@ -69,6 +71,14 @@ export function WorkspaceIcon({ workspace }: { workspace: WorkspaceId }) {
       <svg viewBox="0 0 20 20" aria-hidden="true">
         <path d="M4.5 4.5h7a3 3 0 0 1 3 3v8h-7a3 3 0 0 1-3-3z" />
         <path d="M7.5 7.5h4m-4 3h4" />
+      </svg>
+    );
+  }
+  if (workspace === "skills") {
+    return (
+      <svg viewBox="0 0 20 20" aria-hidden="true">
+        <path d="M4.5 4h7.5a3.5 3.5 0 0 1 3.5 3.5v8.5H6.5A2 2 0 0 1 4.5 14z" />
+        <path d="M8 8.5h4M8 11h4" />
       </svg>
     );
   }

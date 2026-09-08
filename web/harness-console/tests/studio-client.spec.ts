@@ -147,6 +147,47 @@ describe("Studio typed API mapping", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
+  it("falls back to the stable draft endpoint when task-first creation is unavailable", async () => {
+    const created = apiDraft();
+    const calls: Array<{ url: string; method: string; body: unknown }> = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({
+        url: String(input),
+        method: init?.method ?? "GET",
+        body: init?.body ? JSON.parse(String(init.body)) : null,
+      });
+      if (String(input).endsWith("/drafts/from-task")) {
+        return Response.json({ detail: "Method Not Allowed" }, { status: 405 });
+      }
+      return Response.json(created);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await studioClient.createDraftFromTask({
+      task: "股票投资助手",
+      runtimePreference: "auto",
+    });
+
+    expect(result).toEqual({ draft: created, recommendation: null });
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toMatchObject({
+      url: "/api/studio/drafts/from-task",
+      method: "POST",
+      body: { task: "股票投资助手", runtimePreference: "auto" },
+    });
+    expect(calls[1]).toMatchObject({
+      url: "/api/studio/drafts",
+      method: "POST",
+      body: {
+        domain: "general",
+        displayName: "股票投资助手",
+        description: "股票投资助手",
+        template: "analyst",
+      },
+    });
+    expect((calls[1].body as { name: string }).name).toMatch(/^task-agent-[a-f0-9]{8}$/);
+  });
+
   it("imports a ZIP bundle without converting it to JSON", async () => {
     let captured: { url: string; contentType: string | null; body: BodyInit | null } | null = null;
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -208,6 +249,40 @@ describe("Studio typed API mapping", () => {
       body: skill,
     });
     expect(imported.skill.name).toBe("ppt-master");
+  });
+
+  it("lists platform Skill packages and installs an exact revision", async () => {
+    const calls: Array<{ url: string; method: string; body: unknown }> = [];
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({
+        url: String(input),
+        method: init?.method ?? "GET",
+        body: init?.body ? JSON.parse(String(init.body)) : null,
+      });
+      if (!init?.method) return Response.json({ revision: 1, packages: [] });
+      return Response.json({
+        draft: apiDraft(),
+        skillName: "evidence-reporting",
+        sourceContentHash: "a".repeat(64),
+        riskLevel: "low",
+        findings: [],
+        warnings: [],
+        fileCount: 1,
+        binaryFileCount: 0,
+      });
+    });
+
+    await studioClient.listPlatformSkills();
+    await studioClient.installPlatformSkill("draft-1", 4, "evidence-reporting", 2);
+
+    expect(calls).toEqual([
+      { url: "/api/studio/skills/catalog", method: "GET", body: null },
+      {
+        url: "/api/studio/drafts/draft-1/skills/catalog/evidence-reporting/install",
+        method: "POST",
+        body: { expectedRevision: 4, packageRevision: 2 },
+      },
+    ]);
   });
 
   it("reads usage and replaces quota policy with revision CAS", async () => {

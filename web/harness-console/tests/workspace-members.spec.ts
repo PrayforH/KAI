@@ -13,12 +13,10 @@ const styles = readFileSync(
 );
 
 describe("Workspace member management", () => {
-  it("is discoverable from account settings", () => {
-    expect(page).toMatch(
-      /id:\s*"members",\s*href:\s*"#members",\s*label:\s*"工作区成员"/s,
-    );
-    expect(page).toContain("<WorkspaceMembers");
-    expect(page).toContain("至少保留一位 Owner");
+  it("hides the member entry and avoids mounting member data in personal settings", () => {
+    expect(page).not.toContain('href: "#members"');
+    expect(page).not.toContain("<WorkspaceMembers");
+    expect(page).toContain("显示内部子智能体");
   });
 
   it("lists members and saves deliberate role changes", () => {
