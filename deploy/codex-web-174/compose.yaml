@@ -1,0 +1,29 @@
+name: axis-codex-web-174
+
+services:
+  codex-web:
+    image: axis/codex-web:0.10.8-codex-0.149.0
+    container_name: axis-codex-web
+    init: true
+    restart: unless-stopped
+    env_file:
+      - /data/codex-web-174/codex-web.env
+    environment:
+      CODEX_HOME: /root/.codex
+      CODEX_WEB_STATE: /var/lib/codex-web
+      CODEX_WEB_NEXT_HOST: 0.0.0.0
+      CODEX_WEB_PUBLIC_HOST: 172.20.109.174
+      PORT: "3001"
+    ports:
+      - "3401:3001"
+    volumes:
+      - /data/codex-web-174/codex-home:/root/.codex
+      - /data/codex-web-174/web-state:/var/lib/codex-web
+      - /data/codex-web-174/workspace:/workspace
+    working_dir: /workspace
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:3001/login"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s

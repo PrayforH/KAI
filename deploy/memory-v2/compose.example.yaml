@@ -1,0 +1,20 @@
+# Merge with the deployment's complete existing Compose chain.
+# Real credentials belong in protected environment files, never this example.
+services:
+  postgres:
+    image: kai/axis-postgres:18.1-vector0.8.6
+  api:
+    image: kai/axis-api:20260908-memory-v2
+    env_file:
+      - ./memory.env
+  worker:
+    image: kai/axis-api:20260908-memory-v2
+    env_file:
+      - ./memory.env
+    environment:
+      HARNESS_WORKER_CONCURRENCY: "8"
+      HARNESS_WORKER_DEFERRED_MAX_ACTIVE_RUNS: "8"
+  quality-sync:
+    image: kai/axis-api:20260908-memory-v2
+    env_file:
+      - ./memory.env

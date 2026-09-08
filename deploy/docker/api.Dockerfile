@@ -59,9 +59,10 @@ ENV PATH="/app/project/bin:/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-# The pinned Python image already carries CA certificates, and the healthcheck
-# uses urllib. Keeping runtime setup package-manager-free makes rebuilds
-# deterministic even when a Debian mirror is slow or unavailable.
+# libarchive provides bounded in-memory RAR4/RAR5 reading for Studio imports.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libarchive13 \
+    && rm -rf /var/lib/apt/lists/*
 RUN groupadd --system --gid 10001 harness \
     && useradd --system --uid 10001 --gid harness --home-dir /app harness \
     && mkdir -p /app/.codex \
