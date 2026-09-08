@@ -16,6 +16,9 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    # 0001 already creates current metadata during fresh installations.
+    if sa.inspect(op.get_bind()).has_table("api_access_keys"):
+        return
     op.create_table(
         "api_access_keys",
         sa.Column("key_id", sa.String(128), primary_key=True),

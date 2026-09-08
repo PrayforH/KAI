@@ -204,11 +204,7 @@ class SubagentRuntimeGovernor:
         now: float,
     ) -> RuntimeEvent:
         usage = self._safe_usage(event.payload)
-        usage_limit = self._limits.max_subagent_usage_units
-        if usage_limit is not None and usage.get("total_tokens", 0) > usage_limit:
-            raise SubagentGovernanceError(
-                f"subagent token budget exceeded for alias {state.binding.alias}"
-            )
+        # Preserve measured usage; historical Token quotas do not stop child tasks.
         duration_ms = usage.get(
             "duration_ms", max(0, round((now - state.started_at) * 1000))
         )

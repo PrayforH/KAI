@@ -5,7 +5,7 @@ import json
 import logging
 import shutil
 from collections.abc import AsyncIterator, Callable, Mapping
-from contextlib import AbstractContextManager, ExitStack, nullcontext
+from contextlib import AbstractContextManager, ExitStack, nullcontext, suppress
 from dataclasses import dataclass, replace
 from pathlib import Path
 from types import MappingProxyType
@@ -23,7 +23,9 @@ from claude_agent_sdk import (
     SessionStore,
     StreamEvent,
     TaskUpdatedMessage,
+    TextBlock,
     Transport,
+    UserMessage,
 )
 
 from harness.application.memory import UserMemoryService
@@ -83,6 +85,7 @@ from harness.runtime.sandbox_tools import (
     SUPPORTED_BUILTINS as SANDBOX_BUILTINS,
 )
 from harness.runtime.sdk_tool_gate import ToolGate
+from harness.runtime.steering import SteeringInbox, SteeringInput
 from harness.runtime.subagent_governance import SubagentRuntimeGovernor
 from harness.runtime.tools import (
     ResolvedTools,
@@ -90,6 +93,7 @@ from harness.runtime.tools import (
     ToolResolver,
     enforce_published_tool_directory,
 )
+from harness.runtime.web_tools import WEB_BUILTINS, WEB_CONTRACT, WEB_SERVER, WEB_TOOL_NAMES
 
 SDK_JSON_MAX_BUFFER_SIZE = 32 * 1024 * 1024
 CONTEXT_USAGE_CONTROL_TIMEOUT_SECONDS = 1.0
@@ -244,8 +248,13 @@ async def _client_query(
     *,
     transport: Transport | None = None,
     context_usage_timeout_seconds: float | None = None,
+    steering: SteeringInbox | None = None,
 ) -> AsyncIterator[object]:
-    attempt_options = options
+    attempt_options = (
+        replace(options, extra_args={**options.extra_args, "replay-user-messages": None})
+        if steering is not None
+        else options
+    )
     recovery_session_id: str | None = None
     for attempt in range(len(SDK_STARTUP_RETRY_DELAYS_SECONDS) + 1):
         received_message = False
@@ -262,7 +271,7 @@ async def _client_query(
                 observe_resumed_context = attempt_options.resume is not None
                 terminal_result: ResultMessage | None = None
                 await client.query(prompt)
-                async for message in client.receive_response():
+                async for message in _steerable_response(client, steering):
                     received_message = True
                     if recovery_session_id is not None:
                         yield SessionResumeRecovery(recovery_session_id)
@@ -313,6 +322,134 @@ async def _client_query(
                 recovery_session_id = attempt_options.resume
                 attempt_options = replace(attempt_options, resume=None)
             await asyncio.sleep(SDK_STARTUP_RETRY_DELAYS_SECONDS[attempt])
+
+
+SDK_STEERING_RECEIPT_TIMEOUT_SECONDS = 10.0
+
+
+async def _steerable_response(
+    client: ClaudeSDKClient,
+    steering: SteeringInbox | None,
+) -> AsyncIterator[object]:
+    if steering is None:
+        async for message in client.receive_response():
+            yield message
+        return
+    lock = asyncio.Lock()
+    closed = False
+    pending: dict[str, SteeringInput] = {}
+    terminal_result: ResultMessage | None = None
+    receipt_deadline: float | None = None
+
+    async def deliver() -> None:
+        for item in await steering.read():
+            await steering.sending(item)
+            pending[item.request_id] = item
+            try:
+                async with asyncio.timeout(10):
+                    await client.query(item.text)
+            except Exception:
+                pending.pop(item.request_id, None)
+                await steering.acknowledge(item, error="运行未接收引导，请在下一条消息中重试")
+            # A transport write is not consumption. --replay-user-messages
+            # acknowledges the input when the CLI takes it into a turn.
+
+    async def fail_pending() -> None:
+        for item in list(pending.values()):
+            await steering.acknowledge(item, error="未收到引导处理确认，补充已保留在队列中")
+        pending.clear()
+
+    async def poll() -> None:
+        while not closed:
+            async with lock:
+                if not closed:
+                    await deliver()
+            await asyncio.sleep(0.25)
+
+    await steering.open()
+    polling = asyncio.create_task(poll())
+    messages = client.receive_messages().__aiter__()
+    next_message: asyncio.Task[object] | None = None
+
+    async def receive_next() -> object:
+        return await anext(messages)
+
+    try:
+        while True:
+            next_message = asyncio.create_task(receive_next())
+            timeout = (
+                None
+                if receipt_deadline is None
+                else max(0, receipt_deadline - asyncio.get_running_loop().time())
+            )
+            done, _ = await asyncio.wait(
+                {next_message, polling}, timeout=timeout, return_when=asyncio.FIRST_COMPLETED
+            )
+            if polling in done:
+                await polling
+            if next_message not in done:
+                # A completed turn with no input receipt must never hang until
+                # the hour-long stuck-run reaper. Keep unconfirmed guidance.
+                closed = True
+                async with lock:
+                    await fail_pending()
+                    await steering.close()
+                if terminal_result is not None:
+                    yield terminal_result
+                return
+            try:
+                message = next_message.result()
+            except StopAsyncIteration:
+                break
+            if isinstance(message, UserMessage):
+                text = (
+                    message.content
+                    if isinstance(message.content, str)
+                    else "".join(
+                        block.text for block in message.content if isinstance(block, TextBlock)
+                    )
+                )
+                async with lock:
+                    item = next((entry for entry in pending.values() if entry.text == text), None)
+                    if item is not None:
+                        pending.pop(item.request_id)
+                        await steering.acknowledge(item)
+                        # A receipt after an earlier result starts a subsequent
+                        # SDK turn within this same platform Run.
+                        terminal_result = None
+                        receipt_deadline = None
+            if isinstance(message, ResultMessage):
+                async with lock:
+                    if pending and not message.is_error:
+                        # Inputs can merge before one result or be consumed after
+                        # it. Count acknowledged inputs, never query() calls.
+                        terminal_result = message
+                        receipt_deadline = (
+                            asyncio.get_running_loop().time() + SDK_STEERING_RECEIPT_TIMEOUT_SECONDS
+                        )
+                        continue
+                    closed = True
+                    await fail_pending()
+                    await steering.close()
+                yield message
+                return
+            yield message
+        if terminal_result is not None:
+            yield terminal_result
+    finally:
+        closed = True
+        polling.cancel()
+        if next_message is not None and not next_message.done():
+            next_message.cancel()
+            with suppress(asyncio.CancelledError):
+                await next_message
+        try:
+            with suppress(asyncio.CancelledError):
+                await polling
+        finally:
+            await fail_pending()
+            if not steering.closed:
+                await steering.close()
 
 
 async def _default_query(prompt: str, options: ClaudeAgentOptions) -> AsyncIterator[object]:
@@ -652,7 +789,9 @@ class ClaudeSdkRuntime:
                     for tool in snapshot.manifest.spec.tools
                     if tool.builtin is not None
                 )
-            unsupported = declared_builtins - SANDBOX_BUILTINS - COORDINATION_BUILTINS
+            unsupported = (
+                declared_builtins - SANDBOX_BUILTINS - COORDINATION_BUILTINS - WEB_BUILTINS
+            )
             if unsupported:
                 names = ", ".join(sorted(unsupported))
                 raise ToolResolutionError(
@@ -675,6 +814,27 @@ class ClaudeSdkRuntime:
             builtin_tools = [
                 builtin for builtin in builtin_tools if builtin in COORDINATION_BUILTINS
             ]
+        web_builtins = set(resolved_tools.builtin_tools).intersection(WEB_BUILTINS)
+        for snapshot in subagent_snapshots.values():
+            web_builtins.update(
+                tool.builtin
+                for tool in snapshot.manifest.spec.tools
+                if tool.builtin in WEB_BUILTINS
+            )
+        if web_builtins and not await self._tool_resolver.web_allowed(context.identity):
+            web_builtins.clear()
+            builtin_tools = [name for name in builtin_tools if name not in WEB_BUILTINS]
+        if web_builtins:
+            if remote_transport:
+                raise ToolResolutionError("当前远程 CLI 尚不支持平台内置联网工具，请使用已有 MCP。")
+            if WEB_SERVER in mcp_servers:
+                raise ToolResolutionError("harness-web 是平台保留的服务名称")
+            mcp_servers[WEB_SERVER] = self._tool_resolver.web_server(web_builtins, context.identity)
+            builtin_tools = [name for name in builtin_tools if name not in WEB_BUILTINS]
+            for name in sorted(web_builtins):
+                allowed_tools.append(WEB_TOOL_NAMES[name])
+                result_trust[WEB_TOOL_NAMES[name]] = ContextTrust.UNTRUSTED
+
         if not remote_transport:
             # The production container runs as an unprivileged user whose HOME
             # is the read-only application directory. Claude CLI needs a
@@ -703,7 +863,7 @@ class ClaudeSdkRuntime:
             if "harness-memory" in mcp_servers:
                 raise ToolResolutionError("duplicate MCP server name: harness-memory")
             mcp_servers["harness-memory"] = create_memory_mcp_server()
-            allowed_tools.append("mcp__harness-memory__propose_memory")
+            allowed_tools.extend(f"mcp__harness-memory__{name}" for name in ("propose_memory", "search_memory", "read_memory"))
         if knowledge_bindings and not remote_transport:
             if self._knowledge is None:
                 raise ToolResolutionError(
@@ -737,10 +897,11 @@ class ClaudeSdkRuntime:
                 (
                     proxy_tool_name(tool.builtin)
                     if sandbox_proxy_enabled and tool.builtin in SANDBOX_BUILTINS
-                    else tool.builtin
+                    else WEB_TOOL_NAMES.get(tool.builtin, tool.builtin)
                 )
                 for tool in subagent_manifest.spec.tools
                 if tool.builtin is not None
+                and (tool.builtin not in WEB_BUILTINS or tool.builtin in web_builtins)
             ]
             subagent_tools.extend(child_resolutions[name].allowed_tools)
             agents[name] = AgentDefinition(
@@ -749,12 +910,31 @@ class ClaudeSdkRuntime:
                     if binding is not None and binding.description is not None
                     else f"Delegated {name} agent"
                 ),
-                prompt=(f"{snapshot.system_prompt.rstrip()}\n\n{VISIBLE_EXECUTION_CONTRACT}"),
+                prompt=(
+                    f"{snapshot.system_prompt.rstrip()}\n\n{VISIBLE_EXECUTION_CONTRACT}\n{WEB_CONTRACT}"
+                ),
                 tools=subagent_tools,
                 model="inherit",
                 maxTurns=subagent_manifest.spec.limits.max_turns,
                 skills=[skill.name for skill in snapshot.skill_snapshots] or None,
                 background=binding.background if binding is not None else False,
+            )
+        delegation_contract = ""
+        if agents:
+            roles = "\n".join(
+                f"- subagent_type={name}: {agent.description}; "
+                f"tools={', '.join(agent.tools or []) or 'none'}"
+                for name, agent in agents.items()
+            )
+            delegation_contract = (
+                "\n\n## Published delegation contract\n"
+                "The only permitted subagent_type values and their capabilities are:\n"
+                f"{roles}\n"
+                "Use these exact names. Do not invent general-purpose or claude roles. "
+                "Delegate only work supported by the child's listed tools; children do not "
+                "inherit the parent's MCP or write/command tools. Otherwise perform the "
+                "work in the parent. Pass paths relative to the current workspace, never "
+                "temporary absolute paths from prior runs."
             )
         resolved_tools = replace(
             resolved_tools,
@@ -773,13 +953,15 @@ class ClaudeSdkRuntime:
             allowed_tools=[] if permission_mode == "auto" else allowed_tools,
             mcp_servers=mcp_servers,
             system_prompt=(
-                f"{self._snapshot.system_prompt.rstrip()}\n\n{VISIBLE_EXECUTION_CONTRACT}"
+                f"{self._snapshot.system_prompt.rstrip()}\n\n{VISIBLE_EXECUTION_CONTRACT}\n{WEB_CONTRACT}"
+                f"{delegation_contract}"
             ),
             model=route.model,
             fallback_model=None,
             cwd=context.workspace,
             max_turns=manifest.spec.limits.max_turns,
-            max_budget_usd=manifest.spec.limits.max_budget_usd,
+            # Usage is telemetry, never an execution quota (including legacy manifests).
+            max_budget_usd=None,
             permission_mode=permission_mode,
             include_partial_messages=True,
             strict_mcp_config=True,
@@ -990,7 +1172,11 @@ class ClaudeSdkRuntime:
                     artifact_execution_context(context.artifact_publisher)
                 )
             if context.runtime_transport_factory is None:
-                query_messages = self._query(prompt, options)
+                query_messages = (
+                    _client_query(prompt, options, steering=context.steering)
+                    if self._query is _default_query
+                    else self._query(prompt, options)
+                )
             else:
                 transport = context.runtime_transport_factory(options)
                 if not isinstance(transport, Transport):
@@ -1004,6 +1190,7 @@ class ClaudeSdkRuntime:
                     prompt,
                     options,
                     transport=transport,
+                    steering=context.steering,
                     context_usage_timeout_seconds=(REMOTE_CONTEXT_USAGE_CONTROL_TIMEOUT_SECONDS),
                 )
             async for message in self._model_messages(

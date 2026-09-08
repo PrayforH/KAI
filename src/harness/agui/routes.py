@@ -17,10 +17,11 @@ from ag_ui.core import (
 )
 from fastapi import APIRouter, Depends, Header, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from harness.agui.activity import build_run_activity
 from harness.agui.mapper import map_harness_event
+from harness.agui.response import active_response_text, final_response_text
 from harness.api.dependencies import (
     ApiContainer,
     Identity,
@@ -32,11 +33,10 @@ from harness.api.dependencies import (
 from harness.api.event_streaming import wait_for_run_event
 from harness.context.models import SessionContextDigest, SessionContextOverview
 from harness.context.window import context_window_view
-from harness.core.errors import ConflictError
+from harness.core.errors import ConflictError, NotFoundError
 from harness.core.events import RunEvent
 from harness.core.models import AguiThreadBinding, ApprovalRequest, ApprovalStatus, Run
 from harness.runtime.input_redaction import redact_internal_agent_asset_events
-from harness.runtime.message_mapper import safe_model_text
 
 router = APIRouter(prefix="/agui", tags=["ag-ui"])
 
@@ -48,7 +48,6 @@ _TERMINAL_EVENT_TYPES = {
     "run.timed_out",
 }
 
-_RESPONSE_BOUNDARY_PREFIXES = ("approval.", "subagent.", "tool.")
 _STREAM_HEARTBEAT_SECONDS = 10.0
 
 
@@ -68,81 +67,6 @@ def _projected_event_cursor(last_event_id: str | None) -> tuple[int, int]:
     except ValueError:
         return 0, 0
     return sequence, child_count
-
-
-def final_response_text(events: list[RunEvent]) -> str:
-    """Return only the answer emitted after the last auditable action.
-
-    Providers stream progress commentary and final prose through the same
-    message.delta channel. Activity renders the former in the execution
-    timeline; history must not concatenate it into the final answer again.
-    """
-
-    last_action_index = -1
-    for index, event in enumerate(events):
-        if event.type.startswith(_RESPONSE_BOUNDARY_PREFIXES):
-            last_action_index = index
-    return "".join(
-        safe_model_text(str(event.payload.get("text", "")))
-        for index, event in enumerate(events)
-        if index > last_action_index and event.type == "message.delta"
-    )
-
-
-def active_response_text(events: list[RunEvent]) -> str:
-    """Restore only the current answer candidate for an active run.
-
-    Progress commentary that was followed by a tool belongs in Activity, not
-    in the response slot.  When a user returns from Studio during that tool
-    pause there may therefore be no response text yet.  Once the provider
-    starts emitting after the latest auditable action, restore only that newest
-    message so the response grows in place without replaying earlier progress.
-    """
-
-    last_action_index = max(
-        (
-            index
-            for index, event in enumerate(events)
-            if event.type.startswith(_RESPONSE_BOUNDARY_PREFIXES)
-        ),
-        default=-1,
-    )
-
-    latest_message_id = next(
-        (
-            str(event.payload.get("message_id", "")).strip()
-            for index, event in reversed(list(enumerate(events)))
-            if index > last_action_index
-            and event.type == "message.delta"
-            and str(event.payload.get("message_id", "")).strip()
-        ),
-        "",
-    )
-    if latest_message_id:
-        return "".join(
-            safe_model_text(str(event.payload.get("text", "")))
-            for index, event in enumerate(events)
-            if index > last_action_index
-            and event.type == "message.delta"
-            and str(event.payload.get("message_id", "")).strip()
-            == latest_message_id
-        )
-
-    latest_start_index = max(
-        (
-            index
-            for index, event in enumerate(events)
-            if index > last_action_index and event.type == "message.start"
-        ),
-        default=last_action_index + 1,
-    )
-    return "".join(
-        safe_model_text(str(event.payload.get("text", "")))
-        for index, event in enumerate(events)
-        if index >= latest_start_index
-        and index > last_action_index
-        and event.type == "message.delta"
-    )
 
 
 def _stream_response_message_id(run_id: str) -> str:
@@ -251,7 +175,17 @@ class AguiThreadSummary(BaseModel):
     created_at: datetime
     updated_at: datetime
     archived_at: datetime | None = None
+    last_read_at: datetime | None = None
     pending_approval: ApprovalRequest | None = None
+
+
+class AguiThreadReadInput(BaseModel):
+    updated_at: AwareDatetime
+
+
+class AguiThreadReadResult(BaseModel):
+    thread_id: str
+    last_read_at: datetime
 
 
 class AguiThreadArchiveInput(BaseModel):
@@ -652,6 +586,7 @@ async def list_agui_threads(
             created_at=binding.created_at,
             updated_at=latest.updated_at if latest is not None else binding.updated_at,
             archived_at=binding.archived_at,
+            last_read_at=binding.last_read_at,
             pending_approval=pending,
         )
 
@@ -665,6 +600,36 @@ async def list_agui_threads(
         ),
         reverse=True,
     )[:limit]
+
+
+@router.put("/threads/{thread_id}/read", response_model=AguiThreadReadResult)
+async def mark_agui_thread_read(
+    thread_id: str,
+    body: AguiThreadReadInput,
+    identity: Annotated[Identity, Depends(require_identity)],
+    container: Annotated[ApiContainer, Depends(get_container)],
+) -> AguiThreadReadResult:
+    ensure_permission(identity, "tasks:read")
+    binding = await container.agui.get_thread_record(
+        tenant_id=identity.tenant_id, user_id=identity.user_id, thread_id=thread_id,
+    )
+    runs = await container.runs.list_for_sessions(
+        identity.tenant_id, list(binding.session_ids), limit=200,
+    )
+    latest = max(
+        (run.updated_at for run in _visible_thread_runs(runs)),
+        default=binding.updated_at,
+    )
+    # A delayed device acknowledges only the version it actually displayed.
+    # Clamp to the server's latest version; never mark future results as read.
+    read_at = min(body.updated_at, latest)
+    updated = await container.agui.mark_read(
+        tenant_id=identity.tenant_id, user_id=identity.user_id,
+        thread_id=thread_id, read_at=read_at,
+    )
+    return AguiThreadReadResult(
+        thread_id=thread_id, last_read_at=updated.last_read_at or read_at,
+    )
 
 
 @router.patch(
@@ -746,15 +711,20 @@ async def get_agui_thread_history(
                 if isinstance(raw_input_ids, list)
                 else []
             )
-            input_artifacts = (
-                await container.input_artifacts.resolve_for_run(
-                    tenant_id=identity.tenant_id,
-                    user_id=identity.user_id,
-                    input_artifact_ids=input_ids,
-                )
-                if input_ids
-                else []
-            )
+            input_artifacts = []
+            missing_inputs = False
+            for input_id in input_ids:
+                try:
+                    input_artifacts.extend(await container.input_artifacts.resolve_for_run(
+                        tenant_id=identity.tenant_id,
+                        user_id=identity.user_id,
+                        input_artifact_ids=[input_id],
+                    ))
+                except NotFoundError:
+                    # Attachment retention must not erase the conversation itself.
+                    missing_inputs = True
+            if missing_inputs:
+                prompt += "\n\n（此消息的部分历史附件已不可用。）"
             content: str | list[AguiHistoryTextPart | AguiHistoryInputPart]
             if input_artifacts:
                 content = [
@@ -778,6 +748,12 @@ async def get_agui_thread_history(
             )
         events = await container.observed_events.list_after(identity.tenant_id, run.run_id, 0)
         events = redact_internal_agent_asset_events(events)
+        for guidance in events:
+            if guidance.type == "run.steer.accepted":
+                messages.append(AguiHistoryMessage(
+                    id=f"steer-{guidance.payload.get('request_id', guidance.event_id)}",
+                    role="user", content=str(guidance.payload.get("text", "")),
+                ))
         response = (
             final_response_text(events)
             if run.status.is_terminal

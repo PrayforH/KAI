@@ -721,7 +721,12 @@ class SdkToolGate:
                 "",
             )
             if requested_alias not in allowed_subagent_aliases:
-                reason = "subagent role is not declared by the published Agent Manifest"
+                reason = (
+                    "subagent role is not declared by the published Agent Manifest; "
+                    "available subagent_type values: "
+                    + ", ".join(sorted(allowed_subagent_aliases))
+                    + ". Use a declared role only when its tools support the task."
+                )
                 await self._append_denied(context, tool_call_id, reason)
                 return _hook_output("deny", reason)
         write_target: Path | None = None

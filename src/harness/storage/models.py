@@ -3,12 +3,14 @@
 from datetime import datetime
 from typing import Any
 
+from pgvector.sqlalchemy import Vector  # pyright: ignore[reportMissingTypeStubs]
 from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
@@ -1064,17 +1066,52 @@ class MemoryEntryRow(Base):
             "updated_at",
         ),
         Index("ix_memory_entries_expiry", "status", "expires_at"),
+        UniqueConstraint("tenant_id", "user_id", "dedup_key", name="uq_memory_live_content"),
     )
 
     tenant_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     user_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     entry_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     agent_name: Mapped[str] = mapped_column(String(128))
+    agent_owner_user_id: Mapped[str | None] = mapped_column(String(128))
+    dedup_key: Mapped[str | None] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(String(32))
     version: Mapped[int] = mapped_column(Integer)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     payload: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
+class MemoryEmbeddingRow(Base):
+    __tablename__ = "memory_embeddings"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "user_id", "entry_id"],
+            ["memory_entries.tenant_id", "memory_entries.user_id", "memory_entries.entry_id"],
+            ondelete="CASCADE",
+        ),
+    )
+    tenant_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    entry_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    entry_version: Mapped[int] = mapped_column(Integer)
+    model: Mapped[str] = mapped_column(String(128))
+    embedding: Mapped[list[float]] = mapped_column(Vector(1024))
+
+
+class MemoryExtractionJobRow(Base):
+    __tablename__ = "memory_extraction_jobs"
+    tenant_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(128), index=True)
+    agent_name: Mapped[str] = mapped_column(String(128))
+    agent_owner_user_id: Mapped[str] = mapped_column(String(128))
+    session_id: Mapped[str] = mapped_column(String(128))
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    error_code: Mapped[str | None] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class MemoryConsentRow(Base):

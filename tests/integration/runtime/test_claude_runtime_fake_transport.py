@@ -24,6 +24,11 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from pydantic import SecretStr
 
+from harness.studio.mcp_credential_store import (
+    McpCredentialService, McpCredentialCipher, InMemoryMcpCredentialRepository,
+)
+from harness.studio.web_configuration import WebConfigurationService, ConfigureWebRequest
+
 import harness.runtime.claude_sdk as claude_runtime
 from harness.config import Settings
 from harness.core.manifest import ToolSpec, load_manifest
@@ -71,10 +76,24 @@ class RecordingToolGate:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("web_enabled", [False, True])
+@pytest.mark.parametrize("personal_web_enabled", [False, True])
 async def test_runtime_builds_new_api_options_and_maps_fake_sdk_messages(
     tmp_path: Path,
+    web_enabled: bool,
+    personal_web_enabled: bool,
 ) -> None:
     snapshot = load_manifest("tests/fixtures/agents/echo-agent/agent.yaml")
+    if web_enabled:
+        spec = snapshot.manifest.spec.model_copy(
+            update={
+                "tools": snapshot.manifest.spec.tools
+                + (ToolSpec(builtin="WebSearch"), ToolSpec(builtin="WebFetch")),
+            }
+        )
+        snapshot = snapshot.model_copy(
+            update={"manifest": snapshot.manifest.model_copy(update={"spec": spec})}
+        )
     version = AgentVersion(
         tenant_id="tenant-a",
         owner_user_id="user-a",
@@ -131,7 +150,12 @@ async def test_runtime_builds_new_api_options_and_maps_fake_sdk_messages(
         exporter=trace_exporter,
         processor_factory=SimpleSpanProcessor,
     )
+    web = WebConfigurationService(McpCredentialService(
+        InMemoryMcpCredentialRepository(), McpCredentialCipher(SecretStr("test-key"))
+    ))
+    await web.configure("tenant-a", "user-1", ConfigureWebRequest(enabled=personal_web_enabled))
     runtime = ClaudeSdkRuntime(
+        tool_resolver=ToolResolver(web_configurations=web),
         agent_version=version,
         routes=[route],
         route_secrets={"new-api-default": "super-secret"},
@@ -176,6 +200,14 @@ async def test_runtime_builds_new_api_options_and_maps_fake_sdk_messages(
         "<current_user_request>\nhello\n</current_user_request>"
     )
     options = captured[0][1]
+    if web_enabled and personal_web_enabled:
+        assert "harness-web" in options.mcp_servers
+        assert "mcp__harness-web__search" in options.allowed_tools
+        assert "WebSearch" not in (options.tools or [])
+        assert "WebFetch" not in (options.tools or [])
+    else:
+        assert "harness-web" not in options.mcp_servers
+    assert options.max_budget_usd is None  # Fixture retains maxBudgetUsd=1.
     assert options.env["ANTHROPIC_BASE_URL"] == "https://new-api.example/v1"
     assert options.env["ANTHROPIC_AUTH_TOKEN"] == "super-secret"
     assert options.model == "claude-sonnet-4-6"
@@ -348,9 +380,7 @@ async def test_resumed_runtime_emits_unavailable_when_stream_has_no_window_outco
         async def get_context_usage(self) -> ContextUsageResponse:
             # Remote control responses are allowed to cross the local budget
             # budget without being misclassified as unavailable.
-            await asyncio.sleep(
-                claude_runtime.CONTEXT_USAGE_CONTROL_TIMEOUT_SECONDS + 0.05
-            )
+            await asyncio.sleep(claude_runtime.CONTEXT_USAGE_CONTROL_TIMEOUT_SECONDS + 0.05)
             return cast(
                 ContextUsageResponse,
                 {
@@ -1079,5 +1109,8 @@ async def test_runtime_wires_custom_tools_declared_by_subagents(tmp_path: Path) 
     options = captured[0]
     assert options.agents is not None
     helper = options.agents["helper"]
+    assert isinstance(options.system_prompt, str)
+    assert "subagent_type=helper" in options.system_prompt
+    assert "children do not inherit" in options.system_prompt
     assert helper.tools is not None
     assert "mcp__harness-python__lookup_customer" in helper.tools

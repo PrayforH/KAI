@@ -473,6 +473,7 @@ async def test_undeclared_subagent_delegation_fails_before_execution(
     assert [event.type for event in emitted] == ["tool.request", "tool.result"]
     assert emitted[-1].payload["error"]["code"] == "policy_denied"
     assert "not declared" in emitted[-1].payload["error"]["message"]
+    assert "available subagent_type values: helper-agent" in emitted[-1].payload["error"]["message"]
 
 
 @pytest.mark.asyncio

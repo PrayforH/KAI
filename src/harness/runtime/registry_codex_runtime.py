@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import cast
 from urllib.parse import urlsplit
 
+from harness.memory_bank.workload import RemoteMemoryMcpProvider
 from harness.core.errors import ConflictError
 from harness.core.manifest import AgentManifestSnapshot
 from harness.core.models import AgentRuntimeType
@@ -150,6 +151,7 @@ class RegistryCodexRuntime:
         process_factory: CodexProcessFactory | None = None,
         server_request_handler: CodexServerRequestHandler | None = None,
         tool_resolver: ToolResolver | None = None,
+        remote_memory_mcp: RemoteMemoryMcpProvider | None = None,
     ) -> None:
         self._registry = registry
         self._codex_path = codex_path
@@ -166,6 +168,7 @@ class RegistryCodexRuntime:
         self._process_factory = process_factory
         self._server_request_handler = server_request_handler
         self._tool_resolver = tool_resolver or ToolResolver()
+        self._remote_memory_mcp = remote_memory_mcp
 
     async def execute(self, context: RuntimeContext) -> AsyncIterator[RuntimeEvent]:
         session = context.session
@@ -232,6 +235,8 @@ class RegistryCodexRuntime:
             snapshot,
             await self._tool_resolver.resolve(snapshot.manifest, context.identity),
         )
+        if self._remote_memory_mcp is not None:
+            resolved_tools = self._remote_memory_mcp.attach(resolved_tools, context.identity)
         mcp_config_overrides, mcp_environment = _codex_mcp_configuration(resolved_tools)
         reasoning_config_overrides = _codex_reasoning_configuration(snapshot)
         limits = snapshot.manifest.spec.limits

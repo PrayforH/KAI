@@ -41,23 +41,6 @@ def _manifest_mapping(version: AgentVersion) -> dict[str, object]:
     return cast(dict[str, object], manifest) if isinstance(manifest, dict) else {}
 
 
-def _subagent_coordinates(version: AgentVersion) -> set[str]:
-    spec = _manifest_mapping(version).get("spec")
-    if not isinstance(spec, dict):
-        return set()
-    subagents = cast(dict[str, object], spec).get("subagents")
-    if not isinstance(subagents, list):
-        return set()
-    coordinates: set[str] = set()
-    for item in cast(list[object], subagents):
-        if not isinstance(item, dict):
-            continue
-        reference = cast(dict[str, object], item).get("ref")
-        if isinstance(reference, str):
-            coordinates.add(reference)
-    return coordinates
-
-
 def _is_internal(version: AgentVersion) -> bool:
     metadata = _manifest_mapping(version).get("metadata")
     labels = cast(dict[str, object], metadata).get("labels") if isinstance(metadata, dict) else None
@@ -77,19 +60,15 @@ async def list_agents(
         container.workspace_agents.list_personal_agents(identity.tenant_id, identity.user_id),
         container.team_spaces.list_accessible_agents(identity.tenant_id, identity.user_id),
     )
-    dependency_coordinates = {
-        coordinate for version in versions for coordinate in _subagent_coordinates(version)
-    }
+    drafts = await container.agent_drafts.list_summaries(identity.tenant_id, identity.user_id)
+    internal_names = {draft.name for draft in drafts if draft.parent_draft_id is not None}
     personal_by_name = {agent.name: agent for agent in personal_agents}
     personal: list[AgentCatalogItem] = []
     for version in versions:
-        if f"{version.name}@{version.version}" in dependency_coordinates or _is_internal(version):
+        if version.name in internal_names or _is_internal(version):
             continue
         workspace_agent = personal_by_name.get(version.name)
-        if (
-            workspace_agent is not None
-            and workspace_agent.status is WorkspaceAgentStatus.ARCHIVED
-        ):
+        if workspace_agent is not None and workspace_agent.status is WorkspaceAgentStatus.ARCHIVED:
             continue
         personal.append(
             AgentCatalogItem.from_version(

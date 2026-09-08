@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     codex_provider_by_route: dict[str, str] = Field(default_factory=dict)
     codex_approval_policy: Literal["untrusted", "on-request", "never"] = "untrusted"
     codex_network_access: bool = False
+    web_tools_enabled: bool = True
+    web_search_api_key: SecretStr = SecretStr("")
+    web_search_provider: Literal["tavily", "minimax"] = "tavily"
     codex_tool_output_token_limit: int = Field(default=32_000, ge=1_000, le=200_000)
     otel_enabled: bool = False
     otel_content_capture: Literal["off", "redacted"] = "off"
@@ -173,4 +176,14 @@ class Settings(BaseSettings):
     langfuse_secret_key: SecretStr = SecretStr("")
     langfuse_dashboard_url: str = ""
     memory_mcp_public_url: str = ""
+    memory_embedding_base_url: str = ""
+    memory_embedding_api_key: SecretStr = SecretStr("")
+    memory_embedding_model: str = "shdata-bge-m3"
+    memory_embedding_dimensions: int = Field(default=1024, ge=1024, le=1024)
+    memory_semantic_threshold: float = Field(default=0.5, ge=0, le=1)
+    memory_extraction_enabled: bool = False
+    memory_extraction_since: str = ""
+    memory_extraction_base_url: str = ""
+    memory_extraction_api_key: SecretStr = SecretStr("")
+    memory_extraction_model: str = ""
     knowledge_mcp_public_url: str = ""

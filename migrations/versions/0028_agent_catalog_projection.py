@@ -20,26 +20,20 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "agent_versions",
+    # 0001 creates current metadata on a fresh database; existing deployments
+    # still need each missing projection column before the backfill.
+    existing = {
+        column["name"] for column in sa.inspect(op.get_bind()).get_columns("agent_versions")
+    }
+    for column in (
         sa.Column("status", sa.String(32), nullable=True),
-    )
-    op.add_column(
-        "agent_versions",
         sa.Column("manifest_hash", sa.String(64), nullable=True),
-    )
-    op.add_column(
-        "agent_versions",
         sa.Column("package_hash", sa.String(64), nullable=True),
-    )
-    op.add_column(
-        "agent_versions",
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=True),
-    )
-    op.add_column(
-        "agent_versions",
         sa.Column("catalog_manifest", sa.JSON(), nullable=True),
-    )
+    ):
+        if column.name not in existing:
+            op.add_column("agent_versions", column)
     op.execute(
         """
         UPDATE agent_versions

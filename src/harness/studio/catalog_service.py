@@ -8,6 +8,7 @@ from harness.core.errors import ConflictError, NotFoundError
 from harness.studio.catalog import default_capability_catalog
 from harness.studio.catalog_repository import CapabilityCatalogRepository
 from harness.studio.models import (
+    BuiltinToolCapability,
     CapabilityCatalog,
     CapabilityCatalogRecord,
     CatalogImpact,
@@ -50,6 +51,7 @@ def _retire_platform_model_routes(
 def _append_missing[
     CatalogEntry: (
         ModelRouteCapability,
+        BuiltinToolCapability,
         McpCapability,
         PolicyCapability,
         ExecutionProfileMetadata,
@@ -223,6 +225,9 @@ def _upgrade_system_managed_catalog(
         )
         changed = True
 
+    builtin_tools, builtin_changed = _append_missing(
+        catalog.builtin_tools, defaults.builtin_tools, lambda item: item.name
+    )
     mcp_servers, mcp_changed = _append_missing(
         catalog.mcp_servers, defaults.mcp_servers, lambda item: item.reference
     )
@@ -246,6 +251,7 @@ def _upgrade_system_managed_catalog(
     )
     changed = changed or any(
         (
+            builtin_changed,
             mcp_changed,
             policies_changed,
             profiles_changed,
@@ -257,6 +263,7 @@ def _upgrade_system_managed_catalog(
     upgraded = catalog.model_copy(
         update={
             "model_routes": routes,
+            "builtin_tools": builtin_tools,
             "mcp_servers": mcp_servers,
             "policies": policies,
             "execution_profiles": execution_profiles,
@@ -311,6 +318,20 @@ class CapabilityCatalogService:
                     update={"runtime_capabilities": runtime_capabilities}
                 )
             updated_by = current.updated_by
+        # Platform web tools are selectable capabilities, not automatic grants.
+        # Also expose them in admin-edited catalogs without replacing custom entries.
+        catalog_for_web = upgraded_catalog or current.catalog
+        web_tools, web_changed = _append_missing(
+            catalog_for_web.builtin_tools,
+            tuple(
+                item
+                for item in default_capability_catalog().builtin_tools
+                if item.name in {"WebSearch", "WebFetch"}
+            ),
+            lambda item: item.name,
+        )
+        if web_changed:
+            upgraded_catalog = catalog_for_web.model_copy(update={"builtin_tools": web_tools})
         catalog_for_scope = upgraded_catalog or current.catalog
         scoped_catalog = await self._scope_legacy_mcp_capabilities(
             tenant_id,

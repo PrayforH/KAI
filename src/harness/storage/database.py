@@ -1,5 +1,6 @@
 """Async SQLAlchemy database composition helpers."""
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -19,6 +20,8 @@ def create_database(url: str) -> tuple[AsyncEngine, SessionFactory]:
 
 async def create_schema(engine: AsyncEngine) -> None:
     async with engine.begin() as connection:
+        if connection.dialect.name == "postgresql":
+            await connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await connection.run_sync(Base.metadata.create_all)
 
 

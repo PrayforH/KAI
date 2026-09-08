@@ -18,7 +18,6 @@ from harness.core.ports import (
     TaskQueue,
 )
 from harness.core.state_machine import transition
-from harness.deployments.boundaries import environment_quota_boundary
 from harness.observability.provider import Observability
 from harness.reliability.metrics import ReliabilityMetrics
 
@@ -96,28 +95,8 @@ def _blocking_predecessor(active_runs: list[Run]) -> Run | None:
 
 
 def apply_environment_quota(plan: RunQuotaPlan, session: Session) -> RunQuotaPlan:
-    boundary = environment_quota_boundary(session)
-    if boundary is None:
-        return plan
-
-    budget = plan.max_budget_usd
-    if boundary.max_run_budget_usd is not None:
-        budget = (
-            boundary.max_run_budget_usd
-            if budget is None
-            else min(budget, boundary.max_run_budget_usd)
-        )
-    tokens = plan.max_model_tokens
-    if boundary.max_model_tokens is not None:
-        tokens = (
-            boundary.max_model_tokens if tokens is None else min(tokens, boundary.max_model_tokens)
-        )
-
-    return RunQuotaPlan(
-        max_budget_usd=budget,
-        max_model_tokens=tokens,
-        ttl_seconds=plan.ttl_seconds,
-    )
+    # Historical agent/environment budgets cannot re-enable operational limits.
+    return RunQuotaPlan(max_budget_usd=None, max_model_tokens=None, ttl_seconds=plan.ttl_seconds)
 
 
 class RunService:
@@ -347,6 +326,52 @@ class RunService:
 
     async def list_for_tenant(self, tenant_id: str, *, limit: int = 1_000) -> list[Run]:
         return await self._runs.list_for_tenant(tenant_id, limit=limit)
+
+    async def steering_state(self, tenant_id: str, run_id: str) -> dict[str, object]:
+        run = await self._runs.get(tenant_id, run_id)
+        events = await self._events.list_after(tenant_id, run_id, 0)
+        ready = False
+        requests: dict[str, dict[str, object]] = {}
+        for event in events:
+            if event.type == "runtime.steering.ready":
+                ready = True
+            elif event.type == "runtime.steering.closed":
+                ready = False
+            elif event.type.startswith("run.steer."):
+                key = str(event.payload.get("request_id", ""))
+                if event.type == "run.steer.requested" and key in requests:
+                    continue
+                item = requests.setdefault(key, {"request_id": key})
+                item.update(event.payload)
+                item["status"] = event.type.rsplit(".", 1)[-1]
+        active = ready and run.status is RunStatus.RUNNING
+        for item in requests.values():
+            if not active and item.get("status") == "requested":
+                item["status"] = "not_delivered"
+            elif not active and item.get("status") == "sending":
+                item["status"] = "unknown"
+        return {"available": active, "requests": list(requests.values())}
+
+    async def steer(
+        self, tenant_id: str, run_id: str, request_id: str, text: str
+    ) -> dict[str, object]:
+        state = await self.steering_state(tenant_id, run_id)
+        for item in cast(list[dict[str, object]], state["requests"]):
+            if item["request_id"] == request_id:
+                if item.get("text") != text:
+                    raise ConflictError("引导请求编号已用于其他内容")
+                return item
+        if not state["available"]:
+            raise ConflictError("当前运行未就绪或已结束，请将补充加入下一条消息")
+        run = await self._runs.get(tenant_id, run_id)
+        await self._events.append(
+            tenant_id=tenant_id,
+            run_id=run_id,
+            session_id=run.session_id,
+            event_type="run.steer.requested",
+            payload={"request_id": request_id, "text": text},
+        )
+        return {"request_id": request_id, "text": text, "status": "requested"}
 
     async def cancel(self, tenant_id: str, run_id: str) -> Run:
         current = await self._runs.get(tenant_id, run_id)

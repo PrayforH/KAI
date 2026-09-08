@@ -3,7 +3,9 @@
 from datetime import datetime
 from typing import Any, Literal, cast
 
-from sqlalchemy import CursorResult, delete, select, update
+from sqlalchemy import CursorResult, column, delete, func, select, update
+from sqlalchemy import cast as sql_cast
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
 
 from harness.core.errors import ConflictError, NotFoundError
@@ -113,6 +115,27 @@ class PostgresAgentRegistry:
         JSON fields server-side prevents a single historical release from
         turning every task-page transition into a multi-megabyte read.
         """
+        skill = func.jsonb_array_elements(
+            func.coalesce(
+                sql_cast(AgentVersionRow.payload, JSONB)["snapshot"]["skill_snapshots"],
+                sql_cast("[]", JSONB),
+            )
+        ).table_valued(column("value", JSONB))
+        skill_metadata = (
+            select(
+                func.jsonb_agg(
+                    func.jsonb_build_object(
+                        "name",
+                        skill.c.value["name"].astext,
+                        "description",
+                        skill.c.value["description"].astext,
+                    )
+                )
+            )
+            .select_from(skill)
+            .correlate(AgentVersionRow)
+            .scalar_subquery()
+        )
         statement = (
             select(
                 AgentVersionRow.name,
@@ -123,6 +146,7 @@ class PostgresAgentRegistry:
                 AgentVersionRow.package_hash,
                 AgentVersionRow.created_at,
                 AgentVersionRow.catalog_manifest,
+                skill_metadata,
             )
             .where(
                 AgentVersionRow.tenant_id == tenant_id,
@@ -143,7 +167,10 @@ class PostgresAgentRegistry:
                     manifest_hash=manifest_hash,
                     package_hash=package_hash,
                     created_at=created_at,
-                    snapshot={"manifest": manifest or {}},
+                    snapshot={
+                        "manifest": manifest or {},
+                        **({"skill_snapshots": skills} if skills else {}),
+                    },
                 )
                 for (
                     name,
@@ -154,6 +181,7 @@ class PostgresAgentRegistry:
                     package_hash,
                     created_at,
                     manifest,
+                    skills,
                 ) in rows
             ]
 
@@ -778,7 +806,9 @@ class PostgresAguiThreadBindingRepository:
         generated_at: datetime,
     ) -> AguiThreadBinding:
         async with self._sessions() as session:
-            row = await session.get(AguiThreadBindingRow, (tenant_id, user_id, thread_id))
+            row = await session.get(
+                AguiThreadBindingRow, (tenant_id, user_id, thread_id), with_for_update=True
+            )
             if row is None:
                 raise NotFoundError(f"AG-UI thread binding not found: {thread_id}")
             binding = AguiThreadBinding.model_validate(row.payload)
@@ -796,6 +826,27 @@ class PostgresAguiThreadBindingRepository:
             await session.commit()
             return updated
 
+    async def mark_read(
+        self, tenant_id: str, user_id: str, thread_id: str, *, read_at: datetime
+    ) -> AguiThreadBinding:
+        async with self._sessions() as session:
+            row = await session.get(
+                AguiThreadBindingRow, (tenant_id, user_id, thread_id), with_for_update=True
+            )
+            if row is None:
+                raise NotFoundError(f"AG-UI thread binding not found: {thread_id}")
+            binding = AguiThreadBinding.model_validate(row.payload)
+            updated = binding.model_copy(
+                update={
+                    "last_read_at": max(binding.last_read_at, read_at)
+                    if binding.last_read_at is not None
+                    else read_at,
+                }
+            )
+            row.payload = updated.model_dump(mode="json")
+            await session.commit()
+            return updated
+
     async def set_archived(
         self,
         tenant_id: str,
@@ -805,7 +856,9 @@ class PostgresAguiThreadBindingRepository:
         archived_at: datetime | None,
     ) -> AguiThreadBinding:
         async with self._sessions() as session:
-            row = await session.get(AguiThreadBindingRow, (tenant_id, user_id, thread_id))
+            row = await session.get(
+                AguiThreadBindingRow, (tenant_id, user_id, thread_id), with_for_update=True
+            )
             if row is None:
                 raise NotFoundError(f"AG-UI thread binding not found: {thread_id}")
             binding = AguiThreadBinding.model_validate(row.payload)

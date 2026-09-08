@@ -48,11 +48,7 @@ class MemoryRecallEvalRunner:
             recalled_set = frozenset(recalled)
             correct = recalled_set & case.expected_entry_ids
             precision = len(correct) / len(recalled_set) if recalled_set else 1.0
-            recall = (
-                len(correct) / len(case.expected_entry_ids)
-                if case.expected_entry_ids
-                else 1.0
-            )
+            recall = len(correct) / len(case.expected_entry_ids) if case.expected_entry_ids else 1.0
             passed = (
                 case.expected_entry_ids <= recalled_set
                 and not (case.forbidden_entry_ids & recalled_set)

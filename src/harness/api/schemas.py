@@ -12,6 +12,11 @@ class PublishAgentRequest(BaseModel):
     path: str = Field(min_length=1)
 
 
+class AgentSkillItem(BaseModel):
+    name: str
+    description: str
+
+
 class AgentCatalogItem(BaseModel):
     name: str
     version: str
@@ -20,6 +25,7 @@ class AgentCatalogItem(BaseModel):
     model_route: str | None = None
     model: str | None = None
     model_capabilities: tuple[str, ...] = ()
+    skills: tuple[AgentSkillItem, ...] = ()
     mcp_references: tuple[str, ...] = ()
     knowledge_references: tuple[str, ...] = ()
     owner_user_id: str
@@ -72,6 +78,19 @@ class AgentCatalogItem(BaseModel):
             if isinstance(raw_capabilities, list)
             else ()
         )
+        raw_skills = version.snapshot.get("skill_snapshots", [])
+        skills = (
+            tuple(
+                AgentSkillItem(
+                    name=str(cast(dict[str, Any], item)["name"]),
+                    description=str(cast(dict[str, Any], item).get("description", "")),
+                )
+                for item in cast(list[object], raw_skills)
+                if isinstance(item, dict) and cast(dict[str, Any], item).get("name")
+            )
+            if isinstance(raw_skills, (list, tuple))
+            else ()
+        )
         dependencies = dependencies_from_snapshot(version.snapshot)
         return cls(
             name=version.name,
@@ -81,6 +100,7 @@ class AgentCatalogItem(BaseModel):
             model_route=(str(model_values["route"]) if model_values.get("route") else None),
             model=str(model_values["model"]) if model_values.get("model") else None,
             model_capabilities=capabilities,
+            skills=skills,
             mcp_references=dependencies.mcp_references,
             knowledge_references=dependencies.knowledge_references,
             owner_user_id=version.owner_user_id,

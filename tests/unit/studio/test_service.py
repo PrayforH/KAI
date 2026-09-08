@@ -23,6 +23,7 @@ from harness.studio.models import (
     DraftSubagent,
     ReplaceAgentDraftRequest,
 )
+from harness.studio.platform_skills import imported_platform_skill, platform_skill_package
 from harness.studio.repositories import InMemoryAgentDraftRepository
 from harness.studio.service import AgentStudioService
 
@@ -103,6 +104,56 @@ async def test_replace_uses_optimistic_revision_and_preserves_publication_identi
             draft_id=created.draft_id,
             request=request,
         )
+
+
+@pytest.mark.asyncio
+async def test_editing_an_imported_platform_skill_marks_package_provenance_modified() -> None:
+    service = studio()
+    created = await service.create(
+        tenant_id="tenant-a", user_id="builder", request=create_request()
+    )
+    package = platform_skill_package("evidence-reporting", 1)
+    installed = await service.install_skill(
+        tenant_id="tenant-a",
+        user_id="builder",
+        draft_id=created.draft_id,
+        expected_revision=created.revision,
+        imported=imported_platform_skill(package),
+        evaluation_cases=package.evaluation_cases,
+    )
+    skill = installed.spec.skills[0].model_copy(update={"description": "租户定制报告规范。"})
+    updated = await service.replace(
+        tenant_id="tenant-a",
+        user_id="builder",
+        draft_id=created.draft_id,
+        request=ReplaceAgentDraftRequest(
+            expectedRevision=installed.revision,
+            spec=installed.spec.model_copy(update={"skills": (skill,)}),
+        ),
+    )
+
+    assert installed.spec.skills[0].source is not None
+    assert any(
+        "skill:evidence-reporting" in case.tags
+        for case in installed.spec.evaluation_cases
+    )
+    assert updated.spec.skills[0].source is not None
+    assert updated.spec.skills[0].source.modified is True
+
+    uninstalled = await service.replace(
+        tenant_id="tenant-a",
+        user_id="builder",
+        draft_id=created.draft_id,
+        request=ReplaceAgentDraftRequest(
+            expectedRevision=updated.revision,
+            spec=updated.spec.model_copy(update={"skills": ()}),
+        ),
+    )
+
+    assert not any(
+        "skill:evidence-reporting" in case.tags
+        for case in uninstalled.spec.evaluation_cases
+    )
 
 
 @pytest.mark.asyncio

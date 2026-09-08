@@ -206,3 +206,62 @@ async def test_artifact_quota_is_checked_before_pending_metadata_is_created() ->
     assert rejected.json()["error"]["code"] == "quota_exceeded"
     assert "artifact_bytes" in rejected.json()["error"]["message"]
     assert listed.json() == []
+
+
+@pytest.mark.asyncio
+async def test_task_files_are_isolated_for_two_tasks_of_the_same_agent() -> None:
+    app = create_memory_app(auto_execute=True)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS)
+        artifacts = {}
+        for thread_id in ("task-a", "task-b"):
+            response = await client.post(
+                "/v1/agui?agent_name=echo-agent&agent_version=0.1.0",
+                json={
+                    "threadId": thread_id,
+                    "runId": f"run-{thread_id}",
+                    "state": {},
+                    "messages": [
+                        {"id": f"message-{thread_id}", "role": "user", "content": thread_id}
+                    ],
+                    "tools": [],
+                    "context": [],
+                    "forwardedProps": {},
+                },
+                headers=HEADERS,
+            )
+            assert response.status_code == 200
+            run_id = response.headers["x-harness-run-id"]
+            uploaded = await client.post(
+                f"/v1/runs/{run_id}/artifacts",
+                headers=HEADERS,
+                files={"file": ("result.txt", thread_id.encode(), "text/plain")},
+            )
+            assert uploaded.status_code == 201
+            artifacts[thread_id] = uploaded.json()["artifact_id"]
+        for current, other in (("task-a", "task-b"), ("task-b", "task-a")):
+            listed = await client.get(
+                "/v1/artifacts", params={"thread_id": current, "limit": 1}, headers=HEADERS
+            )
+            assert listed.status_code == 200
+            assert [item["artifact_id"] for item in listed.json()] == [artifacts[current]]
+            own = await client.get(
+                f"/v1/artifacts/{artifacts[current]}/content",
+                params={"thread_id": current},
+                headers=HEADERS,
+            )
+            assert own.content == current.encode()
+            foreign = await client.get(
+                f"/v1/artifacts/{artifacts[other]}/content",
+                params={"thread_id": current},
+                headers=HEADERS,
+            )
+            assert foreign.status_code == 404
+        unknown = await client.get("/v1/artifacts?thread_id=missing", headers=HEADERS)
+        assert unknown.status_code == 404
+        denied = await client.get(
+            "/v1/artifacts?thread_id=task-a", headers={**HEADERS, "X-User-ID": "someone-else"}
+        )
+        assert denied.status_code == 404
+        global_files = await client.get("/v1/artifacts", headers=HEADERS)
+        assert len(global_files.json()) == 2

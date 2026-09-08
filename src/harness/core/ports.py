@@ -316,6 +316,10 @@ class AguiThreadBindingRepository(Protocol):
         generated_at: datetime,
     ) -> AguiThreadBinding: ...
 
+    async def mark_read(
+        self, tenant_id: str, user_id: str, thread_id: str, *, read_at: datetime
+    ) -> AguiThreadBinding: ...
+
     async def set_archived(
         self,
         tenant_id: str,

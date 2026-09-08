@@ -38,11 +38,12 @@ _DISPLAY_NAME_ACTION_PREFIX = re.compile(
     r"监测|监控|管理|检查|审查|提取|识别|规划|推荐|回答|给出)"
 )
 _DISPLAY_NAME_REQUEST_PREFIX = re.compile(
-    r"^(?:(?:请帮我|请|麻烦帮我|麻烦|帮我|我想要|我想做|我需要|我希望|"
+    r"^(?:(?:你能帮我|你可以帮我|能帮我|可以帮我|请帮我|请|麻烦帮我|麻烦|帮我|我想要|我想做|我需要|我希望|"
     r"希望创建|希望构建|希望有|需要|创建|构建|打造|设计|做一个|做一名|做|"
     r"作为|你是|充当)\s*)+"
 )
 _AGENT_NAME_RULES: tuple[tuple[tuple[str, ...], str], ...] = (
+    (("类案", "案例检索", "判例分析"), "case-analysis-assistant"),
     (("育儿", "婴儿", "孩子", "儿童", "喂养", "亲子"), "parenting-expert"),
     (("备孕", "孕期", "孕早", "孕中", "孕晚", "产后"), "maternity-guide"),
     (("舆情", "声誉", "负面新闻", "新闻监测"), "sentiment-analyst"),
@@ -60,11 +61,12 @@ _AGENT_NAME_RULES: tuple[tuple[tuple[str, ...], str], ...] = (
 def summarize_agent_display_name(task: str) -> str:
     """Derive a short product name from a task without discarding the full brief."""
 
-    normalized = re.sub(r"\s+", " ", task).strip()
-    first_clause = re.split(r"[\n，,。；;！？!?：:]", normalized, maxsplit=1)[0].strip()
+    first_clause = re.split(r"[\r\n，,。；;！？!?：:]", task.strip(), maxsplit=1)[0].strip()
+    first_clause = re.sub(r"\s+", " ", first_clause)
     candidate = _DISPLAY_NAME_REQUEST_PREFIX.sub("", first_clause).strip()
     candidate = re.sub(r"^(?:一个|一名|一款|一套)\s*", "", candidate)
     candidate = re.sub(r"^[“”'\"「」『』【】]+|[“”'\"「」『』【】]+$", "", candidate).strip()
+    candidate = re.sub(r"(?:可以)?吗$|[么呢吧呀啊]$", "", candidate).strip()
     if not candidate:
         candidate = first_clause or "新智能体"
 
@@ -475,6 +477,10 @@ def configure_task_driven_draft(
                 model=route.models[0],
             ),
             "system_prompt": _system_prompt(draft, contract),
+            # Skills are reusable workflow modules, not a requirement for every
+            # Agent. The Builder starts with the smaller Prompt + Tools contract;
+            # users can bind a Skill when the task benefits from one.
+            "skills": (),
             "builtin_tools": builtin_tools,
             "python_tools": (),
             "mcp_servers": tuple(item.reference for item in selected_mcp),

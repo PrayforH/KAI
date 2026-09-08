@@ -128,6 +128,14 @@ async def test_postgres_platform_repositories_are_durable_and_tenant_scoped(
         snapshot={
             "manifest": {"metadata": {"name": "agent-a", "version": "1.0.0"}},
             "files": {"large.bin": "x" * 1024},
+            "skill_snapshots": [
+                {
+                    "name": "skill-creator",
+                    "description": "Create",
+                    "instructions": "private",
+                    "files": [],
+                }
+            ],
         },
         created_at=now,
     )
@@ -137,7 +145,10 @@ async def test_postgres_platform_repositories_are_durable_and_tenant_scoped(
     catalog_versions = await agent_repository.list_catalog_for_user("tenant-a", "user-a")
     assert len(catalog_versions) == 1
     assert catalog_versions[0].model_copy(update={"snapshot": agent.snapshot}) == agent
-    assert catalog_versions[0].snapshot == {"manifest": agent.snapshot["manifest"]}
+    assert catalog_versions[0].snapshot == {
+        "manifest": agent.snapshot["manifest"],
+        "skill_snapshots": [{"name": "skill-creator", "description": "Create"}],
+    }
 
     thread = Session(
         session_id="session-a",

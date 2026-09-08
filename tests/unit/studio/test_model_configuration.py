@@ -562,16 +562,16 @@ async def test_server_route_is_imported_testable_and_does_not_expose_secret() ->
 @pytest.mark.asyncio
 async def test_trusted_server_route_may_use_private_http_but_workspace_override_cannot() -> None:
     route = CcSwitchClaudeConfig(
-        route_id="glm-5-2",
+        route_id="glm-5-3-flash",
         base_url="http://172.20.109.174:4000",
-        model="shdata-glm",
+        model="glm-5.3-flash",
         provider="new-api",
         credential=SecretStr("server-only-secret"),
         auth_scheme="bearer",
     )
     models, _catalogs, _credentials = service(environment="production", server_routes=(route,))
 
-    resolved = await models.resolve_runtime("tenant-a", "helper-agent", "glm-5-2")
+    resolved = await models.resolve_runtime("tenant-a", "helper-agent", "glm-5-3-flash")
 
     assert resolved is not None
     assert resolved.base_url == "http://172.20.109.174:4000"
@@ -608,3 +608,46 @@ async def test_imported_server_model_runs_without_server_fallback_after_import()
     assert resolved is not None
     assert resolved.base_url == "https://api.minimaxi.com/anthropic"
     assert resolved.credential.get_secret_value() == "server-only-secret"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("api_format", ["openai_compatible", "anthropic_compatible"])
+async def test_authoring_completion_forwards_image_bytes(api_format: str) -> None:
+    captured: list[httpx.Request] = []
+
+    def handler(incoming: httpx.Request) -> httpx.Response:
+        captured.append(incoming)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "red"}}],
+                                        "content": [{"type": "text", "text": "red"}]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        models, _, _ = service(client=client)
+        await models.configure("tenant-a", "admin-a", "vision", request(apiFormat=api_format))
+        text = await models.complete_text(
+            "tenant-a", "vision", system_prompt="describe", user_prompt="color?",
+            images=(("image/png", image_bytes()),),
+        )
+    assert text == "red"
+    content = json.loads(captured[0].content)["messages"][-1]["content"]
+    assert content[0] == {"type": "text", "text": "color?"}
+    if api_format == "openai_compatible":
+        assert content[1]["image_url"]["url"].startswith("data:image/png;base64,")
+    else:
+        assert content[1]["source"]["media_type"] == "image/png"
+        assert content[1]["source"]["data"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("base_url", ["https://models.example.test/api/anthropic", "https://models.example.test/api/anthropic/v1"])
+async def test_managed_anthropic_sdk_base_uses_one_v1_segment(base_url: str) -> None:
+    calls: list[httpx.Request] = []
+    def handler(incoming: httpx.Request) -> httpx.Response:
+        calls.append(incoming)
+        return httpx.Response(200, json={"content": [{"type": "text", "text": "red square"}]})
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        models, _, _ = service(client=client)
+        await models.configure("tenant-a", "admin-a", "vision", request(
+            apiFormat="anthropic_compatible", baseUrl=base_url))
+        assert await models.complete_text("tenant-a", "vision", system_prompt="describe",
+            user_prompt="color?", images=(("image/png", image_bytes()),)) == "red square"
+    assert str(calls[0].url) == "https://models.example.test/api/anthropic/v1/messages"

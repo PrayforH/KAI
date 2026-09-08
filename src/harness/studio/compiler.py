@@ -143,13 +143,13 @@ class AgentDraftCompiler:
                         "maxTurns": spec.limits.max_turns,
                         "maxToolCalls": spec.limits.max_tool_calls,
                         "timeoutSeconds": spec.limits.timeout_seconds,
-                        "maxBudgetUsd": spec.limits.max_budget_usd,
-                        "maxModelTokens": spec.limits.max_model_tokens,
+                        "maxBudgetUsd": None,
+                        "maxModelTokens": None,
                         "maxSubagents": spec.limits.max_subagents,
                         "maxSubagentTasks": spec.limits.max_subagent_tasks,
                         "maxConcurrentSubagents": (spec.limits.max_concurrent_subagents),
                         "maxSubagentDepth": 1,
-                        "maxSubagentUsageUnits": (spec.limits.max_subagent_usage_units),
+                        "maxSubagentUsageUnits": None,
                     },
                 },
             }
@@ -235,8 +235,7 @@ class AgentDraftCompiler:
                 label=runtime.label if runtime is not None else draft.spec.runtime,
                 stability=runtime.stability if runtime is not None else "experimental",
                 compatible=not any(
-                    issue.severity is ValidationSeverity.ERROR
-                    and issue.code in runtime_issue_codes
+                    issue.severity is ValidationSeverity.ERROR and issue.code in runtime_issue_codes
                     for issue in issues
                 ),
                 capabilities=runtime.capabilities if runtime is not None else (),
@@ -276,7 +275,10 @@ class AgentDraftCompiler:
             for reference in spec.mcp_servers
             if (item := mcp_by_reference.get(reference)) is not None
         ]
-        if any(item.network_access is NetworkAccess.EXTERNAL for item in selected_mcp):
+        if {"WebSearch", "WebFetch"}.intersection(spec.builtin_tools):
+            network = NetworkAccess.EXTERNAL
+            network_summary = "平台内置公开网页检索；已选 MCP 继续按各自权限运行"
+        elif any(item.network_access is NetworkAccess.EXTERNAL for item in selected_mcp):
             network = NetworkAccess.EXTERNAL
             network_summary = "仅通过审核过的外部 MCP 受控联网"
         elif any(item.network_access is NetworkAccess.INTERNAL for item in selected_mcp):
@@ -328,13 +330,10 @@ class AgentDraftCompiler:
         spec = draft.spec
         issues: list[ValidationIssue] = []
         runtimes = {
-            capability.runtime: capability
-            for capability in self._catalog.runtime_capabilities
+            capability.runtime: capability for capability in self._catalog.runtime_capabilities
         }
         runtime = runtimes.get(spec.runtime)
-        runtime_features: set[str] = (
-            set(runtime.capabilities) if runtime is not None else set()
-        )
+        runtime_features: set[str] = set(runtime.capabilities) if runtime is not None else set()
         if runtime is None:
             issues.append(
                 ValidationIssue(
@@ -423,6 +422,17 @@ class AgentDraftCompiler:
                     )
                 )
 
+        if {"WebSearch", "WebFetch"}.intersection(
+            spec.builtin_tools
+        ) and spec.runtime != "claude-agent-sdk":
+            issues.append(
+                ValidationIssue(
+                    code="web_tools_runtime_unsupported",
+                    message="平台内置联网目前支持 Claude SDK 运行时；其他运行时可保留 MCP。",
+                    severity=ValidationSeverity.ERROR,
+                    path="builtinTools",
+                )
+            )
         builtins = {tool.name for tool in self._catalog.builtin_tools}
         for name in spec.builtin_tools:
             if name not in builtins:
@@ -469,8 +479,7 @@ class AgentDraftCompiler:
                 ValidationIssue(
                     code=(
                         legacy_code
-                        if spec.runtime == "codex-app-server"
-                        and legacy_code.startswith("codex_")
+                        if spec.runtime == "codex-app-server" and legacy_code.startswith("codex_")
                         else f"runtime_{feature}_unsupported"
                     ),
                     message=f"{runtime.label}：{message}",
@@ -524,8 +533,7 @@ class AgentDraftCompiler:
                     ValidationIssue(
                         code="runtime_mcp_transport_unsupported",
                         message=(
-                            f"{runtime.label} 不支持 MCP {server.transport} transport："
-                            f"{reference}"
+                            f"{runtime.label} 不支持 MCP {server.transport} transport：{reference}"
                         ),
                         severity=ValidationSeverity.ERROR,
                         path="mcpServers",
@@ -694,7 +702,7 @@ class AgentDraftCompiler:
                     logicalReference=name,
                     description=capability.description,
                     risk=capability.risk.value,
-                    resultTrust="safe",
+                    resultTrust="untrusted" if name in {"WebSearch", "WebFetch"} else "safe",
                 )
             )
         for reference in draft.spec.mcp_servers:
@@ -746,8 +754,18 @@ class AgentDraftCompiler:
         for skill in spec.skills:
             skill_root = root / "skills" / skill.name
             skill_root.mkdir(parents=True, exist_ok=True)
+            frontmatter_payload: dict[str, object] = {
+                "name": skill.name,
+                "description": skill.description,
+            }
+            if skill.source is not None:
+                frontmatter_payload["metadata"] = {
+                    "harness": {
+                        "source": skill.source.model_dump(mode="json", by_alias=True),
+                    }
+                }
             frontmatter = yaml.safe_dump(
-                {"name": skill.name, "description": skill.description},
+                frontmatter_payload,
                 sort_keys=False,
                 allow_unicode=True,
             ).strip()

@@ -88,6 +88,7 @@ from harness.lifecycle.controller import DataLifecycleController
 from harness.lifecycle.models import LifecycleScope, LifecycleScopeKind
 from harness.lifecycle.repositories import InMemoryDataLifecycleRepository
 from harness.lifecycle.service import DataLifecycleService
+from harness.memory_bank.configuration import embedding_client
 from harness.memory_bank.repositories import InMemoryMemoryBankRepository
 from harness.memory_bank.service import MemoryBankService
 from harness.memory_bank.workload import (
@@ -178,6 +179,7 @@ from harness.studio.skill_builder import (
     AnthropicCompatibleSkillConversationService,
     SkillConversationService,
 )
+from harness.studio.web_configuration import WebConfigurationService
 from harness.triggers.repositories import InMemoryAgentTriggerRepository
 from harness.triggers.service import AgentTriggerService
 from harness.worker.orchestrator import RunOrchestrator
@@ -205,6 +207,7 @@ class ApiContainer:
     capability_catalogs: CapabilityCatalogService
     mcp_discovery: McpDiscoveryService
     mcp_credentials: McpCredentialService
+    web_configurations: WebConfigurationService
     model_configurations: ModelConfigurationService
     studio: AgentStudioService
     preview_repository: PreviewRepository
@@ -423,6 +426,9 @@ def build_memory_container(
         McpCredentialCipher(resolved_settings.auth_jwt_secret),
         audit=audit,
     )
+    web_configurations = WebConfigurationService(mcp_credential_service,
+        enabled=resolved_settings.web_tools_enabled, provider=resolved_settings.web_search_provider,
+        api_key=resolved_settings.web_search_api_key.get_secret_value())
     model_configurations = ModelConfigurationService(
         capability_catalogs,
         mcp_credential_service,
@@ -617,6 +623,8 @@ def build_memory_container(
     )
     memory_bank = MemoryBankService(
         memory_bank_repository,
+        embedder=embedding_client(resolved_settings),
+        semantic_threshold=resolved_settings.memory_semantic_threshold,
         audit=audit,
         clock=clock,
         id_generator=id_generator,
@@ -803,6 +811,7 @@ def build_memory_container(
         tool_resolver = default_tool_resolver(
             credential_provider,
             catalogs=capability_catalogs,
+            web_configurations=web_configurations,
         )
         claude_runtime = RegistryClaudeRuntime(
             registry=registry,
@@ -834,6 +843,7 @@ def build_memory_container(
                             claude_runtime,
                             RegistryCodexRuntime(
                                 registry=registry,
+                                remote_memory_mcp=remote_memory_mcp,
                                 codex_path=Path(resolved_settings.codex_cli_path),
                                 model_configurations=model_configurations,
                                 tool_resolver=tool_resolver,
@@ -939,6 +949,7 @@ def build_memory_container(
         MaintenanceReaper("quota-reservation", "quota", quotas.reap_expired_all),
         MaintenanceReaper("workspace-retention", "workspace", lifecycle_reap),
         MaintenanceReaper("memory-expiry", "memory", memory_bank.reap_expired),
+        MaintenanceReaper("memory-index", "memory", memory_bank.reindex_pending),
     ]
     if sandbox_maintenance is not None:
         maintenance.append(MaintenanceReaper("sandbox-expiry", "sandbox", sandbox_maintenance))
@@ -969,6 +980,7 @@ def build_memory_container(
         capability_catalogs=capability_catalogs,
         mcp_discovery=mcp_discovery,
         mcp_credentials=mcp_credential_service,
+        web_configurations=web_configurations,
         model_configurations=model_configurations,
         studio=studio_service,
         preview_repository=preview_repository,

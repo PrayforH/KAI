@@ -20,7 +20,7 @@ def event(sequence: int, event_type: str, payload: dict[str, object]) -> RunEven
     )
 
 
-def test_codex_loop_marks_observed_failure_and_recovery_as_correction() -> None:
+def test_codex_loop_preserves_failures_without_claiming_recovery_or_quality_verification() -> None:
     run = Run(
         run_id="run-1",
         session_id="session-1",
@@ -51,13 +51,11 @@ def test_codex_loop_marks_observed_failure_and_recovery_as_correction() -> None:
         "verification",
         "result",
     ]
-    assert loop[2].status == "completed"
-    assert {item.event_type for item in loop[2].evidence} >= {
-        "tool.result",
-        "message.completed",
-        "run.succeeded",
-    }
-    assert loop[3].status == "completed"
+    assert loop[2].status == "failed"
+    assert {item.event_type for item in loop[2].evidence} == {"tool.result"}
+    assert "不代表问题已修复" in loop[2].summary
+    assert loop[3].status == "skipped"
+    assert "未进行独立质量评测" in loop[3].summary
     assert loop[4].status == "completed"
 
 
@@ -80,6 +78,8 @@ def test_codex_loop_does_not_invent_correction_for_first_pass_success() -> None:
     assert loop[1].status == "skipped"
     assert loop[2].status == "skipped"
     assert loop[2].evidence == ()
+    assert loop[3].status == "skipped"
+    assert loop[0].label == "运行准备"
 
 
 def test_codex_loop_detects_a_captured_inner_command_failure() -> None:
@@ -116,5 +116,5 @@ def test_codex_loop_detects_a_captured_inner_command_failure() -> None:
     )
 
     assert loop[1].status == "completed"
-    assert loop[2].status == "completed"
+    assert loop[2].status == "failed"
     assert loop[2].evidence[0].summary == "Bash 返回失败"

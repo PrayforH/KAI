@@ -13,7 +13,7 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from tempfile import TemporaryDirectory
-from typing import cast
+from typing import Literal, cast
 
 import yaml
 from pydantic import ValidationError
@@ -35,6 +35,7 @@ from harness.studio.models import (
     DraftPythonTool,
     DraftSkill,
     DraftSkillFile,
+    DraftSkillSource,
     DraftSubagent,
     DraftWorkspace,
 )
@@ -52,6 +53,7 @@ _MAX_NEXAU_UNPACKED_BYTES = 50 * 1024 * 1024
 _NEXAU_SKILL_NAMES = {
     "施工机械检测": "construction-machinery-detection",
 }
+_CODEX_REASONING_EFFORTS = {"minimal", "low", "medium", "high", "xhigh"}
 
 
 class AgentBundleImportError(ValueError):
@@ -82,6 +84,16 @@ def _object_list(value: object) -> list[object]:
     return cast(list[object], value)
 
 
+def _reasoning_effort(
+    value: str | None,
+) -> Literal["minimal", "low", "medium", "high", "xhigh"] | None:
+    if value is None:
+        return None
+    if value not in _CODEX_REASONING_EFFORTS:
+        raise AgentBundleImportError(f"Codex reasoning effort 无效：{value}")
+    return cast(Literal["minimal", "low", "medium", "high", "xhigh"], value)
+
+
 def _skill_instructions(content: str, *, skill_name: str) -> str:
     lines = content.splitlines()
     if not lines or lines[0].strip() != "---":
@@ -94,6 +106,29 @@ def _skill_instructions(content: str, *, skill_name: str) -> str:
     if not instructions:
         raise AgentBundleImportError(f"Skill 指令为空：{skill_name}")
     return instructions + "\n"
+
+
+def _skill_source(content: str, *, skill_name: str) -> DraftSkillSource | None:
+    lines = content.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return None
+    try:
+        end = next(index for index, line in enumerate(lines[1:], start=1) if line.strip() == "---")
+        raw = cast(object, yaml.safe_load("\n".join(lines[1:end])))
+    except (StopIteration, yaml.YAMLError):
+        return None
+    frontmatter = _object_mapping(raw)
+    metadata = _object_mapping(frontmatter.get("metadata"))
+    harness_metadata = _object_mapping(metadata.get("harness"))
+    source = harness_metadata.get("source")
+    if not isinstance(source, dict):
+        return None
+    try:
+        return DraftSkillSource.model_validate(source)
+    except ValidationError as error:
+        raise AgentBundleImportError(
+            f"Skill 平台来源元数据无效：{skill_name}"
+        ) from error
 
 
 def _decode_text(value: str, *, label: str) -> str:
@@ -171,28 +206,94 @@ def _safe_name(value: str, *, separator: str = "-") -> str:
     return normalized
 
 
-def _nexau_root(archive: zipfile.ZipFile) -> str:
-    files = [name for name in archive.namelist() if name and not name.endswith("/")]
-    candidates = [name for name in files if name == "agent.yaml" or name.endswith("/agent.yaml")]
-    if not candidates:
-        raise AgentBundleImportError("NexAU ZIP 必须包含根 Agent 的 agent.yaml")
-    shallowest_depth = min(len(PurePosixPath(name).parts) for name in candidates)
-    root_candidates = [
-        name for name in candidates if len(PurePosixPath(name).parts) == shallowest_depth
-    ]
-    if len(root_candidates) != 1:
-        raise AgentBundleImportError("NexAU ZIP 必须且只能包含一个根 Agent 的 agent.yaml")
-    root = root_candidates[0][: -len("agent.yaml")]
+def _safe_archive_name(name: str) -> str:
+    path = PurePosixPath(name)
+    if (not name or "\\" in name or path.is_absolute()
+            or ".." in path.parts or re.match(r"^[A-Za-z]:", name)):
+        raise AgentBundleImportError(f"压缩包包含不安全路径：{name}")
+    return path.as_posix()
+
+
+def _nexau_root(archive: zipfile.ZipFile) -> tuple[str, str]:
     total = 0
+    names: set[str] = set()
     for item in archive.infolist():
-        path = Path(item.filename)
-        mode = item.external_attr >> 16
-        if path.is_absolute() or ".." in path.parts or stat.S_ISLNK(mode):
-            raise AgentBundleImportError(f"NexAU ZIP 包含不安全路径：{item.filename}")
+        name = _safe_archive_name(item.filename)
+        if name in names or stat.S_ISLNK(item.external_attr >> 16):
+            raise AgentBundleImportError(f"压缩包包含重复路径或链接：{item.filename}")
+        names.add(name)
         total += item.file_size
-        if total > _MAX_NEXAU_UNPACKED_BYTES:
-            raise AgentBundleImportError("NexAU ZIP 解压后超过 50 MiB")
-    return root
+        if total > _MAX_NEXAU_UNPACKED_BYTES or len(names) > 2000:
+            raise AgentBundleImportError("压缩包解压后超过 50 MiB 或 2000 个文件")
+        if item.flag_bits & 1:
+            raise AgentBundleImportError("不支持加密压缩包，请去除密码后导入")
+    configs: dict[str, dict[str, object]] = {}
+    for name in names:
+        if not name.lower().endswith((".yaml", ".yml")) or "__MACOSX" in PurePosixPath(name).parts:
+            continue
+        try:
+            value = _object_mapping(yaml.safe_load(archive.read(name).decode("utf-8-sig")))
+        except (yaml.YAMLError, UnicodeDecodeError):
+            continue
+        if value.get("type") == "agent" or (value.get("name") and "system_prompt" in value):
+            configs[name] = value
+    referenced = {
+        str(PurePosixPath(name).parent / str(item["config_path"]).removeprefix("./"))
+        for name, config in configs.items()
+        for entry in _object_list(config.get("sub_agents"))
+        if (item := _object_mapping(entry)) and item.get("config_path")
+    }
+    candidates = [name for name in configs if name not in referenced]
+    if not candidates:
+        raise AgentBundleImportError(
+            "未找到 NexAU Agent YAML 配置，请包含 agent.yaml 或实际 Agent 配置文件"
+        )
+    depth = min(len(PurePosixPath(name).parts) for name in candidates)
+    candidates = [name for name in candidates if len(PurePosixPath(name).parts) == depth]
+    conventional = [
+        name for name in candidates if PurePosixPath(name).name in {"agent.yaml", "agent.yml"}
+    ]
+    if len(conventional) == 1:
+        candidates = conventional
+    if len(candidates) != 1:
+        raise AgentBundleImportError(
+            "压缩包包含多个根 Agent，请分别打包导入：" + "、".join(sorted(candidates))
+        )
+    path = PurePosixPath(candidates[0])
+    return ("" if str(path.parent) == "." else str(path.parent) + "/", path.name)
+
+
+def _rar_as_zip(content: bytes) -> bytes:
+    # Read entries in memory; never extract untrusted paths to the filesystem.
+    import libarchive
+    from libarchive.exception import ArchiveError
+
+    output = io.BytesIO()
+    total = 0
+    seen: set[str] = set()
+    try:
+        with libarchive.memory_reader(content) as source, zipfile.ZipFile(output, "w") as target:
+            for entry in source:
+                name = _safe_archive_name(str(entry.pathname))
+                if entry.isdir:
+                    continue
+                if not entry.isfile or entry.issym or entry.islnk or name in seen:
+                    raise AgentBundleImportError(f"RAR 包含链接、重复路径或特殊文件：{name}")
+                seen.add(name)
+                if len(seen) > 2000 or total + (entry.size or 0) > _MAX_NEXAU_UNPACKED_BYTES:
+                    raise AgentBundleImportError("RAR 解压后超过 50 MiB 或 2000 个文件")
+                data = bytearray()
+                for block in entry.get_blocks():
+                    total += len(block)
+                    if total > _MAX_NEXAU_UNPACKED_BYTES:
+                        raise AgentBundleImportError("RAR 解压后超过 50 MiB")
+                    data.extend(block)
+                target.writestr(name, bytes(data))
+    except ArchiveError as error:
+        raise AgentBundleImportError(
+            "无法读取 RAR：文件可能损坏、加密或属于分卷，请提供完整且无密码的压缩包"
+        ) from error
+    return output.getvalue()
 
 
 def _zip_text(archive: zipfile.ZipFile, root: str, relative: str) -> str:
@@ -334,13 +435,13 @@ def _parse_nexau_bundle(content: bytes) -> ParsedAgentBundle:
     except zipfile.BadZipFile as error:
         raise AgentBundleImportError("上传内容不是有效的 Agent Bundle 或 NexAU ZIP") from error
     with archive:
-        root = _nexau_root(archive)
+        root, config_name = _nexau_root(archive)
         try:
-            raw_config = cast(object, yaml.safe_load(_zip_text(archive, root, "agent.yaml")))
+            raw_config = cast(object, yaml.safe_load(_zip_text(archive, root, config_name)))
         except yaml.YAMLError as error:
             raise AgentBundleImportError("NexAU agent.yaml 无效") from error
         config = _object_mapping(raw_config)
-        if config.get("type") != "agent":
+        if config.get("type") not in {None, "agent"}:
             raise AgentBundleImportError("ZIP 不是受支持的 NexAU Agent 导出")
         warnings: list[str] = ["已从 NexAU 结构转换；请保存并运行平台预检"]
         raw_name = str(config.get("name") or "imported-agent")
@@ -348,10 +449,12 @@ def _parse_nexau_bundle(content: bytes) -> ParsedAgentBundle:
         description = str(config.get("description") or f"从 NexAU 导入的 {raw_name}")[:500]
         display_name = description.split("。", 1)[0].strip()[:100] or raw_name[:100]
         prompt_path = str(config.get("system_prompt") or "systemprompt.md")
-        system_prompt = _nexau_system_prompt(
-            _zip_text(archive, root, prompt_path),
-            display_name=display_name,
-        )
+        prompt_type = config.get("system_prompt_type")
+        prompt_source = (prompt_path if prompt_type == "string"
+                         else _zip_text(archive, root, prompt_path))
+        system_prompt = _nexau_system_prompt(prompt_source, display_name=display_name)
+        if config.get("sub_agents"):
+            warnings.append("原包子智能体配置未自动绑定，请在协作角色中逐个导入并关联")
 
         builtin_tools: list[str] = []
         python_tools: list[DraftPythonTool] = []
@@ -367,6 +470,11 @@ def _parse_nexau_bundle(content: bytes) -> ParsedAgentBundle:
                     builtin_tools.append(builtin)
                 continue
             binding = str(entry.get("binding") or "")
+            if binding.startswith("nexau."):
+                warnings.append(
+                    f"NexAU 内置工具 {tool_name} 由平台运行时治理，未作为自定义代码导入"
+                )
+                continue
             module_name, separator, function_name = binding.partition(":")
             if not separator or not module_name or not function_name:
                 warnings.append(f"工具 {tool_name or binding} 缺少可转换的 Python binding，已跳过")
@@ -418,8 +526,6 @@ def _parse_nexau_bundle(content: bytes) -> ParsedAgentBundle:
         if has_visual_input and "消防" in description:
             skills.append(_fire_safety_skill())
             warnings.append("已补齐导出描述中声明但原包缺失的消防设施识别 Skill")
-        if not skills:
-            raise AgentBundleImportError("NexAU Agent 至少需要一个可导入 Skill")
 
         if config.get("max_iterations") or config.get("max_context_tokens"):
             warnings.append("NexAU 的 turns/context 上限未导入；当前平台对长程任务不设硬上限")
@@ -545,6 +651,8 @@ def _parse_nexau_bundle(content: bytes) -> ParsedAgentBundle:
 def parse_agent_bundle(content: bytes) -> ParsedAgentBundle:
     """Validate, extract and reconstruct one editable Draft specification."""
 
+    if content.startswith(b"Rar!\x1a\x07"):
+        content = _rar_as_zip(content)
     with TemporaryDirectory(prefix="harness-agent-studio-import-") as directory:
         root = Path(directory)
         try:
@@ -634,6 +742,7 @@ def parse_agent_bundle(content: bytes) -> ParsedAgentBundle:
                     description=skill.description,
                     instructions=_skill_instructions(skill_md, skill_name=skill.name),
                     files=tuple(files),
+                    source=_skill_source(skill_md, skill_name=skill.name),
                 )
             )
 
@@ -697,7 +806,7 @@ def parse_agent_bundle(content: bytes) -> ParsedAgentBundle:
             model=DraftModelSelection(
                 routeId=model.route,
                 model=model.model,
-                reasoningEffort=labels.get("codex-reasoning-effort"),
+                reasoningEffort=_reasoning_effort(labels.get("codex-reasoning-effort")),
                 fallbackRouteId=model.fallback_route,
                 fallbackModel=model.fallback_model,
                 requiredCapabilities=model.required_capabilities,

@@ -76,6 +76,7 @@ from harness.runtime.input_redaction import (
     staged_read_path,
 )
 from harness.runtime.mcp_credentials import McpCredentialError
+from harness.runtime.steering import SteeringInbox
 from harness.runtime.subagent_governance import SubagentGovernanceError
 from harness.runtime.tools import ToolResolutionError
 from harness.sandbox.base import (
@@ -1094,7 +1095,8 @@ class RunOrchestrator:
             )
             with self._stage("harness.memory.load", {"run.id": run_id}):
                 memory_projection = (
-                    await self._memory.projection(identity) if self._memory is not None else ""
+                    await self._memory.projection(identity, str(run.input.get("prompt", "")))
+                    if self._memory is not None else ""
                 )
             raw_input_artifact_ids: object = run.input.get("input_artifact_ids", [])
             if not isinstance(raw_input_artifact_ids, list):
@@ -1224,6 +1226,7 @@ class RunOrchestrator:
                 sandbox_isolation=handle.isolation_level,
                 remote_workspace=handle.remote_workspace,
                 assistant_message_id=f"assistant-{run_id}-{uuid4().hex}",
+                steering=SteeringInbox(run, self._runs, self._events),
                 input_files=tuple(
                     path for item in staged_inputs for path in (item.path, *item.processed_paths)
                 ),

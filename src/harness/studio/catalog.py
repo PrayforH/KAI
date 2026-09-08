@@ -46,15 +46,27 @@ def default_capability_catalog() -> CapabilityCatalog:
                 credentialReference="MINIMAX_M3_API_KEY",
             ),
             ModelRouteCapability(
-                routeId="glm-5-2",
-                label="GLM-5.2",
+                routeId="glm-5-3-flash",
+                label="GLM-5.3-Flash",
                 provider="glm",
-                models=("shdata-glm",),
-                capabilities=("streaming", "tool_use"),
-                credentialReference="GLM_5_2_API_KEY",
+                models=("glm-5.3-flash",),
+                modelType="vision",
+                capabilities=("streaming", "tool_use", "vision"),
             ),
         ),
         builtinTools=(
+            BuiltinToolCapability(
+                name="WebSearch", label="搜索公开网页",
+                description="平台内置搜索，无需配置 MCP；仅发送公开关键词，结果带来源。",
+                risk=CapabilityRisk.LOW, executionLocation="platform",
+                approvalBehavior="公开关键词自动检索，疑似敏感信息拒绝外发",
+            ),
+            BuiltinToolCapability(
+                name="WebFetch", label="读取公开网页",
+                description="直接读取公开网页正文，拦截内网地址，限制跳转和内容大小。",
+                risk=CapabilityRisk.LOW, executionLocation="platform",
+                approvalBehavior="公开网页自动读取，不携带登录信息",
+            ),
             BuiltinToolCapability(
                 name="Read",
                 label="读取文件",

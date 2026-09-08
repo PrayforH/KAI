@@ -16,6 +16,14 @@ class MemoryStatus(StrEnum):
     REJECTED = "rejected"
     DELETED = "deleted"
     EXPIRED = "expired"
+    SUPERSEDED = "superseded"
+
+
+class MemoryType(StrEnum):
+    PREFERENCE = "preference"
+    FACT = "fact"
+    ENTITY = "entity"
+    DECISION = "decision"
 
 
 class MemorySensitivity(StrEnum):
@@ -42,6 +50,9 @@ class MemorySource(MemoryModel):
     run_id: str | None = Field(default=None, alias="runId")
     session_id: str | None = Field(default=None, alias="sessionId")
     captured_at: datetime = Field(alias="capturedAt")
+    evidence: str = Field(default="", max_length=1000)
+    extraction_job_id: str | None = Field(default=None, alias="extractionJobId")
+    extraction_version: int | None = Field(default=None, alias="extractionVersion")
 
 
 class MemoryConsent(MemoryModel):
@@ -88,6 +99,16 @@ class MemoryEntry(MemoryModel):
     updated_at: datetime = Field(alias="updatedAt")
     expires_at: datetime | None = Field(default=None, alias="expiresAt")
     deleted_at: datetime | None = Field(default=None, alias="deletedAt")
+    agent_owner_user_id: str | None = Field(default=None, alias="agentOwnerUserId")
+    memory_type: MemoryType = Field(default=MemoryType.FACT, alias="memoryType")
+    topic: str = Field(default="", max_length=120)
+    conditions: str = Field(default="", max_length=500)
+    supersedes: str | None = None
+    supersedes_version: int | None = Field(default=None, alias="supersedesVersion")
+
+    @property
+    def owner_id(self) -> str:
+        return self.agent_owner_user_id or self.user_id
 
 
 class MemorySearchHit(MemoryModel):
@@ -98,12 +119,16 @@ class MemorySearchHit(MemoryModel):
 
 class ProposeMemoryRequest(MemoryModel):
     agent_name: str = Field(alias="agentName", min_length=1, max_length=128)
+    agent_owner_user_id: str | None = Field(default=None, alias="agentOwnerUserId", max_length=128)
     content: str = Field(min_length=1, max_length=4000)
     confidence: float = Field(default=0.7, ge=0, le=1)
     source_kind: MemorySourceKind = Field(default=MemorySourceKind.USER, alias="sourceKind")
     source_label: str = Field(default="用户提交", alias="sourceLabel", max_length=200)
     run_id: str | None = Field(default=None, alias="runId", max_length=128)
     session_id: str | None = Field(default=None, alias="sessionId", max_length=128)
+    memory_type: MemoryType = Field(default=MemoryType.FACT, alias="memoryType")
+    topic: str = Field(default="", max_length=120)
+    conditions: str = Field(default="", max_length=500)
 
 
 class MemoryVersionRequest(MemoryModel):
@@ -119,6 +144,7 @@ class SearchMemoryRequest(MemoryModel):
     agent_name: str = Field(alias="agentName", min_length=1, max_length=128)
     query: str = Field(min_length=1, max_length=500)
     limit: int = Field(default=8, ge=1, le=50)
+    agent_owner_user_id: str | None = Field(default=None, alias="agentOwnerUserId")
 
 
 class ReplaceConsentRequest(MemoryModel):

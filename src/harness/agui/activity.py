@@ -253,6 +253,9 @@ def _activity_item(event: RunEvent) -> dict[str, Any] | None:
         elif subtype == "error_max_turns":
             title = "达到最大执行回合数"
             summary = "Agent 多次调用工具后仍未完成任务，请查看处理过程中的失败动作。"
+        elif subtype == "error_max_budget_usd":
+            title = "达到运行费用上限"
+            summary = "此历史运行触发了费用额度上限；平台现已取消费用和 Token 执行限制。"
         elif (
             error_type == "ToolResolutionError"
             and raw_message is not None
@@ -344,15 +347,27 @@ def _activity_item(event: RunEvent) -> dict[str, Any] | None:
         )
     if event.type == "message.delta":
         text = safe_model_text(str(payload.get("text", "")))
-        if not text.strip():
+        if not text:
             return None
         return _item(
             event,
             kind="analysis",
             status="succeeded",
             title="进展说明",
-            summary=redact_text(text, limit=2_000),
+            summary=redact_text(text, limit=max(1, len(text))),
             metadata=_metadata(message_id=payload.get("message_id")),
+        )
+    if event.type == "reasoning.summary.delta":
+        text = safe_model_text(str(payload.get("text", "")))
+        if not text:
+            return None
+        return _item(
+            event,
+            kind="analysis",
+            status="succeeded",
+            title="思考摘要",
+            summary=redact_text(text, limit=max(1, len(text))),
+            metadata=_metadata(item_id=payload.get("item_id")),
         )
     if event.type == "message.start":
         return _item(
@@ -475,6 +490,8 @@ def _activity_item(event: RunEvent) -> dict[str, Any] | None:
                 if isinstance(turns, int)
                 else "已达到最大模型回合数，任务尚未完成"
             )
+        if failed and subtype == "error_max_budget_usd":
+            summary = "此历史运行触发了费用额度上限；平台现已取消费用和 Token 执行限制。"
         return _item(
             event,
             kind="result",
@@ -482,6 +499,8 @@ def _activity_item(event: RunEvent) -> dict[str, Any] | None:
             title=(
                 "达到最大模型回合数"
                 if failed and subtype == "error_max_turns"
+                else "达到运行费用上限"
+                if failed and subtype == "error_max_budget_usd"
                 else "模型执行失败"
                 if failed
                 else "模型执行完成"

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -15,6 +16,7 @@ from harness.auth.audit import AuditService
 from harness.core.errors import ConflictError, NotFoundError
 from harness.core.models import AgentVersion, AgentVersionStatus
 from harness.core.ports import AgentIdentityProvider, AgentRegistry
+from harness.evals.suite import EvalCase
 from harness.knowledge.service import KnowledgeService
 from harness.sharing.models import (
     AgentPermission,
@@ -30,6 +32,15 @@ from harness.studio.agent_builder import (
     summarize_agent_display_name,
     summarize_agent_name,
 )
+from harness.studio.builder_conversation import (
+    BUILDER_AUTO_SYSTEM_PROMPT,
+    BUILDER_SYSTEM_PROMPT,
+    BuilderApplyRequest,
+    BuilderConversationReply,
+    BuilderConversationRequest,
+    apply_builder_changes,
+    parse_builder_reply,
+)
 from harness.studio.bundle_import import AgentBundleImportError, parse_agent_bundle
 from harness.studio.catalog_service import CapabilityCatalogService
 from harness.studio.compiler import (
@@ -38,13 +49,17 @@ from harness.studio.compiler import (
     DraftCompilationError,
 )
 from harness.studio.factory import create_draft_spec
+from harness.studio.model_configuration import ModelConfigurationService
 from harness.studio.models import (
     AgentDraft,
+    AgentDraftPlacementRequest,
     AgentDraftSpec,
     AgentDraftSummary,
     AgentTemplate,
     CapabilityCatalog,
     CreateAgentDraftRequest,
+    CreatedInternalSubagent,
+    CreateInternalSubagentRequest,
     DraftSkill,
     DraftSkillFile,
     DraftSubagent,
@@ -56,6 +71,7 @@ from harness.studio.models import (
     ValidationSeverity,
 )
 from harness.studio.nexau_export import NexauAgentArchive, export_nexau_agent
+from harness.studio.platform_skills import draft_skill_content_hash
 from harness.studio.repositories import AgentDraftRepository
 
 _EDITOR_SKILL_FILE_LIMIT = 200
@@ -177,13 +193,23 @@ def _merge_editor_skill(current: DraftSkill | None, incoming: DraftSkill) -> Dra
         merged = [incoming_files.get(file.path, file) for file in current.files]
     else:
         merged = [incoming_files[file.path] for file in incoming.files]
-    return incoming.model_copy(
+    merged_skill = incoming.model_copy(
         update={
             "files": tuple(merged),
             "file_count": None,
             "files_truncated": False,
         }
     )
+    if (
+        merged_skill.source is not None
+        and draft_skill_content_hash(merged_skill) != merged_skill.source.content_hash
+    ):
+        # Preserve where the Skill came from, but stop presenting tenant edits
+        # as the exact reviewed platform snapshot.
+        return merged_skill.model_copy(
+            update={"source": merged_skill.source.model_copy(update={"modified": True})}
+        )
+    return merged_skill
 
 
 class SharedDraftPermissionChecker(Protocol):
@@ -296,8 +322,7 @@ class AgentStudioService:
         base_name: str,
     ) -> str:
         existing = {
-            draft.spec.name
-            for draft in await self._repository.list_for_user(tenant_id, user_id)
+            draft.spec.name for draft in await self._repository.list_for_user(tenant_id, user_id)
         }
         if base_name not in existing:
             return base_name
@@ -379,6 +404,141 @@ class AgentStudioService:
         await self._repository.add(draft)
         return TaskDrivenDraftResult(draft=draft, recommendation=recommendation)
 
+    async def create_internal_subagent(
+        self,
+        tenant_id: str,
+        user_id: str,
+        parent_id: str,
+        request: CreateInternalSubagentRequest,
+    ) -> CreatedInternalSubagent:
+        parent = await self.get(tenant_id, user_id, parent_id)
+        await self._require_shared_permission(tenant_id, user_id, parent, AgentPermission.EDIT)
+        if parent.space_id is not None:
+            raise ConflictError("请在个人智能体中创建内部子智能体；协作空间可引用已有智能体")
+        if parent.parent_draft_id:
+            raise ConflictError("子智能体不能继续创建子智能体")
+        if parent.revision != request.expected_revision:
+            raise ConflictError("父智能体已更新，请刷新后重试")
+        if len(parent.spec.subagents) >= parent.spec.limits.max_subagents:
+            raise ConflictError("已达到当前智能体的协作角色数量上限")
+        drafts = await self._repository.list_for_user(tenant_id, user_id)
+        if any(
+            binding.ref.rsplit("@", 1)[0] == parent.spec.name
+            for item in drafts
+            for binding in item.spec.subagents
+        ):
+            raise ConflictError("当前智能体已被用作子智能体，不支持嵌套委派")
+        now = self._clock()
+        child_id = self._id_generator()
+        alias = f"specialist-{uuid4().hex[:8]}"
+        name = await self._available_generated_name(
+            tenant_id,
+            user_id,
+            f"{parent.spec.name[:40]}-{alias}",
+        )
+        child = AgentDraft(
+            draftId=child_id,
+            tenantId=tenant_id,
+            revision=1,
+            parentDraftId=parent_id,
+            spec=create_draft_spec(
+                name=name,
+                domain=parent.spec.domain,
+                display_name=request.display_name.strip(),
+                description=request.responsibility.strip(),
+                template=AgentTemplate.ANALYST,
+            ),
+            createdBy=user_id,
+            updatedBy=user_id,
+            createdAt=now,
+            updatedAt=now,
+            agentId=await self._resolve_agent_id(tenant_id, user_id, name),
+        )
+        child, _ = configure_task_driven_draft(
+            child,
+            CreateTaskDrivenDraftRequest(
+                task=request.responsibility,
+                runtimePreference=parent.spec.runtime,
+            ),
+            await self.capabilities(tenant_id, user_id),
+            await self._compiler_for(tenant_id, user_id),
+        )
+        child = child.model_copy(
+            update={
+                "spec": child.spec.model_copy(
+                    update={
+                        "runtime": parent.spec.runtime,
+                        "model": parent.spec.model,
+                    }
+                )
+            }
+        )
+        parent_spec = _auto_version_modified_release(
+            parent,
+            parent.spec.model_copy(
+                update={
+                    "subagents": (
+                        *parent.spec.subagents,
+                        DraftSubagent(
+                            alias=alias,
+                            ref=f"{name}@{child.spec.version}",
+                            responsibility=request.responsibility.strip(),
+                            background=True,
+                        ),
+                    ),
+                    "builtin_tools": tuple(dict.fromkeys((*parent.spec.builtin_tools, "Task"))),
+                    "permission_policy": "production-orchestrator"
+                    if parent.spec.permission_policy == "production-read-only"
+                    else parent.spec.permission_policy,
+                }
+            ),
+        )
+        updated = parent.model_copy(
+            update={
+                "spec": parent_spec,
+                "revision": parent.revision + 1,
+                "updated_by": user_id,
+                "updated_at": now,
+            }
+        )
+        await self._repository.add_child(parent.revision, updated, child)
+        return CreatedInternalSubagent(parent=updated, child=child)
+
+    async def set_placement(
+        self,
+        tenant_id: str,
+        user_id: str,
+        draft_id: str,
+        request: AgentDraftPlacementRequest,
+    ) -> AgentDraft:
+        draft = await self.get(tenant_id, user_id, draft_id)
+        await self._require_shared_permission(tenant_id, user_id, draft, AgentPermission.EDIT)
+        if draft.space_id is not None:
+            raise ConflictError("协作空间智能体保留独立入口")
+        if request.parent_draft_id is not None:
+            parent = await self.get(tenant_id, user_id, request.parent_draft_id)
+            if parent.space_id or parent.parent_draft_id or parent.draft_id == draft_id:
+                raise ConflictError("请选择个人主智能体作为归属")
+            if draft.spec.subagents:
+                raise ConflictError("包含子智能体的智能体不能转为内部子智能体")
+            if not any(b.ref.rsplit("@", 1)[0] == draft.spec.name for b in parent.spec.subagents):
+                raise ConflictError("请先在父智能体中引用该智能体")
+            for other in await self._repository.list_for_user(tenant_id, user_id):
+                if other.draft_id != parent.draft_id and any(
+                    b.ref.rsplit("@", 1)[0] == draft.spec.name for b in other.spec.subagents
+                ):
+                    raise ConflictError("该智能体被多个主智能体引用，请保留独立入口")
+        updated = draft.model_copy(
+            update={
+                "parent_draft_id": request.parent_draft_id,
+                "revision": draft.revision + 1,
+                "updated_at": self._clock(),
+                "updated_by": user_id,
+            }
+        )
+        await self._repository.replace(request.expected_revision, updated)
+        return updated
+
     async def delete(
         self,
         *,
@@ -396,19 +556,23 @@ class AgentStudioService:
         if draft.space_id is not None:
             raise ConflictError("协作空间智能体不能从个人 Builder 删除")
 
+        if any(
+            item.parent_draft_id == draft_id
+            for item in await self._repository.list_for_user(tenant_id, user_id)
+        ):
+            raise ConflictError("请先将内部子智能体转为独立智能体或删除，再删除父智能体")
+
         dependents = sorted(
             item.spec.display_name
             for item in await self._repository.list_for_user(tenant_id, user_id)
             if item.draft_id != draft_id
             and any(
-                binding.ref.rsplit("@", 1)[0] == draft.spec.name
-                for binding in item.spec.subagents
+                binding.ref.rsplit("@", 1)[0] == draft.spec.name for binding in item.spec.subagents
             )
         )
         if dependents:
             raise ConflictError(
-                "智能体仍被其他草稿绑定为 Sub Agent，请先解除绑定："
-                + "、".join(dependents)
+                "智能体仍被其他草稿绑定为 Sub Agent，请先解除绑定：" + "、".join(dependents)
             )
 
         await self._repository.delete(
@@ -611,18 +775,48 @@ class AgentStudioService:
     ) -> AgentDraft:
         current = await self._load_draft(tenant_id, user_id, draft_id)
         await self._require_shared_permission(tenant_id, user_id, current, AgentPermission.EDIT)
+        if current.parent_draft_id and (
+            request.spec.subagents or request.spec.name != current.spec.name
+        ):
+            raise ConflictError("内部子智能体不能嵌套委派或修改标识；可以修改显示名称")
+        owned_drafts = await self._repository.list_for_user(tenant_id, user_id)
+        for binding in request.spec.subagents:
+            source = next(
+                (item for item in owned_drafts if item.spec.name == binding.ref.rsplit("@", 1)[0]),
+                None,
+            )
+            if source is not None and source.parent_draft_id not in {None, draft_id}:
+                raise ConflictError("该子智能体属于其他主智能体，请先转为独立智能体再引用")
         if current.space_id is not None and request.spec.name != current.spec.name:
             raise ConflictError(
                 "shared draft name cannot change; it is the workspace Agent identity"
             )
         current_skills = {skill.name: skill for skill in current.spec.skills}
+        incoming_skill_names = {skill.name for skill in request.spec.skills}
+        removed_platform_packages = {
+            skill.source.package_id
+            for skill in current.spec.skills
+            if skill.name not in incoming_skill_names and skill.source is not None
+        }
         merged_skills = tuple(
             _merge_editor_skill(current_skills.get(skill.name), skill)
             for skill in request.spec.skills
         )
+        evaluation_cases = tuple(
+            case
+            for case in request.spec.evaluation_cases
+            if not any(
+                f"skill:{package_id}" in case.tags for package_id in removed_platform_packages
+            )
+        )
         candidate_spec = _auto_version_modified_release(
             current,
-            request.spec.model_copy(update={"skills": merged_skills}),
+            request.spec.model_copy(
+                update={
+                    "skills": merged_skills,
+                    "evaluation_cases": evaluation_cases,
+                }
+            ),
         )
         updated = current.model_copy(
             update={
@@ -643,6 +837,7 @@ class AgentStudioService:
         draft_id: str,
         expected_revision: int,
         imported: ImportedSkill,
+        evaluation_cases: tuple[EvalCase, ...] = (),
     ) -> AgentDraft:
         current = await self._load_draft(tenant_id, user_id, draft_id)
         await self._require_shared_permission(tenant_id, user_id, current, AgentPermission.EDIT)
@@ -652,9 +847,17 @@ class AgentStudioService:
         )
         if all(skill.name != imported.skill.name for skill in current.spec.skills):
             skills = (*skills, imported.skill)
+        cases_by_id = {case.id: case for case in current.spec.evaluation_cases}
+        for case in evaluation_cases:
+            cases_by_id[case.id] = case
         candidate_spec = _auto_version_modified_release(
             current,
-            current.spec.model_copy(update={"skills": skills}),
+            current.spec.model_copy(
+                update={
+                    "skills": skills,
+                    "evaluation_cases": tuple(cases_by_id.values()),
+                }
+            ),
         )
         updated = current.model_copy(
             update={
@@ -699,6 +902,81 @@ class AgentStudioService:
         compiler = await self._compiler_for(tenant_id, owner_user_id)
         return build_agent_patch(draft, request, compiler)
 
+    async def converse_builder(
+        self, tenant_id: str, user_id: str, draft_id: str,
+        request: BuilderConversationRequest, models: ModelConfigurationService,
+    ) -> BuilderConversationReply:
+        current = await self.get(tenant_id, user_id, draft_id)
+        await self._require_shared_permission(tenant_id, user_id, current, AgentPermission.EDIT)
+        if current.revision != request.expected_revision:
+            raise ConflictError("草稿已更新，请基于最新配置重新生成建议")
+        # No credentials or script contents are passed to the authoring model.
+        context = current.spec.model_dump(mode="json", by_alias=True)
+        context["skills"] = [
+            {"name": skill.name, "instructions": skill.instructions}
+            for skill in current.spec.skills
+        ]
+        context.pop("pythonTools", None)
+        prompt = json.dumps({
+            "currentDraft": context,
+            "conversation": [item.model_dump() for item in request.messages],
+            "runContext": request.run_context,
+        }, ensure_ascii=False)
+        if len(prompt) > 180_000:
+            raise ConflictError("当前草稿内容过长，请先在主编辑区选择具体 Skill 修改")
+        reply = parse_builder_reply(await models.complete_text(
+            tenant_id, current.spec.model.route_id,
+            system_prompt=(
+                BUILDER_AUTO_SYSTEM_PROMPT if request.intent == "auto" else BUILDER_SYSTEM_PROMPT
+            ),
+            user_prompt=prompt, max_tokens=12_000,
+        ))
+        if request.intent == "auto" and "action" not in reply.model_fields_set:
+            raise ConflictError("模型未明确消息用途，请重试；未执行任何操作")
+        if request.intent == "edit" and reply.action not in {"edit", "ask", "reply"}:
+            raise ConflictError("修改模式不能发起试跑，请重新描述修改要求")
+        candidate = apply_builder_changes(current.spec, reply.changes)
+        await self._check_builder_candidate(tenant_id, user_id, current, candidate)
+        latest = await self.get(tenant_id, user_id, draft_id)
+        if latest.revision != current.revision:
+            raise ConflictError("生成期间草稿已更新，请基于最新配置重新生成建议")
+        before, after = current.spec.model_dump(by_alias=True), candidate.model_dump(by_alias=True)
+        return BuilderConversationReply(
+            reply=reply.reply, changes=reply.changes, action=reply.action, task=reply.task,
+            baseRevision=current.revision,
+            changedFields=tuple(
+                name for name in after if after[name] != before[name]
+            ),
+        )
+
+    async def apply_builder_edit(
+        self, tenant_id: str, user_id: str, draft_id: str, request: BuilderApplyRequest,
+    ) -> AgentDraft:
+        current = await self.get(tenant_id, user_id, draft_id)
+        await self._require_shared_permission(tenant_id, user_id, current, AgentPermission.EDIT)
+        if current.revision != request.expected_revision:
+            raise ConflictError("草稿已更新，本次建议未应用；请重新生成以免覆盖其他修改")
+        candidate = apply_builder_changes(current.spec, request.changes)
+        if candidate == current.spec:
+            return current
+        await self._check_builder_candidate(tenant_id, user_id, current, candidate)
+        return await self.replace(
+            tenant_id=tenant_id, user_id=user_id, draft_id=draft_id,
+            request=ReplaceAgentDraftRequest(expectedRevision=current.revision, spec=candidate),
+        )
+
+    async def _check_builder_candidate(
+        self, tenant_id: str, user_id: str, current: AgentDraft, spec: AgentDraftSpec,
+    ) -> None:
+        compiler = await self._compiler_for(tenant_id, user_id)
+        previous = {(item.code, item.path) for item in compiler.validate(current).issues}
+        validation = compiler.validate(current.model_copy(update={"spec": spec}))
+        errors = [item.message for item in validation.issues
+                  if item.severity == ValidationSeverity.ERROR
+                  and (item.code, item.path) not in previous]
+        if errors:
+            raise ConflictError("修改未通过配置检查：" + "；".join(errors[:3]))
+
     async def bundle(self, tenant_id: str, owner_user_id: str, draft_id: str) -> CompiledAgentDraft:
         compiler = await self._compiler_for(tenant_id, owner_user_id)
         return compiler.compile(await self.get(tenant_id, owner_user_id, draft_id))
@@ -719,9 +997,7 @@ class AgentStudioService:
             published = None
             if self._registry is not None:
                 try:
-                    candidate = await self._registry.get(
-                        tenant_id, owner_user_id, name, version
-                    )
+                    candidate = await self._registry.get(tenant_id, owner_user_id, name, version)
                     if candidate.status is AgentVersionStatus.PUBLISHED:
                         published = candidate
                 except NotFoundError:
@@ -775,9 +1051,7 @@ class AgentStudioService:
                 )
                 dependency_by_draft[source.draft_id] = node
                 dependencies.append(node)
-            rewritten.append(
-                binding.model_copy(update={"ref": f"{name}@{node.preview_version}"})
-            )
+            rewritten.append(binding.model_copy(update={"ref": f"{name}@{node.preview_version}"}))
         preview_spec = root.spec.model_copy(update={"subagents": tuple(rewritten)})
         preview_root = root.model_copy(update={"spec": preview_spec})
         return CompiledPreviewGraph(

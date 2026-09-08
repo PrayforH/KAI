@@ -181,8 +181,6 @@ def check_agent_package(
     domain = metadata.labels.get("domain", "").strip()
     if not domain or domain == "replace-me":
         issues.append("metadata.labels.domain must identify the business domain")
-    if not snapshot.skill_snapshots:
-        issues.append("at least one Skill is required")
     if not {"streaming", "tool_use"}.issubset(spec.model.required_capabilities):
         issues.append("model must require streaming and tool_use capabilities")
     if (

@@ -21,6 +21,7 @@ from harness.studio.models import (
     AgentTemplate,
     CapabilityRisk,
     DraftPythonTool,
+    DraftSkill,
     DraftSkillFile,
     DraftSubagent,
     McpCapability,
@@ -29,6 +30,7 @@ from harness.studio.models import (
     ValidationSeverity,
 )
 from harness.studio.nexau_export import export_nexau_agent
+from harness.studio.platform_skills import platform_skill_package
 
 NOW = datetime(2026, 7, 16, tzinfo=UTC)
 
@@ -69,7 +71,6 @@ def test_default_draft_compiles_to_existing_reproducible_bundle_contract() -> No
             "bundle.json",
             "studio.json",
             "prompts/system.md",
-            "skills/invoice-reviewer-core/SKILL.md",
             "evals/suite.yaml",
             "tool-directory.json",
         }.issubset(names)
@@ -84,6 +85,32 @@ def test_default_draft_compiles_to_existing_reproducible_bundle_contract() -> No
     assert studio_metadata.description == draft().spec.description
     assert studio_metadata.execution_profile == draft().spec.execution_profile
     assert {entry.name for entry in directory.entries} == set(draft().spec.builtin_tools)
+
+
+def test_platform_skill_provenance_round_trips_through_the_immutable_bundle() -> None:
+    compiler = AgentDraftCompiler(default_capability_catalog())
+    source = draft()
+    package = platform_skill_package("evidence-reporting", 1)
+    source = source.model_copy(
+        update={
+            "spec": source.spec.model_copy(
+                update={
+                    "skills": (package.skill,),
+                    "evaluation_cases": (
+                        *source.spec.evaluation_cases,
+                        *package.evaluation_cases,
+                    ),
+                }
+            )
+        }
+    )
+
+    imported = parse_agent_bundle(compiler.compile(source).bundle)
+
+    assert imported.spec.skills[0].source == package.skill.source
+    assert imported.spec.skills[0].source is not None
+    assert imported.spec.skills[0].source.modified is False
+    assert any("skill:evidence-reporting" in case.tags for case in imported.spec.evaluation_cases)
 
 
 def test_codex_runtime_compiles_and_round_trips_with_a_responses_route() -> None:
@@ -209,15 +236,16 @@ def test_binary_skill_asset_survives_compile_and_studio_round_trip() -> None:
     compiler = AgentDraftCompiler(default_capability_catalog())
     source = draft()
     payload = b"\x89PNG\r\n\x1a\n\x00\xff"
-    skill = source.spec.skills[0].model_copy(
-        update={
-            "files": (
-                DraftSkillFile(
-                    path="assets/template.png",
-                    contentBase64=base64.b64encode(payload).decode("ascii"),
-                ),
-            )
-        }
+    skill = DraftSkill(
+        name="invoice-reviewer-core",
+        description="Review invoice evidence.",
+        instructions="Verify the invoice before reporting a result.",
+        files=(
+            DraftSkillFile(
+                path="assets/template.png",
+                contentBase64=base64.b64encode(payload).decode("ascii"),
+            ),
+        ),
     )
     source = source.model_copy(update={"spec": source.spec.model_copy(update={"skills": (skill,)})})
 
@@ -234,15 +262,16 @@ def test_binary_skill_asset_survives_compile_and_studio_round_trip() -> None:
 def test_nexau_export_is_deterministic_and_round_trips_editable_assets() -> None:
     source = draft()
     payload = b"\x89PNG\r\n\x1a\n\x00\xff"
-    skill = source.spec.skills[0].model_copy(
-        update={
-            "files": (
-                DraftSkillFile(
-                    path="assets/template.png",
-                    contentBase64=base64.b64encode(payload).decode("ascii"),
-                ),
-            )
-        }
+    skill = DraftSkill(
+        name="invoice-reviewer-core",
+        description="Review invoice evidence.",
+        instructions="Verify the invoice before reporting a result.",
+        files=(
+            DraftSkillFile(
+                path="assets/template.png",
+                contentBase64=base64.b64encode(payload).decode("ascii"),
+            ),
+        ),
     )
     python_tool = DraftPythonTool(
         name="normalize_score",
@@ -390,9 +419,7 @@ def test_studio_bundle_round_trips_into_an_editable_spec() -> None:
     assert imported.spec.description == source.spec.description
     assert imported.spec.execution_profile == source.spec.execution_profile
     assert imported.spec.system_prompt == source.spec.system_prompt
-    assert (
-        imported.spec.skills[0].instructions.strip() == source.spec.skills[0].instructions.strip()
-    )
+    assert imported.spec.skills == source.spec.skills
     assert rebuilt_bundle.report.package_hash == compiled.report.package_hash
 
 
@@ -1029,3 +1056,29 @@ def test_execution_profile_reports_network_and_egress_mismatches_together() -> N
     assert issues["execution_profile_network_incompatible"].related_references == (
         "tavily-readonly",
     )
+
+
+def test_all_new_and_imported_templates_have_no_operational_limits() -> None:
+    from harness.studio.models import DraftLimits
+
+    compiler = AgentDraftCompiler(default_capability_catalog())
+    for template in AgentTemplate:
+        source = draft(template)
+        legacy_limits = DraftLimits.model_validate({
+            "maxBudgetUsd": 4, "maxModelTokens": 400_000,
+            "maxSubagentUsageUnits": 300_000, "timeoutSeconds": 300,
+        })
+        assert legacy_limits.max_budget_usd is None
+        assert legacy_limits.max_model_tokens is None
+        assert legacy_limits.max_subagent_usage_units is None
+        source = source.model_copy(
+            update={"spec": source.spec.model_copy(update={"limits": legacy_limits})}
+        )
+        compiled = compiler.compile(source)
+        limits = yaml.safe_load(compiled.manifest_yaml)["spec"]["limits"]
+        assert "maxBudgetUsd" not in limits
+        assert "maxModelTokens" not in limits
+        assert "maxSubagentUsageUnits" not in limits
+        assert limits["timeoutSeconds"] == 300
+        imported = parse_agent_bundle(compiled.bundle)
+        assert imported.spec.limits.max_budget_usd is None

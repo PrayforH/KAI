@@ -795,3 +795,42 @@ async def test_agui_run_accepts_assistant_ui_image_transport_envelope() -> None:
 
     assert run.input["input_artifact_ids"] == [input_artifact_id]
     assert run.input["required_model_capabilities"] == ["vision"]
+
+
+@pytest.mark.asyncio
+async def test_history_keeps_messages_and_valid_files_when_old_attachment_is_missing() -> None:
+    from harness.adapters.memory import InMemoryInputArtifactRepository
+
+    app = create_memory_app(auto_execute=True)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS)
+        attachments = []
+        ids = []
+        for filename in ("missing.txt", "valid.txt"):
+            upload = await client.post("/v1/input-artifacts",
+                files={"file": (filename, b"historical attachment", "text/plain")}, headers=HEADERS)
+            assert upload.status_code == 201
+            input_id = upload.json()["input_artifact_id"]
+            ids.append(input_id)
+            attachments.append({"type": "document", "source": {
+                "type": "data", "value": input_id, "mimeType": "text/plain"},
+                "metadata": {"filename": filename}})
+        request = _request(thread_id="old-files", run_id="old-run", prompt="保留历史对话")
+        request["messages"] = [{"id": "m", "role": "user", "content": [
+            {"type": "text", "text": "保留历史对话"}, *attachments]}]
+        result = await client.post("/v1/agui?agent_name=echo-agent&agent_version=0.1.0",
+            json=request, headers=HEADERS)
+        assert result.status_code == 200
+        repository = app.state.container.input_artifacts._repository
+        assert isinstance(repository, InMemoryInputArtifactRepository)
+        repository._items.pop(("tenant-a", ids[0]))
+        history = await client.get("/v1/agui/threads/old-files/history", headers=HEADERS)
+        assert history.status_code == 200
+        messages = history.json()["messages"]
+        assert len(messages) >= 2
+        assert "保留历史对话" in messages[0]["content"][0]["text"]
+        assert "部分历史附件已不可用" in messages[0]["content"][0]["text"]
+        assert messages[0]["content"][1]["source"]["value"] == ids[1]
+        denied = await client.get("/v1/agui/threads/old-files/history",
+            headers={**HEADERS, "X-User-ID": "someone-else"})
+        assert denied.status_code == 404

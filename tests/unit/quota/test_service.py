@@ -170,12 +170,12 @@ async def test_budget_alert_is_deterministic_for_scope_resource_window_threshold
     await policy(
         quotas,
         policy_id="tenant-default",
-        limits={QuotaResource.MODEL_TOKENS: 100},
-        alert_thresholds={QuotaResource.MODEL_TOKENS: 75},
+        limits={QuotaResource.ARTIFACT_BYTES: 100},
+        alert_thresholds={QuotaResource.ARTIFACT_BYTES: 75},
     )
     reservation = await quotas.reserve(
         tenant_id="tenant-a",
-        resource=QuotaResource.MODEL_TOKENS,
+        resource=QuotaResource.ARTIFACT_BYTES,
         amount=80,
         subject_id="run-alert",
         idempotency_key="run-alert",
@@ -208,11 +208,11 @@ async def test_usage_is_aggregated_for_tenant_agent_environment_and_combined_sco
             quotas,
             policy_id=policy_id,
             scope=scope,
-            limits={QuotaResource.MODEL_TOKENS: limit},
+            limits={QuotaResource.ARTIFACT_BYTES: limit},
         )
     reservation = await quotas.reserve(
         tenant_id="tenant-a",
-        resource=QuotaResource.MODEL_TOKENS,
+        resource=QuotaResource.ARTIFACT_BYTES,
         amount=100,
         subject_id="run-aggregate",
         idempotency_key="run-aggregate:tokens",
@@ -241,14 +241,14 @@ async def test_reserve_commit_release_are_idempotent_and_partial_commit_is_exact
     quotas, repository, _ = service()
     reservation = await quotas.reserve(
         tenant_id="tenant-a",
-        resource=QuotaResource.MODEL_COST_MICRO_USD,
+        resource=QuotaResource.ARTIFACT_BYTES,
         amount=2_000_000,
         subject_id="run-1",
         idempotency_key="run-1-cost",
     )
     repeated = await quotas.reserve(
         tenant_id="tenant-a",
-        resource=QuotaResource.MODEL_COST_MICRO_USD,
+        resource=QuotaResource.ARTIFACT_BYTES,
         amount=2_000_000,
         subject_id="run-1",
         idempotency_key="run-1-cost",
@@ -288,8 +288,6 @@ async def test_worker_admission_recovers_all_run_reservations_idempotently() -> 
 
     assert {item.resource for item in first} == {
         QuotaResource.CONCURRENT_RUNS,
-        QuotaResource.MODEL_COST_MICRO_USD,
-        QuotaResource.MODEL_TOKENS,
     }
     assert [item.reservation_id for item in repeated] == [
         item.reservation_id for item in first
@@ -301,7 +299,7 @@ async def test_actual_usage_over_reservation_is_recorded_instead_of_lost() -> No
     quotas, repository, _ = service()
     reservation = await quotas.reserve(
         tenant_id="tenant-a",
-        resource=QuotaResource.MODEL_TOKENS,
+        resource=QuotaResource.ARTIFACT_BYTES,
         amount=10,
         subject_id="run-overage",
         idempotency_key="run-overage:tokens",
@@ -400,3 +398,21 @@ async def test_policy_replace_requires_matching_revision() -> None:
     effective = (await quotas.list_policies("tenant-a"))[0]
     assert effective.limits[QuotaResource.CONCURRENT_RUNS] == 2
     assert effective.limits[QuotaResource.ARTIFACT_BYTES] > 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "resource", [QuotaResource.MODEL_TOKENS, QuotaResource.MODEL_COST_MICRO_USD]
+)
+async def test_legacy_model_limits_never_block_any_agent(resource: QuotaResource) -> None:
+    quotas, repository, _ = service()
+    for scope_id, scope in [("tenant", QuotaScope()), ("agent", QuotaScope(agentName="research"))]:
+        await policy(quotas, policy_id=scope_id, scope=scope, limits={resource: 1})
+    for agent in ("research", "other-agent"):
+        reservation = await quotas.consume(
+            tenant_id="tenant-a", resource=resource, amount=1_000_000_000,
+            subject_id=agent, idempotency_key=agent, agent_name=agent,
+        )
+        assert reservation.constraints == ()
+    ledger = await repository.list_ledger("tenant-a")
+    assert sum(entry.amount or 0 for entry in ledger) == 2_000_000_000

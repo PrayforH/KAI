@@ -1,9 +1,12 @@
 """Versioned, user-scoped memory application service."""
 
+import hashlib
+
 from harness.application.types import Clock
-from harness.core.errors import ConflictError
+from harness.core.errors import ConflictError, NotFoundError
 from harness.core.models import ExecutionIdentity, UserMemory
 from harness.core.ports import UserMemoryRepository
+from harness.memory_bank.models import MemorySourceKind
 from harness.memory_bank.service import MemoryBankService
 
 
@@ -30,21 +33,43 @@ class UserMemoryService:
         self._memory_bank = memory_bank
 
     async def get(self, identity: ExecutionIdentity) -> UserMemory | None:
-        return await self._repository.get(
-            identity.tenant_id, identity.user_id, identity.agent_name
-        )
+        return await self._repository.get(identity.tenant_id, identity.user_id, identity.agent_name)
 
-    async def projection(self, identity: ExecutionIdentity) -> str:
+    async def projection(self, identity: ExecutionIdentity, query: str = "") -> str:
         memory = await self.get(identity)
-        legacy = "" if memory is None else memory.content
-        managed = (
-            await self._memory_bank.projection(identity)
-            if self._memory_bank is not None
-            else ""
-        )
-        return "\n\n".join(value for value in (legacy, managed) if value)[
-            : self._projection_limit
-        ]
+        if self._memory_bank is not None:
+            # Old whole-text memory becomes explicit import proposals once. Stable
+            # IDs also prevent a rejected/deleted import being resurrected next run.
+            if memory is not None and identity.resolved_agent_owner_user_id == identity.user_id:
+                for offset in range(0, len(memory.content), 4000):
+                    key = hashlib.sha256(
+                        f"{identity.tenant_id}\0{identity.user_id}\0{identity.agent_name}\0{memory.version}\0{offset}".encode()
+                    ).hexdigest()
+                    entry_id = f"legacy_{key}"
+                    try:
+                        await self._memory_bank.repository.get_entry(
+                            identity.tenant_id, identity.user_id, entry_id
+                        )
+                    except NotFoundError:
+                        try:
+                            await self._memory_bank.propose(
+                                tenant_id=identity.tenant_id,
+                                user_id=identity.user_id,
+                                agent_name=identity.agent_name,
+                                content=memory.content[offset : offset + 4000],
+                                source_kind=MemorySourceKind.IMPORT,
+                                source_label="旧版记忆迁移（请确认）",
+                                confidence=0.7,
+                                entry_id=entry_id,
+                            )
+                        except ConflictError:
+                            pass
+            return await self._memory_bank.projection(
+                identity,
+                query=query,
+                char_budget=self._projection_limit,
+            )
+        return ("" if memory is None else memory.content)[: self._projection_limit]
 
     async def update(
         self,

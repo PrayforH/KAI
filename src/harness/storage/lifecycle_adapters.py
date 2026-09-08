@@ -10,7 +10,7 @@ from typing import cast
 
 import httpx
 from pydantic import SecretStr
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 
 from harness.core.models import Run, Session
 from harness.core.ports import ArtifactStore
@@ -34,6 +34,7 @@ from harness.storage.models import (
     InputArtifactRow,
     MemoryConsentRow,
     MemoryEntryRow,
+    MemoryExtractionJobRow,
     MemoryRetentionRow,
     QualityIncidentRow,
     QualityRuleRow,
@@ -336,6 +337,16 @@ class MemoryLifecycleAdapter:
                         UserMemoryRow.agent_name == agent_name,
                     )
                 )
+            job_filter = [MemoryExtractionJobRow.tenant_id == job.tenant_id]
+            if job.scope.kind is LifecycleScopeKind.USER:
+                job_filter.append(MemoryExtractionJobRow.user_id == job.scope.subject_id)
+            elif job.scope.kind is LifecycleScopeKind.AGENT:
+                job_filter.append(MemoryExtractionJobRow.agent_name == job.scope.subject_id)
+            elif job.scope.kind is LifecycleScopeKind.SESSION:
+                job_filter.append(MemoryExtractionJobRow.session_id == job.scope.subject_id)
+            # Keep cancelled tombstones so reconciliation cannot re-extract old runs.
+            await db.execute(update(MemoryExtractionJobRow).where(*job_filter).values(
+                status="cancelled", error_code="source_removed"))
             for row in managed:
                 await db.delete(row)
             for row in (*consents, *retentions):

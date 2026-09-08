@@ -121,6 +121,11 @@ class AguiRunService:
             return run.session_id, run.idempotency_key
         return binding.thread_id, run.idempotency_key
 
+    async def get_thread_record(
+        self, *, tenant_id: str, user_id: str, thread_id: str
+    ) -> StoredAguiThreadBinding:
+        return await self._bindings.get_by_thread(tenant_id, user_id, thread_id)
+
     async def list_bindings(
         self,
         *,
@@ -131,6 +136,13 @@ class AguiRunService:
     ) -> list[StoredAguiThreadBinding]:
         return await self._bindings.list_for_user(
             tenant_id, user_id, limit=limit, archived=archived
+        )
+
+    async def mark_read(
+        self, *, tenant_id: str, user_id: str, thread_id: str, read_at: datetime
+    ) -> StoredAguiThreadBinding:
+        return await self._bindings.mark_read(
+            tenant_id, user_id, thread_id, read_at=read_at
         )
 
     async def set_archived(

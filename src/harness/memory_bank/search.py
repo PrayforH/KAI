@@ -30,9 +30,7 @@ class KeywordMemorySearchAdapter:
                 continue
             lexical = len(matched) / len(query_terms)
             score = min(1.0, lexical * 0.8 + entry.confidence * 0.2)
-            hits.append(
-                MemorySearchHit(entry=entry, score=score, matchedTerms=matched)
-            )
+            hits.append(MemorySearchHit(entry=entry, score=score, matchedTerms=matched))
         return tuple(
             sorted(
                 hits,

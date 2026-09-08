@@ -40,6 +40,38 @@ def _load_draft(row: AgentDraftRow) -> AgentDraft:
     return draft
 
 
+def _summary_fields(payload: dict[str, Any]) -> dict[str, Any]:
+    """Extract card-sized facts from both current and historical draft payloads."""
+
+    spec = payload.get("spec")
+    spec = cast(dict[str, Any], spec) if isinstance(spec, dict) else {}
+    task_contract = spec.get("taskContract")
+    task_contract = cast(dict[str, Any], task_contract) if isinstance(task_contract, dict) else {}
+
+    outputs = task_contract.get("outputs")
+    outputs = cast(list[Any], outputs) if isinstance(outputs, list) else []
+    constraints = task_contract.get("constraints")
+    constraints = cast(list[Any], constraints) if isinstance(constraints, list) else []
+    skills = spec.get("skills")
+    skills = cast(list[Any], skills) if isinstance(skills, list) else []
+    builtin_tools = spec.get("builtinTools")
+    builtin_tools = cast(list[Any], builtin_tools) if isinstance(builtin_tools, list) else []
+    python_tools = spec.get("pythonTools")
+    python_tools = cast(list[Any], python_tools) if isinstance(python_tools, list) else []
+    mcp_servers = spec.get("mcpServers")
+    mcp_servers = cast(list[Any], mcp_servers) if isinstance(mcp_servers, list) else []
+
+    return {
+        "parentDraftId": payload.get("parentDraftId"),
+        "goal": task_contract.get("goal") or spec.get("description") or "完成已配置任务",
+        "primaryOutput": outputs[0] if outputs else "按 System Prompt 生成可核验结果",
+        "primaryConstraint": constraints[0] if constraints else None,
+        "skillCount": len(skills),
+        "toolCount": len(builtin_tools) + len(python_tools) + len(mcp_servers),
+        "networkToolsEnabled": bool({"WebSearch", "WebFetch"}.intersection(builtin_tools)),
+    }
+
+
 class PostgresAgentDraftRepository:
     """Durable Draft storage with owner isolation and atomic revision CAS."""
 
@@ -75,6 +107,48 @@ class PostgresAgentDraftRepository:
                 raise NotFoundError(f"Agent draft not found: {draft_id}")
             return _load_draft(row)
 
+    async def add_child(
+        self, expected_revision: int, parent: AgentDraft, child: AgentDraft
+    ) -> None:
+        if parent.revision != expected_revision + 1:
+            raise ConflictError("Agent draft replacement must increment revision once")
+        async with self._sessions() as session:
+            result = await session.execute(
+                update(AgentDraftRow)
+                .where(
+                    AgentDraftRow.tenant_id == parent.tenant_id,
+                    AgentDraftRow.owner_user_id == parent.created_by,
+                    AgentDraftRow.draft_id == parent.draft_id,
+                    AgentDraftRow.revision == expected_revision,
+                )
+                .values(
+                    revision=parent.revision,
+                    updated_at=parent.updated_at,
+                    payload=_draft_payload(parent),
+                )
+            )
+            if not cast(CursorResult[Any], result).rowcount:
+                raise ConflictError("父智能体已更新，请刷新后重试")
+            session.add(
+                AgentDraftRow(
+                    tenant_id=child.tenant_id,
+                    owner_user_id=child.created_by,
+                    draft_id=child.draft_id,
+                    agent_id=child.agent_id,
+                    space_id=child.space_id,
+                    name=child.spec.name,
+                    revision=child.revision,
+                    schema_version=AGENT_DRAFT_SCHEMA_VERSION,
+                    updated_at=child.updated_at,
+                    payload=_draft_payload(child),
+                )
+            )
+            try:
+                await session.commit()
+            except IntegrityError as error:
+                await session.rollback()
+                raise ConflictError("子智能体已存在，请刷新后重试") from error
+
     async def list_for_user(self, tenant_id: str, owner_user_id: str) -> list[AgentDraft]:
         statement = (
             select(AgentDraftRow)
@@ -88,9 +162,7 @@ class PostgresAgentDraftRepository:
             rows = (await session.scalars(statement)).all()
             return [_load_draft(row) for row in rows]
 
-    async def list_summaries(
-        self, tenant_id: str, owner_user_id: str
-    ) -> list[AgentDraftSummary]:
+    async def list_summaries(self, tenant_id: str, owner_user_id: str) -> list[AgentDraftSummary]:
         statement = (
             select(
                 AgentDraftRow.draft_id,
@@ -104,6 +176,7 @@ class PostgresAgentDraftRepository:
                 AgentDraftRow.revision,
                 AgentDraftRow.updated_at,
                 AgentDraftRow.payload["publishedVersion"].as_string(),
+                AgentDraftRow.payload,
             )
             .where(
                 AgentDraftRow.tenant_id == tenant_id,
@@ -126,6 +199,7 @@ class PostgresAgentDraftRepository:
                 revision=row[8],
                 updatedAt=row[9],
                 publishedVersion=row[10],
+                **_summary_fields(cast(dict[str, Any], row[11])),
             )
             for row in rows
         ]
@@ -214,10 +288,7 @@ class PostgresAgentDraftRepository:
                 f"expected={expected_revision} actual={actual_revision}"
             )
 
-
-    async def get_by_agent(
-        self, tenant_id: str, agent_id: str
-    ) -> AgentDraft | None:
+    async def get_by_agent(self, tenant_id: str, agent_id: str) -> AgentDraft | None:
         statement = select(AgentDraftRow).where(
             AgentDraftRow.tenant_id == tenant_id,
             AgentDraftRow.agent_id == agent_id,

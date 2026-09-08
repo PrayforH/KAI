@@ -429,6 +429,19 @@ def map_codex_notification(message: Mapping[str, Any]) -> list[RuntimeEvent]:
     if method == "item/agentMessage/delta":
         delta = _text(params.get("delta"))
         return [RuntimeEvent(type="message.delta", payload={"text": delta})] if delta else []
+    if method == "item/reasoning/summaryTextDelta":
+        delta = _text(params.get("delta"))
+        if not delta:
+            return []
+        item_id = _identifier(params.get("itemId"))
+        payload: dict[str, Any] = {"text": delta}
+        if item_id:
+            payload["item_id"] = item_id
+        return [RuntimeEvent(type="reasoning.summary.delta", payload=payload)]
+    if method == "item/reasoning/textDelta":
+        # Raw hidden reasoning is intentionally not persisted or projected.
+        # Only the provider-authored summary channel above is user-visible.
+        return []
     if method == "item/started":
         event = _item_request(_mapping(params.get("item")))
         return [event] if event is not None else []

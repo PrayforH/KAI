@@ -40,25 +40,32 @@ async def list_user_artifacts(
     identity: Annotated[Identity, Depends(require_identity)],
     container: Annotated[ApiContainer, Depends(get_container)],
     limit: Annotated[int, Query(ge=1, le=500)] = 200,
+    thread_id: Annotated[str | None, Query(min_length=1, max_length=256)] = None,
 ) -> list[UserArtifactIndexEntry]:
     """Return generated files from every task owned by the current user."""
 
     ensure_permission(identity, "tasks:read")
-    active_bindings, archived_bindings = await asyncio.gather(
-        container.agui.list_bindings(
-            tenant_id=identity.tenant_id,
-            user_id=identity.user_id,
-            limit=1_000,
-            archived=False,
-        ),
-        container.agui.list_bindings(
-            tenant_id=identity.tenant_id,
-            user_id=identity.user_id,
-            limit=1_000,
-            archived=True,
-        ),
-    )
-    bindings = [*active_bindings, *archived_bindings]
+    if thread_id is not None:
+        binding = await container.agui.get_thread_record(
+            tenant_id=identity.tenant_id, user_id=identity.user_id, thread_id=thread_id
+        )
+        bindings = [binding]
+    else:
+        active_bindings, archived_bindings = await asyncio.gather(
+            container.agui.list_bindings(
+                tenant_id=identity.tenant_id,
+                user_id=identity.user_id,
+                limit=1_000,
+                archived=False,
+            ),
+            container.agui.list_bindings(
+                tenant_id=identity.tenant_id,
+                user_id=identity.user_id,
+                limit=1_000,
+                archived=True,
+            ),
+        )
+        bindings = [*active_bindings, *archived_bindings]
     if not bindings:
         return []
 
@@ -159,10 +166,17 @@ async def download_artifact(
     artifact_id: str,
     identity: Annotated[Identity, Depends(require_identity)],
     container: Annotated[ApiContainer, Depends(get_container)],
+    thread_id: Annotated[str | None, Query(min_length=1, max_length=256)] = None,
 ) -> Response:
     ensure_permission(identity, "tasks:read")
     artifact = await container.artifacts.get(identity.tenant_id, artifact_id)
-    await require_owned_run(container, identity, artifact.run_id)
+    run = await require_owned_run(container, identity, artifact.run_id)
+    if thread_id is not None:
+        binding = await container.agui.get_binding(
+            tenant_id=identity.tenant_id, user_id=identity.user_id, thread_id=thread_id
+        )
+        if run.session_id not in binding.session_ids:
+            raise HTTPException(status_code=404, detail="Artifact not found in this task")
     artifact, content = await container.artifacts.download(identity.tenant_id, artifact_id)
     return Response(
         content=content,

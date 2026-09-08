@@ -146,6 +146,9 @@ def proxy_tool_name(builtin: str) -> str:
 
 
 def canonical_tool_name(name: str) -> str:
+    web_names = {"mcp__harness-web__search": "WebSearch", "mcp__harness-web__fetch": "WebFetch"}
+    if name in web_names:
+        return web_names[name]
     prefix = f"mcp__{SERVER_NAME}__"
     if not name.startswith(prefix):
         return name

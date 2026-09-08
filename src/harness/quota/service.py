@@ -25,8 +25,6 @@ from harness.quota.repositories import QuotaRepository
 DEFAULT_LIMITS: dict[QuotaResource, int] = {
     QuotaResource.CONCURRENT_RUNS: 20,
     QuotaResource.CONCURRENT_SUBAGENTS: 50,
-    QuotaResource.MODEL_TOKENS: 10_000_000,
-    QuotaResource.MODEL_COST_MICRO_USD: 1_000_000_000,
     QuotaResource.MCP_REQUESTS: 50,
     QuotaResource.ARTIFACT_BYTES: 5 * 1024 * 1024 * 1024,
     QuotaResource.SNAPSHOT_BYTES: 20 * 1024 * 1024 * 1024,
@@ -151,6 +149,10 @@ class QuotaService:
         environment: str | None,
         api_key_id: str | None,
     ) -> tuple[QuotaConstraint, ...]:
+        # Model usage is observational across all tenants, agents and environments.
+        # Ignore even stored policies so old versions cannot re-enable these limits.
+        if resource in {QuotaResource.MODEL_TOKENS, QuotaResource.MODEL_COST_MICRO_USD}:
+            return ()
         # The synthetic tenant default remains a fallback for resources omitted
         # by a managed partial policy. The management view still shows only one
         # global policy, while admission receives a complete effective policy.
@@ -337,40 +339,6 @@ class QuotaService:
                     ttl_seconds=ttl_seconds,
                 )
             )
-            if max_budget_usd is not None:
-                admitted.append(
-                    await self.reserve(
-                        tenant_id=tenant_id,
-                        resource=QuotaResource.MODEL_COST_MICRO_USD,
-                        amount=self.micro_usd(max_budget_usd),
-                        subject_id=run_id,
-                        idempotency_key=f"run:{run_id}:cost",
-                        organization_id=tenant_id,
-                        team_ids=team_ids,
-                        user_id=user_id,
-                        agent_name=agent_name,
-                        environment=environment,
-                        api_key_id=api_key_id,
-                        ttl_seconds=ttl_seconds,
-                    )
-                )
-            if max_model_tokens is not None:
-                admitted.append(
-                    await self.reserve(
-                        tenant_id=tenant_id,
-                        resource=QuotaResource.MODEL_TOKENS,
-                        amount=max_model_tokens,
-                        subject_id=run_id,
-                        idempotency_key=f"run:{run_id}:tokens",
-                        organization_id=tenant_id,
-                        team_ids=team_ids,
-                        user_id=user_id,
-                        agent_name=agent_name,
-                        environment=environment,
-                        api_key_id=api_key_id,
-                        ttl_seconds=ttl_seconds,
-                    )
-                )
         except Exception:
             for reservation in admitted:
                 await self.release(reservation)
@@ -394,22 +362,6 @@ class QuotaService:
         requested = [
             (QuotaResource.CONCURRENT_RUNS, 1, f"run:{run_id}:concurrency")
         ]
-        if max_budget_usd is not None:
-            requested.append(
-                (
-                    QuotaResource.MODEL_COST_MICRO_USD,
-                    self.micro_usd(max_budget_usd),
-                    f"run:{run_id}:cost",
-                )
-            )
-        if max_model_tokens is not None:
-            requested.append(
-                (
-                    QuotaResource.MODEL_TOKENS,
-                    max_model_tokens,
-                    f"run:{run_id}:tokens",
-                )
-            )
         admitted: list[ResourceReservation] = []
         created: list[ResourceReservation] = []
         try:

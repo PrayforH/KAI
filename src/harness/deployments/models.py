@@ -92,7 +92,7 @@ class EnvironmentResourcePolicy(StudioModel):
             "deepseek-v4-pro",
             "new-api-default",
             "minimax-m3",
-            "glm-5-2",
+            "glm-5-3-flash",
         ),
         alias="allowedModelRoutes",
     )

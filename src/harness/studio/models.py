@@ -11,7 +11,7 @@ from pathlib import PurePosixPath
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 from harness.core.manifest import ToolExposureMode
 from harness.core.models import AgentRuntimeType
@@ -110,6 +110,19 @@ class DraftSkillFile(StudioModel):
         return self
 
 
+class DraftSkillSource(StudioModel):
+    """Immutable provenance for a Skill copied from a managed package."""
+
+    kind: Literal["platform"] = "platform"
+    package_id: str = Field(alias="packageId", pattern=r"^[a-z][a-z0-9-]*$")
+    package_revision: int = Field(alias="packageRevision", ge=1)
+    source_url: str = Field(alias="sourceUrl", min_length=1, max_length=2_000)
+    source_revision: str = Field(alias="sourceRevision", min_length=1, max_length=200)
+    license: str = Field(min_length=1, max_length=100)
+    content_hash: str = Field(alias="contentHash", pattern=r"^[a-f0-9]{64}$")
+    modified: bool = False
+
+
 class DraftSkill(StudioModel):
     name: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9-]*$")
     description: str = Field(min_length=1, max_length=500)
@@ -117,6 +130,7 @@ class DraftSkill(StudioModel):
     files: tuple[DraftSkillFile, ...] = ()
     file_count: int | None = Field(default=None, alias="fileCount", ge=0)
     files_truncated: bool = Field(default=False, alias="filesTruncated")
+    source: DraftSkillSource | None = None
 
     @model_validator(mode="after")
     def unique_file_paths(self) -> DraftSkill:
@@ -125,6 +139,36 @@ class DraftSkill(StudioModel):
         if duplicates:
             raise ValueError(f"duplicate Skill file path: {', '.join(duplicates)}")
         return self
+
+
+class PlatformSkillPackage(StudioModel):
+    package_id: str = Field(alias="packageId", pattern=r"^[a-z][a-z0-9-]*$")
+    revision: int = Field(ge=1)
+    display_name: str = Field(alias="displayName", min_length=1, max_length=100)
+    summary: str = Field(min_length=1, max_length=500)
+    tags: tuple[str, ...] = ()
+    compatible_runtimes: tuple[AgentRuntimeType, ...] = Field(
+        alias="compatibleRuntimes",
+        min_length=1,
+    )
+    license: str = Field(min_length=1, max_length=100)
+    source_url: str = Field(alias="sourceUrl", min_length=1, max_length=2_000)
+    source_revision: str = Field(alias="sourceRevision", min_length=1, max_length=200)
+    content_hash: str = Field(alias="contentHash", pattern=r"^[a-f0-9]{64}$")
+    risk_level: Literal["low", "review"] = Field(alias="riskLevel")
+    findings: tuple[str, ...] = ()
+    skill: DraftSkill
+    evaluation_cases: tuple[EvalCase, ...] = Field(alias="evaluationCases", min_length=1)
+
+
+class PlatformSkillCatalog(StudioModel):
+    revision: int = Field(ge=1)
+    packages: tuple[PlatformSkillPackage, ...]
+
+
+class InstallPlatformSkillRequest(StudioModel):
+    expected_revision: int = Field(alias="expectedRevision", ge=1)
+    package_revision: int = Field(alias="packageRevision", ge=1)
 
 
 class ImportedSkill(StudioModel):
@@ -179,6 +223,15 @@ class DraftLimits(StudioModel):
     max_subagent_usage_units: int | None = Field(default=None, alias="maxSubagentUsageUnits", gt=0)
 
 
+    @field_validator(
+        "max_budget_usd", "max_model_tokens", "max_subagent_usage_units", mode="before"
+    )
+    @classmethod
+    def discard_operational_limits(cls, value: object) -> None:
+        """New, imported and edited drafts never acquire monetary or Token quotas."""
+        return None
+
+
 class DraftSubagent(StudioModel):
     alias: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9-]*$")
     ref: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9-]*@[^@]+$")
@@ -208,7 +261,7 @@ class AgentDraftSpec(StudioModel):
     runtime: AgentRuntimeType = "claude-agent-sdk"
     model: DraftModelSelection
     system_prompt: str = Field(alias="systemPrompt", min_length=1, max_length=512 * 1024)
-    skills: tuple[DraftSkill, ...] = Field(min_length=1)
+    skills: tuple[DraftSkill, ...] = ()
     builtin_tools: tuple[str, ...] = Field(default=(), alias="builtinTools")
     python_tools: tuple[DraftPythonTool, ...] = Field(default=(), alias="pythonTools")
     mcp_servers: tuple[str, ...] = Field(default=(), alias="mcpServers")
@@ -258,6 +311,9 @@ class AgentDraftSpec(StudioModel):
 
 
 class AgentDraft(StudioModel):
+    # Authoring placement only: null is an independent entry, otherwise owned
+    # by a parent draft. This does not mutate previously published snapshots.
+    parent_draft_id: str | None = Field(default=None, alias="parentDraftId", min_length=1)
     draft_id: str = Field(alias="draftId", min_length=1)
     tenant_id: str = Field(alias="tenantId", min_length=1)
     revision: int = Field(ge=1)
@@ -313,6 +369,28 @@ class ReplaceAgentDraftRequest(StudioModel):
     spec: AgentDraftSpec
 
 
+class CreateInternalSubagentRequest(StudioModel):
+    expected_revision: int = Field(alias="expectedRevision", ge=1)
+    display_name: str = Field(alias="displayName", min_length=1, max_length=100)
+    responsibility: str = Field(min_length=2, max_length=500)
+
+    @model_validator(mode="after")
+    def non_empty_text(self) -> CreateInternalSubagentRequest:
+        if not self.display_name.strip() or len(self.responsibility.strip()) < 2:
+            raise ValueError("请填写名称和职责")
+        return self
+
+
+class AgentDraftPlacementRequest(StudioModel):
+    expected_revision: int = Field(alias="expectedRevision", ge=1)
+    parent_draft_id: str | None = Field(alias="parentDraftId", min_length=1)
+
+
+class CreatedInternalSubagent(StudioModel):
+    parent: AgentDraft
+    child: AgentDraft
+
+
 class PublishAgentDraftRequest(StudioModel):
     expected_revision: int = Field(alias="expectedRevision", ge=1)
 
@@ -344,6 +422,7 @@ class ImportedAgentBundle(StudioModel):
 
 
 class AgentDraftSummary(StudioModel):
+    parent_draft_id: str | None = Field(default=None, alias="parentDraftId")
     draft_id: str = Field(alias="draftId")
     agent_id: str | None = Field(default=None, alias="agentId")
     space_id: str | None = Field(default=None, alias="spaceId")
@@ -352,13 +431,21 @@ class AgentDraftSummary(StudioModel):
     domain: str
     version: str
     template: AgentTemplate
+    goal: str
+    primary_output: str = Field(alias="primaryOutput")
+    primary_constraint: str | None = Field(default=None, alias="primaryConstraint")
+    skill_count: int = Field(alias="skillCount", ge=0)
+    tool_count: int = Field(alias="toolCount", ge=0)
+    network_tools_enabled: bool = Field(alias="networkToolsEnabled")
     revision: int
     updated_at: datetime = Field(alias="updatedAt")
     published_version: str | None = Field(default=None, alias="publishedVersion")
 
     @classmethod
     def from_draft(cls, draft: AgentDraft) -> AgentDraftSummary:
+        task_contract = draft.spec.task_contract
         return cls(
+            parentDraftId=draft.parent_draft_id,
             draftId=draft.draft_id,
             agentId=draft.agent_id,
             spaceId=draft.space_id,
@@ -367,6 +454,26 @@ class AgentDraftSummary(StudioModel):
             domain=draft.spec.domain,
             version=draft.spec.version,
             template=draft.spec.template,
+            goal=task_contract.goal if task_contract else draft.spec.description,
+            primaryOutput=(
+                task_contract.outputs[0]
+                if task_contract and task_contract.outputs
+                else "按 System Prompt 生成可核验结果"
+            ),
+            primaryConstraint=(
+                task_contract.constraints[0]
+                if task_contract and task_contract.constraints
+                else None
+            ),
+            skillCount=len(draft.spec.skills),
+            toolCount=(
+                len(draft.spec.builtin_tools)
+                + len(draft.spec.python_tools)
+                + len(draft.spec.mcp_servers)
+            ),
+            networkToolsEnabled=bool(
+                {"WebSearch", "WebFetch"}.intersection(draft.spec.builtin_tools)
+            ),
             revision=draft.revision,
             updatedAt=draft.updated_at,
             publishedVersion=draft.published_version,
@@ -684,9 +791,7 @@ class CapabilityCatalog(StudioModel):
     runtime_capabilities: tuple[RuntimeCapability, ...] = Field(
         default=(), alias="runtimeCapabilities"
     )
-    agent_model_bindings: dict[str, str] = Field(
-        default_factory=dict, alias="agentModelBindings"
-    )
+    agent_model_bindings: dict[str, str] = Field(default_factory=dict, alias="agentModelBindings")
 
     @model_validator(mode="after")
     def unique_managed_ids(self) -> CapabilityCatalog:

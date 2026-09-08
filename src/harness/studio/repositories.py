@@ -10,6 +10,10 @@ from harness.studio.models import AgentDraft, AgentDraftSummary
 
 
 class AgentDraftRepository(Protocol):
+    async def add_child(
+        self, expected_revision: int, parent: AgentDraft, child: AgentDraft
+    ) -> None: ...
+
     async def add(self, draft: AgentDraft) -> None: ...
 
     async def get(self, tenant_id: str, owner_user_id: str, draft_id: str) -> AgentDraft: ...
@@ -66,6 +70,20 @@ class InMemoryAgentDraftRepository:
             return self._items[(tenant_id, owner_user_id, draft_id)]
         except KeyError as error:
             raise NotFoundError(f"Agent draft not found: {draft_id}") from error
+
+    async def add_child(
+        self, expected_revision: int, parent: AgentDraft, child: AgentDraft
+    ) -> None:
+        parent_key = (parent.tenant_id, parent.created_by, parent.draft_id)
+        child_key = (child.tenant_id, child.created_by, child.draft_id)
+        async with self._lock:
+            current = self._items.get(parent_key)
+            if current is None or current.revision != expected_revision:
+                raise ConflictError("父智能体已更新，请刷新后重试")
+            if parent.revision != expected_revision + 1 or child_key in self._items:
+                raise ConflictError("子智能体创建冲突，请刷新后重试")
+            self._items[parent_key] = parent
+            self._items[child_key] = child
 
     async def list_for_user(self, tenant_id: str, owner_user_id: str) -> list[AgentDraft]:
         return sorted(

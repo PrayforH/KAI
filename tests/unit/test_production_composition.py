@@ -160,6 +160,10 @@ async def test_production_container_uses_durable_event_and_queue_adapters() -> N
         assert vars(runtime)["_config"] is None
         assert vars(runtime)["_route_configs"] == ()
         assert vars(runtime)["_model_configurations"] is container.model_configurations
+        imported = vars(container.model_configurations)["_server_routes"]
+        assert set(imported) == {"deepseek-v4-flash", "deepseek-v4-pro"}
+        assert imported["deepseek-v4-flash"].compatibility.value == "degraded"
+        assert imported["deepseek-v4-flash"].capabilities == frozenset({"streaming"})
     finally:
         assert container.close is not None
         await container.close()
@@ -243,13 +247,13 @@ async def test_production_container_starts_without_gateway_credentials() -> None
 
 
 @pytest.mark.asyncio
-async def test_production_container_ignores_legacy_gateway_capabilities() -> None:
+async def test_production_container_imports_empty_gateway_capabilities() -> None:
     container = build_production_container(
         production_settings(new_api_capabilities=" , ")
     )
     try:
-        runtime = cast(RegistryClaudeRuntime, container.runtime)
-        assert vars(runtime)["_route_configs"] == ()
+        imported = vars(container.model_configurations)["_server_routes"]
+        assert imported["deepseek-v4-flash"].capabilities == frozenset()
     finally:
         assert container.close is not None
         await container.close()
@@ -357,7 +361,7 @@ async def test_production_composition_ignores_legacy_anthropic_environment() -> 
 
 
 @pytest.mark.asyncio
-async def test_production_composition_ignores_legacy_minimax_environment() -> None:
+async def test_production_composition_imports_minimax_into_model_control_plane() -> None:
     container = build_production_container(
         production_settings(
             minimax_m3_base_url="https://api.minimaxi.com/anthropic",
@@ -369,13 +373,16 @@ async def test_production_composition_ignores_legacy_minimax_environment() -> No
         assert vars(runtime)["_config"] is None
         assert vars(runtime)["_fallback_config"] is None
         assert vars(runtime)["_route_configs"] == ()
+        imported = vars(container.model_configurations)["_server_routes"]
+        assert imported["minimax-m3"].base_url == "https://api.minimaxi.com/anthropic"
+        assert imported["minimax-m3"].model == "MiniMax-M3"
     finally:
         assert container.close is not None
         await container.close()
 
 
 @pytest.mark.asyncio
-async def test_production_composition_ignores_legacy_glm_environment() -> None:
+async def test_production_composition_imports_glm_into_model_control_plane() -> None:
     container = build_production_container(
         production_settings(
             glm_5_2_base_url="http://172.20.109.112:31300",
@@ -386,6 +393,9 @@ async def test_production_composition_ignores_legacy_glm_environment() -> None:
         runtime = cast(RegistryClaudeRuntime, container.runtime)
         assert vars(runtime)["_config"] is None
         assert vars(runtime)["_route_configs"] == ()
+        imported = vars(container.model_configurations)["_server_routes"]
+        assert imported["glm-5-2"].base_url == "http://172.20.109.112:31300"
+        assert imported["glm-5-2"].model == "shdata-glm"
     finally:
         assert container.close is not None
         await container.close()

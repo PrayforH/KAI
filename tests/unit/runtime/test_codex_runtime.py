@@ -560,3 +560,41 @@ async def test_turn_timeout_closes_process(tmp_path: Path) -> None:
         _ = [event async for event in runtime.execute(_context(tmp_path))]
 
     assert process.closed is True
+
+
+@pytest.mark.asyncio
+async def test_guidance_targets_active_turn_without_interrupting(tmp_path: Path) -> None:
+    from tests.unit.runtime.test_steering import setup_inbox
+
+    _, _, service, inbox = await setup_inbox()
+    accepted = asyncio.Event()
+
+    class GuidableClient(FakeClient):
+        async def request(self, method, params=None, *, timeout_seconds=None):
+            if method == "turn/steer":
+                self.requests.append((method, dict(params or {})))
+                accepted.set()
+                return {"turnId": "turn-1"}
+            return await super().request(method, params, timeout_seconds=timeout_seconds)
+
+        async def inbound(self):
+            await service.steer("t", "r", "guidance", "use the new constraints")
+            async with asyncio.timeout(2):
+                await accepted.wait()
+            yield _notification("turn/completed", {"turn": {"status": "completed"}})
+
+    client = GuidableClient([])
+    runtime, process, _ = _runtime(tmp_path, client)
+    context = _context(tmp_path).model_copy(update={"steering": inbox})
+    events = [event async for event in runtime.execute(context)]
+    assert events[-1].type == "runtime.turn.completed"
+    assert (
+        "turn/steer",
+        {
+            "threadId": "thread-1",
+            "expectedTurnId": "turn-1",
+            "input": [{"type": "text", "text": "use the new constraints"}],
+        },
+    ) in client.requests
+    assert not any(method == "turn/interrupt" for method, _ in client.requests)
+    assert process.closed and inbox.closed

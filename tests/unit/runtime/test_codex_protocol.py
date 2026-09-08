@@ -227,12 +227,20 @@ def test_classifies_other_context_error_without_persisting_remote_message() -> N
     assert "private-token" not in repr(events)
 
 
-def test_unknown_or_reasoning_notifications_are_ignored() -> None:
-    for method in (
-        "item/reasoning/textDelta",
-        "item/reasoning/summaryTextDelta",
-        "future/notification",
-    ):
+def test_projects_reasoning_summaries_but_ignores_raw_reasoning() -> None:
+    summary = map_codex_notification(
+        {
+            "method": "item/reasoning/summaryTextDelta",
+            "params": {"itemId": "reasoning-1", "delta": "先核对配置，再运行测试。"},
+        }
+    )
+
+    assert summary[0].type == "reasoning.summary.delta"
+    assert summary[0].payload == {
+        "text": "先核对配置，再运行测试。",
+        "item_id": "reasoning-1",
+    }
+    for method in ("item/reasoning/textDelta", "future/notification"):
         assert map_codex_notification({"method": method, "params": {"delta": "never-show"}}) == []
 
 

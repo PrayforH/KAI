@@ -4,7 +4,7 @@ import json
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 from uuid import uuid4
 
 from pydantic import SecretStr
@@ -36,7 +36,7 @@ from harness.config import Settings
 from harness.context.checkpoint import ContextCheckpointService
 from harness.context.service import ContextService
 from harness.core.manifest import AgentManifest, AgentManifestSnapshot
-from harness.core.models import RunStatus, Session
+from harness.core.models import ModelCompatibility, RunStatus, Session
 from harness.core.ports import ArtifactStore, TaskQueue
 from harness.deployments.controller import DeploymentController
 from harness.deployments.queue import DeploymentTaskQueue
@@ -62,6 +62,8 @@ from harness.lifecycle.adapters import EmptyLifecycleAdapter, LifecycleAdapter
 from harness.lifecycle.controller import DataLifecycleController
 from harness.lifecycle.models import LifecycleScope, LifecycleScopeKind
 from harness.lifecycle.service import DataLifecycleService
+from harness.memory_bank.configuration import embedding_client, extraction_client
+from harness.memory_bank.processing import MemoryProcessingController
 from harness.memory_bank.service import MemoryBankService
 from harness.memory_bank.workload import (
     MemoryWorkloadTokenService,
@@ -86,6 +88,7 @@ from harness.reliability.controller import MaintenanceReaper, ReliabilityControl
 from harness.reliability.metrics import ReliabilityMetrics
 from harness.reliability.probes import CapacityProbe, QueueStats
 from harness.reliability.service import ReliabilityService
+from harness.runtime.cc_switch import CcSwitchClaudeConfig
 from harness.runtime.codex_tool_gate import CodexToolGate
 from harness.runtime.default_tools import (
     TAVILY_REFERENCE,
@@ -187,8 +190,81 @@ from harness.studio.preview_queue import PreviewTaskQueue
 from harness.studio.preview_service import PreviewService
 from harness.studio.service import AgentStudioService
 from harness.studio.skill_builder import ControlPlaneSkillConversationService
+from harness.studio.web_configuration import WebConfigurationService
 from harness.triggers.service import AgentTriggerService
 from harness.worker.orchestrator import RunOrchestrator, SandboxResolver
+
+
+def _deployment_model_routes(settings: Settings) -> tuple[CcSwitchClaudeConfig, ...]:
+    """Translate configured deployment routes into a one-time control-plane import.
+
+    Production execution still resolves models exclusively through the durable
+    model catalog. These values only seed missing endpoint metadata and secrets,
+    which keeps older deployments with environment-based model settings usable
+    after the catalog became authoritative.
+    """
+
+    routes: list[CcSwitchClaudeConfig] = []
+
+    def add(
+        route_id: str,
+        *,
+        base_url: str,
+        model: str,
+        credential: SecretStr,
+        auth_scheme: Literal["bearer", "x-api-key"],
+        compatibility: Literal["full", "degraded", "unsupported"],
+        capabilities: str,
+    ) -> None:
+        if not base_url.strip() or not model.strip() or not credential.get_secret_value().strip():
+            return
+        routes.append(
+            CcSwitchClaudeConfig(
+                route_id=route_id,
+                base_url=base_url.strip(),
+                model=model.strip(),
+                provider="new-api" if auth_scheme == "bearer" else "anthropic",
+                credential=credential,
+                auth_scheme=auth_scheme,
+                compatibility=ModelCompatibility(compatibility),
+                capabilities=frozenset(
+                    item.strip() for item in capabilities.split(",") if item.strip()
+                ),
+            )
+        )
+
+    for route_id, model in (
+        ("deepseek-v4-flash", settings.new_api_flash_model),
+        ("deepseek-v4-pro", settings.new_api_pro_model),
+    ):
+        add(
+            route_id,
+            base_url=settings.new_api_base_url,
+            model=model,
+            credential=settings.new_api_key,
+            auth_scheme=settings.new_api_auth_scheme,
+            compatibility=settings.new_api_compatibility,
+            capabilities=settings.new_api_capabilities,
+        )
+    add(
+        "minimax-m3",
+        base_url=settings.minimax_m3_base_url,
+        model=settings.minimax_m3_model,
+        credential=settings.minimax_m3_api_key,
+        auth_scheme=settings.minimax_m3_auth_scheme,
+        compatibility=settings.minimax_m3_compatibility,
+        capabilities=settings.minimax_m3_capabilities,
+    )
+    add(
+        "glm-5-2",
+        base_url=settings.glm_5_2_base_url,
+        model=settings.glm_5_2_model,
+        credential=settings.glm_5_2_api_key,
+        auth_scheme=settings.glm_5_2_auth_scheme,
+        compatibility=settings.glm_5_2_compatibility,
+        capabilities=settings.glm_5_2_capabilities,
+    )
+    return tuple(routes)
 
 
 def _sandbox(settings: Settings) -> SandboxProvider:
@@ -577,10 +653,14 @@ def build_production_container(
         McpCredentialCipher(settings.auth_jwt_secret),
         audit=audit,
     )
+    web_configurations = WebConfigurationService(mcp_credential_service,
+        enabled=settings.web_tools_enabled, provider=settings.web_search_provider,
+        api_key=settings.web_search_api_key.get_secret_value())
     model_configurations = ModelConfigurationService(
         capability_catalogs,
         mcp_credential_service,
         environment="production",
+        server_routes=_deployment_model_routes(settings),
     )
     discovery_credentials = StoredMcpCredentialProvider(
         mcp_credential_service,
@@ -791,6 +871,8 @@ def build_production_container(
     )
     memory_bank = MemoryBankService(
         memory_bank_repository,
+        embedder=embedding_client(settings),
+        semantic_threshold=settings.memory_semantic_threshold,
         audit=audit,
         clock=clock,
         id_generator=ids,
@@ -880,6 +962,10 @@ def build_production_container(
         tool_resolver = default_tool_resolver(
             credential_provider,
             catalogs=capability_catalogs,
+            web_configurations=web_configurations,
+            web_search_api_key=settings.web_search_api_key.get_secret_value(),
+            web_search_provider=settings.web_search_provider,
+            web_enabled=settings.web_tools_enabled,
         )
         claude_runtime = RegistryClaudeRuntime(
             registry=registry,
@@ -916,6 +1002,7 @@ def build_production_container(
                             claude_runtime,
                             RegistryCodexRuntime(
                                 registry=registry,
+                                remote_memory_mcp=remote_memory_mcp,
                                 codex_path=Path(settings.codex_cli_path),
                                 model_configurations=model_configurations,
                                 tool_resolver=tool_resolver,
@@ -930,6 +1017,7 @@ def build_production_container(
                                 ).authorize,
                             ),
                         ),
+                        strict=True,
                     )
                 ),
             )
@@ -1135,7 +1223,15 @@ def build_production_container(
         MaintenanceReaper("quota-reservation", "quota", quotas.reap_expired_all),
         MaintenanceReaper("workspace-retention", "workspace", lifecycle_reap),
         MaintenanceReaper("memory-expiry", "memory", memory_bank.reap_expired),
+        MaintenanceReaper("memory-index", "memory", memory_bank.reindex_pending),
     ]
+    extractor = extraction_client(settings)
+    if extractor is not None:
+        since = datetime.fromisoformat(settings.memory_extraction_since.replace("Z", "+00:00"))
+        if since.tzinfo is None:
+            raise ValueError("memory extraction rollout date must include timezone")
+        memory_processing = MemoryProcessingController(sessions, memory_bank, extractor, since=since)
+        maintenance.append(MaintenanceReaper("memory-extraction", "memory", memory_processing.process_once))
     if credential_broker is not None:
         maintenance.append(
             MaintenanceReaper(
@@ -1177,6 +1273,7 @@ def build_production_container(
         capability_catalogs=capability_catalogs,
         mcp_discovery=mcp_discovery,
         mcp_credentials=mcp_credential_service,
+        web_configurations=web_configurations,
         model_configurations=model_configurations,
         studio=studio_service,
         preview_repository=preview_repository,

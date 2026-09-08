@@ -76,6 +76,11 @@ class InMemoryAgentRegistry:
                 update={
                     "snapshot": {
                         "manifest": version.snapshot.get("manifest", {}),
+                        "skill_snapshots": [
+                            {"name": item.get("name"), "description": item.get("description", "")}
+                            for item in version.snapshot.get("skill_snapshots", [])
+                            if isinstance(item, dict) and item.get("name")
+                        ],
                     }
                 }
             )
@@ -740,6 +745,22 @@ class InMemoryAguiThreadBindingRepository:
                 }
             )
             self._by_thread[thread_key] = updated
+            self._store_session_aliases(updated)
+            return updated
+
+    async def mark_read(
+        self, tenant_id: str, user_id: str, thread_id: str, *, read_at: datetime
+    ) -> AguiThreadBinding:
+        async with self._lock:
+            binding = await self.get_by_thread(tenant_id, user_id, thread_id)
+            updated = binding.model_copy(
+                update={
+                    "last_read_at": max(binding.last_read_at, read_at)
+                    if binding.last_read_at is not None
+                    else read_at,
+                }
+            )
+            self._by_thread[(tenant_id, user_id, thread_id)] = updated
             self._store_session_aliases(updated)
             return updated
 

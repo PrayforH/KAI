@@ -8,7 +8,6 @@ from harness.studio.models import (
     AgentTemplate,
     DraftLimits,
     DraftModelSelection,
-    DraftSkill,
     DraftSubagent,
     DraftTaskContract,
 )
@@ -46,27 +45,6 @@ def _system_prompt(display_name: str, domain: str) -> str:
 
 按“结果、证据、不确定性、已执行动作、建议下一步”组织回答；需要交付文件时写入 `outputs/`。
 """
-
-
-def _skill(name: str, domain: str) -> DraftSkill:
-    return DraftSkill(
-        name=f"{name}-core",
-        description=f"Apply the reviewed evidence and decision workflow for {domain} tasks.",
-        instructions=f"""# {domain} 核心工作流
-
-1. 明确业务结果和缺失输入。
-2. 只收集支持当前判断所需的证据。
-3. 分开记录事实、推断和未解决的不确定性。
-4. 后果性或不可逆动作必须进入审批。
-5. 核验工具结果，并按系统提示词的输出契约交付。
-
-## 质量门禁
-
-- 每项重要结论都有明确来源或工具结果。
-- 缺少输入时提出澄清，不编造默认值。
-- 被拒绝的动作保持拒绝并如实说明。
-""",
-    )
 
 
 def _evaluation_cases(name: str, domain: str, template: AgentTemplate) -> tuple[EvalCase, ...]:
@@ -152,7 +130,9 @@ def create_draft_spec(
             model="deepseek-v4-pro",
         ),
         systemPrompt=_system_prompt(display_name, domain),
-        skills=(_skill(name, domain),),
+        # Skills are optional behavior modules. New drafts start without a
+        # placeholder and only snapshot Skills the builder deliberately adds.
+        skills=(),
         builtinTools=tools,
         mcpServers=(),
         subagents=subagents,

@@ -3,18 +3,32 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Path, Query, Request, status
-from fastapi.responses import Response
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    Header,
+    HTTPException,
+    Path,
+    Query,
+    Request,
+    status,
+)
+from fastapi.responses import Response, StreamingResponse
 
 from harness.agent_package import (
     MAX_AGENT_BUNDLE_UPLOAD_BYTES,
     AgentBundleValidationError,
 )
+from harness.agui.activity import build_run_activity
 from harness.api.dependencies import (
     ApiContainer,
     Identity,
@@ -22,8 +36,9 @@ from harness.api.dependencies import (
     get_container,
     require_identity,
 )
+from harness.api.event_streaming import wait_for_run_event
 from harness.core.errors import ConflictError, NotFoundError, PermissionDeniedError
-from harness.core.models import RunStatus
+from harness.core.models import Run, RunStatus
 from harness.deployments.controller import DeploymentController
 from harness.deployments.models import (
     DeploymentSnapshot,
@@ -38,11 +53,11 @@ from harness.deployments.service import DeploymentService
 from harness.evals.controller import EvalController
 from harness.evals.models import (
     CreateEvalDatasetVersionRequest,
-    ImportEvalDatasetRequest,
     CreateEvalRunRequest,
     EvalDatasetVersion,
     EvalGateResult,
     EvalRunView,
+    ImportEvalDatasetRequest,
 )
 from harness.evals.service import EvalControlPlaneService
 from harness.quality.models import (
@@ -62,12 +77,19 @@ from harness.quota.models import (
 )
 from harness.quota.repositories import QuotaExceededError
 from harness.quota.service import QuotaService
+from harness.runtime.input_redaction import redact_internal_agent_asset_events
 from harness.studio.agent_builder import (
     AgentBuilderPatch,
     AgentBuilderPatchRequest,
     CreateTaskDrivenDraftRequest,
     TaskDrivenDraftResult,
 )
+from harness.studio.builder_conversation import (
+    BuilderApplyRequest,
+    BuilderConversationReply,
+    BuilderConversationRequest,
+)
+from harness.studio.builder_materials import BuilderMaterialsRequest, read_builder_materials
 from harness.studio.bundle_import import AgentBundleImportError
 from harness.studio.catalog_service import CapabilityCatalogService, CatalogResourceType
 from harness.studio.compiler import DraftCompilationError
@@ -91,24 +113,34 @@ from harness.studio.model_configuration import (
 )
 from harness.studio.models import (
     AgentDraft,
+    AgentDraftPlacementRequest,
     AgentDraftSummary,
     CapabilityCatalog,
     CapabilityCatalogRecord,
     CatalogImpact,
     CatalogMutationResult,
     CreateAgentDraftRequest,
+    CreatedInternalSubagent,
+    CreateInternalSubagentRequest,
     DraftValidationResult,
     ImportedAgentBundle,
     ImportedSkill,
     InstalledSkill,
+    InstallPlatformSkillRequest,
     McpCapability,
     McpDiscoveryRequest,
     McpDiscoveryResult,
+    PlatformSkillCatalog,
     PublishAgentDraftRequest,
     PublishedAgentVersion,
     ReplaceAgentDraftRequest,
     ReplaceCapabilityCatalogRequest,
     UpsertCatalogResourceRequest,
+)
+from harness.studio.platform_skills import (
+    default_platform_skill_catalog,
+    imported_platform_skill,
+    platform_skill_package,
 )
 from harness.studio.preflight_models import PreflightEvent
 from harness.studio.preview_controller import PreviewController
@@ -139,6 +171,11 @@ from harness.studio.try_run import (
     StudioTryRunView,
     build_codex_loop,
     final_text,
+)
+from harness.studio.web_configuration import (
+    ConfigureWebRequest,
+    WebConfiguration,
+    WebConfigurationService,
 )
 
 
@@ -1227,6 +1264,13 @@ async def import_skill_file(
         ) from error
 
 
+@router.get("/skills/catalog", response_model=PlatformSkillCatalog)
+async def list_platform_skill_packages(
+    _actor: Annotated[StudioActor, Depends(require_studio_reader)],
+) -> PlatformSkillCatalog:
+    return default_platform_skill_catalog()
+
+
 async def _read_skill_upload(request: Request) -> bytes:
     media_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
     if media_type not in {
@@ -1293,6 +1337,33 @@ async def install_skill_file(
             status_code=422,
             detail={"code": "skill_import_invalid", "message": str(error)},
         ) from error
+    except (ConflictError, NotFoundError) as error:
+        raise _translate_domain_error(error) from error
+    return _installed_skill_response(draft, imported)
+
+
+@router.post(
+    "/drafts/{draft_id}/skills/catalog/{package_id}/install",
+    response_model=InstalledSkill,
+)
+async def install_platform_skill_package(
+    draft_id: str,
+    package_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9-]*$")],
+    body: InstallPlatformSkillRequest,
+    actor: Annotated[StudioActor, Depends(require_studio_writer)],
+    service: Annotated[AgentStudioService, Depends(get_studio_service)],
+) -> InstalledSkill:
+    try:
+        package = platform_skill_package(package_id, body.package_revision)
+        imported = imported_platform_skill(package)
+        draft = await service.install_skill(
+            tenant_id=actor.tenant_id,
+            user_id=actor.user_id,
+            draft_id=draft_id,
+            expected_revision=body.expected_revision,
+            imported=imported,
+            evaluation_cases=package.evaluation_cases,
+        )
     except (ConflictError, NotFoundError) as error:
         raise _translate_domain_error(error) from error
     return _installed_skill_response(draft, imported)
@@ -1436,6 +1507,23 @@ async def create_draft(
         raise _translate_domain_error(error) from error
 
 
+@router.post("/builder-materials")
+async def builder_materials(
+    body: BuilderMaterialsRequest,
+    actor: Annotated[StudioActor, Depends(require_studio_writer)],
+    container: Annotated[ApiContainer, Depends(get_container)],
+    models: Annotated[ModelConfigurationService, Depends(get_model_configuration_service)],
+) -> dict[str, str]:
+    try:
+        return await read_builder_materials(
+            actor.tenant_id, actor.user_id, body, container.input_artifacts, models,
+        )
+    except (ConflictError, NotFoundError, PermissionDeniedError) as error:
+        raise _translate_domain_error(error) from error
+    except (ValueError, OSError) as error:
+        raise HTTPException(status_code=422, detail="无法解析参考附件，请检查文件内容") from error
+
+
 @router.post(
     "/drafts/from-task",
     response_model=TaskDrivenDraftResult,
@@ -1475,12 +1563,15 @@ async def import_draft_bundle(
     service: Annotated[AgentStudioService, Depends(get_studio_service)],
 ) -> ImportedAgentBundle:
     media_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
-    if media_type != "application/zip":
+    if media_type not in {
+        "application/zip", "application/vnd.rar",
+        "application/x-rar-compressed", "application/octet-stream",
+    }:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail={
                 "code": "bundle_import_media_type_invalid",
-                "message": "Agent Bundle 导入必须使用 Content-Type application/zip",
+                "message": "Agent 导入支持 ZIP 和 RAR 压缩包",
             },
         )
     raw_length = request.headers.get("content-length")
@@ -1638,6 +1729,42 @@ async def validate_draft(
         raise _translate_domain_error(error) from error
 
 
+@router.post(
+    "/drafts/{draft_id}/subagents",
+    response_model=CreatedInternalSubagent,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_internal_subagent(
+    draft_id: str,
+    body: CreateInternalSubagentRequest,
+    actor: Annotated[StudioActor, Depends(require_studio_writer)],
+    service: Annotated[AgentStudioService, Depends(get_studio_service)],
+) -> CreatedInternalSubagent:
+    try:
+        return await service.create_internal_subagent(
+            actor.tenant_id, actor.user_id, draft_id, body
+        )
+    except (ConflictError, NotFoundError) as error:
+        raise HTTPException(
+            status_code=409 if isinstance(error, ConflictError) else 404, detail=str(error)
+        ) from error
+
+
+@router.put("/drafts/{draft_id}/placement", response_model=AgentDraft)
+async def set_draft_placement(
+    draft_id: str,
+    body: AgentDraftPlacementRequest,
+    actor: Annotated[StudioActor, Depends(require_studio_writer)],
+    service: Annotated[AgentStudioService, Depends(get_studio_service)],
+) -> AgentDraft:
+    try:
+        return await service.set_placement(actor.tenant_id, actor.user_id, draft_id, body)
+    except (ConflictError, NotFoundError) as error:
+        raise HTTPException(
+            status_code=409 if isinstance(error, ConflictError) else 404, detail=str(error)
+        ) from error
+
+
 @router.post("/drafts/{draft_id}/builder-patch", response_model=AgentBuilderPatch)
 async def create_agent_builder_patch(
     draft_id: str,
@@ -1653,6 +1780,38 @@ async def create_agent_builder_patch(
         raise _translate_domain_error(error) from error
 
 
+@router.post(
+    "/drafts/{draft_id}/builder-conversation",
+    response_model=BuilderConversationReply, response_model_exclude_unset=True,
+)
+async def converse_agent_builder(
+    draft_id: str,
+    body: BuilderConversationRequest,
+    actor: Annotated[StudioActor, Depends(require_studio_writer)],
+    service: Annotated[AgentStudioService, Depends(get_studio_service)],
+    models: Annotated[ModelConfigurationService, Depends(get_model_configuration_service)],
+) -> BuilderConversationReply:
+    try:
+        return await service.converse_builder(
+            actor.tenant_id, actor.user_id, draft_id, body, models,
+        )
+    except (ConflictError, NotFoundError) as error:
+        raise _translate_domain_error(error) from error
+
+
+@router.post("/drafts/{draft_id}/builder-apply", response_model=AgentDraft)
+async def apply_agent_builder_edit(
+    draft_id: str,
+    body: BuilderApplyRequest,
+    actor: Annotated[StudioActor, Depends(require_studio_writer)],
+    service: Annotated[AgentStudioService, Depends(get_studio_service)],
+) -> AgentDraft:
+    try:
+        return await service.apply_builder_edit(actor.tenant_id, actor.user_id, draft_id, body)
+    except (ConflictError, NotFoundError) as error:
+        raise _translate_domain_error(error) from error
+
+
 async def _studio_try_run_view(
     container: ApiContainer,
     actor: StudioActor,
@@ -1660,15 +1819,13 @@ async def _studio_try_run_view(
     draft_revision: int,
     run_id: str,
 ) -> StudioTryRunView:
-    run = await container.runs.get(actor.tenant_id, run_id)
-    session = await container.sessions.get(actor.tenant_id, run.session_id)
-    prefix = f"preview-{draft_id}-{draft_revision}-"
-    if (
-        session.user_id != actor.user_id
-        or session.environment != "preview"
-        or not session.agent_version.startswith(prefix)
-    ):
-        raise NotFoundError(f"Studio Try Run not found: {run_id}")
+    run = await _require_studio_try_run(
+        container,
+        actor,
+        draft_id,
+        draft_revision,
+        run_id,
+    )
     events = await container.observed_events.list_after(actor.tenant_id, run_id, 0)
     approvals = await container.approvals.list_for_runs(actor.tenant_id, [run_id])
     artifacts = await container.artifacts.list_for_run(actor.tenant_id, run_id)
@@ -1680,8 +1837,38 @@ async def _studio_try_run_view(
         approvals=tuple(approvals),
         artifacts=tuple(artifacts),
         finalText=final_text(events),
+        activity=build_run_activity(events),
         loop=build_codex_loop(run, events),
     )
+
+
+_TRY_RUN_TERMINAL_EVENT_TYPES = {
+    "run.cancelled",
+    "run.failed",
+    "run.rejected",
+    "run.succeeded",
+    "run.timed_out",
+}
+_TRY_RUN_STREAM_HEARTBEAT_SECONDS = 10.0
+
+
+async def _require_studio_try_run(
+    container: ApiContainer,
+    actor: StudioActor,
+    draft_id: str,
+    draft_revision: int,
+    run_id: str,
+) -> Run:
+    run = await container.runs.get(actor.tenant_id, run_id)
+    session = await container.sessions.get(actor.tenant_id, run.session_id)
+    prefix = f"preview-{draft_id}-{draft_revision}-"
+    if (
+        session.user_id != actor.user_id
+        or session.environment != "preview"
+        or not session.agent_version.startswith(prefix)
+    ):
+        raise NotFoundError(f"Studio Try Run not found: {run_id}")
+    return run
 
 
 @router.post(
@@ -1696,6 +1883,7 @@ async def create_studio_try_run(
     request: Request,
     actor: Annotated[StudioActor, Depends(require_studio_previewer)],
     service: Annotated[AgentStudioService, Depends(get_studio_service)],
+    models: Annotated[ModelConfigurationService, Depends(get_model_configuration_service)],
 ) -> StudioTryRunView:
     """Compile and execute the current draft without publishing it."""
 
@@ -1734,19 +1922,60 @@ async def create_studio_try_run(
         session_key = hashlib.sha256(
             f"{actor.tenant_id}:{actor.user_id}:{draft_id}:{body.idempotency_key}".encode()
         ).hexdigest()[:32]
-        session = await container.sessions.create(
-            actor.tenant_id,
-            actor.user_id,
-            draft.spec.name,
-            preview_version,
-            session_id=f"studio_try_{session_key}",
-            preview=True,
+        previous = None
+        if body.continue_from_run_id:
+            previous = await _require_studio_try_run(
+                container, actor, draft_id, draft.revision, body.continue_from_run_id,
+            )
+            if not previous.status.is_terminal:
+                raise ConflictError("Previous preview turn is still running")
+            session = await container.sessions.get(actor.tenant_id, previous.session_id)
+            if session.agent_version != preview_version:
+                raise ConflictError("Preview configuration changed; start a new conversation")
+        else:
+            session = await container.sessions.create(
+                actor.tenant_id, actor.user_id, draft.spec.name, preview_version,
+                session_id=f"studio_try_{session_key}", preview=True,
+            )
+        resolved = await container.input_artifacts.resolve_for_run(
+            tenant_id=actor.tenant_id, user_id=actor.user_id,
+            input_artifact_ids=body.input_artifact_ids,
         )
+        model_override = previous.input.get("model_route_override") if previous else None
+        has_images = any(item.media_type.startswith("image/") for item in resolved)
+        if has_images:
+            catalog = await service.capabilities(actor.tenant_id, actor.user_id)
+            api_format = ("openai_compatible" if draft.spec.runtime == "codex-app-server"
+                          else "anthropic_compatible")
+            candidates = [route for route in catalog.model_routes
+                          if route.enabled and {"vision", *draft.spec.model.required_capabilities}
+                          <= set(route.capabilities) and route.api_format == api_format]
+            preferred = model_override or draft.spec.model.route_id
+            candidates.sort(key=lambda route: route.route_id != preferred)
+            if not candidates:
+                raise ConflictError("图片已上传，但当前运行环境没有可用的视觉模型。"
+                                    "请在模型配置中启用兼容的视觉模型后重试，输入和附件会保留。")
+            model_override = None
+            for candidate in candidates:
+                if await models.resolve_runtime(
+                    actor.tenant_id, draft.spec.name, candidate.route_id,
+                    apply_agent_binding=False, required_api_format=api_format,
+                ):
+                    model_override = candidate.route_id
+                    break
+            if model_override is None:
+                raise ConflictError("视觉模型尚未配置有效凭据，请检查模型连接后重试")
+        previous_prompts = list(previous.input.get("conversation_prompts", [])) if previous else []
         creation = await container.runs.create_with_result(
-            actor.tenant_id,
-            session.session_id,
-            body.idempotency_key,
-            input={"prompt": body.prompt},
+            actor.tenant_id, session.session_id, body.idempotency_key,
+            input={
+                "prompt": body.prompt,
+                "conversation_prompts": [*previous_prompts, body.prompt],
+                "input_artifact_ids": [item.input_artifact_id for item in resolved],
+                **({"model_route_override": model_override} if model_override else {}),
+                **({"required_model_capabilities": ["vision"]}
+                   if any(item.media_type.startswith("image/") for item in resolved) else {}),
+            },
         )
         if container.auto_execute and creation.created:
             background_tasks.add_task(
@@ -1786,6 +2015,73 @@ async def get_studio_try_run(
         return await _studio_try_run_view(container, actor, draft_id, draft_revision, run_id)
     except (ConflictError, NotFoundError) as error:
         raise _translate_domain_error(error) from error
+
+
+@router.get("/drafts/{draft_id}/try-runs/{run_id}/events")
+async def stream_studio_try_run_events(
+    draft_id: str,
+    run_id: str,
+    draft_revision: Annotated[int, Query(alias="draftRevision", ge=1)],
+    actor: Annotated[StudioActor, Depends(require_studio_previewer)],
+    container: Annotated[ApiContainer, Depends(get_container)],
+    last_event_id: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
+) -> StreamingResponse:
+    """Stream durable Try Run events until the Run reaches a terminal state."""
+
+    try:
+        run = await _require_studio_try_run(
+            container,
+            actor,
+            draft_id,
+            draft_revision,
+            run_id,
+        )
+    except (ConflictError, NotFoundError) as error:
+        raise _translate_domain_error(error) from error
+    try:
+        after_sequence = max(0, int(last_event_id or "0"))
+    except ValueError:
+        after_sequence = 0
+
+    async def stream() -> AsyncIterator[str]:
+        sequence = after_sequence
+        terminal = run.status.is_terminal
+        last_emission = time.monotonic()
+        while True:
+            events = await container.observed_events.list_after(
+                actor.tenant_id,
+                run_id,
+                sequence,
+            )
+            events = redact_internal_agent_asset_events(events)
+            for event in events:
+                data = json.dumps(event.model_dump(mode="json"), separators=(",", ":"))
+                yield f"id: {event.sequence}\nevent: {event.type}\ndata: {data}\n\n"
+                sequence = event.sequence
+                last_emission = time.monotonic()
+                if event.type in _TRY_RUN_TERMINAL_EVENT_TYPES:
+                    terminal = True
+            if terminal:
+                break
+            if time.monotonic() - last_emission >= _TRY_RUN_STREAM_HEARTBEAT_SECONDS:
+                yield ": keep-alive\n\n"
+                last_emission = time.monotonic()
+            await wait_for_run_event(
+                container.event_wakeup,
+                actor.tenant_id,
+                run_id,
+                sequence,
+                fallback_poll_seconds=0.02,
+            )
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post(
@@ -1987,3 +2283,22 @@ async def publish_draft(
             status_code=503,
             detail={"code": "studio_publisher_unavailable", "message": str(error)},
         ) from error
+
+
+@router.get("/web-configuration", response_model=WebConfiguration)
+async def get_web_configuration(
+    request: Request,
+    actor: Annotated[StudioActor, Depends(require_studio_reader)],
+) -> WebConfiguration:
+    service: WebConfigurationService = request.app.state.container.web_configurations
+    return await service.get(actor.tenant_id, actor.user_id)
+
+
+@router.put("/web-configuration", response_model=WebConfiguration)
+async def configure_web(
+    request: Request,
+    body: ConfigureWebRequest,
+    actor: Annotated[StudioActor, Depends(require_studio_writer)],
+) -> WebConfiguration:
+    service: WebConfigurationService = request.app.state.container.web_configurations
+    return await service.configure(actor.tenant_id, actor.user_id, body)

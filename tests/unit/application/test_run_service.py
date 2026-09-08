@@ -53,7 +53,7 @@ def id_generator() -> Callable[[str], str]:
     return generate
 
 
-def test_environment_snapshot_clamps_agent_run_budget() -> None:
+def test_environment_snapshot_cannot_reintroduce_operational_limits() -> None:
     policy = EnvironmentResourcePolicy(
         quota=EnvironmentQuotaBoundary(
             maxRunBudgetUsd=0.4,
@@ -91,8 +91,8 @@ def test_environment_snapshot_clamps_agent_run_budget() -> None:
     )
 
     assert result == RunQuotaPlan(
-        max_budget_usd=0.4,
-        max_model_tokens=80_000,
+        max_budget_usd=None,
+        max_model_tokens=None,
         ttl_seconds=1_200,
     )
 

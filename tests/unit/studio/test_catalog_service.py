@@ -28,7 +28,7 @@ def test_default_catalog_exposes_separate_deepseek_v4_routes() -> None:
     assert routes["deepseek-v4-flash"].models == ("deepseek-v4-flash",)
     assert routes["deepseek-v4-pro"].models == ("deepseek-v4-pro",)
     assert "new-api-default" not in routes
-    assert routes["glm-5-2"].models == ("shdata-glm",)
+    assert routes["glm-5-3-flash"].models == ("glm-5.3-flash",)
     assert "anthropic-official" not in routes
 
 
@@ -521,7 +521,7 @@ async def test_get_retires_legacy_deepseek_route_in_system_migrated_catalog() ->
     assert routes["deepseek-v4-flash"].models == ("deepseek-v4-flash",)
     assert routes["deepseek-v4-pro"].models == ("deepseek-v4-pro",)
     assert routes["deepseek-v4-flash"].credential_reference == "CUSTOM_NEW_API_KEY"
-    assert routes["glm-5-2"].models == ("shdata-glm",)
+    assert routes["glm-5-3-flash"].models == ("glm-5.3-flash",)
 
 
 @pytest.mark.asyncio
@@ -729,3 +729,33 @@ async def test_mcp_upsert_rejects_profile_without_required_network_access() -> N
                 allowedExecutionProfileIds=("e2b-public-egress",),
             ),
         )
+
+
+@pytest.mark.asyncio
+async def test_admin_edited_catalog_receives_web_tools_without_replacing_custom_entries():
+    defaults = default_capability_catalog()
+    existing = defaults.model_copy(
+        update={
+            "builtin_tools": tuple(
+                tool
+                for tool in defaults.builtin_tools
+                if tool.name not in {"WebSearch", "WebFetch"}
+            ),
+        }
+    )
+    repository = InMemoryCapabilityCatalogRepository()
+    await repository.seed(
+        CapabilityCatalogRecord(
+            tenantId="admin-catalog",
+            revision=5,
+            catalog=existing,
+            updatedBy="user-admin",
+            updatedAt=NOW,
+        )
+    )
+    service = CapabilityCatalogService(repository, InMemoryAgentDraftRepository())
+    upgraded = await service.get("admin-catalog")
+    assert {"WebSearch", "WebFetch"} <= {tool.name for tool in upgraded.catalog.builtin_tools}
+    assert upgraded.catalog.builtin_tools[: len(existing.builtin_tools)] == existing.builtin_tools
+    assert upgraded.updated_by == "user-admin"
+    assert (await service.get("admin-catalog")).revision == upgraded.revision

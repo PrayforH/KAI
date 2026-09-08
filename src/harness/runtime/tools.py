@@ -7,10 +7,11 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from importlib import import_module
 from types import MappingProxyType
-from typing import Any, cast
+from typing import Any, Literal, cast
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from claude_agent_sdk import (
+    McpSdkServerConfig,
     McpServerConfig,
     SdkMcpTool,
     create_sdk_mcp_server,
@@ -25,6 +26,8 @@ from harness.runtime.mcp_credentials import (
     EmptyMcpCredentialProvider,
     McpCredentialError,
 )
+from harness.runtime.web_tools import PublicWebClient, create_web_mcp_server
+from harness.studio.web_configuration import UserWebClient, WebConfigurationService
 
 
 class ToolResolutionError(ValueError):
@@ -130,10 +133,48 @@ class ToolResolver:
             Callable[[str, str], Awaitable[Mapping[str, McpServerRegistration]]] | None
         ) = None,
         credential_provider: DynamicMcpCredentialProvider | None = None,
+        web_search_api_key: str = "",
+        web_search_provider: Literal["tavily", "minimax"] = "tavily",
+        web_enabled: bool = True,
+        web_configurations: WebConfigurationService | None = None,
     ) -> None:
         self._mcp_registry = MappingProxyType(dict(mcp_registry or {}))
         self._mcp_registry_provider = mcp_registry_provider
         self._credential_provider = credential_provider or EmptyMcpCredentialProvider()
+        self._web_search_api_key = web_search_api_key
+        self._web_search_provider: Literal["tavily", "minimax"] = web_search_provider
+        self._web_enabled = web_enabled
+        self._web_configurations = web_configurations
+
+    def web_server(self, names: set[str], identity: ExecutionIdentity | None) -> McpSdkServerConfig:
+        if not self._web_enabled:
+            raise ToolResolutionError("平台已关闭内置联网能力，请移除联网工具后运行。")
+
+        if self._web_configurations is not None and identity is not None:
+            return create_web_mcp_server(names, UserWebClient(self._web_configurations, identity))
+
+        async def key() -> str:
+            if self._web_search_api_key:
+                return self._web_search_api_key
+            if identity is not None and self._web_search_provider == "tavily":
+                try:
+                    credentials = await self._credential_provider.resolve(
+                        "tavily-readonly", identity, frozenset({"api_key"})
+                    )
+                    return credentials["api_key"].get_secret_value()
+                except McpCredentialError:
+                    pass
+            return ""
+
+        return create_web_mcp_server(names, PublicWebClient(key, self._web_search_provider))
+
+    async def web_allowed(self, identity: ExecutionIdentity | None) -> bool:
+        if not self._web_enabled:
+            return False
+        if self._web_configurations is None or identity is None:
+            return True
+        configuration = await self._web_configurations.get(identity.tenant_id, identity.user_id)
+        return configuration.effective_enabled
 
     async def resolve(
         self,
@@ -169,9 +210,12 @@ class ToolResolver:
                     )
                 )
 
+        web_allowed = await self.web_allowed(identity)
         python_tool_overrides = python_tool_overrides or {}
         for tool_spec in manifest.spec.tools:
             if tool_spec.builtin is not None:
+                if tool_spec.builtin in {"WebSearch", "WebFetch"} and not web_allowed:
+                    continue
                 if tool_spec.builtin not in builtins:
                     builtins.append(tool_spec.builtin)
                 continue

@@ -7,6 +7,7 @@ included in API responses, logs, manifests, or task input.
 
 from __future__ import annotations
 
+import base64
 import ipaddress
 import json
 from collections.abc import Iterable
@@ -420,6 +421,7 @@ class ModelConfigurationService:
         system_prompt: str,
         user_prompt: str,
         max_tokens: int = 256,
+        images: tuple[tuple[str, bytes], ...] = (),
     ) -> str:
         """Run a small non-streaming control-plane text completion."""
 
@@ -428,6 +430,23 @@ class ModelConfigurationService:
             raise ConflictError("the selected route is not an enabled text model")
         if route.api_format not in {"anthropic_compatible", "openai_compatible"}:
             raise ConflictError("the selected route does not support text completion")
+        if images and "vision" not in route.capabilities:
+            raise ConflictError("当前模型不支持看图，请配置可用的视觉模型")
+        user_content: object = user_prompt
+        if images:
+            if route.api_format == "openai_compatible":
+                user_content = [
+                    {"type": "text", "text": user_prompt},
+                    *({"type": "image_url", "image_url": {
+                        "url": f"data:{mime};base64,{base64.b64encode(data).decode()}"
+                    }} for mime, data in images),
+                ]
+            else:
+                user_content = [
+                    {"type": "text", "text": user_prompt},
+                    *({"type": "image", "source": {"type": "base64", "media_type": mime,
+                       "data": base64.b64encode(data).decode()}} for mime, data in images),
+                ]
         secret = await self._credential_for_route(tenant_id, route)
         if route.api_format == "openai_compatible":
             path = "chat/completions"
@@ -435,7 +454,7 @@ class ModelConfigurationService:
                 "model": route.models[0],
                 "messages": [
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
+                    {"role": "user", "content": user_content},
                 ],
                 "max_tokens": max_tokens,
                 "temperature": 0,
@@ -445,7 +464,7 @@ class ModelConfigurationService:
             payload = {
                 "model": route.models[0],
                 "system": system_prompt,
-                "messages": [{"role": "user", "content": user_prompt}],
+                "messages": [{"role": "user", "content": user_content}],
                 "max_tokens": max_tokens,
                 "temperature": 0,
                 "thinking": {"type": "disabled"},
@@ -1042,11 +1061,15 @@ class ModelConfigurationService:
         payload: dict[str, object],
     ) -> httpx.Response:
         assert route.base_url is not None
+        base_url = route.base_url.rstrip("/")
+        if (route.api_format == "anthropic_compatible" and path == "messages"
+                and not base_url.endswith("/v1")):
+            base_url += "/v1"
         headers = {"content-type": "application/json", **self._headers(route, secret)}
         client = self._http_client or httpx.AsyncClient(timeout=30.0, follow_redirects=False)
         try:
             return await client.post(
-                f"{route.base_url.rstrip('/')}/{path}",
+                f"{base_url}/{path}",
                 headers=headers,
                 json=payload,
             )

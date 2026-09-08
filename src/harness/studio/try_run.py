@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import re
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field
 
+from harness.agui.response import final_response_text
 from harness.core.events import RunEvent
 from harness.core.models import ApprovalRequest, Artifact, Run, RunStatus
 from harness.evals.models import EvalDatasetVersion
@@ -17,6 +18,8 @@ class CreateStudioTryRunRequest(StudioModel):
     expected_revision: int = Field(alias="expectedRevision", ge=1)
     prompt: str = Field(min_length=1, max_length=100_000)
     idempotency_key: str = Field(alias="idempotencyKey", min_length=1, max_length=200)
+    continue_from_run_id: str | None = Field(default=None, alias="continueFromRunId", min_length=1)
+    input_artifact_ids: tuple[str, ...] = Field(default=(), alias="inputArtifactIds", max_length=20)
 
 
 CodexLoopStageId = Literal["plan", "tools", "correction", "verification", "result"]
@@ -58,13 +61,12 @@ class StudioTryRunView(StudioModel):
     approvals: tuple[ApprovalRequest, ...] = ()
     artifacts: tuple[Artifact, ...] = ()
     final_text: str = Field(default="", alias="finalText")
+    activity: dict[str, Any] | None = None
     loop: tuple[CodexLoopStage, ...] = Field(min_length=5, max_length=5)
 
 
 def final_text(events: list[RunEvent]) -> str:
-    return "".join(
-        str(event.payload.get("text", "")) for event in events if event.type == "message.delta"
-    )
+    return final_response_text(events)
 
 
 def _event_summary(event: RunEvent) -> str:
@@ -94,7 +96,7 @@ def _event_summary(event: RunEvent) -> str:
     labels = {
         "run.queued": "试跑已进入隔离执行队列",
         "run.provisioning": "正在准备隔离工作区",
-        "run.running": "Agent 已开始执行计划",
+        "run.running": "Agent 已开始执行",
         "run.succeeded": "试跑成功结束",
         "run.failed": "试跑失败结束",
         "run.rejected": "试跑被策略拒绝",
@@ -160,17 +162,6 @@ def build_codex_loop(run: Run, events: list[RunEvent]) -> tuple[CodexLoopStage, 
     }
     tool_events = [event for event in events if event.type in tool_types]
     failures = [event for event in events if _tool_failed(event)]
-    recovery = bool(
-        failures
-        and any(
-            event.sequence > failures[0].sequence
-            and (
-                (event.type == "tool.result" and not _tool_failed(event))
-                or event.type in {"message.completed", "runtime.turn.completed", "run.succeeded"}
-            )
-            for event in events
-        )
-    )
 
     if tool_events:
         tools_status: CodexLoopStageStatus = "completed" if terminal else "active"
@@ -182,49 +173,32 @@ def build_codex_loop(run: Run, events: list[RunEvent]) -> tuple[CodexLoopStage, 
         tools_status = "pending" if not started else "active"
         tools_summary = "等待 Agent 选择并调用已声明能力"
 
-    if failures:
-        if recovery or succeeded:
-            correction_status: CodexLoopStageStatus = "completed"
-            correction_summary = "检测到失败或拒绝，并由后续安全路径完成修正"
-        elif terminal:
-            correction_status = "failed"
-            correction_summary = "检测到失败或拒绝，运行结束前未形成有效修正"
-        else:
-            correction_status = "active"
-            correction_summary = "已发现失败或拒绝，正在等待重试或调整路径"
-    elif terminal:
-        correction_status = "skipped"
-        correction_summary = "首轮执行路径无需修正"
-    else:
-        correction_status = "pending"
-        correction_summary = "仅在真实错误、拒绝或重试发生时记录修正"
+    correction_status: CodexLoopStageStatus = "failed" if failures else "skipped"
+    correction_summary = (
+        f"记录 {len(failures)} 次错误或拒绝；后续完成不代表问题已修复"
+        if failures else "未观察到错误或拒绝"
+    )
 
     if terminal:
-        verification_status: CodexLoopStageStatus = "completed" if succeeded else "failed"
-        verification_summary = (
-            "已核对终态、工具结果、最终消息与交付物"
-            if succeeded
-            else "终态未通过成功标准，保留失败证据"
-        )
+        verification_status: CodexLoopStageStatus = "skipped"
+        verification_summary = "未进行独立质量评测；执行完成不代表回答正确"
         result_status: CodexLoopStageStatus = "completed" if succeeded else "failed"
         result_summary = (
-            "试跑成功，可固化为不可变 Agent 版本与评测基线"
+            "执行完成；请检查回答质量后再固化评测基线"
             if succeeded
             else f"试跑以 {run.status.value} 结束，不能固化"
         )
     else:
         verification_status = "pending"
-        verification_summary = "等待运行终态后核验结果和交付物"
+        verification_summary = "未进行独立质量评测"
         result_status = "pending"
-        result_summary = "等待验证完成"
+        result_summary = "等待运行结束"
 
     correction_types = {event.type for event in failures}
-    if recovery:
-        correction_types.update({"tool.result", "message.completed", "run.succeeded"})
     return (
         CodexLoopStage(
             id="plan",
-            label="计划",
+            label="运行准备",
             status="completed" if started else "active",
             summary=(
                 f"锁定草稿修订与任务：{prompt_summary}"
@@ -242,7 +216,7 @@ def build_codex_loop(run: Run, events: list[RunEvent]) -> tuple[CodexLoopStage, 
         ),
         CodexLoopStage(
             id="correction",
-            label="修正",
+            label="异常记录",
             status=correction_status,
             summary=correction_summary,
             evidence=_evidence(events, correction_types),

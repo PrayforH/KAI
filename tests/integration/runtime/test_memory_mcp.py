@@ -47,7 +47,7 @@ async def test_remote_memory_mcp_uses_workload_identity_and_creates_proposal() -
                         "propose_memory", {"content": "用户偏好使用中文"}
                     )
 
-    assert [tool.name for tool in tools.tools] == ["propose_memory"]
+    assert [tool.name for tool in tools.tools] == ["propose_memory", "search_memory", "read_memory"]
     assert result.isError is not True
     entries = await container.memory_bank.list_entries("tenant-a", "user-a")
     assert len(entries) == 1

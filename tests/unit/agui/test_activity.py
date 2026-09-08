@@ -200,6 +200,21 @@ def test_projects_visible_progress_text_but_suppresses_hidden_thinking_noise() -
     assert activity_projection(event("runtime.system", {"subtype": "thinking_tokens"})) == []
 
 
+def test_projects_provider_reasoning_summary_as_visible_analysis() -> None:
+    projected = activity_projection(
+        event(
+            "reasoning.summary.delta",
+            {"text": "先核对配置，再运行测试。", "item_id": "reasoning-1"},
+        )
+    )[0].model_dump(by_alias=True)
+
+    item = projected["patch"][0]["value"]
+    assert item["event_type"] == "reasoning.summary.delta"
+    assert item["title"] == "思考摘要"
+    assert item["summary"] == "先核对配置，再运行测试。"
+    assert item["metadata"] == {"item_id": "reasoning-1"}
+
+
 def test_projects_safe_runtime_milestones_without_internal_identifiers() -> None:
     restored = activity_projection(
         event(
@@ -242,9 +257,9 @@ def test_projects_safe_runtime_milestones_without_internal_identifiers() -> None
 
 
 def test_context_recovery_is_visible_without_projecting_digest_content() -> None:
-    projected = activity_projection(
-        event("context.recovery.loaded", {"mode": "digest_rebase"})
-    )[0].model_dump(by_alias=True)
+    projected = activity_projection(event("context.recovery.loaded", {"mode": "digest_rebase"}))[
+        0
+    ].model_dump(by_alias=True)
 
     item = projected["patch"][0]["value"]
     assert item["title"] == "上下文恢复点已载入"
@@ -517,3 +532,32 @@ def test_history_replay_hides_internal_skill_read_content() -> None:
     assert result["metadata"]["result_summary"] == "内部 Skill / 提示词内容已隐藏"
     assert result["metadata"].get("result_preview") is None
     assert "PRIVATE SKILL INSTRUCTIONS" not in repr(activity)
+
+
+def test_reasoning_preserves_long_provider_text_and_whitespace_with_redaction() -> None:
+    text = "完整摘要。" * 500 + " password=secret-value"
+    activity = build_run_activity(
+        [
+            event("run.running"),
+            event("reasoning.summary.delta", {"text": text, "item_id": "one"}, 2),
+            event("reasoning.summary.delta", {"text": " ", "item_id": "one"}, 3),
+        ]
+    )
+    assert activity is not None
+    summaries = [
+        item["summary"]
+        for item in activity["items"]
+        if item["event_type"] == "reasoning.summary.delta"
+    ]
+    assert summaries[0] == "完整摘要。" * 500 + " password=[REDACTED]"
+    assert summaries[1] == " "
+
+
+def test_historical_budget_failure_is_explained() -> None:
+    projected = activity_projection(event("runtime.result", {
+        "subtype": "error_max_budget_usd", "is_error": True, "total_cost_usd": 4.005826,
+    }))
+    assert projected is not None
+    result = projected[0].model_dump(by_alias=True)["patch"][0]["value"]
+    assert result["title"] == "达到运行费用上限"
+    assert "取消费用和 Token" in result["summary"]

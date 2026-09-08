@@ -81,8 +81,6 @@ def build_remote_claude_command(
         command.extend(["--allowedTools", ",".join(options.allowed_tools)])
     if options.max_turns:
         command.extend(["--max-turns", str(options.max_turns)])
-    if options.max_budget_usd is not None:
-        command.extend(["--max-budget-usd", str(options.max_budget_usd)])
     if options.model:
         command.extend(["--model", options.model])
     if options.permission_mode:

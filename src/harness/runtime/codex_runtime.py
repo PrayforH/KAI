@@ -8,6 +8,7 @@ import json
 import logging
 import shutil
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, cast
@@ -245,8 +246,7 @@ class CodexAppServerRuntime:
                 "codex_control_request_timeout",
                 error_code="codex_control_timeout",
                 user_message=(
-                    "Codex 运行环境启动超时，请重试。"
-                    f"尚未进入模型执行阶段（{error.method}）。"
+                    f"Codex 运行环境启动超时，请重试。尚未进入模型执行阶段（{error.method}）。"
                 ),
             ) from error
         except CodexRpcRemoteError as error:
@@ -311,6 +311,7 @@ class CodexAppServerRuntime:
             if context.runtime_transport_factory is not None
             else self._process_factory(options)
         )
+        steering_task: asyncio.Task[None] | None = None
         try:
             await process.start()
             client = process.client
@@ -353,10 +354,39 @@ class CodexAppServerRuntime:
                 },
             )
             turn_id = self._turn_id(turn_response)
+            if context.steering is not None:
+                await context.steering.open()
+
+                async def deliver_guidance() -> None:
+                    assert context.steering is not None
+                    while True:
+                        for item in await context.steering.read():
+                            await context.steering.sending(item)
+                            try:
+                                await client.request(
+                                    "turn/steer",
+                                    {
+                                        "threadId": thread_id,
+                                        "expectedTurnId": turn_id,
+                                        "input": [{"type": "text", "text": item.text}],
+                                    },
+                                )
+                            except Exception:
+                                await context.steering.acknowledge(
+                                    item,
+                                    error="当前回合已结束或无法接收引导，请在下一条消息中重试",
+                                )
+                            else:
+                                await context.steering.acknowledge(item)
+                        await asyncio.sleep(0.25)
+
+                steering_task = asyncio.create_task(deliver_guidance())
             completed = False
             tool_call_count = 0
             last_runtime_error = "Other"
             async for message in client.inbound():
+                if steering_task is not None and steering_task.done():
+                    await steering_task
                 if message.kind is CodexMessageKind.SERVER_REQUEST:
                     await self._handle_server_request(client, context, message)
                     continue
@@ -421,10 +451,20 @@ class CodexAppServerRuntime:
             )
         finally:
             try:
-                await process.close()
+                if steering_task is not None:
+                    steering_task.cancel()
+                    try:
+                        with suppress(asyncio.CancelledError):
+                            await steering_task
+                    finally:
+                        assert context.steering is not None
+                        await context.steering.close()
             finally:
-                if local_home is not None:
-                    await asyncio.to_thread(_persist_local_codex_home, local_home)
+                try:
+                    await process.close()
+                finally:
+                    if local_home is not None:
+                        await asyncio.to_thread(_persist_local_codex_home, local_home)
 
     async def _open_thread(
         self,
@@ -561,8 +601,7 @@ class CodexAppServerRuntime:
     def _turn_error_message(reason_code: str) -> str:
         return {
             "ContextWindowExceeded": (
-                "Codex 上下文已达到模型窗口上限，平台已重置运行线程，"
-                "请重试本条任务。"
+                "Codex 上下文已达到模型窗口上限，平台已重置运行线程，请重试本条任务。"
             ),
             "RateLimited": "模型渠道正在限流，请稍后重试。",
             "AuthenticationFailed": "模型渠道认证失败，请检查控制面的模型渠道配置。",
