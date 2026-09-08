@@ -238,7 +238,7 @@ describe("task agent catalog", () => {
       ),
     );
 
-    const catalog = await loadTaskAgentCatalog();
+    const catalog = await loadTaskAgentCatalog(null, true);
 
     expect(catalog.agents).toEqual([
       {
@@ -247,6 +247,26 @@ describe("task agent catalog", () => {
         displayName: "echo-agent",
         domain: "default",
       },
+    ]);
+    expect(catalog.defaultAgent.name).toBe("echo-agent");
+  });
+
+  it("keeps the internal validation runtime out of the visible catalog", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) =>
+        String(input).includes("runtime-config")
+          ? Response.json({ name: "echo-agent", version: "0.4.0" })
+          : new Response("offline", { status: 503 }),
+      ),
+    );
+
+    const catalog = await loadTaskAgentCatalog();
+
+    expect(catalog.agents).toEqual([]);
+    expect(catalog.defaultAgent.name).toBe("echo-agent");
+    expect(catalog.hiddenAgents?.map((agent) => agent.name)).toEqual([
+      "echo-agent",
     ]);
   });
 
@@ -281,10 +301,12 @@ describe("task agent catalog", () => {
     const catalog = await loadTaskAgentCatalog();
 
     expect(catalog.agents.map(agentCoordinate)).toEqual([
-      "echo-agent@0.4.0",
       "public-opinion-agent@0.1.1",
     ]);
-    expect(catalog.agents[1].displayName).toBe("舆情分析");
+    expect(catalog.agents[0].displayName).toBe("舆情分析");
+    expect(catalog.hiddenAgents?.map(agentCoordinate)).toEqual([
+      "echo-agent@0.4.0",
+    ]);
   });
 
   it("suppresses only the current user's duplicate Studio fallback release", async () => {
