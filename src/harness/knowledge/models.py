@@ -200,6 +200,8 @@ class KnowledgeBase(KnowledgeModel):
         alias="engine",
     )
     engine_ref: str = Field(default="", alias="engineRef", max_length=128)
+    # Last synced document count for engine-backed bases; 0 when unknown.
+    document_count: int = Field(default=0, alias="documentCount", ge=0)
     revision: int = Field(ge=1)
     created_by: str = Field(alias="createdBy", min_length=1)
     updated_by: str = Field(alias="updatedBy", min_length=1)

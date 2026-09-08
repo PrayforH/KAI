@@ -1171,6 +1171,7 @@ def build_production_container(
         bindings=binding_repository,
         contexts=context_service,
         title_generator=ControlPlaneTaskTitleGenerator(model_configurations),
+        knowledge_bindings=knowledge.resolve_bindings,
     )
 
     async def infrastructure_facts(tenant_id: str) -> dict[str, int | None]:

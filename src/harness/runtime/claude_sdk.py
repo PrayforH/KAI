@@ -119,6 +119,26 @@ _ANTHROPIC_AUTO_PERMISSION_MODELS = frozenset(
 )
 
 
+def _knowledge_bindings_for(
+    context: RuntimeContext,
+) -> tuple[KnowledgeSnapshotBinding, ...]:
+    """Per-run knowledge selection wins over the session's pinned bindings.
+
+    The composer lets a user pick knowledge bases for the current thread; that
+    choice travels on the run input so a session can serve several selections.
+    """
+    override = context.run.input.get("knowledge_binding_override")
+    if isinstance(override, list) and override:
+        return tuple(
+            KnowledgeSnapshotBinding.model_validate(item)
+            for item in cast(list[object], override)
+        )
+    return tuple(
+        KnowledgeSnapshotBinding.model_validate(item)
+        for item in context.session.knowledge_snapshot_bindings
+    )
+
+
 def permission_mode_for_route(route: ModelRoute) -> Literal["auto", "dontAsk"]:
     """Use Claude Auto only where Anthropic documents and serves it."""
 
@@ -709,10 +729,7 @@ class ClaudeSdkRuntime:
         allowed_tools = list(resolved_tools.allowed_tools)
         builtin_tools = list(resolved_tools.builtin_tools)
         remote_transport = context.runtime_transport_factory is not None
-        knowledge_bindings = tuple(
-            KnowledgeSnapshotBinding.model_validate(item)
-            for item in context.session.knowledge_snapshot_bindings
-        )
+        knowledge_bindings = _knowledge_bindings_for(context)
         if (
             remote_transport
             and self._remote_memory_mcp is not None
@@ -1155,19 +1172,17 @@ class ClaudeSdkRuntime:
                 execution_context.enter_context(
                     memory_execution_context(self._memory_bank, context.identity)
                 )
+            run_knowledge_bindings = _knowledge_bindings_for(context)
             if (
                 self._knowledge is not None
                 and context.identity is not None
-                and context.session.knowledge_snapshot_bindings
+                and run_knowledge_bindings
             ):
                 execution_context.enter_context(
                     knowledge_execution_context(
                         self._knowledge,
                         context.identity,
-                        tuple(
-                            KnowledgeSnapshotBinding.model_validate(item)
-                            for item in context.session.knowledge_snapshot_bindings
-                        ),
+                        run_knowledge_bindings,
                     )
                 )
             if context.artifact_publisher is not None:

@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import re
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal, cast
@@ -64,6 +65,35 @@ class AguiContextRebase:
     digest: SessionContextDigest
 
 
+KnowledgeBindingResolver = Callable[
+    [str, str, Sequence[str], tuple[str, ...]],
+    Awaitable[Sequence[object]],
+]
+
+
+def _knowledge_references_override(request: RunAgentInput) -> list[str] | None:
+    """Per-conversation knowledge base selection from the composer.
+
+    The Agent manifest still defines the default set; this override lets a user
+    pick (and multi-select) knowledge bases for the current thread.
+    """
+    raw = request.forwarded_props
+    if not isinstance(raw, dict):
+        return None
+    value = cast(dict[str, object], raw).get("knowledgeReferences")
+    if value is None or value == []:
+        return None
+    if not isinstance(value, list):
+        raise ConflictError("task knowledge reference override is invalid")
+    references: list[str] = []
+    for item in cast(list[object], value):
+        if not isinstance(item, str) or not re.fullmatch(r"[a-z][a-z0-9-]{0,127}", item):
+            raise ConflictError("task knowledge reference override is invalid")
+        if item not in references:
+            references.append(item)
+    return references or None
+
+
 class AguiRunService:
     def __init__(
         self,
@@ -74,6 +104,7 @@ class AguiRunService:
         bindings: AguiThreadBindingRepository | None = None,
         title_generator: TaskTitleGenerator | None = None,
         contexts: ContextService | None = None,
+        knowledge_bindings: KnowledgeBindingResolver | None = None,
     ) -> None:
         self._sessions = sessions
         self._run_service = runs
@@ -81,6 +112,7 @@ class AguiRunService:
         self._bindings = bindings or InMemoryAguiThreadBindingRepository()
         self._title_generator = title_generator
         self._contexts = contexts
+        self._knowledge_bindings = knowledge_bindings
         self._title_tasks: set[asyncio.Task[None]] = set()
         self._title_task_keys: set[tuple[str, str, str, datetime]] = set()
         self._run_bindings: dict[tuple[str, str, str, str], str] = {}
@@ -202,21 +234,8 @@ class AguiRunService:
             user_id=user_id,
             input_artifact_ids=input_artifact_ids,
         )
-        run_input: dict[str, object] = {
-            "prompt": prompt,
-            "conversation_prompts": conversation_prompts,
-            "input_artifact_ids": [item.input_artifact_id for item in resolved],
-            **(
-                {"required_model_capabilities": ["vision"]}
-                if any(item.media_type.startswith("image/") for item in resolved)
-                else {}
-            ),
-            **(
-                {"model_route_override": model_route_override}
-                if (model_route_override := _model_route_override(request)) is not None
-                else {}
-            ),
-        }
+        model_route_override = _model_route_override(request)
+        requested_knowledge = _knowledge_references_override(request)
         creation = None
         for attempt in range(2):
             binding = await self._resolve_binding(
@@ -229,6 +248,32 @@ class AguiRunService:
                 space_id=space_id,
                 connection_mode=connection_mode,
             )
+            knowledge_override = await self._resolve_knowledge_override(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                session_id=binding.session_id,
+                references=requested_knowledge,
+            )
+            run_input: dict[str, object] = {
+                "prompt": prompt,
+                "conversation_prompts": conversation_prompts,
+                "input_artifact_ids": [item.input_artifact_id for item in resolved],
+                **(
+                    {"required_model_capabilities": ["vision"]}
+                    if any(item.media_type.startswith("image/") for item in resolved)
+                    else {}
+                ),
+                **(
+                    {"model_route_override": model_route_override}
+                    if model_route_override is not None
+                    else {}
+                ),
+                **(
+                    {"knowledge_binding_override": knowledge_override}
+                    if knowledge_override
+                    else {}
+                ),
+            }
             creation = await self._run_service.create_with_result(
                 tenant_id,
                 binding.session_id,
@@ -566,6 +611,28 @@ class AguiRunService:
             async with self._lock:
                 self._run_bindings[key] = run_id
         return await self._run_service.get(tenant_id, run_id)
+
+    async def _resolve_knowledge_override(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        session_id: str,
+        references: list[str] | None,
+    ) -> list[dict[str, object]]:
+        if not references or self._knowledge_bindings is None:
+            return []
+        session = await self._sessions.get(tenant_id, session_id)
+        resolved = await self._knowledge_bindings(
+            tenant_id,
+            user_id,
+            references,
+            session.team_ids,
+        )
+        return [
+            cast(object, item).model_dump(mode="json", by_alias=True)  # type: ignore[attr-defined]
+            for item in resolved
+        ]
 
     async def _resolve_binding(
         self,

@@ -211,6 +211,7 @@ class KnowledgeService:
         owner_user_id: str | None = None,
     ) -> Sequence[KnowledgeBase]:
         values = await self.repository.list_bases(tenant_id)
+        values = tuple([await self._with_document_count(tenant_id, item) for item in values])
         if owner_user_id is None:
             return values
         member_references = {
@@ -826,6 +827,22 @@ class KnowledgeService:
 
     # --- engine-backed (WeKnora) knowledge bases --------------------------
 
+    async def _with_document_count(
+        self,
+        tenant_id: str,
+        base: KnowledgeBase,
+    ) -> KnowledgeBase:
+        """Attach the last synced document count without a remote round trip."""
+        if base.engine is not KnowledgeBaseEngine.WEKNORA or not base.engine_ref:
+            return base
+        try:
+            source = await self.repository.get_source(tenant_id, base.reference)
+        except NotFoundError:
+            return base
+        raw = source.checkpoint.get("documents")
+        count = raw if isinstance(raw, int) and raw >= 0 else 0
+        return base.model_copy(update={"document_count": count})
+
     def _require_engine(self) -> KnowledgeEnginePort:
         if self._engine is None:
             raise KnowledgeEngineNotConfiguredError("weknora knowledge engine is not configured")
@@ -888,6 +905,10 @@ class KnowledgeService:
             update={
                 "revision": source.revision + 1,
                 "health": KnowledgeSourceHealth.HEALTHY,
+                "checkpoint": {
+                    "documents": len(documents),
+                    "parse_completed": parse_completed,
+                },
                 "last_sync_id": sync.sync_id,
                 "last_sync_at": completed_at,
                 "last_error": None,

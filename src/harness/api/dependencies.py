@@ -924,6 +924,7 @@ def build_memory_container(
         runs=run_service,
         input_artifacts=input_artifact_service,
         contexts=context_service,
+        knowledge_bindings=knowledge.resolve_bindings,
     )
 
     async def lifecycle_reap() -> int:
