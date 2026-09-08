@@ -447,3 +447,12 @@ body.codex-theme-v1 .login-card-footer nav {
     padding-inline: 22px;
   }
 }
+
+/* Real product mark replaces the letter placeholder in the login card. */
+body.codex-theme-v1 .login-card-brand .login-brand-mark img,
+html[data-color-mode="light"] body.codex-theme-v1 .login-card-brand .login-brand-mark img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}

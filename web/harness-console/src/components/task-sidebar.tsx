@@ -404,6 +404,9 @@ export function TaskSidebar({
                 <strong>{PRODUCT_NAME}</strong>
               </span>
             </Link>
+            {searchControl ? (
+              <div className="task-sidebar-search-control">{searchControl}</div>
+            ) : null}
             <button
               ref={closeButtonRef}
               type="button"
@@ -421,12 +424,11 @@ export function TaskSidebar({
               <NewTaskIcon />
               <span>新建任务</span>
             </button>
-            {searchControl ? <div className="task-sidebar-search-control">{searchControl}</div> : null}
           </div>
           <div className="task-sidebar-mode">
             <WorkspaceNavigation
               active={activeNav}
-              visible={["agents", "capabilities"]}
+              visible={["knowledge", "agents", "capabilities"]}
               labelOverrides={{ capabilities: "技能 / MCP" }}
             />
           </div>

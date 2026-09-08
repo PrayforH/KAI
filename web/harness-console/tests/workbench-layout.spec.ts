@@ -229,7 +229,7 @@ describe("full-page agent workbench", () => {
   it("keeps agents and capabilities in the simplified task sidebar", () => {
     expect(taskSidebar).not.toContain("WorkspaceModeSwitcher");
     expect(studioSidebar).not.toContain("WorkspaceModeSwitcher");
-    expect(taskSidebar).toContain('visible={["agents", "capabilities"]}');
+    expect(taskSidebar).toContain('visible={["knowledge", "agents", "capabilities"]}');
     expect(taskSidebar).toContain('labelOverrides={{ capabilities: "技能 / MCP" }}');
     expect(taskSidebar).not.toContain('visible={["agents", "files"]}');
     expect(studioSidebar).toContain('visible={["tasks", "agents"]}');

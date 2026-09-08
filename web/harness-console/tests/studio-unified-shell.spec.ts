@@ -41,7 +41,7 @@ describe("Studio unified shell", () => {
     expect(shell).toContain("usePathname");
     expect(shell).toContain('pathname.startsWith("/studio/skills")');
     expect(taskSidebar).toContain('active={activeNav}');
-    expect(taskSidebar).toContain('visible={["agents", "capabilities"]}');
+    expect(taskSidebar).toContain('visible={["knowledge", "agents", "capabilities"]}');
     expect(taskSidebar).toContain('labelOverrides={{ capabilities: "技能 / MCP" }}');
   });
 

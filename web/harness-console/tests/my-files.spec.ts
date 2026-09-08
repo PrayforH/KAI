@@ -34,7 +34,7 @@ describe("my files", () => {
   });
 
   it("removes the files entry from the task shell while preserving its authenticated direct route", () => {
-    expect(taskSidebar).toContain('visible={["agents", "capabilities"]}');
+    expect(taskSidebar).toContain('visible={["knowledge", "agents", "capabilities"]}');
     expect(taskSidebar).not.toContain('visible={["agents", "files"]}');
     expect(workspaceNavigation.indexOf('id: "files"')).toBeGreaterThan(
       workspaceNavigation.indexOf('id: "agents"'),

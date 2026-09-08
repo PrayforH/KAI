@@ -2255,3 +2255,47 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .workbench
     padding-inline: 18px;
   }
 }
+
+/* Search moved into the sidebar brand row, left of the collapse control. It
+   renders as a compact icon button; the knowledge base entry takes its former
+   place in the workspace navigation. */
+body.codex-theme-v1:has(.console-shell) .task-sidebar-brand .task-sidebar-brand-link {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-sidebar-brand .task-sidebar-search-control {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-sidebar-brand .task-sidebar-search-control .command-center-trigger {
+  width: 34px;
+  min-height: 34px;
+  height: 34px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--codex-muted);
+  background: transparent;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-sidebar-brand .task-sidebar-search-control .command-center-trigger:hover,
+body.codex-theme-v1:has(.console-shell) .task-sidebar-brand .task-sidebar-search-control .command-center-trigger[aria-expanded="true"] {
+  border-color: var(--codex-line);
+  color: var(--codex-ink);
+  background: var(--codex-surface-hover);
+}
+
+body.codex-theme-v1:has(.console-shell) .task-sidebar-brand .task-sidebar-search-control .command-center-trigger > span,
+body.codex-theme-v1:has(.console-shell) .task-sidebar-brand .task-sidebar-search-control .command-center-trigger kbd {
+  display: none;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-sidebar-brand .task-sidebar-search-control .command-center-trigger svg {
+  width: 17px;
+  height: 17px;
+  color: currentColor;
+}
