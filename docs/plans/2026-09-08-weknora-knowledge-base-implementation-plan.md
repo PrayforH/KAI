@@ -3,6 +3,7 @@
 - 日期：2026-09-08
 - 配套设计：[2026-09-08-weknora-knowledge-base-design.md](2026-09-08-weknora-knowledge-base-design.md)
 - 分支：`feature/weknora-knowledge-base`
+- 变更记录：2026-09-08 决策**首期不对接 IDAAS**（需求 4 拆期：一期按平台用户目录做成员授权，组织树二期另立计划），M4 由 7 人日调整为 5.5 人日，详见设计 §3.4。
 - 参照：174 WeKnora `http://172.20.109.174:8180`（页面细节以该实例为准；服务账号在 `.env`，不入库）
 - 执行约定：每个任务一个独立 commit；`make verify` + `make web-build` 常绿；涉及 WeKnora 真实调用的测试用录制夹具（respx/vcr），CI 不直连 174。
 
@@ -56,18 +57,17 @@
 - [ ] T3.4 hybrid 聚合检索（1d）
   - `search(mode=hybrid)`：并行 hybrid-search + wiki/search，加权融合（0.6/0.4 可配），命中标记 `chunk|wiki_page`；单测覆盖融合与去重。
 
-## M4 权限与问答引用（需求 4、5）— 约 7 人日
+## M4 权限与问答引用（需求 4、5；首期不含 IDAAS）— 约 5.5 人日
 
 - [ ] T4.1 kb_members 模型与迁移（1d）
-  - `kb_members(kb_reference, subject_type user|org_unit, subject_id, idaas_org_path, role viewer|editor, ...)`；effective 权限解析（直授覆盖继承）。
-- [ ] T4.2 IDAAS 适配器 + 本地桩（1.5d）
-  - `src/harness/auth/idaas.py`：`IdentityDirectoryPort` + HTTP 实现 + CSV 导入桩（IDAAS 未接入时用）；`HARNESS_IDAAS_*` 配置。
-  - 开放问题（阻塞真实对接，不阻塞开发）：IDAAS 组织树/用户查询接口规格。
+  - `kb_members(kb_reference, subject_type user|org_unit, subject_id, org_path, role viewer|editor, ...)`；`org_unit/org_path` 为二期 IDAAS 预留，一期只写 `user`；effective 权限解析器一期实现"直授覆盖继承"骨架（继承分支空实现）。
+- [ ] T4.2 平台用户目录（0.5d）
+  - `IdentityDirectoryPort` 一期实现 = AXIS `users` 表（`resolve_users`、`search_users`）；不引入 `HARNESS_IDAAS_*` 配置。
 - [ ] T4.3 成员 API 与执行收口（1.5d）
-  - `GET/POST/PUT/DELETE /v1/studio/knowledge/bases/{ref}/members`（批量：org_paths[]/user_ids[] + role）；`KnowledgeService` 全部读写路径统一走 effective 成员校验。
-  - 验收：无 viewer 隐藏目录；viewer 访问写接口 403；继承/直授覆盖单测。
-- [ ] T4.4 成员管理 UI（1.5d）
-  - KB 设置新增"成员管理"：左 IDAAS 组织树（懒加载/搜索、勾选）+ 角色选择 + 批量添加；右成员表（继承/直授徽标、角色下拉、移除）。
+  - `GET/POST/PUT/DELETE /v1/studio/knowledge/bases/{ref}/members`（批量：`user_ids[]|emails[]` + role，无效条目忽略并返回清单）；`KnowledgeService` 全部读写路径统一走 effective 成员校验。
+  - 验收：无 viewer 隐藏目录；viewer 访问写接口 403；重复授权幂等。
+- [ ] T4.4 成员管理 UI（1d）
+  - KB 设置新增"成员管理"：用户搜索多选 + 粘贴邮箱批量添加（选查看/编辑角色）；成员表（角色下拉、移除）。页签左侧预留组织树位置给二期。
 - [ ] T4.5 问答引用链路（1d）
   - `knowledge/runtime.py` `query_knowledge_sources` 返回结构化引用（citation_index/chunk_id/knowledge_id/document_title/content/score）；`agui/activity.py` 事件附带 `citations`；线程历史缓存兼容回放。
 - [ ] T4.6 引用前端（0.5d）
@@ -75,7 +75,7 @@
 
 ## 验收联调（0.5 里程碑，2 人日）
 
-- 对 174 实例端到端脚本：建 rag / wiki / hybrid 三库 → 上传文档 → 状态跟踪至 completed → 查看切片 → wiki 索引与图谱渲染 → 配置成员（组织继承 + 直授覆盖）→ 会话提问验证引用切片查看。
+- 对 174 实例端到端脚本：建 rag / wiki / hybrid 三库 → 上传文档 → 状态跟踪至 completed → 查看切片 → wiki 索引与图谱渲染 → 配置成员（批量直授 + 角色变更校验）→ 会话提问验证引用切片查看。
 - 回归：legacy 引擎知识库（file/web 连接器、团队空间共享）不受影响；`make verify`、`make e2e`、`make web-test`、`make web-build` 全绿。
 
 ## 排期汇总
@@ -85,7 +85,11 @@
 | M1 网关与 RAG 后台 | 6 | 6 |
 | M2 目录与卡片 | 4 | 10 |
 | M3 Wiki 与图谱 | 6 | 16 |
-| M4 权限与问答引用 | 7 | 23 |
-| 验收联调 | 2 | 25 |
+| M4 权限与问答引用（不含 IDAAS） | 5.5 | 21.5 |
+| 验收联调 | 2 | 23.5 |
 
-并行建议：T4.1/T4.2（权限模型与桩）可与 M2/M3 并行；前端 G6 选型 PoC（T3.3 前置）可在 M1 期间先行验证。
+并行建议：T4.1/T4.2（权限模型与用户目录）可与 M2/M3 并行；前端 G6 选型 PoC（T3.3 前置）可在 M1 期间先行验证。
+
+## 二期预留（IDAAS 接入，另立计划）
+
+一期交付后按需启动，模型与 API 契约不变：IDAAS HTTP 适配器实现 `IdentityDirectoryPort` 的 `get_org_tree()`/`list_users_under(path, recursive)`（配置 `HARNESS_IDAAS_BASE_URL/TOKEN`）；成员管理页左侧组织树（懒加载/搜索、按组织子树批量授权）；`org_unit` 继承授权生效（填充 effective 权限解析器继承分支）；`HARNESS_IDAAS_*` 配置与目录同步任务。粗估 3-4 人日（依赖 IDAAS 接口规格）。

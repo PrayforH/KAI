@@ -8,7 +8,7 @@
   1. 知识库管理：卡片式统一管理 rag / wiki / rag+wiki 混合三类知识库（P1）
   2. RAG 知识库：后台替换为 WeKnora，支持切片、向量构建、状态跟踪、切片详情查看（P1）
   3. Wiki 知识库：接入 WeKnora wiki 与 rag+wiki 混合搜索，支持切片、wiki 索引构建与展示（摘要/实体/概念抽取）、图谱渲染（P1）
-  4. 知识库权限管理：基于 IDAAS 用户组织机构目录树配置使用权限，支持批量添加成员、按成员配置查看/编辑权限（P1）
+  4. 知识库权限管理：基于 IDAAS 用户组织机构目录树配置使用权限，支持批量添加成员、按成员配置查看/编辑权限（P1；**2026-09-08 决策：首期不对接 IDAAS**，拆期见 §3.4）
   5. RAG 知识库问答适配：问答召回文本切片，回复中可点击查看引用切片详情（P1）
 - 非目标（本轮不做，仅预留接口）：需求 6 wiki 问答高亮/图谱跳转、需求 7 智能体问答适配（基本现成）、需求 8 历史对话管理（基本现成）、需求 9 自定义选择 skills（P2）。
 
@@ -74,7 +74,9 @@ WikiPage: id, slug(entity|concept|summary|index)/..., title, page_type, status,
 
 ### 1.5 权限模型差距（对需求 4 的关键结论)
 
-WeKnora 的权限 = **租户角色 + 共享空间(组织)成员角色 + KB 级 share 到 space**，没有"按 IDAAS 组织机构目录树逐成员授权查看/编辑"的产品概念。因此需求 4 的授权模型、组织树选择器、批量成员解析必须建在 AXIS 侧（IDAAS 对接），WeKnora 仅以服务账号被 AXIS 代理访问，不直接暴露给终端用户。
+WeKnora 的权限 = **租户角色 + 共享空间(组织)成员角色 + KB 级 share 到 space**，没有"按 IDAAS 组织机构目录树逐成员授权查看/编辑"的产品概念。因此需求 4 的授权模型、组织树选择器、批量成员解析必须建在 AXIS 侧，WeKnora 仅以服务账号被 AXIS 代理访问，不直接暴露给终端用户。
+
+**首期决策（2026-09-08）：不对接 IDAAS。** 需求 4 拆两期：一期基于 AXIS 平台用户目录落地 KB 成员模型、批量添加与查看/编辑授权；IDAAS 组织树对接（实时目录同步、组织继承授权、组织树选择器）延后二期，数据模型一次到位、字段预留，二期只换目录来源不改表。
 
 ---
 
@@ -178,23 +180,25 @@ AXIS 侧 `KnowledgeBase`（`knowledge/models.py:140`）新增字段：`kb_type: 
   - **图谱页签**：力导向图渲染 wiki graph（`nodes[{slug,title,page_type,link_count}]` + links）。选型 **AntV G6 v5**（力导向/图例/缩略图导航/中文文档完善，bundle ~200KB gzip；备选 reactflow，偏流程图场景）。交互：按 page_type 着色（摘要蓝/实体绿/概念橙，与 WeKnora 一致）、点节点开页面抽屉、"全库概览"一键复位、节点数>500 时开 CDN 分页加载。
 - **混合搜索**：`kb_type=hybrid` 的 `search` 并行调 `hybrid-search`（文本切片）与 `wiki/search`（页面命中），按来源加权融合（切片 0.6 / wiki 页 0.4，可配），命中类型标记 `chunk|wiki_page`。
 
-### 3.4 功能 4：知识库权限管理（IDAAS 组织树 + 成员查看/编辑）
+### 3.4 功能 4：知识库权限管理（成员查看/编辑；IDAAS 延后）
 
-分两阶段交付，模型一次到位：
+**首期不对接 IDAAS**（2026-09-08 决策）：成员授权基于 AXIS 平台用户目录落地"批量添加成员 + 按成员查看/编辑"；组织机构目录树（实时 IDAAS 同步、按组织子树继承授权、组织树选择器）延后二期。数据模型一次到位、字段预留，二期只换目录来源、不改表结构。
 
 - **数据模型**（迁移 `00xx_kb_members.py`）：
 
 ```
-kb_members(id, kb_reference, subject_type user|org_unit, subject_id, idaas_org_path,
+kb_members(id, kb_reference, subject_type user|org_unit, subject_id, org_path,
            role viewer|editor, granted_by, granted_at, UNIQUE(kb_reference, subject_type, subject_id))
 ```
 
-- `subject_type=org_unit` 表示"按组织子树授权"（继承），`user` 为直授；effective 权限 = 直授覆盖继承。角色仅查看/编辑两档（映射 API reader/writer），owner 沿用创建者。
-- **IDAAS 适配器** `src/harness/auth/idaas.py`：`IdentityDirectoryPort`（`get_org_tree()`、`list_users_under(path, recursive)`、`resolve_user(email|id)`），配置 `HARNESS_IDAAS_BASE_URL/TOKEN`；**IDAAS 环境未就绪时以本地组织树桩（可导入 CSV）顶替，模型不变**。
-- **API**（`/v1/studio/knowledge/bases/{ref}/members`）：`GET` 列表（含继承来源）、`POST` 批量添加（body: `org_paths[] | user_ids[]` + `role`，服务端经 IDAAS 展开为成员）、`PUT /:member_id`（改角色）、`DELETE /:member_id`。
+- 一期只写 `subject_type=user`（直授）；`org_unit`/`org_path` 字段为二期组织继承预留。effective 权限解析器一期即实现"直授覆盖继承"的骨架（继承分支空实现），二期接入目录后填充。
+- 角色仅查看/编辑两档（映射 API reader/writer），owner 沿用创建者。
+- **用户目录**：`IdentityDirectoryPort`（`resolve_users(ids|emails)`、`search_users(q)`）一期由平台 `users` 表实现（`src/harness/auth/`）；不引入 `HARNESS_IDAAS_*` 配置。
+- **API**（`/v1/studio/knowledge/bases/{ref}/members`）：`GET` 列表、`POST` 批量添加（body: `user_ids[] | emails[]` + `role`，服务端解析为成员，无效邮箱忽略并在响应中返回清单）、`PUT /:member_id`（改角色）、`DELETE /:member_id`。
 - **执行点**（后端统一收口在 `KnowledgeService` 的 ACL 复查处）：目录可见性、文档/切片/Wiki/图谱代理读、检索、QA 引用查看，全部要求 effective ≥ viewer；写操作 ≥ editor。WeKnora 侧不感知终端用户（服务账号），权限完全由 AXIS 代理层裁决。
-- **前端**：KB 设置新增"成员管理"页签——左侧 IDAAS 组织树（懒加载、搜索），勾选组织/用户 → 选择"查看/编辑" → 批量添加；右侧成员表（来源：组织继承/直授徽标、角色下拉、移除）。对齐需求"批量添加多个用户 + 逐成员自定义查看/编辑"。
+- **前端**：KB 设置新增"成员管理"页签——用户搜索多选 + 粘贴邮箱批量添加（选"查看/编辑"角色）；成员表（角色下拉、移除）。页签左侧预留组织树位置，二期接入 IDAAS 后启用。
 - **与现有模型关系**：`KnowledgeAcl`（tenant/restricted + user/workload 白名单）保留作为粗粒度开关；`kb_members` 为 KB 级细粒度层；团队空间 `SharedKnowledgeBase` 不变。
+- **二期预留（IDAAS，另立计划）**：HTTP 适配器实现 `IdentityDirectoryPort` 的 `get_org_tree()`、`list_users_under(path, recursive)`；配置 `HARNESS_IDAAS_BASE_URL/TOKEN`；成员管理页左侧组织树（懒加载/搜索、勾选组织子树批量授权）；`org_unit` 继承授权生效。API 契约与表结构不变。
 
 ### 3.5 功能 5：RAG 知识库问答适配（引用切片点击查看）
 
@@ -216,12 +220,12 @@ kb_members(id, kb_reference, subject_type user|org_unit, subject_id, idaas_org_p
 | M1 网关与 RAG 后台 | WeknoraClient/端口/配置/组合根；KB+文档+状态跟踪+切片代理；检索分派 | 需求 2 | 6d | 无 |
 | M2 目录与卡片 | kb_type 模型+迁移；bases API 扩展；卡片页/新建向导/KB 详情(文档页签) | 需求 1(+2 UI) | 4d | M1 |
 | M3 Wiki 与图谱 | wiki 代理端点；Wiki 页签(目录树/索引/页面抽屉)；G6 图谱页签；hybrid 聚合检索 | 需求 3 | 6d | M2 |
-| M4 权限与问答引用 | kb_members 迁移+API+IDAAS 适配器(含桩)+成员管理 UI；query 工具结构化引用+citation chip+切片抽屉 | 需求 4、5 | 7d | M2 |
+| M4 权限与问答引用 | kb_members 迁移+API+平台用户目录+成员管理 UI；query 工具结构化引用+citation chip+切片抽屉 | 需求 4、5 | 5.5d | M2 |
 | 验收联调 | 174 实例端到端：建 rag/wiki/hybrid 库→上传→状态→切片→wiki/图谱→权限→问答引用 | 全部 | 2d | M1-M4 |
 
 风险与开放问题：
 
-1. **IDAAS 接口规格未定**（组织树/用户查询协议、性能、权限模型口径）——M4 前 must-answer；先用 CSV 桩解锁并行开发。
+1. **IDAAS 延后（2026-09-08 决策）**：一期权限基于平台用户目录（搜索多选/邮箱批量），组织树批量授权与继承延后二期；`IdentityDirectoryPort` 即二期接入缝，IDAAS 接口规格问题随二期另立计划关闭。一期代价：授权入口从"按组织勾选"退化为"按用户勾选/粘贴邮箱"，大范围授权操作成本略高。
 2. WeKnora 索引策略建库后不可改（实测提示），产品需明确 hybrid=建库时双开，而非事后切换。
 3. WeKnora 版本升级（当前未知版本号，API 以本次实测为准）可能变动路由——网关层做能力探测（`GET /knowledge-bases` 响应字段存在性）。
 4. G6 引入增加 ~200KB 前端 bundle，需在 `web-build` 门禁中确认预算。
