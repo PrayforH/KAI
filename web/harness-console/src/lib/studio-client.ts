@@ -406,6 +406,28 @@ export type StudioKnowledgeDocumentStatus = {
   enabled: boolean;
 };
 
+export type StudioKnowledgeWikiPage = {
+  slug: string;
+  title: string;
+  pageType: string;
+  content: string;
+  summary: string;
+  aliases: string[];
+  categoryPath: string[];
+  folderId: string;
+};
+
+export type StudioKnowledgeWikiGraph = {
+  nodes: Array<{ slug: string; title: string; pageType: string; linkCount: number }>;
+  links: Array<[string, string]>;
+};
+
+export type StudioKnowledgeWikiStats = {
+  totalPages: number;
+  pagesByType: Record<string, number>;
+  totalLinks: number;
+};
+
 export type StudioKnowledgeDocumentChunk = {
   tenantId: string;
   sourceReference: string;
@@ -1605,6 +1627,29 @@ export const studioClient = {
   getKnowledgeDocumentChunk: (baseReference: string, chunkId: string) =>
     request<StudioKnowledgeDocumentChunk>(
       `knowledge/sources/${encodeURIComponent(baseReference)}/chunks/${encodeURIComponent(chunkId)}`,
+    ),
+  listWikiPages: (baseReference: string) =>
+    request<StudioKnowledgeWikiPage[]>(
+      `knowledge/sources/${encodeURIComponent(baseReference)}/wiki/pages`,
+    ),
+  getWikiPage: (baseReference: string, slug: string) =>
+    request<StudioKnowledgeWikiPage>(
+      `knowledge/sources/${encodeURIComponent(baseReference)}/wiki/pages/${slug
+        .split("/")
+        .map(encodeURIComponent)
+        .join("/")}`,
+    ),
+  searchWikiPages: (baseReference: string, query: string) =>
+    request<StudioKnowledgeWikiPage[]>(
+      `knowledge/sources/${encodeURIComponent(baseReference)}/wiki/search?q=${encodeURIComponent(query)}`,
+    ),
+  getWikiGraph: (baseReference: string) =>
+    request<StudioKnowledgeWikiGraph>(
+      `knowledge/sources/${encodeURIComponent(baseReference)}/wiki/graph`,
+    ),
+  getWikiStats: (baseReference: string) =>
+    request<StudioKnowledgeWikiStats>(
+      `knowledge/sources/${encodeURIComponent(baseReference)}/wiki/stats`,
     ),
   replaceKnowledgeBase: (
     value: StudioKnowledgeBase,

@@ -8,6 +8,8 @@ import {
   type StudioKnowledgeDocumentChunk,
   type StudioKnowledgeDocumentStatus,
 } from "../../lib/studio-client";
+import { KnowledgeGraphPanel } from "./knowledge-graph-panel";
+import { KnowledgeWikiPanel } from "./knowledge-wiki-panel";
 import styles from "./knowledge-base-detail.module.css";
 
 type Tab = "docs" | "wiki" | "graph";
@@ -35,6 +37,7 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
   const [content, setContent] = useState("");
   const [creating, setCreating] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [graphFocus, setGraphFocus] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -310,12 +313,16 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
               </div>
             )}
           </section>
+        ) : tab === "wiki" ? (
+          <KnowledgeWikiPanel
+            reference={reference}
+            onOpenGraph={(slug) => {
+              setGraphFocus(slug);
+              setTab("graph");
+            }}
+          />
         ) : (
-          <p className={styles.placeholder}>
-            {tab === "wiki"
-              ? "Wiki 索引将在后续里程碑提供（摘要/实体/概念页面）"
-              : "知识图谱渲染将在后续里程碑提供（AntV G6）"}
-          </p>
+          <KnowledgeGraphPanel reference={reference} focusSlug={graphFocus} />
         )}
 
         {showManual ? (

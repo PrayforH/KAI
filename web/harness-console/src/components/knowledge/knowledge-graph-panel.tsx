@@ -1,0 +1,223 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  studioClient,
+  type StudioKnowledgeWikiGraph,
+  type StudioKnowledgeWikiPage,
+} from "../../lib/studio-client";
+import styles from "./knowledge-graph-panel.module.css";
+
+const TYPE_COLORS: Record<string, string> = {
+  summary: "#4f8cff",
+  entity: "#40c977",
+  concept: "#e6aa4a",
+  index: "#9a9a9a",
+  page: "#737373",
+};
+
+const TYPE_LABELS: Record<string, string> = {
+  summary: "摘要",
+  entity: "实体",
+  concept: "概念",
+  index: "索引",
+  page: "页面",
+};
+
+export function KnowledgeGraphPanel({
+  reference,
+  focusSlug,
+}: {
+  reference: string;
+  focusSlug?: string | null;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const graphRef = useRef<unknown>(null);
+  const [graph, setGraph] = useState<StudioKnowledgeWikiGraph | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [page, setPage] = useState<StudioKnowledgeWikiPage | null>(null);
+  const [hiddenTypes, setHiddenTypes] = useState<Set<string>>(new Set());
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      setGraph(await studioClient.getWikiGraph(reference));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "加载图谱失败");
+    } finally {
+      setLoading(false);
+    }
+  }, [reference]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const openPage = useCallback(
+    async (slug: string) => {
+      setError("");
+      try {
+        setPage(await studioClient.getWikiPage(reference, slug));
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "打开页面失败");
+      }
+    },
+    [reference],
+  );
+
+  const types = useMemo(() => {
+    if (!graph) return [];
+    return [...new Set(graph.nodes.map((node) => node.pageType))];
+  }, [graph]);
+
+  const visible = useMemo(() => {
+    if (!graph) return null;
+    const nodes = graph.nodes.filter((node) => !hiddenTypes.has(node.pageType));
+    const keep = new Set(nodes.map((node) => node.slug));
+    return {
+      nodes,
+      links: graph.links.filter(([source, target]) => keep.has(source) && keep.has(target)),
+    };
+  }, [graph, hiddenTypes]);
+
+  useEffect(() => {
+    if (!containerRef.current || !visible) return;
+    let disposed = false;
+    const container = containerRef.current;
+
+    const draw = async () => {
+      const { Graph } = await import("@antv/g6");
+      if (disposed) return;
+      const instance = new Graph({
+        container,
+        width: container.clientWidth,
+        height: 560,
+        autoFit: "view",
+        data: {
+          nodes: visible.nodes.map((node) => ({
+            id: node.slug,
+            data: { title: node.title, pageType: node.pageType },
+          })),
+          edges: visible.links.map(([source, target]) => ({ source, target })),
+        },
+        node: {
+          style: {
+            size: (datum: { data?: { pageType?: string } }) =>
+              datum.data?.pageType === "summary" ? 26 : 18,
+            fill: (datum: { data?: { pageType?: string } }) =>
+              TYPE_COLORS[datum.data?.pageType ?? "page"] ?? TYPE_COLORS.page,
+            labelText: (datum: { data?: { title?: string } }) => datum.data?.title ?? "",
+            labelFill: "#d6d6d6",
+            labelFontSize: 11,
+            labelPlacement: "bottom",
+            cursor: "pointer",
+          },
+        },
+        edge: {
+          style: {
+            stroke: "#444444",
+            lineWidth: 1,
+            endArrow: true,
+          },
+        },
+        layout: {
+          type: "force",
+          preventOverlap: true,
+          linkDistance: 120,
+          nodeSize: 30,
+        },
+        behaviors: ["drag-canvas", "zoom-canvas", "drag-element"],
+      });
+      graphRef.current = instance;
+      instance.on("node:click", (event) => {
+        const target = (event as { target?: { id?: string } }).target;
+        if (target?.id) void openPage(target.id);
+      });
+      await instance.render();
+      if (focusSlug) {
+        await instance.focusElement(focusSlug).catch(() => undefined);
+      }
+    };
+
+    void draw();
+    return () => {
+      disposed = true;
+      const instance = graphRef.current as { destroy?: () => void } | null;
+      instance?.destroy?.();
+      graphRef.current = null;
+    };
+  }, [visible, focusSlug, openPage]);
+
+  if (loading) {
+    return <p className={styles.empty}>图谱加载中…</p>;
+  }
+
+  if (!graph || graph.nodes.length === 0) {
+    return (
+      <p className={styles.empty}>
+        该知识库还没有 Wiki 引用关系图。启用 Wiki 索引策略并上传文档后会自动生成。
+      </p>
+    );
+  }
+
+  return (
+    <div className={styles.layout}>
+      <div className={styles.legend}>
+        {types.map((type) => (
+          <button
+            key={type}
+            type="button"
+            className={`${styles.legendItem} ${hiddenTypes.has(type) ? styles.legendOff : ""}`}
+            onClick={() =>
+              setHiddenTypes((current) => {
+                const next = new Set(current);
+                if (next.has(type)) next.delete(type);
+                else next.add(type);
+                return next;
+              })
+            }
+          >
+            <span
+              className={styles.dot}
+              style={{ background: TYPE_COLORS[type] ?? TYPE_COLORS.page }}
+            />
+            {TYPE_LABELS[type] ?? type}
+          </button>
+        ))}
+        <span className={styles.legendCount}>
+          {visible?.nodes.length ?? 0} / {graph.nodes.length} 个节点 · {graph.links.length} 条引用
+        </span>
+      </div>
+
+      {error ? <p className={styles.error}>{error}</p> : null}
+
+      <div className={styles.canvasRow}>
+        <div ref={containerRef} className={styles.canvas} />
+        {page ? (
+          <aside className={styles.drawer}>
+            <header className={styles.drawerHead}>
+              <div>
+                <h3>{page.title}</h3>
+                <p className={styles.drawerMeta}>
+                  <span className={styles.dot} style={{ background: TYPE_COLORS[page.pageType] }} />
+                  {TYPE_LABELS[page.pageType] ?? page.pageType} · <code>{page.slug}</code>
+                </p>
+              </div>
+              <button
+                type="button"
+                className={styles.close}
+                onClick={() => setPage(null)}
+              >
+                关闭
+              </button>
+            </header>
+            {page.summary ? <p className={styles.summary}>{page.summary}</p> : null}
+            <pre className={styles.content}>{page.content}</pre>
+          </aside>
+        ) : null}
+      </div>
+    </div>
+  );
+}
