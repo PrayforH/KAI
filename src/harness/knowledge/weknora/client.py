@@ -9,12 +9,17 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any
+from typing import Any, cast
 
 import httpx
-from pydantic import SecretStr
 
 from harness.knowledge.weknora.configuration import WeknoraSettings
+
+
+def _dict_list(value: Any) -> list[dict[str, Any]]:  # noqa: ANN401 - remote JSON
+    if not isinstance(value, list):
+        return []
+    return [cast(dict[str, Any], item) for item in cast(list[Any], value) if isinstance(item, dict)]
 
 
 class WeknoraError(RuntimeError):
@@ -46,13 +51,15 @@ class WeknoraClient:
                 return self._token
             password = self._settings.password
             secret = (
-                password.get_secret_value() if isinstance(password, SecretStr) else str(password)
+                password.get_secret_value()
+                if hasattr(password, "get_secret_value")
+                else str(password)
             )
             response = await self._client.post(
                 "/auth/login",
                 json={"email": self._settings.email, "password": secret},
             )
-            payload = self._unwrap(response)
+            payload = cast(dict[str, Any], self._unwrap(response))
             token = payload.get("token")
             if not isinstance(token, str) or not token:
                 raise WeknoraError("weknora login response did not contain a token")
@@ -75,13 +82,15 @@ class WeknoraClient:
         except ValueError as error:
             raise WeknoraError("weknora returned a non-JSON response") from error
         if isinstance(payload, dict):
-            error = payload.get("error")
-            if payload.get("success") is False or error:
+            values = cast(dict[str, Any], payload)
+            error = values.get("error")
+            if values.get("success") is False or error:
                 message = "weknora request rejected"
                 if isinstance(error, dict):
-                    message = str(error.get("message") or message)
+                    error_values = cast(dict[str, Any], error)
+                    message = str(error_values.get("message") or message)
                 raise WeknoraError(message, status_code=response.status_code)
-        return payload
+        return cast(Any, payload)
 
     async def _request(
         self,
@@ -113,9 +122,11 @@ class WeknoraClient:
                 reauthenticated=True,
             )
         payload = self._unwrap(response)
-        if isinstance(payload, dict) and "data" in payload:
-            return payload["data"]
-        return payload
+        if isinstance(payload, dict):
+            values = cast(dict[str, Any], payload)
+            if "data" in values:
+                return values["data"]
+        return cast(Any, payload)
 
     async def get_data(self, path: str, *, params: dict[str, Any] | None = None) -> Any:
         return await self._request("GET", path, params=params)
@@ -143,9 +154,9 @@ class WeknoraClient:
                 },
             },
         )
-        if not isinstance(payload, dict) or not payload.get("id"):
+        if not isinstance(payload, dict) or not cast(dict[str, Any], payload).get("id"):
             raise WeknoraError("weknora knowledge base creation returned no id")
-        return payload
+        return cast(dict[str, Any], payload)
 
     async def delete_knowledge_base(self, base_id: str) -> None:
         await self._request("DELETE", f"/knowledge-bases/{base_id}")
@@ -162,7 +173,7 @@ class WeknoraClient:
             json={"query_text": query, "match_count": limit},
         )
         if isinstance(payload, list):
-            return [item for item in payload if isinstance(item, dict)]
+            return _dict_list(payload)
         return []
 
     # --- documents --------------------------------------------------------
@@ -170,18 +181,17 @@ class WeknoraClient:
     async def list_documents(self, base_id: str) -> list[dict[str, Any]]:
         payload = await self.get_data(f"/knowledge-bases/{base_id}/knowledge")
         if isinstance(payload, list):
-            return [item for item in payload if isinstance(item, dict)]
+            return _dict_list(payload)
         if isinstance(payload, dict):
-            items = payload.get("data") or payload.get("items") or []
-            if isinstance(items, list):
-                return [item for item in items if isinstance(item, dict)]
+            values = cast(dict[str, Any], payload)
+            return _dict_list(values.get("data") or values.get("items") or [])
         return []
 
     async def get_document(self, document_id: str) -> dict[str, Any]:
         payload = await self.get_data(f"/knowledge/{document_id}")
         if not isinstance(payload, dict):
             raise WeknoraError(f"weknora document not found: {document_id}")
-        return payload
+        return cast(dict[str, Any], payload)
 
     async def upload_document(
         self,
@@ -195,9 +205,9 @@ class WeknoraClient:
             f"/knowledge-bases/{base_id}/knowledge/file",
             files={"file": (filename, content)},
         )
-        if not isinstance(payload, dict) or not payload.get("id"):
+        if not isinstance(payload, dict) or not cast(dict[str, Any], payload).get("id"):
             raise WeknoraError("weknora document upload returned no id")
-        return payload
+        return cast(dict[str, Any], payload)
 
     async def create_manual_document(
         self,
@@ -210,9 +220,9 @@ class WeknoraClient:
             f"/knowledge-bases/{base_id}/knowledge/manual",
             json={"title": title, "content": content},
         )
-        if not isinstance(payload, dict) or not payload.get("id"):
+        if not isinstance(payload, dict) or not cast(dict[str, Any], payload).get("id"):
             raise WeknoraError("weknora manual document creation returned no id")
-        return payload
+        return cast(dict[str, Any], payload)
 
     async def delete_document(self, document_id: str) -> None:
         await self._request("DELETE", f"/knowledge/{document_id}")
@@ -235,15 +245,16 @@ class WeknoraClient:
                 f"/chunks/{document_id}",
                 params={"page": page, "page_size": page_size},
             )
-            rows: list[Any]
+            total: Any = None
             if isinstance(payload, dict):
-                rows = payload.get("data") or []
+                values = cast(dict[str, Any], payload)
+                rows = _dict_list(values.get("data") or [])
+                total = values.get("total")
             elif isinstance(payload, list):
-                rows = payload
+                rows = _dict_list(payload)
             else:
                 rows = []
-            chunks.extend(item for item in rows if isinstance(item, dict))
-            total = payload.get("total") if isinstance(payload, dict) else None
+            chunks.extend(rows)
             if not rows or (isinstance(total, int) and len(chunks) >= total):
                 break
         return chunks
@@ -251,10 +262,11 @@ class WeknoraClient:
     async def get_chunk(self, chunk_id: str) -> dict[str, Any] | None:
         payload = await self.get_data(f"/chunks/by-id/{chunk_id}")
         if isinstance(payload, dict):
-            inner = payload.get("data")
+            values = cast(dict[str, Any], payload)
+            inner = values.get("data")
             if isinstance(inner, dict):
-                return inner
-            return payload
+                return cast(dict[str, Any], inner)
+            return values
         return None
 
     # --- wiki -------------------------------------------------------------
@@ -262,20 +274,18 @@ class WeknoraClient:
     async def list_wiki_pages(self, base_id: str) -> list[dict[str, Any]]:
         payload = await self.get_data(f"/knowledgebase/{base_id}/wiki/pages")
         if isinstance(payload, dict):
-            rows = payload.get("pages") or payload.get("data") or []
-        elif isinstance(payload, list):
-            rows = payload
-        else:
-            rows = []
-        return [item for item in rows if isinstance(item, dict)]
+            values = cast(dict[str, Any], payload)
+            return _dict_list(values.get("pages") or values.get("data") or [])
+        return _dict_list(payload)
 
     async def get_wiki_page(self, base_id: str, slug: str) -> dict[str, Any]:
         payload = await self.get_data(f"/knowledgebase/{base_id}/wiki/pages/{slug}")
         if isinstance(payload, dict):
-            inner = payload.get("data")
+            values = cast(dict[str, Any], payload)
+            inner = values.get("data")
             if isinstance(inner, dict):
-                return inner
-            return payload
+                return cast(dict[str, Any], inner)
+            return values
         raise WeknoraError(f"weknora wiki page not found: {slug}")
 
     async def search_wiki_pages(
@@ -290,27 +300,28 @@ class WeknoraClient:
             params={"q": query, "limit": limit},
         )
         if isinstance(payload, dict):
-            rows = payload.get("pages") or payload.get("data") or payload.get("results") or []
-        elif isinstance(payload, list):
-            rows = payload
-        else:
-            rows = []
-        return [item for item in rows if isinstance(item, dict)]
+            values = cast(dict[str, Any], payload)
+            return _dict_list(
+                values.get("pages") or values.get("data") or values.get("results") or []
+            )
+        return _dict_list(payload)
 
     async def get_wiki_graph(self, base_id: str) -> dict[str, Any]:
         payload = await self.get_data(f"/knowledgebase/{base_id}/wiki/graph")
         if isinstance(payload, dict):
-            inner = payload.get("data")
+            values = cast(dict[str, Any], payload)
+            inner = values.get("data")
             if isinstance(inner, dict):
-                return inner
-            return payload
+                return cast(dict[str, Any], inner)
+            return values
         raise WeknoraError("weknora wiki graph returned an unexpected payload")
 
     async def get_wiki_stats(self, base_id: str) -> dict[str, Any]:
         payload = await self.get_data(f"/knowledgebase/{base_id}/wiki/stats")
         if isinstance(payload, dict):
-            inner = payload.get("data")
+            values = cast(dict[str, Any], payload)
+            inner = values.get("data")
             if isinstance(inner, dict):
-                return inner
-            return payload
+                return cast(dict[str, Any], inner)
+            return values
         raise WeknoraError("weknora wiki stats returned an unexpected payload")

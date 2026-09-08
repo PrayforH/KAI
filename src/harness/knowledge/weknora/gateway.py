@@ -7,6 +7,7 @@ remote payloads (status enums, score scales, chunk shapes) for the service.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Any, cast
 
 from harness.knowledge.ports import (
     EngineChunk,
@@ -22,8 +23,16 @@ from harness.knowledge.weknora.client import WeknoraClient, WeknoraError
 from harness.knowledge.weknora.configuration import WeknoraSettings
 
 
-def _text(value: object) -> str:
+def _text(value: Any) -> str:  # noqa: ANN401 - remote JSON payload values
     return value if isinstance(value, str) else ""
+
+
+def _as_dict(value: Any) -> dict[str, Any]:  # noqa: ANN401 - remote JSON payload
+    return cast(dict[str, Any], value) if isinstance(value, dict) else {}
+
+
+def _as_list(value: Any) -> list[Any]:  # noqa: ANN401 - remote JSON payload
+    return cast(list[Any], value) if isinstance(value, list) else []
 
 
 class WeknoraKnowledgeEngine:
@@ -118,7 +127,12 @@ class WeknoraKnowledgeEngine:
             rows = await self._client.list_chunks(document_id)
         except WeknoraError as error:
             raise KnowledgeEngineError(f"weknora list chunks failed: {error}") from error
-        return tuple(_chunk(row) for row in rows)
+        chunks: list[EngineChunk] = []
+        for row in rows:
+            item = _chunk(row)
+            if item is not None:
+                chunks.append(item)
+        return tuple(chunks)
 
     async def get_chunk(self, chunk_id: str) -> EngineChunk | None:
         try:
@@ -149,7 +163,12 @@ class WeknoraKnowledgeEngine:
             rows = await self._client.list_wiki_pages(base_id)
         except WeknoraError as error:
             raise KnowledgeEngineError(f"weknora wiki pages failed: {error}") from error
-        return tuple(_wiki_page(row) for row in rows if _wiki_page(row) is not None)
+        pages: list[EngineWikiPage] = []
+        for row in rows:
+            item = _wiki_page(row)
+            if item is not None:
+                pages.append(item)
+        return tuple(pages)
 
     async def get_wiki_page(self, base_id: str, slug: str) -> EngineWikiPage:
         try:
@@ -172,21 +191,24 @@ class WeknoraKnowledgeEngine:
             rows = await self._client.search_wiki_pages(base_id, query, limit=limit)
         except WeknoraError as error:
             raise KnowledgeEngineError(f"weknora wiki search failed: {error}") from error
-        return tuple(_wiki_page(row) for row in rows if _wiki_page(row) is not None)
+        pages: list[EngineWikiPage] = []
+        for row in rows:
+            item = _wiki_page(row)
+            if item is not None:
+                pages.append(item)
+        return tuple(pages)
 
     async def wiki_graph(self, base_id: str) -> EngineWikiGraph:
         try:
             row = await self._client.get_wiki_graph(base_id)
         except WeknoraError as error:
             raise KnowledgeEngineError(f"weknora wiki graph failed: {error}") from error
-        nodes = row.get("nodes") or []
-        edges = row.get("edges") or []
-        if not isinstance(nodes, list) or not isinstance(edges, list):
-            raise KnowledgeEngineError("weknora wiki graph returned an unexpected payload")
+        payload = _as_dict(row)
+        nodes = _as_list(payload.get("nodes"))
+        edges = _as_list(payload.get("edges"))
         graph_nodes: list[EngineWikiGraphNode] = []
-        for node in nodes:
-            if not isinstance(node, dict):
-                continue
+        for raw_node in nodes:
+            node = _as_dict(raw_node)
             slug = _text(node.get("slug"))
             if not slug:
                 continue
@@ -199,9 +221,8 @@ class WeknoraKnowledgeEngine:
                 )
             )
         links: list[tuple[str, str]] = []
-        for edge in edges:
-            if not isinstance(edge, dict):
-                continue
+        for raw_edge in edges:
+            edge = _as_dict(raw_edge)
             source = _text(edge.get("source"))
             target = _text(edge.get("target"))
             if source and target:
@@ -213,17 +234,16 @@ class WeknoraKnowledgeEngine:
             row = await self._client.get_wiki_stats(base_id)
         except WeknoraError as error:
             raise KnowledgeEngineError(f"weknora wiki stats failed: {error}") from error
-        pages_by_type = row.get("pages_by_type")
+        payload = _as_dict(row)
+        pages_by_type = _as_dict(payload.get("pages_by_type"))
         return EngineWikiStats(
-            total_pages=int(row.get("total_pages") or 0),
-            pages_by_type={str(key): int(value) for key, value in pages_by_type.items()}
-            if isinstance(pages_by_type, dict)
-            else {},
-            total_links=int(row.get("total_links") or 0),
+            total_pages=int(payload.get("total_pages") or 0),
+            pages_by_type={str(key): int(value) for key, value in pages_by_type.items()},
+            total_links=int(payload.get("total_links") or 0),
         )
 
 
-def _wiki_page(row: dict[str, object]) -> EngineWikiPage | None:
+def _wiki_page(row: dict[str, Any]) -> EngineWikiPage | None:
     slug = _text(row.get("slug"))
     if not slug:
         return None
@@ -241,7 +261,7 @@ def _wiki_page(row: dict[str, object]) -> EngineWikiPage | None:
     )
 
 
-def _document_status(row: dict[str, object]) -> EngineDocumentStatus:
+def _document_status(row: dict[str, Any]) -> EngineDocumentStatus:
     document_id = _text(row.get("id"))
     if not document_id:
         raise KnowledgeEngineError("weknora document row is missing an id")
@@ -257,7 +277,7 @@ def _document_status(row: dict[str, object]) -> EngineDocumentStatus:
     )
 
 
-def _chunk(row: dict[str, object]) -> EngineChunk | None:
+def _chunk(row: dict[str, Any]) -> EngineChunk | None:
     chunk_id = _text(row.get("id"))
     if not chunk_id:
         return None
@@ -270,7 +290,7 @@ def _chunk(row: dict[str, object]) -> EngineChunk | None:
     )
 
 
-def _hit(row: dict[str, object], base_id: str) -> EngineSearchHit:
+def _hit(row: dict[str, Any], base_id: str) -> EngineSearchHit:
     chunk_id = _text(row.get("id"))
     if not chunk_id:
         raise KnowledgeEngineError("weknora search hit is missing a chunk id")
