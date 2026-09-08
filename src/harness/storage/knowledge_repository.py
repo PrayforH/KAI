@@ -3,12 +3,13 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any, cast
 
-from sqlalchemy import CursorResult, select, update
+from sqlalchemy import CursorResult, delete, select, update
 from sqlalchemy.exc import IntegrityError
 
 from harness.core.errors import ConflictError, NotFoundError
 from harness.knowledge.models import (
     KnowledgeBase,
+    KnowledgeBaseMember,
     KnowledgeChunk,
     KnowledgeSnapshot,
     KnowledgeSource,
@@ -16,6 +17,7 @@ from harness.knowledge.models import (
 )
 from harness.storage.database import SessionFactory
 from harness.storage.models import (
+    KnowledgeBaseMemberRow,
     KnowledgeBaseRow,
     KnowledgeChunkRow,
     KnowledgeSnapshotRow,
@@ -312,6 +314,85 @@ class PostgresKnowledgeRepository:
         async with self._sessions() as db:
             rows = (await db.scalars(statement)).all()
         return tuple(KnowledgeChunk.model_validate(row.payload) for row in rows)
+
+    async def add_member(self, value: KnowledgeBaseMember) -> None:
+        async with self._sessions() as db:
+            db.add(
+                KnowledgeBaseMemberRow(
+                    tenant_id=value.tenant_id,
+                    member_id=value.member_id,
+                    knowledge_base_reference=value.knowledge_base_reference,
+                    subject_type=value.subject_type.value,
+                    subject_id=value.subject_id,
+                    role=value.role.value,
+                    created_at=value.granted_at,
+                    payload=value.model_dump(mode="json", by_alias=True),
+                )
+            )
+            try:
+                await db.commit()
+            except IntegrityError as error:
+                await db.rollback()
+                raise ConflictError(
+                    f"knowledge base member already granted: {value.subject_id}"
+                ) from error
+
+    async def get_member(self, tenant_id: str, member_id: str) -> KnowledgeBaseMember:
+        async with self._sessions() as db:
+            row = await db.get(KnowledgeBaseMemberRow, (tenant_id, member_id))
+            if row is None:
+                raise NotFoundError(f"knowledge base member not found: {member_id}")
+            return KnowledgeBaseMember.model_validate(row.payload)
+
+    async def list_members(
+        self,
+        tenant_id: str,
+        *,
+        knowledge_base_reference: str | None = None,
+    ) -> Sequence[KnowledgeBaseMember]:
+        statement = select(KnowledgeBaseMemberRow).where(
+            KnowledgeBaseMemberRow.tenant_id == tenant_id
+        )
+        if knowledge_base_reference is not None:
+            statement = statement.where(
+                KnowledgeBaseMemberRow.knowledge_base_reference == knowledge_base_reference
+            )
+        statement = statement.order_by(
+            KnowledgeBaseMemberRow.knowledge_base_reference,
+            KnowledgeBaseMemberRow.subject_id,
+        )
+        async with self._sessions() as db:
+            rows = (await db.scalars(statement)).all()
+        return tuple(KnowledgeBaseMember.model_validate(row.payload) for row in rows)
+
+    async def put_member(self, value: KnowledgeBaseMember) -> None:
+        statement = (
+            update(KnowledgeBaseMemberRow)
+            .where(
+                KnowledgeBaseMemberRow.tenant_id == value.tenant_id,
+                KnowledgeBaseMemberRow.member_id == value.member_id,
+            )
+            .values(
+                role=value.role.value,
+                payload=value.model_dump(mode="json", by_alias=True),
+            )
+        )
+        async with self._sessions() as db:
+            result = await db.execute(statement)
+            if not cast(CursorResult[Any], result).rowcount:
+                await db.rollback()
+                raise NotFoundError(f"knowledge base member not found: {value.member_id}")
+            await db.commit()
+
+    async def delete_member(self, tenant_id: str, member_id: str) -> bool:
+        statement = delete(KnowledgeBaseMemberRow).where(
+            KnowledgeBaseMemberRow.tenant_id == tenant_id,
+            KnowledgeBaseMemberRow.member_id == member_id,
+        )
+        async with self._sessions() as db:
+            result = await db.execute(statement)
+            await db.commit()
+            return bool(cast(CursorResult[Any], result).rowcount)
 
     @staticmethod
     def _source_row(value: KnowledgeSource) -> KnowledgeSourceRow:

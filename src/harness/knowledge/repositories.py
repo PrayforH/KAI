@@ -7,6 +7,7 @@ from typing import Protocol
 from harness.core.errors import ConflictError, NotFoundError
 from harness.knowledge.models import (
     KnowledgeBase,
+    KnowledgeBaseMember,
     KnowledgeChunk,
     KnowledgeSnapshot,
     KnowledgeSource,
@@ -73,6 +74,21 @@ class KnowledgeRepository(Protocol):
         snapshot_ids: frozenset[str],
     ) -> Sequence[KnowledgeChunk]: ...
 
+    async def add_member(self, value: KnowledgeBaseMember) -> None: ...
+
+    async def get_member(self, tenant_id: str, member_id: str) -> KnowledgeBaseMember: ...
+
+    async def list_members(
+        self,
+        tenant_id: str,
+        *,
+        knowledge_base_reference: str | None = None,
+    ) -> Sequence[KnowledgeBaseMember]: ...
+
+    async def put_member(self, value: KnowledgeBaseMember) -> None: ...
+
+    async def delete_member(self, tenant_id: str, member_id: str) -> bool: ...
+
 
 class InMemoryKnowledgeRepository:
     def __init__(self) -> None:
@@ -81,6 +97,7 @@ class InMemoryKnowledgeRepository:
         self._syncs: dict[tuple[str, str], KnowledgeSyncRun] = {}
         self._snapshots: dict[tuple[str, str], KnowledgeSnapshot] = {}
         self._chunks: dict[tuple[str, str, str], KnowledgeChunk] = {}
+        self._members: dict[tuple[str, str], KnowledgeBaseMember] = {}
         self._lock = asyncio.Lock()
 
     async def add_base(self, value: KnowledgeBase) -> None:
@@ -265,3 +282,51 @@ class InMemoryKnowledgeRepository:
                 ),
             )
         )
+
+    async def add_member(self, value: KnowledgeBaseMember) -> None:
+        key = (value.tenant_id, value.member_id)
+        if key in self._members:
+            raise ConflictError(f"knowledge base member already exists: {value.member_id}")
+        duplicate = [
+            item
+            for item in self._members.values()
+            if item.tenant_id == value.tenant_id
+            and item.knowledge_base_reference == value.knowledge_base_reference
+            and item.subject_type is value.subject_type
+            and item.subject_id == value.subject_id
+        ]
+        if duplicate:
+            raise ConflictError("knowledge base member subject already granted")
+        self._members[key] = value
+
+    async def get_member(self, tenant_id: str, member_id: str) -> KnowledgeBaseMember:
+        try:
+            return self._members[(tenant_id, member_id)]
+        except KeyError as error:
+            raise NotFoundError(f"knowledge base member not found: {member_id}") from error
+
+    async def list_members(
+        self,
+        tenant_id: str,
+        *,
+        knowledge_base_reference: str | None = None,
+    ) -> Sequence[KnowledgeBaseMember]:
+        values = [
+            item
+            for (item_tenant, _), item in sorted(self._members.items())
+            if item_tenant == tenant_id
+            and (
+                knowledge_base_reference is None
+                or item.knowledge_base_reference == knowledge_base_reference
+            )
+        ]
+        return tuple(values)
+
+    async def put_member(self, value: KnowledgeBaseMember) -> None:
+        key = (value.tenant_id, value.member_id)
+        if key not in self._members:
+            raise NotFoundError(f"knowledge base member not found: {value.member_id}")
+        self._members[key] = value
+
+    async def delete_member(self, tenant_id: str, member_id: str) -> bool:
+        return self._members.pop((tenant_id, member_id), None) is not None

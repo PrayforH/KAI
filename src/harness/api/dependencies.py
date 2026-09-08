@@ -76,6 +76,7 @@ from harness.evals.service import EvalControlPlaneService
 from harness.governance.repositories import InMemoryGovernanceRepository
 from harness.governance.service import GovernanceService
 from harness.inputs.processors import DefaultInputProcessor
+from harness.knowledge.directory import InMemoryUserDirectory
 from harness.knowledge.repositories import InMemoryKnowledgeRepository
 from harness.knowledge.service import KnowledgeService
 from harness.knowledge.workload import (
@@ -350,6 +351,7 @@ def build_memory_container(
         audit=audit,
         clock=clock,
         id_generator=id_generator,
+        directory=InMemoryUserDirectory(),
     )
     quotas = QuotaService(
         InMemoryQuotaRepository(),

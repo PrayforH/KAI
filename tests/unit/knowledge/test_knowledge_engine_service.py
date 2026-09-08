@@ -7,11 +7,14 @@ from datetime import UTC, datetime
 
 import pytest
 
+from harness.knowledge.directory import DirectoryUser, InMemoryUserDirectory
 from harness.knowledge.models import (
+    AddKnowledgeMembersRequest,
     CreateKnowledgeBaseRequest,
     CreateKnowledgeSourceRequest,
     KnowledgeBaseEngine,
     KnowledgeDocumentStatus,
+    KnowledgeMemberRole,
 )
 from harness.knowledge.ports import (
     EngineChunk,
@@ -192,12 +195,16 @@ def weknora_source() -> CreateKnowledgeSourceRequest:
     )
 
 
-def make_service(engine: FakeEngine | None = None) -> tuple[KnowledgeService, FakeEngine]:
+def make_service(
+    engine: FakeEngine | None = None,
+    directory: InMemoryUserDirectory | None = None,
+) -> tuple[KnowledgeService, FakeEngine]:
     service_engine = engine or FakeEngine()
     service = KnowledgeService(
         InMemoryKnowledgeRepository(),
         clock=lambda: datetime.now(UTC),
         engine=service_engine,
+        directory=directory,
     )
     return service, service_engine
 
@@ -352,3 +359,98 @@ async def test_wiki_proxies_require_viewer_access_and_acl() -> None:
     # non-member 404s (personal ACL restricted to creator)
     with pytest.raises(NotFoundError):
         await service.wiki_graph("local", "user-2", "case-library")
+
+
+async def create_engine_base(service: KnowledgeService, reference: str = "case-library") -> None:
+    await service.create_base(
+        "local",
+        "user-1",
+        CreateKnowledgeBaseRequest.model_validate(
+            {
+                "reference": reference,
+                "displayName": "案例库",
+                "engine": "weknora",
+                "kbType": "rag",
+            }
+        ),
+    )
+
+
+@pytest.mark.asyncio
+async def test_member_roles_gate_read_and_write() -> None:
+    from harness.core.errors import NotFoundError
+
+    directory = InMemoryUserDirectory(
+        [
+            DirectoryUser(user_id="user-2", email="viewer@axis.test", display_name="查看者"),
+            DirectoryUser(user_id="user-3", email="editor@axis.test", display_name="编辑者"),
+        ]
+    )
+    service, _engine = make_service(directory=directory)
+    await create_engine_base(service)
+
+    # No grant yet: neither user can reach the base.
+    assert await service.list_bases("local", "user-2") == ()
+    with pytest.raises(NotFoundError):
+        await service.list_source_documents("local", "user-2", "case-library")
+
+    # Owner grants viewer + editor in one batch (one by id, one by email).
+    result = await service.add_members(
+        "local",
+        "user-1",
+        "case-library",
+        AddKnowledgeMembersRequest.model_validate(
+            {"userIds": ["user-2"], "emails": ["editor@axis.test"], "role": "viewer"}
+        ),
+    )
+    assert len(result.members) == 2
+    assert result.unresolved == ()
+
+    # Viewers can read.
+    docs = await service.list_source_documents("local", "user-2", "case-library")
+    assert len(docs) == 1
+    assert [base.reference for base in await service.list_bases("local", "user-2")] == [
+        "case-library"
+    ]
+
+    # Viewers cannot write.
+    with pytest.raises(NotFoundError):
+        await service.create_source_document("local", "user-2", "case-library", "t", "c")
+
+    # Promote user-3 to editor, then writes succeed.
+    editor_member = next(
+        item for item in result.members if item.subject_id == "user-3"
+    )
+    await service.update_member_role(
+        "local", "user-1", "case-library", editor_member.member_id, KnowledgeMemberRole.EDITOR
+    )
+    created = await service.create_source_document("local", "user-3", "case-library", "t", "c")
+    assert created.document_id == "doc-manual"
+
+    # A viewer still cannot write after another member is promoted.
+    with pytest.raises(NotFoundError):
+        await service.create_source_document("local", "user-2", "case-library", "t", "c")
+
+    # Removing the editor revokes write access.
+    await service.remove_member("local", "user-1", "case-library", editor_member.member_id)
+    with pytest.raises(NotFoundError):
+        await service.create_source_document("local", "user-3", "case-library", "t", "c")
+
+
+@pytest.mark.asyncio
+async def test_member_batch_reports_unresolved_emails() -> None:
+    directory = InMemoryUserDirectory(
+        [DirectoryUser(user_id="user-2", email="viewer@axis.test", display_name="查看者")]
+    )
+    service, _engine = make_service(directory=directory)
+    await create_engine_base(service)
+    result = await service.add_members(
+        "local",
+        "user-1",
+        "case-library",
+        AddKnowledgeMembersRequest.model_validate(
+            {"emails": ["viewer@axis.test", "ghost@axis.test"], "role": "viewer"}
+        ),
+    )
+    assert len(result.members) == 1
+    assert result.unresolved == ("ghost@axis.test",)

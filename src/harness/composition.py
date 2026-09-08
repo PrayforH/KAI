@@ -52,6 +52,7 @@ from harness.execution.credentials import (
 )
 from harness.governance.service import GovernanceService
 from harness.inputs.processors import DefaultInputProcessor
+from harness.knowledge.directory import PlatformUserDirectory
 from harness.knowledge.service import KnowledgeService
 from harness.knowledge.weknora import WeknoraKnowledgeEngine, WeknoraSettings
 from harness.knowledge.workload import (
@@ -565,6 +566,7 @@ def build_production_container(
         clock=clock,
         id_generator=ids,
         engine=weknora_engine,
+        directory=PlatformUserDirectory(sessions),
     )
     quotas = QuotaService(
         PostgresQuotaRepository(sessions),

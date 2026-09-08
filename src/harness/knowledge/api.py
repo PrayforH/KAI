@@ -7,11 +7,14 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import PlainTextResponse
 
 from harness.knowledge.models import (
+    AddKnowledgeMembersRequest,
+    AddKnowledgeMembersResult,
     CreateKnowledgeBaseRequest,
     CreateKnowledgeDocumentRequest,
     CreateKnowledgeSourceRequest,
     CreateKnowledgeSourceResult,
     KnowledgeBase,
+    KnowledgeBaseMember,
     KnowledgeDocumentChunk,
     KnowledgeDocumentStatus,
     KnowledgeSnapshot,
@@ -24,6 +27,7 @@ from harness.knowledge.models import (
     ReplaceKnowledgeSourceRequest,
     SearchKnowledgeRequest,
     SearchKnowledgeResponse,
+    UpdateKnowledgeMemberRequest,
 )
 from harness.knowledge.ports import (
     KnowledgeEngineError,
@@ -527,3 +531,80 @@ async def get_wiki_stats(
         return await service.wiki_stats(actor.tenant_id, actor.user_id, reference)
     except KnowledgeEngineError as error:
         raise await _translate_engine_error(error) from error
+
+
+# --- knowledge base membership (phase 1: per-user viewer/editor) -----------
+
+
+@router.get(
+    "/bases/{reference}/members",
+    response_model=list[KnowledgeBaseMember],
+)
+async def list_knowledge_base_members(
+    reference: str,
+    actor: Annotated[StudioActor, Depends(require_studio_reader)],
+    service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+) -> list[KnowledgeBaseMember]:
+    return await service.list_members(actor.tenant_id, actor.user_id, reference)
+
+
+@router.post(
+    "/bases/{reference}/members",
+    response_model=AddKnowledgeMembersResult,
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_knowledge_base_members(
+    reference: str,
+    body: AddKnowledgeMembersRequest,
+    actor: Annotated[StudioActor, Depends(require_studio_writer)],
+    service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+) -> AddKnowledgeMembersResult:
+    return await service.add_members(actor.tenant_id, actor.user_id, reference, body)
+
+
+@router.put(
+    "/bases/{reference}/members/{member_id}",
+    response_model=KnowledgeBaseMember,
+)
+async def update_knowledge_base_member(
+    reference: str,
+    member_id: str,
+    body: UpdateKnowledgeMemberRequest,
+    actor: Annotated[StudioActor, Depends(require_studio_writer)],
+    service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+) -> KnowledgeBaseMember:
+    return await service.update_member_role(
+        actor.tenant_id,
+        actor.user_id,
+        reference,
+        member_id,
+        body.role,
+    )
+
+
+@router.delete(
+    "/bases/{reference}/members/{member_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def remove_knowledge_base_member(
+    reference: str,
+    member_id: str,
+    actor: Annotated[StudioActor, Depends(require_studio_writer)],
+    service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+) -> None:
+    await service.remove_member(actor.tenant_id, actor.user_id, reference, member_id)
+
+
+@router.get("/directory/users")
+async def search_directory_users(
+    actor: Annotated[StudioActor, Depends(require_studio_reader)],
+    service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+    q: str = "",
+    limit: int = 20,
+) -> list[dict[str, str]]:
+    return await service.search_directory_users(
+        actor.tenant_id,
+        actor.user_id,
+        q,
+        limit=limit,
+    )

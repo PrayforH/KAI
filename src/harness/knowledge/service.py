@@ -11,16 +11,22 @@ from harness.knowledge.connectors import (
     KnowledgeConnectorError,
     KnowledgeConnectorRegistry,
 )
+from harness.knowledge.directory import IdentityDirectoryPort
 from harness.knowledge.models import (
+    AddKnowledgeMembersRequest,
+    AddKnowledgeMembersResult,
     CreateKnowledgeBaseRequest,
     CreateKnowledgeSourceRequest,
     KnowledgeAcl,
     KnowledgeBase,
     KnowledgeBaseEngine,
+    KnowledgeBaseMember,
     KnowledgeChunk,
     KnowledgeCitation,
     KnowledgeDocumentChunk,
     KnowledgeDocumentStatus,
+    KnowledgeMemberRole,
+    KnowledgeMemberSubject,
     KnowledgeSearchHit,
     KnowledgeSnapshot,
     KnowledgeSnapshotBinding,
@@ -68,6 +74,7 @@ class KnowledgeService:
         chunk_overlap: int = 240,
         team_grant_checker: TeamGrantChecker | None = None,
         engine: KnowledgeEnginePort | None = None,
+        directory: IdentityDirectoryPort | None = None,
     ) -> None:
         if chunk_overlap >= chunk_characters:
             raise ValueError("knowledge chunk overlap must be smaller than chunk size")
@@ -81,6 +88,7 @@ class KnowledgeService:
         self._chunk_overlap = chunk_overlap
         self._team_grant_checker = team_grant_checker
         self._engine = engine
+        self._directory = directory
 
     def configure_team_grant_checker(self, checker: TeamGrantChecker) -> None:
         if self._team_grant_checker is not None:
@@ -205,7 +213,16 @@ class KnowledgeService:
         values = await self.repository.list_bases(tenant_id)
         if owner_user_id is None:
             return values
-        return tuple(item for item in values if item.created_by == owner_user_id)
+        member_references = {
+            item.knowledge_base_reference
+            for item in await self.repository.list_members(tenant_id)
+            if item.subject_type is KnowledgeMemberSubject.USER and item.subject_id == owner_user_id
+        }
+        return tuple(
+            item
+            for item in values
+            if item.created_by == owner_user_id or item.reference in member_references
+        )
 
     async def get_base(
         self,
@@ -720,6 +737,8 @@ class KnowledgeService:
             return True
         if source.acl.visibility is KnowledgeVisibility.RESTRICTED and source.acl.allows(actor_id):
             return True
+        if await self._member_role(tenant_id, actor_id, base_reference) is not None:
+            return True
         return bool(
             team_ids
             and self._team_grant_checker is not None
@@ -735,6 +754,8 @@ class KnowledgeService:
     ) -> bool:
         if base.created_by == actor_id:
             return True
+        if await self._member_role(tenant_id, actor_id, base.reference) is not None:
+            return True
         return bool(
             team_ids
             and self._team_grant_checker is not None
@@ -745,6 +766,27 @@ class KnowledgeService:
                 base.reference,
             )
         )
+
+    async def _require_editor(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+    ) -> None:
+        """Writes require the creator or an editor grant; viewers are rejected."""
+        try:
+            base = await self.repository.get_base(tenant_id, reference)
+        except NotFoundError:
+            # Standalone engine source without a owning base record.
+            source = await self.repository.get_source(tenant_id, reference)
+            if source.created_by != actor_id:
+                raise NotFoundError(f"knowledge source not found: {reference}") from None
+            return
+        if base.created_by == actor_id:
+            return
+        role = await self._member_role(tenant_id, actor_id, reference)
+        if role is None or role.rank < KnowledgeMemberRole.EDITOR.rank:
+            raise NotFoundError(f"Knowledge Base not found: {reference}")
 
     async def get_visible_chunk(
         self,
@@ -870,6 +912,10 @@ class KnowledgeService:
             return source
         if source.acl.visibility is KnowledgeVisibility.TENANT or source.acl.allows(actor_id):
             return source
+        # Engine bases keep a 1:1 link source named after the base, so a member
+        # grant on the base also unlocks its documents, chunks and wiki.
+        if await self._member_role(tenant_id, actor_id, reference) is not None:
+            return source
         raise NotFoundError(f"knowledge source not found: {reference}")
 
     async def list_source_documents(
@@ -904,7 +950,8 @@ class KnowledgeService:
         title: str,
         content: str,
     ) -> KnowledgeDocumentStatus:
-        source = await self._get_owned_source(tenant_id, actor_id, reference)
+        await self._require_editor(tenant_id, actor_id, reference)
+        source = await self.repository.get_source(tenant_id, reference)
         remote_id = getattr(source.config, "weknora_base_id", "")
         document_id = await self._require_engine().create_manual_document(
             remote_id,
@@ -928,7 +975,8 @@ class KnowledgeService:
         filename: str,
         content: bytes,
     ) -> KnowledgeDocumentStatus:
-        source = await self._get_owned_source(tenant_id, actor_id, reference)
+        await self._require_editor(tenant_id, actor_id, reference)
+        source = await self.repository.get_source(tenant_id, reference)
         remote_id = getattr(source.config, "weknora_base_id", "")
         document_id = await self._require_engine().upload_document(
             remote_id,
@@ -972,7 +1020,8 @@ class KnowledgeService:
         reference: str,
         document_id: str,
     ) -> None:
-        source = await self._get_owned_source(tenant_id, actor_id, reference)
+        await self._require_editor(tenant_id, actor_id, reference)
+        source = await self.repository.get_source(tenant_id, reference)
         remote_id = getattr(source.config, "weknora_base_id", "")
         await self._require_engine().delete_document(remote_id, document_id)
         await self._record(
@@ -990,7 +1039,8 @@ class KnowledgeService:
         reference: str,
         document_id: str,
     ) -> None:
-        source = await self._get_owned_source(tenant_id, actor_id, reference)
+        await self._require_editor(tenant_id, actor_id, reference)
+        source = await self.repository.get_source(tenant_id, reference)
         remote_id = getattr(source.config, "weknora_base_id", "")
         await self._require_engine().reparse_document(remote_id, document_id)
         await self._record(
@@ -1274,6 +1324,162 @@ class KnowledgeService:
             pagesByType=stats.pages_by_type,
             totalLinks=stats.total_links,
         )
+
+    # --- membership (phase 1: per-user viewer/editor) ---------------------
+
+    async def list_members(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+    ) -> list[KnowledgeBaseMember]:
+        base = await self.repository.get_base(tenant_id, reference)
+        if base.created_by != actor_id:
+            # Members may see the roster; non-members must not enumerate it.
+            role = await self._member_role(tenant_id, actor_id, reference)
+            if role is None:
+                raise NotFoundError(f"Knowledge Base not found: {reference}")
+        return list(
+            await self.repository.list_members(
+                tenant_id,
+                knowledge_base_reference=reference,
+            )
+        )
+
+    async def add_members(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+        request: AddKnowledgeMembersRequest,
+    ) -> AddKnowledgeMembersResult:
+        await self._get_owned_base(tenant_id, actor_id, reference)
+        if self._directory is None:
+            raise ConflictError("knowledge base member directory is not configured")
+        resolved = await self._directory.resolve_users(
+            user_ids=request.user_ids,
+            emails=request.emails,
+        )
+        known_emails = {item.email.lower() for item in resolved}
+        known_ids = {item.user_id for item in resolved}
+        unresolved = tuple(
+            item
+            for item in (*request.user_ids, *request.emails)
+            if item not in known_ids and item.lower() not in known_emails
+        )
+        existing = {
+            item.subject_id
+            for item in await self.repository.list_members(
+                tenant_id,
+                knowledge_base_reference=reference,
+            )
+            if item.subject_type is KnowledgeMemberSubject.USER
+        }
+        granted: list[KnowledgeBaseMember] = []
+        now = self._clock()
+        for user in resolved:
+            if user.user_id in existing:
+                continue
+            member = KnowledgeBaseMember(
+                tenantId=tenant_id,
+                memberId=self._ids("knowledge_member"),
+                knowledgeBaseReference=reference,
+                subjectType=KnowledgeMemberSubject.USER,
+                subjectId=user.user_id,
+                role=request.role,
+                displayName=user.display_name,
+                email=user.email,
+                grantedBy=actor_id,
+                grantedAt=now,
+            )
+            await self.repository.add_member(member)
+            granted.append(member)
+        await self._record(
+            tenant_id,
+            actor_id,
+            "knowledge.member.add",
+            reference,
+            {
+                "granted": len(granted),
+                "unresolved": len(unresolved),
+                "role": request.role.value,
+            },
+        )
+        return AddKnowledgeMembersResult(members=tuple(granted), unresolved=unresolved)
+
+    async def update_member_role(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+        member_id: str,
+        role: KnowledgeMemberRole,
+    ) -> KnowledgeBaseMember:
+        await self._get_owned_base(tenant_id, actor_id, reference)
+        member = await self.repository.get_member(tenant_id, member_id)
+        if member.knowledge_base_reference != reference:
+            raise NotFoundError(f"knowledge base member not found: {member_id}")
+        updated = member.model_copy(update={"role": role})
+        await self.repository.put_member(updated)
+        await self._record(
+            tenant_id,
+            actor_id,
+            "knowledge.member.update",
+            reference,
+            {"member_id": member_id, "role": role.value},
+        )
+        return updated
+
+    async def remove_member(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+        member_id: str,
+    ) -> None:
+        await self._get_owned_base(tenant_id, actor_id, reference)
+        member = await self.repository.get_member(tenant_id, member_id)
+        if member.knowledge_base_reference != reference:
+            raise NotFoundError(f"knowledge base member not found: {member_id}")
+        await self.repository.delete_member(tenant_id, member_id)
+        await self._record(
+            tenant_id,
+            actor_id,
+            "knowledge.member.remove",
+            reference,
+            {"member_id": member_id},
+        )
+
+    async def search_directory_users(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        query: str,
+        *,
+        limit: int = 20,
+    ) -> list[dict[str, str]]:
+        if self._directory is None:
+            return []
+        users = await self._directory.search_users(query, limit=limit)
+        return [
+            {"userId": item.user_id, "email": item.email, "displayName": item.display_name}
+            for item in users
+        ]
+
+    async def _member_role(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+    ) -> KnowledgeMemberRole | None:
+        members = await self.repository.list_members(
+            tenant_id,
+            knowledge_base_reference=reference,
+        )
+        for member in members:
+            if member.subject_type is KnowledgeMemberSubject.USER and member.subject_id == actor_id:
+                return member.role
+        return None
 
     async def _record(
         self,

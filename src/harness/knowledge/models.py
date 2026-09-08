@@ -54,6 +54,28 @@ class KnowledgeBaseEngine(StrEnum):
     WEKNORA = "weknora"
 
 
+class KnowledgeMemberRole(StrEnum):
+    """Per-member knowledge base permission: read-only or read-write."""
+
+    VIEWER = "viewer"
+    EDITOR = "editor"
+
+    @property
+    def rank(self) -> int:
+        return 1 if self is KnowledgeMemberRole.VIEWER else 2
+
+
+class KnowledgeMemberSubject(StrEnum):
+    """Who a membership row grants to.
+
+    ``org_unit`` (and the inherited ``org_path``) is reserved for the phase-2
+    IDAAS organization-tree rollout; phase 1 only writes ``user`` rows.
+    """
+
+    USER = "user"
+    ORG_UNIT = "org_unit"
+
+
 class KnowledgeSourceHealth(StrEnum):
     PENDING = "pending"
     HEALTHY = "healthy"
@@ -434,6 +456,44 @@ class KnowledgeWikiStats(KnowledgeModel):
     total_pages: int = Field(alias="totalPages", ge=0)
     pages_by_type: dict[str, int] = Field(alias="pagesByType")
     total_links: int = Field(default=0, alias="totalLinks", ge=0)
+
+
+class KnowledgeBaseMember(KnowledgeModel):
+    tenant_id: str = Field(alias="tenantId", min_length=1)
+    member_id: str = Field(alias="memberId", min_length=1)
+    knowledge_base_reference: KnowledgeReference = Field(alias="knowledgeBaseReference")
+    subject_type: KnowledgeMemberSubject = Field(alias="subjectType")
+    subject_id: str = Field(alias="subjectId", min_length=1, max_length=320)
+    org_path: str = Field(default="", alias="orgPath", max_length=1_000)
+    role: KnowledgeMemberRole
+    display_name: str = Field(default="", alias="displayName", max_length=160)
+    email: str = Field(default="", max_length=320)
+    granted_by: str = Field(alias="grantedBy", min_length=1)
+    granted_at: datetime = Field(alias="grantedAt")
+
+
+class AddKnowledgeMembersRequest(KnowledgeModel):
+    """Batch grant. Phase 1 accepts user ids or emails; emails are resolved
+    against the platform user directory and unresolved entries are reported."""
+
+    user_ids: tuple[str, ...] = Field(default=(), alias="userIds")
+    emails: tuple[str, ...] = Field(default=())
+    role: KnowledgeMemberRole = KnowledgeMemberRole.VIEWER
+
+    @model_validator(mode="after")
+    def require_subject(self) -> AddKnowledgeMembersRequest:
+        if not self.user_ids and not self.emails:
+            raise ValueError("at least one user id or email is required")
+        return self
+
+
+class AddKnowledgeMembersResult(KnowledgeModel):
+    members: tuple[KnowledgeBaseMember, ...]
+    unresolved: tuple[str, ...] = ()
+
+
+class UpdateKnowledgeMemberRequest(KnowledgeModel):
+    role: KnowledgeMemberRole
 
 
 class CreateKnowledgeDocumentRequest(KnowledgeModel):
