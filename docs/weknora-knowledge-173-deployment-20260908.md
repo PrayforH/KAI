@@ -4,7 +4,7 @@
 - 分支：`feature/weknora-knowledge-base`
 - 目标环境：`172.20.109.173`（KAI WORKBENCH 黑色主题，Web `:3301`，API `:8800`）
 - 知识数据面：`172.20.109.174:8180` WeKnora（服务账号，终端用户不直连）
-- 发布 tag：`weknora-kb-20260909-6e866dc`（api 与 web 同 tag）
+- 发布 tag：`weknora-kb-20260909-69025c0`（api 与 web 同 tag）
 - 配套设计：[2026-09-08-weknora-knowledge-base-design.md](2026-09-08-weknora-knowledge-base-design.md)、[实现计划](2026-09-08-weknora-knowledge-base-implementation-plan.md)
 
 ## 1. 交付内容
@@ -92,6 +92,8 @@ $COMPOSE up -d --no-build --force-recreate api worker web
 | 问答引用切片 | 发布测试智能体 `kb-citation-verify@0.1.0`（绑定本知识库）→ 提问 → 工具命中 1 项 → 回答带 [1][2] → 回复下方引用徽标 ①1.00/②0.99 → 点击打开切片抽屉（含全文） | 通过 |
 | 侧栏搜索位置 | 搜索入口移到侧栏头部，位于收起按钮左侧（紧凑图标按钮） | 通过 |
 | 侧栏导航顺序 | 「知识库」位于「新建任务」下方第二项，其后为智能体、技能 / MCP | 通过 |
+| 模型选择器对齐 | 模型名与下拉箭头紧贴、整体靠右对齐（按选中项自适应宽度，不再是固定最宽选项宽度） | 通过 |
+| 版本选择器图标 | 顶部版本选择器增加 git 分支图标（对齐 Codex 分支控件样式） | 通过 |
 | 登录页 logo | 中间卡片左上角由字母占位改为真实产品标识 `/brand/kai-mark-v2.png` | 通过 |
 
 ## 4. 待验证项与后续动作
