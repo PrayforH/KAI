@@ -1,5 +1,9 @@
 # Docker deployment
 
+仅替换 174 验证环境的 AXIS Web（保留现有 API 与数据服务）时，使用
+[AXIS Web 构建与 174 部署手册](axis-web-174-build-deployment-runbook.md)，
+不要执行本页的全栈 Compose 重建流程。
+
 认证、可选 Google/GitHub SSO、RBAC 与生产安全配置见
 [authentication.md](authentication.md)。
 

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Mecha primary mark · light surface variant -->
+  <rect width="64" height="64" rx="15" fill="#E7F1EA"/>
+  <rect x="15" y="27" width="30" height="24" rx="7.5" fill="none" stroke="#17251C" stroke-width="4.4"/>
+  <path d="M7 39 H46.5" fill="none" stroke="#15945A" stroke-width="4.4" stroke-linecap="round"/>
+  <circle cx="55" cy="39" r="3.1" fill="#15945A"/>
+</svg>

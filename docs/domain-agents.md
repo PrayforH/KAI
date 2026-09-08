@@ -74,6 +74,21 @@ description: Review invoice evidence and identify approval exceptions.
 
 Skill 必须小而聚焦。跨多个 Agent 复用的审核规则或报告规范可以独立成 Skill；凭据、环境地址和租户数据不能放入 Skill。
 
+新建草稿默认不安装 Skill。平台提供经过审核的 Skill 包目录，但目录项不是运行时引用：
+Builder 将选中的包按明确 revision 复制成草稿自己的 `DraftSkill`，记录来源、许可证和
+源内容哈希，并把包携带的回归场景合并进草稿评测集。发布时这些内容继续随 Agent
+版本递归快照和冻结；平台包后续升级不会改变已经导入或发布的版本。导入后修改内容会
+保留来源记录并标记为已修改，不再显示为平台当前原始快照。
+
+当前内置目录只包含无需外网、凭据、脚本和额外依赖的流程型 Skill：证据化报告、
+多源研究归纳、交付结果核验、文档与表格制作流程，以及 Skill 创建与质检。文档和
+表格 Skill 只规定制作与验收流程；确定性生成、转换、文件处理和外部系统访问仍应
+实现为工具或 MCP，而不是伪装成 Skill。
+
+其中 Skill 创建与质检基于 Apache-2.0 授权的 OpenAI `skill-creator` 固定 commit
+制作离线适配版，并在包内保留上游地址、commit 和修改声明。第三方 Skill 不能只凭
+热度进入目录；必须逐包确认许可证、固定源 revision、扫描脚本与依赖，并通过平台评测。
+
 ### Tools：确定性能力和副作用边界
 
 SDK builtin 适合工作区和委派：

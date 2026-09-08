@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 296 64">
+  <!-- Mecha horizontal lockup · for light surfaces -->
+  <rect width="64" height="64" rx="15" fill="#E7F1EA"/>
+  <rect x="15" y="27" width="30" height="24" rx="7.5" fill="none" stroke="#17251C" stroke-width="4.4"/>
+  <path d="M7 39 H46.5" fill="none" stroke="#15945A" stroke-width="4.4" stroke-linecap="round"/>
+  <circle cx="55" cy="39" r="3.1" fill="#15945A"/>
+  <text x="82" y="31" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif" font-size="21" font-weight="750" letter-spacing="3.4" fill="#17251C">MECHA</text>
+  <text x="83.5" y="48" font-family="'SF Mono', SFMono-Regular, Menlo, Consolas, monospace" font-size="7.6" letter-spacing="2.6" fill="#5C6B61">AGENTOPS CONTROL PLANE</text>
+</svg>
