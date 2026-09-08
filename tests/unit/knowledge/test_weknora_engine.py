@@ -221,3 +221,97 @@ async def test_gateway_list_documents_maps_statuses() -> None:
             await engine.list_documents("kb-1")
     finally:
         await engine.aclose()
+
+
+@pytest.mark.asyncio
+async def test_gateway_wiki_graph_parses_nodes_and_edges() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/auth/login":
+            return login_response()
+        return httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "nodes": [
+                        {
+                            "slug": "summary/s1",
+                            "title": "案例一",
+                            "page_type": "summary",
+                            "link_count": 19,
+                        },
+                        {
+                            "slug": "entity/e1",
+                            "title": "某公司",
+                            "page_type": "entity",
+                            "link_count": 3,
+                        },
+                        {"slug": "broken", "page_type": "concept", "link_count": 1},
+                    ],
+                    "edges": [{"source": "entity/e1", "target": "summary/s1"}],
+                    "meta": {"total": 3, "returned": 3, "truncated": False},
+                },
+            },
+        )
+
+    client = make_client(handler)
+    engine = WeknoraKnowledgeEngine(WeknoraSettings(base_url="http://weknora.test"), client)
+    try:
+        graph = await engine.wiki_graph("kb-1")
+    finally:
+        await engine.aclose()
+    assert len(graph.nodes) == 3
+    assert graph.nodes[0].page_type == "summary"
+    assert graph.nodes[0].link_count == 19
+    assert graph.links == (("entity/e1", "summary/s1"),)
+
+
+@pytest.mark.asyncio
+async def test_gateway_wiki_pages_and_stats() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/auth/login":
+            return login_response()
+        if request.url.path.endswith("/wiki/pages"):
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "data": {
+                        "pages": [
+                            {
+                                "slug": "summary/abc",
+                                "title": "以充值油卡为名的非法集资",
+                                "page_type": "summary",
+                                "content": "# 标题\n内容",
+                                "summary": "摘要",
+                                "aliases": ["油卡案"],
+                                "category_path": ["案例"],
+                            }
+                        ]
+                    },
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "total_pages": 19,
+                    "pages_by_type": {"concept": 14, "entity": 2, "index": 1, "summary": 2},
+                    "total_links": 42,
+                },
+            },
+        )
+
+    client = make_client(handler)
+    engine = WeknoraKnowledgeEngine(WeknoraSettings(base_url="http://weknora.test"), client)
+    try:
+        pages = await engine.list_wiki_pages("kb-1")
+        stats = await engine.wiki_stats("kb-1")
+    finally:
+        await engine.aclose()
+    assert len(pages) == 1
+    assert pages[0].page_type == "summary"
+    assert pages[0].aliases == ("油卡案",)
+    assert stats.total_pages == 19
+    assert stats.pages_by_type["summary"] == 2

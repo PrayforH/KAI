@@ -46,9 +46,7 @@ class WeknoraClient:
                 return self._token
             password = self._settings.password
             secret = (
-                password.get_secret_value()
-                if isinstance(password, SecretStr)
-                else str(password)
+                password.get_secret_value() if isinstance(password, SecretStr) else str(password)
             )
             response = await self._client.post(
                 "/auth/login",
@@ -258,3 +256,61 @@ class WeknoraClient:
                 return inner
             return payload
         return None
+
+    # --- wiki -------------------------------------------------------------
+
+    async def list_wiki_pages(self, base_id: str) -> list[dict[str, Any]]:
+        payload = await self.get_data(f"/knowledgebase/{base_id}/wiki/pages")
+        if isinstance(payload, dict):
+            rows = payload.get("pages") or payload.get("data") or []
+        elif isinstance(payload, list):
+            rows = payload
+        else:
+            rows = []
+        return [item for item in rows if isinstance(item, dict)]
+
+    async def get_wiki_page(self, base_id: str, slug: str) -> dict[str, Any]:
+        payload = await self.get_data(f"/knowledgebase/{base_id}/wiki/pages/{slug}")
+        if isinstance(payload, dict):
+            inner = payload.get("data")
+            if isinstance(inner, dict):
+                return inner
+            return payload
+        raise WeknoraError(f"weknora wiki page not found: {slug}")
+
+    async def search_wiki_pages(
+        self,
+        base_id: str,
+        query: str,
+        *,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        payload = await self.get_data(
+            f"/knowledgebase/{base_id}/wiki/search",
+            params={"q": query, "limit": limit},
+        )
+        if isinstance(payload, dict):
+            rows = payload.get("pages") or payload.get("data") or payload.get("results") or []
+        elif isinstance(payload, list):
+            rows = payload
+        else:
+            rows = []
+        return [item for item in rows if isinstance(item, dict)]
+
+    async def get_wiki_graph(self, base_id: str) -> dict[str, Any]:
+        payload = await self.get_data(f"/knowledgebase/{base_id}/wiki/graph")
+        if isinstance(payload, dict):
+            inner = payload.get("data")
+            if isinstance(inner, dict):
+                return inner
+            return payload
+        raise WeknoraError("weknora wiki graph returned an unexpected payload")
+
+    async def get_wiki_stats(self, base_id: str) -> dict[str, Any]:
+        payload = await self.get_data(f"/knowledgebase/{base_id}/wiki/stats")
+        if isinstance(payload, dict):
+            inner = payload.get("data")
+            if isinstance(inner, dict):
+                return inner
+            return payload
+        raise WeknoraError("weknora wiki stats returned an unexpected payload")

@@ -17,6 +17,9 @@ from harness.knowledge.models import (
     KnowledgeSnapshot,
     KnowledgeSourceSummary,
     KnowledgeSyncRun,
+    KnowledgeWikiGraph,
+    KnowledgeWikiPage,
+    KnowledgeWikiStats,
     ReplaceKnowledgeBaseRequest,
     ReplaceKnowledgeSourceRequest,
     SearchKnowledgeRequest,
@@ -432,5 +435,95 @@ async def get_source_chunk(
             reference,
             chunk_id,
         )
+    except KnowledgeEngineError as error:
+        raise await _translate_engine_error(error) from error
+
+
+# --- wiki proxies (engine-backed bases) ------------------------------------
+
+
+@router.get(
+    "/sources/{reference}/wiki/pages",
+    response_model=list[KnowledgeWikiPage],
+)
+async def list_wiki_pages(
+    reference: str,
+    actor: Annotated[StudioActor, Depends(require_studio_reader)],
+    service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+) -> list[KnowledgeWikiPage]:
+    try:
+        return await service.list_wiki_pages(actor.tenant_id, actor.user_id, reference)
+    except KnowledgeEngineError as error:
+        raise await _translate_engine_error(error) from error
+
+
+@router.get(
+    "/sources/{reference}/wiki/pages/{slug:path}",
+    response_model=KnowledgeWikiPage,
+)
+async def get_wiki_page(
+    reference: str,
+    slug: str,
+    actor: Annotated[StudioActor, Depends(require_studio_reader)],
+    service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+) -> KnowledgeWikiPage:
+    try:
+        return await service.get_wiki_page(actor.tenant_id, actor.user_id, reference, slug)
+    except KnowledgeEngineError as error:
+        raise await _translate_engine_error(error) from error
+
+
+@router.get(
+    "/sources/{reference}/wiki/search",
+    response_model=list[KnowledgeWikiPage],
+)
+async def search_wiki_pages(
+    reference: str,
+    actor: Annotated[StudioActor, Depends(require_studio_reader)],
+    service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+    q: str = "",
+    limit: int = 20,
+) -> list[KnowledgeWikiPage]:
+    query = (q or "").strip()
+    if not query:
+        return []
+    try:
+        return await service.search_wiki_pages(
+            actor.tenant_id,
+            actor.user_id,
+            reference,
+            query,
+            limit=limit,
+        )
+    except KnowledgeEngineError as error:
+        raise await _translate_engine_error(error) from error
+
+
+@router.get(
+    "/sources/{reference}/wiki/graph",
+    response_model=KnowledgeWikiGraph,
+)
+async def get_wiki_graph(
+    reference: str,
+    actor: Annotated[StudioActor, Depends(require_studio_reader)],
+    service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+) -> KnowledgeWikiGraph:
+    try:
+        return await service.wiki_graph(actor.tenant_id, actor.user_id, reference)
+    except KnowledgeEngineError as error:
+        raise await _translate_engine_error(error) from error
+
+
+@router.get(
+    "/sources/{reference}/wiki/stats",
+    response_model=KnowledgeWikiStats,
+)
+async def get_wiki_stats(
+    reference: str,
+    actor: Annotated[StudioActor, Depends(require_studio_reader)],
+    service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+) -> KnowledgeWikiStats:
+    try:
+        return await service.wiki_stats(actor.tenant_id, actor.user_id, reference)
     except KnowledgeEngineError as error:
         raise await _translate_engine_error(error) from error

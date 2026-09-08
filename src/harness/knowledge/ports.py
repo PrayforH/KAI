@@ -59,6 +59,41 @@ class EngineSearchHit:
     match_type: str = ""
 
 
+@dataclass(frozen=True)
+class EngineWikiPage:
+    """A WeKnora wiki page (summary / entity / concept / index)."""
+
+    slug: str
+    title: str
+    page_type: str
+    content: str = ""
+    summary: str = ""
+    aliases: tuple[str, ...] = ()
+    category_path: tuple[str, ...] = ()
+    folder_id: str = ""
+
+
+@dataclass(frozen=True)
+class EngineWikiGraphNode:
+    slug: str
+    title: str
+    page_type: str
+    link_count: int = 0
+
+
+@dataclass(frozen=True)
+class EngineWikiGraph:
+    nodes: tuple[EngineWikiGraphNode, ...]
+    links: tuple[tuple[str, str], ...]
+
+
+@dataclass(frozen=True)
+class EngineWikiStats:
+    total_pages: int
+    pages_by_type: dict[str, int]
+    total_links: int
+
+
 class KnowledgeEnginePort(Protocol):
     """Contract implemented by external knowledge engines (e.g. WeKnora)."""
 
@@ -128,4 +163,32 @@ class KnowledgeEnginePort(Protocol):
         limit: int,
     ) -> tuple[EngineSearchHit, ...]:
         """Run hybrid retrieval against the given remote knowledge bases."""
+        ...
+
+    # --- wiki -------------------------------------------------------------
+
+    async def list_wiki_pages(self, base_id: str) -> tuple[EngineWikiPage, ...]:
+        """List wiki pages of a remote knowledge base."""
+        ...
+
+    async def get_wiki_page(self, base_id: str, slug: str) -> EngineWikiPage:
+        """Fetch a single wiki page by slug."""
+        ...
+
+    async def search_wiki_pages(
+        self,
+        base_id: str,
+        query: str,
+        *,
+        limit: int,
+    ) -> tuple[EngineWikiPage, ...]:
+        """Full-text search wiki pages by title/content."""
+        ...
+
+    async def wiki_graph(self, base_id: str) -> EngineWikiGraph:
+        """Fetch the wiki page reference graph."""
+        ...
+
+    async def wiki_stats(self, base_id: str) -> EngineWikiStats:
+        """Fetch wiki stats (page counts by type, link count)."""
         ...

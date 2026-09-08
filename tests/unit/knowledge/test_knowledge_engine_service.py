@@ -17,6 +17,10 @@ from harness.knowledge.ports import (
     EngineChunk,
     EngineDocumentStatus,
     EngineSearchHit,
+    EngineWikiGraph,
+    EngineWikiGraphNode,
+    EngineWikiPage,
+    EngineWikiStats,
     KnowledgeEngineError,
     KnowledgeEngineNotConfiguredError,
 )
@@ -126,6 +130,54 @@ class FakeEngine:
                 score=0.9,
                 knowledge_base_id="remote-1",
             ),
+        )
+
+    async def list_wiki_pages(self, base_id: str) -> tuple[EngineWikiPage, ...]:
+        return (
+            EngineWikiPage(
+                slug="summary/doc-1",
+                title="案例一",
+                page_type="summary",
+                content="# 案例一",
+                summary="摘要",
+            ),
+        )
+
+    async def get_wiki_page(self, base_id: str, slug: str) -> EngineWikiPage:
+        return EngineWikiPage(
+            slug=slug,
+            title="案例一",
+            page_type="summary",
+            content="# 案例一",
+        )
+
+    async def search_wiki_pages(
+        self,
+        base_id: str,
+        query: str,
+        *,
+        limit: int,
+    ) -> tuple[EngineWikiPage, ...]:
+        return ()
+
+    async def wiki_graph(self, base_id: str) -> EngineWikiGraph:
+        return EngineWikiGraph(
+            nodes=(
+                EngineWikiGraphNode(
+                    slug="summary/doc-1",
+                    title="案例一",
+                    page_type="summary",
+                    link_count=2,
+                ),
+            ),
+            links=(),
+        )
+
+    async def wiki_stats(self, base_id: str) -> EngineWikiStats:
+        return EngineWikiStats(
+            total_pages=1,
+            pages_by_type={"summary": 1},
+            total_links=2,
         )
 
 
@@ -279,3 +331,24 @@ async def test_document_and_chunk_proxies() -> None:
 
     with pytest.raises(NotFoundError):
         await service.get_source_chunk("local", "user-2", "case-library", "chunk-1")
+
+
+
+@pytest.mark.asyncio
+async def test_wiki_proxies_require_viewer_access_and_acl() -> None:
+    from harness.core.errors import NotFoundError
+
+    service, engine = make_service()
+    await service.create_source("local", "user-1", weknora_source())
+    # creator can reach wiki
+    pages = await service.list_wiki_pages("local", "user-1", "case-library")
+    assert len(pages) == 1
+    assert pages[0].page_type == "summary"
+    stats = await service.wiki_stats("local", "user-1", "case-library")
+    assert stats.total_pages == 1
+    graph = await service.wiki_graph("local", "user-1", "case-library")
+    assert graph.nodes[0].slug == "summary/doc-1"
+
+    # non-member 404s (personal ACL restricted to creator)
+    with pytest.raises(NotFoundError):
+        await service.wiki_graph("local", "user-2", "case-library")

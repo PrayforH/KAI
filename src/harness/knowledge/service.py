@@ -30,6 +30,10 @@ from harness.knowledge.models import (
     KnowledgeSyncRun,
     KnowledgeSyncStatus,
     KnowledgeVisibility,
+    KnowledgeWikiGraph,
+    KnowledgeWikiGraphNode,
+    KnowledgeWikiPage,
+    KnowledgeWikiStats,
     ReplaceKnowledgeBaseRequest,
     ReplaceKnowledgeSourceRequest,
     SearchKnowledgeResponse,
@@ -1159,6 +1163,117 @@ class KnowledgeService:
         if value.created_by != owner_user_id:
             raise NotFoundError(f"knowledge source not found: {reference}")
         return value
+
+    async def list_wiki_pages(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+    ) -> list[KnowledgeWikiPage]:
+        source = await self._accessible_weknora_source(tenant_id, actor_id, reference)
+        remote_id = getattr(source.config, "weknora_base_id", "")
+        pages = await self._require_engine().list_wiki_pages(remote_id)
+        return [
+            KnowledgeWikiPage(
+                slug=item.slug,
+                title=item.title,
+                pageType=item.page_type,
+                content=item.content,
+                summary=item.summary,
+                aliases=item.aliases,
+                categoryPath=item.category_path,
+                folderId=item.folder_id,
+            )
+            for item in pages
+        ]
+
+    async def get_wiki_page(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+        slug: str,
+    ) -> KnowledgeWikiPage:
+        source = await self._accessible_weknora_source(tenant_id, actor_id, reference)
+        remote_id = getattr(source.config, "weknora_base_id", "")
+        item = await self._require_engine().get_wiki_page(remote_id, slug)
+        return KnowledgeWikiPage(
+            slug=item.slug,
+            title=item.title,
+            pageType=item.page_type,
+            content=item.content,
+            summary=item.summary,
+            aliases=item.aliases,
+            categoryPath=item.category_path,
+            folderId=item.folder_id,
+        )
+
+    async def search_wiki_pages(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+        query: str,
+        *,
+        limit: int = 20,
+    ) -> list[KnowledgeWikiPage]:
+        source = await self._accessible_weknora_source(tenant_id, actor_id, reference)
+        remote_id = getattr(source.config, "weknora_base_id", "")
+        pages = await self._require_engine().search_wiki_pages(
+            remote_id,
+            query,
+            limit=max(1, min(limit, 50)),
+        )
+        return [
+            KnowledgeWikiPage(
+                slug=item.slug,
+                title=item.title,
+                pageType=item.page_type,
+                content=item.content,
+                summary=item.summary,
+                aliases=item.aliases,
+                categoryPath=item.category_path,
+                folderId=item.folder_id,
+            )
+            for item in pages
+        ]
+
+    async def wiki_graph(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+    ) -> KnowledgeWikiGraph:
+        source = await self._accessible_weknora_source(tenant_id, actor_id, reference)
+        remote_id = getattr(source.config, "weknora_base_id", "")
+        graph = await self._require_engine().wiki_graph(remote_id)
+        return KnowledgeWikiGraph(
+            nodes=tuple(
+                KnowledgeWikiGraphNode(
+                    slug=node.slug,
+                    title=node.title,
+                    pageType=node.page_type,
+                    linkCount=node.link_count,
+                )
+                for node in graph.nodes
+            ),
+            links=graph.links,
+        )
+
+    async def wiki_stats(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+    ) -> KnowledgeWikiStats:
+        source = await self._accessible_weknora_source(tenant_id, actor_id, reference)
+        remote_id = getattr(source.config, "weknora_base_id", "")
+        stats = await self._require_engine().wiki_stats(remote_id)
+        return KnowledgeWikiStats(
+            totalPages=stats.total_pages,
+            pagesByType=stats.pages_by_type,
+            totalLinks=stats.total_links,
+        )
 
     async def _record(
         self,

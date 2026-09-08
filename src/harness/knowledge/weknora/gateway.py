@@ -12,6 +12,10 @@ from harness.knowledge.ports import (
     EngineChunk,
     EngineDocumentStatus,
     EngineSearchHit,
+    EngineWikiGraph,
+    EngineWikiGraphNode,
+    EngineWikiPage,
+    EngineWikiStats,
     KnowledgeEngineError,
 )
 from harness.knowledge.weknora.client import WeknoraClient, WeknoraError
@@ -139,6 +143,102 @@ class WeknoraKnowledgeEngine:
             hits.extend(_hit(row, base_id) for row in rows)
         hits.sort(key=lambda item: item.score, reverse=True)
         return tuple(hits[:limit])
+
+    async def list_wiki_pages(self, base_id: str) -> tuple[EngineWikiPage, ...]:
+        try:
+            rows = await self._client.list_wiki_pages(base_id)
+        except WeknoraError as error:
+            raise KnowledgeEngineError(f"weknora wiki pages failed: {error}") from error
+        return tuple(_wiki_page(row) for row in rows if _wiki_page(row) is not None)
+
+    async def get_wiki_page(self, base_id: str, slug: str) -> EngineWikiPage:
+        try:
+            row = await self._client.get_wiki_page(base_id, slug)
+        except WeknoraError as error:
+            raise KnowledgeEngineError(f"weknora wiki page failed: {error}") from error
+        page = _wiki_page(row)
+        if page is None:
+            raise KnowledgeEngineError("weknora wiki page is missing a slug")
+        return page
+
+    async def search_wiki_pages(
+        self,
+        base_id: str,
+        query: str,
+        *,
+        limit: int,
+    ) -> tuple[EngineWikiPage, ...]:
+        try:
+            rows = await self._client.search_wiki_pages(base_id, query, limit=limit)
+        except WeknoraError as error:
+            raise KnowledgeEngineError(f"weknora wiki search failed: {error}") from error
+        return tuple(_wiki_page(row) for row in rows if _wiki_page(row) is not None)
+
+    async def wiki_graph(self, base_id: str) -> EngineWikiGraph:
+        try:
+            row = await self._client.get_wiki_graph(base_id)
+        except WeknoraError as error:
+            raise KnowledgeEngineError(f"weknora wiki graph failed: {error}") from error
+        nodes = row.get("nodes") or []
+        edges = row.get("edges") or []
+        if not isinstance(nodes, list) or not isinstance(edges, list):
+            raise KnowledgeEngineError("weknora wiki graph returned an unexpected payload")
+        graph_nodes: list[EngineWikiGraphNode] = []
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            slug = _text(node.get("slug"))
+            if not slug:
+                continue
+            graph_nodes.append(
+                EngineWikiGraphNode(
+                    slug=slug,
+                    title=_text(node.get("title")) or slug,
+                    page_type=_text(node.get("page_type")) or "page",
+                    link_count=int(node.get("link_count") or 0),
+                )
+            )
+        links: list[tuple[str, str]] = []
+        for edge in edges:
+            if not isinstance(edge, dict):
+                continue
+            source = _text(edge.get("source"))
+            target = _text(edge.get("target"))
+            if source and target:
+                links.append((source, target))
+        return EngineWikiGraph(nodes=tuple(graph_nodes), links=tuple(links))
+
+    async def wiki_stats(self, base_id: str) -> EngineWikiStats:
+        try:
+            row = await self._client.get_wiki_stats(base_id)
+        except WeknoraError as error:
+            raise KnowledgeEngineError(f"weknora wiki stats failed: {error}") from error
+        pages_by_type = row.get("pages_by_type")
+        return EngineWikiStats(
+            total_pages=int(row.get("total_pages") or 0),
+            pages_by_type={str(key): int(value) for key, value in pages_by_type.items()}
+            if isinstance(pages_by_type, dict)
+            else {},
+            total_links=int(row.get("total_links") or 0),
+        )
+
+
+def _wiki_page(row: dict[str, object]) -> EngineWikiPage | None:
+    slug = _text(row.get("slug"))
+    if not slug:
+        return None
+    aliases = row.get("aliases") or ()
+    category_path = row.get("category_path") or ()
+    return EngineWikiPage(
+        slug=slug,
+        title=_text(row.get("title")) or slug,
+        page_type=_text(row.get("page_type")) or "page",
+        content=_text(row.get("content")),
+        summary=_text(row.get("summary")),
+        aliases=tuple(str(item) for item in aliases if isinstance(item, str)),
+        category_path=tuple(str(item) for item in category_path if isinstance(item, str)),
+        folder_id=_text(row.get("folder_id")),
+    )
 
 
 def _document_status(row: dict[str, object]) -> EngineDocumentStatus:

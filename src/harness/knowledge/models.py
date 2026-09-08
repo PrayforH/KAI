@@ -407,6 +407,35 @@ class KnowledgeDocumentStatus(KnowledgeModel):
     enabled: bool = True
 
 
+class KnowledgeWikiPage(KnowledgeModel):
+    slug: str
+    title: str = Field(min_length=1)
+    page_type: str = Field(alias="pageType", min_length=1)
+    content: str = ""
+    summary: str = ""
+    aliases: tuple[str, ...] = Field(default=())
+    category_path: tuple[str, ...] = Field(default=(), alias="categoryPath")
+    folder_id: str = Field(default="", alias="folderId")
+
+
+class KnowledgeWikiGraphNode(KnowledgeModel):
+    slug: str
+    title: str
+    page_type: str = Field(alias="pageType")
+    link_count: int = Field(default=0, alias="linkCount", ge=0)
+
+
+class KnowledgeWikiGraph(KnowledgeModel):
+    nodes: tuple[KnowledgeWikiGraphNode, ...]
+    links: tuple[tuple[str, str], ...]
+
+
+class KnowledgeWikiStats(KnowledgeModel):
+    total_pages: int = Field(alias="totalPages", ge=0)
+    pages_by_type: dict[str, int] = Field(alias="pagesByType")
+    total_links: int = Field(default=0, alias="totalLinks", ge=0)
+
+
 class CreateKnowledgeDocumentRequest(KnowledgeModel):
     title: str = Field(min_length=1, max_length=500)
     content: str = Field(min_length=1, max_length=2 * 1024 * 1024)
