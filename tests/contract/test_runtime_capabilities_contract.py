@@ -56,7 +56,9 @@ def fixture_catalog(openai_route: ModelRouteCapability) -> object:
 
 def test_fixture_matches_the_default_capability_catalog() -> None:
     catalog = default_capability_catalog()
-    expected = [item.model_dump(mode="json", by_alias=True) for item in catalog.runtime_capabilities]
+    expected = [
+        item.model_dump(mode="json", by_alias=True) for item in catalog.runtime_capabilities
+    ]
     assert load_fixture() == expected
 
 
@@ -149,9 +151,7 @@ def test_compiler_conclusions_match_fixture_protocol_contract() -> None:
             compiler, incompatible_claude
         )
     else:
-        assert "runtime_model_protocol_incompatible" in _issue_codes(
-            compiler, incompatible_claude
-        )
+        assert "runtime_model_protocol_incompatible" in _issue_codes(compiler, incompatible_claude)
 
 
 def test_compiler_feature_gates_follow_fixture_capabilities() -> None:
@@ -188,9 +188,7 @@ def test_unregistered_runtime_is_rejected_by_the_compiler() -> None:
         default_capability_catalog().model_copy(
             update={
                 "runtime_capabilities": tuple(
-                    item
-                    for item in fixture_runtimes()
-                    if item.runtime != "codex-app-server"
+                    item for item in fixture_runtimes() if item.runtime != "codex-app-server"
                 ),
                 "model_routes": (
                     *default_capability_catalog().model_routes,
@@ -204,7 +202,6 @@ def test_unregistered_runtime_is_rejected_by_the_compiler() -> None:
     runtime_unknown = [
         issue
         for issue in issues
-        if issue.code == "runtime_unknown"
-        and issue.severity is ValidationSeverity.ERROR
+        if issue.code == "runtime_unknown" and issue.severity is ValidationSeverity.ERROR
     ]
     assert runtime_unknown

@@ -1230,8 +1230,12 @@ def build_production_container(
         since = datetime.fromisoformat(settings.memory_extraction_since.replace("Z", "+00:00"))
         if since.tzinfo is None:
             raise ValueError("memory extraction rollout date must include timezone")
-        memory_processing = MemoryProcessingController(sessions, memory_bank, extractor, since=since)
-        maintenance.append(MaintenanceReaper("memory-extraction", "memory", memory_processing.process_once))
+        memory_processing = MemoryProcessingController(
+            sessions, memory_bank, extractor, since=since
+        )
+        maintenance.append(
+            MaintenanceReaper("memory-extraction", "memory", memory_processing.process_once)
+        )
     if credential_broker is not None:
         maintenance.append(
             MaintenanceReaper(
