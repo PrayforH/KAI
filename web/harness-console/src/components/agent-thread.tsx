@@ -45,11 +45,17 @@ import { ActivitySummary } from "./activity-summary";
 import { TaskAgentSwitcher } from "./task-agent-switcher";
 import { ApprovalCard, type ApprovalDetails } from "./approval-card";
 import { ArtifactCard, type ArtifactDetails } from "./artifact-list";
+import { KnowledgeCitations } from "./knowledge/knowledge-citations";
 import { MarkdownText } from "./markdown-text";
 import { SubagentCard } from "./subagent-card";
 import { ToolCard } from "./tool-card";
 import { useRunActivity, useRunViewModel } from "../lib/activity-store";
-import { reduceRunViewModel, selectComposerDisabled, type RunPhase } from "../lib/run-view-model";
+import {
+  reduceRunViewModel,
+  selectComposerDisabled,
+  type RunCitation,
+  type RunPhase,
+} from "../lib/run-view-model";
 import {
   TaskModelControl,
   TaskModelVisionNotice,
@@ -1286,6 +1292,17 @@ export function turnOwnsRun(
   );
 }
 
+function dedupeCitations(citations: readonly RunCitation[]): RunCitation[] {
+  const seen = new Set<string>();
+  const unique: RunCitation[] = [];
+  for (const citation of citations) {
+    if (seen.has(citation.chunkId)) continue;
+    seen.add(citation.chunkId);
+    unique.push(citation);
+  }
+  return unique;
+}
+
 function HarnessAssistantMessage() {
   const live = useLiveResponse();
   const isLast = useAuiState((state) => state.message.isLast);
@@ -1314,6 +1331,12 @@ function HarnessAssistantMessage() {
           .join("\n"),
       );
   const feedbackRun = feedbackRunId(messageId, isLast, runView?.runId);
+  // Requirement: citations must be reachable from the reply itself, not only
+  // from the collapsed execution summary. Deduplicate by chunk so repeated
+  // retrieval in one run shows one chip per slice.
+  const answerCitations = isLast
+    ? dedupeCitations(runView?.tools.flatMap((tool) => tool.citations ?? []) ?? [])
+    : [];
   return (
     <AssistantMessage.Root
       className="harness-assistant-message"
@@ -1336,6 +1359,9 @@ function HarnessAssistantMessage() {
           },
         }}
       />
+      {answerCitations.length > 0 ? (
+        <KnowledgeCitations citations={answerCitations} />
+      ) : null}
       {showIncompleteRecovery ? (
         <div className="aui-message-error">
           <span>{incompleteRunGuidance(isLast)}</span>
