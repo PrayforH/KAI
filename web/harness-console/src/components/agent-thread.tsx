@@ -92,6 +92,7 @@ import {
 
 import { createRandomId } from "../lib/random-id";
 import { ComposerAssist, composerOptions } from "./composer-assist";
+import { TaskKnowledgeControl, useTaskKnowledge } from "./task-knowledge-context";
 import { composerTrigger, queueAttachments, queueMayDispatch, restorePromptQueue, type QueuedPrompt } from "../lib/composer-interactions";
 
 export { normalizeMessageText } from "../lib/message-text";
@@ -420,7 +421,15 @@ function HarnessComposer() {
   const steeringRunId = queue.find((item) => item.steerRunId)?.steerRunId ?? runView?.runId;
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const composingRef = useRef(false);
-  const options = dismissedText === composerText ? [] : composerOptions(composerText, caret, agentSelection.agents, agentSelection.selected?.skills);
+  const knowledge = useTaskKnowledge();
+  const options = dismissedText === composerText ? [] : composerOptions(
+    composerText,
+    caret,
+    agentSelection.agents,
+    agentSelection.selected?.skills,
+    knowledge.available,
+    knowledge.selected,
+  );
   const busy = threadRunning || showStop || runLocked || videoGenerating;
   useEffect(() => {
     if (!queueKey) return;
@@ -477,6 +486,17 @@ function HarnessComposer() {
     const trigger = composerTrigger(composerText, caret);
     if (!trigger) return;
     if (option.id.startsWith("/")) { command(option.id); return; }
+    // `@` selects knowledge bases for this thread; the mention text is removed
+    // and the picker stays open so several bases can be toggled in a row.
+    if (trigger.symbol === "@") {
+      const reference = option.id.slice(1);
+      knowledge.toggle(reference);
+      const next = composerText.slice(0, trigger.start) + composerText.slice(trigger.end);
+      aui.composer().setText(next);
+      setDismissedText(null);
+      inputRef.current?.focus();
+      return;
+    }
     const next = composerText.slice(0, trigger.start) + (option.agent ? "" : `${option.id} `) + composerText.slice(trigger.end);
     aui.composer().setText(next);
     setDismissedText(next);
@@ -753,7 +773,7 @@ function HarnessComposer() {
           onComposingChange={(value) => { composingRef.current = value; }}
           className="aui-composer-input"
           aria-label="消息输入"
-          placeholder={busy ? "继续补充…" : "随心输入，/ 命令 · @ 智能体 · $ 技能"}
+          placeholder={busy ? "继续补充…" : "随心输入，/ 命令 · @ 知识库 · $ 技能"}
           rows={Math.min(8, Math.max(2, composerText.split("\n").length))}
           aria-controls={options.length ? "composer-suggestions" : undefined}
           aria-activedescendant={options.length ? `composer-option-${suggestionIndex}` : undefined}
@@ -793,6 +813,7 @@ function HarnessComposer() {
             onChange={agentSelection.onChange}
             onRefresh={agentSelection.onRefresh}
           />
+          <TaskKnowledgeControl disabled={runLocked || showStop || videoGenerating} />
           <TaskModelControl disabled={runLocked || showStop || videoGenerating} />
           {showStop && Boolean(composerText.trim() || composerAttachments.length) && <button type="button" className="composer-stop-secondary" aria-label="停止运行" title="停止运行" onClick={() => void stopRun()}><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="5" width="10" height="10" rx="2" fill="currentColor" /></svg></button>}
         </div>

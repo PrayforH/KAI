@@ -387,6 +387,7 @@ export type StudioKnowledgeBase = {
   kbType: KnowledgeBaseType;
   engine: KnowledgeBaseEngine;
   engineRef: string;
+  documentCount: number;
   revision: number;
   createdBy: string;
   updatedBy: string;

@@ -19,6 +19,7 @@ import { redirectOnUnauthorized } from "./client-auth";
 export interface HarnessHttpAgentConfig extends HttpAgentConfig {
   cancelFetch?: typeof fetch;
   modelRouteOverride?: string | null;
+  knowledgeReferences?: readonly string[];
   onRunSucceeded?: () => void;
 }
 
@@ -174,12 +175,14 @@ export class HarnessHttpAgent extends HttpAgent {
   private activeInput?: ActiveRun;
   private cancelFetch: typeof fetch;
   private modelRouteOverride?: string;
+  private knowledgeReferences?: readonly string[];
   private onRunSucceeded?: () => void;
 
   constructor(config: HarnessHttpAgentConfig) {
     const {
       cancelFetch,
       modelRouteOverride,
+      knowledgeReferences,
       onRunSucceeded,
       ...httpConfig
     } = config;
@@ -208,6 +211,7 @@ export class HarnessHttpAgent extends HttpAgent {
     };
     super({ ...httpConfig, fetch: sessionAwareFetch });
     this.modelRouteOverride = modelRouteOverride || undefined;
+    this.knowledgeReferences = knowledgeReferences?.length ? knowledgeReferences : undefined;
     this.onRunSucceeded = onRunSucceeded;
     const cancelTransport = cancelFetch ?? globalThis.fetch.bind(globalThis);
     this.cancelFetch = async (input, init) => {
@@ -235,13 +239,16 @@ export class HarnessHttpAgent extends HttpAgent {
   }
 
   private withModelOverride<T extends object>(input: T): T {
-    if (!this.modelRouteOverride) return input;
+    if (!this.modelRouteOverride && !this.knowledgeReferences) return input;
     const current = input as T & { forwardedProps?: Record<string, unknown> };
     return {
       ...input,
       forwardedProps: {
         ...current.forwardedProps,
-        modelRoute: this.modelRouteOverride,
+        ...(this.modelRouteOverride ? { modelRoute: this.modelRouteOverride } : {}),
+        ...(this.knowledgeReferences
+          ? { knowledgeReferences: [...this.knowledgeReferences] }
+          : {}),
       },
     };
   }

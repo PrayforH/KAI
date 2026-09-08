@@ -318,3 +318,67 @@
 .ghost:hover {
   background: var(--codex-surface-hover, #2a2a2a);
 }
+
+/* Knowledge base card mirrors the WeKnora console: a type glyph and title,
+   description, then a document-count badge. Colors stay on the dark theme. */
+.cardGlyph {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  border-radius: 7px;
+  color: var(--codex-ink-soft, #d6d6d6);
+  background: var(--codex-accent-faint, rgb(236 236 236 / 7%));
+}
+
+.cardGlyph svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.cardHead {
+  align-items: center;
+}
+
+.cardTitle {
+  font-size: 15.5px;
+}
+
+.countBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border: 1px solid rgb(64 201 119 / 38%);
+  border-radius: 7px;
+  color: var(--codex-success, #40c977);
+  background: var(--codex-success-soft, rgb(64 201 119 / 13%));
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.countBadge svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.cardRef {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardMeta {
+  justify-content: space-between;
+}

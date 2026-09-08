@@ -1,13 +1,31 @@
 "use client";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { COMPOSER_COMMANDS, composerTrigger } from "../lib/composer-interactions";
-import { groupTaskAgents } from "./task-agent-switcher";
 import type { TaskAgent } from "../lib/task-agent-catalog";
-export function composerOptions(text: string, caret: number, agents: readonly TaskAgent[], skills: NonNullable<TaskAgent["skills"]> = []) {
+export function composerOptions(
+  text: string,
+  caret: number,
+  _agents: readonly TaskAgent[],
+  skills: NonNullable<TaskAgent["skills"]> = [],
+  knowledgeBases: readonly { reference: string; displayName: string; kbType: string }[] = [],
+  selectedKnowledge: readonly string[] = [],
+) {
   const trigger = composerTrigger(text, caret);
   if (!trigger) return [];
   if (trigger.symbol === "/") return COMPOSER_COMMANDS.filter((item) => `${item.name} ${item.label}`.toLowerCase().includes(trigger.query)).map((item) => ({ id: item.name, label: item.name, description: `${item.label} · ${item.description}`, agent: undefined as TaskAgent | undefined }));
-  if (trigger.symbol === "@") return groupTaskAgents(agents, trigger.query).map((group) => ({ id: group.key, label: `@${group.displayName}`, description: "切换任务智能体 · 选择其他智能体会新建任务", agent: group.agents[0] }));
+  // `@` designates knowledge bases and supports multi-select; agents are
+  // switched from the composer's agent control.
+  if (trigger.symbol === "@")
+    return knowledgeBases
+      .filter((base) =>
+        `${base.reference} ${base.displayName}`.toLowerCase().includes(trigger.query),
+      )
+      .map((base) => ({
+        id: `@${base.reference}`,
+        label: `@${base.displayName}`,
+        description: `${base.kbType} 知识库 · ${selectedKnowledge.includes(base.reference) ? "已选，回车取消" : "回车选择，可多选"}`,
+        agent: undefined as TaskAgent | undefined,
+      }));
   const available = new Map(skills.map((skill) => [skill.name, skill] as const));
   return [...available.values()]
     .filter((skill) => `${skill.name} ${skill.description}`.toLowerCase().includes(trigger.query))

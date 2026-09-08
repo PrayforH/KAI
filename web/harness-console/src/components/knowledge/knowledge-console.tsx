@@ -147,29 +147,25 @@ export function KnowledgeConsole() {
                 className={styles.card}
               >
                 <div className={styles.cardHead}>
-                  <span
-                    className={`${styles.badge} ${
-                      base.kbType === "wiki"
-                        ? styles.badgeWiki
-                        : base.kbType === "hybrid"
-                          ? styles.badgeHybrid
-                          : ""
-                    }`}
-                  >
-                    {KB_TYPE_LABELS[base.kbType] ?? "RAG"}
+                  <span className={styles.cardGlyph} aria-hidden="true">
+                    <svg viewBox="0 0 20 20">
+                      <path d="M10 5.2C8.4 4.2 6.3 3.8 3.8 4v11c2.5-.2 4.6.2 6.2 1.2 1.6-1 3.7-1.4 6.2-1.2V4c-2.5-.2-4.6.2-6.2 1.2z" />
+                      <path d="M10 5.2v11" />
+                    </svg>
                   </span>
                   <h3 className={styles.cardTitle}>{base.displayName}</h3>
-                  <span className={styles.engineTag}>
-                    {base.engine === "weknora" ? "WeKnora" : "内置"}
-                  </span>
                 </div>
                 <p className={styles.cardDesc}>
                   {base.description || "暂无描述"}
                 </p>
                 <div className={styles.cardMeta}>
-                  <span>{base.reference}</span>
-                  <span>rev {base.revision}</span>
-                  <span>{new Date(base.updatedAt).toLocaleDateString()}</span>
+                  <span className={styles.countBadge} title="文档数量">
+                    <svg viewBox="0 0 20 20" aria-hidden="true">
+                      <path d="M3.5 5.5h5l1.5 2h6.5v7h-13z" />
+                    </svg>
+                    {base.documentCount}
+                  </span>
+                  <span className={styles.cardRef}>{base.reference}</span>
                 </div>
               </Link>
             ))}

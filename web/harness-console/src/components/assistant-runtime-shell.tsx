@@ -27,6 +27,7 @@ import {
 } from "../lib/task-history";
 import { activateRuntimeThread } from "../lib/runtime-thread-scope";
 import type { TaskModelRoute } from "../lib/task-model-catalog";
+import { TaskKnowledgeProvider } from "./task-knowledge-context";
 import { TaskModelProvider } from "./task-model-context";
 
 function DurableHistorySync({
@@ -113,6 +114,7 @@ export function AssistantRuntimeShell({
 }) {
   const runView = useRunViewModel();
   const [historyRevision, setHistoryRevision] = useState(0);
+  const [knowledgeReferences, setKnowledgeReferences] = useState<string[]>([]);
   const conversationalModelRouteOverride = modelRoutes.find(
     (route) => route.id === modelRouteOverride && route.modelType !== "video_generation",
   )?.id ?? null;
@@ -130,6 +132,7 @@ export function AssistantRuntimeShell({
     const next = new HarnessHttpAgent({
       url: `/api/agui?${query.toString()}`,
       modelRouteOverride: conversationalModelRouteOverride,
+      knowledgeReferences,
       onRunSucceeded: refreshDurableHistory,
     });
     next.threadId = threadId;
@@ -139,6 +142,7 @@ export function AssistantRuntimeShell({
     agentOwnerUserId,
     agentVersion,
     conversationalModelRouteOverride,
+    knowledgeReferences,
     refreshDurableHistory,
     spaceId,
     threadId,
@@ -160,6 +164,7 @@ export function AssistantRuntimeShell({
     [agent, history],
   );
   useLayoutEffect(() => {
+    setKnowledgeReferences([]);
     activateRuntimeThread(threadId);
     activityStore.clear();
     liveResponseStore.clear();
@@ -184,12 +189,17 @@ export function AssistantRuntimeShell({
         overrideRouteId={modelRouteOverride}
         onOverrideChange={onModelRouteOverrideChange}
       >
-        <div
-          className="assistant-runtime-shell"
-          data-run-phase={runView?.phase ?? "idle"}
+        <TaskKnowledgeProvider
+          selected={knowledgeReferences}
+          onChange={setKnowledgeReferences}
         >
-          {children}
-        </div>
+          <div
+            className="assistant-runtime-shell"
+            data-run-phase={runView?.phase ?? "idle"}
+          >
+            {children}
+          </div>
+        </TaskKnowledgeProvider>
       </TaskModelProvider>
     </AssistantRuntimeProvider>
   );

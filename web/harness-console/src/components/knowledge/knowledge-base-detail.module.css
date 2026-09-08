@@ -571,3 +571,32 @@
   opacity: 0.5;
   cursor: default;
 }
+
+/* Flattened detail header: one compact row for identity and actions, so the
+   document workspace keeps the vertical space. */
+.crumbs {
+  margin-bottom: 6px;
+}
+
+.head {
+  align-items: center;
+}
+
+.head h1 {
+  font-size: 21px;
+  letter-spacing: -0.025em;
+}
+
+.headDesc {
+  margin: 3px 0 0;
+  font-size: 11.5px;
+}
+
+.tabs {
+  margin: 14px 0 12px;
+  padding-bottom: 8px;
+}
+
+.uploadHint {
+  margin: 0 0 10px;
+}
