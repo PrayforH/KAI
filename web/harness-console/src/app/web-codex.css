@@ -1557,6 +1557,10 @@ body.codex-theme-v1:has(.console-shell) .task-model-control select {
   box-shadow: none;
   font-size: 12px;
   font-weight: 480;
+  /* Size the picker to the selected label so the chevron sits directly after
+     the model name instead of at the far edge of a widest-option box. */
+  field-sizing: content;
+  min-width: 0;
 }
 
 body.codex-theme-v1:has(.console-shell) .task-model-control[data-overridden="true"] select,

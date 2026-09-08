@@ -349,3 +349,24 @@ html body.codex-theme-v1 .workbench-rail-body > div > .workbench-rail-section:la
 html body.codex-theme-v1 .rail-file-row:last-child { border-bottom: 0; }
 html body.codex-theme-v1 .settings-web-actions button { padding: 8px 14px; border: 1px solid var(--codex-line); border-radius: 8px; color: var(--codex-ink); background: var(--codex-surface); cursor: pointer; }
 html body.codex-theme-v1 .settings-web-actions button:disabled { opacity: .45; cursor: default; }
+
+/* The version pill reads as a branch selector: a git-branch glyph replaces the
+   stacked agent mark, matching the Codex branch control. */
+body.codex-theme-v1 .task-version-switcher .task-agent-switcher-branch {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  color: var(--codex-muted);
+}
+
+body.codex-theme-v1 .task-version-switcher .task-agent-switcher-branch svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
