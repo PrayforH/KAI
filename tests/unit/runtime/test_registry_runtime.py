@@ -433,8 +433,8 @@ async def test_manifest_primary_route_selects_its_route_bound_gateway(
             update={
                 "model": base_spec.model.model_copy(
                     update={
-                        "route_id": "glm-5-2",
-                        "model": "shdata-glm",
+                        "route_id": "glm-5-3-flash",
+                        "model": "glm-5.3-flash",
                     }
                 )
             }
@@ -483,7 +483,7 @@ async def test_manifest_primary_route_selects_its_route_bound_gateway(
             credential=SecretStr("new-api-secret"),
         ),
         fallback_config=CcSwitchClaudeConfig(
-            route_id="glm-5-2",
+            route_id="glm-5-3-flash",
             base_url="https://glm.example",
             model="shdata-glm",
             provider="new-api",
@@ -534,7 +534,7 @@ async def test_manifest_primary_route_selects_its_route_bound_gateway(
     assert "ANTHROPIC_API_KEY" not in captured[0].env
     assert (
         next(event for event in events if event.type == "model.route.selected").payload["route_id"]
-        == "glm-5-2"
+        == "glm-5-3-flash"
     )
     assert next(
         event for event in events if event.type == "model.route.selected"
@@ -575,7 +575,7 @@ async def test_manifest_primary_route_selects_its_route_bound_gateway(
     assert selected.payload["route_id"] == "deepseek-v4-pro"
     assert selected.payload["model"] == "shdata-glm"
     assert selected.payload["selection_source"] == "task_override"
-    assert selected.payload["agent_default_route"] == "glm-5-2"
+    assert selected.payload["agent_default_route"] == "glm-5-3-flash"
 
 
 @pytest.mark.asyncio

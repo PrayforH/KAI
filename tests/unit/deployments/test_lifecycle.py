@@ -268,25 +268,15 @@ async def test_environment_policy_denies_agent_resources_and_workload_scope() ->
     denied_route_policy = current.resource_policy.model_copy(
         update={"allowed_model_routes": ("glm-5-2",)}
     )
-    denied = await container.deployments.replace_environment_policy(
-        tenant_id=TENANT,
-        user_id=USER,
-        agent_name=draft.spec.name,
-        environment_name=EnvironmentName.PRODUCTION,
-        request=ReplaceEnvironmentPolicyRequest(
-            expectedEnvironmentRevision=current.revision,
-            policy=denied_route_policy,
-        ),
-    )
     with pytest.raises(ConflictError, match="model routes"):
-        await container.deployments.promote(
+        await container.deployments.replace_environment_policy(
             tenant_id=TENANT,
             user_id=USER,
-            request=promotion(
-                agent_name=draft.spec.name,
-                version=first_version,
-                revision=denied.revision,
-                key="environment-route-denied",
+            agent_name=draft.spec.name,
+            environment_name=EnvironmentName.PRODUCTION,
+            request=ReplaceEnvironmentPolicyRequest(
+                expectedEnvironmentRevision=current.revision,
+                policy=denied_route_policy,
             ),
         )
 
@@ -296,7 +286,7 @@ async def test_environment_policy_denies_agent_resources_and_workload_scope() ->
         agent_name=draft.spec.name,
         environment_name=EnvironmentName.PRODUCTION,
         request=ReplaceEnvironmentPolicyRequest(
-            expectedEnvironmentRevision=denied.revision,
+            expectedEnvironmentRevision=current.revision,
             policy=current.resource_policy.model_copy(
                 update={"credential_scopes": (CredentialScope.USER,)}
             ),
