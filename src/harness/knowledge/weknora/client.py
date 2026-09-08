@@ -12,6 +12,7 @@ import time
 from typing import Any
 
 import httpx
+from pydantic import SecretStr
 
 from harness.knowledge.weknora.configuration import WeknoraSettings
 
@@ -43,7 +44,12 @@ class WeknoraClient:
         async with self._login_lock:
             if self._token and time.monotonic() < self._token_expires_at:
                 return self._token
-            secret = self._settings.password.get_secret_value()
+            password = self._settings.password
+            secret = (
+                password.get_secret_value()
+                if isinstance(password, SecretStr)
+                else str(password)
+            )
             response = await self._client.post(
                 "/auth/login",
                 json={"email": self._settings.email, "password": secret},
