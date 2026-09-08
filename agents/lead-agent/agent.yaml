@@ -2,7 +2,7 @@ apiVersion: harness/v1alpha1
 kind: Agent
 metadata:
   name: lead-agent
-  version: 1.0.0
+  version: 1.0.2
   labels:
     domain: general-assistant
     template: orchestrator
@@ -14,18 +14,28 @@ spec:
   model:
     route: deepseek-v4-pro
     model: deepseek-v4-pro
-    requiredCapabilities: [streaming, tool_use]
+    requiredCapabilities:
+    - streaming
+    - tool_use
   prompt:
     system: prompts/system.md
   skills:
-    - skills/general-task-orchestration
+  - skills/general-task-orchestration
+  - skills/evidence-reporting
+  - skills/research-synthesis
+  - skills/delivery-verification
+  - skills/document-spreadsheet-production
+  - skills/skill-authoring-quality
+  - skills/skill-creator
   tools:
-    - builtin: Read
-    - builtin: Glob
-    - builtin: Grep
-    - builtin: Write
-    - builtin: Edit
-    - builtin: Bash
+  - builtin: Read
+  - builtin: Glob
+  - builtin: Grep
+  - builtin: Write
+  - builtin: Edit
+  - builtin: Bash
+  - builtin: WebSearch
+  - builtin: WebFetch
   subagents: []
   hooks: []
   permissions:
