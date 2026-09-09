@@ -2472,62 +2472,106 @@ body.codex-theme-v1:has(.console-shell) .task-sidebar-brand .task-sidebar-search
   color: var(--codex-ink, #ffffff);
 }
 
-/* Knowledge Q&A mode: chunk retrieval (RAG) or curated wiki pages. */
+/* Knowledge Q&A mode: one dropdown button, like the WeKnora console. */
 .task-knowledge-mode {
-  display: inline-flex;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--codex-line, #303030);
-  border-radius: 8px;
-  background: var(--codex-inset, #171717);
+  position: relative;
+  flex: 0 0 auto;
 }
 
-.task-knowledge-mode button {
-  min-height: 24px;
-  padding: 0 7px;
-  border: 0;
-  border-radius: 6px;
+.task-knowledge-mode-trigger {
+  min-height: 30px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--codex-line, #303030);
+  border-radius: 8px;
   background: transparent;
-  color: var(--codex-muted, #a1a1a1);
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  color: var(--codex-ink-soft, #d6d6d6);
+  font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
 }
 
-.task-knowledge-mode button:hover:not(:disabled) {
+.task-knowledge-mode-trigger:hover,
+.task-knowledge-mode-trigger[aria-expanded="true"] {
+  border-color: var(--codex-line-strong, #444444);
   color: var(--codex-ink, #ffffff);
+  background: var(--codex-surface-hover, #2a2a2a);
 }
 
-.task-knowledge-mode button.is-active {
-  color: var(--codex-success, #40c977);
-  background: var(--codex-success-soft, rgb(64 201 119 / 13%));
-  font-weight: 600;
-}
-
-.task-knowledge-mode button:disabled {
+.task-knowledge-mode-trigger:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-/* Wiki links inside assistant answers open the entity drawer. */
-/* Wiki links inside answers follow the monochrome theme: white ink with a
-   faint underline, not a green accent. */
-.aui-wiki-link {
-  padding: 0 2px;
+.task-knowledge-mode-trigger svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.task-knowledge-mode-menu {
+  position: absolute;
+  z-index: 71;
+  bottom: calc(100% + 8px);
+  left: 0;
+  width: min(280px, calc(100vw - 32px));
+  padding: 5px;
+  display: grid;
+  gap: 2px;
+  border: 1px solid var(--codex-line-strong, #444444);
+  border-radius: 10px;
+  background: var(--codex-panel-solid, #242424);
+  box-shadow: var(--codex-shadow, 0 18px 56px rgb(0 0 0 / 38%));
+}
+
+.task-knowledge-mode-menu button {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
   border: 0;
-  border-radius: 4px;
+  border-radius: 7px;
   background: transparent;
-  color: var(--codex-accent-hover, #ffffff);
-  font: inherit;
-  text-decoration: underline;
-  text-decoration-color: rgb(236 236 236 / 44%);
-  text-underline-offset: 2px;
+  color: var(--codex-ink-soft, #d6d6d6);
+  text-align: left;
   cursor: pointer;
 }
 
-.aui-wiki-link:hover {
+.task-knowledge-mode-menu button:hover {
+  background: var(--codex-surface-hover, #2a2a2a);
+}
+
+.task-knowledge-mode-menu button.is-active {
+  color: var(--codex-ink, #ffffff);
   background: var(--codex-accent-faint, rgb(236 236 236 / 7%));
-  text-decoration-color: rgb(236 236 236 / 72%);
+}
+
+.task-knowledge-mode-mark {
+  width: 14px;
+  flex: 0 0 14px;
+  color: var(--codex-success, #40c977);
+  font-weight: 700;
+}
+
+.task-knowledge-mode-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.task-knowledge-mode-copy strong {
+  font-size: 12.5px;
+}
+
+.task-knowledge-mode-copy small {
+  color: var(--codex-faint, #737373);
+  font-size: 10.5px;
+  line-height: 1.5;
 }
