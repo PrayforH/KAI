@@ -186,9 +186,7 @@ class AguiRunService:
     async def mark_read(
         self, *, tenant_id: str, user_id: str, thread_id: str, read_at: datetime
     ) -> StoredAguiThreadBinding:
-        return await self._bindings.mark_read(
-            tenant_id, user_id, thread_id, read_at=read_at
-        )
+        return await self._bindings.mark_read(tenant_id, user_id, thread_id, read_at=read_at)
 
     async def set_archived(
         self,
@@ -268,6 +266,14 @@ class AguiRunService:
                 session_id=binding.session_id,
                 references=requested_knowledge,
             )
+            if requested_knowledge or knowledge_mode == "wiki":
+                session = await self._sessions.get(tenant_id, binding.session_id)
+                if session.runtime_type != "claude-agent-sdk":
+                    raise ConflictError("当前运行时不支持知识问答，请切换支持知识检索的智能体")
+                if knowledge_mode == "wiki" and not (
+                    knowledge_override or session.knowledge_snapshot_bindings
+                ):
+                    raise ConflictError("Wiki 问答需要先选择知识库，或使用已绑定知识库的智能体")
             run_input: dict[str, object] = {
                 "prompt": prompt,
                 "conversation_prompts": conversation_prompts,
@@ -283,9 +289,7 @@ class AguiRunService:
                     else {}
                 ),
                 **(
-                    {"knowledge_binding_override": knowledge_override}
-                    if knowledge_override
-                    else {}
+                    {"knowledge_binding_override": knowledge_override} if knowledge_override else {}
                 ),
                 **({"knowledge_mode": knowledge_mode} if knowledge_mode else {}),
             }
@@ -635,8 +639,10 @@ class AguiRunService:
         session_id: str,
         references: list[str] | None,
     ) -> list[dict[str, object]]:
-        if not references or self._knowledge_bindings is None:
+        if not references:
             return []
+        if self._knowledge_bindings is None:
+            raise ConflictError("知识检索服务未配置")
         session = await self._sessions.get(tenant_id, session_id)
         resolved = await self._knowledge_bindings(
             tenant_id,

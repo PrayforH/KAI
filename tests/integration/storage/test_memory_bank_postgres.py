@@ -129,6 +129,7 @@ async def test_pg_concurrent_proposal_and_atomic_replacement(
     memory_database: SessionFactory,
 ) -> None:
     import asyncio
+
     from harness.memory_bank.models import MemorySourceKind
 
     bank = MemoryBankService(PostgresMemoryBankRepository(memory_database), clock=lambda: NOW)
@@ -159,13 +160,15 @@ async def test_extraction_job_reconciliation_evidence_and_idempotency(
     memory_database: SessionFactory,
 ) -> None:
     import json
+
     import httpx
     from pydantic import SecretStr
     from sqlalchemy import select
+
     from harness.core.models import Run, RunStatus, Session
     from harness.memory_bank.extraction import MemoryExtractor
     from harness.memory_bank.processing import MemoryProcessingController
-    from harness.storage.models import RunRow, SessionRow, MemoryExtractionJobRow
+    from harness.storage.models import MemoryExtractionJobRow, RunRow, SessionRow
 
     run = Run(
         tenant_id="tenant-a",

@@ -121,6 +121,21 @@ async def replace_knowledge_base(
     )
 
 
+@router.delete(
+    "/bases/{reference}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_knowledge_base(
+    reference: str,
+    actor: Annotated[StudioActor, Depends(require_studio_writer)],
+    service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+) -> None:
+    try:
+        await service.delete_base(actor.tenant_id, actor.user_id, reference)
+    except KnowledgeEngineError as error:
+        raise await _translate_engine_error(error) from error
+
+
 @router.get("/sources", response_model=list[KnowledgeSourceSummary])
 async def list_knowledge_sources(
     actor: Annotated[StudioActor, Depends(require_studio_reader)],

@@ -34,6 +34,8 @@ from harness.knowledge.service import KnowledgeService
 class FakeEngine:
     def __init__(self) -> None:
         self.created_bases: list[dict[str, str]] = []
+        self.deleted_bases: list[str] = []
+        self.fail_delete_base_ids: set[str] = set()
         self.search_calls: list[tuple[list[str], str]] = []
         self.documents: dict[str, list[EngineDocumentStatus]] = {}
         self.document_rows: list[EngineDocumentStatus] = [
@@ -48,13 +50,13 @@ class FakeEngine:
         self.fail_base_ids: set[str] = set()
 
     async def create_base(self, *, name: str, description: str, kb_type: str) -> str:
-        self.created_bases.append(
-            {"name": name, "description": description, "kb_type": kb_type}
-        )
+        self.created_bases.append({"name": name, "description": description, "kb_type": kb_type})
         return "remote-1"
 
     async def delete_base(self, base_id: str) -> None:
-        return None
+        if base_id in self.fail_delete_base_ids:
+            raise KnowledgeEngineError("remote unavailable")
+        self.deleted_bases.append(base_id)
 
     async def list_documents(self, base_id: str) -> tuple[EngineDocumentStatus, ...]:
         if base_id in self.fail_base_ids:
@@ -225,9 +227,7 @@ async def test_create_base_with_weknora_engine_provisions_remote_base() -> None:
     assert base.engine is KnowledgeBaseEngine.WEKNORA
     assert base.engine_ref == "remote-1"
     assert base.kb_type.value == "hybrid"
-    assert engine.created_bases == [
-        {"name": "案例知识库", "description": "", "kb_type": "hybrid"}
-    ]
+    assert engine.created_bases == [{"name": "案例知识库", "description": "", "kb_type": "hybrid"}]
 
 
 @pytest.mark.asyncio
@@ -338,7 +338,6 @@ async def test_document_and_chunk_proxies() -> None:
         await service.get_source_chunk("local", "user-2", "case-library", "chunk-1")
 
 
-
 @pytest.mark.asyncio
 async def test_wiki_proxies_require_viewer_access_and_acl() -> None:
     from harness.core.errors import NotFoundError
@@ -416,9 +415,7 @@ async def test_member_roles_gate_read_and_write() -> None:
         await service.create_source_document("local", "user-2", "case-library", "t", "c")
 
     # Promote user-3 to editor, then writes succeed.
-    editor_member = next(
-        item for item in result.members if item.subject_id == "user-3"
-    )
+    editor_member = next(item for item in result.members if item.subject_id == "user-3")
     await service.update_member_role(
         "local", "user-1", "case-library", editor_member.member_id, KnowledgeMemberRole.EDITOR
     )
@@ -508,9 +505,7 @@ async def test_document_mutations_refresh_the_base_count() -> None:
             knowledge_base_id="remote-1",
         )
     )
-    await service.upload_source_document(
-        "local", "user-1", "case-library", "分类表.xlsx", b"data"
-    )
+    await service.upload_source_document("local", "user-1", "case-library", "分类表.xlsx", b"data")
     bases = await service.list_bases("local", "user-1")
     assert bases[0].document_count == 2
 
@@ -518,3 +513,129 @@ async def test_document_mutations_refresh_the_base_count() -> None:
     await service.delete_source_document("local", "user-1", "case-library", "doc-2")
     bases = await service.list_bases("local", "user-1")
     assert bases[0].document_count == 1
+
+
+@pytest.mark.asyncio
+async def test_bound_wiki_preserves_same_slug_across_bases_and_global_limit() -> None:
+    from unittest.mock import AsyncMock
+
+    service, engine = make_service()
+    engine.search_wiki_pages = AsyncMock(
+        return_value=(
+            EngineWikiPage(slug="entity/a", title="甲", page_type="entity", content="正文"),
+        )
+    )
+    for reference in ("cases", "policy"):
+        await service.create_base(
+            "local",
+            "user-1",
+            CreateKnowledgeBaseRequest.model_validate(
+                {
+                    "reference": reference,
+                    "displayName": reference,
+                    "engine": "weknora",
+                    "kbType": "hybrid",
+                }
+            ),
+        )
+    bindings = await service.resolve_bindings("local", "user-1", ("cases", "policy"), ())
+    pages = await service.search_bound_wiki_pages("local", "user-1", bindings, "概念", limit=2)
+    assert len(pages) == 2
+    assert {page.knowledge_base_reference for page in pages} == {"cases", "policy"}
+    assert pages[0].slug == pages[1].slug
+    limited = await service.search_bound_wiki_pages("local", "user-1", bindings, "概念", limit=1)
+    assert len(limited) == 1
+    denied = await service.search_bound_wiki_pages("local", "other", bindings, "概念", limit=2)
+    assert denied == []
+
+
+@pytest.mark.asyncio
+async def test_bound_wiki_propagates_engine_failure_instead_of_empty_evidence() -> None:
+    from unittest.mock import AsyncMock
+
+    service, engine = make_service()
+    await service.create_base(
+        "local",
+        "user-1",
+        CreateKnowledgeBaseRequest.model_validate(
+            {
+                "reference": "cases",
+                "displayName": "Cases",
+                "engine": "weknora",
+                "kbType": "wiki",
+            }
+        ),
+    )
+    bindings = await service.resolve_bindings("local", "user-1", ("cases",), ())
+    engine.search_wiki_pages = AsyncMock(side_effect=KnowledgeEngineError("offline"))
+    with pytest.raises(KnowledgeEngineError, match="offline"):
+        await service.search_bound_wiki_pages("local", "user-1", bindings, "概念")
+
+
+@pytest.mark.asyncio
+async def test_delete_base_removes_remote_base_and_local_rows() -> None:
+    directory = InMemoryUserDirectory(
+        [DirectoryUser(user_id="user-2", email="viewer@axis.test", display_name="查看者")]
+    )
+    service, engine = make_service(directory=directory)
+    await service.create_base(
+        "local",
+        "user-1",
+        CreateKnowledgeBaseRequest.model_validate(
+            {"reference": "cases", "displayName": "案例知识库", "engine": "weknora"}
+        ),
+    )
+    await service.add_members(
+        "local",
+        "user-1",
+        "cases",
+        AddKnowledgeMembersRequest.model_validate({"userIds": ["user-2"], "role": "viewer"}),
+    )
+
+    await service.delete_base("local", "user-1", "cases")
+
+    assert engine.deleted_bases == ["remote-1"]
+    from harness.core.errors import NotFoundError
+
+    with pytest.raises(NotFoundError):
+        await service.repository.get_base("local", "cases")
+    with pytest.raises(NotFoundError):
+        await service.repository.get_source("local", "cases")
+    assert await service.repository.list_members("local", knowledge_base_reference="cases") == ()
+
+
+@pytest.mark.asyncio
+async def test_delete_base_remote_failure_keeps_local_rows() -> None:
+    service, engine = make_service()
+    await service.create_base(
+        "local",
+        "user-1",
+        CreateKnowledgeBaseRequest.model_validate(
+            {"reference": "cases", "displayName": "案例知识库", "engine": "weknora"}
+        ),
+    )
+    engine.fail_delete_base_ids.add("remote-1")
+
+    with pytest.raises(KnowledgeEngineError):
+        await service.delete_base("local", "user-1", "cases")
+
+    # Nothing was removed locally, so the delete can be retried later.
+    assert await service.repository.get_base("local", "cases") is not None
+    assert await service.repository.get_source("local", "cases") is not None
+    assert engine.deleted_bases == []
+
+
+@pytest.mark.asyncio
+async def test_delete_base_requires_editor_role() -> None:
+    service, _engine = make_service()
+    await service.create_base(
+        "local",
+        "user-1",
+        CreateKnowledgeBaseRequest.model_validate(
+            {"reference": "cases", "displayName": "案例知识库", "engine": "weknora"}
+        ),
+    )
+    from harness.core.errors import NotFoundError
+
+    with pytest.raises(NotFoundError):
+        await service.delete_base("local", "user-9", "cases")

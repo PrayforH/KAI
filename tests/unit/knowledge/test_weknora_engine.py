@@ -386,3 +386,91 @@ async def test_gateway_wiki_pages_and_stats() -> None:
     assert pages[0].aliases == ("油卡案",)
     assert stats.total_pages == 19
     assert stats.pages_by_type["summary"] == 2
+
+
+@pytest.mark.asyncio
+async def test_wiki_phrase_miss_falls_back_to_terms_with_one_deduplicated_budget() -> None:
+    queries: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/auth/login":
+            return login_response()
+        query = request.url.params["q"]
+        queries.append(query)
+        pages = {
+            "启信宝": [{"slug": "qixin"}, {"slug": "shared"}],
+            "企业画像": [{"slug": "profile"}, {"slug": "shared"}],
+        }.get(query, [])
+        return httpx.Response(200, json={"data": {"pages": pages}})
+
+    client = make_client(handler)
+    try:
+        pages = await client.search_wiki_pages("base", "启信宝 企业画像", limit=3)
+        assert [page["slug"] for page in pages] == ["qixin", "profile", "shared"]
+        assert set(queries) == {"启信宝 企业画像", "启信宝", "企业画像"}
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_wiki_phrase_hits_do_not_trigger_broader_searches() -> None:
+    queries: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/auth/login":
+            return login_response()
+        queries.append(request.url.params["q"])
+        return httpx.Response(200, json={"data": [{"slug": "exact"}]})
+
+    client = make_client(handler)
+    try:
+        assert await client.search_wiki_pages("base", "exact phrase", limit=3) == [
+            {"slug": "exact"}
+        ]
+        assert queries == ["exact phrase"]
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_gateway_delete_document_is_idempotent() -> None:
+    """WeKnora deletes asynchronously: once the worker finished, a repeated
+    delete reports 404 "Knowledge not found". The caller asked for the document
+    to be gone, so that must not surface as a failure."""
+    methods: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/auth/login":
+            return login_response()
+        methods.append(request.method)
+        return httpx.Response(
+            404,
+            json={
+                "success": False,
+                "error": {"code": 1003, "message": "Knowledge not found"},
+            },
+        )
+
+    client = make_client(handler)
+    engine = WeknoraKnowledgeEngine(WeknoraSettings(base_url="http://weknora.test"), client)
+    try:
+        await engine.delete_document("kb-1", "doc-gone")
+    finally:
+        await engine.aclose()
+    assert methods == ["DELETE"]
+
+
+@pytest.mark.asyncio
+async def test_gateway_delete_document_reports_other_failures() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/auth/login":
+            return login_response()
+        return httpx.Response(500, json={"success": False, "error": {"message": "boom"}})
+
+    client = make_client(handler)
+    engine = WeknoraKnowledgeEngine(WeknoraSettings(base_url="http://weknora.test"), client)
+    try:
+        with pytest.raises(KnowledgeEngineError):
+            await engine.delete_document("kb-1", "doc-1")
+    finally:
+        await engine.aclose()

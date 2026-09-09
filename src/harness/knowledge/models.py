@@ -441,6 +441,7 @@ class KnowledgeDocumentStatus(KnowledgeModel):
 
 
 class KnowledgeWikiPage(KnowledgeModel):
+    knowledge_base_reference: str | None = Field(default=None, alias="knowledgeBaseReference")
     slug: str
     title: str = Field(min_length=1)
     page_type: str = Field(alias="pageType", min_length=1)

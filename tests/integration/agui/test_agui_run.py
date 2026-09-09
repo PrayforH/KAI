@@ -834,3 +834,20 @@ async def test_history_keeps_messages_and_valid_files_when_old_attachment_is_mis
         denied = await client.get("/v1/agui/threads/old-files/history",
             headers={**HEADERS, "X-User-ID": "someone-else"})
         assert denied.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_wiki_without_knowledge_fails_before_creating_a_run() -> None:
+    app = create_memory_app(auto_execute=True)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        published = await client.post(
+            "/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS
+        )
+        assert published.status_code == 201
+        request = _request(thread_id="wiki-no-base", run_id="wiki-no-base", prompt="查询资料")
+        request["forwardedProps"] = {"knowledgeMode": "wiki"}
+        response = await client.post(
+            "/v1/agui?agent_name=echo-agent&agent_version=0.1.0", json=request, headers=HEADERS
+        )
+    assert response.status_code == 409
+    assert "Wiki 问答需要先选择知识库" in response.text

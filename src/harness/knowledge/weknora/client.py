@@ -365,16 +365,41 @@ class WeknoraClient:
         *,
         limit: int,
     ) -> list[dict[str, Any]]:
-        payload = await self.get_data(
-            f"/knowledgebase/{base_id}/wiki/search",
-            params={"q": query, "limit": limit},
-        )
-        if isinstance(payload, dict):
-            values = cast(dict[str, Any], payload)
-            return _dict_list(
-                values.get("pages") or values.get("data") or values.get("results") or []
+        async def search(term: str) -> list[dict[str, Any]]:
+            payload = await self.get_data(
+                f"/knowledgebase/{base_id}/wiki/search",
+                params={"q": term, "limit": limit},
             )
-        return _dict_list(payload)
+            if isinstance(payload, dict):
+                values = cast(dict[str, Any], payload)
+                return _dict_list(
+                    values.get("pages") or values.get("data") or values.get("results") or []
+                )
+            return _dict_list(payload)
+
+        exact = await search(query)
+        terms = list(dict.fromkeys(query.split()))
+        if exact or len(terms) < 2:
+            return exact[:limit]
+        # This endpoint matches phrases. Model-generated space-separated terms
+        # otherwise miss existing entities (e.g. "启信宝 企业画像"). Only broaden
+        # an empty search, with a bounded fan-out and one global result budget.
+        groups = await asyncio.gather(*(search(term) for term in terms[:3]))
+        pages: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for offset in range(limit):
+            for group in groups:
+                if offset >= len(group):
+                    continue
+                page = group[offset]
+                slug = page.get("slug")
+                if not isinstance(slug, str) or slug in seen:
+                    continue
+                seen.add(slug)
+                pages.append(page)
+                if len(pages) == limit:
+                    return pages
+        return pages
 
     async def get_wiki_graph(self, base_id: str) -> dict[str, Any]:
         payload = await self.get_data(f"/knowledgebase/{base_id}/wiki/graph")

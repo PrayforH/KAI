@@ -24,6 +24,8 @@ class KnowledgeRepository(Protocol):
 
     async def compare_and_set_base(self, expected_revision: int, value: KnowledgeBase) -> bool: ...
 
+    async def delete_base(self, tenant_id: str, reference: str) -> bool: ...
+
     async def add_source(self, value: KnowledgeSource) -> None: ...
 
     async def get_source(self, tenant_id: str, reference: str) -> KnowledgeSource: ...
@@ -33,6 +35,12 @@ class KnowledgeRepository(Protocol):
     async def compare_and_set_source(
         self, expected_revision: int, value: KnowledgeSource
     ) -> bool: ...
+
+    async def delete_source(self, tenant_id: str, reference: str) -> bool: ...
+
+    async def delete_base_members(self, tenant_id: str, reference: str) -> int: ...
+
+    async def delete_source_artifacts(self, tenant_id: str, reference: str) -> int: ...
 
     async def add_sync(self, value: KnowledgeSyncRun) -> None: ...
 
@@ -132,6 +140,10 @@ class InMemoryKnowledgeRepository:
             self._bases[key] = value
             return True
 
+    async def delete_base(self, tenant_id: str, reference: str) -> bool:
+        async with self._lock:
+            return self._bases.pop((tenant_id, reference), None) is not None
+
     async def add_source(self, value: KnowledgeSource) -> None:
         key = (value.tenant_id, value.reference)
         async with self._lock:
@@ -163,6 +175,47 @@ class InMemoryKnowledgeRepository:
                 return False
             self._sources[key] = value
             return True
+
+    async def delete_source(self, tenant_id: str, reference: str) -> bool:
+        async with self._lock:
+            return self._sources.pop((tenant_id, reference), None) is not None
+
+    async def delete_base_members(self, tenant_id: str, reference: str) -> int:
+        async with self._lock:
+            stale = [
+                member_id
+                for (stored_tenant, member_id), item in self._members.items()
+                if stored_tenant == tenant_id
+                and item.knowledge_base_reference == reference
+            ]
+            for member_id in stale:
+                self._members.pop((tenant_id, member_id), None)
+            return len(stale)
+
+    async def delete_source_artifacts(self, tenant_id: str, reference: str) -> int:
+        async with self._lock:
+            snapshot_ids = {
+                snapshot_id
+                for (stored_tenant, snapshot_id), item in self._snapshots.items()
+                if stored_tenant == tenant_id and item.source_reference == reference
+            }
+            for snapshot_id in snapshot_ids:
+                self._snapshots.pop((tenant_id, snapshot_id), None)
+            stale_chunks = [
+                chunk_key
+                for chunk_key in self._chunks
+                if chunk_key[0] == tenant_id and chunk_key[1] in snapshot_ids
+            ]
+            for chunk_key in stale_chunks:
+                self._chunks.pop(chunk_key, None)
+            stale_syncs = [
+                sync_id
+                for (stored_tenant, sync_id), item in self._syncs.items()
+                if stored_tenant == tenant_id and item.source_reference == reference
+            ]
+            for sync_id in stale_syncs:
+                self._syncs.pop((tenant_id, sync_id), None)
+            return len(snapshot_ids) + len(stale_chunks) + len(stale_syncs)
 
     async def add_sync(self, value: KnowledgeSyncRun) -> None:
         key = (value.tenant_id, value.sync_id)

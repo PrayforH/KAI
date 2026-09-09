@@ -208,6 +208,40 @@ class KnowledgeService:
         )
         return updated
 
+    async def delete_base(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+    ) -> None:
+        base = await self.repository.get_base(tenant_id, reference)
+        await self._require_editor(tenant_id, actor_id, reference)
+        # Delete the remote base first: if WeKnora is unreachable the local
+        # rows stay intact instead of stranding a populated remote base.
+        if base.engine is KnowledgeBaseEngine.WEKNORA:
+            remote_id = base.engine_ref
+            if not remote_id:
+                source = await self.repository.get_source(tenant_id, reference)
+                remote_id = getattr(source.config, "weknora_base_id", "")
+            if remote_id:
+                await self._require_engine().delete_base(remote_id)
+        await self.repository.delete_base_members(tenant_id, reference)
+        try:
+            await self.repository.get_source(tenant_id, reference)
+        except NotFoundError:
+            pass
+        else:
+            await self.repository.delete_source_artifacts(tenant_id, reference)
+            await self.repository.delete_source(tenant_id, reference)
+        await self.repository.delete_base(tenant_id, reference)
+        await self._record(
+            tenant_id,
+            actor_id,
+            "knowledge.base.delete",
+            reference,
+            {"engine": base.engine.value},
+        )
+
     async def list_bases(
         self,
         tenant_id: str,
@@ -217,9 +251,7 @@ class KnowledgeService:
         # Refresh engine-backed counts concurrently; the list is small and a
         # stale badge is worse than a couple of extra remote reads.
         values = tuple(
-            await asyncio.gather(
-                *(self._with_document_count(tenant_id, item) for item in values)
-            )
+            await asyncio.gather(*(self._with_document_count(tenant_id, item) for item in values))
         )
         if owner_user_id is None:
             return values
@@ -1408,81 +1440,50 @@ class KnowledgeService:
         query: str,
         *,
         limit: int = 8,
+        team_ids: tuple[str, ...] = (),
     ) -> list[KnowledgeWikiPage]:
-        """Wiki-page search across the knowledge bases bound to a session.
+        """Search bound Wiki bases with ACL checks and unambiguous provenance.
 
-        Wiki mode answers from curated pages (summary/entity/concept) instead of
-        raw chunks, so the reply can cite and link wiki entities.
+        Round-robin results keep the first base from consuming the global budget.
+        Index pages do not replace query matches; callers can search for an index
+        explicitly when an overview is needed.
         """
-        pages: list[KnowledgeWikiPage] = []
-        seen: set[str] = set()
+        if not query.strip() or not 1 <= limit <= 25:
+            raise ValueError("query must be non-empty and limit must be between 1 and 25")
+        groups: list[list[KnowledgeWikiPage]] = []
+        seen_bases: set[str] = set()
         for binding in bindings:
-            # Lead with the index page: it maps every curated page, which lets
-            # the model plan several targeted searches instead of one.
-            source = await self.repository.get_source(
-                tenant_id, binding.source_reference
-            )
-            if source.kind.value != "weknora":
+            reference = binding.knowledge_base_reference
+            if reference in seen_bases:
                 continue
-            if not await self._allows_source(
-                tenant_id,
-                actor_id,
-                (),
-                binding.knowledge_base_reference,
-                source,
-            ):
-                continue
-            remote_id = getattr(source.config, "weknora_base_id", "")
-            if not remote_id:
-                continue
-            try:
-                index_pages = await self._require_engine().list_wiki_pages(remote_id)
-            except KnowledgeEngineError:
-                index_pages = ()
-            for item in index_pages:
-                if item.page_type != "index" or item.slug in seen:
-                    continue
-                seen.add(item.slug)
-                pages.append(
-                    KnowledgeWikiPage(
-                        slug=item.slug,
-                        title=item.title,
-                        pageType=item.page_type,
-                        content=item.content,
-                        summary=item.summary,
-                        aliases=item.aliases,
-                        categoryPath=item.category_path,
-                        folderId=item.folder_id,
-                    )
-                )
+            seen_bases.add(reference)
             source = await self.repository.get_source(tenant_id, binding.source_reference)
-            if source.kind.value != "weknora":
-                continue
-            if not await self._allows_source(
+            if source.kind.value != "weknora" or not await self._allows_source(
                 tenant_id,
                 actor_id,
-                (),
-                binding.knowledge_base_reference,
+                team_ids,
+                reference,
                 source,
             ):
                 continue
             remote_id = getattr(source.config, "weknora_base_id", "")
             if not remote_id:
                 continue
-            try:
-                found = await self._require_engine().search_wiki_pages(
-                    remote_id,
-                    query,
-                    limit=max(1, min(limit, 25)),
-                )
-            except KnowledgeEngineError:
-                continue
+            # Propagate retrieval failures instead of presenting them as no evidence.
+            found = await self._require_engine().search_wiki_pages(
+                remote_id,
+                query,
+                limit=limit,
+            )
+            seen_slugs: set[str] = set()
+            group: list[KnowledgeWikiPage] = []
             for item in found:
-                if item.slug in seen:
+                if item.slug in seen_slugs:
                     continue
-                seen.add(item.slug)
-                pages.append(
+                seen_slugs.add(item.slug)
+                group.append(
                     KnowledgeWikiPage(
+                        knowledgeBaseReference=reference,
                         slug=item.slug,
                         title=item.title,
                         pageType=item.page_type,
@@ -1493,6 +1494,14 @@ class KnowledgeService:
                         folderId=item.folder_id,
                     )
                 )
+            groups.append(group)
+        pages: list[KnowledgeWikiPage] = []
+        for offset in range(limit):
+            for group in groups:
+                if offset < len(group):
+                    pages.append(group[offset])
+                    if len(pages) == limit:
+                        return pages
         return pages
 
     async def wiki_graph(

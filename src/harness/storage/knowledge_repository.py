@@ -85,6 +85,16 @@ class PostgresKnowledgeRepository:
             await db.commit()
             return bool(cast(CursorResult[Any], result).rowcount)
 
+    async def delete_base(self, tenant_id: str, reference: str) -> bool:
+        statement = delete(KnowledgeBaseRow).where(
+            KnowledgeBaseRow.tenant_id == tenant_id,
+            KnowledgeBaseRow.reference == reference,
+        )
+        async with self._sessions() as db:
+            result = await db.execute(statement)
+            await db.commit()
+            return bool(cast(CursorResult[Any], result).rowcount)
+
     async def add_source(self, value: KnowledgeSource) -> None:
         async with self._sessions() as db:
             db.add(self._source_row(value))
@@ -136,6 +146,77 @@ class PostgresKnowledgeRepository:
             result = await db.execute(statement)
             await db.commit()
             return bool(cast(CursorResult[Any], result).rowcount)
+
+    async def delete_source(self, tenant_id: str, reference: str) -> bool:
+        statement = delete(KnowledgeSourceRow).where(
+            KnowledgeSourceRow.tenant_id == tenant_id,
+            KnowledgeSourceRow.reference == reference,
+        )
+        async with self._sessions() as db:
+            result = await db.execute(statement)
+            await db.commit()
+            return bool(cast(CursorResult[Any], result).rowcount)
+
+    async def delete_base_members(self, tenant_id: str, reference: str) -> int:
+        statement = delete(KnowledgeBaseMemberRow).where(
+            KnowledgeBaseMemberRow.tenant_id == tenant_id,
+            KnowledgeBaseMemberRow.knowledge_base_reference == reference,
+        )
+        async with self._sessions() as db:
+            result = await db.execute(statement)
+            await db.commit()
+            return int(cast(CursorResult[Any], result).rowcount or 0)
+
+    async def delete_source_artifacts(self, tenant_id: str, reference: str) -> int:
+        """Drop legacy-engine artifacts (snapshots, chunks, sync runs) so no
+        rows outlive their base after a delete."""
+        async with self._sessions() as db:
+            snapshot_rows = cast(
+                list[KnowledgeSnapshotRow],
+                (
+                    await db.scalars(
+                        select(KnowledgeSnapshotRow).where(
+                            KnowledgeSnapshotRow.tenant_id == tenant_id,
+                            KnowledgeSnapshotRow.source_reference == reference,
+                        )
+                    )
+                ).all(),
+            )
+            snapshot_ids = [row.snapshot_id for row in snapshot_rows]
+            removed = len(snapshot_ids)
+            if snapshot_ids:
+                removed += int(
+                    cast(
+                        CursorResult[Any],
+                        await db.execute(
+                            delete(KnowledgeChunkRow).where(
+                                KnowledgeChunkRow.tenant_id == tenant_id,
+                                KnowledgeChunkRow.snapshot_id.in_(snapshot_ids),
+                            )
+                        ),
+                    ).rowcount
+                    or 0
+                )
+            removed += int(
+                cast(
+                    CursorResult[Any],
+                    await db.execute(
+                        delete(KnowledgeSyncRunRow).where(
+                            KnowledgeSyncRunRow.tenant_id == tenant_id,
+                            KnowledgeSyncRunRow.source_reference == reference,
+                        )
+                    ),
+                ).rowcount
+                or 0
+            )
+            await db.execute(
+                delete(KnowledgeSnapshotRow).where(
+                    KnowledgeSnapshotRow.tenant_id == tenant_id,
+                    KnowledgeSnapshotRow.source_reference == reference,
+                )
+            )
+            await db.commit()
+            return removed
 
     async def add_sync(self, value: KnowledgeSyncRun) -> None:
         async with self._sessions() as db:

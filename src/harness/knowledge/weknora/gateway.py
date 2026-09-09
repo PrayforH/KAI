@@ -79,6 +79,10 @@ class WeknoraKnowledgeEngine:
         try:
             await self._client.delete_knowledge_base(base_id)
         except WeknoraError as error:
+            # The remote base may already be gone (previous partial delete);
+            # the requested end state is "no such base", not an error.
+            if error.status_code == 404:
+                return
             raise KnowledgeEngineError(f"weknora delete base failed: {error}") from error
 
     async def list_documents(self, base_id: str) -> tuple[EngineDocumentStatus, ...]:
@@ -129,6 +133,11 @@ class WeknoraKnowledgeEngine:
         try:
             await self._client.delete_document(document_id)
         except WeknoraError as error:
+            # WeKnora deletes asynchronously, so a repeat delete of a document
+            # whose removal already completed is reported as 404. That is the
+            # requested end state, not a failure.
+            if error.status_code == 404:
+                return
             raise KnowledgeEngineError(f"weknora delete document failed: {error}") from error
 
     async def reparse_document(self, base_id: str, document_id: str) -> None:
