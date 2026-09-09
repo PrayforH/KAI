@@ -149,6 +149,10 @@ class KnowledgeEnginePort(Protocol):
         """Fetch a single document's ingestion status."""
         ...
 
+    async def download_document(self, document_id: str) -> bytes:
+        """Fetch a document's original bytes."""
+        ...
+
     async def list_chunks(self, document_id: str) -> tuple[EngineChunk, ...]:
         """List chunks of a remote document."""
         ...

@@ -820,3 +820,45 @@
   font-size: 13px;
   line-height: 1.9;
 }
+
+/* Spreadsheet documents render as a scrollable cell grid. */
+.tableWrap {
+  max-height: 60vh;
+  overflow: auto;
+  border: 1px solid var(--codex-line, #303030);
+  border-radius: 10px;
+  background: var(--codex-inset, #171717);
+}
+
+.docTable {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+}
+
+.docTable td {
+  padding: 7px 10px;
+  border-right: 1px solid var(--codex-line, #303030);
+  border-bottom: 1px solid var(--codex-line, #303030);
+  color: var(--codex-ink-soft, #d6d6d6);
+  vertical-align: top;
+  white-space: pre-wrap;
+  word-break: break-word;
+  min-width: 90px;
+}
+
+.docTable tr:first-child td {
+  color: var(--codex-ink, #ffffff);
+  font-weight: 600;
+  background: var(--codex-surface-raised, #242424);
+}
+
+.docTable tr:hover td {
+  background: var(--codex-surface-hover, #2a2a2a);
+}
+
+.tableNote {
+  margin: 8px 10px;
+  color: var(--codex-faint, #737373);
+  font-size: 11px;
+}

@@ -9,6 +9,7 @@ import {
   type StudioKnowledgeBase,
   type StudioKnowledgeDocumentChunk,
   type StudioKnowledgeDocumentStatus,
+  type StudioKnowledgeDocumentTable,
 } from "../../lib/studio-client";
 import { KnowledgeGraphPanel } from "./knowledge-graph-panel";
 import { KnowledgeWikiPanel } from "./knowledge-wiki-panel";
@@ -58,11 +59,17 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [menuFor, setMenuFor] = useState<string | null>(null);
-  const [contentView, setContentView] = useState<"full" | "chunks">("full");
+  const [contentView, setContentView] = useState<"full" | "chunks" | "table">("full");
+  const [table, setTable] = useState<StudioKnowledgeDocumentTable | null>(null);
+  const [tableLoading, setTableLoading] = useState(false);
+  const [tableError, setTableError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const isWeknora = base?.engine === "weknora";
+  const SPREADSHEET_TYPES = ["xls", "xlsx", "xlsm", "csv"];
+  const isSpreadsheet = (fileType: string) =>
+    SPREADSHEET_TYPES.includes((fileType || "").toLowerCase());
 
   const loadDocuments = useCallback(
     async (quiet = false) => {
@@ -133,7 +140,25 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
   const closeDrawer = useCallback(() => {
     setSelected(null);
     setChunks([]);
+    setTable(null);
+    setTableError("");
   }, []);
+
+  const showTable = useCallback(async () => {
+    setContentView("table");
+    if (table || !selected) return;
+    setTableLoading(true);
+    setTableError("");
+    try {
+      setTable(
+        await studioClient.getKnowledgeDocumentTable(reference, selected.documentId),
+      );
+    } catch (cause) {
+      setTableError(cause instanceof Error ? cause.message : "表格解析失败");
+    } finally {
+      setTableLoading(false);
+    }
+  }, [reference, selected, table]);
 
   const submitManual = useCallback(async () => {
     if (!title.trim() || !content.trim()) return;
@@ -670,6 +695,15 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
                     >
                       全文
                     </button>
+                    {isSpreadsheet(selected.fileType) ? (
+                      <button
+                        type="button"
+                        className={contentView === "table" ? styles.drawerToggleActive : ""}
+                        onClick={() => void showTable()}
+                      >
+                        表格
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       className={contentView === "chunks" ? styles.drawerToggleActive : ""}
@@ -679,7 +713,30 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
                     </button>
                   </div>
                 </div>
-                {chunksLoading ? (
+                {contentView === "table" ? (
+                  tableLoading ? (
+                    <p className={styles.empty}>表格解析中…</p>
+                  ) : tableError ? (
+                    <p className={styles.error}>{tableError}</p>
+                  ) : table ? (
+                    <div className={styles.tableWrap}>
+                      <table className={styles.docTable}>
+                        <tbody>
+                          {table.rows.map((row, rowIndex) => (
+                            <tr key={rowIndex}>
+                              {row.map((cell, cellIndex) => (
+                                <td key={cellIndex}>{cell}</td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {table.truncated ? (
+                        <p className={styles.tableNote}>表格过大，仅展示前若干行/列</p>
+                      ) : null}
+                    </div>
+                  ) : null
+                ) : chunksLoading ? (
                   <p className={styles.empty}>切片加载中…</p>
                 ) : chunks.length === 0 ? (
                   <p className={styles.empty}>解析完成后这里会显示文档内容</p>

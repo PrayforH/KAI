@@ -266,6 +266,21 @@ class WeknoraClient:
     async def reparse_document(self, document_id: str) -> None:
         await self.post_data(f"/knowledge/{document_id}/reparse")
 
+    async def download_document(self, document_id: str) -> bytes:
+        """Fetch the original uploaded file (WeKnora keeps flattened text in
+        chunks, so table structure only exists in the source file)."""
+        token = await self._authenticate()
+        response = await self._client.get(
+            f"/knowledge/{document_id}/download",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        if response.status_code >= 400:
+            raise WeknoraError(
+                f"weknora download failed: HTTP {response.status_code}",
+                status_code=response.status_code,
+            )
+        return response.content
+
     # --- chunks -----------------------------------------------------------
 
     async def list_chunks(

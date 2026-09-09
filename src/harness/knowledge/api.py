@@ -17,6 +17,7 @@ from harness.knowledge.models import (
     KnowledgeBaseMember,
     KnowledgeDocumentChunk,
     KnowledgeDocumentStatus,
+    KnowledgeDocumentTable,
     KnowledgeSnapshot,
     KnowledgeSourceSummary,
     KnowledgeSyncRun,
@@ -392,6 +393,27 @@ async def reparse_source_document(
             document_id,
         )
         return await service.get_source_document(
+            actor.tenant_id,
+            actor.user_id,
+            reference,
+            document_id,
+        )
+    except KnowledgeEngineError as error:
+        raise await _translate_engine_error(error) from error
+
+
+@router.get(
+    "/sources/{reference}/documents/{document_id}/table",
+    response_model=KnowledgeDocumentTable,
+)
+async def get_source_document_table(
+    reference: str,
+    document_id: str,
+    actor: Annotated[StudioActor, Depends(require_studio_reader)],
+    service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+) -> KnowledgeDocumentTable:
+    try:
+        return await service.get_source_document_table(
             actor.tenant_id,
             actor.user_id,
             reference,

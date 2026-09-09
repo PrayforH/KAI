@@ -85,9 +85,7 @@ class PlatformUserDirectory:
         statement = (
             select(UserRow)
             .where(UserRow.disabled.is_(False))
-            .where(
-                (UserRow.email.ilike(pattern)) | (UserRow.display_name.ilike(pattern))
-            )
+            .where((UserRow.email.ilike(pattern)) | (UserRow.display_name.ilike(pattern)))
             .order_by(UserRow.email)
             .limit(max(1, min(limit, 50)))
         )

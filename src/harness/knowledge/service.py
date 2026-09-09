@@ -25,6 +25,7 @@ from harness.knowledge.models import (
     KnowledgeCitation,
     KnowledgeDocumentChunk,
     KnowledgeDocumentStatus,
+    KnowledgeDocumentTable,
     KnowledgeMemberRole,
     KnowledgeMemberSubject,
     KnowledgeSearchHit,
@@ -52,6 +53,7 @@ from harness.knowledge.ports import (
 )
 from harness.knowledge.repositories import KnowledgeRepository
 from harness.knowledge.search import HybridKnowledgeSearch, tokenize
+from harness.knowledge.spreadsheet import is_spreadsheet, parse_spreadsheet
 
 TeamGrantChecker = Callable[[str, str, tuple[str, ...], str], Awaitable[bool]]
 
@@ -1104,6 +1106,38 @@ class KnowledgeService:
             )
             for item in chunks
         ]
+
+    async def get_source_document_table(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+        document_id: str,
+    ) -> KnowledgeDocumentTable:
+        """Render a spreadsheet document as a cell grid.
+
+        WeKnora's chunk text flattens spreadsheets to ``A: value`` lines, so the
+        table is rebuilt from the downloadable original file.
+        """
+        await self._accessible_weknora_source(tenant_id, actor_id, reference)
+        document = await self._require_engine().get_document(document_id)
+        filename = document.title or document.document_id
+        if not is_spreadsheet(filename):
+            raise ConflictError("document is not a spreadsheet")
+        content = await self._require_engine().download_document(document_id)
+        grid = parse_spreadsheet(filename, content)
+        if grid is None:
+            raise ConflictError("spreadsheet could not be parsed")
+        return KnowledgeDocumentTable(
+            tenantId=tenant_id,
+            sourceReference=reference,
+            documentId=document_id,
+            title=document.title,
+            sheet=grid.sheet,
+            rows=grid.rows,
+            truncated=grid.truncated,
+            extraSheets=grid.extra_sheets,
+        )
 
     async def get_source_chunk(
         self,

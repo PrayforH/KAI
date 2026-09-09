@@ -453,6 +453,17 @@ export type StudioDirectoryUser = {
   displayName: string;
 };
 
+export type StudioKnowledgeDocumentTable = {
+  tenantId: string;
+  sourceReference: string;
+  documentId: string;
+  title: string;
+  sheet: string;
+  rows: string[][];
+  truncated: boolean;
+  extraSheets: string[];
+};
+
 export type StudioKnowledgeDocumentChunk = {
   tenantId: string;
   sourceReference: string;
@@ -1644,6 +1655,10 @@ export const studioClient = {
     request<StudioKnowledgeDocumentStatus>(
       `knowledge/sources/${encodeURIComponent(baseReference)}/documents/${encodeURIComponent(documentId)}/reparse`,
       { method: "POST" },
+    ),
+  getKnowledgeDocumentTable: (baseReference: string, documentId: string) =>
+    request<StudioKnowledgeDocumentTable>(
+      `knowledge/sources/${encodeURIComponent(baseReference)}/documents/${encodeURIComponent(documentId)}/table`,
     ),
   listKnowledgeDocumentChunks: (baseReference: string, documentId: string) =>
     request<StudioKnowledgeDocumentChunk[]>(

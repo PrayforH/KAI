@@ -137,6 +137,12 @@ class WeknoraKnowledgeEngine:
         except WeknoraError as error:
             raise KnowledgeEngineError(f"weknora reparse failed: {error}") from error
 
+    async def download_document(self, document_id: str) -> bytes:
+        try:
+            return await self._client.download_document(document_id)
+        except WeknoraError as error:
+            raise KnowledgeEngineError(f"weknora download failed: {error}") from error
+
     async def list_chunks(self, document_id: str) -> tuple[EngineChunk, ...]:
         try:
             rows = await self._client.list_chunks(document_id)

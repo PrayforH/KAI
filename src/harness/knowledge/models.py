@@ -507,6 +507,19 @@ class UpdateKnowledgeMemberRequest(KnowledgeModel):
     role: KnowledgeMemberRole
 
 
+class KnowledgeDocumentTable(KnowledgeModel):
+    """A spreadsheet document rendered as a cell grid for the console."""
+
+    tenant_id: str = Field(alias="tenantId")
+    source_reference: KnowledgeReference = Field(alias="sourceReference")
+    document_id: str = Field(alias="documentId")
+    title: str
+    sheet: str = ""
+    rows: tuple[tuple[str, ...], ...] = ()
+    truncated: bool = False
+    extra_sheets: tuple[str, ...] = Field(default=(), alias="extraSheets")
+
+
 class CreateKnowledgeDocumentRequest(KnowledgeModel):
     title: str = Field(min_length=1, max_length=500)
     content: str = Field(min_length=1, max_length=2 * 1024 * 1024)

@@ -341,23 +341,25 @@ async def test_gateway_wiki_pages_and_stats() -> None:
         if request.url.path == "/api/v1/auth/login":
             return login_response()
         if request.url.path.endswith("/wiki/pages"):
+            # The real endpoint returns a paginated envelope at the top level.
             return httpx.Response(
                 200,
                 json={
-                    "success": True,
-                    "data": {
-                        "pages": [
-                            {
-                                "slug": "summary/abc",
-                                "title": "以充值油卡为名的非法集资",
-                                "page_type": "summary",
-                                "content": "# 标题\n内容",
-                                "summary": "摘要",
-                                "aliases": ["油卡案"],
-                                "category_path": ["案例"],
-                            }
-                        ]
-                    },
+                    "pages": [
+                        {
+                            "slug": "summary/abc",
+                            "title": "以充值油卡为名的非法集资",
+                            "page_type": "summary",
+                            "content": "# 标题\n内容",
+                            "summary": "摘要",
+                            "aliases": ["油卡案"],
+                            "category_path": ["案例"],
+                        }
+                    ],
+                    "total": 1,
+                    "page": 1,
+                    "page_size": 100,
+                    "total_pages": 1,
                 },
             )
         return httpx.Response(
