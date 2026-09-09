@@ -61,7 +61,7 @@ type LinkEndpoint = string | number | Node3D | undefined;
 type Link3D = { source: LinkEndpoint; target: LinkEndpoint };
 
 type NodeVisual = {
-  material: { opacity: number; transparent: boolean };
+  materials: Array<{ opacity: number; transparent: boolean }>;
   spriteMaterial: { opacity: number };
   baseOpacity: number;
 };
@@ -97,6 +97,7 @@ export function KnowledgeGraphPanel({
   });
   const node3dStoreRef = useRef(new Map<string, Node3D>());
   const nodeVisualsRef = useRef(new Map<string, NodeVisual>());
+  const userNavigatedRef = useRef(false);
   const [mode, setMode] = useState<ViewMode>("2d");
   const [graph, setGraph] = useState<StudioKnowledgeWikiGraph | null>(null);
   const [graphReady, setGraphReady] = useState(false);
@@ -458,6 +459,19 @@ export function KnowledgeGraphPanel({
     let detachResize: (() => void) | null = null;
     let detachClick: (() => void) | null = null;
     const container = containerRef.current;
+    // Once the user zooms or rotates, every automatic fit stands down; only
+    // the explicit 适应屏幕 button reframes after that.
+    userNavigatedRef.current = false;
+    const markNavigated = () => {
+      userNavigatedRef.current = true;
+    };
+    container.addEventListener("wheel", markNavigated, { passive: true });
+    const detachWheel = () => container.removeEventListener("wheel", markNavigated);
+    const autoFit = () => {
+      if (!disposed && !userNavigatedRef.current) {
+        graph3dRef.current?.zoomToFit(700, 60);
+      }
+    };
 
     const draw = async () => {
       const [{ default: ForceGraph3D }, THREE, { default: SpriteText }, { UnrealBloomPass }] =
@@ -473,12 +487,41 @@ export function KnowledgeGraphPanel({
         const node = asNode3d(libNode);
         const color = TYPE_COLORS[node.pageType] ?? TYPE_COLORS.page;
         const radius = 2.7 * Math.sqrt(node.val);
-        const material = new THREE.MeshBasicMaterial({
+        // Faceted "model" silhouettes distinguish types by shape, not just
+        // color; flat shading + emissive keeps them crisp under bloom.
+        const geometry =
+          node.pageType === "summary"
+            ? new THREE.IcosahedronGeometry(radius, 0)
+            : node.pageType === "entity"
+              ? new THREE.OctahedronGeometry(radius, 0)
+              : node.pageType === "concept"
+                ? new THREE.DodecahedronGeometry(radius, 0)
+                : node.pageType === "index"
+                  ? new THREE.BoxGeometry(radius * 1.3, radius * 1.3, radius * 1.3)
+                  : new THREE.SphereGeometry(radius, 20, 20);
+        const material = new THREE.MeshStandardMaterial({
           color,
+          emissive: color,
+          emissiveIntensity: 0.45,
+          roughness: 0.32,
+          metalness: 0.18,
+          flatShading: true,
           transparent: true,
           opacity: 0.95,
         });
-        const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 24, 24), material);
+        const mesh = new THREE.Mesh(geometry, material);
+        const shellMaterial = new THREE.MeshBasicMaterial({
+          color,
+          wireframe: true,
+          transparent: true,
+          opacity: 0.12,
+        });
+        const shell = new THREE.Mesh(
+          node.pageType === "index"
+            ? new THREE.BoxGeometry(radius * 1.7, radius * 1.7, radius * 1.7)
+            : new THREE.IcosahedronGeometry(radius * 1.45, 0),
+          shellMaterial,
+        );
         const sprite = new SpriteText(node.title);
         sprite.color = "#d6d6d6";
         sprite.backgroundColor = "rgb(18 18 18 / 72%)";
@@ -487,9 +530,10 @@ export function KnowledgeGraphPanel({
         sprite.position.set(0, -(radius + 3.2), 0);
         const group = new THREE.Group();
         group.add(mesh);
+        group.add(shell);
         group.add(sprite);
         nodeVisualsRef.current.set(node.id, {
-          material,
+          materials: [material, shellMaterial],
           spriteMaterial: sprite.material,
           baseOpacity: 0.95,
         });
@@ -545,14 +589,10 @@ export function KnowledgeGraphPanel({
           const target = linkEndpointId(link.target);
           return source === node || target === node ? "#e6e6e6" : "#4a4a4a";
         })
-        .onEngineStop(() => {
-          if (!disposed) instance.zoomToFit(800, 60);
-        });
+        .onEngineStop(autoFit);
       // Engine-stop timing varies; guarantee an initial frame with fallbacks.
       [1400, 3600].forEach((delay) => {
-        setTimeout(() => {
-          if (!disposed && graph3dRef.current === instance) instance.zoomToFit(700, 60);
-        }, delay);
+        setTimeout(autoFit, delay);
       });
 
       // Bloom: bright node colours and particles glow over the dark theme.
@@ -649,7 +689,9 @@ export function KnowledgeGraphPanel({
         const highlight = highlightRef.current;
         for (const [id, visual] of nodeVisualsRef.current) {
           const active = !highlight.node || id === highlight.node || highlight.neighbors.has(id);
-          visual.material.opacity = active ? visual.baseOpacity : 0.12;
+          for (const material of visual.materials) {
+            material.opacity = active ? visual.baseOpacity : 0.12;
+          }
           visual.spriteMaterial.opacity = active ? 1 : 0.12;
         }
         // Re-apply the accessors so link colors/particles re-evaluate.
@@ -664,6 +706,12 @@ export function KnowledgeGraphPanel({
       };
       window.addEventListener("resize", onResize);
       detachResize = () => window.removeEventListener("resize", onResize);
+      // OrbitControls "start" fires for drag-rotate; wheel is covered above.
+      (
+        instance.controls() as {
+          addEventListener?: (type: string, fn: () => void) => void;
+        }
+      ).addEventListener?.("start", markNavigated);
 
       graph3dRef.current = instance;
       if (!disposed) setGraphVersion((version) => version + 1);
@@ -673,6 +721,7 @@ export function KnowledgeGraphPanel({
     return () => {
       disposed = true;
       detachResize?.();
+      detachWheel();
       detachClick?.();
       cancelPendingOpen();
       const instance = graph3dRef.current;

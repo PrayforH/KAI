@@ -29,14 +29,14 @@ describe("Knowledge graph 3D view", () => {
     expect(component).toContain("linkDirectionalParticleColor");
     expect(component).toContain("PointsMaterial");
     expect(component).toContain("onNodeHover");
-    expect(component).toContain("visual.material.opacity");
+    expect(component).toContain("material.opacity = active ? visual.baseOpacity : 0.12");
   });
 
   it("keeps single-click drawer and double-click expand semantics in 3D", () => {
     expect(component).toContain("DBLCLICK_MS");
     expect(component).toContain("cancelPendingOpen()");
     expect(component).toContain("instance.cameraPosition(");
-    expect(component).toContain("instance.zoomToFit(800, 60)");
+    expect(component).toContain(".onEngineStop(autoFit)");
   });
 
   it("reuses node objects across data updates so positions survive expansion", () => {
@@ -52,6 +52,22 @@ describe("Knowledge graph 3D view", () => {
 
   it("guarantees an initial fit independent of engine-stop timing", () => {
     expect(component).toContain("[1400, 3600].forEach");
-    expect(component).toContain("instance.zoomToFit(700, 60)");
+    expect(component).toContain("graph3dRef.current?.zoomToFit(700, 60)");
+  });
+
+  it("stands down every auto-fit once the user navigates the camera", () => {
+    expect(component).toContain("userNavigatedRef");
+    expect(component).toContain('container.addEventListener("wheel", markNavigated');
+    expect(component).toContain('addEventListener?.("start", markNavigated)');
+    expect(component).toContain("if (!disposed && !userNavigatedRef.current)");
+  });
+
+  it("gives node types faceted model silhouettes with glow shells", () => {
+    expect(component).toContain("IcosahedronGeometry");
+    expect(component).toContain("OctahedronGeometry");
+    expect(component).toContain("DodecahedronGeometry");
+    expect(component).toContain("MeshStandardMaterial");
+    expect(component).toContain("emissiveIntensity");
+    expect(component).toContain("wireframe: true");
   });
 });
