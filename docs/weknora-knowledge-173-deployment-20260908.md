@@ -4,7 +4,7 @@
 - 分支：`feature/weknora-knowledge-base`
 - 目标环境：`172.20.109.173`（KAI WORKBENCH 黑色主题，Web `:3301`，API `:8800`）
 - 知识数据面：`172.20.109.174:8180` WeKnora（服务账号，终端用户不直连）
-- 发布 tag：`weknora-kb-20260909-46c855b`（api 与 web 同 tag）
+- 发布 tag：`weknora-kb-20260909-7f2f6ce`（api 与 web 同 tag）
 - 配套设计：[2026-09-08-weknora-knowledge-base-design.md](2026-09-08-weknora-knowledge-base-design.md)、[实现计划](2026-09-08-weknora-knowledge-base-implementation-plan.md)
 
 ## 1. 交付内容
@@ -112,6 +112,11 @@ $COMPOSE up -d --no-build --force-recreate api worker web
 | 图谱节点抽屉 | 点击节点从右侧展开全高抽屉，展示页面摘要、分类路径与可点击链接 | 通过 |
 | Wiki 分类树 | 左栏按 WeKnora `category_path` 一级分类分组（如 企业画像/企业风险）并显示计数，不再只有实体/概念 | 通过 |
 | Excel 表格视图 | WeKnora 切片把表格压成 `A: 值,B: 值` 文本，无法渲染表格；改为下载原文件解析（xlsx→openpyxl、xls→xlrd、csv），抽屉新增「表格」视图 | 通过 |
+| 抽屉知识互链 | 抽屉正文渲染加粗、行内代码与全部 `[[wikilink]]`，点击在抽屉内跳转到目标页面（实测 养老服务 → 预付费返利） | 通过 |
+| 摘要折叠 | 抽屉摘要默认 3 行，右下角箭头展开/收起 | 通过 |
+| 表格单元格省略 | 单元格单行显示，超出宽度以省略号截断（nowrap + ellipsis + max-width 260px） | 通过 |
+| 分类树缩进 | 分类下的页面条目缩进一级显示 | 通过 |
+| 拖拽上传 | 文档页签支持把文件拖入区域上传（支持多文件） | 通过 |
 | 登录页 logo | 中间卡片左上角由字母占位改为真实产品标识 `/brand/kai-mark-v2.png` | 通过 |
 
 ## 4. 待验证项与后续动作
