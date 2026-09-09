@@ -179,4 +179,5 @@ jobs:
           done
           docker run --rm -v "$PWD:/workspace" -w /workspace \
             "$TRIVY_IMAGE" fs --scanners secret,misconfig \
+            --ignorefile /workspace/.trivyignore.yaml \
             --severity HIGH,CRITICAL --exit-code 1 .
