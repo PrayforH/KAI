@@ -4,7 +4,7 @@
 - 分支：`feature/weknora-knowledge-base`
 - 目标环境：`172.20.109.173`（KAI WORKBENCH 黑色主题，Web `:3301`，API `:8800`）
 - 知识数据面：`172.20.109.174:8180` WeKnora（服务账号，终端用户不直连）
-- 发布 tag：`weknora-kb-20260909-082b540`（api 与 web 同 tag）
+- 发布 tag：`weknora-kb-20260909-59e12fe`（api 与 web 同 tag）
 - 配套设计：[2026-09-08-weknora-knowledge-base-design.md](2026-09-08-weknora-knowledge-base-design.md)、[实现计划](2026-09-08-weknora-knowledge-base-implementation-plan.md)
 
 ## 1. 交付内容
@@ -101,6 +101,8 @@ $COMPOSE up -d --no-build --force-recreate api worker web
 | 卡片去下划线 | 标题/描述/标识不再出现链接下划线 | 通过 |
 | 成员管理外移 | 成员管理从详情页页签移到知识库卡片，点击在弹窗中管理（已添加成员可见） | 通过 |
 | 详情页精简 | 去掉 `reference · engine · kbType` 与描述行，上传提示上移到知识库名下方；页签仅保留 文档/Wiki/图谱 | 通过 |
+| 文档卡片交互 | 点击卡片即查看；`⋯` 菜单含 查看 / 重新解析 / 删除 | 通过 |
+| 文档查看器改版 | 分区块（基本信息 / 摘要 / 文档内容）：绿色竖线标题、类型与状态徽章、摘要框、全文 / 查看分块切换 | 通过 |
 | 登录页 logo | 中间卡片左上角由字母占位改为真实产品标识 `/brand/kai-mark-v2.png` | 通过 |
 
 ## 4. 待验证项与后续动作
