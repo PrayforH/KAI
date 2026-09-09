@@ -4,7 +4,7 @@
 - 分支：`feature/weknora-knowledge-base`
 - 目标环境：`172.20.109.173`（KAI WORKBENCH 黑色主题，Web `:3301`，API `:8800`）
 - 知识数据面：`172.20.109.174:8180` WeKnora（服务账号，终端用户不直连）
-- 发布 tag：`weknora-kb-20260909-5e0cfe3`（api 与 web 同 tag）
+- 发布 tag：`weknora-kb-20260909-43469f4`（api 与 web 同 tag）
 - 配套设计：[2026-09-08-weknora-knowledge-base-design.md](2026-09-08-weknora-knowledge-base-design.md)、[实现计划](2026-09-08-weknora-knowledge-base-implementation-plan.md)
 
 ## 1. 交付内容
@@ -132,6 +132,7 @@ $COMPOSE up -d --no-build --force-recreate api worker web
 | 模式切换精简 | 问答模式只显示 RAG / Wiki 短标签（宽度约 83px） | 通过 |
 | 抽屉可调宽 | Wiki 抽屉 / 引用抽屉 / 文档抽屉左边缘可拖拽调宽，Wiki 抽屉实测 360–1000px 夹紧，宽度按抽屉记忆 | 通过 |
 | 工具栏顺序 | 编辑器底栏顺序为 `+ 附件 · @ 知识库 · 智能体 · Wiki 开关`，问答模式改为紧凑开关（非下拉） | 通过 |
+| 控件紧凑化 | 知识库控件只显示放大的 `@` + 已选数量（宽度约 51px）；知识库下拉列表收窄；工具栏按钮间距收紧；侧栏搜索与收起按钮间距 8px | 通过 |
 | 登录页 logo | 中间卡片左上角由字母占位改为真实产品标识 `/brand/kai-mark-v2.png` | 通过 |
 
 ## 4. 待验证项与后续动作
