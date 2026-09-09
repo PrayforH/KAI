@@ -842,8 +842,11 @@
   border-bottom: 1px solid var(--codex-line, #303030);
   color: var(--codex-ink-soft, #d6d6d6);
   vertical-align: top;
-  white-space: pre-wrap;
-  word-break: break-word;
+  /* One line per cell; long content is ellipsised and readable on hover. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
   min-width: 90px;
 }
 
@@ -861,4 +864,16 @@
   margin: 8px 10px;
   color: var(--codex-faint, #737373);
   font-size: 11px;
+}
+
+/* Drop zone: the documents tab accepts files dragged anywhere onto it. */
+.dropZone {
+  position: relative;
+  border-radius: 12px;
+  transition: background-color 140ms ease, box-shadow 140ms ease;
+}
+
+.dropZoneActive {
+  background: var(--codex-accent-faint, rgb(236 236 236 / 7%));
+  box-shadow: inset 0 0 0 1px var(--codex-accent, #ececec);
 }

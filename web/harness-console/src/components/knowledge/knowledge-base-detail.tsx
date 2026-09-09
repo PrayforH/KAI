@@ -1,7 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+} from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -63,6 +70,7 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
   const [table, setTable] = useState<StudioKnowledgeDocumentTable | null>(null);
   const [tableLoading, setTableLoading] = useState(false);
   const [tableError, setTableError] = useState("");
+  const [dragging, setDragging] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -181,22 +189,43 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
     }
   }, [content, loadDocuments, reference, title]);
 
+  const uploadFile = useCallback(
+    async (file: File) => {
+      setUploading(true);
+      setError("");
+      try {
+        await studioClient.uploadKnowledgeDocument(reference, file);
+        setNotice(`「${file.name}」已上传，正在解析`);
+        await loadDocuments();
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "上传失败");
+      } finally {
+        setUploading(false);
+      }
+    },
+    [loadDocuments, reference],
+  );
+
   const onUpload = useCallback(async () => {
     const file = fileRef.current?.files?.[0];
     if (!file) return;
-    setUploading(true);
-    setError("");
-    try {
-      await studioClient.uploadKnowledgeDocument(reference, file);
-      setNotice(`「${file.name}」已上传，正在解析`);
-      if (fileRef.current) fileRef.current.value = "";
-      await loadDocuments();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "上传失败");
-    } finally {
-      setUploading(false);
-    }
-  }, [loadDocuments, reference]);
+    await uploadFile(file);
+    if (fileRef.current) fileRef.current.value = "";
+  }, [uploadFile]);
+
+  const onDrop = useCallback(
+    async (event: DragEvent<HTMLElement>) => {
+      event.preventDefault();
+      setDragging(false);
+      if (!isWeknora || uploading) return;
+      const files = Array.from(event.dataTransfer?.files ?? []);
+      if (files.length === 0) return;
+      for (const file of files) {
+        await uploadFile(file);
+      }
+    },
+    [isWeknora, uploadFile, uploading],
+  );
 
   const onDelete = useCallback(
     async (doc: StudioKnowledgeDocumentStatus) => {
@@ -384,7 +413,20 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
         {notice ? <p className={styles.notice}>{notice}</p> : null}
 
         {tab === "docs" ? (
-          <section>
+          <section
+            className={`${styles.dropZone} ${dragging ? styles.dropZoneActive : ""}`}
+            onDragOver={(event) => {
+              if (!isWeknora) return;
+              event.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={(event) => {
+              if (event.currentTarget.contains(event.relatedTarget as Node)) return;
+              setDragging(false);
+            }}
+            onDrop={(event) => void onDrop(event)}
+            data-dragging={dragging ? "true" : "false"}
+          >
             <div className={styles.toolbar}>
               <input
                 className={styles.toolbarSearch}

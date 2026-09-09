@@ -24,6 +24,49 @@ const TYPE_LABELS: Record<string, string> = {
   page: "页面",
 };
 
+function renderInline(
+  text: string,
+  onOpen: (slug: string) => void,
+  keyPrefix: string,
+): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  const pattern = /(\[\[[^\]]+\]\]|\*\*[^*]+\*\*|`[^`]+`)/g;
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+  let index = 0;
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > cursor) {
+      nodes.push(<span key={`${keyPrefix}-t${index++}`}>{text.slice(cursor, match.index)}</span>);
+    }
+    const token = match[0];
+    const link = /^\[\[([^\]|]+)(?:\|([^\]]+))?\]\]$/.exec(token);
+    if (link) {
+      const slug = link[1].trim();
+      nodes.push(
+        <button
+          key={`${keyPrefix}-l${index++}`}
+          type="button"
+          className={styles.bodyLink}
+          onClick={() => onOpen(slug)}
+        >
+          {(link[2] ?? slug).trim()}
+        </button>,
+      );
+    } else if (token.startsWith("**")) {
+      nodes.push(
+        <strong key={`${keyPrefix}-b${index++}`}>{token.slice(2, -2)}</strong>,
+      );
+    } else {
+      nodes.push(<code key={`${keyPrefix}-c${index++}`}>{token.slice(1, -1)}</code>);
+    }
+    cursor = match.index + token.length;
+  }
+  if (cursor < text.length) {
+    nodes.push(<span key={`${keyPrefix}-tail`}>{text.slice(cursor)}</span>);
+  }
+  return nodes;
+}
+
 function renderWikiBody(
   content: string,
   onOpen: (slug: string) => void,
@@ -35,28 +78,21 @@ function renderWikiBody(
     if (heading) {
       return (
         <p key={index} className={styles.bodyHeading}>
-          {heading[2]}
+          {renderInline(heading[2], onOpen, `h${index}`)}
         </p>
       );
     }
-    const parts = line.split(/(\[\[[^\]]+\]\])/g);
+    const listItem = /^\s*[-*]\s+(.*)$/.exec(line);
+    if (listItem) {
+      return (
+        <p key={index} className={styles.bodyBullet}>
+          {renderInline(listItem[1], onOpen, `li${index}`)}
+        </p>
+      );
+    }
     return (
       <p key={index} className={styles.bodyLine}>
-        {parts.map((part, partIndex) => {
-          const link = /^\[\[([^\]|]+)(?:\|([^\]]+))?\]\]$/.exec(part);
-          if (!link) return <span key={partIndex}>{part}</span>;
-          const slug = link[1].trim();
-          return (
-            <button
-              key={partIndex}
-              type="button"
-              className={styles.bodyLink}
-              onClick={() => onOpen(slug)}
-            >
-              {(link[2] ?? slug).trim()}
-            </button>
-          );
-        })}
+        {renderInline(line, onOpen, `p${index}`)}
       </p>
     );
   });
@@ -78,6 +114,7 @@ export function KnowledgeGraphPanel({
   const [hiddenTypes, setHiddenTypes] = useState<Set<string>>(new Set());
   const [showArrows, setShowArrows] = useState(true);
   const [query, setQuery] = useState("");
+  const [summaryExpanded, setSummaryExpanded] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -98,6 +135,7 @@ export function KnowledgeGraphPanel({
   const openPage = useCallback(
     async (slug: string) => {
       setError("");
+      setSummaryExpanded(false);
       try {
         setPage(await studioClient.getWikiPage(reference, slug));
       } catch (cause) {
@@ -311,7 +349,26 @@ export function KnowledgeGraphPanel({
                 ×
               </button>
             </header>
-            {page.summary ? <p className={styles.summary}>{page.summary}</p> : null}
+            {page.summary ? (
+              <div className={styles.summaryBox}>
+                <p
+                  className={`${styles.summary} ${summaryExpanded ? styles.summaryOpen : ""}`}
+                >
+                  {page.summary}
+                </p>
+                <button
+                  type="button"
+                  className={styles.summaryToggle}
+                  aria-expanded={summaryExpanded}
+                  aria-label={summaryExpanded ? "收起摘要" : "展开摘要"}
+                  onClick={() => setSummaryExpanded((current) => !current)}
+                >
+                  <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
+                  </svg>
+                </button>
+              </div>
+            ) : null}
             <div className={styles.content}>{renderWikiBody(page.content, openPage)}</div>
           </aside>
         </>
