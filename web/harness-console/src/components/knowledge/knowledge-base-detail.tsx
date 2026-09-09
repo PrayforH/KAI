@@ -21,6 +21,7 @@ import {
 import { KnowledgeGraphPanel } from "./knowledge-graph-panel";
 import { KnowledgeWikiPanel } from "./knowledge-wiki-panel";
 import { DrawerResizeHandle, useDrawerResize } from "../../lib/use-drawer-resize";
+import { KnowledgeDrawerLayer } from "./knowledge-drawer-layer";
 import styles from "./knowledge-base-detail.module.css";
 
 type Tab = "docs" | "wiki" | "graph";
@@ -65,6 +66,7 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
     "all",
   );
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [pendingDeletes, setPendingDeletes] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [contentView, setContentView] = useState<"full" | "chunks" | "table">("full");
@@ -92,6 +94,15 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
       try {
         const docs = await studioClient.listKnowledgeDocuments(reference);
         setDocuments(docs);
+        // WeKnora deletes documents in the background, so a just-deleted row
+        // keeps coming back from the list for a few seconds. Hold it hidden
+        // until the engine agrees it is gone.
+        setPendingDeletes((current) => {
+          if (current.size === 0) return current;
+          const present = new Set(docs.map((doc) => doc.documentId));
+          const next = new Set([...current].filter((documentId) => present.has(documentId)));
+          return next.size === current.size ? current : next;
+        });
         const active = docs.some(
           (doc) => doc.parseStatus === "processing" || doc.parseStatus === "pending",
         );
@@ -134,6 +145,25 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
       if (pollTimer.current) clearInterval(pollTimer.current);
     };
   }, [load]);
+
+  useEffect(() => {
+    if (pendingDeletes.size === 0) return;
+    const timer = setInterval(() => void loadDocuments(true), 2500);
+    return () => clearInterval(timer);
+  }, [loadDocuments, pendingDeletes]);
+
+  // Dropping a file anywhere outside the drop zone would otherwise make the
+  // browser open or download it instead of uploading.
+  useEffect(() => {
+    if (!isWeknora || tab !== "docs") return;
+    const swallow = (event: Event) => event.preventDefault();
+    window.addEventListener("dragover", swallow);
+    window.addEventListener("drop", swallow);
+    return () => {
+      window.removeEventListener("dragover", swallow);
+      window.removeEventListener("drop", swallow);
+    };
+  }, [isWeknora, tab]);
 
   const openDocument = useCallback(
     async (doc: StudioKnowledgeDocumentStatus) => {
@@ -260,6 +290,7 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
       try {
         await studioClient.deleteKnowledgeDocument(reference, doc.documentId);
         setSelected(null);
+        setPendingDeletes((current) => new Set(current).add(doc.documentId));
         setNotice("文档已删除");
         await loadDocuments();
       } catch (cause) {
@@ -283,9 +314,14 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
     [loadDocuments, reference],
   );
 
+  const activeDocuments = useMemo(
+    () => documents.filter((doc) => !pendingDeletes.has(doc.documentId)),
+    [documents, pendingDeletes],
+  );
+
   const visibleDocuments = useMemo(() => {
     const query = docQuery.trim().toLowerCase();
-    return documents.filter((doc) => {
+    return activeDocuments.filter((doc) => {
       if (query && !doc.title.toLowerCase().includes(query)) return false;
       if (statusFilter === "all") return true;
       if (statusFilter === "completed") return doc.parseStatus === "completed";
@@ -294,7 +330,7 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
       }
       return doc.parseStatus === "failed";
     });
-  }, [documents, docQuery, statusFilter]);
+  }, [activeDocuments, docQuery, statusFilter]);
 
   const toggleSelect = useCallback((documentId: string) => {
     setSelectedIds((current) => {
@@ -339,10 +375,16 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
     setBulkBusy(true);
     setError("");
     try {
-      for (const documentId of selectedIds) {
+      const removed = [...selectedIds];
+      for (const documentId of removed) {
         await studioClient.deleteKnowledgeDocument(reference, documentId);
       }
-      setNotice(`已删除 ${selectedIds.size} 个文档`);
+      setPendingDeletes((current) => {
+        const next = new Set(current);
+        for (const documentId of removed) next.add(documentId);
+        return next;
+      });
+      setNotice(`已删除 ${removed.length} 个文档`);
       clearSelection();
       await loadDocuments();
     } catch (cause) {
@@ -383,7 +425,7 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
           <div>
             <h1>{base.displayName}</h1>
             <p className={styles.headHint}>
-              支持点击或拖拽上传，多格式文档自动解析并智能分块，快速构建可检索的知识库
+              上传或拖入文档，解析完成后即可检索与问答
             </p>
           </div>
           <div className={styles.actions}>
@@ -391,7 +433,7 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
               <>
                 <button
                   type="button"
-                  className={styles.ghost}
+                  className={styles.primary}
                   onClick={() => fileRef.current?.click()}
                   disabled={uploading}
                 >
@@ -405,7 +447,7 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
                 />
                 <button
                   type="button"
-                  className={styles.primary}
+                  className={styles.ghost}
                   onClick={() => setShowManual(true)}
                 >
                   手动建文档
@@ -419,6 +461,7 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
           <button
             type="button"
             className={`${styles.tab} ${tab === "docs" ? styles.tabActive : ""}`}
+            aria-pressed={tab === "docs"}
             onClick={() => setTab("docs")}
           >
             文档
@@ -426,6 +469,7 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
           <button
             type="button"
             className={`${styles.tab} ${tab === "wiki" ? styles.tabActive : ""}`}
+            aria-pressed={tab === "wiki"}
             onClick={() => setTab("wiki")}
             disabled={!isWeknora}
           >
@@ -434,6 +478,7 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
           <button
             type="button"
             className={`${styles.tab} ${tab === "graph" ? styles.tabActive : ""}`}
+            aria-pressed={tab === "graph"}
             onClick={() => setTab("graph")}
             disabled={!isWeknora}
           >
@@ -479,11 +524,11 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
                 <option value="failed">失败</option>
               </select>
               <span className={styles.toolbarCount}>
-                共 {visibleDocuments.length} / {documents.length} 个文档
+                共 {visibleDocuments.length} / {activeDocuments.length} 个文档
               </span>
             </div>
 
-            {documents.length === 0 ? (
+            {activeDocuments.length === 0 ? (
               <p className={styles.empty}>
                 还没有文档。上传文件或手动创建文档，WeKnora 将自动解析并切片。
               </p>
@@ -666,6 +711,7 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
         )}
 
         {showManual ? (
+          <KnowledgeDrawerLayer onClose={() => setShowManual(false)}>
           <div
             className={styles.overlay}
             role="presentation"
@@ -712,13 +758,16 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
               </div>
             </div>
           </div>
+          </KnowledgeDrawerLayer>
         ) : null}
 
         {selected ? (
-          <>
+          <KnowledgeDrawerLayer onClose={closeDrawer}>
             <div className={styles.drawerOverlay} onClick={closeDrawer} role="presentation" />
             <aside
               className={styles.drawer}
+              role="dialog"
+              aria-modal="true"
               aria-label="文档详情"
               style={{ width: drawerWidth }}
             >
@@ -883,7 +932,7 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
                 )}
               </section>
             </aside>
-          </>
+          </KnowledgeDrawerLayer>
         ) : null}
     </section>
   );

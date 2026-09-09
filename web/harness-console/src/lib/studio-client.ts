@@ -1208,6 +1208,14 @@ async function errorFrom(response: Response): Promise<StudioApiError> {
   return new StudioApiError(response.status, code, message);
 }
 
+/** 204/empty-body responses have no JSON; callers that return void must not fail. */
+async function readJson<T>(response: Response): Promise<T> {
+  if (response.status === 204) return undefined as T;
+  const body = await response.text();
+  if (!body) return undefined as T;
+  return JSON.parse(body) as T;
+}
+
 async function requestForm<T>(path: string, form: FormData): Promise<T> {
   const response = requireAuthenticatedResponse(
     await fetch(`/api/studio/${path.replace(/^\//, "")}`, {
@@ -1217,7 +1225,7 @@ async function requestForm<T>(path: string, form: FormData): Promise<T> {
     }),
   );
   if (!response.ok) throw await errorFrom(response);
-  return response.json() as Promise<T>;
+  return readJson<T>(response);
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -1232,7 +1240,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     }),
   );
   if (!response.ok) throw await errorFrom(response);
-  return response.json() as Promise<T>;
+  return readJson<T>(response);
 }
 
 async function listAccessibleDrafts(): Promise<StudioDraftSummary[]> {
@@ -1325,7 +1333,7 @@ async function agentRequest<T>(path: string, init: RequestInit = {}): Promise<T>
     }),
   );
   if (!response.ok) throw await errorFrom(response);
-  return response.json() as Promise<T>;
+  return readJson<T>(response);
 }
 
 async function harnessRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -1340,7 +1348,7 @@ async function harnessRequest<T>(path: string, init: RequestInit = {}): Promise<
     }),
   );
   if (!response.ok) throw await errorFrom(response);
-  return response.json() as Promise<T>;
+  return readJson<T>(response);
 }
 
 async function lifecycleRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -1355,7 +1363,7 @@ async function lifecycleRequest<T>(path: string, init: RequestInit = {}): Promis
     }),
   );
   if (!response.ok) throw await errorFrom(response);
-  return response.json() as Promise<T>;
+  return readJson<T>(response);
 }
 
 export const lifecycleClient = {
@@ -1626,6 +1634,11 @@ export const studioClient = {
     method: "POST",
     body: JSON.stringify(values),
   }),
+  deleteKnowledgeBase: (reference: string) =>
+    request<void>(
+      `knowledge/bases/${encodeURIComponent(reference)}`,
+      { method: "DELETE" },
+    ),
   listKnowledgeDocuments: (baseReference: string) =>
     request<StudioKnowledgeDocumentStatus[]>(
       `knowledge/sources/${encodeURIComponent(baseReference)}/documents`,

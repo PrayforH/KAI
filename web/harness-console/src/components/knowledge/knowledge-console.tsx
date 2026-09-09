@@ -9,6 +9,7 @@ import {
   type StudioKnowledgeBase,
 } from "../../lib/studio-client";
 import { KnowledgeMembersPanel } from "./knowledge-members-panel";
+import { KnowledgeDrawerLayer } from "./knowledge-drawer-layer";
 import styles from "./knowledge-console.module.css";
 
 const KB_TYPE_LABELS: Record<KnowledgeBaseType, string> = {
@@ -40,6 +41,8 @@ export function KnowledgeConsole() {
   const [description, setDescription] = useState("");
   const [creating, setCreating] = useState(false);
   const [membersFor, setMembersFor] = useState<StudioKnowledgeBase | null>(null);
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -56,6 +59,51 @@ export function KnowledgeConsole() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // The card "⋯" menu closes on any click outside of it, or on Escape.
+  useEffect(() => {
+    if (menuFor === null) return;
+    const close = (event: Event) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest("[data-kb-menu]")) return;
+      setMenuFor(null);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenuFor(null);
+    };
+    document.addEventListener("click", close);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("click", close);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [menuFor]);
+
+  const onDeleteBase = useCallback(
+    async (base: StudioKnowledgeBase) => {
+      if (
+        !window.confirm(
+          `删除知识库「${base.displayName}」？WeKnora 中该库及其全部文档、Wiki 与图谱将一并删除，不可恢复。`,
+        )
+      ) {
+        return;
+      }
+      setMenuFor(null);
+      setDeleting(base.reference);
+      setError("");
+      setNotice("");
+      try {
+        await studioClient.deleteKnowledgeBase(base.reference);
+        setNotice(`知识库「${base.displayName}」已删除`);
+        await load();
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "删除知识库失败");
+      } finally {
+        setDeleting(null);
+      }
+    },
+    [load],
+  );
 
   const visible = useMemo(() => {
     if (filter === "mine" && user?.user_id) {
@@ -98,7 +146,7 @@ export function KnowledgeConsole() {
         <div className={styles.hero}>
           <div className={styles.heroText}>
             <h1>知识库</h1>
-            <p>统一管理 RAG、Wiki 与混合知识库；文档解析、切片与图谱由 WeKnora 提供</p>
+            <p>管理文档、Wiki 页面与知识图谱，为问答提供可信来源</p>
           </div>
           {canManage ? (
             <button
@@ -115,6 +163,7 @@ export function KnowledgeConsole() {
           <button
             type="button"
             className={`${styles.tab} ${filter === "all" ? styles.tabActive : ""}`}
+            aria-pressed={filter === "all"}
             onClick={() => setFilter("all")}
           >
             全部 {bases.length}
@@ -122,6 +171,7 @@ export function KnowledgeConsole() {
           <button
             type="button"
             className={`${styles.tab} ${filter === "mine" ? styles.tabActive : ""}`}
+            aria-pressed={filter === "mine"}
             onClick={() => setFilter("mine")}
           >
             我创建的{" "}
@@ -155,12 +205,54 @@ export function KnowledgeConsole() {
                         <path d="M10 5.2v11" />
                       </svg>
                     </span>
-                    <h3 className={styles.cardTitle}>{base.displayName}</h3>
+                    <h3 className={styles.cardTitle} title={base.displayName}>{base.displayName}</h3>
                   </div>
                   <p className={styles.cardDesc}>
                     {base.description || "暂无描述"}
                   </p>
                 </Link>
+                <button
+                  type="button"
+                  className={styles.cardMenuTrigger}
+                  data-kb-menu
+                  aria-label={`${base.displayName} 更多操作`}
+                  aria-expanded={menuFor === base.reference}
+                  onClick={() =>
+                    setMenuFor((current) => (current === base.reference ? null : base.reference))
+                  }
+                >
+                  <svg viewBox="0 0 20 20" aria-hidden="true">
+                    <circle cx="4" cy="10" r="1.4" />
+                    <circle cx="10" cy="10" r="1.4" />
+                    <circle cx="16" cy="10" r="1.4" />
+                  </svg>
+                </button>
+                {menuFor === base.reference ? (
+                  <div className={styles.cardMenu} data-kb-menu role="menu">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className={styles.cardMenuItem}
+                      onClick={() => {
+                        setMenuFor(null);
+                        setMembersFor(base);
+                      }}
+                    >
+                      成员管理
+                    </button>
+                    {canManage ? (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className={`${styles.cardMenuItem} ${styles.cardMenuItemDanger}`}
+                        disabled={deleting === base.reference}
+                        onClick={() => void onDeleteBase(base)}
+                      >
+                        {deleting === base.reference ? "删除中…" : "删除"}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
                 <div className={styles.cardMeta}>
                   <span className={styles.countBadge} title="文档数量">
                     <svg viewBox="0 0 20 20" aria-hidden="true">
@@ -169,14 +261,6 @@ export function KnowledgeConsole() {
                     {base.documentCount}
                   </span>
                   <span className={styles.cardRef}>{base.reference}</span>
-                  <button
-                    type="button"
-                    className={styles.cardAction}
-                    onClick={() => setMembersFor(base)}
-                    title="管理该知识库的成员与权限"
-                  >
-                    成员管理
-                  </button>
                 </div>
               </article>
             ))}
@@ -184,6 +268,7 @@ export function KnowledgeConsole() {
         )}
 
         {membersFor ? (
+          <KnowledgeDrawerLayer onClose={() => setMembersFor(null)}>
           <div
             className={styles.overlay}
             role="presentation"
@@ -210,9 +295,11 @@ export function KnowledgeConsole() {
               <KnowledgeMembersPanel reference={membersFor.reference} />
             </div>
           </div>
+          </KnowledgeDrawerLayer>
         ) : null}
 
         {showCreate ? (
+          <KnowledgeDrawerLayer onClose={() => setShowCreate(false)}>
           <div
             className={styles.overlay}
             role="presentation"
@@ -228,7 +315,7 @@ export function KnowledgeConsole() {
             >
               <h2>新建知识库</h2>
               <p className={styles.dialogHint}>
-                选择知识库类型；WeKnora 负责解析、切片、向量与 Wiki 构建。
+                选择适合资料的知识库类型，上传文档后即可检索与问答。
               </p>
               <div className={styles.typeRow}>
                 {(Object.keys(KB_TYPE_LABELS) as KnowledgeBaseType[]).map((type) => (
@@ -236,6 +323,7 @@ export function KnowledgeConsole() {
                     key={type}
                     type="button"
                     className={`${styles.typeCard} ${kbType === type ? styles.typeCardActive : ""}`}
+                    aria-pressed={kbType === type}
                     onClick={() => setKbType(type)}
                   >
                     <p className={styles.typeName}>{KB_TYPE_LABELS[type]}</p>
@@ -289,6 +377,7 @@ export function KnowledgeConsole() {
               </div>
             </div>
           </div>
+          </KnowledgeDrawerLayer>
         ) : null}
     </section>
   );
