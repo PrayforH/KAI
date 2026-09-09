@@ -91,18 +91,21 @@ export function KnowledgeWikiPanel({
     }
   }, [query, reference]);
 
+  // WeKnora classifies wiki pages by category_path (e.g. 企业评分 > 科创评分).
+  // Group by the first-level category so the rail matches the WeKnora console
+  // instead of collapsing everything into 实体 / 概念.
   const grouped = useMemo(() => {
     const groups = new Map<string, StudioKnowledgeWikiPage[]>();
     for (const item of pages) {
-      const bucket = groups.get(item.pageType) ?? [];
+      const category = item.categoryPath[0] || PAGE_TYPE_LABELS[item.pageType] || item.pageType;
+      const bucket = groups.get(category) ?? [];
       bucket.push(item);
-      groups.set(item.pageType, bucket);
+      groups.set(category, bucket);
     }
-    const ordered = [...groups.entries()].sort(
-      ([a], [b]) =>
-        (PAGE_TYPE_ORDER.indexOf(a) + 1 || 99) - (PAGE_TYPE_ORDER.indexOf(b) + 1 || 99),
+    return [...groups.entries()].sort(
+      ([nameA, itemsA], [nameB, itemsB]) =>
+        itemsB.length - itemsA.length || nameA.localeCompare(nameB, "zh-Hans-CN"),
     );
-    return ordered;
   }, [pages]);
 
   const rendered = useMemo(() => renderWikiContent(page?.content ?? ""), [page]);
@@ -221,11 +224,15 @@ export function KnowledgeWikiPanel({
           </ul>
         ) : (
           grouped
-            .filter(([type]) =>
-              typeTab === "summary"
-                ? type === "summary"
-                : type !== "summary" && type !== "index",
-            )
+            .map(([type, items]) => [
+              type,
+              items.filter((item) =>
+                typeTab === "summary"
+                  ? item.pageType === "summary"
+                  : item.pageType !== "summary" && item.pageType !== "index",
+              ),
+            ] as const)
+            .filter(([, items]) => items.length > 0)
             .map(([type, items]) => (
             <section key={type} className={styles.group}>
               <button

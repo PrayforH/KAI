@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   studioClient,
   type StudioKnowledgeWikiGraph,
@@ -23,6 +23,44 @@ const TYPE_LABELS: Record<string, string> = {
   index: "索引",
   page: "页面",
 };
+
+function renderWikiBody(
+  content: string,
+  onOpen: (slug: string) => void,
+): ReactNode {
+  const lines = content.replace(/\r\n/g, "\n").split("\n");
+  return lines.map((line, index) => {
+    if (!line.trim()) return null;
+    const heading = /^(#{1,6})\s+(.*)$/.exec(line);
+    if (heading) {
+      return (
+        <p key={index} className={styles.bodyHeading}>
+          {heading[2]}
+        </p>
+      );
+    }
+    const parts = line.split(/(\[\[[^\]]+\]\])/g);
+    return (
+      <p key={index} className={styles.bodyLine}>
+        {parts.map((part, partIndex) => {
+          const link = /^\[\[([^\]|]+)(?:\|([^\]]+))?\]\]$/.exec(part);
+          if (!link) return <span key={partIndex}>{part}</span>;
+          const slug = link[1].trim();
+          return (
+            <button
+              key={partIndex}
+              type="button"
+              className={styles.bodyLink}
+              onClick={() => onOpen(slug)}
+            >
+              {(link[2] ?? slug).trim()}
+            </button>
+          );
+        })}
+      </p>
+    );
+  });
+}
 
 export function KnowledgeGraphPanel({
   reference,
@@ -243,29 +281,41 @@ export function KnowledgeGraphPanel({
           </p>
         </aside>
 
-        {page ? (
-          <aside className={styles.drawer}>
+      </div>
+
+      {page ? (
+        <>
+          <div
+            className={styles.drawerOverlay}
+            role="presentation"
+            onClick={() => setPage(null)}
+          />
+          <aside className={styles.drawer} aria-label="Wiki 页面详情">
             <header className={styles.drawerHead}>
               <div>
                 <h3>{page.title}</h3>
                 <p className={styles.drawerMeta}>
                   <span className={styles.dot} style={{ background: TYPE_COLORS[page.pageType] }} />
-                  {TYPE_LABELS[page.pageType] ?? page.pageType} · <code>{page.slug}</code>
+                  {TYPE_LABELS[page.pageType] ?? page.pageType}
+                  {page.categoryPath.length > 0
+                    ? ` · ${page.categoryPath.join(" / ")}`
+                    : ""}
                 </p>
               </div>
               <button
                 type="button"
                 className={styles.close}
                 onClick={() => setPage(null)}
+                aria-label="关闭"
               >
-                关闭
+                ×
               </button>
             </header>
             {page.summary ? <p className={styles.summary}>{page.summary}</p> : null}
-            <pre className={styles.content}>{page.content}</pre>
+            <div className={styles.content}>{renderWikiBody(page.content, openPage)}</div>
           </aside>
-        ) : null}
-      </div>
+        </>
+      ) : null}
     </div>
   );
 }
