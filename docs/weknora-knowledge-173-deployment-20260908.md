@@ -4,7 +4,7 @@
 - 分支：`feature/weknora-knowledge-base`
 - 目标环境：`172.20.109.173`（KAI WORKBENCH 黑色主题，Web `:3301`，API `:8800`）
 - 知识数据面：`172.20.109.174:8180` WeKnora（服务账号，终端用户不直连）
-- 发布 tag：`weknora-kb-20260909-2614a0e`（api 与 web 同 tag）
+- 发布 tag：`weknora-kb-20260909-70bdb55`（api 与 web 同 tag）
 - 配套设计：[2026-09-08-weknora-knowledge-base-design.md](2026-09-08-weknora-knowledge-base-design.md)、[实现计划](2026-09-08-weknora-knowledge-base-implementation-plan.md)
 
 ## 1. 交付内容
@@ -105,6 +105,10 @@ $COMPOSE up -d --no-build --force-recreate api worker web
 | 文档查看器改版 | 分区块（基本信息 / 摘要 / 文档内容）：绿色竖线标题、类型与状态徽章、摘要框、全文 / 查看分块切换 | 通过 |
 | Wiki 页签对齐 | 左栏 索引/目录 入口 + 知识/摘要 页签（绿色选中线）+ 分类计数徽章；页面链接绿色带下划线 | 通过 |
 | 图谱页签对齐 | 右侧图例面板（摘要/概念/实体/索引）+ 适应屏幕 / 隐藏箭头 + 全库概览节点数；左上 Wiki 搜索框 | 通过 |
+| 图谱无边框放大 | 画布去掉边框、按面板高度铺满 | 通过 |
+| 文档摘要展示 | 抽屉「摘要」区块展示 WeKnora 文档摘要（实测手动文档有摘要） | 通过 |
+| 表格文档渲染 | 抽屉内容按 Markdown 渲染，表格文档显示为真实表格（实测 3 列分类表） | 通过 |
+| 分页修复 | Wiki 页面与文档列表按页拉取：合合资料 66 页（知识 64 + 摘要 1 + 索引 1）、248 件库 248 文档，不再截断到 20 | 通过 |
 | 登录页 logo | 中间卡片左上角由字母占位改为真实产品标识 `/brand/kai-mark-v2.png` | 通过 |
 
 ## 4. 待验证项与后续动作
