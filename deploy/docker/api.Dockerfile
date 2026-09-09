@@ -1,6 +1,6 @@
 # Both upstreams are immutable. The Chainguard kubectl image is also verified
 # with Cosign in CI before Docker is allowed to copy its binary into our image.
-ARG KUBECTL_IMAGE=cgr.dev/chainguard/kubectl@sha256:1e1aa9dedf0d9008e5a3710b23f2072bc2ab83117146d503c689b5d2592add3d
+ARG KUBECTL_IMAGE=cgr.dev/chainguard/kubectl@sha256:0fee370907fa4cd5aa8be82b35772649fbca19abc07add837de6f87a9a97b5d2
 ARG PYTHON_IMAGE=python:3.12-slim-bookworm@sha256:4766d8b510c428e595d74b9cc5bbb2fae8e26316fffb4adc89908d79aacd58a2
 FROM ${KUBECTL_IMAGE} AS kubectl
 

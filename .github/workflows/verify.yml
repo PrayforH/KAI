@@ -144,7 +144,7 @@ jobs:
           cosign-release: v3.0.6
       - name: Verify the immutable kubectl source image
         env:
-          KUBECTL_IMAGE: cgr.dev/chainguard/kubectl@sha256:1e1aa9dedf0d9008e5a3710b23f2072bc2ab83117146d503c689b5d2592add3d
+          KUBECTL_IMAGE: cgr.dev/chainguard/kubectl@sha256:0fee370907fa4cd5aa8be82b35772649fbca19abc07add837de6f87a9a97b5d2
         run: |
           set -euo pipefail
           cosign verify \
@@ -153,7 +153,7 @@ jobs:
             "$KUBECTL_IMAGE" >/dev/null
       - name: Build the three production images without pushing
         env:
-          KUBECTL_IMAGE: cgr.dev/chainguard/kubectl@sha256:1e1aa9dedf0d9008e5a3710b23f2072bc2ab83117146d503c689b5d2592add3d
+          KUBECTL_IMAGE: cgr.dev/chainguard/kubectl@sha256:0fee370907fa4cd5aa8be82b35772649fbca19abc07add837de6f87a9a97b5d2
         run: |
           set -euo pipefail
           docker build --pull --build-arg KUBECTL_IMAGE="$KUBECTL_IMAGE" \

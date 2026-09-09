@@ -21,7 +21,7 @@ jobs:
     needs: quality
     runs-on: ${{ vars.HARNESS_RELEASE_RUNNER || 'ubuntu-latest' }}
     env:
-      KUBECTL_IMAGE: cgr.dev/chainguard/kubectl@sha256:1e1aa9dedf0d9008e5a3710b23f2072bc2ab83117146d503c689b5d2592add3d
+      KUBECTL_IMAGE: cgr.dev/chainguard/kubectl@sha256:0fee370907fa4cd5aa8be82b35772649fbca19abc07add837de6f87a9a97b5d2
       RELEASE_REGISTRY: ${{ vars.HARNESS_RELEASE_REGISTRY || 'ghcr.io' }}
       RELEASE_NAMESPACE: ${{ vars.HARNESS_RELEASE_NAMESPACE || github.repository }}
     permissions:

@@ -6,7 +6,7 @@ x-python-build: &python-build
   dockerfile: deploy/docker/api.Dockerfile
   args:
     UV_DEFAULT_INDEX: ${UV_DEFAULT_INDEX:-https://pypi.tuna.tsinghua.edu.cn/simple}
-    KUBECTL_IMAGE: ${KUBECTL_IMAGE:-cgr.dev/chainguard/kubectl@sha256:1e1aa9dedf0d9008e5a3710b23f2072bc2ab83117146d503c689b5d2592add3d}
+    KUBECTL_IMAGE: ${KUBECTL_IMAGE:-cgr.dev/chainguard/kubectl@sha256:0fee370907fa4cd5aa8be82b35772649fbca19abc07add837de6f87a9a97b5d2}
     CODEX_VERSION: ${CODEX_VERSION:-0.149.0}
     CODEX_LINUX_X64_SHA256: ${CODEX_LINUX_X64_SHA256:-e06f3d106fe8bb058a6bfd30075d89ea17deaee7c8425e0c5d23072df0fdd0e7}
     CODEX_NPM_REGISTRY: ${CODEX_NPM_REGISTRY:-https://registry.npmmirror.com}
