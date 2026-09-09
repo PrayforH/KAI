@@ -114,8 +114,13 @@ export function useTaskKnowledge(): TaskKnowledgeValue {
 
 /** Composer toolbar control: shows and edits the thread's knowledge bases. */
 const MODE_LABELS: Record<KnowledgeMode, string> = {
-  rag: "RAG 问答",
-  wiki: "Wiki 问答",
+  rag: "RAG",
+  wiki: "Wiki",
+};
+
+const MODE_HINTS: Record<KnowledgeMode, string> = {
+  rag: "基于文档切片检索回答",
+  wiki: "基于 Wiki 页面（摘要/实体/概念）回答，可点开实体",
 };
 
 export function TaskKnowledgeControl({ disabled }: { disabled: boolean }) {
@@ -154,11 +159,7 @@ export function TaskKnowledgeControl({ disabled }: { disabled: boolean }) {
             className={mode === value ? "is-active" : undefined}
             disabled={disabled}
             aria-pressed={mode === value}
-            title={
-              value === "rag"
-                ? "基于文档切片检索回答"
-                : "基于 Wiki 页面（摘要/实体/概念）回答，可点开实体"
-            }
+            title={MODE_HINTS[value]}
             onClick={() => setMode(value)}
           >
             {MODE_LABELS[value]}
