@@ -12,7 +12,7 @@ function Harness({ id = "task-a", prompts = ["第一问", "第二问", "第三�
   const frame = useRef<HTMLDivElement>(null);
   return <div ref={frame}><div className="aui-thread-viewport" ref={node => {
     if (!node) return;
-    node.scrollTo = scroll;
+    node.scrollTo = scroll as unknown as HTMLElement["scrollTo"];
     node.getBoundingClientRect = () => ({ top: 10 } as DOMRect);
   }}>{prompts.map((prompt, i) => <article key={id + i} data-turn-id={id + i} data-turn-label={prompt} tabIndex={-1} ref={node => {
     if (node) node.getBoundingClientRect = () => ({ top: 10 + i * 300 - (node.parentElement?.scrollTop ?? 0) } as DOMRect);
