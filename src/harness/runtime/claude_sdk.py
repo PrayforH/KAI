@@ -119,6 +119,22 @@ _ANTHROPIC_AUTO_PERMISSION_MODELS = frozenset(
 )
 
 
+WIKI_MODE_CONTRACT = (
+    "\n\n## Wiki answer contract\n"
+    "This thread answers from curated Wiki pages. Call search_wiki_pages before "
+    "answering. Every wiki page you mention MUST be written as "
+    "[[slug|title]] using the slug and title from the tool result, for example "
+    "[[concept/fei-fa-ji-zi|非法集资]]; the console renders that syntax as a "
+    "clickable link that opens the page. Never write a page title as plain text."
+)
+
+
+def _knowledge_mode_contract(context: RuntimeContext) -> str:
+    if not _knowledge_bindings_for(context):
+        return ""
+    return WIKI_MODE_CONTRACT if _knowledge_mode_for(context) == "wiki" else ""
+
+
 def _knowledge_mode_for(context: RuntimeContext) -> str:
     """Per-thread knowledge Q&A mode: ``rag`` (chunks) or ``wiki`` (pages)."""
     value = context.run.input.get("knowledge_mode")
@@ -987,7 +1003,7 @@ class ClaudeSdkRuntime:
             mcp_servers=mcp_servers,
             system_prompt=(
                 f"{self._snapshot.system_prompt.rstrip()}\n\n{VISIBLE_EXECUTION_CONTRACT}\n{WEB_CONTRACT}"
-                f"{delegation_contract}"
+                f"{delegation_contract}{_knowledge_mode_contract(context)}"
             ),
             model=route.model,
             fallback_model=None,
