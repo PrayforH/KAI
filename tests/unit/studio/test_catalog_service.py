@@ -759,3 +759,108 @@ async def test_admin_edited_catalog_receives_web_tools_without_replacing_custom_
     assert upgraded.catalog.builtin_tools[: len(existing.builtin_tools)] == existing.builtin_tools
     assert upgraded.updated_by == "user-admin"
     assert (await service.get("admin-catalog")).revision == upgraded.revision
+
+
+def test_default_catalog_seeds_platform_skill_capabilities() -> None:
+    catalog = default_capability_catalog()
+
+    assert {skill.package_id for skill in catalog.skills} >= {
+        "office-docx",
+        "office-xlsx",
+        "office-pptx",
+        "office-pdf",
+    }
+    for skill in catalog.skills:
+        assert skill.enabled is True
+        assert skill.owner_user_id is None if hasattr(skill, "owner_user_id") else True
+        assert skill.content_hash
+        assert skill.compatible_runtimes
+
+
+@pytest.mark.asyncio
+async def test_admin_edited_catalog_receives_new_platform_skills() -> None:
+    defaults = default_capability_catalog()
+    existing = defaults.model_copy(
+        update={"skills": tuple(s for s in defaults.skills if s.package_id == "evidence-reporting")}
+    )
+    repository = InMemoryCapabilityCatalogRepository()
+    await repository.seed(
+        CapabilityCatalogRecord(
+            tenantId="skill-catalog",
+            revision=3,
+            catalog=existing,
+            updatedBy="user-admin",
+            updatedAt=NOW,
+        )
+    )
+    service = CapabilityCatalogService(repository, InMemoryAgentDraftRepository())
+    upgraded = await service.get("skill-catalog")
+
+    package_ids = {skill.package_id for skill in upgraded.catalog.skills}
+    assert "evidence-reporting" in package_ids
+    assert {"office-docx", "office-xlsx", "office-pptx", "office-pdf"} <= package_ids
+    # The tenant-authored entry survives untouched.
+    assert upgraded.catalog.skills[0].package_id == "evidence-reporting"
+
+
+@pytest.mark.asyncio
+async def test_skill_disable_reports_referencing_drafts_and_upsert_is_rejected() -> None:
+    from harness.studio.models import AgentDraftSpec
+
+    defaults = default_capability_catalog()
+    repository = InMemoryCapabilityCatalogRepository()
+    await repository.seed(
+        CapabilityCatalogRecord(
+            tenantId="skill-impact",
+            revision=1,
+            catalog=defaults,
+            updatedBy="system",
+            updatedAt=NOW,
+        )
+    )
+    spec = AgentDraftSpec(
+        name="impact-agent",
+        displayName="影响面助手",
+        description="目录 Skill 影响面验证。",
+        domain="operations",
+        template=AgentTemplate.ANALYST,
+        runtime="claude-agent-sdk",
+        model={"routeId": "deepseek-v4-flash", "model": "deepseek-v4-flash"},
+        systemPrompt="你是测试助手。",
+        permissionPolicy="production-standard",
+        evaluationCases=[
+            {
+                "id": "baseline",
+                "tags": ["baseline"],
+                "prompt": "ping",
+                "expect": {"terminalStatuses": ["succeeded"]},
+            }
+        ],
+        skillReferences=("office-docx",),
+    )
+    from harness.studio.models import AgentDraft
+
+    drafts = InMemoryAgentDraftRepository()
+    await drafts.add(
+        AgentDraft(
+            draftId="draft-impact",
+            tenantId="skill-impact",
+            revision=1,
+            spec=spec,
+            createdBy="admin-a",
+            updatedBy="admin-a",
+            createdAt=NOW,
+            updatedAt=NOW,
+        )
+    )
+    service = CapabilityCatalogService(repository, drafts)
+
+    impact = await service.impact("skill-impact", "admin-a", "skill", "office-docx")
+    assert impact.draft_ids == ("draft-impact",)
+
+    # Skill identity is platform-governed: the upsert payload union rejects
+    # SkillCapability outright, so tenants cannot author catalog skill entries.
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        UpsertCatalogResourceRequest(expectedRevision=1, resource=defaults.skills[0])

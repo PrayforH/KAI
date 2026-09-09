@@ -39,6 +39,9 @@ export function SkillsCatalogPage() {
   const { membership } = useAuth();
   const [showInternalAgents] = useInternalAgentsPreference();
   const canManage = membership.role !== "viewer";
+  // Mounting reviewed platform Skills requires the backend catalog-admin
+  // permission (owner/admin); keep the UI gate aligned to avoid 403s.
+  const canManageCatalog = membership.role === "owner" || membership.role === "admin";
   const [skills, setSkills] = useState<CatalogSkill[]>([]);
   const [drafts, setDrafts] = useState<StudioDraft[]>([]);
   const [query, setQuery] = useState("");
@@ -479,6 +482,7 @@ export function SkillsCatalogPage() {
           {canManage && (
             <footer className={styles.drawerActions}>
               {selectedSkill.package ? (
+                canManageCatalog ? (
                 <div className={styles.installControls}>
                   {drafts.length > 0 ? (
                     <>
@@ -507,6 +511,9 @@ export function SkillsCatalogPage() {
                     <Link className={styles.actionLink} href="/studio/agents">先创建智能体</Link>
                   )}
                 </div>
+                ) : (
+                  <span className={styles.actionLink}>平台 Skill 由管理员统一导入，如需使用请联系管理员。</span>
+                )
               ) : (
                 <button
                   className={styles.secondaryAction}

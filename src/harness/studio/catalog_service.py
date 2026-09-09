@@ -19,12 +19,13 @@ from harness.studio.models import (
     PolicyCapability,
     ReplaceCapabilityCatalogRequest,
     RuntimeCapability,
+    SkillCapability,
     TemplateCapability,
     UpsertCatalogResourceRequest,
 )
 from harness.studio.repositories import AgentDraftRepository
 
-CatalogResourceType = Literal["modelRoute", "mcp", "policy", "executionProfile"]
+CatalogResourceType = Literal["modelRoute", "mcp", "policy", "executionProfile", "skill"]
 _RETIRED_PLATFORM_MODEL_ROUTES = frozenset({"anthropic-official", "new-api-default"})
 _EDITABLE_PLATFORM_MCP_REFERENCES = frozenset({"tavily-readonly"})
 
@@ -57,6 +58,7 @@ def _append_missing[
         ExecutionProfileMetadata,
         TemplateCapability,
         RuntimeCapability,
+        SkillCapability,
     )
 ](
     current: tuple[CatalogEntry, ...],
@@ -249,6 +251,11 @@ def _upgrade_system_managed_catalog(
         defaults.runtime_capabilities,
         lambda item: item.runtime,
     )
+    skills, skills_changed = _append_missing(
+        catalog.skills,
+        defaults.skills,
+        lambda item: item.package_id,
+    )
     changed = changed or any(
         (
             builtin_changed,
@@ -257,6 +264,7 @@ def _upgrade_system_managed_catalog(
             profiles_changed,
             templates_changed,
             runtime_capabilities_changed,
+            skills_changed,
         )
     )
 
@@ -269,6 +277,7 @@ def _upgrade_system_managed_catalog(
             "execution_profiles": execution_profiles,
             "templates": templates,
             "runtime_capabilities": runtime_capabilities,
+            "skills": skills,
         }
     )
     permission_copy_upgrade = _upgrade_known_legacy_permission_copy(upgraded)
@@ -316,6 +325,19 @@ class CapabilityCatalogService:
             if runtime_capabilities_changed:
                 upgraded_catalog = catalog_for_runtime_upgrade.model_copy(
                     update={"runtime_capabilities": runtime_capabilities}
+                )
+            # Platform Skills are platform-governed (tenants can only disable
+            # them), so new packages also reach admin-edited catalogs without
+            # touching tenant entries.
+            catalog_for_skills = upgraded_catalog or current.catalog
+            catalog_skills, catalog_skills_changed = _append_missing(
+                catalog_for_skills.skills,
+                default_capability_catalog().skills,
+                lambda item: item.package_id,
+            )
+            if catalog_skills_changed:
+                upgraded_catalog = catalog_for_skills.model_copy(
+                    update={"skills": catalog_skills}
                 )
             updated_by = current.updated_by
         # Platform web tools are selectable capabilities, not automatic grants.
@@ -521,6 +543,9 @@ class CapabilityCatalogService:
             referenced = referenced or (
                 resource_type == "executionProfile" and spec.execution_profile == resource_id
             )
+            referenced = referenced or (
+                resource_type == "skill" and resource_id in spec.skill_references
+            )
             if referenced:
                 affected.append(draft.draft_id)
         return CatalogImpact(
@@ -556,12 +581,14 @@ class CapabilityCatalogService:
             "mcp": "mcp_servers",
             "policy": "policies",
             "executionProfile": "execution_profiles",
+            "skill": "skills",
         }[resource_type]
         identifier = {
             "modelRoute": "route_id",
             "mcp": "reference",
             "policy": "policy_id",
             "executionProfile": "profile_id",
+            "skill": "package_id",
         }[resource_type]
         entries = getattr(current.catalog, field)
         updated_entries = tuple(
@@ -703,6 +730,13 @@ class CapabilityCatalogService:
             resource_type == "executionProfile"
             and isinstance(request.resource, ExecutionProfileMetadata)
         )
+        if resource_type == "skill":
+            # Platform Skill identity is governed by the platform package
+            # catalog; tenants may only toggle availability via disable().
+            raise ConflictError(
+                "Platform Skills are governed by the platform catalog; "
+                "use the disable operation to toggle availability"
+            )
         if not type_matches:
             raise ConflictError(f"Catalog resource type mismatch: expected {resource_type}")
         field = {
@@ -710,12 +744,14 @@ class CapabilityCatalogService:
             "mcp": "mcp_servers",
             "policy": "policies",
             "executionProfile": "execution_profiles",
+            "skill": "skills",
         }[resource_type]
         identifier = {
             "modelRoute": "route_id",
             "mcp": "reference",
             "policy": "policy_id",
             "executionProfile": "profile_id",
+            "skill": "package_id",
         }[resource_type]
         if getattr(request.resource, identifier) != resource_id:
             raise ConflictError("Catalog resource path and body IDs must match")
@@ -825,5 +861,6 @@ class CapabilityCatalogService:
             "mcp": {item.reference for item in catalog.mcp_servers},
             "policy": {item.policy_id for item in catalog.policies},
             "executionProfile": {item.profile_id for item in catalog.execution_profiles},
+            "skill": {item.package_id for item in catalog.skills},
         }
         return resource_id in identifiers[resource_type]

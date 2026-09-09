@@ -20,8 +20,12 @@ def test_platform_skill_catalog_is_curated_offline_and_deterministic() -> None:
         "delivery-verification",
         "document-spreadsheet-production",
         "skill-authoring-quality",
+        "office-docx",
+        "office-xlsx",
+        "office-pptx",
+        "office-pdf",
     ]
-    assert len({package.content_hash for package in first.packages}) == 5
+    assert len({package.content_hash for package in first.packages}) == 9
     for package in first.packages:
         assert package.license == "Apache-2.0"
         assert package.risk_level == "low"

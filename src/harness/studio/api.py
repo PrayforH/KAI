@@ -135,6 +135,7 @@ from harness.studio.models import (
     PublishedAgentVersion,
     ReplaceAgentDraftRequest,
     ReplaceCapabilityCatalogRequest,
+    SetSkillReferencesRequest,
     UpsertCatalogResourceRequest,
 )
 from harness.studio.platform_skills import (
@@ -1342,6 +1343,26 @@ async def install_skill_file(
     return _installed_skill_response(draft, imported)
 
 
+@router.put("/drafts/{draft_id}/skills/references", response_model=AgentDraft)
+async def set_draft_skill_references(
+    draft_id: str,
+    body: SetSkillReferencesRequest,
+    actor: Annotated[StudioActor, Depends(require_studio_catalog_admin)],
+    service: Annotated[AgentStudioService, Depends(get_studio_service)],
+) -> AgentDraft:
+    try:
+        draft = await service.set_skill_references(
+            tenant_id=actor.tenant_id,
+            user_id=actor.user_id,
+            draft_id=draft_id,
+            expected_revision=body.expected_revision,
+            references=body.references,
+        )
+    except (ConflictError, NotFoundError) as error:
+        raise _translate_domain_error(error) from error
+    return compact_draft_for_editor(draft)
+
+
 @router.post(
     "/drafts/{draft_id}/skills/catalog/{package_id}/install",
     response_model=InstalledSkill,
@@ -1350,7 +1371,9 @@ async def install_platform_skill_package(
     draft_id: str,
     package_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9-]*$")],
     body: InstallPlatformSkillRequest,
-    actor: Annotated[StudioActor, Depends(require_studio_writer)],
+    # Mounting a reviewed platform Skill snapshot is a governance decision,
+    # not a plain draft edit: it bypasses the catalog reference lifecycle.
+    actor: Annotated[StudioActor, Depends(require_studio_catalog_admin)],
     service: Annotated[AgentStudioService, Depends(get_studio_service)],
 ) -> InstalledSkill:
     try:

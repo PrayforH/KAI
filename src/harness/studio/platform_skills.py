@@ -27,6 +27,11 @@ _OPENAI_SKILL_CREATOR_URL = (
     "https://github.com/openai/skills/blob/"
     f"{_OPENAI_SKILL_CREATOR_REVISION}/skills/.system/skill-creator/SKILL.md"
 )
+_ANTHROPIC_SKILLS_REVISION = "41bbe19d1a1a7eaab5e7bb9050a417e5c6cffc8f"
+_ANTHROPIC_SKILLS_URL = (
+    "https://github.com/anthropics/skills/blob/"
+    f"{_ANTHROPIC_SKILLS_REVISION}/document-skills"
+)
 
 
 def draft_skill_content_hash(skill: DraftSkill) -> str:
@@ -312,6 +317,277 @@ def default_platform_skill_catalog() -> PlatformSkillCatalog:
                 ),
                 source_url=_OPENAI_SKILL_CREATOR_URL,
                 source_revision=_OPENAI_SKILL_CREATOR_REVISION,
+            ),
+            _package(
+                package_id="office-docx",
+                display_name="Word 文档创作",
+                summary="用 python-docx 在沙箱内确定性生成并校验真实 .docx 文档。",
+                tags=("办公", "Word", "docx"),
+                evaluation_prompt=(
+                    "请根据给定的调研要点生成一份带标题层级和数据表格的 Word 报告，"
+                    "完成后重新解析文件核对标题、表格与图片结构，并报告校验结果。"
+                ),
+                skill=DraftSkill(
+                    name="office-docx",
+                    description=(
+                        "Create and edit real .docx Word documents with python-docx in the "
+                        "sandbox. Use when the user asks for a Word 文档、.docx 文件、报告交付物"
+                        "或修改已有 docx。Covers headings, paragraphs, tables, images and styles"
+                        " via deterministic Python code, then re-opens the file to verify "
+                        "structure. Not for HTML/Markdown documents, PDF files, or pure text "
+                        "answers."
+                    ),
+                    instructions="""# Word 文档创作（.docx）
+
+用户需要交付或修改真实 Word 文件（.docx）时使用本流程。
+
+1. 先确认文档目标、受众、章节结构、格式要求（字体、页边距、页眉页脚）和验收标准。
+2. 前置探测：运行 `python3 -c "import docx"` 确认 python-docx 可用；不可用时先尝试在
+   工作区虚拟环境安装，仍不可用则只交付内容大纲与结构建议，并明确说明尚未生成文件。
+3. 生成必须通过确定性 Python 脚本完成：标题层级用内置 Heading 样式，正文段落、表格
+   （含表头重复）、图片（指定宽度）和页码分别设置；不用文字模拟排版。
+4. 生成后重新打开文件校验：标题层级顺序、表格行列数、图片数量、文档可打开性；
+   校验失败必须修复后重新生成，不得直接交付。
+5. 交付时列出文件路径、生成方式、校验结果和已知限制（如目录页需在 Word 中刷新）。
+
+不得在没有工具证据时声称文件已生成；不得把模板建议描述成已完成的文档。
+""",
+                    files=(
+                        DraftSkillFile(
+                            path="references/docx-checklist.md",
+                            content=(
+                                "# docx 交付检查清单\n\n"
+                                "- 文件能被 python-docx 重新打开且结构完整？\n"
+                                "- 标题层级、表格行列、图片数量与要求一致？\n"
+                                "- 样式统一（正文/标题字体、页边距、页码）？\n"
+                                "- 输出是否说明生成方式、校验结果与限制？\n"
+                            ),
+                        ),
+                        DraftSkillFile(
+                            path="references/UPSTREAM.md",
+                            content=(
+                                "# 上游来源与修改声明\n\n"
+                                "本包参考 anthropics/skills 仓库 document skills 公开描述的"
+                                "“确定性脚本生成 + 重新解析校验”方法论，全部文本为平台原创"
+                                "中文重写，未复制其 SKILL.md 文本或脚本。\n\n"
+                                f"- 上游版本：`{_ANTHROPIC_SKILLS_REVISION}`\n"
+                                "- 上游文件："
+                                f"{_ANTHROPIC_SKILLS_URL}\n"
+                                "- 许可证说明：上游 document skills 为 Anthropic 自定义许可；"
+                                "本包不包含其受许可文本，平台原创内容以 Apache-2.0 提供。\n"
+                                "- 修改：改为平台沙箱离线运行（python-docx），加入探测、"
+                                "校验与证据化交付约束。\n"
+                            ),
+                        ),
+                    ),
+                ),
+                source_url=_ANTHROPIC_SKILLS_URL,
+                source_revision=_ANTHROPIC_SKILLS_REVISION,
+            ),
+            _package(
+                package_id="office-xlsx",
+                display_name="Excel 表格工作簿",
+                summary="用 openpyxl 生成真实公式与类型化数据的 .xlsx 工作簿并复核。",
+                tags=("办公", "Excel", "xlsx"),
+                evaluation_prompt=(
+                    "请根据给定的销售数据生成一个含汇总公式、冻结表头和数字格式的工作簿，"
+                    "完成后重新打开抽查公式与关键单元格数值。"
+                ),
+                skill=DraftSkill(
+                    name="office-xlsx",
+                    description=(
+                        "Create, read and edit Excel workbooks (.xlsx/.xlsm) and CSV files "
+                        "with openpyxl in the sandbox. Use for Excel 表格、.xlsx 工作簿、"
+                        "数据汇总、财务模型。Writes real formulas, typed cells, number "
+                        "formats and frozen panes via Python code, then re-opens the "
+                        "workbook to verify formulas and sampled cells. Not for pivot "
+                        "tables requiring a recalculation engine or chart-only image "
+                        "exports."
+                    ),
+                    instructions="""# Excel 表格工作簿（.xlsx）
+
+用户需要交付、读取或修改真实 Excel 文件时使用本流程。
+
+1. 先确认数据来源、工作表结构、计算规则、格式要求和验收标准。
+2. 前置探测：运行 `python3 -c "import openpyxl"` 确认 openpyxl 可用；不可用时先尝试
+   在工作区虚拟环境安装，仍不可用则只交付数据结构与公式设计，并说明尚未生成文件。
+3. 生成必须通过确定性 Python 脚本完成：汇总与派生列用真实公式（SUM/AVERAGE/
+   VLOOKUP 等），数值/日期/文本分列存储并设置数字格式，冻结首行表头，不做手工数。
+4. 生成后重新打开文件校验：工作表数量、公式字符串、抽样单元格的值与类型、
+   表头冻结设置。openpyxl 不执行重算，交付时须说明公式将在 Excel 打开时计算。
+5. 交付时列出文件路径、生成方式、抽查结果和已知限制。
+
+不得在没有工具证据时声称工作簿已生成；不得把估算值伪装成公式结果。
+""",
+                    files=(
+                        DraftSkillFile(
+                            path="references/xlsx-checklist.md",
+                            content=(
+                                "# xlsx 交付检查清单\n\n"
+                                "- 文件能被 openpyxl 重新打开且工作表结构完整？\n"
+                                "- 汇总使用真实公式而非硬编码数值？\n"
+                                "- 数值、日期、文本类型与数字格式正确？\n"
+                                "- 表头冻结、列宽等可读性设置到位？\n"
+                                "- 输出是否说明重算限制与抽查结果？\n"
+                            ),
+                        ),
+                        DraftSkillFile(
+                            path="references/UPSTREAM.md",
+                            content=(
+                                "# 上游来源与修改声明\n\n"
+                                "本包参考 anthropics/skills 仓库 document skills 公开描述的"
+                                "“真实公式 + 类型化单元格 + 生成后复核”方法论，全部文本为"
+                                "平台原创中文重写，未复制其 SKILL.md 文本或脚本。\n\n"
+                                f"- 上游版本：`{_ANTHROPIC_SKILLS_REVISION}`\n"
+                                "- 上游文件："
+                                f"{_ANTHROPIC_SKILLS_URL}\n"
+                                "- 许可证说明：上游 document skills 为 Anthropic 自定义许可；"
+                                "本包不包含其受许可文本，平台原创内容以 Apache-2.0 提供。\n"
+                                "- 修改：改为平台沙箱离线运行（openpyxl），加入探测、"
+                                "复核与重算限制说明。\n"
+                            ),
+                        ),
+                    ),
+                ),
+                source_url=_ANTHROPIC_SKILLS_URL,
+                source_revision=_ANTHROPIC_SKILLS_REVISION,
+            ),
+            _package(
+                package_id="office-pptx",
+                display_name="PowerPoint 演示文稿",
+                summary="用 python-pptx 生成真实 .pptx 文件并复核页数与内容。",
+                tags=("办公", "PPT", "pptx"),
+                evaluation_prompt=(
+                    "请根据给定主题先列出幻灯片大纲，确认结构后生成含标题页、内容页和"
+                    "演讲者备注的 .pptx 文件，并重新解析校验页数与文字。"
+                ),
+                skill=DraftSkill(
+                    name="office-pptx",
+                    description=(
+                        "Create and edit PowerPoint .pptx files with python-pptx in the "
+                        "sandbox. Use when the user asks for a PPT/PowerPoint 文件、.pptx "
+                        "幻灯片文件，或修改已有 pptx。Builds slides from an approved "
+                        "outline with layouts, placeholders, tables, images and speaker "
+                        "notes via deterministic Python code, then re-opens the file to "
+                        "verify slide count and text. For styled HTML slide decks use the "
+                        "html-ppt skill instead."
+                    ),
+                    instructions="""# PowerPoint 演示文稿（.pptx）
+
+用户需要交付真实 PowerPoint 文件（.pptx）时使用本流程；若用户要的是网页样式
+HTML 幻灯片，应改用 html-ppt Skill 而不是本流程。
+
+1. 先给出幻灯片大纲（每页标题与要点）供确认；页数和 信息密度 服从用途
+   （汇报/评审/分享）。
+2. 前置探测：运行 `python3 -c "import pptx"` 确认 python-pptx 可用；不可用时先尝试
+   在工作区虚拟环境安装，仍不可用则只交付大纲与版式建议，并说明尚未生成文件。
+3. 生成必须通过确定性 Python 脚本完成：使用版式占位符（标题/正文/两栏），表格与
+   图片按占位符尺寸放置，每页写入演讲者备注；不用文字模拟幻灯片。
+4. 生成后重新打开文件校验：页数、每页标题文本、备注是否存在、图片数量。
+5. 交付时列出文件路径、页数、校验结果和已知限制（如复杂动画与主题配色需在
+   PowerPoint 中调整）。
+
+不得在没有工具证据时声称文件已生成；不得跳过大纲确认直接生成大体积演示文稿。
+""",
+                    files=(
+                        DraftSkillFile(
+                            path="references/pptx-checklist.md",
+                            content=(
+                                "# pptx 交付检查清单\n\n"
+                                "- 文件能被 python-pptx 重新打开且页数一致？\n"
+                                "- 每页标题与大纲一致，无占位符残留？\n"
+                                "- 演讲者备注已写入？\n"
+                                "- 图片清晰、不变形、尺寸符合版式？\n"
+                                "- 输出是否说明校验结果与限制？\n"
+                            ),
+                        ),
+                        DraftSkillFile(
+                            path="references/UPSTREAM.md",
+                            content=(
+                                "# 上游来源与修改声明\n\n"
+                                "本包参考 anthropics/skills 仓库 document skills 公开描述的"
+                                "“大纲先行 + 占位符版式 + 重新解析校验”方法论，全部文本为"
+                                "平台原创中文重写，未复制其 SKILL.md 文本或脚本。\n\n"
+                                f"- 上游版本：`{_ANTHROPIC_SKILLS_REVISION}`\n"
+                                "- 上游文件："
+                                f"{_ANTHROPIC_SKILLS_URL}\n"
+                                "- 许可证说明：上游 document skills 为 Anthropic 自定义许可；"
+                                "本包不包含其受许可文本，平台原创内容以 Apache-2.0 提供。\n"
+                                "- 修改：改为平台沙箱离线运行（python-pptx），加入与 "
+                                "html-ppt 的边界说明与大纲确认步骤。\n"
+                            ),
+                        ),
+                    ),
+                ),
+                source_url=_ANTHROPIC_SKILLS_URL,
+                source_revision=_ANTHROPIC_SKILLS_REVISION,
+            ),
+            _package(
+                package_id="office-pdf",
+                display_name="PDF 文档处理",
+                summary="用 pypdf 读取、合并、拆分 PDF 并提取文本与页数校验。",
+                tags=("办公", "PDF", "pypdf"),
+                evaluation_prompt=(
+                    "请把给定的两个 PDF 合并为一个文件，报告总页数，并抽取其中包含"
+                    "关键结论的页面文本作为证据。"
+                ),
+                skill=DraftSkill(
+                    name="office-pdf",
+                    description=(
+                        "Read, merge, split and extract text from PDF files with pypdf in "
+                        "the sandbox. Use for PDF 合并、拆分、页数统计、文本提取，或校验"
+                        "生成 PDF 的页数与内容。Explains honestly when layout-faithful PDF "
+                        "creation is not available and proposes a deterministic conversion "
+                        "path instead. Not for OCR of scanned images or form-filling via "
+                        "external services."
+                    ),
+                    instructions="""# PDF 文档处理
+
+用户需要读取、合并、拆分 PDF，或从 PDF 提取文本/校验页数时使用本流程。
+
+1. 先确认输入文件、期望输出（合并顺序、拆分范围、需要的页面）和验收标准。
+2. 前置探测：运行 `python3 -c "import pypdf"` 确认 pypdf 可用；不可用时先尝试在
+   工作区虚拟环境安装，仍不可用则只交付处理方案，并说明尚未处理文件。
+3. 读取与抽取必须通过确定性 Python 脚本完成：页数、页面尺寸、书签、文本按页
+   提取并标注页码；扫描件无文本层时如实说明，不臆造内容。
+4. 合并与拆分后重新打开输出文件校验：页数一致、页面顺序正确、文本抽查可读。
+5. 需要从零生成排版精美的 PDF 时，说明当前工具边界，改走 Markdown/HTML 或
+   docx 内容加确定性转换的路径，并校验转换产物页数与文本。
+6. 交付时列出输出文件路径、页数、抽取/校验证据和已知限制。
+
+不得在没有工具证据时声称 PDF 已处理完成；不得把 OCR 猜测描述为原文。
+""",
+                    files=(
+                        DraftSkillFile(
+                            path="references/pdf-checklist.md",
+                            content=(
+                                "# PDF 处理检查清单\n\n"
+                                "- 输出文件能被 pypdf 重新打开且页数一致？\n"
+                                "- 文本提取标注了页码，可直接回查原文？\n"
+                                "- 扫描件/无文本层的情况已如实说明？\n"
+                                "- 生成类需求是否说明工具边界与转换路径？\n"
+                            ),
+                        ),
+                        DraftSkillFile(
+                            path="references/UPSTREAM.md",
+                            content=(
+                                "# 上游来源与修改声明\n\n"
+                                "本包参考 anthropics/skills 仓库 document skills 公开描述的"
+                                "“按页确定性处理 + 重新打开校验”方法论，全部文本为平台"
+                                "原创中文重写，未复制其 SKILL.md 文本或脚本。\n\n"
+                                f"- 上游版本：`{_ANTHROPIC_SKILLS_REVISION}`\n"
+                                "- 上游文件："
+                                f"{_ANTHROPIC_SKILLS_URL}\n"
+                                "- 许可证说明：上游 document skills 为 Anthropic 自定义许可；"
+                                "本包不包含其受许可文本，平台原创内容以 Apache-2.0 提供。\n"
+                                "- 修改：改为平台沙箱离线运行（pypdf），加入扫描件与"
+                                "排版生成边界说明。\n"
+                            ),
+                        ),
+                    ),
+                ),
+                source_url=_ANTHROPIC_SKILLS_URL,
+                source_revision=_ANTHROPIC_SKILLS_REVISION,
             ),
         ),
     )

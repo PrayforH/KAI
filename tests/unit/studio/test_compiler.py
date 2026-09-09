@@ -1082,3 +1082,48 @@ def test_all_new_and_imported_templates_have_no_operational_limits() -> None:
         assert limits["timeoutSeconds"] == 300
         imported = parse_agent_bundle(compiled.bundle)
         assert imported.spec.limits.max_budget_usd is None
+
+
+def test_skill_references_resolve_into_bundle_with_platform_provenance() -> None:
+    compiler = AgentDraftCompiler(default_capability_catalog())
+    base = draft()
+    spec = base.spec.model_copy(update={"skill_references": ("office-docx", "office-xlsx")})
+    candidate = base.model_copy(update={"spec": spec})
+
+    resolved = compiler.resolve_skills(candidate)
+    assert [skill.name for skill in resolved] == ["office-docx", "office-xlsx"]
+    for skill in resolved:
+        assert skill.source is not None
+        assert skill.source.package_id == skill.name
+        assert skill.source.modified is False
+        assert len(skill.source.content_hash) == 64
+
+    validation = compiler.validate(candidate)
+    assert validation.ready
+    assert "skills/office-docx" in yaml.safe_load(validation.manifest_yaml)["spec"]["skills"]
+
+    compiled = compiler.compile(candidate)
+    with ZipFile(BytesIO(compiled.bundle)) as bundle:
+        packaged = set(bundle.namelist())
+    assert "skills/office-docx/SKILL.md" in packaged
+    assert "skills/office-xlsx/SKILL.md" in packaged
+
+
+def test_skill_reference_conflicts_disable_and_unknown_block_compilation() -> None:
+    compiler_catalog = default_capability_catalog()
+    disabled = compiler_catalog.skills[0]
+    catalog = compiler_catalog.model_copy(
+        update={"skills": (disabled.model_copy(update={"enabled": False}), *compiler_catalog.skills[1:])}
+    )
+    compiler = AgentDraftCompiler(catalog)
+    base = draft()
+    spec = base.spec.model_copy(
+        update={"skill_references": (disabled.package_id, "no-such-skill")}
+    )
+    candidate = base.model_copy(update={"spec": spec})
+
+    validation = compiler.validate(candidate)
+    codes = {issue.code for issue in validation.issues}
+    assert {"skill_reference_disabled", "skill_reference_unknown"} <= codes
+    assert not validation.ready
+    assert compiler.resolve_skills(candidate) == ()

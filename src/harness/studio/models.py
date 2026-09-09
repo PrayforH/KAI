@@ -171,6 +171,17 @@ class InstallPlatformSkillRequest(StudioModel):
     package_revision: int = Field(alias="packageRevision", ge=1)
 
 
+class SetSkillReferencesRequest(StudioModel):
+    """Bind platform catalog Skills to a draft by package ID.
+
+    Catalog Skill references are a platform-governance decision and require the
+    catalog admin permission; draft writers manage their own uploaded snapshots.
+    """
+
+    expected_revision: int = Field(alias="expectedRevision", ge=1)
+    references: tuple[str, ...] = Field(max_length=32)
+
+
 class ImportedSkill(StudioModel):
     skill: DraftSkill
     source_content_hash: str = Field(alias="sourceContentHash", min_length=64, max_length=64)
@@ -262,6 +273,7 @@ class AgentDraftSpec(StudioModel):
     model: DraftModelSelection
     system_prompt: str = Field(alias="systemPrompt", min_length=1, max_length=512 * 1024)
     skills: tuple[DraftSkill, ...] = ()
+    skill_references: tuple[str, ...] = Field(default=(), alias="skillReferences")
     builtin_tools: tuple[str, ...] = Field(default=(), alias="builtinTools")
     python_tools: tuple[DraftPythonTool, ...] = Field(default=(), alias="pythonTools")
     mcp_servers: tuple[str, ...] = Field(default=(), alias="mcpServers")
@@ -301,6 +313,21 @@ class AgentDraftSpec(StudioModel):
         duplicate_skills = sorted({name for name in skill_names if skill_names.count(name) > 1})
         if duplicate_skills:
             raise ValueError(f"duplicate Skill: {', '.join(duplicate_skills)}")
+        duplicate_references = sorted(
+            {value for value in self.skill_references if self.skill_references.count(value) > 1}
+        )
+        if duplicate_references:
+            raise ValueError(f"duplicate Skill reference: {', '.join(duplicate_references)}")
+        snapshot_names = set(skill_names)
+        conflicts = sorted(set(self.skill_references) & snapshot_names)
+        if conflicts:
+            raise ValueError(
+                "Skill reference conflicts with an installed Skill snapshot: "
+                + ", ".join(conflicts)
+            )
+        for value in self.skill_references:
+            if re.fullmatch(r"[a-z][a-z0-9-]*", value) is None:
+                raise ValueError(f"invalid Skill reference: {value}")
         python_tool_names = [tool.name for tool in self.python_tools]
         duplicate_python_tools = sorted(
             {name for name in python_tool_names if python_tool_names.count(name) > 1}
@@ -779,6 +806,32 @@ class RuntimeCapability(StudioModel):
     limitations: tuple[str, ...] = ()
 
 
+class SkillCapability(StudioModel):
+    """Platform Skill exposed as a managed catalog resource.
+
+    The catalog stores identity metadata only; skill content is resolved from
+    the immutable platform package catalog at compile time and pinned into the
+    bundle via the DraftSkillSource snapshot.
+    """
+
+    package_id: str = Field(alias="packageId", pattern=r"^[a-z][a-z0-9-]*$")
+    label: str = Field(min_length=1, max_length=100)
+    summary: str = Field(min_length=1, max_length=500)
+    tags: tuple[str, ...] = ()
+    revision: int = Field(ge=1)
+    version: int = Field(default=1, ge=1)
+    compatible_runtimes: tuple[AgentRuntimeType, ...] = Field(
+        alias="compatibleRuntimes",
+        min_length=1,
+    )
+    license: str = Field(min_length=1, max_length=100)
+    source_url: str = Field(alias="sourceUrl", min_length=1, max_length=2_000)
+    source_revision: str = Field(alias="sourceRevision", min_length=1, max_length=200)
+    content_hash: str = Field(alias="contentHash", pattern=r"^[a-f0-9]{64}$")
+    risk_level: Literal["low", "review"] = Field(alias="riskLevel")
+    enabled: bool = True
+
+
 class CapabilityCatalog(StudioModel):
     model_routes: tuple[ModelRouteCapability, ...] = Field(alias="modelRoutes")
     builtin_tools: tuple[BuiltinToolCapability, ...] = Field(alias="builtinTools")
@@ -787,6 +840,7 @@ class CapabilityCatalog(StudioModel):
     execution_profiles: tuple[ExecutionProfileMetadata, ...] = Field(
         default=(), alias="executionProfiles"
     )
+    skills: tuple[SkillCapability, ...] = ()
     templates: tuple[TemplateCapability, ...]
     runtime_capabilities: tuple[RuntimeCapability, ...] = Field(
         default=(), alias="runtimeCapabilities"
@@ -802,6 +856,7 @@ class CapabilityCatalog(StudioModel):
                 "execution profile",
                 [item.profile_id for item in self.execution_profiles],
             ),
+            ("skill", [item.package_id for item in self.skills]),
         )
         for label, identifiers in collections:
             duplicates = sorted(
@@ -844,9 +899,9 @@ class ReplaceCapabilityCatalogRequest(StudioModel):
 
 
 class CatalogImpact(StudioModel):
-    resource_type: Literal["modelRoute", "mcp", "policy", "executionProfile"] = Field(
-        alias="resourceType"
-    )
+    resource_type: Literal[
+        "modelRoute", "mcp", "policy", "executionProfile", "skill"
+    ] = Field(alias="resourceType")
     resource_id: str = Field(alias="resourceId")
     draft_ids: tuple[str, ...] = Field(alias="draftIds")
 
