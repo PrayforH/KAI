@@ -3,6 +3,7 @@
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 16px;
   align-items: start;
+  composes: surface from "./knowledge-ui.module.css";
 }
 
 @media (max-width: 900px) {
@@ -28,13 +29,14 @@
 
 .panelHead h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: 15px;
   letter-spacing: -0.01em;
+  font-weight: 600;
 }
 
 .hint {
   color: var(--codex-faint, #737373);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .searchRow {
@@ -51,8 +53,9 @@
   background: var(--codex-field, #191919);
   color: var(--codex-ink, #ffffff);
   padding: 8px 10px;
-  font-size: 12px;
+  font-size: 13px;
   font-family: inherit;
+  min-height: 36px;
 }
 
 .candidateList {
@@ -102,12 +105,12 @@
 
 .candidateEmail {
   color: var(--codex-faint, #737373);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .check {
-  color: var(--codex-success, #40c977);
-  font-weight: 700;
+  color: var(--codex-ink-soft, #d2d2d2);
+  font-weight: 600;
 }
 
 .field {
@@ -115,7 +118,7 @@
   gap: 5px;
   margin-bottom: 12px;
   color: var(--codex-muted, #a1a1a1);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .field textarea {
@@ -139,17 +142,17 @@
 
 .fieldLabel {
   color: var(--codex-muted, #a1a1a1);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .roleChip {
-  min-height: 28px;
+  min-height: 32px;
   padding: 0 12px;
   border: 1px solid var(--codex-line, #303030);
-  border-radius: 999px;
+  border-radius: 8px;
   background: transparent;
   color: var(--codex-ink-soft, #d6d6d6);
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
 }
 
@@ -161,41 +164,7 @@
   border-color: var(--codex-accent, #ececec);
   color: var(--codex-on-accent, #07111a);
   background: var(--codex-accent, #ececec);
-  font-weight: 700;
-}
-
-.primary {
-  margin-left: auto;
-  min-height: 30px;
-  padding: 0 14px;
-  border: 1px solid var(--codex-accent, #ececec);
-  border-radius: 8px;
-  background: var(--codex-accent, #ececec);
-  color: var(--codex-on-accent, #07111a);
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.primary:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.ghost {
-  min-height: 28px;
-  padding: 0 11px;
-  border: 1px solid var(--codex-line, #303030);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--codex-ink-soft, #d6d6d6);
-  font-size: 11px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.ghost:hover {
-  background: var(--codex-surface-hover, #2a2a2a);
+  font-weight: 600;
 }
 
 .orgNote {
@@ -203,7 +172,7 @@
   padding: 8px 10px;
   border-left: 2px solid var(--codex-line-strong, #444444);
   color: var(--codex-faint, #737373);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.6;
 }
 
@@ -242,20 +211,20 @@
 
 .memberMeta {
   color: var(--codex-faint, #737373);
-  font-size: 11px;
+  font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .select {
-  min-height: 28px;
+  min-height: 36px;
   padding: 0 8px;
   border: 1px solid var(--codex-line, #303030);
   border-radius: 8px;
   background: var(--codex-field, #191919);
   color: var(--codex-ink, #ffffff);
-  font-size: 11px;
+  font-size: 13px;
   font-family: inherit;
 }
 
@@ -269,11 +238,11 @@
 .notice {
   margin: 0 0 10px;
   padding: 8px 10px;
-  border: 1px solid rgb(64 201 119 / 35%);
+  border: 1px solid var(--codex-line-strong, #444444);
   border-radius: 8px;
-  color: var(--codex-success, #40c977);
-  background: var(--codex-success-soft, rgb(64 201 119 / 13%));
-  font-size: 11px;
+  color: var(--codex-ink-soft, #d2d2d2);
+  background: var(--codex-accent-faint, rgb(255 255 255 / 6%));
+  font-size: 12px;
 }
 
 .error {
@@ -283,5 +252,21 @@
   border-radius: 8px;
   color: var(--codex-danger, #fa423e);
   background: var(--codex-danger-soft, rgb(250 66 62 / 13%));
-  font-size: 11px;
+  font-size: 12px;
+}
+
+.primary {
+  composes: primary from "./knowledge-ui.module.css";
+  margin-left: auto;
+}
+
+.ghost {
+  composes: secondary compact from "./knowledge-ui.module.css";
+}
+
+@media (max-width: 640px) {
+  .panel { padding: 14px; min-width: 0; }
+  .panelHead, .memberRow, .candidate { flex-wrap: wrap; }
+  .memberInfo { flex-basis: calc(100% - 80px); }
+  .candidateEmail { width: 100%; overflow-wrap: anywhere; }
 }

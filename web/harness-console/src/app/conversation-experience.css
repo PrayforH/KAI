@@ -36,7 +36,7 @@ body.codex-theme-v1 .harness-composer-shell .aui-composer-input { resize: none; 
 .composer-assist strong { font-size: 13px; font-weight: 500; }
 .composer-assist small, .composer-assist footer { font-size: 11px; color: var(--codex-muted); }
 .composer-assist footer { padding: 8px 12px 2px; }
-.prompt-queue { width: 100%; border: 1px solid var(--codex-line); border-radius: 10px 10px 5px 5px; padding: 8px 12px; margin-bottom: 6px; font-size: 12px; background: var(--codex-surface-raised); }
+.composer-context-shelf { width: 100%; border: 1px solid var(--codex-line); border-radius: 10px 10px 5px 5px; padding: 8px 12px; margin-bottom: 6px; font-size: 12px; background: var(--codex-surface-raised); }
 .prompt-queue header { display: flex; align-items: center; gap: 10px; padding: 2px 0 8px; color: var(--codex-muted); }
 .prompt-queue header strong { font-weight: 500; color: var(--codex-ink); }
 .prompt-queue header button { margin-left: auto; }
@@ -84,7 +84,7 @@ body.codex-theme-v1 .execution-commentary-content { padding: 0; border: 0; }
 body.codex-theme-v1 .composer-skill-context { display: inline-flex; width: fit-content; gap: 6px; padding: 4px 8px; margin-bottom: 8px; border-radius: 6px; border: 1px solid var(--codex-line); font-size: 12px; }
 body.codex-theme-v1 .composer-skill-context strong { font-size: 12px; font-weight: 500; }
 .composer-help-popover { padding: 12px; font-size: 12px; }
-body.codex-theme-v1 .prompt-queue { border-radius: 16px 16px 0 0; margin: 0 8px -12px; width: calc(100% - 16px); padding: 4px 12px 16px; box-shadow: none; }
+body.codex-theme-v1 .composer-context-shelf { border-radius: 16px 16px 0 0; margin: 0 8px -12px; width: calc(100% - 16px); padding: 4px 12px 16px; box-shadow: none; }
 .prompt-queue ol { overflow: visible; }
 .prompt-queue li { min-height: 36px; border-top: 0; }
 .prompt-queue li + li { border-top: 1px solid var(--codex-line); }

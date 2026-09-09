@@ -6,6 +6,7 @@ import {
   type StudioKnowledgeWikiPage,
   type StudioKnowledgeWikiStats,
 } from "../../lib/studio-client";
+import { WikiEntityLink } from "./wiki-entity-link";
 import styles from "./knowledge-wiki-panel.module.css";
 
 const PAGE_TYPE_LABELS: Record<string, string> = {
@@ -317,14 +318,12 @@ export function KnowledgeWikiPanel({
                   {line.segments.map((segment, segmentIndex) => {
                     if (segment.kind === "link") {
                       return (
-                        <button
+                        <WikiEntityLink
                           key={segmentIndex}
-                          type="button"
-                          className={styles.wikiLink}
                           onClick={() => void openPage(segment.slug)}
                         >
                           {segment.label}
-                        </button>
+                        </WikiEntityLink>
                       );
                     }
                     if (segment.kind === "bold") {

@@ -21,7 +21,7 @@ export function PromptQueue({ items, paused, busy, canSteer, sendingIds, onChang
     onChange(next);
   }
   if (!items.length) return null;
-  return <section className="prompt-queue" aria-label="待发送队列">
+  return <section className="composer-context-shelf prompt-queue" aria-label="待发送队列">
     {(items.length > 1 || paused) && <header><strong>待发送 · {items.length}</strong><span>{paused ? "已暂停" : ""}</span>
       <button type="button" disabled={sendingIds.length > 0 || Boolean(editing)} onClick={() => onPause(!paused)}>{paused ? "继续队列" : "暂停"}</button>
     </header>}

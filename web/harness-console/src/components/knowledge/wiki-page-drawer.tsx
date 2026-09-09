@@ -1,11 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   studioClient,
   type StudioKnowledgeWikiPage,
 } from "../../lib/studio-client";
 import { DrawerResizeHandle, useDrawerResize } from "../../lib/use-drawer-resize";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { knowledgeUrlTransform, remarkWikiLinks } from "../../lib/knowledge-links";
+import { WikiEntityLink } from "./wiki-entity-link";
+import { KnowledgeDrawerLayer } from "./knowledge-drawer-layer";
 import styles from "./wiki-page-drawer.module.css";
 
 const TYPE_LABELS: Record<string, string> = {
@@ -17,85 +22,25 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 const TYPE_COLORS: Record<string, string> = {
-  summary: "#4f8cff",
-  entity: "#40c977",
-  concept: "#e6aa4a",
+  summary: "#d6d6d6",
+  entity: "#b3b3b3",
+  concept: "#8c8c8c",
   index: "#9a9a9a",
   page: "#737373",
 };
 
-function renderInline(
-  text: string,
-  onOpen: (slug: string) => void,
-  keyPrefix: string,
-): ReactNode[] {
-  const nodes: ReactNode[] = [];
-  const pattern = /(\[\[[^\]]+\]\]|\*\*[^*]+\*\*|`[^`]+`)/g;
-  let cursor = 0;
-  let match: RegExpExecArray | null;
-  let index = 0;
-  while ((match = pattern.exec(text)) !== null) {
-    if (match.index > cursor) {
-      nodes.push(<span key={`${keyPrefix}-t${index++}`}>{text.slice(cursor, match.index)}</span>);
-    }
-    const token = match[0];
-    const link = /^\[\[([^\]|]+)(?:\|([^\]]+))?\]\]$/.exec(token);
-    if (link) {
-      const slug = link[1].trim();
-      nodes.push(
-        <button
-          key={`${keyPrefix}-l${index++}`}
-          type="button"
-          className={styles.link}
-          onClick={() => onOpen(slug)}
-        >
-          {(link[2] ?? slug).trim()}
-        </button>,
-      );
-    } else if (token.startsWith("**")) {
-      nodes.push(<strong key={`${keyPrefix}-b${index++}`}>{token.slice(2, -2)}</strong>);
-    } else {
-      nodes.push(<code key={`${keyPrefix}-c${index++}`}>{token.slice(1, -1)}</code>);
-    }
-    cursor = match.index + token.length;
-  }
-  if (cursor < text.length) {
-    nodes.push(<span key={`${keyPrefix}-tail`}>{text.slice(cursor)}</span>);
-  }
-  return nodes;
-}
-
-export function renderWikiBody(
-  content: string,
-  onOpen: (slug: string) => void,
-): ReactNode {
-  return content
-    .replace(/\r\n/g, "\n")
-    .split("\n")
-    .map((line, index) => {
-      if (!line.trim()) return null;
-      const heading = /^(#{1,6})\s+(.*)$/.exec(line);
-      if (heading) {
-        return (
-          <p key={index} className={styles.heading}>
-            {renderInline(heading[2], onOpen, `h${index}`)}
-          </p>
-        );
+export function renderWikiBody(content: string, onOpen: (slug: string) => void): ReactNode {
+  return <ReactMarkdown remarkPlugins={[remarkGfm, remarkWikiLinks]} urlTransform={knowledgeUrlTransform} components={{
+    a: ({ href, children }) => {
+      if (href?.startsWith("wiki:")) {
+        let target: string;
+        try { target = decodeURIComponent(href.slice(5)); } catch { return <span>{children}</span>; }
+        return <WikiEntityLink onClick={() => onOpen(target)}>{children}</WikiEntityLink>;
       }
-      const bullet = /^\s*[-*]\s+(.*)$/.exec(line);
-      if (bullet) {
-        return (
-          <p key={index} className={styles.bullet}>
-            {renderInline(bullet[1], onOpen, `b${index}`)}
-          </p>
-        );
-      }
-      return (
-        <p key={index} className={styles.line}>
-          {renderInline(line, onOpen, `p${index}`)}
-        </p>
-      );
-    });
+      return <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
+    },
+    table: (props) => <div className="aui-table-scroll"><table {...props} /></div>,
+  }}>{content}</ReactMarkdown>;
 }
 
 /**
@@ -119,57 +64,60 @@ export function WikiPageDrawer({
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [resolvedReference, setResolvedReference] = useState<string | null>(
-    reference ?? null,
-  );
+  const resolvedReference = useRef<string | null>(reference ?? null);
+  const requestId = useRef(0);
   const { width, startResize } = useDrawerResize("wiki", { min: 360, max: 1000 });
 
   const open = useCallback(
     async (next: string) => {
+      const id = ++requestId.current;
+      setPage(null);
       setCurrent(next);
       setSummaryOpen(false);
       setLoading(true);
       setError("");
-      const candidates = resolvedReference
-        ? [resolvedReference]
+      const candidates = resolvedReference.current
+        ? [resolvedReference.current]
         : (await studioClient.listKnowledgeBases().catch(() => [])).map(
             (base) => base.reference,
           );
-      let lastError = "打开 Wiki 页面失败";
+      let lastError = "未找到 Wiki 页面或没有查看权限";
+      const matches: Array<{ reference: string; page: StudioKnowledgeWikiPage }> = [];
       for (const candidate of candidates) {
         try {
           const found = await studioClient.getWikiPage(candidate, next);
-          setResolvedReference(candidate);
-          setPage(found);
-          setLoading(false);
-          return;
+          if (id !== requestId.current) return;
+          matches.push({ reference: candidate, page: found });
         } catch (cause) {
           lastError = cause instanceof Error ? cause.message : lastError;
         }
       }
-      setError(lastError);
+      if (id !== requestId.current) return;
+      if (matches.length === 1) {
+        resolvedReference.current = matches[0].reference;
+        setPage(matches[0].page);
+      } else {
+        setError(matches.length > 1 ? "多个知识库存在同名页面，旧引用未记录所属知识库，无法确定来源。请重新提问获取明确引用。" : lastError);
+      }
       setLoading(false);
     },
-    [resolvedReference],
+    [],
   );
 
   useEffect(() => {
+    resolvedReference.current = reference ?? null;
     void open(slug);
-  }, [open, slug]);
+    return () => { requestId.current += 1; };
+  }, [open, slug, reference]);
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
 
   return (
-    <>
+    <KnowledgeDrawerLayer onClose={onClose}>
       <div className={styles.overlay} role="presentation" onClick={onClose} />
       <aside
         className={styles.drawer}
+        role="dialog"
+        aria-modal="true"
         aria-label="Wiki 页面详情"
         style={{ width }}
       >
@@ -225,10 +173,10 @@ export function WikiPageDrawer({
                 </button>
               </div>
             ) : null}
-            <div className={styles.body}>{renderWikiBody(page.content, open)}</div>
+            <div className={`${styles.body} aui-md`}>{renderWikiBody(page.content, open)}</div>
           </>
         ) : null}
       </aside>
-    </>
+    </KnowledgeDrawerLayer>
   );
 }

@@ -116,6 +116,7 @@ export function AssistantRuntimeShell({
   const [historyRevision, setHistoryRevision] = useState(0);
   const [knowledgeReferences, setKnowledgeReferences] = useState<string[]>([]);
   const [knowledgeMode, setKnowledgeMode] = useState<"rag" | "wiki">("rag");
+  const [loadedKnowledgeKey, setLoadedKnowledgeKey] = useState<string | null>(null);
   const knowledgeStorageKey = `harness:thread-knowledge:${threadId}`;
   const conversationalModelRouteOverride = modelRoutes.find(
     (route) => route.id === modelRouteOverride && route.modelType !== "video_generation",
@@ -171,16 +172,18 @@ export function AssistantRuntimeShell({
     try {
       const raw = localStorage.getItem(knowledgeStorageKey);
       const saved = raw ? (JSON.parse(raw) as { references?: string[]; mode?: string }) : null;
-      setKnowledgeReferences(saved?.references ?? []);
+      setKnowledgeReferences(Array.isArray(saved?.references) ? [...new Set(saved.references.filter((ref) => typeof ref === "string" && /^[a-z][a-z0-9-]{0,127}$/.test(ref)))] : []);
       setKnowledgeMode(saved?.mode === "wiki" ? "wiki" : "rag");
     } catch {
       setKnowledgeReferences([]);
       setKnowledgeMode("rag");
     }
+    setLoadedKnowledgeKey(knowledgeStorageKey);
   }, [knowledgeStorageKey]);
 
   useEffect(() => {
     try {
+      if (loadedKnowledgeKey !== knowledgeStorageKey) return;
       localStorage.setItem(
         knowledgeStorageKey,
         JSON.stringify({ references: knowledgeReferences, mode: knowledgeMode }),
@@ -188,7 +191,7 @@ export function AssistantRuntimeShell({
     } catch {
       /* storage unavailable: keep the in-memory selection */
     }
-  }, [knowledgeMode, knowledgeReferences, knowledgeStorageKey]);
+  }, [knowledgeMode, knowledgeReferences, knowledgeStorageKey, loadedKnowledgeKey]);
 
   useLayoutEffect(() => {
     activateRuntimeThread(threadId);

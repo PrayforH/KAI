@@ -197,3 +197,11 @@
 .resizeHandle:active::after {
   opacity: 1;
 }
+
+.chip { max-width: min(280px, 100%); border-radius: 7px; }
+.chip:focus-visible, .close:focus-visible { outline: 2px solid var(--codex-ink); outline-offset: 2px; }
+.drawer { max-width: 100vw; box-sizing: border-box; }
+.drawerMeta { flex-wrap: wrap; overflow-wrap: anywhere; }
+.content { white-space: normal; }
+.content :global(table) { display: block; overflow-x: auto; }
+@media (max-width: 640px) { .row { flex-direction: column; gap: 6px; } .drawer { padding: 18px; } }

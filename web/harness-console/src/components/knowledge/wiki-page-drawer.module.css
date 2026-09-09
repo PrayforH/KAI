@@ -90,21 +90,7 @@
   word-break: break-word;
 }
 
-.link {
-  padding: 0 2px;
-  border: 0;
-  background: transparent;
-  color: var(--codex-accent-hover, #ffffff);
-  font-size: inherit;
-  font-family: inherit;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
 
-.link:hover {
-  filter: brightness(1.15);
-}
 
 
 .error {
@@ -152,4 +138,80 @@
 .resizeHandle:hover::after,
 .resizeHandle:active::after {
   opacity: 1;
+}
+
+.drawer { max-width: 100vw; box-sizing: border-box; }
+.body { overflow-wrap: anywhere; }
+.body :global(table) { width: 100%; border-collapse: collapse; }
+.body :global(th), .body :global(td) { padding: 8px 10px; border: 1px solid var(--codex-line); text-align: left; }
+.body :global(pre) { overflow-x: auto; }
+
+.summaryBox {
+  position: relative;
+  margin: 0 0 14px;
+  padding: 11px 34px 11px 13px;
+  border: 1px solid var(--codex-line, #303030);
+  border-radius: 10px;
+  background: var(--codex-inset, #171717);
+}
+
+.summary {
+  margin: 0;
+  border: 0;
+  padding: 0;
+  color: var(--codex-muted, #a1a1a1);
+  font-size: 12.5px;
+  line-height: 1.75;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.summaryOpen {
+  display: block;
+  overflow: visible;
+}
+
+.summaryToggle {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--codex-faint, #737373);
+  cursor: pointer;
+}
+
+.summaryToggle:hover {
+  background: var(--codex-surface-hover, #2a2a2a);
+  color: var(--codex-ink, #ffffff);
+}
+
+.summaryToggle svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 140ms ease;
+}
+
+.summaryToggle[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+.typeBadge {
+  padding: 1px 8px;
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
 }

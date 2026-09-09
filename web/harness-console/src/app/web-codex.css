@@ -2424,7 +2424,7 @@ body.codex-theme-v1:has(.console-shell) .task-sidebar-brand .task-sidebar-search
 .task-knowledge-option-mark {
   width: 16px;
   flex: 0 0 16px;
-  color: var(--codex-success, #40c977);
+  color: var(--codex-ink, #f5f5f5);
   font-weight: 700;
   text-align: center;
 }
@@ -2536,34 +2536,78 @@ body.codex-theme-v1:has(.console-shell) .task-sidebar-brand .task-sidebar-search
   letter-spacing: 0.02em;
 }
 
-/* The composer's knowledge picker is keyed to "@": a large glyph plus the
-   number of selected knowledge bases. */
+/* The @ trigger keeps its footprint; the count sits above its top-right edge. */
+.task-knowledge-trigger {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  justify-content: center;
+}
+
 .task-knowledge-at {
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  flex: 0 0 18px;
-  border-radius: 5px;
-  color: var(--codex-ink-soft, #d6d6d6);
-  background: var(--codex-accent-faint, rgb(236 236 236 / 7%));
-  font-size: 14px;
-  font-weight: 700;
+  color: var(--codex-muted, #a1a1a1);
+  font-size: 18px;
+  font-weight: 500;
   line-height: 1;
 }
 
-.task-knowledge-count {
-  min-width: 10px;
-  color: var(--codex-muted, #a1a1a1);
-  font-size: 11.5px;
+.task-knowledge-trigger > .task-knowledge-count {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  display: grid;
+  place-items: center;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-radius: 999px;
+  background: var(--codex-ink, #f5f5f5);
+  color: var(--codex-on-accent, #141414);
+  font-size: 10px;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
+  line-height: 1;
 }
 
 .task-knowledge-control[data-active="true"] .task-knowledge-at {
-  color: var(--codex-ink, #ffffff);
-  background: var(--codex-accent-soft, rgb(236 236 236 / 14%));
+  color: var(--codex-ink, #f5f5f5);
 }
 
-.task-knowledge-control[data-active="true"] .task-knowledge-count {
-  color: var(--codex-ink, #ffffff);
+/* Knowledge Q&A controls share the existing monochrome composer rhythm. */
+.task-knowledge-menu { left: -34px; width: min(300px, calc(100vw - 48px)); max-height: min(360px, 55dvh); }
+.task-knowledge-search { width: 100%; box-sizing: border-box; padding: 8px 10px; margin-bottom: 8px; border: 1px solid var(--codex-line); border-radius: 7px; background: var(--codex-inset, #171717); color: var(--codex-ink); font: inherit; font-size: 12px; }
+.task-knowledge-menu-head { color: var(--codex-muted); }
+.task-knowledge-option-copy small { color: var(--codex-muted); }
+.task-knowledge-clear:disabled { opacity: .45; cursor: default; }
+.task-knowledge-selection {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  box-sizing: border-box;
+  color: var(--codex-ink-soft, #d6d6d6);
 }
+.task-knowledge-selected-chip { display: inline-flex; align-items: center; min-width: 0; max-width: 100%; }
+.task-knowledge-context-control { min-width: 0; }
+.task-knowledge-context-trigger { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-height: 36px; padding: 4px 3px; border: 0; border-radius: 5px; background: transparent; color: var(--codex-ink-soft); font: inherit; font-size: 13px; cursor: pointer; }
+.task-knowledge-context-trigger:hover { background: var(--codex-surface-hover); color: var(--codex-ink); }
+.task-knowledge-context-trigger:disabled { opacity: .45; cursor: default; }
+.task-knowledge-context-trigger:focus-visible { outline: 2px solid var(--codex-ink); outline-offset: 2px; }
+.task-knowledge-context-control .task-knowledge-menu { left: 0; }
+.task-knowledge-context-trigger .task-knowledge-selected-name { max-width: 240px; }
+.task-knowledge-chevron { width: 14px; height: 14px; flex: 0 0 14px; fill: none; stroke: var(--codex-muted); stroke-width: 1.5; }
+.task-knowledge-folder { width: 17px; height: 17px; flex: 0 0 17px; fill: none; stroke: var(--codex-ink, #f5f5f5); stroke-width: 1.5; stroke-linejoin: round; }
+.task-knowledge-selected-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.task-knowledge-selected-chip > button { display: grid; place-items: center; flex: 0 0 22px; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--codex-muted); font: inherit; font-size: 17px; cursor: pointer; }
+.task-knowledge-selected-chip > button:hover:not(:disabled) { background: var(--codex-accent-faint); color: var(--codex-ink); }
+.task-knowledge-selected-chip > button:disabled { opacity: .45; cursor: default; }
+.task-knowledge-trigger:focus-visible, .task-knowledge-option:focus-visible, .task-knowledge-switch:focus-visible, .task-knowledge-search:focus-visible, .task-knowledge-selection button:focus-visible, .aui-citation-link:focus-visible { outline: 2px solid var(--codex-ink); outline-offset: 2px; }
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .composer-toolbar { flex: 1 1 0%; flex-wrap: wrap; row-gap: 5px; }
+@media (max-width: 640px) {
+  body.codex-theme-v1:has(.console-shell) .harness-composer-shell .composer-toolbar { gap: 2px; }
+  .task-knowledge-context-trigger .task-knowledge-selected-name { max-width: 180px; }
+}
+
+.composer-footer { display: flex; flex: 0 0 100%; width: 100%; min-width: 0; align-items: flex-end; gap: 6px; }

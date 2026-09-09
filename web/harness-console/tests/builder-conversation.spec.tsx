@@ -59,7 +59,7 @@ async function click(text: string) {
 }
 async function send(value: string) {
   await act(async () => {
-    const input = host.querySelector('[aria-label="智能体构建助手"] textarea:not([aria-label="对话预览输入"])')!;
+    const input = host.querySelector<HTMLTextAreaElement>('[aria-label="智能体构建助手"] textarea:not([aria-label="对话预览输入"])')!;
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, value);
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
@@ -182,7 +182,7 @@ it("does not run when clarification fails, a task is missing, or an unapplied pr
 });
 
 it("protects Chinese composition Enter from sending and uses the main composer styling", async () => {
-  const input = host.querySelector('[aria-label="智能体构建助手"] textarea:not([aria-label="对话预览输入"])')!;
+  const input = host.querySelector<HTMLTextAreaElement>('[aria-label="智能体构建助手"] textarea:not([aria-label="对话预览输入"])')!;
   act(() => {
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, "修改提示词");
     input.dispatchEvent(new Event("input", { bubbles: true }));

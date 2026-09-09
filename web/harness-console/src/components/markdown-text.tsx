@@ -8,6 +8,9 @@ import remarkGfm from "remark-gfm";
 import { memo, useState, type ComponentPropsWithoutRef } from "react";
 import { normalizeMessageText } from "../lib/message-text";
 import { MermaidCodeHeader, MermaidDiagram } from "./mermaid-diagram";
+import { citationTarget, knowledgeUrlTransform, remarkWikiLinks } from "../lib/knowledge-links";
+import { useAnswerCitations } from "./knowledge/answer-citation-context";
+import { WikiEntityLink } from "./knowledge/wiki-entity-link";
 import { SourceLink } from "./source-link";
 
 function CodeHeader({ language, code }: CodeHeaderProps) {
@@ -42,28 +45,22 @@ function ScrollableTable(props: ComponentPropsWithoutRef<"table">) {
   );
 }
 
-const WIKILINK = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
-
-/** Turn WeKnora wiki links into markdown links the renderer can intercept. */
-function preprocessMessage(text: string): string {
-  return normalizeMessageText(text).replace(
-    WIKILINK,
-    (_match, slug: string, label?: string) =>
-      `[${(label ?? slug).trim()}](wiki:${encodeURIComponent(slug.trim())})`,
-  );
-}
-
 function WikiLink({
   href,
   children,
   node: _node,
   ...props
 }: ComponentPropsWithoutRef<"a"> & { node?: unknown }) {
+  const answer = useAnswerCitations();
+  if (href?.startsWith("citation:")) {
+    const citation = answer?.citations.find((item) => citationTarget(item) === href);
+    return citation ? <WikiEntityLink className="aui-citation-link" title={citation.title ?? "查看来源"} aria-label={`查看来源 ${citation.index}：${citation.title ?? "文档"}`} onClick={() => answer?.request(citation)}>{children}</WikiEntityLink> : <span title="引用来源暂不可用">{children}</span>;
+  }
   if (typeof href === "string" && href.startsWith("wiki:")) {
-    const slug = decodeURIComponent(href.slice("wiki:".length));
+    let slug: string;
+    try { slug = decodeURIComponent(href.slice("wiki:".length)); } catch { return <span>{children}</span>; }
     return (
-      <button
-        type="button"
+      <WikiEntityLink
         className="aui-wiki-link"
         onClick={() => {
           window.dispatchEvent(
@@ -72,7 +69,7 @@ function WikiLink({
         }}
       >
         {children}
-      </button>
+      </WikiEntityLink>
     );
   }
   return (
@@ -86,8 +83,8 @@ function MarkdownTextImpl() {
   return (
     <MarkdownTextPrimitive
       className="aui-md"
-      remarkPlugins={[remarkGfm]}
-      preprocess={preprocessMessage}
+      remarkPlugins={[remarkGfm, remarkWikiLinks]}
+      preprocess={normalizeMessageText}
       // The live response store already batches network deltas per animation
       // frame. A second character-by-character reveal exposes incomplete
       // Markdown delimiters (for example `**`) until their closing token is
@@ -96,7 +93,7 @@ function MarkdownTextImpl() {
       smooth={false}
       // react-markdown blanks unknown protocols; wiki: must survive so the
       // renderer can turn it into a page-opening button.
-      urlTransform={(url: string) => url}
+      urlTransform={knowledgeUrlTransform}
       components={{ CodeHeader, a: WikiLink, table: ScrollableTable }}
       componentsByLanguage={{
         mermaid: {

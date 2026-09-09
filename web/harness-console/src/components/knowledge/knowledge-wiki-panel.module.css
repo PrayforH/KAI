@@ -3,6 +3,7 @@
   grid-template-columns: 280px minmax(0, 1fr);
   gap: 20px;
   align-items: start;
+  composes: surface from "./knowledge-ui.module.css";
 }
 
 .rail {
@@ -30,24 +31,9 @@
   background: var(--codex-field, #191919);
   color: var(--codex-ink, #ffffff);
   padding: 7px 9px;
-  font-size: 12px;
+  font-size: 13px;
   font-family: inherit;
-}
-
-.railButton {
-  min-height: 30px;
-  padding: 0 11px;
-  border: 1px solid var(--codex-line, #303030);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--codex-ink-soft, #d6d6d6);
-  font-size: 11px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.railButton:hover {
-  background: var(--codex-surface-hover, #2a2a2a);
+  min-height: 34px;
 }
 
 .clearRow {
@@ -58,7 +44,7 @@
   border-radius: 8px;
   background: transparent;
   color: var(--codex-muted, #a1a1a1);
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
 }
 
@@ -76,8 +62,8 @@
   border-radius: 7px;
   background: transparent;
   color: var(--codex-muted, #a1a1a1);
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
   text-align: left;
 }
@@ -121,9 +107,10 @@
   border-radius: 7px;
   background: transparent;
   color: var(--codex-ink-soft, #d6d6d6);
-  font-size: 12px;
+  font-size: 13px;
   text-align: left;
   cursor: pointer;
+  min-height: 34px;
 }
 
 .pageItem:hover {
@@ -147,8 +134,8 @@
   border-radius: 999px;
   border: 1px solid var(--codex-line-strong, #444444);
   color: var(--codex-faint, #737373);
-  font-size: 9px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 600;
   flex-shrink: 0;
 }
 
@@ -169,7 +156,7 @@
   padding-bottom: 12px;
   border-bottom: 1px solid var(--codex-line, #303030);
   color: var(--codex-faint, #737373);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .detailHead {
@@ -182,8 +169,11 @@
 
 .detailHead h2 {
   margin: 0 0 6px;
-  font-size: 19px;
+  font-size: 20px;
   letter-spacing: -0.02em;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .detailMeta {
@@ -192,12 +182,12 @@
   gap: 8px;
   margin: 3px 0;
   color: var(--codex-faint, #737373);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .detailMeta code {
   font-family: var(--codex-font-mono, monospace);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .content {
@@ -215,24 +205,6 @@
   color: var(--codex-ink-soft, #d6d6d6);
   font-size: 13px;
   line-height: 1.75;
-}
-
-.wikiLink {
-  padding: 1px 5px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--codex-accent-hover, #ffffff);
-  text-decoration: underline;
-  text-decoration-color: rgb(236 236 236 / 44%);
-  text-underline-offset: 2px;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.wikiLink:hover {
-  background: var(--codex-accent-faint, rgb(236 236 236 / 7%));
-  text-decoration-color: rgb(236 236 236 / 72%);
 }
 
 .empty {
@@ -265,9 +237,10 @@
   border-radius: 8px;
   background: transparent;
   color: var(--codex-ink-soft, #d6d6d6);
-  font-size: 12.5px;
+  font-size: 13px;
   text-align: left;
   cursor: pointer;
+  min-height: 34px;
 }
 
 .railEntry:hover {
@@ -275,8 +248,8 @@
 }
 
 .railEntryActive {
-  color: var(--codex-success, #40c977);
-  background: var(--codex-success-soft, rgb(64 201 119 / 13%));
+  color: var(--codex-ink-soft, #d2d2d2);
+  background: var(--codex-accent-faint, rgb(255 255 255 / 6%));
   font-weight: 600;
 }
 
@@ -324,8 +297,8 @@
 }
 
 .typeTabActive {
-  color: var(--codex-success, #40c977) !important;
-  border-bottom-color: var(--codex-success, #40c977) !important;
+  color: var(--codex-ink-soft, #d2d2d2) !important;
+  border-bottom-color: var(--codex-ink-soft, #d2d2d2) !important;
   font-weight: 600;
 }
 
@@ -344,21 +317,13 @@
   border-radius: 999px;
   border: 1px solid var(--codex-line, #303030);
   background: var(--codex-surface-raised, #242424);
-  font-size: 10.5px;
+  font-size: 12px;
 }
 
 .statLine {
   margin: 0 0 12px;
   color: var(--codex-faint, #737373);
-  font-size: 11px;
-}
-
-/* Page body links mirror the WeKnora wiki: green and underlined. */
-.wikiLink {
-  color: var(--codex-accent-hover, #ffffff);
-  text-decoration: underline;
-  text-decoration-color: rgb(236 236 236 / 44%);
-  text-underline-offset: 2px;
+  font-size: 12px;
 }
 
 /* Inline keyword styling: links stay in the sentence flow instead of taking
@@ -381,7 +346,7 @@
   margin-top: 16px;
   color: var(--codex-ink, #ffffff);
   font-size: 15px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .paragraphBullet {
@@ -409,5 +374,17 @@
   border-radius: 5px;
   background: var(--codex-code-inline, #222a31);
   font-family: var(--codex-font-mono, monospace);
-  font-size: 11.5px;
+  font-size: 12px;
+}
+
+.railButton {
+  composes: secondary compact from "./knowledge-ui.module.css";
+}
+
+@media (max-width: 800px) {
+  .layout { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .rail { position: static; max-height: 320px; }
+  .detail { padding: 0 0 24px; }
+  .detailHead, .detailMeta { flex-wrap: wrap; }
+  .detailMeta { overflow-wrap: anywhere; }
 }
