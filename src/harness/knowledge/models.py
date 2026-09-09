@@ -437,6 +437,7 @@ class KnowledgeDocumentStatus(KnowledgeModel):
     file_size: int = Field(default=0, alias="fileSize", ge=0)
     enabled: bool = True
     created_at: str = Field(default="", alias="createdAt")
+    description: str = Field(default="", alias="description")
 
 
 class KnowledgeWikiPage(KnowledgeModel):

@@ -55,6 +55,8 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
   );
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [contentView, setContentView] = useState<"full" | "chunks">("full");
   const fileRef = useRef<HTMLInputElement>(null);
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -112,6 +114,7 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
   const openDocument = useCallback(
     async (doc: StudioKnowledgeDocumentStatus) => {
       setSelected(doc);
+      setContentView("full");
       setChunks([]);
       setChunksLoading(true);
       try {
@@ -393,26 +396,86 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
                     <article
                       key={doc.documentId}
                       className={`${styles.docCard} ${isSelected ? styles.docCardSelected : ""}`}
+                      onClick={() => void openDocument(doc)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          void openDocument(doc);
+                        }
+                      }}
                     >
                       <header className={styles.docCardHead}>
                         <input
                           type="checkbox"
                           className={styles.docCheckbox}
                           checked={isSelected}
+                          onClick={(event) => event.stopPropagation()}
                           onChange={() => toggleSelect(doc.documentId)}
                           aria-label={`选择 ${doc.title}`}
                         />
                         <h3 className={styles.docCardTitle} title={doc.title}>
                           {doc.title}
                         </h3>
-                        <button
-                          type="button"
-                          className={styles.docCardOpen}
-                          onClick={() => void openDocument(doc)}
-                          title="查看切片"
-                        >
-                          ⋯
-                        </button>
+                        <div className={styles.docCardMenuWrap}>
+                          <button
+                            type="button"
+                            className={styles.docCardOpen}
+                            aria-expanded={menuFor === doc.documentId}
+                            aria-haspopup="menu"
+                            title="更多操作"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setMenuFor((current) =>
+                                current === doc.documentId ? null : doc.documentId,
+                              );
+                            }}
+                          >
+                            ⋯
+                          </button>
+                          {menuFor === doc.documentId ? (
+                            <div
+                              className={styles.docCardMenu}
+                              role="menu"
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              <button
+                                type="button"
+                                role="menuitem"
+                                onClick={() => {
+                                  setMenuFor(null);
+                                  void openDocument(doc);
+                                }}
+                              >
+                                查看
+                              </button>
+                              <button
+                                type="button"
+                                role="menuitem"
+                                disabled={bulkBusy}
+                                onClick={() => {
+                                  setMenuFor(null);
+                                  void onReparse(doc);
+                                }}
+                              >
+                                重新解析
+                              </button>
+                              <button
+                                type="button"
+                                role="menuitem"
+                                className={styles.docCardMenuDanger}
+                                disabled={bulkBusy}
+                                onClick={() => {
+                                  setMenuFor(null);
+                                  void onDelete(doc);
+                                }}
+                              >
+                                删除
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
                       </header>
                       <p className={styles.docCardDesc}>
                         {doc.summaryStatus === "completed"
@@ -538,47 +601,105 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
           <>
             <div className={styles.drawerOverlay} onClick={closeDrawer} role="presentation" />
             <aside className={styles.drawer} aria-label="文档详情">
-              <div className={styles.drawerHead} style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+              <header className={styles.drawerHead}>
+                <span className={styles.drawerGlyph} aria-hidden="true">
+                  <svg viewBox="0 0 20 20">
+                    <path d="M4.5 3.5h7l4 4v9h-11z" />
+                    <path d="M11.5 3.5v4h4M7.5 11h5m-5 2.8h5" />
+                  </svg>
+                </span>
                 <h2>{selected.title}</h2>
-                <button type="button" className={styles.ghost} onClick={closeDrawer}>
-                  关闭
-                </button>
-              </div>
-              <p className={styles.drawerSub}>
-                {selected.documentId} · {selected.parseStatus} 解析 · 共 {chunks.length} 个切片
-              </p>
-              <div className={styles.drawerActions} style={{ display: "flex", gap: 8, marginBottom: 14 }}>
                 <button
                   type="button"
-                  className={styles.ghost}
-                  onClick={() => void onReparse(selected)}
+                  className={styles.drawerClose}
+                  onClick={closeDrawer}
+                  aria-label="关闭"
+                  title="关闭"
                 >
-                  重新解析
+                  ×
                 </button>
-                <button
-                  type="button"
-                  className={styles.ghost}
-                  onClick={() => void onDelete(selected)}
-                >
-                  删除
-                </button>
-              </div>
-              {chunksLoading ? (
-                <p className={styles.empty}>切片加载中…</p>
-              ) : chunks.length === 0 ? (
-                <p className={styles.empty}>解析完成后这里会显示切片列表</p>
-              ) : (
-                <div className={styles.chunkList}>
-                  {chunks.map((chunk) => (
-                    <article key={chunk.chunkId} className={styles.chunkCard}>
-                      <p className={styles.chunkIndex}>
-                        片段 {chunk.seq} · {chunk.chunkId.slice(0, 10)}
-                      </p>
-                      <p className={styles.chunkContent}>{chunk.content}</p>
-                    </article>
-                  ))}
+              </header>
+
+              <section className={styles.drawerSection}>
+                <h3 className={styles.drawerSectionTitle}>基本信息</h3>
+                <dl className={styles.drawerFacts}>
+                  <dt>创建时间</dt>
+                  <dd>{formatDocumentDate(selected.createdAt)}</dd>
+                  <dt>类型</dt>
+                  <dd>
+                    <span className={styles.drawerTypeBadge}>
+                      {selected.fileType ? selected.fileType.toUpperCase() : "手动创建"}
+                    </span>
+                  </dd>
+                  <dt>解析状态</dt>
+                  <dd>
+                    <span
+                      className={`${styles.statusChip} ${
+                        selected.parseStatus === "completed"
+                          ? styles.statusCompleted
+                          : selected.parseStatus === "processing" ||
+                              selected.parseStatus === "pending"
+                            ? styles.statusProcessing
+                            : styles.statusFailed
+                      }`}
+                    >
+                      {PARSE_LABELS[selected.parseStatus] ?? selected.parseStatus}
+                    </span>
+                  </dd>
+                </dl>
+              </section>
+
+              {selected.description ? (
+                <section className={styles.drawerSection}>
+                  <h3 className={styles.drawerSectionTitle}>摘要</h3>
+                  <p className={styles.drawerSummary}>{selected.description}</p>
+                </section>
+              ) : null}
+
+              <section className={styles.drawerSection}>
+                <div className={styles.drawerSectionHead}>
+                  <h3 className={styles.drawerSectionTitle}>文档内容</h3>
+                  <span className={styles.drawerCount}>共 {chunks.length} 个片段</span>
+                  <div className={styles.drawerToggle}>
+                    <button
+                      type="button"
+                      className={contentView === "full" ? styles.drawerToggleActive : ""}
+                      onClick={() => setContentView("full")}
+                    >
+                      全文
+                    </button>
+                    <button
+                      type="button"
+                      className={contentView === "chunks" ? styles.drawerToggleActive : ""}
+                      onClick={() => setContentView("chunks")}
+                    >
+                      查看分块
+                    </button>
+                  </div>
                 </div>
-              )}
+                {chunksLoading ? (
+                  <p className={styles.empty}>切片加载中…</p>
+                ) : chunks.length === 0 ? (
+                  <p className={styles.empty}>解析完成后这里会显示文档内容</p>
+                ) : contentView === "full" ? (
+                  <p className={styles.drawerFullText}>
+                    {chunks
+                      .slice()
+                      .sort((left, right) => left.seq - right.seq)
+                      .map((chunk) => chunk.content)
+                      .join("\n\n")}
+                  </p>
+                ) : (
+                  <div className={styles.chunkList}>
+                    {chunks.map((chunk) => (
+                      <article key={chunk.chunkId} className={styles.chunkCard}>
+                        <p className={styles.chunkIndex}>片段 {chunk.seq}</p>
+                        <p className={styles.chunkContent}>{chunk.content}</p>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
             </aside>
           </>
         ) : null}

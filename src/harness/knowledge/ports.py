@@ -34,6 +34,7 @@ class EngineDocumentStatus:
     enabled: bool = True
     knowledge_base_id: str = ""
     created_at: str = ""
+    description: str = ""
 
 
 @dataclass(frozen=True)
