@@ -4,7 +4,7 @@
 - 分支：`feature/weknora-knowledge-base`
 - 目标环境：`172.20.109.173`（KAI WORKBENCH 黑色主题，Web `:3301`，API `:8800`）
 - 知识数据面：`172.20.109.174:8180` WeKnora（服务账号，终端用户不直连）
-- 发布 tag：`weknora-kb-20260909-4b8d5d7`（api 与 web 同 tag）
+- 发布 tag：`weknora-kb-20260909-7a057c0`（api 与 web 同 tag）
 - 配套设计：[2026-09-08-weknora-knowledge-base-design.md](2026-09-08-weknora-knowledge-base-design.md)、[实现计划](2026-09-08-weknora-knowledge-base-implementation-plan.md)
 
 ## 1. 交付内容
@@ -123,6 +123,10 @@ $COMPOSE up -d --no-build --force-recreate api worker web
 | 文档数量实时 | 列表接口并发读取 WeKnora 真实文档数并回写缓存（实测 合合资料 1、173 库 3，与 WeKnora 一致） | 通过 |
 | 批量管理模式 | 「⋯」菜单新增「批量管理」，进入后勾选框才出现，悬浮栏保持旧顺序（重建知识 / 批量删除 靠右） | 通过 |
 | Wiki 加粗渲染 | 正文 `**加粗**` 与行内代码正确渲染，不再显示字面星号 | 通过 |
+| RAG/Wiki 问答模式 | 编辑器新增「RAG 问答 / Wiki 问答」切换，Wiki 模式走 `search_wiki_pages`（进程内 SDK MCP 与远端 HTTP MCP 均已提供） | 通过 |
+| Wiki 答案可点击 | 回答中的 `[[slug|title]]` 渲染为可点击链接（react-markdown 默认清洗会清空 `wiki:` 协议，已用 urlTransform 放行）；点击打开页面抽屉，抽屉内可继续跳转 | 通过 |
+| 链接配色统一 | Wiki 链接改为主题白色 + 淡下划线，去掉绿色/橙色，与黑色主题一致 | 通过 |
+| Wiki 回答更丰富 | 工具先返回知识库索引页作为全局地图，默认取 12 页/每页 8k 字符；契约要求 2-4 次定向检索 + 结构化作答（实测单次回答约 4.5k 字符、分节呈现） | 通过 |
 | 登录页 logo | 中间卡片左上角由字母占位改为真实产品标识 `/brand/kai-mark-v2.png` | 通过 |
 
 ## 4. 待验证项与后续动作
@@ -130,6 +134,7 @@ $COMPOSE up -d --no-build --force-recreate api worker web
 1. **测试智能体**：`kb-citation-verify@0.1.0` 是本次验证产物，绑定 `weknora-173-verify` 知识库；如需清理，删除该草稿/版本即可（不影响其他智能体）。
 2. **质量同步容器**：`agent-studio-173-quality-sync-1` 仍为旧镜像，本轮未纳入发布（与知识库无关）。
 3. **IDaaS 组织树**：二期，`kb_members` 已预留 `org_unit`/`org_path`。
+4. **Codex 运行时**：本轮按需求不处理。已知限制——Codex 运行时未接入知识 MCP，其上的智能体选择 RAG/Wiki 问答会静默无效（工具不存在）；编译器也会拒绝带 manifest 级 `knowledge_references` 的 Codex 智能体。
 
 ## 5. 回滚
 
