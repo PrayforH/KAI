@@ -4,7 +4,7 @@
 - 分支：`feature/weknora-knowledge-base`
 - 目标环境：`172.20.109.173`（KAI WORKBENCH 黑色主题，Web `:3301`，API `:8800`）
 - 知识数据面：`172.20.109.174:8180` WeKnora（服务账号，终端用户不直连）
-- 发布 tag：`weknora-kb-20260909-70bdb55`（api 与 web 同 tag）
+- 发布 tag：`weknora-kb-20260909-46c855b`（api 与 web 同 tag）
 - 配套设计：[2026-09-08-weknora-knowledge-base-design.md](2026-09-08-weknora-knowledge-base-design.md)、[实现计划](2026-09-08-weknora-knowledge-base-implementation-plan.md)
 
 ## 1. 交付内容
@@ -109,6 +109,9 @@ $COMPOSE up -d --no-build --force-recreate api worker web
 | 文档摘要展示 | 抽屉「摘要」区块展示 WeKnora 文档摘要（实测手动文档有摘要） | 通过 |
 | 表格文档渲染 | 抽屉内容按 Markdown 渲染，表格文档显示为真实表格（实测 3 列分类表） | 通过 |
 | 分页修复 | Wiki 页面与文档列表按页拉取：合合资料 66 页（知识 64 + 摘要 1 + 索引 1）、248 件库 248 文档，不再截断到 20 | 通过 |
+| 图谱节点抽屉 | 点击节点从右侧展开全高抽屉，展示页面摘要、分类路径与可点击链接 | 通过 |
+| Wiki 分类树 | 左栏按 WeKnora `category_path` 一级分类分组（如 企业画像/企业风险）并显示计数，不再只有实体/概念 | 通过 |
+| Excel 表格视图 | WeKnora 切片把表格压成 `A: 值,B: 值` 文本，无法渲染表格；改为下载原文件解析（xlsx→openpyxl、xls→xlrd、csv），抽屉新增「表格」视图 | 通过 |
 | 登录页 logo | 中间卡片左上角由字母占位改为真实产品标识 `/brand/kai-mark-v2.png` | 通过 |
 
 ## 4. 待验证项与后续动作
