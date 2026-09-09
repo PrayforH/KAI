@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   studioClient,
   type StudioKnowledgeBase,
@@ -682,19 +684,25 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
                 ) : chunks.length === 0 ? (
                   <p className={styles.empty}>解析完成后这里会显示文档内容</p>
                 ) : contentView === "full" ? (
-                  <p className={styles.drawerFullText}>
-                    {chunks
-                      .slice()
-                      .sort((left, right) => left.seq - right.seq)
-                      .map((chunk) => chunk.content)
-                      .join("\n\n")}
-                  </p>
+                  <div className={styles.drawerFullText}>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {chunks
+                        .slice()
+                        .sort((left, right) => left.seq - right.seq)
+                        .map((chunk) => chunk.content)
+                        .join("\n\n")}
+                    </ReactMarkdown>
+                  </div>
                 ) : (
                   <div className={styles.chunkList}>
                     {chunks.map((chunk) => (
                       <article key={chunk.chunkId} className={styles.chunkCard}>
                         <p className={styles.chunkIndex}>片段 {chunk.seq}</p>
-                        <p className={styles.chunkContent}>{chunk.content}</p>
+                        <div className={styles.chunkContent}>
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {chunk.content}
+                          </ReactMarkdown>
+                        </div>
                       </article>
                     ))}
                   </div>

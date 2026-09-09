@@ -101,6 +101,7 @@ class WeknoraClient:
         params: dict[str, Any] | None = None,
         files: dict[str, Any] | None = None,
         reauthenticated: bool = False,
+        raw: bool = False,
     ) -> Any:
         token = await self._authenticate()
         response = await self._client.request(
@@ -120,16 +121,25 @@ class WeknoraClient:
                 params=params,
                 files=files,
                 reauthenticated=True,
+                raw=raw,
             )
         payload = self._unwrap(response)
-        if isinstance(payload, dict):
+        if not raw and isinstance(payload, dict):
             values = cast(dict[str, Any], payload)
             if "data" in values:
                 return values["data"]
         return cast(Any, payload)
 
-    async def get_data(self, path: str, *, params: dict[str, Any] | None = None) -> Any:
-        return await self._request("GET", path, params=params)
+    async def get_data(
+        self,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        raw: bool = False,
+    ) -> Any:
+        """GET a path; ``raw=True`` keeps the envelope so callers can read
+        pagination metadata (total/page) alongside the rows."""
+        return await self._request("GET", path, params=params, raw=raw)
 
     async def post_data(self, path: str, *, json: Any = None) -> Any:
         return await self._request("POST", path, json=json)
@@ -185,14 +195,31 @@ class WeknoraClient:
 
     # --- documents --------------------------------------------------------
 
-    async def list_documents(self, base_id: str) -> list[dict[str, Any]]:
-        payload = await self.get_data(f"/knowledge-bases/{base_id}/knowledge")
-        if isinstance(payload, list):
-            return _dict_list(payload)
-        if isinstance(payload, dict):
-            values = cast(dict[str, Any], payload)
-            return _dict_list(values.get("data") or values.get("items") or [])
-        return []
+    async def list_documents(
+        self,
+        base_id: str,
+        *,
+        page_size: int = 100,
+        max_pages: int = 50,
+    ) -> list[dict[str, Any]]:
+        """WeKnora paginates documents (20 per page); fetch every page."""
+        documents: list[dict[str, Any]] = []
+        for page in range(1, max_pages + 1):
+            payload = await self.get_data(
+                f"/knowledge-bases/{base_id}/knowledge",
+                params={"page": page, "page_size": page_size},
+                raw=True,
+            )
+            if isinstance(payload, list):
+                documents.extend(_dict_list(payload))
+                break
+            values = cast(dict[str, Any], payload) if isinstance(payload, dict) else {}
+            rows = _dict_list(values.get("data") or values.get("items") or [])
+            documents.extend(rows)
+            total = values.get("total")
+            if not rows or (isinstance(total, int) and len(documents) >= total):
+                break
+        return documents
 
     async def get_document(self, document_id: str) -> dict[str, Any]:
         payload = await self.get_data(f"/knowledge/{document_id}")
@@ -280,12 +307,31 @@ class WeknoraClient:
 
     # --- wiki -------------------------------------------------------------
 
-    async def list_wiki_pages(self, base_id: str) -> list[dict[str, Any]]:
-        payload = await self.get_data(f"/knowledgebase/{base_id}/wiki/pages")
-        if isinstance(payload, dict):
-            values = cast(dict[str, Any], payload)
-            return _dict_list(values.get("pages") or values.get("data") or [])
-        return _dict_list(payload)
+    async def list_wiki_pages(
+        self,
+        base_id: str,
+        *,
+        page_size: int = 100,
+        max_pages: int = 50,
+    ) -> list[dict[str, Any]]:
+        """WeKnora paginates wiki pages (20 per page); fetch every page."""
+        pages: list[dict[str, Any]] = []
+        for page in range(1, max_pages + 1):
+            payload = await self.get_data(
+                f"/knowledgebase/{base_id}/wiki/pages",
+                params={"page": page, "page_size": page_size},
+                raw=True,
+            )
+            if isinstance(payload, list):
+                pages.extend(_dict_list(payload))
+                break
+            values = cast(dict[str, Any], payload) if isinstance(payload, dict) else {}
+            rows = _dict_list(values.get("pages") or values.get("data") or [])
+            pages.extend(rows)
+            total = values.get("total")
+            if not rows or (isinstance(total, int) and len(pages) >= total):
+                break
+        return pages
 
     async def get_wiki_page(self, base_id: str, slug: str) -> dict[str, Any]:
         payload = await self.get_data(f"/knowledgebase/{base_id}/wiki/pages/{slug}")

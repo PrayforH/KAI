@@ -133,12 +133,13 @@
   align-items: start;
 }
 
+/* The graph is a full-bleed canvas: no frame, taller, and it fills the pane. */
 .canvas {
   width: 100%;
-  min-height: 560px;
-  border: 1px solid var(--codex-line, #303030);
-  border-radius: 12px;
-  background: var(--codex-inset, #171717);
+  min-height: calc(100vh - 260px);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   overflow: hidden;
 }
 

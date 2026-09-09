@@ -107,7 +107,7 @@ export function KnowledgeGraphPanel({
       const instance = new Graph({
         container,
         width: container.clientWidth,
-        height: 560,
+        height: container.clientHeight || 560,
         autoFit: "view",
         data: {
           nodes: visible.nodes.map((node) => ({
