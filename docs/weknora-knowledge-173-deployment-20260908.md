@@ -4,7 +4,7 @@
 - 分支：`feature/weknora-knowledge-base`
 - 目标环境：`172.20.109.173`（KAI WORKBENCH 黑色主题，Web `:3301`，API `:8800`）
 - 知识数据面：`172.20.109.174:8180` WeKnora（服务账号，终端用户不直连）
-- 发布 tag：`weknora-kb-20260909-cde09d5`（api 与 web 同 tag）
+- 发布 tag：`weknora-kb-20260909-082b540`（api 与 web 同 tag）
 - 配套设计：[2026-09-08-weknora-knowledge-base-design.md](2026-09-08-weknora-knowledge-base-design.md)、[实现计划](2026-09-08-weknora-knowledge-base-implementation-plan.md)
 
 ## 1. 交付内容
@@ -98,6 +98,9 @@ $COMPOSE up -d --no-build --force-recreate api worker web
 | `@` 指定知识库（多选） | 输入 `@` 列出知识库，回车切换选中并保持列表打开；底栏知识库控件显示已选，选择随 `forwardedProps.knowledgeReferences` 生效 | 通过 |
 | 详情页头部扁平化 | 标题/元信息/页签压缩为紧凑一行，文档工作区上移 | 通过 |
 | 知识库卡片改版 | 图标 + 标题 + 描述 + 文档数徽章（绿色），保持黑色配色；文档数取最近一次同步 | 通过 |
+| 卡片去下划线 | 标题/描述/标识不再出现链接下划线 | 通过 |
+| 成员管理外移 | 成员管理从详情页页签移到知识库卡片，点击在弹窗中管理（已添加成员可见） | 通过 |
+| 详情页精简 | 去掉 `reference · engine · kbType` 与描述行，上传提示上移到知识库名下方；页签仅保留 文档/Wiki/图谱 | 通过 |
 | 登录页 logo | 中间卡片左上角由字母占位改为真实产品标识 `/brand/kai-mark-v2.png` | 通过 |
 
 ## 4. 待验证项与后续动作
