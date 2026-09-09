@@ -34,6 +34,8 @@ export function KnowledgeWikiPanel({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [railMode, setRailMode] = useState<"index" | "tree">("index");
+  const [typeTab, setTypeTab] = useState<"knowledge" | "summary">("knowledge");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -147,7 +149,58 @@ export function KnowledgeWikiPanel({
           >
             清除搜索（{results.length} 条结果）
           </button>
-        ) : null}
+        ) : (
+          <>
+            <button
+              type="button"
+              className={`${styles.railEntry} ${railMode === "index" ? styles.railEntryActive : ""}`}
+              onClick={() => {
+                setRailMode("index");
+                const index =
+                  pages.find((item) => item.pageType === "index") ?? pages[0];
+                if (index) void openPage(index.slug);
+              }}
+            >
+              <span className={styles.railEntryGlyph} aria-hidden="true">
+                <svg viewBox="0 0 20 20">
+                  <path d="M4.5 4.5h7a3 3 0 0 1 3 3v8h-7a3 3 0 0 1-3-3z" />
+                  <path d="M7.5 7.5h4m-4 3h4" />
+                </svg>
+              </span>
+              索引
+            </button>
+            <button
+              type="button"
+              className={`${styles.railEntry} ${railMode === "tree" ? styles.railEntryActive : ""}`}
+              onClick={() => setRailMode("tree")}
+            >
+              <span className={styles.railEntryGlyph} aria-hidden="true">
+                <svg viewBox="0 0 20 20">
+                  <path d="M4.5 4.5h11M4.5 10h11M4.5 15.5h7" />
+                </svg>
+              </span>
+              目录
+            </button>
+            <div className={styles.railDivider} />
+            <div className={styles.typeTabs}>
+              <button
+                type="button"
+                className={typeTab === "knowledge" ? styles.typeTabActive : ""}
+                onClick={() => setTypeTab("knowledge")}
+              >
+                知识{" "}
+                {pages.filter((item) => item.pageType !== "summary" && item.pageType !== "index").length}
+              </button>
+              <button
+                type="button"
+                className={typeTab === "summary" ? styles.typeTabActive : ""}
+                onClick={() => setTypeTab("summary")}
+              >
+                摘要 {pages.filter((item) => item.pageType === "summary").length}
+              </button>
+            </div>
+          </>
+        )}
 
         {results !== null ? (
           <ul className={styles.pageList}>
@@ -167,7 +220,13 @@ export function KnowledgeWikiPanel({
             ))}
           </ul>
         ) : (
-          grouped.map(([type, items]) => (
+          grouped
+            .filter(([type]) =>
+              typeTab === "summary"
+                ? type === "summary"
+                : type !== "summary" && type !== "index",
+            )
+            .map(([type, items]) => (
             <section key={type} className={styles.group}>
               <button
                 type="button"
@@ -176,9 +235,9 @@ export function KnowledgeWikiPanel({
                   setCollapsed((current) => ({ ...current, [type]: !current[type] }))
                 }
               >
+                <span className={styles.chevron}>{collapsed[type] ? "›" : "⌄"}</span>
                 <span className={styles.groupName}>{PAGE_TYPE_LABELS[type] ?? type}</span>
                 <span className={styles.groupCount}>{items.length}</span>
-                <span className={styles.chevron}>{collapsed[type] ? "▸" : "▾"}</span>
               </button>
               {collapsed[type] ? null : (
                 <ul className={styles.pageList}>
@@ -203,15 +262,9 @@ export function KnowledgeWikiPanel({
       <article className={styles.detail}>
         {error ? <p className={styles.error}>{error}</p> : null}
         {stats ? (
-          <div className={styles.statRow}>
-            <span>共 {stats.totalPages} 页</span>
-            {Object.entries(stats.pagesByType).map(([type, count]) => (
-              <span key={type}>
-                {PAGE_TYPE_LABELS[type] ?? type} {count}
-              </span>
-            ))}
-            <span>引用 {stats.totalLinks} 条</span>
-          </div>
+          <p className={styles.statLine}>
+            共 {stats.totalPages} 页 · 引用 {stats.totalLinks} 条
+          </p>
         ) : null}
 
         {page ? (

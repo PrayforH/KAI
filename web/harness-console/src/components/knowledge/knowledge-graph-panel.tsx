@@ -38,6 +38,8 @@ export function KnowledgeGraphPanel({
   const [error, setError] = useState("");
   const [page, setPage] = useState<StudioKnowledgeWikiPage | null>(null);
   const [hiddenTypes, setHiddenTypes] = useState<Set<string>>(new Set());
+  const [showArrows, setShowArrows] = useState(true);
+  const [query, setQuery] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -74,13 +76,25 @@ export function KnowledgeGraphPanel({
 
   const visible = useMemo(() => {
     if (!graph) return null;
-    const nodes = graph.nodes.filter((node) => !hiddenTypes.has(node.pageType));
+    const search = query.trim().toLowerCase();
+    const nodes = graph.nodes.filter(
+      (node) =>
+        !hiddenTypes.has(node.pageType) &&
+        (!search ||
+          node.title.toLowerCase().includes(search) ||
+          node.slug.toLowerCase().includes(search)),
+    );
     const keep = new Set(nodes.map((node) => node.slug));
     return {
       nodes,
       links: graph.links.filter(([source, target]) => keep.has(source) && keep.has(target)),
     };
-  }, [graph, hiddenTypes]);
+  }, [graph, hiddenTypes, query]);
+
+  const fitView = useCallback(() => {
+    const instance = graphRef.current as { fitView?: () => Promise<void> } | null;
+    void instance?.fitView?.();
+  }, []);
 
   useEffect(() => {
     if (!containerRef.current || !visible) return;
@@ -119,7 +133,7 @@ export function KnowledgeGraphPanel({
           style: {
             stroke: "#444444",
             lineWidth: 1,
-            endArrow: true,
+            endArrow: showArrows,
           },
         },
         layout: {
@@ -148,7 +162,7 @@ export function KnowledgeGraphPanel({
       instance?.destroy?.();
       graphRef.current = null;
     };
-  }, [visible, focusSlug, openPage]);
+  }, [visible, focusSlug, openPage, showArrows]);
 
   if (loading) {
     return <p className={styles.empty}>图谱加载中…</p>;
@@ -164,37 +178,71 @@ export function KnowledgeGraphPanel({
 
   return (
     <div className={styles.layout}>
-      <div className={styles.legend}>
-        {types.map((type) => (
-          <button
-            key={type}
-            type="button"
-            className={`${styles.legendItem} ${hiddenTypes.has(type) ? styles.legendOff : ""}`}
-            onClick={() =>
-              setHiddenTypes((current) => {
-                const next = new Set(current);
-                if (next.has(type)) next.delete(type);
-                else next.add(type);
-                return next;
-              })
-            }
-          >
-            <span
-              className={styles.dot}
-              style={{ background: TYPE_COLORS[type] ?? TYPE_COLORS.page }}
-            />
-            {TYPE_LABELS[type] ?? type}
-          </button>
-        ))}
-        <span className={styles.legendCount}>
-          {visible?.nodes.length ?? 0} / {graph.nodes.length} 个节点 · {graph.links.length} 条引用
-        </span>
-      </div>
-
       {error ? <p className={styles.error}>{error}</p> : null}
 
       <div className={styles.canvasRow}>
-        <div ref={containerRef} className={styles.canvas} />
+        <div className={styles.canvasWrap}>
+          <input
+            className={styles.search}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="搜索 Wiki 页面…"
+          />
+          <div ref={containerRef} className={styles.canvas} />
+        </div>
+
+        <aside className={styles.panel}>
+          <ul className={styles.legendList}>
+            {types.map((type) => (
+              <li key={type}>
+                <button
+                  type="button"
+                  className={`${styles.legendItem} ${hiddenTypes.has(type) ? styles.legendOff : ""}`}
+                  onClick={() =>
+                    setHiddenTypes((current) => {
+                      const next = new Set(current);
+                      if (next.has(type)) next.delete(type);
+                      else next.add(type);
+                      return next;
+                    })
+                  }
+                >
+                  <span
+                    className={styles.dot}
+                    style={{ background: TYPE_COLORS[type] ?? TYPE_COLORS.page }}
+                  />
+                  {TYPE_LABELS[type] ?? type}
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          <div className={styles.panelDivider} />
+
+          <button type="button" className={styles.panelAction} onClick={fitView}>
+            <span aria-hidden="true">⤢</span> 适应屏幕
+          </button>
+          <button
+            type="button"
+            className={styles.panelAction}
+            onClick={() => setShowArrows((current) => !current)}
+          >
+            <span aria-hidden="true">↗</span> {showArrows ? "隐藏箭头" : "显示箭头"}
+          </button>
+
+          <div className={styles.panelDivider} />
+
+          <p className={styles.panelStatTitle}>全库概览</p>
+          <p className={styles.panelStatValue}>
+            {visible?.nodes.length ?? 0} / {graph.nodes.length} 个节点
+          </p>
+          <p className={styles.panelStatHint}>
+            {hiddenTypes.size === 0
+              ? "已展示知识库全部节点"
+              : `已隐藏 ${hiddenTypes.size} 类节点`}
+          </p>
+        </aside>
+
         {page ? (
           <aside className={styles.drawer}>
             <header className={styles.drawerHead}>
