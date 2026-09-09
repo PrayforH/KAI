@@ -107,7 +107,9 @@ export function WikiPageDrawer({
   slug,
   onClose,
 }: {
-  reference: string;
+  /** Knowledge base that owns the page; resolved automatically when omitted
+   * (a cited page stays openable after the composer selection is reset). */
+  reference?: string | null;
   slug: string;
   onClose: () => void;
 }) {
@@ -116,6 +118,9 @@ export function WikiPageDrawer({
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [resolvedReference, setResolvedReference] = useState<string | null>(
+    reference ?? null,
+  );
 
   const open = useCallback(
     async (next: string) => {
@@ -123,15 +128,27 @@ export function WikiPageDrawer({
       setSummaryOpen(false);
       setLoading(true);
       setError("");
-      try {
-        setPage(await studioClient.getWikiPage(reference, next));
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "打开 Wiki 页面失败");
-      } finally {
-        setLoading(false);
+      const candidates = resolvedReference
+        ? [resolvedReference]
+        : (await studioClient.listKnowledgeBases().catch(() => [])).map(
+            (base) => base.reference,
+          );
+      let lastError = "打开 Wiki 页面失败";
+      for (const candidate of candidates) {
+        try {
+          const found = await studioClient.getWikiPage(candidate, next);
+          setResolvedReference(candidate);
+          setPage(found);
+          setLoading(false);
+          return;
+        } catch (cause) {
+          lastError = cause instanceof Error ? cause.message : lastError;
+        }
       }
+      setError(lastError);
+      setLoading(false);
     },
-    [reference],
+    [resolvedReference],
   );
 
   useEffect(() => {

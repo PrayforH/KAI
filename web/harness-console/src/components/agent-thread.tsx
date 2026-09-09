@@ -763,9 +763,9 @@ function HarnessComposer() {
       {inputError && <p className="composer-input-error" role="alert">{inputError}</p>}
       <Composer.Root onSubmitCapture={(event: FormEvent) => { event.preventDefault(); event.stopPropagation(); if (!composingRef.current) submitComposer(); }}>
         <ComposerAssist options={options} index={suggestionIndex} onChoose={chooseSuggestion} />
-        {wikiSlug && knowledge.selected.length > 0 ? (
+        {wikiSlug ? (
           <WikiPageDrawer
-            reference={knowledge.selected[0]}
+            reference={knowledge.selected[0] ?? null}
             slug={wikiSlug}
             onClose={() => setWikiSlug(null)}
           />
