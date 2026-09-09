@@ -42,19 +42,54 @@ function ScrollableTable(props: ComponentPropsWithoutRef<"table">) {
   );
 }
 
+const WIKILINK = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
+
+/** Turn WeKnora wiki links into markdown links the renderer can intercept. */
+function preprocessMessage(text: string): string {
+  return normalizeMessageText(text).replace(
+    WIKILINK,
+    (_match, slug: string, label?: string) =>
+      `[${(label ?? slug).trim()}](wiki:${encodeURIComponent(slug.trim())})`,
+  );
+}
+
+function WikiLink({ href, children, ...props }: ComponentPropsWithoutRef<"a">) {
+  if (typeof href === "string" && href.startsWith("wiki:")) {
+    const slug = decodeURIComponent(href.slice("wiki:".length));
+    return (
+      <button
+        type="button"
+        className="aui-wiki-link"
+        onClick={() => {
+          window.dispatchEvent(
+            new CustomEvent("harness:open-wiki", { detail: { slug } }),
+          );
+        }}
+      >
+        {children}
+      </button>
+    );
+  }
+  return (
+    <SourceLink href={href} {...props}>
+      {children}
+    </SourceLink>
+  );
+}
+
 function MarkdownTextImpl() {
   return (
     <MarkdownTextPrimitive
       className="aui-md"
       remarkPlugins={[remarkGfm]}
-      preprocess={normalizeMessageText}
+      preprocess={preprocessMessage}
       // The live response store already batches network deltas per animation
       // frame. A second character-by-character reveal exposes incomplete
       // Markdown delimiters (for example `**`) until their closing token is
       // replayed, which looks like a final-pass renderer. Parse every received
       // delta immediately so Markdown remains formatted throughout streaming.
       smooth={false}
-      components={{ CodeHeader, a: SourceLink, table: ScrollableTable }}
+      components={{ CodeHeader, a: WikiLink, table: ScrollableTable }}
       componentsByLanguage={{
         mermaid: {
           CodeHeader: MermaidCodeHeader,

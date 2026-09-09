@@ -94,6 +94,19 @@ def _knowledge_references_override(request: RunAgentInput) -> list[str] | None:
     return references or None
 
 
+def _knowledge_mode_override(request: RunAgentInput) -> str | None:
+    """Composer knowledge Q&A mode: ``rag`` (chunk retrieval) or ``wiki``."""
+    raw = request.forwarded_props
+    if not isinstance(raw, dict):
+        return None
+    value = cast(dict[str, object], raw).get("knowledgeMode")
+    if value is None or value == "":
+        return None
+    if value not in {"rag", "wiki"}:
+        raise ConflictError("task knowledge mode is invalid")
+    return cast(str, value)
+
+
 class AguiRunService:
     def __init__(
         self,
@@ -236,6 +249,7 @@ class AguiRunService:
         )
         model_route_override = _model_route_override(request)
         requested_knowledge = _knowledge_references_override(request)
+        knowledge_mode = _knowledge_mode_override(request)
         creation = None
         for attempt in range(2):
             binding = await self._resolve_binding(
@@ -273,6 +287,7 @@ class AguiRunService:
                     if knowledge_override
                     else {}
                 ),
+                **({"knowledge_mode": knowledge_mode} if knowledge_mode else {}),
             }
             creation = await self._run_service.create_with_result(
                 tenant_id,

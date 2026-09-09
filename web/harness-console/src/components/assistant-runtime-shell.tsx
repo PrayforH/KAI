@@ -115,6 +115,7 @@ export function AssistantRuntimeShell({
   const runView = useRunViewModel();
   const [historyRevision, setHistoryRevision] = useState(0);
   const [knowledgeReferences, setKnowledgeReferences] = useState<string[]>([]);
+  const [knowledgeMode, setKnowledgeMode] = useState<"rag" | "wiki">("rag");
   const conversationalModelRouteOverride = modelRoutes.find(
     (route) => route.id === modelRouteOverride && route.modelType !== "video_generation",
   )?.id ?? null;
@@ -133,6 +134,7 @@ export function AssistantRuntimeShell({
       url: `/api/agui?${query.toString()}`,
       modelRouteOverride: conversationalModelRouteOverride,
       knowledgeReferences,
+      knowledgeMode,
       onRunSucceeded: refreshDurableHistory,
     });
     next.threadId = threadId;
@@ -143,6 +145,7 @@ export function AssistantRuntimeShell({
     agentVersion,
     conversationalModelRouteOverride,
     knowledgeReferences,
+    knowledgeMode,
     refreshDurableHistory,
     spaceId,
     threadId,
@@ -165,6 +168,7 @@ export function AssistantRuntimeShell({
   );
   useLayoutEffect(() => {
     setKnowledgeReferences([]);
+    setKnowledgeMode("rag");
     activateRuntimeThread(threadId);
     activityStore.clear();
     liveResponseStore.clear();
@@ -192,6 +196,8 @@ export function AssistantRuntimeShell({
         <TaskKnowledgeProvider
           selected={knowledgeReferences}
           onChange={setKnowledgeReferences}
+          mode={knowledgeMode}
+          onModeChange={setKnowledgeMode}
         >
           <div
             className="assistant-runtime-shell"

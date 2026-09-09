@@ -46,6 +46,7 @@ import { TaskAgentSwitcher } from "./task-agent-switcher";
 import { ApprovalCard, type ApprovalDetails } from "./approval-card";
 import { ArtifactCard, type ArtifactDetails } from "./artifact-list";
 import { KnowledgeCitations } from "./knowledge/knowledge-citations";
+import { WikiPageDrawer } from "./knowledge/wiki-page-drawer";
 import { MarkdownText } from "./markdown-text";
 import { SubagentCard } from "./subagent-card";
 import { ToolCard } from "./tool-card";
@@ -422,6 +423,15 @@ function HarnessComposer() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const composingRef = useRef(false);
   const knowledge = useTaskKnowledge();
+  const [wikiSlug, setWikiSlug] = useState<string | null>(null);
+  useEffect(() => {
+    const onOpenWiki = (event: Event) => {
+      const slug = (event as CustomEvent<{ slug?: string }>).detail?.slug;
+      if (slug) setWikiSlug(slug);
+    };
+    window.addEventListener("harness:open-wiki", onOpenWiki);
+    return () => window.removeEventListener("harness:open-wiki", onOpenWiki);
+  }, []);
   const options = dismissedText === composerText ? [] : composerOptions(
     composerText,
     caret,
@@ -753,6 +763,13 @@ function HarnessComposer() {
       {inputError && <p className="composer-input-error" role="alert">{inputError}</p>}
       <Composer.Root onSubmitCapture={(event: FormEvent) => { event.preventDefault(); event.stopPropagation(); if (!composingRef.current) submitComposer(); }}>
         <ComposerAssist options={options} index={suggestionIndex} onChoose={chooseSuggestion} />
+        {wikiSlug && knowledge.selected.length > 0 ? (
+          <WikiPageDrawer
+            reference={knowledge.selected[0]}
+            slug={wikiSlug}
+            onClose={() => setWikiSlug(null)}
+          />
+        ) : null}
         {helpOpen && <div className="composer-assist composer-help-popover" role="dialog" aria-label="输入帮助">
           <button type="button" onClick={() => setHelpOpen(false)}>关闭</button>
           <p>/ 执行命令 · @ 选择智能体 · $ 引用技能</p>

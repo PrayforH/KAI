@@ -14,6 +14,8 @@ import {
   type StudioKnowledgeBase,
 } from "../lib/studio-client";
 
+export type KnowledgeMode = "rag" | "wiki";
+
 type TaskKnowledgeValue = {
   /** Knowledge base references selected for this thread. */
   selected: string[];
@@ -22,6 +24,9 @@ type TaskKnowledgeValue = {
   toggle: (reference: string) => void;
   clear: () => void;
   isSelected: (reference: string) => boolean;
+  /** Q&A mode: chunk retrieval (RAG) or curated wiki pages. */
+  mode: KnowledgeMode;
+  setMode: (mode: KnowledgeMode) => void;
 };
 
 const TaskKnowledgeContext = createContext<TaskKnowledgeValue | null>(null);
@@ -29,10 +34,14 @@ const TaskKnowledgeContext = createContext<TaskKnowledgeValue | null>(null);
 export function TaskKnowledgeProvider({
   selected,
   onChange,
+  mode,
+  onModeChange,
   children,
 }: {
   selected: string[];
   onChange: (references: string[]) => void;
+  mode: KnowledgeMode;
+  onModeChange: (mode: KnowledgeMode) => void;
   children: ReactNode;
 }) {
   const [available, setAvailable] = useState<StudioKnowledgeBase[]>([]);
@@ -69,6 +78,11 @@ export function TaskKnowledgeProvider({
 
   const clear = useCallback(() => onChange([]), [onChange]);
 
+  const setMode = useCallback(
+    (next: KnowledgeMode) => onModeChange(next),
+    [onModeChange],
+  );
+
   const value = useMemo<TaskKnowledgeValue>(
     () => ({
       selected,
@@ -77,8 +91,10 @@ export function TaskKnowledgeProvider({
       toggle,
       clear,
       isSelected: (reference: string) => selected.includes(reference),
+      mode,
+      setMode,
     }),
-    [available, clear, loading, selected, toggle],
+    [available, clear, loading, mode, selected, setMode, toggle],
   );
 
   return (
@@ -97,8 +113,14 @@ export function useTaskKnowledge(): TaskKnowledgeValue {
 }
 
 /** Composer toolbar control: shows and edits the thread's knowledge bases. */
+const MODE_LABELS: Record<KnowledgeMode, string> = {
+  rag: "RAG 问答",
+  wiki: "Wiki 问答",
+};
+
 export function TaskKnowledgeControl({ disabled }: { disabled: boolean }) {
-  const { available, selected, loading, toggle, clear } = useTaskKnowledge();
+  const { available, selected, loading, toggle, clear, mode, setMode } =
+    useTaskKnowledge();
   const [open, setOpen] = useState(false);
   if (loading && available.length === 0) return null;
   const label =
@@ -125,6 +147,25 @@ export function TaskKnowledgeControl({ disabled }: { disabled: boolean }) {
         </svg>
         <span>{label}</span>
       </button>
+      <div className="task-knowledge-mode" role="group" aria-label="知识库问答模式">
+        {(["rag", "wiki"] as const).map((value) => (
+          <button
+            key={value}
+            type="button"
+            className={mode === value ? "is-active" : undefined}
+            disabled={disabled}
+            aria-pressed={mode === value}
+            title={
+              value === "rag"
+                ? "基于文档切片检索回答"
+                : "基于 Wiki 页面（摘要/实体/概念）回答，可点开实体"
+            }
+            onClick={() => setMode(value)}
+          >
+            {MODE_LABELS[value]}
+          </button>
+        ))}
+      </div>
       {open ? (
         <>
           <button

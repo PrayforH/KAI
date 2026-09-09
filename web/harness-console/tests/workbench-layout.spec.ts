@@ -699,7 +699,10 @@ describe("full-page agent workbench", () => {
     expect(markdown).toContain("table: ScrollableTable");
     expect(markdown).not.toContain("defer");
     expect(markdown).toContain("smooth={false}");
-    expect(markdown).toContain("preprocess={normalizeMessageText}");
+    // The preprocessor normalises text and turns [[wiki]] links into
+    // clickable wiki: links.
+    expect(markdown).toContain("preprocess={preprocessMessage}");
+    expect(markdown).toContain("normalizeMessageText");
     expect(markdown).not.toContain("codexStreamSmoothing");
     expect(styles).toMatch(
       /\.aui-table-scroll\s*\{[^}]*overflow-x:\s*auto;/s,

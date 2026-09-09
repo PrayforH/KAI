@@ -152,12 +152,13 @@
   flex-shrink: 0;
 }
 
+/* The page body sits directly on the page background, like the WeKnora wiki
+   view: no frame, no raised surface. */
 .detail {
   min-width: 0;
-  padding: 18px 20px;
-  border: 1px solid var(--codex-line, #303030);
-  border-radius: 12px;
-  background: var(--codex-surface-subtle, #1e1e1e);
+  padding: 0 4px 24px 20px;
+  border: 0;
+  background: transparent;
 }
 
 .statRow {

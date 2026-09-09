@@ -119,6 +119,12 @@ _ANTHROPIC_AUTO_PERMISSION_MODELS = frozenset(
 )
 
 
+def _knowledge_mode_for(context: RuntimeContext) -> str:
+    """Per-thread knowledge Q&A mode: ``rag`` (chunks) or ``wiki`` (pages)."""
+    value = context.run.input.get("knowledge_mode")
+    return value if value in {"rag", "wiki"} else "rag"
+
+
 def _knowledge_bindings_for(
     context: RuntimeContext,
 ) -> tuple[KnowledgeSnapshotBinding, ...]:
@@ -891,8 +897,15 @@ class ClaudeSdkRuntime:
                 )
             if "harness-knowledge" in mcp_servers:
                 raise ToolResolutionError("duplicate MCP server name: harness-knowledge")
-            knowledge_tool = "mcp__harness-knowledge__query_knowledge_sources"
-            mcp_servers["harness-knowledge"] = create_knowledge_mcp_server()
+            wiki_mode = _knowledge_mode_for(context) == "wiki"
+            knowledge_tool = (
+                "mcp__harness-knowledge__search_wiki_pages"
+                if wiki_mode
+                else "mcp__harness-knowledge__query_knowledge_sources"
+            )
+            mcp_servers["harness-knowledge"] = create_knowledge_mcp_server(
+                wiki_mode=wiki_mode
+            )
             allowed_tools.append(knowledge_tool)
             knowledge_trust = (
                 ContextTrust.UNTRUSTED
@@ -1183,6 +1196,7 @@ class ClaudeSdkRuntime:
                         self._knowledge,
                         context.identity,
                         run_knowledge_bindings,
+                        _knowledge_mode_for(context),
                     )
                 )
             if context.artifact_publisher is not None:

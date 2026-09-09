@@ -2471,3 +2471,57 @@ body.codex-theme-v1:has(.console-shell) .task-sidebar-brand .task-sidebar-search
 .task-knowledge-clear:hover {
   color: var(--codex-ink, #ffffff);
 }
+
+/* Knowledge Q&A mode: chunk retrieval (RAG) or curated wiki pages. */
+.task-knowledge-mode {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--codex-line, #303030);
+  border-radius: 8px;
+  background: var(--codex-inset, #171717);
+}
+
+.task-knowledge-mode button {
+  min-height: 26px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--codex-muted, #a1a1a1);
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.task-knowledge-mode button:hover:not(:disabled) {
+  color: var(--codex-ink, #ffffff);
+}
+
+.task-knowledge-mode button.is-active {
+  color: var(--codex-success, #40c977);
+  background: var(--codex-success-soft, rgb(64 201 119 / 13%));
+  font-weight: 600;
+}
+
+.task-knowledge-mode button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Wiki links inside assistant answers open the entity drawer. */
+.aui-wiki-link {
+  padding: 0 3px;
+  border: 0;
+  border-radius: 5px;
+  background: var(--codex-success-soft, rgb(64 201 119 / 13%));
+  color: var(--codex-success, #40c977);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.aui-wiki-link:hover {
+  filter: brightness(1.15);
+}

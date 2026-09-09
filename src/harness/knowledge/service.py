@@ -1400,6 +1400,63 @@ class KnowledgeService:
             for item in pages
         ]
 
+    async def search_bound_wiki_pages(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        bindings: Sequence[KnowledgeSnapshotBinding],
+        query: str,
+        *,
+        limit: int = 8,
+    ) -> list[KnowledgeWikiPage]:
+        """Wiki-page search across the knowledge bases bound to a session.
+
+        Wiki mode answers from curated pages (summary/entity/concept) instead of
+        raw chunks, so the reply can cite and link wiki entities.
+        """
+        pages: list[KnowledgeWikiPage] = []
+        seen: set[str] = set()
+        for binding in bindings:
+            source = await self.repository.get_source(tenant_id, binding.source_reference)
+            if source.kind.value != "weknora":
+                continue
+            if not await self._allows_source(
+                tenant_id,
+                actor_id,
+                (),
+                binding.knowledge_base_reference,
+                source,
+            ):
+                continue
+            remote_id = getattr(source.config, "weknora_base_id", "")
+            if not remote_id:
+                continue
+            try:
+                found = await self._require_engine().search_wiki_pages(
+                    remote_id,
+                    query,
+                    limit=max(1, min(limit, 25)),
+                )
+            except KnowledgeEngineError:
+                continue
+            for item in found:
+                if item.slug in seen:
+                    continue
+                seen.add(item.slug)
+                pages.append(
+                    KnowledgeWikiPage(
+                        slug=item.slug,
+                        title=item.title,
+                        pageType=item.page_type,
+                        content=item.content,
+                        summary=item.summary,
+                        aliases=item.aliases,
+                        categoryPath=item.category_path,
+                        folderId=item.folder_id,
+                    )
+                )
+        return pages
+
     async def wiki_graph(
         self,
         tenant_id: str,

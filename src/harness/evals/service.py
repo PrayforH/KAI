@@ -20,7 +20,6 @@ from harness.evals.importer import (
 )
 from harness.evals.models import (
     CreateEvalDatasetVersionRequest,
-    ImportEvalDatasetRequest,
     CreateEvalRunRequest,
     EvalDatasetVersion,
     EvalFixture,
@@ -28,6 +27,7 @@ from harness.evals.models import (
     EvalRun,
     EvalRunStatus,
     EvalRunView,
+    ImportEvalDatasetRequest,
     transition_eval_run,
 )
 from harness.evals.queue import EvalTask, EvalTaskQueue
