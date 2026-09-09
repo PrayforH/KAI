@@ -4,7 +4,7 @@
 - 分支：`feature/weknora-knowledge-base`
 - 目标环境：`172.20.109.173`（KAI WORKBENCH 黑色主题，Web `:3301`，API `:8800`）
 - 知识数据面：`172.20.109.174:8180` WeKnora（服务账号，终端用户不直连）
-- 发布 tag：`weknora-kb-20260909-7f2f6ce`（api 与 web 同 tag）
+- 发布 tag：`weknora-kb-20260909-d32c17e`（api 与 web 同 tag）
 - 配套设计：[2026-09-08-weknora-knowledge-base-design.md](2026-09-08-weknora-knowledge-base-design.md)、[实现计划](2026-09-08-weknora-knowledge-base-implementation-plan.md)
 
 ## 1. 交付内容
@@ -117,6 +117,9 @@ $COMPOSE up -d --no-build --force-recreate api worker web
 | 表格单元格省略 | 单元格单行显示，超出宽度以省略号截断（nowrap + ellipsis + max-width 260px） | 通过 |
 | 分类树缩进 | 分类下的页面条目缩进一级显示 | 通过 |
 | 拖拽上传 | 文档页签支持把文件拖入区域上传（支持多文件） | 通过 |
+| 关键词内联 | Wiki 正文里的知识关键词不再独占一行，随句子内联展示并可点击 | 通过 |
+| 抽屉类型标注 | 图谱抽屉标题下方以彩色徽章标注页面类型（摘要/实体/概念/索引） | 通过 |
+| Excel 默认表格 | 表格类文档打开抽屉即进入「表格」视图；摘要默认收起 3 行、箭头展开 | 通过 |
 | 登录页 logo | 中间卡片左上角由字母占位改为真实产品标识 `/brand/kai-mark-v2.png` | 通过 |
 
 ## 4. 待验证项与后续动作
