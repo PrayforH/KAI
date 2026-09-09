@@ -53,7 +53,12 @@ function preprocessMessage(text: string): string {
   );
 }
 
-function WikiLink({ href, children, ...props }: ComponentPropsWithoutRef<"a">) {
+function WikiLink({
+  href,
+  children,
+  node: _node,
+  ...props
+}: ComponentPropsWithoutRef<"a"> & { node?: unknown }) {
   if (typeof href === "string" && href.startsWith("wiki:")) {
     const slug = decodeURIComponent(href.slice("wiki:".length));
     return (
@@ -89,6 +94,9 @@ function MarkdownTextImpl() {
       // replayed, which looks like a final-pass renderer. Parse every received
       // delta immediately so Markdown remains formatted throughout streaming.
       smooth={false}
+      // react-markdown blanks unknown protocols; wiki: must survive so the
+      // renderer can turn it into a page-opening button.
+      urlTransform={(url: string) => url}
       components={{ CodeHeader, a: WikiLink, table: ScrollableTable }}
       componentsByLanguage={{
         mermaid: {
