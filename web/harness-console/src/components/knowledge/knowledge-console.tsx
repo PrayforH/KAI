@@ -8,6 +8,7 @@ import {
   type KnowledgeBaseType,
   type StudioKnowledgeBase,
 } from "../../lib/studio-client";
+import { KnowledgeMembersPanel } from "./knowledge-members-panel";
 import styles from "./knowledge-console.module.css";
 
 const KB_TYPE_LABELS: Record<KnowledgeBaseType, string> = {
@@ -38,6 +39,7 @@ export function KnowledgeConsole() {
   const [displayName, setDisplayName] = useState("");
   const [description, setDescription] = useState("");
   const [creating, setCreating] = useState(false);
+  const [membersFor, setMembersFor] = useState<StudioKnowledgeBase | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -141,23 +143,24 @@ export function KnowledgeConsole() {
         ) : (
           <div className={styles.grid}>
             {visible.map((base) => (
-              <Link
-                key={base.reference}
-                href={`/studio/knowledge/${encodeURIComponent(base.reference)}`}
-                className={styles.card}
-              >
-                <div className={styles.cardHead}>
-                  <span className={styles.cardGlyph} aria-hidden="true">
-                    <svg viewBox="0 0 20 20">
-                      <path d="M10 5.2C8.4 4.2 6.3 3.8 3.8 4v11c2.5-.2 4.6.2 6.2 1.2 1.6-1 3.7-1.4 6.2-1.2V4c-2.5-.2-4.6.2-6.2 1.2z" />
-                      <path d="M10 5.2v11" />
-                    </svg>
-                  </span>
-                  <h3 className={styles.cardTitle}>{base.displayName}</h3>
-                </div>
-                <p className={styles.cardDesc}>
-                  {base.description || "暂无描述"}
-                </p>
+              <article key={base.reference} className={styles.card}>
+                <Link
+                  href={`/studio/knowledge/${encodeURIComponent(base.reference)}`}
+                  className={styles.cardBody}
+                >
+                  <div className={styles.cardHead}>
+                    <span className={styles.cardGlyph} aria-hidden="true">
+                      <svg viewBox="0 0 20 20">
+                        <path d="M10 5.2C8.4 4.2 6.3 3.8 3.8 4v11c2.5-.2 4.6.2 6.2 1.2 1.6-1 3.7-1.4 6.2-1.2V4c-2.5-.2-4.6.2-6.2 1.2z" />
+                        <path d="M10 5.2v11" />
+                      </svg>
+                    </span>
+                    <h3 className={styles.cardTitle}>{base.displayName}</h3>
+                  </div>
+                  <p className={styles.cardDesc}>
+                    {base.description || "暂无描述"}
+                  </p>
+                </Link>
                 <div className={styles.cardMeta}>
                   <span className={styles.countBadge} title="文档数量">
                     <svg viewBox="0 0 20 20" aria-hidden="true">
@@ -166,11 +169,48 @@ export function KnowledgeConsole() {
                     {base.documentCount}
                   </span>
                   <span className={styles.cardRef}>{base.reference}</span>
+                  <button
+                    type="button"
+                    className={styles.cardAction}
+                    onClick={() => setMembersFor(base)}
+                    title="管理该知识库的成员与权限"
+                  >
+                    成员管理
+                  </button>
                 </div>
-              </Link>
+              </article>
             ))}
           </div>
         )}
+
+        {membersFor ? (
+          <div
+            className={styles.overlay}
+            role="presentation"
+            onClick={(event) => {
+              if (event.target === event.currentTarget) setMembersFor(null);
+            }}
+          >
+            <div
+              className={styles.membersDialog}
+              role="dialog"
+              aria-modal="true"
+              aria-label={`${membersFor.displayName} 成员管理`}
+            >
+              <header className={styles.membersDialogHead}>
+                <h2>{membersFor.displayName} · 成员管理</h2>
+                <button
+                  type="button"
+                  className={styles.ghost}
+                  onClick={() => setMembersFor(null)}
+                >
+                  关闭
+                </button>
+              </header>
+              <KnowledgeMembersPanel reference={membersFor.reference} />
+            </div>
+          </div>
+        ) : null}
 
         {showCreate ? (
           <div

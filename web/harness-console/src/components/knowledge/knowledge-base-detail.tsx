@@ -9,11 +9,10 @@ import {
   type StudioKnowledgeDocumentStatus,
 } from "../../lib/studio-client";
 import { KnowledgeGraphPanel } from "./knowledge-graph-panel";
-import { KnowledgeMembersPanel } from "./knowledge-members-panel";
 import { KnowledgeWikiPanel } from "./knowledge-wiki-panel";
 import styles from "./knowledge-base-detail.module.css";
 
-type Tab = "docs" | "wiki" | "graph" | "members";
+type Tab = "docs" | "wiki" | "graph";
 
 /** WeKnora returns RFC3339 timestamps; fall back to a dash when absent. */
 function formatDocumentDate(value: string): string {
@@ -292,11 +291,9 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
         <div className={styles.head}>
           <div>
             <h1>{base.displayName}</h1>
-            <p className={styles.headDesc}>
-              {base.reference} · {base.engine === "weknora" ? "WeKnora" : "内置"} ·{" "}
-              {base.kbType} 知识库
+            <p className={styles.headHint}>
+              支持点击或拖拽上传，多格式文档自动解析并智能分块，快速构建可检索的知识库
             </p>
-            {base.description ? <p className={styles.headDesc}>{base.description}</p> : null}
           </div>
           <div className={styles.actions}>
             {isWeknora ? (
@@ -351,13 +348,6 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
           >
             图谱
           </button>
-          <button
-            type="button"
-            className={`${styles.tab} ${tab === "members" ? styles.tabActive : ""}`}
-            onClick={() => setTab("members")}
-          >
-            成员管理
-          </button>
         </div>
 
         {error ? <p className={styles.error}>{error}</p> : null}
@@ -365,10 +355,6 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
 
         {tab === "docs" ? (
           <section>
-            <p className={styles.uploadHint}>
-              支持点击或拖拽上传，多格式文档自动解析并智能分块，快速构建可检索的知识库
-            </p>
-
             <div className={styles.toolbar}>
               <input
                 className={styles.toolbarSearch}
@@ -495,10 +481,8 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
               setTab("graph");
             }}
           />
-        ) : tab === "graph" ? (
-          <KnowledgeGraphPanel reference={reference} focusSlug={graphFocus} />
         ) : (
-          <KnowledgeMembersPanel reference={reference} />
+          <KnowledgeGraphPanel reference={reference} focusSlug={graphFocus} />
         )}
 
         {showManual ? (

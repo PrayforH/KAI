@@ -600,3 +600,11 @@
 .uploadHint {
   margin: 0 0 10px;
 }
+
+/* Upload guidance sits under the knowledge base name; the reference/engine
+   meta line is gone so the workspace starts higher. */
+.headHint {
+  margin: 4px 0 0;
+  color: var(--codex-faint, #737373);
+  font-size: 11.5px;
+}
