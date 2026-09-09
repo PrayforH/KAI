@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Graph } from "@antv/g6";
+import type { ForceGraph3DInstance, NodeObject } from "3d-force-graph";
 import {
   studioClient,
   type StudioKnowledgeWikiGraph,
@@ -33,10 +34,48 @@ type GraphDatum = {
   endArrow?: boolean;
 };
 
+type ViewMode = "2d" | "3d";
+
+const MODE_STORAGE_KEY = "knowledge-graph-view-mode";
+
 /** Single click and double click share one physical click; hold single clicks
  * briefly so a double click expands the neighborhood instead of opening the
  * page drawer. */
 const CLICK_DELAY_MS = 240;
+
+/** Double-click window for the expand-neighbour gesture. */
+const DBLCLICK_MS = 320;
+
+type Node3D = {
+  id: string;
+  title: string;
+  pageType: string;
+  val: number;
+  x?: number;
+  y?: number;
+  z?: number;
+};
+
+type LinkEndpoint = string | number | Node3D | undefined;
+
+type Link3D = { source: LinkEndpoint; target: LinkEndpoint };
+
+type NodeVisual = {
+  material: { opacity: number; transparent: boolean };
+  spriteMaterial: { opacity: number };
+  baseOpacity: number;
+};
+
+const linkEndpointId = (endpoint: LinkEndpoint): string =>
+  typeof endpoint === "object" && endpoint !== null
+    ? endpoint.id
+    : String(endpoint ?? "");
+
+/** Library accessors receive their loose NodeObject type; our nodes carry the
+ * payload fields we set on them. */
+const asNode3d = (node: NodeObject) => node as unknown as Node3D;
+
+const asLink3d = (link: unknown) => link as Link3D;
 
 export function KnowledgeGraphPanel({
   reference,
@@ -46,11 +85,19 @@ export function KnowledgeGraphPanel({
   focusSlug?: string | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const graphRef = useRef<Graph | null>(null);
+  const graph2dRef = useRef<Graph | null>(null);
+  const graph3dRef = useRef<ForceGraph3DInstance | null>(null);
   const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedRef = useRef<string | null>(null);
-  const firstRenderRef = useRef(true);
+  const first2dRenderRef = useRef(true);
   const showArrowsRef = useRef(true);
+  const highlightRef = useRef<{ node: string | null; neighbors: Set<string> }>({
+    node: null,
+    neighbors: new Set(),
+  });
+  const node3dStoreRef = useRef(new Map<string, Node3D>());
+  const nodeVisualsRef = useRef(new Map<string, NodeVisual>());
+  const [mode, setMode] = useState<ViewMode>("2d");
   const [graph, setGraph] = useState<StudioKnowledgeWikiGraph | null>(null);
   const [graphReady, setGraphReady] = useState(false);
   const [graphVersion, setGraphVersion] = useState(0);
@@ -77,6 +124,16 @@ export function KnowledgeGraphPanel({
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem(MODE_STORAGE_KEY);
+    if (saved === "2d" || saved === "3d") setMode(saved);
+  }, []);
+
+  const changeMode = useCallback((next: ViewMode) => {
+    setMode(next);
+    window.localStorage.setItem(MODE_STORAGE_KEY, next);
+  }, []);
 
   const openPage = useCallback((slug: string) => setPageSlug(slug), []);
 
@@ -153,14 +210,42 @@ export function KnowledgeGraphPanel({
   );
 
   const fitView = useCallback(() => {
-    const instance = graphRef.current;
+    const instance3d = graph3dRef.current;
+    if (mode === "3d") {
+      instance3d?.zoomToFit(600, 60);
+      return;
+    }
+    const instance = graph2dRef.current;
     void instance?.fitView({ when: "always" }, { duration: 320, easing: "ease-in-out" });
+  }, [mode]);
+
+  useEffect(() => {
+    setGraphReady(Boolean(visible));
+  }, [visible]);
+
+  // The card "⋯" style disambiguation is shared by both engines: a second
+  // click on the same node within DBLCLICK_MS expands instead of opening.
+  const scheduleOpen = useCallback(
+    (slug: string) => {
+      if (clickTimer.current) clearTimeout(clickTimer.current);
+      clickTimer.current = setTimeout(() => openPage(slug), CLICK_DELAY_MS);
+    },
+    [openPage],
+  );
+
+  const cancelPendingOpen = useCallback(() => {
+    if (clickTimer.current) {
+      clearTimeout(clickTimer.current);
+      clickTimer.current = null;
+    }
   }, []);
 
-  // The instance is created once per mount; data updates flow through setData
-  // so filters and expansions animate instead of rebuilding the canvas.
+  // ---------------------------------------------------------------- 2D (G6)
+
+  // The G6 instance is created once per mount; data updates flow through
+  // setData so filters and expansions animate instead of rebuilding.
   useEffect(() => {
-    if (!graphReady || !containerRef.current || graphRef.current) return;
+    if (mode !== "2d" || !graphReady || !containerRef.current || graph2dRef.current) return;
     let disposed = false;
     const container = containerRef.current;
 
@@ -250,25 +335,18 @@ export function KnowledgeGraphPanel({
           { type: "hover-activate", degree: 1, state: "active", inactiveState: "dim" },
         ],
       });
-      graphRef.current = instance;
-      const onNodeActivate = (event: unknown) => {
+      graph2dRef.current = instance;
+      instance.on("node:click", (event) => {
         const target = (event as { target?: { id?: string | number } }).target;
         if (!target?.id) return;
-        const slug = String(target.id);
-        if (clickTimer.current) clearTimeout(clickTimer.current);
-        clickTimer.current = setTimeout(() => openPage(slug), CLICK_DELAY_MS);
-      };
-      const onNodeExpand = (event: unknown) => {
+        scheduleOpen(String(target.id));
+      });
+      instance.on("node:dblclick", (event) => {
         const target = (event as { target?: { id?: string | number } }).target;
         if (!target?.id) return;
-        if (clickTimer.current) {
-          clearTimeout(clickTimer.current);
-          clickTimer.current = null;
-        }
+        cancelPendingOpen();
         expand(String(target.id));
-      };
-      instance.on("node:click", onNodeActivate);
-      instance.on("node:dblclick", onNodeExpand);
+      });
       await instance.render();
       if (disposed) return;
       setGraphVersion((version) => version + 1);
@@ -277,18 +355,14 @@ export function KnowledgeGraphPanel({
     void draw();
     return () => {
       disposed = true;
-      if (clickTimer.current) clearTimeout(clickTimer.current);
-      const instance = graphRef.current;
+      cancelPendingOpen();
+      const instance = graph2dRef.current;
       instance?.destroy?.();
-      graphRef.current = null;
+      graph2dRef.current = null;
       selectedRef.current = null;
-      firstRenderRef.current = true;
+      first2dRenderRef.current = true;
     };
-  }, [graphReady, expand, openPage]);
-
-  useEffect(() => {
-    setGraphReady(Boolean(visible));
-  }, [visible]);
+  }, [mode, graphReady, expand, openPage, scheduleOpen, cancelPendingOpen]);
 
   const markSelected = useCallback((instance: Graph, slug: string | null) => {
     const previous = selectedRef.current;
@@ -310,7 +384,8 @@ export function KnowledgeGraphPanel({
   }, []);
 
   useEffect(() => {
-    const instance = graphRef.current;
+    if (mode !== "2d") return;
+    const instance = graph2dRef.current;
     if (!instance || !shown || shown.nodes.length === 0) return;
     // Surviving nodes keep their current canvas position (drags included);
     // only genuinely new nodes get laid out, so expansions stay put.
@@ -345,8 +420,8 @@ export function KnowledgeGraphPanel({
     });
     selectedRef.current = null;
     void instance.render().then(() => {
-      if (firstRenderRef.current) {
-        firstRenderRef.current = false;
+      if (first2dRenderRef.current) {
+        first2dRenderRef.current = false;
         void instance.fitView({ when: "always" });
       }
       if (focusSlug && shown.nodes.some((node) => node.slug === focusSlug)) {
@@ -354,12 +429,18 @@ export function KnowledgeGraphPanel({
         void instance.focusElement(focusSlug, { duration: 380, easing: "ease-out" });
       }
     });
-  }, [shown, focusSlug, graphVersion, degreeOf, markSelected]);
+  }, [mode, shown, focusSlug, graphVersion, degreeOf, markSelected]);
 
   // Arrow toggles restyle existing edges in place; no re-layout, no reshuffle.
   useEffect(() => {
     showArrowsRef.current = showArrows;
-    const instance = graphRef.current;
+    if (mode === "3d") {
+      // The 3D engine expresses the same switch as flowing particles.
+      const instance = graph3dRef.current;
+      if (instance) instance.linkDirectionalParticles(instance.linkDirectionalParticles());
+      return;
+    }
+    const instance = graph2dRef.current;
     if (!instance) return;
     const edges = instance.getEdgeData();
     if (edges.length === 0) return;
@@ -367,7 +448,298 @@ export function KnowledgeGraphPanel({
       edges.map((edge) => ({ id: edge.id, data: { endArrow: showArrows } })),
     );
     void instance.render();
-  }, [showArrows]);
+  }, [showArrows, mode]);
+
+  // ---------------------------------------------------------------- 3D
+
+  useEffect(() => {
+    if (mode !== "3d" || !graphReady || !containerRef.current || graph3dRef.current) return;
+    let disposed = false;
+    let detachResize: (() => void) | null = null;
+    let detachClick: (() => void) | null = null;
+    const container = containerRef.current;
+
+    const draw = async () => {
+      const [{ default: ForceGraph3D }, THREE, { default: SpriteText }, { UnrealBloomPass }] =
+        await Promise.all([
+          import("3d-force-graph"),
+          import("three"),
+          import("three-spritetext"),
+          import("three/examples/jsm/postprocessing/UnrealBloomPass.js"),
+        ]);
+      if (disposed) return;
+
+      const buildNodeObject = (libNode: NodeObject) => {
+        const node = asNode3d(libNode);
+        const color = TYPE_COLORS[node.pageType] ?? TYPE_COLORS.page;
+        const radius = 2.7 * Math.sqrt(node.val);
+        const material = new THREE.MeshBasicMaterial({
+          color,
+          transparent: true,
+          opacity: 0.95,
+        });
+        const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 24, 24), material);
+        const sprite = new SpriteText(node.title);
+        sprite.color = "#d6d6d6";
+        sprite.backgroundColor = "rgb(18 18 18 / 72%)";
+        sprite.padding = 0.5;
+        sprite.textHeight = 3.6;
+        sprite.position.set(0, -(radius + 3.2), 0);
+        const group = new THREE.Group();
+        group.add(mesh);
+        group.add(sprite);
+        nodeVisualsRef.current.set(node.id, {
+          material,
+          spriteMaterial: sprite.material,
+          baseOpacity: 0.95,
+        });
+        return group;
+      };
+
+      // three-render-objects defaults its viewport to the window size; pin it
+      // to the container or the graph renders offset from the visible pane.
+      const instance = new ForceGraph3D(container, {
+        controlType: "orbit",
+        rendererConfig: { antialias: true, alpha: true },
+      })
+        .width(container.clientWidth)
+        .height(container.clientHeight || 560)
+        .backgroundColor("rgba(0,0,0,0)")
+        .showNavInfo(false)
+        .nodeLabel((node) => asNode3d(node).title)
+        .nodeVal((node) => asNode3d(node).val)
+        .nodeThreeObject(buildNodeObject)
+        .linkOpacity(0.24)
+        .linkColor((rawLink) => {
+          const link = asLink3d(rawLink);
+          const { node, neighbors } = highlightRef.current;
+          if (!node) return "#3f3f3f";
+          const source = linkEndpointId(link.source);
+          const target = linkEndpointId(link.target);
+          return source === node || target === node ? "#b9b9b9" : "rgb(80 80 80 / 10%)";
+        })
+        .linkWidth((rawLink) => {
+          const link = asLink3d(rawLink);
+          const { node } = highlightRef.current;
+          if (!node) return 0;
+          const source = linkEndpointId(link.source);
+          const target = linkEndpointId(link.target);
+          return source === node || target === node ? 1.4 : 0;
+        })
+        .linkDirectionalParticles((rawLink) => {
+          const link = asLink3d(rawLink);
+          if (!showArrowsRef.current) return 0;
+          const { node } = highlightRef.current;
+          if (!node) return 2;
+          const source = linkEndpointId(link.source);
+          const target = linkEndpointId(link.target);
+          return source === node || target === node ? 5 : 1;
+        })
+        .linkDirectionalParticleWidth(2)
+        .linkDirectionalParticleSpeed(0.0055)
+        .linkDirectionalParticleColor((rawLink) => {
+          const link = asLink3d(rawLink);
+          const { node } = highlightRef.current;
+          if (!node) return "#8a8a8a";
+          const source = linkEndpointId(link.source);
+          const target = linkEndpointId(link.target);
+          return source === node || target === node ? "#e6e6e6" : "#4a4a4a";
+        })
+        .onEngineStop(() => {
+          if (!disposed) instance.zoomToFit(800, 60);
+        });
+      // Engine-stop timing varies; guarantee an initial frame with fallbacks.
+      [1400, 3600].forEach((delay) => {
+        setTimeout(() => {
+          if (!disposed && graph3dRef.current === instance) instance.zoomToFit(700, 60);
+        }, delay);
+      });
+
+      // Bloom: bright node colours and particles glow over the dark theme.
+      instance.postProcessingComposer().addPass(
+        new UnrealBloomPass(
+          new THREE.Vector2(container.clientWidth, container.clientHeight || 560),
+          0.85,
+          0.55,
+          0.14,
+        ),
+      );
+
+      // A gentler repulsion keeps degree-0 nodes (the index page) close to
+      // the cluster instead of drifting far away and skewing zoomToFit.
+      const charge = (
+        instance as unknown as {
+          d3Force?: (name: string) => { strength: (value: number) => void } | undefined;
+        }
+      ).d3Force?.("charge");
+      charge?.strength(-220);
+
+      // Ambient dust gives the empty space a sense of depth.
+      const dustCount = 320;
+      const dustPositions = new Float32Array(dustCount * 3);
+      for (let index = 0; index < dustCount; index += 1) {
+        dustPositions[index * 3] = (Math.random() - 0.5) * 1400;
+        dustPositions[index * 3 + 1] = (Math.random() - 0.5) * 1400;
+        dustPositions[index * 3 + 2] = (Math.random() - 0.5) * 1400;
+      }
+      const dustGeometry = new THREE.BufferGeometry();
+      dustGeometry.setAttribute(
+        "position",
+        new THREE.Float32BufferAttribute(dustPositions, 3),
+      );
+      const dust = new THREE.Points(
+        dustGeometry,
+        new THREE.PointsMaterial({ color: "#3a3a3a", size: 1.6, sizeAttenuation: true }),
+      );
+      instance.scene().add(dust);
+
+      // Clicks go through a native listener with a screen-space hit test:
+      // nearest node centre within tolerance, which stays dependable across
+      // zoom levels instead of relying on the library's internal raycast
+      // pipeline for the press/release pair.
+      let lastClick: { id: string | null; time: number } = { id: null, time: 0 };
+      const pickNode = (clientX: number, clientY: number) => {
+        const rect = container.getBoundingClientRect();
+        let best: Node3D | null = null;
+        let bestDistance = 26;
+        for (const node of node3dStoreRef.current.values()) {
+          if (node.x === undefined) continue;
+          const screen = instance.graph2ScreenCoords(node.x, node.y ?? 0, node.z ?? 0);
+          const distance = Math.hypot(rect.left + screen.x - clientX, rect.top + screen.y - clientY);
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            best = node;
+          }
+        }
+        return best;
+      };
+      const onNativeClick = (ev: MouseEvent) => {
+        const node = pickNode(ev.clientX, ev.clientY);
+        if (!node) return;
+        const now = Date.now();
+        if (lastClick.id === node.id && now - lastClick.time < DBLCLICK_MS) {
+          lastClick = { id: null, time: 0 };
+          cancelPendingOpen();
+          expand(node.id);
+          const current = instance.cameraPosition();
+          const distance = Math.hypot(
+            current.x - (node.x ?? 0),
+            current.y - (node.y ?? 0),
+            current.z - (node.z ?? 0),
+          );
+          const targetPosition = { x: node.x ?? 0, y: node.y ?? 0, z: node.z ?? 0 };
+          instance.cameraPosition(
+            { x: targetPosition.x, y: targetPosition.y, z: targetPosition.z + distance * 0.75 },
+            targetPosition,
+            600,
+          );
+          return;
+        }
+        lastClick = { id: node.id, time: now };
+        scheduleOpen(node.id);
+      };
+      container.addEventListener("click", onNativeClick);
+      detachClick = () => container.removeEventListener("click", onNativeClick);
+      instance.onNodeHover((node) => {
+        const slug = node ? String(node.id) : null;
+        highlightRef.current = {
+          node: slug,
+          neighbors: slug ? new Set(adjacency.get(slug) ?? []) : new Set(),
+        };
+        const highlight = highlightRef.current;
+        for (const [id, visual] of nodeVisualsRef.current) {
+          const active = !highlight.node || id === highlight.node || highlight.neighbors.has(id);
+          visual.material.opacity = active ? visual.baseOpacity : 0.12;
+          visual.spriteMaterial.opacity = active ? 1 : 0.12;
+        }
+        // Re-apply the accessors so link colors/particles re-evaluate.
+        instance.linkColor(instance.linkColor());
+        instance.linkWidth(instance.linkWidth());
+        instance.linkDirectionalParticles(instance.linkDirectionalParticles());
+      });
+
+      const onResize = () => {
+        if (disposed) return;
+        instance.width(container.clientWidth).height(container.clientHeight || 560);
+      };
+      window.addEventListener("resize", onResize);
+      detachResize = () => window.removeEventListener("resize", onResize);
+
+      graph3dRef.current = instance;
+      if (!disposed) setGraphVersion((version) => version + 1);
+    };
+
+    void draw();
+    return () => {
+      disposed = true;
+      detachResize?.();
+      detachClick?.();
+      cancelPendingOpen();
+      const instance = graph3dRef.current;
+      instance?._destructor();
+      graph3dRef.current = null;
+      nodeVisualsRef.current.clear();
+      highlightRef.current = { node: null, neighbors: new Set() };
+    };
+  }, [mode, graphReady, adjacency, expand, scheduleOpen, cancelPendingOpen]);
+
+  useEffect(() => {
+    if (mode !== "3d") return;
+    const instance = graph3dRef.current;
+    if (!instance || !shown) return;
+    // Reusing the same node objects preserves simulation positions, so
+    // expansions keep the existing constellation in place.
+    const store = node3dStoreRef.current;
+    const keep = new Set<string>();
+    const nodes = shown.nodes.map((node) => {
+      keep.add(node.slug);
+      const existing = store.get(node.slug);
+      if (existing) {
+        existing.title = node.title;
+        existing.pageType = node.pageType;
+        existing.val = 1 + Math.min(degreeOf.get(node.slug) ?? 0, 6) + (node.pageType === "summary" ? 2 : 0);
+        return existing;
+      }
+      const fresh: Node3D = {
+        id: node.slug,
+        title: node.title,
+        pageType: node.pageType,
+        val: 1 + Math.min(degreeOf.get(node.slug) ?? 0, 6) + (node.pageType === "summary" ? 2 : 0),
+        x: (Math.random() - 0.5) * 60,
+        y: (Math.random() - 0.5) * 60,
+        z: (Math.random() - 0.5) * 60,
+      };
+      store.set(node.slug, fresh);
+      return fresh;
+    });
+    for (const slug of [...store.keys()]) {
+      if (!keep.has(slug)) store.delete(slug);
+    }
+    for (const slug of [...nodeVisualsRef.current.keys()]) {
+      if (!keep.has(slug)) nodeVisualsRef.current.delete(slug);
+    }
+    instance.graphData({
+      nodes,
+      links: shown.links.map(([source, target]) => ({ source, target })),
+    });
+    if (focusSlug && keep.has(focusSlug)) {
+      const node = store.get(focusSlug);
+      if (node && node.x !== undefined) {
+        const current = instance.cameraPosition();
+        const distance = Math.hypot(
+          current.x - node.x,
+          current.y - (node.y ?? 0),
+          current.z - (node.z ?? 0),
+        );
+        const targetPosition = { x: node.x, y: node.y ?? 0, z: node.z ?? 0 };
+        instance.cameraPosition(
+          { x: targetPosition.x, y: targetPosition.y, z: targetPosition.z + Math.max(distance, 120) * 0.8 },
+          targetPosition,
+          700,
+        );
+      }
+    }
+  }, [mode, shown, graphVersion, degreeOf, focusSlug]);
 
   useEffect(() => {
     return () => {
@@ -399,7 +771,11 @@ export function KnowledgeGraphPanel({
             onChange={(event) => setQuery(event.target.value)}
             placeholder="搜索 Wiki 页面…"
           />
-          <span className={styles.hint}>单击打开页面 · 双击展开邻居</span>
+          <span className={styles.hint}>
+            {mode === "3d"
+              ? "单击打开页面 · 双击展开邻居 · 拖拽旋转 · 滚轮缩放"
+              : "单击打开页面 · 双击展开邻居"}
+          </span>
           <div ref={containerRef} className={styles.canvas} />
         </div>
 
@@ -431,6 +807,14 @@ export function KnowledgeGraphPanel({
 
           <div className={styles.panelDivider} />
 
+          <button
+            type="button"
+            className={styles.panelAction}
+            onClick={() => changeMode(mode === "3d" ? "2d" : "3d")}
+          >
+            <span aria-hidden="true">{mode === "3d" ? "◻" : "✦"}</span>
+            {mode === "3d" ? "切换 2D 视图" : "切换 3D 视图"}
+          </button>
           <button type="button" className={styles.panelAction} onClick={fitView}>
             <span aria-hidden="true">⤢</span> 适应屏幕
           </button>
@@ -439,7 +823,14 @@ export function KnowledgeGraphPanel({
             className={styles.panelAction}
             onClick={() => setShowArrows((current) => !current)}
           >
-            <span aria-hidden="true">↗</span> {showArrows ? "隐藏箭头" : "显示箭头"}
+            <span aria-hidden="true">↗</span>
+            {mode === "3d"
+              ? showArrows
+                ? "隐藏粒子流"
+                : "显示粒子流"
+              : showArrows
+                ? "隐藏箭头"
+                : "显示箭头"}
           </button>
           {revealed ? (
             <button

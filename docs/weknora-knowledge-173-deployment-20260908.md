@@ -4,7 +4,7 @@
 - 分支：`feature/weknora-knowledge-base`
 - 目标环境：`172.20.109.173`（KAI WORKBENCH 黑色主题，Web `:3301`，API `:8800`）
 - 知识数据面：`172.20.109.174:8180` WeKnora（服务账号，终端用户不直连）
-- 发布 tag：`weknora-kb-20260910-cardmenu`（api 与 web 同 tag；此前为 `weknora-kb-20260909-del`）
+- 发布 tag：`knowledge-graph-3d`（web；api 仍为 `weknora-kb-20260910-cardmenu`）
 - 配套设计：[2026-09-08-weknora-knowledge-base-design.md](2026-09-08-weknora-knowledge-base-design.md)、[实现计划](2026-09-08-weknora-knowledge-base-implementation-plan.md)
 
 ## 1. 交付内容
@@ -141,6 +141,13 @@ $COMPOSE up -d --no-build --force-recreate api worker web
 | 图谱展开邻居 | 双击节点进入探索模式：揭示该节点及其直接邻居，继续双击已见节点逐跳外扩；侧栏出现「显示全部」重置与「双击节点继续展开邻居」提示；单击（240ms 消歧）仍打开页面抽屉。实测 16→10→重置 16 | 通过 |
 | 知识库卡片更多菜单 | 「成员管理」「删除」收进卡片右上角 ⋯ 菜单；点击卡片其他区域或按 Esc 收起（实测 外点 0 项→重开 2 项→Esc 0 项）；删除仅管理角色可见 | 通过 |
 | 删除知识库 | 新增 `DELETE /v1/studio/knowledge/bases/{reference}`（204）：先删 WeKnora 远端库（404 幂等）再清本地 base/source/成员/遗留切片，全程审计；确认弹窗明示不可恢复。实测建「删除探针-临时」→菜单删除→卡片消失、计数 3→2、WeKnora 侧无残留 | 通过 |
+
+| 3D 可行性分析 | 调研开源方案：G6 v5 仅覆盖 2D；选型 `3d-force-graph` 1.80（Three.js + d3-force-3d，vasturiano 出品，业界知识图谱 3D 事实标准，three-forcegraph/three-render-objects/three-spritetext 配套完整）。数据结构与现有 Wiki 图谱同构（nodes/links），无需后端改动；three ~150KB gzip 走动态 import 仅在 3D 模式加载，2D 模式零影响。结论：可行，按 2D/3D 双引擎实现 | 通过 |
+| 3D 图谱视图 | 侧栏「切换 3D/2D 视图」双向切换并按 localStorage 记忆；3D 力导向（orbit 相机、拖拽旋转、滚轮缩放），复用 2D 的过滤/搜索/展开邻居/页面抽屉与全库概览统计 | 通过 |
+| 3D 复杂特效 | UnrealBloomPass 辉光（彩色发光节点）、连线粒子流（可开关，悬停邻居加速增亮）、星尘背景 320 点、SpriteText 深色底板标签、节点尺寸按连接度分级、摘要节点加大 | 通过 |
+| 3D 悬停高亮 | `onNodeHover` 邻居高亮/其余压暗（节点透明度 + 标签透明度 + 连线增亮 + 粒子增强），实测 CUA 悬停生效 | 通过 |
+| 3D 点击/双击 | 单击打开页面抽屉、双击展开邻居（320ms 消歧），采用原生 click 事件 + `graph2ScreenCoords` 屏幕空间命中（26px 容差），规避库内 press/release 管线的不确定性；展开后相机飞行至锚点节点。实测 16→10→重置 16、抽屉正确打开且双击无误开 | 通过 |
+| 3D 视口修复 | three-render-objects 宽高默认取 window 尺寸，导致画布 1280×720 溢出、构图偏移；显式 `width/height` 绑定容器并监听 resize。另补充 1.4s/3.6s 兜底 zoomToFit 与斥力收敛（-220），孤立索引节点不再漂移撑破包围盒 | 通过 |
 
 ## 4. 待验证项与后续动作
 
