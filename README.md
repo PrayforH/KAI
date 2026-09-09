@@ -1,10 +1,29 @@
-# AXIS · Agent Operations Platform
+# KAI · Agent Studio
 
-AXIS 是面向组织的智能体任务、能力与运行治理平台。它以 Claude Agent SDK 为执行内核，把智能体定义、任务运行、能力装配、协作权限、评测发布和审计治理收束到一条可恢复的执行链路中。
+面向企业的智能体任务、能力与运行治理平台。以 Claude Agent SDK 为执行内核，把智能体定义、
+任务运行、能力装配、协作权限、评测发布与审计治理收束成一条可恢复的执行链路——构建、运行、
+评测、晋级、审计一条链。
 
-当前发布候选为 **AXIS 0.2.0**。Claude Agent SDK 提供 Agent Loop、工具、Skills、
-Sub Agent、MCP、Hooks 与 Session Resume；本项目补齐多租户服务、版本治理、分布式 Run、
-可恢复审批、隔离执行、统一 API/Web、上下文工程、评测和可审计发布，不重写 SDK 的执行语义。
+当前版本 **0.3.0**（签名发布见 [Releases](https://github.com/PrayforH/KAI/releases)），
+Apache-2.0。
+
+## 亮点
+
+- **企业级生产形态，不是演示项目。** 多租户服务、不可变 Agent 版本与字节确定的 Bundle、
+  Eval 与运行质量门禁、test → canary → production 晋级和回滚、审批与审计账本；同一套能力在
+  本地 Compose 和 Kubernetes/gVisor 两条基线上运行。
+- **执行内核不重写。** 直接使用 Claude Agent SDK 的 Agent Loop、工具、Skills、Sub Agent、MCP、
+  Hooks 与 Session Resume；平台补齐会话、Run、工作区、制品、失败恢复与治理，而不是再造一个
+  编排框架。
+- **可恢复的执行链。** Run 具备幂等键、状态机与 fencing token；审批可以暂停、过期、拒绝和恢复；
+  任务运行中可以接收用户转向；上下文压缩与恢复保留事实、决定、待办和工作区引用。
+- **长期记忆 v2。** 在既有 PostgreSQL 上用 pgvector 做关键词 + 语义混合召回；成功任务结束后从
+  原始输入提取偏好、项目事实、实体和决策，作为待确认候选入库，确认即生效、纠正走版本校验。
+- **黑色 KAI WORKBENCH 工作台。** 任务、构建、技能一体化的单色界面：可折叠的任务与项目分组、
+  右侧任务工作区（文件 / 任务详情），以及「构建助手 + 资产 + 效果测试」三栏的统一构建工作台。
+- **发布可验证。** 镜像构建一次并由 Sigstore 无密钥签名，附带 SBOM 与 Trivy HIGH/CRITICAL 门禁；
+  Agent Bundle 字节可复现，平台版本与 source commit、镜像 digest、SBOM、Bundle hash 一起写入
+  签名 manifest。
 
 | 平面 | 产品能力 |
 | --- | --- |
@@ -13,7 +32,7 @@ Sub Agent、MCP、Hooks 与 Session Resume；本项目补齐多租户服务、�
 | 运行 | API、Redis Queue、Worker、Claude SDK、Sandbox、MCP、AG-UI |
 | 运营 | Deployment Snapshot、test/canary/production 晋级、Trace、回滚、审计 |
 
-## 这套 Harness 的价值
+## 平台解决什么
 
 - **让 Agent 代码只关注业务能力。** Manifest 固化 prompt、tools、skills、subagents、权限和预算；平台负责 Session、Run、Workspace、Artifact 与失败恢复。
 - **保留 Claude Agent SDK 的能力边界。** 直接使用官方 SDK、SessionStore 和消息类型，不用 LangGraph 重写 Claude Code 的执行语义。
@@ -40,7 +59,7 @@ cd web/harness-console && npm ci --registry=https://registry.npmmirror.com && cd
 make dev-up
 ```
 
-平台完整架构、AXIS 构建区、Lead + Sub、多层记忆、安全、评测、发布和分阶段路线见 [docs/agent-production-platform-design.md](docs/agent-production-platform-design.md)，个人 Agent、团队空间 RBAC、共享版本/知识库与任务隔离见 [docs/team-spaces.md](docs/team-spaces.md)，Webhook、A2A 1.0、AG-UI、MCP 职责边界与 Bundle 可逆交付见 [docs/external-agent-exposure.md](docs/external-agent-exposure.md)，可直接交给 Codex/Claude 执行的目标树和循环见 [docs/plans/2026-07-16-agent-production-platform-goals-and-loops.md](docs/plans/2026-07-16-agent-production-platform-goals-and-loops.md)。领域 Agent 的 prompt、Skill、Python Tool、外部 MCP、权限、bundle 发布与评测流程见 [docs/domain-agents.md](docs/domain-agents.md)，单 Agent 上线检查见 [docs/production-agent-runbook.md](docs/production-agent-runbook.md)，平台构建一次、签名、环境晋级和回滚见 [docs/runbooks/release-promotion.md](docs/runbooks/release-promotion.md)。仓库中的 `public-opinion-agent` 是可运行的编排型参考实现。
+平台完整架构、Agent Studio 构建区、Lead + Sub、多层记忆、安全、评测、发布和分阶段路线见 [docs/agent-production-platform-design.md](docs/agent-production-platform-design.md)，个人 Agent、团队空间 RBAC、共享版本/知识库与任务隔离见 [docs/team-spaces.md](docs/team-spaces.md)，Webhook、A2A 1.0、AG-UI、MCP 职责边界与 Bundle 可逆交付见 [docs/external-agent-exposure.md](docs/external-agent-exposure.md)，可直接交给 Codex/Claude 执行的目标树和循环见 [docs/plans/2026-07-16-agent-production-platform-goals-and-loops.md](docs/plans/2026-07-16-agent-production-platform-goals-and-loops.md)。领域 Agent 的 prompt、Skill、Python Tool、外部 MCP、权限、bundle 发布与评测流程见 [docs/domain-agents.md](docs/domain-agents.md)，单 Agent 上线检查见 [docs/production-agent-runbook.md](docs/production-agent-runbook.md)，平台构建一次、签名、环境晋级和回滚见 [docs/runbooks/release-promotion.md](docs/runbooks/release-promotion.md)。仓库中的 `public-opinion-agent` 是可运行的编排型参考实现。
 
 当前平台版本与发布说明见 [CHANGELOG.md](CHANGELOG.md)。正式 Release 会校验 Python、Web、
 Helm 和 Changelog 使用同一 SemVer，并把该版本与 source commit、镜像 digest、SBOM 和 Agent
