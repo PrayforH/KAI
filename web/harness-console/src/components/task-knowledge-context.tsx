@@ -113,16 +113,6 @@ export function useTaskKnowledge(): TaskKnowledgeValue {
 }
 
 /** Composer toolbar control: shows and edits the thread's knowledge bases. */
-const MODE_LABELS: Record<KnowledgeMode, string> = {
-  rag: "RAG",
-  wiki: "Wiki",
-};
-
-const MODE_FULL_LABELS: Record<KnowledgeMode, string> = {
-  rag: "RAG 问答",
-  wiki: "Wiki 问答",
-};
-
 const MODE_HINTS: Record<KnowledgeMode, string> = {
   rag: "基于文档切片检索回答",
   wiki: "基于 Wiki 页面（摘要/实体/概念）回答，可点开实体",
@@ -132,7 +122,6 @@ export function TaskKnowledgeControl({ disabled }: { disabled: boolean }) {
   const { available, selected, loading, toggle, clear, mode, setMode } =
     useTaskKnowledge();
   const [open, setOpen] = useState(false);
-  const [modeOpen, setModeOpen] = useState(false);
   if (loading && available.length === 0) return null;
   const label =
     selected.length === 0
@@ -157,104 +146,28 @@ export function TaskKnowledgeControl({ disabled }: { disabled: boolean }) {
         </span>
         <span>{label}</span>
       </button>
-      <div className="task-knowledge-mode">
-        <button
-          type="button"
-          className="task-knowledge-mode-trigger"
-          disabled={disabled}
-          aria-expanded={modeOpen}
-          aria-haspopup="menu"
-          title={MODE_HINTS[mode]}
-          onClick={() => setModeOpen((current) => !current)}
-        >
-          {MODE_FULL_LABELS[mode]}
-          <svg viewBox="0 0 16 16" aria-hidden="true">
-            <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
-          </svg>
-        </button>
-        {modeOpen ? (
-          <>
-            <button
-              type="button"
-              className="task-knowledge-backdrop"
-              aria-label="关闭问答模式选择"
-              onClick={() => setModeOpen(false)}
-            />
-            <div className="task-knowledge-mode-menu" role="menu">
-              {(["rag", "wiki"] as const).map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={mode === value}
-                  className={mode === value ? "is-active" : undefined}
-                  onClick={() => {
-                    setMode(value);
-                    setModeOpen(false);
-                  }}
-                >
-                  <span className="task-knowledge-mode-mark">
-                    {mode === value ? "✓" : ""}
-                  </span>
-                  <span className="task-knowledge-mode-copy">
-                    <strong>{MODE_FULL_LABELS[value]}</strong>
-                    <small>{MODE_HINTS[value]}</small>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </>
-        ) : null}
-      </div>
-      {open ? (
-        <>
-          <button
-            type="button"
-            className="task-knowledge-backdrop"
-            aria-label="关闭知识库选择"
-            onClick={() => setOpen(false)}
-          />
-          <div className="task-knowledge-menu" role="dialog" aria-label="选择知识库">
-            <p className="task-knowledge-menu-head">
-              选择本次任务使用的知识库（可多选）
-            </p>
-            {available.length === 0 ? (
-              <p className="task-knowledge-empty">还没有可用的知识库</p>
-            ) : (
-              <ul>
-                {available.map((base) => {
-                  const active = selected.includes(base.reference);
-                  return (
-                    <li key={base.reference}>
-                      <button
-                        type="button"
-                        className="task-knowledge-option"
-                        aria-pressed={active}
-                        onClick={() => toggle(base.reference)}
-                      >
-                        <span className="task-knowledge-option-mark">
-                          {active ? "✓" : ""}
-                        </span>
-                        <span className="task-knowledge-option-copy">
-                          <strong>{base.displayName}</strong>
-                          <small>
-                            {base.reference} · {base.kbType}
-                          </small>
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-            {selected.length > 0 ? (
-              <button type="button" className="task-knowledge-clear" onClick={clear}>
-                清空选择
-              </button>
-            ) : null}
-          </div>
-        </>
-      ) : null}
     </div>
+  );
+}
+
+/** Compact Wiki on/off switch for the composer toolbar. */
+export function TaskKnowledgeModeSwitch({ disabled }: { disabled: boolean }) {
+  const { mode, setMode } = useTaskKnowledge();
+  const wiki = mode === "wiki";
+  return (
+    <button
+      type="button"
+      className={`task-knowledge-switch${wiki ? " is-on" : ""}`}
+      disabled={disabled}
+      role="switch"
+      aria-checked={wiki}
+      title={wiki ? "Wiki 问答：基于 Wiki 页面回答" : "RAG 问答：基于文档切片回答"}
+      onClick={() => setMode(wiki ? "rag" : "wiki")}
+    >
+      <span className="task-knowledge-switch-track" aria-hidden="true">
+        <span className="task-knowledge-switch-thumb" />
+      </span>
+      <span className="task-knowledge-switch-label">Wiki</span>
+    </button>
   );
 }

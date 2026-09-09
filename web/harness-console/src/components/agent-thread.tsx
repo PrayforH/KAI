@@ -93,7 +93,11 @@ import {
 
 import { createRandomId } from "../lib/random-id";
 import { ComposerAssist, composerOptions } from "./composer-assist";
-import { TaskKnowledgeControl, useTaskKnowledge } from "./task-knowledge-context";
+import {
+  TaskKnowledgeControl,
+  TaskKnowledgeModeSwitch,
+  useTaskKnowledge,
+} from "./task-knowledge-context";
 import { composerTrigger, queueAttachments, queueMayDispatch, restorePromptQueue, type QueuedPrompt } from "../lib/composer-interactions";
 
 export { normalizeMessageText } from "../lib/message-text";
@@ -822,6 +826,7 @@ function HarnessComposer() {
               <path d="M10 4.5v11M4.5 10h11" />
             </svg>
           </Composer.AddAttachment>
+          <TaskKnowledgeControl disabled={runLocked || showStop || videoGenerating} />
           <TaskAgentSwitcher
             agents={agentSelection.agents}
             selected={agentSelection.selected}
@@ -830,7 +835,7 @@ function HarnessComposer() {
             onChange={agentSelection.onChange}
             onRefresh={agentSelection.onRefresh}
           />
-          <TaskKnowledgeControl disabled={runLocked || showStop || videoGenerating} />
+          <TaskKnowledgeModeSwitch disabled={runLocked || showStop || videoGenerating} />
           <TaskModelControl disabled={runLocked || showStop || videoGenerating} />
           {showStop && Boolean(composerText.trim() || composerAttachments.length) && <button type="button" className="composer-stop-secondary" aria-label="停止运行" title="停止运行" onClick={() => void stopRun()}><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="5" width="10" height="10" rx="2" fill="currentColor" /></svg></button>}
         </div>
