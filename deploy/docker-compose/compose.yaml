@@ -132,7 +132,10 @@ x-control-environment: &control-environment
 
 services:
   postgres:
-    image: postgres:18.4-bookworm
+    # Migrations 0001 and 0031 run `CREATE EXTENSION IF NOT EXISTS vector`, so
+    # the local cluster needs the pgvector-enabled build, matching CI and the
+    # production 0.8.6/PG18 line.
+    image: pgvector/pgvector:0.8.6-pg18
     environment:
       POSTGRES_DB: harness
       POSTGRES_USER: harness

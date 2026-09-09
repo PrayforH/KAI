@@ -58,12 +58,17 @@ NPM_CONFIG_REGISTRY=https://registry.npmmirror.com
 - API 固定到 Python 3.12 Bookworm 的不可变 digest；Web/Sandbox 固定到 Node 22 的不可变
   digest。Web 与 Sandbox 的运行层删除 npm，只保留运行所需的 Node/standalone/Claude CLI。
 - API 的 kubectl 来自经过 Cosign 身份验证的 Chainguard 不可变镜像 digest，不在构建时从
-  未验证 URL 下载二进制。当前客户端为 1.36.3，项目声明并验证的 Kubernetes 目标版本为
+  未验证 URL 下载二进制。当前客户端为 1.36.4，项目声明并验证的 Kubernetes 目标版本为
   1.35～1.36；升级集群或客户端时必须重新执行版本偏差、Sandbox 创建/删除与取消测试。
 - CI 对三张最终镜像执行 Trivy HIGH/CRITICAL fail-closed 扫描。`cryptography 49.0.0`
   对应的暂未有上游修复版本的报告项，只能由仓库内精确 PURL 的 OpenVEX 判断抑制；回归测试
   禁止引入该漏洞涉及的 PKCS7 decrypt 调用。Release 会签名 VEX 原始字节并附加 image-bound
   attestation，Promotion 同时验证两者。
+- 仓库级 `trivy fs` 的 secret/misconfig 扫描同样 fail-closed，并由仓库根的
+  `.trivyignore.yaml` 记录路径级、带到期日的例外（例如 postgres 与 codex-web 镜像的
+  entrypoint 需要先以 root 初始化再降权、nginx 绑定 80 端口、沙箱控制器必须 exec 进入
+  隔离 Pod 并管理自身 NetworkPolicy）。该文件属于 Trivy 实验特性，工作流用
+  `--ignorefile` 显式传入；新增 HIGH/CRITICAL 仍会失败，到期条目必须重新评估。
 - 本地开发与交叉构建使用 Colima；用于 174 的镜像平台必须显式为 `linux/amd64`。arm64
   上的 QEMU 结果不替代真实 amd64 主机 smoke。
 
