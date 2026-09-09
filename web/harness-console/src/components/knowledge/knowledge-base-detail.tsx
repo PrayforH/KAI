@@ -20,6 +20,7 @@ import {
 } from "../../lib/studio-client";
 import { KnowledgeGraphPanel } from "./knowledge-graph-panel";
 import { KnowledgeWikiPanel } from "./knowledge-wiki-panel";
+import { DrawerResizeHandle, useDrawerResize } from "../../lib/use-drawer-resize";
 import styles from "./knowledge-base-detail.module.css";
 
 type Tab = "docs" | "wiki" | "graph";
@@ -73,6 +74,10 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
   const [dragging, setDragging] = useState(false);
   const [summaryExpanded, setSummaryExpanded] = useState(false);
   const [batchMode, setBatchMode] = useState(false);
+  const { width: drawerWidth, startResize: startDrawerResize } = useDrawerResize(
+    "document",
+    { min: 400, max: 1100 },
+  );
   const fileRef = useRef<HTMLInputElement>(null);
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -712,7 +717,15 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
         {selected ? (
           <>
             <div className={styles.drawerOverlay} onClick={closeDrawer} role="presentation" />
-            <aside className={styles.drawer} aria-label="文档详情">
+            <aside
+              className={styles.drawer}
+              aria-label="文档详情"
+              style={{ width: drawerWidth }}
+            >
+              <DrawerResizeHandle
+                onPointerDown={startDrawerResize}
+                className={styles.resizeHandle}
+              />
               <header className={styles.drawerHead}>
                 <span className={styles.drawerGlyph} aria-hidden="true">
                   <svg viewBox="0 0 20 20">

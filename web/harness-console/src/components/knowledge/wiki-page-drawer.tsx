@@ -5,6 +5,7 @@ import {
   studioClient,
   type StudioKnowledgeWikiPage,
 } from "../../lib/studio-client";
+import { DrawerResizeHandle, useDrawerResize } from "../../lib/use-drawer-resize";
 import styles from "./wiki-page-drawer.module.css";
 
 const TYPE_LABELS: Record<string, string> = {
@@ -121,6 +122,7 @@ export function WikiPageDrawer({
   const [resolvedReference, setResolvedReference] = useState<string | null>(
     reference ?? null,
   );
+  const { width, startResize } = useDrawerResize("wiki", { min: 360, max: 1000 });
 
   const open = useCallback(
     async (next: string) => {
@@ -166,7 +168,12 @@ export function WikiPageDrawer({
   return (
     <>
       <div className={styles.overlay} role="presentation" onClick={onClose} />
-      <aside className={styles.drawer} aria-label="Wiki 页面详情">
+      <aside
+        className={styles.drawer}
+        aria-label="Wiki 页面详情"
+        style={{ width }}
+      >
+        <DrawerResizeHandle onPointerDown={startResize} className={styles.resizeHandle} />
         <header className={styles.head}>
           <div>
             <h3>{page?.title ?? current}</h3>

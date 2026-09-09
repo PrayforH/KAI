@@ -6,6 +6,7 @@ import {
   type StudioKnowledgeDocumentChunk,
 } from "../../lib/studio-client";
 import type { RunCitation } from "../../lib/run-view-model";
+import { DrawerResizeHandle, useDrawerResize } from "../../lib/use-drawer-resize";
 import styles from "./knowledge-citations.module.css";
 
 export function KnowledgeCitations({ citations }: { citations: readonly RunCitation[] }) {
@@ -13,6 +14,7 @@ export function KnowledgeCitations({ citations }: { citations: readonly RunCitat
   const [chunk, setChunk] = useState<StudioKnowledgeDocumentChunk | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const { width, startResize } = useDrawerResize("citation", { min: 360, max: 1000 });
 
   const openCitation = useCallback(async (citation: RunCitation) => {
     setOpen(citation);
@@ -73,7 +75,12 @@ export function KnowledgeCitations({ citations }: { citations: readonly RunCitat
       {open ? (
         <>
           <div className={styles.overlay} role="presentation" onClick={close} />
-          <aside className={styles.drawer} aria-label="引用切片详情">
+          <aside
+            className={styles.drawer}
+            aria-label="引用切片详情"
+            style={{ width }}
+          >
+            <DrawerResizeHandle onPointerDown={startResize} className={styles.resizeHandle} />
             <header className={styles.drawerHead}>
               <div>
                 <h3>{open.title || "引用切片"}</h3>
