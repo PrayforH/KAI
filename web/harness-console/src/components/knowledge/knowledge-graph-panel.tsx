@@ -1,13 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Graph } from "@antv/g6";
 import {
   studioClient,
   type StudioKnowledgeWikiGraph,
-  type StudioKnowledgeWikiPage,
 } from "../../lib/studio-client";
+import { WikiPageDrawer } from "./wiki-page-drawer";
 import styles from "./knowledge-graph-panel.module.css";
 
+// Graph colors encode node types; management controls keep the neutral theme.
 const TYPE_COLORS: Record<string, string> = {
   summary: "#4f8cff",
   entity: "#40c977",
@@ -24,79 +26,17 @@ const TYPE_LABELS: Record<string, string> = {
   page: "页面",
 };
 
-function renderInline(
-  text: string,
-  onOpen: (slug: string) => void,
-  keyPrefix: string,
-): ReactNode[] {
-  const nodes: ReactNode[] = [];
-  const pattern = /(\[\[[^\]]+\]\]|\*\*[^*]+\*\*|`[^`]+`)/g;
-  let cursor = 0;
-  let match: RegExpExecArray | null;
-  let index = 0;
-  while ((match = pattern.exec(text)) !== null) {
-    if (match.index > cursor) {
-      nodes.push(<span key={`${keyPrefix}-t${index++}`}>{text.slice(cursor, match.index)}</span>);
-    }
-    const token = match[0];
-    const link = /^\[\[([^\]|]+)(?:\|([^\]]+))?\]\]$/.exec(token);
-    if (link) {
-      const slug = link[1].trim();
-      nodes.push(
-        <button
-          key={`${keyPrefix}-l${index++}`}
-          type="button"
-          className={styles.bodyLink}
-          onClick={() => onOpen(slug)}
-        >
-          {(link[2] ?? slug).trim()}
-        </button>,
-      );
-    } else if (token.startsWith("**")) {
-      nodes.push(
-        <strong key={`${keyPrefix}-b${index++}`}>{token.slice(2, -2)}</strong>,
-      );
-    } else {
-      nodes.push(<code key={`${keyPrefix}-c${index++}`}>{token.slice(1, -1)}</code>);
-    }
-    cursor = match.index + token.length;
-  }
-  if (cursor < text.length) {
-    nodes.push(<span key={`${keyPrefix}-tail`}>{text.slice(cursor)}</span>);
-  }
-  return nodes;
-}
+type GraphDatum = {
+  title?: string;
+  pageType?: string;
+  degree?: number;
+  endArrow?: boolean;
+};
 
-function renderWikiBody(
-  content: string,
-  onOpen: (slug: string) => void,
-): ReactNode {
-  const lines = content.replace(/\r\n/g, "\n").split("\n");
-  return lines.map((line, index) => {
-    if (!line.trim()) return null;
-    const heading = /^(#{1,6})\s+(.*)$/.exec(line);
-    if (heading) {
-      return (
-        <p key={index} className={styles.bodyHeading}>
-          {renderInline(heading[2], onOpen, `h${index}`)}
-        </p>
-      );
-    }
-    const listItem = /^\s*[-*]\s+(.*)$/.exec(line);
-    if (listItem) {
-      return (
-        <p key={index} className={styles.bodyBullet}>
-          {renderInline(listItem[1], onOpen, `li${index}`)}
-        </p>
-      );
-    }
-    return (
-      <p key={index} className={styles.bodyLine}>
-        {renderInline(line, onOpen, `p${index}`)}
-      </p>
-    );
-  });
-}
+/** Single click and double click share one physical click; hold single clicks
+ * briefly so a double click expands the neighborhood instead of opening the
+ * page drawer. */
+const CLICK_DELAY_MS = 240;
 
 export function KnowledgeGraphPanel({
   reference,
@@ -106,15 +46,21 @@ export function KnowledgeGraphPanel({
   focusSlug?: string | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const graphRef = useRef<unknown>(null);
+  const graphRef = useRef<Graph | null>(null);
+  const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const selectedRef = useRef<string | null>(null);
+  const firstRenderRef = useRef(true);
+  const showArrowsRef = useRef(true);
   const [graph, setGraph] = useState<StudioKnowledgeWikiGraph | null>(null);
+  const [graphReady, setGraphReady] = useState(false);
+  const [graphVersion, setGraphVersion] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [page, setPage] = useState<StudioKnowledgeWikiPage | null>(null);
+  const [pageSlug, setPageSlug] = useState<string | null>(null);
   const [hiddenTypes, setHiddenTypes] = useState<Set<string>>(new Set());
   const [showArrows, setShowArrows] = useState(true);
+  const [revealed, setRevealed] = useState<Set<string> | null>(null);
   const [query, setQuery] = useState("");
-  const [summaryExpanded, setSummaryExpanded] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -132,22 +78,36 @@ export function KnowledgeGraphPanel({
     void load();
   }, [load]);
 
-  const openPage = useCallback(
-    async (slug: string) => {
-      setError("");
-      setSummaryExpanded(false);
-      try {
-        setPage(await studioClient.getWikiPage(reference, slug));
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "打开页面失败");
-      }
-    },
-    [reference],
-  );
+  const openPage = useCallback((slug: string) => setPageSlug(slug), []);
 
   const types = useMemo(() => {
     if (!graph) return [];
     return [...new Set(graph.nodes.map((node) => node.pageType))];
+  }, [graph]);
+
+  // Undirected adjacency over the whole base; expansion always reveals every
+  // neighbour of a node regardless of link direction.
+  const adjacency = useMemo(() => {
+    const map = new Map<string, string[]>();
+    if (!graph) return map;
+    for (const [source, target] of graph.links) {
+      if (source !== target) {
+        (map.get(source) ?? map.set(source, []).get(source))?.push(target);
+        (map.get(target) ?? map.set(target, []).get(target))?.push(source);
+      }
+    }
+    return map;
+  }, [graph]);
+
+  const degreeOf = useMemo(() => {
+    const counts = new Map<string, number>();
+    if (!graph) return counts;
+    for (const [source, target] of graph.links) {
+      if (source === target) continue;
+      counts.set(source, (counts.get(source) ?? 0) + 1);
+      counts.set(target, (counts.get(target) ?? 0) + 1);
+    }
+    return counts;
   }, [graph]);
 
   const visible = useMemo(() => {
@@ -167,78 +127,253 @@ export function KnowledgeGraphPanel({
     };
   }, [graph, hiddenTypes, query]);
 
+  // Explore mode: only the revealed set stays on canvas; double clicking a
+  // node reveals one more hop, so the graph grows outward step by step.
+  const shown = useMemo(() => {
+    if (!visible) return null;
+    if (!revealed) return visible;
+    const nodes = visible.nodes.filter((node) => revealed.has(node.slug));
+    const keep = new Set(nodes.map((node) => node.slug));
+    return {
+      nodes,
+      links: visible.links.filter(([source, target]) => keep.has(source) && keep.has(target)),
+    };
+  }, [visible, revealed]);
+
+  const expand = useCallback(
+    (slug: string) => {
+      setRevealed((current) => {
+        const next = new Set(current ?? [slug]);
+        next.add(slug);
+        for (const neighbour of adjacency.get(slug) ?? []) next.add(neighbour);
+        return next;
+      });
+    },
+    [adjacency],
+  );
+
   const fitView = useCallback(() => {
-    const instance = graphRef.current as { fitView?: () => Promise<void> } | null;
-    void instance?.fitView?.();
+    const instance = graphRef.current;
+    void instance?.fitView({ when: "always" }, { duration: 320, easing: "ease-in-out" });
   }, []);
 
+  // The instance is created once per mount; data updates flow through setData
+  // so filters and expansions animate instead of rebuilding the canvas.
   useEffect(() => {
-    if (!containerRef.current || !visible) return;
+    if (!graphReady || !containerRef.current || graphRef.current) return;
     let disposed = false;
     const container = containerRef.current;
 
     const draw = async () => {
-      const { Graph } = await import("@antv/g6");
+      const { Graph: G6Graph } = await import("@antv/g6");
       if (disposed) return;
-      const instance = new Graph({
+      const instance = new G6Graph({
         container,
         width: container.clientWidth,
         height: container.clientHeight || 560,
-        autoFit: "view",
-        data: {
-          nodes: visible.nodes.map((node) => ({
-            id: node.slug,
-            data: { title: node.title, pageType: node.pageType },
-          })),
-          edges: visible.links.map(([source, target]) => ({ source, target })),
-        },
+        // Element updates (data changes, state flips) animate globally.
+        animation: true,
+        data: { nodes: [], edges: [] },
         node: {
           style: {
-            size: (datum: { data?: { pageType?: string } }) =>
-              datum.data?.pageType === "summary" ? 26 : 18,
-            fill: (datum: { data?: { pageType?: string } }) =>
+            size: (datum: { data?: GraphDatum }) =>
+              datum.data?.pageType === "summary"
+                ? 30
+                : 18 + Math.min(datum.data?.degree ?? 0, 6) * 2,
+            fill: (datum: { data?: GraphDatum }) =>
               TYPE_COLORS[datum.data?.pageType ?? "page"] ?? TYPE_COLORS.page,
-            labelText: (datum: { data?: { title?: string } }) => datum.data?.title ?? "",
-            labelFill: "#d6d6d6",
+            fillOpacity: 0.95,
+            lineWidth: 1,
+            stroke: "rgb(255 255 255 / 16%)",
+            labelText: (datum: { data?: GraphDatum }) => datum.data?.title ?? "",
+            labelFill: "#c9c9c9",
             labelFontSize: 11,
             labelPlacement: "bottom",
+            // Labels carry a dark plate so they stay readable over edges.
+            labelBackground: true,
+            labelBackgroundFill: "rgb(18 18 18 / 78%)",
+            labelBackgroundRadius: 4,
+            labelPadding: [1, 4],
             cursor: "pointer",
+          },
+          state: {
+            active: {
+              halo: true,
+              haloLineWidth: 3,
+              haloStrokeOpacity: 0.22,
+              labelFill: "#ffffff",
+              labelFontWeight: 600,
+              lineWidth: 1.5,
+            },
+            dim: {
+              fillOpacity: 0.14,
+              labelOpacity: 0.25,
+              strokeOpacity: 0.1,
+            },
+            selected: {
+              halo: true,
+              haloLineWidth: 4,
+              haloStrokeOpacity: 0.3,
+              stroke: "#ececec",
+              labelFill: "#ffffff",
+              labelFontWeight: 600,
+            },
           },
         },
         edge: {
           style: {
-            stroke: "#444444",
+            stroke: "#3f3f3f",
             lineWidth: 1,
-            endArrow: showArrows,
+            endArrow: (datum: { data?: GraphDatum }) => Boolean(datum.data?.endArrow),
+            endArrowSize: 6,
+            endArrowFill: "#4a4a4a",
+          },
+          state: {
+            active: { stroke: "#9a9a9a", lineWidth: 1.6, endArrowFill: "#9a9a9a" },
+            dim: { strokeOpacity: 0.08, endArrowFill: "rgb(140 140 140 / 8%)" },
           },
         },
         layout: {
           type: "force",
+          // The simulation animates between ticks, so the graph settles
+          // organically instead of snapping into place.
+          animation: true,
           preventOverlap: true,
-          linkDistance: 120,
+          linkDistance: 130,
           nodeSize: 30,
         },
-        behaviors: ["drag-canvas", "zoom-canvas", "drag-element"],
+        behaviors: [
+          "drag-canvas",
+          "zoom-canvas",
+          "drag-element",
+          // Hover lights up the 1-hop neighbourhood and dims the rest.
+          { type: "hover-activate", degree: 1, state: "active", inactiveState: "dim" },
+        ],
       });
       graphRef.current = instance;
-      instance.on("node:click", (event) => {
-        const target = (event as { target?: { id?: string } }).target;
-        if (target?.id) void openPage(target.id);
-      });
+      const onNodeActivate = (event: unknown) => {
+        const target = (event as { target?: { id?: string | number } }).target;
+        if (!target?.id) return;
+        const slug = String(target.id);
+        if (clickTimer.current) clearTimeout(clickTimer.current);
+        clickTimer.current = setTimeout(() => openPage(slug), CLICK_DELAY_MS);
+      };
+      const onNodeExpand = (event: unknown) => {
+        const target = (event as { target?: { id?: string | number } }).target;
+        if (!target?.id) return;
+        if (clickTimer.current) {
+          clearTimeout(clickTimer.current);
+          clickTimer.current = null;
+        }
+        expand(String(target.id));
+      };
+      instance.on("node:click", onNodeActivate);
+      instance.on("node:dblclick", onNodeExpand);
       await instance.render();
-      if (focusSlug) {
-        await instance.focusElement(focusSlug).catch(() => undefined);
-      }
+      if (disposed) return;
+      setGraphVersion((version) => version + 1);
     };
 
     void draw();
     return () => {
       disposed = true;
-      const instance = graphRef.current as { destroy?: () => void } | null;
+      if (clickTimer.current) clearTimeout(clickTimer.current);
+      const instance = graphRef.current;
       instance?.destroy?.();
       graphRef.current = null;
+      selectedRef.current = null;
+      firstRenderRef.current = true;
     };
-  }, [visible, focusSlug, openPage, showArrows]);
+  }, [graphReady, expand, openPage]);
+
+  useEffect(() => {
+    setGraphReady(Boolean(visible));
+  }, [visible]);
+
+  const markSelected = useCallback((instance: Graph, slug: string | null) => {
+    const previous = selectedRef.current;
+    if (previous && previous !== slug) {
+      try {
+        void instance.setElementState(previous, [], true);
+      } catch {
+        // The previous selection may already be hidden in explore mode.
+      }
+    }
+    if (slug) {
+      try {
+        void instance.setElementState(slug, ["selected"], true);
+      } catch {
+        // focusSlug might not be part of the filtered view.
+      }
+    }
+    selectedRef.current = slug;
+  }, []);
+
+  useEffect(() => {
+    const instance = graphRef.current;
+    if (!instance || !shown || shown.nodes.length === 0) return;
+    // Surviving nodes keep their current canvas position (drags included);
+    // only genuinely new nodes get laid out, so expansions stay put.
+    const positionOf = (slug: string) => {
+      try {
+        const point = instance.getElementPosition(slug);
+        const [x, y] = point;
+        return { x, y };
+      } catch {
+        return undefined;
+      }
+    };
+    instance.setData({
+      nodes: shown.nodes.map((node) => {
+        const position = positionOf(node.slug);
+        return {
+          id: node.slug,
+          data: {
+            title: node.title,
+            pageType: node.pageType,
+            degree: degreeOf.get(node.slug) ?? 0,
+          },
+          ...(position ? { style: { x: position.x, y: position.y } } : {}),
+        };
+      }),
+      edges: shown.links.map(([source, target], index) => ({
+        id: `link-${index}`,
+        source,
+        target,
+        data: { endArrow: showArrowsRef.current },
+      })),
+    });
+    selectedRef.current = null;
+    void instance.render().then(() => {
+      if (firstRenderRef.current) {
+        firstRenderRef.current = false;
+        void instance.fitView({ when: "always" });
+      }
+      if (focusSlug && shown.nodes.some((node) => node.slug === focusSlug)) {
+        markSelected(instance, focusSlug);
+        void instance.focusElement(focusSlug, { duration: 380, easing: "ease-out" });
+      }
+    });
+  }, [shown, focusSlug, graphVersion, degreeOf, markSelected]);
+
+  // Arrow toggles restyle existing edges in place; no re-layout, no reshuffle.
+  useEffect(() => {
+    showArrowsRef.current = showArrows;
+    const instance = graphRef.current;
+    if (!instance) return;
+    const edges = instance.getEdgeData();
+    if (edges.length === 0) return;
+    instance.updateEdgeData(
+      edges.map((edge) => ({ id: edge.id, data: { endArrow: showArrows } })),
+    );
+    void instance.render();
+  }, [showArrows]);
+
+  useEffect(() => {
+    return () => {
+      if (clickTimer.current) clearTimeout(clickTimer.current);
+    };
+  }, []);
 
   if (loading) {
     return <p className={styles.empty}>图谱加载中…</p>;
@@ -264,6 +399,7 @@ export function KnowledgeGraphPanel({
             onChange={(event) => setQuery(event.target.value)}
             placeholder="搜索 Wiki 页面…"
           />
+          <span className={styles.hint}>单击打开页面 · 双击展开邻居</span>
           <div ref={containerRef} className={styles.canvas} />
         </div>
 
@@ -305,82 +441,34 @@ export function KnowledgeGraphPanel({
           >
             <span aria-hidden="true">↗</span> {showArrows ? "隐藏箭头" : "显示箭头"}
           </button>
+          {revealed ? (
+            <button
+              type="button"
+              className={styles.panelAction}
+              onClick={() => setRevealed(null)}
+            >
+              <span aria-hidden="true">↺</span> 显示全部
+            </button>
+          ) : null}
 
           <div className={styles.panelDivider} />
 
           <p className={styles.panelStatTitle}>全库概览</p>
           <p className={styles.panelStatValue}>
-            {visible?.nodes.length ?? 0} / {graph.nodes.length} 个节点
+            {shown?.nodes.length ?? 0} / {graph.nodes.length} 个节点
           </p>
           <p className={styles.panelStatHint}>
-            {hiddenTypes.size === 0
-              ? "已展示知识库全部节点"
-              : `已隐藏 ${hiddenTypes.size} 类节点`}
+            {revealed
+              ? "双击节点继续展开邻居"
+              : hiddenTypes.size === 0
+                ? "已展示知识库全部节点"
+                : `已隐藏 ${hiddenTypes.size} 类节点`}
           </p>
         </aside>
 
       </div>
 
-      {page ? (
-        <>
-          <div
-            className={styles.drawerOverlay}
-            role="presentation"
-            onClick={() => setPage(null)}
-          />
-          <aside className={styles.drawer} aria-label="Wiki 页面详情">
-            <header className={styles.drawerHead}>
-              <div>
-                <h3>{page.title}</h3>
-                <p className={styles.drawerMeta}>
-                  <span
-                    className={styles.typeBadge}
-                    style={{
-                      color: TYPE_COLORS[page.pageType] ?? TYPE_COLORS.page,
-                      borderColor: `${TYPE_COLORS[page.pageType] ?? TYPE_COLORS.page}66`,
-                      background: `${TYPE_COLORS[page.pageType] ?? TYPE_COLORS.page}1f`,
-                    }}
-                  >
-                    {TYPE_LABELS[page.pageType] ?? page.pageType}
-                  </span>
-                  {page.categoryPath.length > 0 ? (
-                    <span>{page.categoryPath.join(" / ")}</span>
-                  ) : null}
-                </p>
-              </div>
-              <button
-                type="button"
-                className={styles.close}
-                onClick={() => setPage(null)}
-                aria-label="关闭"
-              >
-                ×
-              </button>
-            </header>
-            {page.summary ? (
-              <div className={styles.summaryBox}>
-                <p
-                  className={`${styles.summary} ${summaryExpanded ? styles.summaryOpen : ""}`}
-                >
-                  {page.summary}
-                </p>
-                <button
-                  type="button"
-                  className={styles.summaryToggle}
-                  aria-expanded={summaryExpanded}
-                  aria-label={summaryExpanded ? "收起摘要" : "展开摘要"}
-                  onClick={() => setSummaryExpanded((current) => !current)}
-                >
-                  <svg viewBox="0 0 16 16" aria-hidden="true">
-                    <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
-                  </svg>
-                </button>
-              </div>
-            ) : null}
-            <div className={styles.content}>{renderWikiBody(page.content, openPage)}</div>
-          </aside>
-        </>
-      ) : null}
+      {pageSlug ? <WikiPageDrawer reference={reference} slug={pageSlug} onClose={() => setPageSlug(null)} /> : null}
     </div>
   );
 }

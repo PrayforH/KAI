@@ -1,6 +1,7 @@
 .layout {
   display: grid;
   gap: 10px;
+  composes: surface from "./knowledge-ui.module.css";
 }
 
 .canvasWrap {
@@ -14,18 +15,34 @@
   top: 12px;
   left: 12px;
   width: min(280px, 60%);
-  min-height: 32px;
+  min-height: 36px;
   padding: 0 11px;
   border: 1px solid var(--codex-line, #303030);
   border-radius: 8px;
   background: var(--codex-panel-solid, #242424);
   color: var(--codex-ink, #ffffff);
-  font-size: 12px;
+  font-size: 13px;
   font-family: inherit;
 }
 
 .search::placeholder {
   color: var(--codex-faint, #737373);
+}
+
+/* Interaction hint floats opposite the search box and never blocks the
+   canvas beneath it. */
+.hint {
+  position: absolute;
+  z-index: 2;
+  top: 12px;
+  right: 12px;
+  padding: 5px 10px;
+  border: 1px solid var(--codex-line, #303030);
+  border-radius: 8px;
+  background: var(--codex-panel-solid, #242424);
+  color: var(--codex-faint, #737373);
+  font-size: 11.5px;
+  pointer-events: none;
 }
 
 .panel {
@@ -55,9 +72,10 @@
   border-radius: 6px;
   background: transparent;
   color: var(--codex-ink-soft, #d6d6d6);
-  font-size: 11.5px;
+  font-size: 12px;
   text-align: left;
   cursor: pointer;
+  min-height: 30px;
 }
 
 .legendItem:hover {
@@ -93,9 +111,10 @@
   border-radius: 6px;
   background: transparent;
   color: var(--codex-ink-soft, #d6d6d6);
-  font-size: 11.5px;
+  font-size: 12px;
   text-align: left;
   cursor: pointer;
+  min-height: 30px;
 }
 
 .panelAction:hover {
@@ -109,7 +128,7 @@
 .panelStatTitle {
   margin: 0 0 4px;
   color: var(--codex-muted, #a1a1a1);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .panelStatValue {
@@ -122,7 +141,7 @@
 .panelStatHint {
   margin: 3px 0 0;
   color: var(--codex-faint, #737373);
-  font-size: 10.5px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -186,7 +205,7 @@
   gap: 6px;
   margin: 0;
   color: var(--codex-faint, #737373);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .close {
@@ -212,7 +231,7 @@
   padding: 11px 13px;
   border-left: 2px solid var(--codex-line-strong, #444444);
   color: var(--codex-muted, #a1a1a1);
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.75;
 }
 
@@ -224,31 +243,15 @@
   margin: 16px 0 8px;
   color: var(--codex-ink, #ffffff);
   font-size: 15px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: -0.01em;
 }
 
 .bodyLine {
   margin: 0 0 9px;
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.85;
   word-break: break-word;
-}
-
-.bodyLink {
-  padding: 0 2px;
-  border: 0;
-  background: transparent;
-  color: var(--codex-accent-hover, #ffffff);
-  font-size: inherit;
-  font-family: inherit;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
-
-.bodyLink:hover {
-  filter: brightness(1.15);
 }
 
 .empty {
@@ -272,7 +275,7 @@
   position: relative;
   margin: 0 0 7px;
   padding-left: 14px;
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.8;
   word-break: break-word;
 }
@@ -296,7 +299,7 @@
   border-radius: 5px;
   background: var(--codex-code-inline, #222a31);
   font-family: var(--codex-font-mono, monospace);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .summaryBox {
@@ -313,7 +316,7 @@
   border: 0;
   padding: 0;
   color: var(--codex-muted, #a1a1a1);
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.75;
   display: -webkit-box;
   -webkit-line-clamp: 3;
@@ -365,6 +368,13 @@
   padding: 1px 8px;
   border: 1px solid;
   border-radius: 999px;
-  font-size: 10.5px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+@media (max-width: 800px) {
+  .canvasRow { grid-template-columns: minmax(0, 1fr); }
+  .panel { width: 100%; }
+  .legendList { grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); }
+  .canvas { min-height: 400px; }
 }
