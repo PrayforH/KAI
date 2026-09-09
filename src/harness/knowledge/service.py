@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime
@@ -213,7 +214,13 @@ class KnowledgeService:
         owner_user_id: str | None = None,
     ) -> Sequence[KnowledgeBase]:
         values = await self.repository.list_bases(tenant_id)
-        values = tuple([await self._with_document_count(tenant_id, item) for item in values])
+        # Refresh engine-backed counts concurrently; the list is small and a
+        # stale badge is worse than a couple of extra remote reads.
+        values = tuple(
+            await asyncio.gather(
+                *(self._with_document_count(tenant_id, item) for item in values)
+            )
+        )
         if owner_user_id is None:
             return values
         member_references = {
@@ -863,15 +870,29 @@ class KnowledgeService:
         tenant_id: str,
         base: KnowledgeBase,
     ) -> KnowledgeBase:
-        """Attach the last synced document count without a remote round trip."""
+        """Attach the engine's live document count.
+
+        Documents can be added directly in WeKnora, so the cached checkpoint is
+        only a fallback when the remote read fails.
+        """
         if base.engine is not KnowledgeBaseEngine.WEKNORA or not base.engine_ref:
             return base
         try:
             source = await self.repository.get_source(tenant_id, base.reference)
         except NotFoundError:
             return base
-        raw = source.checkpoint.get("documents")
-        count = raw if isinstance(raw, int) and raw >= 0 else 0
+        cached = source.checkpoint.get("documents")
+        fallback = cached if isinstance(cached, int) and cached >= 0 else 0
+        remote_id = getattr(source.config, "weknora_base_id", "")
+        if self._engine is None or not remote_id:
+            return base.model_copy(update={"document_count": fallback})
+        try:
+            documents = await self._engine.list_documents(remote_id)
+        except KnowledgeEngineError:
+            return base.model_copy(update={"document_count": fallback})
+        count = len(documents)
+        if count != fallback:
+            await self._refresh_document_count(tenant_id, base.reference, source)
         return base.model_copy(update={"document_count": count})
 
     def _require_engine(self) -> KnowledgeEnginePort:
