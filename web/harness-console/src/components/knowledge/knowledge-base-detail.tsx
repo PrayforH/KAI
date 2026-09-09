@@ -71,6 +71,7 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
   const [tableLoading, setTableLoading] = useState(false);
   const [tableError, setTableError] = useState("");
   const [dragging, setDragging] = useState(false);
+  const [summaryExpanded, setSummaryExpanded] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -131,7 +132,14 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
   const openDocument = useCallback(
     async (doc: StudioKnowledgeDocumentStatus) => {
       setSelected(doc);
-      setContentView("full");
+      setSummaryExpanded(false);
+      setTable(null);
+      setTableError("");
+      const spreadsheet = ["xls", "xlsx", "xlsm", "csv"].includes(
+        (doc.fileType || "").toLowerCase(),
+      );
+      // Spreadsheet documents open straight into the parsed table view.
+      setContentView(spreadsheet ? "table" : "full");
       setChunks([]);
       setChunksLoading(true);
       try {
@@ -140,6 +148,18 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
         setError(cause instanceof Error ? cause.message : "加载切片失败");
       } finally {
         setChunksLoading(false);
+      }
+      if (spreadsheet) {
+        setTableLoading(true);
+        try {
+          setTable(
+            await studioClient.getKnowledgeDocumentTable(reference, doc.documentId),
+          );
+        } catch (cause) {
+          setTableError(cause instanceof Error ? cause.message : "表格解析失败");
+        } finally {
+          setTableLoading(false);
+        }
       }
     },
     [reference],
@@ -721,7 +741,26 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
               {selected.description ? (
                 <section className={styles.drawerSection}>
                   <h3 className={styles.drawerSectionTitle}>摘要</h3>
-                  <p className={styles.drawerSummary}>{selected.description}</p>
+                  <div className={styles.summaryBox}>
+                    <p
+                      className={`${styles.drawerSummary} ${
+                        summaryExpanded ? styles.drawerSummaryOpen : ""
+                      }`}
+                    >
+                      {selected.description}
+                    </p>
+                    <button
+                      type="button"
+                      className={styles.summaryToggle}
+                      aria-expanded={summaryExpanded}
+                      aria-label={summaryExpanded ? "收起摘要" : "展开摘要"}
+                      onClick={() => setSummaryExpanded((current) => !current)}
+                    >
+                      <svg viewBox="0 0 16 16" aria-hidden="true">
+                        <path d="m4.5 6.5 3.5 3.5 3.5-3.5" />
+                      </svg>
+                    </button>
+                  </div>
                 </section>
               ) : null}
 

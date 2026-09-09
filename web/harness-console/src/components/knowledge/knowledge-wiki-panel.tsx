@@ -303,22 +303,33 @@ export function KnowledgeWikiPanel({
               </button>
             </header>
             <div className={styles.content}>
-              {rendered.map((block, index) =>
-                block.kind === "link" ? (
-                  <button
-                    key={`${block.slug}-${index}`}
-                    type="button"
-                    className={styles.wikiLink}
-                    onClick={() => void openPage(block.slug)}
-                  >
-                    {block.label}
-                  </button>
-                ) : (
-                  <p key={`text-${index}`} className={styles.paragraph}>
-                    {block.text}
-                  </p>
-                ),
-              )}
+              {rendered.map((line, index) => (
+                <p
+                  key={index}
+                  className={
+                    line.kind === "heading"
+                      ? styles.paragraphHeading
+                      : line.kind === "bullet"
+                        ? styles.paragraphBullet
+                        : styles.paragraph
+                  }
+                >
+                  {line.segments.map((segment, segmentIndex) =>
+                    segment.kind === "link" ? (
+                      <button
+                        key={segmentIndex}
+                        type="button"
+                        className={styles.wikiLink}
+                        onClick={() => void openPage(segment.slug)}
+                      >
+                        {segment.label}
+                      </button>
+                    ) : (
+                      <span key={segmentIndex}>{segment.text}</span>
+                    ),
+                  )}
+                </p>
+              ))}
             </div>
           </>
         ) : (
@@ -329,47 +340,45 @@ export function KnowledgeWikiPanel({
   );
 }
 
-type ContentBlock =
+type InlineSegment =
   | { kind: "text"; text: string }
   | { kind: "link"; slug: string; label: string };
 
+type ContentLine = {
+  kind: "heading" | "bullet" | "text";
+  segments: InlineSegment[];
+};
+
 const WIKILINK = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
 
-/** Split WeKnora wiki markdown into plain paragraphs and [[slug|label]] links. */
-export function renderWikiContent(content: string): ContentBlock[] {
-  const blocks: ContentBlock[] = [];
-  const lines = content.replace(/\r\n/g, "\n").split("\n");
-  let buffer: string[] = [];
-
-  const flush = () => {
-    const text = buffer.join("\n").replace(/^#{1,6}\s+/gm, "").trim();
-    if (text) blocks.push({ kind: "text", text });
-    buffer = [];
-  };
-
-  for (const line of lines) {
-    if (!line.trim()) {
-      flush();
-      continue;
-    }
+/** Split WeKnora wiki markdown into lines whose [[links]] stay inline in the
+ * sentence, so a keyword never breaks onto its own line. */
+export function renderWikiContent(content: string): ContentLine[] {
+  const lines: ContentLine[] = [];
+  for (const raw of content.replace(/\r\n/g, "\n").split("\n")) {
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    const heading = /^#{1,6}\s+(.*)$/.exec(trimmed);
+    const bullet = /^[-*]\s+(.*)$/.exec(trimmed);
+    const body = heading ? heading[1] : bullet ? bullet[1] : raw;
+    const segments: InlineSegment[] = [];
+    let cursor = 0;
+    let match: RegExpExecArray | null;
     WIKILINK.lastIndex = 0;
-    if (WIKILINK.test(line)) {
-      flush();
-      let cursor = 0;
-      WIKILINK.lastIndex = 0;
-      let match: RegExpExecArray | null;
-      while ((match = WIKILINK.exec(line)) !== null) {
-        const before = line.slice(cursor, match.index).trim();
-        if (before) blocks.push({ kind: "text", text: before });
-        blocks.push({ kind: "link", slug: match[1].trim(), label: (match[2] ?? match[1]).trim() });
-        cursor = match.index + match[0].length;
-      }
-      const after = line.slice(cursor).trim();
-      if (after) blocks.push({ kind: "text", text: after });
-      continue;
+    while ((match = WIKILINK.exec(body)) !== null) {
+      const before = body.slice(cursor, match.index);
+      if (before) segments.push({ kind: "text", text: before });
+      segments.push({
+        kind: "link",
+        slug: match[1].trim(),
+        label: (match[2] ?? match[1]).trim(),
+      });
+      cursor = match.index + match[0].length;
     }
-    buffer.push(line);
+    const after = body.slice(cursor);
+    if (after) segments.push({ kind: "text", text: after });
+    if (segments.length === 0) continue;
+    lines.push({ kind: heading ? "heading" : bullet ? "bullet" : "text", segments });
   }
-  flush();
-  return blocks;
+  return lines;
 }

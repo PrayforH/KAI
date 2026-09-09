@@ -354,3 +354,38 @@
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+
+/* Inline keyword styling: links stay in the sentence flow instead of taking
+   their own flex line. */
+.content {
+  display: block;
+}
+
+.paragraph,
+.paragraphHeading,
+.paragraphBullet {
+  margin: 0 0 10px;
+  color: var(--codex-ink-soft, #d6d6d6);
+  font-size: 13px;
+  line-height: 1.85;
+  word-break: break-word;
+}
+
+.paragraphHeading {
+  margin-top: 16px;
+  color: var(--codex-ink, #ffffff);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.paragraphBullet {
+  position: relative;
+  padding-left: 14px;
+}
+
+.paragraphBullet::before {
+  content: "•";
+  position: absolute;
+  left: 2px;
+  color: var(--codex-faint, #737373);
+}

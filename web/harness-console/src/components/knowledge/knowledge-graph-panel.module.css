@@ -360,3 +360,11 @@
 .summaryToggle[aria-expanded="true"] svg {
   transform: rotate(180deg);
 }
+
+.typeBadge {
+  padding: 1px 8px;
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+}

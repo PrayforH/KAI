@@ -333,11 +333,19 @@ export function KnowledgeGraphPanel({
               <div>
                 <h3>{page.title}</h3>
                 <p className={styles.drawerMeta}>
-                  <span className={styles.dot} style={{ background: TYPE_COLORS[page.pageType] }} />
-                  {TYPE_LABELS[page.pageType] ?? page.pageType}
-                  {page.categoryPath.length > 0
-                    ? ` · ${page.categoryPath.join(" / ")}`
-                    : ""}
+                  <span
+                    className={styles.typeBadge}
+                    style={{
+                      color: TYPE_COLORS[page.pageType] ?? TYPE_COLORS.page,
+                      borderColor: `${TYPE_COLORS[page.pageType] ?? TYPE_COLORS.page}66`,
+                      background: `${TYPE_COLORS[page.pageType] ?? TYPE_COLORS.page}1f`,
+                    }}
+                  >
+                    {TYPE_LABELS[page.pageType] ?? page.pageType}
+                  </span>
+                  {page.categoryPath.length > 0 ? (
+                    <span>{page.categoryPath.join(" / ")}</span>
+                  ) : null}
                 </p>
               </div>
               <button
