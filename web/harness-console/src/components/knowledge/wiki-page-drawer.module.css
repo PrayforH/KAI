@@ -94,7 +94,7 @@
   padding: 0 2px;
   border: 0;
   background: transparent;
-  color: var(--codex-success, #40c977);
+  color: var(--codex-accent-hover, #ffffff);
   font-size: inherit;
   font-family: inherit;
   text-decoration: underline;

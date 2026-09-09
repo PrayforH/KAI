@@ -2510,18 +2510,22 @@ body.codex-theme-v1:has(.console-shell) .task-sidebar-brand .task-sidebar-search
 }
 
 /* Wiki links inside assistant answers open the entity drawer. */
+/* Wiki links inside answers follow the monochrome theme: white ink with a
+   faint underline, not a green accent. */
 .aui-wiki-link {
-  padding: 0 3px;
+  padding: 0 2px;
   border: 0;
-  border-radius: 5px;
-  background: var(--codex-success-soft, rgb(64 201 119 / 13%));
-  color: var(--codex-success, #40c977);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--codex-accent-hover, #ffffff);
   font: inherit;
   text-decoration: underline;
+  text-decoration-color: rgb(236 236 236 / 44%);
   text-underline-offset: 2px;
   cursor: pointer;
 }
 
 .aui-wiki-link:hover {
-  filter: brightness(1.15);
+  background: var(--codex-accent-faint, rgb(236 236 236 / 7%));
+  text-decoration-color: rgb(236 236 236 / 72%);
 }

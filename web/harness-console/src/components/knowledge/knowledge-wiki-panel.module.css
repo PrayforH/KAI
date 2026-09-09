@@ -218,17 +218,21 @@
 }
 
 .wikiLink {
-  padding: 1px 7px;
-  border: 1px solid rgb(230 170 74 / 35%);
-  border-radius: 6px;
-  background: var(--codex-warning-soft, rgb(230 170 74 / 14%));
-  color: var(--codex-warning, #e6aa4a);
+  padding: 1px 5px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--codex-accent-hover, #ffffff);
+  text-decoration: underline;
+  text-decoration-color: rgb(236 236 236 / 44%);
+  text-underline-offset: 2px;
   font-size: 12px;
   cursor: pointer;
 }
 
 .wikiLink:hover {
-  filter: brightness(1.15);
+  background: var(--codex-accent-faint, rgb(236 236 236 / 7%));
+  text-decoration-color: rgb(236 236 236 / 72%);
 }
 
 .empty {
@@ -351,8 +355,9 @@
 
 /* Page body links mirror the WeKnora wiki: green and underlined. */
 .wikiLink {
-  color: var(--codex-success, #40c977);
+  color: var(--codex-accent-hover, #ffffff);
   text-decoration: underline;
+  text-decoration-color: rgb(236 236 236 / 44%);
   text-underline-offset: 2px;
 }
 

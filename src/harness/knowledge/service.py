@@ -1417,6 +1417,44 @@ class KnowledgeService:
         pages: list[KnowledgeWikiPage] = []
         seen: set[str] = set()
         for binding in bindings:
+            # Lead with the index page: it maps every curated page, which lets
+            # the model plan several targeted searches instead of one.
+            source = await self.repository.get_source(
+                tenant_id, binding.source_reference
+            )
+            if source.kind.value != "weknora":
+                continue
+            if not await self._allows_source(
+                tenant_id,
+                actor_id,
+                (),
+                binding.knowledge_base_reference,
+                source,
+            ):
+                continue
+            remote_id = getattr(source.config, "weknora_base_id", "")
+            if not remote_id:
+                continue
+            try:
+                index_pages = await self._require_engine().list_wiki_pages(remote_id)
+            except KnowledgeEngineError:
+                index_pages = ()
+            for item in index_pages:
+                if item.page_type != "index" or item.slug in seen:
+                    continue
+                seen.add(item.slug)
+                pages.append(
+                    KnowledgeWikiPage(
+                        slug=item.slug,
+                        title=item.title,
+                        pageType=item.page_type,
+                        content=item.content,
+                        summary=item.summary,
+                        aliases=item.aliases,
+                        categoryPath=item.category_path,
+                        folderId=item.folder_id,
+                    )
+                )
             source = await self.repository.get_source(tenant_id, binding.source_reference)
             if source.kind.value != "weknora":
                 continue

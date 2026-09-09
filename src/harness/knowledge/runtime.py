@@ -89,7 +89,7 @@ async def _search_wiki_pages(arguments: dict[str, Any]) -> dict[str, Any]:
     if execution is None:
         raise RuntimeError("knowledge execution context is not active")
     query = arguments.get("query")
-    limit = arguments.get("limit", 8)
+    limit = arguments.get("limit", 12)
     if not isinstance(query, str) or not query.strip():
         return {
             "content": [{"type": "text", "text": "query must be a non-empty string"}],
@@ -122,7 +122,7 @@ async def _search_wiki_pages(arguments: dict[str, Any]) -> dict[str, Any]:
                 "title": page.title,
                 "pageType": page.page_type,
                 "summary": page.summary,
-                "content": page.content[:4_000],
+                "content": page.content[:8_000],
             }
             for page in pages
         ],
@@ -152,7 +152,7 @@ search_wiki_pages_tool = SdkMcpTool(
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 25,
-                "default": 8,
+                "default": 12,
             },
         },
         "required": ["query"],
@@ -176,7 +176,7 @@ query_knowledge_sources_tool = SdkMcpTool(
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 25,
-                "default": 8,
+                "default": 12,
             },
         },
         "required": ["query"],

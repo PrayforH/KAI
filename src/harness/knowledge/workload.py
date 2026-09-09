@@ -204,7 +204,7 @@ def build_knowledge_mcp_app(
     )
     async def search_wiki_pages(
         query: str,
-        limit: int = 8,
+        limit: int = 12,
     ) -> dict[str, object]:
         workload = _workload.get()
         if workload is None:
@@ -230,7 +230,7 @@ def build_knowledge_mcp_app(
                     "title": page.title,
                     "pageType": page.page_type,
                     "summary": page.summary,
-                    "content": page.content[:4_000],
+                    "content": page.content[:8_000],
                 }
                 for page in pages
             ],
