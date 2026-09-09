@@ -89,8 +89,8 @@ async def test_published_bundle_is_available_in_the_task_agent_catalog(
                     "name": "public-opinion-analysis",
                     "description": (
                         "面向中文舆情监测、专用舆情数据查询、事件复盘、观点与传播分析、风险研判及 "
-                        "HTML 或 Markdown 报告生成；在用户要求构造舆情关键词、地域/排除条件、热搜分析、"
-                        "原文链接或可下载舆情报告时使用。"
+                        "HTML 或 Markdown 报告生成；在用户要求构造舆情关键词、地域/排除条件、"
+                        "热搜分析、原文链接或可下载舆情报告时使用。"
                     ),
                 }
             ],
