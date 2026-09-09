@@ -4,7 +4,7 @@
 - 分支：`feature/weknora-knowledge-base`
 - 目标环境：`172.20.109.173`（KAI WORKBENCH 黑色主题，Web `:3301`，API `:8800`）
 - 知识数据面：`172.20.109.174:8180` WeKnora（服务账号，终端用户不直连）
-- 发布 tag：`weknora-kb-20260909-43469f4`（api 与 web 同 tag）
+- 发布 tag：`weknora-kb-20260910-cardmenu`（api 与 web 同 tag；此前为 `weknora-kb-20260909-del`）
 - 配套设计：[2026-09-08-weknora-knowledge-base-design.md](2026-09-08-weknora-knowledge-base-design.md)、[实现计划](2026-09-08-weknora-knowledge-base-implementation-plan.md)
 
 ## 1. 交付内容
@@ -134,6 +134,13 @@ $COMPOSE up -d --no-build --force-recreate api worker web
 | 工具栏顺序 | 编辑器底栏顺序为 `+ 附件 · @ 知识库 · 智能体 · Wiki 开关`，问答模式改为紧凑开关（非下拉） | 通过 |
 | 控件紧凑化 | 知识库控件只显示放大的 `@` + 已选数量（宽度约 51px）；知识库下拉列表收窄；工具栏按钮间距收紧；侧栏搜索与收起按钮间距 8px | 通过 |
 | 登录页 logo | 中间卡片左上角由字母占位改为真实产品标识 `/brand/kai-mark-v2.png` | 通过 |
+| 删除文档 | 点击删除后卡片立即消失、计数递减并提示「文档已删除」；WeKnora 删除是异步任务（返回 `task_id`，列表短时间内仍含该行），重复删除同一文档不再报 404（引擎侧把 404 视为已删除） | 通过 |
+| 删除空响应 | 删除接口返回 `204 No Content`，前端此前对空响应仍调用 `response.json()` 会抛 `Unexpected end of JSON input`，导致删除成功却显示报错；客户端统一改为容忍 204/空体 | 通过 |
+| 拖拽上传默认行为 | 文件拖到页面任意位置不再被浏览器打开/下载（窗口级 `dragover`/`drop` 阻止默认行为），拖入文档区正常上传（实测 `拖拽验证-20260909.txt` 上传并进入解析） | 通过 |
+| 图谱动效升级 | 基于 G6 v5 原生能力重构：实例挂载一次、数据经 `setData` 增量更新；力导向逐帧动画入场；悬停经 `hover-activate`（degree 1）高亮邻居并压暗无关节点/边；节点按连接度分级尺寸、标签带深色底板、active/selected 态带光晕；`fitView`/`focusElement` 带缓动动画；箭头切换经 `updateEdgeData` 原地改样式不重排；已见节点保留画布位置，展开新邻居不闪动 | 通过 |
+| 图谱展开邻居 | 双击节点进入探索模式：揭示该节点及其直接邻居，继续双击已见节点逐跳外扩；侧栏出现「显示全部」重置与「双击节点继续展开邻居」提示；单击（240ms 消歧）仍打开页面抽屉。实测 16→10→重置 16 | 通过 |
+| 知识库卡片更多菜单 | 「成员管理」「删除」收进卡片右上角 ⋯ 菜单；点击卡片其他区域或按 Esc 收起（实测 外点 0 项→重开 2 项→Esc 0 项）；删除仅管理角色可见 | 通过 |
+| 删除知识库 | 新增 `DELETE /v1/studio/knowledge/bases/{reference}`（204）：先删 WeKnora 远端库（404 幂等）再清本地 base/source/成员/遗留切片，全程审计；确认弹窗明示不可恢复。实测建「删除探针-临时」→菜单删除→卡片消失、计数 3→2、WeKnora 侧无残留 | 通过 |
 
 ## 4. 待验证项与后续动作
 
