@@ -123,13 +123,12 @@ export function TaskKnowledgeControl({ disabled }: { disabled: boolean }) {
     useTaskKnowledge();
   const [open, setOpen] = useState(false);
   if (loading && available.length === 0) return null;
-  const label =
-    selected.length === 0
-      ? "知识库"
-      : selected.length === 1
-        ? (available.find((item) => item.reference === selected[0])?.displayName ??
-          selected[0])
-        : `知识库 ${selected.length}`;
+  // The control shows only the selected count; the names live in the tooltip
+  // and the picker itself.
+  const count = selected.length;
+  const names = selected
+    .map((reference) => available.find((item) => item.reference === reference)?.displayName ?? reference)
+    .join("、");
   return (
     <div className="task-knowledge-control" data-active={selected.length > 0 ? "true" : "false"}>
       <button
@@ -138,13 +137,17 @@ export function TaskKnowledgeControl({ disabled }: { disabled: boolean }) {
         disabled={disabled}
         aria-expanded={open}
         aria-haspopup="dialog"
-        title="选择本次任务使用的知识库，可多选"
+        title={
+          count === 0
+            ? "选择本次任务使用的知识库，可多选"
+            : `已选知识库：${names}`
+        }
         onClick={() => setOpen((current) => !current)}
       >
         <span className="task-knowledge-at" aria-hidden="true">
           @
         </span>
-        <span>{label}</span>
+        <span className="task-knowledge-count">{count}</span>
       </button>
     </div>
   );

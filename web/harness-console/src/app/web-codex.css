@@ -1343,7 +1343,7 @@ body.codex-theme-v1:has(.console-shell) .composer-skill-context > button:hover {
 
 body.codex-theme-v1:has(.console-shell) .harness-composer-shell .composer-toolbar {
   min-height: 36px;
-  gap: 4px;
+  gap: 1px;
 }
 
 body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-attach {
@@ -2276,7 +2276,7 @@ body.codex-theme-v1:has(.console-shell) .task-sidebar-brand .task-sidebar-search
 /* Search and collapse are one trailing control pair: keep them adjacent
    instead of spreading across the row gap. */
 body.codex-theme-v1:has(.console-shell) .task-sidebar-brand {
-  gap: 0;
+  gap: 8px;
 }
 
 body.codex-theme-v1:has(.console-shell) .task-sidebar-brand .task-sidebar-search-control .command-center-trigger {
@@ -2318,11 +2318,11 @@ body.codex-theme-v1:has(.console-shell) .task-sidebar-brand .task-sidebar-search
 }
 
 .task-knowledge-trigger {
-  min-height: 34px;
-  padding: 0 10px;
+  min-height: 32px;
+  padding: 0 8px;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 5px;
   border: 1px solid transparent;
   border-radius: 8px;
   color: var(--codex-muted, #a1a1a1);
@@ -2374,7 +2374,7 @@ body.codex-theme-v1:has(.console-shell) .task-sidebar-brand .task-sidebar-search
   z-index: 71;
   bottom: calc(100% + 8px);
   left: 0;
-  width: min(320px, calc(100vw - 32px));
+  width: min(228px, calc(100vw - 32px));
   max-height: 320px;
   overflow-y: auto;
   padding: 10px;
@@ -2534,4 +2534,36 @@ body.codex-theme-v1:has(.console-shell) .task-sidebar-brand .task-sidebar-search
 .task-knowledge-switch-label {
   font-weight: 600;
   letter-spacing: 0.02em;
+}
+
+/* The composer's knowledge picker is keyed to "@": a large glyph plus the
+   number of selected knowledge bases. */
+.task-knowledge-at {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  border-radius: 5px;
+  color: var(--codex-ink-soft, #d6d6d6);
+  background: var(--codex-accent-faint, rgb(236 236 236 / 7%));
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.task-knowledge-count {
+  min-width: 10px;
+  color: var(--codex-muted, #a1a1a1);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.task-knowledge-control[data-active="true"] .task-knowledge-at {
+  color: var(--codex-ink, #ffffff);
+  background: var(--codex-accent-soft, rgb(236 236 236 / 14%));
+}
+
+.task-knowledge-control[data-active="true"] .task-knowledge-count {
+  color: var(--codex-ink, #ffffff);
 }
