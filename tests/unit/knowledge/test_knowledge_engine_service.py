@@ -36,6 +36,15 @@ class FakeEngine:
         self.created_bases: list[dict[str, str]] = []
         self.search_calls: list[tuple[list[str], str]] = []
         self.documents: dict[str, list[EngineDocumentStatus]] = {}
+        self.document_rows: list[EngineDocumentStatus] = [
+            EngineDocumentStatus(
+                document_id="doc-1",
+                title="手册.pdf",
+                parse_status="completed",
+                summary_status="completed",
+                knowledge_base_id="remote-1",
+            )
+        ]
         self.fail_base_ids: set[str] = set()
 
     async def create_base(self, *, name: str, description: str, kb_type: str) -> str:
@@ -50,18 +59,7 @@ class FakeEngine:
     async def list_documents(self, base_id: str) -> tuple[EngineDocumentStatus, ...]:
         if base_id in self.fail_base_ids:
             raise KnowledgeEngineError("remote unavailable")
-        return self.documents.get(
-            base_id,
-            (
-                EngineDocumentStatus(
-                    document_id="doc-1",
-                    title="手册.pdf",
-                    parse_status="completed",
-                    summary_status="completed",
-                    knowledge_base_id=base_id,
-                ),
-            ),
-        )
+        return self.documents.get(base_id, tuple(self.document_rows))
 
     async def create_manual_document(
         self,
@@ -492,3 +490,31 @@ def test_healthy_weknora_source_round_trips_without_local_snapshot() -> None:
     }
     with pytest.raises(ValueError, match="requires an active snapshot"):
         KnowledgeSource.model_validate(legacy)
+
+
+@pytest.mark.asyncio
+async def test_document_mutations_refresh_the_base_count() -> None:
+    service, engine = make_service()
+    await create_engine_base(service)
+    bases = await service.list_bases("local", "user-1")
+    assert bases[0].document_count == 1
+
+    # A new upload must refresh the cached count, not wait for a manual sync.
+    engine.document_rows.append(
+        EngineDocumentStatus(
+            document_id="doc-2",
+            title="分类表.xlsx",
+            parse_status="completed",
+            knowledge_base_id="remote-1",
+        )
+    )
+    await service.upload_source_document(
+        "local", "user-1", "case-library", "分类表.xlsx", b"data"
+    )
+    bases = await service.list_bases("local", "user-1")
+    assert bases[0].document_count == 2
+
+    engine.document_rows.pop()
+    await service.delete_source_document("local", "user-1", "case-library", "doc-2")
+    bases = await service.list_bases("local", "user-1")
+    assert bases[0].document_count == 1

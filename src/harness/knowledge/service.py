@@ -829,6 +829,35 @@ class KnowledgeService:
 
     # --- engine-backed (WeKnora) knowledge bases --------------------------
 
+    async def _refresh_document_count(
+        self,
+        tenant_id: str,
+        reference: str,
+        source: KnowledgeSource,
+    ) -> None:
+        """Persist the live document count so the console card stays accurate.
+
+        WeKnora's document list is the source of truth; the sync checkpoint is
+        only a cache, so a create/delete must refresh it instead of waiting for
+        the next manual sync.
+        """
+        remote_id = getattr(source.config, "weknora_base_id", "")
+        if not remote_id:
+            return
+        documents = await self._require_engine().list_documents(remote_id)
+        checkpoint = dict(source.checkpoint)
+        checkpoint["documents"] = len(documents)
+        if checkpoint == source.checkpoint:
+            return
+        updated = source.model_copy(
+            update={
+                "revision": source.revision + 1,
+                "checkpoint": checkpoint,
+                "updated_at": self._clock(),
+            }
+        )
+        await self.repository.compare_and_set_source(source.revision, updated)
+
     async def _with_document_count(
         self,
         tenant_id: str,
@@ -990,6 +1019,7 @@ class KnowledgeService:
             reference,
             {"document_id": document_id, "kind": "manual"},
         )
+        await self._refresh_document_count(tenant_id, reference, source)
         return await self.get_source_document(tenant_id, actor_id, reference, document_id)
 
     async def upload_source_document(
@@ -1015,6 +1045,7 @@ class KnowledgeService:
             reference,
             {"document_id": document_id, "kind": "file", "filename": filename[:200]},
         )
+        await self._refresh_document_count(tenant_id, reference, source)
         return await self.get_source_document(tenant_id, actor_id, reference, document_id)
 
     async def get_source_document(
@@ -1058,6 +1089,7 @@ class KnowledgeService:
             reference,
             {"document_id": document_id},
         )
+        await self._refresh_document_count(tenant_id, reference, source)
 
     async def reparse_source_document(
         self,

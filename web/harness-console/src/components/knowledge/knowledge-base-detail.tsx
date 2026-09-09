@@ -72,6 +72,7 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
   const [tableError, setTableError] = useState("");
   const [dragging, setDragging] = useState(false);
   const [summaryExpanded, setSummaryExpanded] = useState(false);
+  const [batchMode, setBatchMode] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -301,6 +302,12 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
 
   const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
 
+  const exitBatchMode = useCallback(() => {
+    setBatchMode(false);
+    setSelectedIds(new Set());
+    setMenuFor(null);
+  }, []);
+
   const bulkReparse = useCallback(async () => {
     if (selectedIds.size === 0) return;
     setBulkBusy(true);
@@ -496,14 +503,16 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
                       }}
                     >
                       <header className={styles.docCardHead}>
-                        <input
-                          type="checkbox"
-                          className={styles.docCheckbox}
-                          checked={isSelected}
-                          onClick={(event) => event.stopPropagation()}
-                          onChange={() => toggleSelect(doc.documentId)}
-                          aria-label={`选择 ${doc.title}`}
-                        />
+                        {batchMode ? (
+                          <input
+                            type="checkbox"
+                            className={styles.docCheckbox}
+                            checked={isSelected}
+                            onClick={(event) => event.stopPropagation()}
+                            onChange={() => toggleSelect(doc.documentId)}
+                            aria-label={`选择 ${doc.title}`}
+                          />
+                        ) : null}
                         <h3 className={styles.docCardTitle} title={doc.title}>
                           {doc.title}
                         </h3>
@@ -549,6 +558,16 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
                                 }}
                               >
                                 重新解析
+                              </button>
+                              <button
+                                type="button"
+                                role="menuitem"
+                                onClick={() => {
+                                  setMenuFor(null);
+                                  setBatchMode(true);
+                                }}
+                              >
+                                批量管理
                               </button>
                               <button
                                 type="button"
@@ -599,17 +618,20 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
               </div>
             )}
 
-            {selectedIds.size > 0 ? (
+            {batchMode ? (
               <div className={styles.bulkBar}>
                 <span className={styles.bulkCount}>已选 {selectedIds.size} 项</span>
                 <button type="button" className={styles.bulkLink} onClick={clearSelection}>
                   取消选择
                 </button>
+                <button type="button" className={styles.bulkLink} onClick={exitBatchMode}>
+                  退出批量
+                </button>
                 <span className={styles.bulkSpacer} />
                 <button
                   type="button"
                   className={styles.ghost}
-                  disabled={bulkBusy}
+                  disabled={bulkBusy || selectedIds.size === 0}
                   onClick={() => void bulkReparse()}
                 >
                   重建知识
@@ -617,13 +639,14 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
                 <button
                   type="button"
                   className={styles.bulkDanger}
-                  disabled={bulkBusy}
+                  disabled={bulkBusy || selectedIds.size === 0}
                   onClick={() => void bulkDelete()}
                 >
                   批量删除
                 </button>
               </div>
             ) : null}
+
           </section>
         ) : tab === "wiki" ? (
           <KnowledgeWikiPanel

@@ -314,20 +314,27 @@ export function KnowledgeWikiPanel({
                         : styles.paragraph
                   }
                 >
-                  {line.segments.map((segment, segmentIndex) =>
-                    segment.kind === "link" ? (
-                      <button
-                        key={segmentIndex}
-                        type="button"
-                        className={styles.wikiLink}
-                        onClick={() => void openPage(segment.slug)}
-                      >
-                        {segment.label}
-                      </button>
-                    ) : (
-                      <span key={segmentIndex}>{segment.text}</span>
-                    ),
-                  )}
+                  {line.segments.map((segment, segmentIndex) => {
+                    if (segment.kind === "link") {
+                      return (
+                        <button
+                          key={segmentIndex}
+                          type="button"
+                          className={styles.wikiLink}
+                          onClick={() => void openPage(segment.slug)}
+                        >
+                          {segment.label}
+                        </button>
+                      );
+                    }
+                    if (segment.kind === "bold") {
+                      return <strong key={segmentIndex}>{segment.text}</strong>;
+                    }
+                    if (segment.kind === "code") {
+                      return <code key={segmentIndex}>{segment.text}</code>;
+                    }
+                    return <span key={segmentIndex}>{segment.text}</span>;
+                  })}
                 </p>
               ))}
             </div>
@@ -342,7 +349,9 @@ export function KnowledgeWikiPanel({
 
 type InlineSegment =
   | { kind: "text"; text: string }
-  | { kind: "link"; slug: string; label: string };
+  | { kind: "link"; slug: string; label: string }
+  | { kind: "bold"; text: string }
+  | { kind: "code"; text: string };
 
 type ContentLine = {
   kind: "heading" | "bullet" | "text";
@@ -362,18 +371,26 @@ export function renderWikiContent(content: string): ContentLine[] {
     const bullet = /^[-*]\s+(.*)$/.exec(trimmed);
     const body = heading ? heading[1] : bullet ? bullet[1] : raw;
     const segments: InlineSegment[] = [];
+    const pattern = /(\[\[[^\]]+\]\]|\*\*[^*]+\*\*|`[^`]+`)/g;
     let cursor = 0;
     let match: RegExpExecArray | null;
-    WIKILINK.lastIndex = 0;
-    while ((match = WIKILINK.exec(body)) !== null) {
+    while ((match = pattern.exec(body)) !== null) {
       const before = body.slice(cursor, match.index);
       if (before) segments.push({ kind: "text", text: before });
-      segments.push({
-        kind: "link",
-        slug: match[1].trim(),
-        label: (match[2] ?? match[1]).trim(),
-      });
-      cursor = match.index + match[0].length;
+      const token = match[0];
+      const link = /^\[\[([^\]|]+)(?:\|([^\]]+))?\]\]$/.exec(token);
+      if (link) {
+        segments.push({
+          kind: "link",
+          slug: link[1].trim(),
+          label: (link[2] ?? link[1]).trim(),
+        });
+      } else if (token.startsWith("**")) {
+        segments.push({ kind: "bold", text: token.slice(2, -2) });
+      } else {
+        segments.push({ kind: "code", text: token.slice(1, -1) });
+      }
+      cursor = match.index + token.length;
     }
     const after = body.slice(cursor);
     if (after) segments.push({ kind: "text", text: after });

@@ -41,6 +41,19 @@ describe("wiki content rendering", () => {
     ]);
   });
 
+  it("renders bold and inline code alongside links", () => {
+    const lines = renderWikiContent("**预付费返利** 是 `concept` 里的 [[concept/a|甲]]。");
+    expect(lines).toHaveLength(1);
+    expect(lines[0].segments).toEqual([
+      { kind: "bold", text: "预付费返利" },
+      { kind: "text", text: " 是 " },
+      { kind: "code", text: "concept" },
+      { kind: "text", text: " 里的 " },
+      { kind: "link", slug: "concept/a", label: "甲" },
+      { kind: "text", text: "。" },
+    ]);
+  });
+
   it("returns no blocks for empty content", () => {
     expect(renderWikiContent("")).toEqual([]);
     expect(renderWikiContent("\n\n  \n")).toEqual([]);

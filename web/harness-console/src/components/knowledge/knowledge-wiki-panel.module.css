@@ -389,3 +389,19 @@
   left: 2px;
   color: var(--codex-faint, #737373);
 }
+
+.paragraph strong,
+.paragraphHeading strong,
+.paragraphBullet strong {
+  color: var(--codex-ink, #ffffff);
+}
+
+.paragraph code,
+.paragraphHeading code,
+.paragraphBullet code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--codex-code-inline, #222a31);
+  font-family: var(--codex-font-mono, monospace);
+  font-size: 11.5px;
+}
