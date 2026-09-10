@@ -88,3 +88,11 @@ docker push .../agent-studio-web:$TAG
 - 变更：api/web/worker×3/quality-sync 全部运行 `graph-skills-20260910`；env tag 修复为同值（备份 `.env.production.bak-graph-skills-20260910-*`）。
 - 附带修复：office skill 的探测指令改为以 `; true` 收尾——此前探测链末尾 `which libreoffice` 退出码 1，把整个工具结果误标为 `is_error`（沙箱无 LibreOffice 属预期，python-pptx 1.0.2 实际可用）。
 - 验证：6 容器 healthy；`/v1/studio/skills/catalog` 9 包；运行镜像内确认探测修正已生效；真实 run `succeeded`；web `:3301` 200。
+
+## 9. lead-agent 默认绑定全部平台 Skills（lead-platform-skills-20260910-r2）
+
+- 提交基线：`01160ab`（默认 agent 供应时物化平台 Skill 目录）+ api-update.Dockerfile 增量镜像同步 `agents/lead-agent`。
+- 机制：`AgentService._build_default_report` 在 `ensure_user_default` 供应默认 agent 时，把 `default_platform_skill_catalog()` 全部包物化进临时副本（同名目录以平台目录为准覆盖），版本号追加确定性后缀 `+platform.<digest8>`——平台目录更新自动作为新的不可变版本供应，无需手动同步或升版本号；lead 专属 skill（general-task-orchestration、skill-creator）保留。
+- 命名澄清：「通用助手」是 lead-agent 的 UI 显示名（09-08 发布设计，内部标识不变）；**老会话固定在创建时的 agent 版本**（不可变原则），本例 PPT 会话固定在 `lead-agent@1.0.0`（仅 1 个 skill），**新建对话**才会使用新版本。
+- 验证：用户目录出现 `lead-agent@1.0.2+platform.58a522a1`；该版本快照 `skill_snapshots` 含 11 个 skill（7 个原库 + 4 个办公包）；新会话 run 的 `agent.assets.staged` 事件确认 11 个 skill 全部物化进运行；run `succeeded`。
+- 体验备注：直接问模型"你有哪些技能"不可靠（模型无法自省工具列表），以实际任务触发为准；本轮增量镜像顺带把容器内滞留的 lead-agent 1.0.0 包更新为仓库当前 1.0.2。
