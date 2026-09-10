@@ -36,7 +36,7 @@ describe("Knowledge graph 3D view", () => {
     expect(component).toContain("DBLCLICK_MS");
     expect(component).toContain("cancelPendingOpen()");
     expect(component).toContain("instance.cameraPosition(");
-    expect(component).toContain(".onEngineStop(autoFit)");
+    expect(component).toContain(".onEngineStop(() => {");
   });
 
   it("reuses node objects across data updates so positions survive expansion", () => {
@@ -59,15 +59,45 @@ describe("Knowledge graph 3D view", () => {
     expect(component).toContain("userNavigatedRef");
     expect(component).toContain('container.addEventListener("wheel", markNavigated');
     expect(component).toContain('addEventListener?.("start", markNavigated)');
-    expect(component).toContain("if (!disposed && !userNavigatedRef.current)");
+    expect(component).toContain("if (!disposed && !userNavigatedRef.current && !focusHoldRef.current)");
   });
 
-  it("gives node types faceted model silhouettes with glow shells", () => {
-    expect(component).toContain("IcosahedronGeometry");
-    expect(component).toContain("OctahedronGeometry");
-    expect(component).toContain("DodecahedronGeometry");
-    expect(component).toContain("MeshStandardMaterial");
-    expect(component).toContain("emissiveIntensity");
-    expect(component).toContain("wireframe: true");
+  it("renders nodes as glowing spheres (polyhedra experiment reverted)", () => {
+    expect(component).toContain("SphereGeometry(radius, 24, 24)");
+    expect(component).toContain("MeshBasicMaterial");
+    expect(component).not.toContain("IcosahedronGeometry");
+    expect(component).not.toContain("wireframe: true");
+  });
+
+  it("reframes the whole revealed neighbourhood after an expansion", () => {
+    expect(component).toContain("pendingFitRef.current = true");
+    expect(component).toContain("setTimeout(fitReframed, 500)");
+    expect(component).toContain("setTimeout(fitReframed, 1800)");
+  });
+});
+
+describe("Jumping into the graph keeps the target framed", () => {
+  it("skips the 2D whole-graph fit when the jump carries a target", () => {
+    // fitView (G6 default 500ms) and focusElement (380ms) animate the same
+    // viewport from one tick, so the fit used to deliver the final frame.
+    expect(component).toContain("if (!focusTarget) void instance.fitView({ when: \"always\" })");
+    expect(component).toContain("void instance.focusElement(focusTarget, { duration: 380");
+    expect(component).toContain("focusHoldRef.current === focusTarget) return;");
+  });
+
+  it("stands the 3D auto-fits down while a jumped-to node is anchored", () => {
+    expect(component).toContain("const focusHoldRef = useRef<string | null>(null)");
+    expect(component).toContain("!userNavigatedRef.current && !focusHoldRef.current");
+    expect(component).toContain("focusHoldRef.current !== focusSlug)");
+    expect(component).toContain("if (flyToNode3d(focusSlug, 700)) focusHoldRef.current = focusSlug;");
+    // The engine keeps moving nodes after arrival, so the stop handler re-aims
+    // at the settled position instead of fitting the whole graph.
+    expect(component).toContain("flyToNode3d(focusHoldRef.current, 600);");
+  });
+
+  it("releases the anchor when the user takes over the viewport", () => {
+    expect(component).toContain('container.addEventListener("wheel", releaseFocusHold');
+    expect(component).toContain('container.addEventListener("wheel", markNavigated');
+    expect(component).toContain("focusHoldRef.current = null;");
   });
 });

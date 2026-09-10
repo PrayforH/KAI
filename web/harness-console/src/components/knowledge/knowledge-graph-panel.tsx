@@ -61,7 +61,7 @@ type LinkEndpoint = string | number | Node3D | undefined;
 type Link3D = { source: LinkEndpoint; target: LinkEndpoint };
 
 type NodeVisual = {
-  materials: Array<{ opacity: number; transparent: boolean }>;
+  material: { opacity: number; transparent: boolean };
   spriteMaterial: { opacity: number };
   baseOpacity: number;
 };
@@ -98,6 +98,12 @@ export function KnowledgeGraphPanel({
   const node3dStoreRef = useRef(new Map<string, Node3D>());
   const nodeVisualsRef = useRef(new Map<string, NodeVisual>());
   const userNavigatedRef = useRef(false);
+  const pendingFitRef = useRef(false);
+  // Slug the camera is anchored to after an explicit "view in graph" jump.
+  // While it is set every automatic whole-graph fit stands down: those fits run
+  // on later frames (engine stop, fallback timers, G6's 500ms fitView) and
+  // would deliver the final frame, undoing the focus the user just asked for.
+  const focusHoldRef = useRef<string | null>(null);
   const [mode, setMode] = useState<ViewMode>("2d");
   const [graph, setGraph] = useState<StudioKnowledgeWikiGraph | null>(null);
   const [graphReady, setGraphReady] = useState(false);
@@ -211,6 +217,9 @@ export function KnowledgeGraphPanel({
   );
 
   const fitView = useCallback(() => {
+    // The user asked for the whole graph explicitly, so the focus anchor that
+    // holds automatic fits back no longer applies.
+    focusHoldRef.current = null;
     const instance3d = graph3dRef.current;
     if (mode === "3d") {
       instance3d?.zoomToFit(600, 60);
@@ -249,6 +258,12 @@ export function KnowledgeGraphPanel({
     if (mode !== "2d" || !graphReady || !containerRef.current || graph2dRef.current) return;
     let disposed = false;
     const container = containerRef.current;
+    // A manual zoom means the user is driving the viewport: release the focus
+    // anchor so a later data sync cannot yank them back to the jumped-to node.
+    const releaseFocusHold = () => {
+      focusHoldRef.current = null;
+    };
+    container.addEventListener("wheel", releaseFocusHold, { passive: true });
 
     const draw = async () => {
       const { Graph: G6Graph } = await import("@antv/g6");
@@ -357,11 +372,15 @@ export function KnowledgeGraphPanel({
     return () => {
       disposed = true;
       cancelPendingOpen();
+      container.removeEventListener("wheel", releaseFocusHold);
       const instance = graph2dRef.current;
       instance?.destroy?.();
       graph2dRef.current = null;
       selectedRef.current = null;
       first2dRenderRef.current = true;
+      // A rebuilt engine must re-anchor on its focus target, not inherit the
+      // previous engine's "already framed this slug" state.
+      focusHoldRef.current = null;
     };
   }, [mode, graphReady, expand, openPage, scheduleOpen, cancelPendingOpen]);
 
@@ -421,14 +440,22 @@ export function KnowledgeGraphPanel({
     });
     selectedRef.current = null;
     void instance.render().then(() => {
+      const focusTarget =
+        focusSlug && shown.nodes.some((node) => node.slug === focusSlug) ? focusSlug : null;
       if (first2dRenderRef.current) {
         first2dRenderRef.current = false;
-        void instance.fitView({ when: "always" });
+        // Arriving with an explicit target, skip the fit: fitView and
+        // focusElement animate the same viewport from the same tick, and the
+        // longer animation writes the last frame — G6's 500ms fit default
+        // outruns the 380ms focus below, leaving the whole graph on screen.
+        if (!focusTarget) void instance.fitView({ when: "always" });
       }
-      if (focusSlug && shown.nodes.some((node) => node.slug === focusSlug)) {
-        markSelected(instance, focusSlug);
-        void instance.focusElement(focusSlug, { duration: 380, easing: "ease-out" });
-      }
+      // Frame the target once per jump. Re-focusing on every data sync would
+      // drag the viewport back after the user has panned or filtered away.
+      if (!focusTarget || focusHoldRef.current === focusTarget) return;
+      focusHoldRef.current = focusTarget;
+      markSelected(instance, focusTarget);
+      void instance.focusElement(focusTarget, { duration: 380, easing: "ease-out" });
     });
   }, [mode, shown, focusSlug, graphVersion, degreeOf, markSelected]);
 
@@ -453,6 +480,28 @@ export function KnowledgeGraphPanel({
 
   // ---------------------------------------------------------------- 3D
 
+  // Frames one node: the camera keeps its distance from the target and looks at
+  // it. Shared by the "view in graph" jump and by the engine-stop re-aim, so
+  // both produce the same framing.
+  const flyToNode3d = useCallback((slug: string, duration: number) => {
+    const instance = graph3dRef.current;
+    const node = node3dStoreRef.current.get(slug);
+    if (!instance || !node || node.x === undefined) return false;
+    const current = instance.cameraPosition();
+    const target = { x: node.x, y: node.y ?? 0, z: node.z ?? 0 };
+    const distance = Math.hypot(
+      current.x - target.x,
+      current.y - target.y,
+      current.z - target.z,
+    );
+    instance.cameraPosition(
+      { x: target.x, y: target.y, z: target.z + Math.max(distance, 120) * 0.8 },
+      target,
+      duration,
+    );
+    return true;
+  }, []);
+
   useEffect(() => {
     if (mode !== "3d" || !graphReady || !containerRef.current || graph3dRef.current) return;
     let disposed = false;
@@ -464,11 +513,13 @@ export function KnowledgeGraphPanel({
     userNavigatedRef.current = false;
     const markNavigated = () => {
       userNavigatedRef.current = true;
+      // The user is driving now; stop holding the camera on the jumped-to node.
+      focusHoldRef.current = null;
     };
     container.addEventListener("wheel", markNavigated, { passive: true });
     const detachWheel = () => container.removeEventListener("wheel", markNavigated);
     const autoFit = () => {
-      if (!disposed && !userNavigatedRef.current) {
+      if (!disposed && !userNavigatedRef.current && !focusHoldRef.current) {
         graph3dRef.current?.zoomToFit(700, 60);
       }
     };
@@ -487,41 +538,12 @@ export function KnowledgeGraphPanel({
         const node = asNode3d(libNode);
         const color = TYPE_COLORS[node.pageType] ?? TYPE_COLORS.page;
         const radius = 2.7 * Math.sqrt(node.val);
-        // Faceted "model" silhouettes distinguish types by shape, not just
-        // color; flat shading + emissive keeps them crisp under bloom.
-        const geometry =
-          node.pageType === "summary"
-            ? new THREE.IcosahedronGeometry(radius, 0)
-            : node.pageType === "entity"
-              ? new THREE.OctahedronGeometry(radius, 0)
-              : node.pageType === "concept"
-                ? new THREE.DodecahedronGeometry(radius, 0)
-                : node.pageType === "index"
-                  ? new THREE.BoxGeometry(radius * 1.3, radius * 1.3, radius * 1.3)
-                  : new THREE.SphereGeometry(radius, 20, 20);
-        const material = new THREE.MeshStandardMaterial({
+        const material = new THREE.MeshBasicMaterial({
           color,
-          emissive: color,
-          emissiveIntensity: 0.45,
-          roughness: 0.32,
-          metalness: 0.18,
-          flatShading: true,
           transparent: true,
           opacity: 0.95,
         });
-        const mesh = new THREE.Mesh(geometry, material);
-        const shellMaterial = new THREE.MeshBasicMaterial({
-          color,
-          wireframe: true,
-          transparent: true,
-          opacity: 0.12,
-        });
-        const shell = new THREE.Mesh(
-          node.pageType === "index"
-            ? new THREE.BoxGeometry(radius * 1.7, radius * 1.7, radius * 1.7)
-            : new THREE.IcosahedronGeometry(radius * 1.45, 0),
-          shellMaterial,
-        );
+        const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 24, 24), material);
         const sprite = new SpriteText(node.title);
         sprite.color = "#d6d6d6";
         sprite.backgroundColor = "rgb(18 18 18 / 72%)";
@@ -530,10 +552,9 @@ export function KnowledgeGraphPanel({
         sprite.position.set(0, -(radius + 3.2), 0);
         const group = new THREE.Group();
         group.add(mesh);
-        group.add(shell);
         group.add(sprite);
         nodeVisualsRef.current.set(node.id, {
-          materials: [material, shellMaterial],
+          material,
           spriteMaterial: sprite.material,
           baseOpacity: 0.95,
         });
@@ -589,7 +610,16 @@ export function KnowledgeGraphPanel({
           const target = linkEndpointId(link.target);
           return source === node || target === node ? "#e6e6e6" : "#4a4a4a";
         })
-        .onEngineStop(autoFit);
+        .onEngineStop(() => {
+          if (focusHoldRef.current) {
+            // The simulation moved the jumped-to node since the arrival
+            // animation, so re-aim at its settled position. Fitting the whole
+            // graph here is what used to discard the focus the user asked for.
+            flyToNode3d(focusHoldRef.current, 600);
+            return;
+          }
+          autoFit();
+        });
       // Engine-stop timing varies; guarantee an initial frame with fallbacks.
       [1400, 3600].forEach((delay) => {
         setTimeout(autoFit, delay);
@@ -660,19 +690,11 @@ export function KnowledgeGraphPanel({
         if (lastClick.id === node.id && now - lastClick.time < DBLCLICK_MS) {
           lastClick = { id: null, time: 0 };
           cancelPendingOpen();
+          // Reframe after the data lands so every revealed neighbour stays
+          // inside the viewport (the effect owns the actual zoomToFit).
+          focusHoldRef.current = null;
+          pendingFitRef.current = true;
           expand(node.id);
-          const current = instance.cameraPosition();
-          const distance = Math.hypot(
-            current.x - (node.x ?? 0),
-            current.y - (node.y ?? 0),
-            current.z - (node.z ?? 0),
-          );
-          const targetPosition = { x: node.x ?? 0, y: node.y ?? 0, z: node.z ?? 0 };
-          instance.cameraPosition(
-            { x: targetPosition.x, y: targetPosition.y, z: targetPosition.z + distance * 0.75 },
-            targetPosition,
-            600,
-          );
           return;
         }
         lastClick = { id: node.id, time: now };
@@ -689,9 +711,7 @@ export function KnowledgeGraphPanel({
         const highlight = highlightRef.current;
         for (const [id, visual] of nodeVisualsRef.current) {
           const active = !highlight.node || id === highlight.node || highlight.neighbors.has(id);
-          for (const material of visual.materials) {
-            material.opacity = active ? visual.baseOpacity : 0.12;
-          }
+          visual.material.opacity = active ? visual.baseOpacity : 0.12;
           visual.spriteMaterial.opacity = active ? 1 : 0.12;
         }
         // Re-apply the accessors so link colors/particles re-evaluate.
@@ -729,8 +749,11 @@ export function KnowledgeGraphPanel({
       graph3dRef.current = null;
       nodeVisualsRef.current.clear();
       highlightRef.current = { node: null, neighbors: new Set() };
+      // A rebuilt engine re-anchors on its focus target instead of inheriting
+      // this engine's "already framed that slug" state.
+      focusHoldRef.current = null;
     };
-  }, [mode, graphReady, adjacency, expand, scheduleOpen, cancelPendingOpen]);
+  }, [mode, graphReady, adjacency, expand, scheduleOpen, cancelPendingOpen, flyToNode3d]);
 
   useEffect(() => {
     if (mode !== "3d") return;
@@ -771,24 +794,22 @@ export function KnowledgeGraphPanel({
       nodes,
       links: shown.links.map(([source, target]) => ({ source, target })),
     });
-    if (focusSlug && keep.has(focusSlug)) {
-      const node = store.get(focusSlug);
-      if (node && node.x !== undefined) {
-        const current = instance.cameraPosition();
-        const distance = Math.hypot(
-          current.x - node.x,
-          current.y - (node.y ?? 0),
-          current.z - (node.z ?? 0),
-        );
-        const targetPosition = { x: node.x, y: node.y ?? 0, z: node.z ?? 0 };
-        instance.cameraPosition(
-          { x: targetPosition.x, y: targetPosition.y, z: targetPosition.z + Math.max(distance, 120) * 0.8 },
-          targetPosition,
-          700,
-        );
-      }
+    if (pendingFitRef.current) {
+      // The user just expanded: reframe the whole revealed neighbourhood
+      // once the layout starts settling, then refine as it settles further.
+      pendingFitRef.current = false;
+      const fitReframed = () => {
+        if (graph3dRef.current === instance) instance.zoomToFit(600, 90);
+      };
+      setTimeout(fitReframed, 500);
+      setTimeout(fitReframed, 1800);
+    } else if (focusSlug && keep.has(focusSlug) && focusHoldRef.current !== focusSlug) {
+      // Anchor on the jumped-to node once. Nodes keep moving while the
+      // simulation runs, so the engine-stop handler re-aims at the settled
+      // position rather than this arrival frame being the last word.
+      if (flyToNode3d(focusSlug, 700)) focusHoldRef.current = focusSlug;
     }
-  }, [mode, shown, graphVersion, degreeOf, focusSlug]);
+  }, [mode, shown, graphVersion, degreeOf, focusSlug, flyToNode3d]);
 
   useEffect(() => {
     return () => {
