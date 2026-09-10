@@ -101,3 +101,28 @@ describe("Jumping into the graph keeps the target framed", () => {
     expect(component).toContain("focusHoldRef.current = null;");
   });
 });
+
+describe("Single click and double click stay unambiguous", () => {
+  it("resolves both gestures through one shared click path in either engine", () => {
+    expect(component).toContain("const resolveNodeClick = useCallback(");
+    expect(component).toContain("if (last.id === slug && now - last.time < DBLCLICK_MS)");
+    expect(component).toContain("if (resolveNodeClick(slug)) expand(slug);");
+    expect(component).toContain("if (resolveNodeClick(node.id)) expandFromGesture(node.id);");
+  });
+
+  it("takes back a drawer the delayed single click already opened", () => {
+    // A double click slower than the hold-off would otherwise leave the page
+    // drawer open underneath the expand gesture.
+    expect(component).toContain("openedByClickRef");
+    expect(component).toContain("const undoClickOpen = useCallback(");
+    expect(component).toContain("if (openedByClickRef.current !== slug) return;");
+    expect(component).toContain("setPageSlug((current) => (current === slug ? null : current))");
+  });
+
+  it("covers slow pairs with the browser's own double click", () => {
+    expect(component).toContain('instance.on("node:dblclick"');
+    expect(component).toContain('container.addEventListener("dblclick", onNativeDblClick)');
+    expect(component).toContain("undoClickOpen(slug);");
+    expect(component).toContain("undoClickOpen(node.id);");
+  });
+});

@@ -43,8 +43,11 @@ const MODE_STORAGE_KEY = "knowledge-graph-view-mode";
  * page drawer. */
 const CLICK_DELAY_MS = 240;
 
-/** Double-click window for the expand-neighbour gesture. */
-const DBLCLICK_MS = 320;
+/** Double-click window for the expand-neighbour gesture. A pair slower than this
+ * still counts: the browsers' own dblclick lands a little later and revokes the
+ * drawer the single click had already opened, so the gesture stays unambiguous
+ * however fast the user clicks. */
+const DBLCLICK_MS = 400;
 
 type Node3D = {
   id: string;
@@ -104,6 +107,10 @@ export function KnowledgeGraphPanel({
   // on later frames (engine stop, fallback timers, G6's 500ms fitView) and
   // would deliver the final frame, undoing the focus the user just asked for.
   const focusHoldRef = useRef<string | null>(null);
+  // Node whose drawer the delayed single click opened, so a slow double click
+  // can take it back.
+  const openedByClickRef = useRef<string | null>(null);
+  const lastClickRef = useRef<{ id: string | null; time: number }>({ id: null, time: 0 });
   const [mode, setMode] = useState<ViewMode>("2d");
   const [graph, setGraph] = useState<StudioKnowledgeWikiGraph | null>(null);
   const [graphReady, setGraphReady] = useState(false);
@@ -233,12 +240,18 @@ export function KnowledgeGraphPanel({
     setGraphReady(Boolean(visible));
   }, [visible]);
 
-  // The card "⋯" style disambiguation is shared by both engines: a second
-  // click on the same node within DBLCLICK_MS expands instead of opening.
+  // The two gestures share one physical click, so the drawer open is held back
+  // briefly. It also records the node it opened for, because the second click of
+  // a slow double click can arrive after that timer has already fired — see
+  // undoClickOpen.
   const scheduleOpen = useCallback(
     (slug: string) => {
       if (clickTimer.current) clearTimeout(clickTimer.current);
-      clickTimer.current = setTimeout(() => openPage(slug), CLICK_DELAY_MS);
+      clickTimer.current = setTimeout(() => {
+        clickTimer.current = null;
+        openedByClickRef.current = slug;
+        openPage(slug);
+      }, CLICK_DELAY_MS);
     },
     [openPage],
   );
@@ -249,6 +262,34 @@ export function KnowledgeGraphPanel({
       clickTimer.current = null;
     }
   }, []);
+
+  /** Takes back a drawer that the delayed single click just opened, so an expand
+   * gesture never leaves it behind. Only the node this click opened counts —
+   * a drawer the user opened for another page stays put. */
+  const undoClickOpen = useCallback((slug: string) => {
+    if (openedByClickRef.current !== slug) return;
+    openedByClickRef.current = null;
+    setPageSlug((current) => (current === slug ? null : current));
+  }, []);
+
+  /** Returns true when the click is the second half of a double click on the
+   * same node, i.e. when it is the expand gesture rather than "open the page". */
+  const resolveNodeClick = useCallback(
+    (slug: string) => {
+      const now = Date.now();
+      const last = lastClickRef.current;
+      if (last.id === slug && now - last.time < DBLCLICK_MS) {
+        lastClickRef.current = { id: null, time: 0 };
+        cancelPendingOpen();
+        undoClickOpen(slug);
+        return true;
+      }
+      lastClickRef.current = { id: slug, time: now };
+      scheduleOpen(slug);
+      return false;
+    },
+    [cancelPendingOpen, scheduleOpen, undoClickOpen],
+  );
 
   // ---------------------------------------------------------------- 2D (G6)
 
@@ -355,13 +396,19 @@ export function KnowledgeGraphPanel({
       instance.on("node:click", (event) => {
         const target = (event as { target?: { id?: string | number } }).target;
         if (!target?.id) return;
-        scheduleOpen(String(target.id));
+        const slug = String(target.id);
+        if (resolveNodeClick(slug)) expand(slug);
       });
       instance.on("node:dblclick", (event) => {
         const target = (event as { target?: { id?: string | number } }).target;
         if (!target?.id) return;
+        const slug = String(target.id);
+        // G6 relays the browser's own double click, so this covers a pair too
+        // slow for the window above — and revokes the drawer it already opened.
+        lastClickRef.current = { id: null, time: 0 };
         cancelPendingOpen();
-        expand(String(target.id));
+        undoClickOpen(slug);
+        expand(slug);
       });
       await instance.render();
       if (disposed) return;
@@ -382,7 +429,7 @@ export function KnowledgeGraphPanel({
       // previous engine's "already framed this slug" state.
       focusHoldRef.current = null;
     };
-  }, [mode, graphReady, expand, openPage, scheduleOpen, cancelPendingOpen]);
+  }, [mode, graphReady, expand, resolveNodeClick, undoClickOpen, cancelPendingOpen]);
 
   const markSelected = useCallback((instance: Graph, slug: string | null) => {
     const previous = selectedRef.current;
@@ -667,7 +714,6 @@ export function KnowledgeGraphPanel({
       // nearest node centre within tolerance, which stays dependable across
       // zoom levels instead of relying on the library's internal raycast
       // pipeline for the press/release pair.
-      let lastClick: { id: string | null; time: number } = { id: null, time: 0 };
       const pickNode = (clientX: number, clientY: number) => {
         const rect = container.getBoundingClientRect();
         let best: Node3D | null = null;
@@ -683,25 +729,35 @@ export function KnowledgeGraphPanel({
         }
         return best;
       };
+      // Expanding drops the focus anchor and reframes once the data lands, so
+      // every revealed neighbour stays inside the viewport (the effect owns the
+      // actual zoomToFit).
+      const expandFromGesture = (slug: string) => {
+        focusHoldRef.current = null;
+        pendingFitRef.current = true;
+        expand(slug);
+      };
       const onNativeClick = (ev: MouseEvent) => {
         const node = pickNode(ev.clientX, ev.clientY);
         if (!node) return;
-        const now = Date.now();
-        if (lastClick.id === node.id && now - lastClick.time < DBLCLICK_MS) {
-          lastClick = { id: null, time: 0 };
-          cancelPendingOpen();
-          // Reframe after the data lands so every revealed neighbour stays
-          // inside the viewport (the effect owns the actual zoomToFit).
-          focusHoldRef.current = null;
-          pendingFitRef.current = true;
-          expand(node.id);
-          return;
-        }
-        lastClick = { id: node.id, time: now };
-        scheduleOpen(node.id);
+        if (resolveNodeClick(node.id)) expandFromGesture(node.id);
+      };
+      // The browser's own double click reaches us for pairs slower than the
+      // window above: expand and take back the drawer the single click opened.
+      const onNativeDblClick = (ev: MouseEvent) => {
+        const node = pickNode(ev.clientX, ev.clientY);
+        if (!node) return;
+        lastClickRef.current = { id: null, time: 0 };
+        cancelPendingOpen();
+        undoClickOpen(node.id);
+        expandFromGesture(node.id);
       };
       container.addEventListener("click", onNativeClick);
-      detachClick = () => container.removeEventListener("click", onNativeClick);
+      container.addEventListener("dblclick", onNativeDblClick);
+      detachClick = () => {
+        container.removeEventListener("click", onNativeClick);
+        container.removeEventListener("dblclick", onNativeDblClick);
+      };
       instance.onNodeHover((node) => {
         const slug = node ? String(node.id) : null;
         highlightRef.current = {
@@ -753,7 +809,16 @@ export function KnowledgeGraphPanel({
       // this engine's "already framed that slug" state.
       focusHoldRef.current = null;
     };
-  }, [mode, graphReady, adjacency, expand, scheduleOpen, cancelPendingOpen, flyToNode3d]);
+  }, [
+    mode,
+    graphReady,
+    adjacency,
+    expand,
+    resolveNodeClick,
+    undoClickOpen,
+    cancelPendingOpen,
+    flyToNode3d,
+  ]);
 
   useEffect(() => {
     if (mode !== "3d") return;
