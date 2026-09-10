@@ -1087,11 +1087,11 @@ def test_all_new_and_imported_templates_have_no_operational_limits() -> None:
 def test_skill_references_resolve_into_bundle_with_platform_provenance() -> None:
     compiler = AgentDraftCompiler(default_capability_catalog())
     base = draft()
-    spec = base.spec.model_copy(update={"skill_references": ("office-docx", "office-xlsx")})
+    spec = base.spec.model_copy(update={"skill_references": ("minimax-docx", "minimax-xlsx")})
     candidate = base.model_copy(update={"spec": spec})
 
     resolved = compiler.resolve_skills(candidate)
-    assert [skill.name for skill in resolved] == ["office-docx", "office-xlsx"]
+    assert [skill.name for skill in resolved] == ["minimax-docx", "minimax-xlsx"]
     for skill in resolved:
         assert skill.source is not None
         assert skill.source.package_id == skill.name
@@ -1100,13 +1100,13 @@ def test_skill_references_resolve_into_bundle_with_platform_provenance() -> None
 
     validation = compiler.validate(candidate)
     assert validation.ready
-    assert "skills/office-docx" in yaml.safe_load(validation.manifest_yaml)["spec"]["skills"]
+    assert "skills/minimax-docx" in yaml.safe_load(validation.manifest_yaml)["spec"]["skills"]
 
     compiled = compiler.compile(candidate)
     with ZipFile(BytesIO(compiled.bundle)) as bundle:
         packaged = set(bundle.namelist())
-    assert "skills/office-docx/SKILL.md" in packaged
-    assert "skills/office-xlsx/SKILL.md" in packaged
+    assert "skills/minimax-docx/SKILL.md" in packaged
+    assert "skills/minimax-xlsx/SKILL.md" in packaged
 
 
 def test_skill_reference_conflicts_disable_and_unknown_block_compilation() -> None:

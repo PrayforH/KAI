@@ -874,7 +874,7 @@ async def test_studio_lists_and_installs_a_platform_skill_as_a_draft_snapshot() 
 
     assert catalog.status_code == 200, catalog.text
     assert catalog.json()["revision"] == 1
-    assert len(catalog.json()["packages"]) == 9
+    assert len(catalog.json()["packages"]) == 22
     assert created.json()["spec"]["skills"] == []
     assert installed.status_code == 200, installed.text
     installed_skill = installed.json()["draft"]["spec"]["skills"][0]
@@ -911,7 +911,7 @@ async def test_skill_references_resolve_into_bundle_without_snapshot_install() -
         updated = await client.put(
             f"/v1/studio/drafts/{created.json()['draftId']}/skills/references",
             headers=headers,
-            json={"expectedRevision": 1, "references": ["office-docx", "office-pdf"]},
+            json={"expectedRevision": 1, "references": ["minimax-docx", "minimax-pdf"]},
         )
         bundle = await client.get(
             f"/v1/studio/drafts/{created.json()['draftId']}/bundle",
@@ -921,15 +921,15 @@ async def test_skill_references_resolve_into_bundle_without_snapshot_install() -
     assert created.status_code == 201, created.text
     assert updated.status_code == 200, updated.text
     body = updated.json()
-    assert body["spec"]["skillReferences"] == ["office-docx", "office-pdf"]
+    assert body["spec"]["skillReferences"] == ["minimax-docx", "minimax-pdf"]
     # References stay declarative: no snapshot copies appear in the draft spec.
     assert body["spec"]["skills"] == []
     with ZipFile(BytesIO(bundle.content)) as archive:
-        docx_skill = archive.read("skills/office-docx/SKILL.md").decode()
+        docx_skill = archive.read("skills/minimax-docx/SKILL.md").decode()
         manifest = __import__("yaml").safe_load(archive.read("agent.yaml").decode())
-    assert "python-docx" in docx_skill
+    assert "OpenXML" in docx_skill or "docx" in docx_skill
     resolved = [
-        entry for entry in manifest["spec"]["skills"] if entry.endswith(("office-docx", "office-pdf"))
+        entry for entry in manifest["spec"]["skills"] if entry.endswith(("minimax-docx", "minimax-pdf"))
     ]
     assert len(resolved) == 2
 

@@ -44,6 +44,7 @@ COPY src ./src
 COPY migrations ./migrations
 COPY alembic.ini ./alembic.ini
 COPY agents ./agents
+COPY platform-skills ./platform-skills
 COPY scripts/seed_docker.py ./scripts/seed_docker.py
 RUN .venv/bin/pip install --no-cache-dir \
     --index-url "${UV_DEFAULT_INDEX}" \
@@ -61,8 +62,22 @@ ENV PATH="/app/project/bin:/app/.venv/bin:$PATH" \
 
 # libarchive provides bounded in-memory RAR4/RAR5 reading for Studio imports.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libarchive13 \
+    && apt-get install -y --no-install-recommends libarchive13 xz-utils \
     && rm -rf /var/lib/apt/lists/*
+# Vendored office Skills generate .docx/.pptx through the Node libraries, so
+# Node plus the two document packages ship in the image. Installing them at
+# build time keeps runs free of npm-registry egress.
+ARG NODE_VERSION=22.9.0
+ARG NODE_LINUX_X64_SHA256=1bfae9ef21ab43c92d8274f1bd032bf61f42ea004192a18d4c64477508626142
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+RUN python -c 'import os, urllib.request; v=os.environ["NODE_VERSION"]; r=os.environ["NPM_REGISTRY"].rstrip("/"); urllib.request.urlretrieve(f"{r}/-/binary/node/v{v}/node-v{v}-linux-x64.tar.xz", "/tmp/node.tar.xz")' \
+    && printf '%s  %s\n' "${NODE_LINUX_X64_SHA256}" /tmp/node.tar.xz | sha256sum --check --strict \
+    && tar -xJf /tmp/node.tar.xz --strip-components=1 -C /usr/local \
+    && rm -f /tmp/node.tar.xz \
+    && npm install --global --registry="${NPM_REGISTRY}" docx pptxgenjs \
+    && npm cache clean --force \
+    && node -e "require('docx'); require('pptxgenjs'); console.log('office npm libs ok')"
+ENV NODE_PATH=/usr/local/lib/node_modules
 RUN groupadd --system --gid 10001 harness \
     && useradd --system --uid 10001 --gid harness --home-dir /app harness \
     && mkdir -p /app/.codex \
@@ -74,6 +89,7 @@ COPY --from=builder --chown=harness:harness /app/project /app/project
 COPY --from=builder --chown=harness:harness /app/migrations /app/migrations
 COPY --from=builder --chown=harness:harness /app/alembic.ini /app/alembic.ini
 COPY --from=builder --chown=harness:harness /app/agents /app/agents
+COPY --from=builder --chown=harness:harness /app/platform-skills /app/platform-skills
 COPY --from=builder --chown=harness:harness /app/scripts /app/scripts
 COPY --from=kubectl /bin/kubectl /usr/local/bin/kubectl
 COPY --from=builder /opt/codex /opt/codex

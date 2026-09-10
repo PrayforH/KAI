@@ -765,10 +765,10 @@ def test_default_catalog_seeds_platform_skill_capabilities() -> None:
     catalog = default_capability_catalog()
 
     assert {skill.package_id for skill in catalog.skills} >= {
-        "office-docx",
-        "office-xlsx",
-        "office-pptx",
-        "office-pdf",
+        "minimax-docx",
+        "minimax-xlsx",
+        "pptx-generator",
+        "minimax-pdf",
     }
     for skill in catalog.skills:
         assert skill.enabled is True
@@ -798,7 +798,7 @@ async def test_admin_edited_catalog_receives_new_platform_skills() -> None:
 
     package_ids = {skill.package_id for skill in upgraded.catalog.skills}
     assert "evidence-reporting" in package_ids
-    assert {"office-docx", "office-xlsx", "office-pptx", "office-pdf"} <= package_ids
+    assert {"minimax-docx", "minimax-xlsx", "pptx-generator", "minimax-pdf"} <= package_ids
     # The tenant-authored entry survives untouched.
     assert upgraded.catalog.skills[0].package_id == "evidence-reporting"
 
@@ -836,7 +836,7 @@ async def test_skill_disable_reports_referencing_drafts_and_upsert_is_rejected()
                 "expect": {"terminalStatuses": ["succeeded"]},
             }
         ],
-        skillReferences=("office-docx",),
+        skillReferences=("minimax-docx",),
     )
     from harness.studio.models import AgentDraft
 
@@ -855,7 +855,7 @@ async def test_skill_disable_reports_referencing_drafts_and_upsert_is_rejected()
     )
     service = CapabilityCatalogService(repository, drafts)
 
-    impact = await service.impact("skill-impact", "admin-a", "skill", "office-docx")
+    impact = await service.impact("skill-impact", "admin-a", "skill", "minimax-docx")
     assert impact.draft_ids == ("draft-impact",)
 
     # Skill identity is platform-governed: the upsert payload union rejects
