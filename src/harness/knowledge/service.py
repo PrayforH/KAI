@@ -48,6 +48,7 @@ from harness.knowledge.models import (
     WeknoraKnowledgeConfig,
 )
 from harness.knowledge.ports import (
+    EngineBaseConfig,
     KnowledgeEngineError,
     KnowledgeEngineNotConfiguredError,
     KnowledgeEnginePort,
@@ -117,6 +118,7 @@ class KnowledgeService:
                 request.display_name,
                 request.description,
                 request.kb_type.value,
+                config=request.engine_config(),
             )
             # Engine-backed bases get one 1:1 link source so the existing
             # ACL, sync-mirror and proxy paths keep operating per source.
@@ -932,11 +934,19 @@ class KnowledgeService:
             raise KnowledgeEngineNotConfiguredError("weknora knowledge engine is not configured")
         return self._engine
 
-    async def _engine_create_base(self, name: str, description: str, kb_type: str) -> str:
+    async def _engine_create_base(
+        self,
+        name: str,
+        description: str,
+        kb_type: str,
+        *,
+        config: EngineBaseConfig | None = None,
+    ) -> str:
         return await self._require_engine().create_base(
             name=name,
             description=description,
             kb_type=kb_type,
+            config=config,
         )
 
     async def _sync_weknora_source(

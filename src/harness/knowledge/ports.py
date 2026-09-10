@@ -96,6 +96,22 @@ class EngineWikiStats:
     total_links: int
 
 
+@dataclass(frozen=True)
+class EngineBaseConfig:
+    """Creation-time tuning for an engine-backed base.
+
+    Unset fields mean "keep the engine's own default", so a base created without
+    any tuning behaves exactly like one created before these options existed.
+    """
+
+    chunk_size: int | None = None
+    chunk_overlap: int | None = None
+    wiki_granularity: str = ""
+    wiki_content_instructions: str = ""
+    wiki_extraction_instructions: str = ""
+    wiki_max_pages_per_ingest: int | None = None
+
+
 class KnowledgeEnginePort(Protocol):
     """Contract implemented by external knowledge engines (e.g. WeKnora)."""
 
@@ -105,6 +121,7 @@ class KnowledgeEnginePort(Protocol):
         name: str,
         description: str,
         kb_type: str,
+        config: EngineBaseConfig | None = None,
     ) -> str:
         """Create a remote knowledge base and return its engine id."""
         ...

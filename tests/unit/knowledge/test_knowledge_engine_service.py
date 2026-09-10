@@ -17,6 +17,7 @@ from harness.knowledge.models import (
     KnowledgeMemberRole,
 )
 from harness.knowledge.ports import (
+    EngineBaseConfig,
     EngineChunk,
     EngineDocumentStatus,
     EngineSearchHit,
@@ -49,8 +50,17 @@ class FakeEngine:
         ]
         self.fail_base_ids: set[str] = set()
 
-    async def create_base(self, *, name: str, description: str, kb_type: str) -> str:
-        self.created_bases.append({"name": name, "description": description, "kb_type": kb_type})
+    async def create_base(
+        self,
+        *,
+        name: str,
+        description: str,
+        kb_type: str,
+        config: EngineBaseConfig | None = None,
+    ) -> str:
+        self.created_bases.append(
+            {"name": name, "description": description, "kb_type": kb_type, "config": config}
+        )
         return "remote-1"
 
     async def delete_base(self, base_id: str) -> None:
@@ -227,7 +237,47 @@ async def test_create_base_with_weknora_engine_provisions_remote_base() -> None:
     assert base.engine is KnowledgeBaseEngine.WEKNORA
     assert base.engine_ref == "remote-1"
     assert base.kb_type.value == "hybrid"
-    assert engine.created_bases == [{"name": "案例知识库", "description": "", "kb_type": "hybrid"}]
+    created = engine.created_bases[0]
+    assert {key: created[key] for key in ("name", "description", "kb_type")} == {
+        "name": "案例知识库",
+        "description": "",
+        "kb_type": "hybrid",
+    }
+    # A wizard that sets nothing must not pin any engine-side default.
+    assert created["config"] == EngineBaseConfig()
+
+
+@pytest.mark.asyncio
+async def test_create_base_forwards_wizard_config_to_the_engine() -> None:
+    service, engine = make_service()
+    await service.create_base(
+        "local",
+        "user-1",
+        CreateKnowledgeBaseRequest.model_validate(
+            {
+                "reference": "cases",
+                "displayName": "案例知识库",
+                "engine": "weknora",
+                "kbType": "hybrid",
+                "config": {
+                    "chunkSize": 3200,
+                    "chunkOverlap": 200,
+                    "wikiGranularity": "exhaustive",
+                    "wikiContentInstructions": "  用法务口吻  ",
+                    "wikiExtractionInstructions": "重点识别责任主体",
+                    "wikiMaxPagesPerIngest": 24,
+                },
+            }
+        ),
+    )
+    assert engine.created_bases[0]["config"] == EngineBaseConfig(
+        chunk_size=3200,
+        chunk_overlap=200,
+        wiki_granularity="exhaustive",
+        wiki_content_instructions="用法务口吻",
+        wiki_extraction_instructions="重点识别责任主体",
+        wiki_max_pages_per_ingest=24,
+    )
 
 
 @pytest.mark.asyncio

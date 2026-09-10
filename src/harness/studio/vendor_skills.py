@@ -135,6 +135,11 @@ VENDORED_SOURCES: dict[str, tuple[str, str, str]] = {
     ),
 }
 
+# Packages that stay catalog-only: binding them by default would copy
+# multi-megabyte assets (font libraries) into every default-agent version and
+# every run workspace. Operators bind them explicitly when a task needs them.
+CATALOG_ONLY_SKILLS: frozenset[str] = frozenset({"canvas-design"})
+
 _SKILL_MARKDOWN = "SKILL.md"
 _EXCLUDED_NAMES = frozenset({".DS_Store", ".gitignore"})
 

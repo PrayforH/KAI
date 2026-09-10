@@ -155,6 +155,7 @@ class WeknoraClient:
         embedding_model: str = "",
         summary_model_id: str = "",
         wiki_config: dict[str, Any] | None = None,
+        chunking_config: dict[str, int] | None = None,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {
             "name": name,
@@ -170,6 +171,8 @@ class WeknoraClient:
             body["summary_model_id"] = summary_model_id
         if wiki_config:
             body["wiki_config"] = wiki_config
+        if chunking_config:
+            body["chunking_config"] = chunking_config
         payload = await self.post_data("/knowledge-bases", json=body)
         if not isinstance(payload, dict) or not cast(dict[str, Any], payload).get("id"):
             raise WeknoraError("weknora knowledge base creation returned no id")

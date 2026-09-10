@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from typing import Any, cast
 
 from harness.knowledge.ports import (
+    EngineBaseConfig,
     EngineChunk,
     EngineDocumentStatus,
     EngineSearchHit,
@@ -49,19 +50,52 @@ class WeknoraKnowledgeEngine:
             raise KnowledgeEngineError(f"unsupported knowledge base type: {kb_type}")
         return {name: True for name in switches}
 
-    def wiki_config(self, kb_type: str) -> dict[str, Any] | None:
+    def wiki_config(
+        self,
+        kb_type: str,
+        config: EngineBaseConfig | None = None,
+    ) -> dict[str, Any] | None:
         """Wiki page synthesis config; required for WeKnora to generate pages."""
         strategy = self._settings.kb_type_strategies.get(kb_type)
         if strategy is None or "wiki_enabled" not in strategy:
             return None
         if not self._settings.wiki_synthesis_model_id:
             return None
-        return {
+        payload: dict[str, Any] = {
             "synthesis_model_id": self._settings.wiki_synthesis_model_id,
             "max_pages_per_ingest": self._settings.wiki_max_pages_per_ingest,
         }
+        if config is not None:
+            # Operator choices override the platform defaults; blank means unset.
+            if config.wiki_granularity:
+                payload["extraction_granularity"] = config.wiki_granularity
+            if config.wiki_content_instructions:
+                payload["content_instructions"] = config.wiki_content_instructions
+            if config.wiki_extraction_instructions:
+                payload["extraction_instructions"] = config.wiki_extraction_instructions
+            if config.wiki_max_pages_per_ingest is not None:
+                payload["max_pages_per_ingest"] = config.wiki_max_pages_per_ingest
+        return payload
 
-    async def create_base(self, *, name: str, description: str, kb_type: str) -> str:
+    def chunking_config(self, config: EngineBaseConfig | None) -> dict[str, int] | None:
+        """Chunk sizing for the RAG index; omitted when the operator kept defaults."""
+        if config is None:
+            return None
+        payload: dict[str, int] = {}
+        if config.chunk_size is not None:
+            payload["chunk_size"] = config.chunk_size
+        if config.chunk_overlap is not None:
+            payload["chunk_overlap"] = config.chunk_overlap
+        return payload or None
+
+    async def create_base(
+        self,
+        *,
+        name: str,
+        description: str,
+        kb_type: str,
+        config: EngineBaseConfig | None = None,
+    ) -> str:
         try:
             payload = await self._client.create_knowledge_base(
                 name=name,
@@ -69,7 +103,8 @@ class WeknoraKnowledgeEngine:
                 indexing_strategy=self.indexing_strategy(kb_type),
                 embedding_model=self._settings.embedding_model,
                 summary_model_id=self._settings.summary_model_id,
-                wiki_config=self.wiki_config(kb_type),
+                wiki_config=self.wiki_config(kb_type, config),
+                chunking_config=self.chunking_config(config),
             )
         except WeknoraError as error:
             raise KnowledgeEngineError(f"weknora create base failed: {error}") from error

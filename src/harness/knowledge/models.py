@@ -15,6 +15,8 @@ from pydantic import (
     model_validator,
 )
 
+from harness.knowledge.ports import EngineBaseConfig
+
 KnowledgeReference = Annotated[
     str,
     StringConstraints(
@@ -406,6 +408,46 @@ class KnowledgeSnapshotBinding(KnowledgeModel):
     trust: KnowledgeResultTrust
 
 
+class KnowledgeBaseGranularity(StrEnum):
+    """How many Wiki entities/concepts WeKnora extracts per document."""
+
+    FOCUSED = "focused"
+    STANDARD = "standard"
+    EXHAUSTIVE = "exhaustive"
+
+
+class KnowledgeBaseConfig(KnowledgeModel):
+    """Engine settings captured when a knowledge base is created.
+
+    These mirror the WeKnora knowledge base options: chunking drives the RAG
+    index, while the Wiki options drive page synthesis. Every field is optional;
+    an absent field keeps the platform default configured on the engine.
+    """
+
+    chunk_size: int | None = Field(default=None, alias="chunkSize", ge=200, le=20_000)
+    chunk_overlap: int | None = Field(default=None, alias="chunkOverlap", ge=0, le=4_000)
+    wiki_granularity: KnowledgeBaseGranularity | None = Field(
+        default=None,
+        alias="wikiGranularity",
+    )
+    wiki_content_instructions: str = Field(
+        default="",
+        alias="wikiContentInstructions",
+        max_length=4_000,
+    )
+    wiki_extraction_instructions: str = Field(
+        default="",
+        alias="wikiExtractionInstructions",
+        max_length=4_000,
+    )
+    wiki_max_pages_per_ingest: int | None = Field(
+        default=None,
+        alias="wikiMaxPagesPerIngest",
+        ge=0,
+        le=1_000,
+    )
+
+
 class CreateKnowledgeBaseRequest(KnowledgeModel):
     reference: KnowledgeReference
     display_name: str = Field(alias="displayName", min_length=1, max_length=160)
@@ -422,6 +464,23 @@ class CreateKnowledgeBaseRequest(KnowledgeModel):
         default=KnowledgeBaseEngine.LEGACY,
         alias="engine",
     )
+    config: KnowledgeBaseConfig = Field(
+        default_factory=KnowledgeBaseConfig,
+        alias="config",
+    )
+
+    def engine_config(self) -> EngineBaseConfig:
+        """Project the request onto the engine-agnostic creation config."""
+        return EngineBaseConfig(
+            chunk_size=self.config.chunk_size,
+            chunk_overlap=self.config.chunk_overlap,
+            wiki_granularity=(
+                self.config.wiki_granularity.value if self.config.wiki_granularity else ""
+            ),
+            wiki_content_instructions=self.config.wiki_content_instructions.strip(),
+            wiki_extraction_instructions=self.config.wiki_extraction_instructions.strip(),
+            wiki_max_pages_per_ingest=self.config.wiki_max_pages_per_ingest,
+        )
 
 
 class KnowledgeDocumentStatus(KnowledgeModel):

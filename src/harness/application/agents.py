@@ -23,6 +23,7 @@ from harness.core.models import AgentVersion, AgentVersionStatus
 from harness.core.ports import AgentIdentityProvider, AgentRegistry
 from harness.studio.models import DraftSkill
 from harness.studio.platform_skills import default_platform_skill_catalog
+from harness.studio.vendor_skills import CATALOG_ONLY_SKILLS
 
 
 class AgentService:
@@ -201,6 +202,8 @@ class AgentService:
             manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
             entries = list(manifest["spec"].get("skills") or [])
             for package in catalog.packages:
+                if package.package_id in CATALOG_ONLY_SKILLS:
+                    continue
                 self._materialize_platform_skill(root, package.skill)
                 entry = f"skills/{package.skill.name}"
                 if entry not in entries:

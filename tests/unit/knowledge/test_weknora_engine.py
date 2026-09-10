@@ -9,7 +9,7 @@ import httpx
 import pytest
 from pydantic import SecretStr
 
-from harness.knowledge.ports import KnowledgeEngineError
+from harness.knowledge.ports import EngineBaseConfig, KnowledgeEngineError
 from harness.knowledge.weknora.client import WeknoraClient
 from harness.knowledge.weknora.configuration import WeknoraSettings
 from harness.knowledge.weknora.gateway import WeknoraKnowledgeEngine
@@ -207,6 +207,90 @@ async def test_gateway_create_base_maps_kb_type_strategy() -> None:
         "synthesis_model_id": "wiki-1",
         "max_pages_per_ingest": 12,
     }
+
+
+@pytest.mark.asyncio
+async def test_gateway_hybrid_base_passes_operator_config_through() -> None:
+    bodies: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/auth/login":
+            return login_response()
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json={"success": True, "data": {"id": "kb-hybrid"}})
+
+    client = make_client(handler)
+    engine = WeknoraKnowledgeEngine(
+        WeknoraSettings(
+            base_url="http://weknora.test",
+            embedding_model="builtin-bge-m3-v2",
+            summary_model_id="summary-1",
+            wiki_synthesis_model_id="wiki-1",
+        ),
+        client,
+    )
+    try:
+        await engine.create_base(
+            name="混合库",
+            description="",
+            kb_type="hybrid",
+            config=EngineBaseConfig(
+                chunk_size=3200,
+                chunk_overlap=200,
+                wiki_granularity="exhaustive",
+                wiki_content_instructions="使用法务审阅口吻",
+                wiki_extraction_instructions="重点识别责任主体",
+                wiki_max_pages_per_ingest=24,
+            ),
+        )
+    finally:
+        await engine.aclose()
+    body = bodies[0]
+    assert body["chunking_config"] == {"chunk_size": 3200, "chunk_overlap": 200}
+    assert body["wiki_config"] == {
+        "synthesis_model_id": "wiki-1",
+        "max_pages_per_ingest": 24,
+        "extraction_granularity": "exhaustive",
+        "content_instructions": "使用法务审阅口吻",
+        "extraction_instructions": "重点识别责任主体",
+    }
+
+
+@pytest.mark.asyncio
+async def test_gateway_hybrid_base_keeps_platform_defaults_when_config_is_empty() -> None:
+    bodies: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/auth/login":
+            return login_response()
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json={"success": True, "data": {"id": "kb-default"}})
+
+    client = make_client(handler)
+    engine = WeknoraKnowledgeEngine(
+        WeknoraSettings(
+            base_url="http://weknora.test",
+            wiki_synthesis_model_id="wiki-1",
+        ),
+        client,
+    )
+    try:
+        await engine.create_base(
+            name="混合库",
+            description="",
+            kb_type="hybrid",
+            config=EngineBaseConfig(),
+        )
+    finally:
+        await engine.aclose()
+    body = bodies[0]
+    # An untouched wizard must not pin engine defaults: the platform setting
+    # (wiki_max_pages_per_ingest) still decides, and no empty keys are sent.
+    assert body["wiki_config"] == {
+        "synthesis_model_id": "wiki-1",
+        "max_pages_per_ingest": 12,
+    }
+    assert "chunking_config" not in body
 
 
 @pytest.mark.asyncio
