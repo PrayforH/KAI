@@ -26,7 +26,7 @@ from pydantic import SecretStr
 
 import harness.runtime.claude_sdk as claude_runtime
 from harness.config import Settings
-from harness.core.manifest import ToolSpec, load_manifest
+from harness.core.manifest import SkillSnapshot, ToolSpec, load_manifest
 from harness.core.models import (
     AgentVersion,
     AgentVersionStatus,
@@ -1115,3 +1115,101 @@ async def test_runtime_wires_custom_tools_declared_by_subagents(tmp_path: Path) 
     assert "children do not inherit" in options.system_prompt
     assert helper.tools is not None
     assert "mcp__harness-python__lookup_customer" in helper.tools
+
+
+@pytest.mark.asyncio
+async def test_runtime_exposes_skill_tool_when_bundle_has_skills(tmp_path: Path) -> None:
+    """Skills staged into the workspace are unusable unless `Skill` is in tools."""
+
+    snapshot = load_manifest("tests/fixtures/agents/echo-agent/agent.yaml")
+    skill_snapshot = SkillSnapshot(
+        name="office-pptx",
+        description="Create real pptx decks.",
+        source="skills/office-pptx",
+        content_hash="a" * 64,
+    )
+    manifest = snapshot.manifest.model_copy(
+        update={
+            "spec": snapshot.manifest.spec.model_copy(
+                update={"skills": ("skills/office-pptx",)}
+            )
+        }
+    )
+    snapshot = snapshot.model_copy(
+        update={"manifest": manifest, "skill_snapshots": (skill_snapshot,)}
+    )
+    version = AgentVersion(
+        tenant_id="tenant-a",
+        owner_user_id="user-1",
+        name=snapshot.manifest.metadata.name,
+        version=snapshot.manifest.metadata.version,
+        status=AgentVersionStatus.PUBLISHED,
+        manifest_hash=snapshot.content_hash,
+        snapshot=snapshot.model_dump(mode="json"),
+        created_at=datetime.now(UTC),
+    )
+    route = ModelRoute(
+        route_id="new-api-default",
+        provider="new-api",
+        base_url="https://new-api.example/v1",
+        model="claude-sonnet-4-6",
+        compatibility=ModelCompatibility.FULL,
+        capabilities=frozenset({"streaming", "tool_use"}),
+    )
+    captured: list[ClaudeAgentOptions] = []
+
+    async def fake_query(prompt: str, options: ClaudeAgentOptions) -> AsyncIterator[object]:
+        captured.append(options)
+        yield ResultMessage(
+            subtype="success",
+            duration_ms=1,
+            duration_api_ms=1,
+            is_error=False,
+            num_turns=1,
+            session_id="sdk-session",
+            result="done",
+            usage={"input_tokens": 1, "output_tokens": 1},
+        )
+
+    runtime = ClaudeSdkRuntime(
+        tool_resolver=ToolResolver(
+            web_configurations=WebConfigurationService(
+                McpCredentialService(
+                    InMemoryMcpCredentialRepository(),
+                    McpCredentialCipher(SecretStr("test-key")),
+                )
+            )
+        ),
+        agent_version=version,
+        routes=[route],
+        route_secrets={"new-api-default": "super-secret"},
+        query_factory=fake_query,
+    )
+    now = datetime.now(UTC)
+    context = RuntimeContext(
+        run=Run(
+            run_id="run-skills",
+            session_id="session-skills",
+            tenant_id="tenant-a",
+            status=RunStatus.RUNNING,
+            idempotency_key="idem-skills",
+            created_at=now,
+            updated_at=now,
+            input={"prompt": "hello"},
+        ),
+        session=Session(
+            session_id="session-skills",
+            tenant_id="tenant-a",
+            user_id="user-1",
+            agent_name="echo-agent",
+            agent_version="0.1.0",
+            created_at=now,
+        ),
+        workspace=tmp_path,
+    )
+
+    _events = [event async for event in runtime.execute(context)]
+
+    options = captured[0]
+    assert "Skill" in (options.tools or [])
+    assert options.skills == ["office-pptx"]

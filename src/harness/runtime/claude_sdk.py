@@ -1013,8 +1013,14 @@ class ClaudeSdkRuntime:
             sensitive_values=frozenset(sensitive_values),
         )
         store = cast(SessionStore, self._session_store) if self._session_store is not None else None
+        # `tools` replaces the built-in tool base set. The Skill tool is not a
+        # declared builtin, so it must be added explicitly whenever the bundle
+        # carries skills, otherwise the model can never load them.
+        option_tools = list(builtin_tools)
+        if skill_names:
+            option_tools.append("Skill")
         options = ClaudeAgentOptions(
-            tools=builtin_tools,
+            tools=option_tools,
             # allowed_tools are unconditional permission grants in Claude Code.
             # Leave them empty in Auto mode so its classifier remains the
             # second gate after Harness policy instead of being shadowed.
