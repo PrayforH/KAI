@@ -80,3 +80,11 @@ docker push .../agent-studio-web:$TAG
   1. `.env.production` 当前指向不存在的 `agent-studio-api:knowledge-graph-3d`；任何对 api/worker 的 `compose pull/up` 都会失败，直到该线推送 api 镜像或改回统一 tag。
   2. 正在运行的 web 是本地镜像 `agent-studio-web:knowledge-graph-3d`（未推送 harbor），宿主机清理镜像或跨机迁移会丢失。
   3. 建议后续发布统一走 `scripts/build_harbor_174.sh` 式的"一次 tag、api/web/worker 同批滚动"流程。
+
+## 8. 统一版本：graph-skills-20260910（与 3D 图谱工作线合流）
+
+- 提交基线：`d6ad1f4`（含 3D 图谱全部修复至 `cd2f310`、知识库 answer/RAG 后端、office skill 探测措辞修正）。
+- 背景：`knowledge-graph-3d` 仅有本地 web 镜像、env tag 指向不存在的 api 镜像（见第 7 节遗留风险）；本轮以合并后的 HEAD 重建 api+web，全部组件统一滚动。
+- 变更：api/web/worker×3/quality-sync 全部运行 `graph-skills-20260910`；env tag 修复为同值（备份 `.env.production.bak-graph-skills-20260910-*`）。
+- 附带修复：office skill 的探测指令改为以 `; true` 收尾——此前探测链末尾 `which libreoffice` 退出码 1，把整个工具结果误标为 `is_error`（沙箱无 LibreOffice 属预期，python-pptx 1.0.2 实际可用）。
+- 验证：6 容器 healthy；`/v1/studio/skills/catalog` 9 包；运行镜像内确认探测修正已生效；真实 run `succeeded`；web `:3301` 200。
