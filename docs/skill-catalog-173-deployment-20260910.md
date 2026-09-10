@@ -103,3 +103,12 @@ docker push .../agent-studio-web:$TAG
 - 修复：173 `.env.production` 设 `HARNESS_AGENT_VERSION=1.0.2+platform.58a522a1` 并重建 web。
 - 验证：新会话固定到该版本；run `agent.assets.staged` 物化 11 个 skill；run `succeeded`。
 - 已知耦合：平台目录内容变化会生成新的 `+platform.<digest>` 版本号，该环境变量需同步更新（后续可改为 BFF 不钉版本、由后端解析默认部署）。
+
+## 11. Skill 工具缺失根因修复（lead-platform-skills-20260910-r4）
+
+- 现象：版本含 11 个 skill 且 staged 成功，但模型回答 `SKILL_TOOL_MISSING`，直接裸写 python-pptx。
+- 排查：`runtime.system` init 事件的 tools 列表只有声明内建工具 + MCP，无 `Skill`。
+- 根因：`ClaudeAgentOptions(tools=...)` 的语义是**替换**内置工具基础集。Harness 传入显式清单（Read/Glob/Grep/Write/Edit/Bash/WebSearch/WebFetch），`skills=` 参数只影响权限白名单（`Skill(name)` 加入 allowedTools）与发现源（setting_sources 默认 user,project），但 Skill 工具本身不在基础集里就永远不会注册。
+- 修复：运行时构造 options 时，凡 bundle 带 skill 快照即向 `tools` 追加 `"Skill"`（`src/harness/runtime/claude_sdk.py`）；同时 SDK 从基座的 0.2.128 升级到 0.2.152（与 uv.lock 一致，内置 CLI 2.1.259）。
+- 验证：init tools 列表含 `Skill`；模型真实调用 `Skill(skill="office-pptx")`（tool.request 事件）；run `succeeded`。
+- 覆盖说明：新建对话版本由 `HARNESS_AGENT_VERSION=1.0.2+platform.58a522a1` 钉住（见第 10 节）；老会话仍固定 1.0.0。
