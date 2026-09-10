@@ -1,8 +1,14 @@
 """Agent validation and publication use cases."""
 
+import base64
+import hashlib
+import json
+import shutil
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Literal
+
+import yaml
 
 from harness.agent_package import (
     AgentBundleValidationError,
@@ -15,6 +21,8 @@ from harness.core.errors import ConflictError
 from harness.core.manifest import AgentManifestSnapshot, load_manifest
 from harness.core.models import AgentVersion, AgentVersionStatus
 from harness.core.ports import AgentIdentityProvider, AgentRegistry
+from harness.studio.models import DraftSkill
+from harness.studio.platform_skills import default_platform_skill_catalog
 
 
 class AgentService:
@@ -40,6 +48,7 @@ class AgentService:
             Path(default_manifest_path) if default_manifest_path is not None else None
         )
         self._default_report: AgentPackageReport | None = None
+        self._default_platform_digest: str | None = None
         self._agent_ids = agent_ids
 
     def validate(
@@ -139,10 +148,11 @@ class AgentService:
 
         if self._default_manifest_path is None:
             return None
-        if self._default_report is None:
-            self._default_report = check_agent_package(
-                self._default_manifest_path, environment="production"
-            )
+        if self._default_report is None or self._default_platform_digest != (
+            self._platform_catalog_digest()
+        ):
+            self._default_report = self._build_default_report()
+            self._default_platform_digest = self._platform_catalog_digest()
         report = self._default_report
         snapshot = report.snapshot
         name = snapshot.manifest.metadata.name
@@ -160,6 +170,81 @@ class AgentService:
             snapshot,
             package_hash=report.package_hash,
         )
+
+    @staticmethod
+    def _platform_catalog_digest() -> str:
+        payload = json.dumps(
+            sorted(
+                package.content_hash
+                for package in default_platform_skill_catalog().packages
+            )
+        ).encode("utf-8")
+        return hashlib.sha256(payload).hexdigest()[:8]
+
+    def _build_default_report(self) -> AgentPackageReport:
+        """Validate the default agent with every platform Skill bound.
+
+        The default conversation agent must keep the platform's full reviewed
+        Skill library available. Catalog packages are materialized into a
+        temporary copy of the bundle (overwriting same-name directories so the
+        platform catalog stays the single source of truth) and the published
+        version carries a deterministic ``+platform.<digest>`` suffix: a catalog
+        revision provisions as a new immutable version without manual bumps.
+        """
+
+        catalog = default_platform_skill_catalog()
+        digest = self._platform_catalog_digest()
+        with TemporaryDirectory(prefix="default-agent-platform-") as temp:
+            root = Path(temp) / "agent"
+            shutil.copytree(self._default_manifest_path.parent, root)
+            manifest_path = root / self._default_manifest_path.name
+            manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+            entries = list(manifest["spec"].get("skills") or [])
+            for package in catalog.packages:
+                self._materialize_platform_skill(root, package.skill)
+                entry = f"skills/{package.skill.name}"
+                if entry not in entries:
+                    entries.append(entry)
+            manifest["spec"]["skills"] = entries
+            manifest["metadata"]["version"] = (
+                f"{manifest['metadata']['version']}+platform.{digest}"
+            )
+            manifest_path.write_text(
+                yaml.safe_dump(manifest, sort_keys=False, allow_unicode=True),
+                encoding="utf-8",
+            )
+            return check_agent_package(manifest_path, environment="production")
+
+    @staticmethod
+    def _materialize_platform_skill(root: Path, skill: DraftSkill) -> None:
+        skill_root = root / "skills" / skill.name
+        skill_root.mkdir(parents=True, exist_ok=True)
+        frontmatter_payload: dict[str, object] = {
+            "name": skill.name,
+            "description": skill.description,
+        }
+        if skill.source is not None:
+            frontmatter_payload["metadata"] = {
+                "harness": {
+                    "source": skill.source.model_dump(mode="json", by_alias=True),
+                }
+            }
+        frontmatter = yaml.safe_dump(
+            frontmatter_payload,
+            sort_keys=False,
+            allow_unicode=True,
+        ).strip()
+        (skill_root / "SKILL.md").write_text(
+            f"---\n{frontmatter}\n---\n\n{skill.instructions.strip()}\n",
+            encoding="utf-8",
+        )
+        for file in skill.files:
+            target = skill_root.joinpath(*Path(file.path).parts)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if file.content is not None:
+                target.write_text(file.content, encoding="utf-8")
+            else:
+                target.write_bytes(base64.b64decode(file.content_base64 or "", validate=True))
 
     async def publish(
         self,
