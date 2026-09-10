@@ -40,16 +40,22 @@
 
 ### 4.1 交互测试（真实组件，非源码文本断言）
 
-新增 `web/harness-console/tests/knowledge-graph-clicks.spec.tsx`：用 G6 替身保留面板绑定的节点事件与 `setData` 载荷，真实挂载组件后回放手势。
+新增 `web/harness-console/tests/knowledge-graph-clicks.spec.tsx`：用 G6 / 3D 两个引擎替身保留面板绑定的节点事件、`setData` / `graphData` 载荷与相机调用，真实挂载组件后回放手势（3D 的点击走容器原生监听，测试直接在容器上派发 `MouseEvent` 命中屏幕坐标）。
 
-| 用例 | 断言 | 新代码 | cd2a121（改前） |
-| --- | --- | --- | --- |
-| 单击（越过窗口后）开抽屉 | `role="dialog"` 出现 | 通过 | 通过 |
-| 双击展开且不留抽屉 | 无 dialog 且节点收敛为 a–b | 通过 | **失败** |
-| 慢双击收回已弹出的抽屉 | 无 dialog 且已展开 | 通过 | **失败** |
-| 引擎自身 dblclick 也走展开 | 无 dialog 且已展开 | 通过 | **失败** |
-| 带目标跳转只定位不 fitView | `focusElement(["b"])`、`fitView` 0 次 | 通过 | **失败** |
-| 无目标打开仍 fitView 整图 | `fitView` 1 次 | 通过 | 通过 |
+| 引擎 | 用例 | 断言 | 新代码 | cd2a121（改前） |
+| --- | --- | --- | --- | --- |
+| 2D | 单击（越过窗口后）开抽屉 | `role="dialog"` 出现 | 通过 | 通过 |
+| 2D | 双击展开且不留抽屉 | 无 dialog 且节点收敛为 a–b | 通过 | **失败** |
+| 2D | 慢双击收回已弹出的抽屉 | 无 dialog 且已展开 | 通过 | **失败** |
+| 2D | 引擎自身 dblclick 也走展开 | 无 dialog 且已展开 | 通过 | **失败** |
+| 2D | 带目标跳转只定位不 fitView | `focusElement(["b"])`、`fitView` 0 次 | 通过 | **失败** |
+| 2D | 无目标打开仍 fitView 整图 | `fitView` 1 次 | 通过 | 通过 |
+| 3D | 双击展开且不留抽屉 | 无 dialog 且已展开 | 通过 | **失败** |
+| 3D | 浏览器原生 dblclick 也走展开 | 无 dialog 且已展开 | 通过 | **失败** |
+| 3D | 带目标跳转只定位，1.4s/3.6s 兜底也不 fitView | 相机对准 1 次、`zoomToFit` 0 次 | 通过 | **失败** |
+| 3D | 引擎停止时复核目标节点重新对准（无目标则 fitView） | 再次对准且 `zoomToFit` 0 次 | 通过 | **失败** |
+
+改前代码（`git checkout cd2a121 -- knowledge-graph-panel.tsx`）下 10 个用例 **8 失败 / 2 通过**，通过的正是本轮未改动的两个行为（单击开抽屉、无目标时整图取景）。
 
 ### 4.2 发布后镜像内 bundle 校验
 
@@ -70,7 +76,7 @@
 | api / worker | 未重建（`skill-catalog-20260910` / `weknora-qa-20260909-v5`，均 healthy） |
 | Web 首页 | `http=200`、`time=0.009s`（容器内自测） |
 | 发布前 active-run 守卫 | `0`，未推迟 |
-| 前端测试基线 | 572 通过；3 个失败（`workbench-layout` ×2、`studio-client` ×1）在改动前的 HEAD 上同样失败 |
+| 前端测试基线 | 576 通过；3 个失败（`workbench-layout` ×2、`studio-client` ×1）在改动前的 HEAD 上同样失败 |
 | `tsc --noEmit` | 通过 |
 
 ### 4.4 未做的验证（需人工或授权）
