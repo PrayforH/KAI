@@ -67,3 +67,16 @@ docker push .../agent-studio-web:$TAG
 - `GET /skills/catalog`（平台包）仍为公开只读；member 上传自己的 zip 快照路径不变。
 - 发布评测用例目前只有正向触发用例；负向（不应触发）用例待 EvalExpectation 支持「输出不含」类断言后补充。
 - `skillCount` 卡片统计只计快照 skill，不含目录引用（引用在编译期物化，草稿层面保持声明式）。
+
+## 7. 事故记录：worker 版本偏斜导致全量运行秒败（已修复）
+
+- 现象：发布后约 9 小时（09:50–09:52），用户运行全部在数百毫秒内失败，`error_code=runtime_error`。
+- 根因：worker 停留在旧镜像（旧 `CapabilityCatalog` 模型没有 `skills` 字段），而新 API 已把含 `skills` 的目录记录写入数据库；worker 反序列化时 pydantic `extra_forbidden` 直接崩溃。**经验：catalog 模型加字段属于读写双向变更，api 与 worker 必须同批滚动**，"只重建 api/web 最小影响面"的判断不成立。
+- 复杂因素：另一条工作线（知识图谱 3D）于 04:54 将 `.env.production` 的 `HARNESS_HARBOR_IMAGE_TAG` 改为 `knowledge-graph-3d` 并重建了 web；但该 tag 的 **api 镜像从未推送**（仅 web 镜像存在于 173 本地），导致按 compose 重建 worker 会 pull 失败，worker 被继续留在旧版本。
+- 修复：不改动 `.env.production`（保留对方 web 部署意图），重建 worker/quality-sync 时用环境变量覆盖：
+  `HARNESS_HARBOR_IMAGE_TAG=skill-catalog-20260910 docker compose ... up -d --no-build --no-deps --force-recreate worker quality-sync`
+- 验证：4 个容器全部 healthy 且运行 `skill-catalog-20260910`；在原失败会话发送测试消息创建 run，状态 `succeeded`。
+- 遗留风险（需与知识图谱工作线协调）：
+  1. `.env.production` 当前指向不存在的 `agent-studio-api:knowledge-graph-3d`；任何对 api/worker 的 `compose pull/up` 都会失败，直到该线推送 api 镜像或改回统一 tag。
+  2. 正在运行的 web 是本地镜像 `agent-studio-web:knowledge-graph-3d`（未推送 harbor），宿主机清理镜像或跨机迁移会丢失。
+  3. 建议后续发布统一走 `scripts/build_harbor_174.sh` 式的"一次 tag、api/web/worker 同批滚动"流程。
