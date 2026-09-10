@@ -246,10 +246,7 @@ body.codex-theme-v1 .task-title-viewport { display: block; min-width: 0; overflo
   .task-list-item .task-title-text { animation: none !important; }
 }
 
-.system-assistant-upgrade { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; color: var(--ink); font-size: 13px; background: var(--panel); }
-.system-assistant-upgrade button { flex-shrink: 0; border: 1px solid currentColor; border-radius: 6px; padding: 5px 8px; background: transparent; color: inherit; cursor: pointer; }
 body.codex-theme-v1 .tasks-show-more { opacity: .65; }
-@media (max-width: 600px) { .system-assistant-upgrade { flex-wrap: wrap; } }
 
 body.codex-theme-v1:has(.console-shell) .task-default-group .task-project-items,
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-default-group .task-project-items {

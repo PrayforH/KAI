@@ -656,17 +656,6 @@ function AuthenticatedHome() {
           </header>
           <section className="chat-stage" aria-label="Agent 任务对话">
             <div className="chat-surface">
-              {selectedAgent && systemAssistant && currentSystemAssistant(selectedAgent, systemAssistant) === systemAssistant
-                && selectedAgent.version !== systemAssistant.version && (
-                <div className="system-assistant-upgrade" role="status">
-                  <span>当前对话使用旧版系统助手。新版支持公开联网和平台技能。</span>
-                  <button type="button" disabled={currentTaskBusy} onClick={() => {
-                    bindThreadAgent(taskStorage(), threadId, systemAssistant);
-                    setSelectedAgent(systemAssistant);
-                  }}>升级并继续此对话</button>
-                </div>
-              )}
-
               {threadId && selectedAgent ? (
                 <AssistantRuntimeShell
                   key={`${threadId}:${agentItemKey(selectedAgent)}`}
