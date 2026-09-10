@@ -589,6 +589,14 @@ class CapabilityCatalogService:
             if own_entry is None:
                 raise NotFoundError(f"Catalog resource not found: mcp/{resource_id}")
         impact = await self.impact(tenant_id, user_id, resource_type, resource_id)
+        # Disabling resolves to "route unavailable" at run time, so it breaks
+        # pinned versions exactly like deletion does.
+        if resource_type == "modelRoute" and impact.published_agent_versions:
+            raise ConflictError(
+                "Published Agent versions still pin this model route; publish a "
+                "rebound version or remove those versions first: "
+                + ", ".join(impact.published_agent_versions)
+            )
         field = {
             "modelRoute": "model_routes",
             "mcp": "mcp_servers",

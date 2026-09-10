@@ -916,3 +916,49 @@ async def test_deleting_a_route_pinned_by_published_versions_is_refused() -> Non
         expected_revision=1,
     )
     assert "glm-5-3-flash" not in {item.route_id for item in result.record.catalog.model_routes}
+
+
+@pytest.mark.asyncio
+async def test_disabling_a_route_pinned_by_published_versions_is_refused() -> None:
+    """Disabling resolves to "route unavailable", so it breaks runs too."""
+
+    defaults = default_capability_catalog()
+    repository = InMemoryCapabilityCatalogRepository()
+    await repository.seed(
+        CapabilityCatalogRecord(
+            tenantId="route-disable-guard",
+            revision=1,
+            catalog=defaults,
+            updatedBy="system",
+            updatedAt=NOW,
+        )
+    )
+
+    async def route_references(tenant_id: str, route_id: str) -> tuple[str, ...]:
+        return ("public-opinion-agent@0.3.22",) if route_id == "deepseek-v4-flash" else ()
+
+    service = CapabilityCatalogService(
+        repository,
+        InMemoryAgentDraftRepository(),
+        published_route_references=route_references,
+    )
+
+    with pytest.raises(ConflictError, match="still pin this model route"):
+        await service.disable(
+            tenant_id="route-disable-guard",
+            user_id="admin-a",
+            resource_type="modelRoute",
+            resource_id="deepseek-v4-flash",
+            expected_revision=1,
+        )
+
+    result = await service.disable(
+        tenant_id="route-disable-guard",
+        user_id="admin-a",
+        resource_type="modelRoute",
+        resource_id="glm-5-3-flash",
+        expected_revision=1,
+    )
+    assert not next(
+        item for item in result.record.catalog.model_routes if item.route_id == "glm-5-3-flash"
+    ).enabled
