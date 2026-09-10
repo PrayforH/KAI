@@ -185,6 +185,27 @@ class PostgresAgentRegistry:
                 ) in rows
             ]
 
+    async def route_references(self, tenant_id: str, route_id: str) -> tuple[str, ...]:
+        """List published ``name@version`` coordinates pinned to a model route.
+
+        Deleting a route that a published version still pins breaks every
+        session bound to that version, so callers need this before removing or
+        disabling a catalog entry. The manifest projection keeps the read small.
+        """
+
+        route_pointer = sql_cast(AgentVersionRow.catalog_manifest, JSONB)["spec"]["model"]["route"]
+        statement = (
+            select(AgentVersionRow.name, AgentVersionRow.version)
+            .where(
+                AgentVersionRow.tenant_id == tenant_id,
+                route_pointer == sql_cast(route_id, JSONB),
+            )
+            .order_by(AgentVersionRow.name, AgentVersionRow.version)
+        )
+        async with self._sessions() as session:
+            rows = (await session.execute(statement)).all()
+        return tuple(f"{name}@{version}" for name, version in rows)
+
     async def move_owner(
         self, tenant_id: str, from_user_id: str, to_user_id: str, name: str
     ) -> int:

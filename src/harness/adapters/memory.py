@@ -87,6 +87,21 @@ class InMemoryAgentRegistry:
             for version in await self.list_for_user(tenant_id, owner_user_id)
         ]
 
+    async def route_references(self, tenant_id: str, route_id: str) -> tuple[str, ...]:
+        def pinned(version: AgentVersion) -> bool:
+            manifest = version.snapshot.get("manifest") or {}
+            spec = manifest.get("spec") or {}
+            model = spec.get("model") or {}
+            return version.tenant_id == tenant_id and model.get("route") == route_id
+
+        return tuple(
+            sorted(
+                f"{version.name}@{version.version}"
+                for version in self._items.values()
+                if pinned(version)
+            )
+        )
+
     async def move_owner(
         self, tenant_id: str, from_user_id: str, to_user_id: str, name: str
     ) -> int:

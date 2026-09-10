@@ -233,7 +233,6 @@ class DraftLimits(StudioModel):
     max_concurrent_subagents: int = Field(default=4, alias="maxConcurrentSubagents", ge=1, le=16)
     max_subagent_usage_units: int | None = Field(default=None, alias="maxSubagentUsageUnits", gt=0)
 
-
     @field_validator(
         "max_budget_usd", "max_model_tokens", "max_subagent_usage_units", mode="before"
     )
@@ -899,11 +898,12 @@ class ReplaceCapabilityCatalogRequest(StudioModel):
 
 
 class CatalogImpact(StudioModel):
-    resource_type: Literal[
-        "modelRoute", "mcp", "policy", "executionProfile", "skill"
-    ] = Field(alias="resourceType")
+    resource_type: Literal["modelRoute", "mcp", "policy", "executionProfile", "skill"] = Field(
+        alias="resourceType"
+    )
     resource_id: str = Field(alias="resourceId")
     draft_ids: tuple[str, ...] = Field(alias="draftIds")
+    published_agent_versions: tuple[str, ...] = Field(default=(), alias="publishedAgentVersions")
 
 
 class CatalogMutationResult(StudioModel):

@@ -864,3 +864,55 @@ async def test_skill_disable_reports_referencing_drafts_and_upsert_is_rejected()
 
     with pytest.raises(ValidationError):
         UpsertCatalogResourceRequest(expectedRevision=1, resource=defaults.skills[0])
+
+
+@pytest.mark.asyncio
+async def test_deleting_a_route_pinned_by_published_versions_is_refused() -> None:
+    """A published version is immutable, so its route must survive deletion.
+
+    On 2026-09-09 deleting the ``codex-deepseek-v4-flash`` route silently broke
+    every already-published version that pinned it, because the reference check
+    only looked at drafts and agent bindings.
+    """
+
+    defaults = default_capability_catalog()
+    repository = InMemoryCapabilityCatalogRepository()
+    await repository.seed(
+        CapabilityCatalogRecord(
+            tenantId="route-guard",
+            revision=1,
+            catalog=defaults,
+            updatedBy="system",
+            updatedAt=NOW,
+        )
+    )
+    published = ("public-opinion-agent@0.3.20", "public-opinion-agent@0.3.22")
+
+    async def route_references(tenant_id: str, route_id: str) -> tuple[str, ...]:
+        return published if route_id == "deepseek-v4-flash" else ()
+
+    service = CapabilityCatalogService(
+        repository,
+        InMemoryAgentDraftRepository(),
+        published_route_references=route_references,
+    )
+
+    impact = await service.impact("route-guard", "admin-a", "modelRoute", "deepseek-v4-flash")
+    assert impact.published_agent_versions == published
+
+    with pytest.raises(ConflictError, match="published:public-opinion-agent@0.3.22"):
+        await service.delete_model(
+            tenant_id="route-guard",
+            user_id="admin-a",
+            resource_id="deepseek-v4-flash",
+            expected_revision=1,
+        )
+
+    # An unreferenced route still deletes.
+    result = await service.delete_model(
+        tenant_id="route-guard",
+        user_id="admin-a",
+        resource_id="glm-5-3-flash",
+        expected_revision=1,
+    )
+    assert "glm-5-3-flash" not in {item.route_id for item in result.record.catalog.model_routes}

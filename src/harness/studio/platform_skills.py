@@ -118,7 +118,9 @@ _VENDORED_EVALUATION = {
     "design-style-skill": "请为演示文稿选定一套统一的设计风格（圆角/间距规则）并说明映射关系。",
     "ppt-editing-skill": "请在保留模板布局的前提下更新演示文稿内容，并说明改动范围。",
     "slide-making-skill": "请根据给定材料规划并制作一套幻灯片，先给出大纲结构。",
-    "skill-creator": "请把一段重复流程整理成一个职责单一、触发条件明确的 Agent Skill，并给出评测用例。",
+    "skill-creator": (
+        "请把一段重复流程整理成一个职责单一、触发条件明确的 Agent Skill，并给出评测用例。"
+    ),
     "mcp-builder": "请为一个 HTTP API 设计 MCP 工具集，说明工具划分、输入契约与错误处理。",
     "internal-comms": "请撰写一份包含进展、计划与问题的内部状态更新，语言简洁面向管理层。",
     "theme-factory": "请为一份已有文档套用统一主题，说明所选配色与字体，并保持可读性。",

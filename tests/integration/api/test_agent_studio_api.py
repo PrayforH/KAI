@@ -929,7 +929,9 @@ async def test_skill_references_resolve_into_bundle_without_snapshot_install() -
         manifest = __import__("yaml").safe_load(archive.read("agent.yaml").decode())
     assert "OpenXML" in docx_skill or "docx" in docx_skill
     resolved = [
-        entry for entry in manifest["spec"]["skills"] if entry.endswith(("minimax-docx", "minimax-pdf"))
+        entry
+        for entry in manifest["spec"]["skills"]
+        if entry.endswith(("minimax-docx", "minimax-pdf"))
     ]
     assert len(resolved) == 2
 

@@ -1113,7 +1113,12 @@ def test_skill_reference_conflicts_disable_and_unknown_block_compilation() -> No
     compiler_catalog = default_capability_catalog()
     disabled = compiler_catalog.skills[0]
     catalog = compiler_catalog.model_copy(
-        update={"skills": (disabled.model_copy(update={"enabled": False}), *compiler_catalog.skills[1:])}
+        update={
+            "skills": (
+                disabled.model_copy(update={"enabled": False}),
+                *compiler_catalog.skills[1:],
+            )
+        }
     )
     compiler = AgentDraftCompiler(catalog)
     base = draft()

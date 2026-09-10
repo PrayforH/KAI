@@ -1,6 +1,6 @@
 """Catalog seeding, optimistic updates and Draft impact analysis."""
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -290,11 +290,20 @@ class CapabilityCatalogService:
         repository: CapabilityCatalogRepository,
         drafts: AgentDraftRepository,
         *,
+        published_route_references: Callable[[str, str], Awaitable[tuple[str, ...]]] | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._repository = repository
         self._drafts = drafts
+        # Published Agent versions are immutable and sessions pin them, so a
+        # route removal must see them; drafts alone are not the whole impact.
+        self._published_route_references = published_route_references
         self._clock = clock or (lambda: datetime.now(UTC))
+
+    async def _published_versions_for_route(self, tenant_id: str, route_id: str) -> tuple[str, ...]:
+        if self._published_route_references is None:
+            return ()
+        return await self._published_route_references(tenant_id, route_id)
 
     async def get(self, tenant_id: str) -> CapabilityCatalogRecord:
         seed = CapabilityCatalogRecord(
@@ -336,9 +345,7 @@ class CapabilityCatalogService:
                 lambda item: item.package_id,
             )
             if catalog_skills_changed:
-                upgraded_catalog = catalog_for_skills.model_copy(
-                    update={"skills": catalog_skills}
-                )
+                upgraded_catalog = catalog_for_skills.model_copy(update={"skills": catalog_skills})
             updated_by = current.updated_by
         # Platform web tools are selectable capabilities, not automatic grants.
         # Also expose them in admin-edited catalogs without replacing custom entries.
@@ -526,6 +533,11 @@ class CapabilityCatalogService:
         catalog = (await self.get_for_user(tenant_id, user_id)).catalog
         if not self._contains(catalog, resource_type, resource_id):
             raise NotFoundError(f"Catalog resource not found: {resource_type}/{resource_id}")
+        published = (
+            await self._published_versions_for_route(tenant_id, resource_id)
+            if resource_type == "modelRoute"
+            else ()
+        )
         affected: list[str] = []
         drafts = (
             await self._drafts.list_for_user(tenant_id, user_id)
@@ -552,6 +564,7 @@ class CapabilityCatalogService:
             resourceType=resource_type,
             resourceId=resource_id,
             draftIds=tuple(sorted(affected)),
+            publishedAgentVersions=published,
         )
 
     async def disable(
@@ -682,10 +695,11 @@ class CapabilityCatalogService:
                 if route_id == resource_id
             )
         )
-        if impact.draft_ids or bound_agents:
+        if impact.draft_ids or bound_agents or impact.published_agent_versions:
             references = (
                 *(f"draft:{draft_id}" for draft_id in impact.draft_ids),
                 *(f"agent:{agent_name}" for agent_name in bound_agents),
+                *(f"published:{coordinate}" for coordinate in impact.published_agent_versions),
             )
             raise ConflictError(
                 "Rebind or update these references before deleting the model: "

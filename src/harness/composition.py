@@ -655,6 +655,7 @@ def build_production_container(
     capability_catalogs = CapabilityCatalogService(
         capability_catalog_repository,
         agent_drafts,
+        published_route_references=registry.route_references,
         clock=clock,
     )
     environment_mcp_credentials = server_secret_credential_provider(
