@@ -96,3 +96,10 @@ docker push .../agent-studio-web:$TAG
 - 命名澄清：「通用助手」是 lead-agent 的 UI 显示名（09-08 发布设计，内部标识不变）；**老会话固定在创建时的 agent 版本**（不可变原则），本例 PPT 会话固定在 `lead-agent@1.0.0`（仅 1 个 skill），**新建对话**才会使用新版本。
 - 验证：用户目录出现 `lead-agent@1.0.2+platform.58a522a1`；该版本快照 `skill_snapshots` 含 11 个 skill（7 个原库 + 4 个办公包）；新会话 run 的 `agent.assets.staged` 事件确认 11 个 skill 全部物化进运行；run `succeeded`。
 - 体验备注：直接问模型"你有哪些技能"不可靠（模型无法自省工具列表），以实际任务触发为准；本轮增量镜像顺带把容器内滞留的 lead-agent 1.0.0 包更新为仓库当前 1.0.2。
+
+## 10. 默认会话版本钉修复（HARNESS_AGENT_VERSION）
+
+- 现象：新建对话仍固定 `lead-agent@1.0.0`。根因：Web BFF 以 `HARNESS_AGENT_VERSION`（缺省 1.0.0）为新建会话钉版本，与平台目录/供应无关。
+- 修复：173 `.env.production` 设 `HARNESS_AGENT_VERSION=1.0.2+platform.58a522a1` 并重建 web。
+- 验证：新会话固定到该版本；run `agent.assets.staged` 物化 11 个 skill；run `succeeded`。
+- 已知耦合：平台目录内容变化会生成新的 `+platform.<digest>` 版本号，该环境变量需同步更新（后续可改为 BFF 不钉版本、由后端解析默认部署）。
