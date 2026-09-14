@@ -124,8 +124,9 @@ scripts/package_skill.py 打包（在 skill-creator 目录以 python -m scripts.
             }
         )
         try:
-            compiled = AgentDraftCompiler(catalog.catalog, catalog_revision=catalog.revision).compile(
-                draft)
+            compiled = AgentDraftCompiler(
+                catalog.catalog, catalog_revision=catalog.revision
+            ).compile(draft)
         except ValueError as error:
             raise ConflictError(f"Skill Creator 运行配置未通过检查：{error}") from None
         version = f"preview-{creator_id}-1-{compiled.report.snapshot.content_hash[:12]}"
@@ -196,8 +197,12 @@ scripts/package_skill.py 打包（在 skill-creator 目录以 python -m scripts.
             artifacts = await container.artifacts.list_for_run(tenant_id, run_id)
             archive = next((a for a in artifacts if a.name == f"{name}.skill"), None)
             if archive is None and final_text(events):
-                return SkillConversationReply(status="clarifying", reply=final_text(events)[:4000],
-                    creatorRunId=run_id, creatorSourceRevision=package.source_revision)
+                return SkillConversationReply(
+                    status="clarifying",
+                    reply=final_text(events)[:4000],
+                    creatorRunId=run_id,
+                    creatorSourceRevision=package.source_revision,
+                )
             if archive is None or not packaged:
                 raise ConflictError(f"未验证到 skill-creator 加载与官方打包调用；运行 {run_id}")
             _, content = await container.artifacts.download(tenant_id, archive.artifact_id)

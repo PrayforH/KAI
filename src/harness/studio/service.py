@@ -410,7 +410,7 @@ class AgentStudioService:
             updatedBy=user_id,
             createdAt=now,
             updatedAt=now,
-            agentId=await self._resolve_agent_id(tenant_id, user_id, name),
+            agentId=None,
         )
         catalog = await self.capabilities(tenant_id, user_id)
         compiler = await self._compiler_for(tenant_id, user_id)
@@ -432,6 +432,8 @@ class AgentStudioService:
             "reasons": ("已调用所选模型生成职责、执行流程与任务契约。",
                         "Skill 仅作推荐，选择后通过差异审阅安装。") + recommendation.reasons,
         })
+        draft = draft.model_copy(update={
+            "agent_id": await self._resolve_agent_id(tenant_id, user_id, name)})
         await self._repository.add(draft)
         return TaskDrivenDraftResult(draft=draft, recommendation=recommendation)
 
@@ -1028,6 +1030,8 @@ class AgentStudioService:
         if reply.skill_requests:
             if creator is None:
                 raise ConflictError("Skill Creator Worker 服务不可用，未生成或修改技能")
+            if creator.draft.revision != current.revision:
+                raise ConflictError("草稿已更新，请基于最新配置重新调用 Skill Creator")
             generated = {"create_skills": list(reply.changes.create_skills),
                          "update_skills": list(reply.changes.update_skills)}
             existing = {skill.name: skill for skill in current.spec.skills}
