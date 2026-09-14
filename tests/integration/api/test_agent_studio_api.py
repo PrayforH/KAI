@@ -132,6 +132,18 @@ async def test_service_identity_can_build_and_publish_existing_bundle() -> None:
         deepagents = await client.get(
             f"/v1/studio/drafts/{draft_id}/deepagents-project", headers=headers
         )
+        source = await client.get(
+            f"/v1/studio/drafts/{draft_id}/deepagents-project/files",
+            headers=headers, params={"expectedRevision": 1},
+        )
+        denied_source = await client.get(
+            f"/v1/studio/drafts/{draft_id}/deepagents-project/files",
+            headers=headers | {"X-User-ID": "someone-else"}, params={"expectedRevision": 1},
+        )
+        stale_source = await client.get(
+            f"/v1/studio/drafts/{draft_id}/deepagents-project/files",
+            headers=headers, params={"expectedRevision": 2},
+        )
         published = await client.post(f"/v1/studio/drafts/{draft_id}/publish", headers=headers)
         drafts = await client.get("/v1/studio/drafts", headers=headers)
 
@@ -165,6 +177,14 @@ async def test_service_identity_can_build_and_publish_existing_bundle() -> None:
         config = yaml.safe_load(archive.read("agent.yaml"))
         assert manifest["agents"] == {config["name"]: "agent.yaml"}
     assert deepagents.status_code == 200
+    assert source.status_code == 200
+    assert denied_source.status_code == 404
+    assert stale_source.status_code == 409
+    assert source.json()["revision"] == 1
+    assert source.json()["digest"] == hashlib.sha256(deepagents.content).hexdigest()
+    with ZipFile(BytesIO(deepagents.content)) as archive:
+        for entry in source.json()["files"]:
+            assert entry["content"] == archive.read(entry["path"]).decode("utf-8")
     assert deepagents.headers["x-agent-export-format"] == "deepagents"
     assert deepagents.headers["content-disposition"] == (
         'attachment; filename="policy-researcher-0.1.0-deepagents.zip"'

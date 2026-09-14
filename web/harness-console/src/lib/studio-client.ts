@@ -15,6 +15,12 @@ import type {
 
 export type StudioRole = "owner" | "admin" | "member" | "viewer";
 
+export type ProjectSourceFile = { path: string; size: number; content: string | null; unavailable: string | null };
+export type DeepagentsProjectSource = {
+  revision: number; filename: string; digest: string; framework_version: string;
+  files: ProjectSourceFile[];
+};
+
 export type LifecycleScope = {
   kind: "tenant" | "user" | "session" | "agent";
   subjectId: string;
@@ -2483,9 +2489,17 @@ export const studioClient = {
     anchor.click();
     URL.revokeObjectURL(url);
   },
-  async downloadDeepagentsProject(draftId: string): Promise<void> {
+  async getDeepagentsProjectSource(draftId: string, revision: number, signal?: AbortSignal): Promise<DeepagentsProjectSource> {
+    const response = requireAuthenticatedResponse(await fetch(
+      `/api/studio/drafts/${encodeURIComponent(draftId)}/deepagents-project/files?expectedRevision=${revision}`,
+      { cache: "no-store", signal },
+    ));
+    if (!response.ok) throw await errorFrom(response);
+    return response.json();
+  },
+  async downloadDeepagentsProject(draftId: string, revision?: number): Promise<void> {
     const response = requireAuthenticatedResponse(
-      await fetch(`/api/studio/drafts/${encodeURIComponent(draftId)}/deepagents-project`, {
+      await fetch(`/api/studio/drafts/${encodeURIComponent(draftId)}/deepagents-project${revision === undefined ? "" : `?expectedRevision=${revision}`}`, {
         cache: "no-store",
       }),
     );

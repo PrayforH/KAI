@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import ast
 import base64
+import hashlib
 import io
 import json
 import keyword
@@ -55,6 +56,7 @@ from harness.studio.models import (
     DraftWorkspace,
     McpCapability,
     ModelRouteCapability,
+    StudioModel,
 )
 
 DEEPAGENTS_PINNED_VERSION = "0.7.13"
@@ -100,6 +102,54 @@ workspace/
 class DeepagentsProjectArchive:
     content: bytes
     filename: str
+
+
+class ProjectSourceFile(StudioModel):
+    path: str
+    size: int
+    content: str | None
+    unavailable: str | None = None
+
+
+class DeepagentsProjectSource(StudioModel):
+    revision: int
+    filename: str
+    digest: str
+    framework_version: str
+    files: tuple[ProjectSourceFile, ...]
+
+
+def project_source(archive: DeepagentsProjectArchive, revision: int) -> DeepagentsProjectSource:
+    """Read the exact export as bounded text previews; binary assets stay in the ZIP."""
+    files: list[ProjectSourceFile] = []
+    remaining = 2 * 1024 * 1024
+    with ZipFile(io.BytesIO(archive.content)) as zipped:
+        for entry in zipped.infolist():
+            if entry.is_dir():
+                continue
+            content = None
+            unavailable = None
+            if entry.file_size > min(256 * 1024, remaining):
+                unavailable = "文件超出预览大小限制，请下载项目查看。"
+            else:
+                raw = zipped.read(entry)
+                try:
+                    content = raw.decode("utf-8")
+                    if "\x00" in content:
+                        raise UnicodeError
+                    remaining -= len(raw)
+                except UnicodeError:
+                    content = None
+                    unavailable = "二进制文件，请下载项目查看。"
+            files.append(ProjectSourceFile(
+                path=entry.filename, size=entry.file_size, content=content,
+                unavailable=unavailable,
+            ))
+    return DeepagentsProjectSource(
+        revision=revision, filename=archive.filename,
+        digest=hashlib.sha256(archive.content).hexdigest(),
+        framework_version=DEEPAGENTS_PINNED_VERSION, files=tuple(files),
+    )
 
 
 @dataclass(frozen=True)

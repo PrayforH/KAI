@@ -93,6 +93,7 @@ from harness.studio.builder_materials import BuilderMaterialsRequest, read_build
 from harness.studio.bundle_import import AgentBundleImportError
 from harness.studio.catalog_service import CapabilityCatalogService, CatalogResourceType
 from harness.studio.compiler import DraftCompilationError
+from harness.studio.deepagents_export import DeepagentsProjectSource, project_source
 from harness.studio.mcp_credential_store import (
     ConfigureMcpCredentialRequest,
     McpCredentialService,
@@ -2270,14 +2271,33 @@ async def download_nexau_bundle(
     )
 
 
+@router.get("/drafts/{draft_id}/deepagents-project/files")
+async def read_deepagents_project(
+    draft_id: str,
+    actor: Annotated[StudioActor, Depends(require_studio_reader)],
+    service: Annotated[AgentStudioService, Depends(get_studio_service)],
+    expected_revision: Annotated[int, Query(alias="expectedRevision", ge=1)],
+) -> DeepagentsProjectSource:
+    try:
+        exported = await service.deepagents_project(
+            actor.tenant_id, actor.user_id, draft_id, expected_revision=expected_revision,
+        )
+        return project_source(exported, expected_revision)
+    except (ConflictError, NotFoundError) as error:
+        raise _translate_domain_error(error) from error
+
+
 @router.get("/drafts/{draft_id}/deepagents-project")
 async def download_deepagents_project(
     draft_id: str,
     actor: Annotated[StudioActor, Depends(require_studio_reader)],
     service: Annotated[AgentStudioService, Depends(get_studio_service)],
+    expected_revision: Annotated[int | None, Query(alias="expectedRevision", ge=1)] = None,
 ) -> Response:
     try:
-        exported = await service.deepagents_project(actor.tenant_id, actor.user_id, draft_id)
+        exported = await service.deepagents_project(
+            actor.tenant_id, actor.user_id, draft_id, expected_revision=expected_revision,
+        )
     except (ConflictError, NotFoundError) as error:
         raise _translate_domain_error(error) from error
     return Response(

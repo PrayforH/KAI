@@ -1144,7 +1144,8 @@ class AgentStudioService:
         )
 
     async def deepagents_project(
-        self, tenant_id: str, owner_user_id: str, draft_id: str
+        self, tenant_id: str, owner_user_id: str, draft_id: str,
+        *, expected_revision: int | None = None,
     ) -> DeepagentsProjectArchive:
         """Export the draft as a runnable deepagents==0.7.13 project zip.
 
@@ -1154,6 +1155,8 @@ class AgentStudioService:
         """
 
         draft = await self.get(tenant_id, owner_user_id, draft_id)
+        if expected_revision is not None and draft.revision != expected_revision:
+            raise ConflictError("草稿修订已变化，请重新加载智能体后查看代码。")
         catalog = await self.capabilities(tenant_id, owner_user_id)
         compiler = await self._compiler_for(tenant_id, owner_user_id)
         skills = compiler.resolve_skills(draft)

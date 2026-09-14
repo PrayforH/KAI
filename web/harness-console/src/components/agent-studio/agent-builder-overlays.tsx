@@ -3,6 +3,8 @@
 import { createPortal } from "react-dom";
 import { WorkspaceAttachments, type WorkspaceFile } from "./workspace-attachments";
 import { AgentTestPanel } from "./agent-test-panel";
+import dynamic from "next/dynamic";
+const AgentProjectCode = dynamic(() => import("./agent-project-code").then(module => module.AgentProjectCode), { ssr: false });
 import { AgentBuildAssets, type BuildChange } from "./agent-build-assets";
 import workspaceStyles from "./build-workspace.module.css";
 import { PreviewRunResponse, PreviewMarkdown, type PreviewTurn } from "./agent-preview";
@@ -113,6 +115,7 @@ export function AgentBuilderAssistant({
   testRequest?: number;
 }) {
   const [input, setInput] = useState("");
+  const [codeView, setCodeView] = useState(false);
   const [assetsOpen, setAssetsOpen] = useState(true);
   const [assetTab, setAssetTab] = useState<"config" | "changes">("config");
   const [mobilePanel, setMobilePanel] = useState<"build" | "test">("build");
@@ -172,7 +175,7 @@ export function AgentBuilderAssistant({
     setEditing(false);
     setApplying(false);
     setProposal(null);
-    setLastChanges([]); setSelectedRunId(""); setAssetsOpen(true); setMobilePanel("build");
+    setCodeView(false); setLastChanges([]); setSelectedRunId(""); setAssetsOpen(true); setMobilePanel("build");
     setLastTestPrompt("");
     setArchivedTurns([]); setCurrentFiles([]); setLastArtifactIds([]); setFeedbackTurn(null);
     setInput(initialPrompt);
@@ -189,7 +192,7 @@ export function AgentBuilderAssistant({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, mode, draft.id, creationSession]);
 
-  useEffect(() => { if (testRequest) { setMobilePanel("test"); window.setTimeout(() => workspaceTarget?.querySelector<HTMLTextAreaElement>('[aria-label="效果测试输入"]')?.focus(), 0); } }, [testRequest, workspaceTarget]);
+  useEffect(() => { if (testRequest) { setCodeView(false);setMobilePanel("test"); window.setTimeout(() => workspaceTarget?.querySelector<HTMLTextAreaElement>('[aria-label="效果测试输入"]')?.focus(), 0); } }, [testRequest, workspaceTarget]);
 
   useEffect(() => () => {
     epochRef.current += 1;
@@ -256,7 +259,7 @@ export function AgentBuilderAssistant({
       setLastTestPrompt(value.trim());
       setCurrentFiles(names); setLastArtifactIds(artifactIds);
       setResult(started);
-      setMobilePanel("test");
+      setCodeView(false);setMobilePanel("test");
       setSelectedRunId("");
       setMessages(current => [...current, { id: `run-${started.run.run_id}`, role: "assistant", text: "", runId: started.run.run_id }]);
       const controller = new AbortController();
@@ -472,14 +475,14 @@ export function AgentBuilderAssistant({
         setResult(null); setFeedbackTurn(null); setIntent("run"); setError("");
         setMessages(current => [...current, { id: createRandomId(), role: "assistant", tone: "muted", text: "已开启新的测试会话。" }]);
       }}>↺</button>}
-      {workspaceTarget ? <button type="button" title="查看配置与改动" aria-label="查看智能体资产" onClick={() => {setAssetTab("config");setAssetsOpen(current => !current);}}>☷</button> : <button type="button" aria-label="收起构建助手" onClick={onClose}>×</button>}</div>
+      {workspaceTarget ? <button type="button" title="查看配置与改动" aria-label="查看智能体资产" onClick={() => {setCodeView(false);setAssetTab("config");setAssetsOpen(current => !current);}}>☷</button> : <button type="button" aria-label="收起构建助手" onClick={onClose}>×</button>}</div>
     </header>
 
     <div className={styles.transcript} ref={transcriptRef} aria-live="polite" onScroll={event => { const el = event.currentTarget; followOutput.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120; }}>
       {messages.map((message) => {
         const turn = message.runId ? turns.find(turn => turn.result.run.run_id === message.runId) : undefined;
         return <article key={message.id} className={styles.message} data-role={message.role} data-tone={message.tone} data-source={turn ? "agent" : "builder"}>
-          <div>{turn ? workspaceTarget ? <button type="button" className={styles.runLink} onClick={() => {setSelectedRunId(turn.result.run.run_id);setMobilePanel("test");}}><span>{turn.result.run.status === "succeeded" ? "测试已完成" : ["failed", "cancelled", "timed_out", "rejected"].includes(turn.result.run.status) ? "测试已结束" : "正在测试"} · r{turn.result.draftRevision}</span><small>查看回答 ↗</small></button> : <PreviewRunResponse turn={turn} agentName={activeDraft.displayName} onImprove={improve} /> : <>
+          <div>{turn ? workspaceTarget ? <button type="button" className={styles.runLink} onClick={() => {setSelectedRunId(turn.result.run.run_id);setCodeView(false);setMobilePanel("test");}}><span>{turn.result.run.status === "succeeded" ? "测试已完成" : ["failed", "cancelled", "timed_out", "rejected"].includes(turn.result.run.status) ? "测试已结束" : "正在测试"} · r{turn.result.draftRevision}</span><small>查看回答 ↗</small></button> : <PreviewRunResponse turn={turn} agentName={activeDraft.displayName} onImprove={improve} /> : <>
             {message.role === "assistant" && <small className={styles.speaker}>构建助手</small>}
             <PreviewMarkdown text={message.text} />
             {message.files?.length ? <WorkspaceAttachments files={message.files.map((name,i)=>({id:message.artifactIds?.[i] || `legacy-${i}`,name}))}/> : null}
@@ -496,7 +499,7 @@ export function AgentBuilderAssistant({
       {(editing || applying) && <p className={styles.editStatus} role="status">{editing ? intent === "auto" ? "正在结合上下文理解要求…" : "正在根据当前草稿生成修改建议…" : "正在保存修改…"}</p>}
       {proposal && <section className={styles.editProposal} aria-label="待确认的配置修改">
         <strong>修改预览 · 基于修订 {proposal.baseRevision}</strong>
-        {workspaceTarget && <button type="button" className={styles.diffLink} onClick={() => {setAssetTab("changes");setAssetsOpen(true);}}>查看完整差异 ↗</button>}
+        {workspaceTarget && <button type="button" className={styles.diffLink} onClick={() => {setCodeView(false);setAssetTab("changes");setAssetsOpen(true);}}>查看完整差异 ↗</button>}
         <p>只修改当前草稿，不发布，也不改变正在运行的配置。</p>
         {Object.entries(proposal.changes).map(([key, value]) => <details key={key}>
           <summary>{editLabels[key] ?? key}</summary>
@@ -558,13 +561,14 @@ export function AgentBuilderAssistant({
   </aside>;
   if (!workspaceTarget) return builder;
   const changes = proposal ? Object.entries(proposal.changes).map(([key,value]) => ({label: editLabels[key] ?? key, before: showValue(beforeEdit(proposal.before,key)), after: showValue(value)})) : lastChanges;
-  return createPortal(<div className={workspaceStyles.workspace} data-assets={assetsOpen} data-mobile={mobilePanel}>
+  return createPortal(<div className={workspaceStyles.workspace} data-assets={assetsOpen} data-code={codeView} data-mobile={mobilePanel}>
     <nav className={workspaceStyles.mobileTabs} aria-label="构建工作台视图"><button type="button" aria-pressed={mobilePanel === "build"} onClick={() => setMobilePanel("build")}>构建与修改</button><button type="button" aria-pressed={mobilePanel === "test"} onClick={() => setMobilePanel("test")}>效果测试</button></nav>
     {builder}
-    {assetsOpen && <AgentBuildAssets key={assetTab} initialTab={assetTab} draft={activeDraft} turns={turns} changes={changes} pending={Boolean(proposal)} onClose={() => setAssetsOpen(false)} onEdit={(section, label) => onEditConfiguration?.(section, label)} />}
+    {assetsOpen && !codeView && <AgentBuildAssets key={assetTab} initialTab={assetTab} onCodeView={() => setCodeView(true)} draft={activeDraft} turns={turns} changes={changes} pending={Boolean(proposal)} onClose={() => setAssetsOpen(false)} onEdit={(section, label) => onEditConfiguration?.(section, label)} />}
+    {codeView && <AgentProjectCode key={activeDraft.id} draftId={draftReady ? activeDraft.id : ""} revision={activeDraft.revision} name={activeDraft.name || activeDraft.displayName} dirty={hasUnsavedChanges} onClose={() => {setCodeView(false);setAssetsOpen(true);}} />}
     <AgentTestPanel draftId={activeDraft.id} revision={activeDraft.revision} agentName={activeDraft.displayName} model={activeDraft.model} turns={turns} busy={active} ready={draftReady} dirty={hasUnsavedChanges} error={error} selectedRunId={selectedRunId}
       onSend={async (value,ids,names) => {if (proposal) {setError("请先应用或放弃左侧的配置建议，再测试。");return false;}return startRun(value, undefined, true, ids, names);}}
       onReset={() => {if (result) setArchivedTurns(current => [...current,{prompt:lastTestPrompt,result,files:currentFiles,artifactIds:lastArtifactIds}]);setResult(null);setFeedbackTurn(null);setSelectedRunId("");setError("");}}
-      onCancel={cancelRun} onImprove={improve} onAssets={() => {setAssetTab("config");setAssetsOpen(current => !current);}} />
+      onCancel={cancelRun} onImprove={improve} onAssets={() => {setCodeView(false);setAssetTab("config");setAssetsOpen(current => !current);}} />
   </div>, workspaceTarget);
 }
