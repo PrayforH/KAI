@@ -193,6 +193,22 @@ export type StudioInstalledSkill = {
   binaryFileCount: number;
 };
 
+/** A catalog-listing file is a path plus its metadata: the catalog endpoint
+ *  never ships vendored asset payloads, so the list stays small. */
+export type StudioPlatformSkillListingFile = {
+  path: string;
+  binary?: boolean;
+  sizeBytes?: number | null;
+};
+
+export type StudioPlatformSkillListing = {
+  name: string;
+  description: string;
+  instructions: string;
+  fileCount: number;
+  files: StudioPlatformSkillListingFile[];
+};
+
 export type StudioPlatformSkillPackage = {
   packageId: string;
   revision: number;
@@ -206,13 +222,8 @@ export type StudioPlatformSkillPackage = {
   contentHash: string;
   riskLevel: "low" | "review";
   findings: string[];
-  skill: StudioSkill;
-  evaluationCases: Array<{
-    id: string;
-    tags: string[];
-    prompt: string;
-    expect: StudioEvalCase["expect"];
-  }>;
+  skill: StudioPlatformSkillListing;
+  evaluationCaseCount: number;
 };
 
 export type StudioPlatformSkillCatalog = {

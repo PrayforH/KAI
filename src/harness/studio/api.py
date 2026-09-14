@@ -130,7 +130,7 @@ from harness.studio.models import (
     McpCapability,
     McpDiscoveryRequest,
     McpDiscoveryResult,
-    PlatformSkillCatalog,
+    PlatformSkillCatalogListing,
     PublishAgentDraftRequest,
     PublishedAgentVersion,
     ReplaceAgentDraftRequest,
@@ -139,8 +139,8 @@ from harness.studio.models import (
     UpsertCatalogResourceRequest,
 )
 from harness.studio.platform_skills import (
-    default_platform_skill_catalog,
     imported_platform_skill,
+    platform_skill_catalog_listing,
     platform_skill_package,
 )
 from harness.studio.preflight_models import PreflightEvent
@@ -1265,11 +1265,13 @@ async def import_skill_file(
         ) from error
 
 
-@router.get("/skills/catalog", response_model=PlatformSkillCatalog)
+@router.get("/skills/catalog", response_model=PlatformSkillCatalogListing)
 async def list_platform_skill_packages(
     _actor: Annotated[StudioActor, Depends(require_studio_reader)],
-) -> PlatformSkillCatalog:
-    return default_platform_skill_catalog()
+) -> PlatformSkillCatalogListing:
+    """List reviewed platform Skill packages without their file payloads."""
+
+    return platform_skill_catalog_listing()
 
 
 async def _read_skill_upload(request: Request) -> bytes:

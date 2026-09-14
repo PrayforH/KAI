@@ -166,6 +166,61 @@ class PlatformSkillCatalog(StudioModel):
     packages: tuple[PlatformSkillPackage, ...]
 
 
+class PlatformSkillListingFile(StudioModel):
+    """Catalog-listing file metadata: a path, never the payload.
+
+    Vendored packages ship their upstream assets verbatim, so a few entries
+    carry megabytes of images and binaries the catalog browser never renders;
+    listing them by name keeps the response small.
+    """
+
+    path: str
+    binary: bool = False
+    size_bytes: int | None = Field(default=None, alias="sizeBytes", ge=0)
+
+
+class PlatformSkillListing(StudioModel):
+    """The subset of a package Skill that the catalog browser displays.
+
+    ``instructions`` stays inline so the detail drawer opens without a second
+    round trip; per-file payloads and evaluation baselines do not, because the
+    list renders neither of them.
+    """
+
+    name: str
+    description: str
+    instructions: str
+    file_count: int = Field(alias="fileCount", ge=0)
+    files: tuple[PlatformSkillListingFile, ...] = ()
+
+
+class PlatformSkillCatalogEntry(StudioModel):
+    """One catalog package as returned by the read-only listing endpoint."""
+
+    package_id: str = Field(alias="packageId", pattern=r"^[a-z][a-z0-9-]*$")
+    revision: int = Field(ge=1)
+    display_name: str = Field(alias="displayName", min_length=1, max_length=100)
+    summary: str = Field(min_length=1, max_length=500)
+    tags: tuple[str, ...] = ()
+    compatible_runtimes: tuple[AgentRuntimeType, ...] = Field(
+        alias="compatibleRuntimes",
+        min_length=1,
+    )
+    license: str = Field(min_length=1, max_length=100)
+    source_url: str = Field(alias="sourceUrl", min_length=1, max_length=2_000)
+    source_revision: str = Field(alias="sourceRevision", min_length=1, max_length=200)
+    content_hash: str = Field(alias="contentHash", pattern=r"^[a-f0-9]{64}$")
+    risk_level: Literal["low", "review"] = Field(alias="riskLevel")
+    findings: tuple[str, ...] = ()
+    evaluation_case_count: int = Field(alias="evaluationCaseCount", ge=0)
+    skill: PlatformSkillListing
+
+
+class PlatformSkillCatalogListing(StudioModel):
+    revision: int = Field(ge=1)
+    packages: tuple[PlatformSkillCatalogEntry, ...]
+
+
 class InstallPlatformSkillRequest(StudioModel):
     expected_revision: int = Field(alias="expectedRevision", ge=1)
     package_revision: int = Field(alias="packageRevision", ge=1)

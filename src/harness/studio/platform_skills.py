@@ -14,6 +14,10 @@ from harness.studio.models import (
     DraftSkillSource,
     ImportedSkill,
     PlatformSkillCatalog,
+    PlatformSkillCatalogEntry,
+    PlatformSkillCatalogListing,
+    PlatformSkillListing,
+    PlatformSkillListingFile,
     PlatformSkillPackage,
 )
 
@@ -426,6 +430,73 @@ def default_platform_skill_catalog() -> PlatformSkillCatalog:
 
         ),
     )
+
+
+def platform_skill_catalog_listing() -> PlatformSkillCatalogListing:
+    """Project the reviewed catalog into the payload the catalog browser reads.
+
+    The full catalog embeds every vendored asset byte-for-byte, which made the
+    技能 page download ~10 MB before it could render a single row. The listing
+    keeps the governance fields and the Skill instructions and replaces each
+    file body with its metadata; installs still resolve content server-side
+    through ``platform_skill_package``.
+    """
+
+    catalog = default_platform_skill_catalog()
+    return PlatformSkillCatalogListing(
+        revision=catalog.revision,
+        packages=tuple(
+            PlatformSkillCatalogEntry(
+                packageId=package.package_id,
+                revision=package.revision,
+                displayName=package.display_name,
+                summary=package.summary,
+                tags=package.tags,
+                compatibleRuntimes=package.compatible_runtimes,
+                license=package.license,
+                sourceUrl=package.source_url,
+                sourceRevision=package.source_revision,
+                contentHash=package.content_hash,
+                riskLevel=package.risk_level,
+                findings=package.findings,
+                evaluationCaseCount=len(package.evaluation_cases),
+                skill=PlatformSkillListing(
+                    name=package.skill.name,
+                    description=package.skill.description,
+                    instructions=package.skill.instructions,
+                    fileCount=(
+                        package.skill.file_count
+                        if package.skill.file_count is not None
+                        else len(package.skill.files)
+                    ),
+                    files=tuple(
+                        PlatformSkillListingFile(
+                            path=file.path,
+                            binary=file.binary,
+                            sizeBytes=_listing_file_size(file),
+                        )
+                        for file in package.skill.files
+                    ),
+                ),
+            )
+            for package in catalog.packages
+        ),
+    )
+
+
+def _listing_file_size(file: DraftSkillFile) -> int:
+    """Byte size for a catalog-listing file without decoding its payload."""
+
+    if file.size_bytes is not None:
+        return file.size_bytes
+    if file.content is not None:
+        return len(file.content.encode("utf-8"))
+    if file.content_base64 is not None:
+        # Base64 encodes 3 bytes per 4 characters, minus one per padding '='.
+        encoded = file.content_base64
+        padding = len(encoded) - len(encoded.rstrip("="))
+        return max(len(encoded) * 3 // 4 - padding, 0)
+    return 0
 
 
 def platform_skill_package(package_id: str, package_revision: int) -> PlatformSkillPackage:

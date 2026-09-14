@@ -104,3 +104,61 @@ def test_vendored_skills_preserve_upstream_license_and_provenance() -> None:
     # Vendored package descriptions must fit the model budget.
     for skill in skills.values():
         assert 0 < len(skill.description) <= 500
+
+
+def test_catalog_listing_drops_file_payloads_but_keeps_provenance() -> None:
+    """The 技能 page lists packages; shipping asset bytes there stalled it."""
+
+    from harness.studio.models import PlatformSkillCatalogListing
+    from harness.studio.platform_skills import platform_skill_catalog_listing
+
+    listing = platform_skill_catalog_listing()
+    full = default_platform_skill_catalog()
+
+    assert isinstance(listing, PlatformSkillCatalogListing)
+    assert listing.revision == full.revision
+    assert [entry.package_id for entry in listing.packages] == [
+        package.package_id for package in full.packages
+    ]
+
+    full_by_id = {package.package_id: package for package in full.packages}
+    for entry in listing.packages:
+        package = full_by_id[entry.package_id]
+        # Governance fields the drawer and install gate read stay intact.
+        assert entry.content_hash == package.content_hash
+        assert entry.license == package.license
+        assert entry.risk_level == package.risk_level
+        assert entry.findings == package.findings
+        assert entry.source_url == package.source_url
+        assert entry.source_revision == package.source_revision
+        assert entry.compatible_runtimes == package.compatible_runtimes
+        assert entry.evaluation_case_count == len(package.evaluation_cases)
+        assert entry.skill.instructions == package.skill.instructions
+        assert entry.skill.file_count == len(package.skill.files)
+        assert [file.path for file in entry.skill.files] == [
+            file.path for file in package.skill.files
+        ]
+        # Only the metadata crosses the wire, never the payload.
+        for file in entry.skill.files:
+            assert set(file.model_dump(by_alias=True)) == {"path", "binary", "sizeBytes"}
+
+    serialized = listing.model_dump_json(by_alias=True)
+    payload = full.model_dump_json(by_alias=True)
+    assert len(serialized) * 10 < len(payload), "listing must be far smaller than the catalog"
+
+
+def test_catalog_listing_file_sizes_cover_text_and_binary_payloads() -> None:
+    from harness.studio.models import DraftSkillFile
+    from harness.studio.platform_skills import _listing_file_size
+
+    digest = "a" * 64
+    assert (
+        _listing_file_size(
+            DraftSkillFile(path="retained.bin", retained=True, sizeBytes=12, contentSha256=digest)
+        )
+        == 12
+    )
+    assert _listing_file_size(DraftSkillFile(path="text", content="abcdef")) == 6
+    # Two padding characters mean a 4-byte payload, not the 6 raw base64/4*3 gives.
+    assert _listing_file_size(DraftSkillFile(path="bin", contentBase64="YWJjZA==")) == 4
+    assert _listing_file_size(DraftSkillFile(path="bin", contentBase64="YWJjZGVm")) == 6
