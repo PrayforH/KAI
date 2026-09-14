@@ -1100,11 +1100,8 @@ class AgentStudioService:
         allowed = {
             "builtin_tools": {item.name for item in catalog.builtin_tools},
             "mcp_servers": {item.reference for item in catalog.mcp_servers
-                            if item.category == "tool" and item.enabled},
-            "knowledge_references": {
-                item.reference for item in catalog.mcp_servers
-                if item.category == "knowledge" and item.enabled
-            },
+                            if item.enabled},
+            "knowledge_references": set(),
         }
         for field, visible in allowed.items():
             proposed = getattr(changes, field)

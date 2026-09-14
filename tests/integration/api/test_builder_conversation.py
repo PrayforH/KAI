@@ -122,6 +122,7 @@ async def test_multi_turn_preview_apply_conflict_and_scope() -> None:
             ({"systemPrompt": None}, 422),
             ({"builtinTools": ["NotARegisteredTool"]}, 409),
             ({"mcpServers": ["new-external-server"]}, 409),
+            ({"knowledgeReferences": ["tavily-readonly"]}, 409),
             ({"skillInstructions": [{"name": "missing", "instructions": "changed"}]}, 409),
             ({"roleResponsibilities": [{"alias": "missing", "responsibility": "changed"}]}, 409),
         ]:
