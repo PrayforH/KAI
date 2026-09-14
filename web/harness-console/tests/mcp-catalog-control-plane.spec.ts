@@ -59,7 +59,29 @@ describe("MCP capability catalog", () => {
     expect(component).toContain("deleteDialogRef");
     expect(component).toContain("closeEditor");
     expect(styles).toMatch(/\.editorBackdrop\s*\{[^}]*inset:\s*44px 0 0 var\(--app-sidebar-expanded-width\);/s);
+    // The authoring page keeps the same measure as the catalog list (1160px)
+    // rather than stretching across the window.
     expect(styles).toMatch(/\.editorBackdrop \.editor\s*\{[^}]*width:\s*min\(1160px, 100%\);/s);
+  });
+
+  it("fills each form row instead of leaving an empty column beside a field", () => {
+    // Short fields form a three-column row, so a row of three fills its card
+    // instead of rendering with an empty column beside it.
+    expect(styles).toMatch(
+      /\.formSection\s*\{\s*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);/s,
+    );
+    expect(styles).toMatch(
+      /@media \(max-width: 1320px\)\s*\{\s*\.formSection\s*\{\s*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/s,
+    );
+  });
+
+  it("keeps the light authoring surface distinguishable from its section cards", () => {
+    expect(styles).toMatch(
+      /data-color-mode="light"\]\) \.editorBackdrop,\s*:global\(html\[data-color-mode="light"\]\) \.editorBackdrop \.editor\s*\{\s*background:\s*#f7f7f8;/s,
+    );
+    expect(styles).toMatch(
+      /data-color-mode="light"\]\) \.editorBackdrop \.formSection\s*\{\s*border-color:\s*#e4e4e7;/s,
+    );
   });
 
   it("uses the same centered catalog toolbar and single-column row surface as Skills", () => {
