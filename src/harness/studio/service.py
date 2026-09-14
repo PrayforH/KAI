@@ -996,6 +996,12 @@ class AgentStudioService:
             raise ConflictError("模型未明确消息用途，请重试；未执行任何操作")
         if request.intent == "edit" and reply.action not in {"edit", "ask", "reply"}:
             raise ConflictError("修改模式不能发起试跑，请重新描述修改要求")
+        if any(set(getattr(reply.changes, field) or ()) - set(getattr(current.spec, field))
+               for field in ("builtin_tools", "mcp_servers")):
+            # Bind to the catalog the model actually saw, not a model-generated revision.
+            reply = reply.model_copy(update={"changes": reply.changes.model_copy(
+                update={"capability_catalog_revision": catalog_revision}
+            )})
         if reply.skill_requests:
             generated = {"create_skills": list(reply.changes.create_skills),
                          "update_skills": list(reply.changes.update_skills)}
@@ -1037,7 +1043,9 @@ class AgentStudioService:
                     authored = AuthoredSkill.model_validate(result.skill.model_dump(
                         include={"name", "description", "instructions", "files"}))
                 except ValueError:
-                    raise ConflictError("共创技能内容未通过安装校验，请重新生成；草稿未更改") from None
+                    raise ConflictError(
+                        "共创技能内容未通过安装校验，请重新生成；草稿未更改"
+                    ) from None
                 generated[item.operation + "_skills"].append(authored)
             reply = reply.model_copy(update={"changes": reply.changes.model_copy(
                 update={key: tuple(value) for key, value in generated.items() if value}
@@ -1097,7 +1105,7 @@ class AgentStudioService:
         self, tenant_id: str, user_id: str, current: AgentDraft, changes: BuilderChanges,
     ) -> None:
         revision, catalog = await self._builder_catalog(tenant_id, user_id)
-        allowed = {
+        allowed: dict[str, set[str]] = {
             "builtin_tools": {item.name for item in catalog.builtin_tools},
             "mcp_servers": {item.reference for item in catalog.mcp_servers
                             if item.enabled},

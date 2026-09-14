@@ -314,9 +314,11 @@ async def test_skill_creator_and_catalog_assembly_share_review_and_atomic_apply(
                    "capabilityCatalogRevision": catalog["revision"]}
         changes["builtinTools"] = list(dict.fromkeys(changes["builtinTools"]))
         model.complete_text.return_value = json.dumps({
-            "reply": "创建技能并装配联网", "changes": changes,
-            "skillRequests": [{"operation": "create", "name": "source-review",
-                               "request": "创建公开资料审阅技能，附一个来源格式模板"}],
+            "reply": "创建技能并装配联网", "changes": {
+                **{k: v for k, v in changes.items() if k != "capabilityCatalogRevision"},
+                "skillRequests": [{"operation": "create", "name": "source-review",
+                                   "request": "创建公开资料审阅技能，附一个来源格式模板"}],
+            },
         })
         generated = DraftSkill(name="source-review", description="审阅公开资料时使用",
             instructions="查验来源并按 assets/template.md 整理。",
