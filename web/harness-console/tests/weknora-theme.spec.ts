@@ -68,11 +68,27 @@ describe("Weknora-inspired product theme", () => {
     );
     expect(webCodexStyles).not.toContain("--aui-thread-max-width: 980px");
     expect(webCodexStyles).not.toContain("width: min(980px, 100%)");
+    // Both appearances share one navigation geometry. The light branch only
+    // repaints, so the project tree keeps the dark indentation grid and the
+    // status dot keeps its dark offset instead of being restyled per theme.
     expect(webCodexStyles).toMatch(
-      /one predictable indentation grid[\s\S]*?data-color-mode="light"[^}]*\.task-project-items\s*\{[^}]*margin:\s*2px 0 7px 24px;[^}]*border-left:\s*0;/s,
+      /data-color-mode="light"[^}]*\.task-project-heading strong\s*\{\s*color:\s*#56565b;\s*\}/s,
     );
     expect(webCodexStyles).toMatch(
-      /data-color-mode="light"[^}]*\.task-project-items \.task-status\s*\{[^}]*left:\s*11px;/s,
+      /data-color-mode="light"[^}]*\.task-workbench-name strong\s*\{\s*color:\s*#1c1c1f;\s*\}/s,
+    );
+    expect(webCodexStyles).not.toContain("margin: 2px 0 7px 24px;");
+    expect(webCodexStyles).not.toContain("left: 11px;");
+    // The shared row box stays the single definition, and no light selector
+    // re-declares it.
+    expect(webCodexStyles).toMatch(
+      /min-height:\s*30px;\s*padding:\s*5px 6px 5px 35px;/,
+    );
+    expect(webCodexStyles).not.toMatch(
+      /html\[data-color-mode="light"\][^{]*\.task-list-item[^{]*\{[^}]*padding/s,
+    );
+    expect(webCodexStyles).not.toMatch(
+      /html\[data-color-mode="light"\][^{]*\.task-list-item[^{]*\{[^}]*min-height/s,
     );
   });
 
@@ -85,8 +101,28 @@ describe("Weknora-inspired product theme", () => {
     );
     expect(taskSidebar).not.toContain("智能任务工作台");
     expect(studioSidebar).not.toContain("智能体控制面");
+  });
+
+  it("keeps the light navigation on the dark row density and type scale", () => {
+    // The task rail used to carry a light-only skin with taller rows, smaller
+    // and bolder titles and a tinted 新建任务 pill. Light now inherits the
+    // shared density and repaints only, so neither layer may re-declare the
+    // sidebar's geometry or type while theming it.
+    for (const geometry of [
+      "min-height: 60px;",
+      "font-size: 12.5px;\n  font-weight: 590;",
+      "min-height: 42px;",
+      "min-height: 64px;",
+    ]) {
+      expect(theme).not.toContain(geometry);
+    }
+    expect(theme).not.toMatch(/data-color-mode="light"[^}]*\.task-sidebar-primary button/);
+    expect(theme).not.toMatch(/data-color-mode="light"[^}]*\.task-list-title\s*\{/);
+    expect(webCodexStyles).not.toMatch(
+      /data-color-mode="light"[^}]*\.task-project-items\s*\{\s*margin-left:/s,
+    );
     expect(theme).toMatch(
-      /\.task-sidebar-primary button\s*\{[^}]*min-height:\s*42px;[^}]*color:\s*var\(--codex-accent\);/s,
+      /html\[data-color-mode="light"\] body\.codex-theme-v1 \.task-sidebar-account\s*\{/s,
     );
   });
 

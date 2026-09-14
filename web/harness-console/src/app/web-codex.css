@@ -1684,63 +1684,11 @@ body.codex-theme-v1:has(.console-shell) .aui-thread-viewport:has(.user-task-welc
   }
 }
 
-/* Keep the light project/task tree on one predictable indentation grid. The
-   former nested guide plus reduced row padding put status dots on top of task
-   titles and made each project appear to use a different alignment. */
-html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-list {
-  padding: 4px 8px 16px;
-}
-
-html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-group + .task-project-group {
-  margin-top: 8px;
-}
-
-html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-head {
-  min-height: 34px;
-}
-
-html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-heading {
-  min-height: 34px;
-  padding: 5px 30px 5px 8px;
-  grid-template-columns: 17px minmax(0, 1fr);
-  gap: 8px;
-}
-
-html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-heading strong {
-  color: #46464b;
-  font-size: 13px;
-  font-weight: 590;
-}
-
-html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-items {
-  margin: 2px 0 7px 24px;
-  padding: 0;
-  gap: 2px;
-  border-left: 0;
-}
-
-html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-items .task-list-row {
-  width: 100%;
-}
-
-html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-items .task-list-item,
-html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-items .task-list-item:hover,
-html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-items .task-list-item.is-active {
-  min-height: 36px;
-  padding: 6px 8px 6px 26px;
-  border: 1px solid transparent;
-  border-radius: 9px;
-}
-
-html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-items .task-list-item.is-active {
-  border-color: #e1e1e4;
-  background: #ffffff;
-  box-shadow: 0 1px 3px rgb(28 28 34 / 7%);
-}
-
-html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-items .task-status {
-  left: 11px;
-}
+/* The light project/task tree keeps the shared geometry: same indentation
+   grid, row height and type scale as the dark workbench, so switching
+   appearance never reflows the navigation — only its palette changes.
+   The branch below therefore repaints colours only; see "Doubao-inspired
+   light task shell" further down for the light task-tree palette. */
 
 @media (max-width: 680px) {
   .task-context-project,
@@ -1872,7 +1820,6 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-side
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-workbench-name strong {
   color: #1c1c1f;
-  font-weight: 650;
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-sidebar-collapse,
@@ -1902,7 +1849,6 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-side
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-list-toolbar .task-list-heading {
   color: #8b8b91;
-  font-weight: 540;
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-list {
@@ -1927,23 +1873,6 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-proj
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-heading strong {
   color: #56565b;
-}
-
-html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-group {
-  display: grid;
-  gap: 1px;
-}
-
-html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-items {
-  margin-left: 17px;
-  padding-left: 8px;
-  border-left: 1px solid #e1e1e3;
-}
-
-html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-items .task-list-item,
-html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-items .task-list-item:hover,
-html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-items .task-list-item.is-active {
-  padding-left: 10px;
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-add {
