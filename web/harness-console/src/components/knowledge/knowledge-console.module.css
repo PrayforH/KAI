@@ -271,6 +271,94 @@
   margin-top: 24px;
 }
 
+/* Type-specific engine options (chunking / Wiki synthesis) in the create wizard. */
+.configGroup {
+  margin: 0 0 16px;
+  padding: 14px;
+  border: 1px solid var(--codex-line, #303030);
+  border-radius: 12px;
+  background: var(--codex-surface-subtle, #1e1e1e);
+}
+
+.configLegend {
+  padding: 0;
+  color: var(--codex-ink, #ffffff);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.configGroup .field:first-of-type {
+  margin-top: 12px;
+}
+
+.configGroup .field:last-child {
+  margin-bottom: 0;
+}
+
+.configHint {
+  margin: 0;
+  color: var(--codex-faint, #737373);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.configCount {
+  margin: 0;
+  color: var(--codex-faint, #737373);
+  font-size: 11px;
+  text-align: right;
+}
+
+.fieldLabel {
+  color: var(--codex-muted, #a1a1a1);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.configRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.segmented {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.segmentedButton {
+  min-height: 30px;
+  padding: 0 14px;
+  border: 1px solid var(--codex-line, #303030);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--codex-ink-soft, #d6d6d6);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.segmentedButton:hover {
+  background: var(--codex-surface-hover, #2a2a2a);
+}
+
+.segmentedActive {
+  border-color: var(--codex-line-strong, #444444) !important;
+  background: var(--codex-accent-faint, rgb(255 255 255 / 6%)) !important;
+  color: var(--codex-ink, #ffffff) !important;
+  font-weight: 600;
+}
+
+.segmentedButton:focus-visible {
+  outline: 2px solid var(--codex-ink);
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .configRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* Knowledge base card mirrors the WeKnora console: a type glyph and title,
    description, then a document-count badge. Colors stay on the dark theme. */
 .cardGlyph {

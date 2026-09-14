@@ -406,6 +406,18 @@ export type StudioKnowledgeBase = {
   updatedAt: string;
 };
 
+export type WikiGranularity = "focused" | "standard" | "exhaustive";
+
+/** Engine options chosen in the create wizard; unset fields keep platform defaults. */
+export type StudioKnowledgeBaseConfig = {
+  chunkSize?: number;
+  chunkOverlap?: number;
+  wikiGranularity?: WikiGranularity;
+  wikiContentInstructions?: string;
+  wikiExtractionInstructions?: string;
+  wikiMaxPagesPerIngest?: number;
+};
+
 export type StudioKnowledgeDocumentStatus = {
   tenantId: string;
   sourceReference: string;
@@ -1640,6 +1652,7 @@ export const studioClient = {
     > & {
       kbType?: KnowledgeBaseType;
       engine?: KnowledgeBaseEngine;
+      config?: StudioKnowledgeBaseConfig;
     },
   ) => request<StudioKnowledgeBase>("knowledge/bases", {
     method: "POST",
@@ -1679,6 +1692,10 @@ export const studioClient = {
     request<StudioKnowledgeDocumentStatus>(
       `knowledge/sources/${encodeURIComponent(baseReference)}/documents/${encodeURIComponent(documentId)}/reparse`,
       { method: "POST" },
+    ),
+  getKnowledgeDocument: (baseReference: string, documentId: string) =>
+    request<StudioKnowledgeDocumentStatus>(
+      `knowledge/sources/${encodeURIComponent(baseReference)}/documents/${encodeURIComponent(documentId)}`,
     ),
   getKnowledgeDocumentTable: (baseReference: string, documentId: string) =>
     request<StudioKnowledgeDocumentTable>(

@@ -7,6 +7,8 @@ import {
   studioClient,
   type KnowledgeBaseType,
   type StudioKnowledgeBase,
+  type StudioKnowledgeBaseConfig,
+  type WikiGranularity,
 } from "../../lib/studio-client";
 import { KnowledgeMembersPanel } from "./knowledge-members-panel";
 import { KnowledgeDrawerLayer } from "./knowledge-drawer-layer";
@@ -24,6 +26,26 @@ const KB_TYPE_HINTS: Record<KnowledgeBaseType, string> = {
   hybrid: "RAG 切片检索 + Wiki 页面检索聚合，能力最全",
 };
 
+const GRANULARITY_ORDER: readonly WikiGranularity[] = ["focused", "standard", "exhaustive"];
+
+const GRANULARITY_LABELS: Record<WikiGranularity, string> = {
+  focused: "聚焦",
+  standard: "标准",
+  exhaustive: "详尽",
+};
+
+const GRANULARITY_HINTS: Record<WikiGranularity, string> = {
+  focused: "只抽取文档的主角（如简历 → 人物和项目）。最干净，但可能漏掉次要实体。",
+  standard: "抽取主角 + 被详细描述的次要实体/概念。跳过一带而过的通用名词。适合大多数场景。",
+  exhaustive: "抽取所有可识别的命名实体与概念，包括一带而过的技术栈。适合将知识库当作术语表使用。",
+};
+
+/** A blank tuning field means "keep the engine default", never zero. */
+function optionalNumber(value: string): number | undefined {
+  const parsed = Number(value);
+  return value.trim() !== "" && Number.isFinite(parsed) ? parsed : undefined;
+}
+
 type TypeFilter = "all" | "mine";
 
 export function KnowledgeConsole() {
@@ -40,6 +62,12 @@ export function KnowledgeConsole() {
   const [displayName, setDisplayName] = useState("");
   const [description, setDescription] = useState("");
   const [creating, setCreating] = useState(false);
+  const [chunkSize, setChunkSize] = useState("");
+  const [chunkOverlap, setChunkOverlap] = useState("");
+  const [granularity, setGranularity] = useState<WikiGranularity>("standard");
+  const [wikiContentInstructions, setWikiContentInstructions] = useState("");
+  const [wikiExtractionInstructions, setWikiExtractionInstructions] = useState("");
+  const [wikiMaxPages, setWikiMaxPages] = useState("");
   const [membersFor, setMembersFor] = useState<StudioKnowledgeBase | null>(null);
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -114,6 +142,54 @@ export function KnowledgeConsole() {
 
   const createDisabled = creating || !reference.trim() || !displayName.trim();
 
+  const usesRag = kbType === "rag" || kbType === "hybrid";
+  const usesWiki = kbType === "wiki" || kbType === "hybrid";
+
+  const resetDraft = useCallback(() => {
+    setReference("");
+    setDisplayName("");
+    setDescription("");
+    setChunkSize("");
+    setChunkOverlap("");
+    setGranularity("standard");
+    setWikiContentInstructions("");
+    setWikiExtractionInstructions("");
+    setWikiMaxPages("");
+  }, []);
+
+  // Only the groups the chosen type actually uses are sent, so a RAG base never
+  // carries Wiki options and vice versa.
+  const draftConfig = useCallback((): StudioKnowledgeBaseConfig => {
+    const config: StudioKnowledgeBaseConfig = {};
+    if (usesRag) {
+      const size = optionalNumber(chunkSize);
+      const overlap = optionalNumber(chunkOverlap);
+      if (size !== undefined) config.chunkSize = size;
+      if (overlap !== undefined) config.chunkOverlap = overlap;
+    }
+    if (usesWiki) {
+      config.wikiGranularity = granularity;
+      if (wikiContentInstructions.trim()) {
+        config.wikiContentInstructions = wikiContentInstructions.trim();
+      }
+      if (wikiExtractionInstructions.trim()) {
+        config.wikiExtractionInstructions = wikiExtractionInstructions.trim();
+      }
+      const pages = optionalNumber(wikiMaxPages);
+      if (pages !== undefined) config.wikiMaxPagesPerIngest = pages;
+    }
+    return config;
+  }, [
+    chunkOverlap,
+    chunkSize,
+    granularity,
+    usesRag,
+    usesWiki,
+    wikiContentInstructions,
+    wikiExtractionInstructions,
+    wikiMaxPages,
+  ]);
+
   const submit = useCallback(async () => {
     if (createDisabled) return;
     setCreating(true);
@@ -127,19 +203,18 @@ export function KnowledgeConsole() {
         sourceReferences: [],
         kbType,
         engine: "weknora",
+        config: draftConfig(),
       });
       setShowCreate(false);
       setNotice(`知识库「${created.displayName}」已创建`);
-      setReference("");
-      setDisplayName("");
-      setDescription("");
+      resetDraft();
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "创建知识库失败");
     } finally {
       setCreating(false);
     }
-  }, [createDisabled, description, displayName, kbType, load, reference]);
+  }, [createDisabled, description, displayName, draftConfig, kbType, load, reference, resetDraft]);
 
   return (
     <section className={styles.content}>
@@ -358,6 +433,114 @@ export function KnowledgeConsole() {
                   placeholder="收录 2017-2020 年非法集资典型案例与法规切片"
                 />
               </div>
+
+              {usesRag ? (
+                <fieldset className={styles.configGroup}>
+                  <legend className={styles.configLegend}>分块设置</legend>
+                  <p className={styles.configHint}>
+                    RAG 检索按此还原原文切片；留空使用平台默认值，已有内容不受影响。
+                  </p>
+                  <div className={styles.configRow}>
+                    <div className={styles.field}>
+                      <label htmlFor="kb-chunk-size">分块大小（字符）</label>
+                      <input
+                        id="kb-chunk-size"
+                        type="number"
+                        min={200}
+                        max={20000}
+                        value={chunkSize}
+                        onChange={(event) => setChunkSize(event.target.value)}
+                        placeholder="4000"
+                      />
+                    </div>
+                    <div className={styles.field}>
+                      <label htmlFor="kb-chunk-overlap">分块重叠（字符）</label>
+                      <input
+                        id="kb-chunk-overlap"
+                        type="number"
+                        min={0}
+                        max={4000}
+                        value={chunkOverlap}
+                        onChange={(event) => setChunkOverlap(event.target.value)}
+                        placeholder="100"
+                      />
+                    </div>
+                  </div>
+                </fieldset>
+              ) : null}
+
+              {usesWiki ? (
+                <fieldset className={styles.configGroup}>
+                  <legend className={styles.configLegend}>Wiki 设置</legend>
+                  <div className={styles.field}>
+                    <span className={styles.fieldLabel} id="kb-granularity-label">
+                      提取粒度
+                    </span>
+                    <div
+                      className={styles.segmented}
+                      role="group"
+                      aria-labelledby="kb-granularity-label"
+                    >
+                      {GRANULARITY_ORDER.map((value) => (
+                        <button
+                          key={value}
+                          type="button"
+                          className={`${styles.segmentedButton} ${
+                            granularity === value ? styles.segmentedActive : ""
+                          }`}
+                          aria-pressed={granularity === value}
+                          onClick={() => setGranularity(value)}
+                        >
+                          {GRANULARITY_LABELS[value]}
+                        </button>
+                      ))}
+                    </div>
+                    <p className={styles.configHint}>{GRANULARITY_HINTS[granularity]}</p>
+                  </div>
+                  <div className={styles.field}>
+                    <label htmlFor="kb-wiki-content">Wiki 内容生成要求（可选）</label>
+                    <textarea
+                      id="kb-wiki-content"
+                      maxLength={4000}
+                      value={wikiContentInstructions}
+                      onChange={(event) => setWikiContentInstructions(event.target.value)}
+                      placeholder="例如：使用法务审阅口吻，优先展示责任主体、时间线和风险提示…"
+                    />
+                    <p className={styles.configCount}>{wikiContentInstructions.length}/4000</p>
+                    <p className={styles.configHint}>
+                      控制摘要、页面与首页的表达重点；引用、合并与防幻觉规则由系统固定维护。修改后需重新解析才能影响已有内容。
+                    </p>
+                  </div>
+                  <div className={styles.field}>
+                    <label htmlFor="kb-wiki-extraction">Wiki 提取重点（可选）</label>
+                    <textarea
+                      id="kb-wiki-extraction"
+                      maxLength={4000}
+                      value={wikiExtractionInstructions}
+                      onChange={(event) => setWikiExtractionInstructions(event.target.value)}
+                      placeholder="例如：重点识别产品、版本、组织、负责人和关键技术概念…"
+                    />
+                    <p className={styles.configHint}>
+                      说明应重点识别的领域实体与概念，不会替换系统的 JSON 与引用协议。
+                    </p>
+                  </div>
+                  <div className={styles.field}>
+                    <label htmlFor="kb-wiki-pages">单次最大页面数（可选）</label>
+                    <input
+                      id="kb-wiki-pages"
+                      type="number"
+                      min={0}
+                      max={1000}
+                      value={wikiMaxPages}
+                      onChange={(event) => setWikiMaxPages(event.target.value)}
+                      placeholder="0"
+                    />
+                    <p className={styles.configHint}>
+                      每次摄入最多创建/更新的 Wiki 页面数，0 表示不限制；留空使用平台默认。
+                    </p>
+                  </div>
+                </fieldset>
+              ) : null}
               <div className={styles.dialogActions}>
                 <button
                   type="button"

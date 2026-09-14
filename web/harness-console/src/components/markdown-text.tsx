@@ -10,6 +10,7 @@ import { normalizeMessageText } from "../lib/message-text";
 import { MermaidCodeHeader, MermaidDiagram } from "./mermaid-diagram";
 import { citationTarget, knowledgeUrlTransform, remarkWikiLinks } from "../lib/knowledge-links";
 import { useAnswerCitations } from "./knowledge/answer-citation-context";
+import { CitationLink } from "./knowledge/citation-link";
 import { WikiEntityLink } from "./knowledge/wiki-entity-link";
 import { SourceLink } from "./source-link";
 
@@ -54,7 +55,7 @@ function WikiLink({
   const answer = useAnswerCitations();
   if (href?.startsWith("citation:")) {
     const citation = answer?.citations.find((item) => citationTarget(item) === href);
-    return citation ? <WikiEntityLink className="aui-citation-link" title={citation.title ?? "查看来源"} aria-label={`查看来源 ${citation.index}：${citation.title ?? "文档"}`} onClick={() => answer?.request(citation)}>{children}</WikiEntityLink> : <span title="引用来源暂不可用">{children}</span>;
+    return citation ? <CitationLink className="aui-citation-link" title={citation.title ?? "查看来源"} aria-label={`查看来源 ${citation.index}：${citation.title ?? "文档"}`} onClick={() => answer?.request(citation)}>{children}</CitationLink> : <span title="引用来源暂不可用">{children}</span>;
   }
   if (typeof href === "string" && href.startsWith("wiki:")) {
     let slug: string;
