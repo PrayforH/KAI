@@ -59,7 +59,7 @@ async function click(text: string) {
 }
 async function send(value: string) {
   await act(async () => {
-    const input = host.querySelector('[aria-label="智能体构建助手"] textarea:not([aria-label="对话预览输入"])')!;
+    const input = host.querySelector<HTMLTextAreaElement>('[aria-label="智能体构建助手"] textarea:not([aria-label="对话预览输入"])')!;
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, value);
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });

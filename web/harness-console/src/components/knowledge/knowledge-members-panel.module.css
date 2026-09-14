@@ -1,0 +1,272 @@
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  composes: surface from "./knowledge-ui.module.css";
+}
+
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.panel {
+  padding: 16px;
+  border: 1px solid var(--codex-line, #303030);
+  border-radius: 12px;
+  background: var(--codex-surface-subtle, #1e1e1e);
+}
+
+.panelHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.panelHead h3 {
+  margin: 0;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  font-weight: 600;
+}
+
+.hint {
+  color: var(--codex-faint, #737373);
+  font-size: 12px;
+}
+
+.searchRow {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--codex-line, #303030);
+  border-radius: 8px;
+  background: var(--codex-field, #191919);
+  color: var(--codex-ink, #ffffff);
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  min-height: 36px;
+}
+
+.candidateList {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--codex-line, #303030);
+  border-radius: 8px;
+}
+
+.candidate {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--codex-line, #303030);
+  background: transparent;
+  color: var(--codex-ink-soft, #d6d6d6);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.candidate:last-child {
+  border-bottom: 0;
+}
+
+.candidate:hover {
+  background: var(--codex-surface-hover, #2a2a2a);
+}
+
+.candidateActive {
+  background: var(--codex-accent-faint, rgb(236 236 236 / 7%));
+  color: var(--codex-ink, #ffffff);
+}
+
+.candidateName {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.candidateEmail {
+  color: var(--codex-faint, #737373);
+  font-size: 12px;
+}
+
+.check {
+  color: var(--codex-ink-soft, #d2d2d2);
+  font-weight: 600;
+}
+
+.field {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 12px;
+  color: var(--codex-muted, #a1a1a1);
+  font-size: 12px;
+}
+
+.field textarea {
+  min-height: 64px;
+  resize: vertical;
+  border: 1px solid var(--codex-line, #303030);
+  border-radius: 8px;
+  background: var(--codex-field, #191919);
+  color: var(--codex-ink, #ffffff);
+  padding: 8px 10px;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.roleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.fieldLabel {
+  color: var(--codex-muted, #a1a1a1);
+  font-size: 12px;
+}
+
+.roleChip {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--codex-line, #303030);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--codex-ink-soft, #d6d6d6);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.roleChip:hover {
+  background: var(--codex-surface-hover, #2a2a2a);
+}
+
+.roleChipActive {
+  border-color: var(--codex-accent, #ececec);
+  color: var(--codex-on-accent, #07111a);
+  background: var(--codex-accent, #ececec);
+  font-weight: 600;
+}
+
+.orgNote {
+  margin: 12px 0 0;
+  padding: 8px 10px;
+  border-left: 2px solid var(--codex-line-strong, #444444);
+  color: var(--codex-faint, #737373);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.memberList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.memberRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--codex-line, #303030);
+  border-radius: 9px;
+  background: var(--codex-inset, #171717);
+}
+
+.memberInfo {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.memberName {
+  font-size: 13px;
+  color: var(--codex-ink, #ffffff);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memberMeta {
+  color: var(--codex-faint, #737373);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.select {
+  min-height: 36px;
+  padding: 0 8px;
+  border: 1px solid var(--codex-line, #303030);
+  border-radius: 8px;
+  background: var(--codex-field, #191919);
+  color: var(--codex-ink, #ffffff);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.empty {
+  padding: 28px 0;
+  text-align: center;
+  color: var(--codex-faint, #737373);
+  font-size: 12px;
+}
+
+.notice {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--codex-line-strong, #444444);
+  border-radius: 8px;
+  color: var(--codex-ink-soft, #d2d2d2);
+  background: var(--codex-accent-faint, rgb(255 255 255 / 6%));
+  font-size: 12px;
+}
+
+.error {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid rgb(250 66 62 / 35%);
+  border-radius: 8px;
+  color: var(--codex-danger, #fa423e);
+  background: var(--codex-danger-soft, rgb(250 66 62 / 13%));
+  font-size: 12px;
+}
+
+.primary {
+  composes: primary from "./knowledge-ui.module.css";
+  margin-left: auto;
+}
+
+.ghost {
+  composes: secondary compact from "./knowledge-ui.module.css";
+}
+
+@media (max-width: 640px) {
+  .panel { padding: 14px; min-width: 0; }
+  .panelHead, .memberRow, .candidate { flex-wrap: wrap; }
+  .memberInfo { flex-basis: calc(100% - 80px); }
+  .candidateEmail { width: 100%; overflow-wrap: anywhere; }
+}

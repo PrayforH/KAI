@@ -8,6 +8,10 @@ import remarkGfm from "remark-gfm";
 import { memo, useState, type ComponentPropsWithoutRef } from "react";
 import { normalizeMessageText } from "../lib/message-text";
 import { MermaidCodeHeader, MermaidDiagram } from "./mermaid-diagram";
+import { citationTarget, knowledgeUrlTransform, remarkWikiLinks } from "../lib/knowledge-links";
+import { useAnswerCitations } from "./knowledge/answer-citation-context";
+import { CitationLink } from "./knowledge/citation-link";
+import { WikiEntityLink } from "./knowledge/wiki-entity-link";
 import { SourceLink } from "./source-link";
 
 function CodeHeader({ language, code }: CodeHeaderProps) {
@@ -42,11 +46,45 @@ function ScrollableTable(props: ComponentPropsWithoutRef<"table">) {
   );
 }
 
+function WikiLink({
+  href,
+  children,
+  node: _node,
+  ...props
+}: ComponentPropsWithoutRef<"a"> & { node?: unknown }) {
+  const answer = useAnswerCitations();
+  if (href?.startsWith("citation:")) {
+    const citation = answer?.citations.find((item) => citationTarget(item) === href);
+    return citation ? <CitationLink className="aui-citation-link" title={citation.title ?? "查看来源"} aria-label={`查看来源 ${citation.index}：${citation.title ?? "文档"}`} onClick={() => answer?.request(citation)}>{children}</CitationLink> : <span title="引用来源暂不可用">{children}</span>;
+  }
+  if (typeof href === "string" && href.startsWith("wiki:")) {
+    let slug: string;
+    try { slug = decodeURIComponent(href.slice("wiki:".length)); } catch { return <span>{children}</span>; }
+    return (
+      <WikiEntityLink
+        className="aui-wiki-link"
+        onClick={() => {
+          window.dispatchEvent(
+            new CustomEvent("harness:open-wiki", { detail: { slug } }),
+          );
+        }}
+      >
+        {children}
+      </WikiEntityLink>
+    );
+  }
+  return (
+    <SourceLink href={href} {...props}>
+      {children}
+    </SourceLink>
+  );
+}
+
 function MarkdownTextImpl() {
   return (
     <MarkdownTextPrimitive
       className="aui-md"
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={[remarkGfm, remarkWikiLinks]}
       preprocess={normalizeMessageText}
       // The live response store already batches network deltas per animation
       // frame. A second character-by-character reveal exposes incomplete
@@ -54,7 +92,10 @@ function MarkdownTextImpl() {
       // replayed, which looks like a final-pass renderer. Parse every received
       // delta immediately so Markdown remains formatted throughout streaming.
       smooth={false}
-      components={{ CodeHeader, a: SourceLink, table: ScrollableTable }}
+      // react-markdown blanks unknown protocols; wiki: must survive so the
+      // renderer can turn it into a page-opening button.
+      urlTransform={knowledgeUrlTransform}
+      components={{ CodeHeader, a: WikiLink, table: ScrollableTable }}
       componentsByLanguage={{
         mermaid: {
           CodeHeader: MermaidCodeHeader,

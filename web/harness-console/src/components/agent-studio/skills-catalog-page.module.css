@@ -814,3 +814,38 @@
 .creationPanel input, .creationPanel select { min-width: 0; max-width: 100%; padding: 10px; border: 1px solid var(--codex-line); border-radius: 6px; background: var(--codex-surface); color: inherit; }
 .creationScopes { display: flex; flex-wrap: wrap; gap: 10px; }
 .creationScopes a { padding: 10px; color: inherit; border: 1px solid var(--codex-line); border-radius: 6px; text-decoration: none; }
+
+/* Scroll paging: the footer sits inside the list card so it reads as the end
+   of the catalog rather than a floating toolbar. */
+.loadMore {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--codex-line, #303030);
+  color: var(--codex-muted, #a1a1a1);
+  font-size: 12px;
+}
+
+.loadMore button {
+  min-height: 30px;
+  padding: 0 13px;
+  border: 1px solid var(--codex-line-strong, #444444);
+  border-radius: 7px;
+  color: var(--codex-ink, #ffffff);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.loadMore button:hover {
+  background: var(--codex-surface-hover, #2a2a2a);
+}
+
+.loadMoreStatus {
+  margin: 10px 0 0;
+  color: var(--codex-faint, #737373);
+  font-size: 12px;
+}

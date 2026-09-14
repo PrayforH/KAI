@@ -2,7 +2,7 @@
 
 import { type FormEvent, useEffect, useState } from "react";
 import { publishAuthEvent } from "../../lib/auth-coordination";
-import { PRODUCT_NAME } from "../../components/product-brand";
+import { PRODUCT_NAME, ProductBrandMark } from "../../components/product-brand";
 import { SecretInput } from "../../components/secret-input";
 import alpinePeak from "./assets/alpine-peak.jpg";
 
@@ -112,7 +112,7 @@ export default function LoginPage() {
         <article className="login-card">
           <header className="login-card-banner">
             <div className="login-card-brand">
-              <span className="login-brand-mark" aria-hidden="true">K</span>
+              <ProductBrandMark className="login-brand-mark" />
               <strong>{PRODUCT_NAME}</strong>
             </div>
             <p

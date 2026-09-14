@@ -35,10 +35,124 @@ interface CatalogSkill {
 
 const DISABLED_SKILLS_STORAGE_KEY = "harness-skill-catalog-disabled:v1";
 
+/** Draft skill payloads are the heavy part of this page, so they load a few at
+ *  a time instead of firing one request per agent at once. */
+const DRAFT_FETCH_CONCURRENCY = 4;
+
+/** Rows rendered before the catalog asks for another scroll page. */
+const CATALOG_PAGE_SIZE = 20;
+
+/** Run `worker` over `items` with a bounded number of in-flight requests and
+ *  report each success as it lands. A draft that fails to load degrades to
+ *  "missing from the list" rather than failing the whole catalog. */
+async function forEachWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  worker: (item: T) => Promise<R>,
+  onResult: (item: T, result: R) => void,
+): Promise<void> {
+  let cursor = 0;
+  const runners = Array.from(
+    { length: Math.min(limit, items.length) },
+    async () => {
+      while (cursor < items.length) {
+        const index = cursor;
+        cursor += 1;
+        const item = items[index];
+        try {
+          onResult(item, await worker(item));
+        } catch {
+          // Keep the remaining catalog usable when one draft is unreadable.
+        }
+      }
+    },
+  );
+  await Promise.all(runners);
+}
+
+/** Merge the platform package catalog with the Skills declared by agent
+ *  drafts into the single row list the page renders. */
+function buildCatalog(
+  platformPackages: StudioPlatformSkillPackage[],
+  studioDrafts: StudioDraft[],
+): CatalogSkill[] {
+  const byName = new Map<string, CatalogSkill>([[
+    `platform:${DEFAULT_SKILL_CREATOR.name}`,
+    {
+      key: `platform:${DEFAULT_SKILL_CREATOR.name}`,
+      name: DEFAULT_SKILL_CREATOR.name,
+      displayName: "Skill Creator",
+      description: DEFAULT_SKILL_CREATOR.description,
+      instructions: DEFAULT_SKILL_CREATOR.instructions,
+      scope: "platform",
+      files: [{ path: "SKILL.md" }],
+      fileCount: 1,
+      agents: [],
+      package: null,
+    },
+  ]]);
+  for (const item of platformPackages) {
+    byName.set(`platform-package:${item.packageId}`, {
+      key: `platform-package:${item.packageId}`,
+      name: item.skill.name,
+      displayName: item.displayName,
+      description: item.summary,
+      instructions: item.skill.instructions,
+      scope: "platform",
+      files: item.skill.files,
+      // A web bundle can briefly outrun the API during a rolling deploy, so
+      // fall back to the listed files when the count is absent.
+      fileCount: item.skill.fileCount ?? item.skill.files.length,
+      agents: [],
+      package: item,
+    });
+  }
+  for (const draft of studioDrafts) {
+    for (const skill of draft.skills) {
+      const platformKey = skill.source?.packageId
+        ? `platform-package:${skill.source.packageId}`
+        : null;
+      const platform = platformKey ? byName.get(platformKey) : null;
+      if (platform) {
+        if (!platform.agents.some((entry) => entry.draftId === draft.id)) {
+          platform.agents.push({ draftId: draft.id, label: draft.displayName || draft.name });
+        }
+        continue;
+      }
+      const key = `agent:${skill.name}`;
+      const existing = byName.get(key);
+      const fileCount = skill.fileCount ?? skill.files?.length ?? 0;
+      if (existing) {
+        if (!existing.agents.some((entry) => entry.draftId === draft.id)) {
+          existing.agents.push({ draftId: draft.id, label: draft.displayName || draft.name });
+        }
+        existing.fileCount = Math.max(existing.fileCount, fileCount);
+      } else {
+        byName.set(key, {
+          key,
+          name: skill.name,
+          displayName: skill.name,
+          description: skill.description || "暂无描述",
+          instructions: skill.instructions || "",
+          scope: "agent",
+          files: (skill.files ?? []).map((file) => file),
+          fileCount,
+          agents: [{ draftId: draft.id, label: draft.displayName || draft.name }],
+          package: null,
+        });
+      }
+    }
+  }
+  return [...byName.values()].sort((a, b) => a.displayName.localeCompare(b.displayName, "zh-CN"));
+}
+
 export function SkillsCatalogPage() {
   const { membership } = useAuth();
   const [showInternalAgents] = useInternalAgentsPreference();
   const canManage = membership.role !== "viewer";
+  // Mounting reviewed platform Skills requires the backend catalog-admin
+  // permission (owner/admin); keep the UI gate aligned to avoid 403s.
+  const canManageCatalog = membership.role === "owner" || membership.role === "admin";
   const [skills, setSkills] = useState<CatalogSkill[]>([]);
   const [drafts, setDrafts] = useState<StudioDraft[]>([]);
   const [query, setQuery] = useState("");
@@ -54,91 +168,45 @@ export function SkillsCatalogPage() {
   const [uploadDraftId, setUploadDraftId] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadPending, setUploadPending] = useState(false);
+  const [renderLimit, setRenderLimit] = useState(CATALOG_PAGE_SIZE);
+  const [agentScan, setAgentScan] = useState({ scanned: 0, total: 0, done: false });
   const drawerRef = useRef<HTMLElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
+    setAgentScan({ scanned: 0, total: 0, done: false });
     try {
       const [summaries, platformCatalog] = await Promise.all([
         studioClient.listAccessibleDrafts(),
         studioClient.listPlatformSkills(),
       ]);
-      const drafts = await Promise.all(
-        summaries.filter((summary) => isAgentVisible(summary, showInternalAgents)).map((summary) => studioClient.getDraft(summary.draftId)),
-      );
-      const studioDrafts = drafts.map(apiDraftToStudioDraft);
-      const byName = new Map<string, CatalogSkill>([[
-        `platform:${DEFAULT_SKILL_CREATOR.name}`,
-        {
-          key: `platform:${DEFAULT_SKILL_CREATOR.name}`,
-          name: DEFAULT_SKILL_CREATOR.name,
-          displayName: "Skill Creator",
-          description: DEFAULT_SKILL_CREATOR.description,
-          instructions: DEFAULT_SKILL_CREATOR.instructions,
-          scope: "platform",
-          files: [{ path: "SKILL.md" }],
-          fileCount: 1,
-          agents: [],
-          package: null,
+      // Platform packages plus the built-in Skill are enough to paint the list,
+      // so render them before the per-agent draft reads start.
+      setSkills(buildCatalog(platformCatalog.packages, []));
+      setLoading(false);
+
+      const targets = summaries.filter((summary) =>
+        isAgentVisible(summary, showInternalAgents));
+      setAgentScan({ scanned: 0, total: targets.length, done: false });
+      const loaded: StudioDraft[] = [];
+      await forEachWithConcurrency(
+        targets,
+        DRAFT_FETCH_CONCURRENCY,
+        (summary) => studioClient.getDraft(summary.draftId),
+        (summary, apiDraft) => {
+          loaded.push(apiDraftToStudioDraft(apiDraft));
+          setSkills(buildCatalog(platformCatalog.packages, loaded));
+          setAgentScan((current) => ({ ...current, scanned: current.scanned + 1 }));
         },
-      ]]);
-      for (const item of platformCatalog.packages) {
-        byName.set(`platform-package:${item.packageId}`, {
-          key: `platform-package:${item.packageId}`,
-          name: item.skill.name,
-          displayName: item.displayName,
-          description: item.summary,
-          instructions: item.skill.instructions,
-          scope: "platform",
-          files: item.skill.files ?? [],
-          fileCount: item.skill.files?.length ?? 0,
-          agents: [],
-          package: item,
-        });
-      }
-      for (const draft of studioDrafts) {
-        for (const skill of draft.skills) {
-          const platformKey = skill.source?.packageId
-            ? `platform-package:${skill.source.packageId}`
-            : null;
-          const platform = platformKey ? byName.get(platformKey) : null;
-          if (platform) {
-            if (!platform.agents.some((entry) => entry.draftId === draft.id)) {
-              platform.agents.push({ draftId: draft.id, label: draft.displayName || draft.name });
-            }
-            continue;
-          }
-          const key = `agent:${skill.name}`;
-          const existing = byName.get(key);
-          const fileCount = skill.fileCount ?? skill.files?.length ?? 0;
-          if (existing) {
-            if (!existing.agents.some((entry) => entry.draftId === draft.id)) {
-              existing.agents.push({ draftId: draft.id, label: draft.displayName || draft.name });
-            }
-            existing.fileCount = Math.max(existing.fileCount, fileCount);
-          } else {
-            byName.set(key, {
-              key,
-              name: skill.name,
-              displayName: skill.name,
-              description: skill.description || "暂无描述",
-              instructions: skill.instructions || "",
-              scope: "agent",
-              files: (skill.files ?? []).map((file) => file),
-              fileCount,
-              agents: [{ draftId: draft.id, label: draft.displayName || draft.name }],
-              package: null,
-            });
-          }
-        }
-      }
-      setSkills([...byName.values()].sort((a, b) => a.displayName.localeCompare(b.displayName, "zh-CN")));
-      setDrafts(studioDrafts);
+      );
+      setDrafts(loaded);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "技能目录暂时不可用。");
     } finally {
       setLoading(false);
+      setAgentScan((current) => ({ ...current, done: true }));
     }
   }, [showInternalAgents]);
 
@@ -190,6 +258,34 @@ export function SkillsCatalogPage() {
         .includes(normalized)),
     );
   }, [skills, query, scopeFilter]);
+
+  // The catalog can hold hundreds of rows; render the list in scroll-sized
+  // pages so opening the page never builds every row at once.
+  const pageSkills = useMemo(
+    () => visibleSkills.slice(0, renderLimit),
+    [visibleSkills, renderLimit],
+  );
+  const hasMoreRows = pageSkills.length < visibleSkills.length;
+
+  useEffect(() => {
+    setRenderLimit(CATALOG_PAGE_SIZE);
+  }, [query, scopeFilter, skills.length]);
+
+  useEffect(() => {
+    if (!hasMoreRows) return;
+    const sentinel = sentinelRef.current;
+    if (!sentinel || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setRenderLimit((current) => current + CATALOG_PAGE_SIZE);
+        }
+      },
+      { rootMargin: "320px 0px" },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMoreRows, pageSkills.length]);
 
   const selectedSkill = useMemo(
     () => skills.find((skill) => skill.key === selectedKey) ?? null,
@@ -343,7 +439,7 @@ export function SkillsCatalogPage() {
           ) : (
             <div className={styles.groups}>
               <section className={styles.group}>
-                {visibleSkills.map((skill) => {
+                {pageSkills.map((skill) => {
                   const enabled = !disabledKeys.has(skill.key);
                   return (
                     <div className={styles.row} data-enabled={enabled} key={skill.key}>
@@ -392,7 +488,23 @@ export function SkillsCatalogPage() {
                   );
                 })}
               </section>
+              {hasMoreRows && (
+                <div className={styles.loadMore} ref={sentinelRef}>
+                  <span>{`已显示 ${pageSkills.length} / ${visibleSkills.length}`}</span>
+                  <button
+                    type="button"
+                    onClick={() => setRenderLimit((current) => current + CATALOG_PAGE_SIZE)}
+                  >
+                    加载更多
+                  </button>
+                </div>
+              )}
             </div>
+          )}
+          {agentScan.total > 0 && !agentScan.done && (
+            <p className={styles.loadMoreStatus} role="status">
+              {`正在读取智能体技能 ${agentScan.scanned} / ${agentScan.total}…`}
+            </p>
           )}
         </section>
       </section>
@@ -479,6 +591,7 @@ export function SkillsCatalogPage() {
           {canManage && (
             <footer className={styles.drawerActions}>
               {selectedSkill.package ? (
+                canManageCatalog ? (
                 <div className={styles.installControls}>
                   {drafts.length > 0 ? (
                     <>
@@ -507,6 +620,9 @@ export function SkillsCatalogPage() {
                     <Link className={styles.actionLink} href="/studio/agents">先创建智能体</Link>
                   )}
                 </div>
+                ) : (
+                  <span className={styles.actionLink}>平台 Skill 由管理员统一导入，如需使用请联系管理员。</span>
+                )
               ) : (
                 <button
                   className={styles.secondaryAction}

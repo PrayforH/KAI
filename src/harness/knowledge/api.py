@@ -3,21 +3,36 @@ from __future__ import annotations
 from typing import Annotated
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from fastapi.responses import PlainTextResponse
 
 from harness.knowledge.models import (
+    AddKnowledgeMembersRequest,
+    AddKnowledgeMembersResult,
     CreateKnowledgeBaseRequest,
+    CreateKnowledgeDocumentRequest,
     CreateKnowledgeSourceRequest,
     CreateKnowledgeSourceResult,
     KnowledgeBase,
+    KnowledgeBaseMember,
+    KnowledgeDocumentChunk,
+    KnowledgeDocumentStatus,
+    KnowledgeDocumentTable,
     KnowledgeSnapshot,
     KnowledgeSourceSummary,
     KnowledgeSyncRun,
+    KnowledgeWikiGraph,
+    KnowledgeWikiPage,
+    KnowledgeWikiStats,
     ReplaceKnowledgeBaseRequest,
     ReplaceKnowledgeSourceRequest,
     SearchKnowledgeRequest,
     SearchKnowledgeResponse,
+    UpdateKnowledgeMemberRequest,
+)
+from harness.knowledge.ports import (
+    KnowledgeEngineError,
+    KnowledgeEngineNotConfiguredError,
 )
 from harness.knowledge.service import KnowledgeService
 from harness.studio.api import (
@@ -41,6 +56,24 @@ def get_knowledge_service(request: Request) -> KnowledgeService:
             },
         )
     return service
+
+
+async def _translate_engine_error(error: KnowledgeEngineError) -> HTTPException:
+    if isinstance(error, KnowledgeEngineNotConfiguredError):
+        return HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "knowledge_engine_not_configured",
+                "message": str(error),
+            },
+        )
+    return HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail={
+            "code": "knowledge_engine_error",
+            "message": str(error),
+        },
+    )
 
 
 @router.get("/bases", response_model=list[KnowledgeBase])
@@ -86,6 +119,21 @@ async def replace_knowledge_base(
         reference,
         body,
     )
+
+
+@router.delete(
+    "/bases/{reference}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_knowledge_base(
+    reference: str,
+    actor: Annotated[StudioActor, Depends(require_studio_writer)],
+    service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+) -> None:
+    try:
+        await service.delete_base(actor.tenant_id, actor.user_id, reference)
+    except KnowledgeEngineError as error:
+        raise await _translate_engine_error(error) from error
 
 
 @router.get("/sources", response_model=list[KnowledgeSourceSummary])
@@ -231,4 +279,369 @@ async def search_knowledge(
         body.query,
         knowledge_base_references=body.knowledge_base_references,
         limit=body.limit,
+    )
+
+
+# --- engine-backed document and chunk proxies (WeKnora) -------------------
+
+
+@router.get(
+    "/sources/{reference}/documents",
+    response_model=list[KnowledgeDocumentStatus],
+)
+async def list_source_documents(
+    reference: str,
+    actor: Annotated[StudioActor, Depends(require_studio_reader)],
+    service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+) -> list[KnowledgeDocumentStatus]:
+    try:
+        return await service.list_source_documents(actor.tenant_id, actor.user_id, reference)
+    except KnowledgeEngineError as error:
+        raise await _translate_engine_error(error) from error
+
+
+@router.post(
+    "/sources/{reference}/documents",
+    response_model=KnowledgeDocumentStatus,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_source_document(
+    reference: str,
+    body: CreateKnowledgeDocumentRequest,
+    actor: Annotated[StudioActor, Depends(require_studio_writer)],
+    service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+) -> KnowledgeDocumentStatus:
+    try:
+        return await service.create_source_document(
+            actor.tenant_id,
+            actor.user_id,
+            reference,
+            body.title,
+            body.content,
+        )
+    except KnowledgeEngineError as error:
+        raise await _translate_engine_error(error) from error
+
+
+@router.post(
+    "/sources/{reference}/documents/upload",
+    response_model=KnowledgeDocumentStatus,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_source_document(
+    reference: str,
+    actor: Annotated[StudioActor, Depends(require_studio_writer)],
+    service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+    file: Annotated[UploadFile, File()],
+) -> KnowledgeDocumentStatus:
+    filename = file.filename or "upload.bin"
+    content = await file.read()
+    try:
+        return await service.upload_source_document(
+            actor.tenant_id,
+            actor.user_id,
+            reference,
+            filename,
+            content,
+        )
+    except KnowledgeEngineError as error:
+        raise await _translate_engine_error(error) from error
+
+
+@router.get(
+    "/sources/{reference}/documents/{document_id}",
+    response_model=KnowledgeDocumentStatus,
+)
+async def get_source_document(
+    reference: str,
+    document_id: str,
+    actor: Annotated[StudioActor, Depends(require_studio_reader)],
+    service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+) -> KnowledgeDocumentStatus:
+    try:
+        return await service.get_source_document(
+            actor.tenant_id,
+            actor.user_id,
+            reference,
+            document_id,
+        )
+    except KnowledgeEngineError as error:
+        raise await _translate_engine_error(error) from error
+
+
+@router.delete(
+    "/sources/{reference}/documents/{document_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_source_document(
+    reference: str,
+    document_id: str,
+    actor: Annotated[StudioActor, Depends(require_studio_writer)],
+    service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+) -> None:
+    try:
+        await service.delete_source_document(
+            actor.tenant_id,
+            actor.user_id,
+            reference,
+            document_id,
+        )
+    except KnowledgeEngineError as error:
+        raise await _translate_engine_error(error) from error
+
+
+@router.post(
+    "/sources/{reference}/documents/{document_id}/reparse",
+    response_model=KnowledgeDocumentStatus,
+)
+async def reparse_source_document(
+    reference: str,
+    document_id: str,
+    actor: Annotated[StudioActor, Depends(require_studio_writer)],
+    service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+) -> KnowledgeDocumentStatus:
+    try:
+        await service.reparse_source_document(
+            actor.tenant_id,
+            actor.user_id,
+            reference,
+            document_id,
+        )
+        return await service.get_source_document(
+            actor.tenant_id,
+            actor.user_id,
+            reference,
+            document_id,
+        )
+    except KnowledgeEngineError as error:
+        raise await _translate_engine_error(error) from error
+
+
+@router.get(
+    "/sources/{reference}/documents/{document_id}/table",
+    response_model=KnowledgeDocumentTable,
+)
+async def get_source_document_table(
+    reference: str,
+    document_id: str,
+    actor: Annotated[StudioActor, Depends(require_studio_reader)],
+    service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+) -> KnowledgeDocumentTable:
+    try:
+        return await service.get_source_document_table(
+            actor.tenant_id,
+            actor.user_id,
+            reference,
+            document_id,
+        )
+    except KnowledgeEngineError as error:
+        raise await _translate_engine_error(error) from error
+
+
+@router.get(
+    "/sources/{reference}/documents/{document_id}/chunks",
+    response_model=list[KnowledgeDocumentChunk],
+)
+async def list_source_document_chunks(
+    reference: str,
+    document_id: str,
+    actor: Annotated[StudioActor, Depends(require_studio_reader)],
+    service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+) -> list[KnowledgeDocumentChunk]:
+    try:
+        return await service.list_source_chunks(
+            actor.tenant_id,
+            actor.user_id,
+            reference,
+            document_id,
+        )
+    except KnowledgeEngineError as error:
+        raise await _translate_engine_error(error) from error
+
+
+@router.get(
+    "/sources/{reference}/chunks/{chunk_id}",
+    response_model=KnowledgeDocumentChunk,
+)
+async def get_source_chunk(
+    reference: str,
+    chunk_id: str,
+    actor: Annotated[StudioActor, Depends(require_studio_reader)],
+    service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+) -> KnowledgeDocumentChunk:
+    try:
+        return await service.get_source_chunk(
+            actor.tenant_id,
+            actor.user_id,
+            reference,
+            chunk_id,
+        )
+    except KnowledgeEngineError as error:
+        raise await _translate_engine_error(error) from error
+
+
+# --- wiki proxies (engine-backed bases) ------------------------------------
+
+
+@router.get(
+    "/sources/{reference}/wiki/pages",
+    response_model=list[KnowledgeWikiPage],
+)
+async def list_wiki_pages(
+    reference: str,
+    actor: Annotated[StudioActor, Depends(require_studio_reader)],
+    service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+) -> list[KnowledgeWikiPage]:
+    try:
+        return await service.list_wiki_pages(actor.tenant_id, actor.user_id, reference)
+    except KnowledgeEngineError as error:
+        raise await _translate_engine_error(error) from error
+
+
+@router.get(
+    "/sources/{reference}/wiki/pages/{slug:path}",
+    response_model=KnowledgeWikiPage,
+)
+async def get_wiki_page(
+    reference: str,
+    slug: str,
+    actor: Annotated[StudioActor, Depends(require_studio_reader)],
+    service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+) -> KnowledgeWikiPage:
+    try:
+        return await service.get_wiki_page(actor.tenant_id, actor.user_id, reference, slug)
+    except KnowledgeEngineError as error:
+        raise await _translate_engine_error(error) from error
+
+
+@router.get(
+    "/sources/{reference}/wiki/search",
+    response_model=list[KnowledgeWikiPage],
+)
+async def search_wiki_pages(
+    reference: str,
+    actor: Annotated[StudioActor, Depends(require_studio_reader)],
+    service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+    q: str = "",
+    limit: int = 20,
+) -> list[KnowledgeWikiPage]:
+    query = (q or "").strip()
+    if not query:
+        return []
+    try:
+        return await service.search_wiki_pages(
+            actor.tenant_id,
+            actor.user_id,
+            reference,
+            query,
+            limit=limit,
+        )
+    except KnowledgeEngineError as error:
+        raise await _translate_engine_error(error) from error
+
+
+@router.get(
+    "/sources/{reference}/wiki/graph",
+    response_model=KnowledgeWikiGraph,
+)
+async def get_wiki_graph(
+    reference: str,
+    actor: Annotated[StudioActor, Depends(require_studio_reader)],
+    service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+) -> KnowledgeWikiGraph:
+    try:
+        return await service.wiki_graph(actor.tenant_id, actor.user_id, reference)
+    except KnowledgeEngineError as error:
+        raise await _translate_engine_error(error) from error
+
+
+@router.get(
+    "/sources/{reference}/wiki/stats",
+    response_model=KnowledgeWikiStats,
+)
+async def get_wiki_stats(
+    reference: str,
+    actor: Annotated[StudioActor, Depends(require_studio_reader)],
+    service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+) -> KnowledgeWikiStats:
+    try:
+        return await service.wiki_stats(actor.tenant_id, actor.user_id, reference)
+    except KnowledgeEngineError as error:
+        raise await _translate_engine_error(error) from error
+
+
+# --- knowledge base membership (phase 1: per-user viewer/editor) -----------
+
+
+@router.get(
+    "/bases/{reference}/members",
+    response_model=list[KnowledgeBaseMember],
+)
+async def list_knowledge_base_members(
+    reference: str,
+    actor: Annotated[StudioActor, Depends(require_studio_reader)],
+    service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+) -> list[KnowledgeBaseMember]:
+    return await service.list_members(actor.tenant_id, actor.user_id, reference)
+
+
+@router.post(
+    "/bases/{reference}/members",
+    response_model=AddKnowledgeMembersResult,
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_knowledge_base_members(
+    reference: str,
+    body: AddKnowledgeMembersRequest,
+    actor: Annotated[StudioActor, Depends(require_studio_writer)],
+    service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+) -> AddKnowledgeMembersResult:
+    return await service.add_members(actor.tenant_id, actor.user_id, reference, body)
+
+
+@router.put(
+    "/bases/{reference}/members/{member_id}",
+    response_model=KnowledgeBaseMember,
+)
+async def update_knowledge_base_member(
+    reference: str,
+    member_id: str,
+    body: UpdateKnowledgeMemberRequest,
+    actor: Annotated[StudioActor, Depends(require_studio_writer)],
+    service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+) -> KnowledgeBaseMember:
+    return await service.update_member_role(
+        actor.tenant_id,
+        actor.user_id,
+        reference,
+        member_id,
+        body.role,
+    )
+
+
+@router.delete(
+    "/bases/{reference}/members/{member_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def remove_knowledge_base_member(
+    reference: str,
+    member_id: str,
+    actor: Annotated[StudioActor, Depends(require_studio_writer)],
+    service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+) -> None:
+    await service.remove_member(actor.tenant_id, actor.user_id, reference, member_id)
+
+
+@router.get("/directory/users")
+async def search_directory_users(
+    actor: Annotated[StudioActor, Depends(require_studio_reader)],
+    service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+    q: str = "",
+    limit: int = 20,
+) -> list[dict[str, str]]:
+    return await service.search_directory_users(
+        actor.tenant_id,
+        actor.user_id,
+        q,
+        limit=limit,
     )

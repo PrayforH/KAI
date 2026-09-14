@@ -55,102 +55,12 @@ html[data-color-mode="light"] ::selection {
   background: rgb(22 179 100 / 22%);
 }
 
+/* Light navigation only repaints; density, type scale and row geometry stay on
+   the shared task-shell rules so both appearances read as the same product. */
 html[data-color-mode="light"] body.codex-theme-v1 .task-sidebar,
 html[data-color-mode="light"] body.codex-theme-v1 .task-sidebar.is-collapsed {
   border-right-color: var(--codex-line);
   background: var(--codex-surface-sidebar);
-}
-
-html[data-color-mode="light"] body.codex-theme-v1 .task-sidebar-brand {
-  min-height: 64px;
-  padding: 11px 12px;
-}
-
-html[data-color-mode="light"] body.codex-theme-v1 .task-sidebar-brand-mark {
-  width: var(--app-sidebar-brand-mark-size, 36px);
-  height: var(--app-sidebar-brand-mark-size, 36px);
-  border-color: #28332d;
-  border-radius: 10px;
-  color: #ffffff;
-  background: #202823;
-}
-
-html[data-color-mode="light"] body.codex-theme-v1 .task-sidebar-brand-copy strong {
-  font-size: 15px;
-  font-weight: 680;
-  letter-spacing: -.025em;
-}
-
-html[data-color-mode="light"] body.codex-theme-v1 .task-sidebar-primary {
-  padding: 5px 8px 2px;
-}
-
-html[data-color-mode="light"] body.codex-theme-v1 .task-sidebar-primary button {
-  min-height: 42px;
-  padding-inline: 12px;
-  color: var(--codex-accent);
-  background: color-mix(in srgb, var(--codex-accent) 7%, #ffffff);
-  box-shadow: none;
-  font-size: 12.5px;
-  font-weight: 610;
-}
-
-html[data-color-mode="light"] body.codex-theme-v1 .task-sidebar-primary button:hover {
-  background: color-mix(in srgb, var(--codex-accent) 11%, #ffffff);
-}
-
-html[data-color-mode="light"] body.codex-theme-v1 .task-list-toolbar {
-  padding-top: 8px;
-}
-
-html[data-color-mode="light"] body.codex-theme-v1 .task-list-toolbar .task-list-heading {
-  min-height: 30px;
-  padding-inline: 14px;
-  color: var(--codex-faint);
-  font-size: 10.5px;
-  letter-spacing: .01em;
-}
-
-html[data-color-mode="light"] body.codex-theme-v1 .task-list-search {
-  height: 38px;
-  margin-inline: 8px;
-  border: 0;
-  border-radius: 9px;
-  background: var(--codex-surface-subtle);
-}
-
-html[data-color-mode="light"] body.codex-theme-v1 .task-list-search:focus-within {
-  background: var(--codex-surface-raised);
-  box-shadow: 0 0 0 2px var(--codex-accent-soft);
-}
-
-html[data-color-mode="light"] body.codex-theme-v1 .task-list {
-  padding: 6px 7px 18px;
-}
-
-html[data-color-mode="light"] body.codex-theme-v1 .task-list-row + .task-list-row {
-  margin-top: 2px;
-}
-
-html[data-color-mode="light"] body.codex-theme-v1 .task-list-item {
-  min-height: 60px;
-  padding: 9px 34px 9px 11px;
-  border-radius: 9px;
-}
-
-html[data-color-mode="light"] body.codex-theme-v1 .task-list-item:hover {
-  background: var(--codex-surface-hover);
-}
-
-html[data-color-mode="light"] body.codex-theme-v1 .task-list-item.is-active {
-  color: var(--codex-ink);
-  background: color-mix(in srgb, var(--codex-accent) 6%, #ffffff);
-  box-shadow: none;
-}
-
-html[data-color-mode="light"] body.codex-theme-v1 .task-list-title {
-  font-size: 12.5px;
-  font-weight: 590;
 }
 
 html[data-color-mode="light"] body.codex-theme-v1 .task-sidebar-account {

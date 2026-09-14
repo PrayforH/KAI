@@ -52,7 +52,9 @@ from harness.execution.credentials import (
 )
 from harness.governance.service import GovernanceService
 from harness.inputs.processors import DefaultInputProcessor
+from harness.knowledge.directory import PlatformUserDirectory
 from harness.knowledge.service import KnowledgeService
+from harness.knowledge.weknora import WeknoraKnowledgeEngine, WeknoraSettings
 from harness.knowledge.workload import (
     KnowledgeWorkloadTokenService,
     RemoteKnowledgeMcpProvider,
@@ -551,11 +553,22 @@ def build_production_container(
         context_service,
         PostgresTranscriptCheckpointProvider(sessions),
     )
+    weknora_settings = WeknoraSettings(
+        base_url=settings.weknora_base_url,
+        email=settings.weknora_email,
+        password=settings.weknora_password,
+        embedding_model=settings.weknora_embedding_model,
+        summary_model_id=settings.weknora_summary_model_id,
+        wiki_synthesis_model_id=settings.weknora_wiki_synthesis_model_id,
+    )
+    weknora_engine = WeknoraKnowledgeEngine(weknora_settings) if weknora_settings.enabled else None
     knowledge = KnowledgeService(
         knowledge_repository,
         audit=audit,
         clock=clock,
         id_generator=ids,
+        engine=weknora_engine,
+        directory=PlatformUserDirectory(sessions),
     )
     quotas = QuotaService(
         PostgresQuotaRepository(sessions),
@@ -642,6 +655,7 @@ def build_production_container(
     capability_catalogs = CapabilityCatalogService(
         capability_catalog_repository,
         agent_drafts,
+        published_route_references=registry.route_references,
         clock=clock,
     )
     environment_mcp_credentials = server_secret_credential_provider(
@@ -1158,6 +1172,7 @@ def build_production_container(
         bindings=binding_repository,
         contexts=context_service,
         title_generator=ControlPlaneTaskTitleGenerator(model_configurations),
+        knowledge_bindings=knowledge.resolve_bindings,
     )
 
     async def infrastructure_facts(tenant_id: str) -> dict[str, int | None]:

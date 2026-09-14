@@ -229,7 +229,7 @@ describe("full-page agent workbench", () => {
   it("keeps agents and capabilities in the simplified task sidebar", () => {
     expect(taskSidebar).not.toContain("WorkspaceModeSwitcher");
     expect(studioSidebar).not.toContain("WorkspaceModeSwitcher");
-    expect(taskSidebar).toContain('visible={["agents", "capabilities"]}');
+    expect(taskSidebar).toContain('visible={["knowledge", "agents", "capabilities"]}');
     expect(taskSidebar).toContain('labelOverrides={{ capabilities: "技能 / MCP" }}');
     expect(taskSidebar).not.toContain('visible={["agents", "files"]}');
     expect(studioSidebar).toContain('visible={["tasks", "agents"]}');
@@ -699,7 +699,11 @@ describe("full-page agent workbench", () => {
     expect(markdown).toContain("table: ScrollableTable");
     expect(markdown).not.toContain("defer");
     expect(markdown).toContain("smooth={false}");
+    // Text normalization stays in the preprocessor; Wiki links use the
+    // Markdown AST plugin so inline code and fenced code remain literal.
     expect(markdown).toContain("preprocess={normalizeMessageText}");
+    expect(markdown).toContain("remarkPlugins={[remarkGfm, remarkWikiLinks]}");
+    expect(markdown).toContain("normalizeMessageText");
     expect(markdown).not.toContain("codexStreamSmoothing");
     expect(styles).toMatch(
       /\.aui-table-scroll\s*\{[^}]*overflow-x:\s*auto;/s,

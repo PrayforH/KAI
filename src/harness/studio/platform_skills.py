@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from functools import lru_cache
 
 from harness.core.errors import ConflictError, NotFoundError
 from harness.evals.suite import EvalCase, EvalExpectation
@@ -13,6 +14,10 @@ from harness.studio.models import (
     DraftSkillSource,
     ImportedSkill,
     PlatformSkillCatalog,
+    PlatformSkillCatalogEntry,
+    PlatformSkillCatalogListing,
+    PlatformSkillListing,
+    PlatformSkillListingFile,
     PlatformSkillPackage,
 )
 
@@ -88,12 +93,121 @@ def _package(
     )
 
 
+_VENDORED_DISPLAY = {
+    "minimax-docx": ("Word 文档（MiniMax）", ("办公", "Word", "docx")),
+    "minimax-xlsx": ("Excel 表格（MiniMax）", ("办公", "Excel", "xlsx")),
+    "minimax-pdf": ("PDF 文档（MiniMax）", ("办公", "PDF", "pdf")),
+    "pptx-generator": ("PowerPoint 演示（MiniMax）", ("办公", "PPT", "pptx")),
+    "color-font-skill": ("PPT 配色与字体", ("办公", "PPT", "设计")),
+    "design-style-skill": ("PPT 设计风格", ("办公", "PPT", "设计")),
+    "ppt-editing-skill": ("PPTX 模板编辑", ("办公", "PPT", "编辑")),
+    "slide-making-skill": ("幻灯片制作", ("办公", "PPT", "制作")),
+    "skill-creator": ("Skill 创建与评测", ("Skill", "创建", "评测")),
+    "mcp-builder": ("MCP 服务开发", ("MCP", "开发", "集成")),
+    "internal-comms": ("内部沟通写作", ("写作", "沟通", "企业")),
+    "theme-factory": ("主题与配色工厂", ("设计", "主题", "配色")),
+    "frontend-design": ("前端界面设计", ("设计", "前端", "UI")),
+    "web-artifacts-builder": ("Web Artifact 构建", ("前端", "Artifact", "React")),
+    "webapp-testing": ("Web 应用测试", ("测试", "Playwright", "前端")),
+    "canvas-design": ("平面视觉设计", ("设计", "海报", "视觉")),
+    "algorithmic-art": ("生成式艺术", ("设计", "生成艺术", "p5.js")),
+}
+
+_VENDORED_EVALUATION = {
+    "minimax-docx": "请生成一份含标题层级与数据表格的 Word 文档，并在生成后重新解析文件核对结构。",
+    "minimax-xlsx": "请生成含汇总公式与数字格式的工作簿，并在生成后重新打开抽查公式与关键单元格。",
+    "minimax-pdf": "请生成一份带封面与正文设计的 PDF，并报告页数与版面结果。",
+    "pptx-generator": "请先用 PptxGenJS 生成含封面、目录与内容页的演示文稿，再重新解析核对页数。",
+    "color-font-skill": "请为一个演示文稿选择配色与字体搭配，说明选择依据并保持整套一致。",
+    "design-style-skill": "请为演示文稿选定一套统一的设计风格（圆角/间距规则）并说明映射关系。",
+    "ppt-editing-skill": "请在保留模板布局的前提下更新演示文稿内容，并说明改动范围。",
+    "slide-making-skill": "请根据给定材料规划并制作一套幻灯片，先给出大纲结构。",
+    "skill-creator": (
+        "请把一段重复流程整理成一个职责单一、触发条件明确的 Agent Skill，并给出评测用例。"
+    ),
+    "mcp-builder": "请为一个 HTTP API 设计 MCP 工具集，说明工具划分、输入契约与错误处理。",
+    "internal-comms": "请撰写一份包含进展、计划与问题的内部状态更新，语言简洁面向管理层。",
+    "theme-factory": "请为一份已有文档套用统一主题，说明所选配色与字体，并保持可读性。",
+    "frontend-design": "请设计一个界面方案，给出排版、配色与组件选择，避免模板化观感。",
+    "web-artifacts-builder": "请规划一个含状态管理的多组件前端 Artifact，说明组件拆分与数据流。",
+    "webapp-testing": "请为本地 Web 应用设计一组端到端交互测试，说明断言与失败定位方式。",
+    "canvas-design": "请设计一张静态视觉作品，说明构图、配色与字体选择，并说明输出方式。",
+    "algorithmic-art": "请设计一个基于 p5.js 的生成艺术方案，说明参数空间与随机种子控制。",
+}
+
+_VENDORED_SKILLS_REVISION = _SOURCE_REVISION
+
+
+@lru_cache(maxsize=1)
+def _vendored_packages() -> tuple[PlatformSkillPackage, ...]:
+    """Build vendored catalog entries once; hashing multi-MB assets is costly."""
+
+    from harness.studio.vendor_skills import load_vendored_skills
+
+    return tuple(_vendored_package(skill) for skill in load_vendored_skills())
+
+
+def _vendored_package(skill: DraftSkill) -> PlatformSkillPackage:
+    """Wrap a vendored Skill directory as a reviewed catalog package.
+
+    Vendored packages ship upstream files verbatim (including the upstream
+    LICENSE) and are attributed to the pinned upstream revision. Any package
+    carrying executable files is catalogued at ``review`` risk so operators can
+    see that it can run code in the sandbox.
+    """
+
+    from harness.studio.vendor_skills import VENDORED_SOURCES
+
+    source_url, source_revision, license_name = VENDORED_SOURCES[skill.name]
+    display_name, tags = _VENDORED_DISPLAY[skill.name]
+    digest = draft_skill_content_hash(skill)
+    source = DraftSkillSource(
+        packageId=skill.name,
+        packageRevision=1,
+        sourceUrl=source_url,
+        sourceRevision=source_revision,
+        license=license_name,
+        contentHash=digest,
+    )
+    has_scripts = any(
+        file.path.startswith("scripts/") or file.path.endswith((".py", ".js", ".mjs", ".sh"))
+        for file in skill.files
+    )
+    return PlatformSkillPackage(
+        packageId=skill.name,
+        revision=1,
+        displayName=display_name,
+        summary=f"{skill.description[:180]}（上游 {license_name}，随包附带许可证原文）",
+        tags=tags,
+        compatibleRuntimes=("claude-agent-sdk", "codex-app-server"),
+        license=license_name,
+        sourceUrl=source_url,
+        sourceRevision=source_revision,
+        contentHash=digest,
+        riskLevel="review" if has_scripts else "low",
+        findings=("包含沙箱内可执行文件：scripts/",) if has_scripts else (),
+        skill=skill.model_copy(update={"source": source}),
+        evaluationCases=(
+            EvalCase(
+                id=f"skill-{skill.name}-happy",
+                tags=("happy", f"skill:{skill.name}"),
+                prompt=_VENDORED_EVALUATION[skill.name],
+                expect=EvalExpectation(
+                    terminalStatuses=("succeeded",),
+                    maxDurationSeconds=120,
+                ),
+            ),
+        ),
+    )
+
+
 def default_platform_skill_catalog() -> PlatformSkillCatalog:
-    """Return the reviewed v1 catalog. Packages contain no scripts or network dependency."""
+    """Return the reviewed catalog of first-party and vendored Skill packages."""
 
     return PlatformSkillCatalog(
         revision=_CATALOG_REVISION,
         packages=(
+            *_vendored_packages(),
             _package(
                 package_id="evidence-reporting",
                 display_name="证据化报告",
@@ -313,8 +427,76 @@ def default_platform_skill_catalog() -> PlatformSkillCatalog:
                 source_url=_OPENAI_SKILL_CREATOR_URL,
                 source_revision=_OPENAI_SKILL_CREATOR_REVISION,
             ),
+
         ),
     )
+
+
+def platform_skill_catalog_listing() -> PlatformSkillCatalogListing:
+    """Project the reviewed catalog into the payload the catalog browser reads.
+
+    The full catalog embeds every vendored asset byte-for-byte, which made the
+    技能 page download ~10 MB before it could render a single row. The listing
+    keeps the governance fields and the Skill instructions and replaces each
+    file body with its metadata; installs still resolve content server-side
+    through ``platform_skill_package``.
+    """
+
+    catalog = default_platform_skill_catalog()
+    return PlatformSkillCatalogListing(
+        revision=catalog.revision,
+        packages=tuple(
+            PlatformSkillCatalogEntry(
+                packageId=package.package_id,
+                revision=package.revision,
+                displayName=package.display_name,
+                summary=package.summary,
+                tags=package.tags,
+                compatibleRuntimes=package.compatible_runtimes,
+                license=package.license,
+                sourceUrl=package.source_url,
+                sourceRevision=package.source_revision,
+                contentHash=package.content_hash,
+                riskLevel=package.risk_level,
+                findings=package.findings,
+                evaluationCaseCount=len(package.evaluation_cases),
+                skill=PlatformSkillListing(
+                    name=package.skill.name,
+                    description=package.skill.description,
+                    instructions=package.skill.instructions,
+                    fileCount=(
+                        package.skill.file_count
+                        if package.skill.file_count is not None
+                        else len(package.skill.files)
+                    ),
+                    files=tuple(
+                        PlatformSkillListingFile(
+                            path=file.path,
+                            binary=file.binary,
+                            sizeBytes=_listing_file_size(file),
+                        )
+                        for file in package.skill.files
+                    ),
+                ),
+            )
+            for package in catalog.packages
+        ),
+    )
+
+
+def _listing_file_size(file: DraftSkillFile) -> int:
+    """Byte size for a catalog-listing file without decoding its payload."""
+
+    if file.size_bytes is not None:
+        return file.size_bytes
+    if file.content is not None:
+        return len(file.content.encode("utf-8"))
+    if file.content_base64 is not None:
+        # Base64 encodes 3 bytes per 4 characters, minus one per padding '='.
+        encoded = file.content_base64
+        padding = len(encoded) - len(encoded.rstrip("="))
+        return max(len(encoded) * 3 // 4 - padding, 0)
+    return 0
 
 
 def platform_skill_package(package_id: str, package_revision: int) -> PlatformSkillPackage:

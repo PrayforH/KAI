@@ -212,7 +212,9 @@ class AgentManifest(ManifestModel):
 
 class SkillFileSnapshot(ManifestModel):
     path: str = Field(min_length=1)
-    content_base64: str = Field(min_length=1)
+    # Zero-byte files are legitimate Skill assets (Python package markers,
+    # placeholders); base64 of empty content is the empty string.
+    content_base64: str = Field(min_length=0)
     sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     size_bytes: int = Field(ge=0)
 

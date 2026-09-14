@@ -874,7 +874,7 @@ async def test_studio_lists_and_installs_a_platform_skill_as_a_draft_snapshot() 
 
     assert catalog.status_code == 200, catalog.text
     assert catalog.json()["revision"] == 1
-    assert len(catalog.json()["packages"]) == 5
+    assert len(catalog.json()["packages"]) == 22
     assert created.json()["spec"]["skills"] == []
     assert installed.status_code == 200, installed.text
     installed_skill = installed.json()["draft"]["spec"]["skills"][0]
@@ -893,6 +893,47 @@ async def test_studio_lists_and_installs_a_platform_skill_as_a_draft_snapshot() 
         skill_md = archive.read(f"skills/{package['skill']['name']}/SKILL.md").decode()
     assert package["packageId"] in skill_md
     assert package["contentHash"] in skill_md
+
+
+@pytest.mark.asyncio
+async def test_skill_references_resolve_into_bundle_without_snapshot_install() -> None:
+    headers = {
+        "Authorization": f"Bearer {SERVICE_TOKEN}",
+        "X-Tenant-ID": "tenant-a",
+        "X-User-ID": "builder-a",
+    }
+    async with AsyncClient(transport=ASGITransport(app=app()), base_url="http://test") as client:
+        created = await client.post(
+            "/v1/studio/drafts",
+            headers=headers,
+            json=draft_request("skill-reference-agent"),
+        )
+        updated = await client.put(
+            f"/v1/studio/drafts/{created.json()['draftId']}/skills/references",
+            headers=headers,
+            json={"expectedRevision": 1, "references": ["minimax-docx", "minimax-pdf"]},
+        )
+        bundle = await client.get(
+            f"/v1/studio/drafts/{created.json()['draftId']}/bundle",
+            headers=headers,
+        )
+
+    assert created.status_code == 201, created.text
+    assert updated.status_code == 200, updated.text
+    body = updated.json()
+    assert body["spec"]["skillReferences"] == ["minimax-docx", "minimax-pdf"]
+    # References stay declarative: no snapshot copies appear in the draft spec.
+    assert body["spec"]["skills"] == []
+    with ZipFile(BytesIO(bundle.content)) as archive:
+        docx_skill = archive.read("skills/minimax-docx/SKILL.md").decode()
+        manifest = __import__("yaml").safe_load(archive.read("agent.yaml").decode())
+    assert "OpenXML" in docx_skill or "docx" in docx_skill
+    resolved = [
+        entry
+        for entry in manifest["spec"]["skills"]
+        if entry.endswith(("minimax-docx", "minimax-pdf"))
+    ]
+    assert len(resolved) == 2
 
 
 @pytest.mark.asyncio

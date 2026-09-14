@@ -7,6 +7,7 @@ from typing import Protocol
 from harness.core.errors import ConflictError, NotFoundError
 from harness.knowledge.models import (
     KnowledgeBase,
+    KnowledgeBaseMember,
     KnowledgeChunk,
     KnowledgeSnapshot,
     KnowledgeSource,
@@ -23,6 +24,8 @@ class KnowledgeRepository(Protocol):
 
     async def compare_and_set_base(self, expected_revision: int, value: KnowledgeBase) -> bool: ...
 
+    async def delete_base(self, tenant_id: str, reference: str) -> bool: ...
+
     async def add_source(self, value: KnowledgeSource) -> None: ...
 
     async def get_source(self, tenant_id: str, reference: str) -> KnowledgeSource: ...
@@ -32,6 +35,12 @@ class KnowledgeRepository(Protocol):
     async def compare_and_set_source(
         self, expected_revision: int, value: KnowledgeSource
     ) -> bool: ...
+
+    async def delete_source(self, tenant_id: str, reference: str) -> bool: ...
+
+    async def delete_base_members(self, tenant_id: str, reference: str) -> int: ...
+
+    async def delete_source_artifacts(self, tenant_id: str, reference: str) -> int: ...
 
     async def add_sync(self, value: KnowledgeSyncRun) -> None: ...
 
@@ -73,6 +82,21 @@ class KnowledgeRepository(Protocol):
         snapshot_ids: frozenset[str],
     ) -> Sequence[KnowledgeChunk]: ...
 
+    async def add_member(self, value: KnowledgeBaseMember) -> None: ...
+
+    async def get_member(self, tenant_id: str, member_id: str) -> KnowledgeBaseMember: ...
+
+    async def list_members(
+        self,
+        tenant_id: str,
+        *,
+        knowledge_base_reference: str | None = None,
+    ) -> Sequence[KnowledgeBaseMember]: ...
+
+    async def put_member(self, value: KnowledgeBaseMember) -> None: ...
+
+    async def delete_member(self, tenant_id: str, member_id: str) -> bool: ...
+
 
 class InMemoryKnowledgeRepository:
     def __init__(self) -> None:
@@ -81,6 +105,7 @@ class InMemoryKnowledgeRepository:
         self._syncs: dict[tuple[str, str], KnowledgeSyncRun] = {}
         self._snapshots: dict[tuple[str, str], KnowledgeSnapshot] = {}
         self._chunks: dict[tuple[str, str, str], KnowledgeChunk] = {}
+        self._members: dict[tuple[str, str], KnowledgeBaseMember] = {}
         self._lock = asyncio.Lock()
 
     async def add_base(self, value: KnowledgeBase) -> None:
@@ -115,6 +140,10 @@ class InMemoryKnowledgeRepository:
             self._bases[key] = value
             return True
 
+    async def delete_base(self, tenant_id: str, reference: str) -> bool:
+        async with self._lock:
+            return self._bases.pop((tenant_id, reference), None) is not None
+
     async def add_source(self, value: KnowledgeSource) -> None:
         key = (value.tenant_id, value.reference)
         async with self._lock:
@@ -146,6 +175,47 @@ class InMemoryKnowledgeRepository:
                 return False
             self._sources[key] = value
             return True
+
+    async def delete_source(self, tenant_id: str, reference: str) -> bool:
+        async with self._lock:
+            return self._sources.pop((tenant_id, reference), None) is not None
+
+    async def delete_base_members(self, tenant_id: str, reference: str) -> int:
+        async with self._lock:
+            stale = [
+                member_id
+                for (stored_tenant, member_id), item in self._members.items()
+                if stored_tenant == tenant_id
+                and item.knowledge_base_reference == reference
+            ]
+            for member_id in stale:
+                self._members.pop((tenant_id, member_id), None)
+            return len(stale)
+
+    async def delete_source_artifacts(self, tenant_id: str, reference: str) -> int:
+        async with self._lock:
+            snapshot_ids = {
+                snapshot_id
+                for (stored_tenant, snapshot_id), item in self._snapshots.items()
+                if stored_tenant == tenant_id and item.source_reference == reference
+            }
+            for snapshot_id in snapshot_ids:
+                self._snapshots.pop((tenant_id, snapshot_id), None)
+            stale_chunks = [
+                chunk_key
+                for chunk_key in self._chunks
+                if chunk_key[0] == tenant_id and chunk_key[1] in snapshot_ids
+            ]
+            for chunk_key in stale_chunks:
+                self._chunks.pop(chunk_key, None)
+            stale_syncs = [
+                sync_id
+                for (stored_tenant, sync_id), item in self._syncs.items()
+                if stored_tenant == tenant_id and item.source_reference == reference
+            ]
+            for sync_id in stale_syncs:
+                self._syncs.pop((tenant_id, sync_id), None)
+            return len(snapshot_ids) + len(stale_chunks) + len(stale_syncs)
 
     async def add_sync(self, value: KnowledgeSyncRun) -> None:
         key = (value.tenant_id, value.sync_id)
@@ -265,3 +335,51 @@ class InMemoryKnowledgeRepository:
                 ),
             )
         )
+
+    async def add_member(self, value: KnowledgeBaseMember) -> None:
+        key = (value.tenant_id, value.member_id)
+        if key in self._members:
+            raise ConflictError(f"knowledge base member already exists: {value.member_id}")
+        duplicate = [
+            item
+            for item in self._members.values()
+            if item.tenant_id == value.tenant_id
+            and item.knowledge_base_reference == value.knowledge_base_reference
+            and item.subject_type is value.subject_type
+            and item.subject_id == value.subject_id
+        ]
+        if duplicate:
+            raise ConflictError("knowledge base member subject already granted")
+        self._members[key] = value
+
+    async def get_member(self, tenant_id: str, member_id: str) -> KnowledgeBaseMember:
+        try:
+            return self._members[(tenant_id, member_id)]
+        except KeyError as error:
+            raise NotFoundError(f"knowledge base member not found: {member_id}") from error
+
+    async def list_members(
+        self,
+        tenant_id: str,
+        *,
+        knowledge_base_reference: str | None = None,
+    ) -> Sequence[KnowledgeBaseMember]:
+        values = [
+            item
+            for (item_tenant, _), item in sorted(self._members.items())
+            if item_tenant == tenant_id
+            and (
+                knowledge_base_reference is None
+                or item.knowledge_base_reference == knowledge_base_reference
+            )
+        ]
+        return tuple(values)
+
+    async def put_member(self, value: KnowledgeBaseMember) -> None:
+        key = (value.tenant_id, value.member_id)
+        if key not in self._members:
+            raise NotFoundError(f"knowledge base member not found: {value.member_id}")
+        self._members[key] = value
+
+    async def delete_member(self, tenant_id: str, member_id: str) -> bool:
+        return self._members.pop((tenant_id, member_id), None) is not None

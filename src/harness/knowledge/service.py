@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime
@@ -11,27 +12,50 @@ from harness.knowledge.connectors import (
     KnowledgeConnectorError,
     KnowledgeConnectorRegistry,
 )
+from harness.knowledge.directory import IdentityDirectoryPort
 from harness.knowledge.models import (
+    AddKnowledgeMembersRequest,
+    AddKnowledgeMembersResult,
     CreateKnowledgeBaseRequest,
     CreateKnowledgeSourceRequest,
     KnowledgeAcl,
     KnowledgeBase,
+    KnowledgeBaseEngine,
+    KnowledgeBaseMember,
     KnowledgeChunk,
     KnowledgeCitation,
+    KnowledgeDocumentChunk,
+    KnowledgeDocumentStatus,
+    KnowledgeDocumentTable,
+    KnowledgeMemberRole,
+    KnowledgeMemberSubject,
     KnowledgeSearchHit,
     KnowledgeSnapshot,
     KnowledgeSnapshotBinding,
     KnowledgeSource,
     KnowledgeSourceHealth,
+    KnowledgeSourceKind,
     KnowledgeSyncRun,
     KnowledgeSyncStatus,
     KnowledgeVisibility,
+    KnowledgeWikiGraph,
+    KnowledgeWikiGraphNode,
+    KnowledgeWikiPage,
+    KnowledgeWikiStats,
     ReplaceKnowledgeBaseRequest,
     ReplaceKnowledgeSourceRequest,
     SearchKnowledgeResponse,
+    WeknoraKnowledgeConfig,
+)
+from harness.knowledge.ports import (
+    EngineBaseConfig,
+    KnowledgeEngineError,
+    KnowledgeEngineNotConfiguredError,
+    KnowledgeEnginePort,
 )
 from harness.knowledge.repositories import KnowledgeRepository
 from harness.knowledge.search import HybridKnowledgeSearch, tokenize
+from harness.knowledge.spreadsheet import is_spreadsheet, parse_spreadsheet
 
 TeamGrantChecker = Callable[[str, str, tuple[str, ...], str], Awaitable[bool]]
 
@@ -53,6 +77,8 @@ class KnowledgeService:
         chunk_characters: int = 1_600,
         chunk_overlap: int = 240,
         team_grant_checker: TeamGrantChecker | None = None,
+        engine: KnowledgeEnginePort | None = None,
+        directory: IdentityDirectoryPort | None = None,
     ) -> None:
         if chunk_overlap >= chunk_characters:
             raise ValueError("knowledge chunk overlap must be smaller than chunk size")
@@ -65,6 +91,8 @@ class KnowledgeService:
         self._chunk_characters = chunk_characters
         self._chunk_overlap = chunk_overlap
         self._team_grant_checker = team_grant_checker
+        self._engine = engine
+        self._directory = directory
 
     def configure_team_grant_checker(self, checker: TeamGrantChecker) -> None:
         if self._team_grant_checker is not None:
@@ -83,12 +111,45 @@ class KnowledgeService:
             owner_user_id=actor_id,
         )
         now = self._clock()
+        engine_ref = ""
+        source_references = tuple(request.source_references)
+        if request.engine is KnowledgeBaseEngine.WEKNORA:
+            engine_ref = await self._engine_create_base(
+                request.display_name,
+                request.description,
+                request.kb_type.value,
+                config=request.engine_config(),
+            )
+            # Engine-backed bases get one 1:1 link source so the existing
+            # ACL, sync-mirror and proxy paths keep operating per source.
+            link_reference = request.reference
+            await self.repository.add_source(
+                KnowledgeSource(
+                    tenantId=tenant_id,
+                    reference=link_reference,
+                    displayName=request.display_name,
+                    description=request.description,
+                    kind=KnowledgeSourceKind.WEKNORA,
+                    config=WeknoraKnowledgeConfig(weknoraBaseId=engine_ref),
+                    acl=self._personal_acl(actor_id, KnowledgeAcl()),
+                    revision=1,
+                    health=KnowledgeSourceHealth.PENDING,
+                    createdBy=actor_id,
+                    updatedBy=actor_id,
+                    createdAt=now,
+                    updatedAt=now,
+                )
+            )
+            source_references = (link_reference,)
         value = KnowledgeBase(
             tenantId=tenant_id,
             reference=request.reference,
             displayName=request.display_name,
             description=request.description,
-            sourceReferences=request.source_references,
+            sourceReferences=source_references,
+            kbType=request.kb_type,
+            engine=request.engine,
+            engineRef=engine_ref,
             revision=1,
             createdBy=actor_id,
             updatedBy=actor_id,
@@ -101,8 +162,16 @@ class KnowledgeService:
             actor_id,
             "knowledge.base.create",
             value.reference,
-            {"source_count": len(value.source_references)},
+            {
+                "source_count": len(value.source_references),
+                "engine": value.engine.value,
+                "kb_type": value.kb_type.value,
+            },
         )
+        if engine_ref:
+            # Mirror remote ingestion state so the link source becomes usable
+            # (and the console sees documents) right after creation.
+            await self.sync_source(tenant_id, actor_id, request.reference)
         return value
 
     async def replace_base(
@@ -141,15 +210,63 @@ class KnowledgeService:
         )
         return updated
 
+    async def delete_base(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+    ) -> None:
+        base = await self.repository.get_base(tenant_id, reference)
+        await self._require_editor(tenant_id, actor_id, reference)
+        # Delete the remote base first: if WeKnora is unreachable the local
+        # rows stay intact instead of stranding a populated remote base.
+        if base.engine is KnowledgeBaseEngine.WEKNORA:
+            remote_id = base.engine_ref
+            if not remote_id:
+                source = await self.repository.get_source(tenant_id, reference)
+                remote_id = getattr(source.config, "weknora_base_id", "")
+            if remote_id:
+                await self._require_engine().delete_base(remote_id)
+        await self.repository.delete_base_members(tenant_id, reference)
+        try:
+            await self.repository.get_source(tenant_id, reference)
+        except NotFoundError:
+            pass
+        else:
+            await self.repository.delete_source_artifacts(tenant_id, reference)
+            await self.repository.delete_source(tenant_id, reference)
+        await self.repository.delete_base(tenant_id, reference)
+        await self._record(
+            tenant_id,
+            actor_id,
+            "knowledge.base.delete",
+            reference,
+            {"engine": base.engine.value},
+        )
+
     async def list_bases(
         self,
         tenant_id: str,
         owner_user_id: str | None = None,
     ) -> Sequence[KnowledgeBase]:
         values = await self.repository.list_bases(tenant_id)
+        # Refresh engine-backed counts concurrently; the list is small and a
+        # stale badge is worse than a couple of extra remote reads.
+        values = tuple(
+            await asyncio.gather(*(self._with_document_count(tenant_id, item) for item in values))
+        )
         if owner_user_id is None:
             return values
-        return tuple(item for item in values if item.created_by == owner_user_id)
+        member_references = {
+            item.knowledge_base_reference
+            for item in await self.repository.list_members(tenant_id)
+            if item.subject_type is KnowledgeMemberSubject.USER and item.subject_id == owner_user_id
+        }
+        return tuple(
+            item
+            for item in values
+            if item.created_by == owner_user_id or item.reference in member_references
+        )
 
     async def get_base(
         self,
@@ -318,6 +435,8 @@ class KnowledgeService:
             startedAt=now,
         )
         await self.repository.add_sync(sync)
+        if source.kind.value == "weknora":
+            return await self._sync_weknora_source(source, sync)
         try:
             result = await self._connectors.resolve(source.kind).sync(
                 source.config,
@@ -493,8 +612,22 @@ class KnowledgeService:
                         tenant_id, actor_id, team_ids, base_reference, source
                     )
                     or source.health is not KnowledgeSourceHealth.HEALTHY
-                    or source.active_snapshot_id is None
                 ):
+                    continue
+                if source.kind.value == "weknora":
+                    # Engine-backed sources hold no local snapshot; retrieval is
+                    # delegated to the external engine at search time.
+                    seen.add(key)
+                    bindings.append(
+                        KnowledgeSnapshotBinding(
+                            knowledgeBaseReference=base_reference,
+                            sourceReference=source_reference,
+                            snapshotId=f"weknora:{source_reference}",
+                            trust=source.result_trust,
+                        )
+                    )
+                    continue
+                if source.active_snapshot_id is None:
                     continue
                 seen.add(key)
                 bindings.append(
@@ -545,7 +678,9 @@ class KnowledgeService:
                 source,
             ):
                 allowed.append(binding)
-        snapshots = frozenset(item.snapshot_id for item in allowed)
+        snapshots = frozenset(
+            item.snapshot_id for item in allowed if not item.snapshot_id.startswith("weknora:")
+        )
         chunks = await self.repository.list_chunks(tenant_id, snapshots)
         ranked = self._search.search(chunks, query, limit=limit)
         binding_by_pair = {(item.source_reference, item.snapshot_id): item for item in allowed}
@@ -572,10 +707,67 @@ class KnowledgeService:
                     matchedTerms=item.matched_terms,
                 )
             )
+        hits.extend(
+            await self._engine_search_hits(tenant_id, allowed, source_by_reference, query, limit)
+        )
+        hits.sort(key=lambda item: item.score, reverse=True)
+        hits = hits[:limit]
         return SearchKnowledgeResponse(
             hits=tuple(hits),
             searchedSnapshotIds=tuple(sorted(snapshots)),
         )
+
+    async def _engine_search_hits(
+        self,
+        tenant_id: str,
+        allowed: Sequence[KnowledgeSnapshotBinding],
+        source_by_reference: dict[str, KnowledgeSource],
+        query: str,
+        limit: int,
+    ) -> list[KnowledgeSearchHit]:
+        engine_bindings = [item for item in allowed if item.snapshot_id.startswith("weknora:")]
+        if not engine_bindings:
+            return []
+        if self._engine is None:
+            raise KnowledgeEngineError("weknora knowledge engine is not configured")
+        base_ids: list[str] = []
+        base_by_id: dict[str, KnowledgeSnapshotBinding] = {}
+        for binding in engine_bindings:
+            source = source_by_reference[binding.source_reference]
+            config = source.config
+            remote_id = getattr(config, "weknora_base_id", "")
+            if not remote_id or remote_id in base_by_id:
+                continue
+            base_ids.append(remote_id)
+            base_by_id[remote_id] = binding
+        engine_hits = await self._engine.search(base_ids, query, limit=limit)
+        top = max((item.score for item in engine_hits), default=0.0)
+        hits: list[KnowledgeSearchHit] = []
+        for item in engine_hits:
+            binding = base_by_id.get(item.knowledge_base_id)
+            if binding is None:
+                continue
+            source = source_by_reference[binding.source_reference]
+            normalized = item.score / top if top > 0 else 0.0
+            hits.append(
+                KnowledgeSearchHit(
+                    content=item.content,
+                    score=normalized,
+                    trust=binding.trust,
+                    citation=KnowledgeCitation(
+                        knowledgeBaseReference=binding.knowledge_base_reference,
+                        sourceReference=binding.source_reference,
+                        sourceDisplayName=source.display_name,
+                        snapshotId=binding.snapshot_id,
+                        documentId=item.document_id,
+                        chunkId=item.chunk_id,
+                        title=item.document_title,
+                        uri="",
+                    ),
+                    matchedTerms=(),
+                )
+            )
+        return hits
 
     async def _allows_source(
         self,
@@ -588,6 +780,8 @@ class KnowledgeService:
         if source.created_by == actor_id:
             return True
         if source.acl.visibility is KnowledgeVisibility.RESTRICTED and source.acl.allows(actor_id):
+            return True
+        if await self._member_role(tenant_id, actor_id, base_reference) is not None:
             return True
         return bool(
             team_ids
@@ -604,6 +798,8 @@ class KnowledgeService:
     ) -> bool:
         if base.created_by == actor_id:
             return True
+        if await self._member_role(tenant_id, actor_id, base.reference) is not None:
+            return True
         return bool(
             team_ids
             and self._team_grant_checker is not None
@@ -614,6 +810,27 @@ class KnowledgeService:
                 base.reference,
             )
         )
+
+    async def _require_editor(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+    ) -> None:
+        """Writes require the creator or an editor grant; viewers are rejected."""
+        try:
+            base = await self.repository.get_base(tenant_id, reference)
+        except NotFoundError:
+            # Standalone engine source without a owning base record.
+            source = await self.repository.get_source(tenant_id, reference)
+            if source.created_by != actor_id:
+                raise NotFoundError(f"knowledge source not found: {reference}") from None
+            return
+        if base.created_by == actor_id:
+            return
+        role = await self._member_role(tenant_id, actor_id, reference)
+        if role is None or role.rank < KnowledgeMemberRole.EDITOR.rank:
+            raise NotFoundError(f"Knowledge Base not found: {reference}")
 
     async def get_visible_chunk(
         self,
@@ -650,6 +867,399 @@ class KnowledgeService:
     ) -> None:
         for reference in references:
             await self.repository.get_base(tenant_id, reference)
+
+    # --- engine-backed (WeKnora) knowledge bases --------------------------
+
+    async def _refresh_document_count(
+        self,
+        tenant_id: str,
+        reference: str,
+        source: KnowledgeSource,
+    ) -> None:
+        """Persist the live document count so the console card stays accurate.
+
+        WeKnora's document list is the source of truth; the sync checkpoint is
+        only a cache, so a create/delete must refresh it instead of waiting for
+        the next manual sync.
+        """
+        remote_id = getattr(source.config, "weknora_base_id", "")
+        if not remote_id:
+            return
+        documents = await self._require_engine().list_documents(remote_id)
+        checkpoint = dict(source.checkpoint)
+        checkpoint["documents"] = len(documents)
+        if checkpoint == source.checkpoint:
+            return
+        updated = source.model_copy(
+            update={
+                "revision": source.revision + 1,
+                "checkpoint": checkpoint,
+                "updated_at": self._clock(),
+            }
+        )
+        await self.repository.compare_and_set_source(source.revision, updated)
+
+    async def _with_document_count(
+        self,
+        tenant_id: str,
+        base: KnowledgeBase,
+    ) -> KnowledgeBase:
+        """Attach the engine's live document count.
+
+        Documents can be added directly in WeKnora, so the cached checkpoint is
+        only a fallback when the remote read fails.
+        """
+        if base.engine is not KnowledgeBaseEngine.WEKNORA or not base.engine_ref:
+            return base
+        try:
+            source = await self.repository.get_source(tenant_id, base.reference)
+        except NotFoundError:
+            return base
+        cached = source.checkpoint.get("documents")
+        fallback = cached if isinstance(cached, int) and cached >= 0 else 0
+        remote_id = getattr(source.config, "weknora_base_id", "")
+        if self._engine is None or not remote_id:
+            return base.model_copy(update={"document_count": fallback})
+        try:
+            documents = await self._engine.list_documents(remote_id)
+        except KnowledgeEngineError:
+            return base.model_copy(update={"document_count": fallback})
+        count = len(documents)
+        if count != fallback:
+            await self._refresh_document_count(tenant_id, base.reference, source)
+        return base.model_copy(update={"document_count": count})
+
+    def _require_engine(self) -> KnowledgeEnginePort:
+        if self._engine is None:
+            raise KnowledgeEngineNotConfiguredError("weknora knowledge engine is not configured")
+        return self._engine
+
+    async def _engine_create_base(
+        self,
+        name: str,
+        description: str,
+        kb_type: str,
+        *,
+        config: EngineBaseConfig | None = None,
+    ) -> str:
+        return await self._require_engine().create_base(
+            name=name,
+            description=description,
+            kb_type=kb_type,
+            config=config,
+        )
+
+    async def _sync_weknora_source(
+        self,
+        source: KnowledgeSource,
+        sync: KnowledgeSyncRun,
+    ) -> KnowledgeSyncRun:
+        """Mirror remote ingestion status into a sync run; chunks stay remote."""
+        config = source.config
+        remote_base_id = getattr(config, "weknora_base_id", "")
+        try:
+            documents = await self._require_engine().list_documents(remote_base_id)
+        except KnowledgeEngineError as error:
+            completed_at = self._clock()
+            failed = sync.model_copy(
+                update={
+                    "status": KnowledgeSyncStatus.FAILED,
+                    "error_code": type(error).__name__,
+                    "error_message": str(error)[:1_000],
+                    "completed_at": completed_at,
+                }
+            )
+            await self.repository.put_sync(failed)
+            degraded = source.model_copy(
+                update={
+                    "revision": source.revision + 1,
+                    "health": KnowledgeSourceHealth.DEGRADED,
+                    "last_sync_id": sync.sync_id,
+                    "last_sync_at": completed_at,
+                    "last_error": str(error)[:1_000],
+                    "updated_at": completed_at,
+                }
+            )
+            await self.repository.compare_and_set_source(source.revision, degraded)
+            return failed
+        completed_at = self._clock()
+        parse_completed = sum(1 for item in documents if item.parse_status == "completed")
+        completed = sync.model_copy(
+            update={
+                "status": KnowledgeSyncStatus.SUCCEEDED,
+                "checkpoint_after": {
+                    "documents": len(documents),
+                    "parse_completed": parse_completed,
+                },
+                "documents_seen": len(documents),
+                "completed_at": completed_at,
+            }
+        )
+        updated_source = source.model_copy(
+            update={
+                "revision": source.revision + 1,
+                "health": KnowledgeSourceHealth.HEALTHY,
+                "checkpoint": {
+                    "documents": len(documents),
+                    "parse_completed": parse_completed,
+                },
+                "last_sync_id": sync.sync_id,
+                "last_sync_at": completed_at,
+                "last_error": None,
+                "updated_at": completed_at,
+            }
+        )
+        if not await self.repository.compare_and_set_source(source.revision, updated_source):
+            raise ConflictError("knowledge source changed while sync completed")
+        await self.repository.put_sync(completed)
+        return completed
+
+    async def _accessible_weknora_source(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+    ) -> KnowledgeSource:
+        source = await self.repository.get_source(tenant_id, reference)
+        if source.kind.value != "weknora":
+            raise NotFoundError(f"knowledge source not found: {reference}")
+        if source.created_by == actor_id:
+            return source
+        if source.acl.visibility is KnowledgeVisibility.TENANT or source.acl.allows(actor_id):
+            return source
+        # Engine bases keep a 1:1 link source named after the base, so a member
+        # grant on the base also unlocks its documents, chunks and wiki.
+        if await self._member_role(tenant_id, actor_id, reference) is not None:
+            return source
+        raise NotFoundError(f"knowledge source not found: {reference}")
+
+    async def list_source_documents(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+    ) -> list[KnowledgeDocumentStatus]:
+        source = await self._accessible_weknora_source(tenant_id, actor_id, reference)
+        remote_id = getattr(source.config, "weknora_base_id", "")
+        documents = await self._require_engine().list_documents(remote_id)
+        return [
+            KnowledgeDocumentStatus(
+                tenantId=tenant_id,
+                sourceReference=reference,
+                documentId=item.document_id,
+                title=item.title,
+                parseStatus=item.parse_status,
+                summaryStatus=item.summary_status,
+                fileType=item.file_type,
+                fileSize=item.file_size,
+                enabled=item.enabled,
+                createdAt=item.created_at,
+                description=item.description,
+            )
+            for item in documents
+        ]
+
+    async def create_source_document(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+        title: str,
+        content: str,
+    ) -> KnowledgeDocumentStatus:
+        await self._require_editor(tenant_id, actor_id, reference)
+        source = await self.repository.get_source(tenant_id, reference)
+        remote_id = getattr(source.config, "weknora_base_id", "")
+        document_id = await self._require_engine().create_manual_document(
+            remote_id,
+            title=title,
+            content=content,
+        )
+        await self._record(
+            tenant_id,
+            actor_id,
+            "knowledge.document.create",
+            reference,
+            {"document_id": document_id, "kind": "manual"},
+        )
+        await self._refresh_document_count(tenant_id, reference, source)
+        return await self.get_source_document(tenant_id, actor_id, reference, document_id)
+
+    async def upload_source_document(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+        filename: str,
+        content: bytes,
+    ) -> KnowledgeDocumentStatus:
+        await self._require_editor(tenant_id, actor_id, reference)
+        source = await self.repository.get_source(tenant_id, reference)
+        remote_id = getattr(source.config, "weknora_base_id", "")
+        document_id = await self._require_engine().upload_document(
+            remote_id,
+            filename=filename,
+            content=content,
+        )
+        await self._record(
+            tenant_id,
+            actor_id,
+            "knowledge.document.create",
+            reference,
+            {"document_id": document_id, "kind": "file", "filename": filename[:200]},
+        )
+        await self._refresh_document_count(tenant_id, reference, source)
+        return await self.get_source_document(tenant_id, actor_id, reference, document_id)
+
+    async def get_source_document(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+        document_id: str,
+    ) -> KnowledgeDocumentStatus:
+        await self._accessible_weknora_source(tenant_id, actor_id, reference)
+        item = await self._require_engine().get_document(document_id)
+        return KnowledgeDocumentStatus(
+            tenantId=tenant_id,
+            sourceReference=reference,
+            documentId=item.document_id,
+            title=item.title,
+            parseStatus=item.parse_status,
+            summaryStatus=item.summary_status,
+            fileType=item.file_type,
+            fileSize=item.file_size,
+            enabled=item.enabled,
+            createdAt=item.created_at,
+            description=item.description,
+        )
+
+    async def delete_source_document(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+        document_id: str,
+    ) -> None:
+        await self._require_editor(tenant_id, actor_id, reference)
+        source = await self.repository.get_source(tenant_id, reference)
+        remote_id = getattr(source.config, "weknora_base_id", "")
+        await self._require_engine().delete_document(remote_id, document_id)
+        await self._record(
+            tenant_id,
+            actor_id,
+            "knowledge.document.delete",
+            reference,
+            {"document_id": document_id},
+        )
+        await self._refresh_document_count(tenant_id, reference, source)
+
+    async def reparse_source_document(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+        document_id: str,
+    ) -> None:
+        await self._require_editor(tenant_id, actor_id, reference)
+        source = await self.repository.get_source(tenant_id, reference)
+        remote_id = getattr(source.config, "weknora_base_id", "")
+        await self._require_engine().reparse_document(remote_id, document_id)
+        await self._record(
+            tenant_id,
+            actor_id,
+            "knowledge.document.reparse",
+            reference,
+            {"document_id": document_id},
+        )
+
+    async def list_source_chunks(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+        document_id: str,
+    ) -> list[KnowledgeDocumentChunk]:
+        await self._accessible_weknora_source(tenant_id, actor_id, reference)
+        chunks = await self._require_engine().list_chunks(document_id)
+        title = document_id
+        if chunks:
+            try:
+                document = await self._require_engine().get_document(document_id)
+                title = document.title
+            except KnowledgeEngineError:
+                title = document_id
+        return [
+            KnowledgeDocumentChunk(
+                tenantId=tenant_id,
+                sourceReference=reference,
+                documentId=document_id,
+                chunkId=item.chunk_id,
+                title=title,
+                content=item.content,
+                seq=item.seq,
+            )
+            for item in chunks
+        ]
+
+    async def get_source_document_table(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+        document_id: str,
+    ) -> KnowledgeDocumentTable:
+        """Render a spreadsheet document as a cell grid.
+
+        WeKnora's chunk text flattens spreadsheets to ``A: value`` lines, so the
+        table is rebuilt from the downloadable original file.
+        """
+        await self._accessible_weknora_source(tenant_id, actor_id, reference)
+        document = await self._require_engine().get_document(document_id)
+        filename = document.title or document.document_id
+        if not is_spreadsheet(filename):
+            raise ConflictError("document is not a spreadsheet")
+        content = await self._require_engine().download_document(document_id)
+        grid = parse_spreadsheet(filename, content)
+        if grid is None:
+            raise ConflictError("spreadsheet could not be parsed")
+        return KnowledgeDocumentTable(
+            tenantId=tenant_id,
+            sourceReference=reference,
+            documentId=document_id,
+            title=document.title,
+            sheet=grid.sheet,
+            rows=grid.rows,
+            truncated=grid.truncated,
+            extraSheets=grid.extra_sheets,
+        )
+
+    async def get_source_chunk(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+        chunk_id: str,
+    ) -> KnowledgeDocumentChunk:
+        await self._accessible_weknora_source(tenant_id, actor_id, reference)
+        chunk = await self._require_engine().get_chunk(chunk_id)
+        if chunk is None:
+            raise NotFoundError("knowledge chunk not found")
+        title = chunk.document_id
+        try:
+            document = await self._require_engine().get_document(chunk.document_id)
+            title = document.title
+        except KnowledgeEngineError:
+            title = chunk.document_id
+        return KnowledgeDocumentChunk(
+            tenantId=tenant_id,
+            sourceReference=reference,
+            documentId=chunk.document_id,
+            chunkId=chunk.chunk_id,
+            title=title,
+            content=chunk.content,
+            seq=chunk.seq,
+        )
 
     def _chunk_documents(
         self,
@@ -757,6 +1367,345 @@ class KnowledgeService:
         if value.created_by != owner_user_id:
             raise NotFoundError(f"knowledge source not found: {reference}")
         return value
+
+    async def list_wiki_pages(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+    ) -> list[KnowledgeWikiPage]:
+        source = await self._accessible_weknora_source(tenant_id, actor_id, reference)
+        remote_id = getattr(source.config, "weknora_base_id", "")
+        pages = await self._require_engine().list_wiki_pages(remote_id)
+        return [
+            KnowledgeWikiPage(
+                slug=item.slug,
+                title=item.title,
+                pageType=item.page_type,
+                content=item.content,
+                summary=item.summary,
+                aliases=item.aliases,
+                categoryPath=item.category_path,
+                folderId=item.folder_id,
+            )
+            for item in pages
+        ]
+
+    async def get_wiki_page(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+        slug: str,
+    ) -> KnowledgeWikiPage:
+        source = await self._accessible_weknora_source(tenant_id, actor_id, reference)
+        remote_id = getattr(source.config, "weknora_base_id", "")
+        item = await self._require_engine().get_wiki_page(remote_id, slug)
+        return KnowledgeWikiPage(
+            slug=item.slug,
+            title=item.title,
+            pageType=item.page_type,
+            content=item.content,
+            summary=item.summary,
+            aliases=item.aliases,
+            categoryPath=item.category_path,
+            folderId=item.folder_id,
+        )
+
+    async def search_wiki_pages(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+        query: str,
+        *,
+        limit: int = 20,
+    ) -> list[KnowledgeWikiPage]:
+        source = await self._accessible_weknora_source(tenant_id, actor_id, reference)
+        remote_id = getattr(source.config, "weknora_base_id", "")
+        pages = await self._require_engine().search_wiki_pages(
+            remote_id,
+            query,
+            limit=max(1, min(limit, 50)),
+        )
+        return [
+            KnowledgeWikiPage(
+                slug=item.slug,
+                title=item.title,
+                pageType=item.page_type,
+                content=item.content,
+                summary=item.summary,
+                aliases=item.aliases,
+                categoryPath=item.category_path,
+                folderId=item.folder_id,
+            )
+            for item in pages
+        ]
+
+    async def search_bound_wiki_pages(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        bindings: Sequence[KnowledgeSnapshotBinding],
+        query: str,
+        *,
+        limit: int = 8,
+        team_ids: tuple[str, ...] = (),
+    ) -> list[KnowledgeWikiPage]:
+        """Search bound Wiki bases with ACL checks and unambiguous provenance.
+
+        Round-robin results keep the first base from consuming the global budget.
+        Index pages do not replace query matches; callers can search for an index
+        explicitly when an overview is needed.
+        """
+        if not query.strip() or not 1 <= limit <= 25:
+            raise ValueError("query must be non-empty and limit must be between 1 and 25")
+        groups: list[list[KnowledgeWikiPage]] = []
+        seen_bases: set[str] = set()
+        for binding in bindings:
+            reference = binding.knowledge_base_reference
+            if reference in seen_bases:
+                continue
+            seen_bases.add(reference)
+            source = await self.repository.get_source(tenant_id, binding.source_reference)
+            if source.kind.value != "weknora" or not await self._allows_source(
+                tenant_id,
+                actor_id,
+                team_ids,
+                reference,
+                source,
+            ):
+                continue
+            remote_id = getattr(source.config, "weknora_base_id", "")
+            if not remote_id:
+                continue
+            # Propagate retrieval failures instead of presenting them as no evidence.
+            found = await self._require_engine().search_wiki_pages(
+                remote_id,
+                query,
+                limit=limit,
+            )
+            seen_slugs: set[str] = set()
+            group: list[KnowledgeWikiPage] = []
+            for item in found:
+                if item.slug in seen_slugs:
+                    continue
+                seen_slugs.add(item.slug)
+                group.append(
+                    KnowledgeWikiPage(
+                        knowledgeBaseReference=reference,
+                        slug=item.slug,
+                        title=item.title,
+                        pageType=item.page_type,
+                        content=item.content,
+                        summary=item.summary,
+                        aliases=item.aliases,
+                        categoryPath=item.category_path,
+                        folderId=item.folder_id,
+                    )
+                )
+            groups.append(group)
+        pages: list[KnowledgeWikiPage] = []
+        for offset in range(limit):
+            for group in groups:
+                if offset < len(group):
+                    pages.append(group[offset])
+                    if len(pages) == limit:
+                        return pages
+        return pages
+
+    async def wiki_graph(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+    ) -> KnowledgeWikiGraph:
+        source = await self._accessible_weknora_source(tenant_id, actor_id, reference)
+        remote_id = getattr(source.config, "weknora_base_id", "")
+        graph = await self._require_engine().wiki_graph(remote_id)
+        return KnowledgeWikiGraph(
+            nodes=tuple(
+                KnowledgeWikiGraphNode(
+                    slug=node.slug,
+                    title=node.title,
+                    pageType=node.page_type,
+                    linkCount=node.link_count,
+                )
+                for node in graph.nodes
+            ),
+            links=graph.links,
+        )
+
+    async def wiki_stats(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+    ) -> KnowledgeWikiStats:
+        source = await self._accessible_weknora_source(tenant_id, actor_id, reference)
+        remote_id = getattr(source.config, "weknora_base_id", "")
+        stats = await self._require_engine().wiki_stats(remote_id)
+        return KnowledgeWikiStats(
+            totalPages=stats.total_pages,
+            pagesByType=stats.pages_by_type,
+            totalLinks=stats.total_links,
+        )
+
+    # --- membership (phase 1: per-user viewer/editor) ---------------------
+
+    async def list_members(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+    ) -> list[KnowledgeBaseMember]:
+        base = await self.repository.get_base(tenant_id, reference)
+        if base.created_by != actor_id:
+            # Members may see the roster; non-members must not enumerate it.
+            role = await self._member_role(tenant_id, actor_id, reference)
+            if role is None:
+                raise NotFoundError(f"Knowledge Base not found: {reference}")
+        return list(
+            await self.repository.list_members(
+                tenant_id,
+                knowledge_base_reference=reference,
+            )
+        )
+
+    async def add_members(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+        request: AddKnowledgeMembersRequest,
+    ) -> AddKnowledgeMembersResult:
+        await self._get_owned_base(tenant_id, actor_id, reference)
+        if self._directory is None:
+            raise ConflictError("knowledge base member directory is not configured")
+        resolved = await self._directory.resolve_users(
+            user_ids=request.user_ids,
+            emails=request.emails,
+        )
+        known_emails = {item.email.lower() for item in resolved}
+        known_ids = {item.user_id for item in resolved}
+        unresolved = tuple(
+            item
+            for item in (*request.user_ids, *request.emails)
+            if item not in known_ids and item.lower() not in known_emails
+        )
+        existing = {
+            item.subject_id
+            for item in await self.repository.list_members(
+                tenant_id,
+                knowledge_base_reference=reference,
+            )
+            if item.subject_type is KnowledgeMemberSubject.USER
+        }
+        granted: list[KnowledgeBaseMember] = []
+        now = self._clock()
+        for user in resolved:
+            if user.user_id in existing:
+                continue
+            member = KnowledgeBaseMember(
+                tenantId=tenant_id,
+                memberId=self._ids("knowledge_member"),
+                knowledgeBaseReference=reference,
+                subjectType=KnowledgeMemberSubject.USER,
+                subjectId=user.user_id,
+                role=request.role,
+                displayName=user.display_name,
+                email=user.email,
+                grantedBy=actor_id,
+                grantedAt=now,
+            )
+            await self.repository.add_member(member)
+            granted.append(member)
+        await self._record(
+            tenant_id,
+            actor_id,
+            "knowledge.member.add",
+            reference,
+            {
+                "granted": len(granted),
+                "unresolved": len(unresolved),
+                "role": request.role.value,
+            },
+        )
+        return AddKnowledgeMembersResult(members=tuple(granted), unresolved=unresolved)
+
+    async def update_member_role(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+        member_id: str,
+        role: KnowledgeMemberRole,
+    ) -> KnowledgeBaseMember:
+        await self._get_owned_base(tenant_id, actor_id, reference)
+        member = await self.repository.get_member(tenant_id, member_id)
+        if member.knowledge_base_reference != reference:
+            raise NotFoundError(f"knowledge base member not found: {member_id}")
+        updated = member.model_copy(update={"role": role})
+        await self.repository.put_member(updated)
+        await self._record(
+            tenant_id,
+            actor_id,
+            "knowledge.member.update",
+            reference,
+            {"member_id": member_id, "role": role.value},
+        )
+        return updated
+
+    async def remove_member(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+        member_id: str,
+    ) -> None:
+        await self._get_owned_base(tenant_id, actor_id, reference)
+        member = await self.repository.get_member(tenant_id, member_id)
+        if member.knowledge_base_reference != reference:
+            raise NotFoundError(f"knowledge base member not found: {member_id}")
+        await self.repository.delete_member(tenant_id, member_id)
+        await self._record(
+            tenant_id,
+            actor_id,
+            "knowledge.member.remove",
+            reference,
+            {"member_id": member_id},
+        )
+
+    async def search_directory_users(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        query: str,
+        *,
+        limit: int = 20,
+    ) -> list[dict[str, str]]:
+        if self._directory is None:
+            return []
+        users = await self._directory.search_users(query, limit=limit)
+        return [
+            {"userId": item.user_id, "email": item.email, "displayName": item.display_name}
+            for item in users
+        ]
+
+    async def _member_role(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        reference: str,
+    ) -> KnowledgeMemberRole | None:
+        members = await self.repository.list_members(
+            tenant_id,
+            knowledge_base_reference=reference,
+        )
+        for member in members:
+            if member.subject_type is KnowledgeMemberSubject.USER and member.subject_id == actor_id:
+                return member.role
+        return None
 
     async def _record(
         self,

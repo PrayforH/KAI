@@ -193,6 +193,22 @@ export type StudioInstalledSkill = {
   binaryFileCount: number;
 };
 
+/** A catalog-listing file is a path plus its metadata: the catalog endpoint
+ *  never ships vendored asset payloads, so the list stays small. */
+export type StudioPlatformSkillListingFile = {
+  path: string;
+  binary?: boolean;
+  sizeBytes?: number | null;
+};
+
+export type StudioPlatformSkillListing = {
+  name: string;
+  description: string;
+  instructions: string;
+  fileCount: number;
+  files: StudioPlatformSkillListingFile[];
+};
+
 export type StudioPlatformSkillPackage = {
   packageId: string;
   revision: number;
@@ -206,13 +222,8 @@ export type StudioPlatformSkillPackage = {
   contentHash: string;
   riskLevel: "low" | "review";
   findings: string[];
-  skill: StudioSkill;
-  evaluationCases: Array<{
-    id: string;
-    tags: string[];
-    prompt: string;
-    expect: StudioEvalCase["expect"];
-  }>;
+  skill: StudioPlatformSkillListing;
+  evaluationCaseCount: number;
 };
 
 export type StudioPlatformSkillCatalog = {
@@ -375,17 +386,115 @@ export type StudioKnowledgeSource = {
   updatedAt: string;
 };
 
+export type KnowledgeBaseType = "rag" | "wiki" | "hybrid";
+export type KnowledgeBaseEngine = "legacy" | "weknora";
+
 export type StudioKnowledgeBase = {
   tenantId: string;
   reference: string;
   displayName: string;
   description: string;
   sourceReferences: string[];
+  kbType: KnowledgeBaseType;
+  engine: KnowledgeBaseEngine;
+  engineRef: string;
+  documentCount: number;
   revision: number;
   createdBy: string;
   updatedBy: string;
   createdAt: string;
   updatedAt: string;
+};
+
+export type WikiGranularity = "focused" | "standard" | "exhaustive";
+
+/** Engine options chosen in the create wizard; unset fields keep platform defaults. */
+export type StudioKnowledgeBaseConfig = {
+  chunkSize?: number;
+  chunkOverlap?: number;
+  wikiGranularity?: WikiGranularity;
+  wikiContentInstructions?: string;
+  wikiExtractionInstructions?: string;
+  wikiMaxPagesPerIngest?: number;
+};
+
+export type StudioKnowledgeDocumentStatus = {
+  tenantId: string;
+  sourceReference: string;
+  documentId: string;
+  title: string;
+  parseStatus: string;
+  summaryStatus: string;
+  fileType: string;
+  fileSize: number;
+  enabled: boolean;
+  createdAt: string;
+  description: string;
+};
+
+export type StudioKnowledgeWikiPage = {
+  slug: string;
+  title: string;
+  pageType: string;
+  content: string;
+  summary: string;
+  aliases: string[];
+  categoryPath: string[];
+  folderId: string;
+};
+
+export type StudioKnowledgeWikiGraph = {
+  nodes: Array<{ slug: string; title: string; pageType: string; linkCount: number }>;
+  links: Array<[string, string]>;
+};
+
+export type StudioKnowledgeWikiStats = {
+  totalPages: number;
+  pagesByType: Record<string, number>;
+  totalLinks: number;
+};
+
+export type KnowledgeMemberRole = "viewer" | "editor";
+
+export type StudioKnowledgeBaseMember = {
+  tenantId: string;
+  memberId: string;
+  knowledgeBaseReference: string;
+  subjectType: "user" | "org_unit";
+  subjectId: string;
+  orgPath: string;
+  role: KnowledgeMemberRole;
+  displayName: string;
+  email: string;
+  grantedBy: string;
+  grantedAt: string;
+};
+
+export type StudioDirectoryUser = {
+  userId: string;
+  email: string;
+  displayName: string;
+};
+
+export type StudioKnowledgeDocumentTable = {
+  tenantId: string;
+  sourceReference: string;
+  documentId: string;
+  title: string;
+  sheet: string;
+  rows: string[][];
+  truncated: boolean;
+  extraSheets: string[];
+};
+
+export type StudioKnowledgeDocumentChunk = {
+  tenantId: string;
+  sourceReference: string;
+  documentId: string;
+  chunkId: string;
+  title: string;
+  content: string;
+  seq: number;
 };
 
 export type StudioKnowledgeSync = {
@@ -1122,6 +1231,26 @@ async function errorFrom(response: Response): Promise<StudioApiError> {
   return new StudioApiError(response.status, code, message);
 }
 
+/** 204/empty-body responses have no JSON; callers that return void must not fail. */
+async function readJson<T>(response: Response): Promise<T> {
+  if (response.status === 204) return undefined as T;
+  const body = await response.text();
+  if (!body) return undefined as T;
+  return JSON.parse(body) as T;
+}
+
+async function requestForm<T>(path: string, form: FormData): Promise<T> {
+  const response = requireAuthenticatedResponse(
+    await fetch(`/api/studio/${path.replace(/^\//, "")}`, {
+      method: "POST",
+      cache: "no-store",
+      body: form,
+    }),
+  );
+  if (!response.ok) throw await errorFrom(response);
+  return readJson<T>(response);
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = requireAuthenticatedResponse(
     await fetch(`/api/studio/${path.replace(/^\//, "")}`, {
@@ -1134,7 +1263,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     }),
   );
   if (!response.ok) throw await errorFrom(response);
-  return response.json() as Promise<T>;
+  return readJson<T>(response);
 }
 
 async function listAccessibleDrafts(): Promise<StudioDraftSummary[]> {
@@ -1227,7 +1356,7 @@ async function agentRequest<T>(path: string, init: RequestInit = {}): Promise<T>
     }),
   );
   if (!response.ok) throw await errorFrom(response);
-  return response.json() as Promise<T>;
+  return readJson<T>(response);
 }
 
 async function harnessRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -1242,7 +1371,7 @@ async function harnessRequest<T>(path: string, init: RequestInit = {}): Promise<
     }),
   );
   if (!response.ok) throw await errorFrom(response);
-  return response.json() as Promise<T>;
+  return readJson<T>(response);
 }
 
 async function lifecycleRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -1257,7 +1386,7 @@ async function lifecycleRequest<T>(path: string, init: RequestInit = {}): Promis
     }),
   );
   if (!response.ok) throw await errorFrom(response);
-  return response.json() as Promise<T>;
+  return readJson<T>(response);
 }
 
 export const lifecycleClient = {
@@ -1512,15 +1641,130 @@ export const studioClient = {
     ),
   listKnowledgeBases: () =>
     request<StudioKnowledgeBase[]>("knowledge/bases"),
+  getKnowledgeBase: (reference: string) =>
+    request<StudioKnowledgeBase>(
+      `knowledge/bases/${encodeURIComponent(reference)}`,
+    ),
   createKnowledgeBase: (
     values: Pick<
       StudioKnowledgeBase,
       "reference" | "displayName" | "description" | "sourceReferences"
-    >,
+    > & {
+      kbType?: KnowledgeBaseType;
+      engine?: KnowledgeBaseEngine;
+      config?: StudioKnowledgeBaseConfig;
+    },
   ) => request<StudioKnowledgeBase>("knowledge/bases", {
     method: "POST",
     body: JSON.stringify(values),
   }),
+  deleteKnowledgeBase: (reference: string) =>
+    request<void>(
+      `knowledge/bases/${encodeURIComponent(reference)}`,
+      { method: "DELETE" },
+    ),
+  listKnowledgeDocuments: (baseReference: string) =>
+    request<StudioKnowledgeDocumentStatus[]>(
+      `knowledge/sources/${encodeURIComponent(baseReference)}/documents`,
+    ),
+  createKnowledgeDocument: (
+    baseReference: string,
+    body: { title: string; content: string },
+  ) =>
+    request<StudioKnowledgeDocumentStatus>(
+      `knowledge/sources/${encodeURIComponent(baseReference)}/documents`,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+  uploadKnowledgeDocument: (baseReference: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return requestForm<StudioKnowledgeDocumentStatus>(
+      `knowledge/sources/${encodeURIComponent(baseReference)}/documents/upload`,
+      form,
+    );
+  },
+  deleteKnowledgeDocument: (baseReference: string, documentId: string) =>
+    request<void>(
+      `knowledge/sources/${encodeURIComponent(baseReference)}/documents/${encodeURIComponent(documentId)}`,
+      { method: "DELETE" },
+    ),
+  reparseKnowledgeDocument: (baseReference: string, documentId: string) =>
+    request<StudioKnowledgeDocumentStatus>(
+      `knowledge/sources/${encodeURIComponent(baseReference)}/documents/${encodeURIComponent(documentId)}/reparse`,
+      { method: "POST" },
+    ),
+  getKnowledgeDocument: (baseReference: string, documentId: string) =>
+    request<StudioKnowledgeDocumentStatus>(
+      `knowledge/sources/${encodeURIComponent(baseReference)}/documents/${encodeURIComponent(documentId)}`,
+    ),
+  getKnowledgeDocumentTable: (baseReference: string, documentId: string) =>
+    request<StudioKnowledgeDocumentTable>(
+      `knowledge/sources/${encodeURIComponent(baseReference)}/documents/${encodeURIComponent(documentId)}/table`,
+    ),
+  listKnowledgeDocumentChunks: (baseReference: string, documentId: string) =>
+    request<StudioKnowledgeDocumentChunk[]>(
+      `knowledge/sources/${encodeURIComponent(baseReference)}/documents/${encodeURIComponent(documentId)}/chunks`,
+    ),
+  getKnowledgeDocumentChunk: (baseReference: string, chunkId: string) =>
+    request<StudioKnowledgeDocumentChunk>(
+      `knowledge/sources/${encodeURIComponent(baseReference)}/chunks/${encodeURIComponent(chunkId)}`,
+    ),
+  listWikiPages: (baseReference: string) =>
+    request<StudioKnowledgeWikiPage[]>(
+      `knowledge/sources/${encodeURIComponent(baseReference)}/wiki/pages`,
+    ),
+  getWikiPage: (baseReference: string, slug: string) =>
+    request<StudioKnowledgeWikiPage>(
+      `knowledge/sources/${encodeURIComponent(baseReference)}/wiki/pages/${slug
+        .split("/")
+        .map(encodeURIComponent)
+        .join("/")}`,
+    ),
+  searchWikiPages: (baseReference: string, query: string) =>
+    request<StudioKnowledgeWikiPage[]>(
+      `knowledge/sources/${encodeURIComponent(baseReference)}/wiki/search?q=${encodeURIComponent(query)}`,
+    ),
+  getWikiGraph: (baseReference: string) =>
+    request<StudioKnowledgeWikiGraph>(
+      `knowledge/sources/${encodeURIComponent(baseReference)}/wiki/graph`,
+    ),
+  getWikiStats: (baseReference: string) =>
+    request<StudioKnowledgeWikiStats>(
+      `knowledge/sources/${encodeURIComponent(baseReference)}/wiki/stats`,
+    ),
+  listKnowledgeMembers: (baseReference: string) =>
+    request<StudioKnowledgeBaseMember[]>(
+      `knowledge/bases/${encodeURIComponent(baseReference)}/members`,
+    ),
+  addKnowledgeMembers: (
+    baseReference: string,
+    body: { userIds?: string[]; emails?: string[]; role: KnowledgeMemberRole },
+  ) =>
+    request<{
+      members: StudioKnowledgeBaseMember[];
+      unresolved: string[];
+    }>(`knowledge/bases/${encodeURIComponent(baseReference)}/members`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateKnowledgeMemberRole: (
+    baseReference: string,
+    memberId: string,
+    role: KnowledgeMemberRole,
+  ) =>
+    request<StudioKnowledgeBaseMember>(
+      `knowledge/bases/${encodeURIComponent(baseReference)}/members/${encodeURIComponent(memberId)}`,
+      { method: "PUT", body: JSON.stringify({ role }) },
+    ),
+  removeKnowledgeMember: (baseReference: string, memberId: string) =>
+    request<void>(
+      `knowledge/bases/${encodeURIComponent(baseReference)}/members/${encodeURIComponent(memberId)}`,
+      { method: "DELETE" },
+    ),
+  searchDirectoryUsers: (query: string) =>
+    request<StudioDirectoryUser[]>(
+      `knowledge/directory/users?q=${encodeURIComponent(query)}`,
+    ),
   replaceKnowledgeBase: (
     value: StudioKnowledgeBase,
     update: Pick<

@@ -298,3 +298,82 @@ async def test_session_fails_early_when_pinned_subagent_is_not_published() -> No
         await service.create(
             "tenant-a", "user-1", "echo-agent", parent.manifest.metadata.version
         )
+
+
+@pytest.mark.asyncio
+async def test_default_agent_provisions_with_all_platform_skills() -> None:
+    registry = InMemoryAgentRegistry()
+    service = AgentService(
+        registry,
+        clock=lambda: NOW,
+        environment="production",
+        default_manifest_path="agents/lead-agent/agent.yaml",
+    )
+
+    version = await service.ensure_user_default("tenant-a", "user-1")
+
+    assert version is not None
+    assert "+platform." in version.version
+    skill_names = {item["name"] for item in version.snapshot["skill_snapshots"]}
+    # Lead-specific curation survives…
+    assert "general-task-orchestration" in skill_names
+    # …and every reviewed platform Skill package except catalog-only asset
+    # packs is bound, including the office set.
+    from harness.studio.platform_skills import default_platform_skill_catalog
+    from harness.studio.vendor_skills import CATALOG_ONLY_SKILLS
+
+    expected = {package.package_id for package in default_platform_skill_catalog().packages}
+    assert (expected - CATALOG_ONLY_SKILLS) <= skill_names
+    assert "pptx-generator" in skill_names
+
+
+@pytest.mark.asyncio
+async def test_default_agent_platform_version_tracks_catalog_content() -> None:
+    registry = InMemoryAgentRegistry()
+    service = AgentService(
+        registry,
+        clock=lambda: NOW,
+        environment="production",
+        default_manifest_path="agents/lead-agent/agent.yaml",
+    )
+
+    first = await service.ensure_user_default("tenant-a", "user-1")
+    second = await service.ensure_user_default("tenant-a", "user-2")
+
+    # Same catalog content → one immutable version shared by both users.
+    assert first.version == second.version
+    assert second.manifest_hash == first.manifest_hash
+
+
+@pytest.mark.asyncio
+async def test_default_agent_skips_catalog_only_skill_assets() -> None:
+    """Multi-megabyte asset packages stay catalog-only to keep bundles lean."""
+
+    registry = InMemoryAgentRegistry()
+    service = AgentService(
+        registry,
+        clock=lambda: NOW,
+        environment="production",
+        default_manifest_path="agents/lead-agent/agent.yaml",
+    )
+
+    version = await service.ensure_user_default("tenant-a", "user-1")
+
+    from harness.studio.platform_skills import default_platform_skill_catalog
+    from harness.studio.vendor_skills import CATALOG_ONLY_SKILLS
+
+    names = {item["name"] for item in version.snapshot["skill_snapshots"]}
+    assert not (names & CATALOG_ONLY_SKILLS)
+    assert CATALOG_ONLY_SKILLS <= {
+        package.package_id for package in default_platform_skill_catalog().packages
+    }
+    # The office packages the default conversation agent actually needs stay bound.
+    assert {"minimax-docx", "minimax-xlsx", "minimax-pdf", "pptx-generator"} <= names
+    # Zero-byte assets must survive the snapshot round-trip.
+    zero_byte = [
+        (skill["name"], item["path"])
+        for skill in version.snapshot["skill_snapshots"]
+        for item in skill.get("files", [])
+        if item.get("size_bytes") == 0
+    ]
+    assert ("skill-creator", "scripts/__init__.py") in zero_byte

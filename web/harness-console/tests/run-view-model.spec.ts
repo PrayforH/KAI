@@ -361,3 +361,87 @@ describe("denied delegation", () => {
     expect(view.tools).toHaveLength(0);
   });
 });
+
+describe("run view model knowledge citations", () => {
+  it("projects citations from a tool result onto its tool node", async () => {
+    const { reduceRunViewModel } = await moduleUnderTest();
+    const view = reduceRunViewModel(
+      undefined,
+      activity("succeeded", [
+        {
+          id: "request",
+          event_type: "tool.request",
+          kind: "tool",
+          status: "running",
+          sequence: 1,
+          metadata: { name: "query_knowledge_sources", tool_call_id: "call-1" },
+        },
+        {
+          id: "result",
+          event_type: "tool.result",
+          kind: "tool",
+          status: "succeeded",
+          sequence: 2,
+          metadata: {
+            tool_call_id: "call-1",
+            citations: [
+              {
+                index: 1,
+                chunkId: "chunk-1",
+                documentId: "doc-1",
+                sourceReference: "cases",
+                sourceDisplayName: "案例库",
+                title: "起诉书.pdf",
+                score: 0.82,
+                content: "切片正文",
+              },
+            ],
+          },
+        },
+      ]),
+    );
+
+    const tool = view.tools.find((item) => item.id === "call-1");
+    expect(tool?.citations).toHaveLength(1);
+    expect(tool?.citations?.[0]).toMatchObject({
+      index: 1,
+      chunkId: "chunk-1",
+      documentId: "doc-1",
+      sourceReference: "cases",
+      title: "起诉书.pdf",
+      content: "切片正文",
+    });
+  });
+
+  it("ignores malformed citation entries", async () => {
+    const { reduceRunViewModel } = await moduleUnderTest();
+    const view = reduceRunViewModel(
+      undefined,
+      activity("succeeded", [
+        {
+          id: "request",
+          event_type: "tool.request",
+          kind: "tool",
+          status: "running",
+          sequence: 1,
+          metadata: { name: "query_knowledge_sources", tool_call_id: "call-2" },
+        },
+        {
+          id: "result",
+          event_type: "tool.result",
+          kind: "tool",
+          status: "succeeded",
+          sequence: 2,
+          metadata: {
+            tool_call_id: "call-2",
+            citations: [{ index: 1 }, { chunkId: "ok", sourceReference: "cases" }],
+          },
+        },
+      ]),
+    );
+
+    const tool = view.tools.find((item) => item.id === "call-2");
+    expect(tool?.citations).toHaveLength(1);
+    expect(tool?.citations?.[0].chunkId).toBe("ok");
+  });
+});

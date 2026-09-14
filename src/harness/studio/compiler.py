@@ -33,6 +33,8 @@ from harness.studio.models import (
     AgentDraft,
     CapabilityCatalog,
     CapabilityRisk,
+    DraftSkill,
+    DraftSkillSource,
     DraftValidationResult,
     EffectiveAgentContract,
     NetworkAccess,
@@ -41,6 +43,7 @@ from harness.studio.models import (
     ValidationSeverity,
     ValidationStage,
 )
+from harness.studio.platform_skills import default_platform_skill_catalog
 
 
 class DraftCompilationError(ValueError):
@@ -83,6 +86,47 @@ class AgentDraftCompiler:
         self._catalog = catalog
         self._catalog_revision = catalog_revision
 
+    def resolve_skills(self, draft: AgentDraft) -> tuple[DraftSkill, ...]:
+        """Merge installed snapshots with platform catalog Skill references.
+
+        Catalog references resolve against the immutable platform package
+        catalog at compile time; each resolved copy pins the package revision
+        and content hash via its DraftSkillSource so published versions stay
+        reproducible even after the platform catalog moves forward.
+        """
+
+        spec = draft.spec
+        if not spec.skill_references:
+            return spec.skills
+        resolved = list(spec.skills)
+        names = {skill.name for skill in spec.skills}
+        capabilities = {item.package_id: item for item in self._catalog.skills}
+        packages = {
+            package.package_id: package
+            for package in default_platform_skill_catalog().packages
+        }
+        for reference in spec.skill_references:
+            capability = capabilities.get(reference)
+            package = packages.get(reference)
+            if capability is None or package is None or not capability.enabled:
+                continue
+            if spec.runtime not in package.compatible_runtimes:
+                continue
+            if package.skill.name in names:
+                continue
+            source = DraftSkillSource(
+                packageId=package.package_id,
+                packageRevision=package.revision,
+                sourceUrl=package.source_url,
+                sourceRevision=package.source_revision,
+                license=package.license,
+                contentHash=package.content_hash,
+                modified=False,
+            )
+            resolved.append(package.skill.model_copy(update={"source": source}))
+            names.add(package.skill.name)
+        return tuple(resolved)
+
     def render_manifest(self, draft: AgentDraft) -> str:
         spec = draft.spec
         required_capabilities = list(spec.model.required_capabilities)
@@ -119,7 +163,9 @@ class AgentDraftCompiler:
                         "requiredCapabilities": required_capabilities,
                     },
                     "prompt": {"system": "prompts/system.md"},
-                    "skills": [f"skills/{skill.name}" for skill in spec.skills],
+                    "skills": [
+                        f"skills/{skill.name}" for skill in self.resolve_skills(draft)
+                    ],
                     "tools": tools,
                     "toolExposureMode": spec.tool_exposure_mode,
                     "knowledgeReferences": list(spec.knowledge_references),
@@ -312,7 +358,7 @@ class AgentDraftCompiler:
         return EffectiveAgentContract(
             model=spec.model.model,
             modelRoute=spec.model.route_id,
-            skills=len(spec.skills),
+            skills=len(self.resolve_skills(draft)),
             builtinTools=spec.builtin_tools,
             mcpServers=spec.mcp_servers,
             toolExposureMode=spec.tool_exposure_mode,
@@ -540,6 +586,70 @@ class AgentDraftCompiler:
                         relatedReferences=(reference,),
                     )
                 )
+        skill_capabilities = {item.package_id: item for item in self._catalog.skills}
+        platform_packages = {
+            package.package_id: package
+            for package in default_platform_skill_catalog().packages
+        }
+        for reference in spec.skill_references:
+            capability = skill_capabilities.get(reference)
+            if capability is None:
+                issues.append(
+                    ValidationIssue(
+                        code="skill_reference_unknown",
+                        message=f"目录 Skill 未注册：{reference}",
+                        severity=ValidationSeverity.ERROR,
+                        path="skillReferences",
+                        relatedReferences=(reference,),
+                    )
+                )
+                continue
+            if not capability.enabled:
+                issues.append(
+                    ValidationIssue(
+                        code="skill_reference_disabled",
+                        message=f"目录 Skill 已禁用：{reference}",
+                        severity=ValidationSeverity.ERROR,
+                        path="skillReferences",
+                        relatedReferences=(reference,),
+                    )
+                )
+                continue
+            package = platform_packages.get(reference)
+            if package is None:
+                issues.append(
+                    ValidationIssue(
+                        code="skill_reference_unavailable",
+                        message=f"平台 Skill 包不存在：{reference}",
+                        severity=ValidationSeverity.ERROR,
+                        path="skillReferences",
+                        relatedReferences=(reference,),
+                    )
+                )
+            elif spec.runtime not in package.compatible_runtimes:
+                issues.append(
+                    ValidationIssue(
+                        code="skill_reference_runtime_incompatible",
+                        message=(
+                            f"{spec.runtime} 运行时不兼容目录 Skill：{reference}"
+                        ),
+                        severity=ValidationSeverity.ERROR,
+                        path="skillReferences",
+                        relatedReferences=(reference,),
+                    )
+                )
+            elif any(skill.name == reference for skill in spec.skills):
+                issues.append(
+                    ValidationIssue(
+                        code="skill_reference_conflicts_snapshot",
+                        message=(
+                            f"已存在同名 Skill 快照，目录引用重复：{reference}"
+                        ),
+                        severity=ValidationSeverity.ERROR,
+                        path="skillReferences",
+                        relatedReferences=(reference,),
+                    )
+                )
         policies = {policy.policy_id: policy for policy in self._catalog.policies}
         policy = policies.get(spec.permission_policy)
         if policy is None:
@@ -751,7 +861,7 @@ class AgentDraftCompiler:
         prompt.parent.mkdir(parents=True, exist_ok=True)
         prompt.write_text(spec.system_prompt, encoding="utf-8")
 
-        for skill in spec.skills:
+        for skill in self.resolve_skills(draft):
             skill_root = root / "skills" / skill.name
             skill_root.mkdir(parents=True, exist_ok=True)
             frontmatter_payload: dict[str, object] = {

@@ -11,8 +11,37 @@ from harness.studio.models import (
     NetworkAccess,
     PolicyCapability,
     RuntimeCapability,
+    SkillCapability,
     TemplateCapability,
 )
+
+
+def _platform_skill_capabilities() -> tuple[SkillCapability, ...]:
+    """Mirror the reviewed platform Skill packages as catalog resources.
+
+    Content stays in the immutable platform package catalog; the catalog entry
+    carries identity metadata for display, enable/disable governance and
+    compile-time resolution.
+    """
+
+    from harness.studio.platform_skills import default_platform_skill_catalog
+
+    return tuple(
+        SkillCapability(
+            packageId=package.package_id,
+            label=package.display_name,
+            summary=package.summary,
+            tags=package.tags,
+            revision=package.revision,
+            compatibleRuntimes=package.compatible_runtimes,
+            license=package.license,
+            sourceUrl=package.source_url,
+            sourceRevision=package.source_revision,
+            contentHash=package.content_hash,
+            riskLevel=package.risk_level,
+        )
+        for package in default_platform_skill_catalog().packages
+    )
 
 
 def default_capability_catalog() -> CapabilityCatalog:
@@ -283,6 +312,7 @@ def default_capability_catalog() -> CapabilityCatalog:
                 description="将可独立验收的任务委派给固定版本子 Agent。",
             ),
         ),
+        skills=_platform_skill_capabilities(),
         runtimeCapabilities=(
             RuntimeCapability(
                 runtime="claude-agent-sdk",

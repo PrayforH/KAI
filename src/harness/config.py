@@ -187,3 +187,10 @@ class Settings(BaseSettings):
     memory_extraction_api_key: SecretStr = SecretStr("")
     memory_extraction_model: str = ""
     knowledge_mcp_public_url: str = ""
+    weknora_base_url: str = ""
+    weknora_email: str = ""
+    weknora_password: SecretStr = SecretStr("")
+    weknora_timeout_seconds: float = Field(default=30, ge=1, le=120)
+    weknora_embedding_model: str = "builtin-bge-m3-v2"
+    weknora_summary_model_id: str = ""
+    weknora_wiki_synthesis_model_id: str = ""

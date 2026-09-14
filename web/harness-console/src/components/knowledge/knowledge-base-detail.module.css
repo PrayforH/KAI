@@ -1,0 +1,976 @@
+.page {
+  min-height: 100vh;
+  color: var(--codex-ink, #ffffff);
+  background: var(--codex-surface, #181818);
+  font-family: var(--codex-font-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+}
+
+.content {
+  width: min(1160px, 100%);
+  margin: 0 auto;
+  padding: 32px clamp(20px, 4vw, 48px) 64px;
+  composes: surface from "./knowledge-ui.module.css";
+  min-width: 0;
+}
+
+.crumbs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--codex-muted, #a1a1a1);
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
+}
+
+.crumbs a {
+  color: var(--codex-muted, #a1a1a1);
+  text-decoration: none;
+}
+
+.crumbs a:hover {
+  color: var(--codex-ink, #ffffff);
+}
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.head h1 {
+  margin: 0;
+  font-size: 24px;
+  letter-spacing: -0.02em;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.headDesc {
+  margin: 6px 0 0;
+  color: var(--codex-muted, #a1a1a1);
+  font-size: 12px;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.tabs {
+  display: flex;
+  gap: 6px;
+  margin: 24px 0 20px;
+  border-bottom: 1px solid var(--codex-line, #303030);
+  padding-bottom: 10px;
+  overflow-x: auto;
+}
+
+.docList {
+  display: grid;
+  gap: 10px;
+}
+
+.docRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 13px 14px;
+  border: 1px solid var(--codex-line, #303030);
+  border-radius: 10px;
+  background: var(--codex-surface-subtle, #1e1e1e);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.docRow:hover {
+  border-color: var(--codex-line-strong, #444444);
+  background: var(--codex-surface-raised, #242424);
+}
+
+.docTitle {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.docMeta {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--codex-faint, #737373);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.statusChip {
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  border: 1px solid var(--codex-line-strong, #444444);
+  color: var(--codex-ink-soft, #d6d6d6);
+  line-height: 18px;
+}
+
+.statusCompleted {
+  color: var(--codex-ink-soft, #d2d2d2);
+  border-color: var(--codex-line-strong, #444444);
+  background: var(--codex-accent-faint, rgb(255 255 255 / 6%));
+}
+
+.statusProcessing {
+  color: var(--codex-ink-soft, #d6d6d6);
+  border-color: var(--codex-line-strong, #444444);
+  background: var(--codex-accent-faint);
+}
+
+.statusFailed {
+  color: var(--codex-danger, #fa423e);
+  border-color: rgb(250 66 62 / 35%);
+  background: var(--codex-danger-soft, rgb(250 66 62 / 13%));
+}
+
+.empty {
+  padding: 42px 0;
+  text-align: center;
+  color: var(--codex-faint, #737373);
+  font-size: 13px;
+}
+
+.overlay {
+  composes: surface from "./knowledge-ui.module.css";
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 55%);
+}
+
+.dialog {
+  width: min(540px, calc(100vw - 48px));
+  padding: 24px;
+  border: 1px solid var(--codex-line-strong, #444444);
+  border-radius: 14px;
+  background: var(--codex-panel-solid, #242424);
+  box-shadow: var(--codex-shadow, 0 18px 56px rgb(0 0 0 / 38%));
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+}
+
+.dialog h2 {
+  margin: 0 0 14px;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.field label {
+  color: var(--codex-muted, #a1a1a1);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.field input,
+.field textarea {
+  border: 1px solid var(--codex-line, #303030);
+  border-radius: 8px;
+  background: var(--codex-field, #191919);
+  color: var(--codex-ink, #ffffff);
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.field textarea {
+  min-height: 140px;
+  resize: vertical;
+}
+
+.dialogActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.notice {
+  margin: 0 0 14px;
+  padding: 9px 12px;
+  border: 1px solid var(--codex-line-strong, #444444);
+  border-radius: 8px;
+  color: var(--codex-ink-soft, #d2d2d2);
+  background: var(--codex-accent-faint, rgb(255 255 255 / 6%));
+  font-size: 12px;
+}
+
+.error {
+  margin: 0 0 14px;
+  padding: 9px 12px;
+  border: 1px solid rgb(250 66 62 / 35%);
+  border-radius: 8px;
+  color: var(--codex-danger, #fa423e);
+  background: var(--codex-danger-soft, rgb(250 66 62 / 13%));
+  font-size: 12px;
+}
+
+.drawerOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  background: rgb(0 0 0 / 45%);
+}
+
+.drawer {
+  max-width: calc(100vw - 16px);
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 56;
+  width: min(520px, 92vw);
+  overflow-y: auto;
+  border-left: 1px solid var(--codex-line-strong, #444444);
+  background: var(--codex-panel-solid, #242424);
+  box-shadow: var(--codex-shadow, 0 18px 56px rgb(0 0 0 / 38%));
+  padding: 22px;
+  composes: surface from "./knowledge-ui.module.css";
+}
+
+.drawer h2 {
+  margin: 0 0 2px;
+  font-size: 16px;
+  letter-spacing: -0.02em;
+}
+
+.drawerSub {
+  margin: 0 0 14px;
+  color: var(--codex-faint, #737373);
+  font-size: 12px;
+}
+
+.chunkList {
+  display: grid;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.chunkCard {
+  padding: 12px;
+  border: 1px solid var(--codex-line, #303030);
+  border-radius: 10px;
+  background: var(--codex-inset, #171717);
+}
+
+.chunkIndex {
+  margin: 0 0 6px;
+  color: var(--codex-faint, #737373);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+.chunkContent {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--codex-ink-soft, #d6d6d6);
+}
+
+.placeholder {
+  padding: 60px 0;
+  text-align: center;
+  color: var(--codex-faint, #737373);
+  font-size: 13px;
+}
+
+/* --- WeKnora-style document workspace -------------------------------- */
+
+.uploadHint {
+  margin: 0 0 14px;
+  color: var(--codex-faint, #737373);
+  font-size: 12px;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.toolbarSearch {
+  flex: 1 1 260px;
+  min-width: 200px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--codex-line, #303030);
+  border-radius: 8px;
+  background: var(--codex-field, #191919);
+  color: var(--codex-ink, #ffffff);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.toolbarSearch::placeholder {
+  color: var(--codex-faint, #737373);
+}
+
+.toolbarSelect {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--codex-line, #303030);
+  border-radius: 8px;
+  background: var(--codex-field, #191919);
+  color: var(--codex-ink-soft, #d6d6d6);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.toolbarCount {
+  margin-left: auto;
+  color: var(--codex-faint, #737373);
+  font-size: 12px;
+}
+
+.docGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 16px;
+}
+
+.docCard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid var(--codex-line, #303030);
+  border-radius: 12px;
+  background: var(--codex-surface-subtle, #1e1e1e);
+  transition: border-color 140ms ease, background-color 140ms ease;
+  min-width: 0;
+}
+
+.docCard:hover {
+  border-color: var(--codex-line-strong, #444444);
+  background: var(--codex-surface-raised, #242424);
+}
+
+.docCardSelected {
+  border-color: var(--codex-accent, #ececec);
+  background: var(--codex-accent-faint, rgb(236 236 236 / 7%));
+}
+
+.docCardHead {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.docCheckbox {
+  margin-top: 3px;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  accent-color: var(--codex-accent, #ececec);
+  cursor: pointer;
+}
+
+.docCardTitle {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.docCardOpen {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--codex-faint, #737373);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.docCardOpen:hover {
+  background: var(--codex-surface-hover, #2a2a2a);
+  color: var(--codex-ink, #ffffff);
+}
+
+.docCardDesc {
+  margin: 0;
+  min-height: 42px;
+  color: var(--codex-muted, #a1a1a1);
+  font-size: 13px;
+  line-height: 1.6;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.docCardFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--codex-line, #303030);
+  flex-wrap: wrap;
+}
+
+.docCardDate {
+  color: var(--codex-faint, #737373);
+  font-size: 12px;
+}
+
+.docCardTags {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fileBadge {
+  padding: 2px 7px;
+  border: 1px solid var(--codex-line-strong, #444444);
+  border-radius: 6px;
+  color: var(--codex-faint, #737373);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  line-height: 18px;
+}
+
+.bulkBar {
+  position: sticky;
+  bottom: 16px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 11px 16px;
+  border: 1px solid var(--codex-line-strong, #444444);
+  border-radius: 12px;
+  background: var(--codex-panel-solid, #242424);
+  box-shadow: var(--codex-shadow-soft, 0 8px 28px rgb(0 0 0 / 24%));
+}
+
+.bulkCount {
+  color: var(--codex-ink, #ffffff);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.bulkLink {
+  border: 0;
+  background: transparent;
+  color: var(--codex-muted, #a1a1a1);
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.bulkLink:hover {
+  color: var(--codex-ink, #ffffff);
+}
+
+.bulkSpacer {
+  flex: 1;
+}
+
+.bulkDanger {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid rgb(250 66 62 / 40%);
+  border-radius: 8px;
+  background: var(--codex-danger-soft, rgb(250 66 62 / 13%));
+  color: var(--codex-danger, #fa423e);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.bulkDanger:hover {
+  background: rgb(250 66 62 / 22%);
+}
+
+/* Flattened detail header: one compact row for identity and actions, so the
+   document workspace keeps the vertical space. */
+.crumbs {
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
+}
+
+.head {
+  align-items: center;
+}
+
+.head h1 {
+  font-size: 24px;
+  letter-spacing: -0.02em;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.headDesc {
+  margin: 3px 0 0;
+  font-size: 12px;
+}
+
+.tabs {
+  margin: 24px 0 20px;
+  padding-bottom: 10px;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.uploadHint {
+  margin: 0 0 10px;
+}
+
+/* Upload guidance sits under the knowledge base name; the reference/engine
+   meta line is gone so the workspace starts higher. */
+.headHint {
+  margin: 6px 0 0;
+  color: var(--codex-muted, #a1a1a1);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* --- document viewer (WeKnora-style drawer) -------------------------- */
+
+.docCardMenuWrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.docCardMenu {
+  position: absolute;
+  z-index: 12;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 128px;
+  padding: 4px;
+  border: 1px solid var(--codex-line-strong, #444444);
+  border-radius: 9px;
+  background: var(--codex-panel-solid, #242424);
+  box-shadow: var(--codex-shadow-soft, 0 8px 28px rgb(0 0 0 / 24%));
+  display: grid;
+}
+
+.docCardMenu button {
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--codex-ink-soft, #d6d6d6);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.docCardMenu button:hover:not(:disabled) {
+  background: var(--codex-surface-hover, #2a2a2a);
+  color: var(--codex-ink, #ffffff);
+}
+
+.docCardMenu button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.docCardMenuDanger {
+  color: var(--codex-danger, #fa423e) !important;
+}
+
+.drawerHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.drawerGlyph {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  border-radius: 8px;
+  color: var(--codex-ink-soft, #d6d6d6);
+  background: var(--codex-accent-faint, rgb(236 236 236 / 7%));
+}
+
+.drawerGlyph svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.drawerHead h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 16px;
+  letter-spacing: -0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drawerClose {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--codex-muted, #a1a1a1);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.drawerClose:hover {
+  border-color: var(--codex-line, #303030);
+  color: var(--codex-ink, #ffffff);
+}
+
+.drawerSection {
+  padding: 16px 0;
+  border-top: 1px solid var(--codex-line, #303030);
+}
+
+.drawerSection:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.drawerSectionTitle {
+  margin: 0;
+  padding-left: 9px;
+  border-left: 3px solid var(--codex-ink-soft, #d2d2d2);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.drawerSectionHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.drawerCount {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--codex-line-strong, #444444);
+  color: var(--codex-faint, #737373);
+  font-size: 12px;
+}
+
+.drawerToggle {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 6px;
+}
+
+.drawerToggle button {
+  min-height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--codex-line, #303030);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--codex-ink-soft, #d6d6d6);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.drawerToggle button:hover {
+  background: var(--codex-surface-hover, #2a2a2a);
+}
+
+.drawerToggleActive {
+  border-color: var(--codex-line-strong, #444444) !important;
+  color: var(--codex-ink-soft, #d2d2d2) !important;
+  background: var(--codex-accent-faint, rgb(255 255 255 / 6%)) !important;
+  font-weight: 600;
+}
+
+.drawerFacts {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 10px 14px;
+  margin: 14px 0 0;
+  font-size: 13px;
+}
+
+.drawerFacts dt {
+  color: var(--codex-muted, #a1a1a1);
+}
+
+.drawerFacts dd {
+  margin: 0;
+  color: var(--codex-ink, #ffffff);
+}
+
+.drawerTypeBadge {
+  padding: 2px 9px;
+  border: 1px solid var(--codex-line-strong, #444444);
+  border-radius: 7px;
+  color: var(--codex-ink-soft, #d2d2d2);
+  background: var(--codex-accent-faint, rgb(255 255 255 / 6%));
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.drawerSummary {
+  margin: 14px 0 0;
+  padding: 13px 14px;
+  border: 1px solid var(--codex-line, #303030);
+  border-radius: 10px;
+  background: var(--codex-inset, #171717);
+  color: var(--codex-ink-soft, #d6d6d6);
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.drawerFullText {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--codex-ink-soft, #d6d6d6);
+  font-size: 13px;
+  line-height: 1.9;
+}
+
+/* Spreadsheet documents render as a scrollable cell grid. */
+.tableWrap {
+  max-height: 60vh;
+  overflow: auto;
+  border: 1px solid var(--codex-line, #303030);
+  border-radius: 10px;
+  background: var(--codex-inset, #171717);
+}
+
+.docTable {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+}
+
+.docTable td {
+  padding: 7px 10px;
+  border-right: 1px solid var(--codex-line, #303030);
+  border-bottom: 1px solid var(--codex-line, #303030);
+  color: var(--codex-ink-soft, #d6d6d6);
+  vertical-align: top;
+  /* One line per cell; long content is ellipsised and readable on hover. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+  min-width: 90px;
+}
+
+.docTable tr:first-child td {
+  color: var(--codex-ink, #ffffff);
+  font-weight: 600;
+  background: var(--codex-surface-raised, #242424);
+}
+
+.docTable tr:hover td {
+  background: var(--codex-surface-hover, #2a2a2a);
+}
+
+.tableNote {
+  margin: 8px 10px;
+  color: var(--codex-faint, #737373);
+  font-size: 12px;
+}
+
+/* Drop zone: the documents tab accepts files dragged anywhere onto it. */
+.dropZone {
+  position: relative;
+  min-height: 360px;
+  border-radius: 12px;
+  transition: background-color 140ms ease, box-shadow 140ms ease;
+}
+
+.dropZoneActive {
+  background: var(--codex-accent-faint, rgb(236 236 236 / 7%));
+  box-shadow: inset 0 0 0 1px var(--codex-accent, #ececec);
+}
+
+/* Summary clamps to three lines with a chevron to expand, matching the wiki
+   drawer. */
+.summaryBox {
+  position: relative;
+  margin-top: 14px;
+  padding: 13px 34px 13px 14px;
+  border: 1px solid var(--codex-line, #303030);
+  border-radius: 10px;
+  background: var(--codex-inset, #171717);
+}
+
+.drawerSummary {
+  margin: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--codex-ink-soft, #d6d6d6);
+  font-size: 13px;
+  line-height: 1.8;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.drawerSummaryOpen {
+  display: block;
+  overflow: visible;
+}
+
+.summaryToggle {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--codex-faint, #737373);
+  cursor: pointer;
+}
+
+.summaryToggle:hover {
+  background: var(--codex-surface-hover, #2a2a2a);
+  color: var(--codex-ink, #ffffff);
+}
+
+.summaryToggle svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 140ms ease;
+}
+
+.summaryToggle[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+/* Left-edge grab handle: drag to widen or narrow the drawer. */
+.resizeHandle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 2;
+  width: 8px;
+  cursor: col-resize;
+}
+
+.resizeHandle::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 3px;
+  height: 42px;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: var(--codex-line-strong, #444444);
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+
+.resizeHandle:hover::after,
+.resizeHandle:active::after {
+  opacity: 1;
+}
+
+.primary {
+  composes: primary from "./knowledge-ui.module.css";
+}
+
+.ghost {
+  composes: secondary from "./knowledge-ui.module.css";
+}
+
+.tab {
+  composes: secondary compact from "./knowledge-ui.module.css";
+}
+
+.tab.tab {
+  border-color: transparent;
+  color: var(--codex-muted, #a1a1a1);
+}
+
+.tabActive.tabActive {
+  color: var(--codex-ink, #ffffff);
+  border-color: var(--codex-line-strong, #444444);
+  background: var(--codex-surface-raised, #242424);
+}
+
+@media (max-width: 720px) {
+  .content { padding: 24px 16px 48px; }
+  .head { align-items: flex-start; flex-wrap: wrap; }
+  .head > div:first-child { min-width: 0; flex: 1 1 260px; }
+  .actions { flex-wrap: wrap; }
+  .toolbarSearch { min-width: 0; flex-basis: 100%; }
+  .docCard { padding: 16px; }
+  .bulkBar { flex-wrap: wrap; gap: 8px; padding: 12px; }
+  .dialog { width: calc(100vw - 24px); padding: 20px; }
+  .drawer {
+  max-width: calc(100vw - 16px); padding: 20px 16px; }
+  .drawerSectionHead { flex-wrap: wrap; }
+  .drawerToggle { flex-wrap: wrap; }
+}

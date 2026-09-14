@@ -870,6 +870,39 @@ class AgentStudioService:
         await self._repository.replace(expected_revision, updated)
         return updated
 
+    async def set_skill_references(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        draft_id: str,
+        expected_revision: int,
+        references: tuple[str, ...],
+    ) -> AgentDraft:
+        """Bind platform catalog Skills to a draft by package ID.
+
+        Authorization lives at the API layer (catalog admin); this method keeps
+        the shared-draft edit permission and optimistic-revision discipline.
+        """
+
+        current = await self._load_draft(tenant_id, user_id, draft_id)
+        await self._require_shared_permission(tenant_id, user_id, current, AgentPermission.EDIT)
+        ordered = tuple(dict.fromkeys(references))
+        candidate_spec = _auto_version_modified_release(
+            current,
+            current.spec.model_copy(update={"skill_references": ordered}),
+        )
+        updated = current.model_copy(
+            update={
+                "revision": current.revision + 1,
+                "spec": candidate_spec,
+                "updated_by": user_id,
+                "updated_at": self._clock(),
+            }
+        )
+        await self._repository.replace(expected_revision, updated)
+        return updated
+
     async def validate(
         self, tenant_id: str, owner_user_id: str, draft_id: str
     ) -> DraftValidationResult:

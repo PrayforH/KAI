@@ -759,3 +759,206 @@ async def test_admin_edited_catalog_receives_web_tools_without_replacing_custom_
     assert upgraded.catalog.builtin_tools[: len(existing.builtin_tools)] == existing.builtin_tools
     assert upgraded.updated_by == "user-admin"
     assert (await service.get("admin-catalog")).revision == upgraded.revision
+
+
+def test_default_catalog_seeds_platform_skill_capabilities() -> None:
+    catalog = default_capability_catalog()
+
+    assert {skill.package_id for skill in catalog.skills} >= {
+        "minimax-docx",
+        "minimax-xlsx",
+        "pptx-generator",
+        "minimax-pdf",
+    }
+    for skill in catalog.skills:
+        assert skill.enabled is True
+        assert skill.owner_user_id is None if hasattr(skill, "owner_user_id") else True
+        assert skill.content_hash
+        assert skill.compatible_runtimes
+
+
+@pytest.mark.asyncio
+async def test_admin_edited_catalog_receives_new_platform_skills() -> None:
+    defaults = default_capability_catalog()
+    existing = defaults.model_copy(
+        update={"skills": tuple(s for s in defaults.skills if s.package_id == "evidence-reporting")}
+    )
+    repository = InMemoryCapabilityCatalogRepository()
+    await repository.seed(
+        CapabilityCatalogRecord(
+            tenantId="skill-catalog",
+            revision=3,
+            catalog=existing,
+            updatedBy="user-admin",
+            updatedAt=NOW,
+        )
+    )
+    service = CapabilityCatalogService(repository, InMemoryAgentDraftRepository())
+    upgraded = await service.get("skill-catalog")
+
+    package_ids = {skill.package_id for skill in upgraded.catalog.skills}
+    assert "evidence-reporting" in package_ids
+    assert {"minimax-docx", "minimax-xlsx", "pptx-generator", "minimax-pdf"} <= package_ids
+    # The tenant-authored entry survives untouched.
+    assert upgraded.catalog.skills[0].package_id == "evidence-reporting"
+
+
+@pytest.mark.asyncio
+async def test_skill_disable_reports_referencing_drafts_and_upsert_is_rejected() -> None:
+    from harness.studio.models import AgentDraftSpec
+
+    defaults = default_capability_catalog()
+    repository = InMemoryCapabilityCatalogRepository()
+    await repository.seed(
+        CapabilityCatalogRecord(
+            tenantId="skill-impact",
+            revision=1,
+            catalog=defaults,
+            updatedBy="system",
+            updatedAt=NOW,
+        )
+    )
+    spec = AgentDraftSpec(
+        name="impact-agent",
+        displayName="影响面助手",
+        description="目录 Skill 影响面验证。",
+        domain="operations",
+        template=AgentTemplate.ANALYST,
+        runtime="claude-agent-sdk",
+        model={"routeId": "deepseek-v4-flash", "model": "deepseek-v4-flash"},
+        systemPrompt="你是测试助手。",
+        permissionPolicy="production-standard",
+        evaluationCases=[
+            {
+                "id": "baseline",
+                "tags": ["baseline"],
+                "prompt": "ping",
+                "expect": {"terminalStatuses": ["succeeded"]},
+            }
+        ],
+        skillReferences=("minimax-docx",),
+    )
+    from harness.studio.models import AgentDraft
+
+    drafts = InMemoryAgentDraftRepository()
+    await drafts.add(
+        AgentDraft(
+            draftId="draft-impact",
+            tenantId="skill-impact",
+            revision=1,
+            spec=spec,
+            createdBy="admin-a",
+            updatedBy="admin-a",
+            createdAt=NOW,
+            updatedAt=NOW,
+        )
+    )
+    service = CapabilityCatalogService(repository, drafts)
+
+    impact = await service.impact("skill-impact", "admin-a", "skill", "minimax-docx")
+    assert impact.draft_ids == ("draft-impact",)
+
+    # Skill identity is platform-governed: the upsert payload union rejects
+    # SkillCapability outright, so tenants cannot author catalog skill entries.
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        UpsertCatalogResourceRequest(expectedRevision=1, resource=defaults.skills[0])
+
+
+@pytest.mark.asyncio
+async def test_deleting_a_route_pinned_by_published_versions_is_refused() -> None:
+    """A published version is immutable, so its route must survive deletion.
+
+    On 2026-09-09 deleting the ``codex-deepseek-v4-flash`` route silently broke
+    every already-published version that pinned it, because the reference check
+    only looked at drafts and agent bindings.
+    """
+
+    defaults = default_capability_catalog()
+    repository = InMemoryCapabilityCatalogRepository()
+    await repository.seed(
+        CapabilityCatalogRecord(
+            tenantId="route-guard",
+            revision=1,
+            catalog=defaults,
+            updatedBy="system",
+            updatedAt=NOW,
+        )
+    )
+    published = ("public-opinion-agent@0.3.20", "public-opinion-agent@0.3.22")
+
+    async def route_references(tenant_id: str, route_id: str) -> tuple[str, ...]:
+        return published if route_id == "deepseek-v4-flash" else ()
+
+    service = CapabilityCatalogService(
+        repository,
+        InMemoryAgentDraftRepository(),
+        published_route_references=route_references,
+    )
+
+    impact = await service.impact("route-guard", "admin-a", "modelRoute", "deepseek-v4-flash")
+    assert impact.published_agent_versions == published
+
+    with pytest.raises(ConflictError, match="published:public-opinion-agent@0.3.22"):
+        await service.delete_model(
+            tenant_id="route-guard",
+            user_id="admin-a",
+            resource_id="deepseek-v4-flash",
+            expected_revision=1,
+        )
+
+    # An unreferenced route still deletes.
+    result = await service.delete_model(
+        tenant_id="route-guard",
+        user_id="admin-a",
+        resource_id="glm-5-3-flash",
+        expected_revision=1,
+    )
+    assert "glm-5-3-flash" not in {item.route_id for item in result.record.catalog.model_routes}
+
+
+@pytest.mark.asyncio
+async def test_disabling_a_route_pinned_by_published_versions_is_refused() -> None:
+    """Disabling resolves to "route unavailable", so it breaks runs too."""
+
+    defaults = default_capability_catalog()
+    repository = InMemoryCapabilityCatalogRepository()
+    await repository.seed(
+        CapabilityCatalogRecord(
+            tenantId="route-disable-guard",
+            revision=1,
+            catalog=defaults,
+            updatedBy="system",
+            updatedAt=NOW,
+        )
+    )
+
+    async def route_references(tenant_id: str, route_id: str) -> tuple[str, ...]:
+        return ("public-opinion-agent@0.3.22",) if route_id == "deepseek-v4-flash" else ()
+
+    service = CapabilityCatalogService(
+        repository,
+        InMemoryAgentDraftRepository(),
+        published_route_references=route_references,
+    )
+
+    with pytest.raises(ConflictError, match="still pin this model route"):
+        await service.disable(
+            tenant_id="route-disable-guard",
+            user_id="admin-a",
+            resource_type="modelRoute",
+            resource_id="deepseek-v4-flash",
+            expected_revision=1,
+        )
+
+    result = await service.disable(
+        tenant_id="route-disable-guard",
+        user_id="admin-a",
+        resource_type="modelRoute",
+        resource_id="glm-5-3-flash",
+        expected_revision=1,
+    )
+    assert not next(
+        item for item in result.record.catalog.model_routes if item.route_id == "glm-5-3-flash"
+    ).enabled

@@ -57,6 +57,10 @@ class AgentRegistry(Protocol):
         """
         ...
 
+    async def route_references(self, tenant_id: str, route_id: str) -> tuple[str, ...]:
+        """List published ``name@version`` coordinates pinned to one model route."""
+        ...
+
     async def move_owner(
         self, tenant_id: str, from_user_id: str, to_user_id: str, name: str
     ) -> int:

@@ -401,6 +401,20 @@
   cursor: default;
 }
 
+/* The authoring page is wide, so a section lays its short fields out in three
+   columns instead of two. A row of three then fills its card rather than
+   ending in an empty column, and no field grows so wide that it stops reading
+   as a field. The mobile rule below collapses both tiers to one column. */
+.formSection {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (max-width: 1320px) {
+  .formSection {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 680px) {
   .editorBackdrop .editor {
     width: 100vw;
@@ -446,6 +460,21 @@
 
 :global(html[data-color-mode="light"]) .shell {
   background: var(--paper);
+}
+
+/* In light mode the page, the section cards and the fields were all pure
+   white, so the numbered sections had no surface of their own. Tint the
+   authoring page so the white section cards read like the dark theme's
+   raised panels. Backdrop and editor share one tint, otherwise the editor's
+   own edge would show as a band next to the backdrop. */
+:global(html[data-color-mode="light"]) .editorBackdrop,
+:global(html[data-color-mode="light"]) .editorBackdrop .editor {
+  background: #f7f7f8;
+}
+
+:global(html[data-color-mode="light"]) .editorBackdrop .formSection {
+  border-color: #e4e4e7;
+  box-shadow: 0 1px 2px rgb(36 60 45 / 4%);
 }
 
 :global(html[data-color-mode="light"]) .cards > article {
@@ -1310,6 +1339,8 @@
 }
 
 .editorBackdrop .editor {
+  /* Same column as the catalog list and the Skills page, so opening the form
+     keeps the page's measure instead of stretching edge to edge. */
   width: min(1160px, 100%);
   height: auto;
   max-height: none;

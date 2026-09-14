@@ -10,6 +10,10 @@ const page = readFileSync(
   join(process.cwd(), "src/app/studio/knowledge/page.tsx"),
   "utf8",
 );
+const consolePage = readFileSync(
+  join(process.cwd(), "src/components/knowledge/knowledge-console.tsx"),
+  "utf8",
+);
 const layout = readFileSync(
   join(process.cwd(), "src/app/studio/layout.tsx"),
   "utf8",
@@ -20,11 +24,13 @@ const styles = readFileSync(
 );
 
 describe("Knowledge control plane", () => {
-  it("is a first-class Studio page for external knowledge only", () => {
-    expect(page).toContain('<McpCatalogControlPlane mode="knowledge"');
+  it("is a first-class Studio page for card-based knowledge management", () => {
+    expect(page).toContain("<KnowledgeConsole");
     expect(layout).toContain("<StudioUnifiedShell>");
     expect(page).not.toContain("<StudioUnifiedShell");
-    expect(component).toContain("接入外部知识库");
+    expect(consolePage).toContain("新建知识库");
+    expect(consolePage).toContain("engine: \"weknora\"");
+    expect(consolePage).toContain("hybrid");
   });
 
   it("uses governed MCP registration and manual tool discovery", () => {

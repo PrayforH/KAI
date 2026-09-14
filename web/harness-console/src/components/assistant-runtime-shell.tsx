@@ -27,6 +27,7 @@ import {
 } from "../lib/task-history";
 import { activateRuntimeThread } from "../lib/runtime-thread-scope";
 import type { TaskModelRoute } from "../lib/task-model-catalog";
+import { TaskKnowledgeProvider } from "./task-knowledge-context";
 import { TaskModelProvider } from "./task-model-context";
 
 function DurableHistorySync({
@@ -113,6 +114,10 @@ export function AssistantRuntimeShell({
 }) {
   const runView = useRunViewModel();
   const [historyRevision, setHistoryRevision] = useState(0);
+  const [knowledgeReferences, setKnowledgeReferences] = useState<string[]>([]);
+  const [knowledgeMode, setKnowledgeMode] = useState<"rag" | "wiki">("rag");
+  const [loadedKnowledgeKey, setLoadedKnowledgeKey] = useState<string | null>(null);
+  const knowledgeStorageKey = `harness:thread-knowledge:${threadId}`;
   const conversationalModelRouteOverride = modelRoutes.find(
     (route) => route.id === modelRouteOverride && route.modelType !== "video_generation",
   )?.id ?? null;
@@ -130,6 +135,8 @@ export function AssistantRuntimeShell({
     const next = new HarnessHttpAgent({
       url: `/api/agui?${query.toString()}`,
       modelRouteOverride: conversationalModelRouteOverride,
+      knowledgeReferences,
+      knowledgeMode,
       onRunSucceeded: refreshDurableHistory,
     });
     next.threadId = threadId;
@@ -139,6 +146,8 @@ export function AssistantRuntimeShell({
     agentOwnerUserId,
     agentVersion,
     conversationalModelRouteOverride,
+    knowledgeReferences,
+    knowledgeMode,
     refreshDurableHistory,
     spaceId,
     threadId,
@@ -159,6 +168,31 @@ export function AssistantRuntimeShell({
     },
     [agent, history],
   );
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(knowledgeStorageKey);
+      const saved = raw ? (JSON.parse(raw) as { references?: string[]; mode?: string }) : null;
+      setKnowledgeReferences(Array.isArray(saved?.references) ? [...new Set(saved.references.filter((ref) => typeof ref === "string" && /^[a-z][a-z0-9-]{0,127}$/.test(ref)))] : []);
+      setKnowledgeMode(saved?.mode === "wiki" ? "wiki" : "rag");
+    } catch {
+      setKnowledgeReferences([]);
+      setKnowledgeMode("rag");
+    }
+    setLoadedKnowledgeKey(knowledgeStorageKey);
+  }, [knowledgeStorageKey]);
+
+  useEffect(() => {
+    try {
+      if (loadedKnowledgeKey !== knowledgeStorageKey) return;
+      localStorage.setItem(
+        knowledgeStorageKey,
+        JSON.stringify({ references: knowledgeReferences, mode: knowledgeMode }),
+      );
+    } catch {
+      /* storage unavailable: keep the in-memory selection */
+    }
+  }, [knowledgeMode, knowledgeReferences, knowledgeStorageKey, loadedKnowledgeKey]);
+
   useLayoutEffect(() => {
     activateRuntimeThread(threadId);
     activityStore.clear();
@@ -184,12 +218,19 @@ export function AssistantRuntimeShell({
         overrideRouteId={modelRouteOverride}
         onOverrideChange={onModelRouteOverrideChange}
       >
-        <div
-          className="assistant-runtime-shell"
-          data-run-phase={runView?.phase ?? "idle"}
+        <TaskKnowledgeProvider
+          selected={knowledgeReferences}
+          onChange={setKnowledgeReferences}
+          mode={knowledgeMode}
+          onModeChange={setKnowledgeMode}
         >
-          {children}
-        </div>
+          <div
+            className="assistant-runtime-shell"
+            data-run-phase={runView?.phase ?? "idle"}
+          >
+            {children}
+          </div>
+        </TaskKnowledgeProvider>
       </TaskModelProvider>
     </AssistantRuntimeProvider>
   );

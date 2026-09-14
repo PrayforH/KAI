@@ -15,6 +15,8 @@ from pydantic import (
     model_validator,
 )
 
+from harness.knowledge.ports import EngineBaseConfig
+
 KnowledgeReference = Annotated[
     str,
     StringConstraints(
@@ -36,6 +38,44 @@ class KnowledgeModel(BaseModel):
 class KnowledgeSourceKind(StrEnum):
     FILE = "file"
     WEB = "web"
+    WEKNORA = "weknora"
+
+
+class KnowledgeBaseType(StrEnum):
+    """Product-level knowledge base flavor rendered as cards in the console."""
+
+    RAG = "rag"
+    WIKI = "wiki"
+    HYBRID = "hybrid"
+
+
+class KnowledgeBaseEngine(StrEnum):
+    """Which retrieval backend owns a knowledge base's documents and indexes."""
+
+    LEGACY = "legacy"
+    WEKNORA = "weknora"
+
+
+class KnowledgeMemberRole(StrEnum):
+    """Per-member knowledge base permission: read-only or read-write."""
+
+    VIEWER = "viewer"
+    EDITOR = "editor"
+
+    @property
+    def rank(self) -> int:
+        return 1 if self is KnowledgeMemberRole.VIEWER else 2
+
+
+class KnowledgeMemberSubject(StrEnum):
+    """Who a membership row grants to.
+
+    ``org_unit`` (and the inherited ``org_path``) is reserved for the phase-2
+    IDAAS organization-tree rollout; phase 1 only writes ``user`` rows.
+    """
+
+    USER = "user"
+    ORG_UNIT = "org_unit"
 
 
 class KnowledgeSourceHealth(StrEnum):
@@ -131,8 +171,15 @@ class WebKnowledgeConfig(KnowledgeModel):
     )
 
 
+class WeknoraKnowledgeConfig(KnowledgeModel):
+    """Connector config for a knowledge source backed by a WeKnora base."""
+
+    type: Literal["weknora"] = "weknora"
+    weknora_base_id: str = Field(alias="weknoraBaseId", min_length=1, max_length=128)
+
+
 KnowledgeSourceConfig = Annotated[
-    FileKnowledgeConfig | WebKnowledgeConfig,
+    FileKnowledgeConfig | WebKnowledgeConfig | WeknoraKnowledgeConfig,
     Field(discriminator="type"),
 ]
 
@@ -146,6 +193,17 @@ class KnowledgeBase(KnowledgeModel):
         default=(),
         alias="sourceReferences",
     )
+    kb_type: KnowledgeBaseType = Field(
+        default=KnowledgeBaseType.RAG,
+        alias="kbType",
+    )
+    engine: KnowledgeBaseEngine = Field(
+        default=KnowledgeBaseEngine.LEGACY,
+        alias="engine",
+    )
+    engine_ref: str = Field(default="", alias="engineRef", max_length=128)
+    # Last synced document count for engine-backed bases; 0 when unknown.
+    document_count: int = Field(default=0, alias="documentCount", ge=0)
     revision: int = Field(ge=1)
     created_by: str = Field(alias="createdBy", min_length=1)
     updated_by: str = Field(alias="updatedBy", min_length=1)
@@ -183,7 +241,14 @@ class KnowledgeSource(KnowledgeModel):
     def config_matches_kind(self) -> KnowledgeSource:
         if self.kind.value != self.config.type:
             raise ValueError("knowledge source kind does not match connector config")
-        if self.health is KnowledgeSourceHealth.HEALTHY and self.active_snapshot_id is None:
+        # Engine-backed sources keep documents and chunks inside the remote
+        # engine, so a healthy WeKnora source legitimately has no local
+        # snapshot. Re-validating the stored payload would otherwise reject it.
+        if (
+            self.kind is not KnowledgeSourceKind.WEKNORA
+            and self.health is KnowledgeSourceHealth.HEALTHY
+            and self.active_snapshot_id is None
+        ):
             raise ValueError("healthy knowledge source requires an active snapshot")
         return self
 
@@ -343,6 +408,46 @@ class KnowledgeSnapshotBinding(KnowledgeModel):
     trust: KnowledgeResultTrust
 
 
+class KnowledgeBaseGranularity(StrEnum):
+    """How many Wiki entities/concepts WeKnora extracts per document."""
+
+    FOCUSED = "focused"
+    STANDARD = "standard"
+    EXHAUSTIVE = "exhaustive"
+
+
+class KnowledgeBaseConfig(KnowledgeModel):
+    """Engine settings captured when a knowledge base is created.
+
+    These mirror the WeKnora knowledge base options: chunking drives the RAG
+    index, while the Wiki options drive page synthesis. Every field is optional;
+    an absent field keeps the platform default configured on the engine.
+    """
+
+    chunk_size: int | None = Field(default=None, alias="chunkSize", ge=200, le=20_000)
+    chunk_overlap: int | None = Field(default=None, alias="chunkOverlap", ge=0, le=4_000)
+    wiki_granularity: KnowledgeBaseGranularity | None = Field(
+        default=None,
+        alias="wikiGranularity",
+    )
+    wiki_content_instructions: str = Field(
+        default="",
+        alias="wikiContentInstructions",
+        max_length=4_000,
+    )
+    wiki_extraction_instructions: str = Field(
+        default="",
+        alias="wikiExtractionInstructions",
+        max_length=4_000,
+    )
+    wiki_max_pages_per_ingest: int | None = Field(
+        default=None,
+        alias="wikiMaxPagesPerIngest",
+        ge=0,
+        le=1_000,
+    )
+
+
 class CreateKnowledgeBaseRequest(KnowledgeModel):
     reference: KnowledgeReference
     display_name: str = Field(alias="displayName", min_length=1, max_length=160)
@@ -351,6 +456,143 @@ class CreateKnowledgeBaseRequest(KnowledgeModel):
         default=(),
         alias="sourceReferences",
     )
+    kb_type: KnowledgeBaseType = Field(
+        default=KnowledgeBaseType.RAG,
+        alias="kbType",
+    )
+    engine: KnowledgeBaseEngine = Field(
+        default=KnowledgeBaseEngine.LEGACY,
+        alias="engine",
+    )
+    config: KnowledgeBaseConfig = Field(
+        default_factory=KnowledgeBaseConfig,
+        alias="config",
+    )
+
+    def engine_config(self) -> EngineBaseConfig:
+        """Project the request onto the engine-agnostic creation config."""
+        return EngineBaseConfig(
+            chunk_size=self.config.chunk_size,
+            chunk_overlap=self.config.chunk_overlap,
+            wiki_granularity=(
+                self.config.wiki_granularity.value if self.config.wiki_granularity else ""
+            ),
+            wiki_content_instructions=self.config.wiki_content_instructions.strip(),
+            wiki_extraction_instructions=self.config.wiki_extraction_instructions.strip(),
+            wiki_max_pages_per_ingest=self.config.wiki_max_pages_per_ingest,
+        )
+
+
+class KnowledgeDocumentStatus(KnowledgeModel):
+    """Mirror of a WeKnora document's ingestion state for the console."""
+
+    tenant_id: str = Field(alias="tenantId")
+    source_reference: KnowledgeReference = Field(alias="sourceReference")
+    document_id: str = Field(alias="documentId")
+    title: str
+    parse_status: str = Field(alias="parseStatus")
+    summary_status: str = Field(alias="summaryStatus")
+    file_type: str = Field(default="", alias="fileType")
+    file_size: int = Field(default=0, alias="fileSize", ge=0)
+    enabled: bool = True
+    created_at: str = Field(default="", alias="createdAt")
+    description: str = Field(default="", alias="description")
+
+
+class KnowledgeWikiPage(KnowledgeModel):
+    knowledge_base_reference: str | None = Field(default=None, alias="knowledgeBaseReference")
+    slug: str
+    title: str = Field(min_length=1)
+    page_type: str = Field(alias="pageType", min_length=1)
+    content: str = ""
+    summary: str = ""
+    aliases: tuple[str, ...] = Field(default=())
+    category_path: tuple[str, ...] = Field(default=(), alias="categoryPath")
+    folder_id: str = Field(default="", alias="folderId")
+
+
+class KnowledgeWikiGraphNode(KnowledgeModel):
+    slug: str
+    title: str
+    page_type: str = Field(alias="pageType")
+    link_count: int = Field(default=0, alias="linkCount", ge=0)
+
+
+class KnowledgeWikiGraph(KnowledgeModel):
+    nodes: tuple[KnowledgeWikiGraphNode, ...]
+    links: tuple[tuple[str, str], ...]
+
+
+class KnowledgeWikiStats(KnowledgeModel):
+    total_pages: int = Field(alias="totalPages", ge=0)
+    pages_by_type: dict[str, int] = Field(alias="pagesByType")
+    total_links: int = Field(default=0, alias="totalLinks", ge=0)
+
+
+class KnowledgeBaseMember(KnowledgeModel):
+    tenant_id: str = Field(alias="tenantId", min_length=1)
+    member_id: str = Field(alias="memberId", min_length=1)
+    knowledge_base_reference: KnowledgeReference = Field(alias="knowledgeBaseReference")
+    subject_type: KnowledgeMemberSubject = Field(alias="subjectType")
+    subject_id: str = Field(alias="subjectId", min_length=1, max_length=320)
+    org_path: str = Field(default="", alias="orgPath", max_length=1_000)
+    role: KnowledgeMemberRole
+    display_name: str = Field(default="", alias="displayName", max_length=160)
+    email: str = Field(default="", max_length=320)
+    granted_by: str = Field(alias="grantedBy", min_length=1)
+    granted_at: datetime = Field(alias="grantedAt")
+
+
+class AddKnowledgeMembersRequest(KnowledgeModel):
+    """Batch grant. Phase 1 accepts user ids or emails; emails are resolved
+    against the platform user directory and unresolved entries are reported."""
+
+    user_ids: tuple[str, ...] = Field(default=(), alias="userIds")
+    emails: tuple[str, ...] = Field(default=())
+    role: KnowledgeMemberRole = KnowledgeMemberRole.VIEWER
+
+    @model_validator(mode="after")
+    def require_subject(self) -> AddKnowledgeMembersRequest:
+        if not self.user_ids and not self.emails:
+            raise ValueError("at least one user id or email is required")
+        return self
+
+
+class AddKnowledgeMembersResult(KnowledgeModel):
+    members: tuple[KnowledgeBaseMember, ...]
+    unresolved: tuple[str, ...] = ()
+
+
+class UpdateKnowledgeMemberRequest(KnowledgeModel):
+    role: KnowledgeMemberRole
+
+
+class KnowledgeDocumentTable(KnowledgeModel):
+    """A spreadsheet document rendered as a cell grid for the console."""
+
+    tenant_id: str = Field(alias="tenantId")
+    source_reference: KnowledgeReference = Field(alias="sourceReference")
+    document_id: str = Field(alias="documentId")
+    title: str
+    sheet: str = ""
+    rows: tuple[tuple[str, ...], ...] = ()
+    truncated: bool = False
+    extra_sheets: tuple[str, ...] = Field(default=(), alias="extraSheets")
+
+
+class CreateKnowledgeDocumentRequest(KnowledgeModel):
+    title: str = Field(min_length=1, max_length=500)
+    content: str = Field(min_length=1, max_length=2 * 1024 * 1024)
+
+
+class KnowledgeDocumentChunk(KnowledgeModel):
+    tenant_id: str = Field(alias="tenantId")
+    source_reference: KnowledgeReference = Field(alias="sourceReference")
+    document_id: str = Field(alias="documentId")
+    chunk_id: str = Field(alias="chunkId")
+    title: str
+    content: str
+    seq: int = Field(ge=0)
 
 
 class ReplaceKnowledgeBaseRequest(KnowledgeModel):

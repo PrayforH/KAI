@@ -45,11 +45,20 @@ import { ActivitySummary } from "./activity-summary";
 import { TaskAgentSwitcher } from "./task-agent-switcher";
 import { ApprovalCard, type ApprovalDetails } from "./approval-card";
 import { ArtifactCard, type ArtifactDetails } from "./artifact-list";
+import { AnswerCitationProvider } from "./knowledge/answer-citation-context";
+import { citationsForTurn, parseWikiTarget } from "../lib/knowledge-links";
+import { KnowledgeCitations } from "./knowledge/knowledge-citations";
+import { WikiPageDrawer } from "./knowledge/wiki-page-drawer";
 import { MarkdownText } from "./markdown-text";
 import { SubagentCard } from "./subagent-card";
 import { ToolCard } from "./tool-card";
 import { useRunActivity, useRunViewModel } from "../lib/activity-store";
-import { reduceRunViewModel, selectComposerDisabled, type RunPhase } from "../lib/run-view-model";
+import {
+  reduceRunViewModel,
+  selectComposerDisabled,
+  type RunCitation,
+  type RunPhase,
+} from "../lib/run-view-model";
 import {
   TaskModelControl,
   TaskModelVisionNotice,
@@ -86,6 +95,12 @@ import {
 
 import { createRandomId } from "../lib/random-id";
 import { ComposerAssist, composerOptions } from "./composer-assist";
+import {
+  TaskKnowledgeControl,
+  TaskKnowledgeSelection,
+  TaskKnowledgeModeSwitch,
+  useTaskKnowledge,
+} from "./task-knowledge-context";
 import { composerTrigger, queueAttachments, queueMayDispatch, restorePromptQueue, type QueuedPrompt } from "../lib/composer-interactions";
 
 export { normalizeMessageText } from "../lib/message-text";
@@ -414,7 +429,24 @@ function HarnessComposer() {
   const steeringRunId = queue.find((item) => item.steerRunId)?.steerRunId ?? runView?.runId;
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const composingRef = useRef(false);
-  const options = dismissedText === composerText ? [] : composerOptions(composerText, caret, agentSelection.agents, agentSelection.selected?.skills);
+  const knowledge = useTaskKnowledge();
+  const [wikiSlug, setWikiSlug] = useState<string | null>(null);
+  useEffect(() => {
+    const onOpenWiki = (event: Event) => {
+      const slug = (event as CustomEvent<{ slug?: string }>).detail?.slug;
+      if (slug) setWikiSlug(slug);
+    };
+    window.addEventListener("harness:open-wiki", onOpenWiki);
+    return () => window.removeEventListener("harness:open-wiki", onOpenWiki);
+  }, []);
+  const options = dismissedText === composerText ? [] : composerOptions(
+    composerText,
+    caret,
+    agentSelection.agents,
+    agentSelection.selected?.skills,
+    knowledge.available,
+    knowledge.selected,
+  );
   const busy = threadRunning || showStop || runLocked || videoGenerating;
   useEffect(() => {
     if (!queueKey) return;
@@ -471,6 +503,19 @@ function HarnessComposer() {
     const trigger = composerTrigger(composerText, caret);
     if (!trigger) return;
     if (option.id.startsWith("/")) { command(option.id); return; }
+    // `@` selects knowledge bases for this thread; the mention text is removed
+    // and the picker stays open so several bases can be toggled in a row.
+    if (trigger.symbol === "@") {
+      const reference = option.id.slice(1);
+      if (busy) return;
+      knowledge.toggle(reference);
+      const next = composerText.slice(0, trigger.start) + composerText.slice(trigger.end);
+      aui.composer().setText(next);
+      setDismissedText(null);
+      setCaret(trigger.start);
+      window.dispatchEvent(new Event("harness:select-knowledge"));
+      return;
+    }
     const next = composerText.slice(0, trigger.start) + (option.agent ? "" : `${option.id} `) + composerText.slice(trigger.end);
     aui.composer().setText(next);
     setDismissedText(next);
@@ -725,11 +770,20 @@ function HarnessComposer() {
         }} />
       {steeringNotice && <p className="composer-status-announcement" role="status">{steeringNotice}</p>}
       {inputError && <p className="composer-input-error" role="alert">{inputError}</p>}
+      <TaskKnowledgeSelection disabled={busy} />
       <Composer.Root onSubmitCapture={(event: FormEvent) => { event.preventDefault(); event.stopPropagation(); if (!composingRef.current) submitComposer(); }}>
         <ComposerAssist options={options} index={suggestionIndex} onChoose={chooseSuggestion} />
+        {wikiSlug ? (
+          <WikiPageDrawer
+            key={wikiSlug}
+            reference={parseWikiTarget(wikiSlug).reference}
+            slug={parseWikiTarget(wikiSlug).slug}
+            onClose={() => setWikiSlug(null)}
+          />
+        ) : null}
         {helpOpen && <div className="composer-assist composer-help-popover" role="dialog" aria-label="输入帮助">
           <button type="button" onClick={() => setHelpOpen(false)}>关闭</button>
-          <p>/ 执行命令 · @ 选择智能体 · $ 引用技能</p>
+          <p>/ 执行命令 · @ 选择知识库（可多选） · $ 引用技能</p>
           <p>运行中 Enter {followUpBehavior === "steer" ? "调整方向" : "加入队列"}，Alt Enter 使用另一种方式，Shift Enter 换行。可在个人设置的配置中更改默认行为。</p>
         </div>}
         {activeSkillLaunch && selectedSkill && (
@@ -747,7 +801,7 @@ function HarnessComposer() {
           onComposingChange={(value) => { composingRef.current = value; }}
           className="aui-composer-input"
           aria-label="消息输入"
-          placeholder={busy ? "继续补充…" : "随心输入，/ 命令 · @ 智能体 · $ 技能"}
+          placeholder={busy ? "继续补充…" : knowledge.selected.length ? "输入问题，将基于上方选中的知识库回答" : "随心输入，/ 命令 · @ 知识库 · $ 技能"}
           rows={Math.min(8, Math.max(2, composerText.split("\n").length))}
           aria-controls={options.length ? "composer-suggestions" : undefined}
           aria-activedescendant={options.length ? `composer-option-${suggestionIndex}` : undefined}
@@ -761,6 +815,7 @@ function HarnessComposer() {
             for (const file of files) void threadRuntime.composer.addAttachment(file).catch(() => setInputError("附件添加失败，请重试。"));
           }}
           onKeyDown={(event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+            if (event.nativeEvent.isComposing || composingRef.current) return;
             if (options.length && ["ArrowDown", "ArrowUp", "Escape", "Enter", "Tab"].includes(event.key) && !event.shiftKey) {
               event.preventDefault();
               if (event.key === "Escape") setDismissedText(composerText);
@@ -773,12 +828,14 @@ function HarnessComposer() {
             }
           }}
         />
+        <div className="composer-footer">
         <div className="composer-toolbar">
           <Composer.AddAttachment>
             <svg className="aui-composer-attach-icon" viewBox="0 0 20 20" aria-hidden="true">
               <path d="M10 4.5v11M4.5 10h11" />
             </svg>
           </Composer.AddAttachment>
+          <TaskKnowledgeControl disabled={runLocked || showStop || videoGenerating} />
           <TaskAgentSwitcher
             agents={agentSelection.agents}
             selected={agentSelection.selected}
@@ -787,6 +844,7 @@ function HarnessComposer() {
             onChange={agentSelection.onChange}
             onRefresh={agentSelection.onRefresh}
           />
+          <TaskKnowledgeModeSwitch disabled={runLocked || showStop || videoGenerating} />
           <TaskModelControl disabled={runLocked || showStop || videoGenerating} />
           {showStop && Boolean(composerText.trim() || composerAttachments.length) && <button type="button" className="composer-stop-secondary" aria-label="停止运行" title="停止运行" onClick={() => void stopRun()}><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="5" width="10" height="10" rx="2" fill="currentColor" /></svg></button>}
         </div>
@@ -818,6 +876,7 @@ function HarnessComposer() {
             </svg>
           </button>
         )}
+        </div>
       </Composer.Root>
 
     </div>
@@ -1314,7 +1373,17 @@ function HarnessAssistantMessage() {
           .join("\n"),
       );
   const feedbackRun = feedbackRunId(messageId, isLast, runView?.runId);
+  // Requirement: citations must be reachable from the reply itself, not only
+  // from the collapsed execution summary. Deduplicate by chunk so repeated
+  // retrieval in one run shows one chip per slice.
+  const durablePart = content.find((part) => part.type === "tool-call" && part.toolName === "harness_run_activity");
+  const durable = durablePart?.type === "tool-call" ? runActivitySchema.safeParse(durablePart.args.activity) : null;
+  const capturedCitations = useRef<{ messageId: string; citations: RunCitation[] }>({ messageId, citations: [] });
+  const turnCitations = citationsForTurn(messageId, isLast, runView, durable?.success ? durable.data : undefined);
+  if (turnCitations) capturedCitations.current = { messageId, citations: turnCitations };
+  const answerCitations = capturedCitations.current.messageId === messageId ? capturedCitations.current.citations : [];
   return (
+    <AnswerCitationProvider citations={answerCitations}>
     <AssistantMessage.Root
       className="harness-assistant-message"
       data-turn-answer={copyText.replace(/\s+/g, " ").slice(0, 360)}
@@ -1336,6 +1405,9 @@ function HarnessAssistantMessage() {
           },
         }}
       />
+      {answerCitations.length > 0 ? (
+        <KnowledgeCitations citations={answerCitations} showSources={false} />
+      ) : null}
       {showIncompleteRecovery ? (
         <div className="aui-message-error">
           <span>{incompleteRunGuidance(isLast)}</span>
@@ -1368,6 +1440,7 @@ function HarnessAssistantMessage() {
         </div>
       ) : null}
     </AssistantMessage.Root>
+    </AnswerCitationProvider>
   );
 }
 

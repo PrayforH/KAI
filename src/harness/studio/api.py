@@ -130,16 +130,17 @@ from harness.studio.models import (
     McpCapability,
     McpDiscoveryRequest,
     McpDiscoveryResult,
-    PlatformSkillCatalog,
+    PlatformSkillCatalogListing,
     PublishAgentDraftRequest,
     PublishedAgentVersion,
     ReplaceAgentDraftRequest,
     ReplaceCapabilityCatalogRequest,
+    SetSkillReferencesRequest,
     UpsertCatalogResourceRequest,
 )
 from harness.studio.platform_skills import (
-    default_platform_skill_catalog,
     imported_platform_skill,
+    platform_skill_catalog_listing,
     platform_skill_package,
 )
 from harness.studio.preflight_models import PreflightEvent
@@ -1264,11 +1265,13 @@ async def import_skill_file(
         ) from error
 
 
-@router.get("/skills/catalog", response_model=PlatformSkillCatalog)
+@router.get("/skills/catalog", response_model=PlatformSkillCatalogListing)
 async def list_platform_skill_packages(
     _actor: Annotated[StudioActor, Depends(require_studio_reader)],
-) -> PlatformSkillCatalog:
-    return default_platform_skill_catalog()
+) -> PlatformSkillCatalogListing:
+    """List reviewed platform Skill packages without their file payloads."""
+
+    return platform_skill_catalog_listing()
 
 
 async def _read_skill_upload(request: Request) -> bytes:
@@ -1342,6 +1345,26 @@ async def install_skill_file(
     return _installed_skill_response(draft, imported)
 
 
+@router.put("/drafts/{draft_id}/skills/references", response_model=AgentDraft)
+async def set_draft_skill_references(
+    draft_id: str,
+    body: SetSkillReferencesRequest,
+    actor: Annotated[StudioActor, Depends(require_studio_catalog_admin)],
+    service: Annotated[AgentStudioService, Depends(get_studio_service)],
+) -> AgentDraft:
+    try:
+        draft = await service.set_skill_references(
+            tenant_id=actor.tenant_id,
+            user_id=actor.user_id,
+            draft_id=draft_id,
+            expected_revision=body.expected_revision,
+            references=body.references,
+        )
+    except (ConflictError, NotFoundError) as error:
+        raise _translate_domain_error(error) from error
+    return compact_draft_for_editor(draft)
+
+
 @router.post(
     "/drafts/{draft_id}/skills/catalog/{package_id}/install",
     response_model=InstalledSkill,
@@ -1350,7 +1373,9 @@ async def install_platform_skill_package(
     draft_id: str,
     package_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9-]*$")],
     body: InstallPlatformSkillRequest,
-    actor: Annotated[StudioActor, Depends(require_studio_writer)],
+    # Mounting a reviewed platform Skill snapshot is a governance decision,
+    # not a plain draft edit: it bypasses the catalog reference lifecycle.
+    actor: Annotated[StudioActor, Depends(require_studio_catalog_admin)],
     service: Annotated[AgentStudioService, Depends(get_studio_service)],
 ) -> InstalledSkill:
     try:

@@ -721,6 +721,33 @@ class KnowledgeBaseRow(Base):
     payload: Mapped[dict[str, Any]] = mapped_column(JSON)
 
 
+class KnowledgeBaseMemberRow(Base):
+    __tablename__ = "knowledge_base_members"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "knowledge_base_reference",
+            "subject_type",
+            "subject_id",
+            name="uq_knowledge_base_members_subject",
+        ),
+        Index(
+            "ix_knowledge_base_members_tenant_user",
+            "tenant_id",
+            "subject_id",
+        ),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    member_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    knowledge_base_reference: Mapped[str] = mapped_column(String(128), index=True)
+    subject_type: Mapped[str] = mapped_column(String(16))
+    subject_id: Mapped[str] = mapped_column(String(320))
+    role: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
 class KnowledgeSourceRow(Base):
     __tablename__ = "knowledge_sources"
     __table_args__ = (

@@ -60,7 +60,7 @@ describe("Skills catalog page", () => {
     expect(navigation).toContain('href: "/studio/skills"');
     expect(navigation).toContain('label: "技能"');
     expect(sidebar).toContain('active={activeNav}');
-    expect(sidebar).toContain('visible={["agents", "capabilities"]}');
+    expect(sidebar).toContain('visible={["knowledge", "agents", "capabilities"]}');
     expect(sidebar).toContain('labelOverrides={{ capabilities: "技能 / MCP" }}');
   });
 
@@ -99,5 +99,26 @@ describe("Skills catalog page", () => {
     expect(component).toContain("window.localStorage.setItem");
     expect(styles).toMatch(/\.rowActions\s*\{[^}]*justify-content:\s*flex-end/s);
     expect(styles).toContain('.skillToggle[aria-checked="true"]');
+  });
+
+  it("streams the catalog instead of gating it on every agent draft", () => {
+    // Platform packages paint the list first, then draft reads stream in with
+    // a bounded number of in-flight requests.
+    expect(component).toContain("buildCatalog(platformCatalog.packages, [])");
+    expect(component).toContain("DRAFT_FETCH_CONCURRENCY");
+    expect(component).toContain("forEachWithConcurrency");
+    expect(component).not.toMatch(/await Promise\.all\(\s*summaries/);
+    expect(component).toContain("正在读取智能体技能");
+  });
+
+  it("renders the list in scroll pages", () => {
+    expect(component).toContain("CATALOG_PAGE_SIZE");
+    expect(component).toContain("IntersectionObserver");
+    expect(component).toContain("pageSkills.map");
+    expect(component).not.toContain("visibleSkills.map");
+    expect(component).toContain("已显示");
+    expect(component).toContain("加载更多");
+    expect(styles).toContain(".loadMore");
+    expect(styles).toContain(".loadMoreStatus");
   });
 });
