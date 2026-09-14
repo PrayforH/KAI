@@ -7,6 +7,7 @@ import ipaddress
 import json
 import re
 import socket
+import zlib
 from collections.abc import Awaitable, Callable, Iterable
 from datetime import UTC, datetime
 from html.parser import HTMLParser
@@ -217,7 +218,7 @@ class PublicWebClient:
                             current,
                             headers={
                                 "User-Agent": "KAI-PublicReader/1.0",
-                                "Accept-Encoding": "identity",
+                                "Accept-Encoding": "gzip, deflate",
                                 "Accept": "text/html,text/plain,application/json,application/xml",
                             },
                             extensions={
@@ -249,13 +250,35 @@ class PublicWebClient:
                                 raise WebAccessError(
                                     "当前仅读取文本网页；请上传 PDF 或其他二进制文件进行分析。"
                                 )
-                            if headers.get("content-encoding", "identity") != "identity":
+                            encoding = headers.get("content-encoding", "identity").strip().lower()
+                            if encoding not in {"identity", "gzip", "deflate"}:
                                 raise WebAccessError("网页返回不支持的压缩格式，请更换来源。")
+                            decoder = (zlib.decompressobj(16 + zlib.MAX_WBITS)
+                                       if encoding == "gzip" else zlib.decompressobj()
+                                       if encoding == "deflate" else None)
                             body = bytearray()
-                            async for chunk in response.aiter_stream():
-                                body.extend(chunk)
-                                if len(body) > _MAX_BYTES:
-                                    raise WebAccessError("网页超过 2 MB 读取上限，请换用正文页。")
+                            wire_size = 0
+                            try:
+                                async for chunk in response.aiter_stream():
+                                    wire_size += len(chunk)
+                                    if wire_size > _MAX_BYTES:
+                                        raise WebAccessError(
+                                            "网页超过 2 MB 读取上限，请换用正文页。"
+                                        )
+                                    body.extend(
+                                        decoder.decompress(chunk, _MAX_BYTES + 1 - len(body))
+                                        if decoder else chunk
+                                    )
+                                    if len(body) > _MAX_BYTES:
+                                        raise WebAccessError(
+                                            "网页超过 2 MB 读取上限，请换用正文页。"
+                                        )
+                                if decoder and (not decoder.eof or decoder.unused_data):
+                                    raise WebAccessError(
+                                        "网页压缩正文不完整或格式不支持，请更换来源。"
+                                    )
+                            except zlib.error as error:
+                                raise WebAccessError("网页压缩正文无效，请更换来源。") from error
                             charset = re.search(r"charset=[\"']?([\w-]+)", content_type)
                             try:
                                 text = body.decode(

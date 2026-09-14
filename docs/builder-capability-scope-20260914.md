@@ -46,3 +46,15 @@
 - `web/harness-console/src/lib/skill-creator-launch.ts`：个人 / 平台 / Agent Skill 作用域。
 - `src/harness/studio/api.py`：studio:write、studio:catalog:write、preview / publish / deploy 分离。
 - `src/harness/storage/studio_repository.py`：当前草稿修订的持久化与原子更新。
+
+## 2026-09-14 后续实现：Skill Creator 与目录装配
+
+上述“当前能力”矩阵记录的是 f6225d5 时点；本节更新其后续实现状态。
+
+- 构建对话支持 `skillRequests`（create / update），服务端复用 `ControlPlaneSkillConversationService`，使用草稿配置的模型路由生成完整 Skill。返回的 `createSkills` / `updateSkills` 与 Prompt、工具绑定等合并为同一建议。
+- 新技能只安装到当前 Agent 草稿，支持 instructions、description 和 references / scripts / assets。沿用 DraftSkill 文件校验、上传服务的凭据文件检查及原草稿 replacement/CAS 流程；保留已有托管来源，修改后标记为已修改。不会自动运行生成的脚本。
+- 工具、MCP、知识引用可从当前用户可见目录新增或移除。模型上下文只含装配所需的说明、标识和风险，不含连接凭据或自定义请求头。新增绑定携带目录修订；生成、差异预览、应用时均检查当前可见性和修订，编译器继续检查执行环境、策略和模型兼容性。
+- 新建 MCP 服务器、配置密钥、发布个人 / 平台 Skill、创建底层工具和 Python 算子仍走独立管理入口。装配引用复用运行时已有凭据解析与 preflight，不赋予模型目录管理权限。
+- 同一建议先生成实际 DeepAgents 项目差异，再应用整个草稿；失败不会部分安装 Skill。差异也纳入原 replacement 的技能文件合并、关联评测清理和已发布草稿自动升版规则。
+
+示例：在构建助手输入“创建 source-review 技能，附来源记录模板，并添加 WebFetch 和已有的某个 MCP”。助手生成建议后，使用“查看代码差异”审阅文件，再“应用修改”；效果测试继续走已有运行链。

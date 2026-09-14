@@ -84,15 +84,48 @@ export function inputAttachmentType(
   return "file";
 }
 
+export function uploadInputFile(
+  form: FormData, signal: AbortSignal, onProgress: (percent: number) => void,
+): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const abort = () => xhr.abort();
+    const cleanup = () => signal.removeEventListener("abort", abort);
+    xhr.open("POST", "/api/input-artifacts");
+    xhr.timeout = 10 * 60 * 1000;
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress(event.loaded / event.total * 100);
+    };
+    xhr.onload = () => {
+      cleanup();
+      if (!xhr.status) { reject(new Error("附件上传未收到服务器响应。")); return; }
+      resolve(new Response(xhr.status === 204 ? null : xhr.responseText, {
+        status: xhr.status,
+        headers: { "Content-Type": "application/json",
+          "x-harness-auth-error": xhr.getResponseHeader("x-harness-auth-error") ?? "" },
+      }));
+    };
+    xhr.onerror = () => { cleanup(); reject(new Error("网络异常，附件上传失败，请重新添加文件。")); };
+    xhr.ontimeout = () => { cleanup(); reject(new Error("附件上传超时，请重新添加文件。")); };
+    xhr.onabort = () => { cleanup(); reject(new DOMException("已取消上传", "AbortError")); };
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) { cleanup(); reject(new DOMException("已取消上传", "AbortError")); return; }
+    xhr.send(form);
+  });
+}
+
 export function createInputAttachmentAdapter(
-  fetcher: typeof fetch = fetch,
+  fetcher?: typeof fetch,
 ): AttachmentAdapter {
+  const uploads = new Map<string, AbortController>();
   return {
     accept: "*",
     async *add({ file }): AsyncGenerator<PendingAttachment, void> {
       const key = uploadKey(file);
       const attachmentId = `upload:${key}`;
       const initialMediaType = file.type || "application/octet-stream";
+      const controller = new AbortController();
+      uploads.set(attachmentId, controller);
       uploadFeedbackStore.begin(key, file.name);
       yield {
         id: attachmentId,
@@ -106,10 +139,9 @@ export function createInputAttachmentAdapter(
         const form = new FormData();
         form.append("file", file);
         const response = requireAuthenticatedResponse(
-          await fetcher("/api/input-artifacts", {
-            method: "POST",
-            body: form,
-          }),
+          await (fetcher || typeof XMLHttpRequest === "undefined"
+            ? (fetcher ?? fetch)("/api/input-artifacts", { method: "POST", body: form, signal: controller.signal })
+            : uploadInputFile(form, controller.signal, percent => uploadFeedbackStore.progress(key, percent))),
         );
         const payload: unknown = await response.json().catch(() => null);
         if (!response.ok || !isUpload(payload)) {
@@ -129,9 +161,12 @@ export function createInputAttachmentAdapter(
         };
         yield ready;
       } catch (error) {
+        if (controller.signal.aborted) return;
         const message = error instanceof Error ? error.message : String(error);
-        uploadFeedbackStore.fail(key, message);
+        if (!controller.signal.aborted) uploadFeedbackStore.fail(key, message);
         throw error;
+      } finally {
+        uploads.delete(attachmentId);
       }
     },
     async send(attachment): Promise<CompleteAttachment> {
@@ -161,6 +196,8 @@ export function createInputAttachmentAdapter(
       return complete;
     },
     async remove(attachment) {
+      uploads.get(attachment.id)?.abort();
+      uploads.delete(attachment.id);
       const file = "file" in attachment ? attachment.file : undefined;
       if (file) {
         uploadFeedbackStore.dismiss(uploadKey(file));

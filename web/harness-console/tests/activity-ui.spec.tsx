@@ -1,3 +1,4 @@
+import { FileUploadStatus } from "../src/components/composer-attachment";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { ActivitySummary } from "../src/components/activity-summary";
@@ -14,7 +15,6 @@ import {
   shouldKeepActivityInLatestSlot,
   shouldShowArtifactForTurn,
   shouldSuppressRawToolCard,
-  UploadFeedbackContent,
 } from "../src/components/agent-thread";
 import {
   activityOverview,
@@ -273,17 +273,13 @@ describe("Codex-style activity UI", () => {
 
   it("renders upload progress and actionable errors", () => {
     const html = renderToStaticMarkup(
-      <UploadFeedbackContent
-        items={[
-          { key: "a", fileName: "facts.txt", status: "uploading" },
-          { key: "b", fileName: "report.docx", status: "error", message: "too large" },
-        ]}
-        onDismiss={() => undefined}
-      />,
+      <><FileUploadStatus item={{ key: "a", fileName: "facts.txt", status: "uploading", progress: 42 }} />
+        <FileUploadStatus item={{ key: "b", fileName: "report.docx", status: "error", message: "too large" }} /></>,
     );
     expect(html).toContain("正在上传");
     expect(html).toContain("上传失败：too large");
-    expect(html).toContain("关闭 report.docx 上传错误");
+    expect(html).toContain('aria-valuenow="42"');
+    expect(html).toContain('role="progressbar"');
   });
 
   it("renders authenticated preview and download actions for artifacts", () => {

@@ -3676,14 +3676,6 @@ body,
 .input-file-chip > button { margin-left: auto; border: 0; background: transparent; color: #718079; cursor: pointer; font-size: 18px; }
 
 .composer-dropzone { position: relative; }
-.upload-feedback { display: grid; gap: 5px; margin: 0 2px 6px; }
-.upload-feedback-item { display: flex; align-items: center; gap: 7px; min-height: 30px; padding: 5px 8px; border: 1px solid #d6dfda; border-radius: 5px; background: #f6f9f7; color: #56625d; font-size: 11px; }
-.upload-feedback-item > span:nth-child(2) { min-width: 0; flex: 1; overflow-wrap: anywhere; }
-.upload-feedback-item strong { color: #34423c; }
-.upload-feedback-item.uploading > span:first-child { animation: upload-spin 1s linear infinite; }
-.upload-feedback-item.ready { border-color: #bdd8c7; background: #f1f8f3; color: #3d684c; }
-.upload-feedback-item.error { border-color: #dfc0ba; background: #fbf3f1; color: #874b42; }
-.upload-feedback-item button { border: 0; background: transparent; color: inherit; cursor: pointer; font-size: 16px; line-height: 1; }
 @keyframes upload-spin { to { transform: rotate(360deg); } }
 .runtime-disclaimer { margin: 7px 0 0; color: #8b9690; font: 8px/1.4 ui-monospace, monospace; text-align: center; }
 .harness-assistant-message[data-direct-stream="true"]
@@ -3711,7 +3703,6 @@ textarea:not(.aui-composer-input):focus-visible,
 }
 
 @media (max-width: 760px) {
-  .upload-feedback-item { align-items: flex-start; }
 }
 
 /* assistant-ui React UI composition overrides */
@@ -8937,3 +8928,19 @@ textarea.user-message-editor-input:focus-visible {
   outline: 3px solid rgb(236 236 236 / 28%);
   outline-offset: 2px;
 }
+
+/* One attachment card carries both preview and transfer state in every chat. */
+.composer-file-card { position: relative; flex: 0 0 auto; }
+.composer-file-card .aui-attachment-root { height: 78px; }
+.composer-file-card .aui-attachment-content { padding-bottom: 22px; }
+.attachment-upload-status { position: absolute; inset: auto 12px 8px; font-size: 10px; color: var(--text-muted, #737873); pointer-events: none; }
+.attachment-upload-status > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; }
+.attachment-upload-status.error { color: #c45443; }
+.attachment-upload-track { height: 3px; margin-top: 4px; overflow: hidden; border-radius: 3px; background: color-mix(in srgb, currentColor 15%, transparent); }
+.attachment-upload-track > span { display: block; height: 100%; border-radius: inherit; background: currentColor; transition: width 160ms ease; }
+.attachment-upload-track > span.indeterminate { width: 35%; animation: attachment-transfer 1.3s ease-in-out infinite; }
+@keyframes attachment-transfer { from { transform: translateX(-100%); } to { transform: translateX(390%); } }
+@media (prefers-reduced-motion: reduce) { .attachment-upload-track > span { transition: none; } .attachment-upload-track > span.indeterminate { animation: none; width: 100%; opacity: .45; } }
+
+.workspace-file-pending { position: relative; min-width: 210px; max-width: 260px; height: 68px; padding: 10px 30px 28px 12px; border: 1px solid var(--border, #d4d8d3); border-radius: 9px; }
+.workspace-file-pending > strong { display: block; font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }

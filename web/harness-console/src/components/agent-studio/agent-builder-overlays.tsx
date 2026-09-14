@@ -1,5 +1,6 @@
 "use client";
 
+import { uploadKey } from "../../lib/upload-feedback-store";
 import { createPortal } from "react-dom";
 import { WorkspaceAttachments, type WorkspaceFile } from "./workspace-attachments";
 import { AgentTestPanel } from "./agent-test-panel";
@@ -50,10 +51,14 @@ const editLabels: Record<string, string> = {
   displayName: "显示名称", description: "简介", systemPrompt: "系统提示词",
   taskContract: "任务与输出要求", builtinTools: "内置工具", mcpServers: "MCP",
   knowledgeReferences: "知识库", skillInstructions: "Skill 正文", removeSkills: "移除 Skill",
-  roleResponsibilities: "协作角色职责",
+  roleResponsibilities: "协作角色职责", createSkills: "创建 Agent Skill", updateSkills: "更新 Agent Skill",
+  capabilityCatalogRevision: "装配目录修订",
 };
 
 function beforeEdit(draft: StudioDraft, key: string): unknown {
+  if (key === "createSkills") return [];
+  if (key === "updateSkills") return draft.skills;
+  if (key === "capabilityCatalogRevision") return "应用时重新校验";
   if (key === "skillInstructions") return draft.skills.map(({ name, instructions }) => ({ name, instructions }));
   if (key === "removeSkills") return draft.skills.map(({ name }) => name);
   if (key === "roleResponsibilities") return draft.subagents.map(({ alias, responsibility }) => ({ alias, responsibility }));
@@ -229,13 +234,15 @@ export function AgentBuilderAssistant({
     try {
       const adapter = createInputAttachmentAdapter();
       for (const file of files) {
+        const pendingId = `upload:${uploadKey(file)}`;
+        if (epoch === epochRef.current) setAttachments(list => [...list, {id: pendingId, name: file.name, mediaType: file.type, uploadKey: uploadKey(file)}]);
         const iterator = adapter.add({ file });
         if (!(Symbol.asyncIterator in iterator)) throw new Error("附件上传不可用");
         for await (const pending of iterator) {
           if (pending.status.type !== "requires-action") continue;
           const attachment = await adapter.send(pending);
           const id = inputArtifactIdFromAttachment(attachment);
-          if (id && epoch === epochRef.current) setAttachments(current => [...current, { id, name: file.name, mediaType: attachment.contentType }]);
+          if (id && epoch === epochRef.current) setAttachments(current => current.map(item => item.id === pendingId ? { id, name: file.name, mediaType: attachment.contentType } : item));
         }
       }
     } catch (reason) { if (epoch === epochRef.current) setError(reason instanceof Error ? reason.message : "上传失败"); }
@@ -351,6 +358,7 @@ export function AgentBuilderAssistant({
   async function send() {
     const value = input.trim();
     if (!value || inputBusy || submitLock.current) return;
+    if (attachments.some(file => file.uploadKey)) { setError("请移除上传失败的文件后重试。"); return; }
     const sendAsTest = intent === "run";
     if (sendAsTest && proposal) { setError("请先应用或放弃当前修改建议，再开始试跑。"); return; }
     submitLock.current = true;
@@ -467,7 +475,7 @@ export function AgentBuilderAssistant({
         expectedRevision: proposal.baseRevision, changes: proposal.changes,
       }));
       if (epoch !== epochRef.current) return;
-      setLastChanges(Object.entries(proposal.changes).map(([key, value]) => ({label: editLabels[key] ?? key, before: showValue(beforeEdit(proposal.before, key)), after: showValue(value)})));
+      setLastChanges(Object.entries(proposal.changes).filter(([key]) => key !== "capabilityCatalogRevision").map(([key, value]) => ({label: editLabels[key] ?? key, before: showValue(beforeEdit(proposal.before, key)), after: showValue(value)})));
       setProposal(null);
       setLastComparison(comparison); setCodeComparison(comparison); setComparisonPending(false);
       const localConflict = latestRef.current.hasUnsavedChanges;
@@ -541,7 +549,7 @@ export function AgentBuilderAssistant({
         {workspaceTarget && <button type="button" className={styles.diffLink} disabled={comparing || applying || hasUnsavedChanges || activeDraft.revision !== proposal.baseRevision} onClick={() => void previewCodeChanges()}>{comparing ? "正在生成差异…" : "查看代码差异 ↗"}</button>}
         {workspaceTarget && <button type="button" className={styles.diffLink} onClick={() => {setCodeView(false);setAssetTab("changes");setAssetsOpen(true);}}>查看完整差异 ↗</button>}
         <p>只修改当前草稿，不发布，也不改变正在运行的配置。</p>
-        {Object.entries(proposal.changes).map(([key, value]) => <details key={key}>
+        {Object.entries(proposal.changes).filter(([key]) => key !== "capabilityCatalogRevision").map(([key, value]) => <details key={key}>
           <summary>{editLabels[key] ?? key}</summary>
           <small>修改前</small><pre>{showValue(beforeEdit(proposal.before, key))}</pre>
           <small>修改后</small><pre>{showValue(value)}</pre>
@@ -600,7 +608,7 @@ export function AgentBuilderAssistant({
     </footer>
   </aside>;
   if (!workspaceTarget) return builder;
-  const changes = proposal ? Object.entries(proposal.changes).map(([key,value]) => ({label: editLabels[key] ?? key, before: showValue(beforeEdit(proposal.before,key)), after: showValue(value)})) : lastChanges;
+  const changes = proposal ? Object.entries(proposal.changes).filter(([key]) => key !== "capabilityCatalogRevision").map(([key,value]) => ({label: editLabels[key] ?? key, before: showValue(beforeEdit(proposal.before,key)), after: showValue(value)})) : lastChanges;
   return createPortal(<div className={workspaceStyles.workspace} data-assets={assetsOpen} data-code={codeView} data-mobile={mobilePanel}>
     <nav className={workspaceStyles.mobileTabs} aria-label="构建工作台视图"><button type="button" aria-pressed={mobilePanel === "build"} onClick={() => setMobilePanel("build")}>构建与修改</button><button type="button" aria-pressed={mobilePanel === "test"} onClick={() => setMobilePanel("test")}>效果测试</button></nav>
     {builder}

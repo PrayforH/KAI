@@ -203,3 +203,44 @@ def test_platform_switch_denies_builtin_networking():
 
     with pytest.raises(ToolResolutionError, match="关闭"):
         ToolResolver(web_enabled=False).web_server({"WebSearch"}, None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("encoding", ["gzip", "deflate"])
+@pytest.mark.parametrize("oversized", [False, True])
+async def test_fetch_decodes_compressed_pages_with_expanded_size_limit(encoding, oversized):
+    import gzip
+    import zlib
+
+    content = (b"x" * 2_000_001 if oversized
+               else b"<html><title>Public source</title><p>Verified text</p></html>")
+    packed = gzip.compress(content) if encoding == "gzip" else zlib.compress(content)
+    wire = (f"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Encoding: {encoding}"
+            f"\r\nContent-Length: {len(packed)}\r\n\r\n").encode() + packed
+
+    class Stream:
+        def __init__(self):
+            self.data = wire
+
+        async def read(self, max_bytes, timeout=None):
+            data, self.data = self.data[:max_bytes], self.data[max_bytes:]
+            return data
+
+        async def write(self, buffer, timeout=None):
+            pass
+
+        async def aclose(self):
+            pass
+
+        def get_extra_info(self, info):
+            return None
+
+    with patch.object(PublicNetworkBackend, "connect_tcp", AsyncMock(return_value=Stream())):
+        if oversized:
+            with pytest.raises(WebAccessError, match="2 MB"):
+                await PublicWebClient().fetch("http://example.com/")
+        else:
+            result = await PublicWebClient().fetch("http://example.com/")
+            assert result["title"] == "Public source"
+            assert "Verified text" in result["content"]
+            assert result["trust"] == "untrusted"

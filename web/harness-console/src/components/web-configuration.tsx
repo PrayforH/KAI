@@ -29,3 +29,25 @@ export function WebConfiguration() {
     {!config&&!message&&<p>正在读取联网配置…</p>}{message&&<p role="status">{message}</p>}
   </section>
 }
+
+/** Explain the user switch where tools are selected; never enable it implicitly. */
+export function WebCapabilityStatus() {
+  const [config, setConfig] = useState<Config | null>(null);
+  useEffect(() => {
+    let active = true;
+    const refresh = () => { void fetch("/api/studio/web-configuration", { cache: "no-store" })
+      .then(async response => response.ok ? response.json() as Promise<Config> : null)
+      .then(value => { if (active) setConfig(value); }).catch(() => {}); };
+    refresh();
+    window.addEventListener("harness-web-configuration", refresh);
+    window.addEventListener("focus", refresh);
+    return () => { active = false; window.removeEventListener("harness-web-configuration", refresh); window.removeEventListener("focus", refresh); };
+  }, []);
+  if (!config) return null;
+  return <p role="status">{!config.platformEnabled ? "当前环境已关闭公开联网。"
+    : !config.effectiveEnabled ? "当前账号已关闭联网，已勾选的 WebSearch / WebFetch 也不会加载。"
+    : `当前账号联网已开启 · 搜索使用 ${config.provider === "platform" ? config.platformProvider : config.provider}${config.personalKeyConfigured ? " 个人配置" : " 平台配置"}。`}
+    {config.effectiveEnabled && !config.credentialConfigured ? "搜索密钥未配置，仍可读取公开网页。" : ""}
+    {" "}<a href="/settings#configuration">查看用户联网配置 ↗</a>
+  </p>;
+}

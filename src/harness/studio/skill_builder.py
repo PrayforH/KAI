@@ -26,7 +26,7 @@ class SkillConversationContext(StudioModel):
     display_name: str = Field(alias="displayName", min_length=1, max_length=100)
     domain: str = Field(min_length=1, max_length=100)
     description: str = Field(min_length=1, max_length=500)
-    current_skill: DraftSkill = Field(alias="currentSkill")
+    current_skill: DraftSkill | None = Field(default=None, alias="currentSkill")
 
 
 class SkillConversationRequest(StudioModel):

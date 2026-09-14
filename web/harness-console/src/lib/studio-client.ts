@@ -669,6 +669,9 @@ export type StudioBuilderChanges = {
   mcpServers?: string[];
   knowledgeReferences?: string[];
   skillInstructions?: { name: string; instructions: string }[];
+  createSkills?: StudioDraft["skills"];
+  updateSkills?: StudioDraft["skills"];
+  capabilityCatalogRevision?: number;
   removeSkills?: string[];
   roleResponsibilities?: { alias: string; responsibility: string }[];
 };

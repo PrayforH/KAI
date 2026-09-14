@@ -1,5 +1,6 @@
 "use client";
-import { WorkspaceAttachments } from "./workspace-attachments";
+import { uploadKey } from "../../lib/upload-feedback-store";
+import { WorkspaceAttachments, type WorkspaceFile } from "./workspace-attachments";
 import { useEffect, useRef, useState } from "react";
 import { createInputAttachmentAdapter, inputArtifactIdFromAttachment } from "../../lib/input-attachment-adapter";
 import { PreviewRunResponse, type PreviewTurn } from "./agent-preview";
@@ -12,7 +13,7 @@ export function AgentTestPanel({ incomingFiles, onIncomingFilesUsed, turns, draf
   onSend: (value: string, ids: string[], names: string[]) => Promise<boolean>; onReset: () => void; onCancel: () => Promise<void>; onImprove: (turn: PreviewTurn) => void; onAssets: () => void;
 }) {
   const [input, setInput] = useState("");
-  const [files, setFiles] = useState<{id: string; name: string; mediaType?: string}[]>([]);
+  const [files, setFiles] = useState<WorkspaceFile[]>([]);
   const [uploading, setUploading] = useState(false);
   const [sending, setSending] = useState(false);
   const [uploadError, setUploadError] = useState("");
@@ -34,6 +35,7 @@ export function AgentTestPanel({ incomingFiles, onIncomingFilesUsed, turns, draf
   }, [selectedRunId]);
   async function send() {
     if (!ready || busy || sending || uploading || !input.trim()) return;
+    if (files.some(file => file.uploadKey)) { setUploadError("请移除上传失败的文件后重试。"); return; }
     const current = epoch.current; setSending(true); follow.current = true;
     try { if (await onSend(input, files.map(f => f.id), files.map(f => f.name)) && current === epoch.current) { setInput(""); setFiles([]); } }
     finally { if (current === epoch.current) setSending(false); }
@@ -45,12 +47,14 @@ export function AgentTestPanel({ incomingFiles, onIncomingFilesUsed, turns, draf
     try {
       const adapter = createInputAttachmentAdapter();
       for (const file of selected) {
+        const pendingId = `upload:${uploadKey(file)}`;
+        if (current === epoch.current) setFiles(list => [...list, {id: pendingId, name: file.name, mediaType: file.type, uploadKey: uploadKey(file)}]);
         const iterator = adapter.add({file});
         if (!(Symbol.asyncIterator in iterator)) throw new Error("附件上传不可用");
         for await (const pending of iterator) {
           if (pending.status.type !== "requires-action") continue;
           const attachment = await adapter.send(pending); const id = inputArtifactIdFromAttachment(attachment);
-          if (id && current === epoch.current) { setFiles(list => [...list, {id, name: file.name, mediaType: attachment.contentType}]); }
+          if (id && current === epoch.current) { setFiles(list => list.map(item => item.id === pendingId ? {id, name: file.name, mediaType: attachment.contentType} : item)); }
         }
       }
     } catch (reason) { if (current === epoch.current) setUploadError(reason instanceof Error ? reason.message : "上传失败"); }

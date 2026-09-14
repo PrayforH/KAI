@@ -35,7 +35,9 @@ from harness.studio.agent_builder import (
 from harness.studio.builder_conversation import (
     BUILDER_AUTO_SYSTEM_PROMPT,
     BUILDER_SYSTEM_PROMPT,
+    AuthoredSkill,
     BuilderApplyRequest,
+    BuilderChanges,
     BuilderConversationReply,
     BuilderConversationRequest,
     apply_builder_changes,
@@ -80,6 +82,14 @@ from harness.studio.models import (
 from harness.studio.nexau_export import NexauAgentArchive, export_nexau_agent
 from harness.studio.platform_skills import draft_skill_content_hash
 from harness.studio.repositories import AgentDraftRepository
+from harness.studio.skill_builder import (
+    ControlPlaneSkillConversationService,
+    SkillConversationContext,
+    SkillConversationMessage,
+    SkillConversationRequest,
+    SkillConversationUnavailableError,
+    SkillConversationUpstreamError,
+)
 
 _EDITOR_SKILL_FILE_LIMIT = 200
 _EDITOR_INLINE_TEXT_BYTES = 64 * 1024
@@ -957,7 +967,18 @@ class AgentStudioService:
             for skill in current.spec.skills
         ]
         context.pop("pythonTools", None)
+        catalog_revision, catalog = await self._builder_catalog(tenant_id, user_id)
         prompt = json.dumps({
+            "assemblyCatalog": {
+                "revision": catalog_revision,
+                "builtinTools": [item.model_dump() for item in catalog.builtin_tools],
+                "mcpServers": [{"reference": item.reference, "label": item.label,
+                    "description": item.description, "category": item.category,
+                    "tools": item.tools, "risk": item.risk,
+                    "networkAccess": item.network_access,
+                    "allowedExecutionProfileIds": item.allowed_execution_profile_ids}
+                    for item in catalog.mcp_servers],
+            },
             "currentDraft": context,
             "conversation": [item.model_dump() for item in request.messages],
             "runContext": request.run_context,
@@ -975,7 +996,54 @@ class AgentStudioService:
             raise ConflictError("模型未明确消息用途，请重试；未执行任何操作")
         if request.intent == "edit" and reply.action not in {"edit", "ask", "reply"}:
             raise ConflictError("修改模式不能发起试跑，请重新描述修改要求")
-        candidate = apply_builder_changes(current.spec, reply.changes)
+        if reply.skill_requests:
+            generated = {"create_skills": list(reply.changes.create_skills),
+                         "update_skills": list(reply.changes.update_skills)}
+            existing = {skill.name: skill for skill in current.spec.skills}
+            names = [item.name for item in reply.skill_requests]
+            if len(names) != len(set(names)):
+                raise ConflictError("同一 Skill 不能重复共创")
+            creator = ControlPlaneSkillConversationService(models)
+            for item in reply.skill_requests:
+                skill = existing.get(item.name)
+                if (item.operation == "create") == (skill is not None):
+                    raise ConflictError("Skill 创建名称已存在，或更新目标不存在")
+                creator_request = SkillConversationRequest(
+                    modelRoute=current.spec.model.route_id,
+                    context=SkillConversationContext(
+                        agentName=current.spec.name, displayName=current.spec.display_name,
+                        domain=current.spec.domain, description=current.spec.description,
+                        currentSkill=skill,
+                    ),
+                    messages=(SkillConversationMessage(role="user", content=(
+                        item.request + f"\n目标 Skill 名称固定为 {item.name}。返回完整技能与文件；"
+                        "未要求修改的附件必须保留。仅生成建议，尚未安装。"
+                    )),),
+                )
+                if len(creator_request.model_dump_json()) > 180_000:
+                    raise ConflictError("该 Skill 附件内容较大，请在技能编辑区修改具体文件")
+                try:
+                    result = await creator.respond(tenant_id, creator_request)
+                except (SkillConversationUnavailableError, SkillConversationUpstreamError) as error:
+                    raise ConflictError(str(error)) from None
+                if result.status != "ready" or result.skill is None:
+                    return BuilderConversationReply(
+                        reply=result.reply, action="ask", changes=BuilderChanges(),
+                        baseRevision=current.revision, changedFields=(),
+                    )
+                if result.skill.name != item.name:
+                    raise ConflictError("Skill Creator 返回了不同的技能名称，请重新生成")
+                try:
+                    authored = AuthoredSkill.model_validate(result.skill.model_dump(
+                        include={"name", "description", "instructions", "files"}))
+                except ValueError:
+                    raise ConflictError("共创技能内容未通过安装校验，请重新生成；草稿未更改") from None
+                generated[item.operation + "_skills"].append(authored)
+            reply = reply.model_copy(update={"changes": reply.changes.model_copy(
+                update={key: tuple(value) for key, value in generated.items() if value}
+            )})
+        await self._check_builder_assembly(tenant_id, user_id, current, reply.changes)
+        candidate = self._builder_spec(current, reply.changes)
         await self._check_builder_candidate(tenant_id, user_id, current, candidate)
         latest = await self.get(tenant_id, user_id, draft_id)
         if latest.revision != current.revision:
@@ -996,7 +1064,8 @@ class AgentStudioService:
         await self._require_shared_permission(tenant_id, user_id, current, AgentPermission.EDIT)
         if current.revision != request.expected_revision:
             raise ConflictError("草稿已更新，本次建议未应用；请重新生成以免覆盖其他修改")
-        candidate = apply_builder_changes(current.spec, request.changes)
+        await self._check_builder_assembly(tenant_id, user_id, current, request.changes)
+        candidate = self._builder_spec(current, request.changes)
         if candidate == current.spec:
             return current
         await self._check_builder_candidate(tenant_id, user_id, current, candidate)
@@ -1005,15 +1074,59 @@ class AgentStudioService:
             request=ReplaceAgentDraftRequest(expectedRevision=current.revision, spec=candidate),
         )
 
+    def _builder_spec(self, current: AgentDraft, changes: BuilderChanges) -> AgentDraftSpec:
+        spec = apply_builder_changes(current.spec, changes)
+        existing = {skill.name: skill for skill in current.spec.skills}
+        removed_packages = {skill.source.package_id for skill in current.spec.skills
+                            if skill.source and skill.name not in {s.name for s in spec.skills}}
+        spec = spec.model_copy(update={
+            "skills": tuple(_merge_editor_skill(existing.get(skill.name), skill)
+                            for skill in spec.skills),
+            "evaluation_cases": tuple(case for case in spec.evaluation_cases
+                if not any(f"skill:{package}" in case.tags for package in removed_packages)),
+        })
+        return _auto_version_modified_release(current, spec)
+
+    async def _builder_catalog(self, tenant_id: str, user_id: str) -> tuple[int, CapabilityCatalog]:
+        if self._catalogs is not None:
+            record = await self._catalogs.get_for_user(tenant_id, user_id)
+            return record.revision, record.catalog
+        return 1, await self.capabilities(tenant_id, user_id)
+
+    async def _check_builder_assembly(
+        self, tenant_id: str, user_id: str, current: AgentDraft, changes: BuilderChanges,
+    ) -> None:
+        revision, catalog = await self._builder_catalog(tenant_id, user_id)
+        allowed = {
+            "builtin_tools": {item.name for item in catalog.builtin_tools},
+            "mcp_servers": {item.reference for item in catalog.mcp_servers
+                            if item.category == "tool" and item.enabled},
+            "knowledge_references": {
+                item.reference for item in catalog.mcp_servers
+                if item.category == "knowledge" and item.enabled
+            },
+        }
+        for field, visible in allowed.items():
+            proposed = getattr(changes, field)
+            if proposed is None:
+                continue
+            added = set(proposed) - set(getattr(current.spec, field))
+            if added - visible:
+                raise ConflictError("装配能力不在当前用户可见目录中，请刷新后重新生成建议")
+            if added and changes.capability_catalog_revision != revision:
+                raise ConflictError("能力目录已更新，请基于最新目录重新生成装配建议")
+
     async def _check_builder_candidate(
         self, tenant_id: str, user_id: str, current: AgentDraft, spec: AgentDraftSpec,
     ) -> None:
         compiler = await self._compiler_for(tenant_id, user_id)
-        previous = {(item.code, item.path) for item in compiler.validate(current).issues}
+        previous = {
+            (item.code, item.path, item.message) for item in compiler.validate(current).issues
+        }
         validation = compiler.validate(current.model_copy(update={"spec": spec}))
         errors = [item.message for item in validation.issues
                   if item.severity == ValidationSeverity.ERROR
-                  and (item.code, item.path) not in previous]
+                  and (item.code, item.path, item.message) not in previous]
         if errors:
             raise ConflictError("修改未通过配置检查：" + "；".join(errors[:3]))
 
@@ -1168,7 +1281,8 @@ class AgentStudioService:
         await self._require_shared_permission(tenant_id, user_id, current, AgentPermission.EDIT)
         if current.revision != request.expected_revision:
             raise ConflictError("草稿已更新，请重新生成修改差异")
-        spec = apply_builder_changes(current.spec, request.changes)
+        await self._check_builder_assembly(tenant_id, user_id, current, request.changes)
+        spec = self._builder_spec(current, request.changes)
         await self._check_builder_candidate(tenant_id, user_id, current, spec)
         candidate = current.model_copy(update={
             "spec": spec, "revision": current.revision + (spec != current.spec),
