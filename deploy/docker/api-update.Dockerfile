@@ -20,8 +20,16 @@ RUN /app/.venv/bin/pip install --no-cache-dir --no-deps --index-url "${PYPI_INDE
     && rm -f /tmp/node.tar.xz \
     && npm install --global --registry="${NPM_REGISTRY}" docx pptxgenjs \
     && npm cache clean --force \
+    && mkdir -p /node_modules \
+    && cp -R /usr/local/lib/node_modules/. /node_modules/ \
     && node -e "require('docx'); require('pptxgenjs'); console.log('office npm libs ok')"
-ENV NODE_PATH=/usr/local/lib/node_modules
+# Sandbox processes reconstruct their environment without NODE_PATH. Node's
+# parent-directory lookup must also find these packages from every workspace.
+RUN mkdir -p /tmp/office-probe \
+    && cd /tmp/office-probe \
+    && env -u NODE_PATH node -e "require('docx'); require('pptxgenjs')" \
+    && rmdir /tmp/office-probe
+ENV NODE_PATH=/node_modules
 COPY --chown=harness:harness src/harness /app/project/lib/python3.12/site-packages/harness
 # The default conversation agent is seeded straight from this manifest;
 # keep it in lockstep with application code on incremental updates.
