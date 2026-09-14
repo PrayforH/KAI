@@ -2483,6 +2483,22 @@ export const studioClient = {
     anchor.click();
     URL.revokeObjectURL(url);
   },
+  async downloadDeepagentsProject(draftId: string): Promise<void> {
+    const response = requireAuthenticatedResponse(
+      await fetch(`/api/studio/drafts/${encodeURIComponent(draftId)}/deepagents-project`, {
+        cache: "no-store",
+      }),
+    );
+    if (!response.ok) throw await errorFrom(response);
+    const disposition = response.headers.get("content-disposition") ?? "";
+    const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? "deepagents-project.zip";
+    const url = URL.createObjectURL(await response.blob());
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  },
 };
 
 export function capabilityOptions(catalog: StudioCapabilities): {

@@ -2270,6 +2270,27 @@ async def download_nexau_bundle(
     )
 
 
+@router.get("/drafts/{draft_id}/deepagents-project")
+async def download_deepagents_project(
+    draft_id: str,
+    actor: Annotated[StudioActor, Depends(require_studio_reader)],
+    service: Annotated[AgentStudioService, Depends(get_studio_service)],
+) -> Response:
+    try:
+        exported = await service.deepagents_project(actor.tenant_id, actor.user_id, draft_id)
+    except (ConflictError, NotFoundError) as error:
+        raise _translate_domain_error(error) from error
+    return Response(
+        content=exported.content,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{exported.filename}"',
+            "ETag": f'"{hashlib.sha256(exported.content).hexdigest()}"',
+            "X-Agent-Export-Format": "deepagents",
+        },
+    )
+
+
 @router.post("/drafts/{draft_id}/publish", response_model=PublishedAgentVersion)
 async def publish_draft(
     draft_id: str,

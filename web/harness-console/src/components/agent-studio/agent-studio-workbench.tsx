@@ -1382,6 +1382,17 @@ export function AgentStudioWorkbench() {
     }
   }
 
+  async function downloadDeepagentsProject() {
+    const current = dirty ? await saveDraft() : draft;
+    if (!current?.id) return;
+    try {
+      await studioClient.downloadDeepagentsProject(current.id);
+      setNotice("DeepAgents 项目导出已开始");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "DeepAgents 项目导出失败");
+    }
+  }
+
   async function importBundle(file: File) {
     if (dirty && !(await requestConfirmation({
       title: "导入并离开当前草稿？",
@@ -2257,6 +2268,18 @@ export function AgentStudioWorkbench() {
                   }}
                 >
                   <span><strong>导出 NexAU ZIP</strong><small>生成可导入 NexAU 的 Agent 包</small></span>
+                </button>
+                <button
+                  type="button"
+                  className={styles.actionMenuItem}
+                  data-icon="↗"
+                  disabled={!draft.id || saving}
+                  onClick={(event) => {
+                    event.currentTarget.closest("details")?.removeAttribute("open");
+                    void downloadDeepagentsProject();
+                  }}
+                >
+                  <span><strong>导出 DeepAgents 项目</strong><small>生成 deepagents 0.7.13 可运行的 Python 工程</small></span>
                 </button>
                 <button
                   type="button"
