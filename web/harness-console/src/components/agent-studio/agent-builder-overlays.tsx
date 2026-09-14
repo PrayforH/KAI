@@ -15,6 +15,7 @@ import {
   type StudioTaskDrivenRecommendation,
   type StudioTryRun,
   type StudioBuilderReply,
+  type DeepagentsProjectComparison,
 } from "../../lib/studio-client";
 import { createInputAttachmentAdapter, inputArtifactIdFromAttachment } from "../../lib/input-attachment-adapter";
 import { createRandomId } from "../../lib/random-id";
@@ -116,6 +117,10 @@ export function AgentBuilderAssistant({
 }) {
   const [input, setInput] = useState("");
   const [codeView, setCodeView] = useState(false);
+  const [lastComparison, setLastComparison] = useState<DeepagentsProjectComparison>();
+  const [codeComparison, setCodeComparison] = useState<DeepagentsProjectComparison>();
+  const [comparisonPending, setComparisonPending] = useState(false);
+  const [comparing, setComparing] = useState(false);
   const [assetsOpen, setAssetsOpen] = useState(true);
   const [assetTab, setAssetTab] = useState<"config" | "changes">("config");
   const [mobilePanel, setMobilePanel] = useState<"build" | "test">("build");
@@ -146,6 +151,7 @@ export function AgentBuilderAssistant({
   const startingRef = useRef(false);
   const sessionKeyRef = useRef("");
   const epochRef = useRef(0);
+  const proposalRef = useRef(proposal); proposalRef.current = proposal;
   const latestRef = useRef({ hasUnsavedChanges, onUpdated });
   latestRef.current = { hasUnsavedChanges, onUpdated };
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -175,7 +181,7 @@ export function AgentBuilderAssistant({
     setEditing(false);
     setApplying(false);
     setProposal(null);
-    setCodeView(false); setLastChanges([]); setSelectedRunId(""); setAssetsOpen(true); setMobilePanel("build");
+    setCodeView(false); setLastComparison(undefined); setCodeComparison(undefined); setComparisonPending(false); setComparing(false); setLastChanges([]); setSelectedRunId(""); setAssetsOpen(true); setMobilePanel("build");
     setLastTestPrompt("");
     setArchivedTurns([]); setCurrentFiles([]); setLastArtifactIds([]); setFeedbackTurn(null);
     setInput(initialPrompt);
@@ -397,7 +403,7 @@ export function AgentBuilderAssistant({
       setMessages((current) => [...current, { id: createRandomId(), role: "assistant", text: reply.reply }]);
       const action = reply.action ?? "edit";
       if (action === "edit") {
-        if (reply.changedFields.length) setProposal({ ...reply, before: saved, testTurn: contextTurn ?? undefined });
+        if (reply.changedFields.length) { setProposal({ ...reply, before: saved, testTurn: contextTurn ?? undefined }); if (comparisonPending) {setCodeComparison(undefined); setCodeView(false);} }
       } else if (action === "run" || action === "rerun") {
         if (active || proposal || latestRef.current.hasUnsavedChanges) {
           setError(active ? "当前试跑尚未结束，请结束后再试。" : proposal
@@ -420,6 +426,26 @@ export function AgentBuilderAssistant({
     }
   }
 
+  async function previewCodeChanges() {
+    if (!proposal || comparing || applying) return;
+    const epoch = epochRef.current;
+    setComparing(true); setError("");
+    try {
+      const comparison = await studioClient.previewBuilderProjectDiff(activeDraft.id, {
+        expectedRevision: proposal.baseRevision, changes: proposal.changes,
+      });
+      if (epoch !== epochRef.current || proposalRef.current !== proposal) return;
+      setCodeComparison(comparison); setComparisonPending(true); setCodeView(true);
+    } catch (reason) {
+      if (epoch === epochRef.current) setError(reason instanceof Error ? reason.message : "无法生成代码差异，请重试");
+    } finally { if (epoch === epochRef.current) setComparing(false); }
+  }
+
+  function showLastComparison() {
+    if (!lastComparison) return;
+    setCodeComparison(lastComparison); setComparisonPending(false); setCodeView(true);
+  }
+
   async function applyEdit(rerun: boolean) {
     if (!proposal || applying || hasUnsavedChanges || activeDraft.revision !== proposal.baseRevision) return;
     if (rerun && active) return;
@@ -427,21 +453,33 @@ export function AgentBuilderAssistant({
     setApplying(true);
     setError("");
     try {
+      let comparison: DeepagentsProjectComparison | undefined;
+      let comparisonError = "";
+      try {
+        comparison = await studioClient.previewBuilderProjectDiff(activeDraft.id, {
+          expectedRevision: proposal.baseRevision, changes: proposal.changes,
+        });
+      } catch (reason) {
+        comparisonError = reason instanceof Error ? reason.message : "无法生成项目代码差异";
+      }
+      if (epoch !== epochRef.current) return;
       const saved = apiDraftToStudioDraft(await studioClient.applyBuilderEdit(activeDraft.id, {
         expectedRevision: proposal.baseRevision, changes: proposal.changes,
       }));
       if (epoch !== epochRef.current) return;
       setLastChanges(Object.entries(proposal.changes).map(([key, value]) => ({label: editLabels[key] ?? key, before: showValue(beforeEdit(proposal.before, key)), after: showValue(value)})));
       setProposal(null);
+      setLastComparison(comparison); setCodeComparison(comparison); setComparisonPending(false);
       const localConflict = latestRef.current.hasUnsavedChanges;
       if (!localConflict) {
         setWorkingDraft(saved);
         latestRef.current.onUpdated(saved);
+        if (comparison && !rerun) setCodeView(true);
       }
       const text = localConflict
         ? "修改已保存，但主区域出现了新的未保存编辑，已保留本地内容；请重新加载或处理保存冲突后继续。"
         : `已更新“${saved.displayName}”草稿（修订 ${saved.revision}），未发布。${result && !terminal ? "当前试跑仍使用原配置；结束后可用新配置重新试跑。" : "可以继续提出修改要求。"}`;
-      setMessages((current) => [...current, { id: createRandomId(), role: "assistant", tone: "success", text }]);
+      setMessages((current) => [...current, { id: createRandomId(), role: "assistant", tone: "success", text: text + (comparisonError ? ` 代码差异未生成：${comparisonError}。可在智能体资产中查看配置改动。` : "") }]);
       if (rerun && !localConflict && lastTestPrompt) {
         const test = proposal.testTurn;
         await startRun(test?.prompt ?? lastTestPrompt, saved, false, test?.artifactIds ?? lastArtifactIds, test?.files ?? currentFiles);
@@ -496,9 +534,11 @@ export function AgentBuilderAssistant({
       </article>}
 
       {feedbackTurn && <div className={styles.editStatus}>正在改进所选回答 · 修订 {feedbackTurn.result.draftRevision}<button type="button" onClick={() => setFeedbackTurn(null)}>取消选择</button></div>}
+      {workspaceTarget && lastComparison && <button type="button" className={styles.runLink} onClick={showLastComparison} aria-label="查看本次代码差异"><span>已更新 · r{lastComparison.before.revision} → r{lastComparison.after.revision}</span><small>查看代码差异 ↗</small></button>}
       {(editing || applying) && <p className={styles.editStatus} role="status">{editing ? intent === "auto" ? "正在结合上下文理解要求…" : "正在根据当前草稿生成修改建议…" : "正在保存修改…"}</p>}
       {proposal && <section className={styles.editProposal} aria-label="待确认的配置修改">
         <strong>修改预览 · 基于修订 {proposal.baseRevision}</strong>
+        {workspaceTarget && <button type="button" className={styles.diffLink} disabled={comparing || applying || hasUnsavedChanges || activeDraft.revision !== proposal.baseRevision} onClick={() => void previewCodeChanges()}>{comparing ? "正在生成差异…" : "查看代码差异 ↗"}</button>}
         {workspaceTarget && <button type="button" className={styles.diffLink} onClick={() => {setCodeView(false);setAssetTab("changes");setAssetsOpen(true);}}>查看完整差异 ↗</button>}
         <p>只修改当前草稿，不发布，也不改变正在运行的配置。</p>
         {Object.entries(proposal.changes).map(([key, value]) => <details key={key}>
@@ -564,8 +604,8 @@ export function AgentBuilderAssistant({
   return createPortal(<div className={workspaceStyles.workspace} data-assets={assetsOpen} data-code={codeView} data-mobile={mobilePanel}>
     <nav className={workspaceStyles.mobileTabs} aria-label="构建工作台视图"><button type="button" aria-pressed={mobilePanel === "build"} onClick={() => setMobilePanel("build")}>构建与修改</button><button type="button" aria-pressed={mobilePanel === "test"} onClick={() => setMobilePanel("test")}>效果测试</button></nav>
     {builder}
-    {assetsOpen && !codeView && <AgentBuildAssets key={assetTab} initialTab={assetTab} onCodeView={() => setCodeView(true)} draft={activeDraft} turns={turns} changes={changes} pending={Boolean(proposal)} onClose={() => setAssetsOpen(false)} onEdit={(section, label) => onEditConfiguration?.(section, label)} />}
-    {codeView && <AgentProjectCode key={activeDraft.id} draftId={draftReady ? activeDraft.id : ""} revision={activeDraft.revision} name={activeDraft.name || activeDraft.displayName} dirty={hasUnsavedChanges} onClose={() => {setCodeView(false);setAssetsOpen(true);}} />}
+    {assetsOpen && !codeView && <AgentBuildAssets key={assetTab} initialTab={assetTab} onCodeView={() => {setCodeComparison(undefined); setCodeView(true);}} onCodeChanges={lastComparison ? showLastComparison : undefined} draft={activeDraft} turns={turns} changes={changes} pending={Boolean(proposal)} onClose={() => setAssetsOpen(false)} onEdit={(section, label) => onEditConfiguration?.(section, label)} />}
+    {codeView && <AgentProjectCode key={activeDraft.id} draftId={draftReady ? activeDraft.id : ""} revision={activeDraft.revision} name={activeDraft.name || activeDraft.displayName} dirty={hasUnsavedChanges} comparison={codeComparison} comparisonPending={comparisonPending} onClose={() => {setCodeView(false);setAssetsOpen(true);}} />}
     <AgentTestPanel draftId={activeDraft.id} revision={activeDraft.revision} agentName={activeDraft.displayName} model={activeDraft.model} turns={turns} busy={active} ready={draftReady} dirty={hasUnsavedChanges} error={error} selectedRunId={selectedRunId}
       onSend={async (value,ids,names) => {if (proposal) {setError("请先应用或放弃左侧的配置建议，再测试。");return false;}return startRun(value, undefined, true, ids, names);}}
       onReset={() => {if (result) setArchivedTurns(current => [...current,{prompt:lastTestPrompt,result,files:currentFiles,artifactIds:lastArtifactIds}]);setResult(null);setFeedbackTurn(null);setSelectedRunId("");setError("");}}

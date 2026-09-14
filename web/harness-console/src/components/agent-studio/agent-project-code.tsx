@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { studioClient, type DeepagentsProjectSource } from "../../lib/studio-client";
+import { studioClient, type DeepagentsProjectComparison, type DeepagentsProjectSource } from "../../lib/studio-client";
 import { createFileTreeIconResolver, getBuiltInSpriteSheet } from "@pierre/trees";
 import { ProjectFileTree } from "./project-file-tree";
+import { projectSourceChanges } from "../../lib/project-source-changes";
+import { ProjectSourceDiff } from "./project-source-diff";
 import { ProjectSourceEditor } from "./project-source-editor";
 import styles from "./agent-project-code.module.css";
 
@@ -35,22 +37,21 @@ function FileMark({ path }: { path: string }) {
   const icon = iconResolver.resolveIcon("file-tree-icon-file", path);
   return <svg className={styles.fileMark} data-type={sourceFileKind(path).type} viewBox="0 0 16 16" aria-hidden="true" dangerouslySetInnerHTML={{ __html: fileIcons.get(icon.name) ?? "" }} />;
 }
-export function AgentProjectCode({ draftId, revision, name, dirty, onClose }: {
-  draftId: string; revision: number; name: string; dirty: boolean; onClose: () => void;
+export function AgentProjectCode({ draftId, revision, name, dirty, onClose, comparison, comparisonPending = false }: {
+  draftId: string; revision: number; name: string; dirty: boolean; onClose: () => void; comparison?: DeepagentsProjectComparison; comparisonPending?: boolean;
 }) {
-  const [themeChoice, setThemeChoice] = useState<"system" | "dark" | "light">("system");
-  const [systemTheme, setSystemTheme] = useState<"dark" | "light">("dark");
+  const [theme, setTheme] = useState<"dark" | "light">(() => typeof document !== "undefined" && document.documentElement.dataset.colorMode === "light" ? "light" : "dark");
   const [wrap, setWrap] = useState(false);
+  const [mode, setMode] = useState<"files" | "changes">(comparison ? "changes" : "files");
+  useEffect(() => { if (comparison) setMode("changes"); }, [comparison]);
   useEffect(() => {
-    const update = () => setSystemTheme(document.documentElement.dataset.colorMode === "light" ? "light" : "dark");
+    const update = () => setTheme(document.documentElement.dataset.colorMode === "light" ? "light" : "dark");
     update();
     const observer = new MutationObserver(update);
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-color-mode"] });
-    try { const saved = localStorage.getItem("studio-code-theme"); if (saved === "dark" || saved === "light") setThemeChoice(saved); } catch {}
     return () => observer.disconnect();
   }, []);
-  const theme = themeChoice === "system" ? systemTheme : themeChoice;
-  const [project, setProject] = useState<DeepagentsProjectSource | null>(null);
+  const [loadedProject, setProject] = useState<DeepagentsProjectSource | null>(null);
   const [selected, setSelected] = useState("agent.py");
   const [filter, setFilter] = useState("");
   const [refresh, setRefresh] = useState(0);
@@ -60,6 +61,7 @@ export function AgentProjectCode({ draftId, revision, name, dirty, onClose }: {
   const [notice, setNotice] = useState("");
   const [treeOpen, setTreeOpen] = useState(true);
   useEffect(() => {
+    if (mode === "changes" && comparison) { setLoading(false); setError(""); return; }
     const controller = new AbortController();
     setLoading(true); setError(""); setProject(null); setNotice("");
     if (!draftId) { setLoading(false); setError("先完成智能体创建，即可查看生成的项目代码。"); return; }
@@ -71,8 +73,12 @@ export function AgentProjectCode({ draftId, revision, name, dirty, onClose }: {
       if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "代码加载失败，请重试。");
     }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [draftId, revision, refresh]);
-  const files = project?.files ?? [];
+  }, [draftId, revision, refresh, mode, comparison]);
+  const project = mode === "changes" && comparison ? comparison.after : loadedProject;
+  const changes = useMemo(() => comparison ? projectSourceChanges(comparison) : [], [comparison]);
+  const files = useMemo(() => mode === "changes" ? changes.map(change => (change.after ?? change.before)!) : project?.files ?? [], [mode, changes, project]);
+  useEffect(() => { if (files.length && !files.some(file => file.path === selected)) setSelected(files.find(file => file.path === "agent.py")?.path ?? files[0].path); }, [files, selected]);
+  const change = changes.find(item => item.path === selected);
   const visible = useMemo(() => files.filter(file => file.path.toLowerCase().includes(filter.trim().toLowerCase())), [files, filter]);
   const paths = useMemo(() => visible.map(file => file.path), [visible]);
   const file = files.find(item => item.path === selected);
@@ -93,17 +99,14 @@ export function AgentProjectCode({ draftId, revision, name, dirty, onClose }: {
     <header className={styles.toolbar}>
       <div className={styles.breadcrumb}><span title={name}>{name}</span><span aria-hidden="true">→</span><strong>DeepAgents</strong><small>{project?.framework_version}</small></div>
       <div className={styles.actions}>
-        <select className={styles.themeSelect} aria-label="代码主题" value={themeChoice} onChange={event => {
-          const value = event.target.value as "system" | "dark" | "light"; setThemeChoice(value);
-          try { localStorage.setItem("studio-code-theme", value); } catch {}
-        }}><option value="system">跟随界面</option><option value="dark">Codex Dark</option><option value="light">Codex Light</option></select>
-        <button type="button" aria-label="刷新代码" title="刷新代码" disabled={loading} onClick={() => setRefresh(value => value + 1)}><Icon name="refresh" /></button>
-        <button type="button" className={styles.download} aria-label="下载项目" title="下载项目" disabled={!project || downloading} onClick={() => void download()}><Icon name="download" /><span>{downloading ? "下载中…" : "下载项目"}</span></button>
+        <button type="button" aria-label="刷新代码" title="刷新代码" disabled={loading || mode === "changes"} onClick={() => setRefresh(value => value + 1)}><Icon name="refresh" /></button>
+        <button type="button" className={styles.download} aria-label="下载项目" title="下载项目" disabled={!project || downloading || (mode === "changes" && (comparisonPending || revision !== project.revision))} onClick={() => void download()}><Icon name="download" /><span>{downloading ? "下载中…" : "下载项目"}</span></button>
         <button type="button" onClick={onClose} className={styles.returnButton}>返回配置</button>
       </div>
     </header>
+    {comparison && <nav className={styles.viewTabs} aria-label="代码内容"><button type="button" aria-pressed={mode === "files"} onClick={() => setMode("files")}>全部文件</button><button type="button" aria-pressed={mode === "changes"} onClick={() => setMode("changes")}>本次改动 · {changes.length}</button></nav>}
     <div className={styles.context}>
-      <Icon name="code" /><span>{dirty ? `有未保存配置 · 当前展示已保存的 r${revision}` : `草稿 r${revision} · 生成的项目代码`}</span><small>只读</small>
+      <Icon name="code" /><span>{mode === "changes" && comparison ? `r${comparison.before.revision} → r${comparison.after.revision} · ${comparisonPending ? "待应用" : "已应用"} · ${changes.length} 个文件变化` : dirty ? `有未保存配置 · 当前展示已保存的 r${revision}` : `草稿 r${revision} · 生成的项目代码`}</span><small>只读</small>
       <button type="button" aria-label="显示文件树" aria-pressed={treeOpen} title="显示 / 隐藏文件树" onClick={() => setTreeOpen(value => !value)}><Icon name="tree" /></button>
     </div>
     {loading ? <div className={styles.loading} role="status" aria-label="正在生成代码"><div /><div /><div /><span>正在生成项目代码…</span></div> : error ?
@@ -112,20 +115,20 @@ export function AgentProjectCode({ draftId, revision, name, dirty, onClose }: {
         <main className={styles.source}>
           <header className={styles.fileHeader}>
             <FileMark path={selected} /><strong title={selected}>{selected || "选择文件"}</strong>
-            {file && <small>{lines ? `${lines} 行` : `${file.size.toLocaleString()} B`}</small>}
+            {file && mode === "files" && <small>{lines ? `${lines} 行` : `${file.size.toLocaleString()} B`}</small>}
             <button type="button" aria-label="自动换行" title="自动换行" aria-pressed={wrap} onClick={() => setWrap(value => !value)}>↵</button>
             <button type="button" aria-label="复制文件内容" title="复制文件内容" disabled={file?.content == null} onClick={() => void copy()}><Icon name="copy" /></button>
             <button type="button" aria-label="上一个文件" title="上一个文件" disabled={index <= 0} onClick={() => setSelected(visible[index - 1].path)}><Icon name="back" /></button>
             <button type="button" aria-label="下一个文件" title="下一个文件" disabled={!visible.length || index >= visible.length - 1} onClick={() => setSelected(visible[index + 1].path)}><Icon name="next" /></button>
           </header>
-          {file?.content != null ? <ProjectSourceEditor path={file.path} content={file.content} theme={theme} wrap={wrap} /> : <div className={styles.empty}><p>{file?.unavailable ?? "从文件树中选择文件查看源代码。"}</p></div>}
+          {mode === "changes" && change ? <ProjectSourceDiff change={change} theme={theme} wrap={wrap}/> : file?.content != null ? <ProjectSourceEditor path={file.path} content={file.content} theme={theme} wrap={wrap} /> : <div className={styles.empty}><p>{file?.unavailable ?? "从文件树中选择文件查看源代码。"}</p></div>}
           <footer className={styles.status}><span>{file?.content != null ? `${sourceFileKind(file.path).name} · UTF-8` : "项目资源"}</span><span>只读预览</span><span>{project?.files.length ?? 0} 个文件</span></footer>
         </main>
         {treeOpen && <aside className={styles.sidebar} aria-label="项目文件">
           <label className={styles.search}><Icon name="search" /><input aria-label="筛选文件" placeholder="筛选文件…" value={filter} onChange={event => setFilter(event.target.value)} />{filter && <button type="button" aria-label="清除筛选" onClick={() => setFilter("")}>×</button>}</label>
           <div className={styles.treeHeading}><span>项目文件</span><small>{visible.length}</small></div>
-          <nav className={styles.tree} aria-label="DeepAgents 文件树">{paths.length ? <ProjectFileTree paths={paths} selected={selected} onSelect={setSelected} theme={theme} /> : <p className={styles.noFiles}>没有匹配的文件</p>}</nav>
-          <div className={styles.sidebarFooter}><span>DeepAgents {project?.framework_version}</span><button type="button" onClick={() => setSelected("README.md")}>运行说明 ↗</button></div>
+          <nav className={styles.tree} aria-label="DeepAgents 文件树">{paths.length ? <ProjectFileTree key={mode} paths={paths} selected={selected} onSelect={setSelected} theme={theme} gitStatus={mode === "changes" ? changes.map(({path, status}) => ({path, status})) : undefined} /> : <p className={styles.noFiles}>没有匹配的文件</p>}</nav>
+          <div className={styles.sidebarFooter}><span>DeepAgents {project?.framework_version}</span><button type="button" onClick={() => {setMode("files"); setSelected("README.md");}}>运行说明 ↗</button></div>
         </aside>}
       </div>}
     <div className={styles.notice} role="status" aria-live="polite">{notice}</div>

@@ -50,8 +50,10 @@ from harness.studio.compiler import (
 )
 from harness.studio.deepagents_export import (
     DeepagentsProjectArchive,
+    DeepagentsProjectComparison,
     draft_from_published_snapshot,
     export_deepagents_project,
+    project_source,
 )
 from harness.studio.factory import create_draft_spec
 from harness.studio.model_configuration import ModelConfigurationService
@@ -1157,6 +1159,33 @@ class AgentStudioService:
         draft = await self.get(tenant_id, owner_user_id, draft_id)
         if expected_revision is not None and draft.revision != expected_revision:
             raise ConflictError("草稿修订已变化，请重新加载智能体后查看代码。")
+        return await self._export_deepagents_draft(tenant_id, owner_user_id, draft)
+
+    async def compare_builder_project(
+        self, tenant_id: str, user_id: str, draft_id: str, request: BuilderApplyRequest,
+    ) -> DeepagentsProjectComparison:
+        current = await self.get(tenant_id, user_id, draft_id)
+        await self._require_shared_permission(tenant_id, user_id, current, AgentPermission.EDIT)
+        if current.revision != request.expected_revision:
+            raise ConflictError("草稿已更新，请重新生成修改差异")
+        spec = apply_builder_changes(current.spec, request.changes)
+        await self._check_builder_candidate(tenant_id, user_id, current, spec)
+        candidate = current.model_copy(update={
+            "spec": spec, "revision": current.revision + (spec != current.spec),
+        })
+        before = await self._export_deepagents_draft(tenant_id, user_id, current)
+        after = await self._export_deepagents_draft(tenant_id, user_id, candidate)
+        latest = await self.get(tenant_id, user_id, draft_id)
+        if latest.revision != current.revision:
+            raise ConflictError("生成差异期间草稿已更新，请重试")
+        return DeepagentsProjectComparison(
+            before=project_source(before, current.revision),
+            after=project_source(after, candidate.revision),
+        )
+
+    async def _export_deepagents_draft(
+        self, tenant_id: str, owner_user_id: str, draft: AgentDraft,
+    ) -> DeepagentsProjectArchive:
         catalog = await self.capabilities(tenant_id, owner_user_id)
         compiler = await self._compiler_for(tenant_id, owner_user_id)
         skills = compiler.resolve_skills(draft)

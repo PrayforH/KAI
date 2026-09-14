@@ -93,7 +93,11 @@ from harness.studio.builder_materials import BuilderMaterialsRequest, read_build
 from harness.studio.bundle_import import AgentBundleImportError
 from harness.studio.catalog_service import CapabilityCatalogService, CatalogResourceType
 from harness.studio.compiler import DraftCompilationError
-from harness.studio.deepagents_export import DeepagentsProjectSource, project_source
+from harness.studio.deepagents_export import (
+    DeepagentsProjectComparison,
+    DeepagentsProjectSource,
+    project_source,
+)
 from harness.studio.mcp_credential_store import (
     ConfigureMcpCredentialRequest,
     McpCredentialService,
@@ -1821,6 +1825,19 @@ async def converse_agent_builder(
         return await service.converse_builder(
             actor.tenant_id, actor.user_id, draft_id, body, models,
         )
+    except (ConflictError, NotFoundError) as error:
+        raise _translate_domain_error(error) from error
+
+
+@router.post("/drafts/{draft_id}/builder-project-diff")
+async def preview_builder_project_diff(
+    draft_id: str,
+    body: BuilderApplyRequest,
+    actor: Annotated[StudioActor, Depends(require_studio_writer)],
+    service: Annotated[AgentStudioService, Depends(get_studio_service)],
+) -> DeepagentsProjectComparison:
+    try:
+        return await service.compare_builder_project(actor.tenant_id, actor.user_id, draft_id, body)
     except (ConflictError, NotFoundError) as error:
         raise _translate_domain_error(error) from error
 

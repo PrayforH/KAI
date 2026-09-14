@@ -16,8 +16,6 @@
   --source-keyword: #d53538; --source-string: #008809; --source-number: #0071ea;
   --source-function: #751ed9; --source-selection: #add6ff; color-scheme: light;
 }
-.themeSelect { max-width: 112px; min-height: 30px; padding: 4px 6px; border: 0; border-radius: 6px; color: var(--source-muted); background: var(--source-bg); font: inherit; font-size: 12px; cursor: pointer; }
-.themeSelect:hover { color: var(--source-ink); background: var(--source-hover); }
 .workspace button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 0; border-radius: 6px; background: transparent; color: var(--source-muted); font: inherit; cursor: pointer; transition: background 120ms, color 120ms; }
 .workspace button:hover:not(:disabled) { background: var(--source-hover); color: var(--source-ink); }
 .workspace button:disabled { opacity: .35; cursor: default; }
@@ -84,3 +82,10 @@
 @media (prefers-reduced-motion: reduce) { .loading div { animation: none; } }
 @container (max-width: 700px) { .body { grid-template-columns: minmax(0, 1fr) 210px; }.breadcrumb > span:first-child { max-width: 140px; }.breadcrumb small, .download span { display: none; }.toolbar { padding: 0 12px; gap: 8px; }.fileHeader { padding: 0 10px; }.status span:nth-child(2) { display: none; } }
 @container (max-width: 500px) { .body { position: relative; display: flex; flex-direction: column-reverse; }.source { flex: 1; }.sidebar { height: 190px; flex-shrink: 0; border-left: none; border-bottom: 1px solid var(--source-line); }.sidebarFooter, .treeHeading { display: none; }.search { margin-bottom: 6px; }.breadcrumb > span:first-child, .breadcrumb > span:nth-child(2) { display: none; }.context { margin: 10px; padding: 8px 10px; }.fileHeader small { display: none; } }
+
+.sourceFrame { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: auto; }
+.viewTabs { display: flex; gap: 4px; padding: 8px 16px 0; }
+.viewTabs button { padding: 6px 12px; font-size: 12px; }
+.diffSummary { display: flex; align-items: center; gap: 12px; flex-shrink: 0; padding: 8px 16px; margin: 0; color: var(--source-muted); font-size: 11px; }
+.added { color: #00a240; font-variant-numeric: tabular-nums; }
+.deleted { color: #e02e2a; font-variant-numeric: tabular-nums; }

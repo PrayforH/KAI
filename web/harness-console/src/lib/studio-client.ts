@@ -15,11 +15,13 @@ import type {
 
 export type StudioRole = "owner" | "admin" | "member" | "viewer";
 
-export type ProjectSourceFile = { path: string; size: number; content: string | null; unavailable: string | null };
+export type ProjectSourceFile = { path: string; size: number; digest?: string; content: string | null; unavailable: string | null };
 export type DeepagentsProjectSource = {
   revision: number; filename: string; digest: string; framework_version: string;
   files: ProjectSourceFile[];
 };
+
+export type DeepagentsProjectComparison = { before: DeepagentsProjectSource; after: DeepagentsProjectSource };
 
 export type LifecycleScope = {
   kind: "tenant" | "user" | "session" | "agent";
@@ -1993,6 +1995,11 @@ export const studioClient = {
     runContext: string;
     intent?: "auto" | "edit";
   }): Promise<StudioBuilderReply> => request(`drafts/${encodeURIComponent(draftId)}/builder-conversation`, {
+    method: "POST", body: JSON.stringify(body),
+  }),
+  previewBuilderProjectDiff: (draftId: string, body: {
+    expectedRevision: number; changes: StudioBuilderChanges;
+  }): Promise<DeepagentsProjectComparison> => request(`drafts/${encodeURIComponent(draftId)}/builder-project-diff`, {
     method: "POST", body: JSON.stringify(body),
   }),
   applyBuilderEdit: async (draftId: string, body: {

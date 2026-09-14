@@ -107,6 +107,7 @@ class DeepagentsProjectArchive:
 class ProjectSourceFile(StudioModel):
     path: str
     size: int
+    digest: str
     content: str | None
     unavailable: str | None = None
 
@@ -119,17 +120,31 @@ class DeepagentsProjectSource(StudioModel):
     files: tuple[ProjectSourceFile, ...]
 
 
+PROJECT_SOURCE_FILE_LIMIT = 10 * 1024 * 1024
+PROJECT_SOURCE_TOTAL_LIMIT = 50 * 1024 * 1024
+
+
+class DeepagentsProjectComparison(StudioModel):
+    before: DeepagentsProjectSource
+    after: DeepagentsProjectSource
+
+
 def project_source(archive: DeepagentsProjectArchive, revision: int) -> DeepagentsProjectSource:
     """Read the exact export as bounded text previews; binary assets stay in the ZIP."""
     files: list[ProjectSourceFile] = []
-    remaining = 2 * 1024 * 1024
+    remaining = PROJECT_SOURCE_TOTAL_LIMIT
     with ZipFile(io.BytesIO(archive.content)) as zipped:
         for entry in zipped.infolist():
             if entry.is_dir():
                 continue
+            with zipped.open(entry) as stream:
+                hasher = hashlib.sha256()
+                for chunk in iter(lambda: stream.read(64 * 1024), b""):
+                    hasher.update(chunk)
+                digest = hasher.hexdigest()
             content = None
             unavailable = None
-            if entry.file_size > min(256 * 1024, remaining):
+            if entry.file_size > min(PROJECT_SOURCE_FILE_LIMIT, remaining):
                 unavailable = "文件超出预览大小限制，请下载项目查看。"
             else:
                 raw = zipped.read(entry)
@@ -142,7 +157,7 @@ def project_source(archive: DeepagentsProjectArchive, revision: int) -> Deepagen
                     content = None
                     unavailable = "二进制文件，请下载项目查看。"
             files.append(ProjectSourceFile(
-                path=entry.filename, size=entry.file_size, content=content,
+                path=entry.filename, size=entry.file_size, digest=digest, content=content,
                 unavailable=unavailable,
             ))
     return DeepagentsProjectSource(

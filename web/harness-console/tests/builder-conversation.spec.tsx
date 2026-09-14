@@ -6,6 +6,7 @@ import { AgentBuilderAssistant } from "../src/components/agent-studio/agent-buil
 import { DEFAULT_STUDIO_DRAFT, type StudioDraft } from "../src/lib/agent-studio";
 import { studioClient, studioDraftToSpec, type ApiAgentDraft, type StudioTryRun } from "../src/lib/studio-client";
 
+vi.mock("../src/components/agent-studio/agent-project-code", () => ({ AgentProjectCode: ({comparison, comparisonPending}: {comparison?: {before:{revision:number};after:{revision:number}};comparisonPending:boolean}) => <section aria-label="测试代码差异">{comparison?.before.revision} → {comparison?.after.revision} · {comparisonPending ? "待应用" : "已应用"}</section> }));
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 let root: Root;
 let host: HTMLDivElement;
@@ -33,6 +34,7 @@ beforeEach(() => {
   vi.spyOn(studioClient, "converseBuilder").mockResolvedValue({
     baseRevision: 1, reply: "建议输出表格", changedFields: ["systemPrompt"], changes: { systemPrompt: "输出表格" },
   });
+  vi.spyOn(studioClient, "previewBuilderProjectDiff").mockRejectedValue(new Error("Export unavailable in this test"));
   vi.spyOn(studioClient, "applyBuilderEdit").mockResolvedValue(api({ ...initial, revision: 2, systemPrompt: "输出表格" }));
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   function Harness() {
@@ -336,4 +338,16 @@ it("uses creation references on the left and previews images independently on th
   expect(host.querySelector('[aria-label="智能体效果测试"]')?.textContent).toContain("图片.png");
   await sendTest("再看看这张图");
   expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toMatchObject({inputArtifactIds: ["input_artifact_image"]});
+});
+
+it("captures the actual project comparison before apply and opens it after the revision changes", async () => {
+  const source = { revision: 1, filename: "agent.zip", digest: "a", framework_version: "0.7.13", files: [] };
+  vi.mocked(studioClient.previewBuilderProjectDiff).mockResolvedValue({before: source, after: {...source, revision: 2}});
+  act(() => enableWorkspace());
+  await send("输出改成表格");
+  await click("应用修改");
+  expect(studioClient.previewBuilderProjectDiff).toHaveBeenCalledWith("draft-multi", {expectedRevision: 1, changes: {systemPrompt: "输出表格"}});
+  expect(vi.mocked(studioClient.previewBuilderProjectDiff).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(studioClient.applyBuilderEdit).mock.invocationCallOrder[0]);
+  expect(host.textContent).toContain("1 → 2 · 已应用");
+  expect(updated.mock.lastCall?.[0].revision).toBe(2);
 });

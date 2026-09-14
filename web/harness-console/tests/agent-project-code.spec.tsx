@@ -3,9 +3,11 @@ import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { studioClient, type DeepagentsProjectSource } from "../src/lib/studio-client";
+import { projectSourceChanges } from "../src/lib/project-source-changes";
 import { AgentProjectCode } from "../src/components/agent-studio/agent-project-code";
 
 vi.mock("../src/components/agent-studio/project-source-editor", () => ({ ProjectSourceEditor: ({ content, theme, wrap }: { content: string; theme: string; wrap: boolean }) => <pre data-theme={theme} data-wrap={wrap}>{content}</pre> }));
+vi.mock("../src/components/agent-studio/project-source-diff", () => ({ ProjectSourceDiff: ({change}: {change: {before?: {content: string}; after?: {content: string}}}) => <div data-testid="code-diff"><del>{change.before?.content}</del><ins>{change.after?.content}</ins></div> }));
 vi.mock("../src/components/agent-studio/project-file-tree", () => ({ ProjectFileTree: () => <div /> }));
 vi.mock("../src/lib/studio-client", () => ({ studioClient: { getDeepagentsProjectSource: vi.fn(), downloadDeepagentsProject: vi.fn() } }));
 const fixture: DeepagentsProjectSource = {
@@ -16,6 +18,7 @@ const fixture: DeepagentsProjectSource = {
 };
 let root: Root; let host: HTMLDivElement;
 beforeEach(() => {
+  document.documentElement.dataset.colorMode = "dark";
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   const storage = new Map<string, string>();
   vi.stubGlobal("localStorage", { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value) });
@@ -40,14 +43,33 @@ describe("DeepAgents source workspace", () => {
     expect(studioClient.downloadDeepagentsProject).toHaveBeenCalledWith("draft-a", 4);
     expect(host.querySelector("textarea")).toBeNull();
   });
-  it("switches and remembers the Codex theme and wraps source on request", async () => {
+  it("follows interface theme without a selector or a stored override", async () => {
+    localStorage.setItem("studio-code-theme", "dark");
+    document.documentElement.dataset.colorMode = "light";
     await render();
-    const select = host.querySelector<HTMLSelectElement>('select[aria-label="代码主题"]')!;
-    await act(async () => { select.value = "light"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+    expect(host.querySelector("select")).toBeNull();
     expect(host.querySelector("pre")?.dataset.theme).toBe("light");
-    expect(localStorage.getItem("studio-code-theme")).toBe("light");
+    await act(async () => { document.documentElement.dataset.colorMode = "dark"; });
+    expect(host.querySelector("pre")?.dataset.theme).toBe("dark");
     await act(async () => button("自动换行").click());
     expect(host.querySelector("pre")?.dataset.wrap).toBe("true");
+  });
+  it("shows a revision diff, disables pending downloads and returns to current files", async () => {
+    const after = {...fixture, revision: 5, files: fixture.files.map(f => f.path === "agent.py" ? {...f, content: "print('updated')"} : f)};
+    await act(async () => root.render(<AgentProjectCode draftId="draft-a" revision={4} name="research-agent" dirty={false} comparison={{before: fixture, after}} comparisonPending onClose={() => {}}/>));
+    expect(host.textContent).toContain("r4 → r5 · 待应用 · 1 个文件变化");
+    expect(host.querySelector("del")?.textContent).toBe("print('hello')");
+    expect(host.querySelector("ins")?.textContent).toBe("print('updated')");
+    expect(button("下载项目").disabled).toBe(true);
+    expect(studioClient.getDeepagentsProjectSource).not.toHaveBeenCalled();
+    await act(async () => button("全部文件").click());
+    expect(host.querySelector("pre")?.textContent).toBe("print('hello')");
+    expect(studioClient.getDeepagentsProjectSource).toHaveBeenCalled();
+  });
+  it("detects added, removed and equal-sized binary changes without guessing text", () => {
+    const binary = {path:"image.png",size:2,content:null,unavailable:"binary",digest:"old"};
+    const result = projectSourceChanges({before:{...fixture,files:[fixture.files[0], binary]},after:{...fixture,files:[fixture.files[1],{...binary,digest:"new"}]}});
+    expect(result.map(({path,status})=>({path,status}))).toEqual([{path:"agent.py",status:"deleted"},{path:"image.png",status:"modified"},{path:"tools/search.py",status:"added"}]);
   });
   it("clears old source while loading a new revision and shows server errors", async () => {
     await render();

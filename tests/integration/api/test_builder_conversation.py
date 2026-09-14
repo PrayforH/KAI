@@ -43,6 +43,21 @@ async def test_multi_turn_preview_apply_conflict_and_scope() -> None:
         assert proposal["changedFields"] == ["systemPrompt"]
         assert list(proposal["changes"]) == ["systemPrompt"]  # No null defaults on the wire.
         assert (await client.get(path, headers=headers)).json() == draft
+        comparison_response = await client.post(path + "/builder-project-diff", headers=headers,
+            json={"expectedRevision": 1, "changes": proposal["changes"]})
+        assert comparison_response.status_code == 200, comparison_response.text
+        comparison = comparison_response.json()
+        assert comparison["before"]["revision"] == 1
+        assert comparison["after"]["revision"] == 2
+        assert (await client.get(path, headers=headers)).json() == draft
+        old_files = {f["path"]: f for f in comparison["before"]["files"]}
+        new_files = {f["path"]: f for f in comparison["after"]["files"]}
+        assert old_files["agent.py"]["digest"] != new_files["agent.py"]["digest"]
+        assert "输出表格" in new_files["agent.py"]["content"]
+        forbidden_diff = await client.post(path + "/builder-project-diff",
+            headers={**headers, "X-User-ID": "other"},
+            json={"expectedRevision": 1, "changes": proposal["changes"]})
+        assert forbidden_diff.status_code == 404
         applied = await client.post(
             path + "/builder-apply",
             headers=headers,
@@ -55,6 +70,12 @@ async def test_multi_turn_preview_apply_conflict_and_scope() -> None:
         assert saved["publishedVersion"] is None
         assert saved["spec"]["skills"] == original["skills"]
         assert saved["spec"]["model"] == original["model"]
+        actual = (await client.get(path + "/deepagents-project/files",
+            headers=headers, params={"expectedRevision": 2})).json()
+        assert actual["files"] == comparison["after"]["files"]
+        stale_diff = await client.post(path + "/builder-project-diff", headers=headers,
+            json={"expectedRevision": 1, "changes": proposal["changes"]})
+        assert stale_diff.status_code == 409
         stale = await client.post(
             path + "/builder-apply",
             headers=headers,

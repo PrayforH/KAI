@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, type CSSProperties } from "react";
 import { FileTree, useFileTree } from "@pierre/trees/react";
-import { themeToTreeStyles } from "@pierre/trees";
+import { themeToTreeStyles, type GitStatusEntry } from "@pierre/trees";
 import codexDark from "../../lib/code-themes/codex-dark.json";
 import codexLight from "../../lib/code-themes/codex-light.json";
 
@@ -27,15 +27,16 @@ const treeCSS = `
 [data-item-type='file'] { color: var(--source-muted); }
 [data-item-type='file'][data-item-selected] { color: var(--source-ink); }
 `;
-export function ProjectFileTree({ paths, selected, onSelect, theme }: {
-  paths: string[]; selected: string; onSelect: (path: string) => void; theme: "dark" | "light";
+export function ProjectFileTree({ paths, selected, onSelect, theme, gitStatus }: {
+  paths: string[]; selected: string; onSelect: (path: string) => void; theme: "dark" | "light"; gitStatus?: GitStatusEntry[];
 }) {
   const selectRef = useRef(onSelect); selectRef.current = onSelect;
   const pathsRef = useRef(paths); pathsRef.current = paths;
-  const { model } = useFileTree({ paths, initialExpansion: "open", flattenEmptyDirectories: true,
+  const { model } = useFileTree({ paths, gitStatus, initialExpansion: "open", flattenEmptyDirectories: true,
     icons: { set: "complete", colored: true }, itemHeight: 29, stickyFolders: true, unsafeCSS: treeCSS,
     onSelectionChange: values => { const path = values[values.length - 1]; if (path && pathsRef.current.includes(path)) selectRef.current(path); },
   });
+  useEffect(() => { model.setGitStatus(gitStatus); }, [model, gitStatus]);
   useEffect(() => { model.resetPaths(paths); }, [model, paths]);
   useEffect(() => {
     for (const path of model.getSelectedPaths()) if (path !== selected) model.getItem(path)?.deselect();
