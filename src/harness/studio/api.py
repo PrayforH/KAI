@@ -144,6 +144,7 @@ from harness.studio.models import (
     UpsertCatalogResourceRequest,
 )
 from harness.studio.platform_skills import (
+    RETIRED_PLATFORM_SKILLS,
     imported_platform_skill,
     platform_skill_catalog_listing,
     platform_skill_package,
@@ -1385,6 +1386,8 @@ async def install_platform_skill_package(
     service: Annotated[AgentStudioService, Depends(get_studio_service)],
 ) -> InstalledSkill:
     try:
+        if package_id in RETIRED_PLATFORM_SKILLS:
+            raise ConflictError("此技能已停用，请使用 Skill Creator（Claude 官方）")
         package = platform_skill_package(package_id, body.package_revision)
         imported = imported_platform_skill(package)
         draft = await service.install_skill(

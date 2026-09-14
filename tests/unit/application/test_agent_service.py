@@ -317,6 +317,8 @@ async def test_default_agent_provisions_with_all_platform_skills() -> None:
     skill_names = {item["name"] for item in version.snapshot["skill_snapshots"]}
     # Lead-specific curation survives…
     assert "general-task-orchestration" in skill_names
+    assert "skill-creator" in skill_names
+    assert "skill-authoring-quality" not in skill_names
     # …and every reviewed platform Skill package except catalog-only asset
     # packs is bound, including the office set.
     from harness.studio.platform_skills import default_platform_skill_catalog

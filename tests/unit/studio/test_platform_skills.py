@@ -15,13 +15,12 @@ def test_platform_skill_catalog_is_curated_offline_and_deterministic() -> None:
     second = default_platform_skill_catalog()
 
     assert first == second
-    assert first.revision == 1
+    assert first.revision == 2
     first_party = [
         "evidence-reporting",
         "research-synthesis",
         "delivery-verification",
         "document-spreadsheet-production",
-        "skill-authoring-quality",
     ]
     package_ids = [package.package_id for package in first.packages]
     # First-party reviewed packs, plus the vendored upstream Skill library.
@@ -32,6 +31,7 @@ def test_platform_skill_catalog_is_curated_offline_and_deterministic() -> None:
     assert {"skill-creator", "mcp-builder", "canvas-design", "theme-factory"} <= set(
         package_ids
     )
+    assert "skill-authoring-quality" not in package_ids
     assert len(package_ids) == len(set(package_ids))
     assert len({package.content_hash for package in first.packages}) == len(package_ids)
     for package in first.packages:

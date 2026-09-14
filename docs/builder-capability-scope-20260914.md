@@ -69,3 +69,10 @@
 初始 Agent 先根据目录选择兼容运行配置，再实际调用所选模型生成名称、描述、System Prompt 和任务契约。模型从当前可见且兼容的 Skill 目录推荐最多五项并给出理由。前端不再附加禁止联网条件，也不静默过滤 MCP。所选推荐包沿用目录权限和固定版本校验，通过同一套 DeepAgents 差异审阅和 CAS 应用；初稿不会自动安装推荐技能。
 
 代码入口：`initial_agent.py`、`worker_skill_creator.py`、`AgentStudioService.create_from_task/converse_builder`、构建助手推荐 Skill 面板。
+
+
+## 2026-09-15：统一技能创建入口
+
+技能目录中原有三项来自：前端写死的 Skill Creator 快捷条目、Anthropic 原版 `skill-creator`、OpenAI 离线适配的 `skill-authoring-quality`。现移除前端伪目录条目，停用后者，保留“Skill Creator（Claude 官方）”。创建快捷操作放回真实包的详情中。
+
+活跃平台目录、模型推荐与默认 Lead Agent 均只装配原版；目录迁移保留模型、MCP 及技能启停等租户设置。旧适配版禁止新安装，历史包查询和已发布不可变快照保留。174 核对时没有草稿引用旧适配版。默认 Lead 的简化占位文件一并移除，由平台包装配流程提供完整原版并自动派生新的平台版本。

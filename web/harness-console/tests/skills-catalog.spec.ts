@@ -77,6 +77,7 @@ describe("Skills catalog page", () => {
 
   it("ships Skill Creator as the scoped conversational creation entry", () => {
     expect(component).toContain("DEFAULT_SKILL_CREATOR");
+    expect(component).not.toContain("`platform:${DEFAULT_SKILL_CREATOR.name}`");
     expect(component).toContain('skillCreatorHref("personal")');
     expect(component).toContain('skillCreatorHref("platform")');
     expect(component).toContain('href="/studio/agents"');

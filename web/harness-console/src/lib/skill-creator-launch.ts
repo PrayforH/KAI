@@ -17,14 +17,7 @@ export const SKILL_SCOPE_LABELS: Record<SkillInstallScope, string> = {
 export const DEFAULT_SKILL_CREATOR = {
   name: "skill-creator" as const,
   displayName: "Skill Creator" as const,
-  description: "通过对话创建或更新 Skill，并按目标作用域生成可审阅的 SKILL.md。",
-  instructions: [
-    "先确认 Skill 的目标、触发场景和一个真实请求示例。",
-    "只补问会实质改变结果的缺失信息。",
-    "生成简洁的 SKILL.md，并根据需要拆分 references、scripts 或 assets。",
-    "明确安装到个人、平台或指定 Agent；不得混淆作用域。",
-    "写入前展示结果并等待用户确认。",
-  ].join("\n"),
+
 };
 
 export function parseSkillCreatorLaunch(
