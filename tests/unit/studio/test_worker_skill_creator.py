@@ -106,6 +106,8 @@ async def test_creator_compiles_complete_package_and_requires_real_trace(has_tra
         assert result.creator_run_id == "creator-run"
         assert result.creator_source_revision == "41bbe19d1a1a7eaab5e7bb9050a417e5c6cffc8f"
     authorize.assert_called_once()
+    assert agents.register_preview_snapshot.call_args.kwargs["agent_id"] == draft.agent_id
+    assert sessions.create.call_args.args[2] == draft.spec.name
     snapshot = agents.register_preview_snapshot.call_args.args[2]
     text = str(snapshot.model_dump())
     assert "scripts/package_skill.py" in text and "eval-viewer/generate_review.py" in text

@@ -97,7 +97,7 @@ scripts/package_skill.py 打包（在 skill-creator 目录以 python -m scripts.
             skills += (request.context.current_skill,)
         spec = self.draft.spec.model_copy(
             update={
-                "name": creator_id,
+                "name": self.draft.spec.name,
                 "display_name": "Skill Creator",
                 "skills": skills,
                 "skill_references": (),
@@ -117,7 +117,7 @@ scripts/package_skill.py 打包（在 skill-creator 目录以 python -m scripts.
             update={
                 "draft_id": creator_id,
                 "revision": 1,
-                "agent_id": None,
+                "agent_id": self.draft.agent_id,
                 "space_id": None,
                 "parent_draft_id": None,
                 "spec": spec,
@@ -135,10 +135,10 @@ scripts/package_skill.py 打包（在 skill-creator 目录以 python -m scripts.
             compiled.report.snapshot,
             version=version,
             package_hash=compiled.report.package_hash,
-            agent_id=None,
+            agent_id=self.draft.agent_id,
         )
         session = await container.sessions.create(
-            tenant_id, self.user_id, creator_id, version, preview=True
+            tenant_id, self.user_id, self.draft.spec.name, version, preview=True
         )
         creation = await container.runs.create_with_result(
             tenant_id,
