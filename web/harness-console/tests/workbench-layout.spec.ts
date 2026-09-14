@@ -143,7 +143,9 @@ describe("full-page agent workbench", () => {
     expect(taskSidebar).toContain("{PRODUCT_NAME}");
     expect(taskSidebar).toContain('className="task-sidebar-collapse"');
     expect(taskSidebar).not.toContain('className="task-rail-brand-text"');
-    expect(page).not.toContain("<TaskAgentSwitcher");
+    expect(page).toContain("<TaskAgentSwitcher");
+    expect(page).toContain('selectedAgent.name !== "lead-agent"');
+    expect(page).toContain('kind="version"');
     expect(agentThread).toContain("<TaskAgentSwitcher");
     expect(page).toContain('className="task-context-bar"');
     expect(page).toContain("<SidebarPanelToggle");
