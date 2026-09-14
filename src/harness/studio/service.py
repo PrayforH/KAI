@@ -48,6 +48,11 @@ from harness.studio.compiler import (
     CompiledAgentDraft,
     DraftCompilationError,
 )
+from harness.studio.deepagents_export import (
+    DeepagentsProjectArchive,
+    draft_from_published_snapshot,
+    export_deepagents_project,
+)
 from harness.studio.factory import create_draft_spec
 from harness.studio.model_configuration import ModelConfigurationService
 from harness.studio.models import (
@@ -1136,6 +1141,43 @@ class AgentStudioService:
         return export_nexau_agent(
             await self.get(tenant_id, owner_user_id, draft_id),
             mcp_capabilities={item.reference: item for item in catalog.mcp_servers},
+        )
+
+    async def deepagents_project(
+        self, tenant_id: str, owner_user_id: str, draft_id: str
+    ) -> DeepagentsProjectArchive:
+        """Export the draft as a runnable deepagents==0.7.13 project zip.
+
+        Skill references resolve through the compiler, mirroring what a
+        published snapshot would embed, so exported projects carry the same
+        skills the platform would materialize.
+        """
+
+        draft = await self.get(tenant_id, owner_user_id, draft_id)
+        catalog = await self.capabilities(tenant_id, owner_user_id)
+        compiler = await self._compiler_for(tenant_id, owner_user_id)
+        skills = compiler.resolve_skills(draft)
+        resolved_references = {skill.source.package_id for skill in skills if skill.source}
+        missing_references = set(draft.spec.skill_references) - resolved_references
+        if missing_references:
+            raise ConflictError("无法完整导出 Skill 引用：" + ", ".join(sorted(missing_references)))
+        routes = {item.route_id: item for item in catalog.model_routes}
+        children: dict[str, AgentDraft] = {}
+        for binding in draft.spec.subagents:
+            if self._registry is None:
+                raise ConflictError("无法读取固定版本子智能体，请先发布子智能体")
+            name, version = binding.ref.rsplit("@", 1)
+            published = await self._registry.get(tenant_id, owner_user_id, name, version)
+            if published.status is not AgentVersionStatus.PUBLISHED:
+                raise ConflictError(f"子智能体尚未发布：{binding.ref}")
+            children[binding.ref] = draft_from_published_snapshot(draft, published)
+        return export_deepagents_project(
+            draft,
+            skills=skills,
+            mcp_capabilities={item.reference: item for item in catalog.mcp_servers},
+            model_route=routes.get(draft.spec.model.route_id),
+            subagent_drafts=children,
+            model_routes=routes,
         )
 
     async def import_bundle(

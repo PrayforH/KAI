@@ -129,6 +129,9 @@ async def test_service_identity_can_build_and_publish_existing_bundle() -> None:
         validation = await client.post(f"/v1/studio/drafts/{draft_id}/validate", headers=headers)
         bundle = await client.get(f"/v1/studio/drafts/{draft_id}/bundle", headers=headers)
         nexau = await client.get(f"/v1/studio/drafts/{draft_id}/nexau-bundle", headers=headers)
+        deepagents = await client.get(
+            f"/v1/studio/drafts/{draft_id}/deepagents-project", headers=headers
+        )
         published = await client.post(f"/v1/studio/drafts/{draft_id}/publish", headers=headers)
         drafts = await client.get("/v1/studio/drafts", headers=headers)
 
@@ -161,6 +164,26 @@ async def test_service_identity_can_build_and_publish_existing_bundle() -> None:
         manifest = json.loads(archive.read("nexau.json"))
         config = yaml.safe_load(archive.read("agent.yaml"))
         assert manifest["agents"] == {config["name"]: "agent.yaml"}
+    assert deepagents.status_code == 200
+    assert deepagents.headers["x-agent-export-format"] == "deepagents"
+    assert deepagents.headers["content-disposition"] == (
+        'attachment; filename="policy-researcher-0.1.0-deepagents.zip"'
+    )
+    with ZipFile(BytesIO(deepagents.content)) as archive:
+        assert {
+            "pyproject.toml",
+            "agent.py",
+            "langgraph.json",
+            "agent-studio.json",
+        }.issubset(archive.namelist())
+        pyproject = archive.read("pyproject.toml").decode()
+        assert "deepagents==0.7.13" in pyproject
+        assert "langgraph-cli" in pyproject
+        langgraph = json.loads(archive.read("langgraph.json"))
+        assert langgraph["graphs"] == {"policy-researcher": "./agent.py:agent"}
+        extensions = json.loads(archive.read("agent-studio.json"))
+        assert extensions["source"] == "Agent Studio"
+        assert "平台记忆" in extensions["droppedSemantics"]
     assert published.status_code == 200
     assert published.json()["name"] == "policy-researcher"
     assert "snapshot" not in published.json()
@@ -2769,6 +2792,9 @@ async def test_same_tenant_users_have_private_agent_namespaces() -> None:
         alice_id = alice_draft.json()["draftId"]
         bob_id = bob_draft.json()["draftId"]
 
+        hidden_export = await client.get(
+            f"/v1/studio/drafts/{alice_id}/deepagents-project", headers=bob
+        )
         hidden_from_bob = await client.get(f"/v1/studio/drafts/{alice_id}", headers=bob)
         hidden_from_alice = await client.get(f"/v1/studio/drafts/{bob_id}", headers=alice)
         alice_publish = await client.post(f"/v1/studio/drafts/{alice_id}/publish", headers=alice)
@@ -2778,6 +2804,7 @@ async def test_same_tenant_users_have_private_agent_namespaces() -> None:
 
     assert alice_draft.status_code == 201
     assert bob_draft.status_code == 201
+    assert hidden_export.status_code == 404
     assert hidden_from_bob.status_code == 404
     assert hidden_from_alice.status_code == 404
     assert alice_publish.status_code == 200
@@ -2912,6 +2939,7 @@ def test_studio_routes_are_exposed_once_in_openapi() -> None:
         "/v1/studio/drafts/{draft_id}/try-runs/{run_id}",
         "/v1/studio/drafts/{draft_id}/solidify",
         "/v1/studio/drafts/{draft_id}/bundle",
+        "/v1/studio/drafts/{draft_id}/deepagents-project",
         "/v1/studio/drafts/{draft_id}/publish",
         "/v1/studio/previews",
         "/v1/studio/previews/{preview_id}",
@@ -3238,3 +3266,58 @@ async def test_nexau_archive_import_opens_an_editable_draft(kind: str, media_typ
         )
         assert invalid.status_code == 422, invalid.text
         assert "RAR" in invalid.text
+
+
+@pytest.mark.asyncio
+async def test_deepagents_exports_published_child_instead_of_edited_draft() -> None:
+    headers = {
+        "Authorization": f"Bearer {SERVICE_TOKEN}",
+        "X-Tenant-ID": "tenant-export-fixed",
+        "X-User-ID": "builder-a",
+    }
+    async with AsyncClient(transport=ASGITransport(app=app()), base_url="http://test") as client:
+        child = await client.post("/v1/studio/drafts", headers=headers,
+                                  json=draft_request("export-child"))
+        child_id = child.json()["draftId"]
+        spec = child.json()["spec"]
+        spec["systemPrompt"] += "\nIMMUTABLE_PUBLISHED_CHILD"
+        spec["skills"] = [{"name": "frozen-child", "description": "Frozen child skill",
+                           "instructions": "Read the fixed evidence before responding."}]
+        spec["pythonTools"] = [{
+            "name": "child_echo", "description": "Return child arguments",
+            "inputSchema": {"type": "object", "properties": {}},
+            "code": "def run(arguments):\n    return arguments\n",
+        }]
+        saved = await client.put(f"/v1/studio/drafts/{child_id}", headers=headers,
+                                 json={"expectedRevision": 1, "spec": spec})
+        assert saved.status_code == 200, saved.text
+        published = await client.post(f"/v1/studio/drafts/{child_id}/publish", headers=headers)
+        assert published.status_code == 200, published.text
+        latest = await client.get(f"/v1/studio/drafts/{child_id}", headers=headers)
+        changed = latest.json()["spec"]
+        changed["systemPrompt"] = changed["systemPrompt"].replace(
+            "IMMUTABLE_PUBLISHED_CHILD", "EDITED_UNPUBLISHED_CHILD"
+        )
+        updated = await client.put(f"/v1/studio/drafts/{child_id}", headers=headers,
+                                   json={"expectedRevision": latest.json()["revision"],
+                                         "spec": changed})
+        assert updated.status_code == 200, updated.text
+        parent = await client.post("/v1/studio/drafts", headers=headers,
+                                   json=draft_request("export-parent"))
+        parent_id = parent.json()["draftId"]
+        parent_spec = parent.json()["spec"]
+        parent_spec["builtinTools"].append("Task")
+        parent_spec["subagents"] = [{"alias": "reviewer", "ref": "export-child@0.1.0",
+                                     "responsibility": "Review immutable evidence"}]
+        saved = await client.put(f"/v1/studio/drafts/{parent_id}", headers=headers,
+                                 json={"expectedRevision": 1, "spec": parent_spec})
+        assert saved.status_code == 200, saved.text
+        exported = await client.get(f"/v1/studio/drafts/{parent_id}/deepagents-project",
+                                    headers=headers)
+    assert exported.status_code == 200, exported.text
+    with ZipFile(BytesIO(exported.content)) as archive:
+        child_source = archive.read("subagents/reviewer/agent.py").decode()
+        assert "IMMUTABLE_PUBLISHED_CHILD" in child_source
+        assert "EDITED_UNPUBLISHED_CHILD" not in child_source
+        assert "subagents/reviewer/tools/operators/child_echo.py" in archive.namelist()
+        assert "subagents/reviewer/skills/frozen-child/SKILL.md" in archive.namelist()
