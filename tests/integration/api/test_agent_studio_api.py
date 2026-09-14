@@ -6,6 +6,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from typing import Any, cast
+from unittest.mock import AsyncMock, patch
 from zipfile import ZipFile
 
 import httpx
@@ -356,7 +357,19 @@ async def test_delete_agent_requires_current_revision_and_no_subagent_dependents
     assert "政策研究助手" in blocked.json()["error"]["message"]
 
 
+INITIAL_AGENT_RESPONSE = json.dumps({
+    "displayName": "互联网舆情助手", "description": "分析舆情并输出报告",
+    "systemPrompt": ("## Mission\n分析舆情\n## Operating workflow\n收集材料并分析风险\n"
+                     "## Evidence and tool use\n核验来源\n## Safety boundaries\n遵守平台权限\n"
+                     "## Output contract\n输出结论、引用和报告"),
+    "taskContract": {"goal": "分析舆情", "inputs": ["用户材料"], "outputs": ["风险报告"]},
+    "recommendedSkills": [],
+})
+
+
 @pytest.mark.asyncio
+@patch("harness.studio.model_configuration.ModelConfigurationService.complete_text",
+       new=AsyncMock(return_value=INITIAL_AGENT_RESPONSE))
 async def test_task_driven_builder_compiles_codex_draft_from_tenant_capabilities() -> None:
     headers = {
         "Authorization": f"Bearer {SERVICE_TOKEN}",
@@ -412,6 +425,8 @@ async def test_task_driven_builder_compiles_codex_draft_from_tenant_capabilities
 
 
 @pytest.mark.asyncio
+@patch("harness.studio.model_configuration.ModelConfigurationService.complete_text",
+       new=AsyncMock(return_value=INITIAL_AGENT_RESPONSE))
 async def test_task_driven_builder_treats_office_assistant_as_writable() -> None:
     headers = {
         "Authorization": f"Bearer {SERVICE_TOKEN}",

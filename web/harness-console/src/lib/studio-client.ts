@@ -661,6 +661,7 @@ export type StudioAgentBuilderPatch = {
 };
 
 export type StudioBuilderChanges = {
+  installSkills?: {packageId: string; revision: number}[];
   displayName?: string;
   description?: string;
   systemPrompt?: string;
@@ -676,6 +677,7 @@ export type StudioBuilderChanges = {
   roleResponsibilities?: { alias: string; responsibility: string }[];
 };
 export type StudioBuilderReply = {
+  creatorRuns?: {runId: string; sourceRevision: string; artifactIds: string[]; artifactNames: string[]}[];
   baseRevision: number;
   reply: string;
   changedFields: string[];
@@ -768,6 +770,9 @@ export type StudioPreview = {
 };
 
 export type StudioTaskDrivenRecommendation = {
+  generatedByModel?: boolean;
+  capabilityCatalogRevision?: number;
+  recommendedSkills?: {packageId: string; revision: number; label: string; reason: string; risk: "low" | "review"}[];
   runtime: StudioDraft["runtime"];
   modelRouteId: string;
   model: string;

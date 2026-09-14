@@ -68,7 +68,14 @@ class BuilderSkillRequest(StudioModel):
     request: str = Field(min_length=1, max_length=12_000)
 
 
+class PlatformSkillSelection(StudioModel):
+    package_id: str = Field(alias="packageId", pattern=r"^[a-z][a-z0-9-]*$")
+    revision: int = Field(ge=1)
+
+
 class BuilderChanges(StudioModel):
+    install_skills: tuple[PlatformSkillSelection, ...] = Field(
+        default=(), alias="installSkills", max_length=8)
     display_name: str | None = Field(
         default=None, alias="displayName", min_length=1, max_length=100
     )
@@ -126,6 +133,7 @@ class BuilderApplyRequest(StudioModel):
 
 
 class BuilderConversationReply(BuilderModelReply):
+    creator_runs: tuple[dict[str, object], ...] = Field(default=(), alias="creatorRuns")
     base_revision: int = Field(alias="baseRevision")
     changed_fields: tuple[str, ...] = Field(alias="changedFields")
 
@@ -136,7 +144,7 @@ def apply_builder_changes(spec: AgentDraftSpec, changes: BuilderChanges) -> Agen
         exclude_unset=True,
         exclude={
             "skill_instructions",
-            "create_skills", "update_skills", "capability_catalog_revision",
+            "create_skills", "update_skills", "capability_catalog_revision", "install_skills",
             "remove_skills",
             "role_responsibilities",
         },
@@ -204,7 +212,10 @@ skillInstructions:[{"name":"已有技能名称","instructions":"修改后的完�
 roleResponsibilities:[{"alias":"已有角色名","responsibility":"修改后的职责"}]。
 创建 Skill 或更新完整 Skill（包括说明、references/scripts/assets）时，输出顶层
 skillRequests:[{"operation":"create|update","name":"lowercase-kebab-case","request":"结合对话补齐的完整共创要求"}]。
-服务端调用 Skill Creator 生成文件，合并到同一差异建议；
+服务端通过 Worker 加载真正的 skill-creator 技能包，校验打包后合并到同一差异建议；
+已有平台 Skill 可根据 assemblyCatalog.skills 推荐，用户明确要求安装时使用
+changes.installSkills:[{"packageId":"目录中的标识","revision":目录中的版本}]；
+仅咨询或推荐时先说明理由，不自动安装。不得用 createSkills/updateSkills 绕过 Skill Creator；
 不要在 changes 中直接生成 createSkills/updateSkills。
 创建前确认名称未占用，更新必须使用已有名称；Skill 只安装到当前 Agent 草稿，不写个人或平台目录。
 已有 Skill 只改正文时仍可用 skillInstructions。同一 Skill 不得同时出现在多个动作中。

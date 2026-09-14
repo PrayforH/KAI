@@ -58,3 +58,14 @@
 - 同一建议先生成实际 DeepAgents 项目差异，再应用整个草稿；失败不会部分安装 Skill。差异也纳入原 replacement 的技能文件合并、关联评测清理和已发布草稿自动升版规则。
 
 示例：在构建助手输入“创建 source-review 技能，附来源记录模板，并添加 WebFetch 和已有的某个 MCP”。助手生成建议后，使用“查看代码差异”审阅文件，再“应用修改”；效果测试继续走已有运行链。
+
+
+## 2026-09-15：真实 Skill Creator 与模型初稿
+
+上一节的 ControlPlaneSkillConversationService 是模型共创服务，并没有加载 skill-creator；此前将它称作已接入 Skill Creator 不准确。
+
+现在构建助手的创建/更新请求通过 WorkerSkillCreator 注册独立预览快照、创建会话和运行，执行平台内固定上游版本的完整 `platform-skills/skill-creator` 包。沿用现有 Worker、权限、沙箱和产物服务。成功建议必须有技能加载、官方打包工具成功调用、真实 `.skill` 产物及至少两条测试用例。测试用例纳入差异；业务评测和基线比较尚未自动执行，不生成虚构评测成绩。
+
+初始 Agent 先根据目录选择兼容运行配置，再实际调用所选模型生成名称、描述、System Prompt 和任务契约。模型从当前可见且兼容的 Skill 目录推荐最多五项并给出理由。前端不再附加禁止联网条件，也不静默过滤 MCP。所选推荐包沿用目录权限和固定版本校验，通过同一套 DeepAgents 差异审阅和 CAS 应用；初稿不会自动安装推荐技能。
+
+代码入口：`initial_agent.py`、`worker_skill_creator.py`、`AgentStudioService.create_from_task/converse_builder`、构建助手推荐 Skill 面板。

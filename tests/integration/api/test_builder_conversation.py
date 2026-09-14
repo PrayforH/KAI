@@ -323,7 +323,7 @@ async def test_skill_creator_and_catalog_assembly_share_review_and_atomic_apply(
         generated = DraftSkill(name="source-review", description="审阅公开资料时使用",
             instructions="查验来源并按 assets/template.md 整理。",
             files=(DraftSkillFile(path="assets/template.md", content="来源 | 结论\n"),))
-        with patch("harness.studio.service.ControlPlaneSkillConversationService.respond",
+        with patch("harness.studio.worker_skill_creator.WorkerSkillCreator.respond",
                    new_callable=AsyncMock) as creator:
             creator.return_value = SkillConversationReply(
                 status="ready", reply="待审阅", skill=generated

@@ -51,12 +51,12 @@ const editLabels: Record<string, string> = {
   displayName: "显示名称", description: "简介", systemPrompt: "系统提示词",
   taskContract: "任务与输出要求", builtinTools: "内置工具", mcpServers: "MCP",
   knowledgeReferences: "知识库", skillInstructions: "Skill 正文", removeSkills: "移除 Skill",
-  roleResponsibilities: "协作角色职责", createSkills: "创建 Agent Skill", updateSkills: "更新 Agent Skill",
+  roleResponsibilities: "协作角色职责", createSkills: "创建 Agent Skill", installSkills: "安装推荐 Skill", updateSkills: "更新 Agent Skill",
   capabilityCatalogRevision: "装配目录修订",
 };
 
 function beforeEdit(draft: StudioDraft, key: string): unknown {
-  if (key === "createSkills") return [];
+  if (key === "createSkills" || key === "installSkills") return [];
   if (key === "updateSkills") return draft.skills;
   if (key === "capabilityCatalogRevision") return "应用时重新校验";
   if (key === "skillInstructions") return draft.skills.map(({ name, instructions }) => ({ name, instructions }));
@@ -98,7 +98,6 @@ export function AgentBuilderAssistant({
   onClose,
   onCreated,
   prepareDraft,
-  knowledgeMcpReferences,
   hasUnsavedChanges,
   onUpdated,
   creationSession = 0,
@@ -140,6 +139,7 @@ export function AgentBuilderAssistant({
   const [messages, setMessages] = useState<ConversationMessage[]>(() => initialMessages(mode, draft));
   const [workingDraft, setWorkingDraft] = useState<StudioDraft | null>(null);
   const [recommendation, setRecommendation] = useState(initialRecommendation);
+  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [result, setResult] = useState<StudioTryRun | null>(null);
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -194,7 +194,7 @@ export function AgentBuilderAssistant({
     setWorkingDraft(mode === "run" ? draft : null);
     setCreating(false);
     setBusy(false);
-    setRecommendation(initialRecommendation);
+    setRecommendation(initialRecommendation); setSelectedSkills([]);
     setResult(null);
     setError("");
     setAttachments([]); setUploading(false); setReadingMaterials(false); uploadLock.current = false; submitLock.current = false; followOutput.current = true;
@@ -316,31 +316,16 @@ export function AgentBuilderAssistant({
     setCreating(true);
     setError("");
     try {
-      const task = [
-        value.trim(),
-        "",
-        "当前部署约束：只使用 Worker 运行；不访问外部网络；优先使用已有知识库和工作区数据。",
-      ].join("\n");
-      const created = await studioClient.createDraftFromTask({ task, ...(materialContext ? {sampleInput: materialContext} : {}), runtimePreference: "auto" });
-      const generatedDraft = apiDraftToStudioDraft(created.draft);
-      const restrictedDraft = {
-        ...generatedDraft,
-        builtinTools: generatedDraft.builtinTools,
-        mcpServers: generatedDraft.mcpServers.filter((reference) => knowledgeMcpReferences.includes(reference)),
-      };
-      const environmentRestricted = restrictedDraft.builtinTools.length !== generatedDraft.builtinTools.length
-        || restrictedDraft.mcpServers.length !== generatedDraft.mcpServers.length;
-      const nextDraft = environmentRestricted
-        ? apiDraftToStudioDraft(await studioClient.replaceDraft(restrictedDraft))
-        : generatedDraft;
+      const created = await studioClient.createDraftFromTask({task: value.trim(), ...(materialContext ? {sampleInput: materialContext} : {}), runtimePreference: "auto"});
+      const nextDraft = apiDraftToStudioDraft(created.draft);
       setWorkingDraft(nextDraft);
       sessionKeyRef.current = `run:${nextDraft.id}`;
-      setRecommendation(created.recommendation);
+      setRecommendation(created.recommendation); setSelectedSkills([]);
       setMessages((current) => [...current, {
         id: createRandomId(),
         role: "assistant",
         tone: "success",
-        text: `已创建“${nextDraft.displayName}”草稿。可以继续告诉我修改要求，或在右侧输入实际问题测试效果。${attachments.length ? "已将附件作为构建参考材料。" : ""}`,
+        text: `${created.recommendation?.generatedByModel ? "已由模型生成" : "已创建"}“${nextDraft.displayName}”草稿。可以继续告诉我修改要求，或在右侧输入实际问题测试效果。${attachments.length ? "已将附件作为构建参考材料。" : ""}`,
       }]);
       onCreated({ draft: nextDraft, prompt: value.trim(), recommendation: created.recommendation, autoRun: false });
       setAttachments([]); setAssetsOpen(true);
@@ -408,7 +393,10 @@ export function AgentBuilderAssistant({
         }).slice(0, 12_000),
       });
       if (epoch !== epochRef.current) return;
-      setMessages((current) => [...current, { id: createRandomId(), role: "assistant", text: reply.reply }]);
+      setMessages((current) => [...current, { id: createRandomId(), role: "assistant", text: reply.reply,
+        files: reply.creatorRuns?.flatMap(run => run.artifactNames),
+        artifactIds: reply.creatorRuns?.flatMap(run => run.artifactIds),
+      }]);
       const action = reply.action ?? "edit";
       if (action === "edit") {
         if (reply.changedFields.length) { setProposal({ ...reply, before: saved, testTurn: contextTurn ?? undefined }); if (comparisonPending) {setCodeComparison(undefined); setCodeView(false);} }
@@ -538,12 +526,24 @@ export function AgentBuilderAssistant({
 
       {active && !result && <article className={styles.message} data-role="assistant" data-tone="muted">
         <span className={styles.assistantAvatar} aria-hidden="true">K</span>
-        <div className={styles.thinking}><i /><i /><i /><span>{creating ? "正在创建草稿" : busy ? "正在启动 Worker" : "正在执行试跑"}</span></div>
+        <div className={styles.thinking}><i /><i /><i /><span>{creating ? "正在调用模型生成初稿与 Skill 推荐" : busy ? "正在启动 Worker" : "正在执行试跑"}</span></div>
       </article>}
 
       {feedbackTurn && <div className={styles.editStatus}>正在改进所选回答 · 修订 {feedbackTurn.result.draftRevision}<button type="button" onClick={() => setFeedbackTurn(null)}>取消选择</button></div>}
       {workspaceTarget && lastComparison && <button type="button" className={styles.runLink} onClick={showLastComparison} aria-label="查看本次代码差异"><span>已更新 · r{lastComparison.before.revision} → r{lastComparison.after.revision}</span><small>查看代码差异 ↗</small></button>}
-      {(editing || applying) && <p className={styles.editStatus} role="status">{editing ? intent === "auto" ? "正在结合上下文理解要求…" : "正在根据当前草稿生成修改建议…" : "正在保存修改…"}</p>}
+      {(editing || applying) && <p className={styles.editStatus} role="status">{editing ? intent === "auto" ? "正在结合上下文理解要求…" : "正在生成修改建议；创建 Skill 时将由 Worker 执行 skill-creator 校验与打包…" : "正在保存修改…"}</p>}
+      {recommendation?.recommendedSkills?.some(skill => !activeDraft.skills.some(installed => installed.name === skill.packageId)) && <section className={styles.editProposal} aria-label="推荐 Skill">
+        <strong>为此智能体推荐的 Skill</strong>
+        <p>模型根据需求推荐，选择后可查看完整代码差异。</p>
+        {recommendation.recommendedSkills.filter(skill => !activeDraft.skills.some(installed => installed.name === skill.packageId)).map(skill => <label key={skill.packageId} className={styles.skillSuggestion}>
+          <input type="checkbox" checked={selectedSkills.includes(skill.packageId)} disabled={inputBusy || Boolean(proposal)} onChange={event => setSelectedSkills(current => event.target.checked ? [...current, skill.packageId] : current.filter(id => id !== skill.packageId))}/>
+          <span><strong>{skill.label}</strong><small>{skill.reason}</small>{skill.risk === "review" && <small>包含脚本，应用前请审阅</small>}</span>
+        </label>)}
+        <div className={styles.editActions}><button type="button" disabled={!selectedSkills.length || inputBusy || Boolean(proposal) || hasUnsavedChanges} onClick={() => {
+          const installSkills = recommendation.recommendedSkills!.filter(skill => selectedSkills.includes(skill.packageId)).map(({packageId, revision}) => ({packageId, revision}));
+          setProposal({baseRevision: activeDraft.revision, before: activeDraft, action: "edit", reply: "安装所选推荐 Skill", changedFields: ["skills"], changes: {installSkills, capabilityCatalogRevision: recommendation.capabilityCatalogRevision}});
+        }}>审阅所选 Skill</button></div>
+      </section>}
       {proposal && <section className={styles.editProposal} aria-label="待确认的配置修改">
         <strong>修改预览 · 基于修订 {proposal.baseRevision}</strong>
         {workspaceTarget && <button type="button" className={styles.diffLink} disabled={comparing || applying || hasUnsavedChanges || activeDraft.revision !== proposal.baseRevision} onClick={() => void previewCodeChanges()}>{comparing ? "正在生成差异…" : "查看代码差异 ↗"}</button>}

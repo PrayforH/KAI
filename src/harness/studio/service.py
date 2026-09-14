@@ -58,6 +58,7 @@ from harness.studio.deepagents_export import (
     project_source,
 )
 from harness.studio.factory import create_draft_spec
+from harness.studio.initial_agent import generate_initial_agent
 from harness.studio.model_configuration import ModelConfigurationService
 from harness.studio.models import (
     AgentDraft,
@@ -80,16 +81,16 @@ from harness.studio.models import (
     ValidationSeverity,
 )
 from harness.studio.nexau_export import NexauAgentArchive, export_nexau_agent
-from harness.studio.platform_skills import draft_skill_content_hash
+from harness.studio.platform_skills import draft_skill_content_hash, platform_skill_package
 from harness.studio.repositories import AgentDraftRepository
 from harness.studio.skill_builder import (
-    ControlPlaneSkillConversationService,
     SkillConversationContext,
     SkillConversationMessage,
     SkillConversationRequest,
     SkillConversationUnavailableError,
     SkillConversationUpstreamError,
 )
+from harness.studio.worker_skill_creator import WorkerSkillCreator
 
 _EDITOR_SKILL_FILE_LIMIT = 200
 _EDITOR_INLINE_TEXT_BYTES = 64 * 1024
@@ -382,6 +383,7 @@ class AgentStudioService:
         tenant_id: str,
         user_id: str,
         request: CreateTaskDrivenDraftRequest,
+        models: ModelConfigurationService,
     ) -> TaskDrivenDraftResult:
         """Create a valid draft by compiling business intent against tenant capabilities."""
 
@@ -418,6 +420,18 @@ class AgentStudioService:
             catalog,
             compiler,
         )
+        catalog_revision, catalog = await self._builder_catalog(tenant_id, user_id)
+        draft, suggested = await generate_initial_agent(draft, request, catalog, models)
+        validation = compiler.validate(draft)
+        if not validation.ready:
+            raise ConflictError("模型生成的 Agent 未通过配置检查：" + "; ".join(
+                i.message for i in validation.issues if i.severity == ValidationSeverity.ERROR))
+        recommendation = recommendation.model_copy(update={
+            "generated_by_model": True, "recommended_skills": suggested,
+            "capability_catalog_revision": catalog_revision, "validation": validation,
+            "reasons": ("已调用所选模型生成职责、执行流程与任务契约。",
+                        "Skill 仅作推荐，选择后通过差异审阅安装。") + recommendation.reasons,
+        })
         await self._repository.add(draft)
         return TaskDrivenDraftResult(draft=draft, recommendation=recommendation)
 
@@ -955,6 +969,7 @@ class AgentStudioService:
     async def converse_builder(
         self, tenant_id: str, user_id: str, draft_id: str,
         request: BuilderConversationRequest, models: ModelConfigurationService,
+        creator: WorkerSkillCreator | None = None,
     ) -> BuilderConversationReply:
         current = await self.get(tenant_id, user_id, draft_id)
         await self._require_shared_permission(tenant_id, user_id, current, AgentPermission.EDIT)
@@ -971,6 +986,10 @@ class AgentStudioService:
         prompt = json.dumps({
             "assemblyCatalog": {
                 "revision": catalog_revision,
+                "skills": [{"packageId": s.package_id, "revision": s.revision,
+                    "label": s.label, "summary": s.summary, "risk": s.risk_level}
+                    for s in catalog.skills if s.enabled
+                    and current.spec.runtime in s.compatible_runtimes],
                 "builtinTools": [item.model_dump() for item in catalog.builtin_tools],
                 "mcpServers": [{"reference": item.reference, "label": item.label,
                     "description": item.description, "category": item.category,
@@ -996,20 +1015,25 @@ class AgentStudioService:
             raise ConflictError("模型未明确消息用途，请重试；未执行任何操作")
         if request.intent == "edit" and reply.action not in {"edit", "ask", "reply"}:
             raise ConflictError("修改模式不能发起试跑，请重新描述修改要求")
-        if any(set(getattr(reply.changes, field) or ()) - set(getattr(current.spec, field))
+        if reply.changes.install_skills or any(
+               set(getattr(reply.changes, field) or ()) - set(getattr(current.spec, field))
                for field in ("builtin_tools", "mcp_servers")):
             # Bind to the catalog the model actually saw, not a model-generated revision.
             reply = reply.model_copy(update={"changes": reply.changes.model_copy(
                 update={"capability_catalog_revision": catalog_revision}
             )})
+        if reply.changes.create_skills or reply.changes.update_skills:
+            raise ConflictError("创建或更新 Skill 必须通过 skill-creator 运行，请重新生成")
+        creator_runs: list[dict[str, object]] = []
         if reply.skill_requests:
+            if creator is None:
+                raise ConflictError("Skill Creator Worker 服务不可用，未生成或修改技能")
             generated = {"create_skills": list(reply.changes.create_skills),
                          "update_skills": list(reply.changes.update_skills)}
             existing = {skill.name: skill for skill in current.spec.skills}
             names = [item.name for item in reply.skill_requests]
             if len(names) != len(set(names)):
                 raise ConflictError("同一 Skill 不能重复共创")
-            creator = ControlPlaneSkillConversationService(models)
             for item in reply.skill_requests:
                 skill = existing.get(item.name)
                 if (item.operation == "create") == (skill is not None):
@@ -1026,10 +1050,8 @@ class AgentStudioService:
                         "未要求修改的附件必须保留。仅生成建议，尚未安装。"
                     )),),
                 )
-                if len(creator_request.model_dump_json()) > 180_000:
-                    raise ConflictError("该 Skill 附件内容较大，请在技能编辑区修改具体文件")
                 try:
-                    result = await creator.respond(tenant_id, creator_request)
+                    result = await creator.respond(tenant_id, creator_request, name=item.name)
                 except (SkillConversationUnavailableError, SkillConversationUpstreamError) as error:
                     raise ConflictError(str(error)) from None
                 if result.status != "ready" or result.skill is None:
@@ -1037,6 +1059,9 @@ class AgentStudioService:
                         reply=result.reply, action="ask", changes=BuilderChanges(),
                         baseRevision=current.revision, changedFields=(),
                     )
+                creator_runs.append({"runId": result.creator_run_id,
+                    "sourceRevision": result.creator_source_revision,
+                    "artifactIds": result.artifact_ids, "artifactNames": result.artifact_names})
                 if result.skill.name != item.name:
                     raise ConflictError("Skill Creator 返回了不同的技能名称，请重新生成")
                 try:
@@ -1059,6 +1084,7 @@ class AgentStudioService:
         before, after = current.spec.model_dump(by_alias=True), candidate.model_dump(by_alias=True)
         return BuilderConversationReply(
             reply=reply.reply, changes=reply.changes, action=reply.action, task=reply.task,
+            creatorRuns=tuple(creator_runs),
             baseRevision=current.revision,
             changedFields=tuple(
                 name for name in after if after[name] != before[name]
@@ -1084,6 +1110,17 @@ class AgentStudioService:
 
     def _builder_spec(self, current: AgentDraft, changes: BuilderChanges) -> AgentDraftSpec:
         spec = apply_builder_changes(current.spec, changes)
+        if changes.install_skills:
+            packages = [platform_skill_package(s.package_id, s.revision)
+                        for s in changes.install_skills]
+            names = [p.skill.name for p in packages]
+            if len(names) != len(set(names)) or set(names) & {s.name for s in spec.skills}:
+                raise ConflictError("推荐 Skill 已存在或重复选择，请刷新后重试")
+            spec = spec.model_copy(update={
+                "skills": spec.skills + tuple(p.skill for p in packages),
+                "evaluation_cases": spec.evaluation_cases + tuple(
+                    c for p in packages for c in p.evaluation_cases),
+            })
         existing = {skill.name: skill for skill in current.spec.skills}
         removed_packages = {skill.source.package_id for skill in current.spec.skills
                             if skill.source and skill.name not in {s.name for s in spec.skills}}
@@ -1105,6 +1142,16 @@ class AgentStudioService:
         self, tenant_id: str, user_id: str, current: AgentDraft, changes: BuilderChanges,
     ) -> None:
         revision, catalog = await self._builder_catalog(tenant_id, user_id)
+        if changes.install_skills:
+            if changes.capability_catalog_revision != revision:
+                raise ConflictError("能力目录已更新，请重新获取 Skill 推荐")
+            for selected in changes.install_skills:
+                visible = next((s for s in catalog.skills if s.package_id == selected.package_id
+                    and s.enabled and s.revision == selected.revision
+                    and current.spec.runtime in s.compatible_runtimes), None)
+                package = platform_skill_package(selected.package_id, selected.revision)
+                if visible is None or visible.content_hash != package.content_hash:
+                    raise ConflictError("推荐 Skill 不在当前可用目录中")
         allowed: dict[str, set[str]] = {
             "builtin_tools": {item.name for item in catalog.builtin_tools},
             "mcp_servers": {item.reference for item in catalog.mcp_servers

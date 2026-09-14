@@ -353,3 +353,26 @@ it("captures the actual project comparison before apply and opens it after the r
   expect(host.textContent).toContain("1 → 2 · 已应用");
   expect(updated.mock.lastCall?.[0].revision).toBe(2);
 });
+
+it("creates from the actual brief and reviews recommended Skills before installation", async () => {
+  vi.spyOn(studioClient, "createDraftFromTask").mockResolvedValue({draft: api(initial), recommendation: {
+    generatedByModel: true, capabilityCatalogRevision: 7,
+    recommendedSkills: [{packageId: "evidence-reporting", revision: 1, label: "证据报告", reason: "当前任务需要来源核验", risk: "low"}],
+    runtime: initial.runtime, modelRouteId: initial.modelRoute, model: initial.model,
+    template: initial.template, builtinTools: [], mcpServers: [], permissionPolicy: initial.policy,
+    executionProfile: initial.executionProfile, reasons: [], validation: {ready: true, issues: [], productionEligible: true, contentHash: null, packageHash: null, runtimeCompatibility: {runtime: initial.runtime, label: "Worker", stability: "stable", compatible: true, capabilities: [], limitations: []}},
+  }});
+  act(() => newDraft());
+  await send("联网核验公开资料并生成报告");
+  expect(studioClient.createDraftFromTask).toHaveBeenCalledWith({task: "联网核验公开资料并生成报告", runtimePreference: "auto"});
+  expect(host.textContent).toContain("当前任务需要来源核验");
+  expect(studioClient.applyBuilderEdit).not.toHaveBeenCalled();
+  await act(async () => { host.querySelector<HTMLInputElement>('[aria-label="推荐 Skill"] input')!.click(); });
+  await click("审阅所选 Skill");
+  expect(host.textContent).toContain("修改预览");
+  expect(studioClient.applyBuilderEdit).not.toHaveBeenCalled();
+  await click("应用修改");
+  expect(studioClient.applyBuilderEdit).toHaveBeenCalledWith(initial.id, {expectedRevision: 1, changes: {
+    installSkills: [{packageId: "evidence-reporting", revision: 1}], capabilityCatalogRevision: 7,
+  }});
+});

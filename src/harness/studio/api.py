@@ -183,6 +183,7 @@ from harness.studio.web_configuration import (
     WebConfiguration,
     WebConfigurationService,
 )
+from harness.studio.worker_skill_creator import WorkerSkillCreator
 
 
 @dataclass(frozen=True)
@@ -1563,6 +1564,7 @@ async def create_task_driven_draft(
     body: CreateTaskDrivenDraftRequest,
     actor: Annotated[StudioActor, Depends(require_studio_writer)],
     service: Annotated[AgentStudioService, Depends(get_studio_service)],
+    models: Annotated[ModelConfigurationService, Depends(get_model_configuration_service)],
 ) -> TaskDrivenDraftResult:
     """Compile one business task into a complete, explainable Agent draft."""
 
@@ -1570,7 +1572,7 @@ async def create_task_driven_draft(
         result = await service.create_from_task(
             tenant_id=actor.tenant_id,
             user_id=actor.user_id,
-            request=body,
+            request=body, models=models,
         )
         return result.model_copy(update={"draft": compact_draft_for_editor(result.draft)})
     except ValueError as error:
@@ -1820,12 +1822,20 @@ async def converse_agent_builder(
     actor: Annotated[StudioActor, Depends(require_studio_writer)],
     service: Annotated[AgentStudioService, Depends(get_studio_service)],
     models: Annotated[ModelConfigurationService, Depends(get_model_configuration_service)],
+    container: Annotated[ApiContainer, Depends(get_container)],
+    identity: Annotated[Identity, Depends(require_identity)],
 ) -> BuilderConversationReply:
     try:
-        return await service.converse_builder(
+        draft = await service.get(actor.tenant_id, actor.user_id, draft_id)
+        result = await service.converse_builder(
             actor.tenant_id, actor.user_id, draft_id, body, models,
+            WorkerSkillCreator(container, draft, actor.user_id,
+                               lambda: _authorize_studio_actor(identity, "studio:preview")),
         )
-    except (ConflictError, NotFoundError) as error:
+        if result.changes.install_skills:
+            _authorize_studio_actor(identity, "studio:catalog:write")
+        return result
+    except (ConflictError, NotFoundError, PermissionDeniedError) as error:
         raise _translate_domain_error(error) from error
 
 
@@ -1835,8 +1845,11 @@ async def preview_builder_project_diff(
     body: BuilderApplyRequest,
     actor: Annotated[StudioActor, Depends(require_studio_writer)],
     service: Annotated[AgentStudioService, Depends(get_studio_service)],
+    identity: Annotated[Identity, Depends(require_identity)],
 ) -> DeepagentsProjectComparison:
     try:
+        if body.changes.install_skills:
+            _authorize_studio_actor(identity, "studio:catalog:write")
         return await service.compare_builder_project(actor.tenant_id, actor.user_id, draft_id, body)
     except (ConflictError, NotFoundError) as error:
         raise _translate_domain_error(error) from error
@@ -1848,8 +1861,11 @@ async def apply_agent_builder_edit(
     body: BuilderApplyRequest,
     actor: Annotated[StudioActor, Depends(require_studio_writer)],
     service: Annotated[AgentStudioService, Depends(get_studio_service)],
+    identity: Annotated[Identity, Depends(require_identity)],
 ) -> AgentDraft:
     try:
+        if body.changes.install_skills:
+            _authorize_studio_actor(identity, "studio:catalog:write")
         return await service.apply_builder_edit(actor.tenant_id, actor.user_id, draft_id, body)
     except (ConflictError, NotFoundError) as error:
         raise _translate_domain_error(error) from error
