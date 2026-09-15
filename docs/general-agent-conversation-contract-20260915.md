@@ -52,4 +52,8 @@
 
 五项均成功完成。发布后 API、3 个 Worker 和 quality-sync 均 healthy，重启次数为 0。
 
+### 主页面默认入口补齐
+
+后续核对发现，3501 主页面 `runtime-config` 仍由 Web 环境变量固定为 1.0.2。已将 `web-integrated` 的 `HARNESS_AGENT_VERSION` 改为实际发布坐标 `1.0.3+platform.99dfe677`，使用相同 Web 镜像重建该服务，并实测 `/api/harness/runtime-config` 返回新版。刷新页面后新建通用助手任务使用该默认坐标；历史会话保留原版本。有效配置已同步回发布目录的 `compose.release.private.json`，切换前配置保存在 `compose.before-default-switch.private.json`。
+
 回滚在无活动运行时，用发布目录的 `compose.previous.private.json` 重建 api、worker（3 副本）和 quality-sync；不会删除已生成的默认 Agent 发布版本。
