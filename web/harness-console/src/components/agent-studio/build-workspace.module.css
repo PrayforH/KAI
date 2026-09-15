@@ -73,3 +73,6 @@
   .workspace[data-code="true"] > aside, .workspace[data-code="true"] > .mobileTabs { display: none !important; }
   .workspace[data-code="true"] > section[aria-label="DeepAgents 代码视图"] { flex: 1; }
 }
+
+.sessionPicker { display: flex; align-items: center; gap: 10px; padding: 8px 22px 0; flex-shrink: 0; color: var(--studio-muted); font-size: 12px; }
+.sessionPicker select { flex: 1; min-width: 0; max-width: 100%; padding: 5px 8px; border: 1px solid var(--studio-line); border-radius: 6px; background: var(--studio-panel); color: var(--studio-ink); font: inherit; }

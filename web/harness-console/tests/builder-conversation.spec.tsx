@@ -29,7 +29,13 @@ beforeEach(() => {
   HTMLElement.prototype.scrollTo = vi.fn();
   vi.spyOn(studioClient, "readBuilderMaterials").mockResolvedValue({context: "参考材料正文"});
   let nextRun = 0;
-  vi.spyOn(studioClient, "createTryRun").mockImplementation(async (_id, revision) => ({ ...run, draftRevision: revision, run: { ...run.run, run_id: `run-${++nextRun}`, session_id: "preview-session" } }));
+  const sessionByRun = new Map<string, string>();
+  vi.spyOn(studioClient, "createTryRun").mockImplementation(async (_id, revision, _prompt, _key, options) => {
+    const runId = `run-${++nextRun}`;
+    const sessionId = (options?.continueFromRunId && sessionByRun.get(options.continueFromRunId)) || `session-${runId}`;
+    sessionByRun.set(runId, sessionId);
+    return { ...run, draftRevision: revision, run: { ...run.run, run_id: runId, session_id: sessionId } };
+  });
   vi.spyOn(studioClient, "streamTryRunEvents").mockResolvedValue();
   vi.spyOn(studioClient, "getTryRun").mockImplementation(async (_id, revision, runId) => ({ ...run, draftRevision: revision, run: { ...run.run, run_id: runId, session_id: "preview-session" } }));
   vi.spyOn(studioClient, "converseBuilder").mockResolvedValue({
@@ -380,6 +386,8 @@ it("creates from the actual brief and reviews recommended Skills before installa
 it("renders model deltas before the completed proposal and keeps changes reviewable", async () => {
   let finish: (reply: Awaited<ReturnType<typeof studioClient.converseBuilder>>) => void;
   vi.mocked(studioClient.converseBuilder).mockImplementation(async (_id, _body, progress) => {
+    expect(host.querySelector(".aui-composer-root")?.textContent).not.toContain("正在读取参考材料");
+    expect(studioClient.readBuilderMaterials).not.toHaveBeenCalled();
     progress?.({ type: "builder.reply", text: "正在逐步输出建议" });
     return new Promise(resolve => { finish = resolve; });
   });
@@ -391,4 +399,32 @@ it("renders model deltas before the completed proposal and keeps changes reviewa
   expect(host.textContent).toContain("建议完成");
   expect(host.querySelector('[aria-label="待确认的配置修改"]')).not.toBeNull();
   expect(studioClient.applyBuilderEdit).not.toHaveBeenCalled();
+});
+
+it("starts an empty test conversation and can resume a chosen history with its latest turn", async () => {
+  act(() => enableWorkspace());
+  await sendTest("第一组问题"); await sendTest("第一组追问");
+  const panel = () => host.querySelector('[aria-label="智能体效果测试"]')!;
+  expect(panel().querySelectorAll("[data-test-run]")).toHaveLength(2);
+  expect(panel().textContent).toContain("当前对话 2 轮");
+  await act(async () => {
+    const input = panel().querySelector("textarea")!;
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, "未发送内容");
+    input.dispatchEvent(new Event("input", {bubbles:true}));
+  });
+  await click("新对话");
+  expect(panel().querySelectorAll("[data-test-run]")).toHaveLength(0);
+  expect(panel().querySelector("textarea")!.value).toBe("");
+  expect(panel().textContent).toContain("新对话，不携带其他对话上下文");
+  await sendTest("第二组独立问题");
+  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({});
+  expect(panel().querySelectorAll("[data-test-run]")).toHaveLength(1);
+  await act(async () => {
+    const select = panel().querySelector("select")!;
+    select.value = "session-run-1";select.dispatchEvent(new Event("change",{bubbles:true}));
+  });
+  expect(panel().querySelectorAll("[data-test-run]")).toHaveLength(2);
+  await sendTest("回到第一组继续追问");
+  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({continueFromRunId:"run-2"});
+  expect(panel().querySelectorAll("[data-test-run]")).toHaveLength(3);
 });

@@ -6,7 +6,8 @@ import { createInputAttachmentAdapter, inputArtifactIdFromAttachment } from "../
 import { PreviewRunResponse, type PreviewTurn } from "./agent-preview";
 import styles from "./build-workspace.module.css";
 
-export function AgentTestPanel({ incomingFiles, onIncomingFilesUsed, turns, draftId, revision, agentName, model, busy, ready, dirty, error, selectedRunId, onSend, onReset, onCancel, onImprove, onAssets }: {
+export function AgentTestPanel({ history = [], sessionId = "", conversationEpoch = 0, onSelectSession, incomingFiles, onIncomingFilesUsed, turns, draftId, revision, agentName, model, busy, ready, dirty, error, selectedRunId, onSend, onReset, onCancel, onImprove, onAssets }: {
+  history?: PreviewTurn[]; sessionId?: string; conversationEpoch?: number; onSelectSession?: (id: string) => void;
   onIncomingFilesUsed?: () => void;
   incomingFiles?: {draftId: string; files: {id: string; name: string}[]} | null;
   turns: PreviewTurn[]; draftId: string; revision: number; agentName: string; model: string; busy: boolean; ready: boolean; dirty: boolean; error: string; selectedRunId: string;
@@ -25,7 +26,8 @@ export function AgentTestPanel({ incomingFiles, onIncomingFilesUsed, turns, draf
   const transcript = useRef<HTMLDivElement>(null);
   const follow = useRef(true);
   const last = turns.at(-1)?.result;
-  useEffect(() => { epoch.current++; uploadLock.current = false; setInput(""); setFiles([]); setUploadError(""); setUploading(false); setSending(false); follow.current = true; }, [draftId]);
+  const sessions = [...new Map(history.map(turn => [turn.result.run.session_id, turn])).keys()].map(id => history.find(turn => turn.result.run.session_id === id)!);
+  useEffect(() => { epoch.current++; uploadLock.current = false; setInput(""); setFiles([]); setUploadError(""); setUploading(false); setSending(false); follow.current = true; }, [draftId, conversationEpoch]);
   useEffect(() => { if (incomingFiles && incomingFiles !== incomingUsed.current && incomingFiles.draftId === draftId) { incomingUsed.current = incomingFiles; setFiles(current => [...current, ...incomingFiles.files.filter(file => !current.some(item => item.id === file.id))]); onIncomingFilesUsed?.(); } }, [incomingFiles, draftId, onIncomingFilesUsed]);
   useEffect(() => { if (follow.current) transcript.current?.scrollTo({top: transcript.current.scrollHeight, behavior: "smooth"}); }, [turns.length, last?.events.length, last?.finalText]);
   useEffect(() => {
@@ -61,8 +63,9 @@ export function AgentTestPanel({ incomingFiles, onIncomingFilesUsed, turns, draf
     finally { if (current === epoch.current) { uploadLock.current = false; setUploading(false); } }
   }
   return <section className={styles.testPanel} aria-label="智能体效果测试">
-    <header className={styles.panelHeader}><div><strong>效果测试</strong><small title={model}>{model || "使用智能体配置模型"}</small></div><div className={styles.headerActions}><button type="button" onClick={onAssets}>配置与文件</button><button type="button" disabled={busy || sending} onClick={onReset}>新对话</button></div></header>
-    <div className={styles.revisionNote} role="status">{!ready ? "先在左侧描述需求，创建智能体后即可测试" : dirty ? "有未保存修改，发送测试时将先保存配置" : last && last.draftRevision !== revision ? `配置已更新至 r${revision} · 下一次测试将开启新会话` : `草稿 r${revision} · 连续对话`}</div>
+    <header className={styles.panelHeader}><div><strong>效果测试</strong><small title={model}>{model || "使用智能体配置模型"}</small></div><div className={styles.headerActions}><button type="button" onClick={onAssets}>配置与文件</button><button type="button" disabled={busy || sending || uploading} onClick={onReset}>新对话</button></div></header>
+    {sessions.length > 0 && onSelectSession && <label className={styles.sessionPicker}>测试对话<select aria-label="切换测试对话" value={sessionId} disabled={busy || sending || uploading} onChange={event => onSelectSession(event.target.value)}><option value="">新对话</option>{sessions.map((turn, index) => <option key={turn.result.run.session_id} value={turn.result.run.session_id}>对话 {index + 1} · {turn.prompt.slice(0, 36)}</option>)}</select></label>}
+    <div className={styles.revisionNote} role="status">{!ready ? "先在左侧描述需求，创建智能体后即可测试" : dirty ? "有未保存修改，发送测试时将先保存配置" : last && last.draftRevision !== revision ? `配置已更新至 r${revision} · 下一次测试将开启新会话` : last ? `草稿 r${revision} · 当前对话 ${turns.length} 轮 · 继续发送可追问` : `草稿 r${revision} · 新对话，不携带其他对话上下文`}</div>
     <div className={styles.testTranscript} ref={transcript} onScroll={event => {const el=event.currentTarget;follow.current=el.scrollHeight-el.scrollTop-el.clientHeight<120;}}>
       {!turns.length && <div className={styles.emptyTest}><span aria-hidden="true">↗</span><h2>{ready ? agentName : "从一个需求开始"}</h2><p>{ready ? "输入实际问题或附加材料，查看智能体的回答效果。" : "左侧负责构建和修改，这里用于验证效果。"}</p></div>}
       {turns.map((turn, index) => <article key={turn.result.run.run_id} data-test-run={turn.result.run.run_id} className={styles.testTurn} data-selected={turn.result.run.run_id === selectedRunId}>

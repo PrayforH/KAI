@@ -129,6 +129,8 @@ export function AgentBuilderAssistant({
   const [assetTab, setAssetTab] = useState<"config" | "changes">("config");
   const [mobilePanel, setMobilePanel] = useState<"build" | "test">("build");
   const [selectedRunId, setSelectedRunId] = useState("");
+  const [testSessionId, setTestSessionId] = useState("");
+  const [testConversationEpoch, setTestConversationEpoch] = useState(0);
   const [lastChanges, setLastChanges] = useState<BuildChange[]>([]);
   const [attachments, setAttachments] = useState<WorkspaceFile[]>([]);
   const [readingMaterials, setReadingMaterials] = useState(false);
@@ -193,6 +195,7 @@ export function AgentBuilderAssistant({
     setProposal(null);
     setCodeView(false); setLastComparison(undefined); setCodeComparison(undefined); setComparisonPending(false); setComparing(false); setLastChanges([]); setSelectedRunId(""); setAssetsOpen(true); setMobilePanel("build");
     setLastTestPrompt("");
+    setTestSessionId(""); setTestConversationEpoch(value => value + 1);
     setArchivedTurns([]); setCurrentFiles([]); setLastArtifactIds([]); setFeedbackTurn(null);
     setInput(initialPrompt);
     setMessages(initialMessages(mode, draft));
@@ -290,7 +293,10 @@ export function AgentBuilderAssistant({
     try {
       const runnableDraft = targetDraft ?? await prepareDraft();
       if (epoch !== epochRef.current || !runnableDraft?.id || !value.trim()) return false;
-      const previous = continueConversation && result?.draftRevision === runnableDraft.revision ? result : null;
+      const latestTurn = workspaceTarget
+        ? [...archivedTurns.map(turn => turn.result), ...(result ? [result] : [])].findLast(turn => turn.run.session_id === testSessionId)
+        : result;
+      const previous = continueConversation && latestTurn?.draftRevision === runnableDraft.revision ? latestTurn : null;
       const started = await studioClient.createTryRun(
         runnableDraft.id,
         runnableDraft.revision,
@@ -304,6 +310,7 @@ export function AgentBuilderAssistant({
       setLastTestPrompt(value.trim());
       setCurrentFiles(names); setLastArtifactIds(artifactIds);
       setResult(started);
+      setTestSessionId(started.run.session_id);
       setCodeView(false);setMobilePanel("test");
       setSelectedRunId("");
       setMessages(current => [...current, { id: `run-${started.run.run_id}`, role: "assistant", text: "", runId: started.run.run_id }]);
@@ -365,10 +372,11 @@ export function AgentBuilderAssistant({
     const epoch = epochRef.current;
     const messageId = createRandomId();
     try {
-      setReadingMaterials(true); setError("");
+      setReadingMaterials(Boolean(attachments.length && !sendAsTest)); setError("");
       const materialContext = attachments.length && !sendAsTest
         ? (await studioClient.readBuilderMaterials(attachments.map(file=>file.id), activeDraft.modelRoute)).context : "";
       if (epoch !== epochRef.current) return;
+      setReadingMaterials(false);
       followOutput.current = true;
       setInput("");
       setMessages(current => [...current, { id: messageId, role: "user", text: value, files: attachments.map(file => file.name), artifactIds: attachments.map(file=>file.id), materialContext }]);
@@ -538,7 +546,7 @@ export function AgentBuilderAssistant({
       {messages.map((message) => {
         const turn = message.runId ? turns.find(turn => turn.result.run.run_id === message.runId) : undefined;
         return <article key={message.id} className={styles.message} data-role={message.role} data-tone={message.tone} data-source={turn ? "agent" : "builder"}>
-          <div>{turn ? workspaceTarget ? <button type="button" className={styles.runLink} onClick={() => {setSelectedRunId(turn.result.run.run_id);setCodeView(false);setMobilePanel("test");}}><span>{turn.result.run.status === "succeeded" ? "测试已完成" : ["failed", "cancelled", "timed_out", "rejected"].includes(turn.result.run.status) ? "测试已结束" : "正在测试"} · r{turn.result.draftRevision}</span><small>查看回答 ↗</small></button> : <PreviewRunResponse turn={turn} agentName={activeDraft.displayName} onImprove={improve} /> : <>
+          <div>{turn ? workspaceTarget ? <button type="button" className={styles.runLink} onClick={() => {setTestSessionId(turn.result.run.session_id);setSelectedRunId(turn.result.run.run_id);setCodeView(false);setMobilePanel("test");}}><span>{turn.result.run.status === "succeeded" ? "测试已完成" : ["failed", "cancelled", "timed_out", "rejected"].includes(turn.result.run.status) ? "测试已结束" : "正在测试"} · r{turn.result.draftRevision}</span><small>查看回答 ↗</small></button> : <PreviewRunResponse turn={turn} agentName={activeDraft.displayName} onImprove={improve} /> : <>
             {message.role === "assistant" && <small className={styles.speaker}>构建助手</small>}
             <PreviewMarkdown text={message.text} />
             {message.files?.length ? <WorkspaceAttachments files={message.files.map((name,i)=>({id:message.artifactIds?.[i] || `legacy-${i}`,name}))}/> : null}
@@ -546,6 +554,7 @@ export function AgentBuilderAssistant({
         </article>;
       })}
 
+      {readingMaterials && <p className={styles.editStatus} role="status">正在读取参考材料…</p>}
       {buildReply && <article className={styles.message} data-role="assistant"><small className={styles.speaker}>构建助手 · 正在生成</small><PreviewMarkdown text={buildReply} running /></article>}
       {buildProgress && <p className={styles.editStatus} role="status">{buildProgress}</p>}
       {active && !result && !buildProgress && <article className={styles.message} data-role="assistant" data-tone="muted">
@@ -600,7 +609,7 @@ export function AgentBuilderAssistant({
       </div>}
       <div className={`aui-composer-root ${styles.composerRoot}`}>
       {attachments.length > 0 && <WorkspaceAttachments files={attachments} disabled={inputBusy} onRemove={id=>setAttachments(current=>current.filter(file=>file.id!==id))}/>}
-      {readingMaterials && <span className={styles.composerHint} role="status">正在读取参考材料并处理要求…</span>}
+
       <label>
         <span className={styles.visuallyHidden}>输入消息</span>
         <textarea
@@ -638,9 +647,10 @@ export function AgentBuilderAssistant({
     {builder}
     {assetsOpen && !codeView && <AgentBuildAssets key={assetTab} initialTab={assetTab} onCodeView={() => {setCodeComparison(undefined); setCodeView(true);}} onCodeChanges={lastComparison ? showLastComparison : undefined} draft={activeDraft} turns={turns} changes={changes} pending={Boolean(proposal)} onClose={() => setAssetsOpen(false)} onEdit={(section, label) => onEditConfiguration?.(section, label)} />}
     {codeView && <AgentProjectCode key={activeDraft.id} draftId={draftReady ? activeDraft.id : ""} revision={activeDraft.revision} name={activeDraft.name || activeDraft.displayName} dirty={hasUnsavedChanges} comparison={codeComparison} comparisonPending={comparisonPending} onClose={() => {setCodeView(false);setAssetsOpen(true);}} />}
-    <AgentTestPanel draftId={activeDraft.id} revision={activeDraft.revision} agentName={activeDraft.displayName} model={activeDraft.model} turns={turns} busy={active} ready={draftReady} dirty={hasUnsavedChanges} error={error} selectedRunId={selectedRunId}
+    <AgentTestPanel draftId={activeDraft.id} revision={activeDraft.revision} agentName={activeDraft.displayName} model={activeDraft.model} turns={turns.filter(turn => turn.result.run.session_id === testSessionId)} history={turns} sessionId={testSessionId} conversationEpoch={testConversationEpoch}
+      onSelectSession={id => {setTestSessionId(id);setTestConversationEpoch(value => value + 1);setSelectedRunId("");setError("");}} busy={active} ready={draftReady} dirty={hasUnsavedChanges} error={error} selectedRunId={selectedRunId}
       onSend={async (value,ids,names) => {if (proposal) {setError("请先应用或放弃左侧的配置建议，再测试。");return false;}return startRun(value, undefined, true, ids, names);}}
-      onReset={() => {if (result) setArchivedTurns(current => [...current,{prompt:lastTestPrompt,result,files:currentFiles,artifactIds:lastArtifactIds}]);setResult(null);setFeedbackTurn(null);setSelectedRunId("");setError("");}}
+      onReset={() => {if (result) setArchivedTurns(current => [...current,{prompt:lastTestPrompt,result,files:currentFiles,artifactIds:lastArtifactIds}]);setResult(null);setTestSessionId("");setTestConversationEpoch(value => value + 1);setLastTestPrompt("");setCurrentFiles([]);setLastArtifactIds([]);setFeedbackTurn(null);setSelectedRunId("");setError("");}}
       onCancel={cancelRun} onImprove={improve} onAssets={() => {setCodeView(false);setAssetTab("config");setAssetsOpen(current => !current);}} />
   </div>, workspaceTarget);
 }
