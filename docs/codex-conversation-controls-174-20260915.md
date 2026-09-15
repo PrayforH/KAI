@@ -22,3 +22,20 @@
 - 镜像 ID：`sha256:9399638996a16e1ca3de02d9c03cb5318113b6d2173f1e65f1ec1935ab37b20a`。
 - 只重建 `web-integrated`，保留默认 Agent 1.0.3、API/Worker 和 CubeSandbox 配置。
 - 当前配置为 `compose.release.private.json`；回滚使用同目录 `compose.previous.private.json` 执行 `docker compose -p agent-studio-174 -f <配置文件> up -d --no-deps web-integrated`。
+
+## 主会话按钮溢出回归修复
+
+首次统一样式把所有 `.composer-toolbar` 设为 `width: 100%; flex: none`。构建助手的按钮位于 toolbar 内，但主会话的按钮是 toolbar 的兄弟节点，造成工具栏占满宽度后，按钮向右溢出。原单元测试及 HTTP 检查未发现这个真实布局回归。
+
+修复将主会话 `.composer-footer` 设为两列 Grid：左列 `minmax(0, 1fr)`，右列固定 32 px；内层 toolbar 使用剩余宽度、允许换行，移除重复内边距。构建助手和效果测试仍使用原来的单个全宽 toolbar。输入框增加 `min-width: 0`，避免内容撑大容器；未使用裁剪隐藏溢出，菜单仍可展开。
+
+实际在 Safari 打开本地生产构建并使用独立测试账户验收：
+
+- 主会话空输入：发送按钮完整位于边框内。
+- 输入文字并展开右栏至 300 px：发送按钮仍在框内。
+- 将右栏拖宽至 520 px：左侧工具自动换行，发送按钮仍在右下角框内。
+- 打开已有测试智能体：构建助手、效果测试两处按钮均在各自输入框内。
+- 未提交模型消息，未修改或发布测试智能体配置；已关闭测试标签页。
+- 修复后再次完成 602 项测试（1 skipped）和本地生产构建。
+
+修复发布目录 `/data/composer-overflow-20260915`，Web 镜像 `kai/axis-web:composer-overflow-20260915`；该目录保留 `compose.previous.private.json` 供回滚。默认 Agent 仍为 `1.0.3+platform.99dfe677`。

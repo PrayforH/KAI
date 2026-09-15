@@ -6,6 +6,8 @@ html[data-theme="codex-theme-v1"] body.codex-theme-v1 .harness-composer-shell.ha
   flex-direction: column;
   align-items: stretch;
   gap: 0;
+  min-width: 0;
+  width: 100%;
   min-height: 96px;
   padding: 0;
   border-radius: 16px;
@@ -41,6 +43,31 @@ html[data-theme="codex-theme-v1"] body.codex-theme-v1 .harness-composer-shell.ha
   min-height: 48px;
   gap: 8px;
   padding: 8px;
+}
+
+/* The main conversation has tools and the action as sibling columns.
+   A 100%-wide, non-shrinking toolbar would push the 32px action outside.
+   Builder composers put their action inside the toolbar and stay full width. */
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .harness-composer-shell.harness-composer-shell .composer-footer {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  align-items: end;
+  flex: none;
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  gap: 8px;
+  padding: 8px;
+}
+
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .harness-composer-shell.harness-composer-shell .composer-footer > .composer-toolbar {
+  width: auto;
+  min-width: 0;
+  min-height: 32px;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  padding: 0;
 }
 
 html[data-theme="codex-theme-v1"] body.codex-theme-v1 .harness-composer-shell.harness-composer-shell .aui-composer-attach {
