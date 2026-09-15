@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     environment: Literal["local", "test", "production"] = "local"
     runtime: Literal["fake", "claude-sdk", "multi"] = "fake"
-    sandbox_provider: Literal["local", "daytona", "e2b", "kubernetes"] = "local"
+    sandbox_provider: Literal["local", "daytona", "e2b", "kubernetes", "cubesandbox"] = "local"
     sandbox_execution_mode: Literal["remote_cli", "worker_cli_deferred"] = "remote_cli"
     allow_unsafe_local_sandbox: bool = False
     cc_switch_settings_path: str = "~/.claude/settings.json"
@@ -129,6 +129,17 @@ class Settings(BaseSettings):
     e2b_claude_cli_version: str = "2.1.206"
     e2b_claude_cli_path: str = "/home/user/.local/bin/claude"
     e2b_allow_internet_access: bool = True
+    cubesandbox_api_key: SecretStr = SecretStr("")
+    cubesandbox_api_url: str = ""
+    cubesandbox_proxy_url: str = ""
+    cubesandbox_domain: str = "cube.app"
+    cubesandbox_template: str = ""
+    cubesandbox_timeout_seconds: int = Field(default=3600, ge=60, le=86_400)
+    cubesandbox_allow_internet_access: bool = True
+    cubesandbox_remote_workspace_root: str = "/home/user/harness"
+    cubesandbox_claude_cli_path: str = "/home/user/.local/bin/claude"
+    cubesandbox_claude_cli_version: str = "2.1.206"
+    cubesandbox_codex_cli_path: str = "/home/user/.local/bin/codex"
     kubernetes_namespace: str = "harness-sandboxes"
     kubernetes_image: str = ""
     kubernetes_runtime_class_name: str = "gvisor"

@@ -812,7 +812,9 @@ class ExecutionProfileMetadata(StudioModel):
     profile_id: str = Field(alias="profileId", pattern=r"^[a-z][a-z0-9-]*$")
     label: str = Field(min_length=1, max_length=160)
     description: str = Field(min_length=1, max_length=500)
-    sandbox_provider: Literal["local", "daytona", "e2b", "gvisor"] = Field(alias="sandboxProvider")
+    sandbox_provider: Literal["local", "daytona", "e2b", "gvisor", "cubesandbox"] = Field(
+        alias="sandboxProvider"
+    )
     network_access: tuple[NetworkAccess, ...] = Field(alias="networkAccess")
     risk: CapabilityRisk
     cpu_millis: int = Field(default=1000, alias="cpuMillis", ge=100, le=16_000)

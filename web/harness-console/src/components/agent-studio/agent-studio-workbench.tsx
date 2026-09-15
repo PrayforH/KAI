@@ -1916,24 +1916,29 @@ export function AgentStudioWorkbench() {
 
   useEffect(() => {
     if (!activeEvalRun || !["queued", "running", "cancelling"].includes(activeEvalRun.run.status)) return;
-    let active = true;
-    const timer = window.setTimeout(async () => {
-      try {
-        const refreshed = await studioClient.getEvalRun(activeEvalRun.run.evalRunId);
-        if (!active) return;
-        setEvalRuns((current) => [
-          refreshed,
-          ...current.filter((item) => item.run.evalRunId !== refreshed.run.evalRunId),
-        ]);
-      } catch (error) {
-        if (active) setNotice(error instanceof Error ? error.message : "Eval 状态读取失败");
-      }
-    }, 1500);
-    return () => {
-      active = false;
-      window.clearTimeout(timer);
+    const id = activeEvalRun.run.evalRunId;
+    const controller = new AbortController();
+    let retryTimer: ReturnType<typeof setTimeout>;
+    const update = (refreshed: StudioEvalRun) => {
+      if (!controller.signal.aborted) setEvalRuns(current => [refreshed, ...current.filter(item => item.run.evalRunId !== id)]);
     };
-  }, [activeEvalRun?.run.evalRunId, activeEvalRun?.run.status, activeEvalRun?.cases.length]);
+    async function follow() {
+      while (!controller.signal.aborted) {
+        try {
+          const finalView = await studioClient.streamEvalRun(id, update, controller.signal);
+          update(finalView);
+          if (!["queued", "running", "cancelling"].includes(finalView.run.status)) return;
+        } catch (error) {
+          if (controller.signal.aborted) return;
+          setNotice(error instanceof Error ? error.message : "评测连接中断，正在恢复");
+        }
+        await new Promise<void>(resolve => { retryTimer = setTimeout(resolve, 1500); });
+      }
+    }
+    void follow();
+    return () => { controller.abort(); clearTimeout(retryTimer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeEvalRun?.run.evalRunId]);
 
   useEffect(() => {
     if (!draft.publishedVersion) {

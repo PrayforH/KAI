@@ -1,4 +1,5 @@
 "use client";
+import { ApprovalCard } from "../approval-card";
 import { TextMessagePartProvider } from "@assistant-ui/react";
 import { MarkdownText } from "../markdown-text";
 import { ActivitySummary } from "../activity-summary";
@@ -27,7 +28,12 @@ export function PreviewRunResponse({ turn, agentName, onImprove }: { turn: Previ
               <details><summary>本轮输入</summary><p>{turn.prompt}</p>{turn.files?.map((name, index) => <small key={index}>{name}</small>)}</details>
               <details><summary>原始事件 · {result.events.length}</summary>{result.events.map(event => <details key={event.sequence}><summary>{event.sequence} · {event.type}</summary><pre>{JSON.stringify(event.payload, null, 2)}</pre></details>)}</details>
             </details>
-            {result.approvals.filter(item => item.status === "pending").map(item => <div key={item.approval_id}><p>{item.tool_name}：{item.reason}</p><button type="button" onClick={() => void studioClient.decideTryRunApproval(item.approval_id, "approved")}>批准</button><button type="button" onClick={() => void studioClient.decideTryRunApproval(item.approval_id, "rejected")}>拒绝</button></div>)}
+            {!terminal && result.approvals.filter(item => item.status === "pending").map(item => <ApprovalCard
+              key={item.approval_id}
+              details={{ ...item, run_id: result.run.run_id, tool_name: item.tool_name ?? undefined, risk: item.risk ?? undefined }}
+              complete={false}
+              onDecision={async decision => { await studioClient.decideTryRunApproval(item.approval_id, decision); }}
+            />)}
             {answer && <PreviewMarkdown text={answer} running={!terminal} />}
             {terminal && !answer && <p>{result.run.status === "succeeded" ? "本轮已结束，未返回文字。可查看交付文件和执行详情。" : `本轮未完成。${result.run.error_code || "请查看执行详情后重试。"}`}</p>}
             {result.artifacts.filter(item => item.status === "ready").map(item => <a key={item.artifact_id} href={studioClient.tryRunArtifactHref(item.artifact_id)} download={item.name}>{item.name}</a>)}

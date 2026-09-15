@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -441,6 +441,7 @@ class DaytonaCodexAppServerProcess:
         cli_version: str,
         cli_sha256: str,
         stderr_callback: Callable[[str], None] | None = None,
+        prepare_cli: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self._session = session
         self.options = options
@@ -448,6 +449,7 @@ class DaytonaCodexAppServerProcess:
         self._cli_path = cli_path
         self._cli_version = cli_version
         self._cli_sha256 = cli_sha256
+        self._prepare_cli = prepare_cli
         self.stderr_callback = stderr_callback or SdkDiagnosticTail()
         self.client: CodexJsonlClient | None = None
         self._stdout_task: asyncio.Task[None] | None = None
@@ -456,6 +458,8 @@ class DaytonaCodexAppServerProcess:
     async def start(self) -> Mapping[str, object]:
         if self.client is not None:
             raise RuntimeError("Codex app-server process is already started")
+        if self._prepare_cli is not None:
+            await self._prepare_cli()
         install_script = (
             'set -eu; path="$1"; version="$2"; expected="$3"; shift 3; '
             'if ! [ -x "$path" ] || ! "$path" --version 2>/dev/null | '

@@ -127,7 +127,9 @@ def _map_standard_event(event: RunEvent) -> Sequence[BaseEvent]:
                 "risk",
             ),
         )
-    if event.type in {"approval.approved", "approval.rejected"}:
+    if event.type in {
+        "approval.approved", "approval.rejected", "approval.expired", "approval.cancelled",
+    }:
         approval_id = str(event.payload.get("approval_id", event.event_id))
         return [
             ToolCallResultEvent(

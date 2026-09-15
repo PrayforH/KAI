@@ -6,14 +6,15 @@ import asyncio
 import shlex
 import shutil
 import tempfile
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from pathlib import Path, PurePosixPath
 from typing import Any, Protocol, cast
 
 from claude_agent_sdk import ClaudeAgentOptions
-from e2b import AsyncSandbox, NotFoundException
+from e2b import AsyncSandbox, CommandExitException, NotFoundException
 
 from harness.core.models import Run
+from harness.runtime.codex_app_server import CodexAppServerOptions, DaytonaCodexAppServerProcess
 from harness.runtime.daytona_transport import DaytonaClaudeTransport, RemoteClaudeSession
 from harness.sandbox.base import SandboxCommandResult, SandboxHandle, SandboxIsolation
 
@@ -117,6 +118,8 @@ class SdkE2BRemoteSession:
         try:
             result = await self._process.wait()
             self._exit_code = int(result.exit_code)
+        except CommandExitException as error:
+            self._exit_code = error.exit_code
         finally:
             await self._stdout.put(None)
             await self._stderr.put(None)
@@ -143,17 +146,23 @@ class SdkE2BRemoteSession:
 
     async def wait(self) -> int:
         if self._wait_task is not None:
-            await self._wait_task
+            # Cancelling a caller must not cancel the process watcher: terminate
+            # still needs it to observe the remote kill and drain both streams.
+            await asyncio.shield(self._wait_task)
         return self._exit_code if self._exit_code is not None else 1
 
     async def terminate(self) -> None:
-        if self._process is not None and (self._wait_task is None or not self._wait_task.done()):
-            await self._process.kill()
-        if self._wait_task is not None:
+        if self._process is not None and self._exit_code is None:
             try:
-                await asyncio.wait_for(self._wait_task, timeout=5)
+                await self._process.kill()
+            except NotFoundException:
+                pass
+        if self._wait_task is not None and not self._wait_task.cancelled():
+            try:
+                await asyncio.wait_for(asyncio.shield(self._wait_task), timeout=5)
             except TimeoutError:
                 self._wait_task.cancel()
+                await asyncio.gather(self._wait_task, return_exceptions=True)
 
 
 class SdkE2BRemoteSandbox:
@@ -255,10 +264,18 @@ class E2BSandboxProvider:
         cli_path: str = "/home/user/.local/bin/claude",
         max_collect_bytes: int = 512 * 1024 * 1024,
         max_collect_members: int = 10_000,
+        provider_name: str = "e2b",
+        codex_cli_path: str | None = None,
+        codex_cli_version: str = "",
+        codex_cli_sha256: str = "",
     ) -> None:
         if timeout_seconds <= 0 or max_collect_bytes <= 0 or max_collect_members <= 0:
             raise ValueError("E2B lifecycle and collection limits must be positive")
         self._client = client
+        self.provider_name = provider_name
+        self._codex_cli_path = codex_cli_path
+        self._codex_cli_version = codex_cli_version
+        self._codex_cli_sha256 = codex_cli_sha256
         self._local_root = local_root
         self._template = template
         self._timeout_seconds = timeout_seconds
@@ -269,6 +286,9 @@ class E2BSandboxProvider:
         self._max_collect_bytes = max_collect_bytes
         self._max_collect_members = max_collect_members
         self._sandboxes: dict[str, E2BRemoteSandbox] = {}
+
+    def remote_workspace_for(self, run: Run) -> str:
+        return f"{self._remote_workspace_root}/{run.run_id}"
 
     async def provision(self, run: Run) -> SandboxHandle:
         sandbox = await self._client.create(
@@ -283,9 +303,29 @@ class E2BSandboxProvider:
         )
         self._sandboxes[sandbox.id] = sandbox
         path = Path(tempfile.mkdtemp(prefix=f"{run.run_id}-", dir=self._local_root))
-        remote_workspace = f"{self._remote_workspace_root}/{run.run_id}"
+        remote_workspace = self.remote_workspace_for(run)
 
         def transport_factory(raw_options: object) -> object:
+            if isinstance(raw_options, CodexAppServerOptions):
+                if self._codex_cli_path is None:
+                    raise ValueError(f"{self.provider_name} Codex transport is not configured")
+                bootstrap = getattr(sandbox, "ensure_codex_cli", None)
+
+                async def prepare_codex() -> None:
+                    if bootstrap is not None:
+                        await cast(Callable[..., Awaitable[None]], bootstrap)(
+                            version=self._codex_cli_version, path=self._codex_cli_path
+                        )
+
+                return DaytonaCodexAppServerProcess(
+                    session=sandbox.remote_session(),
+                    options=raw_options,
+                    remote_workspace=remote_workspace,
+                    cli_path=self._codex_cli_path,
+                    cli_version=self._codex_cli_version,
+                    cli_sha256=self._codex_cli_sha256,
+                    prepare_cli=prepare_codex,
+                )
             options = cast(ClaudeAgentOptions, raw_options)
             options.env = {
                 **options.env,
@@ -303,7 +343,7 @@ class E2BSandboxProvider:
         return SandboxHandle(
             sandbox_id=sandbox.id,
             path=path,
-            provider="e2b",
+            provider=self.provider_name,
             isolation_level=SandboxIsolation.CONTAINER,
             remote_workspace=remote_workspace,
             runtime_transport_factory=transport_factory,
@@ -312,10 +352,11 @@ class E2BSandboxProvider:
     async def prepare(self, handle: SandboxHandle) -> None:
         sandbox = self._sandboxes[handle.sandbox_id]
         assert handle.remote_workspace is not None
-        await sandbox.ensure_claude_cli(
-            version=self._cli_version,
-            path=self._cli_path,
-        )
+        if not handle.deferred_tool_execution:
+            await sandbox.ensure_claude_cli(
+                version=self._cli_version,
+                path=self._cli_path,
+            )
         await sandbox.create_folder(handle.remote_workspace)
         for path in sorted(handle.path.rglob("*")):
             relative = path.relative_to(handle.path).as_posix()

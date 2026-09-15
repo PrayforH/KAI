@@ -220,3 +220,12 @@ def test_run_failure_keeps_safe_code_and_recovery_message() -> None:
     assert error["type"] == "RUN_ERROR"
     assert error["code"] == "provider_content_rejected"
     assert error["message"] == "模型服务拒绝了本轮上下文，请重新运行。"
+
+
+def test_expired_and_cancelled_approvals_close_matching_tool_cards() -> None:
+    for decision in ("expired", "cancelled"):
+        mapped = map_harness_event(event(f"approval.{decision}", {"approval_id": "approval-1"}))
+        result = mapped[0].model_dump(by_alias=True)
+        assert result["type"] == "TOOL_CALL_RESULT"
+        assert result["toolCallId"] == "harness-approval-approval-1"
+        assert json.loads(result["content"]) == {"decision": decision}

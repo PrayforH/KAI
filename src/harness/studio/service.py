@@ -32,6 +32,7 @@ from harness.studio.agent_builder import (
     summarize_agent_display_name,
     summarize_agent_name,
 )
+from harness.studio.authoring_stream import Progress
 from harness.studio.builder_conversation import (
     BUILDER_AUTO_SYSTEM_PROMPT,
     BUILDER_SYSTEM_PROMPT,
@@ -42,6 +43,7 @@ from harness.studio.builder_conversation import (
     BuilderConversationRequest,
     apply_builder_changes,
     parse_builder_reply,
+    partial_builder_reply,
 )
 from harness.studio.bundle_import import AgentBundleImportError, parse_agent_bundle
 from harness.studio.catalog_service import CapabilityCatalogService
@@ -316,6 +318,23 @@ class AgentStudioService:
             raise RuntimeError("Agent Studio capability catalog is not configured")
         return self._catalog
 
+    async def _select_initial_execution_profile(
+        self, tenant_id: str, user_id: str, draft: AgentDraft
+    ) -> AgentDraft:
+        if self._catalogs is None and self._catalog is None:
+            return draft
+        catalog = await self.capabilities(tenant_id, user_id)
+        enabled = [profile for profile in catalog.execution_profiles if profile.enabled]
+        if any(profile.profile_id == draft.spec.execution_profile for profile in enabled):
+            return draft
+        if not enabled:
+            raise ConflictError("No enabled execution profile is available")
+        return draft.model_copy(
+            update={
+                "spec": draft.spec.model_copy(update={"execution_profile": enabled[0].profile_id})
+            }
+        )
+
     async def _compiler_for(self, tenant_id: str, user_id: str) -> AgentDraftCompiler:
         if self._catalogs is not None:
             record = await self._catalogs.get_for_user(tenant_id, user_id)
@@ -374,6 +393,7 @@ class AgentStudioService:
             updatedAt=now,
             agentId=await self._resolve_agent_id(tenant_id, user_id, request.name),
         )
+        draft = await self._select_initial_execution_profile(tenant_id, user_id, draft)
         await self._repository.add(draft)
         return draft
 
@@ -384,6 +404,7 @@ class AgentStudioService:
         user_id: str,
         request: CreateTaskDrivenDraftRequest,
         models: ModelConfigurationService,
+        on_progress: Progress | None = None,
     ) -> TaskDrivenDraftResult:
         """Create a valid draft by compiling business intent against tenant capabilities."""
 
@@ -412,8 +433,12 @@ class AgentStudioService:
             updatedAt=now,
             agentId=None,
         )
+        if on_progress:
+            await on_progress({"type": "progress", "text": "正在匹配模型、工具和运行环境…"})
         catalog = await self.capabilities(tenant_id, user_id)
         compiler = await self._compiler_for(tenant_id, user_id)
+        if on_progress:
+            await on_progress({"type": "progress", "text": "正在生成指令、任务约束和验证用例…"})
         draft, recommendation = configure_task_driven_draft(
             draft,
             request,
@@ -434,6 +459,8 @@ class AgentStudioService:
         })
         draft = draft.model_copy(update={
             "agent_id": await self._resolve_agent_id(tenant_id, user_id, name)})
+        if on_progress:
+            await on_progress({"type": "progress", "text": "配置已生成，正在保存草稿…"})
         await self._repository.add(draft)
         return TaskDrivenDraftResult(draft=draft, recommendation=recommendation)
 
@@ -734,6 +761,7 @@ class AgentStudioService:
             agentId=agent_id,
             spaceId=space_id,
         )
+        draft = await self._select_initial_execution_profile(tenant_id, user_id, draft)
         await self._repository.add(draft)
         return draft
 
@@ -969,9 +997,14 @@ class AgentStudioService:
         return build_agent_patch(draft, request, compiler)
 
     async def converse_builder(
-        self, tenant_id: str, user_id: str, draft_id: str,
-        request: BuilderConversationRequest, models: ModelConfigurationService,
+        self,
+        tenant_id: str,
+        user_id: str,
+        draft_id: str,
+        request: BuilderConversationRequest,
+        models: ModelConfigurationService,
         creator: WorkerSkillCreator | None = None,
+        on_progress: Progress | None = None,
     ) -> BuilderConversationReply:
         current = await self.get(tenant_id, user_id, draft_id)
         await self._require_shared_permission(tenant_id, user_id, current, AgentPermission.EDIT)
@@ -1006,13 +1039,35 @@ class AgentStudioService:
         }, ensure_ascii=False)
         if len(prompt) > 180_000:
             raise ConflictError("当前草稿内容过长，请先在主编辑区选择具体 Skill 修改")
-        reply = parse_builder_reply(await models.complete_text(
-            tenant_id, current.spec.model.route_id,
-            system_prompt=(
-                BUILDER_AUTO_SYSTEM_PROMPT if request.intent == "auto" else BUILDER_SYSTEM_PROMPT
-            ),
-            user_prompt=prompt, max_tokens=12_000,
-        ))
+        raw_text = ""
+        visible_reply = ""
+
+        async def on_delta(delta: str) -> None:
+            nonlocal raw_text, visible_reply
+            raw_text += delta
+            text = partial_builder_reply(raw_text)
+            if on_progress and text and text != visible_reply:
+                visible_reply = text
+                await on_progress({"type": "builder.reply", "text": text})
+
+        if on_progress:
+            await on_progress({"type": "progress", "text": "正在理解要求并生成修改建议…"})
+        reply = parse_builder_reply(
+            await models.complete_text(
+                tenant_id,
+                current.spec.model.route_id,
+                system_prompt=(
+                    BUILDER_AUTO_SYSTEM_PROMPT
+                    if request.intent == "auto"
+                    else BUILDER_SYSTEM_PROMPT
+                ),
+                user_prompt=prompt,
+                max_tokens=12_000,
+                on_delta=on_delta if on_progress else None,
+            )
+        )
+        if on_progress:
+            await on_progress({"type": "progress", "text": "正在检查修改范围和配置一致性…"})
         if request.intent == "auto" and "action" not in reply.model_fields_set:
             raise ConflictError("模型未明确消息用途，请重试；未执行任何操作")
         if request.intent == "edit" and reply.action not in {"edit", "ask", "reply"}:
@@ -1090,13 +1145,15 @@ class AgentStudioService:
             reply=reply.reply, changes=reply.changes, action=reply.action, task=reply.task,
             creatorRuns=tuple(creator_runs),
             baseRevision=current.revision,
-            changedFields=tuple(
-                name for name in after if after[name] != before[name]
-            ),
+            changedFields=tuple(name for name in after if after[name] != before[name]),
         )
 
     async def apply_builder_edit(
-        self, tenant_id: str, user_id: str, draft_id: str, request: BuilderApplyRequest,
+        self,
+        tenant_id: str,
+        user_id: str,
+        draft_id: str,
+        request: BuilderApplyRequest,
     ) -> AgentDraft:
         current = await self.get(tenant_id, user_id, draft_id)
         await self._require_shared_permission(tenant_id, user_id, current, AgentPermission.EDIT)
@@ -1108,7 +1165,9 @@ class AgentStudioService:
             return current
         await self._check_builder_candidate(tenant_id, user_id, current, candidate)
         return await self.replace(
-            tenant_id=tenant_id, user_id=user_id, draft_id=draft_id,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            draft_id=draft_id,
             request=ReplaceAgentDraftRequest(expectedRevision=current.revision, spec=candidate),
         )
 
@@ -1173,7 +1232,11 @@ class AgentStudioService:
                 raise ConflictError("能力目录已更新，请基于最新目录重新生成装配建议")
 
     async def _check_builder_candidate(
-        self, tenant_id: str, user_id: str, current: AgentDraft, spec: AgentDraftSpec,
+        self,
+        tenant_id: str,
+        user_id: str,
+        current: AgentDraft,
+        spec: AgentDraftSpec,
     ) -> None:
         compiler = await self._compiler_for(tenant_id, user_id)
         previous = {

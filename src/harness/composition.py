@@ -105,6 +105,7 @@ from harness.runtime.registry_runtime import RegistryClaudeRuntime
 from harness.runtime.sdk_tool_gate import SdkToolGate
 from harness.runtime.session_store import PostgresSessionStore
 from harness.sandbox.base import SandboxProvider
+from harness.sandbox.cubesandbox import build_cubesandbox_provider
 from harness.sandbox.daytona import DaytonaSandboxProvider, SdkDaytonaClient
 from harness.sandbox.deferred import DeferredToolSandboxProvider
 from harness.sandbox.e2b import E2BSandboxProvider, SdkE2BClient
@@ -270,6 +271,8 @@ def _deployment_model_routes(settings: Settings) -> tuple[CcSwitchClaudeConfig, 
 
 
 def _sandbox(settings: Settings) -> SandboxProvider:
+    if settings.sandbox_provider == "cubesandbox":
+        return build_cubesandbox_provider(settings)
     if settings.sandbox_provider == "local":
         if not settings.allow_unsafe_local_sandbox:
             raise ValueError(
@@ -381,6 +384,9 @@ def _runtime_sandbox(
         backend,
         provider_name=settings.sandbox_provider,
         max_active_runs=settings.worker_deferred_max_active_runs,
+        remote_workspace_for=(
+            backend.remote_workspace_for if isinstance(backend, E2BSandboxProvider) else None
+        ),
     )
 
 
@@ -1060,7 +1066,7 @@ def build_production_container(
                 actual = (
                     "gvisor"
                     if isinstance(runtime_sandbox_backend, KubernetesSandboxProvider)
-                    else "e2b"
+                    else runtime_sandbox_backend.provider_name
                     if isinstance(runtime_sandbox_backend, E2BSandboxProvider)
                     else "daytona"
                     if isinstance(runtime_sandbox_backend, DaytonaSandboxProvider)
@@ -1084,6 +1090,8 @@ def build_production_container(
                 AgentManifestSnapshot.model_validate(version.snapshot).manifest
                 for version in (root, *children.values())
             )
+            if any(manifest.spec.runtime == "codex-app-server" for manifest in manifests):
+                return runtime_sandbox_backend
             catalog = (await capability_catalogs.get(tenant_id)).catalog
             read_only_mcp_references = frozenset(
                 {

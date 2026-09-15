@@ -821,6 +821,7 @@ export type StudioTryRun = {
   }>;
   approvals: Array<{
     approval_id: string;
+    expires_at?: string;
     status: "pending" | "approved" | "rejected" | "expired" | "cancelled";
     tool_name: string | null;
     reason: string;
@@ -1280,6 +1281,28 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   );
   if (!response.ok) throw await errorFrom(response);
   return readJson<T>(response);
+}
+
+export type StudioStreamProgress = { type: string; text?: string; result?: unknown };
+async function streamRequest<T>(
+  path: string, init: RequestInit, onProgress: (event: StudioStreamProgress) => void,
+): Promise<T> {
+  const response = requireAuthenticatedResponse(await fetch(`/api/studio/${path}`, {
+    ...init, cache: "no-store",
+    headers: { Accept: "text/event-stream", ...(init.body ? { "Content-Type": "application/json" } : {}) },
+  }));
+  if (!response.ok) throw await errorFrom(response);
+  // Supports an older server without replaying a POST that may have saved a draft.
+  if (!response.headers.get("content-type")?.includes("text/event-stream")) return readJson<T>(response);
+  let result: T | undefined;
+  let completed = false;
+  await streamAgui(response, (_id, event) => {
+    if (event.type === "error") throw new Error(String(event.message || "实时处理失败"));
+    if (event.type === "result") { result = event.result as T; completed = true; }
+    else onProgress(event);
+  });
+  if (!completed) throw new Error("实时连接中断，请刷新确认当前状态后重试");
+  return result as T;
 }
 
 async function listAccessibleDrafts(): Promise<StudioDraftSummary[]> {
@@ -1961,12 +1984,16 @@ export const studioClient = {
     audience?: string;
     sampleInput?: string;
     runtimePreference: "auto" | StudioDraft["runtime"];
-  }): Promise<StudioTaskDrivenDraftResult> => {
+  }, onProgress?: (event: StudioStreamProgress) => void, signal?: AbortSignal): Promise<StudioTaskDrivenDraftResult> => {
     try {
-      const result = await request<StudioTaskDrivenDraftResult>("drafts/from-task", {
+      const init = {
         method: "POST",
         body: JSON.stringify(body),
-      });
+        signal,
+      };
+      const result = onProgress
+        ? await streamRequest<StudioTaskDrivenDraftResult>("drafts/from-task", init, onProgress)
+        : await request<StudioTaskDrivenDraftResult>("drafts/from-task", init);
       rememberStudioDraft(result.draft);
       return result;
     } catch (error) {
@@ -2002,9 +2029,11 @@ export const studioClient = {
     messages: { role: "user" | "assistant"; content: string }[];
     runContext: string;
     intent?: "auto" | "edit";
-  }): Promise<StudioBuilderReply> => request(`drafts/${encodeURIComponent(draftId)}/builder-conversation`, {
-    method: "POST", body: JSON.stringify(body),
-  }),
+  }, onProgress?: (event: StudioStreamProgress) => void, signal?: AbortSignal): Promise<StudioBuilderReply> => {
+    const path = `drafts/${encodeURIComponent(draftId)}/builder-conversation`;
+    const init = { method: "POST", body: JSON.stringify(body), signal };
+    return onProgress ? streamRequest(path, init, onProgress) : request(path, init);
+  },
   previewBuilderProjectDiff: (draftId: string, body: {
     expectedRevision: number; changes: StudioBuilderChanges;
   }): Promise<DeepagentsProjectComparison> => request(`drafts/${encodeURIComponent(draftId)}/builder-project-diff`, {
@@ -2316,6 +2345,10 @@ export const studioClient = {
   }),
   getEvalRun: (evalRunId: string) =>
     request<StudioEvalRun>(`eval-runs/${encodeURIComponent(evalRunId)}`),
+  streamEvalRun: (evalRunId: string, onSnapshot: (view: StudioEvalRun) => void, signal: AbortSignal) =>
+    streamRequest<StudioEvalRun>(`eval-runs/${encodeURIComponent(evalRunId)}/events`, { signal }, event => {
+      if (event.type === "eval.snapshot") onSnapshot(event.result as StudioEvalRun);
+    }),
   cancelEvalRun: (evalRunId: string) =>
     request<StudioEvalRun>(`eval-runs/${encodeURIComponent(evalRunId)}/cancel`, {
       method: "POST",

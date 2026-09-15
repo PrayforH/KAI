@@ -364,7 +364,7 @@ it("creates from the actual brief and reviews recommended Skills before installa
   }});
   act(() => newDraft());
   await send("联网核验公开资料并生成报告");
-  expect(studioClient.createDraftFromTask).toHaveBeenCalledWith({task: "联网核验公开资料并生成报告", runtimePreference: "auto"});
+  expect(studioClient.createDraftFromTask).toHaveBeenCalledWith({task: "联网核验公开资料并生成报告", runtimePreference: "auto"}, expect.any(Function), expect.any(AbortSignal));
   expect(host.textContent).toContain("当前任务需要来源核验");
   expect(studioClient.applyBuilderEdit).not.toHaveBeenCalled();
   await act(async () => { host.querySelector<HTMLInputElement>('[aria-label="推荐 Skill"] input')!.click(); });
@@ -375,4 +375,20 @@ it("creates from the actual brief and reviews recommended Skills before installa
   expect(studioClient.applyBuilderEdit).toHaveBeenCalledWith(initial.id, {expectedRevision: 1, changes: {
     installSkills: [{packageId: "evidence-reporting", revision: 1}], capabilityCatalogRevision: 7,
   }});
+});
+
+it("renders model deltas before the completed proposal and keeps changes reviewable", async () => {
+  let finish: (reply: Awaited<ReturnType<typeof studioClient.converseBuilder>>) => void;
+  vi.mocked(studioClient.converseBuilder).mockImplementation(async (_id, _body, progress) => {
+    progress?.({ type: "builder.reply", text: "正在逐步输出建议" });
+    return new Promise(resolve => { finish = resolve; });
+  });
+  await click("修改配置");
+  await send("改成表格");
+  expect(host.textContent).toContain("正在逐步输出建议");
+  expect(host.querySelector('[aria-label="待确认的配置修改"]')).toBeNull();
+  await act(async () => finish!({ baseRevision: 1, reply: "建议完成", changedFields: ["systemPrompt"], changes: { systemPrompt: "表格" } }));
+  expect(host.textContent).toContain("建议完成");
+  expect(host.querySelector('[aria-label="待确认的配置修改"]')).not.toBeNull();
+  expect(studioClient.applyBuilderEdit).not.toHaveBeenCalled();
 });

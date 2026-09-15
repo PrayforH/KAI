@@ -292,6 +292,28 @@ def default_capability_catalog() -> CapabilityCatalog:
                     "productionAllowed": True,
                 }
             ),
+            ExecutionProfileMetadata.model_validate(
+                {
+                    "profileId": "cubesandbox-private",
+                    "label": "CubeSandbox 私有化沙箱",
+                    "description": "通过内网 CubeSandbox 为任务分配独立沙箱，执行命令并回收制品。",
+                    "sandboxProvider": "cubesandbox",
+                    "networkAccess": (
+                        NetworkAccess.NONE,
+                        NetworkAccess.INTERNAL,
+                        NetworkAccess.EXTERNAL,
+                    ),
+                    "risk": CapabilityRisk.MEDIUM,
+                    "cpuMillis": 2000,
+                    "memoryMiB": 4096,
+                    "diskMiB": 20480,
+                    "ttlSeconds": 3600,
+                    "networkPolicyId": "registered-mcp-only",
+                    "allowedMcpReferences": (),
+                    "providerConfigReference": "cubesandbox-managed",
+                    "productionAllowed": True,
+                }
+            ),
         ),
         templates=(
             TemplateCapability(

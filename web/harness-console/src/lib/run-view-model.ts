@@ -114,7 +114,9 @@ function pendingApproval(items: readonly ActivityItem[]): string | undefined {
       pending.set(approvalId, approvalId);
     } else if (
       item.event_type === "approval.approved" ||
-      item.event_type === "approval.rejected"
+      item.event_type === "approval.rejected" ||
+      item.event_type === "approval.expired" ||
+      item.event_type === "approval.cancelled"
     ) {
       pending.delete(approvalId);
     }

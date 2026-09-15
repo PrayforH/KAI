@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ApprovalDecision } from "../lib/harness-server";
 
 export interface ApprovalDetails {
@@ -75,8 +75,18 @@ export function ApprovalCard({
   const [pending, setPending] = useState<ApprovalDecision | null>(null);
   const [decision, setDecision] = useState<ApprovalDecision | null>(null);
   const [error, setError] = useState("");
+  const submitting = useRef(false);
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (!details.expires_at || complete) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [details.expires_at, complete]);
+  const expired = Boolean(details.expires_at && Date.parse(details.expires_at) <= now);
 
   async function decide(value: ApprovalDecision) {
+    if (submitting.current || complete || decision || expired) return;
+    submitting.current = true;
     setError("");
     setPending(value);
     try {
@@ -85,11 +95,12 @@ export function ApprovalCard({
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
+      submitting.current = false;
       setPending(null);
     }
   }
 
-  const settled = complete || decision !== null;
+  const settled = complete || decision !== null || expired;
   const contextRows = approvalContextRows(details);
   const riskLabel = details.risk ? riskLabels[details.risk] ?? details.risk : undefined;
   return (
@@ -98,7 +109,7 @@ export function ApprovalCard({
         <span className="approval-card-icon" aria-hidden="true">!</span>
         <div className="approval-card-copy">
           <div className="approval-card-kicker">
-            <span>{settled ? "审批已处理" : approvalLabel("pending")}</span>
+            <span>{expired && !complete && !decision ? "审批已过期" : settled ? "审批已处理" : approvalLabel("pending")}</span>
             {riskLabel && (
               <span className={`risk-badge risk-${details.risk}`}>
                 {riskLabel}风险

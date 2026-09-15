@@ -931,8 +931,10 @@ async def test_studio_lists_and_installs_a_platform_skill_as_a_draft_snapshot() 
         )
 
     assert catalog.status_code == 200, catalog.text
-    assert catalog.json()["revision"] == 1
-    assert len(catalog.json()["packages"]) == 22
+    assert catalog.json()["revision"] == 2
+    assert len(catalog.json()["packages"]) == 21
+    assert "skill-creator" in {p["packageId"] for p in catalog.json()["packages"]}
+    assert "skill-authoring-quality" not in {p["packageId"] for p in catalog.json()["packages"]}
     assert created.json()["spec"]["skills"] == []
     assert installed.status_code == 200, installed.text
     installed_skill = installed.json()["draft"]["spec"]["skills"][0]

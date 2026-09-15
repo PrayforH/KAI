@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import shutil
 import tempfile
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -41,11 +41,13 @@ class DeferredToolSandboxProvider:
         provider_name: str,
         local_root: Path | None = None,
         max_active_runs: int = 2,
+        remote_workspace_for: Callable[[Run], str] | None = None,
     ) -> None:
         if not provider_name.strip():
             raise ValueError("deferred sandbox provider name must be non-empty")
         if max_active_runs < 1:
             raise ValueError("deferred sandbox max_active_runs must be positive")
+        self._remote_workspace_for = remote_workspace_for
         self._backend = backend
         self._provider_name = provider_name
         self._local_root = local_root
@@ -57,9 +59,7 @@ class DeferredToolSandboxProvider:
     async def provision(self, run: Run) -> SandboxHandle:
         await self._active_run_slots.acquire()
         try:
-            path = Path(
-                tempfile.mkdtemp(prefix=f"{run.run_id}-deferred-", dir=self._local_root)
-            )
+            path = Path(tempfile.mkdtemp(prefix=f"{run.run_id}-deferred-", dir=self._local_root))
         except BaseException:
             self._active_run_slots.release()
             raise
@@ -71,6 +71,9 @@ class DeferredToolSandboxProvider:
             provider=f"{self._provider_name}-deferred",
             isolation_level=SandboxIsolation.CONTAINER,
             deferred_tool_execution=True,
+            remote_workspace=self._remote_workspace_for(run)
+            if self._remote_workspace_for
+            else None,
         )
 
     async def prepare(self, handle: SandboxHandle) -> None:
@@ -93,7 +96,9 @@ class DeferredToolSandboxProvider:
             try:
                 provisioned = await self._backend.provision(lease.run)
                 original_path = provisioned.path
-                remote = provisioned.model_copy(update={"path": handle.path})
+                remote = provisioned.model_copy(
+                    update={"path": handle.path, "deferred_tool_execution": True}
+                )
                 if original_path != handle.path:
                     shutil.rmtree(original_path, ignore_errors=True)
                 await self._backend.prepare(remote)

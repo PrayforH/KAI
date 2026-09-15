@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import uuid4
 
 from fastapi import (
@@ -84,6 +85,7 @@ from harness.studio.agent_builder import (
     CreateTaskDrivenDraftRequest,
     TaskDrivenDraftResult,
 )
+from harness.studio.authoring_stream import Progress, authoring_stream
 from harness.studio.builder_conversation import (
     BuilderApplyRequest,
     BuilderConversationReply,
@@ -806,6 +808,32 @@ async def get_eval_run(
         return await service.get_run(actor.tenant_id, actor.user_id, eval_run_id)
     except (ConflictError, NotFoundError) as error:
         raise _translate_domain_error(error) from error
+
+
+@router.get("/eval-runs/{eval_run_id}/events")
+async def stream_eval_run(
+    eval_run_id: str,
+    actor: Annotated[StudioActor, Depends(require_studio_reader)],
+    service: Annotated[EvalControlPlaneService, Depends(get_eval_service)],
+) -> StreamingResponse:
+    try:
+        await service.get_run(actor.tenant_id, actor.user_id, eval_run_id)
+    except (ConflictError, NotFoundError) as error:
+        raise _translate_domain_error(error) from error
+
+    async def operation(emit: Progress) -> dict[str, Any]:
+        previous = ""
+        while True:
+            view = await service.get_run(actor.tenant_id, actor.user_id, eval_run_id)
+            snapshot = view.model_dump_json(by_alias=True)
+            if snapshot != previous:
+                await emit({"type": "eval.snapshot", "result": json.loads(snapshot)})
+                previous = snapshot
+            if view.run.status.value not in {"queued", "running", "cancelling"}:
+                return json.loads(snapshot)
+            await asyncio.sleep(0.5)
+
+    return authoring_stream(operation)
 
 
 @router.post("/eval-runs/{eval_run_id}/cancel", response_model=EvalRunView)
@@ -1564,13 +1592,24 @@ async def builder_materials(
     status_code=status.HTTP_201_CREATED,
 )
 async def create_task_driven_draft(
+    request: Request,
     body: CreateTaskDrivenDraftRequest,
     actor: Annotated[StudioActor, Depends(require_studio_writer)],
     service: Annotated[AgentStudioService, Depends(get_studio_service)],
     models: Annotated[ModelConfigurationService, Depends(get_model_configuration_service)],
-) -> TaskDrivenDraftResult:
+) -> TaskDrivenDraftResult | StreamingResponse:
     """Compile one business task into a complete, explainable Agent draft."""
 
+    if "text/event-stream" in request.headers.get("accept", ""):
+        async def operation(emit: Progress) -> dict[str, Any]:
+            result = await service.create_from_task(
+                tenant_id=actor.tenant_id, user_id=actor.user_id,
+                request=body, models=models, on_progress=emit,
+            )
+            return result.model_copy(update={
+                "draft": compact_draft_for_editor(result.draft),
+            }).model_dump(mode="json", by_alias=True)
+        return authoring_stream(operation)
     try:
         result = await service.create_from_task(
             tenant_id=actor.tenant_id,
@@ -1820,6 +1859,7 @@ async def create_agent_builder_patch(
     response_model=BuilderConversationReply, response_model_exclude_unset=True,
 )
 async def converse_agent_builder(
+    request: Request,
     draft_id: str,
     body: BuilderConversationRequest,
     actor: Annotated[StudioActor, Depends(require_studio_writer)],
@@ -1827,7 +1867,27 @@ async def converse_agent_builder(
     models: Annotated[ModelConfigurationService, Depends(get_model_configuration_service)],
     container: Annotated[ApiContainer, Depends(get_container)],
     identity: Annotated[Identity, Depends(require_identity)],
-) -> BuilderConversationReply:
+) -> BuilderConversationReply | StreamingResponse:
+    if "text/event-stream" in request.headers.get("accept", ""):
+        # Ownership is checked before opening the stream and again by the service.
+        try:
+            current = await service.get(actor.tenant_id, actor.user_id, draft_id)
+            if current.revision != body.expected_revision:
+                raise ConflictError("草稿已更新，请基于最新配置重新生成建议")
+        except (ConflictError, NotFoundError) as error:
+            raise _translate_domain_error(error) from error
+
+        async def operation(emit: Progress) -> dict[str, Any]:
+            reply = await service.converse_builder(
+                actor.tenant_id, actor.user_id, draft_id, body, models,
+                WorkerSkillCreator(container, current, actor.user_id,
+                    lambda: _authorize_studio_actor(identity, "studio:preview")),
+                on_progress=emit,
+            )
+            if reply.changes.install_skills:
+                _authorize_studio_actor(identity, "studio:catalog:write")
+            return reply.model_dump(mode="json", by_alias=True, exclude_unset=True)
+        return authoring_stream(operation)
     try:
         draft = await service.get(actor.tenant_id, actor.user_id, draft_id)
         result = await service.converse_builder(
@@ -2109,6 +2169,7 @@ async def stream_studio_try_run_events(
         sequence = after_sequence
         terminal = run.status.is_terminal
         last_emission = time.monotonic()
+        last_snapshot = 0.0
         while True:
             events = await container.observed_events.list_after(
                 actor.tenant_id,
@@ -2123,6 +2184,20 @@ async def stream_studio_try_run_events(
                 last_emission = time.monotonic()
                 if event.type in _TRY_RUN_TERMINAL_EVENT_TYPES:
                     terminal = True
+            if events and (terminal or time.monotonic() - last_snapshot >= 1.0
+                           or any(item.type.startswith("approval.") for item in events)):
+                view = await _studio_try_run_view(
+                    container, actor, draft_id, draft_revision, run_id,
+                )
+                snapshot = {
+                    "type": "studio.snapshot", "event_id": f"snapshot-{sequence}",
+                    "sequence": sequence, "timestamp": datetime.now(UTC).isoformat(),
+                    "payload": view.model_dump(
+                        mode="json", by_alias=True, exclude={"events", "final_text", "loop"},
+                    ),
+                }
+                yield "data: " + json.dumps(snapshot, separators=(",", ":")) + "\n\n"
+                last_snapshot = time.monotonic()
             if terminal:
                 break
             if time.monotonic() - last_emission >= _TRY_RUN_STREAM_HEARTBEAT_SECONDS:

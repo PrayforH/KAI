@@ -672,6 +672,7 @@ function HarnessComposer() {
       {pendingApproval.visible && pendingApproval.details ? (
         <div className="composer-approval-slot">
           <ApprovalCard
+            key={pendingApproval.details.approval_id}
             details={pendingApproval.details}
             complete={false}
             onDecision={async (decision) => {

@@ -207,3 +207,21 @@ async def test_file_mutations_collect_remote_workspace(
     await provider.destroy(handle)
 
     assert backend.collections == 1
+
+
+@pytest.mark.asyncio
+async def test_planned_remote_workspace_is_available_before_allocation(tmp_path: Path) -> None:
+    backend = RecordingSandbox(tmp_path)
+    provider = DeferredToolSandboxProvider(
+        backend,
+        provider_name="cubesandbox",
+        local_root=tmp_path,
+        remote_workspace_for=lambda run: f"/home/user/harness/{run.run_id}",
+    )
+    handle = await provider.provision(run())
+    try:
+        assert handle.remote_workspace == "/home/user/harness/run-deferred"
+        assert backend.provisions == 0
+        assert handle.deferred_tool_execution
+    finally:
+        await provider.destroy(handle)
