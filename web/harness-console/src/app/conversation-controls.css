@@ -1,0 +1,66 @@
+/* Codex MessageInput geometry: min-h-12, px-4 py-3, max-h-48.
+   Container width follows the panel; input and toolbar metrics do not. */
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .harness-composer-shell.harness-composer-shell .aui-composer-root {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  min-height: 96px;
+  padding: 0;
+  border-radius: 16px;
+}
+
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .harness-composer-shell.harness-composer-shell .aui-composer-input {
+  box-sizing: border-box;
+  display: block;
+  flex: none;
+  width: 100%;
+  height: auto;
+  min-height: 48px;
+  max-height: 192px;
+  padding: 12px 16px;
+  margin: 0;
+  border: 0;
+  border-radius: 16px 16px 0 0;
+  resize: none;
+  field-sizing: content;
+  overflow-y: auto;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 24px;
+}
+
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .harness-composer-shell.harness-composer-shell .composer-toolbar {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: none;
+  width: 100%;
+  min-height: 48px;
+  gap: 8px;
+  padding: 8px;
+}
+
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .harness-composer-shell.harness-composer-shell .aui-composer-attach {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  font-size: 20px;
+  line-height: 1;
+}
+
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .harness-composer-shell.harness-composer-shell .aui-composer-attach svg {
+  width: 16px;
+  height: 16px;
+}

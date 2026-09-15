@@ -1,5 +1,7 @@
 "use client";
-import { WorkspaceAttachments } from "./workspace-attachments";
+import { ConversationControl } from "../conversation-control";
+import { uploadKey } from "../../lib/upload-feedback-store";
+import { WorkspaceAttachments, type WorkspaceFile } from "./workspace-attachments";
 import { useEffect, useRef, useState } from "react";
 import { createInputAttachmentAdapter, inputArtifactIdFromAttachment } from "../../lib/input-attachment-adapter";
 import { PreviewRunResponse, type PreviewTurn } from "./agent-preview";
@@ -73,7 +75,7 @@ export function AgentTestPanel({ incomingFiles, onIncomingFilesUsed, turns, draf
     <footer data-test-composer className={`${styles.testComposer} harness-composer-shell`} onPaste={event => { const pasted = Array.from(event.clipboardData.files); if (pasted.length) { event.preventDefault(); void upload(pasted); } }} onDragOver={event => { if (Array.from(event.dataTransfer.types).includes("Files")) event.preventDefault(); }} onDrop={event => { const dropped = Array.from(event.dataTransfer.files); if (dropped.length) { event.preventDefault(); void upload(dropped); } }}><div className="aui-composer-root">
       {files.length > 0 && <WorkspaceAttachments files={files} disabled={sending} onRemove={id=>setFiles(list=>list.filter(file=>file.id!==id))}/> }
       <textarea className="aui-composer-input" aria-label="效果测试输入" placeholder={ready ? "输入问题或附加材料，测试智能体…" : "创建智能体后，在这里测试…"} disabled={!ready || sending} rows={2} value={input} maxLength={100000} onChange={event=>setInput(event.target.value)} onCompositionStart={()=>{composing.current=true;}} onCompositionEnd={()=>{composing.current=false;compositionEnded.current=Date.now();}} onKeyDown={event=>{if(composing.current||event.nativeEvent.isComposing||event.keyCode===229)return;if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();if(Date.now()-compositionEnded.current>=80)void send();}}}/>
-      <div className="composer-toolbar"><label className={`${styles.attachment} aui-composer-attach`}>＋<input type="file" aria-label="添加测试附件" multiple disabled={!ready||busy||uploading||sending} onChange={event=>{void upload(Array.from(event.target.files??[]));event.target.value="";}}/></label>{uploading && <span className="composer-status-announcement" role="status">上传中…</span>}{busy ? <button type="button" className="aui-button aui-button-icon aui-composer-cancel" aria-label="停止测试" onClick={()=>void onCancel()}>■</button> : <button type="button" className="aui-button aui-button-icon aui-composer-send" aria-label="发送测试消息" disabled={!ready||!input.trim()||uploading||sending} onClick={()=>void send()}><svg className="aui-composer-send-icon" viewBox="0 0 20 20"><path d="M10 15V5m-5 5 5-5 5 5"/></svg></button>}</div>
+      <div className="composer-toolbar"><label className={`${styles.attachment} aui-composer-attach`}><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M8 3v10M3 8h10" /></svg><input type="file" aria-label="添加测试附件" multiple disabled={!ready||busy||uploading||sending} onChange={event=>{void upload(Array.from(event.target.files??[]));event.target.value="";}}/></label>{uploading && <span className="composer-status-announcement" role="status">上传中…</span>}{busy ? <ConversationControl action="stop" aria-label="停止测试" onClick={()=>void onCancel()} /> : <ConversationControl action="send" aria-label="发送测试消息" disabled={!ready||!input.trim()||uploading||sending} onClick={()=>void send()} />}</div>
     </div></footer>
   </section>;
 }

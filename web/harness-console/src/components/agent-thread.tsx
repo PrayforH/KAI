@@ -1,5 +1,6 @@
 "use client";
 import { startSteeringPolling } from "../lib/steering-poller";
+import { ConversationControl } from "./conversation-control";
 import { MessageAttachmentView } from "./message-attachment-view";
 
 import Link from "next/link";
@@ -854,35 +855,16 @@ function HarnessComposer() {
           />
           <TaskKnowledgeModeSwitch disabled={runLocked || showStop || videoGenerating} />
           <TaskModelControl disabled={runLocked || showStop || videoGenerating} />
-          {showStop && Boolean(composerText.trim() || composerAttachments.length) && <button type="button" className="composer-stop-secondary" aria-label="停止运行" title="停止运行" onClick={() => void stopRun()}><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="5" width="10" height="10" rx="2" fill="currentColor" /></svg></button>}
+          {showStop && Boolean(composerText.trim() || composerAttachments.length) && <ConversationControl action="stop" aria-label="停止运行" onClick={() => void stopRun()} />}
         </div>
         {showStop && !composerText.trim() && !composerAttachments.length ? (
-          <button
-            type="button"
-            className="aui-button aui-button-icon aui-composer-cancel"
-            aria-label="停止运行"
-            onClick={() => void stopRun()}
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <rect x="6" y="6" width="12" height="12" rx="2.5" fill="currentColor" />
-            </svg>
-          </button>
+          <ConversationControl action="stop" aria-label="停止运行" onClick={() => void stopRun()} />
         ) : videoRoute ? (
-          <button
-            type="button"
-            className="aui-button aui-composer-video-send"
-            disabled={videoGenerating || !composerText.trim()}
+          <ConversationControl action="send" disabled={videoGenerating || !composerText.trim()}
             aria-label={videoGenerating ? "视频生成中" : "生成视频"}
-            onClick={() => void generateVideo()}
-          >
-            {videoGenerating ? "生成中" : "生成视频"}
-          </button>
+            onClick={() => void generateVideo()} />
         ) : (
-          <button type="button" className="aui-button aui-button-icon aui-composer-send" aria-label={busy ? followUpBehavior === "steer" && steerAvailable && !composerAttachments.length ? "调整方向" : "加入队列" : queue.length ? "加入队列" : "发送消息"} title={busy ? `Enter ${followUpBehavior === "steer" ? "调整方向" : "加入队列"} · Alt Enter 切换` : "发送消息"} disabled={!composerText.trim() && !composerAttachments.length} onClick={() => submitComposer()}>
-            <svg className="aui-composer-send-icon" viewBox="0 0 20 20" aria-hidden="true">
-              <path d="M10 16.5v-11M5.5 9.5 10 5l4.5 4.5" />
-            </svg>
-          </button>
+          <ConversationControl action="send" aria-label={busy ? followUpBehavior === "steer" && steerAvailable && !composerAttachments.length ? "调整方向" : "加入队列" : queue.length ? "加入队列" : "发送消息"} title={busy ? `Enter ${followUpBehavior === "steer" ? "调整方向" : "加入队列"} · Alt Enter 切换` : "发送消息"} disabled={!composerText.trim() && !composerAttachments.length} onClick={() => submitComposer()} />
         )}
         </div>
       </Composer.Root>

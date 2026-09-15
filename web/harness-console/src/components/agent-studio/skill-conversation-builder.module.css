@@ -244,41 +244,6 @@
 
 .composer {
   margin-top: auto;
-  overflow: hidden;
-  border: 1px solid var(--studio-line-strong);
-  border-radius: 10px;
-  background: var(--studio-panel);
-  transition: 180ms ease;
-}
-
-.composer:focus-within {
-  border-color: color-mix(in srgb, var(--studio-violet) 64%, var(--studio-line));
-  box-shadow: 0 0 0 3px var(--studio-violet-soft);
-}
-
-.composer textarea {
-  width: 100%;
-  min-height: 74px;
-  display: block;
-  padding: 10px 11px 4px;
-  resize: vertical;
-  border: 0;
-  color: var(--studio-ink);
-  background: transparent;
-  font-size: 10px;
-  line-height: 1.6;
-}
-
-.composer textarea::placeholder {
-  color: var(--studio-faint);
-}
-
-.composer footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 6px 7px 7px 11px;
 }
 
 .composer footer span {
@@ -286,7 +251,6 @@
   font-size: 8px;
 }
 
-.composer footer button,
 .applyButton {
   min-height: 29px;
   padding: 0 11px;
@@ -300,21 +264,13 @@
   transition: 180ms ease;
 }
 
-.composer footer button:hover:not(:disabled),
 .applyButton:hover {
   filter: brightness(1.08);
   transform: translateY(-1px);
 }
 
-.composer footer button:active:not(:disabled),
 .applyButton:active {
   transform: translateY(0) scale(0.98);
-}
-
-.composer footer button:disabled {
-  cursor: not-allowed;
-  filter: grayscale(0.3);
-  opacity: 0.42;
 }
 
 .proposal {
