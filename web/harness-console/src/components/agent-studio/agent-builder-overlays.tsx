@@ -1,4 +1,5 @@
 "use client";
+import { ConversationControl } from "../conversation-control";
 
 import { uploadKey } from "../../lib/upload-feedback-store";
 import { createPortal } from "react-dom";
@@ -633,8 +634,8 @@ export function AgentBuilderAssistant({
         />
       </label>
       <div className="composer-toolbar">
-        <div className={styles.composerTools}><label className={`${styles.attachButton} aui-composer-attach`} title="添加构建参考材料">＋<input aria-label="添加构建附件" type="file" multiple disabled={inputBusy || active} onChange={event => { void upload(Array.from(event.target.files ?? [])); event.target.value = ""; }} /></label>{uploading && <span className={styles.visuallyHidden} role="status">上传中…</span>}</div>
-        {active && result && !terminal ? <button type="button" className="aui-button aui-button-icon aui-composer-cancel" aria-label="停止运行" onClick={() => void cancelRun()}><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="5" width="10" height="10" rx="2" fill="currentColor" /></svg></button> : <button type="button" className="aui-button aui-button-icon aui-composer-send" aria-label="发送消息" disabled={!input.trim() || inputBusy} onClick={() => void send()}><svg className="aui-composer-send-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 15V5m-5 5 5-5 5 5" /></svg></button>}
+        <div className={styles.composerTools}><label className={`${styles.attachButton} aui-composer-attach`} title="添加构建参考材料"><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M8 3v10M3 8h10" /></svg><input aria-label="添加构建附件" type="file" multiple disabled={inputBusy || active} onChange={event => { void upload(Array.from(event.target.files ?? [])); event.target.value = ""; }} /></label>{uploading && <span className={styles.visuallyHidden} role="status">上传中…</span>}</div>
+        {active && result && !terminal ? <ConversationControl action="stop" aria-label="停止运行" onClick={() => void cancelRun()} /> : <ConversationControl action="send" aria-label="发送消息" disabled={!input.trim() || inputBusy} onClick={() => void send()} />}
       </div>
       </div>
       <small>Enter 发送 · Shift + Enter 换行</small>

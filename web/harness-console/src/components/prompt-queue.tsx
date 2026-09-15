@@ -1,4 +1,5 @@
 "use client";
+import { ConversationControl } from "./conversation-control";
 import { useRef, useState } from "react";
 import type { QueuedPrompt } from "../lib/composer-interactions";
 
@@ -23,7 +24,7 @@ export function PromptQueue({ items, paused, busy, canSteer, sendingIds, onChang
   if (!items.length) return null;
   return <section className="composer-context-shelf prompt-queue" aria-label="待发送队列">
     {(items.length > 1 || paused) && <header><strong>待发送 · {items.length}</strong><span>{paused ? "已暂停" : ""}</span>
-      <button type="button" disabled={sendingIds.length > 0 || Boolean(editing)} onClick={() => onPause(!paused)}>{paused ? "继续队列" : "暂停"}</button>
+      <ConversationControl action={paused ? "resume" : "pause"} aria-label={paused ? "继续队列" : "暂停"} disabled={sendingIds.length > 0 || Boolean(editing)} onClick={() => onPause(!paused)} />
     </header>}
     <ol>{items.map((item, index) => {
       const sending = sendingIds.includes(item.id);
@@ -43,7 +44,7 @@ export function PromptQueue({ items, paused, busy, canSteer, sendingIds, onChang
           <span className="queue-number" aria-hidden="true">↳</span>
           <span className="queue-copy" title={item.text}>{item.text || "附件消息"}{item.attachments.length > 0 && <small> · {item.attachments.length} 个附件</small>}</span>
           {busy ? <button type="button" disabled={!canSteer || sending || item.attachments.length > 0} title={canSteer ? "将补充送入当前运行" : "等待运行支持实时引导"} onClick={() => onGuide(item)}>{sending ? "正在引导…" : "↪ 调整方向"}</button>
-            : <button type="button" disabled={sendingIds.length > 0} onClick={() => onSend(item)}>发送</button>}
+            : <ConversationControl action="send" aria-label="发送" disabled={sendingIds.length > 0} onClick={() => onSend(item)} />}
           <button type="button" aria-label={`删除第 ${index + 1} 条`} disabled={sending} onClick={() => onChange(items.filter((entry) => entry.id !== item.id))}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 5.5h13M7 5.5V3h6v2.5M5 5.5l1 11h8l1-11M8 8v6m4-6v6" /></svg></button>
           <details className="queue-more"><summary aria-label={`更多第 ${index + 1} 条的操作`}>···</summary><div>
             <button type="button" disabled={sending} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); onPause(true); setDraft(item.text); setEditing(item.id); }}>编辑</button>

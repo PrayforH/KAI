@@ -1,4 +1,5 @@
 "use client";
+import { ConversationControl } from "../conversation-control";
 
 import {
   useEffect,
@@ -197,10 +198,11 @@ export function SkillConversationBuilder({
             </div>
           )}
 
-          <div className={styles.composer}>
+          <div className={`${styles.composer} harness-composer-shell`}><div className="aui-composer-root">
             <textarea
+              className="aui-composer-input"
               ref={composerRef}
-              rows={3}
+              rows={1}
               value={input}
               disabled={busy}
               placeholder="例如：用户上传合同后，提取付款、违约和续约条款，并输出风险表…"
@@ -208,17 +210,12 @@ export function SkillConversationBuilder({
               onChange={(event) => setInput(event.target.value)}
               onKeyDown={handleComposerKeyDown}
             />
-            <footer>
+            <footer className="composer-toolbar">
               <span>Enter 发送 · Shift + Enter 换行</span>
-              <button
-                type="button"
-                disabled={busy || !input.trim()}
-                onClick={() => void submit()}
-              >
-                {busy ? "生成中" : "发送"}
-              </button>
+              <ConversationControl action="send" aria-label={busy ? "生成中" : "发送"}
+                disabled={busy || !input.trim()} onClick={() => void submit()} />
             </footer>
-          </div>
+          </div></div>
         </div>
 
         {proposal && (
@@ -244,7 +241,7 @@ export function SkillConversationBuilder({
                 ))}
               </div>
             )}
-            <footer>
+            <footer className="composer-toolbar">
               <button
                 type="button"
                 className={styles.applyButton}
