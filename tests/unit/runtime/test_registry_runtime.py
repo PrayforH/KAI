@@ -127,7 +127,8 @@ async def test_model_route_uses_run_scoped_broker_lease_without_secret_events(
 
     assert captured[0].model == "gateway-model"
     assert captured[0].max_buffer_size == 32 * 1024 * 1024
-    assert "Every final deliverable must exist" in str(captured[0].system_prompt)
+    assert "Match the response medium to the current request" in str(captured[0].system_prompt)
+    assert "Respect user-owned decisions and stage boundaries" in str(captured[0].system_prompt)
     assert captured[0].env["ANTHROPIC_AUTH_TOKEN"] == broker_secret
     selected_event = next(event for event in events if event.type == "model.route.selected")
     assert selected_event.payload["model"] == "gateway-model"

@@ -2,7 +2,7 @@ apiVersion: harness/v1alpha1
 kind: Agent
 metadata:
   name: lead-agent
-  version: 1.0.2
+  version: 1.0.3
   labels:
     domain: general-assistant
     template: orchestrator
