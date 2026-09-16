@@ -102,7 +102,7 @@ export function AgentBuilderAssistant({
   hasUnsavedChanges,
   onUpdated,
   creationSession = 0,
-  workspaceTarget, onEditConfiguration, testRequest = 0,
+  workspaceTarget, testRequest = 0,
 }: {
   open: boolean;
   mode: AssistantMode;
@@ -117,7 +117,6 @@ export function AgentBuilderAssistant({
   onUpdated: (draft: StudioDraft) => void;
   creationSession?: number;
   workspaceTarget?: HTMLElement | null;
-  onEditConfiguration?: (section?: "identity" | "prompt" | "skills" | "capabilities" | "runtime", label?: string) => void;
   testRequest?: number;
 }) {
   const [input, setInput] = useState("");
@@ -646,7 +645,7 @@ export function AgentBuilderAssistant({
   return createPortal(<div className={workspaceStyles.workspace} data-assets={assetsOpen} data-code={codeView} data-mobile={mobilePanel}>
     <nav className={workspaceStyles.mobileTabs} aria-label="构建工作台视图"><button type="button" aria-pressed={mobilePanel === "build"} onClick={() => setMobilePanel("build")}>构建与修改</button><button type="button" aria-pressed={mobilePanel === "test"} onClick={() => setMobilePanel("test")}>效果测试</button></nav>
     {builder}
-    {assetsOpen && !codeView && <AgentBuildAssets key={assetTab} initialTab={assetTab} onCodeView={() => {setCodeComparison(undefined); setCodeView(true);}} onCodeChanges={lastComparison ? showLastComparison : undefined} draft={activeDraft} turns={turns} changes={changes} pending={Boolean(proposal)} onClose={() => setAssetsOpen(false)} onEdit={(section, label) => onEditConfiguration?.(section, label)} />}
+    {assetsOpen && !codeView && <AgentBuildAssets key={assetTab} initialTab={assetTab} onCodeView={() => {setCodeComparison(undefined); setCodeView(true);}} onCodeChanges={lastComparison ? showLastComparison : undefined} draft={activeDraft} turns={turns} changes={changes} pending={Boolean(proposal)} onClose={() => setAssetsOpen(false)} />}
     {codeView && <AgentProjectCode key={activeDraft.id} draftId={draftReady ? activeDraft.id : ""} revision={activeDraft.revision} name={activeDraft.name || activeDraft.displayName} dirty={hasUnsavedChanges} comparison={codeComparison} comparisonPending={comparisonPending} onClose={() => {setCodeView(false);setAssetsOpen(true);}} />}
     <AgentTestPanel draftId={activeDraft.id} revision={activeDraft.revision} agentName={activeDraft.displayName} model={activeDraft.model} turns={turns.filter(turn => turn.result.run.session_id === testSessionId)} history={turns} sessionId={testSessionId} conversationEpoch={testConversationEpoch}
       onSelectSession={id => {setTestSessionId(id);setTestConversationEpoch(value => value + 1);setSelectedRunId("");setError("");}} busy={active} ready={draftReady} dirty={hasUnsavedChanges} error={error} selectedRunId={selectedRunId}
