@@ -889,6 +889,7 @@ class ClaudeSdkRuntime:
                 mcp_servers[SANDBOX_MCP_SERVER_NAME] = create_sandbox_tools_mcp_server(
                     context.sandbox_command_executor,
                     proxied,
+                    image_aware="vision" in route.capabilities,
                 )
                 for builtin in sorted(proxied):
                     allowed_tools.append(proxy_tool_name(builtin))
@@ -1174,11 +1175,27 @@ class ClaudeSdkRuntime:
                 )
             if originals:
                 original_inventory = "\n".join(f"- {path}" for path in originals)
+                if "vision" in decision.route.capabilities:
+                    original_guidance = (
+                        "Read an original directly only when no processed "
+                        "representation exists, such as for an image. In this session a "
+                        "Read of a PNG, JPEG, WebP or GIF returns the image content "
+                        "itself: inspect the returned image and answer from it. Never "
+                        "install OCR tools or image libraries, and never OCR an image "
+                        "you can read."
+                    )
+                else:
+                    original_guidance = (
+                        "Read an original directly only when no processed "
+                        "representation exists. This session has no image-reading "
+                        "capability: an image cannot be inspected here, so do not "
+                        "attempt OCR or install any package; tell the user which "
+                        "text, table, PDF or document form would work instead."
+                    )
                 inventory_sections.append(
                     "Original uploads:\n"
                     f"{original_inventory}\n"
-                    "Read an original directly only when no processed "
-                    "representation exists, such as for an image."
+                    f"{original_guidance}"
                 )
             prompt = (
                 f"{prompt}\n\n"
