@@ -4,8 +4,8 @@
 .panelHeader > div { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .panelHeader strong { font-size: 13px; font-weight: 550; white-space: nowrap; }
 .panelHeader small { color: var(--studio-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; }
-.panelHeader button, .assetTabs button, .editConfiguration { border: 0; background: transparent; color: var(--studio-muted); padding: 6px 8px; border-radius: 6px; font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
-.panelHeader button:hover, .assetTabs button:hover, .editConfiguration:hover { color: var(--studio-ink); background: var(--studio-panel-subtle); }
+.panelHeader button, .assetTabs button { border: 0; background: transparent; color: var(--studio-muted); padding: 6px 8px; border-radius: 6px; font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.panelHeader button:hover, .assetTabs button:hover { color: var(--studio-ink); background: var(--studio-panel-subtle); }
 .workspace button:focus-visible { outline: 2px solid var(--studio-muted); outline-offset: 2px; }
 .workspace button:disabled { opacity: .45; cursor: default; }
 .testPanel { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
@@ -50,10 +50,6 @@
 @media (max-width: 760px) { .workspace, .workspace[data-assets="true"] { display: flex; flex-direction: column; } .mobileTabs { display: flex; flex: 0 0 42px; gap: 8px; padding: 5px 14px; border-bottom: 1px solid var(--studio-line); } .mobileTabs button { border: 0; border-radius: 6px; background: transparent; color: var(--studio-muted); padding: 5px 12px; } .mobileTabs button[aria-pressed="true"] { color: var(--studio-ink); background: var(--studio-panel-subtle); } .workspace[data-mobile="build"] .testPanel { display: none; } .workspace[data-mobile="test"] > aside:not(.assets) { display: none !important; } .testPanel { flex: 1; } .workspace[data-assets="true"] .assets { inset: 42px 0 0; width: 100%; } .panelHeader small { max-width: 90px; } .headerActions { gap: 1px !important; } .testComposer { width: calc(100% - 24px); } }
 
 .testComposer :global(.composer-toolbar) { width: 100%; justify-content: space-between; }
-.configLinks { display: grid; gap: 2px; margin: 12px 0; }
-.configLinks button { display: flex; justify-content: space-between; border: 0; border-radius: 5px; padding: 7px 8px; color: var(--studio-ink-soft); background: transparent; text-align: left; cursor: pointer; font: inherit; }
-.configLinks button:hover { color: var(--studio-ink); background: var(--studio-panel-subtle); }
-.configLinks button span { color: var(--studio-muted); }
 
 .workspace { min-width: 0; overflow: hidden; }
 .testPanel { overflow: hidden; }

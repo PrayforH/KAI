@@ -94,7 +94,7 @@ export function AgentBuilderAssistant({
   hasUnsavedChanges,
   onUpdated,
   creationSession = 0,
-  workspaceTarget, onEditConfiguration, testRequest = 0,
+  workspaceTarget, testRequest = 0,
 }: {
   open: boolean;
   mode: AssistantMode;
@@ -109,7 +109,6 @@ export function AgentBuilderAssistant({
   onUpdated: (draft: StudioDraft) => void;
   creationSession?: number;
   workspaceTarget?: HTMLElement | null;
-  onEditConfiguration?: (section?: "identity" | "prompt" | "skills" | "capabilities" | "runtime", label?: string) => void;
   testRequest?: number;
 }) {
   const [input, setInput] = useState("");
@@ -586,7 +585,7 @@ export function AgentBuilderAssistant({
   return createPortal(<div className={workspaceStyles.workspace} data-assets={assetsOpen} data-mobile={mobilePanel}>
     <nav className={workspaceStyles.mobileTabs} aria-label="构建工作台视图"><button type="button" aria-pressed={mobilePanel === "build"} onClick={() => setMobilePanel("build")}>构建与修改</button><button type="button" aria-pressed={mobilePanel === "test"} onClick={() => setMobilePanel("test")}>效果测试</button></nav>
     {builder}
-    {assetsOpen && <AgentBuildAssets key={assetTab} initialTab={assetTab} draft={activeDraft} turns={turns} changes={changes} pending={Boolean(proposal)} onClose={() => setAssetsOpen(false)} onEdit={(section, label) => onEditConfiguration?.(section, label)} />}
+    {assetsOpen && <AgentBuildAssets key={assetTab} initialTab={assetTab} draft={activeDraft} turns={turns} changes={changes} pending={Boolean(proposal)} onClose={() => setAssetsOpen(false)} />}
     <AgentTestPanel draftId={activeDraft.id} revision={activeDraft.revision} agentName={activeDraft.displayName} model={activeDraft.model} turns={turns} busy={active} ready={draftReady} dirty={hasUnsavedChanges} error={error} selectedRunId={selectedRunId}
       onSend={async (value,ids,names) => {if (proposal) {setError("请先应用或放弃左侧的配置建议，再测试。");return false;}return startRun(value, undefined, true, ids, names);}}
       onReset={() => {if (result) setArchivedTurns(current => [...current,{prompt:lastTestPrompt,result,files:currentFiles,artifactIds:lastArtifactIds}]);setResult(null);setFeedbackTurn(null);setSelectedRunId("");setError("");}}
