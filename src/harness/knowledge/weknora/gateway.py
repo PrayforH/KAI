@@ -1,3 +1,4 @@
+
 """WeKnora implementation of the knowledge engine port.
 
 The gateway translates AXIS engine calls into WeKnora REST calls and normalizes
@@ -9,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any, cast
 
+from harness.core.errors import NotFoundError
 from harness.knowledge.ports import (
     EngineBaseConfig,
     EngineChunk,
@@ -239,6 +241,8 @@ class WeknoraKnowledgeEngine:
         try:
             row = await self._client.get_wiki_page(base_id, slug)
         except WeknoraError as error:
+            if error.status_code == 404:
+                raise NotFoundError(f"Wiki page not found: {slug}") from error
             raise KnowledgeEngineError(f"weknora wiki page failed: {error}") from error
         page = _wiki_page(row)
         if page is None:

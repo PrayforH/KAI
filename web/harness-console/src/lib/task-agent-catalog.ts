@@ -1,3 +1,5 @@
+import { agentDisplayName } from "./agent-display-name";
+import { readClientResource } from "./client-read-cache";
 import { isAgentVisible } from "./agent-visibility";
 import { requireAuthenticatedResponse } from "./client-auth";
 import type { StudioDraftSummary } from "./studio-client";
@@ -117,7 +119,11 @@ export function chatUsableAgents(agents: readonly TaskAgent[]): TaskAgent[] {
   );
 }
 
-async function json<T>(url: string): Promise<T> {
+function json<T>(url: string): Promise<T> {
+  return readClientResource(url, () => fetchJson<T>(url));
+}
+
+async function fetchJson<T>(url: string): Promise<T> {
   const response = requireAuthenticatedResponse(
     await fetch(url, { cache: "no-store" }),
   );
@@ -172,7 +178,7 @@ export async function loadTaskAgentCatalog(
       spaceId: draft.spaceId ?? undefined,
       name: draft.name,
       version: draft.publishedVersion!,
-      displayName: draft.displayName,
+      displayName: agentDisplayName(draft.name, draft.displayName),
       domain: draft.domain,
     }));
   const studioByCoordinate = new Map(
@@ -218,7 +224,7 @@ export async function loadTaskAgentCatalog(
         displayName:
           agent.display_name === "public-opinion-agent"
             ? "舆情分析"
-            : agent.display_name,
+            : agentDisplayName(agent.name, agent.display_name),
         domain: agent.domain,
         ...sharing,
         modelRoute: agent.model_route ?? undefined,
@@ -259,7 +265,7 @@ export async function loadTaskAgentCatalog(
   const defaultAgent = runtimeMatch ?? {
     name: runtime.name,
     version: runtime.version,
-    displayName: runtime.name,
+    displayName: agentDisplayName(runtime.name),
     domain: "default",
   };
   const agents = runtimeMatch

@@ -1,0 +1,278 @@
+--- a/web/harness-console/src/components/activity-summary.tsx
++++ b/web/harness-console/src/components/activity-summary.tsx
+@@ -1,7 +1,7 @@
+ "use client";
+ 
+ import { TextMessagePartProvider } from "@assistant-ui/react";
+-import { useEffect, useRef, useState, type MouseEvent } from "react";
++import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+ import type { RunActivity } from "../lib/activity-schema";
+ import { useRunViewModel } from "../lib/activity-store";
+ import { activeElapsedMs, elapsedAnchorFor, type ElapsedAnchor } from "../lib/run-elapsed";
+@@ -19,6 +19,7 @@
+ import { KnowledgeCitations } from "./knowledge/knowledge-citations";
+ import { MarkdownText } from "./markdown-text";
+ import { useRunDetails } from "./run-details-context";
++import { setDetailedProcess, useDetailedProcess } from "../lib/process-display-preference";
+ 
+ const phaseLabels: Record<RunPhase, string> = {
+   queued: "等待处理",
+@@ -482,7 +483,28 @@
+   };
+ }
+ 
+-function displayTimeline(view: RunViewModel): DisplayTimelineNode[] {
++function displayTimeline(view: RunViewModel, detailed = false): DisplayTimelineNode[] {
++  if (detailed) {
++    return rawTimeline(view).map((entry): DisplayTimelineNode => {
++      if (entry.kind === "commentary") return entry;
++      if (entry.kind === "tool") return {
++        kind: "action", sequence: entry.sequence,
++        action: { ...toolAction([entry.tool]), label: completeToolSentence(entry.tool) },
++      };
++      if (entry.kind === "task") return {
++        kind: "action", sequence: entry.sequence, action: taskAction([entry.task]),
++      };
++      const process = entry.process;
++      return {
++        kind: "action", sequence: entry.sequence,
++        action: {
++          ...processAction([process]), id: process.id,
++          label: process.title, detail: process.summary,
++          status: view.phase === "completed" ? "completed" : process.status,
++        },
++      };
++    });
++  }
+   // Successful infrastructure/model lifecycle events belong in run details.
+   // Keeping them out of the transcript prevents old rows changing every turn.
+   const raw = rawTimeline(view).filter((entry) =>
+@@ -597,14 +619,14 @@
+   );
+ }
+ 
+-function ActionRow({ action }: { action: ActionNode }) {
++function ActionRow({ action, active = false }: { action: ActionNode; active?: boolean }) {
+   const hasResult = Boolean(action.resultPreview || action.entries?.length);
+   const heading = (
+     <>
+       <span className="execution-action-icon"><ActionIcon kind={action.icon} /></span>
+       <span className="execution-action-copy">
+         <span className="execution-action-heading">
+-          <strong>{action.label}</strong>
++          <strong className={active ? "execution-text-sweep" : undefined}>{action.label}</strong>
+           {action.detail && <small>{action.detail}</small>}
+         </span>
+       </span>
+@@ -672,11 +694,10 @@
+   activity: RunActivity;
+   responseStarted?: boolean;
+ }) {
++  const detailed = useDetailedProcess();
+   const observed = useRunViewModel();
+-  const view =
+-    observed?.runId === activity.run_id
+-      ? observed
+-      : reduceRunViewModel(undefined, activity);
++  const durableView = useMemo(() => reduceRunViewModel(undefined, activity), [activity]);
++  const view = observed?.runId === activity.run_id ? observed : durableView;
+   const [manualDisclosure, setManualDisclosure] = useState<{
+     runId: string;
+     open: boolean;
+@@ -743,7 +764,7 @@
+   const elapsed = elapsedAnchor.current
+     ? activeElapsedMs(view, now, elapsedAnchor.current)
+     : view.elapsedMs;
+-  const timeline = displayTimeline(view);
++  const timeline = useMemo(() => displayTimeline(view, detailed), [view, detailed]);
+   const latestTimelineEntry = timeline.at(-1);
+   const activeCommentaryId =
+     thinkingActive &&
+@@ -751,6 +772,13 @@
+     latestTimelineEntry?.kind === "commentary"
+       ? latestTimelineEntry.commentary.id
+       : null;
++  const activeActionId = thinkingActive && !responseStarted &&
++    latestTimelineEntry?.kind === "action" && latestTimelineEntry.action.status === "running"
++      ? latestTimelineEntry.action.id : null;
++  const showCurrentLine = active && !activeActionId;
++  const currentLine = view.phase === "waiting_approval" ? "等待你的审批后继续。"
++    : view.phase === "queued" ? "正在准备本次任务…"
++    : responseStarted ? "正在输出回复…" : "正在等待模型继续输出…";
+   const heading = activityHeading(view);
+   const elapsedCopy = active
+     ? `已持续 ${elapsed < 1_000 ? "0s" : durationLabel(elapsed)}`
+@@ -778,7 +806,7 @@
+         onClick={toggleDisclosure}
+         aria-expanded={open}
+       >
+-        <span className="execution-phase">{heading}</span>
++        <span className={`execution-phase${thinkingActive && !responseStarted && !open ? " execution-text-sweep" : ""}`}>{heading}</span>
+         <span className="execution-duration">· {elapsedCopy}</span>
+         <span className="execution-chevron" aria-hidden="true" />
+       </button>
+@@ -795,6 +823,23 @@
+         </button>
+       ) : null}
+       <div className="execution-tree" hidden={!open}>
++        <div className="execution-display-controls">
++          <span>执行过程</span>
++          <button
++            type="button"
++            role="switch"
++            aria-checked={detailed}
++            className="execution-display-switch"
++            onClick={() => setDetailedProcess(!detailed)}
++            title="记住此浏览器的选择，展示可用的思考摘要和逐项执行步骤"
++          >
++            <span>详细过程</span>
++            <span className="execution-switch-track" aria-hidden="true" />
++          </button>
++        </div>
++        {detailed && !timeline.some(entry => entry.kind === "commentary" && entry.commentary.source === "reasoning_summary") ? (
++          <p className="execution-process-note">{active ? "尚未收到可展示的思考摘要，以下显示实际执行步骤。" : "本次未提供可展示的思考摘要，以下显示已记录的执行步骤。"}</p>
++        ) : null}
+         {failure ? (
+           <section className="execution-failure-diagnostic" aria-label="失败定位">
+             <span>失败定位</span>
+@@ -822,13 +867,18 @@
+                   active={entry.commentary.id === activeCommentaryId}
+                 />
+               ) : (
+-                <ActionRow key={entry.action.id} action={entry.action} />
++                <ActionRow key={entry.action.id} action={entry.action} active={entry.action.id === activeActionId} />
+               ),
+             )}
+           </section>
+-        ) : (
+-          null
+-        )}
++        ) : !active && !failure ? (
++          <p className="execution-process-note">{view.phase === "completed" ? "本次处理已完成，没有额外的工具或过程记录。" : "本次处理已结束，没有额外的过程记录。"}</p>
++        ) : null}
++        {showCurrentLine ? (
++          <p className="execution-current-line" role="status">
++            <span className={thinkingActive && !responseStarted ? "execution-text-sweep" : undefined}>{currentLine}</span>
++          </p>
++        ) : null}
+       </div>
+     </section>
+   );
+--- a/web/harness-console/src/lib/process-display-preference.ts
++++ b/web/harness-console/src/lib/process-display-preference.ts
+@@ -0,0 +1,32 @@
++"use client";
++
++import { useSyncExternalStore } from "react";
++
++const KEY = "agent-studio:detailed-process:v1";
++const EVENT = "agent-studio:process-display-change";
++let fallback = false;
++
++function getSnapshot() {
++  try { return window.localStorage.getItem(KEY) === "detailed"; }
++  catch { return fallback; }
++}
++function subscribe(listener: () => void) {
++  const storage = (event: StorageEvent) => {
++    if (event.key === KEY || event.key === null) listener();
++  };
++  window.addEventListener(EVENT, listener);
++  window.addEventListener("storage", storage);
++  return () => {
++    window.removeEventListener(EVENT, listener);
++    window.removeEventListener("storage", storage);
++  };
++}
++export function useDetailedProcess() {
++  return useSyncExternalStore(subscribe, getSnapshot, () => false);
++}
++export function setDetailedProcess(value: boolean) {
++  fallback = value;
++  try { window.localStorage.setItem(KEY, value ? "detailed" : "compact"); }
++  catch { /* Keep the preference for this page when storage is unavailable. */ }
++  window.dispatchEvent(new Event(EVENT));
++}
+--- a/web/harness-console/src/app/conversation-experience.css
++++ b/web/harness-console/src/app/conversation-experience.css
+@@ -367,3 +367,80 @@
+   stroke-linecap: round;
+   stroke-linejoin: round;
+ }
++
++/* Keep the disclosure truly collapsed even when the theme sets display:block. */
++body.codex-theme-v1 .execution-tree[hidden] { display: none; }
++body.codex-theme-v1 .execution-display-controls {
++  display: flex;
++  align-items: center;
++  justify-content: space-between;
++  gap: 12px;
++  margin-bottom: 10px;
++  color: var(--codex-faint);
++  font-size: 11px;
++}
++body.codex-theme-v1 .execution-display-switch {
++  display: inline-flex;
++  align-items: center;
++  gap: 7px;
++  min-height: 28px;
++  padding: 3px 0 3px 8px;
++  border: 0;
++  background: transparent;
++  color: var(--codex-muted);
++  font: inherit;
++  cursor: pointer;
++}
++body.codex-theme-v1 .execution-display-switch:focus-visible {
++  outline: 2px solid var(--codex-accent);
++  outline-offset: 3px;
++  border-radius: 4px;
++}
++body.codex-theme-v1 .execution-switch-track {
++  width: 25px;
++  height: 15px;
++  padding: 2px;
++  box-sizing: border-box;
++  border-radius: 10px;
++  background: var(--codex-line);
++}
++body.codex-theme-v1 .execution-switch-track::after {
++  content: "";
++  display: block;
++  width: 11px;
++  height: 11px;
++  border-radius: 50%;
++  background: var(--codex-muted);
++  transition: transform 150ms ease;
++}
++body.codex-theme-v1 .execution-display-switch[aria-checked="true"] .execution-switch-track { background: var(--codex-ink-soft); }
++body.codex-theme-v1 .execution-display-switch[aria-checked="true"] .execution-switch-track::after {
++  transform: translateX(10px);
++  background: var(--codex-bg, #101010);
++}
++body.codex-theme-v1 .execution-process-note,
++body.codex-theme-v1 .execution-current-line {
++  margin: 8px 0 2px;
++  color: var(--codex-muted);
++  font-size: 12px;
++  line-height: 1.6;
++}
++body.codex-theme-v1 .execution-process-note + .execution-log { margin-top: 12px; }
++body.codex-theme-v1 .execution-current-line span { display: inline-block; }
++/* The moving dark band is clipped to glyphs, so it never covers content. */
++body.codex-theme-v1 .execution-ribbon .execution-text-sweep {
++  color: transparent;
++  background-image: linear-gradient(100deg, var(--codex-muted) 35%, #101010 48%, var(--codex-muted) 61%);
++  background-size: 260% 100%;
++  background-clip: text;
++  -webkit-background-clip: text;
++  animation: execution-text-sweep 1.8s linear infinite;
++}
++@keyframes execution-text-sweep {
++  from { background-position: 100% 0; }
++  to { background-position: 0% 0; }
++}
++@media (prefers-reduced-motion: reduce) {
++  body.codex-theme-v1 .execution-ribbon .execution-text-sweep { animation: none; background: none; color: var(--codex-muted); }
++  body.codex-theme-v1 .execution-switch-track::after { transition: none; }
++}

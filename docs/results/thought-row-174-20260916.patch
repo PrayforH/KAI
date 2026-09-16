@@ -1,0 +1,197 @@
+--- a/src/components/activity-summary.tsx
++++ b/src/components/activity-summary.tsx
+@@ -1,7 +1,7 @@
+ "use client";
+ 
+ import { TextMessagePartProvider } from "@assistant-ui/react";
+-import { useEffect, useMemo, useRef, useState } from "react";
++import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+ import type { RunActivity } from "../lib/activity-schema";
+ import { useRunViewModel } from "../lib/activity-store";
+ import { activeElapsedMs, elapsedAnchorFor, type ElapsedAnchor } from "../lib/run-elapsed";
+@@ -19,6 +19,7 @@
+ import { KnowledgeCitations } from "./knowledge/knowledge-citations";
+ import { MarkdownText } from "./markdown-text";
+ import { useRunDetails } from "./run-details-context";
++import { isProcessBoundary } from "../lib/process-boundary";
+ import { useDetailedProcess } from "../lib/process-display-preference";
+ 
+ const phaseLabels: Record<RunPhase, string> = {
+@@ -196,8 +197,7 @@
+   const actionSequences = view.items
+     .filter(
+       (item) =>
+-        item.event_type === "tool.request" ||
+-        item.event_type === "subagent.started",
++        isProcessBoundary(item.event_type),
+     )
+     .map((item) => item.sequence)
+     .sort((left, right) => left - right);
+@@ -223,7 +223,7 @@
+     const nextAction = actionSequences.find((sequence) => sequence > item.sequence);
+     // A trailing message is still ambiguous while the Run is active: the
+     // live response owns it so Markdown can stream without duplication. Only
+-    // text proven to precede an auditable action belongs in the process log.
++    // text followed by a new thinking block or action belongs in the process log.
+     if (nextAction === undefined) continue;
+     const groupKey = `progress:${nextAction}`;
+     const existing = grouped.get(groupKey);
+@@ -240,20 +240,23 @@
+ function ExecutionCommentary({
+   commentary,
+   active,
+-  detailed,
+ }: {
+   commentary: CommentaryNode;
+   active: boolean;
+-  detailed: boolean;
+ }) {
++  const previewRef = useRef<HTMLSpanElement>(null);
++  const [expanded, setExpanded] = useState(false);
++  const preview = commentary.text.replaceAll("**", "").replace(/\s+/g, " ").trim();
++  useLayoutEffect(() => {
++    const row = previewRef.current;
++    if (row && !expanded) row.scrollLeft = row.scrollWidth;
++  }, [preview, expanded]);
+   if (commentary.source !== "progress") {
+-    const lines = commentary.text.trim().split("\n").filter(line => line.trim());
+-    const preview = (active ? lines.at(-1) : lines[0])?.replaceAll("**", "") ?? "";
+     return (
+-      <details className="execution-reasoning" open={detailed || undefined}
++      <details className="execution-reasoning" open={expanded} onToggle={event => setExpanded(event.currentTarget.open)}
+         data-commentary-source={commentary.source} data-active={active ? "true" : "false"}>
+         <summary className={active ? "execution-reasoning-summary execution-row-sweep" : "execution-reasoning-summary"}>
+-          <span>思考</span><span className="execution-reasoning-preview">{preview}</span>
++          <span className="execution-reasoning-label">思考</span><span className="execution-reasoning-separator" aria-hidden="true">·</span><span ref={previewRef} className="execution-reasoning-preview">{preview}</span>
+         </summary>
+         <div className="execution-reasoning-body">
+           <TextMessagePartProvider text={commentary.text} isRunning={false}><MarkdownText /></TextMessagePartProvider>
+@@ -853,7 +856,6 @@
+                   key={entry.commentary.id}
+                   commentary={entry.commentary}
+                   active={entry.commentary.id === activeCommentaryId}
+-                  detailed={detailed}
+                 />
+               ) : (
+                 <ActionRow key={entry.action.id} action={entry.action} active={entry.action.id === activeActionId} />
+--- a/src/components/agent-thread.tsx
++++ b/src/components/agent-thread.tsx
+@@ -1018,11 +1018,15 @@
+ }
+ 
+ function useAssistantResponseStarted() {
+-  return useAuiState((state) =>
++  const live = useLiveResponse();
++  const messageId = useAuiState((state) => state.message.id);
++  const hasText = useAuiState((state) =>
+     state.message.content.some(
+       (part) => part.type === "text" && part.text.trim().length > 0,
+     ),
+   );
++  // Earlier progress prose must not mark later thinking as final-answer output.
++  return live.messageId === messageId && live.status !== "idle" ? live.visible : hasText;
+ }
+ 
+ export function hasProjectedTool(
+--- a/src/components/process-display-settings.tsx
++++ b/src/components/process-display-settings.tsx
+@@ -4,6 +4,6 @@
+   const detailed = useDetailedProcess();
+   return <label className="settings-preference-toggle">
+     <input type="checkbox" checked={detailed} onChange={event => setDetailedProcess(event.target.checked)} />
+-    <span><strong>展开详细思考过程</strong><small>自动展开模型返回的思考内容，并逐项展示工具动作。关闭时保留可展开的一行预览；模型未返回思考内容时不显示思考区。</small></span>
++    <span><strong>详细执行过程</strong><small>逐项展示工具动作，关闭时合并同类动作。思考默认显示单行预览，点击可展开全文。</small></span>
+   </label>;
+ }
+--- a/src/lib/harness-agent.ts
++++ b/src/lib/harness-agent.ts
+@@ -6,6 +6,7 @@
+   type RunAgentInput,
+   type RunAgentResult,
+ } from "@ag-ui/client";
++import { isProcessBoundary } from "./process-boundary";
+ import { runActivitySchema } from "./activity-schema";
+ import {
+   type ActivityPatchOperation,
+@@ -303,7 +304,9 @@
+         // Artifact presentation is a response deliverable, not another model
+         // action. Keeping the final response active also lets the UI render
+         // that prose immediately before the generated file card.
+-        if (params.event.toolCallName !== "harness_present_artifact") {
++        if (params.event.toolCallName !== "harness_present_artifact" &&
++          activityStore.getSnapshot()?.run_id !== liveResponseStore.getSnapshot().runId) {
++          // Without an activity projection retain the legacy tool hand-off.
+           liveResponseStore.hideForTool(runtimeThreadId);
+         }
+         return subscriber?.onToolCallStartEvent?.(params);
+@@ -328,7 +331,10 @@
+       onActivitySnapshotEvent: async (params) => {
+         if (params.event.activityType === "harness.run.v1") {
+           const parsed = runActivitySchema.safeParse(params.event.content);
+-          if (parsed.success) activityStore.publish(parsed.data, runtimeThreadId);
++          if (parsed.success) {
++            activityStore.publish(parsed.data, runtimeThreadId);
++            syncProcessResponse(runtimeThreadId);
++          }
+         }
+         return subscriber?.onActivitySnapshotEvent?.(params);
+       },
+@@ -338,6 +344,7 @@
+             params.event.patch as readonly ActivityPatchOperation[],
+             runtimeThreadId,
+           );
++          syncProcessResponse(runtimeThreadId);
+         }
+         return subscriber?.onActivityDeltaEvent?.(params);
+       },
+@@ -408,3 +415,13 @@
+     return cloned;
+   }
+ }
++
++// Publish the durable process before hiding its live prose, so there is no
++// blank frame while waiting for a tool event after a new thinking block.
++function syncProcessResponse(threadId?: string) {
++  const activity = activityStore.getSnapshot();
++  if (!activity || activity.run_id !== liveResponseStore.getSnapshot().runId) return;
++  const latest = [...activity.items].reverse().find(item =>
++    item.event_type === "message.delta" || isProcessBoundary(item.event_type));
++  if (latest && isProcessBoundary(latest.event_type)) liveResponseStore.hideForTool(threadId);
++}
+--- a/src/app/conversation-experience.css
++++ b/src/app/conversation-experience.css
+@@ -388,15 +388,23 @@
+ }
+ 
+ body.codex-theme-v1 div.execution-disclosure { cursor: default; }
+-body.codex-theme-v1 .execution-reasoning { color: var(--codex-muted); font-size: 12px; }
++body.codex-theme-v1 .execution-ribbon,
++body.codex-theme-v1 .execution-tree,
++body.codex-theme-v1 .execution-log,
++body.codex-theme-v1 .execution-log > * { min-width: 0; max-width: 100%; }
++body.codex-theme-v1 .execution-log { grid-template-columns: minmax(0, 1fr); }
++body.codex-theme-v1 .execution-reasoning { width: 100%; overflow: hidden; box-sizing: border-box; color: var(--codex-muted); font-size: 12px; }
+ body.codex-theme-v1 .execution-reasoning-summary {
+-  display: flex; align-items: center; gap: 10px; min-height: 26px;
++  display: flex; align-items: center; gap: 8px; min-height: 26px; min-width: 0; max-width: 100%;
+   list-style: none; cursor: pointer; position: relative; overflow: hidden;
+ }
+ body.codex-theme-v1 .execution-reasoning-summary::-webkit-details-marker { display: none; }
+ body.codex-theme-v1 .execution-reasoning-summary::before { content: "›"; flex: none; transition: transform 150ms; }
+ body.codex-theme-v1 .execution-reasoning[open] > summary::before { transform: rotate(90deg); }
+-body.codex-theme-v1 .execution-reasoning-preview { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--codex-faint); }
++body.codex-theme-v1 .execution-reasoning-label,
++body.codex-theme-v1 .execution-reasoning-separator { flex: 0 0 auto; white-space: nowrap; }
++body.codex-theme-v1 .execution-reasoning-preview { display: block; flex: 1 1 0%; min-width: 0; overflow: hidden; white-space: nowrap; color: var(--codex-faint); }
++body.codex-theme-v1 .execution-reasoning[open] .execution-reasoning-separator { display: none; }
+ body.codex-theme-v1 .execution-reasoning[open] .execution-reasoning-preview { display: none; }
+ body.codex-theme-v1 .execution-reasoning-body { padding: 6px 0 6px 20px; overflow-wrap: anywhere; }
+ body.codex-theme-v1 .execution-reasoning:not([open]) > .execution-reasoning-body { display: none; }
+--- /dev/null
++++ b/src/lib/process-boundary.ts
+@@ -0,0 +1,5 @@
++// A later thinking block or action proves the preceding prose was progress.
++export function isProcessBoundary(eventType: string): boolean {
++  return eventType === "tool.request" || eventType === "subagent.started" ||
++    eventType === "reasoning.delta" || eventType === "reasoning.summary.delta";
++}

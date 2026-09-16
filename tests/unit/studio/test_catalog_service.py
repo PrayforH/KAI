@@ -22,6 +22,25 @@ from harness.studio.service import AgentStudioService
 NOW = datetime(2026, 7, 17, tzinfo=UTC)
 
 
+def make_mcp_capability(**updates: object) -> McpCapability:
+    """Representative user MCP for upsert tests; the platform ships none."""
+
+    base = McpCapability(
+        reference="team-search",
+        serverName="team-search",
+        label="Team search",
+        description="Read-only internal search MCP.",
+        endpointUrl="http://team-search:8000/mcp",
+        tools=("mcp__team-search__search",),
+        risk=CapabilityRisk.MEDIUM,
+        networkAccess=NetworkAccess.INTERNAL,
+        sendsUserData=True,
+        readOnly=True,
+        executionLocation="external-mcp",
+    )
+    return base.model_copy(update=updates)  # type: ignore[arg-type]
+
+
 def test_default_catalog_exposes_separate_deepseek_v4_routes() -> None:
     routes = {item.route_id: item for item in default_capability_catalog().model_routes}
 
@@ -214,22 +233,47 @@ async def test_get_migrates_legacy_daytona_default_to_docker_worker_profile() ->
 
 
 @pytest.mark.asyncio
-async def test_get_migrates_legacy_platform_tavily_query_auth_to_bearer() -> None:
+async def test_get_strips_retired_tavily_mcp_from_persisted_catalogs() -> None:
     repository = InMemoryCapabilityCatalogRepository()
     catalog = default_capability_catalog()
-    tavily = catalog.mcp_servers[0].model_copy(
+    retired = make_mcp_capability(
+        reference="tavily-readonly",
+        server_name="tavily",
+        label="公网搜索（Tavily）",
+        description="检索和抽取公开网页，不提供网页写入能力。",
+        endpoint_url="https://mcp.tavily.com/mcp/",
+        tools=("mcp__tavily__tavily_search", "mcp__tavily__tavily_extract"),
+        network_access=NetworkAccess.EXTERNAL,
+        credential_reference="TAVILY_API_KEY",
+        auth_mode="bearer",
+        auth_key="api_key",
+        version=2,
+    )
+    catalog = catalog.model_copy(
         update={
-            "auth_mode": "query",
-            "auth_name": "tavilyApiKey",
-            "version": 1,
+            "mcp_servers": (
+                retired,
+                retired.model_copy(update={"owner_user_id": "user-a"}),
+            ),
+            "execution_profiles": tuple(
+                profile.model_copy(
+                    update={
+                        "allowed_mcp_references": (
+                            *profile.allowed_mcp_references,
+                            "tavily-readonly",
+                        )
+                    }
+                )
+                for profile in catalog.execution_profiles
+            ),
         }
     )
     await repository.seed(
         CapabilityCatalogRecord(
             tenantId="tenant-a",
             revision=7,
-            catalog=catalog.model_copy(update={"mcp_servers": (tavily,)}),
-            updatedBy="system-route-migration",
+            catalog=catalog,
+            updatedBy="tenant-admin",
             updatedAt=NOW,
         )
     )
@@ -242,11 +286,12 @@ async def test_get_migrates_legacy_platform_tavily_query_auth_to_bearer() -> Non
     upgraded = await service.get("tenant-a")
     repeated = await service.get("tenant-a")
 
-    migrated = upgraded.catalog.mcp_servers[0]
+    assert upgraded.catalog.mcp_servers == ()
+    assert all(
+        "tavily-readonly" not in profile.allowed_mcp_references
+        for profile in upgraded.catalog.execution_profiles
+    )
     assert upgraded.revision == 8
-    assert migrated.auth_mode == "bearer"
-    assert migrated.auth_name is None
-    assert migrated.version == 2
     assert repeated == upgraded
 
 
@@ -287,7 +332,6 @@ async def test_get_never_drops_tenant_mcp_from_a_system_authored_catalog() -> No
 
     assert upgraded.revision == 5
     assert {item.reference for item in upgraded.catalog.mcp_servers} == {
-        "tavily-readonly",
         "sentiment_query_mcp",
     }
 
@@ -532,13 +576,10 @@ async def test_mcp_upsert_atomically_authorizes_selected_execution_profiles() ->
         InMemoryAgentDraftRepository(),
         clock=lambda: NOW,
     )
-    catalog = default_capability_catalog()
-    resource = catalog.mcp_servers[0].model_copy(
-        update={
-            "reference": "knowledge-search",
-            "label": "Knowledge search",
-            "network_access": NetworkAccess.INTERNAL,
-        }
+    resource = make_mcp_capability(
+        reference="knowledge-search",
+        label="Knowledge search",
+        network_access=NetworkAccess.INTERNAL,
     )
 
     result = await service.upsert(
@@ -571,10 +612,9 @@ async def test_personal_mcp_capabilities_are_visible_only_to_their_owner() -> No
         InMemoryAgentDraftRepository(),
         clock=lambda: NOW,
     )
-    resource = (
-        default_capability_catalog()
-        .mcp_servers[0]
-        .model_copy(update={"reference": "company-search", "label": "Company search"})
+    resource = make_mcp_capability(
+        reference="company-search",
+        label="Company search",
     )
 
     first = await service.upsert(
@@ -618,32 +658,29 @@ async def test_new_users_receive_platform_mcp_but_not_personal_capabilities() ->
     )
     catalog = await service.get_for_user("tenant-a", "new-user")
 
-    assert {item.reference for item in catalog.catalog.mcp_servers} == {
-        item.reference for item in default_capability_catalog().mcp_servers
-    }
-    assert any(
-        "tavily-readonly" in profile.allowed_mcp_references
+    assert catalog.catalog.mcp_servers == ()
+    assert all(
+        "tavily-readonly" not in profile.allowed_mcp_references
         for profile in catalog.catalog.execution_profiles
     )
 
 
 @pytest.mark.asyncio
-async def test_user_can_register_a_personal_version_of_a_platform_mcp() -> None:
+async def test_user_can_register_a_personal_mcp_with_profile_grants() -> None:
     service = CapabilityCatalogService(
         InMemoryCapabilityCatalogRepository(),
         InMemoryAgentDraftRepository(),
         clock=lambda: NOW,
     )
-    platform = default_capability_catalog().mcp_servers[0]
 
     saved = await service.upsert(
         tenant_id="tenant-a",
         user_id="user-a",
         resource_type="mcp",
-        resource_id=platform.reference,
+        resource_id="team-search",
         request=UpsertCatalogResourceRequest(
             expectedRevision=1,
-            resource=platform,
+            resource=make_mcp_capability(),
             allowedExecutionProfileIds=("isolated-default",),
         ),
     )
@@ -678,9 +715,7 @@ async def test_legacy_custom_mcp_is_assigned_to_referencing_draft_owner() -> Non
         ),
     )
     catalog = default_capability_catalog()
-    legacy = catalog.mcp_servers[0].model_copy(
-        update={"reference": "legacy-business", "label": "Legacy business"}
-    )
+    legacy = make_mcp_capability(reference="legacy-business", label="Legacy business")
     await repository.seed(
         CapabilityCatalogRecord(
             tenantId="tenant-a",
@@ -706,15 +741,9 @@ async def test_mcp_upsert_rejects_profile_without_required_network_access() -> N
         InMemoryAgentDraftRepository(),
         clock=lambda: NOW,
     )
-    resource = (
-        default_capability_catalog()
-        .mcp_servers[0]
-        .model_copy(
-            update={
-                "reference": "knowledge-search",
-                "network_access": NetworkAccess.INTERNAL,
-            }
-        )
+    resource = make_mcp_capability(
+        reference="knowledge-search",
+        network_access=NetworkAccess.INTERNAL,
     )
 
     with pytest.raises(ConflictError, match="e2b-public-egress"):

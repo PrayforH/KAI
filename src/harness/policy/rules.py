@@ -192,16 +192,6 @@ def default_policy_rules() -> list[PolicyRule]:
             tool="mcp__harness-artifacts__publish_artifact",
             decision=PolicyDecision.ALLOW,
         ),
-        PolicyRule(
-            name="tavily-search",
-            tool="mcp__tavily__tavily_search",
-            decision=PolicyDecision.ALLOW,
-        ),
-        PolicyRule(
-            name="tavily-extract",
-            tool="mcp__tavily__tavily_extract",
-            decision=PolicyDecision.ALLOW,
-        ),
         *knowledge_search_read_rules(),
         *sentiment_query_read_rules(),
         PolicyRule(name="workspace-write", tool="Write", decision=PolicyDecision.ALLOW),

@@ -8,6 +8,7 @@ from claude_agent_sdk import (
     TaskStartedMessage,
     TaskUpdatedMessage,
     TextBlock,
+    ThinkingBlock,
     ToolResultBlock,
     ToolUseBlock,
     UserMessage,
@@ -342,3 +343,23 @@ def test_internal_task_result_metadata_is_redacted() -> None:
     assert events[0].payload["content"] == "[Internal tool metadata omitted]"
     assert "agentId" not in repr(events)
     assert "/private/tmp" not in repr(events)
+
+
+def test_maps_only_provider_thinking_text_not_signatures():
+    message = AssistantMessage(
+        content=[ThinkingBlock(thinking="核对输入。", signature="private-signature")], model="model"
+    )
+    events = map_sdk_message(message)
+    assert events[0].type == "reasoning.delta"
+    assert events[0].payload == {"text": "核对输入。", "block_index": 0}
+    assert "private-signature" not in repr(events)
+    signature = StreamEvent(
+        uuid="sig",
+        session_id="s",
+        parent_tool_use_id=None,
+        event={
+            "type": "content_block_delta",
+            "delta": {"type": "signature_delta", "signature": "private-signature"},
+        },
+    )
+    assert map_sdk_message(signature) == []

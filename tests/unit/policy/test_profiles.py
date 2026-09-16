@@ -27,7 +27,10 @@ def _decision(
 
 def test_read_only_profile_allows_evidence_tools_and_denies_mutation() -> None:
     assert _decision("production-read-only", "Read") is PolicyDecision.ALLOW
-    assert _decision("production-read-only", "mcp__tavily__tavily_search") is PolicyDecision.ALLOW
+    assert (
+        _decision("production-read-only", "mcp__knowledge-search__sag_search")
+        is PolicyDecision.ALLOW
+    )
     assert (
         _decision("production-read-only", "mcp__novel-search__sag_search")
         is PolicyDecision.ALLOW

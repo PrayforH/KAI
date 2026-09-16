@@ -1,3 +1,4 @@
+import { invalidateClientReads } from "../src/lib/client-read-cache";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   agentCoordinate,
@@ -35,6 +36,7 @@ describe("task agent catalog", () => {
   });
 
   afterEach(() => {
+    invalidateClientReads();
     vi.unstubAllGlobals();
   });
 
@@ -198,7 +200,7 @@ describe("task agent catalog", () => {
 
     const catalog = await loadTaskAgentCatalog();
 
-    expect(catalog.defaultAgent.displayName).toBe("通用 Lead Agent");
+    expect(catalog.defaultAgent.displayName).toBe("通用助手");
     expect(catalog.agents).toHaveLength(2);
     expect(agentCoordinate(catalog.agents[0])).toBe(
       "lead-agent@1.0.0",

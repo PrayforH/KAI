@@ -4,8 +4,10 @@ import {
   MarkdownTextPrimitive,
   type CodeHeaderProps,
 } from "@assistant-ui/react-markdown";
+import { TextMessagePartProvider, useMessagePartText, useSmooth } from "@assistant-ui/react";
+import remend from "remend";
 import remarkGfm from "remark-gfm";
-import { memo, useState, type ComponentPropsWithoutRef } from "react";
+import { memo, useMemo, useState, type ComponentPropsWithoutRef } from "react";
 import { normalizeMessageText } from "../lib/message-text";
 import { MermaidCodeHeader, MermaidDiagram } from "./mermaid-diagram";
 import { citationTarget, knowledgeUrlTransform, remarkWikiLinks } from "../lib/knowledge-links";
@@ -57,6 +59,7 @@ function WikiLink({
     const citation = answer?.citations.find((item) => citationTarget(item) === href);
     return citation ? <CitationLink className="aui-citation-link" title={citation.title ?? "查看来源"} aria-label={`查看来源 ${citation.index}：${citation.title ?? "文档"}`} onClick={() => answer?.request(citation)}>{children}</CitationLink> : <span title="引用来源暂不可用">{children}</span>;
   }
+  if (href === "streamdown:incomplete-link") return <span>{children}</span>;
   if (typeof href === "string" && href.startsWith("wiki:")) {
     let slug: string;
     try { slug = decodeURIComponent(href.slice("wiki:".length)); } catch { return <span>{children}</span>; }
@@ -80,29 +83,42 @@ function WikiLink({
   );
 }
 
+const STREAM_SMOOTHING = { drainMs: 120, maxCharIntervalMs: 4, minCommitMs: 32 };
+const FINAL_SMOOTHING = { drainMs: 32, maxCharIntervalMs: 1, minCommitMs: 32 };
+function markdownUrlTransform(url: string) {
+  return url === "streamdown:incomplete-link" ? url : knowledgeUrlTransform(url);
+}
+
 function MarkdownTextImpl() {
+  const part = useMessagePartText();
+  const normalized = useMemo(() => ({ ...part, text: normalizeMessageText(part.text) }), [part]);
+  const smooth = useSmooth(normalized, part.status.type === "running" ? STREAM_SMOOTHING : FINAL_SMOOTHING);
+  const running = smooth.status.type === "running";
+  // Complete syntax only in the display projection, after smoothing. Stored
+  // text and the message copy action retain the exact provider response.
+  const displayText = useMemo(
+    () => running ? remend(smooth.text, { katex: false }) : smooth.text,
+    [running, smooth.text],
+  );
   return (
-    <MarkdownTextPrimitive
-      className="aui-md"
-      remarkPlugins={[remarkGfm, remarkWikiLinks]}
-      preprocess={normalizeMessageText}
-      // The live response store already batches network deltas per animation
-      // frame. A second character-by-character reveal exposes incomplete
-      // Markdown delimiters (for example `**`) until their closing token is
-      // replayed, which looks like a final-pass renderer. Parse every received
-      // delta immediately so Markdown remains formatted throughout streaming.
-      smooth={false}
-      // react-markdown blanks unknown protocols; wiki: must survive so the
-      // renderer can turn it into a page-opening button.
-      urlTransform={knowledgeUrlTransform}
-      components={{ CodeHeader, a: WikiLink, table: ScrollableTable }}
-      componentsByLanguage={{
-        mermaid: {
-          CodeHeader: MermaidCodeHeader,
-          SyntaxHighlighter: MermaidDiagram,
-        },
-      }}
-    />
+    <TextMessagePartProvider text={displayText} isRunning={running}>
+      <MarkdownTextPrimitive
+        className="aui-md"
+        remarkPlugins={[remarkGfm, remarkWikiLinks]}
+        smooth={false}
+        defer
+        // react-markdown blanks unknown protocols; wiki: must survive so the
+        // renderer can turn it into a page-opening button.
+        urlTransform={markdownUrlTransform}
+        components={{ CodeHeader, a: WikiLink, table: ScrollableTable }}
+        componentsByLanguage={{
+          mermaid: {
+            CodeHeader: MermaidCodeHeader,
+            SyntaxHighlighter: MermaidDiagram,
+          },
+        }}
+      />
+    </TextMessagePartProvider>
   );
 }
 

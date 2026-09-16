@@ -44,7 +44,7 @@ class WebConfigurationService:
         credentials: McpCredentialService,
         *,
         enabled: bool = True,
-        provider: Literal["minimax", "tavily"] = "tavily",
+        provider: Literal["minimax", "tavily"] = "minimax",
         api_key: str = "",
     ) -> None:
         self.credentials = credentials
@@ -119,13 +119,6 @@ class WebConfigurationService:
         key = data.get("keys", {}).get(provider, "")
         if not key and provider == self.provider:
             key = self._api_key
-        if not key and provider == "tavily":
-            stored = await self.credentials.repository.get(
-                identity.tenant_id, identity.user_id, "tavily-readonly"
-            )
-            if stored:
-                value = self.credentials.cipher.decrypt(stored).get("api_key")
-                key = value.get_secret_value() if value else ""
 
         async def get_key() -> str:
             return key

@@ -456,7 +456,7 @@ export function GovernanceControlPlane({
               <span>连接 ID</span>
               <input
                 value={connectionDraft.connectionId}
-                placeholder="personal-tavily"
+                placeholder="personal-search"
                 disabled={!canManage}
                 onChange={(event) => setConnectionDraft((current) => ({
                   ...current,
@@ -524,7 +524,7 @@ export function GovernanceControlPlane({
               <span>Secret 引用</span>
               <input
                 value={connectionDraft.secretReference}
-                placeholder="settings://mcp/tavily"
+                placeholder="settings://mcp/personal-search"
                 disabled={!canManage}
                 onChange={(event) => setConnectionDraft((current) => ({
                   ...current,

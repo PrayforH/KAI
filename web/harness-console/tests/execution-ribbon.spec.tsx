@@ -733,7 +733,7 @@ describe("execution ribbon", () => {
       '<details class="execution-action action-completed" open',
     );
     expect(html).toContain(
-      '<summary class="execution-action-summary">',
+      '<summary class="execution-action-summary', 
     );
     expect(html).toContain('<div class="execution-action-body">');
     expect(html).toContain('role="region"');

@@ -692,7 +692,7 @@ async def test_profile_revision_requires_environment_approval_and_local_is_rejec
             risk=CapabilityRisk.LOW,
             version=current_version,
             networkPolicyId="registered-mcp-only",
-            allowedMcpReferences=("tavily-readonly",),
+            allowedMcpReferences=(),
             productionAllowed=profile_id != "local-dev",
         )
 

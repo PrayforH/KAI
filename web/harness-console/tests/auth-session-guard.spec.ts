@@ -26,9 +26,9 @@ describe("cross-window authentication guard", () => {
     expect(provider).toContain("账号已在其他窗口或设备登录");
   });
 
-  it("rechecks identity on focus, visibility, and a bounded interval", () => {
+  it("rechecks identity on focus and visibility without idle polling", () => {
     expect(provider).toContain('window.addEventListener("focus"');
     expect(provider).toContain('document.addEventListener("visibilitychange"');
-    expect(provider).toContain("15_000");
+    expect(provider).not.toContain("setInterval");
   });
 });

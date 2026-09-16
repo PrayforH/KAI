@@ -6,7 +6,6 @@ from harness.studio.models import (
     CapabilityCatalog,
     CapabilityRisk,
     ExecutionProfileMetadata,
-    McpCapability,
     ModelRouteCapability,
     NetworkAccess,
     PolicyCapability,
@@ -14,6 +13,11 @@ from harness.studio.models import (
     SkillCapability,
     TemplateCapability,
 )
+
+# Platform MCP references that have been retired platform-wide. Persisted
+# catalogs, agent drafts and runtime manifests drop them on load; historical
+# published snapshots keep them only as inert audit residue.
+RETIRED_PLATFORM_MCP_REFERENCES: frozenset[str] = frozenset({"tavily-readonly"})
 
 
 def _platform_skill_capabilities() -> tuple[SkillCapability, ...]:
@@ -153,28 +157,9 @@ def default_capability_catalog() -> CapabilityCatalog:
                 approvalBehavior="受主/子 Agent 双重权限上限约束",
             ),
         ),
-        mcpServers=(
-            McpCapability(
-                reference="tavily-readonly",
-                serverName="tavily",
-                label="公网搜索（Tavily）",
-                description="检索和抽取公开网页，不提供网页写入能力。",
-                endpointUrl="https://mcp.tavily.com/mcp/",
-                tools=(
-                    "mcp__tavily__tavily_search",
-                    "mcp__tavily__tavily_extract",
-                ),
-                risk=CapabilityRisk.MEDIUM,
-                networkAccess=NetworkAccess.EXTERNAL,
-                sendsUserData=True,
-                readOnly=True,
-                executionLocation="external-mcp",
-                credentialReference="TAVILY_API_KEY",
-                authMode="bearer",
-                authKey="api_key",
-                version=2,
-            ),
-        ),
+        # Tavily has been retired platform-wide; the catalog service strips any
+        # remaining tavily-readonly entries from persisted catalogs on load.
+        mcpServers=(),
         policies=(
             PolicyCapability(
                 policyId="production-read-only",
@@ -218,7 +203,7 @@ def default_capability_catalog() -> CapabilityCatalog:
                     "diskMiB": 10240,
                     "ttlSeconds": 3600,
                     "networkPolicyId": "unsafe-local-preview",
-                    "allowedMcpReferences": ("tavily-readonly",),
+                    "allowedMcpReferences": (),
                     "providerConfigReference": "local-unsafe-opt-in",
                     "productionAllowed": False,
                 }
@@ -243,7 +228,7 @@ def default_capability_catalog() -> CapabilityCatalog:
                     "diskMiB": 20480,
                     "ttlSeconds": 3600,
                     "networkPolicyId": "registered-mcp-only",
-                    "allowedMcpReferences": ("tavily-readonly",),
+                    "allowedMcpReferences": (),
                     "providerConfigReference": "docker-worker-local",
                     "productionAllowed": True,
                     "version": 2,
@@ -265,7 +250,7 @@ def default_capability_catalog() -> CapabilityCatalog:
                     "diskMiB": 20480,
                     "ttlSeconds": 3600,
                     "networkPolicyId": "registered-public-mcp",
-                    "allowedMcpReferences": ("tavily-readonly",),
+                    "allowedMcpReferences": (),
                     "providerConfigReference": "e2b-managed",
                     "productionAllowed": True,
                 }
@@ -287,7 +272,7 @@ def default_capability_catalog() -> CapabilityCatalog:
                     "diskMiB": 20480,
                     "ttlSeconds": 3600,
                     "networkPolicyId": "registered-mcp-only",
-                    "allowedMcpReferences": ("tavily-readonly",),
+                    "allowedMcpReferences": (),
                     "providerConfigReference": "kubernetes-gvisor-managed",
                     "productionAllowed": True,
                 }

@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     codex_network_access: bool = False
     web_tools_enabled: bool = True
     web_search_api_key: SecretStr = SecretStr("")
-    web_search_provider: Literal["tavily", "minimax"] = "tavily"
+    web_search_provider: Literal["tavily", "minimax"] = "minimax"
     codex_tool_output_token_limit: int = Field(default=32_000, ge=1_000, le=200_000)
     otel_enabled: bool = False
     otel_content_capture: Literal["off", "redacted"] = "off"
@@ -79,12 +79,6 @@ class Settings(BaseSettings):
     minimax_m3_compatibility: Literal["full", "degraded", "unsupported"] = "full"
     minimax_m3_capabilities: str = "streaming,tool_use,vision"
 
-    glm_5_2_base_url: str = ""
-    glm_5_2_api_key: SecretStr = SecretStr("")
-    glm_5_2_model: str = "shdata-glm"
-    glm_5_2_auth_scheme: Literal["bearer", "x-api-key"] = "bearer"
-    glm_5_2_compatibility: Literal["full", "degraded", "unsupported"] = "full"
-    glm_5_2_capabilities: str = "streaming,tool_use"
 
     anthropic_base_url: str = "https://api.anthropic.com"
     anthropic_api_key: SecretStr = SecretStr("")

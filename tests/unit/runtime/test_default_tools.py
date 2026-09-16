@@ -7,9 +7,7 @@ from pydantic import SecretStr
 
 from harness.core.manifest import AgentManifest
 from harness.core.models import ExecutionIdentity
-from harness.policy.models import ContextTrust
 from harness.runtime.mcp_credentials import (
-    McpCredentialError,
     ServerSecretReferenceProvider,
 )
 from harness.runtime.tools import ToolResolutionError, ToolResolver
@@ -58,35 +56,14 @@ def _factory() -> Callable[..., ToolResolver]:
 
 
 @pytest.mark.asyncio
-async def test_default_resolver_injects_tavily_bearer_key_and_exact_allowlist() -> None:
-    provider = ServerSecretReferenceProvider(
-        references={"tavily-readonly": {"api_key": "TAVILY_API_KEY"}},
-        secrets={"TAVILY_API_KEY": SecretStr("test-key")},
-    )
+async def test_default_resolver_ships_no_builtin_mcp_and_skips_retired_references() -> None:
+    resolved = await _factory()(None).resolve(_manifest(), _identity())
 
-    resolved = await _factory()(provider).resolve(_manifest(), _identity())
-
-    assert resolved.allowed_tools == (
-        "mcp__tavily__tavily_search",
-        "mcp__tavily__tavily_extract",
-    )
-    assert resolved.mcp_servers["tavily"] == {
-        "type": "http",
-        "url": "https://mcp.tavily.com/mcp/",
-        "headers": {"Authorization": "Bearer test-key"},
-    }
-    assert resolved.sensitive_names == frozenset({"Authorization"})
-    assert resolved.sensitive_values == frozenset({"Bearer test-key"})
-    assert set(resolved.result_trust.values()) == {ContextTrust.UNTRUSTED}
-
-
-@pytest.mark.asyncio
-async def test_default_resolver_fails_before_execution_without_tavily_credentials() -> None:
-    with pytest.raises(
-        McpCredentialError,
-        match=r"missing MCP credentials: tavily-readonly\.api_key",
-    ):
-        await _factory()(None).resolve(_manifest(), _identity())
+    # tavily-readonly is retired: manifests still pinning it resolve to no MCP
+    # servers and require no credentials instead of failing execution.
+    assert resolved.mcp_servers == {}
+    assert resolved.allowed_tools == ()
+    assert resolved.sensitive_values == frozenset()
 
 
 @pytest.mark.asyncio

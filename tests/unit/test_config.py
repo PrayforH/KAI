@@ -31,9 +31,8 @@ def test_local_defaults_disable_external_model_and_otel() -> None:
     assert settings.run_reservation_ttl_seconds == 86_400
     assert settings.preflight_timeout_seconds == 180
     assert settings.new_api_auth_scheme == "bearer"
-    assert settings.glm_5_2_model == "shdata-glm"
-    assert settings.glm_5_2_auth_scheme == "bearer"
-    assert settings.glm_5_2_capabilities == "streaming,tool_use"
+    assert settings.web_tools_enabled is True
+    assert settings.web_search_provider == "minimax"
 
 
 def test_observability_content_capture_rejects_implicit_or_unbounded_modes() -> None:

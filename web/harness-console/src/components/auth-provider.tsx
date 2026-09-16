@@ -13,6 +13,7 @@ import {
   type AuthInvalidationReason,
   subscribeAuthEvents,
 } from "../lib/auth-coordination";
+import { readClientResource, invalidateClientReads } from "../lib/client-read-cache";
 import { ProductBrandMark } from "./product-brand";
 import type { AuthUser, Membership } from "../lib/auth-session";
 
@@ -27,6 +28,10 @@ type AuthProfile = {
   membership: Membership;
   password_enabled: boolean;
 };
+
+class SessionVerificationError extends Error {
+  constructor(readonly reason: AuthInvalidationReason) { super(reason); }
+}
 
 // Route transitions remount the page-level provider. Keep the last verified
 // profile in the client module so moving between Tasks and Studio does not
@@ -43,25 +48,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let active = true;
     let checking = false;
+    let invalidated = false;
     const invalidate = (reason: AuthInvalidationReason) => {
       if (!active) return;
+      invalidated = true;
       cachedAuthProfile = null;
+      invalidateClientReads();
       setInvalidation((current) => current ?? reason);
     };
     const verify = async () => {
-      if (checking || !active) return;
+      if (checking || !active || invalidated) return;
       checking = true;
       try {
-        const response = await fetch("/api/auth/session", { cache: "no-store" });
-        if (!response.ok) {
-          const reason = response.headers.get("x-harness-auth-error") === "session_replaced"
-            ? "session_replaced"
-            : "session_expired";
-          if (profileRef.current) invalidate(reason);
-          else window.location.replace(`/login?error=${reason}`);
-          return;
-        }
-        const nextProfile = (await response.json()) as AuthProfile;
+        const nextProfile = await readClientResource<AuthProfile>("auth-profile", async () => {
+          const response = await fetch("/api/auth/session", { cache: "no-store" });
+          if (response.status === 401 || response.status === 403) {
+            const reason = response.headers.get("x-harness-auth-error") === "session_replaced"
+              ? "session_replaced" : "session_expired";
+            throw new SessionVerificationError(reason);
+          }
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          return response.json() as Promise<AuthProfile>;
+        }, 60_000);
+        if (!active || invalidated) return;
         const current = profileRef.current;
         if (current && current.user.user_id !== nextProfile.user.user_id) {
           invalidate("account_changed");
@@ -70,7 +79,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         cachedAuthProfile = nextProfile;
         profileRef.current = nextProfile;
         if (active) setProfile(nextProfile);
-      } catch {
+      } catch (cause) {
+        if (cause instanceof SessionVerificationError && active && !invalidated) {
+          if (profileRef.current) invalidate(cause.reason);
+          else window.location.replace(`/login?error=${cause.reason}`);
+        }
         // A transient network failure must not be presented as an account takeover.
       } finally {
         checking = false;
@@ -92,14 +105,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisibility);
-    const interval = window.setInterval(() => { void verify(); }, 15_000);
     void verify();
     return () => {
       active = false;
       unsubscribe();
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibility);
-      window.clearInterval(interval);
     };
   }, []);
 

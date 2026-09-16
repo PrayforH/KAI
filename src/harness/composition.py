@@ -93,7 +93,6 @@ from harness.reliability.service import ReliabilityService
 from harness.runtime.cc_switch import CcSwitchClaudeConfig
 from harness.runtime.codex_tool_gate import CodexToolGate
 from harness.runtime.default_tools import (
-    TAVILY_REFERENCE,
     default_tool_resolver,
     server_secret_credential_provider,
 )
@@ -257,15 +256,6 @@ def _deployment_model_routes(settings: Settings) -> tuple[CcSwitchClaudeConfig, 
         auth_scheme=settings.minimax_m3_auth_scheme,
         compatibility=settings.minimax_m3_compatibility,
         capabilities=settings.minimax_m3_capabilities,
-    )
-    add(
-        "glm-5-2",
-        base_url=settings.glm_5_2_base_url,
-        model=settings.glm_5_2_model,
-        credential=settings.glm_5_2_api_key,
-        auth_scheme=settings.glm_5_2_auth_scheme,
-        compatibility=settings.glm_5_2_compatibility,
-        capabilities=settings.glm_5_2_capabilities,
     )
     return tuple(routes)
 
@@ -1094,14 +1084,9 @@ def build_production_container(
                 return runtime_sandbox_backend
             catalog = (await capability_catalogs.get(tenant_id)).catalog
             read_only_mcp_references = frozenset(
-                {
-                    TAVILY_REFERENCE,
-                    *(
-                        capability.reference
-                        for capability in catalog.mcp_servers
-                        if capability.enabled and capability.read_only
-                    ),
-                }
+                capability.reference
+                for capability in catalog.mcp_servers
+                if capability.enabled and capability.read_only
             )
             if _manifests_require_remote_cli(
                 manifests,

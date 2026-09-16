@@ -199,7 +199,7 @@ class PublicWebClient:
     def __init__(
         self,
         api_key: Callable[[], Awaitable[str]] | None = None,
-        provider: Literal["tavily", "minimax"] = "tavily",
+        provider: Literal["tavily", "minimax"] = "minimax",
     ) -> None:
         self._api_key = api_key
         self._provider = provider

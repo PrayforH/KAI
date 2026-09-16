@@ -1,0 +1,14 @@
+{
+  "/healthz": 200,
+  "/v1/studio/capabilities": 200,
+  "/v1/studio/drafts": 200,
+  "/v1/studio/skills/agents": 200,
+  "/v1/studio/knowledge/bases": 200,
+  "existing_builder_and_code_routes": "preserved",
+  "web/": 200,
+  "web/studio/agents": 200,
+  "web/studio/skills": 200,
+  "web/studio/knowledge": 200,
+  "anonymous_session": 401,
+  "deployed_backend_source_hashes": "7/7 matched"
+}

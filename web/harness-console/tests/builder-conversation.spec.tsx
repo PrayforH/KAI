@@ -393,6 +393,8 @@ it("renders model deltas before the completed proposal and keeps changes reviewa
   });
   await click("修改配置");
   await send("改成表格");
+  // The reply is progressively revealed; it must appear while the proposal is pending.
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 100)); });
   expect(host.textContent).toContain("正在逐步输出建议");
   expect(host.querySelector('[aria-label="待确认的配置修改"]')).toBeNull();
   await act(async () => finish!({ baseRevision: 1, reply: "建议完成", changedFields: ["systemPrompt"], changes: { systemPrompt: "表格" } }));

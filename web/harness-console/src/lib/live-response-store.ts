@@ -27,7 +27,8 @@ const emptySnapshot: LiveResponseSnapshot = Object.freeze({
 // The provider does not label text as "commentary" or "final" up front. Keep a
 // short candidate out of the response slot because these are normally progress
 // prefaces followed by a tool. Once it grows into a substantive answer, stream
-// it; if a tool still follows, Activity retains it as processing commentary.
+// it; a short answer also becomes visible after 180 ms. If a tool follows,
+// Activity retains the preface as processing commentary.
 
 type MessageDisposition = "idle" | "candidate" | "response" | "activity";
 
@@ -42,6 +43,21 @@ let scheduledWatchdog: ReturnType<typeof setTimeout> | undefined;
 let disposition: MessageDisposition = "idle";
 const FRAME_WATCHDOG_MS = 120;
 const RESPONSE_CANDIDATE_MIN_CHARS = 160;
+const RESPONSE_CANDIDATE_WAIT_MS = 180;
+let candidateTimer: ReturnType<typeof setTimeout> | undefined;
+
+function cancelCandidateTimer() {
+  if (candidateTimer !== undefined) globalThis.clearTimeout(candidateTimer);
+  candidateTimer = undefined;
+}
+
+function scheduleCandidatePromotion() {
+  if (disposition !== "candidate" || snapshot.visible || candidateTimer !== undefined) return;
+  candidateTimer = globalThis.setTimeout(() => {
+    candidateTimer = undefined;
+    promoteCandidate();
+  }, RESPONSE_CANDIDATE_WAIT_MS);
+}
 
 function publish(next: LiveResponseSnapshot) {
   if (
@@ -89,6 +105,7 @@ function flushPendingDelta(visible = true) {
 
 function promoteCandidate() {
   if (disposition !== "candidate") return;
+  cancelCandidateTimer();
   disposition = "response";
   flushPendingDelta(true);
   if (!snapshot.visible && snapshot.text.trim()) {
@@ -97,6 +114,7 @@ function promoteCandidate() {
 }
 
 function cancelScheduledFrame() {
+  cancelCandidateTimer();
   if (scheduledFrame !== undefined) {
     globalThis.cancelAnimationFrame?.(scheduledFrame);
     scheduledFrame = undefined;
@@ -154,6 +172,7 @@ export const liveResponseStore = {
   },
   startMessage(messageId: string, threadId?: string) {
     if (!isActiveRuntimeThread(threadId)) return;
+    cancelCandidateTimer();
     flushPendingDelta(false);
     activeMessageId = messageId;
     displayedMessageId = messageId;
@@ -199,9 +218,11 @@ export const liveResponseStore = {
     activeMessageId = messageId;
     pendingDelta += delta;
     schedulePendingDelta();
+    scheduleCandidatePromotion();
   },
   hideForTool(threadId?: string) {
     if (!isActiveRuntimeThread(threadId)) return;
+    cancelCandidateTimer();
     flushPendingDelta(false);
     // A tool can start before the provider has emitted any assistant prose.
     // In that case there is no response candidate to reclassify. Keeping the

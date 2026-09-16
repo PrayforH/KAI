@@ -194,6 +194,49 @@ class PlatformSkillListing(StudioModel):
     files: tuple[PlatformSkillListingFile, ...] = ()
 
 
+class AgentSkillListing(PlatformSkillListing):
+    source: DraftSkillSource | None = None
+
+
+class AgentSkillCatalogEntry(StudioModel):
+    id: str
+    name: str
+    display_name: str = Field(alias="displayName")
+    parent_draft_id: str | None = Field(default=None, alias="parentDraftId")
+    revision: int
+    skills: tuple[AgentSkillListing, ...]
+
+    @classmethod
+    def from_draft(cls, draft: AgentDraft) -> AgentSkillCatalogEntry:
+        return cls(
+            id=draft.draft_id,
+            name=draft.spec.name,
+            displayName=draft.spec.display_name,
+            parentDraftId=draft.parent_draft_id,
+            revision=draft.revision,
+            skills=tuple(
+                AgentSkillListing(
+                    name=skill.name,
+                    description=skill.description,
+                    instructions=skill.instructions,
+                    source=skill.source,
+                    fileCount=skill.file_count
+                    if skill.file_count is not None
+                    else len(skill.files),
+                    files=tuple(
+                        PlatformSkillListingFile(
+                            path=file.path,
+                            binary=file.content_base64 is not None,
+                            sizeBytes=file.size_bytes,
+                        )
+                        for file in skill.files
+                    ),
+                )
+                for skill in draft.spec.skills
+            ),
+        )
+
+
 class PlatformSkillCatalogEntry(StudioModel):
     """One catalog package as returned by the read-only listing endpoint."""
 

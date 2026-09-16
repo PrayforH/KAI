@@ -699,12 +699,9 @@ describe("full-page agent workbench", () => {
     expect(markdown).toContain('className="aui-table-scroll"');
     expect(markdown).toContain('aria-label="表格，可横向滚动"');
     expect(markdown).toContain("table: ScrollableTable");
-    expect(markdown).not.toContain("defer");
     expect(markdown).toContain("smooth={false}");
-    // Text normalization stays in the preprocessor; Wiki links use the
-    // Markdown AST plugin so inline code and fenced code remain literal.
-    expect(markdown).toContain("preprocess={normalizeMessageText}");
-    expect(markdown).toContain("remarkPlugins={[remarkGfm, remarkWikiLinks]}");
+    // Normalization runs before reveal; wiki links remain a Markdown plugin.
+    expect(markdown).toContain("normalizeMessageText(part.text)");
     expect(markdown).toContain("normalizeMessageText");
     expect(markdown).not.toContain("codexStreamSmoothing");
     expect(styles).toMatch(

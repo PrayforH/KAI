@@ -1,3 +1,4 @@
+import { readClientResource } from "./client-read-cache";
 import { requireAuthenticatedResponse } from "./client-auth";
 
 export interface TaskModelRoute {
@@ -22,13 +23,11 @@ interface CapabilityResponse {
 }
 
 export async function loadTaskModelRoutes(): Promise<TaskModelRoute[]> {
-  const response = requireAuthenticatedResponse(
-    await fetch("/api/studio/capabilities", { cache: "no-store" }),
-  );
-  if (!response.ok) {
-    throw new Error((await response.text()) || `HTTP ${response.status}`);
-  }
-  const catalog = (await response.json()) as CapabilityResponse;
+  const catalog = await readClientResource<CapabilityResponse>("/api/studio/capabilities", async () => {
+    const response = requireAuthenticatedResponse(await fetch("/api/studio/capabilities", { cache: "no-store" }));
+    if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+    return response.json() as Promise<CapabilityResponse>;
+  });
   return catalog.modelRoutes
     // A task override is a route ID, so selectable routes must resolve to one
     // unambiguous provider model. Video routes use the dedicated composer

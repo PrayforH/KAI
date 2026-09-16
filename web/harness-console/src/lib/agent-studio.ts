@@ -96,7 +96,10 @@ export interface McpOption {
   sendsUserData: boolean;
 }
 
-const GENERAL_LEAD_MCP_REFERENCES = new Set(["tavily-readonly"]);
+// The generic Lead Agent may only use platform-generic capabilities, never
+// tenant business MCPs or knowledge bases. The platform ships no such MCP any
+// more, so the personal Lead sees no MCP options at all.
+const GENERAL_LEAD_MCP_REFERENCES = new Set<string>();
 
 export function mcpOptionsForDraft(
   draft: Pick<StudioDraft, "name" | "domain">,
@@ -337,16 +340,10 @@ export const BUILTIN_TOOLS: BuiltinToolOption[] = [
   },
 ];
 
-export const MCP_OPTIONS: McpOption[] = [
-  {
-    id: "tavily-readonly",
-    label: "公网搜索（Tavily）",
-    description: "搜索和抽取公开网页；不提供发布、删除等网页写入能力。",
-    tools: ["tavily_search", "tavily_extract"],
-    network: "external",
-    sendsUserData: true,
-  },
-];
+// Fallback used only before the capability catalog loads. The platform no
+// longer ships any built-in MCP; catalogs may still expose user-registered
+// entries.
+export const MCP_OPTIONS: McpOption[] = [];
 
 export const POLICY_OPTIONS = [
   {
@@ -374,7 +371,7 @@ export const REQUIRED_PROMPT_HEADINGS = [
   "## Output contract",
 ];
 
-const GENERAL_LEAD_SYSTEM_PROMPT = `# 通用 Lead Agent
+const GENERAL_LEAD_SYSTEM_PROMPT = `# 通用助手
 
 ## Mission
 
@@ -418,7 +415,7 @@ export const DEFAULT_STUDIO_DRAFT: StudioDraft = {
   publishedVersion: null,
   publishedHash: null,
   publishedPackageHash: null,
-  displayName: "通用 Lead Agent",
+  displayName: "通用助手",
   name: "lead-agent",
   description: "面向通用任务的中性入口，负责理解目标、执行、验证和交付，不绑定任何具体业务。",
   domain: "general-assistant",

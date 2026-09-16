@@ -132,7 +132,7 @@ def test_codex_mcp_configuration_uses_env_headers_and_exact_tool_allowlist() -> 
     assert any("env_http_headers.Authorization" in override for override in overrides)
 
 
-def test_codex_mcp_configuration_keeps_default_tavily_non_blocking() -> None:
+def test_codex_mcp_configuration_marks_servers_required_now_tavily_is_retired() -> None:
     resolved = ResolvedTools(
         builtin_tools=(),
         mcp_servers=MappingProxyType(
@@ -154,7 +154,7 @@ def test_codex_mcp_configuration_keeps_default_tavily_non_blocking() -> None:
 
     overrides, _environment = _codex_mcp_configuration(resolved)
 
-    assert "mcp_servers.tavily.required=false" in overrides
+    assert "mcp_servers.tavily.required=true" in overrides
 
 
 def test_codex_mcp_configuration_rejects_query_string_credentials() -> None:
