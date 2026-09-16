@@ -1,4 +1,5 @@
 "use client";
+import { agentDisplayName } from "../lib/agent-display-name";
 import { useInternalAgentsPreference } from "../lib/interface-preferences";
 
 import {
@@ -293,7 +294,7 @@ function AuthenticatedHome() {
     if (restoredBinding) {
       const restoredAgent: TaskAgent = {
         ...restoredBinding,
-        displayName: restoredBinding.displayName ?? restoredBinding.name,
+        displayName: agentDisplayName(restoredBinding.name, restoredBinding.displayName),
         domain: restoredBinding.domain ?? "restored",
       };
       setSelectedAgent(restoredAgent);
@@ -373,7 +374,7 @@ function AuthenticatedHome() {
             ? {
                 name: coordinates.name,
                 version: coordinates.version,
-                displayName: coordinates.name,
+                displayName: agentDisplayName(coordinates.name),
                 domain: "historical",
                 ownerUserId: coordinates.ownerUserId,
                 scope: coordinates.scope,
@@ -413,7 +414,7 @@ function AuthenticatedHome() {
     return () => {
       active = false;
     };
-  }, [catalogRefreshKey, user.user_id]);
+  }, [catalogRefreshKey, user.user_id, showInternalAgents]);
 
   const refreshingCatalog = useRef(false);
   const refreshAgentCatalog = useCallback(async () => {
@@ -428,7 +429,6 @@ function AuthenticatedHome() {
     finally { refreshingCatalog.current = false; }
   }, [user.user_id, showInternalAgents]);
   useEffect(() => {
-    void refreshAgentCatalog();
     const refresh = () => { if (document.visibilityState === "visible") void refreshAgentCatalog(); };
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
@@ -505,7 +505,7 @@ function AuthenticatedHome() {
       ) ?? {
         name: projectTask.agent_name,
         version: projectTask.agent_version,
-        displayName: projectTask.agent_name,
+        displayName: agentDisplayName(projectTask.agent_name),
         domain: "historical" as const,
         ownerUserId: projectTask.agent_owner_user_id,
         scope: projectTask.space_id
@@ -546,7 +546,7 @@ function AuthenticatedHome() {
       ) ?? {
         name: task.agent_name,
         version: task.agent_version,
-        displayName: task.agent_name,
+        displayName: agentDisplayName(task.agent_name),
         domain: "historical",
         ownerUserId: task.agent_owner_user_id,
         scope: task.space_id ? "team" : "personal",

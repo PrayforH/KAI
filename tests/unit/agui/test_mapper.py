@@ -50,12 +50,8 @@ def test_can_keep_message_text_and_artifacts_activity_only() -> None:
         project_artifact=False,
     )
 
-    assert [item.model_dump(by_alias=True)["type"] for item in text] == [
-        "ACTIVITY_DELTA"
-    ]
-    assert [item.model_dump(by_alias=True)["type"] for item in artifact] == [
-        "ACTIVITY_DELTA"
-    ]
+    assert [item.model_dump(by_alias=True)["type"] for item in text] == ["ACTIVITY_DELTA"]
+    assert [item.model_dump(by_alias=True)["type"] for item in artifact] == ["ACTIVITY_DELTA"]
 
 
 def test_historical_provider_diagnostic_is_sanitized_in_text_replay() -> None:
@@ -65,8 +61,7 @@ def test_historical_provider_diagnostic_is_sanitized_in_text_replay() -> None:
     dumped = [item.model_dump(by_alias=True) for item in projected]
 
     assert dumped[0]["delta"] == (
-        "模型服务拒绝了本轮上下文，可能由输入或外部检索内容触发。"
-        "请重新运行，或缩小主题与时间范围。"
+        "模型服务拒绝了本轮上下文，可能由输入或外部检索内容触发。请重新运行，或缩小主题与时间范围。"
     )
     assert "Content Exists Risk" not in repr(dumped)
 
@@ -119,9 +114,7 @@ def test_maps_tool_and_domain_events_to_tool_calls() -> None:
         "TOOL_CALL_END",
         "ACTIVITY_DELTA",
     ]
-    assert approval[0].model_dump(by_alias=True)["toolCallName"] == (
-        "harness_request_approval"
-    )
+    assert approval[0].model_dump(by_alias=True)["toolCallName"] == ("harness_request_approval")
     assert approval[0].model_dump(by_alias=True)["parentMessageId"] == (
         "assistant-approval-segment"
     )
@@ -137,9 +130,7 @@ def test_maps_tool_and_domain_events_to_tool_calls() -> None:
         "policy_rule": "write-review",
         "risk": "medium",
     }
-    assert artifact[0].model_dump(by_alias=True)["toolCallName"] == (
-        "harness_present_artifact"
-    )
+    assert artifact[0].model_dump(by_alias=True)["toolCallName"] == ("harness_present_artifact")
     assert json.loads(artifact[1].model_dump(by_alias=True)["delta"]) == {
         "artifact_id": "artifact-1",
         "run_id": "run-1",
@@ -164,13 +155,9 @@ def test_maps_approval_decision_to_matching_tool_result() -> None:
         event("approval.approved", {"approval_id": "approval-1"}, sequence=3)
     )
 
-    assert requested[0].model_dump(by_alias=True)["toolCallId"] == (
-        "harness-approval-approval-1"
-    )
+    assert requested[0].model_dump(by_alias=True)["toolCallId"] == ("harness-approval-approval-1")
     assert approved[0].model_dump(by_alias=True)["type"] == "TOOL_CALL_RESULT"
-    assert approved[0].model_dump(by_alias=True)["toolCallId"] == (
-        "harness-approval-approval-1"
-    )
+    assert approved[0].model_dump(by_alias=True)["toolCallId"] == ("harness-approval-approval-1")
     assert approved[1].model_dump(by_alias=True)["type"] == "ACTIVITY_DELTA"
 
 
@@ -186,9 +173,7 @@ def test_artifact_projection_completes_its_tool_call() -> None:
         "TOOL_CALL_RESULT",
         "ACTIVITY_DELTA",
     ]
-    assert projected[-2].model_dump(by_alias=True)["toolCallId"] == (
-        "harness-artifact-artifact-1"
-    )
+    assert projected[-2].model_dump(by_alias=True)["toolCallId"] == ("harness-artifact-artifact-1")
 
 
 def test_runtime_result_sets_immediate_activity_status_and_metrics() -> None:
@@ -220,3 +205,22 @@ def test_run_failure_keeps_safe_code_and_recovery_message() -> None:
     assert error["type"] == "RUN_ERROR"
     assert error["code"] == "provider_content_rejected"
     assert error["message"] == "模型服务拒绝了本轮上下文，请重新运行。"
+
+
+def test_expired_and_cancelled_approvals_close_matching_tool_cards() -> None:
+    for decision in ("expired", "cancelled"):
+        mapped = map_harness_event(event(f"approval.{decision}", {"approval_id": "approval-1"}))
+        result = mapped[0].model_dump(by_alias=True)
+        assert result["type"] == "TOOL_CALL_RESULT"
+        assert result["toolCallId"] == "harness-approval-approval-1"
+        assert json.loads(result["content"]) == {"decision": decision}
+
+
+def test_thinking_content_is_activity_only_and_preserves_its_block_identity():
+    result = map_harness_event(
+        event("reasoning.delta", {"text": "核对输入。", "item_id": "thought-1"})
+    )
+    payloads = [value.model_dump(by_alias=True) for value in result]
+    assert [value["type"] for value in payloads] == ["ACTIVITY_DELTA"]
+    assert "核对输入。" in json.dumps(payloads, ensure_ascii=False)
+    assert "thought-1" in json.dumps(payloads)

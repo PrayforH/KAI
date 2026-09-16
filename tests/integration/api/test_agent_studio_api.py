@@ -27,11 +27,11 @@ from harness.core.manifest import ToolDirectorySnapshot
 from harness.evals.models import EvalRunStatus
 from harness.quota.models import QuotaResource, ReplaceQuotaPolicyRequest
 from harness.sharing.models import WorkspaceAgentStatus
-from harness.studio.catalog import default_capability_catalog
 from harness.studio.mcp_discovery import (
     DiscoveredServer,
     McpDiscoveryService,
 )
+from harness.studio.models import CapabilityRisk, McpCapability, NetworkAccess
 
 SERVICE_TOKEN = "studio-service-token-with-at-least-32-characters"
 
@@ -83,8 +83,23 @@ def draft_request(name: str = "policy-researcher") -> dict[str, str]:
     }
 
 
-def tavily_resource() -> dict[str, Any]:
-    return default_capability_catalog().mcp_servers[0].model_dump(mode="json", by_alias=True)
+def team_search_resource() -> dict[str, Any]:
+    return McpCapability(
+        reference="team-search",
+        serverName="team-search",
+        label="Team search",
+        description="Read-only search over team sources.",
+        endpointUrl="http://team-search:8000/mcp",
+        tools=("mcp__team-search__search", "mcp__team-search__extract"),
+        risk=CapabilityRisk.MEDIUM,
+        networkAccess=NetworkAccess.EXTERNAL,
+        sendsUserData=True,
+        readOnly=True,
+        executionLocation="external-mcp",
+        credentialReference="TEAM_SEARCH_KEY",
+        authMode="bearer",
+        authKey="api_key",
+    ).model_dump(mode="json", by_alias=True)
 
 
 async def drain_eval(container: ApiContainer, eval_run_id: str) -> None:
@@ -136,7 +151,7 @@ async def test_service_identity_can_build_and_publish_existing_bundle() -> None:
         drafts = await client.get("/v1/studio/drafts", headers=headers)
 
     assert capabilities.status_code == 200
-    assert [item["reference"] for item in capabilities.json()["mcpServers"]] == ["tavily-readonly"]
+    assert [item["reference"] for item in capabilities.json()["mcpServers"]] == []
     assert created.status_code == 201
     assert created.json()["tenantId"] == "tenant-a"
     assert created.json()["createdBy"] == "builder-a"
@@ -685,7 +700,7 @@ async def test_user_can_permanently_delete_an_unreferenced_personal_mcp() -> Non
         "X-User-ID": "builder-a",
     }
     resource = {
-        **tavily_resource(),
+        **team_search_resource(),
         "reference": "company-knowledge",
         "serverName": "company_knowledge",
         "label": "企业知识库",
@@ -718,7 +733,7 @@ async def test_user_can_permanently_delete_an_unreferenced_personal_mcp() -> Non
 
 
 @pytest.mark.asyncio
-async def test_tavily_has_the_same_edit_and_delete_controls_as_other_mcp() -> None:
+async def test_retired_platform_tavily_mcp_is_absent_and_not_deletable() -> None:
     headers = {
         "Authorization": f"Bearer {SERVICE_TOKEN}",
         "X-Tenant-ID": "tenant-delete-tavily",
@@ -732,9 +747,9 @@ async def test_tavily_has_the_same_edit_and_delete_controls_as_other_mcp() -> No
             params={"expected_revision": initial.json()["revision"]},
         )
 
-    assert deleted.status_code == 200, deleted.text
+    assert deleted.status_code == 404, deleted.text
     assert "tavily-readonly" not in {
-        item["reference"] for item in deleted.json()["record"]["catalog"]["mcpServers"]
+        item["reference"] for item in initial.json()["catalog"]["mcpServers"]
     }
 
 
@@ -749,21 +764,21 @@ async def test_authenticated_mcp_requires_the_current_users_credential() -> None
         initial = await client.get("/v1/studio/catalog", headers=headers)
         body = {
             "expectedRevision": initial.json()["revision"],
-            "resource": tavily_resource(),
+            "resource": team_search_resource(),
             "allowedExecutionProfileIds": ["isolated-default"],
         }
         rejected = await client.put(
-            "/v1/studio/catalog/mcp/tavily-readonly",
+            "/v1/studio/catalog/mcp/team-search",
             headers=headers,
             json=body,
         )
         configured = await client.put(
-            "/v1/studio/mcp/tavily-readonly/credentials",
+            "/v1/studio/mcp/team-search/credentials",
             headers=headers,
-            json={"authKey": "api_key", "value": "personal-tavily-key"},
+            json={"authKey": "api_key", "value": "personal-team-key"},
         )
         saved = await client.put(
-            "/v1/studio/catalog/mcp/tavily-readonly",
+            "/v1/studio/catalog/mcp/team-search",
             headers=headers,
             json=body,
         )
@@ -1062,16 +1077,16 @@ async def test_studio_api_round_trips_and_bundles_on_demand_tool_directory() -> 
     ) as client:
         catalog = await client.get("/v1/studio/catalog", headers=headers)
         credential = await client.put(
-            "/v1/studio/mcp/tavily-readonly/credentials",
+            "/v1/studio/mcp/team-search/credentials",
             headers=headers,
-            json={"authKey": "api_key", "value": "personal-tavily-key"},
+            json={"authKey": "api_key", "value": "personal-team-key"},
         )
         registered = await client.put(
-            "/v1/studio/catalog/mcp/tavily-readonly",
+            "/v1/studio/catalog/mcp/team-search",
             headers=headers,
             json={
                 "expectedRevision": catalog.json()["revision"],
-                "resource": tavily_resource(),
+                "resource": team_search_resource(),
                 "allowedExecutionProfileIds": ["isolated-default"],
             },
         )
@@ -1106,7 +1121,7 @@ async def test_studio_api_round_trips_and_bundles_on_demand_tool_directory() -> 
                 "tool_search",
             ],
         }
-        spec["mcpServers"] = ["tavily-readonly"]
+        spec["mcpServers"] = ["team-search"]
         spec["toolExposureMode"] = "on_demand"
         replaced = await client.put(
             f"/v1/studio/drafts/{created.json()['draftId']}",
@@ -1136,8 +1151,8 @@ async def test_studio_api_round_trips_and_bundles_on_demand_tool_directory() -> 
     assert directory.exposure_mode == "on_demand"
     assert directory.content_hash == directory.digest()
     assert {entry.name for entry in directory.entries if entry.source == "mcp"} == {
-        "mcp__tavily__tavily_search",
-        "mcp__tavily__tavily_extract",
+        "mcp__team-search__search",
+        "mcp__team-search__extract",
     }
 
 
@@ -3321,3 +3336,46 @@ async def test_deepagents_exports_published_child_instead_of_edited_draft() -> N
         assert "EDITED_UNPUBLISHED_CHILD" not in child_source
         assert "subagents/reviewer/tools/operators/child_echo.py" in archive.namelist()
         assert "subagents/reviewer/skills/frozen-child/SKILL.md" in archive.namelist()
+
+
+@pytest.mark.asyncio
+async def test_agent_skill_catalog_is_batched_scoped_and_omits_file_payloads() -> None:
+    headers = {
+        "Authorization": f"Bearer {SERVICE_TOKEN}",
+        "X-Tenant-ID": "tenant-a",
+        "X-User-ID": "builder-a",
+    }
+    async with AsyncClient(transport=ASGITransport(app=app()), base_url="http://test") as client:
+        for name in ("first-agent", "second-agent"):
+            created = await client.post(
+                "/v1/studio/drafts", headers=headers, json=draft_request(name)
+            )
+            assert created.status_code == 201
+            draft = created.json()
+            draft["spec"]["skills"] = [
+                {
+                    "name": "reader",
+                    "description": "Read reports",
+                    "instructions": "Read carefully",
+                    "files": [{"path": "reference.txt", "content": "large-private-payload"}],
+                }
+            ]
+            updated = await client.put(
+                f"/v1/studio/drafts/{draft['draftId']}",
+                headers=headers,
+                json={"expectedRevision": draft["revision"], "spec": draft["spec"]},
+            )
+            assert updated.status_code == 200, updated.text
+        listing = await client.get("/v1/studio/skills/agents", headers=headers)
+        assert listing.status_code == 200, listing.text
+        assert len(listing.json()) == 2
+        assert "large-private-payload" not in listing.text
+        assert "systemPrompt" not in listing.text
+        assert listing.json()[0]["skills"][0]["files"][0]["path"] == "reference.txt"
+        hidden = await client.get(
+            "/v1/studio/skills/agents", headers={**headers, "X-User-ID": "other"}
+        )
+        assert hidden.status_code == 200
+        assert hidden.json() == []
+        anonymous = await client.get("/v1/studio/skills/agents")
+        assert anonymous.status_code == 401

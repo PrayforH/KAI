@@ -3,6 +3,7 @@ import { isAgentVisible } from "../../lib/agent-visibility";
 import { useInternalAgentsPreference } from "../../lib/interface-preferences";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useAuth } from "../auth-provider";
@@ -56,10 +57,8 @@ import { useDismissablePopovers } from "../../lib/use-dismissable-popovers";
 import { GovernanceControlPlane } from "./governance-control-plane";
 import { skillCreatorHref } from "../../lib/skill-creator-launch";
 import { SkillConversationBuilder } from "./skill-conversation-builder";
-import { StudioCodeEditor } from "./studio-code-editor";
-import {
-  AgentBuilderAssistant,
-} from "./agent-builder-overlays";
+const StudioCodeEditor = dynamic(() => import("./studio-code-editor").then((module) => module.StudioCodeEditor));
+const AgentBuilderAssistant = dynamic(() => import("./agent-builder-overlays").then((module) => module.AgentBuilderAssistant));
 import styles from "./agent-studio.module.css";
 
 const sectionLabels: Record<StudioSection, string> = {
@@ -329,6 +328,8 @@ export function AgentStudioWorkbench() {
     useState<StudioSection>("identity");
   const [agentQuery, setAgentQuery] = useState("");
   const [viewMode, setViewMode] = useState<"catalog" | "editor">("catalog");
+  const editorOpened = useRef(false);
+  if (viewMode === "editor") editorOpened.current = true;
   const workspaceVisibleRef = useRef(false);
   workspaceVisibleRef.current = viewMode === "editor";
   const [inspected, setInspected] = useState(false);
@@ -481,7 +482,7 @@ export function AgentStudioWorkbench() {
   }, [releaseFeedbackOpen]);
 
   useEffect(() => {
-    if (!draft.agentId || draft.spaceId || !draft.publishedVersion) {
+    if (!versionHistoryOpen || !draft.agentId || draft.spaceId || !draft.publishedVersion) {
       setPersonalVersions([]);
       setVersionHistoryError("");
       setVersionHistoryLoading(false);
@@ -507,7 +508,7 @@ export function AgentStudioWorkbench() {
     return () => {
       active = false;
     };
-  }, [draft.agentId, draft.spaceId, draft.publishedVersion]);
+  }, [draft.agentId, draft.spaceId, draft.publishedVersion, versionHistoryOpen]);
 
   useEffect(() => {
     let active = true;
@@ -556,7 +557,7 @@ export function AgentStudioWorkbench() {
           setDraft(migration.draft);
           setDrafts(await studioClient.listAccessibleDrafts());
           setNotice("旧浏览器草稿已一次性导入控制面");
-        } else if (serverDrafts.length > 0) {
+        } else if (serverDrafts.length > 0 && (requestedDraftId || requestedSection)) {
           const selected = await studioClient.getDraft(serverDrafts[0].draftId, {
             expectedRevision: serverDrafts[0].revision,
           });
@@ -566,7 +567,7 @@ export function AgentStudioWorkbench() {
         } else {
           setDraft({ ...DEFAULT_STUDIO_DRAFT, id: "", revision: 0 });
           setActiveSection("identity");
-          setNotice(canEdit ? "当前没有草稿，可新建第一个 Agent" : "当前没有可查看的草稿");
+          setNotice(serverDrafts.length > 0 ? "" : canEdit ? "当前没有草稿，可新建第一个 Agent" : "当前没有可查看的草稿");
         }
       } catch (error) {
         if (!active) return;
@@ -582,34 +583,22 @@ export function AgentStudioWorkbench() {
   }, [canEdit]);
 
   useEffect(() => {
-    if (loading || loadError) return;
+    if (loading || loadError || viewMode !== "editor" || !configEditorOpen) return;
     let active = true;
-    const timer = window.setTimeout(() => {
-      void Promise.all([
-        studioClient.listPreviews(),
-        studioClient.listEvalDatasets(),
-        studioClient.listEvalRuns(),
-        studioClient.listGovernedPolicies(),
-      ]).then(([
-        serverPreviews,
-        serverDatasets,
-        serverEvalRuns,
-        serverGovernedPolicies,
-      ]) => {
-        if (!active) return;
-        setPreviews(serverPreviews);
-        setEvalDatasets(serverDatasets);
-        setEvalRuns(serverEvalRuns);
-        setGovernedPolicies(serverGovernedPolicies);
-      }).catch(() => {
-        // These panels are secondary; the primary editor remains available.
-      });
-    }, 0);
-    return () => {
-      active = false;
-      window.clearTimeout(timer);
-    };
-  }, [loadError, loading]);
+    const requests: Promise<void>[] = [];
+    if (activeSection === "trial" || activeSection === "evaluation") {
+      requests.push(studioClient.listPreviews().then((items) => { if (active) setPreviews(items); }));
+    }
+    if (activeSection === "evaluation") {
+      requests.push(studioClient.listEvalDatasets().then((items) => { if (active) setEvalDatasets(items); }));
+      requests.push(studioClient.listEvalRuns().then((items) => { if (active) setEvalRuns(items); }));
+    }
+    if (activeSection === "runtime") {
+      requests.push(studioClient.listGovernedPolicies().then((items) => { if (active) setGovernedPolicies(items); }));
+    }
+    void Promise.allSettled(requests);
+    return () => { active = false; };
+  }, [loadError, loading, viewMode, activeSection, configEditorOpen]);
 
   function updateDraft(update: Partial<StudioDraft>) {
     const next = applyStudioDraftUpdate(draft, update);
@@ -1224,7 +1213,7 @@ export function AgentStudioWorkbench() {
   }
 
   async function openDraftEditor(draftId: string) {
-    if (draftId !== draft.id) await selectDraft(draftId);
+    if (draftId !== draft.id && !await selectDraft(draftId)) return;
     setBuilderAssistantMode("run");
     setReturnParentId(null);
     setConfigEditorOpen(false);
@@ -1915,24 +1904,29 @@ export function AgentStudioWorkbench() {
 
   useEffect(() => {
     if (!activeEvalRun || !["queued", "running", "cancelling"].includes(activeEvalRun.run.status)) return;
-    let active = true;
-    const timer = window.setTimeout(async () => {
-      try {
-        const refreshed = await studioClient.getEvalRun(activeEvalRun.run.evalRunId);
-        if (!active) return;
-        setEvalRuns((current) => [
-          refreshed,
-          ...current.filter((item) => item.run.evalRunId !== refreshed.run.evalRunId),
-        ]);
-      } catch (error) {
-        if (active) setNotice(error instanceof Error ? error.message : "Eval 状态读取失败");
-      }
-    }, 1500);
-    return () => {
-      active = false;
-      window.clearTimeout(timer);
+    const id = activeEvalRun.run.evalRunId;
+    const controller = new AbortController();
+    let retryTimer: ReturnType<typeof setTimeout>;
+    const update = (refreshed: StudioEvalRun) => {
+      if (!controller.signal.aborted) setEvalRuns(current => [refreshed, ...current.filter(item => item.run.evalRunId !== id)]);
     };
-  }, [activeEvalRun?.run.evalRunId, activeEvalRun?.run.status, activeEvalRun?.cases.length]);
+    async function follow() {
+      while (!controller.signal.aborted) {
+        try {
+          const finalView = await studioClient.streamEvalRun(id, update, controller.signal);
+          update(finalView);
+          if (!["queued", "running", "cancelling"].includes(finalView.run.status)) return;
+        } catch (error) {
+          if (controller.signal.aborted) return;
+          setNotice(error instanceof Error ? error.message : "评测连接中断，正在恢复");
+        }
+        await new Promise<void>(resolve => { retryTimer = setTimeout(resolve, 1500); });
+      }
+    }
+    void follow();
+    return () => { controller.abort(); clearTimeout(retryTimer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeEvalRun?.run.evalRunId]);
 
   useEffect(() => {
     if (!draft.publishedVersion) {
@@ -3313,12 +3307,6 @@ export function AgentStudioWorkbench() {
                     </label>
                   );
                 })}
-                {false && draft.mcpServers.includes("tavily-readonly") && (
-                  <InfoStrip tone="warning">
-                    检索词和待抽取 URL 会发送给 Tavily。发布部署前必须从实际 Sandbox 检查凭据、MCP tools/list 与公网可达性；这不会开放任意 Bash 网络访问。
-                  </InfoStrip>
-                )}
-
                 {visibleMcpOptions.some((item) => item.category === "knowledge") && (
                   <>
                     <div className={styles.groupHeading}>
@@ -4103,7 +4091,7 @@ export function AgentStudioWorkbench() {
           回退是移动当前指针，不会修改或删除任何不可变版本。
         </footer>
       </aside>
-      <AgentBuilderAssistant
+      {editorOpened.current && <AgentBuilderAssistant
         workspaceTarget={workspaceTarget}
         testRequest={testRequest}
         onEditConfiguration={(section, label) => openConfiguration(section ?? "identity", label)}
@@ -4165,7 +4153,7 @@ export function AgentStudioWorkbench() {
           setBuilderAssistantOpen(true);
           setNotice(`已创建 ${created.displayName}；可继续修改配置，或在右侧输入测试问题`);
         }}
-      />
+      />}
       {confirmationDialog}
     </main>
   );

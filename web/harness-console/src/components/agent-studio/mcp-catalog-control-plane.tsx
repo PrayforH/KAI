@@ -38,7 +38,7 @@ const MANAGED_AUTH_HEADER_NAMES = new Set([
   "api-key",
   "apikey",
 ]);
-const EDITABLE_PLATFORM_MCP_REFERENCES = new Set(["tavily-readonly"]);
+const EDITABLE_PLATFORM_MCP_REFERENCES = new Set<string>();
 
 const EMPTY_MCP: McpCapability = {
   reference: "",

@@ -27,6 +27,7 @@ from harness.runtime.mcp_credentials import (
     McpCredentialError,
 )
 from harness.runtime.web_tools import PublicWebClient, create_web_mcp_server
+from harness.studio.catalog import RETIRED_PLATFORM_MCP_REFERENCES
 from harness.studio.web_configuration import UserWebClient, WebConfigurationService
 
 
@@ -134,7 +135,7 @@ class ToolResolver:
         ) = None,
         credential_provider: DynamicMcpCredentialProvider | None = None,
         web_search_api_key: str = "",
-        web_search_provider: Literal["tavily", "minimax"] = "tavily",
+        web_search_provider: Literal["tavily", "minimax"] = "minimax",
         web_enabled: bool = True,
         web_configurations: WebConfigurationService | None = None,
     ) -> None:
@@ -156,14 +157,6 @@ class ToolResolver:
         async def key() -> str:
             if self._web_search_api_key:
                 return self._web_search_api_key
-            if identity is not None and self._web_search_provider == "tavily":
-                try:
-                    credentials = await self._credential_provider.resolve(
-                        "tavily-readonly", identity, frozenset({"api_key"})
-                    )
-                    return credentials["api_key"].get_secret_value()
-                except McpCredentialError:
-                    pass
             return ""
 
         return create_web_mcp_server(names, PublicWebClient(key, self._web_search_provider))
@@ -195,7 +188,11 @@ class ToolResolver:
         unavailable_mcp: dict[str, tuple[str, ...]] = {}
         has_python_override = False
         mcp_registry = dict(self._mcp_registry)
-        requested_mcp = {tool.mcp for tool in manifest.spec.tools if tool.mcp is not None}
+        requested_mcp = {
+            tool.mcp
+            for tool in manifest.spec.tools
+            if tool.mcp is not None and tool.mcp not in RETIRED_PLATFORM_MCP_REFERENCES
+        }
         needs_tenant_registry = bool(requested_mcp.difference(mcp_registry))
         if self._mcp_registry_provider is not None and needs_tenant_registry:
             if identity is None and any(tool.mcp is not None for tool in manifest.spec.tools):
@@ -233,6 +230,10 @@ class ToolResolver:
                 continue
 
             reference = cast(str, tool_spec.mcp)
+            if reference in RETIRED_PLATFORM_MCP_REFERENCES:
+                # Retired platform MCP: published manifests still pinning the
+                # tool keep running without it instead of failing resolution.
+                continue
             registration = mcp_registry.get(reference)
             if registration is None:
                 raise ToolResolutionError(f"MCP tool registration is not configured: {reference}")

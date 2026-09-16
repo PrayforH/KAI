@@ -502,7 +502,7 @@ def configure_task_driven_draft(
         if writes
         else "任务以分析和回答为主，保持最小只读工具权限"
     )
-    reasons.append("Tavily 与业务 MCP 均默认关闭，需在能力配置中明确选择后启用")
+    reasons.append("业务 MCP 默认关闭，需在能力配置中明确选择后启用")
     reasons.extend(
         (
             "生成 TaskContract、五段式 System Prompt 和三类发布基础评测",

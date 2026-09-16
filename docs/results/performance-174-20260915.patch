@@ -1,0 +1,1920 @@
+--- a/web/harness-console/src/app/page.tsx
++++ b/web/harness-console/src/app/page.tsx
+@@ -413,7 +413,7 @@
+     return () => {
+       active = false;
+     };
+-  }, [catalogRefreshKey, user.user_id]);
++  }, [catalogRefreshKey, user.user_id, showInternalAgents]);
+ 
+   const refreshingCatalog = useRef(false);
+   const refreshAgentCatalog = useCallback(async () => {
+@@ -428,7 +428,6 @@
+     finally { refreshingCatalog.current = false; }
+   }, [user.user_id, showInternalAgents]);
+   useEffect(() => {
+-    void refreshAgentCatalog();
+     const refresh = () => { if (document.visibilityState === "visible") void refreshAgentCatalog(); };
+     window.addEventListener("focus", refresh);
+     document.addEventListener("visibilitychange", refresh);
+--- a/web/harness-console/src/components/auth-provider.tsx
++++ b/web/harness-console/src/components/auth-provider.tsx
+@@ -13,6 +13,7 @@
+   type AuthInvalidationReason,
+   subscribeAuthEvents,
+ } from "../lib/auth-coordination";
++import { readClientResource, invalidateClientReads } from "../lib/client-read-cache";
+ import { ProductBrandMark } from "./product-brand";
+ import type { AuthUser, Membership } from "../lib/auth-session";
+ 
+@@ -27,6 +28,10 @@
+   membership: Membership;
+   password_enabled: boolean;
+ };
++
++class SessionVerificationError extends Error {
++  constructor(readonly reason: AuthInvalidationReason) { super(reason); }
++}
+ 
+ // Route transitions remount the page-level provider. Keep the last verified
+ // profile in the client module so moving between Tasks and Studio does not
+@@ -43,25 +48,29 @@
+   useEffect(() => {
+     let active = true;
+     let checking = false;
++    let invalidated = false;
+     const invalidate = (reason: AuthInvalidationReason) => {
+       if (!active) return;
++      invalidated = true;
+       cachedAuthProfile = null;
++      invalidateClientReads();
+       setInvalidation((current) => current ?? reason);
+     };
+     const verify = async () => {
+-      if (checking || !active) return;
++      if (checking || !active || invalidated) return;
+       checking = true;
+       try {
+-        const response = await fetch("/api/auth/session", { cache: "no-store" });
+-        if (!response.ok) {
+-          const reason = response.headers.get("x-harness-auth-error") === "session_replaced"
+-            ? "session_replaced"
+-            : "session_expired";
+-          if (profileRef.current) invalidate(reason);
+-          else window.location.replace(`/login?error=${reason}`);
+-          return;
+-        }
+-        const nextProfile = (await response.json()) as AuthProfile;
++        const nextProfile = await readClientResource<AuthProfile>("auth-profile", async () => {
++          const response = await fetch("/api/auth/session", { cache: "no-store" });
++          if (response.status === 401 || response.status === 403) {
++            const reason = response.headers.get("x-harness-auth-error") === "session_replaced"
++              ? "session_replaced" : "session_expired";
++            throw new SessionVerificationError(reason);
++          }
++          if (!response.ok) throw new Error(`HTTP ${response.status}`);
++          return response.json() as Promise<AuthProfile>;
++        }, 60_000);
++        if (!active || invalidated) return;
+         const current = profileRef.current;
+         if (current && current.user.user_id !== nextProfile.user.user_id) {
+           invalidate("account_changed");
+@@ -70,7 +79,11 @@
+         cachedAuthProfile = nextProfile;
+         profileRef.current = nextProfile;
+         if (active) setProfile(nextProfile);
+-      } catch {
++      } catch (cause) {
++        if (cause instanceof SessionVerificationError && active && !invalidated) {
++          if (profileRef.current) invalidate(cause.reason);
++          else window.location.replace(`/login?error=${cause.reason}`);
++        }
+         // A transient network failure must not be presented as an account takeover.
+       } finally {
+         checking = false;
+@@ -92,14 +105,12 @@
+     };
+     window.addEventListener("focus", onFocus);
+     document.addEventListener("visibilitychange", onVisibility);
+-    const interval = window.setInterval(() => { void verify(); }, 15_000);
+     void verify();
+     return () => {
+       active = false;
+       unsubscribe();
+       window.removeEventListener("focus", onFocus);
+       document.removeEventListener("visibilitychange", onVisibility);
+-      window.clearInterval(interval);
+     };
+   }, []);
+ 
+--- a/web/harness-console/src/components/agent-studio/agent-studio-workbench.tsx
++++ b/web/harness-console/src/components/agent-studio/agent-studio-workbench.tsx
+@@ -4,6 +4,7 @@
+ import { useInternalAgentsPreference } from "../../lib/interface-preferences";
+ 
+ import Link from "next/link";
++import dynamic from "next/dynamic";
+ import { useRouter } from "next/navigation";
+ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+ import { useAuth } from "../auth-provider";
+@@ -57,10 +58,8 @@
+ import { GovernanceControlPlane } from "./governance-control-plane";
+ import { skillCreatorHref } from "../../lib/skill-creator-launch";
+ import { SkillConversationBuilder } from "./skill-conversation-builder";
+-import { StudioCodeEditor } from "./studio-code-editor";
+-import {
+-  AgentBuilderAssistant,
+-} from "./agent-builder-overlays";
++const StudioCodeEditor = dynamic(() => import("./studio-code-editor").then((module) => module.StudioCodeEditor));
++const AgentBuilderAssistant = dynamic(() => import("./agent-builder-overlays").then((module) => module.AgentBuilderAssistant));
+ import styles from "./agent-studio.module.css";
+ 
+ const sectionLabels: Record<StudioSection, string> = {
+@@ -330,6 +329,8 @@
+     useState<StudioSection>("identity");
+   const [agentQuery, setAgentQuery] = useState("");
+   const [viewMode, setViewMode] = useState<"catalog" | "editor">("catalog");
++  const editorOpened = useRef(false);
++  if (viewMode === "editor") editorOpened.current = true;
+   const workspaceVisibleRef = useRef(false);
+   workspaceVisibleRef.current = viewMode === "editor";
+   const [inspected, setInspected] = useState(false);
+@@ -482,7 +483,7 @@
+   }, [releaseFeedbackOpen]);
+ 
+   useEffect(() => {
+-    if (!draft.agentId || draft.spaceId || !draft.publishedVersion) {
++    if (!versionHistoryOpen || !draft.agentId || draft.spaceId || !draft.publishedVersion) {
+       setPersonalVersions([]);
+       setVersionHistoryError("");
+       setVersionHistoryLoading(false);
+@@ -508,7 +509,7 @@
+     return () => {
+       active = false;
+     };
+-  }, [draft.agentId, draft.spaceId, draft.publishedVersion]);
++  }, [draft.agentId, draft.spaceId, draft.publishedVersion, versionHistoryOpen]);
+ 
+   useEffect(() => {
+     let active = true;
+@@ -557,7 +558,7 @@
+           setDraft(migration.draft);
+           setDrafts(await studioClient.listAccessibleDrafts());
+           setNotice("旧浏览器草稿已一次性导入控制面");
+-        } else if (serverDrafts.length > 0) {
++        } else if (serverDrafts.length > 0 && (requestedDraftId || requestedSection)) {
+           const selected = await studioClient.getDraft(serverDrafts[0].draftId, {
+             expectedRevision: serverDrafts[0].revision,
+           });
+@@ -567,7 +568,7 @@
+         } else {
+           setDraft({ ...DEFAULT_STUDIO_DRAFT, id: "", revision: 0 });
+           setActiveSection("identity");
+-          setNotice(canEdit ? "当前没有草稿，可新建第一个 Agent" : "当前没有可查看的草稿");
++          setNotice(serverDrafts.length > 0 ? "" : canEdit ? "当前没有草稿，可新建第一个 Agent" : "当前没有可查看的草稿");
+         }
+       } catch (error) {
+         if (!active) return;
+@@ -583,34 +584,22 @@
+   }, [canEdit]);
+ 
+   useEffect(() => {
+-    if (loading || loadError) return;
++    if (loading || loadError || viewMode !== "editor" || !configEditorOpen) return;
+     let active = true;
+-    const timer = window.setTimeout(() => {
+-      void Promise.all([
+-        studioClient.listPreviews(),
+-        studioClient.listEvalDatasets(),
+-        studioClient.listEvalRuns(),
+-        studioClient.listGovernedPolicies(),
+-      ]).then(([
+-        serverPreviews,
+-        serverDatasets,
+-        serverEvalRuns,
+-        serverGovernedPolicies,
+-      ]) => {
+-        if (!active) return;
+-        setPreviews(serverPreviews);
+-        setEvalDatasets(serverDatasets);
+-        setEvalRuns(serverEvalRuns);
+-        setGovernedPolicies(serverGovernedPolicies);
+-      }).catch(() => {
+-        // These panels are secondary; the primary editor remains available.
+-      });
+-    }, 0);
+-    return () => {
+-      active = false;
+-      window.clearTimeout(timer);
+-    };
+-  }, [loadError, loading]);
++    const requests: Promise<void>[] = [];
++    if (activeSection === "trial" || activeSection === "evaluation") {
++      requests.push(studioClient.listPreviews().then((items) => { if (active) setPreviews(items); }));
++    }
++    if (activeSection === "evaluation") {
++      requests.push(studioClient.listEvalDatasets().then((items) => { if (active) setEvalDatasets(items); }));
++      requests.push(studioClient.listEvalRuns().then((items) => { if (active) setEvalRuns(items); }));
++    }
++    if (activeSection === "runtime") {
++      requests.push(studioClient.listGovernedPolicies().then((items) => { if (active) setGovernedPolicies(items); }));
++    }
++    void Promise.allSettled(requests);
++    return () => { active = false; };
++  }, [loadError, loading, viewMode, activeSection, configEditorOpen]);
+ 
+   function updateDraft(update: Partial<StudioDraft>) {
+     const next = applyStudioDraftUpdate(draft, update);
+@@ -1225,7 +1214,7 @@
+   }
+ 
+   async function openDraftEditor(draftId: string) {
+-    if (draftId !== draft.id) await selectDraft(draftId);
++    if (draftId !== draft.id && !await selectDraft(draftId)) return;
+     setBuilderAssistantMode("run");
+     setReturnParentId(null);
+     setConfigEditorOpen(false);
+@@ -4110,7 +4099,7 @@
+           回退是移动当前指针，不会修改或删除任何不可变版本。
+         </footer>
+       </aside>
+-      <AgentBuilderAssistant
++      {editorOpened.current && <AgentBuilderAssistant
+         workspaceTarget={workspaceTarget}
+         testRequest={testRequest}
+         onEditConfiguration={(section, label) => openConfiguration(section ?? "identity", label)}
+@@ -4172,7 +4161,7 @@
+           setBuilderAssistantOpen(true);
+           setNotice(`已创建 ${created.displayName}；可继续修改配置，或在右侧输入测试问题`);
+         }}
+-      />
++      />}
+       {confirmationDialog}
+     </main>
+   );
+--- a/web/harness-console/src/components/agent-studio/skills-catalog-page.tsx
++++ b/web/harness-console/src/components/agent-studio/skills-catalog-page.tsx
+@@ -7,10 +7,9 @@
+ import { useAuth } from "../auth-provider";
+ import {
+   studioClient,
+-  apiDraftToStudioDraft,
++  type StudioAgentSkillCatalogEntry,
+   type StudioPlatformSkillPackage,
+ } from "../../lib/studio-client";
+-import type { StudioDraft } from "../../lib/agent-studio";
+ import { useDialogFocus } from "../../lib/use-dialog-focus";
+ import {
+   DEFAULT_SKILL_CREATOR,
+@@ -35,46 +34,13 @@
+ 
+ const DISABLED_SKILLS_STORAGE_KEY = "harness-skill-catalog-disabled:v1";
+ 
+-/** Draft skill payloads are the heavy part of this page, so they load a few at
+- *  a time instead of firing one request per agent at once. */
+-const DRAFT_FETCH_CONCURRENCY = 4;
+-
+-/** Rows rendered before the catalog asks for another scroll page. */
+ const CATALOG_PAGE_SIZE = 20;
+-
+-/** Run `worker` over `items` with a bounded number of in-flight requests and
+- *  report each success as it lands. A draft that fails to load degrades to
+- *  "missing from the list" rather than failing the whole catalog. */
+-async function forEachWithConcurrency<T, R>(
+-  items: readonly T[],
+-  limit: number,
+-  worker: (item: T) => Promise<R>,
+-  onResult: (item: T, result: R) => void,
+-): Promise<void> {
+-  let cursor = 0;
+-  const runners = Array.from(
+-    { length: Math.min(limit, items.length) },
+-    async () => {
+-      while (cursor < items.length) {
+-        const index = cursor;
+-        cursor += 1;
+-        const item = items[index];
+-        try {
+-          onResult(item, await worker(item));
+-        } catch {
+-          // Keep the remaining catalog usable when one draft is unreadable.
+-        }
+-      }
+-    },
+-  );
+-  await Promise.all(runners);
+-}
+ 
+ /** Merge the platform package catalog with the Skills declared by agent
+  *  drafts into the single row list the page renders. */
+ function buildCatalog(
+   platformPackages: StudioPlatformSkillPackage[],
+-  studioDrafts: StudioDraft[],
++  studioDrafts: StudioAgentSkillCatalogEntry[],
+ ): CatalogSkill[] {
+   const byName = new Map<string, CatalogSkill>();
+   for (const item of platformPackages) {
+@@ -140,7 +106,7 @@
+   // permission (owner/admin); keep the UI gate aligned to avoid 403s.
+   const canManageCatalog = membership.role === "owner" || membership.role === "admin";
+   const [skills, setSkills] = useState<CatalogSkill[]>([]);
+-  const [drafts, setDrafts] = useState<StudioDraft[]>([]);
++  const [drafts, setDrafts] = useState<StudioAgentSkillCatalogEntry[]>([]);
+   const [query, setQuery] = useState("");
+   const [loading, setLoading] = useState(true);
+   const [error, setError] = useState("");
+@@ -155,49 +121,33 @@
+   const [uploadFile, setUploadFile] = useState<File | null>(null);
+   const [uploadPending, setUploadPending] = useState(false);
+   const [renderLimit, setRenderLimit] = useState(CATALOG_PAGE_SIZE);
+-  const [agentScan, setAgentScan] = useState({ scanned: 0, total: 0, done: false });
++  const loadGeneration = useRef(0);
+   const drawerRef = useRef<HTMLElement>(null);
+   const sentinelRef = useRef<HTMLDivElement>(null);
+ 
+   const load = useCallback(async () => {
+     setLoading(true);
+     setError("");
+-    setAgentScan({ scanned: 0, total: 0, done: false });
++    const generation = ++loadGeneration.current;
+     try {
+-      const [summaries, platformCatalog] = await Promise.all([
+-        studioClient.listAccessibleDrafts(),
++      const [agents, platformCatalog] = await Promise.all([
++        studioClient.listAgentSkills(),
+         studioClient.listPlatformSkills(),
+       ]);
+-      // Platform packages plus the built-in Skill are enough to paint the list,
+-      // so render them before the per-agent draft reads start.
+-      setSkills(buildCatalog(platformCatalog.packages, []));
+-      setLoading(false);
+-
+-      const targets = summaries.filter((summary) =>
+-        isAgentVisible(summary, showInternalAgents));
+-      setAgentScan({ scanned: 0, total: targets.length, done: false });
+-      const loaded: StudioDraft[] = [];
+-      await forEachWithConcurrency(
+-        targets,
+-        DRAFT_FETCH_CONCURRENCY,
+-        (summary) => studioClient.getDraft(summary.draftId),
+-        (summary, apiDraft) => {
+-          loaded.push(apiDraftToStudioDraft(apiDraft));
+-          setSkills(buildCatalog(platformCatalog.packages, loaded));
+-          setAgentScan((current) => ({ ...current, scanned: current.scanned + 1 }));
+-        },
+-      );
+-      setDrafts(loaded);
++      if (generation !== loadGeneration.current) return;
++      const visible = agents.filter((agent) => isAgentVisible(agent, showInternalAgents));
++      setSkills(buildCatalog(platformCatalog.packages, visible));
++      setDrafts(visible);
+     } catch (caught) {
+-      setError(caught instanceof Error ? caught.message : "技能目录暂时不可用。");
++      if (generation === loadGeneration.current) setError(caught instanceof Error ? caught.message : "技能目录暂时不可用。");
+     } finally {
+-      setLoading(false);
+-      setAgentScan((current) => ({ ...current, done: true }));
++      if (generation === loadGeneration.current) setLoading(false);
+     }
+   }, [showInternalAgents]);
+ 
+   useEffect(() => {
+     void load();
++    return () => { loadGeneration.current += 1; };
+   }, [load]);
+ 
+   useEffect(() => {
+@@ -487,11 +437,7 @@
+               )}
+             </div>
+           )}
+-          {agentScan.total > 0 && !agentScan.done && (
+-            <p className={styles.loadMoreStatus} role="status">
+-              {`正在读取智能体技能 ${agentScan.scanned} / ${agentScan.total}…`}
+-            </p>
+-          )}
++
+         </section>
+       </section>
+ 
+--- a/web/harness-console/src/components/knowledge/knowledge-base-detail.tsx
++++ b/web/harness-console/src/components/knowledge/knowledge-base-detail.tsx
+@@ -1,6 +1,7 @@
+ "use client";
+ 
+ import Link from "next/link";
++import dynamic from "next/dynamic";
+ import {
+   useCallback,
+   useEffect,
+@@ -18,7 +19,7 @@
+   type StudioKnowledgeDocumentStatus,
+   type StudioKnowledgeDocumentTable,
+ } from "../../lib/studio-client";
+-import { KnowledgeGraphPanel } from "./knowledge-graph-panel";
++const KnowledgeGraphPanel = dynamic(() => import("./knowledge-graph-panel").then((module) => module.KnowledgeGraphPanel), { loading: () => <p>正在加载图谱…</p> });
+ import { KnowledgeWikiPanel } from "./knowledge-wiki-panel";
+ import { DrawerResizeHandle, useDrawerResize } from "../../lib/use-drawer-resize";
+ import { KnowledgeDrawerLayer } from "./knowledge-drawer-layer";
+@@ -81,7 +82,9 @@
+     { min: 400, max: 1100 },
+   );
+   const fileRef = useRef<HTMLInputElement>(null);
+-  const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
++  const scopeGeneration = useRef(0);
++  const [pollingStopped, setPollingStopped] = useState(false);
++  const deletionStartedAt = useRef<number | null>(null);
+ 
+   const isWeknora = base?.engine === "weknora";
+   const SPREADSHEET_TYPES = ["xls", "xlsx", "xlsm", "csv"];
+@@ -90,9 +93,11 @@
+ 
+   const loadDocuments = useCallback(
+     async (quiet = false) => {
+-      if (!quiet) setLoading(true);
++      const generation = scopeGeneration.current;
++      if (!quiet) { setLoading(true); setPollingStopped(false); setError(""); }
+       try {
+         const docs = await studioClient.listKnowledgeDocuments(reference);
++        if (generation !== scopeGeneration.current) return;
+         setDocuments(docs);
+         // WeKnora deletes documents in the background, so a just-deleted row
+         // keeps coming back from the list for a few seconds. Hold it hidden
+@@ -103,54 +108,95 @@
+           const next = new Set([...current].filter((documentId) => present.has(documentId)));
+           return next.size === current.size ? current : next;
+         });
+-        const active = docs.some(
+-          (doc) => doc.parseStatus === "processing" || doc.parseStatus === "pending",
+-        );
+-        if (active && pollTimer.current === null) {
+-          pollTimer.current = setInterval(() => void loadDocuments(true), 6000);
+-        } else if (!active && pollTimer.current !== null) {
+-          clearInterval(pollTimer.current);
+-          pollTimer.current = null;
+-        }
+       } catch (cause) {
+-        if (!quiet) {
+-          setError(cause instanceof Error ? cause.message : "加载文档失败");
+-        }
++        if (generation !== scopeGeneration.current) return;
++        if (quiet) throw cause;
++        setError(cause instanceof Error ? cause.message : "加载文档失败");
+       } finally {
+-        if (!quiet) setLoading(false);
++        if (!quiet && generation === scopeGeneration.current) setLoading(false);
+       }
+     },
+     [reference],
+   );
+ 
+-  const load = useCallback(async () => {
++  useEffect(() => {
++    const generation = ++scopeGeneration.current;
++    setLoading(true);
++    setPollingStopped(false);
+     setError("");
+-    try {
+-      const [baseValue, docs] = await Promise.all([
+-        studioClient.getKnowledgeBase(reference),
+-        studioClient.listKnowledgeDocuments(reference).catch(() => [] as StudioKnowledgeDocumentStatus[]),
+-      ]);
++    setBase(null);
++    setDocuments([]);
++    setPendingDeletes(new Set());
++    setSelectedIds(new Set());
++    setSelected(null);
++    void Promise.all([
++      studioClient.getKnowledgeBase(reference),
++      studioClient.listKnowledgeDocuments(reference),
++    ]).then(([baseValue, docs]) => {
++      if (generation !== scopeGeneration.current) return;
+       setBase(baseValue);
+       setDocuments(docs);
+-    } catch (cause) {
+-      setError(cause instanceof Error ? cause.message : "加载知识库失败");
+-    } finally {
+-      setLoading(false);
+-    }
++    }).catch((cause: unknown) => {
++      if (generation === scopeGeneration.current) setError(cause instanceof Error ? cause.message : "加载知识库失败");
++    }).finally(() => {
++      if (generation === scopeGeneration.current) setLoading(false);
++    });
++    return () => { scopeGeneration.current += 1; };
+   }, [reference]);
+ 
++  const hasPendingDeletes = pendingDeletes.size > 0;
++  const hasProcessingDocuments = documents.some((doc) =>
++    !pendingDeletes.has(doc.documentId) && (doc.parseStatus === "processing" || doc.parseStatus === "pending"));
+   useEffect(() => {
+-    void load();
++    if (!hasPendingDeletes) deletionStartedAt.current = null;
++    else deletionStartedAt.current ??= Date.now();
++  }, [hasPendingDeletes]);
++
++  // One completion-driven timer: no overlapping requests, no hidden-tab traffic.
++  useEffect(() => {
++    if (loading || pollingStopped || tab !== "docs" || (!hasPendingDeletes && !hasProcessingDocuments)) return;
++    let active = true;
++    let running = false;
++    let failures = 0;
++    let timer: ReturnType<typeof setTimeout> | undefined;
++    const delay = hasPendingDeletes ? 2500 : 6000;
++    const schedule = () => {
++      if (active && document.visibilityState === "visible") timer = setTimeout(tick, delay * 2 ** failures);
++    };
++    const tick = async () => {
++      if (!active || running || document.visibilityState !== "visible") return;
++      running = true;
++      try {
++        await loadDocuments(true);
++        failures = 0;
++        if (active && deletionStartedAt.current !== null && Date.now() - deletionStartedAt.current > 120_000) {
++          deletionStartedAt.current = null;
++          setPollingStopped(true);
++          setPendingDeletes(new Set());
++          setNotice("删除仍未完成，请稍后刷新确认状态。");
++          return;
++        }
++      } catch {
++        failures += 1;
++        if (failures >= 4) {
++          if (active) { setPollingStopped(true); setError("文档状态刷新失败，请点击刷新重试。"); }
++          return;
++        }
++      } finally { running = false; }
++      schedule();
++    };
++    const onVisibility = () => {
++      clearTimeout(timer);
++      if (document.visibilityState === "visible" && !running) void tick();
++    };
++    document.addEventListener("visibilitychange", onVisibility);
++    schedule();
+     return () => {
+-      if (pollTimer.current) clearInterval(pollTimer.current);
++      active = false;
++      clearTimeout(timer);
++      document.removeEventListener("visibilitychange", onVisibility);
+     };
+-  }, [load]);
+-
+-  useEffect(() => {
+-    if (pendingDeletes.size === 0) return;
+-    const timer = setInterval(() => void loadDocuments(true), 2500);
+-    return () => clearInterval(timer);
+-  }, [loadDocuments, pendingDeletes]);
++  }, [loading, pollingStopped, tab, hasPendingDeletes, hasProcessingDocuments, loadDocuments]);
+ 
+   // Dropping a file anywhere outside the drop zone would otherwise make the
+   // browser open or download it instead of uploading.
+--- a/web/harness-console/src/components/knowledge/wiki-page-drawer.tsx
++++ b/web/harness-console/src/components/knowledge/wiki-page-drawer.tsx
+@@ -76,30 +76,20 @@
+       setSummaryOpen(false);
+       setLoading(true);
+       setError("");
+-      const candidates = resolvedReference.current
+-        ? [resolvedReference.current]
+-        : (await studioClient.listKnowledgeBases().catch(() => [])).map(
+-            (base) => base.reference,
+-          );
+-      let lastError = "未找到 Wiki 页面或没有查看权限";
+-      const matches: Array<{ reference: string; page: StudioKnowledgeWikiPage }> = [];
+-      for (const candidate of candidates) {
+-        try {
+-          const found = await studioClient.getWikiPage(candidate, next);
+-          if (id !== requestId.current) return;
+-          matches.push({ reference: candidate, page: found });
+-        } catch (cause) {
+-          lastError = cause instanceof Error ? cause.message : lastError;
+-        }
++      try {
++        const known = resolvedReference.current;
++        const result = known
++          ? { reference: known, page: await studioClient.getWikiPage(known, next) }
++          : await studioClient.resolveWikiPage(next);
++        if (id !== requestId.current) return;
++        resolvedReference.current = result.reference;
++        setPage(result.page);
++      } catch (cause) {
++        if (id !== requestId.current) return;
++        setError(cause instanceof Error ? cause.message : "未找到 Wiki 页面或没有查看权限");
++      } finally {
++        if (id === requestId.current) setLoading(false);
+       }
+-      if (id !== requestId.current) return;
+-      if (matches.length === 1) {
+-        resolvedReference.current = matches[0].reference;
+-        setPage(matches[0].page);
+-      } else {
+-        setError(matches.length > 1 ? "多个知识库存在同名页面，旧引用未记录所属知识库，无法确定来源。请重新提问获取明确引用。" : lastError);
+-      }
+-      setLoading(false);
+     },
+     [],
+   );
+--- a/web/harness-console/src/lib/studio-client.ts
++++ b/web/harness-console/src/lib/studio-client.ts
+@@ -1,3 +1,4 @@
++import { readClientResource, mutateClientResource, rememberClientRead, forgetClientRead, peekClientRead } from "./client-read-cache";
+ import { TEAM_COLLABORATION_ENABLED } from "./agent-visibility";
+ import type { RunActivity } from "./activity-schema";
+ import { requireAuthenticatedResponse } from "./client-auth";
+@@ -1219,6 +1220,15 @@
+   updatedAt: string | null;
+ };
+ 
++export type StudioAgentSkillCatalogEntry = {
++  id: string; name: string; displayName: string; parentDraftId: string | null; revision: number;
++  skills: Array<{
++    name: string; description: string; instructions: string; fileCount: number;
++    source?: StudioDraft["skills"][number]["source"];
++    files: Array<{ path: string; binary?: boolean; sizeBytes?: number | null }>;
++  }>;
++};
++
+ export class StudioApiError extends Error {
+   constructor(
+     readonly status: number,
+@@ -1256,7 +1266,30 @@
+   return JSON.parse(body) as T;
+ }
+ 
+-async function requestForm<T>(path: string, form: FormData): Promise<T> {
++function requestForm<T>(path: string, form: FormData): Promise<T> {
++  return mutateClientResource(() => sendForm<T>(path, form));
++}
++
++function request<T>(path: string, init: RequestInit = {}): Promise<T> {
++  if (init.method && init.method.toUpperCase() !== "GET") {
++    return mutateClientResource(() => sendRequest<T>(path, init));
++  }
++  const cached = /^(capabilities|drafts(?:\?.*)?|knowledge\/bases|skills\/catalog|skills\/agents(?:\?.*)?)$/.test(path);
++  const documents = /^knowledge\/sources\/[^/]+\/documents$/.test(path);
++  return cached || documents
++    ? readClientResource(`/api/studio/${path}`, () => sendRequest<T>(path, init), cached ? 10_000 : 0)
++    : sendRequest<T>(path, init);
++}
++
++function streamRequest<T>(path: string, init: RequestInit, onProgress: (event: StudioStreamProgress) => void): Promise<T> {
++  return mutateClientResource(() => sendStreamRequest<T>(path, init, onProgress));
++}
++
++function mutationFetch(url: string, init: RequestInit): Promise<Response> {
++  return mutateClientResource(() => fetch(url, init));
++}
++
++async function sendForm<T>(path: string, form: FormData): Promise<T> {
+   const response = requireAuthenticatedResponse(
+     await fetch(`/api/studio/${path.replace(/^\//, "")}`, {
+       method: "POST",
+@@ -1268,7 +1301,7 @@
+   return readJson<T>(response);
+ }
+ 
+-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
++async function sendRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+   const response = requireAuthenticatedResponse(
+     await fetch(`/api/studio/${path.replace(/^\//, "")}`, {
+       ...init,
+@@ -1284,7 +1317,7 @@
+ }
+ 
+ export type StudioStreamProgress = { type: string; text?: string; result?: unknown };
+-async function streamRequest<T>(
++async function sendStreamRequest<T>(
+   path: string, init: RequestInit, onProgress: (event: StudioStreamProgress) => void,
+ ): Promise<T> {
+   const response = requireAuthenticatedResponse(await fetch(`/api/studio/${path}`, {
+@@ -1335,55 +1368,37 @@
+   }
+ }
+ 
+-const studioDraftRequests = new Map<string, Promise<ApiAgentDraft>>();
+-const studioDraftSnapshots = new Map<
+-  string,
+-  { receivedAt: number; draft: ApiAgentDraft }
+->();
+-const STUDIO_DRAFT_CACHE_MS = 10_000;
++function draftCacheKey(draftId: string) { return `/api/studio/drafts/${encodeURIComponent(draftId)}`; }
+ 
+ function rememberStudioDraft(draft: ApiAgentDraft): ApiAgentDraft {
+-  studioDraftSnapshots.set(draft.draftId, {
+-    receivedAt: Date.now(),
+-    draft,
+-  });
+-  return draft;
++  return rememberClientRead(draftCacheKey(draft.draftId), draft);
+ }
+ 
+ function forgetStudioDraft(draftId: string) {
+-  studioDraftSnapshots.delete(draftId);
++  forgetClientRead(draftCacheKey(draftId));
+ }
+ 
+ function getStudioDraft(
+   draftId: string,
+   options: { expectedRevision?: number; maxAgeMs?: number } = {},
+ ): Promise<ApiAgentDraft> {
+-  const cached = studioDraftSnapshots.get(draftId);
+-  const maxAgeMs = options.maxAgeMs ?? STUDIO_DRAFT_CACHE_MS;
+-  if (
+-    cached
+-    && Date.now() - cached.receivedAt < maxAgeMs
+-    && (
+-      options.expectedRevision === undefined
+-      || cached.draft.revision === options.expectedRevision
+-    )
+-  ) {
+-    return Promise.resolve(cached.draft);
++  const key = draftCacheKey(draftId);
++  const cached = peekClientRead<ApiAgentDraft>(key);
++  if (cached && options.expectedRevision !== undefined && cached.revision !== options.expectedRevision) {
++    forgetClientRead(key);
+   }
+-  const inFlight = studioDraftRequests.get(draftId);
+-  if (inFlight) return inFlight;
+-  const requestDraft = request<ApiAgentDraft>(
++  return readClientResource(key, () => request<ApiAgentDraft>(
+     `drafts/${encodeURIComponent(draftId)}`,
+-  ).then(rememberStudioDraft).finally(() => {
+-    if (studioDraftRequests.get(draftId) === requestDraft) {
+-      studioDraftRequests.delete(draftId);
+-    }
+-  });
+-  studioDraftRequests.set(draftId, requestDraft);
+-  return requestDraft;
++  ), options.maxAgeMs ?? 10_000);
+ }
+ 
+-async function agentRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
++function agentRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
++  return init.method && init.method !== "GET"
++    ? mutateClientResource(() => sendAgentRequest<T>(path, init))
++    : sendAgentRequest<T>(path, init);
++}
++
++async function sendAgentRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+   const response = requireAuthenticatedResponse(
+     await fetch(`/api/harness/agents/${path.replace(/^\//, "")}`, {
+       ...init,
+@@ -1752,6 +1767,9 @@
+     request<StudioKnowledgeWikiPage[]>(
+       `knowledge/sources/${encodeURIComponent(baseReference)}/wiki/pages`,
+     ),
++  resolveWikiPage: (slug: string) => request<{ reference: string; page: StudioKnowledgeWikiPage }>(
++    `knowledge/wiki/resolve?slug=${encodeURIComponent(slug)}`,
++  ),
+   getWikiPage: (baseReference: string, slug: string) =>
+     request<StudioKnowledgeWikiPage>(
+       `knowledge/sources/${encodeURIComponent(baseReference)}/wiki/pages/${slug
+@@ -1880,6 +1898,16 @@
+     }).then(rememberStudioDraft),
+   listDrafts: () => request<StudioDraftSummary[]>("drafts"),
+   listAccessibleDrafts,
++  listAgentSkills: async (): Promise<StudioAgentSkillCatalogEntry[]> => {
++    const personal = request<StudioAgentSkillCatalogEntry[]>("skills/agents");
++    if (!TEAM_COLLABORATION_ENABLED) return personal;
++    const response = requireAuthenticatedResponse(await fetch("/api/spaces", { cache: "no-store" }));
++    if (!response.ok) return personal;
++    const spaces = await response.json() as StudioSpaceSummary[];
++    const groups = await Promise.all([personal, ...spaces.map((item) =>
++      request<StudioAgentSkillCatalogEntry[]>(`skills/agents?spaceId=${encodeURIComponent(item.space.spaceId)}`))]);
++    return [...new Map(groups.flat().map((item) => [item.id, item])).values()];
++  },
+   getDraft: (
+     draftId: string,
+     options?: { expectedRevision?: number; maxAgeMs?: number },
+@@ -2092,7 +2120,7 @@
+   },
+   async importBundle(file: Blob): Promise<StudioImportedAgentBundle> {
+     const response = requireAuthenticatedResponse(
+-      await fetch("/api/studio/drafts/import", {
++      await mutationFetch("/api/studio/drafts/import", {
+         method: "POST",
+         cache: "no-store",
+         headers: { "Content-Type": (file instanceof File && file.name.toLowerCase().endsWith(".rar")) ? "application/vnd.rar" : "application/zip" },
+@@ -2107,7 +2135,7 @@
+   async importSkill(file: File): Promise<StudioImportedSkill> {
+     const markdown = file.name.toLowerCase().endsWith(".md");
+     const response = requireAuthenticatedResponse(
+-      await fetch(
++      await mutationFetch(
+         `/api/studio/skills/import?filename=${encodeURIComponent(file.name)}`,
+         {
+           method: "POST",
+@@ -2148,7 +2176,7 @@
+   ): Promise<StudioInstalledSkill> {
+     const markdown = file.name.toLowerCase().endsWith(".md");
+     const response = requireAuthenticatedResponse(
+-      await fetch(
++      await mutationFetch(
+         `/api/studio/drafts/${encodeURIComponent(draftId)}/skills/import`
+           + `?filename=${encodeURIComponent(file.name)}`
+           + `&expectedRevision=${expectedRevision}`,
+@@ -2177,7 +2205,7 @@
+     }).then(rememberStudioDraft),
+   async deleteDraft(draftId: string, expectedRevision: number): Promise<void> {
+     const response = requireAuthenticatedResponse(
+-      await fetch(
++      await mutationFetch(
+         `/api/studio/drafts/${encodeURIComponent(draftId)}`
+           + `?expectedRevision=${expectedRevision}`,
+         { method: "DELETE", cache: "no-store" },
+--- a/web/harness-console/src/lib/task-agent-catalog.ts
++++ b/web/harness-console/src/lib/task-agent-catalog.ts
+@@ -1,3 +1,4 @@
++import { readClientResource } from "./client-read-cache";
+ import { isAgentVisible } from "./agent-visibility";
+ import { requireAuthenticatedResponse } from "./client-auth";
+ import type { StudioDraftSummary } from "./studio-client";
+@@ -117,7 +118,11 @@
+   );
+ }
+ 
+-async function json<T>(url: string): Promise<T> {
++function json<T>(url: string): Promise<T> {
++  return readClientResource(url, () => fetchJson<T>(url));
++}
++
++async function fetchJson<T>(url: string): Promise<T> {
+   const response = requireAuthenticatedResponse(
+     await fetch(url, { cache: "no-store" }),
+   );
+--- a/web/harness-console/src/lib/task-model-catalog.ts
++++ b/web/harness-console/src/lib/task-model-catalog.ts
+@@ -1,3 +1,4 @@
++import { readClientResource } from "./client-read-cache";
+ import { requireAuthenticatedResponse } from "./client-auth";
+ 
+ export interface TaskModelRoute {
+@@ -22,13 +23,11 @@
+ }
+ 
+ export async function loadTaskModelRoutes(): Promise<TaskModelRoute[]> {
+-  const response = requireAuthenticatedResponse(
+-    await fetch("/api/studio/capabilities", { cache: "no-store" }),
+-  );
+-  if (!response.ok) {
+-    throw new Error((await response.text()) || `HTTP ${response.status}`);
+-  }
+-  const catalog = (await response.json()) as CapabilityResponse;
++  const catalog = await readClientResource<CapabilityResponse>("/api/studio/capabilities", async () => {
++    const response = requireAuthenticatedResponse(await fetch("/api/studio/capabilities", { cache: "no-store" }));
++    if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
++    return response.json() as Promise<CapabilityResponse>;
++  });
+   return catalog.modelRoutes
+     // A task override is a route ID, so selectable routes must resolve to one
+     // unambiguous provider model. Video routes use the dedicated composer
+--- /dev/null
++++ b/web/harness-console/src/lib/client-read-cache.ts
+@@ -0,0 +1,68 @@
++import { subscribeAuthEvents } from "./auth-coordination";
++
++type Entry = { value: unknown; receivedAt: number };
++const snapshots = new Map<string, Entry>();
++const pending = new Map<string, Promise<unknown>>();
++let subscribed = false;
++let generation = 0;
++const MAX_ENTRIES = 128;
++
++function subscribe() {
++  if (subscribed || typeof window === "undefined") return;
++  subscribed = true;
++  subscribeAuthEvents(() => invalidateClientReads());
++}
++
++/** Memory only. Auth changes and mutations detach all older in-flight reads. */
++export function invalidateClientReads() {
++  generation += 1;
++  snapshots.clear();
++  pending.clear();
++}
++
++export function forgetClientRead(key: string) {
++  snapshots.delete(key);
++  pending.delete(key);
++}
++
++export function peekClientRead<T>(key: string): T | undefined {
++  return snapshots.get(key)?.value as T | undefined;
++}
++
++export function rememberClientRead<T>(key: string, value: T): T {
++  subscribe();
++  snapshots.delete(key);
++  snapshots.set(key, { value, receivedAt: Date.now() });
++  if (snapshots.size > MAX_ENTRIES) snapshots.delete(snapshots.keys().next().value!);
++  return value;
++}
++
++export function readClientResource<T>(
++  key: string, loader: () => Promise<T>, maxAgeMs = 10_000,
++): Promise<T> {
++  subscribe();
++  const cached = snapshots.get(key);
++  if (cached && Date.now() - cached.receivedAt < maxAgeMs) {
++    return Promise.resolve(cached.value as T);
++  }
++  const existing = pending.get(key);
++  if (existing) return existing as Promise<T>;
++  const startedGeneration = generation;
++  const request = loader().then((value) => {
++    if (generation === startedGeneration && pending.get(key) === request && maxAgeMs > 0) {
++      rememberClientRead(key, value);
++    }
++    return value;
++  }).finally(() => {
++    if (pending.get(key) === request) pending.delete(key);
++  });
++  pending.set(key, request);
++  return request;
++}
++
++/** Invalidate both before dispatch and after completion, including uncertain failures. */
++export async function mutateClientResource<T>(operation: () => Promise<T>): Promise<T> {
++  invalidateClientReads();
++  try { return await operation(); }
++  finally { invalidateClientReads(); }
++}
+--- a/src/harness/studio/api.py
++++ b/src/harness/studio/api.py
+@@ -24,6 +24,7 @@
+     status,
+ )
+ from fastapi.responses import Response, StreamingResponse
++from harness.studio.worker_skill_creator import WorkerSkillCreator
+ 
+ from harness.agent_package import (
+     MAX_AGENT_BUNDLE_UPLOAD_BYTES,
+@@ -122,6 +123,7 @@
+     AgentDraft,
+     AgentDraftPlacementRequest,
+     AgentDraftSummary,
++    AgentSkillCatalogEntry,
+     CapabilityCatalog,
+     CapabilityCatalogRecord,
+     CatalogImpact,
+@@ -186,7 +188,6 @@
+     WebConfiguration,
+     WebConfigurationService,
+ )
+-from harness.studio.worker_skill_creator import WorkerSkillCreator
+ 
+ 
+ @dataclass(frozen=True)
+@@ -1298,6 +1299,18 @@
+             status_code=422,
+             detail={"code": "skill_import_invalid", "message": str(error)},
+         ) from error
++
++
++@router.get("/skills/agents", response_model=list[AgentSkillCatalogEntry])
++async def list_agent_skills(
++    actor: Annotated[StudioActor, Depends(require_studio_reader)],
++    service: Annotated[AgentStudioService, Depends(get_studio_service)],
++    space_id: Annotated[str | None, Query(alias="spaceId")] = None,
++) -> list[AgentSkillCatalogEntry]:
++    try:
++        return await service.list_agent_skills(actor.tenant_id, actor.user_id, space_id)
++    except (ConflictError, NotFoundError, PermissionDeniedError) as error:
++        raise _translate_domain_error(error) from error
+ 
+ 
+ @router.get("/skills/catalog", response_model=PlatformSkillCatalogListing)
+@@ -1578,7 +1591,11 @@
+ ) -> dict[str, str]:
+     try:
+         return await read_builder_materials(
+-            actor.tenant_id, actor.user_id, body, container.input_artifacts, models,
++            actor.tenant_id,
++            actor.user_id,
++            body,
++            container.input_artifacts,
++            models,
+         )
+     except (ConflictError, NotFoundError, PermissionDeniedError) as error:
+         raise _translate_domain_error(error) from error
+@@ -1601,20 +1618,28 @@
+     """Compile one business task into a complete, explainable Agent draft."""
+ 
+     if "text/event-stream" in request.headers.get("accept", ""):
++
+         async def operation(emit: Progress) -> dict[str, Any]:
+             result = await service.create_from_task(
+-                tenant_id=actor.tenant_id, user_id=actor.user_id,
+-                request=body, models=models, on_progress=emit,
++                tenant_id=actor.tenant_id,
++                user_id=actor.user_id,
++                request=body,
++                models=models,
++                on_progress=emit,
+             )
+-            return result.model_copy(update={
+-                "draft": compact_draft_for_editor(result.draft),
+-            }).model_dump(mode="json", by_alias=True)
++            return result.model_copy(
++                update={
++                    "draft": compact_draft_for_editor(result.draft),
++                }
++            ).model_dump(mode="json", by_alias=True)
++
+         return authoring_stream(operation)
+     try:
+         result = await service.create_from_task(
+             tenant_id=actor.tenant_id,
+             user_id=actor.user_id,
+-            request=body, models=models,
++            request=body,
++            models=models,
+         )
+         return result.model_copy(update={"draft": compact_draft_for_editor(result.draft)})
+     except ValueError as error:
+@@ -1638,8 +1663,10 @@
+ ) -> ImportedAgentBundle:
+     media_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+     if media_type not in {
+-        "application/zip", "application/vnd.rar",
+-        "application/x-rar-compressed", "application/octet-stream",
++        "application/zip",
++        "application/vnd.rar",
++        "application/x-rar-compressed",
++        "application/octet-stream",
+     }:
+         raise HTTPException(
+             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+@@ -1856,7 +1883,8 @@
+ 
+ @router.post(
+     "/drafts/{draft_id}/builder-conversation",
+-    response_model=BuilderConversationReply, response_model_exclude_unset=True,
++    response_model=BuilderConversationReply,
++    response_model_exclude_unset=True,
+ )
+ async def converse_agent_builder(
+     request: Request,
+@@ -1879,21 +1907,38 @@
+ 
+         async def operation(emit: Progress) -> dict[str, Any]:
+             reply = await service.converse_builder(
+-                actor.tenant_id, actor.user_id, draft_id, body, models,
+-                WorkerSkillCreator(container, current, actor.user_id,
+-                    lambda: _authorize_studio_actor(identity, "studio:preview")),
++                actor.tenant_id,
++                actor.user_id,
++                draft_id,
++                body,
++                models,
++                WorkerSkillCreator(
++                    container,
++                    current,
++                    actor.user_id,
++                    lambda: _authorize_studio_actor(identity, "studio:preview"),
++                ),
+                 on_progress=emit,
+             )
+             if reply.changes.install_skills:
+                 _authorize_studio_actor(identity, "studio:catalog:write")
+             return reply.model_dump(mode="json", by_alias=True, exclude_unset=True)
++
+         return authoring_stream(operation)
+     try:
+         draft = await service.get(actor.tenant_id, actor.user_id, draft_id)
+         result = await service.converse_builder(
+-            actor.tenant_id, actor.user_id, draft_id, body, models,
+-            WorkerSkillCreator(container, draft, actor.user_id,
+-                               lambda: _authorize_studio_actor(identity, "studio:preview")),
++            actor.tenant_id,
++            actor.user_id,
++            draft_id,
++            body,
++            models,
++            WorkerSkillCreator(
++                container,
++                draft,
++                actor.user_id,
++                lambda: _authorize_studio_actor(identity, "studio:preview"),
++            ),
+         )
+         if result.changes.install_skills:
+             _authorize_studio_actor(identity, "studio:catalog:write")
+@@ -2047,7 +2092,11 @@
+         previous = None
+         if body.continue_from_run_id:
+             previous = await _require_studio_try_run(
+-                container, actor, draft_id, draft.revision, body.continue_from_run_id,
++                container,
++                actor,
++                draft_id,
++                draft.revision,
++                body.continue_from_run_id,
+             )
+             if not previous.status.is_terminal:
+                 raise ConflictError("Previous preview turn is still running")
+@@ -2056,32 +2105,49 @@
+                 raise ConflictError("Preview configuration changed; start a new conversation")
+         else:
+             session = await container.sessions.create(
+-                actor.tenant_id, actor.user_id, draft.spec.name, preview_version,
+-                session_id=f"studio_try_{session_key}", preview=True,
++                actor.tenant_id,
++                actor.user_id,
++                draft.spec.name,
++                preview_version,
++                session_id=f"studio_try_{session_key}",
++                preview=True,
+             )
+         resolved = await container.input_artifacts.resolve_for_run(
+-            tenant_id=actor.tenant_id, user_id=actor.user_id,
++            tenant_id=actor.tenant_id,
++            user_id=actor.user_id,
+             input_artifact_ids=body.input_artifact_ids,
+         )
+         model_override = previous.input.get("model_route_override") if previous else None
+         has_images = any(item.media_type.startswith("image/") for item in resolved)
+         if has_images:
+             catalog = await service.capabilities(actor.tenant_id, actor.user_id)
+-            api_format = ("openai_compatible" if draft.spec.runtime == "codex-app-server"
+-                          else "anthropic_compatible")
+-            candidates = [route for route in catalog.model_routes
+-                          if route.enabled and {"vision", *draft.spec.model.required_capabilities}
+-                          <= set(route.capabilities) and route.api_format == api_format]
++            api_format = (
++                "openai_compatible"
++                if draft.spec.runtime == "codex-app-server"
++                else "anthropic_compatible"
++            )
++            candidates = [
++                route
++                for route in catalog.model_routes
++                if route.enabled
++                and {"vision", *draft.spec.model.required_capabilities} <= set(route.capabilities)
++                and route.api_format == api_format
++            ]
+             preferred = model_override or draft.spec.model.route_id
+             candidates.sort(key=lambda route: route.route_id != preferred)
+             if not candidates:
+-                raise ConflictError("图片已上传，但当前运行环境没有可用的视觉模型。"
+-                                    "请在模型配置中启用兼容的视觉模型后重试，输入和附件会保留。")
++                raise ConflictError(
++                    "图片已上传，但当前运行环境没有可用的视觉模型。"
++                    "请在模型配置中启用兼容的视觉模型后重试，输入和附件会保留。"
++                )
+             model_override = None
+             for candidate in candidates:
+                 if await models.resolve_runtime(
+-                    actor.tenant_id, draft.spec.name, candidate.route_id,
+-                    apply_agent_binding=False, required_api_format=api_format,
++                    actor.tenant_id,
++                    draft.spec.name,
++                    candidate.route_id,
++                    apply_agent_binding=False,
++                    required_api_format=api_format,
+                 ):
+                     model_override = candidate.route_id
+                     break
+@@ -2089,14 +2155,19 @@
+                 raise ConflictError("视觉模型尚未配置有效凭据，请检查模型连接后重试")
+         previous_prompts = list(previous.input.get("conversation_prompts", [])) if previous else []
+         creation = await container.runs.create_with_result(
+-            actor.tenant_id, session.session_id, body.idempotency_key,
++            actor.tenant_id,
++            session.session_id,
++            body.idempotency_key,
+             input={
+                 "prompt": body.prompt,
+                 "conversation_prompts": [*previous_prompts, body.prompt],
+                 "input_artifact_ids": [item.input_artifact_id for item in resolved],
+                 **({"model_route_override": model_override} if model_override else {}),
+-                **({"required_model_capabilities": ["vision"]}
+-                   if any(item.media_type.startswith("image/") for item in resolved) else {}),
++                **(
++                    {"required_model_capabilities": ["vision"]}
++                    if any(item.media_type.startswith("image/") for item in resolved)
++                    else {}
++                ),
+             },
+         )
+         if container.auto_execute and creation.created:
+@@ -2184,16 +2255,27 @@
+                 last_emission = time.monotonic()
+                 if event.type in _TRY_RUN_TERMINAL_EVENT_TYPES:
+                     terminal = True
+-            if events and (terminal or time.monotonic() - last_snapshot >= 1.0
+-                           or any(item.type.startswith("approval.") for item in events)):
++            if events and (
++                terminal
++                or time.monotonic() - last_snapshot >= 1.0
++                or any(item.type.startswith("approval.") for item in events)
++            ):
+                 view = await _studio_try_run_view(
+-                    container, actor, draft_id, draft_revision, run_id,
++                    container,
++                    actor,
++                    draft_id,
++                    draft_revision,
++                    run_id,
+                 )
+                 snapshot = {
+-                    "type": "studio.snapshot", "event_id": f"snapshot-{sequence}",
+-                    "sequence": sequence, "timestamp": datetime.now(UTC).isoformat(),
++                    "type": "studio.snapshot",
++                    "event_id": f"snapshot-{sequence}",
++                    "sequence": sequence,
++                    "timestamp": datetime.now(UTC).isoformat(),
+                     "payload": view.model_dump(
+-                        mode="json", by_alias=True, exclude={"events", "final_text", "loop"},
++                        mode="json",
++                        by_alias=True,
++                        exclude={"events", "final_text", "loop"},
+                     ),
+                 }
+                 yield "data: " + json.dumps(snapshot, separators=(",", ":")) + "\n\n"
+@@ -2391,7 +2473,10 @@
+ ) -> DeepagentsProjectSource:
+     try:
+         exported = await service.deepagents_project(
+-            actor.tenant_id, actor.user_id, draft_id, expected_revision=expected_revision,
++            actor.tenant_id,
++            actor.user_id,
++            draft_id,
++            expected_revision=expected_revision,
+         )
+         return project_source(exported, expected_revision)
+     except (ConflictError, NotFoundError) as error:
+@@ -2407,7 +2492,10 @@
+ ) -> Response:
+     try:
+         exported = await service.deepagents_project(
+-            actor.tenant_id, actor.user_id, draft_id, expected_revision=expected_revision,
++            actor.tenant_id,
++            actor.user_id,
++            draft_id,
++            expected_revision=expected_revision,
+         )
+     except (ConflictError, NotFoundError) as error:
+         raise _translate_domain_error(error) from error
+--- a/src/harness/studio/models.py
++++ b/src/harness/studio/models.py
+@@ -192,6 +192,49 @@
+     instructions: str
+     file_count: int = Field(alias="fileCount", ge=0)
+     files: tuple[PlatformSkillListingFile, ...] = ()
++
++
++class AgentSkillListing(PlatformSkillListing):
++    source: DraftSkillSource | None = None
++
++
++class AgentSkillCatalogEntry(StudioModel):
++    id: str
++    name: str
++    display_name: str = Field(alias="displayName")
++    parent_draft_id: str | None = Field(default=None, alias="parentDraftId")
++    revision: int
++    skills: tuple[AgentSkillListing, ...]
++
++    @classmethod
++    def from_draft(cls, draft: AgentDraft) -> AgentSkillCatalogEntry:
++        return cls(
++            id=draft.draft_id,
++            name=draft.spec.name,
++            displayName=draft.spec.display_name,
++            parentDraftId=draft.parent_draft_id,
++            revision=draft.revision,
++            skills=tuple(
++                AgentSkillListing(
++                    name=skill.name,
++                    description=skill.description,
++                    instructions=skill.instructions,
++                    source=skill.source,
++                    fileCount=skill.file_count
++                    if skill.file_count is not None
++                    else len(skill.files),
++                    files=tuple(
++                        PlatformSkillListingFile(
++                            path=file.path,
++                            binary=file.content_base64 is not None,
++                            sizeBytes=file.size_bytes,
++                        )
++                        for file in skill.files
++                    ),
++                )
++                for skill in draft.spec.skills
++            ),
++        )
+ 
+ 
+ class PlatformSkillCatalogEntry(StudioModel):
+--- a/src/harness/studio/service.py
++++ b/src/harness/studio/service.py
+@@ -11,6 +11,9 @@
+ from datetime import UTC, datetime
+ from typing import Protocol
+ from uuid import uuid4
++
++from harness.studio.initial_agent import generate_initial_agent
++from harness.studio.worker_skill_creator import WorkerSkillCreator
+ 
+ from harness.auth.audit import AuditService
+ from harness.core.errors import ConflictError, NotFoundError
+@@ -60,13 +63,13 @@
+     project_source,
+ )
+ from harness.studio.factory import create_draft_spec
+-from harness.studio.initial_agent import generate_initial_agent
+ from harness.studio.model_configuration import ModelConfigurationService
+ from harness.studio.models import (
+     AgentDraft,
+     AgentDraftPlacementRequest,
+     AgentDraftSpec,
+     AgentDraftSummary,
++    AgentSkillCatalogEntry,
+     AgentTemplate,
+     CapabilityCatalog,
+     CreateAgentDraftRequest,
+@@ -92,7 +95,6 @@
+     SkillConversationUnavailableError,
+     SkillConversationUpstreamError,
+ )
+-from harness.studio.worker_skill_creator import WorkerSkillCreator
+ 
+ _EDITOR_SKILL_FILE_LIMIT = 200
+ _EDITOR_INLINE_TEXT_BYTES = 64 * 1024
+@@ -449,16 +451,28 @@
+         draft, suggested = await generate_initial_agent(draft, request, catalog, models)
+         validation = compiler.validate(draft)
+         if not validation.ready:
+-            raise ConflictError("模型生成的 Agent 未通过配置检查：" + "; ".join(
+-                i.message for i in validation.issues if i.severity == ValidationSeverity.ERROR))
+-        recommendation = recommendation.model_copy(update={
+-            "generated_by_model": True, "recommended_skills": suggested,
+-            "capability_catalog_revision": catalog_revision, "validation": validation,
+-            "reasons": ("已调用所选模型生成职责、执行流程与任务契约。",
+-                        "Skill 仅作推荐，选择后通过差异审阅安装。") + recommendation.reasons,
+-        })
+-        draft = draft.model_copy(update={
+-            "agent_id": await self._resolve_agent_id(tenant_id, user_id, name)})
++            raise ConflictError(
++                "模型生成的 Agent 未通过配置检查："
++                + "; ".join(
++                    i.message for i in validation.issues if i.severity == ValidationSeverity.ERROR
++                )
++            )
++        recommendation = recommendation.model_copy(
++            update={
++                "generated_by_model": True,
++                "recommended_skills": suggested,
++                "capability_catalog_revision": catalog_revision,
++                "validation": validation,
++                "reasons": (
++                    "已调用所选模型生成职责、执行流程与任务契约。",
++                    "Skill 仅作推荐，选择后通过差异审阅安装。",
++                )
++                + recommendation.reasons,
++            }
++        )
++        draft = draft.model_copy(
++            update={"agent_id": await self._resolve_agent_id(tenant_id, user_id, name)}
++        )
+         if on_progress:
+             await on_progress({"type": "progress", "text": "配置已生成，正在保存草稿…"})
+         await self._repository.add(draft)
+@@ -823,6 +837,27 @@
+         await self._repository.add(shared)
+         return shared
+ 
++    async def list_agent_skills(
++        self,
++        tenant_id: str,
++        user_id: str,
++        space_id: str | None = None,
++    ) -> list[AgentSkillCatalogEntry]:
++        drafts: list[AgentDraft]
++        if space_id is None:
++            drafts = await self._repository.list_for_user(tenant_id, user_id)
++            drafts = [draft for draft in drafts if draft.space_id is None]
++        else:
++            if self._draft_permissions is None:
++                raise RuntimeError("shared draft permission checker is not configured")
++            agents = await self._draft_permissions.list_agents(tenant_id, user_id, space_id)
++            drafts = []
++            for agent in agents:
++                draft = await self._repository.get_by_agent(tenant_id, agent.agent_id)
++                if draft is not None:
++                    drafts.append(draft)
++        return [AgentSkillCatalogEntry.from_draft(draft) for draft in drafts]
++
+     async def list(self, tenant_id: str, owner_user_id: str) -> list[AgentDraftSummary]:
+         return await self._repository.list_summaries(tenant_id, owner_user_id)
+ 
+@@ -1018,25 +1053,42 @@
+         ]
+         context.pop("pythonTools", None)
+         catalog_revision, catalog = await self._builder_catalog(tenant_id, user_id)
+-        prompt = json.dumps({
+-            "assemblyCatalog": {
+-                "revision": catalog_revision,
+-                "skills": [{"packageId": s.package_id, "revision": s.revision,
+-                    "label": s.label, "summary": s.summary, "risk": s.risk_level}
+-                    for s in catalog.skills if s.enabled
+-                    and current.spec.runtime in s.compatible_runtimes],
+-                "builtinTools": [item.model_dump() for item in catalog.builtin_tools],
+-                "mcpServers": [{"reference": item.reference, "label": item.label,
+-                    "description": item.description, "category": item.category,
+-                    "tools": item.tools, "risk": item.risk,
+-                    "networkAccess": item.network_access,
+-                    "allowedExecutionProfileIds": item.allowed_execution_profile_ids}
+-                    for item in catalog.mcp_servers],
++        prompt = json.dumps(
++            {
++                "assemblyCatalog": {
++                    "revision": catalog_revision,
++                    "skills": [
++                        {
++                            "packageId": s.package_id,
++                            "revision": s.revision,
++                            "label": s.label,
++                            "summary": s.summary,
++                            "risk": s.risk_level,
++                        }
++                        for s in catalog.skills
++                        if s.enabled and current.spec.runtime in s.compatible_runtimes
++                    ],
++                    "builtinTools": [item.model_dump() for item in catalog.builtin_tools],
++                    "mcpServers": [
++                        {
++                            "reference": item.reference,
++                            "label": item.label,
++                            "description": item.description,
++                            "category": item.category,
++                            "tools": item.tools,
++                            "risk": item.risk,
++                            "networkAccess": item.network_access,
++                            "allowedExecutionProfileIds": item.allowed_execution_profile_ids,
++                        }
++                        for item in catalog.mcp_servers
++                    ],
++                },
++                "currentDraft": context,
++                "conversation": [item.model_dump() for item in request.messages],
++                "runContext": request.run_context,
+             },
+-            "currentDraft": context,
+-            "conversation": [item.model_dump() for item in request.messages],
+-            "runContext": request.run_context,
+-        }, ensure_ascii=False)
++            ensure_ascii=False,
++        )
+         if len(prompt) > 180_000:
+             raise ConflictError("当前草稿内容过长，请先在主编辑区选择具体 Skill 修改")
+         raw_text = ""
+@@ -1073,12 +1125,17 @@
+         if request.intent == "edit" and reply.action not in {"edit", "ask", "reply"}:
+             raise ConflictError("修改模式不能发起试跑，请重新描述修改要求")
+         if reply.changes.install_skills or any(
+-               set(getattr(reply.changes, field) or ()) - set(getattr(current.spec, field))
+-               for field in ("builtin_tools", "mcp_servers")):
++            set(getattr(reply.changes, field) or ()) - set(getattr(current.spec, field))
++            for field in ("builtin_tools", "mcp_servers")
++        ):
+             # Bind to the catalog the model actually saw, not a model-generated revision.
+-            reply = reply.model_copy(update={"changes": reply.changes.model_copy(
+-                update={"capability_catalog_revision": catalog_revision}
+-            )})
++            reply = reply.model_copy(
++                update={
++                    "changes": reply.changes.model_copy(
++                        update={"capability_catalog_revision": catalog_revision}
++                    )
++                }
++            )
+         if reply.changes.create_skills or reply.changes.update_skills:
+             raise ConflictError("创建或更新 Skill 必须通过 skill-creator 运行，请重新生成")
+         creator_runs: list[dict[str, object]] = []
+@@ -1087,8 +1144,10 @@
+                 raise ConflictError("Skill Creator Worker 服务不可用，未生成或修改技能")
+             if creator.draft.revision != current.revision:
+                 raise ConflictError("草稿已更新，请基于最新配置重新调用 Skill Creator")
+-            generated = {"create_skills": list(reply.changes.create_skills),
+-                         "update_skills": list(reply.changes.update_skills)}
++            generated = {
++                "create_skills": list(reply.changes.create_skills),
++                "update_skills": list(reply.changes.update_skills),
++            }
+             existing = {skill.name: skill for skill in current.spec.skills}
+             names = [item.name for item in reply.skill_requests]
+             if len(names) != len(set(names)):
+@@ -1100,14 +1159,22 @@
+                 creator_request = SkillConversationRequest(
+                     modelRoute=current.spec.model.route_id,
+                     context=SkillConversationContext(
+-                        agentName=current.spec.name, displayName=current.spec.display_name,
+-                        domain=current.spec.domain, description=current.spec.description,
++                        agentName=current.spec.name,
++                        displayName=current.spec.display_name,
++                        domain=current.spec.domain,
++                        description=current.spec.description,
+                         currentSkill=skill,
+                     ),
+-                    messages=(SkillConversationMessage(role="user", content=(
+-                        item.request + f"\n目标 Skill 名称固定为 {item.name}。返回完整技能与文件；"
+-                        "未要求修改的附件必须保留。仅生成建议，尚未安装。"
+-                    )),),
++                    messages=(
++                        SkillConversationMessage(
++                            role="user",
++                            content=(
++                                item.request
++                                + f"\n目标 Skill 名称固定为 {item.name}。返回完整技能与文件；"
++                                "未要求修改的附件必须保留。仅生成建议，尚未安装。"
++                            ),
++                        ),
++                    ),
+                 )
+                 try:
+                     result = await creator.respond(tenant_id, creator_request, name=item.name)
+@@ -1115,25 +1182,40 @@
+                     raise ConflictError(str(error)) from None
+                 if result.status != "ready" or result.skill is None:
+                     return BuilderConversationReply(
+-                        reply=result.reply, action="ask", changes=BuilderChanges(),
+-                        baseRevision=current.revision, changedFields=(),
++                        reply=result.reply,
++                        action="ask",
++                        changes=BuilderChanges(),
++                        baseRevision=current.revision,
++                        changedFields=(),
+                     )
+-                creator_runs.append({"runId": result.creator_run_id,
+-                    "sourceRevision": result.creator_source_revision,
+-                    "artifactIds": result.artifact_ids, "artifactNames": result.artifact_names})
++                creator_runs.append(
++                    {
++                        "runId": result.creator_run_id,
++                        "sourceRevision": result.creator_source_revision,
++                        "artifactIds": result.artifact_ids,
++                        "artifactNames": result.artifact_names,
++                    }
++                )
+                 if result.skill.name != item.name:
+                     raise ConflictError("Skill Creator 返回了不同的技能名称，请重新生成")
+                 try:
+-                    authored = AuthoredSkill.model_validate(result.skill.model_dump(
+-                        include={"name", "description", "instructions", "files"}))
++                    authored = AuthoredSkill.model_validate(
++                        result.skill.model_dump(
++                            include={"name", "description", "instructions", "files"}
++                        )
++                    )
+                 except ValueError:
+                     raise ConflictError(
+                         "共创技能内容未通过安装校验，请重新生成；草稿未更改"
+                     ) from None
+                 generated[item.operation + "_skills"].append(authored)
+-            reply = reply.model_copy(update={"changes": reply.changes.model_copy(
+-                update={key: tuple(value) for key, value in generated.items() if value}
+-            )})
++            reply = reply.model_copy(
++                update={
++                    "changes": reply.changes.model_copy(
++                        update={key: tuple(value) for key, value in generated.items() if value}
++                    )
++                }
++            )
+         await self._check_builder_assembly(tenant_id, user_id, current, reply.changes)
+         candidate = self._builder_spec(current, reply.changes)
+         await self._check_builder_candidate(tenant_id, user_id, current, candidate)
+@@ -1142,7 +1224,10 @@
+             raise ConflictError("生成期间草稿已更新，请基于最新配置重新生成建议")
+         before, after = current.spec.model_dump(by_alias=True), candidate.model_dump(by_alias=True)
+         return BuilderConversationReply(
+-            reply=reply.reply, changes=reply.changes, action=reply.action, task=reply.task,
++            reply=reply.reply,
++            changes=reply.changes,
++            action=reply.action,
++            task=reply.task,
+             creatorRuns=tuple(creator_runs),
+             baseRevision=current.revision,
+             changedFields=tuple(name for name in after if after[name] != before[name]),
+@@ -1174,25 +1259,37 @@
+     def _builder_spec(self, current: AgentDraft, changes: BuilderChanges) -> AgentDraftSpec:
+         spec = apply_builder_changes(current.spec, changes)
+         if changes.install_skills:
+-            packages = [platform_skill_package(s.package_id, s.revision)
+-                        for s in changes.install_skills]
++            packages = [
++                platform_skill_package(s.package_id, s.revision) for s in changes.install_skills
++            ]
+             names = [p.skill.name for p in packages]
+             if len(names) != len(set(names)) or set(names) & {s.name for s in spec.skills}:
+                 raise ConflictError("推荐 Skill 已存在或重复选择，请刷新后重试")
+-            spec = spec.model_copy(update={
+-                "skills": spec.skills + tuple(p.skill for p in packages),
+-                "evaluation_cases": spec.evaluation_cases + tuple(
+-                    c for p in packages for c in p.evaluation_cases),
+-            })
++            spec = spec.model_copy(
++                update={
++                    "skills": spec.skills + tuple(p.skill for p in packages),
++                    "evaluation_cases": spec.evaluation_cases
++                    + tuple(c for p in packages for c in p.evaluation_cases),
++                }
++            )
+         existing = {skill.name: skill for skill in current.spec.skills}
+-        removed_packages = {skill.source.package_id for skill in current.spec.skills
+-                            if skill.source and skill.name not in {s.name for s in spec.skills}}
+-        spec = spec.model_copy(update={
+-            "skills": tuple(_merge_editor_skill(existing.get(skill.name), skill)
+-                            for skill in spec.skills),
+-            "evaluation_cases": tuple(case for case in spec.evaluation_cases
+-                if not any(f"skill:{package}" in case.tags for package in removed_packages)),
+-        })
++        removed_packages = {
++            skill.source.package_id
++            for skill in current.spec.skills
++            if skill.source and skill.name not in {s.name for s in spec.skills}
++        }
++        spec = spec.model_copy(
++            update={
++                "skills": tuple(
++                    _merge_editor_skill(existing.get(skill.name), skill) for skill in spec.skills
++                ),
++                "evaluation_cases": tuple(
++                    case
++                    for case in spec.evaluation_cases
++                    if not any(f"skill:{package}" in case.tags for package in removed_packages)
++                ),
++            }
++        )
+         return _auto_version_modified_release(current, spec)
+ 
+     async def _builder_catalog(self, tenant_id: str, user_id: str) -> tuple[int, CapabilityCatalog]:
+@@ -1202,23 +1299,34 @@
+         return 1, await self.capabilities(tenant_id, user_id)
+ 
+     async def _check_builder_assembly(
+-        self, tenant_id: str, user_id: str, current: AgentDraft, changes: BuilderChanges,
++        self,
++        tenant_id: str,
++        user_id: str,
++        current: AgentDraft,
++        changes: BuilderChanges,
+     ) -> None:
+         revision, catalog = await self._builder_catalog(tenant_id, user_id)
+         if changes.install_skills:
+             if changes.capability_catalog_revision != revision:
+                 raise ConflictError("能力目录已更新，请重新获取 Skill 推荐")
+             for selected in changes.install_skills:
+-                visible = next((s for s in catalog.skills if s.package_id == selected.package_id
+-                    and s.enabled and s.revision == selected.revision
+-                    and current.spec.runtime in s.compatible_runtimes), None)
++                visible = next(
++                    (
++                        s
++                        for s in catalog.skills
++                        if s.package_id == selected.package_id
++                        and s.enabled
++                        and s.revision == selected.revision
++                        and current.spec.runtime in s.compatible_runtimes
++                    ),
++                    None,
++                )
+                 package = platform_skill_package(selected.package_id, selected.revision)
+                 if visible is None or visible.content_hash != package.content_hash:
+                     raise ConflictError("推荐 Skill 不在当前可用目录中")
+         allowed: dict[str, set[str]] = {
+             "builtin_tools": {item.name for item in catalog.builtin_tools},
+-            "mcp_servers": {item.reference for item in catalog.mcp_servers
+-                            if item.enabled},
++            "mcp_servers": {item.reference for item in catalog.mcp_servers if item.enabled},
+             "knowledge_references": set(),
+         }
+         for field, visible in allowed.items():
+@@ -1243,9 +1351,12 @@
+             (item.code, item.path, item.message) for item in compiler.validate(current).issues
+         }
+         validation = compiler.validate(current.model_copy(update={"spec": spec}))
+-        errors = [item.message for item in validation.issues
+-                  if item.severity == ValidationSeverity.ERROR
+-                  and (item.code, item.path, item.message) not in previous]
++        errors = [
++            item.message
++            for item in validation.issues
++            if item.severity == ValidationSeverity.ERROR
++            and (item.code, item.path, item.message) not in previous
++        ]
+         if errors:
+             raise ConflictError("修改未通过配置检查：" + "；".join(errors[:3]))
+ 
+@@ -1378,8 +1489,12 @@
+         )
+ 
+     async def deepagents_project(
+-        self, tenant_id: str, owner_user_id: str, draft_id: str,
+-        *, expected_revision: int | None = None,
++        self,
++        tenant_id: str,
++        owner_user_id: str,
++        draft_id: str,
++        *,
++        expected_revision: int | None = None,
+     ) -> DeepagentsProjectArchive:
+         """Export the draft as a runnable deepagents==0.7.13 project zip.
+ 
+@@ -1394,7 +1509,11 @@
+         return await self._export_deepagents_draft(tenant_id, owner_user_id, draft)
+ 
+     async def compare_builder_project(
+-        self, tenant_id: str, user_id: str, draft_id: str, request: BuilderApplyRequest,
++        self,
++        tenant_id: str,
++        user_id: str,
++        draft_id: str,
++        request: BuilderApplyRequest,
+     ) -> DeepagentsProjectComparison:
+         current = await self.get(tenant_id, user_id, draft_id)
+         await self._require_shared_permission(tenant_id, user_id, current, AgentPermission.EDIT)
+@@ -1403,9 +1522,12 @@
+         await self._check_builder_assembly(tenant_id, user_id, current, request.changes)
+         spec = self._builder_spec(current, request.changes)
+         await self._check_builder_candidate(tenant_id, user_id, current, spec)
+-        candidate = current.model_copy(update={
+-            "spec": spec, "revision": current.revision + (spec != current.spec),
+-        })
++        candidate = current.model_copy(
++            update={
++                "spec": spec,
++                "revision": current.revision + (spec != current.spec),
++            }
++        )
+         before = await self._export_deepagents_draft(tenant_id, user_id, current)
+         after = await self._export_deepagents_draft(tenant_id, user_id, candidate)
+         latest = await self.get(tenant_id, user_id, draft_id)
+@@ -1417,7 +1539,10 @@
+         )
+ 
+     async def _export_deepagents_draft(
+-        self, tenant_id: str, owner_user_id: str, draft: AgentDraft,
++        self,
++        tenant_id: str,
++        owner_user_id: str,
++        draft: AgentDraft,
+     ) -> DeepagentsProjectArchive:
+         catalog = await self.capabilities(tenant_id, owner_user_id)
+         compiler = await self._compiler_for(tenant_id, owner_user_id)
+--- a/src/harness/knowledge/api.py
++++ b/src/harness/knowledge/api.py
+@@ -26,6 +26,7 @@
+     KnowledgeWikiStats,
+     ReplaceKnowledgeBaseRequest,
+     ReplaceKnowledgeSourceRequest,
++    ResolvedKnowledgeWikiPage,
+     SearchKnowledgeRequest,
+     SearchKnowledgeResponse,
+     UpdateKnowledgeMemberRequest,
+@@ -480,6 +481,18 @@
+         raise await _translate_engine_error(error) from error
+ 
+ 
++@router.get("/wiki/resolve", response_model=ResolvedKnowledgeWikiPage)
++async def resolve_wiki_page(
++    slug: str,
++    actor: Annotated[StudioActor, Depends(require_studio_reader)],
++    service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
++) -> ResolvedKnowledgeWikiPage:
++    try:
++        return await service.resolve_wiki_page(actor.tenant_id, actor.user_id, slug)
++    except KnowledgeEngineError as error:
++        raise await _translate_engine_error(error) from error
++
++
+ # --- wiki proxies (engine-backed bases) ------------------------------------
+ 
+ 
+--- a/src/harness/knowledge/models.py
++++ b/src/harness/knowledge/models.py
+@@ -511,6 +511,11 @@
+     folder_id: str = Field(default="", alias="folderId")
+ 
+ 
++class ResolvedKnowledgeWikiPage(KnowledgeModel):
++    reference: str
++    page: KnowledgeWikiPage
++
++
+ class KnowledgeWikiGraphNode(KnowledgeModel):
+     slug: str
+     title: str
+--- a/src/harness/knowledge/service.py
++++ b/src/harness/knowledge/service.py
+@@ -44,6 +44,7 @@
+     KnowledgeWikiStats,
+     ReplaceKnowledgeBaseRequest,
+     ReplaceKnowledgeSourceRequest,
++    ResolvedKnowledgeWikiPage,
+     SearchKnowledgeResponse,
+     WeknoraKnowledgeConfig,
+ )
+@@ -248,25 +249,58 @@
+         self,
+         tenant_id: str,
+         owner_user_id: str | None = None,
++        *,
++        refresh_counts: bool = True,
+     ) -> Sequence[KnowledgeBase]:
+         values = await self.repository.list_bases(tenant_id)
+-        # Refresh engine-backed counts concurrently; the list is small and a
+-        # stale badge is worse than a couple of extra remote reads.
+-        values = tuple(
+-            await asyncio.gather(*(self._with_document_count(tenant_id, item) for item in values))
+-        )
+-        if owner_user_id is None:
++        if owner_user_id is not None:
++            member_references = {
++                item.knowledge_base_reference
++                for item in await self.repository.list_members(tenant_id)
++                if item.subject_type is KnowledgeMemberSubject.USER
++                and item.subject_id == owner_user_id
++            }
++            values = tuple(
++                item
++                for item in values
++                if item.created_by == owner_user_id or item.reference in member_references
++            )
++        if not refresh_counts:
+             return values
+-        member_references = {
+-            item.knowledge_base_reference
+-            for item in await self.repository.list_members(tenant_id)
+-            if item.subject_type is KnowledgeMemberSubject.USER and item.subject_id == owner_user_id
+-        }
+-        return tuple(
+-            item
+-            for item in values
+-            if item.created_by == owner_user_id or item.reference in member_references
+-        )
++        semaphore = asyncio.Semaphore(4)
++
++        async def refresh(item: KnowledgeBase) -> KnowledgeBase:
++            async with semaphore:
++                return await self._with_document_count(tenant_id, item)
++
++        return tuple(await asyncio.gather(*(refresh(item) for item in values)))
++
++    async def resolve_wiki_page(
++        self,
++        tenant_id: str,
++        actor_id: str,
++        slug: str,
++    ) -> ResolvedKnowledgeWikiPage:
++        bases = await self.list_bases(tenant_id, actor_id, refresh_counts=False)
++        semaphore = asyncio.Semaphore(4)
++
++        async def lookup(base: KnowledgeBase) -> ResolvedKnowledgeWikiPage | None:
++            if base.engine is not KnowledgeBaseEngine.WEKNORA:
++                return None
++            async with semaphore:
++                try:
++                    page = await self.get_wiki_page(tenant_id, actor_id, base.reference, slug)
++                    return ResolvedKnowledgeWikiPage(reference=base.reference, page=page)
++                except NotFoundError:
++                    return None
++
++        results = await asyncio.gather(*(lookup(base) for base in bases))
++        matches = [item for item in results if item is not None]
++        if len(matches) > 1:
++            raise ConflictError("多个知识库存在同名页面，请重新提问获取明确引用。")
++        if not matches:
++            raise NotFoundError("未找到 Wiki 页面或没有查看权限")
++        return matches[0]
+ 
+     async def get_base(
+         self,
+--- a/src/harness/knowledge/weknora/gateway.py
++++ b/src/harness/knowledge/weknora/gateway.py
+@@ -1,3 +1,4 @@
++
+ """WeKnora implementation of the knowledge engine port.
+ 
+ The gateway translates AXIS engine calls into WeKnora REST calls and normalizes
+@@ -9,6 +10,7 @@
+ from collections.abc import Sequence
+ from typing import Any, cast
+ 
++from harness.core.errors import NotFoundError
+ from harness.knowledge.ports import (
+     EngineBaseConfig,
+     EngineChunk,
+@@ -239,6 +241,8 @@
+         try:
+             row = await self._client.get_wiki_page(base_id, slug)
+         except WeknoraError as error:
++            if error.status_code == 404:
++                raise NotFoundError(f"Wiki page not found: {slug}") from error
+             raise KnowledgeEngineError(f"weknora wiki page failed: {error}") from error
+         page = _wiki_page(row)
+         if page is None:

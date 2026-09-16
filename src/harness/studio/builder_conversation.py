@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Literal
 
 from pydantic import Field, model_validator
@@ -192,3 +193,18 @@ def parse_builder_reply(text: str) -> BuilderModelReply:
         return BuilderModelReply.model_validate(json.loads(text))
     except (ValueError, TypeError):
         raise ConflictError("模型未返回有效的修改建议，草稿未更改；请补充要求后重试") from None
+
+
+def partial_builder_reply(text: str) -> str:
+    """Expose only the leading reply string; never expose partial executable changes."""
+    match = re.match(r'^\s*(?:```(?:json)?\s*)?\{\s*"reply"\s*:\s*"((?:[^"\\]|\\.)*)', text)
+    if not match:
+        return ""
+    value = match[1]
+    # A chunk can split a JSON Unicode escape. Keep it until the next chunk.
+    for trim in range(min(6, len(value) + 1)):
+        try:
+            return str(json.loads('"' + (value[:-trim] if trim else value) + '"'))
+        except ValueError:
+            continue
+    return ""

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import {
   useCallback,
   useEffect,
@@ -18,7 +19,7 @@ import {
   type StudioKnowledgeDocumentStatus,
   type StudioKnowledgeDocumentTable,
 } from "../../lib/studio-client";
-import { KnowledgeGraphPanel } from "./knowledge-graph-panel";
+const KnowledgeGraphPanel = dynamic(() => import("./knowledge-graph-panel").then((module) => module.KnowledgeGraphPanel), { loading: () => <p>正在加载图谱…</p> });
 import { KnowledgeWikiPanel } from "./knowledge-wiki-panel";
 import { DrawerResizeHandle, useDrawerResize } from "../../lib/use-drawer-resize";
 import { KnowledgeDrawerLayer } from "./knowledge-drawer-layer";
@@ -81,7 +82,9 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
     { min: 400, max: 1100 },
   );
   const fileRef = useRef<HTMLInputElement>(null);
-  const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const scopeGeneration = useRef(0);
+  const [pollingStopped, setPollingStopped] = useState(false);
+  const deletionStartedAt = useRef<number | null>(null);
 
   const isWeknora = base?.engine === "weknora";
   const SPREADSHEET_TYPES = ["xls", "xlsx", "xlsm", "csv"];
@@ -90,9 +93,11 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
 
   const loadDocuments = useCallback(
     async (quiet = false) => {
-      if (!quiet) setLoading(true);
+      const generation = scopeGeneration.current;
+      if (!quiet) { setLoading(true); setPollingStopped(false); setError(""); }
       try {
         const docs = await studioClient.listKnowledgeDocuments(reference);
+        if (generation !== scopeGeneration.current) return;
         setDocuments(docs);
         // WeKnora deletes documents in the background, so a just-deleted row
         // keeps coming back from the list for a few seconds. Hold it hidden
@@ -103,54 +108,95 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
           const next = new Set([...current].filter((documentId) => present.has(documentId)));
           return next.size === current.size ? current : next;
         });
-        const active = docs.some(
-          (doc) => doc.parseStatus === "processing" || doc.parseStatus === "pending",
-        );
-        if (active && pollTimer.current === null) {
-          pollTimer.current = setInterval(() => void loadDocuments(true), 6000);
-        } else if (!active && pollTimer.current !== null) {
-          clearInterval(pollTimer.current);
-          pollTimer.current = null;
-        }
       } catch (cause) {
-        if (!quiet) {
-          setError(cause instanceof Error ? cause.message : "加载文档失败");
-        }
+        if (generation !== scopeGeneration.current) return;
+        if (quiet) throw cause;
+        setError(cause instanceof Error ? cause.message : "加载文档失败");
       } finally {
-        if (!quiet) setLoading(false);
+        if (!quiet && generation === scopeGeneration.current) setLoading(false);
       }
     },
     [reference],
   );
 
-  const load = useCallback(async () => {
+  useEffect(() => {
+    const generation = ++scopeGeneration.current;
+    setLoading(true);
+    setPollingStopped(false);
     setError("");
-    try {
-      const [baseValue, docs] = await Promise.all([
-        studioClient.getKnowledgeBase(reference),
-        studioClient.listKnowledgeDocuments(reference).catch(() => [] as StudioKnowledgeDocumentStatus[]),
-      ]);
+    setBase(null);
+    setDocuments([]);
+    setPendingDeletes(new Set());
+    setSelectedIds(new Set());
+    setSelected(null);
+    void Promise.all([
+      studioClient.getKnowledgeBase(reference),
+      studioClient.listKnowledgeDocuments(reference),
+    ]).then(([baseValue, docs]) => {
+      if (generation !== scopeGeneration.current) return;
       setBase(baseValue);
       setDocuments(docs);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "加载知识库失败");
-    } finally {
-      setLoading(false);
-    }
+    }).catch((cause: unknown) => {
+      if (generation === scopeGeneration.current) setError(cause instanceof Error ? cause.message : "加载知识库失败");
+    }).finally(() => {
+      if (generation === scopeGeneration.current) setLoading(false);
+    });
+    return () => { scopeGeneration.current += 1; };
   }, [reference]);
 
+  const hasPendingDeletes = pendingDeletes.size > 0;
+  const hasProcessingDocuments = documents.some((doc) =>
+    !pendingDeletes.has(doc.documentId) && (doc.parseStatus === "processing" || doc.parseStatus === "pending"));
   useEffect(() => {
-    void load();
-    return () => {
-      if (pollTimer.current) clearInterval(pollTimer.current);
-    };
-  }, [load]);
+    if (!hasPendingDeletes) deletionStartedAt.current = null;
+    else deletionStartedAt.current ??= Date.now();
+  }, [hasPendingDeletes]);
 
+  // One completion-driven timer: no overlapping requests, no hidden-tab traffic.
   useEffect(() => {
-    if (pendingDeletes.size === 0) return;
-    const timer = setInterval(() => void loadDocuments(true), 2500);
-    return () => clearInterval(timer);
-  }, [loadDocuments, pendingDeletes]);
+    if (loading || pollingStopped || tab !== "docs" || (!hasPendingDeletes && !hasProcessingDocuments)) return;
+    let active = true;
+    let running = false;
+    let failures = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const delay = hasPendingDeletes ? 2500 : 6000;
+    const schedule = () => {
+      if (active && document.visibilityState === "visible") timer = setTimeout(tick, delay * 2 ** failures);
+    };
+    const tick = async () => {
+      if (!active || running || document.visibilityState !== "visible") return;
+      running = true;
+      try {
+        await loadDocuments(true);
+        failures = 0;
+        if (active && deletionStartedAt.current !== null && Date.now() - deletionStartedAt.current > 120_000) {
+          deletionStartedAt.current = null;
+          setPollingStopped(true);
+          setPendingDeletes(new Set());
+          setNotice("删除仍未完成，请稍后刷新确认状态。");
+          return;
+        }
+      } catch {
+        failures += 1;
+        if (failures >= 4) {
+          if (active) { setPollingStopped(true); setError("文档状态刷新失败，请点击刷新重试。"); }
+          return;
+        }
+      } finally { running = false; }
+      schedule();
+    };
+    const onVisibility = () => {
+      clearTimeout(timer);
+      if (document.visibilityState === "visible" && !running) void tick();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    schedule();
+    return () => {
+      active = false;
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [loading, pollingStopped, tab, hasPendingDeletes, hasProcessingDocuments, loadDocuments]);
 
   // Dropping a file anywhere outside the drop zone would otherwise make the
   // browser open or download it instead of uploading.

@@ -260,3 +260,81 @@ async def test_auto_intents_are_read_only_structured_and_keep_clarification_cont
             },
         )
         assert response.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_streaming_builder_previews_without_applying_and_reports_invalid_reply() -> None:
+    application = app()
+    model = AsyncMock()
+    application.dependency_overrides[get_model_configuration_service] = lambda: model
+    headers = {"Authorization": f"Bearer {SERVICE_TOKEN}", "X-Tenant-ID": "tenant-a",
+               "X-User-ID": "builder-a", "Accept": "text/event-stream"}
+
+    async def complete(*args, **kwargs):
+        chunks = ['{"reply":"流式', '建议", "changes":{}}']
+        for chunk in chunks:
+            await kwargs["on_delta"](chunk)
+        return "".join(chunks)
+
+    model.complete_text.side_effect = complete
+    async with AsyncClient(transport=ASGITransport(app=application), base_url="http://test") as client:
+        draft = (await client.post("/v1/studio/drafts", headers=headers, json=draft_request())).json()
+        path = f"/v1/studio/drafts/{draft['draftId']}"
+        body = {"expectedRevision": 1, "messages": [{"role": "user", "content": "解释配置"}]}
+        response = await client.post(path + "/builder-conversation", headers=headers, json=body)
+        assert response.headers["content-type"].startswith("text/event-stream")
+        events = [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith("data: ")]
+        assert [e["text"] for e in events if e["type"] == "builder.reply"] == ["流式", "流式建议"]
+        assert events[-1]["type"] == "result"
+        assert events[-1]["result"]["changes"] == {}
+        assert (await client.get(path, headers=headers)).json() == draft
+        denied = await client.post(path + "/builder-conversation", headers={**headers, "X-User-ID": "other"}, json=body)
+        assert denied.status_code == 404
+        model.complete_text.side_effect = None
+        model.complete_text.return_value = "invalid"
+        invalid = await client.post(path + "/builder-conversation", headers=headers, json=body)
+        assert '"type": "error"' in invalid.text
+        assert '"type": "result"' not in invalid.text
+        assert (await client.get(path, headers=headers)).json() == draft
+
+
+def test_partial_builder_reply_handles_unicode_escapes_and_never_exposes_changes() -> None:
+    from harness.studio.builder_conversation import partial_builder_reply
+    assert partial_builder_reply('{"reply":"hello\\u4') == "hello"
+    assert partial_builder_reply('{"reply":"hello\\u4f60') == "hello你"
+    assert partial_builder_reply('{"reply":"ok", "changes":{"systemPrompt":"private') == "ok"
+
+
+@pytest.mark.asyncio
+async def test_task_creation_streams_real_stages_and_saves_one_draft() -> None:
+    application = app()
+    headers = {"Authorization": f"Bearer {SERVICE_TOKEN}", "X-Tenant-ID": "tenant-a",
+               "X-User-ID": "builder-a", "Accept": "text/event-stream"}
+    async with AsyncClient(transport=ASGITransport(app=application), base_url="http://test") as client:
+        response = await client.post("/v1/studio/drafts/from-task", headers=headers,
+                                     json={"task": "汇总用户上传材料", "runtimePreference": "auto"})
+        assert response.status_code == 200
+        events = [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith("data: ")]
+        assert [e["type"] for e in events] == ["progress", "progress", "progress", "result"]
+        saved = events[-1]["result"]["draft"]
+        drafts = (await client.get("/v1/studio/drafts", headers=headers)).json()
+        assert [d["draftId"] for d in drafts] == [saved["draftId"]]
+
+
+@pytest.mark.asyncio
+async def test_eval_snapshot_stream_enforces_ownership_and_closes_on_completion() -> None:
+    from tests.integration.api.test_agent_studio_api import app_and_container
+    from tests.unit.evals.test_control_plane import drain, seed
+    application, container = app_and_container()
+    eval_id = await seed(container, "stream")
+    await drain(container, container.eval_controller, eval_id)
+    headers = {"Authorization": f"Bearer {SERVICE_TOKEN}", "X-Tenant-ID": "tenant-a",
+               "X-User-ID": "builder-a"}
+    async with AsyncClient(transport=ASGITransport(app=application), base_url="http://test") as client:
+        response = await client.get(f"/v1/studio/eval-runs/{eval_id}/events", headers=headers)
+        assert response.status_code == 200
+        events = [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith("data: ")]
+        assert [e["type"] for e in events] == ["eval.snapshot", "result"]
+        assert events[-1]["result"]["run"]["status"] in {"passed", "failed"}
+        denied = await client.get(f"/v1/studio/eval-runs/{eval_id}/events", headers={**headers, "X-User-ID": "other"})
+        assert denied.status_code == 404

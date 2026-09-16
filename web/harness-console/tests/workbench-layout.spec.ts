@@ -143,7 +143,7 @@ describe("full-page agent workbench", () => {
     expect(taskSidebar).toContain("{PRODUCT_NAME}");
     expect(taskSidebar).toContain('className="task-sidebar-collapse"');
     expect(taskSidebar).not.toContain('className="task-rail-brand-text"');
-    expect(page).not.toContain("<TaskAgentSwitcher");
+    expect(page).toContain('<TaskAgentSwitcher kind="version"');
     expect(agentThread).toContain("<TaskAgentSwitcher");
     expect(page).toContain('className="task-context-bar"');
     expect(page).toContain("<SidebarPanelToggle");
@@ -697,11 +697,9 @@ describe("full-page agent workbench", () => {
     expect(markdown).toContain('className="aui-table-scroll"');
     expect(markdown).toContain('aria-label="表格，可横向滚动"');
     expect(markdown).toContain("table: ScrollableTable");
-    expect(markdown).not.toContain("defer");
     expect(markdown).toContain("smooth={false}");
-    // The preprocessor normalises text and turns [[wiki]] links into
-    // clickable wiki: links.
-    expect(markdown).toContain("preprocess={preprocessMessage}");
+    // Normalization runs before reveal; wiki links remain a Markdown plugin.
+    expect(markdown).toContain("normalizeMessageText(part.text)");
     expect(markdown).toContain("normalizeMessageText");
     expect(markdown).not.toContain("codexStreamSmoothing");
     expect(styles).toMatch(

@@ -167,7 +167,9 @@ describe("Agent Studio effective contract", () => {
     ];
     const visible = mcpOptionsForDraft(DEFAULT_STUDIO_DRAFT, [...options]);
 
-    expect(visible.map((item) => item.id)).toEqual(["tavily-readonly"]);
+    // The platform no longer ships a generic MCP, so the personal Lead is
+    // offered no MCP option at all rather than tenant business services.
+    expect(visible).toEqual([]);
     expect(mcpOptionsForDraft(
       { ...DEFAULT_STUDIO_DRAFT, name: "public-opinion-agent", domain: "public-opinion" },
       [...options],

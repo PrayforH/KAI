@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { RunAgentInput } from "@ag-ui/client";
 import { HarnessHttpAgent } from "../src/lib/harness-agent";
+import { activityStore } from "../src/lib/activity-store";
 import { liveResponseStore } from "../src/lib/live-response-store";
 import { runStreamStore } from "../src/lib/run-stream-store";
 
@@ -547,4 +548,50 @@ describe("HarnessHttpAgent", () => {
       status: "complete",
     });
   });
+});
+
+it.each(["reasoning.delta", "tool.request"])("hands visible progress to the activity before %s, preserving the final answer", async (boundary) => {
+  liveResponseStore.clear(); activityStore.clear();
+  const progress = "已找到资料，需要继续核验。".repeat(20);
+  const entry = (event_type: string, sequence: number, summary: string) => ({
+    id: `event-${sequence}`, event_type, sequence, summary, title: "过程", kind: "run",
+    status: "running", timestamp: "2026-09-16T00:00:00Z", metadata: { item_id: "thought-next" },
+  });
+  const snapshot = { type: "ACTIVITY_SNAPSHOT", messageId: "activity-handoff", activityType: "harness.run.v1",
+    content: { run_id: "handoff", status: "running", started_at: "2026-09-16T00:00:00Z", items: [entry("message.delta", 1, progress)], metrics: {} } };
+  const delta = { type: "ACTIVITY_DELTA", messageId: "activity-handoff", activityType: "harness.run.v1",
+    patch: [{ op: "add", path: "/items/-", value: entry(boundary, 2, "继续核验") }] };
+  const events = [
+    { type: "RUN_STARTED", threadId: "thread-handoff", runId: "handoff" },
+    { type: "TEXT_MESSAGE_START", messageId: "assistant-handoff", role: "assistant" },
+    { type: "TEXT_MESSAGE_CONTENT", messageId: "assistant-handoff", delta: progress },
+    snapshot,
+    ...(boundary === "tool.request" ? [
+      { type: "TOOL_CALL_START", toolCallId: "handoff-tool", toolCallName: "Read", parentMessageId: "assistant-handoff" },
+      { type: "TOOL_CALL_ARGS", toolCallId: "handoff-tool", delta: "{}" },
+      { type: "TOOL_CALL_END", toolCallId: "handoff-tool" },
+    ] : []),
+    delta,
+    { type: "TEXT_MESSAGE_CONTENT", messageId: "assistant-handoff", delta: "最终回答" },
+    { type: "TEXT_MESSAGE_END", messageId: "assistant-handoff" },
+    { type: "RUN_FINISHED", threadId: "thread-handoff", runId: "handoff" },
+  ];
+  let handedOff = false;
+  const agent = new HarnessHttpAgent({ url: "http://harness/v1/agui", fetch: async () => new Response(
+    events.map(event => `data: ${JSON.stringify(event)}\n\n`).join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  ) });
+  await agent.runAgent({ runId: "handoff" }, {
+    onActivitySnapshotEvent: () => { expect(liveResponseStore.getSnapshot().visible).toBe(true); },
+    onToolCallStartEvent: () => { expect(liveResponseStore.getSnapshot().visible).toBe(true); },
+    onActivityDeltaEvent: () => {
+      expect(activityStore.getSnapshot()?.items[0].summary).toBe(progress);
+      expect(activityStore.getSnapshot()?.items[1].event_type).toBe(boundary);
+      expect(liveResponseStore.getSnapshot().visible).toBe(false);
+      handedOff = true;
+    },
+  });
+  expect(handedOff).toBe(true);
+  expect(liveResponseStore.getSnapshot()).toMatchObject({ text: "最终回答", visible: true, status: "complete" });
+  activityStore.clear(); liveResponseStore.clear();
 });

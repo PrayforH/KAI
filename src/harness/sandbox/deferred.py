@@ -93,7 +93,9 @@ class DeferredToolSandboxProvider:
             try:
                 provisioned = await self._backend.provision(lease.run)
                 original_path = provisioned.path
-                remote = provisioned.model_copy(update={"path": handle.path})
+                remote = provisioned.model_copy(
+                    update={"path": handle.path, "deferred_tool_execution": True}
+                )
                 if original_path != handle.path:
                     shutil.rmtree(original_path, ignore_errors=True)
                 await self._backend.prepare(remote)

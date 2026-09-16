@@ -42,6 +42,17 @@ async def test_encrypted_keys_are_user_scoped_and_preserved_per_provider() -> No
 
 
 @pytest.mark.asyncio
+async def test_platform_default_search_provider_is_minimax() -> None:
+    web = WebConfigurationService(McpCredentialService(
+        InMemoryMcpCredentialRepository(), McpCredentialCipher(SecretStr("test-key"))
+    ), api_key="platform-key")
+    view = await web.get("a", "one")
+    assert view.provider == "platform"
+    assert view.platform_provider == "minimax"
+    assert view.credential_configured
+
+
+@pytest.mark.asyncio
 async def test_switch_persists_across_instances_and_blocks_active_client() -> None:
     web = service()
     other_worker = WebConfigurationService(web.credentials)

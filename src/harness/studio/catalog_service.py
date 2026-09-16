@@ -5,7 +5,10 @@ from datetime import UTC, datetime
 from typing import Literal
 
 from harness.core.errors import ConflictError, NotFoundError
-from harness.studio.catalog import default_capability_catalog
+from harness.studio.catalog import (
+    RETIRED_PLATFORM_MCP_REFERENCES,
+    default_capability_catalog,
+)
 from harness.studio.catalog_repository import CapabilityCatalogRepository
 from harness.studio.models import (
     BuiltinToolCapability,
@@ -27,7 +30,39 @@ from harness.studio.repositories import AgentDraftRepository
 
 CatalogResourceType = Literal["modelRoute", "mcp", "policy", "executionProfile", "skill"]
 _RETIRED_PLATFORM_MODEL_ROUTES = frozenset({"anthropic-official", "new-api-default"})
-_EDITABLE_PLATFORM_MCP_REFERENCES = frozenset({"tavily-readonly"})
+# Tavily was removed from the platform default catalog; persisted catalogs may
+# still carry platform or personal copies of the retired reference until this
+# migration strips them on load.
+_EDITABLE_PLATFORM_MCP_REFERENCES = frozenset()
+
+
+def _retire_platform_mcp_servers(
+    catalog: CapabilityCatalog,
+) -> CapabilityCatalog | None:
+    """Drop retired platform MCP entries and their execution-profile grants."""
+
+    mcp_servers = tuple(
+        item
+        for item in catalog.mcp_servers
+        if item.reference not in RETIRED_PLATFORM_MCP_REFERENCES
+    )
+    execution_profiles = tuple(
+        profile.model_copy(
+            update={
+                "allowed_mcp_references": tuple(
+                    reference
+                    for reference in profile.allowed_mcp_references
+                    if reference not in RETIRED_PLATFORM_MCP_REFERENCES
+                )
+            }
+        )
+        for profile in catalog.execution_profiles
+    )
+    if mcp_servers == catalog.mcp_servers and execution_profiles == catalog.execution_profiles:
+        return None
+    return catalog.model_copy(
+        update={"mcp_servers": mcp_servers, "execution_profiles": execution_profiles}
+    )
 
 
 def _mcp_is_mutable_by(item: McpCapability, user_id: str) -> bool:
@@ -111,31 +146,6 @@ def _upgrade_known_legacy_permission_copy(
         else:
             templates.append(template)
 
-    default_mcp_servers = {item.reference: item for item in defaults.mcp_servers}
-    mcp_servers: list[McpCapability] = []
-    for mcp in catalog.mcp_servers:
-        replacement = default_mcp_servers.get(mcp.reference)
-        if (
-            replacement is not None
-            and mcp.reference == "tavily-readonly"
-            and mcp.owner_user_id is None
-            and mcp.auth_mode == "query"
-            and mcp.auth_name == "tavilyApiKey"
-            and mcp.auth_key == "api_key"
-        ):
-            mcp_servers.append(
-                mcp.model_copy(
-                    update={
-                        "auth_mode": replacement.auth_mode,
-                        "auth_name": replacement.auth_name,
-                        "version": max(mcp.version + 1, replacement.version),
-                    }
-                )
-            )
-            changed = True
-        else:
-            mcp_servers.append(mcp)
-
     default_profiles = {item.profile_id: item for item in defaults.execution_profiles}
     execution_profiles: list[ExecutionProfileMetadata] = []
     for profile in catalog.execution_profiles:
@@ -170,7 +180,6 @@ def _upgrade_known_legacy_permission_copy(
         update={
             "policies": tuple(policies),
             "templates": tuple(templates),
-            "mcp_servers": tuple(mcp_servers),
             "execution_profiles": tuple(execution_profiles),
         }
     )
@@ -369,6 +378,11 @@ class CapabilityCatalogService:
         if scoped_catalog is not None:
             upgraded_catalog = scoped_catalog
             updated_by = "system-user-resource-scope-migration"
+        retired_mcp_catalog = _retire_platform_mcp_servers(
+            upgraded_catalog or current.catalog
+        )
+        if retired_mcp_catalog is not None:
+            upgraded_catalog = retired_mcp_catalog
         if upgraded_catalog is None or current.catalog == upgraded_catalog:
             return current
         upgraded = CapabilityCatalogRecord(

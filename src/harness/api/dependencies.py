@@ -129,6 +129,7 @@ from harness.runtime.installed import INSTALLED_AGENT_RUNTIMES
 from harness.runtime.registry_codex_runtime import RegistryCodexRuntime, RegistryRuntimeRouter
 from harness.runtime.registry_runtime import RegistryClaudeRuntime
 from harness.runtime.sdk_tool_gate import SdkToolGate
+from harness.sandbox.cubesandbox import build_cubesandbox_provider
 from harness.sandbox.daytona import (
     DaytonaSandboxProvider,
     SdkDaytonaClient,
@@ -722,6 +723,8 @@ def build_memory_container(
         )
         sandbox = daytona
         sandbox_maintenance = daytona.reap_expired
+    elif resolved_settings.sandbox_provider == "cubesandbox":
+        sandbox = build_cubesandbox_provider(resolved_settings)
     elif resolved_settings.sandbox_provider == "e2b":
         e2b_api_key = resolved_settings.e2b_api_key.get_secret_value()
         if not e2b_api_key:

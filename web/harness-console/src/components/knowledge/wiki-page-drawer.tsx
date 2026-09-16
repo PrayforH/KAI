@@ -76,30 +76,20 @@ export function WikiPageDrawer({
       setSummaryOpen(false);
       setLoading(true);
       setError("");
-      const candidates = resolvedReference.current
-        ? [resolvedReference.current]
-        : (await studioClient.listKnowledgeBases().catch(() => [])).map(
-            (base) => base.reference,
-          );
-      let lastError = "未找到 Wiki 页面或没有查看权限";
-      const matches: Array<{ reference: string; page: StudioKnowledgeWikiPage }> = [];
-      for (const candidate of candidates) {
-        try {
-          const found = await studioClient.getWikiPage(candidate, next);
-          if (id !== requestId.current) return;
-          matches.push({ reference: candidate, page: found });
-        } catch (cause) {
-          lastError = cause instanceof Error ? cause.message : lastError;
-        }
+      try {
+        const known = resolvedReference.current;
+        const result = known
+          ? { reference: known, page: await studioClient.getWikiPage(known, next) }
+          : await studioClient.resolveWikiPage(next);
+        if (id !== requestId.current) return;
+        resolvedReference.current = result.reference;
+        setPage(result.page);
+      } catch (cause) {
+        if (id !== requestId.current) return;
+        setError(cause instanceof Error ? cause.message : "未找到 Wiki 页面或没有查看权限");
+      } finally {
+        if (id === requestId.current) setLoading(false);
       }
-      if (id !== requestId.current) return;
-      if (matches.length === 1) {
-        resolvedReference.current = matches[0].reference;
-        setPage(matches[0].page);
-      } else {
-        setError(matches.length > 1 ? "多个知识库存在同名页面，旧引用未记录所属知识库，无法确定来源。请重新提问获取明确引用。" : lastError);
-      }
-      setLoading(false);
     },
     [],
   );

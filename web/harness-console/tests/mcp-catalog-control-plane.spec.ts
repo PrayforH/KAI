@@ -39,7 +39,7 @@ describe("MCP capability catalog", () => {
     expect(component).toContain("studioClient.deleteMcp");
     expect(component).toContain("确认停用？");
     expect(component).toContain("永久删除");
-    expect(component).toContain('EDITABLE_PLATFORM_MCP_REFERENCES = new Set(["tavily-readonly"])');
+    expect(component).toContain("const EDITABLE_PLATFORM_MCP_REFERENCES = new Set<string>();");
     expect(component).toContain("selectedDetail.ownerUserId");
     expect(component).toContain("EDITABLE_PLATFORM_MCP_REFERENCES.has(selectedDetail.reference)");
   });

@@ -9,6 +9,11 @@ import {
   type StudioEnvironmentResourcePolicy,
 } from "../src/lib/studio-client";
 
+vi.mock("../src/lib/agent-visibility", async importOriginal => ({
+  ...await importOriginal<typeof import("../src/lib/agent-visibility")>(),
+  TEAM_COLLABORATION_ENABLED: true,
+}));
+
 function apiDraft(): ApiAgentDraft {
   const spec = studioDraftToSpec({
     ...DEFAULT_STUDIO_DRAFT,

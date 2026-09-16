@@ -6,7 +6,7 @@ metadata:
   labels:
     domain: general-assistant
     template: orchestrator
-    display-name: 通用 Lead Agent
+    display-name: 通用助手
     description: 面向所有用户的通用任务入口，负责澄清目标、规划、执行、验证与交付。
     visibility: user-default
 spec:

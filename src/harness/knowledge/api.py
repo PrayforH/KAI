@@ -26,6 +26,7 @@ from harness.knowledge.models import (
     KnowledgeWikiStats,
     ReplaceKnowledgeBaseRequest,
     ReplaceKnowledgeSourceRequest,
+    ResolvedKnowledgeWikiPage,
     SearchKnowledgeRequest,
     SearchKnowledgeResponse,
     UpdateKnowledgeMemberRequest,
@@ -476,6 +477,18 @@ async def get_source_chunk(
             reference,
             chunk_id,
         )
+    except KnowledgeEngineError as error:
+        raise await _translate_engine_error(error) from error
+
+
+@router.get("/wiki/resolve", response_model=ResolvedKnowledgeWikiPage)
+async def resolve_wiki_page(
+    slug: str,
+    actor: Annotated[StudioActor, Depends(require_studio_reader)],
+    service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
+) -> ResolvedKnowledgeWikiPage:
+    try:
+        return await service.resolve_wiki_page(actor.tenant_id, actor.user_id, slug)
     except KnowledgeEngineError as error:
         raise await _translate_engine_error(error) from error
 

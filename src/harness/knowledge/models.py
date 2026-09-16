@@ -511,6 +511,11 @@ class KnowledgeWikiPage(KnowledgeModel):
     folder_id: str = Field(default="", alias="folderId")
 
 
+class ResolvedKnowledgeWikiPage(KnowledgeModel):
+    reference: str
+    page: KnowledgeWikiPage
+
+
 class KnowledgeWikiGraphNode(KnowledgeModel):
     slug: str
     title: str

@@ -124,7 +124,7 @@ def _tool_citations(payload: dict[str, Any]) -> list[dict[str, Any]] | None:
             continue
         if not isinstance(parsed, dict):
             continue
-        hits = parsed.get("hits")
+        hits = cast(dict[str, Any], parsed).get("hits")
         if not isinstance(hits, list):
             continue
         for index, hit in enumerate(cast(list[Any], hits), start=1):
@@ -430,7 +430,7 @@ def _activity_item(event: RunEvent) -> dict[str, Any] | None:
             summary=redact_text(text, limit=max(1, len(text))),
             metadata=_metadata(message_id=payload.get("message_id")),
         )
-    if event.type == "reasoning.summary.delta":
+    if event.type in {"reasoning.summary.delta", "reasoning.delta"}:
         text = safe_model_text(str(payload.get("text", "")))
         if not text:
             return None
@@ -438,7 +438,7 @@ def _activity_item(event: RunEvent) -> dict[str, Any] | None:
             event,
             kind="analysis",
             status="succeeded",
-            title="思考摘要",
+            title="思考" if event.type == "reasoning.delta" else "思考摘要",
             summary=redact_text(text, limit=max(1, len(text))),
             metadata=_metadata(item_id=payload.get("item_id")),
         )
@@ -497,13 +497,23 @@ def _activity_item(event: RunEvent) -> dict[str, Any] | None:
                 tool_call_id=payload.get("tool_call_id"),
             ),
         )
-    if event.type in {"approval.approved", "approval.rejected"}:
+    if event.type in {
+        "approval.approved",
+        "approval.rejected",
+        "approval.expired",
+        "approval.cancelled",
+    }:
         approved = event.type.endswith("approved")
         return _item(
             event,
             kind="tool",
             status="succeeded" if approved else "failed",
-            title="审批已通过" if approved else "审批已拒绝",
+            title={
+                "approval.approved": "审批已通过",
+                "approval.rejected": "审批已拒绝",
+                "approval.expired": "审批已过期",
+                "approval.cancelled": "审批已取消",
+            }[event.type],
             metadata=_metadata(approval_id=payload.get("approval_id")),
         )
     if event.type.startswith("subagent."):

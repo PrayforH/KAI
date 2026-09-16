@@ -194,6 +194,49 @@ class PlatformSkillListing(StudioModel):
     files: tuple[PlatformSkillListingFile, ...] = ()
 
 
+class AgentSkillListing(PlatformSkillListing):
+    source: DraftSkillSource | None = None
+
+
+class AgentSkillCatalogEntry(StudioModel):
+    id: str
+    name: str
+    display_name: str = Field(alias="displayName")
+    parent_draft_id: str | None = Field(default=None, alias="parentDraftId")
+    revision: int
+    skills: tuple[AgentSkillListing, ...]
+
+    @classmethod
+    def from_draft(cls, draft: AgentDraft) -> AgentSkillCatalogEntry:
+        return cls(
+            id=draft.draft_id,
+            name=draft.spec.name,
+            displayName=draft.spec.display_name,
+            parentDraftId=draft.parent_draft_id,
+            revision=draft.revision,
+            skills=tuple(
+                AgentSkillListing(
+                    name=skill.name,
+                    description=skill.description,
+                    instructions=skill.instructions,
+                    source=skill.source,
+                    fileCount=skill.file_count
+                    if skill.file_count is not None
+                    else len(skill.files),
+                    files=tuple(
+                        PlatformSkillListingFile(
+                            path=file.path,
+                            binary=file.content_base64 is not None,
+                            sizeBytes=file.size_bytes,
+                        )
+                        for file in skill.files
+                    ),
+                )
+                for skill in draft.spec.skills
+            ),
+        )
+
+
 class PlatformSkillCatalogEntry(StudioModel):
     """One catalog package as returned by the read-only listing endpoint."""
 
@@ -812,7 +855,9 @@ class ExecutionProfileMetadata(StudioModel):
     profile_id: str = Field(alias="profileId", pattern=r"^[a-z][a-z0-9-]*$")
     label: str = Field(min_length=1, max_length=160)
     description: str = Field(min_length=1, max_length=500)
-    sandbox_provider: Literal["local", "daytona", "e2b", "gvisor"] = Field(alias="sandboxProvider")
+    sandbox_provider: Literal["local", "daytona", "e2b", "gvisor", "cubesandbox"] = Field(
+        alias="sandboxProvider"
+    )
     network_access: tuple[NetworkAccess, ...] = Field(alias="networkAccess")
     risk: CapabilityRisk
     cpu_millis: int = Field(default=1000, alias="cpuMillis", ge=100, le=16_000)

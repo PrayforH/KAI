@@ -1,0 +1,42 @@
+{
+  "baseline": {
+    "label": "baseline",
+    "run_id": "run_7bc9529270954ee686c6f37860121e99",
+    "session_id": "session_8157e61f8503486db28d6653c2c712d1",
+    "status": "succeeded",
+    "complete": true,
+    "chars": 1098,
+    "expected_chars": 1098,
+    "events": 16,
+    "median_chunk_chars": 72.0,
+    "first_delta_ms": 3794.654,
+    "median_gap_ms": 127.2,
+    "p95_gap_ms": 182.7,
+    "max_gap_ms": 182.7
+  },
+  "after": {
+    "label": "after",
+    "run_id": "run_66c4678eced54faa9d6e7e8768a711ef",
+    "session_id": "session_a3a1e6ce5638423b9111b158d6c9a4aa",
+    "status": "succeeded",
+    "complete": true,
+    "chars": 1098,
+    "expected_chars": 1098,
+    "events": 27,
+    "median_chunk_chars": 44,
+    "first_delta_ms": 2983.2839999999997,
+    "median_gap_ms": 59.0,
+    "p95_gap_ms": 61.9,
+    "max_gap_ms": 62.8
+  },
+  "measurement": "Durable message.delta event timestamps, one controlled shdata-model run per version; not browser frame timing or a TTFT benchmark.",
+  "browser": {
+    "run_id": "run_b55f9c00c0b943b6b326e601cedc8c87",
+    "title": "春天山谷中文短文",
+    "status": "completed",
+    "observed_streaming_text": true,
+    "table_rendered": true,
+    "end_marker_rendered": true,
+    "fps_measured": false
+  }
+}

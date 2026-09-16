@@ -93,7 +93,6 @@ from harness.reliability.service import ReliabilityService
 from harness.runtime.cc_switch import CcSwitchClaudeConfig
 from harness.runtime.codex_tool_gate import CodexToolGate
 from harness.runtime.default_tools import (
-    TAVILY_REFERENCE,
     default_tool_resolver,
     server_secret_credential_provider,
 )
@@ -105,6 +104,7 @@ from harness.runtime.registry_runtime import RegistryClaudeRuntime
 from harness.runtime.sdk_tool_gate import SdkToolGate
 from harness.runtime.session_store import PostgresSessionStore
 from harness.sandbox.base import SandboxProvider
+from harness.sandbox.cubesandbox import build_cubesandbox_provider
 from harness.sandbox.daytona import DaytonaSandboxProvider, SdkDaytonaClient
 from harness.sandbox.deferred import DeferredToolSandboxProvider
 from harness.sandbox.e2b import E2BSandboxProvider, SdkE2BClient
@@ -257,19 +257,12 @@ def _deployment_model_routes(settings: Settings) -> tuple[CcSwitchClaudeConfig, 
         compatibility=settings.minimax_m3_compatibility,
         capabilities=settings.minimax_m3_capabilities,
     )
-    add(
-        "glm-5-2",
-        base_url=settings.glm_5_2_base_url,
-        model=settings.glm_5_2_model,
-        credential=settings.glm_5_2_api_key,
-        auth_scheme=settings.glm_5_2_auth_scheme,
-        compatibility=settings.glm_5_2_compatibility,
-        capabilities=settings.glm_5_2_capabilities,
-    )
     return tuple(routes)
 
 
 def _sandbox(settings: Settings) -> SandboxProvider:
+    if settings.sandbox_provider == "cubesandbox":
+        return build_cubesandbox_provider(settings)
     if settings.sandbox_provider == "local":
         if not settings.allow_unsafe_local_sandbox:
             raise ValueError(
@@ -1060,7 +1053,7 @@ def build_production_container(
                 actual = (
                     "gvisor"
                     if isinstance(runtime_sandbox_backend, KubernetesSandboxProvider)
-                    else "e2b"
+                    else runtime_sandbox_backend.provider_name
                     if isinstance(runtime_sandbox_backend, E2BSandboxProvider)
                     else "daytona"
                     if isinstance(runtime_sandbox_backend, DaytonaSandboxProvider)
@@ -1084,16 +1077,13 @@ def build_production_container(
                 AgentManifestSnapshot.model_validate(version.snapshot).manifest
                 for version in (root, *children.values())
             )
+            if any(manifest.spec.runtime == "codex-app-server" for manifest in manifests):
+                return runtime_sandbox_backend
             catalog = (await capability_catalogs.get(tenant_id)).catalog
             read_only_mcp_references = frozenset(
-                {
-                    TAVILY_REFERENCE,
-                    *(
-                        capability.reference
-                        for capability in catalog.mcp_servers
-                        if capability.enabled and capability.read_only
-                    ),
-                }
+                capability.reference
+                for capability in catalog.mcp_servers
+                if capability.enabled and capability.read_only
             )
             if _manifests_require_remote_cli(
                 manifests,

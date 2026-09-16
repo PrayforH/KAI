@@ -494,3 +494,32 @@ async def test_interrupted_inline_wait_can_be_closed_idempotently() -> None:
     emitted = await events.list_after("tenant-a", "run-1", 0)
     assert [event.type for event in emitted].count("approval.cancelled") == 1
     assert emitted[-1].payload["reason"] == "runtime timeout"
+
+
+@pytest.mark.asyncio
+async def test_inline_expiry_is_terminal_even_when_waiter_is_local() -> None:
+    now = NOW
+    service, runs, _ = await arrange(clock=lambda: now)
+    approval = await service.request(tenant_id="tenant-a", run_id="run-1", tool_call_id="local-expiry",
+                                     reason="confirm", inline=True)
+    now += timedelta(minutes=6)
+    assert await service.wait_for_decision(approval.approval_id) is ApprovalStatus.EXPIRED
+    assert (await runs.get("tenant-a", "run-1")).status is RunStatus.REJECTED
+
+
+@pytest.mark.asyncio
+async def test_decision_after_cancellation_does_not_approve_or_restart_run() -> None:
+    service, runs, events = await arrange()
+    approval = await service.request(tenant_id="tenant-a", run_id="run-1", tool_call_id="cancelled",
+                                     reason="confirm", inline=True)
+    current = await runs.get("tenant-a", "run-1")
+    assert await runs.compare_and_set(current.status, current.model_copy(update={
+        "status": RunStatus.CANCELLED, "fencing_token": current.fencing_token + 1,
+    }))
+    with pytest.raises(ConflictError, match="运行已结束"):
+        await service.decide(tenant_id="tenant-a", approval_id=approval.approval_id,
+                             decision=ApprovalStatus.APPROVED)
+    assert (await service.get("tenant-a", approval.approval_id)).status is ApprovalStatus.CANCELLED
+    assert (await runs.get("tenant-a", "run-1")).status is RunStatus.CANCELLED
+    assert not any(e.type == "approval.approved" for e in await events.list_after("tenant-a", "run-1", 0))
+    assert await service.wait_for_decision(approval.approval_id) is ApprovalStatus.CANCELLED

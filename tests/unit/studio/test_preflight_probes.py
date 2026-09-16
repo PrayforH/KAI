@@ -25,7 +25,13 @@ from harness.sandbox.local import LocalSandboxProvider
 from harness.studio.catalog import default_capability_catalog
 from harness.studio.compiler import AgentDraftCompiler
 from harness.studio.factory import create_draft_spec
-from harness.studio.models import AgentDraft, AgentTemplate
+from harness.studio.models import (
+    AgentDraft,
+    AgentTemplate,
+    CapabilityRisk,
+    McpCapability,
+    NetworkAccess,
+)
 from harness.studio.preflight_probes import (
     AnthropicSandboxModelProbe,
     PreflightCheckError,
@@ -64,7 +70,7 @@ def manifest(*, mcp: bool = False) -> AgentManifest:
         template=AgentTemplate.ANALYST,
     )
     if mcp:
-        spec = spec.model_copy(update={"mcp_servers": ("tavily-readonly",)})
+        spec = spec.model_copy(update={"mcp_servers": ("team-search",)})
     draft = AgentDraft(
         draftId="draft-probe",
         tenantId="tenant-a",
@@ -75,9 +81,41 @@ def manifest(*, mcp: bool = False) -> AgentManifest:
         createdAt=NOW,
         updatedAt=NOW,
     )
-    return AgentDraftCompiler(default_capability_catalog()).compile(
-        draft
-    ).report.snapshot.manifest
+    catalog = default_capability_catalog()
+    if mcp:
+        team_search = McpCapability(
+            reference="team-search",
+            serverName="team-search",
+            label="Team search",
+            description="Read-only search over team sources.",
+            endpointUrl="http://team-search:8000/mcp",
+            tools=("mcp__team-search__search",),
+            risk=CapabilityRisk.MEDIUM,
+            networkAccess=NetworkAccess.EXTERNAL,
+            sendsUserData=True,
+            readOnly=True,
+            executionLocation="external-mcp",
+            credentialReference="TEAM_SEARCH_KEY",
+            authMode="bearer",
+            authKey="api_key",
+        )
+        catalog = catalog.model_copy(
+            update={
+                "mcp_servers": (*catalog.mcp_servers, team_search),
+                "execution_profiles": tuple(
+                    profile.model_copy(
+                        update={
+                            "allowed_mcp_references": (
+                                *profile.allowed_mcp_references,
+                                "team-search",
+                            )
+                        }
+                    )
+                    for profile in catalog.execution_profiles
+                ),
+            }
+        )
+    return AgentDraftCompiler(catalog).compile(draft).report.snapshot.manifest
 
 
 async def handle(sandbox: LocalSandboxProvider) -> SandboxHandle:
@@ -210,16 +248,14 @@ def mcp_resolver(
 ) -> ToolResolver:
     return ToolResolver(
         mcp_registry={
-            "tavily-readonly": McpServerRegistration(
-                server_name="tavily",
+            "team-search": McpServerRegistration(
+                server_name="team-search",
                 config=cast(
                     McpServerConfig,
                     {"type": transport, "url": "https://mcp.example.test/mcp"},
                 ),
-                allowed_tools=("mcp__tavily__tavily_search",),
-                preflight_smoke=McpSmokeCheck(
-                    tool="tavily_search", arguments={"query": "probe"}
-                ),
+                allowed_tools=("mcp__team-search__search",),
+                preflight_smoke=McpSmokeCheck(tool="search", arguments={"query": "probe"}),
             )
         }
     )
@@ -345,7 +381,7 @@ async def test_mcp_probe_supports_sse_transport(
 
         async def list_tools(self) -> SimpleNamespace:
             return SimpleNamespace(
-                tools=[SimpleNamespace(name="tavily_search")]
+                tools=[SimpleNamespace(name="search")]
             )
 
         async def call_tool(

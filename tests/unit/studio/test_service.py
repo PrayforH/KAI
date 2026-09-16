@@ -133,10 +133,7 @@ async def test_editing_an_imported_platform_skill_marks_package_provenance_modif
     )
 
     assert installed.spec.skills[0].source is not None
-    assert any(
-        "skill:evidence-reporting" in case.tags
-        for case in installed.spec.evaluation_cases
-    )
+    assert any("skill:evidence-reporting" in case.tags for case in installed.spec.evaluation_cases)
     assert updated.spec.skills[0].source is not None
     assert updated.spec.skills[0].source.modified is True
 
@@ -151,8 +148,7 @@ async def test_editing_an_imported_platform_skill_marks_package_provenance_modif
     )
 
     assert not any(
-        "skill:evidence-reporting" in case.tags
-        for case in uninstalled.spec.evaluation_cases
+        "skill:evidence-reporting" in case.tags for case in uninstalled.spec.evaluation_cases
     )
 
 
@@ -385,9 +381,7 @@ class DriftRegistry:
     async def list_for_user(self, tenant_id: str, owner_user_id: str) -> list[AgentVersion]:
         return await self._delegate.list_for_user(tenant_id, owner_user_id)
 
-    async def list_catalog_for_user(
-        self, tenant_id: str, owner_user_id: str
-    ) -> list[AgentVersion]:
+    async def list_catalog_for_user(self, tenant_id: str, owner_user_id: str) -> list[AgentVersion]:
         return await self._delegate.list_catalog_for_user(tenant_id, owner_user_id)
 
     async def move_owner(
@@ -468,3 +462,21 @@ async def test_subagent_hash_drift_blocks_lead_publication() -> None:
 
     assert validation.ready is False
     assert {issue.code for issue in validation.issues} >= {"subagent_version_drift"}
+
+
+@pytest.mark.asyncio
+async def test_create_uses_enabled_profile_when_default_is_disabled() -> None:
+    catalog = default_capability_catalog()
+    catalog = catalog.model_copy(
+        update={
+            "execution_profiles": tuple(
+                profile.model_copy(update={"enabled": profile.profile_id == "cubesandbox-private"})
+                for profile in catalog.execution_profiles
+            )
+        }
+    )
+    service = AgentStudioService(
+        InMemoryAgentDraftRepository(), AgentDraftCompiler(catalog), catalog
+    )
+    draft = await service.create(tenant_id="tenant-a", user_id="builder", request=create_request())
+    assert draft.spec.execution_profile == "cubesandbox-private"

@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import uuid4
 
 from fastapi import (
@@ -84,6 +85,7 @@ from harness.studio.agent_builder import (
     CreateTaskDrivenDraftRequest,
     TaskDrivenDraftResult,
 )
+from harness.studio.authoring_stream import Progress, authoring_stream
 from harness.studio.builder_conversation import (
     BuilderApplyRequest,
     BuilderConversationReply,
@@ -115,6 +117,7 @@ from harness.studio.models import (
     AgentDraft,
     AgentDraftPlacementRequest,
     AgentDraftSummary,
+    AgentSkillCatalogEntry,
     CapabilityCatalog,
     CapabilityCatalogRecord,
     CatalogImpact,
@@ -801,6 +804,32 @@ async def get_eval_run(
         raise _translate_domain_error(error) from error
 
 
+@router.get("/eval-runs/{eval_run_id}/events")
+async def stream_eval_run(
+    eval_run_id: str,
+    actor: Annotated[StudioActor, Depends(require_studio_reader)],
+    service: Annotated[EvalControlPlaneService, Depends(get_eval_service)],
+) -> StreamingResponse:
+    try:
+        await service.get_run(actor.tenant_id, actor.user_id, eval_run_id)
+    except (ConflictError, NotFoundError) as error:
+        raise _translate_domain_error(error) from error
+
+    async def operation(emit: Progress) -> dict[str, Any]:
+        previous = ""
+        while True:
+            view = await service.get_run(actor.tenant_id, actor.user_id, eval_run_id)
+            snapshot = view.model_dump_json(by_alias=True)
+            if snapshot != previous:
+                await emit({"type": "eval.snapshot", "result": json.loads(snapshot)})
+                previous = snapshot
+            if view.run.status.value not in {"queued", "running", "cancelling"}:
+                return json.loads(snapshot)
+            await asyncio.sleep(0.5)
+
+    return authoring_stream(operation)
+
+
 @router.post("/eval-runs/{eval_run_id}/cancel", response_model=EvalRunView)
 async def cancel_eval_run(
     eval_run_id: str,
@@ -1265,6 +1294,18 @@ async def import_skill_file(
         ) from error
 
 
+@router.get("/skills/agents", response_model=list[AgentSkillCatalogEntry])
+async def list_agent_skills(
+    actor: Annotated[StudioActor, Depends(require_studio_reader)],
+    service: Annotated[AgentStudioService, Depends(get_studio_service)],
+    space_id: Annotated[str | None, Query(alias="spaceId")] = None,
+) -> list[AgentSkillCatalogEntry]:
+    try:
+        return await service.list_agent_skills(actor.tenant_id, actor.user_id, space_id)
+    except (ConflictError, NotFoundError, PermissionDeniedError) as error:
+        raise _translate_domain_error(error) from error
+
+
 @router.get("/skills/catalog", response_model=PlatformSkillCatalogListing)
 async def list_platform_skill_packages(
     _actor: Annotated[StudioActor, Depends(require_studio_reader)],
@@ -1541,7 +1582,11 @@ async def builder_materials(
 ) -> dict[str, str]:
     try:
         return await read_builder_materials(
-            actor.tenant_id, actor.user_id, body, container.input_artifacts, models,
+            actor.tenant_id,
+            actor.user_id,
+            body,
+            container.input_artifacts,
+            models,
         )
     except (ConflictError, NotFoundError, PermissionDeniedError) as error:
         raise _translate_domain_error(error) from error
@@ -1555,12 +1600,29 @@ async def builder_materials(
     status_code=status.HTTP_201_CREATED,
 )
 async def create_task_driven_draft(
+    request: Request,
     body: CreateTaskDrivenDraftRequest,
     actor: Annotated[StudioActor, Depends(require_studio_writer)],
     service: Annotated[AgentStudioService, Depends(get_studio_service)],
-) -> TaskDrivenDraftResult:
+) -> TaskDrivenDraftResult | StreamingResponse:
     """Compile one business task into a complete, explainable Agent draft."""
 
+    if "text/event-stream" in request.headers.get("accept", ""):
+
+        async def operation(emit: Progress) -> dict[str, Any]:
+            result = await service.create_from_task(
+                tenant_id=actor.tenant_id,
+                user_id=actor.user_id,
+                request=body,
+                on_progress=emit,
+            )
+            return result.model_copy(
+                update={
+                    "draft": compact_draft_for_editor(result.draft),
+                }
+            ).model_dump(mode="json", by_alias=True)
+
+        return authoring_stream(operation)
     try:
         result = await service.create_from_task(
             tenant_id=actor.tenant_id,
@@ -1589,8 +1651,10 @@ async def import_draft_bundle(
 ) -> ImportedAgentBundle:
     media_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
     if media_type not in {
-        "application/zip", "application/vnd.rar",
-        "application/x-rar-compressed", "application/octet-stream",
+        "application/zip",
+        "application/vnd.rar",
+        "application/x-rar-compressed",
+        "application/octet-stream",
     }:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
@@ -1807,18 +1871,45 @@ async def create_agent_builder_patch(
 
 @router.post(
     "/drafts/{draft_id}/builder-conversation",
-    response_model=BuilderConversationReply, response_model_exclude_unset=True,
+    response_model=BuilderConversationReply,
+    response_model_exclude_unset=True,
 )
 async def converse_agent_builder(
+    request: Request,
     draft_id: str,
     body: BuilderConversationRequest,
     actor: Annotated[StudioActor, Depends(require_studio_writer)],
     service: Annotated[AgentStudioService, Depends(get_studio_service)],
     models: Annotated[ModelConfigurationService, Depends(get_model_configuration_service)],
-) -> BuilderConversationReply:
+) -> BuilderConversationReply | StreamingResponse:
+    if "text/event-stream" in request.headers.get("accept", ""):
+        # Ownership is checked before opening the stream and again by the service.
+        try:
+            current = await service.get(actor.tenant_id, actor.user_id, draft_id)
+            if current.revision != body.expected_revision:
+                raise ConflictError("草稿已更新，请基于最新配置重新生成建议")
+        except (ConflictError, NotFoundError) as error:
+            raise _translate_domain_error(error) from error
+
+        async def operation(emit: Progress) -> dict[str, Any]:
+            reply = await service.converse_builder(
+                actor.tenant_id,
+                actor.user_id,
+                draft_id,
+                body,
+                models,
+                on_progress=emit,
+            )
+            return reply.model_dump(mode="json", by_alias=True, exclude_unset=True)
+
+        return authoring_stream(operation)
     try:
         return await service.converse_builder(
-            actor.tenant_id, actor.user_id, draft_id, body, models,
+            actor.tenant_id,
+            actor.user_id,
+            draft_id,
+            body,
+            models,
         )
     except (ConflictError, NotFoundError) as error:
         raise _translate_domain_error(error) from error
@@ -1950,7 +2041,11 @@ async def create_studio_try_run(
         previous = None
         if body.continue_from_run_id:
             previous = await _require_studio_try_run(
-                container, actor, draft_id, draft.revision, body.continue_from_run_id,
+                container,
+                actor,
+                draft_id,
+                draft.revision,
+                body.continue_from_run_id,
             )
             if not previous.status.is_terminal:
                 raise ConflictError("Previous preview turn is still running")
@@ -1959,32 +2054,49 @@ async def create_studio_try_run(
                 raise ConflictError("Preview configuration changed; start a new conversation")
         else:
             session = await container.sessions.create(
-                actor.tenant_id, actor.user_id, draft.spec.name, preview_version,
-                session_id=f"studio_try_{session_key}", preview=True,
+                actor.tenant_id,
+                actor.user_id,
+                draft.spec.name,
+                preview_version,
+                session_id=f"studio_try_{session_key}",
+                preview=True,
             )
         resolved = await container.input_artifacts.resolve_for_run(
-            tenant_id=actor.tenant_id, user_id=actor.user_id,
+            tenant_id=actor.tenant_id,
+            user_id=actor.user_id,
             input_artifact_ids=body.input_artifact_ids,
         )
         model_override = previous.input.get("model_route_override") if previous else None
         has_images = any(item.media_type.startswith("image/") for item in resolved)
         if has_images:
             catalog = await service.capabilities(actor.tenant_id, actor.user_id)
-            api_format = ("openai_compatible" if draft.spec.runtime == "codex-app-server"
-                          else "anthropic_compatible")
-            candidates = [route for route in catalog.model_routes
-                          if route.enabled and {"vision", *draft.spec.model.required_capabilities}
-                          <= set(route.capabilities) and route.api_format == api_format]
+            api_format = (
+                "openai_compatible"
+                if draft.spec.runtime == "codex-app-server"
+                else "anthropic_compatible"
+            )
+            candidates = [
+                route
+                for route in catalog.model_routes
+                if route.enabled
+                and {"vision", *draft.spec.model.required_capabilities} <= set(route.capabilities)
+                and route.api_format == api_format
+            ]
             preferred = model_override or draft.spec.model.route_id
             candidates.sort(key=lambda route: route.route_id != preferred)
             if not candidates:
-                raise ConflictError("图片已上传，但当前运行环境没有可用的视觉模型。"
-                                    "请在模型配置中启用兼容的视觉模型后重试，输入和附件会保留。")
+                raise ConflictError(
+                    "图片已上传，但当前运行环境没有可用的视觉模型。"
+                    "请在模型配置中启用兼容的视觉模型后重试，输入和附件会保留。"
+                )
             model_override = None
             for candidate in candidates:
                 if await models.resolve_runtime(
-                    actor.tenant_id, draft.spec.name, candidate.route_id,
-                    apply_agent_binding=False, required_api_format=api_format,
+                    actor.tenant_id,
+                    draft.spec.name,
+                    candidate.route_id,
+                    apply_agent_binding=False,
+                    required_api_format=api_format,
                 ):
                     model_override = candidate.route_id
                     break
@@ -1992,14 +2104,19 @@ async def create_studio_try_run(
                 raise ConflictError("视觉模型尚未配置有效凭据，请检查模型连接后重试")
         previous_prompts = list(previous.input.get("conversation_prompts", [])) if previous else []
         creation = await container.runs.create_with_result(
-            actor.tenant_id, session.session_id, body.idempotency_key,
+            actor.tenant_id,
+            session.session_id,
+            body.idempotency_key,
             input={
                 "prompt": body.prompt,
                 "conversation_prompts": [*previous_prompts, body.prompt],
                 "input_artifact_ids": [item.input_artifact_id for item in resolved],
                 **({"model_route_override": model_override} if model_override else {}),
-                **({"required_model_capabilities": ["vision"]}
-                   if any(item.media_type.startswith("image/") for item in resolved) else {}),
+                **(
+                    {"required_model_capabilities": ["vision"]}
+                    if any(item.media_type.startswith("image/") for item in resolved)
+                    else {}
+                ),
             },
         )
         if container.auto_execute and creation.created:
@@ -2072,6 +2189,7 @@ async def stream_studio_try_run_events(
         sequence = after_sequence
         terminal = run.status.is_terminal
         last_emission = time.monotonic()
+        last_snapshot = 0.0
         while True:
             events = await container.observed_events.list_after(
                 actor.tenant_id,
@@ -2086,6 +2204,31 @@ async def stream_studio_try_run_events(
                 last_emission = time.monotonic()
                 if event.type in _TRY_RUN_TERMINAL_EVENT_TYPES:
                     terminal = True
+            if events and (
+                terminal
+                or time.monotonic() - last_snapshot >= 1.0
+                or any(item.type.startswith("approval.") for item in events)
+            ):
+                view = await _studio_try_run_view(
+                    container,
+                    actor,
+                    draft_id,
+                    draft_revision,
+                    run_id,
+                )
+                snapshot = {
+                    "type": "studio.snapshot",
+                    "event_id": f"snapshot-{sequence}",
+                    "sequence": sequence,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "payload": view.model_dump(
+                        mode="json",
+                        by_alias=True,
+                        exclude={"events", "final_text", "loop"},
+                    ),
+                }
+                yield "data: " + json.dumps(snapshot, separators=(",", ":")) + "\n\n"
+                last_snapshot = time.monotonic()
             if terminal:
                 break
             if time.monotonic() - last_emission >= _TRY_RUN_STREAM_HEARTBEAT_SECONDS:

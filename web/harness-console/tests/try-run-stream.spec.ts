@@ -61,3 +61,19 @@ describe("Studio Try Run streaming projection", () => {
     expect(terminal.run.status).toBe("succeeded");
   });
 });
+
+it("shows and settles approval cards directly from streamed events", () => {
+  const requested = { ...event(1, "approval.requested"), payload: {
+    approval_id: "approval-1", tool_name: "Bash", reason: "确认操作", argument_summary: { command: "echo test" },
+  } };
+  const waiting = appendTryRunEvent(view(), requested);
+  expect(waiting.run.status).toBe("waiting_approval");
+  expect(waiting.approvals[0]).toMatchObject({ approval_id: "approval-1", status: "pending", tool_name: "Bash" });
+  for (const status of ["approved", "rejected", "expired", "cancelled"]) {
+    const decided = appendTryRunEvent(waiting, { ...event(2, `approval.${status}`), payload: { approval_id: "approval-1" } });
+    expect(decided.approvals[0].status).toBe(status);
+  }
+  const resumed = appendTryRunEvent(waiting, event(3, "run.running"));
+  expect(resumed.run.status).toBe("running");
+  expect(appendTryRunEvent(resumed, event(2, "run.waiting_approval")).run.status).toBe("running");
+});

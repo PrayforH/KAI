@@ -37,7 +37,7 @@ from harness.studio.model_configuration import ModelConfigurationService
 _CONTROL_PLANE_PROVIDER_ID = "agent_studio"
 _CONTROL_PLANE_API_KEY_ENV = "HARNESS_CODEX_PROVIDER_API_KEY"
 _TOML_BARE_KEY = re.compile(r"^[A-Za-z0-9_-]+$")
-_OPTIONAL_CODEX_MCP_SERVERS = frozenset({"tavily"})
+_OPTIONAL_CODEX_MCP_SERVERS: frozenset[str] = frozenset()
 _CODEX_REASONING_EFFORTS = frozenset({"minimal", "low", "medium", "high", "xhigh"})
 
 

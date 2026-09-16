@@ -285,9 +285,9 @@ describe("Agent Studio management page", () => {
 
   it("renders the primary Studio editor before secondary control-plane data", () => {
     expect(workbench).toContain("const [serverDrafts, serverCapabilities] = await Promise.all([");
-    expect(workbench).toContain("if (loading || loadError) return;");
+    expect(workbench).toContain('viewMode !== "editor" || !configEditorOpen');
     expect(workbench).toContain("studioClient.listPreviews()");
-    expect(workbench).toContain("These panels are secondary; the primary editor remains available.");
+    expect(workbench).toContain('activeSection === "evaluation"');
     expect(studioClient).toContain("const [personal, response] = await Promise.all([");
   });
 
@@ -596,7 +596,8 @@ describe("Agent Studio management page", () => {
     expect(styles).toContain(".advancedRuntimeSettings[open]");
     expect(workbench).toContain("调用范围遵循已发布的权限设置");
     expect(workbench).not.toContain('type="checkbox" checked={sandbox');
-    expect(studioConfig).toContain("公网搜索（Tavily）");
+    // The platform no longer ships a built-in MCP; catalogs expose user MCPs.
+    expect(studioConfig).toContain("export const MCP_OPTIONS: McpOption[] = [];");
     expect(workbench).toContain("仅展示可配置工具");
     expect(workbench).toContain('new Set(["Task"])');
     expect(builderOverlays).toContain("builtinTools: generatedDraft.builtinTools");
@@ -829,7 +830,7 @@ describe("Agent Studio management page", () => {
 
   it("keeps the empty Agent catalog quiet until the user explicitly creates one", () => {
     expect(workbench).not.toContain("if (canEdit) setNewAgentOpen(true)");
-    expect(workbench).toContain('setNotice(canEdit ? "当前没有草稿，可新建第一个 Agent"');
+    expect(workbench).toContain('setNotice(serverDrafts.length > 0 ? "" : canEdit ? "当前没有草稿，可新建第一个 Agent"');
     expect(workbench).toContain('className={`${styles.studioShell} ${styles.workbenchContent}`}');
   });
 

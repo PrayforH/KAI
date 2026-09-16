@@ -10,11 +10,11 @@ from __future__ import annotations
 import base64
 import ipaddress
 import json
-from collections.abc import Iterable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from io import BytesIO
-from typing import Literal, cast
+from typing import Any, Literal, cast
 from urllib.parse import quote, urlsplit
 from uuid import uuid4
 
@@ -422,8 +422,9 @@ class ModelConfigurationService:
         user_prompt: str,
         max_tokens: int = 256,
         images: tuple[tuple[str, bytes], ...] = (),
+        on_delta: Callable[[str], Awaitable[None]] | None = None,
     ) -> str:
-        """Run a small non-streaming control-plane text completion."""
+        """Complete control-plane text, optionally forwarding provider deltas."""
 
         route = await self._route(tenant_id, route_id)
         if not route.enabled or route.model_type not in {"chat", "vision"}:
@@ -470,6 +471,8 @@ class ModelConfigurationService:
                 "thinking": {"type": "disabled"},
             }
         try:
+            if on_delta is not None:
+                return await self._stream_completion(route, secret, path, payload, on_delta)
             response = await self._post(route, secret, path, payload)
             response.raise_for_status()
         except httpx.HTTPStatusError as error:
@@ -482,6 +485,73 @@ class ModelConfigurationService:
         if not text:
             raise ConflictError("model provider returned no visible completion text")
         return text
+
+    async def _stream_completion(
+        self, route: ModelRouteCapability, secret: SecretStr | None,
+        path: str, payload: dict[str, object],
+        on_delta: Callable[[str], Awaitable[None]],
+    ) -> str:
+        assert route.base_url is not None
+        base = route.base_url.rstrip("/")
+        if route.api_format == "anthropic_compatible" and not base.endswith("/v1"):
+            base += "/v1"
+        client = self._http_client or httpx.AsyncClient(
+            timeout=httpx.Timeout(90, connect=10), follow_redirects=False,
+        )
+        chunks: list[str] = []
+        finished = False
+        try:
+            async with client.stream(
+                "POST", f"{base}/{path}", headers=self._headers(route, secret),
+                json={**payload, "stream": True},
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if data == "[DONE]":
+                        finished = True
+                        break
+                    try:
+                        event = json.loads(data)
+                    except ValueError:
+                        raise ConflictError("模型返回了无效的流式响应") from None
+                    if not isinstance(event, dict):
+                        raise ConflictError("模型返回了无效的流式响应")
+                    event = cast(dict[str, Any], event)
+                    if event.get("error") or event.get("type") == "error":
+                        raise ConflictError("模型流式输出失败，请重试")
+                    text = ""
+                    if route.api_format == "openai_compatible":
+                        choices = event.get("choices")
+                        if choices:
+                            if not isinstance(choices, list) or not isinstance(choices[0], dict):
+                                raise ConflictError("模型返回了无效的流式响应")
+                            choice = cast(dict[str, Any], choices[0])
+                            delta = choice.get("delta")
+                            if delta is not None and not isinstance(delta, dict):
+                                raise ConflictError("模型返回了无效的流式响应")
+                            text = cast(dict[str, Any], delta or {}).get("content", "")
+                            if choice.get("finish_reason") == "length":
+                                raise ConflictError("模型输出超出长度限制，请缩小修改范围")
+                            finished = finished or choice.get("finish_reason") is not None
+                    elif event.get("type") == "content_block_delta":
+                        text = event.get("delta", {}).get("text", "")
+                    elif event.get("type") == "message_delta":
+                        if event.get("delta", {}).get("stop_reason") == "max_tokens":
+                            raise ConflictError("模型输出超出长度限制，请缩小修改范围")
+                    elif event.get("type") == "message_stop":
+                        finished = True
+                    if isinstance(text, str) and text:
+                        chunks.append(text)
+                        await on_delta(text)
+            if not finished or not chunks:
+                raise ConflictError("模型流式输出中断或未返回正文，请重试")
+            return "".join(chunks)
+        finally:
+            if self._http_client is None:
+                await client.aclose()
 
     @staticmethod
     def _completion_text(payload: object, api_format: str) -> str:

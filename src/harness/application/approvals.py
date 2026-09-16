@@ -112,7 +112,7 @@ class ApprovalService:
                         await self._ensure_inline_run_resumed(current)
                     return current.status
                 run = await self._runs.get(tenant_id, current.run_id)
-                if run.status in {RunStatus.CANCELLING, RunStatus.CANCELLED}:
+                if run.status is RunStatus.CANCELLING or run.status.is_terminal:
                     cancelled = await self._cancel_pending(current, run)
                     return cancelled.status
                 if self._clock() >= current.expires_at:
@@ -202,27 +202,25 @@ class ApprovalService:
             event_type="approval.expired",
             payload={"approval_id": current.approval_id},
         )
-        has_local_waiter = current.approval_id in self._inline_waiters
-        if current.inline and has_local_waiter:
-            await self._ensure_inline_run_resumed(expired)
-        else:
-            if not run.status.is_terminal and run.status is not RunStatus.CANCELLING:
-                await self._events.append(
-                    tenant_id=current.tenant_id,
-                    run_id=run.run_id,
-                    session_id=run.session_id,
-                    event_type="tool.result",
-                    payload={
-                        "tool_call_id": current.tool_call_id,
-                        "is_error": True,
-                        "error": {
-                            "code": "approval_expired",
-                            "message": "tool approval expired",
-                        },
+        # Expiry has the same durable outcome on API and Worker processes.
+        # A local in-memory waiter must not determine whether the Run resumes.
+        if not run.status.is_terminal and run.status is not RunStatus.CANCELLING:
+            await self._events.append(
+                tenant_id=current.tenant_id,
+                run_id=run.run_id,
+                session_id=run.session_id,
+                event_type="tool.result",
+                payload={
+                    "tool_call_id": current.tool_call_id,
+                    "is_error": True,
+                    "error": {
+                        "code": "approval_expired",
+                        "message": "tool approval expired",
                     },
-                )
-                if run.status is RunStatus.WAITING_APPROVAL:
-                    await self._move(run, RunStatus.REJECTED)
+                },
+            )
+            if run.status is RunStatus.WAITING_APPROVAL:
+                await self._move(run, RunStatus.REJECTED)
         waiter = self._inline_waiters.get(current.approval_id)
         if waiter is not None and not waiter.done():
             waiter.set_result(ApprovalStatus.EXPIRED)
@@ -343,6 +341,10 @@ class ApprovalService:
             return current
         if current.status is not ApprovalStatus.PENDING:
             raise ConflictError(f"approval is already {current.status.value}")
+        run = await self._runs.get(tenant_id, current.run_id)
+        if run.status.is_terminal or run.status is RunStatus.CANCELLING:
+            await self._cancel_pending(current, run, reason="run is no longer active")
+            raise ConflictError("运行已结束或正在停止，无法继续审批")
         decided_at = self._clock()
         if decided_at >= current.expires_at:
             await self._expire(current)

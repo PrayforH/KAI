@@ -337,3 +337,21 @@ it("uses creation references on the left and previews images independently on th
   await sendTest("再看看这张图");
   expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toMatchObject({inputArtifactIds: ["input_artifact_image"]});
 });
+
+it("renders model deltas before the completed proposal and keeps changes reviewable", async () => {
+  let finish: (reply: Awaited<ReturnType<typeof studioClient.converseBuilder>>) => void;
+  vi.mocked(studioClient.converseBuilder).mockImplementation(async (_id, _body, progress) => {
+    progress?.({ type: "builder.reply", text: "正在逐步输出建议" });
+    return new Promise(resolve => { finish = resolve; });
+  });
+  await click("修改配置");
+  await send("改成表格");
+  // The reply is progressively revealed; it must appear while the proposal is pending.
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 100)); });
+  expect(host.textContent).toContain("正在逐步输出建议");
+  expect(host.querySelector('[aria-label="待确认的配置修改"]')).toBeNull();
+  await act(async () => finish!({ baseRevision: 1, reply: "建议完成", changedFields: ["systemPrompt"], changes: { systemPrompt: "表格" } }));
+  expect(host.textContent).toContain("建议完成");
+  expect(host.querySelector('[aria-label="待确认的配置修改"]')).not.toBeNull();
+  expect(studioClient.applyBuilderEdit).not.toHaveBeenCalled();
+});

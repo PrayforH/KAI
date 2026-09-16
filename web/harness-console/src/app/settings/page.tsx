@@ -16,6 +16,7 @@ import {
 } from "../../components/product-icon";
 import { SecretInput } from "../../components/secret-input";
 import { ThemeSelector } from "../../components/theme-toggle";
+import { ProcessDisplaySettings } from "../../components/process-display-settings";
 import { useFollowUpPreference, useInternalAgentsPreference } from "../../lib/interface-preferences";
 import {
   loadTasks,
@@ -431,6 +432,7 @@ function SettingsContent() {
                   <input type="checkbox" checked={showInternalAgents} onChange={(event) => setShowInternalAgents(event.target.checked)} />
                   <span><strong>显示内部子智能体</strong><small>在智能体列表和各处选择框中显示内部子智能体，默认关闭。</small></span>
                 </label>
+                <ProcessDisplaySettings />
                 {activeSection === "configuration" && <WebConfiguration />}
               </div>
             </section>

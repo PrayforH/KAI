@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from harness.core.errors import ConflictError, NotFoundError
 from harness.storage.database import SessionFactory
 from harness.storage.models import AgentDraftRow
+from harness.studio.catalog import RETIRED_PLATFORM_MCP_REFERENCES
 from harness.studio.models import AgentDraft, AgentDraftSummary
 
 AGENT_DRAFT_SCHEMA_VERSION = 1
@@ -17,13 +18,33 @@ def _draft_payload(draft: AgentDraft) -> dict[str, Any]:
     return draft.model_dump(mode="json", by_alias=True)
 
 
+def _strip_retired_mcp_references(draft: AgentDraft) -> AgentDraft:
+    """Drop retired platform MCP references so stored drafts stay compilable."""
+
+    if not any(item in RETIRED_PLATFORM_MCP_REFERENCES for item in draft.spec.mcp_servers):
+        return draft
+    return draft.model_copy(
+        update={
+            "spec": draft.spec.model_copy(
+                update={
+                    "mcp_servers": tuple(
+                        item
+                        for item in draft.spec.mcp_servers
+                        if item not in RETIRED_PLATFORM_MCP_REFERENCES
+                    )
+                }
+            )
+        }
+    )
+
+
 def _load_draft(row: AgentDraftRow) -> AgentDraft:
     if row.schema_version != AGENT_DRAFT_SCHEMA_VERSION:
         raise ValueError(
             "Unsupported Agent Draft schema version: "
             f"{row.schema_version}; expected={AGENT_DRAFT_SCHEMA_VERSION}"
         )
-    draft = AgentDraft.model_validate(row.payload)
+    draft = _strip_retired_mcp_references(AgentDraft.model_validate(row.payload))
     if draft.agent_id is None and row.agent_id is not None:
         draft = draft.model_copy(update={"agent_id": row.agent_id})
     if draft.space_id is None and row.space_id is not None:
@@ -60,6 +81,7 @@ def _summary_fields(payload: dict[str, Any]) -> dict[str, Any]:
     python_tools = cast(list[Any], python_tools) if isinstance(python_tools, list) else []
     mcp_servers = spec.get("mcpServers")
     mcp_servers = cast(list[Any], mcp_servers) if isinstance(mcp_servers, list) else []
+    mcp_servers = [item for item in mcp_servers if item not in RETIRED_PLATFORM_MCP_REFERENCES]
 
     return {
         "parentDraftId": payload.get("parentDraftId"),

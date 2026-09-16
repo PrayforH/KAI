@@ -7,7 +7,7 @@ metadata:
     domain: networked-research
     template: analyst
     display-name: 联网知识研究
-    description: 综合外部知识库、OpenAI 官方文档和公网搜索，生成带来源与不确定性说明的研究答复。
+    description: 综合外部知识库与用户材料，生成带来源与不确定性说明的研究答复。
     execution-profile: isolated-default
 spec:
   runtime: claude-agent-sdk
@@ -23,7 +23,6 @@ spec:
     - builtin: Read
     - builtin: Glob
     - builtin: Grep
-    - mcp: tavily-readonly
     - mcp: knowledge-search
   subagents: []
   hooks: []

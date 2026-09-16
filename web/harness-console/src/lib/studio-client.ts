@@ -1,3 +1,5 @@
+import { agentDisplayName } from "./agent-display-name";
+import { readClientResource, mutateClientResource, rememberClientRead, forgetClientRead, peekClientRead } from "./client-read-cache";
 import { TEAM_COLLABORATION_ENABLED } from "./agent-visibility";
 import type { RunActivity } from "./activity-schema";
 import { requireAuthenticatedResponse } from "./client-auth";
@@ -805,6 +807,7 @@ export type StudioTryRun = {
   }>;
   approvals: Array<{
     approval_id: string;
+    expires_at?: string;
     status: "pending" | "approved" | "rejected" | "expired" | "cancelled";
     tool_name: string | null;
     reason: string;
@@ -1202,6 +1205,15 @@ export type StudioMcpCredentialStatus = {
   updatedAt: string | null;
 };
 
+export type StudioAgentSkillCatalogEntry = {
+  id: string; name: string; displayName: string; parentDraftId: string | null; revision: number;
+  skills: Array<{
+    name: string; description: string; instructions: string; fileCount: number;
+    source?: StudioDraft["skills"][number]["source"];
+    files: Array<{ path: string; binary?: boolean; sizeBytes?: number | null }>;
+  }>;
+};
+
 export class StudioApiError extends Error {
   constructor(
     readonly status: number,
@@ -1239,7 +1251,30 @@ async function readJson<T>(response: Response): Promise<T> {
   return JSON.parse(body) as T;
 }
 
-async function requestForm<T>(path: string, form: FormData): Promise<T> {
+function requestForm<T>(path: string, form: FormData): Promise<T> {
+  return mutateClientResource(() => sendForm<T>(path, form));
+}
+
+function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  if (init.method && init.method.toUpperCase() !== "GET") {
+    return mutateClientResource(() => sendRequest<T>(path, init));
+  }
+  const cached = /^(capabilities|drafts(?:\?.*)?|knowledge\/bases|skills\/catalog|skills\/agents(?:\?.*)?)$/.test(path);
+  const documents = /^knowledge\/sources\/[^/]+\/documents$/.test(path);
+  return cached || documents
+    ? readClientResource(`/api/studio/${path}`, () => sendRequest<T>(path, init), cached ? 10_000 : 0)
+    : sendRequest<T>(path, init);
+}
+
+function streamRequest<T>(path: string, init: RequestInit, onProgress: (event: StudioStreamProgress) => void): Promise<T> {
+  return mutateClientResource(() => sendStreamRequest<T>(path, init, onProgress));
+}
+
+function mutationFetch(url: string, init: RequestInit): Promise<Response> {
+  return mutateClientResource(() => fetch(url, init));
+}
+
+async function sendForm<T>(path: string, form: FormData): Promise<T> {
   const response = requireAuthenticatedResponse(
     await fetch(`/api/studio/${path.replace(/^\//, "")}`, {
       method: "POST",
@@ -1251,7 +1286,7 @@ async function requestForm<T>(path: string, form: FormData): Promise<T> {
   return readJson<T>(response);
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function sendRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = requireAuthenticatedResponse(
     await fetch(`/api/studio/${path.replace(/^\//, "")}`, {
       ...init,
@@ -1263,7 +1298,33 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     }),
   );
   if (!response.ok) throw await errorFrom(response);
-  return readJson<T>(response);
+  const result = await readJson<T>(response);
+  if (Array.isArray(result) && /^(?:drafts(?:\?|$)|skills\/agents(?:\?|$))/.test(path)) {
+    return result.map((item) => ({ ...item, displayName: agentDisplayName(item.name, item.displayName) })) as T;
+  }
+  return result;
+}
+
+export type StudioStreamProgress = { type: string; text?: string; result?: unknown };
+async function sendStreamRequest<T>(
+  path: string, init: RequestInit, onProgress: (event: StudioStreamProgress) => void,
+): Promise<T> {
+  const response = requireAuthenticatedResponse(await fetch(`/api/studio/${path}`, {
+    ...init, cache: "no-store",
+    headers: { Accept: "text/event-stream", ...(init.body ? { "Content-Type": "application/json" } : {}) },
+  }));
+  if (!response.ok) throw await errorFrom(response);
+  // Supports an older server without replaying a POST that may have saved a draft.
+  if (!response.headers.get("content-type")?.includes("text/event-stream")) return readJson<T>(response);
+  let result: T | undefined;
+  let completed = false;
+  await streamAgui(response, (_id, event) => {
+    if (event.type === "error") throw new Error(String(event.message || "实时处理失败"));
+    if (event.type === "result") { result = event.result as T; completed = true; }
+    else onProgress(event);
+  });
+  if (!completed) throw new Error("实时连接中断，请刷新确认当前状态后重试");
+  return result as T;
 }
 
 async function listAccessibleDrafts(): Promise<StudioDraftSummary[]> {
@@ -1296,55 +1357,37 @@ async function listAccessibleDrafts(): Promise<StudioDraftSummary[]> {
   }
 }
 
-const studioDraftRequests = new Map<string, Promise<ApiAgentDraft>>();
-const studioDraftSnapshots = new Map<
-  string,
-  { receivedAt: number; draft: ApiAgentDraft }
->();
-const STUDIO_DRAFT_CACHE_MS = 10_000;
+function draftCacheKey(draftId: string) { return `/api/studio/drafts/${encodeURIComponent(draftId)}`; }
 
 function rememberStudioDraft(draft: ApiAgentDraft): ApiAgentDraft {
-  studioDraftSnapshots.set(draft.draftId, {
-    receivedAt: Date.now(),
-    draft,
-  });
-  return draft;
+  return rememberClientRead(draftCacheKey(draft.draftId), draft);
 }
 
 function forgetStudioDraft(draftId: string) {
-  studioDraftSnapshots.delete(draftId);
+  forgetClientRead(draftCacheKey(draftId));
 }
 
 function getStudioDraft(
   draftId: string,
   options: { expectedRevision?: number; maxAgeMs?: number } = {},
 ): Promise<ApiAgentDraft> {
-  const cached = studioDraftSnapshots.get(draftId);
-  const maxAgeMs = options.maxAgeMs ?? STUDIO_DRAFT_CACHE_MS;
-  if (
-    cached
-    && Date.now() - cached.receivedAt < maxAgeMs
-    && (
-      options.expectedRevision === undefined
-      || cached.draft.revision === options.expectedRevision
-    )
-  ) {
-    return Promise.resolve(cached.draft);
+  const key = draftCacheKey(draftId);
+  const cached = peekClientRead<ApiAgentDraft>(key);
+  if (cached && options.expectedRevision !== undefined && cached.revision !== options.expectedRevision) {
+    forgetClientRead(key);
   }
-  const inFlight = studioDraftRequests.get(draftId);
-  if (inFlight) return inFlight;
-  const requestDraft = request<ApiAgentDraft>(
+  return readClientResource(key, () => request<ApiAgentDraft>(
     `drafts/${encodeURIComponent(draftId)}`,
-  ).then(rememberStudioDraft).finally(() => {
-    if (studioDraftRequests.get(draftId) === requestDraft) {
-      studioDraftRequests.delete(draftId);
-    }
-  });
-  studioDraftRequests.set(draftId, requestDraft);
-  return requestDraft;
+  ), options.maxAgeMs ?? 10_000);
 }
 
-async function agentRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+function agentRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+  return init.method && init.method !== "GET"
+    ? mutateClientResource(() => sendAgentRequest<T>(path, init))
+    : sendAgentRequest<T>(path, init);
+}
+
+async function sendAgentRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = requireAuthenticatedResponse(
     await fetch(`/api/harness/agents/${path.replace(/^\//, "")}`, {
       ...init,
@@ -1441,7 +1484,7 @@ export function apiDraftToStudioDraft(source: ApiAgentDraft): StudioDraft {
     publishedVersion: source.publishedVersion,
     publishedHash: source.publishedHash,
     publishedPackageHash: source.publishedPackageHash,
-    displayName: spec.displayName,
+    displayName: agentDisplayName(spec.name, spec.displayName),
     name: spec.name,
     description: spec.description,
     domain: spec.domain,
@@ -1713,6 +1756,9 @@ export const studioClient = {
     request<StudioKnowledgeWikiPage[]>(
       `knowledge/sources/${encodeURIComponent(baseReference)}/wiki/pages`,
     ),
+  resolveWikiPage: (slug: string) => request<{ reference: string; page: StudioKnowledgeWikiPage }>(
+    `knowledge/wiki/resolve?slug=${encodeURIComponent(slug)}`,
+  ),
   getWikiPage: (baseReference: string, slug: string) =>
     request<StudioKnowledgeWikiPage>(
       `knowledge/sources/${encodeURIComponent(baseReference)}/wiki/pages/${slug
@@ -1841,6 +1887,16 @@ export const studioClient = {
     }).then(rememberStudioDraft),
   listDrafts: () => request<StudioDraftSummary[]>("drafts"),
   listAccessibleDrafts,
+  listAgentSkills: async (): Promise<StudioAgentSkillCatalogEntry[]> => {
+    const personal = request<StudioAgentSkillCatalogEntry[]>("skills/agents");
+    if (!TEAM_COLLABORATION_ENABLED) return personal;
+    const response = requireAuthenticatedResponse(await fetch("/api/spaces", { cache: "no-store" }));
+    if (!response.ok) return personal;
+    const spaces = await response.json() as StudioSpaceSummary[];
+    const groups = await Promise.all([personal, ...spaces.map((item) =>
+      request<StudioAgentSkillCatalogEntry[]>(`skills/agents?spaceId=${encodeURIComponent(item.space.spaceId)}`))]);
+    return [...new Map(groups.flat().map((item) => [item.id, item])).values()];
+  },
   getDraft: (
     draftId: string,
     options?: { expectedRevision?: number; maxAgeMs?: number },
@@ -1945,12 +2001,16 @@ export const studioClient = {
     audience?: string;
     sampleInput?: string;
     runtimePreference: "auto" | StudioDraft["runtime"];
-  }): Promise<StudioTaskDrivenDraftResult> => {
+  }, onProgress?: (event: StudioStreamProgress) => void, signal?: AbortSignal): Promise<StudioTaskDrivenDraftResult> => {
     try {
-      const result = await request<StudioTaskDrivenDraftResult>("drafts/from-task", {
+      const init = {
         method: "POST",
         body: JSON.stringify(body),
-      });
+        signal,
+      };
+      const result = onProgress
+        ? await streamRequest<StudioTaskDrivenDraftResult>("drafts/from-task", init, onProgress)
+        : await request<StudioTaskDrivenDraftResult>("drafts/from-task", init);
       rememberStudioDraft(result.draft);
       return result;
     } catch (error) {
@@ -1986,9 +2046,11 @@ export const studioClient = {
     messages: { role: "user" | "assistant"; content: string }[];
     runContext: string;
     intent?: "auto" | "edit";
-  }): Promise<StudioBuilderReply> => request(`drafts/${encodeURIComponent(draftId)}/builder-conversation`, {
-    method: "POST", body: JSON.stringify(body),
-  }),
+  }, onProgress?: (event: StudioStreamProgress) => void, signal?: AbortSignal): Promise<StudioBuilderReply> => {
+    const path = `drafts/${encodeURIComponent(draftId)}/builder-conversation`;
+    const init = { method: "POST", body: JSON.stringify(body), signal };
+    return onProgress ? streamRequest(path, init, onProgress) : request(path, init);
+  },
   applyBuilderEdit: async (draftId: string, body: {
     expectedRevision: number; changes: StudioBuilderChanges;
   }): Promise<ApiAgentDraft> => {
@@ -2042,7 +2104,7 @@ export const studioClient = {
   },
   async importBundle(file: Blob): Promise<StudioImportedAgentBundle> {
     const response = requireAuthenticatedResponse(
-      await fetch("/api/studio/drafts/import", {
+      await mutationFetch("/api/studio/drafts/import", {
         method: "POST",
         cache: "no-store",
         headers: { "Content-Type": (file instanceof File && file.name.toLowerCase().endsWith(".rar")) ? "application/vnd.rar" : "application/zip" },
@@ -2057,7 +2119,7 @@ export const studioClient = {
   async importSkill(file: File): Promise<StudioImportedSkill> {
     const markdown = file.name.toLowerCase().endsWith(".md");
     const response = requireAuthenticatedResponse(
-      await fetch(
+      await mutationFetch(
         `/api/studio/skills/import?filename=${encodeURIComponent(file.name)}`,
         {
           method: "POST",
@@ -2098,7 +2160,7 @@ export const studioClient = {
   ): Promise<StudioInstalledSkill> {
     const markdown = file.name.toLowerCase().endsWith(".md");
     const response = requireAuthenticatedResponse(
-      await fetch(
+      await mutationFetch(
         `/api/studio/drafts/${encodeURIComponent(draftId)}/skills/import`
           + `?filename=${encodeURIComponent(file.name)}`
           + `&expectedRevision=${expectedRevision}`,
@@ -2127,7 +2189,7 @@ export const studioClient = {
     }).then(rememberStudioDraft),
   async deleteDraft(draftId: string, expectedRevision: number): Promise<void> {
     const response = requireAuthenticatedResponse(
-      await fetch(
+      await mutationFetch(
         `/api/studio/drafts/${encodeURIComponent(draftId)}`
           + `?expectedRevision=${expectedRevision}`,
         { method: "DELETE", cache: "no-store" },
@@ -2295,6 +2357,10 @@ export const studioClient = {
   }),
   getEvalRun: (evalRunId: string) =>
     request<StudioEvalRun>(`eval-runs/${encodeURIComponent(evalRunId)}`),
+  streamEvalRun: (evalRunId: string, onSnapshot: (view: StudioEvalRun) => void, signal: AbortSignal) =>
+    streamRequest<StudioEvalRun>(`eval-runs/${encodeURIComponent(evalRunId)}/events`, { signal }, event => {
+      if (event.type === "eval.snapshot") onSnapshot(event.result as StudioEvalRun);
+    }),
   cancelEvalRun: (evalRunId: string) =>
     request<StudioEvalRun>(`eval-runs/${encodeURIComponent(evalRunId)}/cancel`, {
       method: "POST",

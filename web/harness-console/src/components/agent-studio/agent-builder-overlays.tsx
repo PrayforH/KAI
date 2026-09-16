@@ -149,6 +149,9 @@ export function AgentBuilderAssistant({
   const composingRef = useRef(false);
   const compositionEndedAt = useRef(-Infinity);
   const transcriptRef = useRef<HTMLDivElement>(null);
+  const [buildProgress, setBuildProgress] = useState("");
+  const [buildReply, setBuildReply] = useState("");
+  const buildStreamAbortRef = useRef<AbortController | null>(null);
   const runStreamAbortRef = useRef<AbortController | null>(null);
 
   const activeDraft = workingDraft && workingDraft.id !== draft.id ? workingDraft : draft;
@@ -167,6 +170,8 @@ export function AgentBuilderAssistant({
     sessionKeyRef.current = key;
     epochRef.current += 1;
     runStreamAbortRef.current?.abort();
+    buildStreamAbortRef.current?.abort();
+    setBuildProgress(""); setBuildReply("");
     startingRef.current = false;
     setIntent("auto");
     setEditing(false);
@@ -194,23 +199,50 @@ export function AgentBuilderAssistant({
   useEffect(() => () => {
     epochRef.current += 1;
     runStreamAbortRef.current?.abort();
+    buildStreamAbortRef.current?.abort();
   }, []);
 
   useEffect(() => {
     if (!result || terminal) return;
-    const timer = window.setInterval(() => {
-      void studioClient
-        .getTryRun(activeDraft.id, result.draftRevision, result.run.run_id)
-        .then((next) => setResult((current) => current?.run.run_id === next.run.run_id
-          ? mergeTryRunView(current, next) : current))
-        .catch((reason) => setError(reason instanceof Error ? reason.message : "运行状态刷新失败"));
-    }, 1200);
-    return () => window.clearInterval(timer);
-  }, [result, terminal, activeDraft.id]);
+    const run = result;
+    const controller = new AbortController();
+    runStreamAbortRef.current = controller;
+    let sequence = run.events.at(-1)?.sequence ?? 0;
+    let retryTimer: ReturnType<typeof setTimeout>;
+    async function follow() {
+      while (!controller.signal.aborted) {
+        try {
+          await studioClient.streamTryRunEvents(activeDraft.id, run.draftRevision, run.run.run_id, sequence, event => {
+            sequence = Math.max(sequence, event.sequence);
+            if (!controller.signal.aborted) setResult(current => current?.run.run_id === run.run.run_id ? appendTryRunEvent(current, event) : current);
+          }, controller.signal);
+        } catch {
+          if (controller.signal.aborted) return;
+          setError("实时连接中断，正在自动恢复…");
+        }
+        if (controller.signal.aborted) return;
+        try {
+          const next = await studioClient.getTryRun(activeDraft.id, run.draftRevision, run.run.run_id);
+          if (controller.signal.aborted) return;
+          sequence = Math.max(sequence, next.events.at(-1)?.sequence ?? 0);
+          setResult(current => current?.run.run_id === next.run.run_id ? mergeTryRunView(current, next) : current);
+          setError(current => current === "实时连接中断，正在自动恢复…" ? "" : current);
+          if (["cancelled", "succeeded", "failed", "timed_out", "rejected"].includes(next.run.status)) return;
+        } catch (reason) {
+          if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "运行状态恢复失败");
+        }
+        await new Promise<void>(resolve => { retryTimer = setTimeout(resolve, 1500); });
+      }
+    }
+    void follow();
+    return () => { controller.abort(); clearTimeout(retryTimer); };
+    // The stream owns its cursor; rendering a delta must not restart it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result?.run.run_id, activeDraft.id]);
 
   useEffect(() => {
     if (followOutput.current) transcriptRef.current?.scrollTo({ top: transcriptRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, result]);
+  }, [messages, result, buildReply, buildProgress]);
 
   async function upload(files: File[]) {
     if (inputBusy || uploadLock.current || !files.length) return;
@@ -259,31 +291,6 @@ export function AgentBuilderAssistant({
       setMobilePanel("test");
       setSelectedRunId("");
       setMessages(current => [...current, { id: `run-${started.run.run_id}`, role: "assistant", text: "", runId: started.run.run_id }]);
-      const controller = new AbortController();
-      runStreamAbortRef.current = controller;
-      const afterSequence = started.events.at(-1)?.sequence ?? 0;
-      void studioClient.streamTryRunEvents(
-        runnableDraft.id,
-        started.draftRevision,
-        started.run.run_id,
-        afterSequence,
-        (event) => setResult((current) => current?.run.run_id === started.run.run_id
-          ? appendTryRunEvent(current, event)
-          : current),
-        controller.signal,
-      ).then(async () => {
-        if (controller.signal.aborted) return;
-        const finalView = await studioClient.getTryRun(
-          runnableDraft.id,
-          started.draftRevision,
-          started.run.run_id,
-        );
-        if (!controller.signal.aborted) setResult((current) => current?.run.run_id === started.run.run_id
-          ? mergeTryRunView(current, finalView) : current);
-      }).catch((reason) => {
-        if (controller.signal.aborted) return;
-        setError(reason instanceof Error ? reason.message : "实时输出连接中断，正在继续刷新运行状态");
-      });
       return true;
     } catch (reason) {
       if (epoch !== epochRef.current) return false;
@@ -297,6 +304,10 @@ export function AgentBuilderAssistant({
   }
 
   async function createDraft(value: string, materialContext = "") {
+    const epoch = epochRef.current;
+    const controller = new AbortController();
+    buildStreamAbortRef.current?.abort(); buildStreamAbortRef.current = controller;
+    setBuildProgress(""); setBuildReply("");
     setCreating(true);
     setError("");
     try {
@@ -305,7 +316,10 @@ export function AgentBuilderAssistant({
         "",
         "当前部署约束：只使用 Worker 运行；不访问外部网络；优先使用已有知识库和工作区数据。",
       ].join("\n");
-      const created = await studioClient.createDraftFromTask({ task, ...(materialContext ? {sampleInput: materialContext} : {}), runtimePreference: "auto" });
+      const created = await studioClient.createDraftFromTask({ task, ...(materialContext ? {sampleInput: materialContext} : {}), runtimePreference: "auto" }, event => {
+        if (epoch === epochRef.current && event.text) setBuildProgress(event.text);
+      }, controller.signal);
+      if (epoch !== epochRef.current) return false;
       const generatedDraft = apiDraftToStudioDraft(created.draft);
       const restrictedDraft = {
         ...generatedDraft,
@@ -317,6 +331,7 @@ export function AgentBuilderAssistant({
       const nextDraft = environmentRestricted
         ? apiDraftToStudioDraft(await studioClient.replaceDraft(restrictedDraft))
         : generatedDraft;
+      if (epoch !== epochRef.current) return false;
       setWorkingDraft(nextDraft);
       sessionKeyRef.current = `run:${nextDraft.id}`;
       setRecommendation(created.recommendation);
@@ -330,12 +345,13 @@ export function AgentBuilderAssistant({
       setAttachments([]); setAssetsOpen(true);
       return true;
     } catch (reason) {
+      if (epoch !== epochRef.current) return false;
       const message = reason instanceof Error ? reason.message : "创建失败";
       setError(message);
       setMessages((current) => [...current, { id: createRandomId(), role: "assistant", tone: "danger", text: message }]);
       return false;
     } finally {
-      setCreating(false);
+      if (epoch === epochRef.current) { setCreating(false); setBuildProgress(""); setBuildReply(""); }
     }
   }
 
@@ -369,6 +385,9 @@ export function AgentBuilderAssistant({
   async function converse(value: string, materialContext = "") {
     const epoch = epochRef.current;
     setEditing(true);
+    setBuildProgress(""); setBuildReply("");
+    const controller = new AbortController();
+    buildStreamAbortRef.current?.abort(); buildStreamAbortRef.current = controller;
     setError("");
     const contextTurn = feedbackTurn ?? (result ? { prompt: lastTestPrompt, result, files: currentFiles, artifactIds: lastArtifactIds } : null);
     const history = [...messages.filter((item) => item.id !== "welcome" && !item.runId).map((item) => ({
@@ -389,7 +408,11 @@ export function AgentBuilderAssistant({
           toolEvidence: contextTurn?.result.events.filter(event => ["tool.request", "tool.result", "tool.denied", "runtime.error"].includes(event.type)).slice(-8).map(event => ({ type: event.type, payload: JSON.stringify(event.payload).slice(0, 400) })),
           pendingProposal: proposal ? { baseRevision: proposal.baseRevision, changes: proposal.changes } : null,
         }).slice(0, 12_000),
-      });
+      }, event => {
+        if (epoch !== epochRef.current || !event.text) return;
+        if (event.type === "builder.reply") setBuildReply(event.text);
+        else if (event.type === "progress") setBuildProgress(event.text);
+      }, controller.signal);
       if (epoch !== epochRef.current) return;
       setMessages((current) => [...current, { id: createRandomId(), role: "assistant", text: reply.reply }]);
       const action = reply.action ?? "edit";
@@ -413,7 +436,7 @@ export function AgentBuilderAssistant({
       if (epoch === epochRef.current) setError(reason instanceof Error ? reason.message : "理解消息失败，请重试；未执行任何操作");
       return false;
     } finally {
-      if (epoch === epochRef.current) setEditing(false);
+      if (epoch === epochRef.current) { setEditing(false); setBuildReply(""); setBuildProgress(""); }
     }
   }
 
@@ -487,13 +510,15 @@ export function AgentBuilderAssistant({
         </article>;
       })}
 
-      {active && !result && <article className={styles.message} data-role="assistant" data-tone="muted">
+      {buildReply && <article className={styles.message} data-role="assistant"><small className={styles.speaker}>构建助手 · 正在生成</small><PreviewMarkdown text={buildReply} running /></article>}
+      {buildProgress && <p className={styles.editStatus} role="status">{buildProgress}</p>}
+      {active && !result && !buildProgress && <article className={styles.message} data-role="assistant" data-tone="muted">
         <span className={styles.assistantAvatar} aria-hidden="true">K</span>
         <div className={styles.thinking}><i /><i /><i /><span>{creating ? "正在创建草稿" : busy ? "正在启动 Worker" : "正在执行试跑"}</span></div>
       </article>}
 
       {feedbackTurn && <div className={styles.editStatus}>正在改进所选回答 · 修订 {feedbackTurn.result.draftRevision}<button type="button" onClick={() => setFeedbackTurn(null)}>取消选择</button></div>}
-      {(editing || applying) && <p className={styles.editStatus} role="status">{editing ? intent === "auto" ? "正在结合上下文理解要求…" : "正在根据当前草稿生成修改建议…" : "正在保存修改…"}</p>}
+      {((editing && !buildProgress) || applying) && <p className={styles.editStatus} role="status">{editing ? intent === "auto" ? "正在结合上下文理解要求…" : "正在根据当前草稿生成修改建议…" : "正在保存修改…"}</p>}
       {proposal && <section className={styles.editProposal} aria-label="待确认的配置修改">
         <strong>修改预览 · 基于修订 {proposal.baseRevision}</strong>
         {workspaceTarget && <button type="button" className={styles.diffLink} onClick={() => {setAssetTab("changes");setAssetsOpen(true);}}>查看完整差异 ↗</button>}

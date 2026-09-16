@@ -139,11 +139,11 @@ async def test_local_claude_composition_uses_server_owned_mcp_registry(
     runtime = cast(RegistryClaudeRuntime, container.runtime)
     resolver = cast(ToolResolver, vars(runtime)["_tool_resolver"])
 
+    # tavily-readonly is retired: pinned manifests resolve without any MCP.
     resolved = await resolver.resolve(tavily_manifest(), execution_identity())
 
-    tavily = cast(dict[str, object], resolved.mcp_servers["tavily"])
-    assert tavily.get("url") == "https://mcp.tavily.com/mcp/"
-    assert tavily.get("headers") == {"Authorization": "Bearer local-key"}
+    assert resolved.mcp_servers == {}
+    assert resolved.allowed_tools == ()
 
 
 def test_claude_sdk_composition_fails_instead_of_falling_back(tmp_path: Path) -> None:

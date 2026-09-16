@@ -651,3 +651,49 @@ async def test_managed_anthropic_sdk_base_uses_one_v1_segment(base_url: str) -> 
         assert await models.complete_text("tenant-a", "vision", system_prompt="describe",
             user_prompt="color?", images=(("image/png", image_bytes()),)) == "red square"
     assert str(calls[0].url) == "https://models.example.test/api/anthropic/v1/messages"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("api_format", ["openai_compatible", "anthropic_compatible"])
+async def test_completion_forwards_provider_deltas_before_stream_finishes(api_format: str) -> None:
+    received: list[str] = []
+
+    class LiveStream(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            for index, text in enumerate(["你", "好"]):
+                assert len(received) == index  # Consumer sees data before the next provider chunk.
+                event = ({"choices": [{"delta": {"content": text}}]}
+                         if api_format == "openai_compatible" else
+                         {"type": "content_block_delta", "delta": {"type": "text_delta", "text": text}})
+                yield ("data: " + json.dumps(event) + "\r\n\r\n").encode()
+            yield (b"data: [DONE]\n\n" if api_format == "openai_compatible" else
+                   b'data: {"type":"message_stop"}\n\n')
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        assert json.loads(req.content)["stream"] is True
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=LiveStream())
+
+    async def consume(text: str) -> None:
+        received.append(text)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        models, _, _ = service(client=client)
+        await models.configure("tenant-a", "admin-a", "stream-route", request(apiFormat=api_format))
+        answer = await models.complete_text("tenant-a", "stream-route", system_prompt="s",
+                                            user_prompt="u", on_delta=consume)
+    assert answer == "你好"
+    assert received == ["你", "好"]
+
+
+@pytest.mark.asyncio
+async def test_completion_rejects_truncated_stream() -> None:
+    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda req: httpx.Response(
+        200, text='data: {"choices":[{"delta":{"content":"partial"}}]}\n\n',
+    ))) as client:
+        models, _, _ = service(client=client)
+        await models.configure("tenant-a", "admin-a", "stream-route", request())
+        async def consume(text: str) -> None:
+            pass
+        with pytest.raises(ConflictError, match="中断"):
+            await models.complete_text("tenant-a", "stream-route", system_prompt="s",
+                                       user_prompt="u", on_delta=consume)
