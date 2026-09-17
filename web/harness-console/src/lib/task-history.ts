@@ -5,6 +5,7 @@ import {
   type ThreadHistoryAdapter,
 } from "@assistant-ui/core";
 import { fromAgUiMessages } from "@assistant-ui/react-ag-ui";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ApprovalDetails } from "../components/approval-card";
 import { latestHistoryRunActivity } from "./activity-schema";
 import { activityStore } from "./activity-store";
@@ -32,6 +33,8 @@ const taskListCoalesceMs = 250;
 export const TASK_LIST_REQUEST_TIMEOUT_MS = 8_000;
 export const THREAD_HISTORY_PREFETCH_TTL_MS = 30_000;
 const threadHistoryCacheMax = 8;
+const THREAD_HISTORY_PAGE_RUNS = 30;
+const threadHistoryAccumulatedMax = 8;
 
 interface ThreadHistoryResponse {
   thread_id: string;
@@ -46,6 +49,8 @@ interface ThreadHistoryResponse {
     toolCallId?: string;
     tool_call_id?: string;
   }>;
+  next_cursor?: string | null;
+  has_more?: boolean;
 }
 
 const activeStatuses = new Set([
@@ -104,25 +109,31 @@ function waitForHistoryPoll(signal: AbortSignal, milliseconds = 500) {
   });
 }
 
-function historyUrl(threadId: string) {
-  return `/api/agui/threads/${encodeURIComponent(threadId)}/history`;
+function historyUrl(threadId: string, before?: string) {
+  const base = `/api/agui/threads/${encodeURIComponent(threadId)}/history`;
+  const query = new URLSearchParams({ limit: String(THREAD_HISTORY_PAGE_RUNS) });
+  if (before) query.set("before", before);
+  return `${base}?${query.toString()}`;
 }
 
 async function loadThreadHistory(
   threadId: string,
   signal?: AbortSignal,
+  before?: string,
 ): Promise<ThreadHistoryResponse | null> {
-  const snapshot = threadHistorySnapshots.get(threadId);
-  if (snapshot && Date.now() - snapshot.receivedAt < THREAD_HISTORY_PREFETCH_TTL_MS) {
-    threadHistorySnapshots.delete(threadId);
-    threadHistorySnapshots.set(threadId, snapshot);
-    return snapshot.history;
+  const isLatestPage = before === undefined;
+  if (isLatestPage) {
+    const snapshot = threadHistorySnapshots.get(threadId);
+    if (snapshot && Date.now() - snapshot.receivedAt < THREAD_HISTORY_PREFETCH_TTL_MS) {
+      threadHistorySnapshots.delete(threadId);
+      threadHistorySnapshots.set(threadId, snapshot);
+      return snapshot.history;
+    }
+    if (snapshot) threadHistorySnapshots.delete(threadId);
   }
-  if (snapshot) threadHistorySnapshots.delete(threadId);
 
-  let request = threadHistoryRequests.get(threadId);
-  if (!request) {
-    request = fetch(historyUrl(threadId), { cache: "no-store" })
+  function createRequest(): Promise<ThreadHistoryResponse | null> {
+    return fetch(historyUrl(threadId, before), { cache: "no-store" })
       .then(requireAuthenticatedResponse)
       .then(async (response) => {
         if (response.status === 404) return null;
@@ -135,6 +146,9 @@ async function loadThreadHistory(
         if (!history || !activeStatuses.has(history.status)) {
           cacheThreadHistory(threadId, history);
         }
+        if (isLatestPage) {
+          seedAccumulatedHistory(threadId, history);
+        }
         return history;
       })
       .finally(() => {
@@ -142,7 +156,16 @@ async function loadThreadHistory(
           threadHistoryRequests.delete(threadId);
         }
       });
+  }
+
+  // Only the latest page is deduplicated; earlier pages are on-demand fetches
+  // issued once per click and must never be reused as the page-1 request.
+  let request: Promise<ThreadHistoryResponse | null>;
+  if (isLatestPage) {
+    request = threadHistoryRequests.get(threadId) ?? createRequest();
     threadHistoryRequests.set(threadId, request);
+  } else {
+    request = createRequest();
   }
 
   if (!signal) return request;
@@ -165,6 +188,117 @@ export function prefetchThreadHistory(threadId: string): Promise<void> {
 
 export function invalidateThreadHistory(threadId: string): void {
   threadHistorySnapshots.delete(threadId);
+  resetAccumulatedHistory(threadId);
+}
+
+export interface AccumulatedThreadHistory {
+  messages: ThreadHistoryResponse["messages"];
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
+interface AccumulationEntry extends AccumulatedThreadHistory {
+  loading: boolean;
+}
+
+const accumulatedHistory = new Map<string, AccumulationEntry>();
+const accumulationListeners = new Map<string, Set<() => void>>();
+
+function publishAccumulatedHistory(threadId: string): void {
+  accumulationListeners.get(threadId)?.forEach((listener) => listener());
+}
+
+function resetAccumulatedHistory(threadId: string): void {
+  const entry = accumulatedHistory.get(threadId);
+  if (!entry) return;
+  accumulatedHistory.delete(threadId);
+  publishAccumulatedHistory(threadId);
+}
+
+function seedAccumulatedHistory(
+  threadId: string,
+  history: ThreadHistoryResponse | null,
+): void {
+  if (!history) {
+    resetAccumulatedHistory(threadId);
+    return;
+  }
+  accumulatedHistory.delete(threadId);
+  accumulatedHistory.set(threadId, {
+    messages: history.messages,
+    nextCursor: history.next_cursor ?? null,
+    hasMore: history.has_more ?? false,
+    loading: false,
+  });
+  while (accumulatedHistory.size > threadHistoryAccumulatedMax) {
+    const oldest = accumulatedHistory.keys().next().value;
+    if (typeof oldest !== "string") break;
+    accumulatedHistory.delete(oldest);
+  }
+  publishAccumulatedHistory(threadId);
+}
+
+export function useThreadHistoryPagination(
+  threadId: string,
+  options: {
+    importRepository: (
+      repository: ReturnType<typeof ExportedMessageRepository.fromArray>,
+    ) => void;
+  },
+): { hasMore: boolean; loading: boolean; loadEarlier: () => Promise<void> } {
+  const [snapshot, setSnapshot] = useState<AccumulationEntry | null>(() =>
+    accumulatedHistory.get(threadId) ?? null,
+  );
+  const importRepositoryRef = useRef(options.importRepository);
+  importRepositoryRef.current = options.importRepository;
+
+  useEffect(() => {
+    setSnapshot(accumulatedHistory.get(threadId) ?? null);
+    const listener = () => setSnapshot(accumulatedHistory.get(threadId) ?? null);
+    const listeners = accumulationListeners.get(threadId) ?? new Set<() => void>();
+    listeners.add(listener);
+    accumulationListeners.set(threadId, listeners);
+    return () => {
+      listeners.delete(listener);
+      if (listeners.size === 0) accumulationListeners.delete(threadId);
+    };
+  }, [threadId]);
+
+  const loadEarlier = useCallback(async () => {
+    const entry = accumulatedHistory.get(threadId);
+    if (!entry || entry.loading || !entry.nextCursor) return;
+    const pending = { ...entry, loading: true };
+    accumulatedHistory.set(threadId, pending);
+    publishAccumulatedHistory(threadId);
+    try {
+      const page = await loadThreadHistory(threadId, undefined, entry.nextCursor);
+      if (!page) return;
+      accumulatedHistory.set(threadId, {
+        messages: [...page.messages, ...entry.messages],
+        nextCursor: page.next_cursor ?? null,
+        hasMore: page.has_more ?? false,
+        loading: false,
+      });
+      publishAccumulatedHistory(threadId);
+      importRepositoryRef.current(
+        ExportedMessageRepository.fromArray(
+          fromAgUiMessages(accumulatedHistory.get(threadId)?.messages ?? [], {
+            showThinking: true,
+          }),
+        ),
+      );
+    } catch (error) {
+      accumulatedHistory.set(threadId, { ...entry, loading: false });
+      publishAccumulatedHistory(threadId);
+      console.error("[Harness Console] Failed to load earlier messages", error);
+    }
+  }, [threadId]);
+
+  return {
+    hasMore: snapshot?.hasMore ?? false,
+    loading: snapshot?.loading ?? false,
+    loadEarlier,
+  };
 }
 
 function publishHistoryActivity(history: ThreadHistoryResponse, threadId: string) {

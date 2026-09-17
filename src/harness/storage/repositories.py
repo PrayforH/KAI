@@ -166,7 +166,14 @@ class PostgresEventRepository:
             value = await session.scalar(statement)
         return int(value or 0)
 
-    async def list_after(self, tenant_id: str, run_id: str, after_sequence: int) -> list[RunEvent]:
+    async def list_after(
+        self,
+        tenant_id: str,
+        run_id: str,
+        after_sequence: int,
+        *,
+        types: tuple[str, ...] | None = None,
+    ) -> list[RunEvent]:
         statement = (
             select(EventRow)
             .where(
@@ -176,6 +183,13 @@ class PostgresEventRepository:
             )
             .order_by(EventRow.sequence)
         )
+        if types is not None:
+            # The event type lives inside the JSON payload (there is no
+            # dedicated column yet), same access pattern as
+            # latest_for_session_types.
+            statement = statement.where(
+                EventRow.payload["type"].as_string().in_(types)
+            )
         async with self._sessions() as session:
             rows = (await session.execute(statement)).scalars().all()
             return [RunEvent.model_validate(row.payload) for row in rows]

@@ -1,11 +1,13 @@
 """AG-UI agent endpoint and replay stream backed by Harness repositories."""
 
 import asyncio
+import base64
 import json
+import logging
 import time
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
-from typing import Annotated, Literal, cast
+from typing import Annotated, Any, Literal, cast
 
 from ag_ui.core import (
     BaseEvent,
@@ -15,7 +17,7 @@ from ag_ui.core import (
     TextMessageEndEvent,
     TextMessageStartEvent,
 )
-from fastapi import APIRouter, Depends, Header, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
@@ -38,6 +40,8 @@ from harness.core.events import RunEvent
 from harness.core.models import AguiThreadBinding, ApprovalRequest, ApprovalStatus, Run
 from harness.runtime.input_redaction import redact_internal_agent_asset_events
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/agui", tags=["ag-ui"])
 
 _TERMINAL_EVENT_TYPES = {
@@ -49,6 +53,17 @@ _TERMINAL_EVENT_TYPES = {
 }
 
 _STREAM_HEARTBEAT_SECONDS = 10.0
+
+# History reads paginate over the thread's visible runs and reconstruct each
+# terminal run from a durable ``history.snapshot`` event instead of folding
+# every streaming delta again. Legacy runs without a snapshot fall back to the
+# full fold once and write the snapshot back so later reads stay cheap.
+_HISTORY_SNAPSHOT_EVENT_TYPE = "history.snapshot"
+_HISTORY_SNAPSHOT_VERSION = 1
+_HISTORY_MARKER_EVENT_TYPES = (_HISTORY_SNAPSHOT_EVENT_TYPE, "run.steer.accepted")
+_HISTORY_RUN_PAGE_DEFAULT = 30
+_HISTORY_RUN_PAGE_MAX = 100
+_HISTORY_RUN_CONCURRENCY = 8
 
 
 def _projected_event_cursor(last_event_id: str | None) -> tuple[int, int]:
@@ -276,6 +291,8 @@ class AguiThreadHistory(BaseModel):
     status: str
     run_id: str | None = None
     messages: list[AguiHistoryMessage]
+    next_cursor: str | None = None
+    has_more: bool = False
 
 
 @router.get(
@@ -681,6 +698,8 @@ async def get_agui_thread_history(
     thread_id: str,
     identity: Annotated[Identity, Depends(require_identity)],
     container: Annotated[ApiContainer, Depends(get_container)],
+    limit: Annotated[int, Query(ge=1, le=_HISTORY_RUN_PAGE_MAX)] = _HISTORY_RUN_PAGE_DEFAULT,
+    before: str | None = Query(default=None),
 ) -> AguiThreadHistory:
     ensure_permission(identity, "tasks:read")
     binding = await container.agui.get_binding(
@@ -697,139 +716,252 @@ async def get_agui_thread_history(
         key=lambda item: (item.updated_at, item.run_id),
         default=None,
     )
-    messages: list[AguiHistoryMessage] = []
-    for run in sorted(runs, key=lambda item: (item.created_at, item.run_id)):
-        prompt = run.input.get("prompt")
-        if isinstance(prompt, str) and prompt:
-            raw_input_ids = run.input.get("input_artifact_ids", [])
-            input_ids = (
-                [
-                    item
-                    for item in cast(list[object], raw_input_ids)
-                    if isinstance(item, str) and item
-                ]
-                if isinstance(raw_input_ids, list)
-                else []
-            )
-            input_artifacts = []
-            missing_inputs = False
-            for input_id in input_ids:
-                try:
-                    input_artifacts.extend(await container.input_artifacts.resolve_for_run(
-                        tenant_id=identity.tenant_id,
-                        user_id=identity.user_id,
-                        input_artifact_ids=[input_id],
-                    ))
-                except NotFoundError:
-                    # Attachment retention must not erase the conversation itself.
-                    missing_inputs = True
-            if missing_inputs:
-                prompt += "\n\n（此消息的部分历史附件已不可用。）"
-            content: str | list[AguiHistoryTextPart | AguiHistoryInputPart]
-            if input_artifacts:
-                content = [
-                    AguiHistoryTextPart(text=prompt),
-                    *(
-                        AguiHistoryInputPart(
-                            type=_history_input_type(artifact.media_type),
-                            source=AguiHistoryInputSource(
-                                value=artifact.input_artifact_id,
-                                mime_type=artifact.media_type,
-                            ),
-                            metadata=AguiHistoryInputMetadata(filename=artifact.name),
-                        )
-                        for artifact in input_artifacts
-                    ),
-                ]
-            else:
-                content = prompt
-            messages.append(
-                AguiHistoryMessage(id=f"user-{run.run_id}", role="user", content=content)
-            )
-        events = await container.observed_events.list_after(identity.tenant_id, run.run_id, 0)
-        events = redact_internal_agent_asset_events(events)
-        for guidance in events:
-            if guidance.type == "run.steer.accepted":
-                messages.append(AguiHistoryMessage(
-                    id=f"steer-{guidance.payload.get('request_id', guidance.event_id)}",
-                    role="user", content=str(guidance.payload.get("text", "")),
-                ))
-        response = (
-            final_response_text(events)
-            if run.status.is_terminal
-            else active_response_text(events)
-        )
-        artifacts = await container.artifacts.list_for_run(identity.tenant_id, run.run_id)
-        activity = build_run_activity(events)
-        activity_tool_call = (
-            AguiHistoryToolCall(
-                id=f"harness-activity-{run.run_id}",
-                function=AguiHistoryFunction(
-                    name="harness_run_activity",
-                    arguments=json.dumps({"activity": activity}, separators=(",", ":")),
-                ),
-            )
-            if activity is not None
-            else None
-        )
-        artifact_tool_calls = [
-            AguiHistoryToolCall(
-                id=f"harness-artifact-{artifact.artifact_id}",
-                function=AguiHistoryFunction(
-                    name="harness_present_artifact",
-                    arguments=json.dumps(
-                        {
-                            "artifact_id": artifact.artifact_id,
-                            "run_id": artifact.run_id,
-                            "name": artifact.name,
-                            "media_type": artifact.media_type,
-                            "size_bytes": artifact.size_bytes,
-                            "sha256": artifact.sha256,
-                            "status": artifact.status.value,
-                        },
-                        separators=(",", ":"),
-                    ),
-                ),
-            )
-            for artifact in artifacts
-        ]
-        tool_calls = [
-            *([activity_tool_call] if activity_tool_call is not None else []),
-            *artifact_tool_calls,
-        ]
-        if response or tool_calls:
-            messages.append(
-                AguiHistoryMessage(
-                    id=f"assistant-{run.run_id}",
-                    role="assistant",
-                    content=response,
-                    tool_calls=tool_calls or None,
-                )
-            )
-        if activity_tool_call is not None:
-            messages.append(
-                AguiHistoryMessage(
-                    id=f"tool-activity-{run.run_id}",
-                    role="tool",
-                    content=json.dumps({"status": "ready"}, separators=(",", ":")),
-                    tool_call_id=activity_tool_call.id,
-                )
-            )
-        messages.extend(
-            AguiHistoryMessage(
-                id=f"tool-artifact-{artifact.artifact_id}",
-                role="tool",
-                content=json.dumps({"status": "ready"}, separators=(",", ":")),
-                tool_call_id=f"harness-artifact-{artifact.artifact_id}",
-            )
-            for artifact in artifacts
-        )
+    ordered = sorted(runs, key=lambda item: (item.created_at, item.run_id))
+    if before is not None:
+        try:
+            cursor = _decode_history_cursor(before)
+        except (KeyError, ValueError, TypeError) as error:
+            raise HTTPException(status_code=400, detail="invalid history cursor") from error
+        window = [item for item in ordered if (item.created_at, item.run_id) < cursor]
+    else:
+        window = ordered
+    page = window[-limit:]
+    has_more = len(window) > len(page)
+
+    semaphore = asyncio.Semaphore(_HISTORY_RUN_CONCURRENCY)
+
+    async def reconstruct(run: Run) -> list[AguiHistoryMessage]:
+        async with semaphore:
+            return await _history_messages_for_run(container, identity, run)
+
+    reconstructed = await asyncio.gather(*(reconstruct(run) for run in page))
+    messages: list[AguiHistoryMessage] = [
+        message for chunk in reconstructed for message in chunk
+    ]
     return AguiThreadHistory(
         thread_id=thread_id,
         status=latest.status.value if latest is not None else "idle",
         run_id=latest.run_id if latest is not None else None,
         messages=messages,
+        next_cursor=_encode_history_cursor(page[0]) if has_more and page else None,
+        has_more=has_more,
     )
+
+
+def _encode_history_cursor(run: Run) -> str:
+    payload = json.dumps(
+        {"created_at": run.created_at.isoformat(), "run_id": run.run_id},
+        separators=(",", ":"),
+    )
+    return base64.urlsafe_b64encode(payload.encode("utf-8")).decode("ascii")
+
+
+def _decode_history_cursor(cursor: str) -> tuple[datetime, str]:
+    decoded = json.loads(base64.urlsafe_b64decode(cursor.encode("ascii")))
+    created_at = datetime.fromisoformat(str(decoded["created_at"]))
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=UTC)
+    return created_at, str(decoded["run_id"])
+
+
+async def _run_projection(
+    container: ApiContainer,
+    tenant_id: str,
+    run: Run,
+) -> tuple[list[RunEvent], str, dict[str, Any] | None]:
+    """Return steer events, response text and activity for one history run.
+
+    Terminal runs prefer the durable ``history.snapshot`` projection; a legacy
+    run without one falls back to folding all events and persists the snapshot
+    so subsequent reads skip the delta fold. Active runs always fold live.
+    """
+
+    if run.status.is_terminal:
+        markers = await container.observed_events.list_after(
+            tenant_id, run.run_id, 0, types=_HISTORY_MARKER_EVENT_TYPES
+        )
+        snapshot = next(
+            (
+                event
+                for event in reversed(markers)
+                if event.type == _HISTORY_SNAPSHOT_EVENT_TYPE
+                and event.payload.get("version") == _HISTORY_SNAPSHOT_VERSION
+            ),
+            None,
+        )
+        if snapshot is not None:
+            activity_payload = snapshot.payload.get("activity")
+            return (
+                [event for event in markers if event.type == "run.steer.accepted"],
+                str(snapshot.payload.get("response_text", "")),
+                activity_payload if isinstance(activity_payload, dict) else None,
+            )
+    events = await container.observed_events.list_after(tenant_id, run.run_id, 0)
+    if not events:
+        return [], "", None
+    events = redact_internal_agent_asset_events(events)
+    steer_events = [event for event in events if event.type == "run.steer.accepted"]
+    activity = build_run_activity(events)
+    if run.status.is_terminal:
+        response = final_response_text(events)
+        await _write_history_snapshot(container, run, response, activity)
+        return steer_events, response, activity
+    return steer_events, active_response_text(events), activity
+
+
+async def _write_history_snapshot(
+    container: ApiContainer,
+    run: Run,
+    response: str,
+    activity: dict[str, Any] | None,
+) -> None:
+    if container.event_service is None:
+        return
+    try:
+        await container.event_service.append(
+            tenant_id=run.tenant_id,
+            run_id=run.run_id,
+            session_id=run.session_id,
+            event_type=_HISTORY_SNAPSHOT_EVENT_TYPE,
+            payload={
+                "version": _HISTORY_SNAPSHOT_VERSION,
+                "response_text": response,
+                "activity": activity,
+            },
+        )
+    except Exception:  # noqa: BLE001 - the snapshot is a cache, never a read blocker
+        logger.debug(
+            "history snapshot write-back failed for run %s",
+            run.run_id,
+            exc_info=True,
+        )
+
+
+async def _history_messages_for_run(
+    container: ApiContainer,
+    identity: Identity,
+    run: Run,
+) -> list[AguiHistoryMessage]:
+    tenant_id = identity.tenant_id
+    messages: list[AguiHistoryMessage] = []
+    prompt = run.input.get("prompt")
+    if isinstance(prompt, str) and prompt:
+        raw_input_ids = run.input.get("input_artifact_ids", [])
+        input_ids = (
+            [
+                item
+                for item in cast(list[object], raw_input_ids)
+                if isinstance(item, str) and item
+            ]
+            if isinstance(raw_input_ids, list)
+            else []
+        )
+        input_artifacts = []
+        missing_inputs = False
+        for input_id in input_ids:
+            try:
+                input_artifacts.extend(await container.input_artifacts.resolve_for_run(
+                    tenant_id=tenant_id,
+                    user_id=identity.user_id,
+                    input_artifact_ids=[input_id],
+                ))
+            except NotFoundError:
+                # Attachment retention must not erase the conversation itself.
+                missing_inputs = True
+        if missing_inputs:
+            prompt += "\n\n（此消息的部分历史附件已不可用。）"
+        content: str | list[AguiHistoryTextPart | AguiHistoryInputPart]
+        if input_artifacts:
+            content = [
+                AguiHistoryTextPart(text=prompt),
+                *(
+                    AguiHistoryInputPart(
+                        type=_history_input_type(artifact.media_type),
+                        source=AguiHistoryInputSource(
+                            value=artifact.input_artifact_id,
+                            mime_type=artifact.media_type,
+                        ),
+                        metadata=AguiHistoryInputMetadata(filename=artifact.name),
+                    )
+                    for artifact in input_artifacts
+                ),
+            ]
+        else:
+            content = prompt
+        messages.append(
+            AguiHistoryMessage(id=f"user-{run.run_id}", role="user", content=content)
+        )
+    steer_events, response, activity = await _run_projection(container, tenant_id, run)
+    for guidance in steer_events:
+        messages.append(AguiHistoryMessage(
+            id=f"steer-{guidance.payload.get('request_id', guidance.event_id)}",
+            role="user", content=str(guidance.payload.get("text", "")),
+        ))
+    artifacts = await container.artifacts.list_for_run(tenant_id, run.run_id)
+    activity_tool_call = (
+        AguiHistoryToolCall(
+            id=f"harness-activity-{run.run_id}",
+            function=AguiHistoryFunction(
+                name="harness_run_activity",
+                arguments=json.dumps({"activity": activity}, separators=(",", ":")),
+            ),
+        )
+        if activity is not None
+        else None
+    )
+    artifact_tool_calls = [
+        AguiHistoryToolCall(
+            id=f"harness-artifact-{artifact.artifact_id}",
+            function=AguiHistoryFunction(
+                name="harness_present_artifact",
+                arguments=json.dumps(
+                    {
+                        "artifact_id": artifact.artifact_id,
+                        "run_id": artifact.run_id,
+                        "name": artifact.name,
+                        "media_type": artifact.media_type,
+                        "size_bytes": artifact.size_bytes,
+                        "sha256": artifact.sha256,
+                        "status": artifact.status.value,
+                    },
+                    separators=(",", ":"),
+                ),
+            ),
+        )
+        for artifact in artifacts
+    ]
+    tool_calls = [
+        *([activity_tool_call] if activity_tool_call is not None else []),
+        *artifact_tool_calls,
+    ]
+    if response or tool_calls:
+        messages.append(
+            AguiHistoryMessage(
+                id=f"assistant-{run.run_id}",
+                role="assistant",
+                content=response,
+                tool_calls=tool_calls or None,
+            )
+        )
+    if activity_tool_call is not None:
+        messages.append(
+            AguiHistoryMessage(
+                id=f"tool-activity-{run.run_id}",
+                role="tool",
+                content=json.dumps({"status": "ready"}, separators=(",", ":")),
+                tool_call_id=activity_tool_call.id,
+            )
+        )
+    messages.extend(
+        AguiHistoryMessage(
+            id=f"tool-artifact-{artifact.artifact_id}",
+            role="tool",
+            content=json.dumps({"status": "ready"}, separators=(",", ":")),
+            tool_call_id=f"harness-artifact-{artifact.artifact_id}",
+        )
+        for artifact in artifacts
+    )
+    return messages
 
 
 def _history_input_type(

@@ -394,9 +394,18 @@ class InMemoryEventRepository:
         events = self._items[(tenant_id, run_id)]
         return events[-1].sequence if events else 0
 
-    async def list_after(self, tenant_id: str, run_id: str, after_sequence: int) -> list[RunEvent]:
+    async def list_after(
+        self,
+        tenant_id: str,
+        run_id: str,
+        after_sequence: int,
+        *,
+        types: tuple[str, ...] | None = None,
+    ) -> list[RunEvent]:
         return [
-            event for event in self._items[(tenant_id, run_id)] if event.sequence > after_sequence
+            event
+            for event in self._items[(tenant_id, run_id)]
+            if event.sequence > after_sequence and (types is None or event.type in types)
         ]
 
     async def latest_for_session_type(

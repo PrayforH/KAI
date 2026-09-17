@@ -1334,6 +1334,7 @@ def build_production_container(
         platform_mcp_tokens=platform_mcp_tokens,
         events=raw_event_repository,
         observed_events=observed_event_repository,
+        event_service=events,
         task_queue=queue,
         session_gate=session_gate,
         observability=observability,

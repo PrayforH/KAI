@@ -265,6 +265,7 @@ class ApiContainer:
     skill_conversation: SkillConversationService | None = None
     sandbox_maintenance: Callable[[], Awaitable[object]] | None = None
     session_gate: object | None = None
+    event_service: EventService | None = None
     close: Callable[[], Awaitable[None]] | None = None
 
 
@@ -1034,6 +1035,7 @@ def build_memory_container(
         platform_mcp_tokens=platform_mcp_tokens,
         events=raw_events,
         observed_events=observed_events,
+        event_service=event_service,
         task_queue=queue,
         observability=observability,
         runtime=runtime,
