@@ -4,6 +4,13 @@ import { useEffect, useRef, useState, type CSSProperties, type RefObject } from 
 
 type Entry = { id: string; label: string; answer: string; node: HTMLElement };
 
+// The rail is the thread's time journey. Ticks stay readable when a task runs
+// for many turns, so they are sized from a shared scale instead of magic
+// numbers inline: idle, current, and the four neighbours of the hovered tick.
+const IDLE_LINE_WIDTH = 6;
+const ACTIVE_LINE_WIDTH = 8;
+const NEIGHBOUR_LINE_WIDTHS = [19, 14, 10, 7, 6];
+
 /** Indexes user turns inside this thread only, including restored history and branches. */
 export function ConversationIndex({ frame, threadId }: { frame: RefObject<HTMLDivElement | null>; threadId: string }) {
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -68,7 +75,7 @@ export function ConversationIndex({ frame, threadId }: { frame: RefObject<HTMLDi
   const previewTop = previewButton ? Math.max(60, Math.min((previewButton.parentElement?.clientHeight ?? 120) - 60, previewButton.offsetTop - (previewButton.parentElement?.scrollTop ?? 0) + 5)) : 60;
   return <nav className="conversation-index" data-expanded={Boolean(hovered)} aria-label="对话轮次索引" onMouseLeave={() => setHovered("")}>
     <div className="conversation-index-rail">
-      {entries.map((entry, index) => <button key={entry.id} ref={node => { if (node) buttons.current.set(entry.id, node); else buttons.current.delete(entry.id); }} type="button" style={{ "--index-line-width": `${expandedIndex < 0 ? (entry.id === active ? 6 : 4) : [16, 12, 9, 6, 4][Math.min(4, Math.abs(index - expandedIndex))]}px` } as CSSProperties} data-highlighted={entry.id === hovered} aria-label={`第 ${index + 1} 轮：${entry.label}`} aria-current={entry.id === active ? "location" : undefined} onMouseEnter={() => setHovered(entry.id)} onFocus={() => setHovered(entry.id)} onBlur={() => setHovered("")} onKeyDown={event => {
+      {entries.map((entry, index) => <button key={entry.id} ref={node => { if (node) buttons.current.set(entry.id, node); else buttons.current.delete(entry.id); }} type="button" style={{ "--index-line-width": `${expandedIndex < 0 ? (entry.id === active ? ACTIVE_LINE_WIDTH : IDLE_LINE_WIDTH) : NEIGHBOUR_LINE_WIDTHS[Math.min(4, Math.abs(index - expandedIndex))]}px` } as CSSProperties} data-highlighted={entry.id === hovered} aria-label={`第 ${index + 1} 轮：${entry.label}`} aria-current={entry.id === active ? "location" : undefined} onMouseEnter={() => setHovered(entry.id)} onFocus={() => setHovered(entry.id)} onBlur={() => setHovered("")} onKeyDown={event => {
         const offset = event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : 0;
         const target = event.key === "Home" ? 0 : event.key === "End" ? entries.length - 1 : index + offset;
         if (offset || event.key === "Home" || event.key === "End") { event.preventDefault(); buttons.current.get(entries[Math.max(0, Math.min(entries.length - 1, target))].id)?.focus(); }
