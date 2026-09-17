@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -34,6 +34,7 @@ class SandboxInstance(BaseModel):
 
     sandbox_id: str
     metadata: dict[str, str] = Field(default_factory=dict)
+    created_at: datetime | None = None
 
 
 class SandboxGovernanceReport(BaseModel):
@@ -60,6 +61,7 @@ class SandboxGovernanceService:
         self._provider = provider
         self._clock = clock
         self._metrics = metrics
+        self._lease_ttl = leases.default_ttl_seconds
 
     @property
     def can_reconcile(self) -> bool:
@@ -74,6 +76,20 @@ class SandboxGovernanceService:
         """Destroy untracked sandboxes and clear stale leases."""
 
         return await self._reconcile(tenant_id=None, reclaim=True)
+
+    async def _destroy(self, sandbox_id: str) -> bool:
+        """Destroy one instance, treating a platform failure as a skip."""
+
+        reclaim_one = getattr(self._provider, "reclaim", None)
+        if not callable(reclaim_one):
+            return False
+        try:
+            return bool(await reclaim_one(sandbox_id))
+        except Exception:  # noqa: BLE001 - one bad instance must not stop the sweep
+            logger.exception(
+                "sandbox reclamation failed", extra={"sandbox_id": sandbox_id}
+            )
+            return False
 
     async def _reconcile(
         self, *, tenant_id: str | None, reclaim: bool
@@ -120,22 +136,29 @@ class SandboxGovernanceService:
             expired = {
                 lease.sandbox_id: lease for lease in await self._leases.expired()
             }
+            by_id = {instance.sandbox_id: instance for instance in instances}
+            grace = timedelta(seconds=self._lease_ttl)
             for sandbox_id in untracked:
                 lease = expired.get(sandbox_id)
                 if lease is None:
-                    # The Session may still be running: never destroy a sandbox
-                    # whose lease is alive just because it looks untracked.
+                    # Never destroy a sandbox whose lease is alive: it may belong
+                    # to a Run running right now. An instance with no lease record
+                    # at all is only reclaimed once it is older than a full lease
+                    # TTL, which outlasts the window between creating a sandbox
+                    # and recording its lease.
+                    created = by_id[sandbox_id].created_at
+                    if created is None or now - created < grace:
+                        continue
+                    logger.warning(
+                        "reclaiming an untracked sandbox with no lease record",
+                        extra={"sandbox_id": sandbox_id},
+                    )
+                    if await self._destroy(sandbox_id):
+                        reclaimed.append(sandbox_id)
                     continue
                 if not callable(reclaim_one):
                     continue
-                try:
-                    destroyed = await reclaim_one(sandbox_id)
-                except Exception:  # noqa: BLE001 - one bad instance must not stop the sweep
-                    logger.exception(
-                        "sandbox reclamation failed", extra={"sandbox_id": sandbox_id}
-                    )
-                    continue
-                if not destroyed:
+                if not await self._destroy(sandbox_id):
                     continue
                 await self._leases.mark_reclaimed(lease.tenant_id, lease.lease_id)
                 reclaimed.append(sandbox_id)

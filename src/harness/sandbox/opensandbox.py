@@ -28,6 +28,7 @@ from collections.abc import (
     Mapping,
     Sequence,
 )
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any, cast
 from urllib.parse import urlsplit
@@ -63,6 +64,18 @@ _OCTAL_MODE = re.compile(r"[0-7]{1,4}")
 
 class OpenSandboxCommandError(RuntimeError):
     """execd reported a failure that is not a plain process exit status."""
+
+
+def _parse_timestamp(value: object) -> datetime | None:
+    """Parse a platform timestamp, tolerating anything unexpected."""
+
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
 
 
 def _is_linux_elf(path: Path) -> bool:
@@ -753,6 +766,7 @@ class OpenSandboxSandboxProvider:
                             metadata.items() if isinstance(metadata, Mapping) else ()
                         )
                     },
+                    created_at=_parse_timestamp(item.get("createdAt")),
                 )
             )
         return instances

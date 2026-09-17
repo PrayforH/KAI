@@ -19,12 +19,16 @@ def ids(prefix: str) -> str:
 class FakeProvider:
     provider_name = "opensandbox-deferred"
 
-    def __init__(self, instances: list[str]) -> None:
+    def __init__(self, instances: list[str], *, created_at: datetime | None = None) -> None:
         self.instances = list(instances)
+        self.created_at = created_at
         self.reclaimed: list[str] = []
 
     async def inventory(self) -> list[SandboxInstance]:
-        return [SandboxInstance(sandbox_id=item) for item in self.instances]
+        return [
+            SandboxInstance(sandbox_id=item, created_at=self.created_at)
+            for item in self.instances
+        ]
 
     async def platform_version(self) -> str:
         return "0.2.3"
@@ -187,3 +191,34 @@ async def test_a_failing_reclaim_does_not_stop_the_sweep() -> None:
 
     assert calls == ["sandbox-orphan", "sandbox-other"]
     assert report.reclaimed == ("sandbox-other",)
+
+
+@pytest.mark.asyncio
+async def test_a_stray_sandbox_without_any_lease_is_reclaimed_after_the_ttl() -> None:
+    """A probe or crashed create leaves no lease behind; age is the only evidence."""
+
+    provider = FakeProvider(["sandbox-stray"], created_at=START)
+    governance, _, clock = service(provider, ttl=60)
+
+    clock[0] = START + timedelta(seconds=30)
+    fresh = await governance.reclaim_orphans()
+    assert fresh.reclaimed == ()
+    assert provider.reclaimed == []
+
+    clock[0] = START + timedelta(seconds=61)
+    stale = await governance.reclaim_orphans()
+    assert stale.reclaimed == ("sandbox-stray",)
+    assert provider.reclaimed == ["sandbox-stray"]
+
+
+@pytest.mark.asyncio
+async def test_a_stray_sandbox_without_a_creation_time_is_left_alone() -> None:
+    provider = FakeProvider(["sandbox-unknown"], created_at=None)
+    governance, _, clock = service(provider, ttl=60)
+    clock[0] = START + timedelta(days=1)
+
+    report = await governance.reclaim_orphans()
+
+    assert report.untracked == ("sandbox-unknown",)
+    assert report.reclaimed == ()
+    assert provider.reclaimed == []
