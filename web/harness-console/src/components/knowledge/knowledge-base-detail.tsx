@@ -61,6 +61,7 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
   const [content, setContent] = useState("");
   const [creating, setCreating] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
   const [graphFocus, setGraphFocus] = useState<string | null>(null);
   const [docQuery, setDocQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "completed" | "processing" | "failed">(
@@ -297,29 +298,48 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
     }
   }, [content, loadDocuments, reference, title]);
 
-  const uploadFile = useCallback(
-    async (file: File) => {
+  const uploadFiles = useCallback(
+    async (files: File[]) => {
+      if (files.length === 0) return;
       setUploading(true);
       setError("");
+      setUploadProgress({ done: 0, total: files.length });
+      const failed: string[] = [];
       try {
-        await studioClient.uploadKnowledgeDocument(reference, file);
-        setNotice(`「${file.name}」已上传，正在解析`);
+        for (const [index, file] of files.entries()) {
+          try {
+            await studioClient.uploadKnowledgeDocument(reference, file);
+          } catch (cause) {
+            failed.push(`${file.name}：${cause instanceof Error ? cause.message : "上传失败"}`);
+          }
+          setUploadProgress({ done: index + 1, total: files.length });
+        }
         await loadDocuments();
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "上传失败");
+        const accepted = files.length - failed.length;
+        if (accepted > 0) {
+          setNotice(
+            files.length === 1
+              ? `「${files[0].name}」已上传，正在解析`
+              : `${accepted} 个文件已上传，正在解析`,
+          );
+        }
+        if (failed.length > 0) {
+          setError(`上传失败：${failed.join("；")}`);
+        }
       } finally {
         setUploading(false);
+        setUploadProgress(null);
       }
     },
     [loadDocuments, reference],
   );
 
   const onUpload = useCallback(async () => {
-    const file = fileRef.current?.files?.[0];
-    if (!file) return;
-    await uploadFile(file);
+    const files = Array.from(fileRef.current?.files ?? []);
+    if (files.length === 0) return;
+    await uploadFiles(files);
     if (fileRef.current) fileRef.current.value = "";
-  }, [uploadFile]);
+  }, [uploadFiles]);
 
   const onDrop = useCallback(
     async (event: DragEvent<HTMLElement>) => {
@@ -328,11 +348,9 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
       if (!isWeknora || uploading) return;
       const files = Array.from(event.dataTransfer?.files ?? []);
       if (files.length === 0) return;
-      for (const file of files) {
-        await uploadFile(file);
-      }
+      await uploadFiles(files);
     },
-    [isWeknora, uploadFile, uploading],
+    [isWeknora, uploadFiles, uploading],
   );
 
   const onDelete = useCallback(
@@ -477,7 +495,7 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
           <div>
             <h1>{base.displayName}</h1>
             <p className={styles.headHint}>
-              上传或拖入文档，解析完成后即可检索与问答
+              上传或拖入文档（支持多选），解析完成后即可检索与问答
             </p>
           </div>
           <div className={styles.actions}>
@@ -489,11 +507,12 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
                   onClick={() => fileRef.current?.click()}
                   disabled={uploading}
                 >
-                  {uploading ? "上传中…" : "上传文件"}
+                  {uploading ? (uploadProgress ? `上传中… ${uploadProgress.done}/${uploadProgress.total}` : "上传中…") : "上传文件"}
                 </button>
                 <input
                   ref={fileRef}
                   type="file"
+                  multiple
                   hidden
                   onChange={() => void onUpload()}
                 />
