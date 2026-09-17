@@ -582,7 +582,15 @@ body.codex-theme-v1 .execution-commentary-content {
 /* One vertical rhythm: every log row keeps the same box height, so 思考 and the
    progress prose stop reading as more spaced than the tool rows. */
 body.codex-theme-v1 .execution-reasoning-summary { min-height: 20px; }
-html body.codex-theme-v1 .execution-commentary { padding-bottom: 0; }
+/* The base theme also gives process prose 10px vertical margins, which read as
+   extra space around it; the log's own gap already spaces every row. */
+html body.codex-theme-v1 .execution-commentary { margin: 0; padding: 0; }
+
+/* Symmetric padding keeps the header text and its chevron centred in the row
+   (4px top against 9px bottom used to push them high). */
+html body.codex-theme-v1 .execution-ribbon > .execution-disclosure {
+  padding: 6px 88px 6px 0;
+}
 
 /* Reasoning follows the ZCode reading: label row, then the body indented on
    the text column behind a hairline rule. */
