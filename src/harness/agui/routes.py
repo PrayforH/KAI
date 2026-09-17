@@ -64,7 +64,7 @@ _HISTORY_SNAPSHOT_EVENT_TYPE = "history.snapshot"
 # items, ~1MB per run) and are ignored so they rebuild compactly on next read.
 _HISTORY_SNAPSHOT_VERSION = 2
 _HISTORY_MARKER_EVENT_TYPES = (_HISTORY_SNAPSHOT_EVENT_TYPE, "run.steer.accepted")
-_HISTORY_RUN_PAGE_DEFAULT = 30
+_HISTORY_RUN_PAGE_DEFAULT = 10
 _HISTORY_RUN_PAGE_MAX = 100
 _HISTORY_RUN_CONCURRENCY = 8
 

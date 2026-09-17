@@ -195,7 +195,7 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) {
 /* A quiet turn index, scoped to the current conversation viewport. */
 .harness-thread-frame { position: relative; display: flex; flex: 1; height: 100%; min-width: 0; min-height: 0; }
 .harness-thread-frame > .aui-thread-root { flex: 1; min-width: 0; }
-.conversation-index { position: absolute; z-index: 12; left: 14px; top: 50%; transform: translateY(-50%); max-height: 56%; }
+.conversation-index { position: absolute; z-index: 12; left: 4px; top: 50%; transform: translateY(-50%); max-height: 56%; }
 .conversation-index-rail { display: flex; flex-direction: column; max-height: min(52dvh, 440px); overflow-y: auto; scrollbar-width: none; padding: 4px 0; }
 .conversation-index-rail::-webkit-scrollbar { display: none; }
 .conversation-index button { display: flex; align-items: center; flex: 0 0 10px; width: 32px; height: 10px; padding: 0 0 0 10px; border: 0; background: transparent; cursor: pointer; }
@@ -207,7 +207,7 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) {
 .conversation-index-preview strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .conversation-index-preview p { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; margin: 4px 0 0; color: var(--codex-muted); }
 @keyframes index-preview-in { from { opacity: 0; transform: translate(5px, -50%) scale(.98); } to { opacity: 1; transform: translate(0, -50%) scale(1); } }
-@media (max-width: 640px) { .conversation-index { left: 1px; } .conversation-index button { width: 20px; } .conversation-index button { padding-left: 5px; } .conversation-index-preview { left: 38px; } .harness-thread-frame .aui-thread-viewport { padding-left: 30px !important; } }
+@media (max-width: 640px) { .conversation-index { left: 0; } .conversation-index button { width: 20px; } .conversation-index button { padding-left: 5px; } .conversation-index-preview { left: 38px; } .harness-thread-frame .aui-thread-viewport { padding-left: 30px !important; } }
 @media (prefers-reduced-motion: reduce) { .conversation-index button > span { transition: none; } .conversation-index-preview { animation: none; } }
 /* The focused builder uses its own full-width toolbar and returns to the catalog. */
 body.codex-theme-v1:has(.console-shell) .console-shell.studio-unified:has([data-build-workspace="true"]) { grid-template-columns: minmax(0, 1fr); }
@@ -567,9 +567,16 @@ body.codex-theme-v1 .execution-reasoning-icon { margin-left: -2px; }
 body.codex-theme-v1 .execution-action-copy { padding-left: 0; }
 body.codex-theme-v1 .execution-action-body { margin: 6px 0 0 24px; width: calc(100% - 24px); }
 
-/* Process prose is flush with the icon gutter, matching the reply text's left
-   edge; only tool labels and reasoning bodies sit on the 24px text column. */
-body.codex-theme-v1 .execution-commentary { padding-left: 0; }
+/* Process prose is flush with the reply text's left edge; only tool labels and
+   reasoning bodies sit on the 24px text column. The inner content wrapper also
+   carries an 8px margin and a 25px padding in the base theme, which pushed the
+   prose ~25px right of everything else. */
+body.codex-theme-v1 .execution-commentary,
+body.codex-theme-v1 .execution-commentary-content {
+  margin-left: 0;
+  padding-left: 0;
+  border-left: 0;
+}
 
 /* Reasoning follows the ZCode reading: label row, then the body indented on
    the text column behind a hairline rule. */

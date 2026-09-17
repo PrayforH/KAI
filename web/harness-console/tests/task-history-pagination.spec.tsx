@@ -88,7 +88,7 @@ describe("thread history pagination", () => {
     await settle();
 
     expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(fetcher.mock.calls[0][0]).toContain("history?limit=30");
+    expect(fetcher.mock.calls[0][0]).toContain("history?limit=10");
     expect(state.hasMore).toBe(true);
     expect(state.loading).toBe(false);
   });

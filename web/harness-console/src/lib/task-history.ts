@@ -33,7 +33,7 @@ const taskListCoalesceMs = 250;
 export const TASK_LIST_REQUEST_TIMEOUT_MS = 8_000;
 export const THREAD_HISTORY_PREFETCH_TTL_MS = 30_000;
 const threadHistoryCacheMax = 8;
-const THREAD_HISTORY_PAGE_RUNS = 30;
+const THREAD_HISTORY_PAGE_RUNS = 10;
 const threadHistoryAccumulatedMax = 8;
 
 interface ThreadHistoryResponse {
