@@ -640,30 +640,3 @@ html body.codex-theme-v1 .execution-ribbon > .execution-disclosure .execution-ch
 html body.codex-theme-v1 .execution-ribbon[data-open="true"] > .execution-disclosure .execution-chevron {
   transform: rotate(45deg);
 }
-
-/* The process transcript opens as a dropdown under its header instead of
-   joining the message flow. Expanding used to push the reply down, and with
-   scroll anchoring disabled in the viewport the newly revealed steps landed
-   where the answer had been, which read as the process growing upward into
-   the response. The panel keeps its own height and scrollbar. */
-html body.codex-theme-v1 .execution-ribbon { position: relative; }
-
-html body.codex-theme-v1 .execution-tree {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  z-index: 20;
-  max-height: min(60vh, 460px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
-  margin: 6px 0 0;
-  padding: 10px 12px 12px;
-  border: 1px solid var(--codex-line);
-  border-radius: 12px;
-  background: var(--codex-surface-raised, #1b1b1b);
-  box-shadow: 0 14px 36px rgb(0 0 0 / 38%);
-}
-
-html body.codex-theme-v1 .execution-tree[hidden] { display: none; }
