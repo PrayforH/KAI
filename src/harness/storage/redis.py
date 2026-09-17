@@ -1,8 +1,10 @@
 """Redis transient queue and event fan-out adapters."""
 
+import asyncio
 import json
 import time
 from collections.abc import Awaitable
+from contextlib import asynccontextmanager, suppress
 from typing import Protocol
 from uuid import uuid4
 
@@ -343,3 +345,104 @@ class RedisCancellationWakeup:
         finally:
             await pubsub.unsubscribe(channel)
             await pubsub.aclose()
+
+
+_SESSION_GATE_ACQUIRE_SCRIPT = """
+local current = redis.call('GET', KEYS[1])
+if not current then
+  redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2])
+  return 1
+end
+return 0
+"""
+
+_SESSION_GATE_REFRESH_SCRIPT = """
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  redis.call('PEXPIRE', KEYS[1], ARGV[2])
+  return 1
+end
+return 0
+"""
+
+_SESSION_GATE_RELEASE_SCRIPT = """
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  redis.call('DEL', KEYS[1])
+  return 1
+end
+return 0
+"""
+
+
+class SessionGateError(TimeoutError):
+    """Raised when a session gate cannot be acquired within its wait budget."""
+
+
+class RedisSessionGate:
+    """Serialize same-session Runs across every worker replica.
+
+    The in-process lock in ``worker_loop`` only orders Runs sharing one
+    process. Replicas dequeue from the same Redis queue, so ordering needs a
+    shared gate. Holders renew a short TTL; a dead worker's gate expires and
+    the redelivered Run reclaims it after the visibility timeout, staying
+    consistent with at-least-once delivery plus Run fencing.
+    """
+
+    def __init__(
+        self,
+        client: AsyncRedisClient,
+        *,
+        namespace: str = "harness",
+        ttl_seconds: float = 90,
+        refresh_interval_seconds: float = 30,
+        poll_interval_seconds: float = 0.5,
+        acquire_timeout_seconds: float = 900,
+    ) -> None:
+        if ttl_seconds <= 0 or refresh_interval_seconds <= 0:
+            raise ValueError("session gate TTL and refresh interval must be positive")
+        if poll_interval_seconds <= 0 or acquire_timeout_seconds <= 0:
+            raise ValueError("session gate poll interval and timeout must be positive")
+        self._client = client
+        self._prefix = f"{namespace}:session-gate"
+        self._ttl_ms = str(int(ttl_seconds * 1000))
+        self._refresh_interval_seconds = refresh_interval_seconds
+        self._poll_interval_seconds = poll_interval_seconds
+        self._acquire_timeout_seconds = acquire_timeout_seconds
+
+    def _key(self, session_key: tuple[str, str]) -> str:
+        tenant_id, session_id = session_key
+        return f"{self._prefix}:{tenant_id}:{session_id}"
+
+    async def _run_script(self, script: str, key: str, token: str) -> int:
+        result = await self._client.eval(script, 1, key, token, self._ttl_ms)
+        return int(result)
+
+    @asynccontextmanager
+    async def acquire(self, session_key: tuple[str, str]):
+        key = self._key(session_key)
+        token = uuid4().hex
+        deadline = time.monotonic() + self._acquire_timeout_seconds
+        while True:
+            if await self._run_script(_SESSION_GATE_ACQUIRE_SCRIPT, key, token):
+                break
+            if time.monotonic() >= deadline:
+                raise SessionGateError(
+                    f"session gate busy beyond {self._acquire_timeout_seconds}s: {key}"
+                )
+            await asyncio.sleep(self._poll_interval_seconds)
+
+        refresh_task = asyncio.create_task(self._refresh_loop(key, token))
+        try:
+            yield
+        finally:
+            refresh_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await refresh_task
+            try:
+                await self._run_script(_SESSION_GATE_RELEASE_SCRIPT, key, token)
+            except Exception:  # noqa: BLE001 - release is best-effort; TTL reaps
+                pass
+
+    async def _refresh_loop(self, key: str, token: str) -> None:
+        while True:
+            await asyncio.sleep(self._refresh_interval_seconds)
+            await self._run_script(_SESSION_GATE_REFRESH_SCRIPT, key, token)
