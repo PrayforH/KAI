@@ -100,7 +100,9 @@ class Settings(BaseSettings):
     daytona_target: str = ""
     daytona_snapshot: str = ""
     daytona_remote_workspace_root: str = "/home/daytona/harness"
-    daytona_claude_cli_version: str = "2.1.206"
+# Empty means "follow the CLI bundled with claude-agent-sdk"; set a value
+    # only to pin the remote CLI explicitly.
+    daytona_claude_cli_version: str = ""
     daytona_claude_cli_path: str = "/home/daytona/.local/bin/claude"
     daytona_codex_cli_version: str = "0.149.0"
     daytona_codex_cli_path: str = "/home/daytona/.local/bin/codex"
@@ -122,7 +124,9 @@ class Settings(BaseSettings):
     e2b_template: str = "base"
     e2b_timeout_seconds: int = Field(default=3600, ge=60, le=86_400)
     e2b_remote_workspace_root: str = "/home/user/harness"
-    e2b_claude_cli_version: str = "2.1.206"
+# Empty means "follow the CLI bundled with claude-agent-sdk"; set a value
+    # only to pin the remote CLI explicitly.
+    e2b_claude_cli_version: str = ""
     e2b_claude_cli_path: str = "/home/user/.local/bin/claude"
     e2b_allow_internet_access: bool = True
     cubesandbox_api_key: SecretStr = SecretStr("")
@@ -134,7 +138,9 @@ class Settings(BaseSettings):
     cubesandbox_allow_internet_access: bool = True
     cubesandbox_remote_workspace_root: str = "/home/user/harness"
     cubesandbox_claude_cli_path: str = "/home/user/.local/bin/claude"
-    cubesandbox_claude_cli_version: str = "2.1.206"
+# Empty means "follow the CLI bundled with claude-agent-sdk"; set a value
+    # only to pin the remote CLI explicitly.
+    cubesandbox_claude_cli_version: str = ""
     cubesandbox_codex_cli_path: str = "/home/user/.local/bin/codex"
     opensandbox_api_key: SecretStr = SecretStr("")
     opensandbox_api_url: str = ""
@@ -146,6 +152,14 @@ class Settings(BaseSettings):
     opensandbox_memory: str = "2048Mi"
     opensandbox_request_timeout_seconds: int = Field(default=30, ge=1, le=600)
     opensandbox_ready_timeout_seconds: int = Field(default=90, ge=10, le=900)
+    # File transfers carry CLI binaries and workspace artifacts, so they get
+    # their own budget instead of the short control-plane request timeout.
+    opensandbox_transfer_timeout_seconds: int = Field(default=600, ge=30, le=3600)
+# Empty means "follow the CLI bundled with claude-agent-sdk"; set a value
+    # only to pin the remote CLI explicitly.
+    opensandbox_claude_cli_version: str = ""
+    opensandbox_claude_cli_path: str = "/root/.local/bin/claude"
+    opensandbox_codex_cli_path: str = "/usr/local/bin/codex"
     kubernetes_namespace: str = "harness-sandboxes"
     kubernetes_image: str = ""
     kubernetes_runtime_class_name: str = "gvisor"
@@ -154,7 +168,9 @@ class Settings(BaseSettings):
     kubernetes_kubeconfig: str = ""
     kubernetes_context: str = ""
     kubernetes_remote_workspace: str = "/workspace"
-    kubernetes_claude_cli_version: str = "2.1.206"
+# Empty means "follow the CLI bundled with claude-agent-sdk"; set a value
+    # only to pin the remote CLI explicitly.
+    kubernetes_claude_cli_version: str = ""
     kubernetes_claude_cli_path: str = "/usr/local/bin/claude"
     kubernetes_pod_ttl_seconds: int = Field(default=3600, ge=60, le=86_400)
     kubernetes_ready_timeout_seconds: float = Field(default=120, ge=10, le=900)

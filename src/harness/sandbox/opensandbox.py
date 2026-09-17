@@ -17,29 +17,61 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import shlex
 import shutil
 import tempfile
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import (
+    Awaitable,
+    Callable,
+    Iterable,
+    Mapping,
+    Sequence,
+)
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlsplit
 
 import httpx
+from claude_agent_sdk import ClaudeAgentOptions
 
 from harness.config import Settings
 from harness.core.models import Run
+from harness.runtime.codex_app_server import (
+    CodexAppServerOptions,
+    DaytonaCodexAppServerProcess,
+)
+from harness.runtime.daytona_transport import DaytonaClaudeTransport
 from harness.sandbox.base import SandboxCommandResult, SandboxHandle, SandboxIsolation
+from harness.sandbox.claude_cli import (
+    banner_matches,
+    bundled_cli_path,
+    install_command,
+    version_pin,
+    version_text,
+)
+from harness.sandbox.opensandbox_session import OpenSandboxPtySession
 
 EXECD_PORT = 44_772
 _SUPPORTED_SANDBOX_STATES = frozenset({"Running", "Pending"})
 _TERMINAL_SANDBOX_STATES = frozenset({"Terminated", "Failed"})
 _UPLOAD_BATCH_FILES = 32
 _UPLOAD_BATCH_BYTES = 8 * 1024 * 1024
+_OCTAL_MODE = re.compile(r"[0-7]{1,4}")
 
 
 class OpenSandboxCommandError(RuntimeError):
     """execd reported a failure that is not a plain process exit status."""
+
+
+def _is_linux_elf(path: Path) -> bool:
+    """Whether a worker-side binary can run inside a Linux sandbox."""
+
+    try:
+        with path.open("rb") as source:
+            return source.read(4) == b"\x7fELF"
+    except OSError:
+        return False
 
 
 def _validated_base_url(value: str, *, name: str) -> str:
@@ -125,14 +157,111 @@ class OpenSandboxRemoteSandbox:
     """execd command and file operations for one provisioned sandbox."""
 
     def __init__(
-        self, *, sandbox_id: str, client: httpx.AsyncClient, execd_base: str
+        self,
+        *,
+        sandbox_id: str,
+        client: httpx.AsyncClient,
+        execd_base: str,
+        transfer_timeout_seconds: int = 600,
     ) -> None:
+        if transfer_timeout_seconds <= 0:
+            raise ValueError("OpenSandbox transfer timeout must be positive")
         self.id = sandbox_id
         self._client = client
         self._execd_base = execd_base.rstrip("/")
+        self._execd_port = EXECD_PORT
+        self._transfer_timeout = httpx.Timeout(float(transfer_timeout_seconds))
 
     def _execd(self, path: str) -> str:
         return f"{self._execd_base}{path}"
+
+    def remote_session(self) -> OpenSandboxPtySession:
+        """Open the interactive channel a remote CLI is driven through."""
+
+        return OpenSandboxPtySession(
+            client=self._client, sandbox_id=self.id, execd_port=self._execd_port
+        )
+
+    async def ensure_claude_cli(self, *, version: str, path: str) -> None:
+        await self._ensure_binary(bundled_cli_path(), path, version_pin(version))
+
+    async def ensure_codex_cli(self, *, version: str, path: str) -> None:
+        source = shutil.which("codex")
+        if source is None:
+            raise RuntimeError(
+                "OpenSandbox Codex requires the pinned CLI in the Linux Worker"
+            )
+        await self._ensure_binary(
+            Path(source).resolve(), path, version_pin(version), allow_installer=False
+        )
+
+    async def _ensure_binary(
+        self,
+        bundled: Path,
+        path: str,
+        pin: str | None,
+        *,
+        allow_installer: bool = True,
+    ) -> None:
+        """Ensure the CLI exists in the sandbox at ``path``.
+
+        A production Worker bundles a Linux ELF, and uploading it keeps the
+        sandbox independent of egress policy. On a development host the bundled
+        binary belongs to the host platform, so the official installer stands in
+        when it is allowed to; the banner check decides either way.
+        """
+
+        try:
+            check = await self.run([path, "--version"], cwd="/", timeout_seconds=30)
+            if check.exit_code == 0 and banner_matches(
+                version_text(check.stdout, check.stderr), pin
+            ):
+                return
+        except Exception:  # noqa: BLE001 - a missing CLI is an expected cache miss
+            pass
+        if _is_linux_elf(bundled):
+            await self._upload_binary(bundled, path, pin)
+            return
+        if not allow_installer:
+            raise RuntimeError("OpenSandbox Codex requires a Linux Worker binary")
+        await self._install_binary(pin, path)
+
+    async def _upload_binary(self, bundled: Path, path: str, pin: str | None) -> None:
+        if not _is_linux_elf(bundled):
+            raise RuntimeError("OpenSandbox remote CLI requires a Linux Worker")
+        await self.create_folder(str(PurePosixPath(path).parent))
+        with bundled.open("rb") as source:
+            await self.upload_many(((path, source.read()),), mode=755)
+        await self._verify_binary(path, pin)
+
+    async def _install_binary(self, pin: str | None, path: str) -> None:
+        """Install the CLI with its own installer, which writes into $HOME.
+
+        The installer places the binary at ``$HOME/.local/bin/claude``, so the
+        configured path has to be that location and HOME has to be explicit:
+        execd does not guarantee it in the command environment.
+        """
+
+        installed = await self.run(
+            ["bash", "-c", install_command(pin)],
+            cwd="/",
+            environment={"HOME": "/root"},
+            timeout_seconds=300,
+        )
+        if installed.exit_code != 0:
+            raise RuntimeError(
+                "failed to install the Claude CLI in OpenSandbox: "
+                f"{version_text(installed.stdout, installed.stderr)[-300:]}"
+            )
+        await self._verify_binary(path, pin)
+
+    async def _verify_binary(self, path: str, pin: str | None) -> None:
+        verified = await self.run([path, "--version"], cwd="/", timeout_seconds=30)
+        observed = version_text(verified.stdout, verified.stderr)
+        if verified.exit_code != 0 or not banner_matches(observed, pin):
+            raise RuntimeError(
+                f"OpenSandbox CLI version verification failed at {path}: {observed[:200]}"
+            )
 
     async def ping(self) -> bool:
         response = await self._client.get(self._execd("/ping"))
@@ -150,12 +279,19 @@ class OpenSandboxRemoteSandbox:
     async def upload(self, remote_path: str, content: bytes) -> None:
         await self.upload_many(((remote_path, content),))
 
-    async def upload_many(self, entries: Sequence[tuple[str, bytes]]) -> None:
+    async def upload_many(
+        self, entries: Sequence[tuple[str, bytes]], *, mode: int | None = None
+    ) -> None:
         """Upload files in bounded multipart batches.
 
         The server proxy requires ``Content-Length`` for multipart requests, so
-        batches are capped rather than streamed.
+        batches are capped rather than streamed. execd parses the permission
+        with base 0, so ``mode`` carries the octal digits as a decimal number
+        (755 means 0o755).
         """
+
+        if mode is not None and not _OCTAL_MODE.fullmatch(str(mode)):
+            raise ValueError("OpenSandbox upload mode must be octal digits, e.g. 755")
 
         batch: list[tuple[str, bytes]] = []
         batch_bytes = 0
@@ -164,18 +300,29 @@ class OpenSandboxRemoteSandbox:
             nonlocal batch, batch_bytes
             if not batch:
                 return
-            files = [
-                (
-                    "metadata",
-                    ("metadata", json.dumps({"path": path}), "application/json"),
+            metadata: dict[str, Any] = {"path": batch[0][0]}
+            if mode is not None:
+                metadata["mode"] = mode
+            files = []
+            for path, _ in batch:
+                entry_metadata = dict(metadata, path=path)
+                files.append(
+                    (
+                        "metadata",
+                        (
+                            "metadata",
+                            json.dumps(entry_metadata),
+                            "application/json",
+                        ),
+                    )
                 )
-                for path, _ in batch
-            ]
             files += [
                 ("file", (path, content, "application/octet-stream"))
                 for path, content in batch
             ]
-            response = await self._client.post(self._execd("/files/upload"), files=files)
+            response = await self._client.post(
+                self._execd("/files/upload"), files=files, timeout=self._transfer_timeout
+            )
             batch = []
             batch_bytes = 0
             if response.status_code >= 400:
@@ -215,7 +362,9 @@ class OpenSandboxRemoteSandbox:
 
     async def download(self, remote_path: str) -> bytes:
         response = await self._client.get(
-            self._execd("/files/download"), params={"path": remote_path}
+            self._execd("/files/download"),
+            params={"path": remote_path},
+            timeout=self._transfer_timeout,
         )
         if response.status_code >= 400:
             raise RuntimeError(
@@ -286,6 +435,7 @@ class OpenSandboxClient:
         api_key: str,
         request_timeout_seconds: int = 30,
         ready_timeout_seconds: int = 90,
+        transfer_timeout_seconds: int = 600,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         token = api_key.strip()
@@ -293,8 +443,11 @@ class OpenSandboxClient:
             raise ValueError("HARNESS_OPENSANDBOX_API_KEY is required")
         if request_timeout_seconds <= 0 or ready_timeout_seconds <= 0:
             raise ValueError("OpenSandbox timeouts must be positive")
+        if transfer_timeout_seconds <= 0:
+            raise ValueError("OpenSandbox transfer timeout must be positive")
         self._api_url = _validated_base_url(api_url, name="API URL")
         self._ready_timeout_seconds = ready_timeout_seconds
+        self._transfer_timeout_seconds = transfer_timeout_seconds
         self._token = token
         self._request_timeout_seconds = float(request_timeout_seconds)
         self._transport = transport
@@ -365,6 +518,7 @@ class OpenSandboxClient:
             sandbox_id=sandbox_id,
             client=self.http,
             execd_base=f"/v1/sandboxes/{sandbox_id}/proxy/{EXECD_PORT}",
+            transfer_timeout_seconds=self._transfer_timeout_seconds,
         )
         await self._wait_until_ready(remote)
         return remote
@@ -405,6 +559,11 @@ class OpenSandboxSandboxProvider:
         network_policy: Mapping[str, Any] | None = None,
         local_root: Path | None = None,
         remote_workspace_root: str = "/workspace",
+        cli_version: str = "",
+        cli_path: str = "/root/.local/bin/claude",
+        codex_cli_path: str | None = None,
+        codex_cli_version: str = "",
+        codex_cli_sha256: str = "",
         max_collect_bytes: int = 512 * 1024 * 1024,
         max_collect_members: int = 10_000,
         provider_name: str = "opensandbox",
@@ -415,6 +574,8 @@ class OpenSandboxSandboxProvider:
             raise ValueError("OpenSandbox image is required")
         if not remote_workspace_root.startswith("/"):
             raise ValueError("OpenSandbox remote workspace root must be absolute")
+        if not cli_path.startswith("/") or any(char.isspace() for char in cli_path):
+            raise ValueError("OpenSandbox Claude CLI path must be absolute")
         self._client = client
         self.provider_name = provider_name
         self._image = image
@@ -424,6 +585,11 @@ class OpenSandboxSandboxProvider:
         self._network_policy = dict(network_policy) if network_policy is not None else None
         self._local_root = local_root
         self._remote_workspace_root = remote_workspace_root.rstrip("/")
+        self._cli_version = cli_version
+        self._cli_path = cli_path
+        self._codex_cli_path = codex_cli_path
+        self._codex_cli_version = codex_cli_version
+        self._codex_cli_sha256 = codex_cli_sha256
         self._max_collect_bytes = max_collect_bytes
         self._max_collect_members = max_collect_members
         self._sandboxes: dict[str, OpenSandboxRemoteSandbox] = {}
@@ -443,17 +609,57 @@ class OpenSandboxSandboxProvider:
         )
         self._sandboxes[sandbox.id] = sandbox
         path = Path(tempfile.mkdtemp(prefix=f"{run.run_id}-", dir=self._local_root))
+        remote_workspace = f"{self._remote_workspace_root}/{run.run_id}"
+
+        def transport_factory(raw_options: object) -> object:
+            if isinstance(raw_options, CodexAppServerOptions):
+                if self._codex_cli_path is None:
+                    raise ValueError(f"{self.provider_name} Codex transport is not configured")
+                bootstrap = getattr(sandbox, "ensure_codex_cli", None)
+
+                async def prepare_codex() -> None:
+                    if bootstrap is not None:
+                        await cast(Callable[..., Awaitable[None]], bootstrap)(
+                            version=self._codex_cli_version, path=self._codex_cli_path
+                        )
+
+                return DaytonaCodexAppServerProcess(
+                    session=sandbox.remote_session(),
+                    options=raw_options,
+                    remote_workspace=remote_workspace,
+                    cli_path=self._codex_cli_path,
+                    cli_version=self._codex_cli_version,
+                    cli_sha256=self._codex_cli_sha256,
+                    prepare_cli=prepare_codex,
+                )
+            options = cast(ClaudeAgentOptions, raw_options)
+            options.env = {
+                **options.env,
+                "CLAUDE_CONFIG_DIR": (
+                    f"{self._remote_workspace_root}/.claude-config/{run.session_id}"
+                ),
+            }
+            return DaytonaClaudeTransport(
+                session=sandbox.remote_session(),
+                options=options,
+                remote_workspace=remote_workspace,
+                cli_path=self._cli_path,
+            )
+
         return SandboxHandle(
             sandbox_id=sandbox.id,
             path=path,
             provider=self.provider_name,
             isolation_level=SandboxIsolation.CONTAINER,
-            remote_workspace=f"{self._remote_workspace_root}/{run.run_id}",
+            remote_workspace=remote_workspace,
+            runtime_transport_factory=transport_factory,
         )
 
     async def prepare(self, handle: SandboxHandle) -> None:
         sandbox = self._sandboxes[handle.sandbox_id]
         assert handle.remote_workspace is not None
+        if not handle.deferred_tool_execution:
+            await sandbox.ensure_claude_cli(version=self._cli_version, path=self._cli_path)
         await sandbox.create_folder(handle.remote_workspace)
         entries: list[tuple[str, bytes]] = []
         for path in sorted(handle.path.rglob("*")):
@@ -541,12 +747,18 @@ def build_opensandbox_provider(settings: Settings) -> OpenSandboxSandboxProvider
             api_key=api_key,
             request_timeout_seconds=settings.opensandbox_request_timeout_seconds,
             ready_timeout_seconds=settings.opensandbox_ready_timeout_seconds,
+            transfer_timeout_seconds=settings.opensandbox_transfer_timeout_seconds,
         ),
         image=settings.opensandbox_image,
         timeout_seconds=settings.opensandbox_timeout_seconds,
         resource_limits=resource_limits,
         network_policy=network_policy,
         remote_workspace_root=settings.opensandbox_remote_workspace_root,
+        cli_version=settings.opensandbox_claude_cli_version,
+        cli_path=settings.opensandbox_claude_cli_path,
+        codex_cli_path=settings.opensandbox_codex_cli_path,
+        codex_cli_version=settings.daytona_codex_cli_version,
+        codex_cli_sha256=settings.daytona_codex_cli_sha256,
         max_collect_bytes=settings.workspace_archive_max_bytes,
         max_collect_members=settings.workspace_archive_max_members,
     )

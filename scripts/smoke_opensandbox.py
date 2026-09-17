@@ -15,9 +15,14 @@ Usage::
 import argparse
 import asyncio
 import json
+import os
 import time
 from datetime import UTC, datetime
+from typing import cast
 from uuid import uuid4
+
+from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
+from claude_agent_sdk._internal.transport import Transport
 
 from harness.config import Settings
 from harness.core.models import Run, RunStatus
@@ -74,6 +79,92 @@ async def deferred_smoke() -> None:
         )
     finally:
         await provider.destroy(handle)
+
+
+async def remote_cli_smoke() -> None:
+    """Boot the pinned CLI inside the sandbox and speak the SDK protocol to it.
+
+    This is the remote_cli bar: the CLI binary has to run inside the sandbox and
+    the PTY transport has to carry the bidirectional SDK handshake. A model call
+    is only attempted when the gateway coordinates are provided through
+    HARNESS_OPENSANDBOX_SMOKE_BASE_URL/_TOKEN/_MODEL.
+    """
+
+    settings = Settings()
+    provider = build_opensandbox_provider(settings)
+    now = datetime.now(UTC)
+    identifier = f"opensandbox-cli-{uuid4().hex}"
+    run = Run(
+        run_id=identifier,
+        session_id=identifier,
+        tenant_id="sandbox-integration",
+        status=RunStatus.PROVISIONING,
+        idempotency_key=identifier,
+        created_at=now,
+        updated_at=now,
+    )
+    started = time.monotonic()
+    handle = await provider.provision(run)
+    try:
+        await provider.prepare(handle)
+        assert handle.runtime_transport_factory is not None
+        print(
+            json.dumps(
+                {
+                    "stage": "cli_installed",
+                    "seconds": round(time.monotonic() - started, 2),
+                }
+            ),
+            flush=True,
+        )
+        environment = dict(os.environ)
+        options = ClaudeAgentOptions(
+            cwd=handle.path, permission_mode="default", env=environment
+        )
+        transport = cast(Transport, handle.runtime_transport_factory(options))
+        async with ClaudeSDKClient(options=options, transport=transport):
+            print(json.dumps({"stage": "claude_protocol_initialized"}), flush=True)
+            base_url = os.getenv("HARNESS_OPENSANDBOX_SMOKE_BASE_URL", "")
+            token = os.getenv("HARNESS_OPENSANDBOX_SMOKE_TOKEN", "")
+            model = os.getenv("HARNESS_OPENSANDBOX_SMOKE_MODEL", "")
+            if not all((base_url, token, model)):
+                print(
+                    json.dumps({"stage": "model_call_skipped", "reason": "no gateway env"}),
+                    flush=True,
+                )
+                return
+            options.env = {
+                **environment,
+                "ANTHROPIC_BASE_URL": base_url,
+                "ANTHROPIC_AUTH_TOKEN": token,
+            }
+            options.model = model
+            await client_query_through_transport(options, transport)
+    finally:
+        await provider.destroy(handle)
+        print(json.dumps({"stage": "cli_deleted"}), flush=True)
+
+
+async def client_query_through_transport(
+    options: ClaudeAgentOptions, transport: Transport
+) -> None:
+    """Run one real turn, requiring the Bash tool to execute inside the sandbox."""
+
+    prompt = "用 Bash 工具执行 echo remote-cli-ok，然后只回复 OK。"
+    client = ClaudeSDKClient(options=options, transport=transport)
+    async with client:
+        await client.query(prompt)
+        texts: list[str] = []
+        async for message in client.receive_response():
+            text = getattr(message, "content", None)
+            if isinstance(text, list):
+                for block in text:
+                    value = getattr(block, "text", None)
+                    if isinstance(value, str):
+                        texts.append(value)
+    reply = " ".join(texts)
+    assert reply.strip(), "remote CLI returned no assistant text"
+    print(json.dumps({"stage": "model_turn_passed", "reply": reply[:120]}), flush=True)
 
 
 async def smoke(*, timeout_seconds: int) -> None:
@@ -174,6 +265,21 @@ if __name__ == "__main__":
         default=2.0,
         help="Command timeout used for the kill-and-recover stage",
     )
+    parser.add_argument(
+        "--remote-cli",
+        action="store_true",
+        help="Also install the pinned CLI in the sandbox and run a real SDK turn",
+    )
+    parser.add_argument(
+        "--only",
+        choices=("full", "deferred", "remote-cli"),
+        default="full",
+        help="Run a single stage instead of the whole suite",
+    )
     arguments = parser.parse_args()
-    asyncio.run(smoke(timeout_seconds=arguments.timeout_seconds))
-    asyncio.run(deferred_smoke())
+    if arguments.only == "full":
+        asyncio.run(smoke(timeout_seconds=arguments.timeout_seconds))
+    if arguments.only in ("full", "deferred"):
+        asyncio.run(deferred_smoke())
+    if arguments.remote_cli or arguments.only == "remote-cli":
+        asyncio.run(remote_cli_smoke())

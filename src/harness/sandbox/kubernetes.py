@@ -28,6 +28,11 @@ from claude_agent_sdk import ClaudeAgentOptions
 from harness.core.models import Run
 from harness.runtime.daytona_transport import DaytonaClaudeTransport, RemoteClaudeSession
 from harness.sandbox.base import SandboxCommandResult, SandboxHandle, SandboxIsolation
+from harness.sandbox.claude_cli import (
+    banner_matches,
+    version_pin,
+    version_text,
+)
 
 _ENVIRONMENT_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _DNS_LABEL = re.compile(r"[^a-z0-9-]+")
@@ -626,7 +631,7 @@ class KubernetesSandboxProvider:
         service_account_name: str = "harness-sandbox",
         local_root: Path | None = None,
         remote_workspace: str = "/workspace",
-        cli_version: str = "2.1.206",
+        cli_version: str = "",
         cli_path: str = "/usr/local/bin/claude",
         ttl_seconds: int = 3600,
         ready_timeout_seconds: float = 120,
@@ -728,9 +733,10 @@ class KubernetesSandboxProvider:
         )
 
     async def prepare(self, handle: SandboxHandle) -> None:
-        expected = f"{self._cli_version} (Claude Code)"
         version = await self.execute(handle, (self._cli_path, "--version"))
-        if version.exit_code != 0 or version.stdout.strip() != expected:
+        if version.exit_code != 0 or not banner_matches(
+            version_text(version.stdout, version.stderr), version_pin(self._cli_version)
+        ):
             raise KubernetesSandboxError("Kubernetes sandbox Claude CLI version mismatch")
         content = _workspace_archive(
             handle.path,

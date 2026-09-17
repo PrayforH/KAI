@@ -17,6 +17,12 @@ from harness.core.models import Run
 from harness.runtime.codex_app_server import CodexAppServerOptions, DaytonaCodexAppServerProcess
 from harness.runtime.daytona_transport import DaytonaClaudeTransport, RemoteClaudeSession
 from harness.sandbox.base import SandboxCommandResult, SandboxHandle, SandboxIsolation
+from harness.sandbox.claude_cli import (
+    banner_matches,
+    install_command,
+    version_pin,
+    version_text,
+)
 
 
 class E2BRemoteSandbox(Protocol):
@@ -171,21 +177,19 @@ class SdkE2BRemoteSandbox:
         self.id = sandbox.sandbox_id
 
     async def ensure_claude_cli(self, *, version: str, path: str) -> None:
-        expected = f"{version} (Claude Code)"
+        pin = version_pin(version)
         try:
             check = await self._sandbox.commands.run(f"{shlex.quote(path)} --version")
         except Exception:  # noqa: BLE001 - a missing CLI is an expected cache miss
             check = None
-        if check is not None and check.exit_code == 0 and check.stdout.strip() == expected:
+        if check is not None and check.exit_code == 0 and banner_matches(
+            version_text(check.stdout, ""), pin
+        ):
             return
-        installer = (
-            "set -o pipefail; "
-            "curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors "
-            "https://claude.ai/install.sh | bash -s "
-            f"{shlex.quote(version)}"
-        )
         try:
-            installed = await self._sandbox.commands.run(installer, timeout=180)
+            installed = await self._sandbox.commands.run(
+                install_command(pin), timeout=180
+            )
         except Exception as error:
             raise RuntimeError("failed to install the pinned Claude CLI in E2B") from error
         if installed.exit_code != 0:
@@ -194,7 +198,9 @@ class SdkE2BRemoteSandbox:
             verified = await self._sandbox.commands.run(f"{shlex.quote(path)} --version")
         except Exception as error:
             raise RuntimeError("E2B Claude CLI version verification failed") from error
-        if verified.exit_code != 0 or verified.stdout.strip() != expected:
+        if verified.exit_code != 0 or not banner_matches(
+            version_text(verified.stdout, ""), pin
+        ):
             raise RuntimeError("E2B Claude CLI version verification failed")
 
     async def create_folder(self, path: str) -> None:
@@ -260,7 +266,7 @@ class E2BSandboxProvider:
         timeout_seconds: int = 3600,
         allow_internet_access: bool = True,
         remote_workspace_root: str = "/home/user/harness",
-        cli_version: str = "2.1.206",
+        cli_version: str = "",
         cli_path: str = "/home/user/.local/bin/claude",
         max_collect_bytes: int = 512 * 1024 * 1024,
         max_collect_members: int = 10_000,

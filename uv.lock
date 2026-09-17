@@ -357,6 +357,7 @@ dependencies = [
     { name = "redis" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "uvicorn", extra = ["standard"] },
+    { name = "websockets" },
     { name = "xlrd" },
 ]
 
@@ -402,6 +403,7 @@ requires-dist = [
     { name = "redis", specifier = ">=6.2,<7" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.41,<3" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.35,<1" },
+    { name = "websockets", specifier = ">=15,<17" },
     { name = "xlrd", specifier = ">=2.0,<3" },
 ]
 

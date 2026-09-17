@@ -1,7 +1,10 @@
 ARG NODE_IMAGE=node:22-bookworm-slim@sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0c23dfb172dc3cc6436
 FROM ${NODE_IMAGE}
 
-ARG CLAUDE_CODE_VERSION=2.1.206
+# Build pin for the pre-baked sandbox CLI. The runtime no longer compares a
+# configured literal against it, but keep it aligned with the CLI bundled by
+# the pinned claude-agent-sdk (2.1.259) so the fleet runs one version.
+ARG CLAUDE_CODE_VERSION=2.1.259
 ARG NPM_CONFIG_REGISTRY=https://registry.npmmirror.com
 
 RUN apt-get update \

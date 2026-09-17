@@ -47,6 +47,12 @@ from harness.sandbox.base import (
     SandboxHandle,
     SandboxIsolation,
 )
+from harness.sandbox.claude_cli import (
+    banner_matches,
+    install_command,
+    version_pin,
+    version_text,
+)
 
 _ENVIRONMENT_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 logger = logging.getLogger(__name__)
@@ -275,23 +281,21 @@ class SdkDaytonaRemoteSandbox:
 
     async def ensure_claude_cli(self, *, version: str, path: str) -> None:
         quoted_path = shlex.quote(path)
-        expected = f"{version} (Claude Code)"
+        pin = version_pin(version)
         check = await self._sandbox.process.exec(f"{quoted_path} --version")
-        if check.exit_code == 0 and check.result.strip() == expected:
+        if check.exit_code == 0 and banner_matches(
+            version_text(check.result, ""), pin
+        ):
             return
-        installer = (
-            "set -o pipefail; "
-            "curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors "
-            "https://claude.ai/install.sh | bash -s "
-            f"{shlex.quote(version)}"
-        )
         installed = await self._sandbox.process.exec(
-            f"bash -lc {shlex.quote(installer)}", timeout=180
+            f"bash -lc {shlex.quote(install_command(pin))}", timeout=180
         )
         if installed.exit_code != 0:
             raise RuntimeError("failed to install the pinned Claude CLI in Daytona")
         verified = await self._sandbox.process.exec(f"{quoted_path} --version")
-        if verified.exit_code != 0 or verified.result.strip() != expected:
+        if verified.exit_code != 0 or not banner_matches(
+            version_text(verified.result, ""), pin
+        ):
             raise RuntimeError("Daytona Claude CLI version verification failed")
 
     async def create_folder(self, path: str) -> None:
@@ -458,7 +462,7 @@ class DaytonaSandboxProvider:
         local_root: Path | None = None,
         snapshot: str | None = None,
         remote_workspace_root: str = "/home/daytona/harness",
-        cli_version: str = "2.1.206",
+        cli_version: str = "",
         cli_path: str = "/home/daytona/.local/bin/claude",
         codex_cli_version: str = "0.149.0",
         codex_cli_path: str = "/home/daytona/.local/bin/codex",

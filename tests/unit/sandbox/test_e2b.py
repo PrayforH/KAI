@@ -141,8 +141,10 @@ async def test_e2b_provider_stages_executes_collects_and_kills(tmp_path: Path) -
     }
     assert handle.provider == "e2b"
     assert handle.isolation_level is SandboxIsolation.CONTAINER
+    # No version pin by default: provisioning follows the CLI bundled with
+    # claude-agent-sdk, which is the version the SDK is locked against.
     assert client.sandbox.ensured_cli == (
-        "2.1.206",
+        "",
         "/home/user/.local/bin/claude",
     )
     assert client.sandbox.uploads["/home/user/harness/run-a/inputs/facts.txt"] == b"facts"
