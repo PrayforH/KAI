@@ -636,3 +636,26 @@ html body.codex-theme-v1 .execution-ribbon > .execution-disclosure .execution-ch
 html body.codex-theme-v1 .execution-ribbon[data-open="true"] > .execution-disclosure .execution-chevron {
   transform: rotate(45deg);
 }
+
+/* Per-step disclosure chevrons stay out of the way until they are relevant:
+   a transcript with dozens of steps showed one on every row. They come back on
+   hover, on keyboard focus, and while the row is open so the state is visible. */
+html body.codex-theme-v1 .execution-action-chevron,
+html body.codex-theme-v1 .execution-reasoning-chevron {
+  opacity: 0;
+  transition: opacity 120ms ease, transform 130ms ease;
+}
+
+html body.codex-theme-v1 .execution-action:hover .execution-action-chevron,
+html body.codex-theme-v1 .execution-action:focus-within .execution-action-chevron,
+html body.codex-theme-v1 .execution-action[open] .execution-action-chevron,
+html body.codex-theme-v1 .execution-reasoning:hover .execution-reasoning-chevron,
+html body.codex-theme-v1 .execution-reasoning:focus-within .execution-reasoning-chevron,
+html body.codex-theme-v1 .execution-reasoning[open] .execution-reasoning-chevron {
+  opacity: .72;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html body.codex-theme-v1 .execution-action-chevron,
+  html body.codex-theme-v1 .execution-reasoning-chevron { transition: none; }
+}
