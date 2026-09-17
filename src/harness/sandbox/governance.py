@@ -54,11 +54,15 @@ class SandboxGovernanceService:
         leases: SandboxLeaseService,
         provider: SandboxProvider,
         *,
+        provider_name: str | None = None,
         clock: Any | None = None,
         metrics: Any | None = None,
     ) -> None:
         self._leases = leases
         self._provider = provider
+        # A container that never owns the platform client (the API process) still
+        # has to name the backend its leases belong to.
+        self._provider_name = provider_name
         self._clock = clock
         self._metrics = metrics
         self._lease_ttl = leases.default_ttl_seconds
@@ -94,7 +98,9 @@ class SandboxGovernanceService:
     async def _reconcile(
         self, *, tenant_id: str | None, reclaim: bool
     ) -> SandboxGovernanceReport:
-        provider_name = str(getattr(self._provider, "provider_name", "unknown"))
+        provider_name = self._provider_name or str(
+            getattr(self._provider, "provider_name", "unknown")
+        )
         now = self._clock() if callable(self._clock) else datetime.now(UTC)
         owned = await self._leases.live(tenant_id)
         # An expired lease still holds its row (state stays active until a reaper

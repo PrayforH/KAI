@@ -35,6 +35,7 @@ from harness.auth.service import AuthService, OAuthProviderConfig
 from harness.config import Settings
 from harness.context.checkpoint import ContextCheckpointService
 from harness.context.service import ContextService
+from harness.core.errors import SandboxGovernanceError
 from harness.core.manifest import AgentManifest, AgentManifestSnapshot
 from harness.core.models import ModelCompatibility, RunStatus, Session
 from harness.core.ports import ArtifactStore, TaskQueue
@@ -104,8 +105,10 @@ from harness.runtime.registry_runtime import RegistryClaudeRuntime
 from harness.runtime.sdk_tool_gate import SdkToolGate
 from harness.runtime.session_store import PostgresSessionStore
 from harness.sandbox.base import (
+    SandboxIsolation,
     SandboxProvider,
     provider_meets_enforcement_floor,
+    sandbox_enforcement,
     trust_enforcement_floor,
 )
 from harness.sandbox.cubesandbox import build_cubesandbox_provider
@@ -1102,7 +1105,12 @@ def build_production_container(
                 settings.sandbox_trust_floor_mode == "enforce"
                 and not provider_meets_enforcement_floor(actual, trust_floor)
             ):
-                raise RuntimeError("session_trust_enforcement_below_floor")
+                raise SandboxGovernanceError(
+                    "session trust floor exceeds the configured sandbox provider: "
+                    f"session requires {trust_floor.value} enforcement, "
+                    f"{actual} provides "
+                    f"{sandbox_enforcement(actual, SandboxIsolation.CONTAINER).value}"
+                )
             if session.deployment_snapshot_id is not None:
                 snapshot = await deployment_repository.get_snapshot(
                     tenant_id, session.deployment_snapshot_id
@@ -1163,6 +1171,7 @@ def build_production_container(
         sandbox_governance = SandboxGovernanceService(
             sandbox_leases,
             runtime_sandbox,
+            provider_name="local",
             clock=clock,
             metrics=reliability_metrics,
         )

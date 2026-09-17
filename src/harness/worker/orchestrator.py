@@ -42,7 +42,7 @@ from harness.application.workspaces import (
 )
 from harness.context.checkpoint import ContextCheckpointService
 from harness.context.service import ContextService
-from harness.core.errors import ConflictError
+from harness.core.errors import ConflictError, SandboxGovernanceError
 from harness.core.models import AgentRuntimeType, ExecutionIdentity, Run, RunStatus, Session
 from harness.core.ports import CancellationWakeup, RunRepository, SessionRepository
 from harness.core.state_machine import transition
@@ -779,6 +779,7 @@ class RunOrchestrator:
                 SubagentGovernanceError,
                 CredentialLeaseError,
                 McpCredentialError,
+                SandboxGovernanceError,
             ),
         ):
             payload["message"] = str(error)
@@ -788,6 +789,8 @@ class RunOrchestrator:
             error_code=(
                 f"quota_exceeded_{error.resource.value}"
                 if isinstance(error, QuotaExceededError)
+                else "sandbox_governance"
+                if isinstance(error, SandboxGovernanceError)
                 else "runtime_error"
             ),
             payload=payload,

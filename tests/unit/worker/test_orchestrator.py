@@ -32,6 +32,7 @@ from harness.context.models import (
 )
 from harness.context.repositories import InMemoryContextRepository
 from harness.context.service import ContextService
+from harness.core.errors import SandboxGovernanceError
 from harness.core.events import RunEvent
 from harness.core.models import Run, RunStatus, Session
 from harness.core.ports import StoredObject
@@ -63,6 +64,7 @@ from harness.worker.orchestrator import (
     PolicyResolver,
     RunOrchestrator,
     RuntimeAssetStager,
+    SandboxResolver,
     final_artifact_paths,
     read_runtime_artifact,
     terminal_runtime_result,
@@ -533,6 +535,7 @@ async def arrange(
     context_checkpoints: ContextCheckpointService | None = None,
     context_service: ContextService | None = None,
     sandbox_leases: SandboxLeaseService | None = None,
+    sandbox_resolver: SandboxResolver | None = None,
 ):
     sessions = InMemorySessionRepository()
     runs = InMemoryRunRepository()
@@ -593,6 +596,7 @@ async def arrange(
         context_checkpoints=context_checkpoints,
         context_service=context_service,
         sandbox_leases=sandbox_leases,
+        sandbox_resolver=sandbox_resolver,
     )
     return orchestrator, runtime, runs, event_repository
 
@@ -2126,3 +2130,27 @@ async def test_run_acquires_reports_and_releases_a_sandbox_lease(tmp_path: Path)
     assert stored.state.value == "released"
     assert stored.owner == "run-fence:1"
     assert await leases.live("tenant-a") == []
+
+
+@pytest.mark.asyncio
+async def test_a_refused_run_reports_the_governance_code(tmp_path: Path) -> None:
+    """A sandbox-governance refusal must be diagnosable from the run event."""
+
+    async def refusing_resolver(_tenant_id: str, _session: Session) -> SandboxProvider:
+        raise SandboxGovernanceError(
+            "session trust floor exceeds the configured sandbox provider: "
+            "session requires full enforcement, opensandbox provides delegated"
+        )
+
+    orchestrator, _, _, event_repository = await arrange(
+        tmp_path,
+        sandbox_resolver=refusing_resolver,
+    )
+
+    result = await orchestrator.execute("tenant-a", "run-1")
+
+    assert result.status is RunStatus.FAILED
+    events = await event_repository.list_after("tenant-a", "run-1", 0)
+    failed = next(event for event in events if event.type == "run.failed")
+    assert failed.payload["error_code"] == "sandbox_governance"
+    assert "trust floor" in failed.payload["message"]
