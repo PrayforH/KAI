@@ -150,6 +150,63 @@ function tracedResponse(response: Response, span: Span) {
   });
 }
 
+const COMPRESSION_MIN_BYTES = 1024;
+
+/**
+ * gzip a buffered JSON reply so long conversation history stays small on the
+ * wire (the upstream API sends none). Streaming replies and binary payloads are
+ * passed through untouched: buffering an SSE run would stall the live stream.
+ *
+ * The reply is buffered before compressing, so any compression failure still
+ * returns the readable body instead of an error — this path used to be able to
+ * turn a healthy upstream 200 into the "API unavailable" fallback.
+ */
+async function compressJsonResponse(
+  request: Request,
+  upstream: Response,
+  headers: Headers,
+): Promise<Response | null> {
+  if (request.method !== "GET" || !upstream.ok) return null;
+  if (typeof CompressionStream === "undefined") return null;
+  if (upstream.headers.has("content-encoding")) return null;
+  const encoding = (request.headers.get("accept-encoding") ?? "").toLowerCase();
+  if (!encoding.includes("gzip")) return null;
+  if (!(upstream.headers.get("content-type") ?? "").includes("application/json")) {
+    return null;
+  }
+  const raw = await upstream.arrayBuffer();
+  // Past this point the body is consumed, so every path must return a Response
+  // built from this buffer: handing `upstream.body` back to the caller throws
+  // "Response body object should not be disturbed or locked".
+  const identity = () =>
+    new Response(raw, {
+      status: upstream.status,
+      statusText: upstream.statusText,
+      headers,
+    });
+  if (raw.byteLength < COMPRESSION_MIN_BYTES) return identity();
+
+  let compressed: ArrayBuffer;
+  try {
+    compressed = await new Response(
+      new Blob([raw]).stream().pipeThrough(new CompressionStream("gzip")),
+    ).arrayBuffer();
+  } catch (error) {
+    console.warn("[harness-proxy] gzip failed; serving the plain body", error);
+    return identity();
+  }
+  headers.set("content-encoding", "gzip");
+  headers.set("content-length", String(compressed.byteLength));
+  headers.append("vary", "accept-encoding");
+  // The body is no longer the identity representation the upstream tagged.
+  headers.delete("etag");
+  return new Response(compressed, {
+    status: upstream.status,
+    statusText: upstream.statusText,
+    headers,
+  });
+}
+
 async function forward(
   request: Request,
   url: string,
@@ -199,8 +256,13 @@ async function forward(
           const headers = responseHeaders(upstream);
           if (refreshed) appendSessionCookies(headers, refreshed, config);
           else if (upstream.status === 401) appendClearedSessionCookies(headers, config);
+          const compressed = await compressJsonResponse(request, upstream, headers)
+            .catch((error) => {
+              console.error("[harness-proxy] compression step failed", error);
+              return null;
+            });
           return tracedResponse(
-            new Response(upstream.body, {
+            compressed ?? new Response(upstream.body, {
               status: upstream.status,
               statusText: upstream.statusText,
               headers,
@@ -208,6 +270,7 @@ async function forward(
             span,
           );
         } catch (error) {
+          console.error("[harness-proxy] upstream request failed", spanName, error);
           span.addEvent("proxy.error", {
             "error.type": error instanceof Error ? error.name : "ProxyError",
           });

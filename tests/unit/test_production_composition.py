@@ -55,7 +55,7 @@ def production_settings(**overrides: object) -> Settings:
     return Settings(**values)  # pyright: ignore[reportArgumentType]
 
 
-def tavily_manifest() -> AgentManifest:
+def retired_mcp_manifest() -> AgentManifest:
     return AgentManifest.model_validate(
         {
             "apiVersion": "harness/v1alpha1",
@@ -73,7 +73,7 @@ def tavily_manifest() -> AgentManifest:
 
 
 def manifest_with_tools(*tools: dict[str, str]) -> AgentManifest:
-    payload = tavily_manifest().model_dump(by_alias=True)
+    payload = retired_mcp_manifest().model_dump(by_alias=True)
     payload["spec"]["tools"] = list(tools)
     return AgentManifest.model_validate(payload)
 
@@ -222,11 +222,12 @@ async def test_production_composition_uses_server_owned_mcp_registry() -> None:
         vars(broker)["_connection_authorizer"] = None
         credential_service = cast(McpCredentialService, vars(provider)["_service"])
         credential_service.repository = InMemoryMcpCredentialRepository()
-        resolved = await resolver.resolve(tavily_manifest(), execution_identity())
+        # tavily-readonly is retired: pinned manifests resolve without touching
+        # the tenant registry or any credential store.
+        resolved = await resolver.resolve(retired_mcp_manifest(), execution_identity())
 
-        tavily = cast(dict[str, object], resolved.mcp_servers["tavily"])
-        assert tavily.get("url") == "https://mcp.tavily.com/mcp/"
-        assert tavily.get("headers") == {"Authorization": "Bearer production-key"}
+        assert resolved.mcp_servers == {}
+        assert resolved.allowed_tools == ()
     finally:
         assert container.close is not None
         await container.close()
@@ -382,20 +383,13 @@ async def test_production_composition_imports_minimax_into_model_control_plane()
 
 
 @pytest.mark.asyncio
-async def test_production_composition_imports_glm_into_model_control_plane() -> None:
-    container = build_production_container(
-        production_settings(
-            glm_5_2_base_url="http://172.20.109.112:31300",
-            glm_5_2_api_key=SecretStr("glm-secret"),
-        )
-    )
+async def test_production_composition_does_not_import_retired_glm(monkeypatch) -> None:
+    monkeypatch.setenv("HARNESS_GLM_5_2_BASE_URL", "https://retired.example")
+    monkeypatch.setenv("HARNESS_GLM_5_2_API_KEY", "retired-test-key")
+    container = build_production_container(production_settings())
     try:
-        runtime = cast(RegistryClaudeRuntime, container.runtime)
-        assert vars(runtime)["_config"] is None
-        assert vars(runtime)["_route_configs"] == ()
         imported = vars(container.model_configurations)["_server_routes"]
-        assert imported["glm-5-2"].base_url == "http://172.20.109.112:31300"
-        assert imported["glm-5-2"].model == "shdata-glm"
+        assert "glm-5-2" not in imported
     finally:
         assert container.close is not None
         await container.close()

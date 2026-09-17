@@ -1,5 +1,6 @@
 "use client";
-import { useThreadHistoryPagination } from "../lib/task-history";
+import { useAutoLoadEarlierMessages, useThreadHistoryPagination } from "../lib/task-history";
+import { startSteeringPolling } from "../lib/steering-poller";
 import { ConversationControl } from "./conversation-control";
 import { MessageAttachmentView } from "./message-attachment-view";
 
@@ -490,17 +491,19 @@ function HarnessComposer() {
 
     } catch (error) { setInputError(error instanceof Error ? error.message : "无法加入队列"); }
   }
+  const hasPendingSteering = steeringIds.length > 0;
+  const steeringContext = useRef({ runId: runView?.runId, busy, steeringIds });
+  steeringContext.current = { runId: runView?.runId, busy, steeringIds };
   useEffect(() => {
-    if (!steeringRunId) { setSteerAvailable(false); return; }
-    let active = true;
-    const controller = new AbortController();
-    async function pollSteering() {
-      try {
-        const response = requireAuthenticatedResponse(await fetch(`/api/harness/runs/${encodeURIComponent(steeringRunId!)}/steer`, { cache: "no-store", signal: controller.signal }));
-        if (!response.ok) { if (active) setSteerAvailable(false); return; }
-        const state = await response.json() as { available: boolean; requests: Array<{ request_id: string; status: string; error?: string }> };
-        if (!active) return;
-        setSteerAvailable(state.available && steeringRunId === runView?.runId);
+    if (!steeringRunId || (!busy && !hasPendingSteering)) { setSteerAvailable(false); return; }
+    let available = false;
+    return startSteeringPolling({
+      runId: steeringRunId,
+      shouldPoll: () => (steeringContext.current.busy && !available) || steeringContext.current.steeringIds.length > 0,
+      onState: (state) => {
+        const steeringIds = steeringContext.current.steeringIds;
+        available = state.available;
+        setSteerAvailable(state.available && steeringRunId === steeringContext.current.runId);
         for (const id of steeringIds) {
           if (state.requests.some((item) => item.request_id === id)) continue;
           steeringSentAt.current[id] ??= Date.now();
@@ -524,13 +527,17 @@ function HarnessComposer() {
             setInputError(item.status === "unknown" ? "引导接收状态不确定，请先查看回复再决定是否重发。" : item.error || "运行已经结束，补充仍保留在队列中。");
           }
         }
-      } catch { if (active) setSteerAvailable(false); }
-    }
-    void pollSteering();
-    const timer = (busy && !steerAvailable) || steeringIds.length > 0
-      ? window.setInterval(() => void pollSteering(), 1500) : undefined;
-    return () => { active = false; controller.abort(); window.clearInterval(timer); };
-  }, [runView?.runId, runView?.phase, steeringIds, busy, steerAvailable, steeringRunId]);
+      },
+      onError: () => {
+        setSteerAvailable(false);
+        if (steeringContext.current.steeringIds.length) {
+          setQueuePaused(true);
+          setInputError("暂时无法核对引导状态；补充已保留，请刷新后核对，避免重复发送。");
+        }
+      },
+    });
+  }, [steeringRunId, busy, hasPendingSteering]);
+
   async function guide(item: QueuedPrompt) {
     if (!runView?.runId || !steerAvailable || steeringIds.includes(item.id)) return;
     if (item.attachments.length) { setInputError("带附件的补充请加入队列；实时引导目前支持文本。"); return; }
@@ -946,11 +953,15 @@ function objectValue(value: unknown): Record<string, unknown> {
 }
 
 function useAssistantResponseStarted() {
-  return useAuiState((state) =>
+  const live = useLiveResponse();
+  const messageId = useAuiState((state) => state.message.id);
+  const hasText = useAuiState((state) =>
     state.message.content.some(
       (part) => part.type === "text" && part.text.trim().length > 0,
     ),
   );
+  // Earlier progress prose must not mark later thinking as final-answer output.
+  return live.messageId === messageId && live.status !== "idle" ? live.visible : hasText;
 }
 
 export function hasProjectedTool(
@@ -1649,6 +1660,7 @@ export function AgentThread({
   const historyPagination = useThreadHistoryPagination(threadId, {
     importRepository: (repository) => threadRuntime?.import(repository),
   });
+  useAutoLoadEarlierMessages(frame, historyPagination);
   const composerDraftScope = useMemo(
     () => ({ userId, threadId }),
     [threadId, userId],
@@ -1675,17 +1687,10 @@ export function AgentThread({
           <MessageEditorContext.Provider value={{ editor, setEditor }}>
             <VideoGenerationProvider>
             <div className="harness-thread-frame" ref={frame}>
-            <ConversationIndex frame={frame} threadId={threadId} />
-            {historyPagination.hasMore && !currentTaskBusy ? (
-              <div className="history-load-earlier">
-                <button
-                  type="button"
-                  className="history-load-earlier-button"
-                  onClick={() => void historyPagination.loadEarlier()}
-                  disabled={historyPagination.loading}
-                >
-                  {historyPagination.loading ? "加载中…" : "加载更早的消息"}
-                </button>
+            <ConversationIndex frame={frame} threadId={threadId} pagination={historyPagination} />
+            {historyPagination.loading ? (
+              <div className="history-load-earlier" role="status" aria-live="polite">
+                <span className="history-load-earlier-status">正在加载更早的消息…</span>
               </div>
             ) : null}
             <Thread

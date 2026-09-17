@@ -1,0 +1,12 @@
+{
+  "old": {
+    "initial_script_count": 19,
+    "uncompressed_bytes": 2128399,
+    "gzip_estimate_bytes": 635771
+  },
+  "new": {
+    "initial_script_count": 16,
+    "uncompressed_bytes": 1211487,
+    "gzip_estimate_bytes": 342761
+  }
+}

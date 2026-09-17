@@ -17,6 +17,7 @@ from claude_agent_sdk import (
     TaskNotificationMessage,
     TaskUpdatedMessage,
     TextBlock,
+    ThinkingBlock,
     Transport,
 )
 from claude_agent_sdk.types import HookEvent
@@ -151,9 +152,11 @@ async def test_runtime_builds_new_api_options_and_maps_fake_sdk_messages(
         exporter=trace_exporter,
         processor_factory=SimpleSpanProcessor,
     )
-    web = WebConfigurationService(McpCredentialService(
-        InMemoryMcpCredentialRepository(), McpCredentialCipher(SecretStr("test-key"))
-    ))
+    web = WebConfigurationService(
+        McpCredentialService(
+            InMemoryMcpCredentialRepository(), McpCredentialCipher(SecretStr("test-key"))
+        )
+    )
     await web.configure("tenant-a", "user-1", ConfigureWebRequest(enabled=personal_web_enabled))
     runtime = ClaudeSdkRuntime(
         tool_resolver=ToolResolver(web_configurations=web),
@@ -738,8 +741,10 @@ async def test_sdk_error_result_is_emitted_then_raises_and_marks_model_span(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("provider_pause", [False, True])
 async def test_runtime_uses_partial_lifecycle_without_repeating_final_assistant_text(
     tmp_path: Path,
+    provider_pause: bool,
 ) -> None:
     snapshot = load_manifest("tests/fixtures/agents/echo-agent/agent.yaml")
     version = AgentVersion(
@@ -761,6 +766,8 @@ async def test_runtime_uses_partial_lifecycle_without_repeating_final_assistant_
         capabilities=frozenset({"streaming", "tool_use"}),
     )
 
+    pending_flushed = asyncio.Event()
+
     async def streaming_query(
         _prompt: str,
         _options: ClaudeAgentOptions,
@@ -781,6 +788,10 @@ async def test_runtime_uses_partial_lifecycle_without_repeating_final_assistant_
                     "delta": {"type": "text_delta", "text": character},
                 },
             )
+            if provider_pause and index == 1:
+                # No new SDK message arrives until the runtime flushes the
+                # outstanding single character on its own deadline.
+                await asyncio.wait_for(pending_flushed.wait(), timeout=1)
         yield StreamEvent(
             uuid="stop",
             session_id="sdk-session",
@@ -873,13 +884,18 @@ async def test_runtime_uses_partial_lifecycle_without_repeating_final_assistant_
         workspace=tmp_path,
     )
 
-    events = [event async for event in runtime.execute(context)]
+    events = []
+    async for event in runtime.execute(context):
+        events.append(event)
+        if event.type == "message.delta" and event.payload.get("text") == "t":
+            pending_flushed.set()
 
     assert [event.type for event in events] == [
         "model.route.selected",
         "message.start",
         "message.delta",
         "message.delta",
+        *(["message.delta"] if provider_pause else []),
         "message.completed",
         "message.start",
         "message.delta",
@@ -891,7 +907,9 @@ async def test_runtime_uses_partial_lifecycle_without_repeating_final_assistant_
     text_deltas = [
         str(event.payload.get("text", "")) for event in events if event.type == "message.delta"
     ]
-    assert text_deltas == ["s", "treamed", "a", "gain"]
+    assert text_deltas == (
+        ["s", "t", "reamed", "a", "gain"] if provider_pause else ["s", "treamed", "a", "gain"]
+    )
     terminal = next(event for event in events if event.type == "runtime.task.completed")
     assert terminal.payload["summary"] == "Safe final summary"
     assert "never-show" not in repr(events)
@@ -1130,9 +1148,7 @@ async def test_runtime_exposes_skill_tool_when_bundle_has_skills(tmp_path: Path)
     )
     manifest = snapshot.manifest.model_copy(
         update={
-            "spec": snapshot.manifest.spec.model_copy(
-                update={"skills": ("skills/office-pptx",)}
-            )
+            "spec": snapshot.manifest.spec.model_copy(update={"skills": ("skills/office-pptx",)})
         }
     )
     snapshot = snapshot.model_copy(
@@ -1213,3 +1229,113 @@ async def test_runtime_exposes_skill_tool_when_bundle_has_skills(tmp_path: Path)
     options = captured[0]
     assert "Skill" in (options.tools or [])
     assert options.skills == ["office-pptx"]
+
+
+@pytest.mark.asyncio
+async def test_thinking_stream_flushes_before_provider_resumes_and_is_not_repeated(tmp_path: Path):
+    snapshot = load_manifest("tests/fixtures/agents/echo-agent/agent.yaml")
+    version = AgentVersion(
+        tenant_id="tenant-a",
+        owner_user_id="user-a",
+        name="echo-agent",
+        version="0.1.0",
+        status=AgentVersionStatus.PUBLISHED,
+        manifest_hash=snapshot.content_hash,
+        snapshot=snapshot.model_dump(mode="json"),
+        created_at=datetime.now(UTC),
+    )
+    route = ModelRoute(
+        route_id="new-api-default",
+        provider="new-api",
+        base_url="https://new-api.example/v1",
+        model="gateway-model",
+        compatibility=ModelCompatibility.FULL,
+        capabilities=frozenset({"streaming", "tool_use"}),
+    )
+
+    flushed = asyncio.Event()
+
+    def chunk(kind, **values):
+        return StreamEvent(
+            uuid=kind, session_id="sdk", parent_tool_use_id=None, event={"type": kind, **values}
+        )
+
+    async def streaming_query(_prompt, _options):
+        yield chunk("message_start", message={})
+        yield chunk(
+            "content_block_delta", index=0, delta={"type": "thinking_delta", "thinking": "先检查"}
+        )
+        await asyncio.wait_for(flushed.wait(), 1)
+        yield chunk(
+            "content_block_delta", index=0, delta={"type": "thinking_delta", "thinking": "输入。"}
+        )
+        yield chunk("content_block_stop", index=0)
+        yield chunk("content_block_delta", index=1, delta={"type": "text_delta", "text": "答案"})
+        yield chunk("message_stop")
+        yield AssistantMessage(
+            content=[
+                ThinkingBlock(thinking="先检查输入。", signature="NEVER-PUBLISH-SIGNATURE"),
+                TextBlock(text="答案"),
+            ],
+            model="gateway-model",
+        )
+        # Also support providers delivering only a completed thinking block.
+        yield AssistantMessage(
+            content=[
+                ThinkingBlock(thinking="再核对。", signature="NEVER-PUBLISH-SIGNATURE"),
+                TextBlock(text="完成"),
+            ],
+            model="gateway-model",
+        )
+        yield ResultMessage(
+            subtype="success",
+            duration_ms=1,
+            duration_api_ms=1,
+            is_error=False,
+            num_turns=2,
+            session_id="sdk",
+        )
+
+    runtime = ClaudeSdkRuntime(
+        agent_version=version,
+        routes=[route],
+        route_secrets={"new-api-default": "secret"},
+        query_factory=streaming_query,
+    )
+    now = datetime.now(UTC)
+    context = RuntimeContext(
+        run=Run(
+            run_id="run-stream",
+            session_id="session-stream",
+            tenant_id="tenant-a",
+            status=RunStatus.RUNNING,
+            idempotency_key="stream",
+            created_at=now,
+            updated_at=now,
+            input={"prompt": "hello"},
+        ),
+        session=Session(
+            session_id="session-stream",
+            tenant_id="tenant-a",
+            user_id="user-1",
+            agent_name="echo-agent",
+            agent_version="0.1.0",
+            created_at=now,
+        ),
+        workspace=tmp_path,
+    )
+
+    events = []
+    async for event in runtime.execute(context):
+        events.append(event)
+        if event.type == "reasoning.delta" and event.payload["text"] == "先检查":
+            flushed.set()
+    reasoning = [event for event in events if event.type == "reasoning.delta"]
+    assert [event.payload["text"] for event in reasoning] == ["先检查", "输入。", "再核对。"]
+    assert reasoning[0].payload["item_id"] == reasoning[1].payload["item_id"]
+    assert reasoning[1].payload["item_id"] != reasoning[2].payload["item_id"]
+    assert (
+        "".join(event.payload["text"] for event in events if event.type == "message.delta")
+        == "答案完成"
+    )
+    assert "NEVER-PUBLISH-SIGNATURE" not in repr(events)

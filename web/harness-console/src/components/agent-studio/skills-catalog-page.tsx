@@ -7,10 +7,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../auth-provider";
 import {
   studioClient,
-  apiDraftToStudioDraft,
+  type StudioAgentSkillCatalogEntry,
   type StudioPlatformSkillPackage,
 } from "../../lib/studio-client";
-import type { StudioDraft } from "../../lib/agent-studio";
 import { useDialogFocus } from "../../lib/use-dialog-focus";
 import {
   DEFAULT_SKILL_CREATOR,
@@ -35,46 +34,13 @@ interface CatalogSkill {
 
 const DISABLED_SKILLS_STORAGE_KEY = "harness-skill-catalog-disabled:v1";
 
-/** Draft skill payloads are the heavy part of this page, so they load a few at
- *  a time instead of firing one request per agent at once. */
-const DRAFT_FETCH_CONCURRENCY = 4;
-
-/** Rows rendered before the catalog asks for another scroll page. */
 const CATALOG_PAGE_SIZE = 20;
-
-/** Run `worker` over `items` with a bounded number of in-flight requests and
- *  report each success as it lands. A draft that fails to load degrades to
- *  "missing from the list" rather than failing the whole catalog. */
-async function forEachWithConcurrency<T, R>(
-  items: readonly T[],
-  limit: number,
-  worker: (item: T) => Promise<R>,
-  onResult: (item: T, result: R) => void,
-): Promise<void> {
-  let cursor = 0;
-  const runners = Array.from(
-    { length: Math.min(limit, items.length) },
-    async () => {
-      while (cursor < items.length) {
-        const index = cursor;
-        cursor += 1;
-        const item = items[index];
-        try {
-          onResult(item, await worker(item));
-        } catch {
-          // Keep the remaining catalog usable when one draft is unreadable.
-        }
-      }
-    },
-  );
-  await Promise.all(runners);
-}
 
 /** Merge the platform package catalog with the Skills declared by agent
  *  drafts into the single row list the page renders. */
 function buildCatalog(
   platformPackages: StudioPlatformSkillPackage[],
-  studioDrafts: StudioDraft[],
+  studioDrafts: StudioAgentSkillCatalogEntry[],
 ): CatalogSkill[] {
   const byName = new Map<string, CatalogSkill>();
   for (const item of platformPackages) {
@@ -140,7 +106,7 @@ export function SkillsCatalogPage() {
   // permission (owner/admin); keep the UI gate aligned to avoid 403s.
   const canManageCatalog = membership.role === "owner" || membership.role === "admin";
   const [skills, setSkills] = useState<CatalogSkill[]>([]);
-  const [drafts, setDrafts] = useState<StudioDraft[]>([]);
+  const [drafts, setDrafts] = useState<StudioAgentSkillCatalogEntry[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -155,49 +121,33 @@ export function SkillsCatalogPage() {
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadPending, setUploadPending] = useState(false);
   const [renderLimit, setRenderLimit] = useState(CATALOG_PAGE_SIZE);
-  const [agentScan, setAgentScan] = useState({ scanned: 0, total: 0, done: false });
+  const loadGeneration = useRef(0);
   const drawerRef = useRef<HTMLElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
-    setAgentScan({ scanned: 0, total: 0, done: false });
+    const generation = ++loadGeneration.current;
     try {
-      const [summaries, platformCatalog] = await Promise.all([
-        studioClient.listAccessibleDrafts(),
+      const [agents, platformCatalog] = await Promise.all([
+        studioClient.listAgentSkills(),
         studioClient.listPlatformSkills(),
       ]);
-      // Platform packages plus the built-in Skill are enough to paint the list,
-      // so render them before the per-agent draft reads start.
-      setSkills(buildCatalog(platformCatalog.packages, []));
-      setLoading(false);
-
-      const targets = summaries.filter((summary) =>
-        isAgentVisible(summary, showInternalAgents));
-      setAgentScan({ scanned: 0, total: targets.length, done: false });
-      const loaded: StudioDraft[] = [];
-      await forEachWithConcurrency(
-        targets,
-        DRAFT_FETCH_CONCURRENCY,
-        (summary) => studioClient.getDraft(summary.draftId),
-        (summary, apiDraft) => {
-          loaded.push(apiDraftToStudioDraft(apiDraft));
-          setSkills(buildCatalog(platformCatalog.packages, loaded));
-          setAgentScan((current) => ({ ...current, scanned: current.scanned + 1 }));
-        },
-      );
-      setDrafts(loaded);
+      if (generation !== loadGeneration.current) return;
+      const visible = agents.filter((agent) => isAgentVisible(agent, showInternalAgents));
+      setSkills(buildCatalog(platformCatalog.packages, visible));
+      setDrafts(visible);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "技能目录暂时不可用。");
+      if (generation === loadGeneration.current) setError(caught instanceof Error ? caught.message : "技能目录暂时不可用。");
     } finally {
-      setLoading(false);
-      setAgentScan((current) => ({ ...current, done: true }));
+      if (generation === loadGeneration.current) setLoading(false);
     }
   }, [showInternalAgents]);
 
   useEffect(() => {
     void load();
+    return () => { loadGeneration.current += 1; };
   }, [load]);
 
   useEffect(() => {
@@ -487,11 +437,7 @@ export function SkillsCatalogPage() {
               )}
             </div>
           )}
-          {agentScan.total > 0 && !agentScan.done && (
-            <p className={styles.loadMoreStatus} role="status">
-              {`正在读取智能体技能 ${agentScan.scanned} / ${agentScan.total}…`}
-            </p>
-          )}
+
         </section>
       </section>
 

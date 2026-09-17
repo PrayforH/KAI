@@ -545,7 +545,7 @@ async def test_deferred_proxy_tool_is_audited_and_authorized_as_builtin(
 @pytest.mark.parametrize(
     ("resource", "tool_name"),
     [
-        (QuotaResource.MCP_REQUESTS, "mcp__tavily__tavily_search"),
+        (QuotaResource.MCP_REQUESTS, "mcp__knowledge-search__sag_search"),
         (QuotaResource.CONCURRENT_SUBAGENTS, "Task"),
     ],
 )

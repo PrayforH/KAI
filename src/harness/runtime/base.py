@@ -10,7 +10,7 @@ from harness.core.models import ExecutionIdentity, Run, Session
 from harness.policy.runtime import ResolvedPolicy
 from harness.runtime.artifact_tools import ArtifactPublisher
 from harness.runtime.steering import SteeringInbox
-from harness.sandbox.base import SandboxCommandResult, SandboxIsolation
+from harness.sandbox.base import SandboxCommandResult, SandboxEnforcement, SandboxIsolation
 
 RuntimeTransportFactory = Callable[[object], object]
 SandboxCommandExecutor = Callable[
@@ -49,6 +49,7 @@ class RuntimeContext(BaseModel):
     workspace: Path
     sandbox_provider: str = "local"
     sandbox_isolation: SandboxIsolation = SandboxIsolation.WORKSPACE
+    sandbox_enforcement: SandboxEnforcement = SandboxEnforcement.NONE
     remote_workspace: str | None = Field(default=None, exclude=True)
     assistant_message_id: str = Field(default="", exclude=True)
     input_files: tuple[str, ...] = ()

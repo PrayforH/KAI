@@ -67,6 +67,7 @@ from harness.studio.models import (
     AgentDraftPlacementRequest,
     AgentDraftSpec,
     AgentDraftSummary,
+    AgentSkillCatalogEntry,
     AgentTemplate,
     CapabilityCatalog,
     CreateAgentDraftRequest,
@@ -822,6 +823,27 @@ class AgentStudioService:
         )
         await self._repository.add(shared)
         return shared
+
+    async def list_agent_skills(
+        self,
+        tenant_id: str,
+        user_id: str,
+        space_id: str | None = None,
+    ) -> list[AgentSkillCatalogEntry]:
+        drafts: list[AgentDraft]
+        if space_id is None:
+            drafts = await self._repository.list_for_user(tenant_id, user_id)
+            drafts = [draft for draft in drafts if draft.space_id is None]
+        else:
+            if self._draft_permissions is None:
+                raise RuntimeError("shared draft permission checker is not configured")
+            agents = await self._draft_permissions.list_agents(tenant_id, user_id, space_id)
+            drafts = []
+            for agent in agents:
+                draft = await self._repository.get_by_agent(tenant_id, agent.agent_id)
+                if draft is not None:
+                    drafts.append(draft)
+        return [AgentSkillCatalogEntry.from_draft(draft) for draft in drafts]
 
     async def list(self, tenant_id: str, owner_user_id: str) -> list[AgentDraftSummary]:
         return await self._repository.list_summaries(tenant_id, owner_user_id)

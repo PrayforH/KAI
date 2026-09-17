@@ -192,8 +192,9 @@ async def test_orchestrator_stages_safe_read_only_input_before_runtime(
         "path": relative_path,
     }
     assert "amber-731" not in repr(events)
-    assert [event.type for event in events[:3]] == [
+    assert [event.type for event in events[:4]] == [
         "run.provisioning",
+        "sandbox.provisioned",
         "input.staged",
         "run.running",
     ]
@@ -260,4 +261,8 @@ async def test_orchestrator_rejects_input_owned_by_another_user_before_runtime(
     assert result.status is RunStatus.FAILED
     assert runtime.context is None
     events = await repository.list_after("tenant-a", "run-1", 0)
-    assert [event.type for event in events] == ["run.provisioning", "run.failed"]
+    assert [event.type for event in events] == [
+        "run.provisioning",
+        "sandbox.provisioned",
+        "run.failed",
+    ]

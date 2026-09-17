@@ -13,4 +13,3 @@ egressProxy:
   port: 3128
   allowedDomains:
     - .anthropic.com
-    - .mcp.tavily.com

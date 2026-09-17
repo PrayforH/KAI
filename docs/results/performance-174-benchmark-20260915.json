@@ -1,0 +1,39 @@
+{
+  "scope": "174 host loopback, same 8 isolated draft fixtures, old 4-way concurrency vs batch; excludes browser rendering and client network",
+  "old": [
+    {
+      "requests": 10,
+      "bytes": 758756,
+      "ms": 161.4
+    },
+    {
+      "requests": 10,
+      "bytes": 758756,
+      "ms": 91.8
+    },
+    {
+      "requests": 10,
+      "bytes": 758756,
+      "ms": 84.7
+    }
+  ],
+  "new": [
+    {
+      "requests": 2,
+      "bytes": 209004,
+      "ms": 37.1
+    },
+    {
+      "requests": 2,
+      "bytes": 209004,
+      "ms": 26.9
+    },
+    {
+      "requests": 2,
+      "bytes": 209004,
+      "ms": 22.5
+    }
+  ],
+  "isolation": "passed",
+  "wiki_missing": "404"
+}

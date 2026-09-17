@@ -102,7 +102,7 @@ class EnvironmentResourcePolicy(StudioModel):
         ge=1,
     )
     allowed_mcp_references: tuple[str, ...] = Field(
-        default=("tavily-readonly",),
+        default=(),
         alias="allowedMcpReferences",
     )
     allowed_knowledge_references: tuple[str, ...] = Field(

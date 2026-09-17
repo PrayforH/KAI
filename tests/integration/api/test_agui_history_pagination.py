@@ -4,6 +4,7 @@ import pytest
 from ag_ui.core import RunAgentInput, UserMessage
 from httpx import ASGITransport, AsyncClient
 
+from harness.agui.routes import _HISTORY_SNAPSHOT_VERSION as HISTORY_SNAPSHOT_VERSION
 from harness.api.app import create_memory_app
 
 FIXTURE_MANIFEST = Path("tests/fixtures/agents/echo-agent/agent.yaml")
@@ -69,6 +70,7 @@ async def test_history_paginates_runs_and_materializes_snapshots() -> None:
         body = full.json()
         assert body["has_more"] is False
         assert body.get("next_cursor") is None
+        assert body["total"] == 3
         assert _texts(body, "user") == ["turn first", "turn second", "turn third"]
         assert _texts(body, "assistant") == [
             "Echo: turn first",
@@ -83,6 +85,7 @@ async def test_history_paginates_runs_and_materializes_snapshots() -> None:
         first_page = page1.json()
         assert first_page["has_more"] is True
         assert first_page["next_cursor"]
+        assert first_page["total"] == 3
         assert _texts(first_page, "user") == ["turn second", "turn third"]
         assert first_page["status"] == body["status"]
         assert first_page["run_id"] == body["run_id"]
@@ -104,7 +107,7 @@ async def test_history_paginates_runs_and_materializes_snapshots() -> None:
                 "tenant-a", run.run_id, 0, types=("history.snapshot",)
             )
             assert len(snapshots) == 1
-            assert snapshots[0].payload["version"] == 1
+            assert snapshots[0].payload["version"] == HISTORY_SNAPSHOT_VERSION
             expected_turn = run.input["prompt"].split()[-1]
             assert snapshots[0].payload["response_text"] == f"Echo: turn {expected_turn}"
 

@@ -1,0 +1,32 @@
+[
+  {
+    "run_id": "run_cd90b140cc2a49ffa1d825e7c83bfb95",
+    "session_id": "session_f1057832d74749d693ea4c13912b7a3b",
+    "lines": 2,
+    "status": "succeeded",
+    "route": "shdata-model",
+    "complete": true,
+    "chars": 54,
+    "expected_chars": 54,
+    "tail": "01：春风吹过山谷，溪水流向远方。\n02：春风吹过山谷，溪水流向远方。\n验证结束标记：END-739182。",
+    "result": {
+      "stop_reason": "end_turn",
+      "is_error": false
+    }
+  },
+  {
+    "run_id": "run_1e1851b00abc48899b7df2c7a3049429",
+    "session_id": "session_f1057832d74749d693ea4c13912b7a3b",
+    "lines": 40,
+    "status": "succeeded",
+    "route": "shdata-model",
+    "complete": true,
+    "chars": 738,
+    "expected_chars": 738,
+    "tail": "溪水流向远方。\n38：春风吹过山谷，溪水流向远方。\n39：春风吹过山谷，溪水流向远方。\n40：春风吹过山谷，溪水流向远方。\n验证结束标记：END-739182。",
+    "result": {
+      "stop_reason": "end_turn",
+      "is_error": false
+    }
+  }
+]

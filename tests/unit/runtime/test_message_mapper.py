@@ -1,3 +1,5 @@
+import base64
+
 from claude_agent_sdk import (
     AssistantMessage,
     ResultMessage,
@@ -8,6 +10,7 @@ from claude_agent_sdk import (
     TaskStartedMessage,
     TaskUpdatedMessage,
     TextBlock,
+    ThinkingBlock,
     ToolResultBlock,
     ToolUseBlock,
     UserMessage,
@@ -342,3 +345,87 @@ def test_internal_task_result_metadata_is_redacted() -> None:
     assert events[0].payload["content"] == "[Internal tool metadata omitted]"
     assert "agentId" not in repr(events)
     assert "/private/tmp" not in repr(events)
+
+
+def test_inline_image_tool_result_keeps_no_base64_in_events() -> None:
+    payload = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"pixels" * 32).decode()
+    message = UserMessage(
+        content=[
+            ToolResultBlock(
+                tool_use_id="read-1",
+                content=[
+                    {"type": "text", "text": "Image returned inline (image/png, 12 bytes)."},
+                    {"type": "image", "data": payload, "mimeType": "image/png"},
+                ],
+                is_error=False,
+            )
+        ],
+        uuid="user-1",
+        parent_tool_use_id=None,
+        tool_use_result=None,
+    )
+
+    events = map_sdk_message(message)
+
+    content = events[0].payload["content"]
+    assert content[0]["text"].startswith("Image returned inline")
+    placeholder = content[1]
+    assert placeholder["type"] == "image"
+    assert placeholder["media_type"] == "image/png"
+    assert placeholder["base64_chars"] == len(payload)
+    assert "omitted" in placeholder
+    # Run events are persisted and replayed to browsers: the pixels must not be
+    # part of any durable or streamed payload.
+    assert payload not in repr(events)
+
+
+def test_anthropic_style_image_block_is_summarized_too() -> None:
+    payload = base64.b64encode(b"fakejpegbytes" * 8).decode()
+    message = UserMessage(
+        content=[
+            ToolResultBlock(
+                tool_use_id="read-2",
+                content=[
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/jpeg",
+                            "data": payload,
+                        },
+                    }
+                ],
+                is_error=False,
+            )
+        ],
+        uuid="user-2",
+        parent_tool_use_id=None,
+        tool_use_result=None,
+    )
+
+    events = map_sdk_message(message)
+
+    placeholder = events[0].payload["content"][0]
+    assert placeholder["media_type"] == "image/jpeg"
+    assert placeholder["base64_chars"] == len(payload)
+    assert payload not in repr(events)
+
+
+def test_maps_only_provider_thinking_text_not_signatures():
+    message = AssistantMessage(
+        content=[ThinkingBlock(thinking="核对输入。", signature="private-signature")], model="model"
+    )
+    events = map_sdk_message(message)
+    assert events[0].type == "reasoning.delta"
+    assert events[0].payload == {"text": "核对输入。", "block_index": 0}
+    assert "private-signature" not in repr(events)
+    signature = StreamEvent(
+        uuid="sig",
+        session_id="s",
+        parent_tool_use_id=None,
+        event={
+            "type": "content_block_delta",
+            "delta": {"type": "signature_delta", "signature": "private-signature"},
+        },
+    )
+    assert map_sdk_message(signature) == []

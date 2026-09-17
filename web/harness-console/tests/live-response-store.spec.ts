@@ -228,3 +228,38 @@ describe("liveResponseStore", () => {
     });
   });
 });
+
+describe("response visibility deadline", () => {
+  beforeEach(() => { vi.useFakeTimers(); liveResponseStore.clear(); });
+  afterEach(() => { liveResponseStore.clear(); vi.useRealTimers(); });
+
+  it("reveals a short ongoing answer without waiting for 160 characters or completion", () => {
+    liveResponseStore.startRun("slow");
+    liveResponseStore.startMessage("answer");
+    liveResponseStore.append("answer", "这是");
+    vi.advanceTimersByTime(100);
+    liveResponseStore.append("answer", "回答");
+    vi.advanceTimersByTime(79);
+    expect(liveResponseStore.getSnapshot().visible).toBe(false);
+    vi.advanceTimersByTime(1);
+    expect(liveResponseStore.getSnapshot()).toMatchObject({ text: "这是回答", visible: true, status: "streaming" });
+  });
+
+  it("never reveals a preface after a tool starts or a run is replaced", () => {
+    liveResponseStore.startRun("first");
+    liveResponseStore.startMessage("preface");
+    liveResponseStore.append("preface", "先查一下");
+    liveResponseStore.hideForTool();
+    vi.advanceTimersByTime(500);
+    expect(liveResponseStore.getSnapshot().visible).toBe(false);
+    liveResponseStore.append("preface", "旧回复");
+    vi.advanceTimersByTime(100);
+    liveResponseStore.startRun("second");
+    liveResponseStore.startMessage("new");
+    liveResponseStore.append("new", "新回复");
+    vi.advanceTimersByTime(80);
+    expect(liveResponseStore.getSnapshot().visible).toBe(false);
+    vi.advanceTimersByTime(100);
+    expect(liveResponseStore.getSnapshot()).toMatchObject({ runId: "second", text: "新回复", visible: true });
+  });
+});

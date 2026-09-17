@@ -293,8 +293,9 @@ async def test_later_run_restores_latest_snapshot_before_runtime(
 
     assert runtime.restored_content == "from-first-run"
     second_events = await events.list_after("tenant-a", "run-2", 0)
-    assert [event.type for event in second_events[:3]] == [
+    assert [event.type for event in second_events[:4]] == [
         "run.provisioning",
+        "sandbox.provisioned",
         "workspace.restored",
         "run.running",
     ]

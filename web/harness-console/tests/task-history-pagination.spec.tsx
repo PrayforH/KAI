@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vite
 import {
   createThreadHistoryAdapter,
   invalidateThreadHistory,
+  useAutoLoadEarlierMessages,
   useThreadHistoryPagination,
 } from "../src/lib/task-history";
 
@@ -88,7 +89,7 @@ describe("thread history pagination", () => {
     await settle();
 
     expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(fetcher.mock.calls[0][0]).toContain("history?limit=30");
+    expect(fetcher.mock.calls[0][0]).toContain("history?limit=10");
     expect(state.hasMore).toBe(true);
     expect(state.loading).toBe(false);
   });
@@ -173,5 +174,94 @@ describe("thread history pagination", () => {
     });
     expect(importRepositoryMock).not.toHaveBeenCalled();
     expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("auto load earlier on scroll", () => {
+  function Harness({ frameRef, pagination }: {
+    frameRef: { current: HTMLElement | null };
+    pagination: Parameters<typeof useAutoLoadEarlierMessages>[1];
+  }) {
+    useAutoLoadEarlierMessages(frameRef, pagination);
+    return null;
+  }
+
+  function viewportWithMetrics(scrollHeight: number, clientHeight: number) {
+    const frame = document.createElement("div");
+    const viewport = document.createElement("div");
+    viewport.className = "aui-thread-viewport";
+    let height = scrollHeight;
+    Object.defineProperty(viewport, "scrollHeight", { get: () => height, configurable: true });
+    Object.defineProperty(viewport, "clientHeight", { get: () => clientHeight, configurable: true });
+    viewport.scrollTop = 0;
+    frame.append(viewport);
+    document.body.append(frame);
+    return { frame, viewport, setHeight: (next: number) => { height = next; } };
+  }
+
+  it("loads the previous page when the reader reaches the top", async () => {
+    const { frame, viewport, setHeight } = viewportWithMetrics(2000, 600);
+    const loadEarlier = vi.fn(async () => { setHeight(3000); });
+    const pagination = { hasMore: true, loading: false, loadEarlier };
+    const frameRef = { current: frame };
+    await act(async () => {
+      root.render(<Harness frameRef={frameRef} pagination={pagination} />);
+    });
+
+    viewport.scrollTop = 900;
+    await act(async () => { viewport.dispatchEvent(new Event("scroll")); });
+    expect(loadEarlier).not.toHaveBeenCalled();
+
+    viewport.scrollTop = 40;
+    await act(async () => {
+      viewport.dispatchEvent(new Event("scroll"));
+      await new Promise((resolve) => setTimeout(resolve, 40));
+    });
+    expect(loadEarlier).toHaveBeenCalledTimes(1);
+    frame.remove();
+  });
+
+  it("keeps the reader's place by the height that was prepended", async () => {
+    const { frame, viewport, setHeight } = viewportWithMetrics(2000, 600);
+    const loadEarlier = vi.fn(async () => { setHeight(2600); });
+    const pagination = { hasMore: true, loading: false, loadEarlier };
+    await act(async () => {
+      root.render(<Harness frameRef={{ current: frame }} pagination={pagination} />);
+    });
+    viewport.scrollTop = 0;
+    await act(async () => {
+      viewport.dispatchEvent(new Event("scroll"));
+      await new Promise((resolve) => setTimeout(resolve, 40));
+    });
+    expect(viewport.scrollTop).toBe(600);
+    frame.remove();
+  });
+
+  it("stops when the thread has no earlier runs", async () => {
+    const { frame, viewport } = viewportWithMetrics(2000, 600);
+    const loadEarlier = vi.fn(async () => undefined);
+    await act(async () => {
+      root.render(<Harness frameRef={{ current: frame }}
+        pagination={{ hasMore: false, loading: false, loadEarlier }} />);
+    });
+    viewport.scrollTop = 0;
+    await act(async () => {
+      viewport.dispatchEvent(new Event("scroll"));
+      await new Promise((resolve) => setTimeout(resolve, 40));
+    });
+    expect(loadEarlier).not.toHaveBeenCalled();
+    frame.remove();
+  });
+
+  it("fills a viewport that is shorter than the first page", async () => {
+    const { frame, setHeight } = viewportWithMetrics(300, 600);
+    const loadEarlier = vi.fn(async () => { setHeight(1200); });
+    await act(async () => {
+      root.render(<Harness frameRef={{ current: frame }}
+        pagination={{ hasMore: true, loading: false, loadEarlier }} />);
+      await new Promise((resolve) => setTimeout(resolve, 40));
+    });
+    expect(loadEarlier).toHaveBeenCalledTimes(1);
+    frame.remove();
   });
 });

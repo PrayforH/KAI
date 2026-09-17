@@ -54,6 +54,50 @@ def draft(template: AgentTemplate = AgentTemplate.ANALYST) -> AgentDraft:
     )
 
 
+TEAM_SEARCH = "team-search"
+
+
+def catalog_with_team_search():
+    """Default catalog plus a registered external MCP granted on every profile."""
+
+    catalog = default_capability_catalog()
+    team_search = McpCapability(
+        reference=TEAM_SEARCH,
+        serverName="team-search",
+        label="Team search",
+        description="Read-only search over team sources.",
+        endpointUrl="http://team-search:8000/mcp",
+        tools=(
+            "mcp__team-search__search",
+            "mcp__team-search__extract",
+        ),
+        risk=CapabilityRisk.MEDIUM,
+        networkAccess=NetworkAccess.EXTERNAL,
+        sendsUserData=True,
+        readOnly=True,
+        executionLocation="external-mcp",
+        credentialReference="TEAM_SEARCH_KEY",
+        authMode="bearer",
+        authKey="api_key",
+    )
+    return catalog.model_copy(
+        update={
+            "mcp_servers": (*catalog.mcp_servers, team_search),
+            "execution_profiles": tuple(
+                profile.model_copy(
+                    update={
+                        "allowed_mcp_references": (
+                            *profile.allowed_mcp_references,
+                            TEAM_SEARCH,
+                        )
+                    }
+                )
+                for profile in catalog.execution_profiles
+            ),
+        }
+    )
+
+
 def test_default_draft_compiles_to_existing_reproducible_bundle_contract() -> None:
     compiler = AgentDraftCompiler(default_capability_catalog())
 
@@ -125,7 +169,9 @@ def test_codex_runtime_compiles_and_round_trips_with_a_responses_route() -> None
         credentialReference="CODEX_GATEWAY_KEY",
     )
     compiler = AgentDraftCompiler(
-        catalog.model_copy(update={"model_routes": (*catalog.model_routes, responses_route)})
+        catalog_with_team_search().model_copy(
+            update={"model_routes": (*catalog.model_routes, responses_route)}
+        )
     )
     source = draft()
     source = source.model_copy(
@@ -140,7 +186,7 @@ def test_codex_runtime_compiles_and_round_trips_with_a_responses_route() -> None
                             "reasoning_effort": "low",
                         }
                     ),
-                    "mcp_servers": ("tavily-readonly",),
+                    "mcp_servers": (TEAM_SEARCH,),
                 }
             )
         }
@@ -154,7 +200,7 @@ def test_codex_runtime_compiles_and_round_trips_with_a_responses_route() -> None
     assert imported.spec.runtime == "codex-app-server"
     assert imported.spec.model.route_id == responses_route.route_id
     assert imported.spec.model.reasoning_effort == "low"
-    assert imported.spec.mcp_servers == ("tavily-readonly",)
+    assert imported.spec.mcp_servers == (TEAM_SEARCH,)
 
 
 def test_codex_runtime_rejects_capabilities_other_than_http_mcp() -> None:
@@ -692,15 +738,15 @@ def test_knowledge_references_are_pinned_in_manifest_and_effective_contract() ->
     assert "- company-policy" in manifest
 
 
-def test_tavily_is_a_controlled_external_mcp_capability_not_general_network() -> None:
-    compiler = AgentDraftCompiler(default_capability_catalog())
+def test_external_mcp_is_a_controlled_capability_not_general_network() -> None:
+    compiler = AgentDraftCompiler(catalog_with_team_search())
     current = draft()
     enabled = current.model_copy(
         update={
             "spec": current.spec.model_copy(
                 update={
                     "builtin_tools": ("Read", "Glob", "Grep", "Write"),
-                    "mcp_servers": ("tavily-readonly",),
+                    "mcp_servers": (TEAM_SEARCH,),
                 }
             )
         }
@@ -717,11 +763,11 @@ def test_tavily_is_a_controlled_external_mcp_capability_not_general_network() ->
         and issue.severity is ValidationSeverity.WARNING
         for issue in validation.issues
     )
-    assert "mcp: tavily-readonly" in validation.manifest_yaml
+    assert f"mcp: {TEAM_SEARCH}" in validation.manifest_yaml
 
 
 def test_on_demand_bundle_pins_reviewed_tool_directory_and_route_capability() -> None:
-    catalog = default_capability_catalog()
+    catalog = catalog_with_team_search()
     catalog = catalog.model_copy(
         update={
             "model_routes": (
@@ -757,7 +803,7 @@ def test_on_demand_bundle_pins_reviewed_tool_directory_and_route_capability() ->
                             ),
                         }
                     ),
-                    "mcp_servers": ("tavily-readonly",),
+                    "mcp_servers": (TEAM_SEARCH,),
                     "tool_exposure_mode": "on_demand",
                 }
             )
@@ -779,11 +825,11 @@ def test_on_demand_bundle_pins_reviewed_tool_directory_and_route_capability() ->
     assert directory.exposure_mode == "on_demand"
     assert directory.content_hash == directory.digest()
     assert {entry.name for entry in directory.entries if entry.source == "mcp"} == {
-        "mcp__tavily__tavily_search",
-        "mcp__tavily__tavily_extract",
+        "mcp__team-search__search",
+        "mcp__team-search__extract",
     }
     assert {entry.logical_reference for entry in directory.entries if entry.source == "mcp"} == {
-        "tavily-readonly"
+        TEAM_SEARCH
     }
 
 
@@ -849,7 +895,7 @@ def test_operator_contract_uses_the_shared_sandbox_risk_copy() -> None:
 
 
 def test_local_development_profile_is_explicitly_preview_only() -> None:
-    catalog = default_capability_catalog()
+    catalog = catalog_with_team_search()
     profile = next(
         item for item in catalog.execution_profiles if item.profile_id == "local-development"
     )
@@ -859,7 +905,7 @@ def test_local_development_profile_is_explicitly_preview_only() -> None:
             "spec": current.spec.model_copy(
                 update={
                     "execution_profile": profile.profile_id,
-                    "mcp_servers": ("tavily-readonly",),
+                    "mcp_servers": (TEAM_SEARCH,),
                 }
             )
         }
@@ -885,7 +931,7 @@ def test_local_development_profile_is_explicitly_preview_only() -> None:
     assert profile.production_allowed is False
     assert profile.risk is CapabilityRisk.HIGH
     assert NetworkAccess.EXTERNAL in profile.network_access
-    assert profile.allowed_mcp_references == ("tavily-readonly",)
+    assert profile.allowed_mcp_references == (TEAM_SEARCH,)
 
 
 def test_orchestrator_starts_without_implicit_subagents() -> None:
@@ -933,7 +979,7 @@ def test_disabled_catalog_resources_fail_closed() -> None:
 
 
 def test_model_and_execution_profile_capabilities_must_be_compatible() -> None:
-    catalog = default_capability_catalog()
+    catalog = catalog_with_team_search()
     incompatible = catalog.model_copy(
         update={
             "model_routes": tuple(
@@ -950,7 +996,7 @@ def test_model_and_execution_profile_capabilities_must_be_compatible() -> None:
     )
     current = draft()
     with_mcp = current.model_copy(
-        update={"spec": current.spec.model_copy(update={"mcp_servers": ("tavily-readonly",)})}
+        update={"spec": current.spec.model_copy(update={"mcp_servers": (TEAM_SEARCH,)})}
     )
 
     validation = AgentDraftCompiler(incompatible).validate(with_mcp)
@@ -997,7 +1043,7 @@ def test_image_generation_route_cannot_be_used_as_agent_chat_model() -> None:
 
 
 def test_execution_profile_egress_allows_only_registered_mcp_associations() -> None:
-    catalog = default_capability_catalog()
+    catalog = catalog_with_team_search()
     restricted = catalog.model_copy(
         update={
             "execution_profiles": tuple(
@@ -1008,7 +1054,7 @@ def test_execution_profile_egress_allows_only_registered_mcp_associations() -> N
     )
     current = draft()
     with_mcp = current.model_copy(
-        update={"spec": current.spec.model_copy(update={"mcp_servers": ("tavily-readonly",)})}
+        update={"spec": current.spec.model_copy(update={"mcp_servers": (TEAM_SEARCH,)})}
     )
 
     validation = AgentDraftCompiler(restricted).validate(with_mcp)
@@ -1019,12 +1065,12 @@ def test_execution_profile_egress_allows_only_registered_mcp_associations() -> N
         for issue in validation.issues
         if issue.code == "execution_profile_egress_incompatible"
     )
-    assert issue.related_references == ("tavily-readonly",)
-    assert "tavily-readonly" in issue.message
+    assert issue.related_references == (TEAM_SEARCH,)
+    assert TEAM_SEARCH in issue.message
 
 
 def test_execution_profile_reports_network_and_egress_mismatches_together() -> None:
-    catalog = default_capability_catalog()
+    catalog = catalog_with_team_search()
     restricted = catalog.model_copy(
         update={
             "execution_profiles": tuple(
@@ -1042,7 +1088,7 @@ def test_execution_profile_reports_network_and_egress_mismatches_together() -> N
     )
     current = draft()
     with_mcp = current.model_copy(
-        update={"spec": current.spec.model_copy(update={"mcp_servers": ("tavily-readonly",)})}
+        update={"spec": current.spec.model_copy(update={"mcp_servers": (TEAM_SEARCH,)})}
     )
 
     validation = AgentDraftCompiler(restricted).validate(with_mcp)
@@ -1054,7 +1100,7 @@ def test_execution_profile_reports_network_and_egress_mismatches_together() -> N
         "execution_profile_egress_incompatible",
     }.issubset(issues)
     assert issues["execution_profile_network_incompatible"].related_references == (
-        "tavily-readonly",
+        TEAM_SEARCH,
     )
 
 

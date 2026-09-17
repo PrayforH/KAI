@@ -6,7 +6,7 @@ import {
 } from "@assistant-ui/react-markdown";
 import { TextMessagePartProvider, useMessagePartText } from "@assistant-ui/react";
 import remarkGfm from "remark-gfm";
-import { memo, useState, type ComponentPropsWithoutRef } from "react";
+import { memo, useMemo, useState, type ComponentPropsWithoutRef } from "react";
 import { normalizeMessageText } from "../lib/message-text";
 import { MermaidCodeHeader, MermaidDiagram } from "./mermaid-diagram";
 import { citationTarget, knowledgeUrlTransform, remarkWikiLinks } from "../lib/knowledge-links";
@@ -58,6 +58,7 @@ function WikiLink({
     const citation = answer?.citations.find((item) => citationTarget(item) === href);
     return citation ? <CitationLink className="aui-citation-link" title={citation.title ?? "查看来源"} aria-label={`查看来源 ${citation.index}：${citation.title ?? "文档"}`} onClick={() => answer?.request(citation)}>{children}</CitationLink> : <span title="引用来源暂不可用">{children}</span>;
   }
+  if (href === "streamdown:incomplete-link") return <span>{children}</span>;
   if (typeof href === "string" && href.startsWith("wiki:")) {
     let slug: string;
     try { slug = decodeURIComponent(href.slice("wiki:".length)); } catch { return <span>{children}</span>; }

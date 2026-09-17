@@ -17,6 +17,12 @@ SUPPORTED_BUILTINS = frozenset({"Read", "Write", "Edit", "Bash", "Glob", "Grep"}
 COORDINATION_BUILTINS = frozenset({"Task", "Agent"})
 _MAX_ARGUMENT_CHARS = 512 * 1024
 _MAX_OUTPUT_CHARS = 256 * 1024
+# Image bytes travel back through the tool-result channel, so the payload must
+# fit the CLI's JSON buffer (32 MiB) together with base64 expansion and JSON
+# escaping. Anything larger fails with an explicit message instead of a
+# truncated frame that would reach the model as a corrupt image.
+_MAX_IMAGE_BYTES = 10 * 1024 * 1024
+_IMAGE_MIMES = ("image/png", "image/jpeg", "image/webp", "image/gif")
 
 _BUNDLE_PYTHON_RUNNER = r"""
 import asyncio
@@ -62,8 +68,40 @@ def target(value):
         raise ValueError("path escaped workspace")
     return resolved
 
+def image_mime(data):
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    if data.startswith((b"GIF87a", b"GIF89a")):
+        return "image/gif"
+    return None
+
 if operation == "read":
     path = target(arguments["file_path"])
+    image_limit = arguments.get("_image_max_bytes")
+    if arguments.get("_image_mode") is True and isinstance(image_limit, int) and path.is_file():
+        size = path.stat().st_size
+        if size > image_limit:
+            raise ValueError(
+                "image is %d bytes; this session returns images up to %d bytes. "
+                "Downscale it or read a processed representation instead."
+                % (size, image_limit)
+            )
+        data = path.read_bytes()
+        mime = image_mime(data)
+        if mime is not None:
+            import base64
+            print(json.dumps({
+                "image": {
+                    "mimeType": mime,
+                    "bytes": len(data),
+                    "data": base64.b64encode(data).decode("ascii"),
+                }
+            }))
+            sys.exit(0)
     offset = max(0, int(arguments.get("offset", 0)))
     limit = max(1, min(10000, int(arguments.get("limit", 2000))))
     lines = path.read_text(errors="replace").splitlines()
@@ -164,17 +202,66 @@ def _tool_result(text: str, *, is_error: bool = False) -> dict[str, Any]:
     }
 
 
+def _image_tool_result(stdout: str) -> dict[str, Any] | None:
+    """Return an inline image result when the sandbox reported image bytes.
+
+    The sandbox decides whether a path is an allowed image by sniffing its magic
+    bytes; this side re-validates the envelope so a hostile or corrupt sandbox
+    reply cannot smuggle an unbounded or mislabelled payload into the model
+    request.
+    """
+
+    base64_budget = (4 * _MAX_IMAGE_BYTES // 3) + 64
+    if len(stdout) > base64_budget + 4096:
+        return None
+    try:
+        parsed = json.loads(stdout)
+    except ValueError:
+        return None
+    image = parsed.get("image") if isinstance(parsed, dict) else None
+    if not isinstance(image, dict):
+        return None
+    data = image.get("data")
+    mime = image.get("mimeType")
+    size = image.get("bytes")
+    if not isinstance(data, str) or mime not in _IMAGE_MIMES or not data:
+        return None
+    if len(data) > base64_budget:
+        return None
+    described = f"{size} bytes" if isinstance(size, int) else "unknown size"
+    return {
+        "content": [
+            {
+                "type": "text",
+                "text": (
+                    f"Image returned inline ({mime}, {described}). Answer from the image "
+                    "itself; do not install OCR or image libraries."
+                ),
+            },
+            {"type": "image", "data": data, "mimeType": mime},
+        ]
+    }
+
+
 def create_sandbox_tool(
     *,
     builtin: str,
     description: str,
     schema: dict[str, Any],
     executor: SandboxCommandExecutor,
+    image_aware: bool = False,
 ) -> SdkMcpTool[Any]:
     operation = builtin.lower()
+    returns_images = image_aware and builtin == "Read"
 
     async def handler(arguments: dict[str, Any]) -> dict[str, Any]:
-        encoded = json.dumps(arguments, ensure_ascii=False, separators=(",", ":"))
+        payload = dict(arguments)
+        if returns_images:
+            # Server-owned flags: the model cannot widen, disable or resize the
+            # image path, whatever it puts in its tool arguments.
+            payload["_image_mode"] = True
+            payload["_image_max_bytes"] = _MAX_IMAGE_BYTES
+        encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
         if len(encoded) > _MAX_ARGUMENT_CHARS:
             return _tool_result("tool arguments exceed the sandbox proxy limit", is_error=True)
         timeout = 30.0
@@ -195,6 +282,10 @@ def create_sandbox_tool(
         if result.exit_code != 0:
             message = result.stderr.strip() or result.stdout.strip() or "sandbox tool failed"
             return _tool_result(message, is_error=True)
+        if returns_images:
+            image_result = _image_tool_result(result.stdout)
+            if image_result is not None:
+                return image_result
         return _tool_result(result.stdout)
 
     return SdkMcpTool(
@@ -208,7 +299,16 @@ def create_sandbox_tool(
 def create_sandbox_tools_mcp_server(
     executor: SandboxCommandExecutor,
     builtins: Iterable[str],
+    *,
+    image_aware: bool = False,
 ) -> McpSdkServerConfig:
+    """Proxy workspace builtins into the sandbox.
+
+    ``image_aware`` enables inline image reads: when the selected model route
+    supports vision, ``Read`` returns allowed image formats as image content
+    instead of UTF-8 noise, so a sandboxed run never has to fall back to OCR.
+    """
+
     requested = frozenset(builtins)
     unsupported = requested - SUPPORTED_BUILTINS
     if unsupported:
@@ -217,7 +317,14 @@ def create_sandbox_tools_mcp_server(
         )
     definitions = {
         "Read": (
-            "Read a UTF-8 text file from the isolated workspace.",
+            (
+                "Read a UTF-8 text file, or an image, from the isolated workspace. "
+                "Reading a PNG, JPEG, WebP or GIF returns the image content itself; "
+                "answer from the returned image instead of installing OCR or image "
+                "libraries."
+            )
+            if image_aware
+            else "Read a UTF-8 text file from the isolated workspace.",
             {
                 "type": "object",
                 "properties": {
@@ -305,6 +412,7 @@ def create_sandbox_tools_mcp_server(
             description=definitions[builtin][0],
             schema=definitions[builtin][1],
             executor=executor,
+            image_aware=image_aware,
         )
         for builtin in sorted(requested)
     ]

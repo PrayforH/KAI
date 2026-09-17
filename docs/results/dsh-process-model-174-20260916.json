@@ -1,0 +1,1 @@
+{"run_id": "run_a0a1219b2d7e4f3fb9537215afc057cc", "session_id": "session_1c993b0da88f4560a956f9e54d6e9b3f", "model": "shdata-model", "status": "succeeded", "reasoning_events": 17, "reasoning_chars": 164, "reasoning_blocks": 1, "signature_exposed": false, "message_events": 3, "answer_correct": true, "tail_complete": true}

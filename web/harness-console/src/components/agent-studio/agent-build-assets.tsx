@@ -13,8 +13,7 @@ export function AgentBuildAssets({ draft, turns, changes, pending, onClose, onCo
     <header className={styles.panelHeader}><strong>智能体资产</strong><div><button type="button" onClick={onCodeView} aria-label="切换代码视图">代码视图 ↗</button><button type="button" aria-label="收起智能体资产" onClick={onClose}>×</button></div></header>
     <nav className={styles.assetTabs} aria-label="资产分类">{([["config","配置"],["files","文件"],["changes","改动"]] as const).map(([key,label])=><button key={key} type="button" aria-pressed={tab===key} onClick={()=>setTab(key)}>{label}{key==="changes"&&changes.length>0?` · ${changes.length}`:""}</button>)}</nav>
     <div className={styles.assetContent}>
-    {tab==="config"&&<><div className={styles.assetIntro}><strong>{draft.displayName}</strong><small>草稿 r{draft.revision}</small></div><p>{draft.description}</p><button type="button" className={styles.editConfiguration} onClick={() => onEdit()}>编辑完整配置 ↗</button>
-      <nav className={styles.configLinks} aria-label="配置编辑入口">{([["prompt", "行为设定"], ["skills", "技能"], ["capabilities", "MCP 与工具"], ["capabilities", "知识库"], ["runtime", "高级配置"]] as const).map(([section, label]) => <button key={label} type="button" onClick={() => onEdit(section, label === "知识库" ? label : undefined)}>{label}<span aria-hidden="true">↗</span></button>)}</nav>
+    {tab==="config"&&<><div className={styles.assetIntro}><strong>{draft.displayName}</strong><small>草稿 r{draft.revision}</small></div><p>{draft.description}</p>
       <details open><summary>提示词与输出要求</summary><pre>{draft.systemPrompt||"尚未配置"}</pre></details>
       <details><summary>Skills · {draft.skills.length}</summary>{draft.skills.map(skill=><details key={skill.name}><summary>{skill.name}</summary><pre>{skill.instructions}</pre></details>)}</details>
       <details><summary>工具 · {draft.builtinTools.length+draft.mcpServers.length}</summary><ul>{[...draft.builtinTools,...draft.mcpServers].map((tool,i)=><li key={i}>{tool}</li>)}</ul></details>

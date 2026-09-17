@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import {
   useCallback,
   useEffect,
@@ -11,6 +12,7 @@ import {
 } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { mapWithConcurrency } from "../../lib/concurrency";
 import {
   studioClient,
   type StudioKnowledgeBase,
@@ -18,7 +20,7 @@ import {
   type StudioKnowledgeDocumentStatus,
   type StudioKnowledgeDocumentTable,
 } from "../../lib/studio-client";
-import { KnowledgeGraphPanel } from "./knowledge-graph-panel";
+const KnowledgeGraphPanel = dynamic(() => import("./knowledge-graph-panel").then((module) => module.KnowledgeGraphPanel), { loading: () => <p>正在加载图谱…</p> });
 import { KnowledgeWikiPanel } from "./knowledge-wiki-panel";
 import { DrawerResizeHandle, useDrawerResize } from "../../lib/use-drawer-resize";
 import { KnowledgeDrawerLayer } from "./knowledge-drawer-layer";
@@ -60,6 +62,7 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
   const [content, setContent] = useState("");
   const [creating, setCreating] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
   const [graphFocus, setGraphFocus] = useState<string | null>(null);
   const [docQuery, setDocQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "completed" | "processing" | "failed">(
@@ -81,18 +84,30 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
     { min: 400, max: 1100 },
   );
   const fileRef = useRef<HTMLInputElement>(null);
-  const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const scopeGeneration = useRef(0);
+  const [pollingStopped, setPollingStopped] = useState(false);
+  const deletionStartedAt = useRef<number | null>(null);
 
   const isWeknora = base?.engine === "weknora";
-  const SPREADSHEET_TYPES = ["xls", "xlsx", "xlsm", "csv"];
+  // The WeKnora wiki/graph endpoints reject a RAG base with "Wiki feature is not
+  // enabled for this knowledge base", so those tabs stay disabled for it.
+  const supportsWiki = isWeknora && base?.kbType !== "rag";
+  useEffect(() => {
+    if (base && !supportsWiki && tab !== "docs") setTab("docs");
+  }, [base, supportsWiki, tab]);
+  // Files uploaded at once: quick without flooding the engine.
+const UPLOAD_CONCURRENCY = 3;
+const SPREADSHEET_TYPES = ["xls", "xlsx", "xlsm", "csv"];
   const isSpreadsheet = (fileType: string) =>
     SPREADSHEET_TYPES.includes((fileType || "").toLowerCase());
 
   const loadDocuments = useCallback(
     async (quiet = false) => {
-      if (!quiet) setLoading(true);
+      const generation = scopeGeneration.current;
+      if (!quiet) { setLoading(true); setPollingStopped(false); setError(""); }
       try {
         const docs = await studioClient.listKnowledgeDocuments(reference);
+        if (generation !== scopeGeneration.current) return;
         setDocuments(docs);
         // WeKnora deletes documents in the background, so a just-deleted row
         // keeps coming back from the list for a few seconds. Hold it hidden
@@ -103,54 +118,95 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
           const next = new Set([...current].filter((documentId) => present.has(documentId)));
           return next.size === current.size ? current : next;
         });
-        const active = docs.some(
-          (doc) => doc.parseStatus === "processing" || doc.parseStatus === "pending",
-        );
-        if (active && pollTimer.current === null) {
-          pollTimer.current = setInterval(() => void loadDocuments(true), 6000);
-        } else if (!active && pollTimer.current !== null) {
-          clearInterval(pollTimer.current);
-          pollTimer.current = null;
-        }
       } catch (cause) {
-        if (!quiet) {
-          setError(cause instanceof Error ? cause.message : "加载文档失败");
-        }
+        if (generation !== scopeGeneration.current) return;
+        if (quiet) throw cause;
+        setError(cause instanceof Error ? cause.message : "加载文档失败");
       } finally {
-        if (!quiet) setLoading(false);
+        if (!quiet && generation === scopeGeneration.current) setLoading(false);
       }
     },
     [reference],
   );
 
-  const load = useCallback(async () => {
+  useEffect(() => {
+    const generation = ++scopeGeneration.current;
+    setLoading(true);
+    setPollingStopped(false);
     setError("");
-    try {
-      const [baseValue, docs] = await Promise.all([
-        studioClient.getKnowledgeBase(reference),
-        studioClient.listKnowledgeDocuments(reference).catch(() => [] as StudioKnowledgeDocumentStatus[]),
-      ]);
+    setBase(null);
+    setDocuments([]);
+    setPendingDeletes(new Set());
+    setSelectedIds(new Set());
+    setSelected(null);
+    void Promise.all([
+      studioClient.getKnowledgeBase(reference),
+      studioClient.listKnowledgeDocuments(reference),
+    ]).then(([baseValue, docs]) => {
+      if (generation !== scopeGeneration.current) return;
       setBase(baseValue);
       setDocuments(docs);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "加载知识库失败");
-    } finally {
-      setLoading(false);
-    }
+    }).catch((cause: unknown) => {
+      if (generation === scopeGeneration.current) setError(cause instanceof Error ? cause.message : "加载知识库失败");
+    }).finally(() => {
+      if (generation === scopeGeneration.current) setLoading(false);
+    });
+    return () => { scopeGeneration.current += 1; };
   }, [reference]);
 
+  const hasPendingDeletes = pendingDeletes.size > 0;
+  const hasProcessingDocuments = documents.some((doc) =>
+    !pendingDeletes.has(doc.documentId) && (doc.parseStatus === "processing" || doc.parseStatus === "pending"));
   useEffect(() => {
-    void load();
-    return () => {
-      if (pollTimer.current) clearInterval(pollTimer.current);
-    };
-  }, [load]);
+    if (!hasPendingDeletes) deletionStartedAt.current = null;
+    else deletionStartedAt.current ??= Date.now();
+  }, [hasPendingDeletes]);
 
+  // One completion-driven timer: no overlapping requests, no hidden-tab traffic.
   useEffect(() => {
-    if (pendingDeletes.size === 0) return;
-    const timer = setInterval(() => void loadDocuments(true), 2500);
-    return () => clearInterval(timer);
-  }, [loadDocuments, pendingDeletes]);
+    if (loading || pollingStopped || tab !== "docs" || (!hasPendingDeletes && !hasProcessingDocuments)) return;
+    let active = true;
+    let running = false;
+    let failures = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const delay = hasPendingDeletes ? 2500 : 6000;
+    const schedule = () => {
+      if (active && document.visibilityState === "visible") timer = setTimeout(tick, delay * 2 ** failures);
+    };
+    const tick = async () => {
+      if (!active || running || document.visibilityState !== "visible") return;
+      running = true;
+      try {
+        await loadDocuments(true);
+        failures = 0;
+        if (active && deletionStartedAt.current !== null && Date.now() - deletionStartedAt.current > 120_000) {
+          deletionStartedAt.current = null;
+          setPollingStopped(true);
+          setPendingDeletes(new Set());
+          setNotice("删除仍未完成，请稍后刷新确认状态。");
+          return;
+        }
+      } catch {
+        failures += 1;
+        if (failures >= 4) {
+          if (active) { setPollingStopped(true); setError("文档状态刷新失败，请点击刷新重试。"); }
+          return;
+        }
+      } finally { running = false; }
+      schedule();
+    };
+    const onVisibility = () => {
+      clearTimeout(timer);
+      if (document.visibilityState === "visible" && !running) void tick();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    schedule();
+    return () => {
+      active = false;
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [loading, pollingStopped, tab, hasPendingDeletes, hasProcessingDocuments, loadDocuments]);
 
   // Dropping a file anywhere outside the drop zone would otherwise make the
   // browser open or download it instead of uploading.
@@ -245,29 +301,52 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
     }
   }, [content, loadDocuments, reference, title]);
 
-  const uploadFile = useCallback(
-    async (file: File) => {
+  const uploadFiles = useCallback(
+    async (files: File[]) => {
+      if (files.length === 0) return;
       setUploading(true);
       setError("");
+      setUploadProgress({ done: 0, total: files.length });
+      let done = 0;
       try {
-        await studioClient.uploadKnowledgeDocument(reference, file);
-        setNotice(`「${file.name}」已上传，正在解析`);
+        const results = await mapWithConcurrency(files, UPLOAD_CONCURRENCY, async (file) => {
+          try {
+            await studioClient.uploadKnowledgeDocument(reference, file);
+            return { name: file.name, error: "" };
+          } catch (cause) {
+            return { name: file.name, error: cause instanceof Error ? cause.message : "上传失败" };
+          } finally {
+            done += 1;
+            setUploadProgress({ done, total: files.length });
+          }
+        });
+        const failed = results.filter((result) => result.error);
         await loadDocuments();
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "上传失败");
+        const accepted = files.length - failed.length;
+        if (accepted > 0) {
+          setNotice(
+            files.length === 1
+              ? `「${files[0].name}」已上传，正在解析`
+              : `${accepted} 个文件已上传，正在解析`,
+          );
+        }
+        if (failed.length > 0) {
+          setError(`上传失败：${failed.map((item) => `${item.name}：${item.error}`).join("；")}`);
+        }
       } finally {
         setUploading(false);
+        setUploadProgress(null);
       }
     },
     [loadDocuments, reference],
   );
 
   const onUpload = useCallback(async () => {
-    const file = fileRef.current?.files?.[0];
-    if (!file) return;
-    await uploadFile(file);
+    const files = Array.from(fileRef.current?.files ?? []);
+    if (files.length === 0) return;
+    await uploadFiles(files);
     if (fileRef.current) fileRef.current.value = "";
-  }, [uploadFile]);
+  }, [uploadFiles]);
 
   const onDrop = useCallback(
     async (event: DragEvent<HTMLElement>) => {
@@ -276,11 +355,9 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
       if (!isWeknora || uploading) return;
       const files = Array.from(event.dataTransfer?.files ?? []);
       if (files.length === 0) return;
-      for (const file of files) {
-        await uploadFile(file);
-      }
+      await uploadFiles(files);
     },
-    [isWeknora, uploadFile, uploading],
+    [isWeknora, uploadFiles, uploading],
   );
 
   const onDelete = useCallback(
@@ -425,7 +502,7 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
           <div>
             <h1>{base.displayName}</h1>
             <p className={styles.headHint}>
-              上传或拖入文档，解析完成后即可检索与问答
+              上传或拖入文档（支持多选），解析完成后即可检索与问答
             </p>
           </div>
           <div className={styles.actions}>
@@ -437,11 +514,12 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
                   onClick={() => fileRef.current?.click()}
                   disabled={uploading}
                 >
-                  {uploading ? "上传中…" : "上传文件"}
+                  {uploading ? (uploadProgress ? `上传中… ${uploadProgress.done}/${uploadProgress.total}` : "上传中…") : "上传文件"}
                 </button>
                 <input
                   ref={fileRef}
                   type="file"
+                  multiple
                   hidden
                   onChange={() => void onUpload()}
                 />
@@ -471,7 +549,7 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
             className={`${styles.tab} ${tab === "wiki" ? styles.tabActive : ""}`}
             aria-pressed={tab === "wiki"}
             onClick={() => setTab("wiki")}
-            disabled={!isWeknora}
+            disabled={!supportsWiki}
           >
             Wiki
           </button>
@@ -480,7 +558,7 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
             className={`${styles.tab} ${tab === "graph" ? styles.tabActive : ""}`}
             aria-pressed={tab === "graph"}
             onClick={() => setTab("graph")}
-            disabled={!isWeknora}
+            disabled={!supportsWiki}
           >
             图谱
           </button>

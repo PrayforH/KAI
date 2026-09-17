@@ -4166,7 +4166,7 @@ body.codex-theme-v1 .execution-commentary {
   color: var(--codex-ink-soft);
   font-size: 13px;
   font-weight: 450;
-  line-height: 1.65;
+  line-height: 1.45;
   letter-spacing: 0;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
@@ -4360,7 +4360,8 @@ body.codex-theme-v1 .execution-action-heading {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow: hidden;
 }
 
 body.codex-theme-v1 .execution-action-copy strong {
@@ -4368,6 +4369,10 @@ body.codex-theme-v1 .execution-action-copy strong {
   font-size: 12px;
   font-weight: 570;
   line-height: 1.45;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 body.codex-theme-v1 .execution-action-copy small {
@@ -4375,6 +4380,8 @@ body.codex-theme-v1 .execution-action-copy small {
   font-size: 10px;
   font-weight: 450;
   line-height: 1.45;
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 body.codex-theme-v1 .execution-action-details {
@@ -4391,7 +4398,7 @@ body.codex-theme-v1 .execution-action-detail {
   color: var(--codex-muted);
   font-size: 11px;
   font-weight: 450;
-  line-height: 1.5;
+  line-height: 1.45;
 }
 
 body.codex-theme-v1 .execution-action-detail-heading {

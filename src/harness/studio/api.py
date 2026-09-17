@@ -122,6 +122,7 @@ from harness.studio.models import (
     AgentDraft,
     AgentDraftPlacementRequest,
     AgentDraftSummary,
+    AgentSkillCatalogEntry,
     CapabilityCatalog,
     CapabilityCatalogRecord,
     CatalogImpact,
@@ -1300,6 +1301,18 @@ async def import_skill_file(
         ) from error
 
 
+@router.get("/skills/agents", response_model=list[AgentSkillCatalogEntry])
+async def list_agent_skills(
+    actor: Annotated[StudioActor, Depends(require_studio_reader)],
+    service: Annotated[AgentStudioService, Depends(get_studio_service)],
+    space_id: Annotated[str | None, Query(alias="spaceId")] = None,
+) -> list[AgentSkillCatalogEntry]:
+    try:
+        return await service.list_agent_skills(actor.tenant_id, actor.user_id, space_id)
+    except (ConflictError, NotFoundError, PermissionDeniedError) as error:
+        raise _translate_domain_error(error) from error
+
+
 @router.get("/skills/catalog", response_model=PlatformSkillCatalogListing)
 async def list_platform_skill_packages(
     _actor: Annotated[StudioActor, Depends(require_studio_reader)],
@@ -1578,7 +1591,11 @@ async def builder_materials(
 ) -> dict[str, str]:
     try:
         return await read_builder_materials(
-            actor.tenant_id, actor.user_id, body, container.input_artifacts, models,
+            actor.tenant_id,
+            actor.user_id,
+            body,
+            container.input_artifacts,
+            models,
         )
     except (ConflictError, NotFoundError, PermissionDeniedError) as error:
         raise _translate_domain_error(error) from error
@@ -1638,8 +1655,10 @@ async def import_draft_bundle(
 ) -> ImportedAgentBundle:
     media_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
     if media_type not in {
-        "application/zip", "application/vnd.rar",
-        "application/x-rar-compressed", "application/octet-stream",
+        "application/zip",
+        "application/vnd.rar",
+        "application/x-rar-compressed",
+        "application/octet-stream",
     }:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
@@ -1856,7 +1875,8 @@ async def create_agent_builder_patch(
 
 @router.post(
     "/drafts/{draft_id}/builder-conversation",
-    response_model=BuilderConversationReply, response_model_exclude_unset=True,
+    response_model=BuilderConversationReply,
+    response_model_exclude_unset=True,
 )
 async def converse_agent_builder(
     request: Request,
@@ -2047,7 +2067,11 @@ async def create_studio_try_run(
         previous = None
         if body.continue_from_run_id:
             previous = await _require_studio_try_run(
-                container, actor, draft_id, draft.revision, body.continue_from_run_id,
+                container,
+                actor,
+                draft_id,
+                draft.revision,
+                body.continue_from_run_id,
             )
             if not previous.status.is_terminal:
                 raise ConflictError("Previous preview turn is still running")
@@ -2056,32 +2080,49 @@ async def create_studio_try_run(
                 raise ConflictError("Preview configuration changed; start a new conversation")
         else:
             session = await container.sessions.create(
-                actor.tenant_id, actor.user_id, draft.spec.name, preview_version,
-                session_id=f"studio_try_{session_key}", preview=True,
+                actor.tenant_id,
+                actor.user_id,
+                draft.spec.name,
+                preview_version,
+                session_id=f"studio_try_{session_key}",
+                preview=True,
             )
         resolved = await container.input_artifacts.resolve_for_run(
-            tenant_id=actor.tenant_id, user_id=actor.user_id,
+            tenant_id=actor.tenant_id,
+            user_id=actor.user_id,
             input_artifact_ids=body.input_artifact_ids,
         )
         model_override = previous.input.get("model_route_override") if previous else None
         has_images = any(item.media_type.startswith("image/") for item in resolved)
         if has_images:
             catalog = await service.capabilities(actor.tenant_id, actor.user_id)
-            api_format = ("openai_compatible" if draft.spec.runtime == "codex-app-server"
-                          else "anthropic_compatible")
-            candidates = [route for route in catalog.model_routes
-                          if route.enabled and {"vision", *draft.spec.model.required_capabilities}
-                          <= set(route.capabilities) and route.api_format == api_format]
+            api_format = (
+                "openai_compatible"
+                if draft.spec.runtime == "codex-app-server"
+                else "anthropic_compatible"
+            )
+            candidates = [
+                route
+                for route in catalog.model_routes
+                if route.enabled
+                and {"vision", *draft.spec.model.required_capabilities} <= set(route.capabilities)
+                and route.api_format == api_format
+            ]
             preferred = model_override or draft.spec.model.route_id
             candidates.sort(key=lambda route: route.route_id != preferred)
             if not candidates:
-                raise ConflictError("图片已上传，但当前运行环境没有可用的视觉模型。"
-                                    "请在模型配置中启用兼容的视觉模型后重试，输入和附件会保留。")
+                raise ConflictError(
+                    "图片已上传，但当前运行环境没有可用的视觉模型。"
+                    "请在模型配置中启用兼容的视觉模型后重试，输入和附件会保留。"
+                )
             model_override = None
             for candidate in candidates:
                 if await models.resolve_runtime(
-                    actor.tenant_id, draft.spec.name, candidate.route_id,
-                    apply_agent_binding=False, required_api_format=api_format,
+                    actor.tenant_id,
+                    draft.spec.name,
+                    candidate.route_id,
+                    apply_agent_binding=False,
+                    required_api_format=api_format,
                 ):
                     model_override = candidate.route_id
                     break
@@ -2089,14 +2130,19 @@ async def create_studio_try_run(
                 raise ConflictError("视觉模型尚未配置有效凭据，请检查模型连接后重试")
         previous_prompts = list(previous.input.get("conversation_prompts", [])) if previous else []
         creation = await container.runs.create_with_result(
-            actor.tenant_id, session.session_id, body.idempotency_key,
+            actor.tenant_id,
+            session.session_id,
+            body.idempotency_key,
             input={
                 "prompt": body.prompt,
                 "conversation_prompts": [*previous_prompts, body.prompt],
                 "input_artifact_ids": [item.input_artifact_id for item in resolved],
                 **({"model_route_override": model_override} if model_override else {}),
-                **({"required_model_capabilities": ["vision"]}
-                   if any(item.media_type.startswith("image/") for item in resolved) else {}),
+                **(
+                    {"required_model_capabilities": ["vision"]}
+                    if any(item.media_type.startswith("image/") for item in resolved)
+                    else {}
+                ),
             },
         )
         if container.auto_execute and creation.created:

@@ -17,6 +17,10 @@ const workbench = readFileSync(
   ),
   "utf8",
 );
+const assetsPanel = readFileSync(
+  join(process.cwd(), "src/components/agent-studio/agent-build-assets.tsx"),
+  "utf8",
+);
 const operationsWorkspace = readFileSync(
   join(
     process.cwd(),
@@ -285,9 +289,9 @@ describe("Agent Studio management page", () => {
 
   it("renders the primary Studio editor before secondary control-plane data", () => {
     expect(workbench).toContain("const [serverDrafts, serverCapabilities] = await Promise.all([");
-    expect(workbench).toContain("if (loading || loadError) return;");
+    expect(workbench).toContain('viewMode !== "editor" || !configEditorOpen');
     expect(workbench).toContain("studioClient.listPreviews()");
-    expect(workbench).toContain("These panels are secondary; the primary editor remains available.");
+    expect(workbench).toContain('activeSection === "evaluation"');
     expect(studioClient).toContain("const [personal, response] = await Promise.all([");
   });
 
@@ -314,7 +318,7 @@ describe("Agent Studio management page", () => {
 
   it("uses one action-button contract and structured overflow menu states", () => {
     expect(workbench.match(/styles\.headerActionButton/g)).toHaveLength(2);
-    expect(workbench.match(/className=\{styles\.actionMenuItem\}/g)).toHaveLength(11);
+    expect(workbench.match(/className=\{styles\.actionMenuItem\}/g)).toHaveLength(12);
     expect(workbench).not.toContain("copilot-drawer");
     expect(workbench).not.toContain("CopilotDrawer");
     expect(workbench).toContain("<HeaderActionIcon name=\"release\"");
@@ -324,6 +328,31 @@ describe("Agent Studio management page", () => {
     expect(styles).toContain(".actionMenuItem:disabled");
     expect(workbench).toContain("useDismissablePopovers()");
     expect(workbench).toContain("data-dismiss-on-outside");
+  });
+
+  it("enters the full configuration from the agent card menu, not from a header menu", () => {
+    // The card's overflow menu owns the configuration entry: one 编辑 item that
+    // opens the full configuration, next to the destructive action.
+    const cardMenuStart = workbench.indexOf("styles.agentCatalogMenu");
+    expect(cardMenuStart).toBeGreaterThan(-1);
+    const cardMenu = workbench.slice(cardMenuStart, workbench.indexOf("</details>", cardMenuStart));
+    expect(cardMenu).toContain("<strong>编辑</strong>");
+    expect(cardMenu).toContain("进入完整配置");
+    expect(cardMenu).toContain("void openFullConfiguration(agent.draftId)");
+    expect(cardMenu).toContain("删除智能体");
+    // Selecting a draft closes the full configuration editor, so the entry must
+    // reopen it explicitly instead of only entering the editor shell.
+    expect(workbench).toContain("async function openFullConfiguration(draftId: string)");
+    expect(workbench).toContain('openConfiguration("identity")');
+    // No per-section entry list, and no separate header configuration menu.
+    expect(workbench).not.toContain("编辑智能体配置");
+    expect(workbench).not.toContain("完整配置 · 分区定位");
+    expect(workbench).not.toContain("openConfiguration(section, anchor)");
+    // The assets panel keeps a read-only overview; it must not carry its own
+    // per-section entry list any more.
+    expect(assetsPanel).not.toContain("配置编辑入口");
+    expect(assetsPanel).not.toContain("编辑完整配置");
+    expect(assetsPanel).not.toContain("configLinks");
   });
 
   it("keeps synchronization state with draft identity instead of between actions", () => {
@@ -596,7 +625,8 @@ describe("Agent Studio management page", () => {
     expect(styles).toContain(".advancedRuntimeSettings[open]");
     expect(workbench).toContain("调用范围遵循已发布的权限设置");
     expect(workbench).not.toContain('type="checkbox" checked={sandbox');
-    expect(studioConfig).toContain("公网搜索（Tavily）");
+    // The platform no longer ships a built-in MCP; catalogs expose user MCPs.
+    expect(studioConfig).toContain("export const MCP_OPTIONS: McpOption[] = [];");
     expect(workbench).toContain("仅展示可配置工具");
     expect(workbench).toContain('new Set(["Task"])');
     expect(builderOverlays).not.toContain("mcpServers.filter");
@@ -829,7 +859,7 @@ describe("Agent Studio management page", () => {
 
   it("keeps the empty Agent catalog quiet until the user explicitly creates one", () => {
     expect(workbench).not.toContain("if (canEdit) setNewAgentOpen(true)");
-    expect(workbench).toContain('setNotice(canEdit ? "当前没有草稿，可新建第一个 Agent"');
+    expect(workbench).toContain('setNotice(serverDrafts.length > 0 ? "" : canEdit ? "当前没有草稿，可新建第一个 Agent"');
     expect(workbench).toContain('className={`${styles.studioShell} ${styles.workbenchContent}`}');
   });
 

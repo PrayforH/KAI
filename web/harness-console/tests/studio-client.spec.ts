@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_STUDIO_DRAFT } from "../src/lib/agent-studio";
-import { TEAM_COLLABORATION_ENABLED } from "../src/lib/agent-visibility";
 import {
   apiDraftToStudioDraft,
   StudioApiError,
@@ -9,6 +8,11 @@ import {
   type ApiAgentDraft,
   type StudioEnvironmentResourcePolicy,
 } from "../src/lib/studio-client";
+
+vi.mock("../src/lib/agent-visibility", async importOriginal => ({
+  ...await importOriginal<typeof import("../src/lib/agent-visibility")>(),
+  TEAM_COLLABORATION_ENABLED: true,
+}));
 
 function apiDraft(): ApiAgentDraft {
   const spec = studioDraftToSpec({
@@ -103,7 +107,7 @@ describe("Studio typed API mapping", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("returns only personal drafts while team collaboration is disabled", async () => {
+  it("combines personal and accessible workspace drafts for the Studio list", async () => {
     const personal = {
       draftId: "draft-personal",
       agentId: "agent-personal",
@@ -128,64 +132,25 @@ describe("Studio typed API mapping", () => {
     };
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url === "/api/studio/drafts") return Response.json([personal, shared]);
+      if (url === "/api/studio/drafts") return Response.json([personal]);
+      if (url === "/api/spaces") {
+        return Response.json([{ space: { spaceId: "space-team" } }]);
+      }
+      if (url === "/api/studio/drafts?spaceId=space-team") {
+        return Response.json([shared]);
+      }
       return new Response("not found", { status: 404 });
     });
     vi.stubGlobal("fetch", fetchMock);
 
     const drafts = await studioClient.listAccessibleDrafts();
 
-    expect(drafts.map((item) => item.draftId)).toEqual(["draft-personal"]);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(drafts.map((item) => item.draftId)).toEqual([
+      "draft-shared",
+      "draft-personal",
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
-
-  it.skipIf(!TEAM_COLLABORATION_ENABLED)(
-    "combines personal and accessible workspace drafts for the Studio list",
-    async () => {
-      const personal = {
-        draftId: "draft-personal",
-        agentId: "agent-personal",
-        spaceId: null,
-        name: "personal-agent",
-        displayName: "个人智能体",
-        domain: "general",
-        version: "0.1.0",
-        template: "analyst" as const,
-        revision: 2,
-        updatedAt: "2026-08-12T01:00:00Z",
-        publishedVersion: "0.1.0",
-      };
-      const shared = {
-        ...personal,
-        draftId: "draft-shared",
-        agentId: "agent-shared",
-        spaceId: "space-team",
-        name: "shared-agent",
-        displayName: "协作智能体",
-        updatedAt: "2026-08-12T02:00:00Z",
-      };
-      const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input);
-        if (url === "/api/studio/drafts") return Response.json([personal]);
-        if (url === "/api/spaces") {
-          return Response.json([{ space: { spaceId: "space-team" } }]);
-        }
-        if (url === "/api/studio/drafts?spaceId=space-team") {
-          return Response.json([shared]);
-        }
-        return new Response("not found", { status: 404 });
-      });
-      vi.stubGlobal("fetch", fetchMock);
-
-      const drafts = await studioClient.listAccessibleDrafts();
-
-      expect(drafts.map((item) => item.draftId)).toEqual([
-        "draft-shared",
-        "draft-personal",
-      ]);
-      expect(fetchMock).toHaveBeenCalledTimes(3);
-    },
-  );
 
   it("falls back to the stable draft endpoint when task-first creation is unavailable", async () => {
     const created = apiDraft();

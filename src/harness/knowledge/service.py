@@ -44,6 +44,7 @@ from harness.knowledge.models import (
     KnowledgeWikiStats,
     ReplaceKnowledgeBaseRequest,
     ReplaceKnowledgeSourceRequest,
+    ResolvedKnowledgeWikiPage,
     SearchKnowledgeResponse,
     WeknoraKnowledgeConfig,
 )
@@ -248,25 +249,58 @@ class KnowledgeService:
         self,
         tenant_id: str,
         owner_user_id: str | None = None,
+        *,
+        refresh_counts: bool = True,
     ) -> Sequence[KnowledgeBase]:
         values = await self.repository.list_bases(tenant_id)
-        # Refresh engine-backed counts concurrently; the list is small and a
-        # stale badge is worse than a couple of extra remote reads.
-        values = tuple(
-            await asyncio.gather(*(self._with_document_count(tenant_id, item) for item in values))
-        )
-        if owner_user_id is None:
+        if owner_user_id is not None:
+            member_references = {
+                item.knowledge_base_reference
+                for item in await self.repository.list_members(tenant_id)
+                if item.subject_type is KnowledgeMemberSubject.USER
+                and item.subject_id == owner_user_id
+            }
+            values = tuple(
+                item
+                for item in values
+                if item.created_by == owner_user_id or item.reference in member_references
+            )
+        if not refresh_counts:
             return values
-        member_references = {
-            item.knowledge_base_reference
-            for item in await self.repository.list_members(tenant_id)
-            if item.subject_type is KnowledgeMemberSubject.USER and item.subject_id == owner_user_id
-        }
-        return tuple(
-            item
-            for item in values
-            if item.created_by == owner_user_id or item.reference in member_references
-        )
+        semaphore = asyncio.Semaphore(4)
+
+        async def refresh(item: KnowledgeBase) -> KnowledgeBase:
+            async with semaphore:
+                return await self._with_document_count(tenant_id, item)
+
+        return tuple(await asyncio.gather(*(refresh(item) for item in values)))
+
+    async def resolve_wiki_page(
+        self,
+        tenant_id: str,
+        actor_id: str,
+        slug: str,
+    ) -> ResolvedKnowledgeWikiPage:
+        bases = await self.list_bases(tenant_id, actor_id, refresh_counts=False)
+        semaphore = asyncio.Semaphore(4)
+
+        async def lookup(base: KnowledgeBase) -> ResolvedKnowledgeWikiPage | None:
+            if base.engine is not KnowledgeBaseEngine.WEKNORA:
+                return None
+            async with semaphore:
+                try:
+                    page = await self.get_wiki_page(tenant_id, actor_id, base.reference, slug)
+                    return ResolvedKnowledgeWikiPage(reference=base.reference, page=page)
+                except NotFoundError:
+                    return None
+
+        results = await asyncio.gather(*(lookup(base) for base in bases))
+        matches = [item for item in results if item is not None]
+        if len(matches) > 1:
+            raise ConflictError("多个知识库存在同名页面，请重新提问获取明确引用。")
+        if not matches:
+            raise NotFoundError("未找到 Wiki 页面或没有查看权限")
+        return matches[0]
 
     async def get_base(
         self,

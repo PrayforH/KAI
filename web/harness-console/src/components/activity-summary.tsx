@@ -1,7 +1,7 @@
 "use client";
 
 import { TextMessagePartProvider } from "@assistant-ui/react";
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { RunActivity } from "../lib/activity-schema";
 import { useRunViewModel } from "../lib/activity-store";
 import { activeElapsedMs, elapsedAnchorFor, type ElapsedAnchor } from "../lib/run-elapsed";
@@ -19,6 +19,8 @@ import { toolActivitySentence } from "../lib/tool-presentation";
 import { KnowledgeCitations } from "./knowledge/knowledge-citations";
 import { MarkdownText } from "./markdown-text";
 import { useRunDetails } from "./run-details-context";
+import { isProcessBoundary } from "../lib/process-boundary";
+import { useDetailedProcess } from "../lib/process-display-preference";
 
 const phaseLabels: Record<RunPhase, string> = {
   queued: "等待处理",
@@ -75,7 +77,7 @@ interface CommentaryNode {
   id: string;
   text: string;
   sequence: number;
-  source: "progress" | "reasoning_summary";
+  source: "progress" | "reasoning_summary" | "reasoning";
 }
 
 type ProcessCategory = "setup" | "model" | "result";
@@ -195,8 +197,7 @@ function commentaryNodes(view: RunViewModel): CommentaryNode[] {
   const actionSequences = view.items
     .filter(
       (item) =>
-        item.event_type === "tool.request" ||
-        item.event_type === "subagent.started",
+        isProcessBoundary(item.event_type),
     )
     .map((item) => item.sequence)
     .sort((left, right) => left - right);
@@ -204,17 +205,17 @@ function commentaryNodes(view: RunViewModel): CommentaryNode[] {
 
   for (const item of view.items) {
     if (!item.summary) continue;
-    if (item.event_type === "reasoning.summary.delta") {
+    if (item.event_type === "reasoning.summary.delta" || item.event_type === "reasoning.delta") {
       const itemId = typeof item.metadata.item_id === "string"
         ? item.metadata.item_id
         : "run";
-      const groupKey = `reasoning:${itemId}`;
+      const groupKey = `${item.event_type}:${itemId}`;
       const existing = grouped.get(groupKey);
       grouped.set(groupKey, {
         id: existing?.id ?? item.id,
         sequence: existing?.sequence ?? item.sequence,
         text: `${existing?.text ?? ""}${item.summary}`,
-        source: "reasoning_summary",
+        source: item.event_type === "reasoning.delta" ? "reasoning" : "reasoning_summary",
       });
       continue;
     }
@@ -222,7 +223,7 @@ function commentaryNodes(view: RunViewModel): CommentaryNode[] {
     const nextAction = actionSequences.find((sequence) => sequence > item.sequence);
     // A trailing message is still ambiguous while the Run is active: the
     // live response owns it so Markdown can stream without duplication. Only
-    // text proven to precede an auditable action belongs in the process log.
+    // text followed by a new thinking block or action belongs in the process log.
     if (nextAction === undefined) continue;
     const groupKey = `progress:${nextAction}`;
     const existing = grouped.get(groupKey);
@@ -243,6 +244,26 @@ function ExecutionCommentary({
   commentary: CommentaryNode;
   active: boolean;
 }) {
+  const previewRef = useRef<HTMLSpanElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const preview = commentary.text.replaceAll("**", "").replace(/\s+/g, " ").trim();
+  useLayoutEffect(() => {
+    const row = previewRef.current;
+    if (row && !expanded) row.scrollLeft = row.scrollWidth;
+  }, [preview, expanded]);
+  if (commentary.source !== "progress") {
+    return (
+      <details className="execution-reasoning" open={expanded} onToggle={event => setExpanded(event.currentTarget.open)}
+        data-commentary-source={commentary.source} data-active={active ? "true" : "false"}>
+        <summary className={active ? "execution-reasoning-summary execution-row-sweep" : "execution-reasoning-summary"}>
+          <span className="execution-reasoning-icon"><ThinkingIcon /></span><span className="execution-reasoning-label">思考</span><span className="execution-reasoning-separator" aria-hidden="true">·</span><span ref={previewRef} className="execution-reasoning-preview">{preview}</span><span className="execution-reasoning-chevron" aria-hidden="true" />
+        </summary>
+        <div className="execution-reasoning-body">
+          <TextMessagePartProvider text={commentary.text} isRunning={false}><MarkdownText /></TextMessagePartProvider>
+        </div>
+      </details>
+    );
+  }
   return (
     <article
       className="execution-commentary"
@@ -336,7 +357,7 @@ function toolGroupLabel(tools: readonly RunToolNode[]) {
   const bash = counts.get("Bash") ?? 0;
   const edits = (counts.get("Write") ?? 0) + (counts.get("Edit") ?? 0);
   const web = [...counts.entries()]
-    .filter(([name]) => ["WebSearch", "WebFetch"].includes(name) || name.includes("tavily"))
+    .filter(([name]) => ["WebSearch", "WebFetch"].includes(name))
     .reduce((total, [, count]) => total + count, 0);
   if (glob) labels.push(`查找了 ${glob} 次文件`);
   if (grep) labels.push(`搜索了 ${grep} 次内容`);
@@ -482,13 +503,24 @@ function failureDetails(view: RunViewModel) {
   };
 }
 
-function displayTimeline(view: RunViewModel): DisplayTimelineNode[] {
-  // Successful infrastructure/model lifecycle events belong in run details.
-  // Keeping them out of the transcript prevents old rows changing every turn.
+function displayTimeline(view: RunViewModel, detailed = false): DisplayTimelineNode[] {
   const raw = rawTimeline(view).filter((entry) =>
     entry.kind !== "process" || entry.process.status === "failed" ||
     entry.process.eventType === "tool.directory.degraded",
   );
+  if (detailed) {
+    return raw.map((entry): DisplayTimelineNode => {
+      if (entry.kind === "commentary") return entry;
+      if (entry.kind === "tool") return {
+        kind: "action", sequence: entry.sequence,
+        action: { ...toolAction([entry.tool]), label: completeToolSentence(entry.tool) },
+      };
+      if (entry.kind === "task") return {
+        kind: "action", sequence: entry.sequence, action: taskAction([entry.task]),
+      };
+      return { kind: "action", sequence: entry.sequence, action: processAction([entry.process]) };
+    });
+  }
   const display: DisplayTimelineNode[] = [];
   const renderedProcessCategories = new Set<ProcessCategory>();
   for (let index = 0; index < raw.length;) {
@@ -544,6 +576,16 @@ function displayTimeline(view: RunViewModel): DisplayTimelineNode[] {
   return display;
 }
 
+function ThinkingIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M10 2.8v14.4" />
+      <path d="M3.8 6.4l12.4 7.2" />
+      <path d="M16.2 6.4L3.8 13.6" />
+    </svg>
+  );
+}
+
 function ActionIcon({ kind }: { kind: ActionIconKind }) {
   if (kind === "terminal") {
     return <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="3" width="15" height="14" rx="3" /><path d="m6 8 2 2-2 2m4.5 0h3" /></svg>;
@@ -552,7 +594,7 @@ function ActionIcon({ kind }: { kind: ActionIconKind }) {
     return <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 14.8.8-3.8L13 2.8a2 2 0 0 1 2.8 2.8l-8.2 8.2-3.6 1Z" /><path d="m11.8 4 3 3" /></svg>;
   }
   if (kind === "search") {
-    return <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M11.8 3.2a4.2 4.2 0 0 0-5.1 5.1L2.9 12l-1 3 3-1 3.8-3.8a4.2 4.2 0 0 0 5.1-5.1l-2.4 2.4-2-2 2.4-2.3Z" /></svg>;
+    return <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.8" cy="8.8" r="5.2" /><path d="m12.7 12.7 4 4" /></svg>;
   }
   if (kind === "agent") {
     return <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="6" r="3" /><path d="M4 17c.5-3.5 2.5-5.3 6-5.3s5.5 1.8 6 5.3" /></svg>;
@@ -597,7 +639,7 @@ function ResultPreview({
   );
 }
 
-function ActionRow({ action }: { action: ActionNode }) {
+function ActionRow({ action, active = false }: { action: ActionNode; active?: boolean }) {
   const hasResult = Boolean(action.resultPreview || action.entries?.length);
   const heading = (
     <>
@@ -649,14 +691,14 @@ function ActionRow({ action }: { action: ActionNode }) {
   if (!hasResult) {
     return (
       <div className={`execution-action action-${action.status}`}>
-        <span className="execution-action-static">{heading}</span>
+        <span className={`execution-action-static${active ? " execution-row-sweep" : ""}`}>{heading}</span>
       </div>
     );
   }
 
   return (
     <details className={`execution-action action-${action.status}`}>
-      <summary className="execution-action-summary">
+      <summary className={`execution-action-summary${active ? " execution-row-sweep" : ""}`}>
         {heading}
         <span className="execution-action-chevron" aria-hidden="true" />
       </summary>
@@ -672,11 +714,10 @@ export function ActivitySummary({
   activity: RunActivity;
   responseStarted?: boolean;
 }) {
+  const detailed = useDetailedProcess();
   const observed = useRunViewModel();
-  const view =
-    observed?.runId === activity.run_id
-      ? observed
-      : reduceRunViewModel(undefined, activity);
+  const durableView = useMemo(() => reduceRunViewModel(undefined, activity), [activity]);
+  const view = observed?.runId === activity.run_id ? observed : durableView;
   const [manualDisclosure, setManualDisclosure] = useState<{
     runId: string;
     open: boolean;
@@ -743,7 +784,7 @@ export function ActivitySummary({
   const elapsed = elapsedAnchor.current
     ? activeElapsedMs(view, now, elapsedAnchor.current)
     : view.elapsedMs;
-  const timeline = displayTimeline(view);
+  const timeline = useMemo(() => displayTimeline(view, detailed), [view, detailed]);
   const latestTimelineEntry = timeline.at(-1);
   const activeCommentaryId =
     thinkingActive &&
@@ -751,14 +792,19 @@ export function ActivitySummary({
     latestTimelineEntry?.kind === "commentary"
       ? latestTimelineEntry.commentary.id
       : null;
+  const activeActionId = thinkingActive && !responseStarted &&
+    latestTimelineEntry?.kind === "action" && !["failed", "waiting"].includes(latestTimelineEntry.action.status)
+      ? latestTimelineEntry.action.id : null;
   const heading = activityHeading(view);
   const elapsedCopy = active
     ? `已持续 ${elapsed < 1_000 ? "0s" : durationLabel(elapsed)}`
     : `持续了 ${durationLabel(elapsed)}`;
   const failure = view.phase === "failed" ? failureDetails(view) : null;
+  const hasContent = timeline.length > 0 || Boolean(failure);
+  const Disclosure = hasContent ? "button" : "div";
   const runDetails = useRunDetails();
 
-  function toggleDisclosure(_event: MouseEvent<HTMLButtonElement>) {
+  function toggleDisclosure() {
     const nextOpen = !open;
     rememberDisclosure(view.runId, nextOpen);
     setManualDisclosure({ runId: view.runId, open: nextOpen });
@@ -770,18 +816,18 @@ export function ActivitySummary({
       aria-label={`执行进度 ${view.runId}`}
       data-run-id={view.runId}
       data-response-started={responseStarted ? "true" : "false"}
-      data-open={open ? "true" : "false"}
+      data-open={open && hasContent ? "true" : "false"}
     >
-      <button
-        type="button"
+      <Disclosure
+        type={hasContent ? "button" : undefined}
         className="execution-disclosure"
-        onClick={toggleDisclosure}
-        aria-expanded={open}
+        onClick={hasContent ? toggleDisclosure : undefined}
+        aria-expanded={hasContent ? open : undefined}
       >
-        <span className="execution-phase">{heading}</span>
+        <span className={`execution-phase${thinkingActive && !responseStarted && (!open || !hasContent) ? " execution-text-sweep" : ""}`}>{heading}</span>
         <span className="execution-duration">· {elapsedCopy}</span>
-        <span className="execution-chevron" aria-hidden="true" />
-      </button>
+        {hasContent && <span className="execution-chevron" aria-hidden="true" />}
+      </Disclosure>
       {runDetails ? (
         <button
           type="button"
@@ -794,7 +840,7 @@ export function ActivitySummary({
           运行详情
         </button>
       ) : null}
-      <div className="execution-tree" hidden={!open}>
+      <div className="execution-tree" hidden={!open || !hasContent}>
         {failure ? (
           <section className="execution-failure-diagnostic" aria-label="失败定位">
             <span>失败定位</span>
@@ -822,13 +868,11 @@ export function ActivitySummary({
                   active={entry.commentary.id === activeCommentaryId}
                 />
               ) : (
-                <ActionRow key={entry.action.id} action={entry.action} />
+                <ActionRow key={entry.action.id} action={entry.action} active={entry.action.id === activeActionId} />
               ),
             )}
           </section>
-        ) : (
-          null
-        )}
+        ) : null}
       </div>
     </section>
   );

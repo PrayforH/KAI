@@ -18,6 +18,7 @@ import {
   setTaskArchived,
   type TaskSummary,
 } from "../lib/task-history";
+import { formatTaskAge } from "../lib/task-list-age";
 import { taskListRefreshDelay } from "../lib/task-list-refresh";
 
 
@@ -33,20 +34,6 @@ const statusLabels: Record<string, string> = {
   rejected: "已拒绝",
   timed_out: "已超时",
 };
-
-// Wall-clock time by default: today shows HH:MM, older entries show the date.
-function formatTaskTime(value: string) {
-  const then = new Date(value);
-  const now = new Date();
-  const sameDay =
-    then.getFullYear() === now.getFullYear()
-    && then.getMonth() === now.getMonth()
-    && then.getDate() === now.getDate();
-  if (sameDay) {
-    return `${String(then.getHours()).padStart(2, "0")}:${String(then.getMinutes()).padStart(2, "0")}`;
-  }
-  return `${then.getMonth() + 1}月${then.getDate()}日`;
-}
 
 function NewTaskIcon() {
   return (
@@ -103,7 +90,9 @@ function ScrollingTaskTitle({ title }: { title: string }) {
     const measure = () => {
       const overflow = Math.max(0, text.scrollWidth - viewport.clientWidth);
       viewport.style.setProperty("--task-title-overflow", `${-overflow}px`);
-      viewport.style.setProperty("--task-title-duration", `${Math.max(3, overflow / 28 + 2)}s`);
+      // Travel the clipped part at roughly 40px per second plus a small fixed
+      // lead-in, so hovering a long task name reveals it without a long wait.
+      viewport.style.setProperty("--task-title-duration", `${Math.max(2.5, overflow / 40 + 1.4)}s`);
       viewport.dataset.overflow = String(overflow > 0);
     };
     measure();
@@ -359,7 +348,7 @@ export function TaskSidebar({
           <ScrollingTaskTitle title={task.title} />
           {hasError && <span className="task-error-label">{statusLabel}</span>}
           <span className="task-list-meta">
-            <time dateTime={task.updated_at}>{formatTaskTime(task.updated_at)}</time>
+            <time dateTime={task.updated_at}>{formatTaskAge(task.updated_at)}</time>
           </span>
         </button>
         <button

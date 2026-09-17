@@ -466,3 +466,84 @@ describe("Harness same-origin proxies", () => {
     });
   });
 });
+
+describe("Harness proxy response compression", () => {
+  const historyPath = "threads/thread-1/history";
+  const upstreamJson = (payload: string, type = "application/json") =>
+    async () => new Response(payload, { status: 200, headers: { "Content-Type": type } });
+
+  it("gzips a large JSON history reply for clients that accept gzip", async () => {
+    const payload = JSON.stringify({ messages: Array(400).fill({ content: "进展说明" }) });
+    const request = new Request(`http://console.test/api/agui/${historyPath}`, {
+      method: "GET",
+      headers: { "Accept-Encoding": "gzip, deflate, br", Cookie: "harness_access_token=user-jwt" },
+    });
+
+    const response = await proxyAguiRequest(request, config, upstreamJson(payload), historyPath);
+
+    expect(response.headers.get("Content-Encoding")).toBe("gzip");
+    expect(response.headers.get("Vary")).toContain("accept-encoding");
+    expect(Number(response.headers.get("Content-Length")))
+      .toBeLessThan(Buffer.byteLength(payload));
+    const raw = await response.arrayBuffer();
+    const decompressed = await new Response(
+      new Blob([raw]).stream().pipeThrough(new DecompressionStream("gzip")),
+    ).text();
+    expect(decompressed).toBe(payload);
+  });
+
+  it("keeps a small JSON reply readable when gzip is accepted", async () => {
+    // Regression: the compressed path consumed the body before deciding the
+    // reply was too small, and the caller then reused the disturbed stream,
+    // which surfaced as "Harness API unavailable" on the knowledge page.
+    const payload = JSON.stringify({ bases: [{ reference: "kb-1", name: "合规库" }] });
+    expect(Buffer.byteLength(payload)).toBeLessThan(1024);
+    const request = new Request(`http://console.test/api/studio/knowledge/bases`, {
+      method: "GET",
+      headers: { "Accept-Encoding": "gzip, deflate, br" },
+    });
+
+    const response = await proxyAgentCatalogRequest(
+      request,
+      config,
+      async () =>
+        new Response(payload, { status: 200, headers: { "Content-Type": "application/json" } }),
+      "knowledge/bases",
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Encoding")).toBeNull();
+    expect(await response.text()).toBe(payload);
+  });
+
+  it("leaves event streams uncompressed so a live run is never buffered", async () => {
+    const streamed = async () =>
+      new Response("data: first\n\n", {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      });
+    const request = new Request("http://console.test/api/agui", {
+      method: "POST",
+      headers: { "Accept-Encoding": "gzip" },
+      body: "{}",
+    });
+
+    const response = await proxyAguiRequest(request, config, streamed);
+
+    expect(response.headers.get("Content-Encoding")).toBeNull();
+    expect(await response.text()).toBe("data: first\n\n");
+  });
+
+  it("sends the identity body when the client does not accept gzip", async () => {
+    const payload = JSON.stringify({ messages: Array(400).fill({ content: "进展说明" }) });
+    const request = new Request(`http://console.test/api/agui/${historyPath}`, {
+      method: "GET",
+      headers: { Cookie: "harness_access_token=user-jwt" },
+    });
+
+    const response = await proxyAguiRequest(request, config, upstreamJson(payload), historyPath);
+
+    expect(response.headers.get("Content-Encoding")).toBeNull();
+    expect(await response.text()).toBe(payload);
+  });
+});

@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { invalidateClientReads } from "../src/lib/client-read-cache";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import {
   loadTaskModelRoutes,
   loadTaskModelOverride,
@@ -15,6 +16,8 @@ function memoryStorage() {
     removeItem: (key: string) => values.delete(key),
   };
 }
+
+beforeEach(() => invalidateClientReads());
 
 describe("task model selection", () => {
   it("exposes DeepSeek Pro and Flash as separate task routes", async () => {

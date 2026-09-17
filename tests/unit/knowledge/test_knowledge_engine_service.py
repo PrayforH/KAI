@@ -689,3 +689,36 @@ async def test_delete_base_requires_editor_role() -> None:
 
     with pytest.raises(NotFoundError):
         await service.delete_base("local", "user-9", "cases")
+
+
+@pytest.mark.asyncio
+async def test_resolve_wiki_is_scoped_skips_counts_and_rejects_ambiguity() -> None:
+    from unittest.mock import AsyncMock
+
+    from harness.core.errors import ConflictError, NotFoundError
+
+    service, engine = make_service()
+    await create_engine_base(service, "first")
+    engine.list_documents = AsyncMock(return_value=())
+    result = await service.resolve_wiki_page("local", "user-1", "summary/doc-1")
+    assert result.reference == "first"
+    engine.list_documents.assert_not_called()
+    with pytest.raises(NotFoundError):
+        await service.resolve_wiki_page("local", "other", "summary/doc-1")
+    await create_engine_base(service, "second")
+    with pytest.raises(ConflictError):
+        await service.resolve_wiki_page("local", "user-1", "summary/doc-1")
+    engine.get_wiki_page = AsyncMock(side_effect=KnowledgeEngineError("offline"))
+    with pytest.raises(KnowledgeEngineError):
+        await service.resolve_wiki_page("local", "user-1", "summary/doc-1")
+
+
+@pytest.mark.asyncio
+async def test_base_counts_only_refresh_visible_bases() -> None:
+    from unittest.mock import AsyncMock
+
+    service, engine = make_service()
+    await create_engine_base(service)
+    engine.list_documents = AsyncMock(return_value=())
+    assert await service.list_bases("local", "unrelated") == ()
+    engine.list_documents.assert_not_called()

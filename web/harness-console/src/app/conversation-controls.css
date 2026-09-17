@@ -68,6 +68,9 @@ html[data-theme="codex-theme-v1"] body.codex-theme-v1 .harness-composer-shell.ha
   flex-wrap: wrap;
   justify-content: flex-start;
   padding: 0;
+  /* The toolbar's own buttons are 34px hit areas, so the row reads tighter
+     without a wide gutter between them. */
+  gap: 3px;
 }
 
 html[data-theme="codex-theme-v1"] body.codex-theme-v1 .harness-composer-shell.harness-composer-shell .aui-composer-attach {

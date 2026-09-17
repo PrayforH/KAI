@@ -1,0 +1,631 @@
+--- a/web/harness-console/src/components/activity-summary.tsx
++++ b/web/harness-console/src/components/activity-summary.tsx
+@@ -1,7 +1,7 @@
+ "use client";
+ 
+ import { TextMessagePartProvider } from "@assistant-ui/react";
+-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
++import { useEffect, useMemo, useRef, useState } from "react";
+ import type { RunActivity } from "../lib/activity-schema";
+ import { useRunViewModel } from "../lib/activity-store";
+ import { activeElapsedMs, elapsedAnchorFor, type ElapsedAnchor } from "../lib/run-elapsed";
+@@ -19,7 +19,7 @@
+ import { KnowledgeCitations } from "./knowledge/knowledge-citations";
+ import { MarkdownText } from "./markdown-text";
+ import { useRunDetails } from "./run-details-context";
+-import { setDetailedProcess, useDetailedProcess } from "../lib/process-display-preference";
++import { useDetailedProcess } from "../lib/process-display-preference";
+ 
+ const phaseLabels: Record<RunPhase, string> = {
+   queued: "等待处理",
+@@ -76,7 +76,7 @@
+   id: string;
+   text: string;
+   sequence: number;
+-  source: "progress" | "reasoning_summary";
++  source: "progress" | "reasoning_summary" | "reasoning";
+ }
+ 
+ type ProcessCategory = "setup" | "model" | "result";
+@@ -205,17 +205,17 @@
+ 
+   for (const item of view.items) {
+     if (!item.summary) continue;
+-    if (item.event_type === "reasoning.summary.delta") {
++    if (item.event_type === "reasoning.summary.delta" || item.event_type === "reasoning.delta") {
+       const itemId = typeof item.metadata.item_id === "string"
+         ? item.metadata.item_id
+         : "run";
+-      const groupKey = `reasoning:${itemId}`;
++      const groupKey = `${item.event_type}:${itemId}`;
+       const existing = grouped.get(groupKey);
+       grouped.set(groupKey, {
+         id: existing?.id ?? item.id,
+         sequence: existing?.sequence ?? item.sequence,
+         text: `${existing?.text ?? ""}${item.summary}`,
+-        source: "reasoning_summary",
++        source: item.event_type === "reasoning.delta" ? "reasoning" : "reasoning_summary",
+       });
+       continue;
+     }
+@@ -240,10 +240,27 @@
+ function ExecutionCommentary({
+   commentary,
+   active,
++  detailed,
+ }: {
+   commentary: CommentaryNode;
+   active: boolean;
++  detailed: boolean;
+ }) {
++  if (commentary.source !== "progress") {
++    const lines = commentary.text.trim().split("\n").filter(line => line.trim());
++    const preview = (active ? lines.at(-1) : lines[0])?.replaceAll("**", "") ?? "";
++    return (
++      <details className="execution-reasoning" open={detailed || undefined}
++        data-commentary-source={commentary.source} data-active={active ? "true" : "false"}>
++        <summary className={active ? "execution-reasoning-summary execution-row-sweep" : "execution-reasoning-summary"}>
++          <span>思考</span><span className="execution-reasoning-preview">{preview}</span>
++        </summary>
++        <div className="execution-reasoning-body">
++          <TextMessagePartProvider text={commentary.text} isRunning={false}><MarkdownText /></TextMessagePartProvider>
++        </div>
++      </details>
++    );
++  }
+   return (
+     <article
+       className="execution-commentary"
+@@ -484,8 +501,12 @@
+ }
+ 
+ function displayTimeline(view: RunViewModel, detailed = false): DisplayTimelineNode[] {
++  const raw = rawTimeline(view).filter((entry) =>
++    entry.kind !== "process" || entry.process.status === "failed" ||
++    entry.process.eventType === "tool.directory.degraded",
++  );
+   if (detailed) {
+-    return rawTimeline(view).map((entry): DisplayTimelineNode => {
++    return raw.map((entry): DisplayTimelineNode => {
+       if (entry.kind === "commentary") return entry;
+       if (entry.kind === "tool") return {
+         kind: "action", sequence: entry.sequence,
+@@ -494,23 +515,9 @@
+       if (entry.kind === "task") return {
+         kind: "action", sequence: entry.sequence, action: taskAction([entry.task]),
+       };
+-      const process = entry.process;
+-      return {
+-        kind: "action", sequence: entry.sequence,
+-        action: {
+-          ...processAction([process]), id: process.id,
+-          label: process.title, detail: process.summary,
+-          status: view.phase === "completed" ? "completed" : process.status,
+-        },
+-      };
++      return { kind: "action", sequence: entry.sequence, action: processAction([entry.process]) };
+     });
+   }
+-  // Successful infrastructure/model lifecycle events belong in run details.
+-  // Keeping them out of the transcript prevents old rows changing every turn.
+-  const raw = rawTimeline(view).filter((entry) =>
+-    entry.kind !== "process" || entry.process.status === "failed" ||
+-    entry.process.eventType === "tool.directory.degraded",
+-  );
+   const display: DisplayTimelineNode[] = [];
+   const renderedProcessCategories = new Set<ProcessCategory>();
+   for (let index = 0; index < raw.length;) {
+@@ -626,7 +633,7 @@
+       <span className="execution-action-icon"><ActionIcon kind={action.icon} /></span>
+       <span className="execution-action-copy">
+         <span className="execution-action-heading">
+-          <strong className={active ? "execution-text-sweep" : undefined}>{action.label}</strong>
++          <strong>{action.label}</strong>
+           {action.detail && <small>{action.detail}</small>}
+         </span>
+       </span>
+@@ -671,14 +678,14 @@
+   if (!hasResult) {
+     return (
+       <div className={`execution-action action-${action.status}`}>
+-        <span className="execution-action-static">{heading}</span>
++        <span className={`execution-action-static${active ? " execution-row-sweep" : ""}`}>{heading}</span>
+       </div>
+     );
+   }
+ 
+   return (
+     <details className={`execution-action action-${action.status}`}>
+-      <summary className="execution-action-summary">
++      <summary className={`execution-action-summary${active ? " execution-row-sweep" : ""}`}>
+         {heading}
+         <span className="execution-action-chevron" aria-hidden="true" />
+       </summary>
+@@ -773,20 +780,18 @@
+       ? latestTimelineEntry.commentary.id
+       : null;
+   const activeActionId = thinkingActive && !responseStarted &&
+-    latestTimelineEntry?.kind === "action" && latestTimelineEntry.action.status === "running"
++    latestTimelineEntry?.kind === "action" && !["failed", "waiting"].includes(latestTimelineEntry.action.status)
+       ? latestTimelineEntry.action.id : null;
+-  const showCurrentLine = active && !activeActionId;
+-  const currentLine = view.phase === "waiting_approval" ? "等待你的审批后继续。"
+-    : view.phase === "queued" ? "正在准备本次任务…"
+-    : responseStarted ? "正在输出回复…" : "正在等待模型继续输出…";
+   const heading = activityHeading(view);
+   const elapsedCopy = active
+     ? `已持续 ${elapsed < 1_000 ? "0s" : durationLabel(elapsed)}`
+     : `持续了 ${durationLabel(elapsed)}`;
+   const failure = view.phase === "failed" ? failureDetails(view) : null;
++  const hasContent = timeline.length > 0 || Boolean(failure);
++  const Disclosure = hasContent ? "button" : "div";
+   const runDetails = useRunDetails();
+ 
+-  function toggleDisclosure(_event: MouseEvent<HTMLButtonElement>) {
++  function toggleDisclosure() {
+     const nextOpen = !open;
+     rememberDisclosure(view.runId, nextOpen);
+     setManualDisclosure({ runId: view.runId, open: nextOpen });
+@@ -798,18 +803,18 @@
+       aria-label={`执行进度 ${view.runId}`}
+       data-run-id={view.runId}
+       data-response-started={responseStarted ? "true" : "false"}
+-      data-open={open ? "true" : "false"}
++      data-open={open && hasContent ? "true" : "false"}
+     >
+-      <button
+-        type="button"
++      <Disclosure
++        type={hasContent ? "button" : undefined}
+         className="execution-disclosure"
+-        onClick={toggleDisclosure}
+-        aria-expanded={open}
++        onClick={hasContent ? toggleDisclosure : undefined}
++        aria-expanded={hasContent ? open : undefined}
+       >
+-        <span className={`execution-phase${thinkingActive && !responseStarted && !open ? " execution-text-sweep" : ""}`}>{heading}</span>
++        <span className={`execution-phase${thinkingActive && !responseStarted && (!open || !hasContent) ? " execution-text-sweep" : ""}`}>{heading}</span>
+         <span className="execution-duration">· {elapsedCopy}</span>
+-        <span className="execution-chevron" aria-hidden="true" />
+-      </button>
++        {hasContent && <span className="execution-chevron" aria-hidden="true" />}
++      </Disclosure>
+       {runDetails ? (
+         <button
+           type="button"
+@@ -822,24 +827,7 @@
+           运行详情
+         </button>
+       ) : null}
+-      <div className="execution-tree" hidden={!open}>
+-        <div className="execution-display-controls">
+-          <span>执行过程</span>
+-          <button
+-            type="button"
+-            role="switch"
+-            aria-checked={detailed}
+-            className="execution-display-switch"
+-            onClick={() => setDetailedProcess(!detailed)}
+-            title="记住此浏览器的选择，展示可用的思考摘要和逐项执行步骤"
+-          >
+-            <span>详细过程</span>
+-            <span className="execution-switch-track" aria-hidden="true" />
+-          </button>
+-        </div>
+-        {detailed && !timeline.some(entry => entry.kind === "commentary" && entry.commentary.source === "reasoning_summary") ? (
+-          <p className="execution-process-note">{active ? "尚未收到可展示的思考摘要，以下显示实际执行步骤。" : "本次未提供可展示的思考摘要，以下显示已记录的执行步骤。"}</p>
+-        ) : null}
++      <div className="execution-tree" hidden={!open || !hasContent}>
+         {failure ? (
+           <section className="execution-failure-diagnostic" aria-label="失败定位">
+             <span>失败定位</span>
+@@ -865,19 +853,13 @@
+                   key={entry.commentary.id}
+                   commentary={entry.commentary}
+                   active={entry.commentary.id === activeCommentaryId}
++                  detailed={detailed}
+                 />
+               ) : (
+                 <ActionRow key={entry.action.id} action={entry.action} active={entry.action.id === activeActionId} />
+               ),
+             )}
+           </section>
+-        ) : !active && !failure ? (
+-          <p className="execution-process-note">{view.phase === "completed" ? "本次处理已完成，没有额外的工具或过程记录。" : "本次处理已结束，没有额外的过程记录。"}</p>
+-        ) : null}
+-        {showCurrentLine ? (
+-          <p className="execution-current-line" role="status">
+-            <span className={thinkingActive && !responseStarted ? "execution-text-sweep" : undefined}>{currentLine}</span>
+-          </p>
+         ) : null}
+       </div>
+     </section>
+--- a/web/harness-console/src/components/process-display-settings.tsx
++++ b/web/harness-console/src/components/process-display-settings.tsx
+@@ -0,0 +1,9 @@
++"use client";
++import { setDetailedProcess, useDetailedProcess } from "../lib/process-display-preference";
++export function ProcessDisplaySettings() {
++  const detailed = useDetailedProcess();
++  return <label className="settings-preference-toggle">
++    <input type="checkbox" checked={detailed} onChange={event => setDetailedProcess(event.target.checked)} />
++    <span><strong>展开详细思考过程</strong><small>自动展开模型返回的思考内容，并逐项展示工具动作。关闭时保留可展开的一行预览；模型未返回思考内容时不显示思考区。</small></span>
++  </label>;
++}
+--- a/web/harness-console/src/app/conversation-experience.css
++++ b/web/harness-console/src/app/conversation-experience.css
+@@ -370,63 +370,6 @@
+ 
+ /* Keep the disclosure truly collapsed even when the theme sets display:block. */
+ body.codex-theme-v1 .execution-tree[hidden] { display: none; }
+-body.codex-theme-v1 .execution-display-controls {
+-  display: flex;
+-  align-items: center;
+-  justify-content: space-between;
+-  gap: 12px;
+-  margin-bottom: 10px;
+-  color: var(--codex-faint);
+-  font-size: 11px;
+-}
+-body.codex-theme-v1 .execution-display-switch {
+-  display: inline-flex;
+-  align-items: center;
+-  gap: 7px;
+-  min-height: 28px;
+-  padding: 3px 0 3px 8px;
+-  border: 0;
+-  background: transparent;
+-  color: var(--codex-muted);
+-  font: inherit;
+-  cursor: pointer;
+-}
+-body.codex-theme-v1 .execution-display-switch:focus-visible {
+-  outline: 2px solid var(--codex-accent);
+-  outline-offset: 3px;
+-  border-radius: 4px;
+-}
+-body.codex-theme-v1 .execution-switch-track {
+-  width: 25px;
+-  height: 15px;
+-  padding: 2px;
+-  box-sizing: border-box;
+-  border-radius: 10px;
+-  background: var(--codex-line);
+-}
+-body.codex-theme-v1 .execution-switch-track::after {
+-  content: "";
+-  display: block;
+-  width: 11px;
+-  height: 11px;
+-  border-radius: 50%;
+-  background: var(--codex-muted);
+-  transition: transform 150ms ease;
+-}
+-body.codex-theme-v1 .execution-display-switch[aria-checked="true"] .execution-switch-track { background: var(--codex-ink-soft); }
+-body.codex-theme-v1 .execution-display-switch[aria-checked="true"] .execution-switch-track::after {
+-  transform: translateX(10px);
+-  background: var(--codex-bg, #101010);
+-}
+-body.codex-theme-v1 .execution-process-note,
+-body.codex-theme-v1 .execution-current-line {
+-  margin: 8px 0 2px;
+-  color: var(--codex-muted);
+-  font-size: 12px;
+-  line-height: 1.6;
+-}
+-body.codex-theme-v1 .execution-process-note + .execution-log { margin-top: 12px; }
+-body.codex-theme-v1 .execution-current-line span { display: inline-block; }
+ /* The moving dark band is clipped to glyphs, so it never covers content. */
+ body.codex-theme-v1 .execution-ribbon .execution-text-sweep {
+   color: transparent;
+@@ -442,5 +385,30 @@
+ }
+ @media (prefers-reduced-motion: reduce) {
+   body.codex-theme-v1 .execution-ribbon .execution-text-sweep { animation: none; background: none; color: var(--codex-muted); }
+-  body.codex-theme-v1 .execution-switch-track::after { transition: none; }
+-}
++}
++
++body.codex-theme-v1 div.execution-disclosure { cursor: default; }
++body.codex-theme-v1 .execution-reasoning { color: var(--codex-muted); font-size: 12px; }
++body.codex-theme-v1 .execution-reasoning-summary {
++  display: flex; align-items: center; gap: 10px; min-height: 26px;
++  list-style: none; cursor: pointer; position: relative; overflow: hidden;
++}
++body.codex-theme-v1 .execution-reasoning-summary::-webkit-details-marker { display: none; }
++body.codex-theme-v1 .execution-reasoning-summary::before { content: "›"; flex: none; transition: transform 150ms; }
++body.codex-theme-v1 .execution-reasoning[open] > summary::before { transform: rotate(90deg); }
++body.codex-theme-v1 .execution-reasoning-preview { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--codex-faint); }
++body.codex-theme-v1 .execution-reasoning[open] .execution-reasoning-preview { display: none; }
++body.codex-theme-v1 .execution-reasoning-body { padding: 6px 0 6px 20px; overflow-wrap: anywhere; }
++body.codex-theme-v1 .execution-reasoning:not([open]) > .execution-reasoning-body { display: none; }
++body.codex-theme-v1 .execution-reasoning-body .aui-md { color: var(--codex-muted); font-size: 12px; }
++body.codex-theme-v1 .execution-row-sweep { position: relative; overflow: hidden; }
++body.codex-theme-v1 .execution-row-sweep::after {
++  content: ""; position: absolute; inset-block: 0; left: 0; width: 220px;
++  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--codex-bg, #101010) 65%, transparent), transparent);
++  animation: execution-row-sweep 2.6s ease-out infinite; pointer-events: none;
++}
++@keyframes execution-row-sweep { from { left: -220px; } 90%, to { left: 100%; } }
++@media (prefers-reduced-motion: reduce) {
++  body.codex-theme-v1 .execution-row-sweep::after { animation: none; display: none; }
++  body.codex-theme-v1 .execution-reasoning-summary::before { transition: none; }
++}
+--- a/web/harness-console/src/app/settings/page.tsx
++++ b/web/harness-console/src/app/settings/page.tsx
+@@ -2,6 +2,7 @@
+ 
+ import { type FormEvent, useEffect, useRef, useState } from "react";
+ import { AuthProvider, useAuth } from "../../components/auth-provider";
++import { ProcessDisplaySettings } from "../../components/process-display-settings";
+ import { WebConfiguration } from "../../components/web-configuration";
+ import { MemoryBank } from "../../components/memory-bank/memory-bank";
+ import { DataLifecycleControlPlane } from "../../components/agent-studio/data-lifecycle-control-plane";
+@@ -431,6 +432,7 @@
+                   <input type="checkbox" checked={showInternalAgents} onChange={(event) => setShowInternalAgents(event.target.checked)} />
+                   <span><strong>显示内部子智能体</strong><small>在智能体列表和各处选择框中显示内部子智能体，默认关闭。</small></span>
+                 </label>
++                <ProcessDisplaySettings />
+                 {activeSection === "configuration" && <WebConfiguration />}
+               </div>
+             </section>
+--- a/src/harness/runtime/claude_sdk.py
++++ b/src/harness/runtime/claude_sdk.py
+@@ -1237,6 +1237,10 @@
+         partial_text_seen = False
+         stream_message_open = False
+         pending_text = ""
++        pending_reasoning = ""
++        pending_reasoning_id = ""
++        reasoning_serial = 0
++        streamed_reasoning_seen = False
+         first_text_delta_flushed = False
+         pending_task_terminals: dict[str, RuntimeEvent] = {}
+         context_window_outcome_seen = False
+@@ -1299,14 +1303,41 @@
+             # Keep SDK/tracing contexts in one producer task while a deadline
+             # flushes small text batches even when the provider pauses.
+             async with aclosing(
+-                with_flush_deadline(model_messages, lambda: bool(pending_text))
++                with_flush_deadline(model_messages, lambda: bool(pending_text or pending_reasoning))
+             ) as messages:
+                 async for message in messages:
+                     if message is FLUSH_TEXT:
++                        if pending_reasoning:
++                            yield RuntimeEvent(
++                                type="reasoning.delta",
++                                payload={
++                                    "text": pending_reasoning,
++                                    "item_id": pending_reasoning_id,
++                                },
++                            )
++                            pending_reasoning = ""
+                         if pending_text:
+                             yield RuntimeEvent(type="message.delta", payload={"text": pending_text})
+                             pending_text = ""
+                         continue
++                    raw_event = message.event if isinstance(message, StreamEvent) else {}
++                    raw_delta = raw_event.get("delta", {})
++                    is_thinking_delta = (
++                        isinstance(raw_delta, dict)
++                        and cast(dict[str, Any], raw_delta).get("type") == "thinking_delta"
++                    )
++                    if pending_reasoning and not is_thinking_delta:
++                        yield RuntimeEvent(
++                            type="reasoning.delta",
++                            payload={
++                                "text": pending_reasoning,
++                                "item_id": pending_reasoning_id,
++                            },
++                        )
++                        pending_reasoning = ""
++                    if raw_event.get("type") == "message_start":
++                        reasoning_serial += 1
++                        streamed_reasoning_seen = False
+                     if (
+                         isinstance(message, ResultMessage)
+                         and not message.is_error
+@@ -1340,6 +1371,27 @@
+                             for event in map_sdk_message(message)
+                         ]
+                     )
++                    if isinstance(message, AssistantMessage):
++                        if streamed_reasoning_seen:
++                            mapped = [event for event in mapped if event.type != "reasoning.delta"]
++                        else:
++                            reasoning_serial += 1
++                        streamed_reasoning_seen = False
++                    mapped = [
++                        RuntimeEvent(
++                            type=event.type,
++                            payload={
++                                "text": event.payload.get("text", ""),
++                                "item_id": (
++                                    f"{context.run.run_id}:thinking:{reasoning_serial}:"
++                                    f"{event.payload.get('block_index', 0)}"
++                                ),
++                            },
++                        )
++                        if event.type == "reasoning.delta"
++                        else event
++                        for event in mapped
++                    ]
+                     if isinstance(message, TaskUpdatedMessage):
+                         immediate: list[RuntimeEvent] = []
+                         for event in mapped:
+@@ -1386,6 +1438,35 @@
+                         mapped = [event for event in mapped if event.type != "tool.request"]
+                     if isinstance(message, StreamEvent):
+                         for event in mapped:
++                            if event.type == "reasoning.delta":
++                                if pending_text:
++                                    yield RuntimeEvent(
++                                        type="message.delta", payload={"text": pending_text}
++                                    )
++                                    pending_text = ""
++                                streamed_reasoning_seen = True
++                                item_id = str(event.payload["item_id"])
++                                if pending_reasoning and item_id != pending_reasoning_id:
++                                    yield RuntimeEvent(
++                                        type="reasoning.delta",
++                                        payload={
++                                            "text": pending_reasoning,
++                                            "item_id": pending_reasoning_id,
++                                        },
++                                    )
++                                    pending_reasoning = ""
++                                pending_reasoning_id = item_id
++                                pending_reasoning += str(event.payload.get("text", ""))
++                                if len(pending_reasoning) >= _TEXT_DELTA_FLUSH_CHARS:
++                                    yield RuntimeEvent(
++                                        type="reasoning.delta",
++                                        payload={
++                                            "text": pending_reasoning,
++                                            "item_id": pending_reasoning_id,
++                                        },
++                                    )
++                                    pending_reasoning = ""
++                                continue
+                             if event.type == "message.start":
+                                 if not stream_message_open:
+                                     stream_message_open = True
+--- a/src/harness/runtime/message_mapper.py
++++ b/src/harness/runtime/message_mapper.py
+@@ -12,6 +12,7 @@
+     TaskStartedMessage,
+     TaskUpdatedMessage,
+     TextBlock,
++    ThinkingBlock,
+     ToolResultBlock,
+     ToolUseBlock,
+     UserMessage,
+@@ -37,8 +38,7 @@
+ )
+ _SAFE_PROVIDER_ERROR_TEXT = "模型服务拒绝了本轮请求。请打开运行详情查看状态，并稍后重试。"
+ _SAFE_PROVIDER_CONTENT_REJECTED_TEXT = (
+-    "模型服务拒绝了本轮上下文，可能由输入或外部检索内容触发。"
+-    "请重新运行，或缩小主题与时间范围。"
++    "模型服务拒绝了本轮上下文，可能由输入或外部检索内容触发。请重新运行，或缩小主题与时间范围。"
+ )
+ 
+ 
+@@ -48,9 +48,8 @@
+ ) -> str:
+     """Classify known provider failures without persisting raw diagnostics."""
+     normalized = text.strip().lower()
+-    if (
+-        api_error_status in {None, 400}
+-        and any(marker in normalized for marker in _PROVIDER_CONTENT_RISK_MARKERS)
++    if api_error_status in {None, 400} and any(
++        marker in normalized for marker in _PROVIDER_CONTENT_RISK_MARKERS
+     ):
+         return "provider_content_rejected"
+     return "runtime_result_error"
+@@ -105,13 +104,19 @@
+             if isinstance(block, TextBlock)
+         ]
+     events: list[RuntimeEvent] = []
+-    for block in message.content:
++    for index, block in enumerate(message.content):
+         if isinstance(block, TextBlock):
+             events.append(
+-                RuntimeEvent(
+-                    type="message.delta", payload={"text": safe_model_text(block.text)}
+-                )
+-            )
++                RuntimeEvent(type="message.delta", payload={"text": safe_model_text(block.text)})
++            )
++        elif isinstance(block, ThinkingBlock):
++            if block.thinking:
++                events.append(
++                    RuntimeEvent(
++                        type="reasoning.delta",
++                        payload={"text": safe_model_text(block.thinking), "block_index": index},
++                    )
++                )
+         elif isinstance(block, ToolUseBlock):
+             events.append(
+                 RuntimeEvent(
+@@ -166,11 +171,21 @@
+             events.append(
+                 RuntimeEvent(
+                     type="message.delta",
+-                    payload={
+-                        "text": safe_model_text(str(typed_delta.get("text", "")))
+-                    },
+-                )
+-            )
++                    payload={"text": safe_model_text(str(typed_delta.get("text", "")))},
++                )
++            )
++        elif typed_delta.get("type") == "thinking_delta":
++            text = str(typed_delta.get("thinking", ""))
++            if text:
++                events.append(
++                    RuntimeEvent(
++                        type="reasoning.delta",
++                        payload={
++                            "text": safe_model_text(text),
++                            "block_index": event.get("index", 0),
++                        },
++                    )
++                )
+     return events
+ 
+ 
+@@ -225,9 +240,7 @@
+     if isinstance(message, TaskNotificationMessage):
+         return RuntimeEvent(
+             type=(
+-                "runtime.task.completed"
+-                if message.status == "completed"
+-                else "runtime.task.failed"
++                "runtime.task.completed" if message.status == "completed" else "runtime.task.failed"
+             ),
+             payload={
+                 "task_id": message.task_id,
+--- a/src/harness/agui/activity.py
++++ b/src/harness/agui/activity.py
+@@ -430,7 +430,7 @@
+             summary=redact_text(text, limit=max(1, len(text))),
+             metadata=_metadata(message_id=payload.get("message_id")),
+         )
+-    if event.type == "reasoning.summary.delta":
++    if event.type in {"reasoning.summary.delta", "reasoning.delta"}:
+         text = safe_model_text(str(payload.get("text", "")))
+         if not text:
+             return None
+@@ -438,7 +438,7 @@
+             event,
+             kind="analysis",
+             status="succeeded",
+-            title="思考摘要",
++            title="思考" if event.type == "reasoning.delta" else "思考摘要",
+             summary=redact_text(text, limit=max(1, len(text))),
+             metadata=_metadata(item_id=payload.get("item_id")),
+         )
+@@ -498,7 +498,10 @@
+             ),
+         )
+     if event.type in {
+-        "approval.approved", "approval.rejected", "approval.expired", "approval.cancelled",
++        "approval.approved",
++        "approval.rejected",
++        "approval.expired",
++        "approval.cancelled",
+     }:
+         approved = event.type.endswith("approved")
+         return _item(
+@@ -506,8 +509,10 @@
+             kind="tool",
+             status="succeeded" if approved else "failed",
+             title={
+-                "approval.approved": "审批已通过", "approval.rejected": "审批已拒绝",
+-                "approval.expired": "审批已过期", "approval.cancelled": "审批已取消",
++                "approval.approved": "审批已通过",
++                "approval.rejected": "审批已拒绝",
++                "approval.expired": "审批已过期",
++                "approval.cancelled": "审批已取消",
+             }[event.type],
+             metadata=_metadata(approval_id=payload.get("approval_id")),
+         )

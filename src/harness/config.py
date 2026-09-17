@@ -17,7 +17,9 @@ class Settings(BaseSettings):
 
     environment: Literal["local", "test", "production"] = "local"
     runtime: Literal["fake", "claude-sdk", "multi"] = "fake"
-    sandbox_provider: Literal["local", "daytona", "e2b", "kubernetes", "cubesandbox"] = "local"
+    sandbox_provider: Literal[
+        "local", "daytona", "e2b", "kubernetes", "cubesandbox", "opensandbox"
+    ] = "local"
     sandbox_execution_mode: Literal["remote_cli", "worker_cli_deferred"] = "remote_cli"
     allow_unsafe_local_sandbox: bool = False
     cc_switch_settings_path: str = "~/.claude/settings.json"
@@ -28,7 +30,7 @@ class Settings(BaseSettings):
     codex_network_access: bool = False
     web_tools_enabled: bool = True
     web_search_api_key: SecretStr = SecretStr("")
-    web_search_provider: Literal["tavily", "minimax"] = "tavily"
+    web_search_provider: Literal["tavily", "minimax"] = "minimax"
     codex_tool_output_token_limit: int = Field(default=32_000, ge=1_000, le=200_000)
     otel_enabled: bool = False
     otel_content_capture: Literal["off", "redacted"] = "off"
@@ -79,12 +81,6 @@ class Settings(BaseSettings):
     minimax_m3_compatibility: Literal["full", "degraded", "unsupported"] = "full"
     minimax_m3_capabilities: str = "streaming,tool_use,vision"
 
-    glm_5_2_base_url: str = ""
-    glm_5_2_api_key: SecretStr = SecretStr("")
-    glm_5_2_model: str = "shdata-glm"
-    glm_5_2_auth_scheme: Literal["bearer", "x-api-key"] = "bearer"
-    glm_5_2_compatibility: Literal["full", "degraded", "unsupported"] = "full"
-    glm_5_2_capabilities: str = "streaming,tool_use"
 
     anthropic_base_url: str = "https://api.anthropic.com"
     anthropic_api_key: SecretStr = SecretStr("")
@@ -140,6 +136,16 @@ class Settings(BaseSettings):
     cubesandbox_claude_cli_path: str = "/home/user/.local/bin/claude"
     cubesandbox_claude_cli_version: str = "2.1.206"
     cubesandbox_codex_cli_path: str = "/home/user/.local/bin/codex"
+    opensandbox_api_key: SecretStr = SecretStr("")
+    opensandbox_api_url: str = ""
+    opensandbox_image: str = "python:3.12-slim"
+    opensandbox_timeout_seconds: int = Field(default=3600, ge=60, le=86_400)
+    opensandbox_allow_internet_access: bool = True
+    opensandbox_remote_workspace_root: str = "/workspace"
+    opensandbox_cpu: str = "1000m"
+    opensandbox_memory: str = "2048Mi"
+    opensandbox_request_timeout_seconds: int = Field(default=30, ge=1, le=600)
+    opensandbox_ready_timeout_seconds: int = Field(default=90, ge=10, le=900)
     kubernetes_namespace: str = "harness-sandboxes"
     kubernetes_image: str = ""
     kubernetes_runtime_class_name: str = "gvisor"

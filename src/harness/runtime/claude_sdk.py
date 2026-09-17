@@ -5,7 +5,7 @@ import json
 import logging
 import shutil
 from collections.abc import AsyncIterator, Callable, Mapping
-from contextlib import AbstractContextManager, ExitStack, nullcontext, suppress
+from contextlib import AbstractContextManager, ExitStack, aclosing, nullcontext, suppress
 from dataclasses import dataclass, replace
 from pathlib import Path
 from types import MappingProxyType
@@ -86,6 +86,7 @@ from harness.runtime.sandbox_tools import (
 )
 from harness.runtime.sdk_tool_gate import ToolGate
 from harness.runtime.steering import SteeringInbox, SteeringInput
+from harness.runtime.stream_flush import FLUSH_TEXT, with_flush_deadline
 from harness.runtime.subagent_governance import SubagentRuntimeGovernor
 from harness.runtime.tools import (
     ResolvedTools,
@@ -148,6 +149,30 @@ WIKI_MODE_CONTRACT = (
 )
 
 
+def _sandbox_tool_contract(tool_names: list[str]) -> str:
+    mappings = [
+        f"- {builtin} -> {proxy_tool_name(builtin)}"
+        for builtin in sorted(SANDBOX_BUILTINS)
+        if proxy_tool_name(builtin) in tool_names
+    ]
+    if not mappings:
+        return ""
+    return (
+        "\n\n## Current sandbox file tools\n"
+        "Native filesystem tools are disabled in this session. Use the exact MCP tool "
+        "names below whenever prompts, skills or conversation history mention a builtin. "
+        "This applies to resumed conversations too. A disabled native tool error does "
+        "not mean the sandbox is unavailable; retry with its listed MCP replacement.\n"
+        + "\n".join(mappings)
+        + "\nUse workspace-relative paths. For a requested report file, write it under "
+        "outputs/, verify the file using an available read or command tool, and return "
+        "the exact path for artifact collection. If publish_artifact is listed among "
+        "your tools, use it to publish the verified file. Do not substitute a pasted "
+        "HTML code block for a requested downloadable report. If the actual sandbox "
+        "tool fails, explain that failure without claiming a file was generated."
+    )
+
+
 def _knowledge_mode_contract(context: RuntimeContext) -> str:
     if not _knowledge_bindings_for(context):
         return ""
@@ -171,8 +196,7 @@ def _knowledge_bindings_for(
     override = context.run.input.get("knowledge_binding_override")
     if isinstance(override, list) and override:
         return tuple(
-            KnowledgeSnapshotBinding.model_validate(item)
-            for item in cast(list[object], override)
+            KnowledgeSnapshotBinding.model_validate(item) for item in cast(list[object], override)
         )
     return tuple(
         KnowledgeSnapshotBinding.model_validate(item)
@@ -865,6 +889,7 @@ class ClaudeSdkRuntime:
                 mcp_servers[SANDBOX_MCP_SERVER_NAME] = create_sandbox_tools_mcp_server(
                     context.sandbox_command_executor,
                     proxied,
+                    image_aware="vision" in route.capabilities,
                 )
                 for builtin in sorted(proxied):
                     allowed_tools.append(proxy_tool_name(builtin))
@@ -938,9 +963,7 @@ class ClaudeSdkRuntime:
                 if wiki_mode
                 else "mcp__harness-knowledge__query_knowledge_sources"
             )
-            mcp_servers["harness-knowledge"] = create_knowledge_mcp_server(
-                wiki_mode=wiki_mode
-            )
+            mcp_servers["harness-knowledge"] = create_knowledge_mcp_server(wiki_mode=wiki_mode)
             allowed_tools.append(knowledge_tool)
             knowledge_trust = (
                 ContextTrust.UNTRUSTED
@@ -980,6 +1003,7 @@ class ClaudeSdkRuntime:
                 ),
                 prompt=(
                     f"{snapshot.system_prompt.rstrip()}\n\n{VISIBLE_EXECUTION_CONTRACT}\n{WEB_CONTRACT}"
+                    f"{_sandbox_tool_contract(subagent_tools)}"
                 ),
                 tools=subagent_tools,
                 model="inherit",
@@ -1029,6 +1053,7 @@ class ClaudeSdkRuntime:
             system_prompt=(
                 f"{self._snapshot.system_prompt.rstrip()}\n\n{VISIBLE_EXECUTION_CONTRACT}\n{WEB_CONTRACT}"
                 f"{delegation_contract}{_knowledge_mode_contract(context)}"
+                f"{_sandbox_tool_contract(allowed_tools)}"
             ),
             model=route.model,
             fallback_model=None,
@@ -1150,11 +1175,27 @@ class ClaudeSdkRuntime:
                 )
             if originals:
                 original_inventory = "\n".join(f"- {path}" for path in originals)
+                if "vision" in decision.route.capabilities:
+                    original_guidance = (
+                        "Read an original directly only when no processed "
+                        "representation exists, such as for an image. In this session a "
+                        "Read of a PNG, JPEG, WebP or GIF returns the image content "
+                        "itself: inspect the returned image and answer from it. Never "
+                        "install OCR tools or image libraries, and never OCR an image "
+                        "you can read."
+                    )
+                else:
+                    original_guidance = (
+                        "Read an original directly only when no processed "
+                        "representation exists. This session has no image-reading "
+                        "capability: an image cannot be inspected here, so do not "
+                        "attempt OCR or install any package; tell the user which "
+                        "text, table, PDF or document form would work instead."
+                    )
                 inventory_sections.append(
                     "Original uploads:\n"
                     f"{original_inventory}\n"
-                    "Read an original directly only when no processed "
-                    "representation exists, such as for an image."
+                    f"{original_guidance}"
                 )
             prompt = (
                 f"{prompt}\n\n"
@@ -1213,6 +1254,10 @@ class ClaudeSdkRuntime:
         partial_text_seen = False
         stream_message_open = False
         pending_text = ""
+        pending_reasoning = ""
+        pending_reasoning_id = ""
+        reasoning_serial = 0
+        streamed_reasoning_seen = False
         first_text_delta_flushed = False
         pending_task_terminals: dict[str, RuntimeEvent] = {}
         context_window_outcome_seen = False
@@ -1266,170 +1311,260 @@ class ClaudeSdkRuntime:
                     steering=context.steering,
                     context_usage_timeout_seconds=(REMOTE_CONTEXT_USAGE_CONTROL_TIMEOUT_SECONDS),
                 )
-            async for message in self._model_messages(
+            model_messages = self._model_messages(
                 query_messages,
                 run_id=context.run.run_id,
                 route=decision.route,
                 prompt=prompt,
-            ):
-                if (
-                    isinstance(message, ResultMessage)
-                    and not message.is_error
-                    and message.stop_reason == "end_turn"
-                    and options.resume is not None
-                    and not context_window_outcome_seen
-                ):
-                    # Custom query factories and remote transports may not
-                    # expose the SDK control API. The terminal result is the
-                    # last event the Worker accepts, so publish capability
-                    # availability immediately before it.
-                    context_window_outcome_seen = True
-                    yield ContextWindowUnavailable(
-                        phase="after",
-                        reason="control_unavailable",
-                    ).event()
-                if isinstance(message, (ContextWindowObservation, ContextWindowUnavailable)):
-                    context_window_outcome_seen = True
-                mapped = (
-                    [message.event()]
-                    if isinstance(
-                        message,
-                        (
-                            ContextWindowObservation,
-                            ContextWindowUnavailable,
-                            SessionResumeRecovery,
-                        ),
-                    )
-                    else [
-                        self._redact_event(event, resolved_tools)
-                        for event in map_sdk_message(message)
-                    ]
-                )
-                if isinstance(message, TaskUpdatedMessage):
-                    immediate: list[RuntimeEvent] = []
-                    for event in mapped:
-                        if event.type in {
-                            "runtime.task.completed",
-                            "runtime.task.failed",
-                        }:
-                            task_id = str(event.payload.get("task_id", ""))
-                            if task_id:
-                                pending_task_terminals[task_id] = event
-                                continue
-                        immediate.append(event)
-                    mapped = immediate
-                else:
-                    for event in mapped:
-                        if event.type in {
-                            "runtime.task.completed",
-                            "runtime.task.failed",
-                        }:
-                            task_id = str(event.payload.get("task_id", ""))
-                            if task_id:
-                                pending_task_terminals.pop(task_id, None)
-                if isinstance(message, ResultMessage) and pending_task_terminals:
-                    mapped = [*pending_task_terminals.values(), *mapped]
-                    pending_task_terminals.clear()
-                governed: list[RuntimeEvent] = []
-                for event in mapped:
-                    governed.extend(
-                        subagent_governor.process(
-                            event,
-                            run_id=context.run.run_id,
-                        )
-                    )
-                mapped = governed
-                if isinstance(message, ResultMessage) and subagent_governor.active_tasks:
-                    mapped = [
-                        *subagent_governor.fail_unfinished(
-                            reason="missing_terminal_event",
-                            run_id=context.run.run_id,
-                        ),
-                        *mapped,
-                    ]
-                if self._tool_gate is not None:
-                    mapped = [event for event in mapped if event.type != "tool.request"]
-                if isinstance(message, StreamEvent):
-                    for event in mapped:
-                        if event.type == "message.start":
-                            if not stream_message_open:
-                                stream_message_open = True
-                                first_text_delta_flushed = False
-                                yield event
-                        elif event.type == "message.delta":
-                            partial_text_seen = True
-                            if not stream_message_open:
-                                stream_message_open = True
-                                first_text_delta_flushed = False
-                                yield RuntimeEvent(type="message.start")
-                            text = str(event.payload.get("text", ""))
-                            if text and not first_text_delta_flushed:
-                                # TTFT takes priority over event coalescing. Flush the
-                                # provider's first visible text immediately, then batch
-                                # later character-sized deltas to avoid one durable DB
-                                # event per token.
-                                first_text_delta_flushed = True
-                                yield RuntimeEvent(
-                                    type="message.delta",
-                                    payload={"text": text},
-                                )
-                                continue
-                            pending_text += text
-                            should_flush = len(pending_text) >= _TEXT_DELTA_FLUSH_CHARS or (
-                                len(pending_text) >= _TEXT_DELTA_PUNCTUATION_CHARS
-                                and pending_text[-1:] in _TEXT_DELTA_BOUNDARIES
+            )
+            # Keep SDK/tracing contexts in one producer task while a deadline
+            # flushes small text batches even when the provider pauses.
+            async with aclosing(
+                with_flush_deadline(model_messages, lambda: bool(pending_text or pending_reasoning))
+            ) as messages:
+                async for message in messages:
+                    if message is FLUSH_TEXT:
+                        if pending_reasoning:
+                            yield RuntimeEvent(
+                                type="reasoning.delta",
+                                payload={
+                                    "text": pending_reasoning,
+                                    "item_id": pending_reasoning_id,
+                                },
                             )
-                            if should_flush:
-                                yield RuntimeEvent(
-                                    type="message.delta",
-                                    payload={"text": pending_text},
+                            pending_reasoning = ""
+                        if pending_text:
+                            yield RuntimeEvent(type="message.delta", payload={"text": pending_text})
+                            pending_text = ""
+                        continue
+                    raw_event = message.event if isinstance(message, StreamEvent) else {}
+                    raw_delta = raw_event.get("delta", {})
+                    is_thinking_delta = (
+                        isinstance(raw_delta, dict)
+                        and cast(dict[str, Any], raw_delta).get("type") == "thinking_delta"
+                    )
+                    if pending_reasoning and not is_thinking_delta:
+                        yield RuntimeEvent(
+                            type="reasoning.delta",
+                            payload={
+                                "text": pending_reasoning,
+                                "item_id": pending_reasoning_id,
+                            },
+                        )
+                        pending_reasoning = ""
+                    if raw_event.get("type") == "message_start":
+                        reasoning_serial += 1
+                        streamed_reasoning_seen = False
+                    if (
+                        isinstance(message, ResultMessage)
+                        and not message.is_error
+                        and message.stop_reason == "end_turn"
+                        and options.resume is not None
+                        and not context_window_outcome_seen
+                    ):
+                        # Custom query factories and remote transports may not
+                        # expose the SDK control API. The terminal result is the
+                        # last event the Worker accepts, so publish capability
+                        # availability immediately before it.
+                        context_window_outcome_seen = True
+                        yield ContextWindowUnavailable(
+                            phase="after",
+                            reason="control_unavailable",
+                        ).event()
+                    if isinstance(message, (ContextWindowObservation, ContextWindowUnavailable)):
+                        context_window_outcome_seen = True
+                    mapped = (
+                        [message.event()]
+                        if isinstance(
+                            message,
+                            (
+                                ContextWindowObservation,
+                                ContextWindowUnavailable,
+                                SessionResumeRecovery,
+                            ),
+                        )
+                        else [
+                            self._redact_event(event, resolved_tools)
+                            for event in map_sdk_message(message)
+                        ]
+                    )
+                    if isinstance(message, AssistantMessage):
+                        if streamed_reasoning_seen:
+                            mapped = [event for event in mapped if event.type != "reasoning.delta"]
+                        else:
+                            reasoning_serial += 1
+                        streamed_reasoning_seen = False
+                    mapped = [
+                        RuntimeEvent(
+                            type=event.type,
+                            payload={
+                                "text": event.payload.get("text", ""),
+                                "item_id": (
+                                    f"{context.run.run_id}:thinking:{reasoning_serial}:"
+                                    f"{event.payload.get('block_index', 0)}"
+                                ),
+                            },
+                        )
+                        if event.type == "reasoning.delta"
+                        else event
+                        for event in mapped
+                    ]
+                    if isinstance(message, TaskUpdatedMessage):
+                        immediate: list[RuntimeEvent] = []
+                        for event in mapped:
+                            if event.type in {
+                                "runtime.task.completed",
+                                "runtime.task.failed",
+                            }:
+                                task_id = str(event.payload.get("task_id", ""))
+                                if task_id:
+                                    pending_task_terminals[task_id] = event
+                                    continue
+                            immediate.append(event)
+                        mapped = immediate
+                    else:
+                        for event in mapped:
+                            if event.type in {
+                                "runtime.task.completed",
+                                "runtime.task.failed",
+                            }:
+                                task_id = str(event.payload.get("task_id", ""))
+                                if task_id:
+                                    pending_task_terminals.pop(task_id, None)
+                    if isinstance(message, ResultMessage) and pending_task_terminals:
+                        mapped = [*pending_task_terminals.values(), *mapped]
+                        pending_task_terminals.clear()
+                    governed: list[RuntimeEvent] = []
+                    for event in mapped:
+                        governed.extend(
+                            subagent_governor.process(
+                                event,
+                                run_id=context.run.run_id,
+                            )
+                        )
+                    mapped = governed
+                    if isinstance(message, ResultMessage) and subagent_governor.active_tasks:
+                        mapped = [
+                            *subagent_governor.fail_unfinished(
+                                reason="missing_terminal_event",
+                                run_id=context.run.run_id,
+                            ),
+                            *mapped,
+                        ]
+                    if self._tool_gate is not None:
+                        mapped = [event for event in mapped if event.type != "tool.request"]
+                    if isinstance(message, StreamEvent):
+                        for event in mapped:
+                            if event.type == "reasoning.delta":
+                                if pending_text:
+                                    yield RuntimeEvent(
+                                        type="message.delta", payload={"text": pending_text}
+                                    )
+                                    pending_text = ""
+                                streamed_reasoning_seen = True
+                                item_id = str(event.payload["item_id"])
+                                if pending_reasoning and item_id != pending_reasoning_id:
+                                    yield RuntimeEvent(
+                                        type="reasoning.delta",
+                                        payload={
+                                            "text": pending_reasoning,
+                                            "item_id": pending_reasoning_id,
+                                        },
+                                    )
+                                    pending_reasoning = ""
+                                pending_reasoning_id = item_id
+                                pending_reasoning += str(event.payload.get("text", ""))
+                                if len(pending_reasoning) >= _TEXT_DELTA_FLUSH_CHARS:
+                                    yield RuntimeEvent(
+                                        type="reasoning.delta",
+                                        payload={
+                                            "text": pending_reasoning,
+                                            "item_id": pending_reasoning_id,
+                                        },
+                                    )
+                                    pending_reasoning = ""
+                                continue
+                            if event.type == "message.start":
+                                if not stream_message_open:
+                                    stream_message_open = True
+                                    first_text_delta_flushed = False
+                                    yield event
+                            elif event.type == "message.delta":
+                                partial_text_seen = True
+                                if not stream_message_open:
+                                    stream_message_open = True
+                                    first_text_delta_flushed = False
+                                    yield RuntimeEvent(type="message.start")
+                                text = str(event.payload.get("text", ""))
+                                if text and not first_text_delta_flushed:
+                                    # TTFT takes priority over event coalescing. Flush the
+                                    # provider's first visible text immediately, then batch
+                                    # later character-sized deltas to avoid one durable DB
+                                    # event per token.
+                                    first_text_delta_flushed = True
+                                    yield RuntimeEvent(
+                                        type="message.delta",
+                                        payload={"text": text},
+                                    )
+                                    continue
+                                pending_text += text
+                                should_flush = len(pending_text) >= _TEXT_DELTA_FLUSH_CHARS or (
+                                    len(pending_text) >= _TEXT_DELTA_PUNCTUATION_CHARS
+                                    and pending_text[-1:] in _TEXT_DELTA_BOUNDARIES
                                 )
-                                pending_text = ""
-                        elif event.type == "message.completed":
-                            if stream_message_open:
+                                if should_flush:
+                                    yield RuntimeEvent(
+                                        type="message.delta",
+                                        payload={"text": pending_text},
+                                    )
+                                    pending_text = ""
+                            elif event.type == "message.completed":
+                                if stream_message_open:
+                                    if pending_text:
+                                        yield RuntimeEvent(
+                                            type="message.delta",
+                                            payload={"text": pending_text},
+                                        )
+                                        pending_text = ""
+                                    stream_message_open = False
+                                    yield event
+                            else:
                                 if pending_text:
                                     yield RuntimeEvent(
                                         type="message.delta",
                                         payload={"text": pending_text},
                                     )
                                     pending_text = ""
-                                stream_message_open = False
                                 yield event
-                        else:
-                            if pending_text:
-                                yield RuntimeEvent(
-                                    type="message.delta",
-                                    payload={"text": pending_text},
-                                )
-                                pending_text = ""
-                            yield event
-                    continue
-                if isinstance(message, ResultMessage) and stream_message_open:
-                    if pending_text:
-                        yield RuntimeEvent(type="message.delta", payload={"text": pending_text})
-                        pending_text = ""
-                    stream_message_open = False
-                    yield RuntimeEvent(type="message.completed")
-                if isinstance(message, AssistantMessage):
-                    if partial_text_seen:
+                        continue
+                    if isinstance(message, ResultMessage) and stream_message_open:
                         if pending_text:
                             yield RuntimeEvent(type="message.delta", payload={"text": pending_text})
                             pending_text = ""
+                        stream_message_open = False
+                        yield RuntimeEvent(type="message.completed")
+                    if isinstance(message, AssistantMessage):
+                        if partial_text_seen:
+                            if pending_text:
+                                yield RuntimeEvent(
+                                    type="message.delta", payload={"text": pending_text}
+                                )
+                                pending_text = ""
+                            for event in mapped:
+                                if event.type != "message.delta":
+                                    yield event
+                            partial_text_seen = False
+                            continue
+                        contains_text = any(event.type == "message.delta" for event in mapped)
+                        if contains_text:
+                            yield RuntimeEvent(type="message.start")
                         for event in mapped:
-                            if event.type != "message.delta":
-                                yield event
-                        partial_text_seen = False
+                            yield event
+                        if contains_text:
+                            yield RuntimeEvent(type="message.completed")
                         continue
-                    contains_text = any(event.type == "message.delta" for event in mapped)
-                    if contains_text:
-                        yield RuntimeEvent(type="message.start")
                     for event in mapped:
                         yield event
-                    if contains_text:
-                        yield RuntimeEvent(type="message.completed")
-                    continue
-                for event in mapped:
-                    yield event
         for event in pending_task_terminals.values():
             for governed_event in subagent_governor.process(
                 event,

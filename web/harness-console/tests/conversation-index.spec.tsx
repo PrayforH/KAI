@@ -34,8 +34,8 @@ it("indexes each user turn, previews labels and scrolls only its viewport", asyn
   expect(buttons[0].getAttribute("aria-current")).toBe("location");
   act(() => buttons[1].focus());
   expect(host.querySelector(".conversation-index-preview")?.textContent).toContain("关于第二问的回答摘要");
-  expect(buttons[1].style.getPropertyValue("--index-line-width")).toBe("16px");
-  expect(buttons[0].style.getPropertyValue("--index-line-width")).toBe("12px");
+  expect(buttons[1].style.getPropertyValue("--index-line-width")).toBe("19px");
+  expect(buttons[0].style.getPropertyValue("--index-line-width")).toBe("14px");
   act(() => buttons[2].click());
   expect(scroll).toHaveBeenCalledWith({ top: 568, behavior: "smooth" });
   expect(document.activeElement?.getAttribute("data-turn-id")).toBe("task-a2");

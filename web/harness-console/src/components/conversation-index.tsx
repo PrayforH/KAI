@@ -4,8 +4,19 @@ import { useEffect, useRef, useState, type CSSProperties, type RefObject } from 
 
 type Entry = { id: string; label: string; answer: string; node: HTMLElement };
 
+// The rail is the thread's time journey. Ticks stay readable when a task runs
+// for many turns, so they are sized from a shared scale instead of magic
+// numbers inline: idle, current, and the four neighbours of the hovered tick.
+const IDLE_LINE_WIDTH = 6;
+const ACTIVE_LINE_WIDTH = 8;
+const NEIGHBOUR_LINE_WIDTHS = [19, 14, 10, 7, 6];
+
 /** Indexes user turns inside this thread only, including restored history and branches. */
-export function ConversationIndex({ frame, threadId }: { frame: RefObject<HTMLDivElement | null>; threadId: string }) {
+export function ConversationIndex({ frame, threadId, pagination }: {
+  frame: RefObject<HTMLDivElement | null>;
+  threadId: string;
+  pagination?: { total: number; hasMore: boolean; loadEarlier: () => Promise<void> };
+}) {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [active, setActive] = useState("");
   const [hovered, setHovered] = useState("");
@@ -66,18 +77,49 @@ export function ConversationIndex({ frame, threadId }: { frame: RefObject<HTMLDi
   const expandedIndex = entries.findIndex(entry => entry.id === hovered);
   const previewButton = buttons.current.get(hovered);
   const previewTop = previewButton ? Math.max(60, Math.min((previewButton.parentElement?.clientHeight ?? 120) - 60, previewButton.offsetTop - (previewButton.parentElement?.scrollTop ?? 0) + 5)) : 60;
+  // The thread's earlier runs are not materialised yet; show them as placeholder
+  // ticks so the rail reflects the whole conversation instead of one page.
+  async function revealPending(globalIndex: number) {
+    if (!pagination) return;
+    for (let attempt = 0; attempt < 12 && pagination.hasMore; attempt += 1) {
+      const visible = frame.current?.querySelectorAll("[data-turn-id]").length ?? 0;
+      const offset = Math.max(0, pagination.total - visible);
+      if (globalIndex >= offset) {
+        const node = frame.current?.querySelectorAll<HTMLElement>("[data-turn-id]")[globalIndex - offset];
+        if (node) scrollToTurn(node);
+        setHovered("");
+        return;
+      }
+      await pagination.loadEarlier();
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+    }
+  }
+
+  function scrollToTurn(node: HTMLElement) {
+    const viewport = frame.current?.querySelector<HTMLElement>(".aui-thread-viewport");
+    if (!viewport) return;
+    const top = node.getBoundingClientRect().top - viewport.getBoundingClientRect().top + viewport.scrollTop - 32;
+    viewport.scrollTo({
+      top: Math.max(0, top),
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
+    });
+    node.focus({ preventScroll: true });
+  }
+
+  const pending = Math.max(0, (pagination?.total ?? entries.length) - entries.length);
   return <nav className="conversation-index" data-expanded={Boolean(hovered)} aria-label="对话轮次索引" onMouseLeave={() => setHovered("")}>
     <div className="conversation-index-rail">
-      {entries.map((entry, index) => <button key={entry.id} ref={node => { if (node) buttons.current.set(entry.id, node); else buttons.current.delete(entry.id); }} type="button" style={{ "--index-line-width": `${expandedIndex < 0 ? (entry.id === active ? 6 : 4) : [16, 12, 9, 6, 4][Math.min(4, Math.abs(index - expandedIndex))]}px` } as CSSProperties} data-highlighted={entry.id === hovered} aria-label={`第 ${index + 1} 轮：${entry.label}`} aria-current={entry.id === active ? "location" : undefined} onMouseEnter={() => setHovered(entry.id)} onFocus={() => setHovered(entry.id)} onBlur={() => setHovered("")} onKeyDown={event => {
+      {Array.from({ length: pending }, (_, index) => <button key={`pending-${index}`} type="button"
+        className="conversation-index-pending" style={{ "--index-line-width": `${index === pending - 1 ? 6 : 4}px` } as CSSProperties}
+        aria-label={`第 ${index + 1} 轮：加载更早的轮次`}
+        onClick={() => void revealPending(index)}
+      ><span aria-hidden="true" /></button>)}
+      {entries.map((entry, index) => <button key={entry.id} ref={node => { if (node) buttons.current.set(entry.id, node); else buttons.current.delete(entry.id); }} type="button" style={{ "--index-line-width": `${expandedIndex < 0 ? (entry.id === active ? ACTIVE_LINE_WIDTH : IDLE_LINE_WIDTH) : NEIGHBOUR_LINE_WIDTHS[Math.min(4, Math.abs(index - expandedIndex))]}px` } as CSSProperties} data-highlighted={entry.id === hovered} aria-label={`第 ${index + 1} 轮：${entry.label}`} aria-current={entry.id === active ? "location" : undefined} onMouseEnter={() => setHovered(entry.id)} onFocus={() => setHovered(entry.id)} onBlur={() => setHovered("")} onKeyDown={event => {
         const offset = event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : 0;
         const target = event.key === "Home" ? 0 : event.key === "End" ? entries.length - 1 : index + offset;
         if (offset || event.key === "Home" || event.key === "End") { event.preventDefault(); buttons.current.get(entries[Math.max(0, Math.min(entries.length - 1, target))].id)?.focus(); }
       }} onClick={() => {
-        const viewport = frame.current?.querySelector<HTMLElement>(".aui-thread-viewport");
-        if (!viewport) return;
-        const top = entry.node.getBoundingClientRect().top - viewport.getBoundingClientRect().top + viewport.scrollTop - 32;
-        viewport.scrollTo({ top: Math.max(0, top), behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
-        entry.node.focus({ preventScroll: true }); setActive(entry.id); setHovered("");
+        scrollToTurn(entry.node); setActive(entry.id); setHovered("");
       }}><span aria-hidden="true" /></button>)}
     </div>
     {preview && <div className="conversation-index-preview" style={{top: previewTop}} aria-hidden="true"><strong>{preview.label}</strong><p>{preview.answer || "这一轮暂无回答"}</p></div>}

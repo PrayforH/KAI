@@ -12,6 +12,7 @@ from claude_agent_sdk import (
     TaskStartedMessage,
     TaskUpdatedMessage,
     TextBlock,
+    ThinkingBlock,
     ToolResultBlock,
     ToolUseBlock,
     UserMessage,
@@ -37,8 +38,7 @@ _PROVIDER_CONTENT_RISK_MARKERS = (
 )
 _SAFE_PROVIDER_ERROR_TEXT = "模型服务拒绝了本轮请求。请打开运行详情查看状态，并稍后重试。"
 _SAFE_PROVIDER_CONTENT_REJECTED_TEXT = (
-    "模型服务拒绝了本轮上下文，可能由输入或外部检索内容触发。"
-    "请重新运行，或缩小主题与时间范围。"
+    "模型服务拒绝了本轮上下文，可能由输入或外部检索内容触发。请重新运行，或缩小主题与时间范围。"
 )
 
 
@@ -48,9 +48,8 @@ def provider_result_error_code(
 ) -> str:
     """Classify known provider failures without persisting raw diagnostics."""
     normalized = text.strip().lower()
-    if (
-        api_error_status in {None, 400}
-        and any(marker in normalized for marker in _PROVIDER_CONTENT_RISK_MARKERS)
+    if api_error_status in {None, 400} and any(
+        marker in normalized for marker in _PROVIDER_CONTENT_RISK_MARKERS
     ):
         return "provider_content_rejected"
     return "runtime_result_error"
@@ -81,14 +80,51 @@ def result_subtype(message: ResultMessage) -> str:
     return message.subtype or "provider_error"
 
 
+def _image_placeholder(item: dict[str, object]) -> dict[str, object]:
+    """Describe an image result without keeping its bytes.
+
+    Run events are persisted and replayed to browsers, so an inline image read
+    must not store base64: the payload would bloat the event store and every
+    reconnect. The model still receives the image; only the durable record keeps
+    a bounded description.
+    """
+
+    source = item.get("source")
+    media_type = item.get("mime_type") or item.get("mimeType")
+    data = item.get("data")
+    if isinstance(source, dict):
+        media_type = media_type or source.get("media_type") or source.get("mimeType")
+        if not isinstance(data, str):
+            data = source.get("data")
+    placeholder: dict[str, object] = {
+        "type": "image",
+        "media_type": media_type if isinstance(media_type, str) else "image/unknown",
+        "omitted": "image bytes are not persisted in run events",
+    }
+    if isinstance(data, str) and data:
+        placeholder["base64_chars"] = len(data)
+    return placeholder
+
+
+def _strip_image_payloads(content: object) -> object:
+    if isinstance(content, list):
+        return [_strip_image_payloads(item) for item in content]
+    if isinstance(content, dict):
+        if content.get("type") == "image":
+            return _image_placeholder(content)
+        return {key: _strip_image_payloads(value) for key, value in content.items()}
+    return content
+
+
 def _safe_tool_result_content(content: object) -> object:
-    """Hide Claude SDK coordination metadata while preserving normal tool output."""
-    rendered = repr(content).lower()
+    """Hide Claude SDK coordination metadata and inline image bytes."""
+    sanitized = _strip_image_payloads(content)
+    rendered = repr(sanitized).lower()
     if "tool result is internal metadata" in rendered and (
         "agentid" in rendered or "output_file" in rendered
     ):
         return "[Internal tool metadata omitted]"
-    return content
+    return sanitized
 
 
 def _map_assistant(message: AssistantMessage) -> list[RuntimeEvent]:
@@ -105,13 +141,19 @@ def _map_assistant(message: AssistantMessage) -> list[RuntimeEvent]:
             if isinstance(block, TextBlock)
         ]
     events: list[RuntimeEvent] = []
-    for block in message.content:
+    for index, block in enumerate(message.content):
         if isinstance(block, TextBlock):
             events.append(
-                RuntimeEvent(
-                    type="message.delta", payload={"text": safe_model_text(block.text)}
-                )
+                RuntimeEvent(type="message.delta", payload={"text": safe_model_text(block.text)})
             )
+        elif isinstance(block, ThinkingBlock):
+            if block.thinking:
+                events.append(
+                    RuntimeEvent(
+                        type="reasoning.delta",
+                        payload={"text": safe_model_text(block.thinking), "block_index": index},
+                    )
+                )
         elif isinstance(block, ToolUseBlock):
             events.append(
                 RuntimeEvent(
@@ -166,11 +208,21 @@ def _map_stream(message: StreamEvent) -> list[RuntimeEvent]:
             events.append(
                 RuntimeEvent(
                     type="message.delta",
-                    payload={
-                        "text": safe_model_text(str(typed_delta.get("text", "")))
-                    },
+                    payload={"text": safe_model_text(str(typed_delta.get("text", "")))},
                 )
             )
+        elif typed_delta.get("type") == "thinking_delta":
+            text = str(typed_delta.get("thinking", ""))
+            if text:
+                events.append(
+                    RuntimeEvent(
+                        type="reasoning.delta",
+                        payload={
+                            "text": safe_model_text(text),
+                            "block_index": event.get("index", 0),
+                        },
+                    )
+                )
     return events
 
 
@@ -225,9 +277,7 @@ def _map_task_message(message: SystemMessage) -> RuntimeEvent | None:
     if isinstance(message, TaskNotificationMessage):
         return RuntimeEvent(
             type=(
-                "runtime.task.completed"
-                if message.status == "completed"
-                else "runtime.task.failed"
+                "runtime.task.completed" if message.status == "completed" else "runtime.task.failed"
             ),
             payload={
                 "task_id": message.task_id,

@@ -6,6 +6,7 @@ import {
   type RunAgentInput,
   type RunAgentResult,
 } from "@ag-ui/client";
+import { isProcessBoundary } from "./process-boundary";
 import { runActivitySchema } from "./activity-schema";
 import {
   type ActivityPatchOperation,
@@ -303,7 +304,9 @@ export class HarnessHttpAgent extends HttpAgent {
         // Artifact presentation is a response deliverable, not another model
         // action. Keeping the final response active also lets the UI render
         // that prose immediately before the generated file card.
-        if (params.event.toolCallName !== "harness_present_artifact") {
+        if (params.event.toolCallName !== "harness_present_artifact" &&
+          activityStore.getSnapshot()?.run_id !== liveResponseStore.getSnapshot().runId) {
+          // Without an activity projection retain the legacy tool hand-off.
           liveResponseStore.hideForTool(runtimeThreadId);
         }
         return subscriber?.onToolCallStartEvent?.(params);
@@ -328,7 +331,10 @@ export class HarnessHttpAgent extends HttpAgent {
       onActivitySnapshotEvent: async (params) => {
         if (params.event.activityType === "harness.run.v1") {
           const parsed = runActivitySchema.safeParse(params.event.content);
-          if (parsed.success) activityStore.publish(parsed.data, runtimeThreadId);
+          if (parsed.success) {
+            activityStore.publish(parsed.data, runtimeThreadId);
+            syncProcessResponse(runtimeThreadId);
+          }
         }
         return subscriber?.onActivitySnapshotEvent?.(params);
       },
@@ -338,6 +344,7 @@ export class HarnessHttpAgent extends HttpAgent {
             params.event.patch as readonly ActivityPatchOperation[],
             runtimeThreadId,
           );
+          syncProcessResponse(runtimeThreadId);
         }
         return subscriber?.onActivityDeltaEvent?.(params);
       },
@@ -407,4 +414,14 @@ export class HarnessHttpAgent extends HttpAgent {
     cloned.activeInput = this.activeInput ? { ...this.activeInput } : undefined;
     return cloned;
   }
+}
+
+// Publish the durable process before hiding its live prose, so there is no
+// blank frame while waiting for a tool event after a new thinking block.
+function syncProcessResponse(threadId?: string) {
+  const activity = activityStore.getSnapshot();
+  if (!activity || activity.run_id !== liveResponseStore.getSnapshot().runId) return;
+  const latest = [...activity.items].reverse().find(item =>
+    item.event_type === "message.delta" || isProcessBoundary(item.event_type));
+  if (latest && isProcessBoundary(latest.event_type)) liveResponseStore.hideForTool(threadId);
 }

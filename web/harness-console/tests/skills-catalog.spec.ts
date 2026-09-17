@@ -36,9 +36,8 @@ describe("Skills catalog page", () => {
 
   it("combines platform packages with Skills already embedded in drafts", () => {
     expect(component).toContain("studioClient.listPlatformSkills");
-    expect(component).toContain("studioClient.listAccessibleDrafts");
-    expect(component).toContain("studioClient.getDraft");
-    expect(component).toContain("apiDraftToStudioDraft");
+    expect(component).toContain("studioClient.listAgentSkills");
+    expect(component).not.toContain("studioClient.getDraft");
     expect(component).toContain("draft.skills");
     expect(component).toContain("暂无描述");
     expect(component).toContain("platform-package:");
@@ -102,14 +101,10 @@ describe("Skills catalog page", () => {
     expect(styles).toContain('.skillToggle[aria-checked="true"]');
   });
 
-  it("streams the catalog instead of gating it on every agent draft", () => {
-    // Platform packages paint the list first, then draft reads stream in with
-    // a bounded number of in-flight requests.
-    expect(component).toContain("buildCatalog(platformCatalog.packages, [])");
-    expect(component).toContain("DRAFT_FETCH_CONCURRENCY");
-    expect(component).toContain("forEachWithConcurrency");
-    expect(component).not.toMatch(/await Promise\.all\(\s*summaries/);
-    expect(component).toContain("正在读取智能体技能");
+  it("loads agent skills in one request without per-draft reads", () => {
+    expect(component).toContain("studioClient.listAgentSkills()");
+    expect(component).not.toContain("forEachWithConcurrency");
+    expect(component).toContain("loadGeneration.current");
   });
 
   it("renders the list in scroll pages", () => {

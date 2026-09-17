@@ -329,7 +329,6 @@ async def test_skill_creator_and_catalog_assembly_share_review_and_atomic_apply(
         assert "customHeaders" not in str(catalog)
         changes = {
             "builtinTools": [*draft["spec"]["builtinTools"], "WebFetch"],
-            "mcpServers": ["tavily-readonly"],
             "capabilityCatalogRevision": catalog["revision"],
         }
         changes["builtinTools"] = list(dict.fromkeys(changes["builtinTools"]))
@@ -387,13 +386,17 @@ async def test_skill_creator_and_catalog_assembly_share_review_and_atomic_apply(
             for f in diff.json()["after"]["files"]
         )
         for endpoint in ["builder-project-diff", "builder-apply"]:
-            invalid = {**plan, "mcpServers": ["private-invisible"]}
-            denied = await client.post(
-                path + "/" + endpoint,
-                headers=headers,
-                json={"expectedRevision": 1, "changes": invalid},
-            )
-            assert denied.status_code == 409
+            # "private-invisible" is not in the catalog and "tavily-readonly" was
+            # retired platform-wide: assembly refuses both instead of dropping
+            # the capability silently.
+            for refused in ["private-invisible", "tavily-readonly"]:
+                invalid = {**plan, "mcpServers": [refused]}
+                denied = await client.post(
+                    path + "/" + endpoint,
+                    headers=headers,
+                    json={"expectedRevision": 1, "changes": invalid},
+                )
+                assert denied.status_code == 409, refused
             stale = await client.post(
                 path + "/" + endpoint,
                 headers=headers,

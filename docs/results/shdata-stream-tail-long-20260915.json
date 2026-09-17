@@ -1,0 +1,17 @@
+[
+  {
+    "run_id": "run_891d821c9d6946e4a7b7692784af8e89",
+    "session_id": "session_f1057832d74749d693ea4c13912b7a3b",
+    "lines": 320,
+    "status": "succeeded",
+    "route": "shdata-model",
+    "complete": true,
+    "chars": 5999,
+    "expected_chars": 5999,
+    "tail": "向远方。\n318：春风吹过山谷，溪水流向远方。\n319：春风吹过山谷，溪水流向远方。\n320：春风吹过山谷，溪水流向远方。\n验证结束标记：END-739182。",
+    "result": {
+      "stop_reason": "end_turn",
+      "is_error": false
+    }
+  }
+]

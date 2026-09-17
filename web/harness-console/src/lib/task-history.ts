@@ -5,7 +5,7 @@ import {
   type ThreadHistoryAdapter,
 } from "@assistant-ui/core";
 import { fromAgUiMessages } from "@assistant-ui/react-ag-ui";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import type { ApprovalDetails } from "../components/approval-card";
 import { latestHistoryRunActivity } from "./activity-schema";
 import { activityStore } from "./activity-store";
@@ -33,7 +33,7 @@ const taskListCoalesceMs = 250;
 export const TASK_LIST_REQUEST_TIMEOUT_MS = 8_000;
 export const THREAD_HISTORY_PREFETCH_TTL_MS = 30_000;
 const threadHistoryCacheMax = 8;
-const THREAD_HISTORY_PAGE_RUNS = 30;
+const THREAD_HISTORY_PAGE_RUNS = 10;
 const threadHistoryAccumulatedMax = 8;
 
 interface ThreadHistoryResponse {
@@ -51,6 +51,7 @@ interface ThreadHistoryResponse {
   }>;
   next_cursor?: string | null;
   has_more?: boolean;
+  total?: number;
 }
 
 const activeStatuses = new Set([
@@ -195,6 +196,8 @@ export interface AccumulatedThreadHistory {
   messages: ThreadHistoryResponse["messages"];
   nextCursor: string | null;
   hasMore: boolean;
+  /** Every visible run of the thread, not only the materialised page. */
+  total: number;
 }
 
 interface AccumulationEntry extends AccumulatedThreadHistory {
@@ -228,6 +231,7 @@ function seedAccumulatedHistory(
     messages: history.messages,
     nextCursor: history.next_cursor ?? null,
     hasMore: history.has_more ?? false,
+    total: history.total ?? history.messages.length,
     loading: false,
   });
   while (accumulatedHistory.size > threadHistoryAccumulatedMax) {
@@ -245,7 +249,7 @@ export function useThreadHistoryPagination(
       repository: ReturnType<typeof ExportedMessageRepository.fromArray>,
     ) => void;
   },
-): { hasMore: boolean; loading: boolean; loadEarlier: () => Promise<void> } {
+): { hasMore: boolean; loading: boolean; total: number; loadEarlier: () => Promise<void> } {
   const [snapshot, setSnapshot] = useState<AccumulationEntry | null>(() =>
     accumulatedHistory.get(threadId) ?? null,
   );
@@ -277,6 +281,7 @@ export function useThreadHistoryPagination(
         messages: [...page.messages, ...entry.messages],
         nextCursor: page.next_cursor ?? null,
         hasMore: page.has_more ?? false,
+        total: page.total ?? entry.total,
         loading: false,
       });
       publishAccumulatedHistory(threadId);
@@ -297,6 +302,7 @@ export function useThreadHistoryPagination(
   return {
     hasMore: snapshot?.hasMore ?? false,
     loading: snapshot?.loading ?? false,
+    total: snapshot?.total ?? 0,
     loadEarlier,
   };
 }
@@ -492,4 +498,72 @@ export function createThreadHistoryAdapter(
       disposal.abort(new DOMException("Task view unmounted", "AbortError"));
     },
   };
+}
+
+/** How close to the top the reader must scroll before earlier runs load. */
+export const LOAD_EARLIER_THRESHOLD_PX = 160;
+
+interface EarlierPagination {
+  hasMore: boolean;
+  loading: boolean;
+  loadEarlier: () => Promise<void>;
+}
+
+/**
+ * Pull the previous page in as soon as the reader scrolls to the top, instead
+ * of asking for a click. Prepending rows moves the content down, so the scroll
+ * offset is restored against the height that was added; a page shorter than the
+ * viewport would leave nothing to scroll, so it keeps filling until the list
+ * can scroll or the thread runs out of earlier runs.
+ */
+export function useAutoLoadEarlierMessages(
+  frame: RefObject<HTMLElement | null>,
+  pagination: EarlierPagination,
+): void {
+  const state = useRef(pagination);
+  state.current = pagination;
+
+  useEffect(() => {
+    const viewport = frame.current?.querySelector<HTMLElement>(".aui-thread-viewport");
+    if (!viewport) return;
+    let inFlight = false;
+
+    function keepPlace(previousHeight: number, previousTop: number) {
+      const grown = viewport!.scrollHeight - previousHeight;
+      if (grown > 0) viewport!.scrollTop = previousTop + grown;
+    }
+
+    async function loadEarlierPage() {
+      const { hasMore, loading, loadEarlier } = state.current;
+      if (inFlight || loading || !hasMore) return;
+      inFlight = true;
+      const previousHeight = viewport!.scrollHeight;
+      const previousTop = viewport!.scrollTop;
+      try {
+        await loadEarlier();
+        // Two frames: assistant-ui re-renders the imported repository first.
+        requestAnimationFrame(() => {
+          keepPlace(previousHeight, previousTop);
+          requestAnimationFrame(() => {
+            keepPlace(previousHeight, previousTop);
+            fillViewport();
+          });
+        });
+      } finally {
+        inFlight = false;
+      }
+    }
+
+    function fillViewport() {
+      if (viewport!.scrollHeight <= viewport!.clientHeight + 1) void loadEarlierPage();
+    }
+
+    function onScroll() {
+      if (viewport!.scrollTop <= LOAD_EARLIER_THRESHOLD_PX) void loadEarlierPage();
+    }
+
+    viewport.addEventListener("scroll", onScroll, { passive: true });
+    fillViewport();
+    return () => viewport.removeEventListener("scroll", onScroll);
+  }, [frame, pagination.hasMore, pagination.loading]);
 }

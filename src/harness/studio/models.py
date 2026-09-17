@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, m
 from harness.core.manifest import ToolExposureMode
 from harness.core.models import AgentRuntimeType
 from harness.evals.suite import EvalCase
+from harness.sandbox.base import SandboxEnforcement
 
 
 class StudioModel(BaseModel):
@@ -192,6 +193,49 @@ class PlatformSkillListing(StudioModel):
     instructions: str
     file_count: int = Field(alias="fileCount", ge=0)
     files: tuple[PlatformSkillListingFile, ...] = ()
+
+
+class AgentSkillListing(PlatformSkillListing):
+    source: DraftSkillSource | None = None
+
+
+class AgentSkillCatalogEntry(StudioModel):
+    id: str
+    name: str
+    display_name: str = Field(alias="displayName")
+    parent_draft_id: str | None = Field(default=None, alias="parentDraftId")
+    revision: int
+    skills: tuple[AgentSkillListing, ...]
+
+    @classmethod
+    def from_draft(cls, draft: AgentDraft) -> AgentSkillCatalogEntry:
+        return cls(
+            id=draft.draft_id,
+            name=draft.spec.name,
+            displayName=draft.spec.display_name,
+            parentDraftId=draft.parent_draft_id,
+            revision=draft.revision,
+            skills=tuple(
+                AgentSkillListing(
+                    name=skill.name,
+                    description=skill.description,
+                    instructions=skill.instructions,
+                    source=skill.source,
+                    fileCount=skill.file_count
+                    if skill.file_count is not None
+                    else len(skill.files),
+                    files=tuple(
+                        PlatformSkillListingFile(
+                            path=file.path,
+                            binary=file.content_base64 is not None,
+                            sizeBytes=file.size_bytes,
+                        )
+                        for file in skill.files
+                    ),
+                )
+                for skill in draft.spec.skills
+            ),
+        )
 
 
 class PlatformSkillCatalogEntry(StudioModel):
@@ -812,8 +856,14 @@ class ExecutionProfileMetadata(StudioModel):
     profile_id: str = Field(alias="profileId", pattern=r"^[a-z][a-z0-9-]*$")
     label: str = Field(min_length=1, max_length=160)
     description: str = Field(min_length=1, max_length=500)
-    sandbox_provider: Literal["local", "daytona", "e2b", "gvisor", "cubesandbox"] = Field(
-        alias="sandboxProvider"
+    sandbox_provider: Literal[
+        "local", "daytona", "e2b", "gvisor", "cubesandbox", "opensandbox"
+    ] = Field(alias="sandboxProvider")
+    # The weakest enforcement tier this profile accepts. The deployment has to
+    # reach it with a backend that actually delivers that tier, otherwise the
+    # run is refused instead of silently running weaker than declared.
+    minimum_enforcement: SandboxEnforcement = Field(
+        default=SandboxEnforcement.NONE, alias="minimumEnforcement"
     )
     network_access: tuple[NetworkAccess, ...] = Field(alias="networkAccess")
     risk: CapabilityRisk

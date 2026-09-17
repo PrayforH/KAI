@@ -93,7 +93,6 @@ from harness.reliability.service import ReliabilityService
 from harness.runtime.cc_switch import CcSwitchClaudeConfig
 from harness.runtime.codex_tool_gate import CodexToolGate
 from harness.runtime.default_tools import (
-    TAVILY_REFERENCE,
     default_tool_resolver,
     server_secret_credential_provider,
 )
@@ -104,7 +103,7 @@ from harness.runtime.registry_codex_runtime import RegistryCodexRuntime, Registr
 from harness.runtime.registry_runtime import RegistryClaudeRuntime
 from harness.runtime.sdk_tool_gate import SdkToolGate
 from harness.runtime.session_store import PostgresSessionStore
-from harness.sandbox.base import SandboxProvider
+from harness.sandbox.base import SandboxProvider, provider_meets_enforcement_floor
 from harness.sandbox.cubesandbox import build_cubesandbox_provider
 from harness.sandbox.daytona import DaytonaSandboxProvider, SdkDaytonaClient
 from harness.sandbox.deferred import DeferredToolSandboxProvider
@@ -114,6 +113,10 @@ from harness.sandbox.kubernetes import (
     KubernetesSandboxProvider,
 )
 from harness.sandbox.local import LocalSandboxProvider
+from harness.sandbox.opensandbox import (
+    OpenSandboxSandboxProvider,
+    build_opensandbox_provider,
+)
 from harness.sharing.service import TeamSpaceService
 from harness.sharing.workspace_repositories import AgentIdentityService
 from harness.storage.api_access_repository import PostgresApiAccessKeyRepository
@@ -160,6 +163,7 @@ from harness.storage.redis import (
     AsyncRedisClient,
     RedisCancellationWakeup,
     RedisEventBus,
+    RedisSessionGate,
     RedisTaskQueue,
 )
 from harness.storage.reliability_repository import PostgresReliabilityRepository
@@ -258,21 +262,14 @@ def _deployment_model_routes(settings: Settings) -> tuple[CcSwitchClaudeConfig, 
         compatibility=settings.minimax_m3_compatibility,
         capabilities=settings.minimax_m3_capabilities,
     )
-    add(
-        "glm-5-2",
-        base_url=settings.glm_5_2_base_url,
-        model=settings.glm_5_2_model,
-        credential=settings.glm_5_2_api_key,
-        auth_scheme=settings.glm_5_2_auth_scheme,
-        compatibility=settings.glm_5_2_compatibility,
-        capabilities=settings.glm_5_2_capabilities,
-    )
     return tuple(routes)
 
 
 def _sandbox(settings: Settings) -> SandboxProvider:
     if settings.sandbox_provider == "cubesandbox":
         return build_cubesandbox_provider(settings)
+    if settings.sandbox_provider == "opensandbox":
+        return build_opensandbox_provider(settings)
     if settings.sandbox_provider == "local":
         if not settings.allow_unsafe_local_sandbox:
             raise ValueError(
@@ -374,6 +371,15 @@ def _runtime_sandbox(
     backend: SandboxProvider,
 ) -> SandboxProvider:
     if settings.sandbox_execution_mode == "remote_cli":
+        if settings.sandbox_provider == "opensandbox":
+            # The provider exposes execd's command and file planes, not a
+            # bidirectional remote CLI transport. Running the model process in
+            # the Worker while claiming remote execution would silently drop the
+            # isolation the operator asked for, so refuse instead.
+            raise ValueError(
+                "HARNESS_SANDBOX_PROVIDER=opensandbox requires "
+                "HARNESS_SANDBOX_EXECUTION_MODE=worker_cli_deferred"
+            )
         return backend
     if settings.sandbox_provider == "local":
         raise ValueError(
@@ -530,6 +536,11 @@ def build_production_container(
         redis_client,
         visibility_timeout_seconds=settings.worker_task_visibility_timeout_seconds,
         retry_delay_seconds=settings.worker_task_retry_delay_seconds,
+    )
+    session_gate = RedisSessionGate(
+        redis_client,
+        ttl_seconds=settings.worker_task_visibility_timeout_seconds,
+        refresh_interval_seconds=settings.worker_task_heartbeat_seconds,
     )
     bus = RedisEventBus(redis_client)
     cancellation_wakeup = RedisCancellationWakeup(redis_client)
@@ -1067,13 +1078,20 @@ def build_production_container(
                     "gvisor"
                     if isinstance(runtime_sandbox_backend, KubernetesSandboxProvider)
                     else runtime_sandbox_backend.provider_name
-                    if isinstance(runtime_sandbox_backend, E2BSandboxProvider)
+                    if isinstance(
+                        runtime_sandbox_backend,
+                        (E2BSandboxProvider, OpenSandboxSandboxProvider),
+                    )
                     else "daytona"
                     if isinstance(runtime_sandbox_backend, DaytonaSandboxProvider)
                     else "local"
                 )
                 if profile.sandbox_provider != actual:
                     raise RuntimeError("execution_profile_sandbox_provider_mismatch")
+                # The profile declares the weakest enforcement it accepts; a run
+                # is refused rather than silently executing weaker than declared.
+                if not provider_meets_enforcement_floor(actual, profile.minimum_enforcement):
+                    raise RuntimeError("execution_profile_enforcement_below_minimum")
 
             if settings.sandbox_execution_mode != "worker_cli_deferred":
                 return runtime_sandbox_backend
@@ -1094,14 +1112,9 @@ def build_production_container(
                 return runtime_sandbox_backend
             catalog = (await capability_catalogs.get(tenant_id)).catalog
             read_only_mcp_references = frozenset(
-                {
-                    TAVILY_REFERENCE,
-                    *(
-                        capability.reference
-                        for capability in catalog.mcp_servers
-                        if capability.enabled and capability.read_only
-                    ),
-                }
+                capability.reference
+                for capability in catalog.mcp_servers
+                if capability.enabled and capability.read_only
             )
             if _manifests_require_remote_cli(
                 manifests,
@@ -1348,6 +1361,7 @@ def build_production_container(
         observed_events=observed_event_repository,
         event_service=events,
         task_queue=queue,
+        session_gate=session_gate,
         observability=observability,
         runtime=runtime,
         worker=worker,

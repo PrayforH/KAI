@@ -4,6 +4,7 @@ import { isAgentVisible } from "../../lib/agent-visibility";
 import { useInternalAgentsPreference } from "../../lib/interface-preferences";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useAuth } from "../auth-provider";
@@ -57,10 +58,8 @@ import { useDismissablePopovers } from "../../lib/use-dismissable-popovers";
 import { GovernanceControlPlane } from "./governance-control-plane";
 import { skillCreatorHref } from "../../lib/skill-creator-launch";
 import { SkillConversationBuilder } from "./skill-conversation-builder";
-import { StudioCodeEditor } from "./studio-code-editor";
-import {
-  AgentBuilderAssistant,
-} from "./agent-builder-overlays";
+const StudioCodeEditor = dynamic(() => import("./studio-code-editor").then((module) => module.StudioCodeEditor));
+const AgentBuilderAssistant = dynamic(() => import("./agent-builder-overlays").then((module) => module.AgentBuilderAssistant));
 import styles from "./agent-studio.module.css";
 
 const sectionLabels: Record<StudioSection, string> = {
@@ -330,6 +329,8 @@ export function AgentStudioWorkbench() {
     useState<StudioSection>("identity");
   const [agentQuery, setAgentQuery] = useState("");
   const [viewMode, setViewMode] = useState<"catalog" | "editor">("catalog");
+  const editorOpened = useRef(false);
+  if (viewMode === "editor") editorOpened.current = true;
   const workspaceVisibleRef = useRef(false);
   workspaceVisibleRef.current = viewMode === "editor";
   const [inspected, setInspected] = useState(false);
@@ -482,7 +483,7 @@ export function AgentStudioWorkbench() {
   }, [releaseFeedbackOpen]);
 
   useEffect(() => {
-    if (!draft.agentId || draft.spaceId || !draft.publishedVersion) {
+    if (!versionHistoryOpen || !draft.agentId || draft.spaceId || !draft.publishedVersion) {
       setPersonalVersions([]);
       setVersionHistoryError("");
       setVersionHistoryLoading(false);
@@ -508,7 +509,7 @@ export function AgentStudioWorkbench() {
     return () => {
       active = false;
     };
-  }, [draft.agentId, draft.spaceId, draft.publishedVersion]);
+  }, [draft.agentId, draft.spaceId, draft.publishedVersion, versionHistoryOpen]);
 
   useEffect(() => {
     let active = true;
@@ -557,7 +558,7 @@ export function AgentStudioWorkbench() {
           setDraft(migration.draft);
           setDrafts(await studioClient.listAccessibleDrafts());
           setNotice("旧浏览器草稿已一次性导入控制面");
-        } else if (serverDrafts.length > 0) {
+        } else if (serverDrafts.length > 0 && (requestedDraftId || requestedSection)) {
           const selected = await studioClient.getDraft(serverDrafts[0].draftId, {
             expectedRevision: serverDrafts[0].revision,
           });
@@ -567,7 +568,7 @@ export function AgentStudioWorkbench() {
         } else {
           setDraft({ ...DEFAULT_STUDIO_DRAFT, id: "", revision: 0 });
           setActiveSection("identity");
-          setNotice(canEdit ? "当前没有草稿，可新建第一个 Agent" : "当前没有可查看的草稿");
+          setNotice(serverDrafts.length > 0 ? "" : canEdit ? "当前没有草稿，可新建第一个 Agent" : "当前没有可查看的草稿");
         }
       } catch (error) {
         if (!active) return;
@@ -583,34 +584,22 @@ export function AgentStudioWorkbench() {
   }, [canEdit]);
 
   useEffect(() => {
-    if (loading || loadError) return;
+    if (loading || loadError || viewMode !== "editor" || !configEditorOpen) return;
     let active = true;
-    const timer = window.setTimeout(() => {
-      void Promise.all([
-        studioClient.listPreviews(),
-        studioClient.listEvalDatasets(),
-        studioClient.listEvalRuns(),
-        studioClient.listGovernedPolicies(),
-      ]).then(([
-        serverPreviews,
-        serverDatasets,
-        serverEvalRuns,
-        serverGovernedPolicies,
-      ]) => {
-        if (!active) return;
-        setPreviews(serverPreviews);
-        setEvalDatasets(serverDatasets);
-        setEvalRuns(serverEvalRuns);
-        setGovernedPolicies(serverGovernedPolicies);
-      }).catch(() => {
-        // These panels are secondary; the primary editor remains available.
-      });
-    }, 0);
-    return () => {
-      active = false;
-      window.clearTimeout(timer);
-    };
-  }, [loadError, loading]);
+    const requests: Promise<void>[] = [];
+    if (activeSection === "trial" || activeSection === "evaluation") {
+      requests.push(studioClient.listPreviews().then((items) => { if (active) setPreviews(items); }));
+    }
+    if (activeSection === "evaluation") {
+      requests.push(studioClient.listEvalDatasets().then((items) => { if (active) setEvalDatasets(items); }));
+      requests.push(studioClient.listEvalRuns().then((items) => { if (active) setEvalRuns(items); }));
+    }
+    if (activeSection === "runtime") {
+      requests.push(studioClient.listGovernedPolicies().then((items) => { if (active) setGovernedPolicies(items); }));
+    }
+    void Promise.allSettled(requests);
+    return () => { active = false; };
+  }, [loadError, loading, viewMode, activeSection, configEditorOpen]);
 
   function updateDraft(update: Partial<StudioDraft>) {
     const next = applyStudioDraftUpdate(draft, update);
@@ -1172,6 +1161,17 @@ export function AgentStudioWorkbench() {
     }, 0);
   }
 
+  // The catalog card owns the configuration entry: opening an agent normally
+  // closes the full configuration editor, so the explicit "编辑" action selects
+  // the draft and opens that editor in one step.
+  async function openFullConfiguration(draftId: string) {
+    if (draftId !== draft.id && !await selectDraft(draftId)) return;
+    setBuilderAssistantMode("run");
+    setReturnParentId(null);
+    setViewMode("editor");
+    openConfiguration("identity");
+  }
+
   async function openTryRun() {
     setTestRequest(current => current + 1);
     const current = dirty ? await saveDraft() : draft;
@@ -1225,7 +1225,7 @@ export function AgentStudioWorkbench() {
   }
 
   async function openDraftEditor(draftId: string) {
-    if (draftId !== draft.id) await selectDraft(draftId);
+    if (draftId !== draft.id && !await selectDraft(draftId)) return;
     setBuilderAssistantMode("run");
     setReturnParentId(null);
     setConfigEditorOpen(false);
@@ -2107,6 +2107,21 @@ export function AgentStudioWorkbench() {
                     <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" fill="currentColor"><circle cx="5" cy="10" r="1.2"/><circle cx="10" cy="10" r="1.2"/><circle cx="15" cy="10" r="1.2"/></svg>
                   </summary>
                   <div className={styles.actionMenuPopover}>
+                    <button
+                      type="button"
+                      className={styles.actionMenuItem}
+                      data-icon="✎"
+                      disabled={saving || Boolean(switchingDraftId)}
+                      onClick={(event) => {
+                        event.currentTarget.closest("details")?.removeAttribute("open");
+                        void openFullConfiguration(agent.draftId);
+                      }}
+                    >
+                      <span>
+                        <strong>编辑</strong>
+                        <small>进入完整配置</small>
+                      </span>
+                    </button>
                     <button
                       type="button"
                       className={`${styles.actionMenuItem} ${styles.actionMenuDanger}`}
@@ -3320,12 +3335,6 @@ export function AgentStudioWorkbench() {
                     </label>
                   );
                 })}
-                {false && draft.mcpServers.includes("tavily-readonly") && (
-                  <InfoStrip tone="warning">
-                    检索词和待抽取 URL 会发送给 Tavily。发布部署前必须从实际 Sandbox 检查凭据、MCP tools/list 与公网可达性；这不会开放任意 Bash 网络访问。
-                  </InfoStrip>
-                )}
-
                 {visibleMcpOptions.some((item) => item.category === "knowledge") && (
                   <>
                     <div className={styles.groupHeading}>
@@ -4110,10 +4119,9 @@ export function AgentStudioWorkbench() {
           回退是移动当前指针，不会修改或删除任何不可变版本。
         </footer>
       </aside>
-      <AgentBuilderAssistant
+      {editorOpened.current && <AgentBuilderAssistant
         workspaceTarget={workspaceTarget}
         testRequest={testRequest}
-        onEditConfiguration={(section, label) => openConfiguration(section ?? "identity", label)}
         open={viewMode === "editor" && Boolean(workspaceTarget)}
         mode={builderAssistantMode}
         creationSession={builderCreationSession}
@@ -4172,7 +4180,7 @@ export function AgentStudioWorkbench() {
           setBuilderAssistantOpen(true);
           setNotice(`已创建 ${created.displayName}；可继续修改配置，或在右侧输入测试问题`);
         }}
-      />
+      />}
       {confirmationDialog}
     </main>
   );

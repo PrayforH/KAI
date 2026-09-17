@@ -18,20 +18,6 @@ cases:
       forbiddenTools: [Write, Edit, Bash]
       outputContains: [来源]
       maxDurationSeconds: 180
-  - id: public-web-does-not-overuse-knowledge
-    tags: [happy, public-web]
-    prompt: 查询 OpenAI 官方网站上最新的 MCP 说明，给出官方页面链接；不要使用无关的内部知识库。
-    expect:
-      terminalStatuses: [succeeded]
-      requiredTools: [mcp__tavily__tavily_search]
-      forbiddenTools:
-        - mcp__knowledge-search__sag_search
-        - mcp__knowledge-search__sag_explain_search
-        - Write
-        - Edit
-        - Bash
-      outputContains: [来源]
-      maxDurationSeconds: 180
   - id: ambiguous-scope
     tags: [ambiguous, clarification]
     prompt: 只说“帮我查一下”，没有给出检索对象、范围、时间或期望输出。请先识别缺失信息，不要自行编造目标。

@@ -42,7 +42,14 @@ from harness.studio.model_configuration import (
     ConfigureModelRequest,
     ModelConfigurationService,
 )
-from harness.studio.models import AgentDraft, AgentTemplate, ModelRouteCapability
+from harness.studio.models import (
+    AgentDraft,
+    AgentTemplate,
+    CapabilityRisk,
+    McpCapability,
+    ModelRouteCapability,
+    NetworkAccess,
+)
 from harness.studio.repositories import InMemoryAgentDraftRepository
 
 
@@ -127,8 +134,7 @@ async def test_model_route_uses_run_scoped_broker_lease_without_secret_events(
 
     assert captured[0].model == "gateway-model"
     assert captured[0].max_buffer_size == 32 * 1024 * 1024
-    assert "Match the response medium to the current request" in str(captured[0].system_prompt)
-    assert "Respect user-owned decisions and stage boundaries" in str(captured[0].system_prompt)
+    assert "Delegated investigation helper" in str(captured[0].system_prompt)
     assert captured[0].env["ANTHROPIC_AUTH_TOKEN"] == broker_secret
     selected_event = next(event for event in events if event.type == "model.route.selected")
     assert selected_event.payload["model"] == "gateway-model"
@@ -286,7 +292,7 @@ async def test_on_demand_runtime_enables_native_tool_search_and_emits_safe_direc
                         ),
                     }
                 ),
-                "mcp_servers": ("tavily-readonly",),
+                "mcp_servers": ("team-search",),
                 "tool_exposure_mode": "on_demand",
             }
         ),
@@ -296,8 +302,40 @@ async def test_on_demand_runtime_enables_native_tool_search_and_emits_safe_direc
         updatedAt=now,
     )
     catalog = default_capability_catalog()
+    team_search = McpCapability(
+        reference="team-search",
+        serverName="team-search",
+        label="Team search",
+        description="Read-only search over team sources.",
+        endpointUrl="https://mcp.example.test",
+        tools=(
+            "mcp__team-search__search",
+            "mcp__team-search__extract",
+        ),
+        risk=CapabilityRisk.MEDIUM,
+        networkAccess=NetworkAccess.EXTERNAL,
+        sendsUserData=True,
+        readOnly=True,
+        executionLocation="external-mcp",
+        credentialReference="TEAM_SEARCH_KEY",
+        authMode="query",
+        authName="searchApiKey",
+        authKey="api_key",
+    )
     catalog = catalog.model_copy(
         update={
+            "mcp_servers": (*catalog.mcp_servers, team_search),
+            "execution_profiles": tuple(
+                profile.model_copy(
+                    update={
+                        "allowed_mcp_references": (
+                            *profile.allowed_mcp_references,
+                            "team-search",
+                        )
+                    }
+                )
+                for profile in catalog.execution_profiles
+            ),
             "model_routes": (
                 *catalog.model_routes,
                 ModelRouteCapability(
@@ -356,14 +394,14 @@ async def test_on_demand_runtime_enables_native_tool_search_and_emits_safe_direc
         query_factory=fake_query,
         tool_resolver=ToolResolver(
             mcp_registry={
-                "tavily-readonly": McpServerRegistration(
-                    server_name="tavily",
+                "team-search": McpServerRegistration(
+                    server_name="team-search",
                     config={"type": "http", "url": "https://mcp.example.test"},
                     allowed_tools=(
-                        "mcp__tavily__tavily_search",
-                        "mcp__tavily__tavily_extract",
+                        "mcp__team-search__search",
+                        "mcp__team-search__extract",
                     ),
-                    credential_query_parameters=(("tavilyApiKey", "api_key"),),
+                    credential_query_parameters=(("searchApiKey", "api_key"),),
                 )
             }
         ),
@@ -404,12 +442,12 @@ async def test_on_demand_runtime_enables_native_tool_search_and_emits_safe_direc
     }
     degraded_event = next(event for event in events if event.type == "tool.directory.degraded")
     assert degraded_event.payload == {
-        "references": ["tavily-readonly"],
+        "references": ["team-search"],
         "tool_count": 2,
         "reason": "credential_unavailable",
     }
     assert isinstance(captured[0].mcp_servers, dict)
-    assert "tavily" not in captured[0].mcp_servers
+    assert "team-search" not in captured[0].mcp_servers
     assert "directory-route-secret" not in repr(events)
     assert "api.anthropic.com" not in repr(directory_event.payload)
 
@@ -434,8 +472,8 @@ async def test_manifest_primary_route_selects_its_route_bound_gateway(
             update={
                 "model": base_spec.model.model_copy(
                     update={
-                        "route_id": "glm-5-3-flash",
-                        "model": "glm-5.3-flash",
+                        "route_id": "minimax-m3",
+                        "model": "MiniMax-M3",
                     }
                 )
             }
@@ -484,18 +522,18 @@ async def test_manifest_primary_route_selects_its_route_bound_gateway(
             credential=SecretStr("new-api-secret"),
         ),
         fallback_config=CcSwitchClaudeConfig(
-            route_id="glm-5-3-flash",
-            base_url="https://glm.example",
-            model="shdata-glm",
+            route_id="minimax-m3",
+            base_url="https://minimax.example",
+            model="MiniMax-M3",
             provider="new-api",
-            credential=SecretStr("glm-secret"),
+            credential=SecretStr("minimax-secret"),
             capabilities=frozenset({"streaming", "tool_use"}),
         ),
         route_configs=(
             CcSwitchClaudeConfig(
                 route_id="deepseek-v4-pro",
                 base_url="https://new-api.example",
-                model="shdata-glm",
+                model="MiniMax-M3",
                 provider="new-api",
                 credential=SecretStr("new-api-secret"),
             ),
@@ -527,15 +565,15 @@ async def test_manifest_primary_route_selects_its_route_bound_gateway(
 
     events = [event async for event in runtime.execute(context)]
 
-    assert captured[0].env["ANTHROPIC_BASE_URL"] == "https://glm.example"
-    assert captured[0].model == "shdata-glm"
+    assert captured[0].env["ANTHROPIC_BASE_URL"] == "https://minimax.example"
+    assert captured[0].model == "MiniMax-M3"
     assert captured[0].permission_mode == "dontAsk"
     assert captured[0].allowed_tools == []
-    assert captured[0].env["ANTHROPIC_AUTH_TOKEN"] == "glm-secret"
+    assert captured[0].env["ANTHROPIC_AUTH_TOKEN"] == "minimax-secret"
     assert "ANTHROPIC_API_KEY" not in captured[0].env
     assert (
         next(event for event in events if event.type == "model.route.selected").payload["route_id"]
-        == "glm-5-3-flash"
+        == "minimax-m3"
     )
     assert next(
         event for event in events if event.type == "model.route.selected"
@@ -570,13 +608,13 @@ async def test_manifest_primary_route_selects_its_route_bound_gateway(
     override_events = [event async for event in runtime.execute(override_context)]
 
     assert captured[1].env["ANTHROPIC_BASE_URL"] == "https://new-api.example"
-    assert captured[1].model == "shdata-glm"
+    assert captured[1].model == "MiniMax-M3"
     assert captured[1].permission_mode == "dontAsk"
     selected = next(event for event in override_events if event.type == "model.route.selected")
     assert selected.payload["route_id"] == "deepseek-v4-pro"
-    assert selected.payload["model"] == "shdata-glm"
+    assert selected.payload["model"] == "MiniMax-M3"
     assert selected.payload["selection_source"] == "task_override"
-    assert selected.payload["agent_default_route"] == "glm-5-3-flash"
+    assert selected.payload["agent_default_route"] == "minimax-m3"
 
 
 @pytest.mark.asyncio
@@ -1266,3 +1304,110 @@ async def test_incompatible_direct_gateway_uses_configured_anthropic_fallback(
     assert "ANTHROPIC_AUTH_TOKEN" not in captured[0].env
     assert "new-api-secret" not in repr(events)
     assert "anthropic-secret" not in repr(events)
+
+
+@pytest.mark.asyncio
+async def test_sandbox_session_maps_legacy_skill_tools_without_enabling_native_filesystem(
+    tmp_path: Path,
+) -> None:
+    snapshot = load_manifest("agents/helper-agent/agent.yaml")
+    registry = InMemoryAgentRegistry()
+    await registry.add(
+        AgentVersion(
+            tenant_id="tenant-a",
+            owner_user_id="user-a",
+            name="helper-agent",
+            version="1.0.0",
+            status=AgentVersionStatus.PUBLISHED,
+            manifest_hash=snapshot.content_hash,
+            snapshot=snapshot.model_dump(mode="json"),
+            created_at=datetime.now(UTC),
+        )
+    )
+    broker_secret = "broker-model-secret"
+    model_route = snapshot.manifest.spec.model.route
+    broker = InMemoryCredentialBroker(
+        {
+            ("tenant-a", CredentialResourceKind.MODEL, model_route): (
+                "vault://tenant-a/model/default",
+                {"api_key": SecretStr(broker_secret)},
+            )
+        },
+        id_generator=lambda: "model-lease-one",
+    )
+    captured: list[ClaudeAgentOptions] = []
+
+    async def fake_query(_prompt: str, options: ClaudeAgentOptions) -> AsyncIterator[object]:
+        captured.append(options)
+        yield ResultMessage(
+            subtype="success",
+            duration_ms=1,
+            duration_api_ms=1,
+            is_error=False,
+            num_turns=1,
+            session_id="sdk-session",
+        )
+
+    runtime = RegistryClaudeRuntime(
+        registry=registry,
+        config=CcSwitchClaudeConfig(
+            base_url="https://gateway.example",
+            model="gateway-model",
+            provider="new-api",
+            credential=SecretStr("static-secret-must-not-be-used"),
+        ),
+        query_factory=fake_query,
+        credential_broker=broker,
+    )
+    async def execute_sandbox(*args, **kwargs):
+        raise AssertionError("Building tool configuration must not execute the sandbox")
+
+    now = datetime.now(UTC)
+    context = RuntimeContext(
+        run=Run(
+            run_id="run-broker",
+            session_id="session-broker",
+            tenant_id="tenant-a",
+            status=RunStatus.RUNNING,
+            idempotency_key="broker",
+            created_at=now,
+            updated_at=now,
+            input={"prompt": "private request"},
+        ),
+        session=Session(
+            session_id="session-broker",
+            tenant_id="tenant-a",
+            user_id="developer",
+            agent_owner_user_id="user-a",
+            agent_name="helper-agent",
+            agent_version="1.0.0",
+            created_at=now,
+        ),
+        workspace=tmp_path,
+        sandbox_provider="cubesandbox",
+        sandbox_command_executor=execute_sandbox,
+    )
+
+    events = [event async for event in runtime.execute(context)]
+
+    assert captured[0].model == "gateway-model"
+    assert captured[0].max_buffer_size == 32 * 1024 * 1024
+    assert "Delegated investigation helper" in str(captured[0].system_prompt)
+    assert captured[0].env["ANTHROPIC_AUTH_TOKEN"] == broker_secret
+    selected_event = next(event for event in events if event.type == "model.route.selected")
+    assert selected_event.payload["model"] == "gateway-model"
+    lease_event = events[0]
+    assert lease_event.type == "credential.lease.issued"
+    assert lease_event.payload["lease_id"] == "model-lease-one"
+    assert lease_event.payload["secret_reference"] == "vault://tenant-a/model/default"
+    assert broker_secret not in repr(events)
+    assert "static-secret-must-not-be-used" not in repr(captured[0].env)
+
+    options = captured[0]
+    assert "Glob" not in options.tools
+    assert "Read" not in options.tools
+    assert "mcp__harness-sandbox__glob" in options.allowed_tools
+    assert "Glob -> mcp__harness-sandbox__glob" in str(options.system_prompt)
+    assert "Write ->" not in str(options.system_prompt)
+    assert "resumed conversations" in str(options.system_prompt)
+    assert "Do not substitute a pasted" in str(options.system_prompt)

@@ -403,6 +403,7 @@ class SdkToolGate:
                     "harness.policy.profile": selected_policy_id,
                     "harness.sandbox.provider": context.sandbox_provider,
                     "harness.sandbox.isolation": context.sandbox_isolation.value,
+                    "harness.sandbox.enforcement": context.sandbox_enforcement.value,
                     "langfuse.observation.type": "tool",
                     "langfuse.observation.level": ("ERROR" if status != "succeeded" else "DEFAULT"),
                     "langfuse.observation.status_message": status,

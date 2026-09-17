@@ -393,6 +393,7 @@ it("renders model deltas before the completed proposal and keeps changes reviewa
   });
   await click("修改配置");
   await send("改成表格");
+
   expect(host.textContent).toContain("正在逐步输出建议");
   expect(host.querySelector('[aria-label="待确认的配置修改"]')).toBeNull();
   await act(async () => finish!({ baseRevision: 1, reply: "建议完成", changedFields: ["systemPrompt"], changes: { systemPrompt: "表格" } }));

@@ -1,0 +1,34 @@
+[
+  {
+    "channel": 14,
+    "complete": false,
+    "chars": 371,
+    "expected_chars": 378,
+    "tail": "春风吹过山谷，溪水流向远方。\n18：春风吹过山谷，溪水流向远方。\n19：春风吹过山谷，溪水流向远方。\n20：春风吹过山谷，溪水流向远方。\n验证结束标记：END-",
+    "ended": true
+  },
+  {
+    "channel": 13,
+    "complete": true,
+    "chars": 378,
+    "expected_chars": 378,
+    "tail": "溪水流向远方。\n18：春风吹过山谷，溪水流向远方。\n19：春风吹过山谷，溪水流向远方。\n20：春风吹过山谷，溪水流向远方。\n验证结束标记：END-739182。",
+    "ended": true
+  },
+  {
+    "channel": 14,
+    "complete": false,
+    "chars": 371,
+    "expected_chars": 378,
+    "tail": "春风吹过山谷，溪水流向远方。\n18：春风吹过山谷，溪水流向远方。\n19：春风吹过山谷，溪水流向远方。\n20：春风吹过山谷，溪水流向远方。\n验证结束标记：END-",
+    "ended": true
+  },
+  {
+    "channel": 13,
+    "complete": true,
+    "chars": 378,
+    "expected_chars": 378,
+    "tail": "溪水流向远方。\n18：春风吹过山谷，溪水流向远方。\n19：春风吹过山谷，溪水流向远方。\n20：春风吹过山谷，溪水流向远方。\n验证结束标记：END-739182。",
+    "ended": true
+  }
+]

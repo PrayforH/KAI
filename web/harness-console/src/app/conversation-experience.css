@@ -195,19 +195,23 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) {
 /* A quiet turn index, scoped to the current conversation viewport. */
 .harness-thread-frame { position: relative; display: flex; flex: 1; height: 100%; min-width: 0; min-height: 0; }
 .harness-thread-frame > .aui-thread-root { flex: 1; min-width: 0; }
-.conversation-index { position: absolute; z-index: 12; left: 14px; top: 50%; transform: translateY(-50%); max-height: 56%; }
+.conversation-index { position: absolute; z-index: 12; left: 4px; top: 50%; transform: translateY(-50%); max-height: 56%; }
 .conversation-index-rail { display: flex; flex-direction: column; max-height: min(52dvh, 440px); overflow-y: auto; scrollbar-width: none; padding: 4px 0; }
 .conversation-index-rail::-webkit-scrollbar { display: none; }
 .conversation-index button { display: flex; align-items: center; flex: 0 0 10px; width: 32px; height: 10px; padding: 0 0 0 10px; border: 0; background: transparent; cursor: pointer; }
 .conversation-index button > span { width: var(--index-line-width, 4px); height: 2px; background: var(--codex-muted); opacity: .45; transition: width 180ms cubic-bezier(.2,.8,.2,1), opacity 160ms ease, background-color 160ms ease; }
 .conversation-index button[aria-current] > span { opacity: .85; }
 .conversation-index button[data-highlighted="true"] > span { background: var(--codex-ink); opacity: 1; }
+/* Ticks for earlier runs that are not loaded yet: visible in the rail, dimmed,
+   and clicking one pulls the pages needed to reveal that turn. */
+.conversation-index button.conversation-index-pending > span { opacity: .22; }
+.conversation-index button.conversation-index-pending:hover > span { opacity: .55; background: var(--codex-ink); }
 .conversation-index button:focus-visible { outline: 1px solid var(--codex-muted); outline-offset: 0; border-radius: 3px; }
 .conversation-index-preview { position: absolute; left: 38px; transform: translateY(-50%); width: 320px; max-width: calc(100vw - 90px); padding: 12px 14px; border: 1px solid var(--codex-line); border-radius: 13px; background: var(--codex-surface-raised); color: var(--codex-ink); box-shadow: 0 8px 28px #0002; pointer-events: none; font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; animation: index-preview-in 140ms ease-out; }
 .conversation-index-preview strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .conversation-index-preview p { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; margin: 4px 0 0; color: var(--codex-muted); }
 @keyframes index-preview-in { from { opacity: 0; transform: translate(5px, -50%) scale(.98); } to { opacity: 1; transform: translate(0, -50%) scale(1); } }
-@media (max-width: 640px) { .conversation-index { left: 1px; } .conversation-index button { width: 20px; } .conversation-index button { padding-left: 5px; } .conversation-index-preview { left: 38px; } .harness-thread-frame .aui-thread-viewport { padding-left: 30px !important; } }
+@media (max-width: 640px) { .conversation-index { left: 0; } .conversation-index button { width: 20px; } .conversation-index button { padding-left: 5px; } .conversation-index-preview { left: 38px; } .harness-thread-frame .aui-thread-viewport { padding-left: 30px !important; } }
 @media (prefers-reduced-motion: reduce) { .conversation-index button > span { transition: none; } .conversation-index-preview { animation: none; } }
 /* The focused builder uses its own full-width toolbar and returns to the catalog. */
 body.codex-theme-v1:has(.console-shell) .console-shell.studio-unified:has([data-build-workspace="true"]) { grid-template-columns: minmax(0, 1fr); }
@@ -368,6 +372,133 @@ body.codex-theme-v1 .task-version-switcher .task-agent-switcher-branch svg {
   stroke-linejoin: round;
 }
 
+/* Keep the disclosure truly collapsed even when the theme sets display:block. */
+body.codex-theme-v1 .execution-tree[hidden] { display: none; }
+/* The moving dark band is clipped to glyphs, so it never covers content. */
+body.codex-theme-v1 .execution-ribbon .execution-text-sweep {
+  color: transparent;
+  background-image: linear-gradient(100deg, var(--codex-muted) 35%, #101010 48%, var(--codex-muted) 61%);
+  background-size: 260% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  animation: execution-text-sweep 1.8s linear infinite;
+}
+@keyframes execution-text-sweep {
+  from { background-position: 100% 0; }
+  to { background-position: 0% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body.codex-theme-v1 .execution-ribbon .execution-text-sweep { animation: none; background: none; color: var(--codex-muted); }
+}
+
+body.codex-theme-v1 div.execution-disclosure { cursor: default; }
+body.codex-theme-v1 .execution-ribbon,
+body.codex-theme-v1 .execution-tree,
+body.codex-theme-v1 .execution-log,
+body.codex-theme-v1 .execution-log > * { min-width: 0; max-width: 100%; }
+body.codex-theme-v1 .execution-log { grid-template-columns: minmax(0, 1fr); }
+body.codex-theme-v1 .execution-reasoning { width: 100%; overflow: hidden; box-sizing: border-box; color: var(--codex-muted); font-size: 12px; }
+body.codex-theme-v1 .execution-reasoning-summary {
+  display: flex; align-items: center; gap: 9px; min-height: 26px; min-width: 0; max-width: 100%;
+  list-style: none; cursor: pointer; position: relative; overflow: hidden;
+}
+body.codex-theme-v1 .execution-reasoning-summary::-webkit-details-marker { display: none; }
+body.codex-theme-v1 .execution-reasoning-icon {
+  width: 16px; height: 16px; flex: 0 0 16px; color: var(--codex-faint);
+}
+body.codex-theme-v1 .execution-reasoning-icon svg {
+  width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.65;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+body.codex-theme-v1 .execution-reasoning-label,
+body.codex-theme-v1 .execution-reasoning-separator { flex: 0 0 auto; white-space: nowrap; }
+body.codex-theme-v1 .execution-reasoning-preview { display: block; flex: 1 1 0%; min-width: 0; overflow: hidden; white-space: nowrap; color: var(--codex-faint); }
+body.codex-theme-v1 .execution-reasoning[open] .execution-reasoning-separator { display: none; }
+body.codex-theme-v1 .execution-reasoning[open] .execution-reasoning-preview { display: none; }
+body.codex-theme-v1 .execution-reasoning-body { padding: 6px 0 6px 20px; overflow-wrap: anywhere; }
+body.codex-theme-v1 .execution-reasoning:not([open]) > .execution-reasoning-body { display: none; }
+body.codex-theme-v1 .execution-reasoning-body .aui-md { color: var(--codex-muted); font-size: 12px; }
+body.codex-theme-v1 .execution-row-sweep { position: relative; overflow: hidden; }
+body.codex-theme-v1 .execution-row-sweep::after {
+  content: ""; position: absolute; inset-block: 0; left: 0; width: 220px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--codex-bg, #101010) 65%, transparent), transparent);
+  animation: execution-row-sweep 2.6s ease-out infinite; pointer-events: none;
+}
+@keyframes execution-row-sweep { from { left: -220px; } 90%, to { left: 100%; } }
+@media (prefers-reduced-motion: reduce) {
+  body.codex-theme-v1 .execution-row-sweep::after { animation: none; display: none; }
+  body.codex-theme-v1 .execution-reasoning-chevron { transition: none; }
+}
+/* Attachment cards share one box for preview, metadata and upload state. */
+body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments {
+  box-sizing: border-box;
+  display: flex;
+  flex: none;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 12px 12px 4px;
+}
+body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments:empty { display: none; }
+body.codex-theme-v1 .harness-composer-shell .composer-file-card {
+  position: relative;
+  flex: 0 0 232px;
+  width: 232px;
+  max-width: 100%;
+  min-width: 0;
+}
+body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments .aui-attachment-root {
+  height: auto;
+  min-width: 0;
+  margin: 0;
+}
+body.codex-theme-v1 .harness-composer-shell .aui-attachment-content {
+  box-sizing: border-box;
+  width: 100%;
+  height: 76px;
+  min-width: 0;
+  justify-content: flex-start;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 32px 24px 10px;
+  border-radius: 10px;
+}
+body.codex-theme-v1 .harness-composer-shell .aui-attachment-thumb {
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  overflow: hidden;
+}
+body.codex-theme-v1 .harness-composer-shell .aui-attachment-thumb img { width: 100%; height: 100%; object-fit: cover; }
+body.codex-theme-v1 .harness-composer-shell .aui-attachment-text { flex: 1 1 0; min-width: 0; }
+body.codex-theme-v1 .harness-composer-shell .aui-attachment-name {
+  display: block;
+  margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  line-height: 18px;
+}
+body.codex-theme-v1 .harness-composer-shell .aui-attachment-type { margin: 0; font-size: 11px; line-height: 18px; }
+body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments .aui-attachment-remove {
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  padding: 4px;
+}
+body.codex-theme-v1 .harness-composer-shell .composer-file-card .attachment-upload-status {
+  inset: auto 32px 9px 56px;
+  color: var(--codex-muted);
+  font-size: 10px;
+  line-height: 14px;
+}
+body.codex-theme-v1 .harness-composer-shell .composer-file-card .attachment-upload-status.error { color: var(--codex-danger, #c45443); }
+body.codex-theme-v1 .harness-composer-shell .composer-file-card .attachment-upload-status > span { max-width: 100%; }
+body.codex-theme-v1 .harness-composer-shell .composer-file-card .attachment-upload-track { margin-top: 2px; }
+
 /* Load-earlier pagination affordance for long threads (2026-09-17). */
 .history-load-earlier {
   position: absolute;
@@ -376,19 +507,11 @@ body.codex-theme-v1 .task-version-switcher .task-agent-switcher-branch svg {
   transform: translateX(-50%);
   z-index: 6;
 }
-.history-load-earlier-button {
-  border: 1px solid rgba(28, 28, 31, 0.16);
-  background: var(--background, #ffffff);
-  color: inherit;
-  border-radius: 999px;
-  padding: 4px 14px;
+.history-load-earlier-status {
+  color: var(--codex-muted, #6b6b70);
   font-size: 12px;
   line-height: 20px;
-  cursor: pointer;
-  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.08);
 }
-.history-load-earlier-button:disabled { opacity: 0.6; cursor: default; }
-body.codex-theme-v1 .history-load-earlier-button { background: var(--codex-surface, #ffffff); }
 
 /* Oversized-message clamp notice (2026-09-17). */
 .aui-md-clamp {
@@ -412,4 +535,104 @@ body.codex-theme-v1 .history-load-earlier-button { background: var(--codex-surfa
   font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
+}
+
+/* Execution timeline geometry (2026-09-17).
+   The log keeps ONE text column: a 16px icon gutter, an 8px gap, then text at
+   24px. Commentary prose, reasoning labels and expanded bodies all start on
+   that column so the middle of the reply no longer has a ragged left edge.
+   The values are declared explicitly because the same selectors are defined
+   more than once across the theme files with different gutters. */
+body.codex-theme-v1 .execution-tree,
+body.codex-theme-v1 .execution-log { margin-left: 0; padding-left: 0; }
+body.codex-theme-v1 .execution-log > * { margin-left: 0; padding-left: 0; }
+
+body.codex-theme-v1 .execution-action-summary,
+body.codex-theme-v1 .execution-action-static {
+  grid-template-columns: 16px minmax(0, 1fr) 8px;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+}
+body.codex-theme-v1 .execution-action-static { grid-template-columns: 16px minmax(0, 1fr); }
+body.codex-theme-v1 .execution-action-icon { width: 16px; height: 16px; flex: 0 0 16px; }
+/* Icons draw ~2px inside their 16px box, so the process block is nudged left to
+   share the exact left edge of the reply text. The reference is the answer
+   text, not the icon box. */
+body.codex-theme-v1 .execution-action-icon,
+body.codex-theme-v1 .execution-reasoning-icon { margin-left: -2px; }
+body.codex-theme-v1 .execution-action-copy { padding-left: 0; }
+body.codex-theme-v1 .execution-action-body { margin: 6px 0 0 24px; width: calc(100% - 24px); }
+
+/* Process prose is flush with the reply text's left edge; only tool labels and
+   reasoning bodies sit on the 24px text column. The inner content wrapper also
+   carries an 8px margin and a 25px padding in the base theme, which pushed the
+   prose ~25px right of everything else. */
+body.codex-theme-v1 .execution-commentary,
+body.codex-theme-v1 .execution-commentary-content {
+  margin-left: 0;
+  padding-left: 0;
+  border-left: 0;
+}
+
+/* One vertical rhythm: every log row keeps the same box height, so 思考 and the
+   progress prose stop reading as more spaced than the tool rows. */
+body.codex-theme-v1 .execution-reasoning-summary { min-height: 20px; }
+/* The base theme also gives process prose 10px vertical margins, which read as
+   extra space around it; the log's own gap already spaces every row. */
+html body.codex-theme-v1 .execution-commentary { margin: 0; padding: 0; }
+
+/* Symmetric padding keeps the header text and its chevron centred in the row
+   (4px top against 9px bottom used to push them high). */
+html body.codex-theme-v1 .execution-ribbon > .execution-disclosure {
+  padding: 6px 88px 6px 0;
+}
+
+/* Reasoning follows the ZCode reading: label row, then the body indented on
+   the text column behind a hairline rule. */
+body.codex-theme-v1 .execution-reasoning-summary { gap: 8px; }
+body.codex-theme-v1 .execution-reasoning-label { color: var(--codex-ink-soft); font-weight: 520; }
+html body.codex-theme-v1 .execution-reasoning-chevron {
+  flex: 0 0 auto;
+  width: 6px; height: 6px;
+  margin: 0 1px 0 2px;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 130ms ease;
+  opacity: .72;
+}
+html body.codex-theme-v1 .execution-reasoning[open] .execution-reasoning-chevron {
+  transform: rotate(45deg);
+}
+/* The rule is centred on the nudged thinking icon (its centre is 6px), and the
+   body keeps a fixed height with its own scrollbar so a long reasoning trace
+   never stretches the reply. */
+body.codex-theme-v1 .execution-reasoning-body {
+  margin: 2px 0 0 6px;
+  padding: 2px 8px 2px 18px;
+  border-left: 1px solid var(--codex-line);
+  max-height: 250px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  color: var(--codex-muted);
+  line-height: 1.6;
+}
+
+/* Disclosure chevrons: the tip points right while collapsed and down while
+   open, and sits centred on its row. For a right+bottom bordered square
+   rotate(-45deg) points right and rotate(45deg) points down. */
+html body.codex-theme-v1 .execution-action-chevron {
+  align-self: center;
+  margin-top: 0;
+  transform: rotate(-45deg);
+}
+html body.codex-theme-v1 .execution-action[open] .execution-action-chevron { transform: rotate(45deg); }
+html body.codex-theme-v1 .execution-ribbon > .execution-disclosure .execution-chevron {
+  margin-top: 0;
+  transform: rotate(-45deg);
+}
+html body.codex-theme-v1 .execution-ribbon[data-open="true"] > .execution-disclosure .execution-chevron {
+  transform: rotate(45deg);
 }
