@@ -582,13 +582,13 @@ body.codex-theme-v1 .execution-commentary-content {
 /* One vertical rhythm: every log row keeps the same box height, so 思考 and the
    progress prose stop reading as more spaced than the tool rows. */
 body.codex-theme-v1 .execution-reasoning-summary { min-height: 20px; }
-body.codex-theme-v1 .execution-commentary { padding-bottom: 0; }
+html body.codex-theme-v1 .execution-commentary { padding-bottom: 0; }
 
 /* Reasoning follows the ZCode reading: label row, then the body indented on
    the text column behind a hairline rule. */
 body.codex-theme-v1 .execution-reasoning-summary { gap: 8px; }
 body.codex-theme-v1 .execution-reasoning-label { color: var(--codex-ink-soft); font-weight: 520; }
-body.codex-theme-v1 .execution-reasoning-chevron {
+html body.codex-theme-v1 .execution-reasoning-chevron {
   flex: 0 0 auto;
   width: 6px; height: 6px;
   margin: 0 1px 0 2px;
@@ -598,7 +598,7 @@ body.codex-theme-v1 .execution-reasoning-chevron {
   transition: transform 130ms ease;
   opacity: .72;
 }
-body.codex-theme-v1 .execution-reasoning[open] .execution-reasoning-chevron {
+html body.codex-theme-v1 .execution-reasoning[open] .execution-reasoning-chevron {
   transform: rotate(45deg);
 }
 /* The rule is centred on the nudged thinking icon (its centre is 6px), and the
@@ -619,16 +619,16 @@ body.codex-theme-v1 .execution-reasoning-body {
 /* Disclosure chevrons: the tip points right while collapsed and down while
    open, and sits centred on its row. For a right+bottom bordered square
    rotate(-45deg) points right and rotate(45deg) points down. */
-body.codex-theme-v1 .execution-action-chevron {
+html body.codex-theme-v1 .execution-action-chevron {
   align-self: center;
   margin-top: 0;
   transform: rotate(-45deg);
 }
-body.codex-theme-v1 .execution-action[open] .execution-action-chevron { transform: rotate(45deg); }
-body.codex-theme-v1 .execution-ribbon > .execution-disclosure .execution-chevron {
+html body.codex-theme-v1 .execution-action[open] .execution-action-chevron { transform: rotate(45deg); }
+html body.codex-theme-v1 .execution-ribbon > .execution-disclosure .execution-chevron {
   margin-top: 0;
   transform: rotate(-45deg);
 }
-body.codex-theme-v1 .execution-ribbon[data-open="true"] > .execution-disclosure .execution-chevron {
+html body.codex-theme-v1 .execution-ribbon[data-open="true"] > .execution-disclosure .execution-chevron {
   transform: rotate(45deg);
 }
