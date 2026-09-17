@@ -87,6 +87,12 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
   const deletionStartedAt = useRef<number | null>(null);
 
   const isWeknora = base?.engine === "weknora";
+  // The WeKnora wiki/graph endpoints reject a RAG base with "Wiki feature is not
+  // enabled for this knowledge base", so those tabs stay disabled for it.
+  const supportsWiki = isWeknora && base?.kbType !== "rag";
+  useEffect(() => {
+    if (base && !supportsWiki && tab !== "docs") setTab("docs");
+  }, [base, supportsWiki, tab]);
   const SPREADSHEET_TYPES = ["xls", "xlsx", "xlsm", "csv"];
   const isSpreadsheet = (fileType: string) =>
     SPREADSHEET_TYPES.includes((fileType || "").toLowerCase());
@@ -517,7 +523,7 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
             className={`${styles.tab} ${tab === "wiki" ? styles.tabActive : ""}`}
             aria-pressed={tab === "wiki"}
             onClick={() => setTab("wiki")}
-            disabled={!isWeknora}
+            disabled={!supportsWiki}
           >
             Wiki
           </button>
@@ -526,7 +532,7 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
             className={`${styles.tab} ${tab === "graph" ? styles.tabActive : ""}`}
             aria-pressed={tab === "graph"}
             onClick={() => setTab("graph")}
-            disabled={!isWeknora}
+            disabled={!supportsWiki}
           >
             图谱
           </button>
