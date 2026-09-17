@@ -9,6 +9,7 @@ import {
   type StudioKnowledgeBase,
   type StudioKnowledgeBaseConfig,
   type WikiGranularity,
+  StudioApiError,
 } from "../../lib/studio-client";
 import { isValidKnowledgeReference, slugifyKnowledgeReference } from "../../lib/knowledge-reference";
 import { KnowledgeMembersPanel } from "./knowledge-members-panel";
@@ -144,7 +145,10 @@ export function KnowledgeConsole() {
   }, [bases, filter, user?.user_id]);
 
   const referenceValid = isValidKnowledgeReference(reference);
-  const createDisabled = creating || !referenceValid || !displayName.trim();
+  // The list is already loaded here, so the form can rule out an identifier that
+  // would come back as a 409 conflict instead of submitting it.
+  const referenceTaken = bases.some((base) => base.reference === reference.trim());
+  const createDisabled = creating || !referenceValid || referenceTaken || !displayName.trim();
 
   const usesRag = kbType === "rag" || kbType === "hybrid";
   const usesWiki = kbType === "wiki" || kbType === "hybrid";
@@ -212,9 +216,21 @@ export function KnowledgeConsole() {
       setShowCreate(false);
       setNotice(`知识库「${created.displayName}」已创建`);
       resetDraft();
-      await load();
+      try {
+        await load();
+      } catch {
+        // The base exists; only the list refresh failed. Never report it as a
+        // failed creation or the operator retries and hits a 409.
+        setError(`知识库「${created.displayName}」已创建，但列表刷新失败，请手动刷新页面。`);
+      }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "创建知识库失败");
+      if (cause instanceof StudioApiError && cause.status === 409) {
+        setError(`标识「${reference.trim()}」已被占用。它可能就是你之前创建成功的那一个：请先关闭本窗口，在列表里确认；或换一个标识再建。`);
+      } else if (cause instanceof StudioApiError && cause.status === 422) {
+        setError("创建被拒绝：标识需为小写字母、数字与连字符，并以字母开头。");
+      } else {
+        setError(cause instanceof Error ? cause.message : "创建知识库失败");
+      }
     } finally {
       setCreating(false);
     }
@@ -422,11 +438,13 @@ export function KnowledgeConsole() {
                 />
                 <p
                   id="kb-reference-hint"
-                  className={reference.trim() && !referenceValid ? styles.fieldError : styles.fieldHint}
+                  className={referenceTaken || (reference.trim() && !referenceValid) ? styles.fieldError : styles.fieldHint}
                 >
-                  {reference.trim() && !referenceValid
-                    ? "标识只能使用小写字母、数字和连字符，并以字母开头，例如 case-library。"
-                    : "标识用于地址与检索，创建后不可修改。"}
+                  {referenceTaken
+                    ? `标识「${reference.trim()}」已经存在，请换一个（例如 ${reference.trim()}-2）。`
+                    : reference.trim() && !referenceValid
+                      ? "标识只能使用小写字母、数字和连字符，并以字母开头，例如 case-library。"
+                      : "标识用于地址与检索，创建后不可修改。"}
                 </p>
               </div>
               <div className={styles.field}>
