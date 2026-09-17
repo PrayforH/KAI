@@ -56,7 +56,9 @@ from harness.runtime.fake import FakeRuntime
 from harness.runtime.subagent_governance import SubagentGovernanceError
 from harness.runtime.tools import ToolResolutionError
 from harness.sandbox.base import SandboxHandle, SandboxIsolation, SandboxProvider
+from harness.sandbox.lease import SandboxLeaseService
 from harness.sandbox.local import LocalSandboxProvider
+from harness.storage.sandbox_lease_repository import InMemorySandboxLeaseRepository
 from harness.worker.orchestrator import (
     PolicyResolver,
     RunOrchestrator,
@@ -530,6 +532,7 @@ async def arrange(
     events_override: InMemoryEventRepository | None = None,
     context_checkpoints: ContextCheckpointService | None = None,
     context_service: ContextService | None = None,
+    sandbox_leases: SandboxLeaseService | None = None,
 ):
     sessions = InMemorySessionRepository()
     runs = InMemoryRunRepository()
@@ -589,6 +592,7 @@ async def arrange(
         metrics=metrics,
         context_checkpoints=context_checkpoints,
         context_service=context_service,
+        sandbox_leases=sandbox_leases,
     )
     return orchestrator, runtime, runs, event_repository
 
@@ -2046,3 +2050,79 @@ async def test_recovered_provisioning_run_is_reclaimed_and_completed(
         "message.completed",
         "run.succeeded",
     ]
+
+
+@pytest.mark.asyncio
+async def test_sandbox_event_reports_the_session_trust_floor(tmp_path: Path) -> None:
+    """A Session that ingested untrusted content publishes what its Run failed to reach."""
+
+    service = ContextService(
+        InMemoryContextRepository(),
+        clock=lambda: NOW,
+        id_generator=ids(),
+    )
+    orchestrator, _, _, event_repository = await arrange(
+        tmp_path,
+        context_service=service,
+    )
+    await service.promote_trust(
+        "tenant-a", "user-1", "session-1", ContextTrust.UNTRUSTED
+    )
+
+    result = await orchestrator.execute("tenant-a", "run-1")
+
+    assert result.status is RunStatus.SUCCEEDED
+    events = await event_repository.list_after("tenant-a", "run-1", 0)
+    provisioned = next(event for event in events if event.type == "sandbox.provisioned")
+    assert provisioned.payload["trust_watermark"] == "untrusted"
+    assert provisioned.payload["trust_floor"] == "full"
+    assert provisioned.payload["trust_floor_met"] is False
+
+
+@pytest.mark.asyncio
+async def test_sandbox_event_reports_a_met_floor_for_a_clean_session(
+    tmp_path: Path,
+) -> None:
+    service = ContextService(
+        InMemoryContextRepository(),
+        clock=lambda: NOW,
+        id_generator=ids(),
+    )
+    orchestrator, _, _, event_repository = await arrange(
+        tmp_path,
+        context_service=service,
+    )
+
+    result = await orchestrator.execute("tenant-a", "run-1")
+
+    assert result.status is RunStatus.SUCCEEDED
+    events = await event_repository.list_after("tenant-a", "run-1", 0)
+    provisioned = next(event for event in events if event.type == "sandbox.provisioned")
+    assert provisioned.payload["trust_watermark"] == "safe"
+    assert provisioned.payload["trust_floor"] == "none"
+    assert provisioned.payload["trust_floor_met"] is True
+
+
+@pytest.mark.asyncio
+async def test_run_acquires_reports_and_releases_a_sandbox_lease(tmp_path: Path) -> None:
+    """Ownership is durable for the Run and released once its sandbox is gone."""
+
+    leases = SandboxLeaseService(
+        InMemorySandboxLeaseRepository(),
+        clock=lambda: NOW,
+        id_generator=ids(),
+    )
+    orchestrator, _, _, event_repository = await arrange(tmp_path, sandbox_leases=leases)
+
+    result = await orchestrator.execute("tenant-a", "run-1")
+
+    assert result.status is RunStatus.SUCCEEDED
+    events = await event_repository.list_after("tenant-a", "run-1", 0)
+    provisioned = next(event for event in events if event.type == "sandbox.provisioned")
+    assert provisioned.payload["lease_id"]
+    assert provisioned.payload["lease_epoch"] == 1
+    stored = await leases.for_run("tenant-a", "run-1")
+    assert stored is not None
+    assert stored.state.value == "released"
+    assert stored.owner == "run-fence:1"
+    assert await leases.live("tenant-a") == []

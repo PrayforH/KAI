@@ -21,6 +21,12 @@ class Settings(BaseSettings):
         "local", "daytona", "e2b", "kubernetes", "cubesandbox", "opensandbox"
     ] = "local"
     sandbox_execution_mode: Literal["remote_cli", "worker_cli_deferred"] = "remote_cli"
+    # `report` records the Session trust floor in the run events and lets the
+    # Run proceed; `enforce` refuses a Run whose backend cannot reach it.
+    sandbox_trust_floor_mode: Literal["report", "enforce"] = "report"
+    # Durable sandbox ownership: how long a lease stays valid without a renewal
+    # before a reaper may reclaim the sandbox its owner abandoned.
+    sandbox_lease_ttl_seconds: int = Field(default=3600, ge=60, le=86_400)
     allow_unsafe_local_sandbox: bool = False
     cc_switch_settings_path: str = "~/.claude/settings.json"
     codex_cli_path: str = "/usr/local/bin/codex"

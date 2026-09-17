@@ -1194,3 +1194,29 @@ class AguiThreadBindingRow(Base):
     thread_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     session_id: Mapped[str] = mapped_column(String(128), index=True)
     payload: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
+class SandboxLeaseRow(Base):
+    """Durable ownership record for one provisioned remote sandbox."""
+
+    __tablename__ = "sandbox_leases"
+    __table_args__ = (
+        Index("ix_sandbox_leases_session", "tenant_id", "session_id", "epoch"),
+        Index("ix_sandbox_leases_expiry", "state", "expires_at"),
+        Index("ix_sandbox_leases_run", "tenant_id", "run_id"),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    lease_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    session_id: Mapped[str] = mapped_column(String(128))
+    run_id: Mapped[str] = mapped_column(String(128))
+    owner: Mapped[str] = mapped_column(String(160))
+    epoch: Mapped[int] = mapped_column(Integer)
+    provider: Mapped[str] = mapped_column(String(64))
+    sandbox_id: Mapped[str] = mapped_column(String(200))
+    state: Mapped[str] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    renewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reclaimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

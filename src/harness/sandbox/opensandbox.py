@@ -50,6 +50,7 @@ from harness.sandbox.claude_cli import (
     version_pin,
     version_text,
 )
+from harness.sandbox.governance import SandboxInstance
 from harness.sandbox.opensandbox_session import OpenSandboxPtySession
 
 EXECD_PORT = 44_772
@@ -722,6 +723,58 @@ class OpenSandboxSandboxProvider:
                 await sandbox.kill()
         finally:
             shutil.rmtree(handle.path, ignore_errors=True)
+
+    async def inventory(self) -> Sequence[SandboxInstance]:
+        """Every sandbox the platform currently runs, for orphan reconciliation."""
+
+        response = await self._client.http.get("/v1/sandboxes", params={"page_size": 100})
+        if response.status_code >= 400:
+            raise RuntimeError(
+                f"OpenSandbox failed to list sandboxes: HTTP {response.status_code}"
+            )
+        payload = response.json()
+        items = payload.get("items") if isinstance(payload, Mapping) else None
+        if not isinstance(items, list):
+            raise RuntimeError("OpenSandbox returned an unexpected sandbox listing")
+        instances: list[SandboxInstance] = []
+        for item in items:
+            if not isinstance(item, Mapping):
+                continue
+            sandbox_id = str(item.get("id", ""))
+            if not sandbox_id:
+                continue
+            metadata = item.get("metadata")
+            instances.append(
+                SandboxInstance(
+                    sandbox_id=sandbox_id,
+                    metadata={
+                        str(key): str(value)
+                        for key, value in (
+                            metadata.items() if isinstance(metadata, Mapping) else ()
+                        )
+                    },
+                )
+            )
+        return instances
+
+    async def platform_version(self) -> str | None:
+        response = await self._client.http.get("/version")
+        if response.status_code >= 400:
+            return None
+        version = response.json().get("version")
+        return None if version is None else str(version)
+
+    async def reclaim(self, sandbox_id: str) -> bool:
+        """Destroy a sandbox the platform owns but no live lease claims."""
+
+        response = await self._client.http.delete(f"/v1/sandboxes/{sandbox_id}")
+        if response.status_code == 404:
+            return True
+        if response.status_code >= 400:
+            raise RuntimeError(
+                f"OpenSandbox failed to reclaim {sandbox_id}: HTTP {response.status_code}"
+            )
+        return True
 
 
 def build_opensandbox_provider(settings: Settings) -> OpenSandboxSandboxProvider:

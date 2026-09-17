@@ -103,15 +103,21 @@ from harness.runtime.registry_codex_runtime import RegistryCodexRuntime, Registr
 from harness.runtime.registry_runtime import RegistryClaudeRuntime
 from harness.runtime.sdk_tool_gate import SdkToolGate
 from harness.runtime.session_store import PostgresSessionStore
-from harness.sandbox.base import SandboxProvider, provider_meets_enforcement_floor
+from harness.sandbox.base import (
+    SandboxProvider,
+    provider_meets_enforcement_floor,
+    trust_enforcement_floor,
+)
 from harness.sandbox.cubesandbox import build_cubesandbox_provider
 from harness.sandbox.daytona import DaytonaSandboxProvider, SdkDaytonaClient
 from harness.sandbox.deferred import DeferredToolSandboxProvider
 from harness.sandbox.e2b import E2BSandboxProvider, SdkE2BClient
+from harness.sandbox.governance import SandboxGovernanceService
 from harness.sandbox.kubernetes import (
     KubectlKubernetesClient,
     KubernetesSandboxProvider,
 )
+from harness.sandbox.lease import SandboxLeaseService
 from harness.sandbox.local import LocalSandboxProvider
 from harness.sandbox.opensandbox import (
     OpenSandboxSandboxProvider,
@@ -168,6 +174,7 @@ from harness.storage.redis import (
 )
 from harness.storage.reliability_repository import PostgresReliabilityRepository
 from harness.storage.repositories import PostgresEventRepository, PostgresRunRepository
+from harness.storage.sandbox_lease_repository import PostgresSandboxLeaseRepository
 from harness.storage.sharing_repository import PostgresTeamSpaceRepository
 from harness.storage.studio_repository import PostgresAgentDraftRepository
 from harness.storage.transcript_checkpoint import PostgresTranscriptCheckpointProvider
@@ -366,6 +373,18 @@ def _sandbox(settings: Settings) -> SandboxProvider:
     )
 
 
+def _configured_sandbox_provider(backend: SandboxProvider) -> str:
+    """The provider id the deployment actually runs, for enforcement checks."""
+
+    if isinstance(backend, KubernetesSandboxProvider):
+        return "gvisor"
+    if isinstance(backend, (E2BSandboxProvider, OpenSandboxSandboxProvider)):
+        return backend.provider_name
+    if isinstance(backend, DaytonaSandboxProvider):
+        return "daytona"
+    return "local"
+
+
 def _runtime_sandbox(
     settings: Settings,
     backend: SandboxProvider,
@@ -560,6 +579,13 @@ def build_production_container(
 
     def ids(prefix: str) -> str:
         return f"{prefix}_{uuid4().hex}"
+    sandbox_governance: SandboxGovernanceService | None = None
+    sandbox_leases = SandboxLeaseService(
+        PostgresSandboxLeaseRepository(sessions),
+        clock=clock,
+        id_generator=ids,
+        default_ttl_seconds=settings.sandbox_lease_ttl_seconds,
+    )
 
     context_service = ContextService(
         PostgresContextRepository(sessions),
@@ -1059,6 +1085,21 @@ def build_production_container(
         mcp_probe = StreamableHttpMcpProbe(tool_resolver)
 
         async def resolve_runtime_sandbox(tenant_id: str, session: Session) -> SandboxProvider:
+            actual = _configured_sandbox_provider(runtime_sandbox_backend)
+            # A Session's trust high-watermark sets the weakest backend it still
+            # accepts, independent of any published execution profile: once
+            # untrusted content entered the Session, isolation may not drop.
+            trust_state = await context_service.state(
+                tenant_id,
+                session.resolved_agent_owner_user_id,
+                session.session_id,
+            )
+            trust_floor = trust_enforcement_floor(trust_state.trust_high_watermark)
+            if (
+                settings.sandbox_trust_floor_mode == "enforce"
+                and not provider_meets_enforcement_floor(actual, trust_floor)
+            ):
+                raise RuntimeError("session_trust_enforcement_below_floor")
             if session.deployment_snapshot_id is not None:
                 snapshot = await deployment_repository.get_snapshot(
                     tenant_id, session.deployment_snapshot_id
@@ -1074,18 +1115,6 @@ def build_production_container(
                 )
                 if profile is None:
                     raise RuntimeError("deployment_execution_profile_unavailable")
-                actual = (
-                    "gvisor"
-                    if isinstance(runtime_sandbox_backend, KubernetesSandboxProvider)
-                    else runtime_sandbox_backend.provider_name
-                    if isinstance(
-                        runtime_sandbox_backend,
-                        (E2BSandboxProvider, OpenSandboxSandboxProvider),
-                    )
-                    else "daytona"
-                    if isinstance(runtime_sandbox_backend, DaytonaSandboxProvider)
-                    else "local"
-                )
                 if profile.sandbox_provider != actual:
                     raise RuntimeError("execution_profile_sandbox_provider_mismatch")
                 # The profile declares the weakest enforcement it accepts; a run
@@ -1128,6 +1157,12 @@ def build_production_container(
         runtime = FakeRuntime()
         runtime_sandbox = LocalSandboxProvider()
         runtime_sandbox_backend = runtime_sandbox
+        sandbox_governance = SandboxGovernanceService(
+            sandbox_leases,
+            runtime_sandbox_backend,
+            clock=clock,
+            metrics=reliability_metrics,
+        )
         preflight_sandbox = runtime_sandbox
         model_probe = FakeModelPreflightProbe()
         mcp_probe = FakeMcpPreflightProbe()
@@ -1179,6 +1214,7 @@ def build_production_container(
             credential_broker.revoke_run if credential_broker is not None else None
         ),
         sandbox_resolver=sandbox_resolver,
+        sandbox_leases=sandbox_leases,
         quotas=enforced_quotas,
         quota_plan_resolver=run_quota_plan,
         metrics=reliability_metrics,
@@ -1280,6 +1316,12 @@ def build_production_container(
         )
     if sandbox_maintenance is not None:
         maintenance.append(MaintenanceReaper("sandbox-expiry", "sandbox", sandbox_maintenance))
+    if sandbox_governance is not None and sandbox_governance.can_reconcile:
+        maintenance.append(
+            MaintenanceReaper(
+                "sandbox-orphans", "sandbox", sandbox_governance.reclaim_orphans
+            )
+        )
     reliability_controller = ReliabilityController(
         runs=runs,
         events=events,
@@ -1362,6 +1404,8 @@ def build_production_container(
         event_service=events,
         task_queue=queue,
         session_gate=session_gate,
+        sandbox_leases=sandbox_leases,
+        sandbox_governance=sandbox_governance,
         observability=observability,
         runtime=runtime,
         worker=worker,

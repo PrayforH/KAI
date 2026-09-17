@@ -21,6 +21,7 @@ from harness.governance.models import (
     SimulateGovernedPolicyRequest,
 )
 from harness.governance.service import GovernanceService
+from harness.sandbox.governance import SandboxGovernanceReport, SandboxGovernanceService
 from harness.studio.api import (
     StudioActor,
     require_studio_deployer,
@@ -206,3 +207,27 @@ async def list_policy_publications(
     service: Annotated[GovernanceService, Depends(get_governance_service)],
 ) -> list[PolicyPublication]:
     return list(await service.list_publications(actor.tenant_id, policy_id))
+
+
+def get_sandbox_governance(request: Request) -> SandboxGovernanceService:
+    container = getattr(request.app.state, "container", None)
+    service = getattr(container, "sandbox_governance", None)
+    if not isinstance(service, SandboxGovernanceService):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "code": "sandbox_governance_not_configured",
+                "message": "Sandbox instance governance is not configured",
+            },
+        )
+    return service
+
+
+@router.get("/sandbox-instances", response_model=SandboxGovernanceReport)
+async def list_sandbox_instances(
+    actor: Annotated[StudioActor, Depends(require_studio_reader)],
+    service: Annotated[SandboxGovernanceService, Depends(get_sandbox_governance)],
+) -> SandboxGovernanceReport:
+    """Durable sandbox ownership for this tenant: leases against live instances."""
+
+    return await service.report(tenant_id=actor.tenant_id)

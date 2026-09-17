@@ -6,6 +6,7 @@ from harness.sandbox.base import (
     provider_meets_enforcement_floor,
     sandbox_enforcement,
     sandbox_enforcement_rank,
+    trust_enforcement_floor,
 )
 from harness.studio.catalog import default_capability_catalog
 
@@ -94,3 +95,28 @@ def test_default_profiles_declare_a_floor_their_provider_delivers() -> None:
         assert provider_meets_enforcement_floor(
             profile.sandbox_provider, profile.minimum_enforcement
         ), f"{profile.profile_id} declares a floor its provider cannot deliver"
+
+
+def test_trust_high_watermark_sets_the_session_floor() -> None:
+    assert trust_enforcement_floor("safe") is SandboxEnforcement.NONE
+    assert trust_enforcement_floor("sensitive") is SandboxEnforcement.DELEGATED
+    assert trust_enforcement_floor("untrusted") is SandboxEnforcement.FULL
+
+
+def test_an_unknown_trust_level_fails_closed_to_full() -> None:
+    assert trust_enforcement_floor("whatever") is SandboxEnforcement.FULL
+
+
+def test_a_session_floor_refuses_backends_below_it() -> None:
+    floor = trust_enforcement_floor("untrusted")
+    assert not provider_meets_enforcement_floor("daytona", floor)
+    assert not provider_meets_enforcement_floor("opensandbox-deferred", floor)
+    assert not provider_meets_enforcement_floor("local", floor)
+    assert provider_meets_enforcement_floor("gvisor", floor)
+
+
+def test_a_sensitive_session_still_accepts_a_container_backend() -> None:
+    floor = trust_enforcement_floor("sensitive")
+    assert provider_meets_enforcement_floor("opensandbox", floor)
+    assert provider_meets_enforcement_floor("cubesandbox-deferred", floor)
+    assert not provider_meets_enforcement_floor("local", floor)

@@ -11,6 +11,7 @@ from harness.config import Settings
 from harness.core.models import Run
 from harness.core.ports import RunTask, TaskQueue
 from harness.reliability.metrics import ReliabilityMetrics
+from harness.sandbox.lease import SandboxLeaseService, SandboxLeaseState
 from harness.worker.orchestrator import RunOrchestrator
 
 logger = logging.getLogger(__name__)
@@ -71,10 +72,13 @@ async def _renew_task_lease(
     stop: asyncio.Event,
     interval: float,
     metrics: ReliabilityMetrics | None = None,
+    sandbox_leases: SandboxLeaseService | None = None,
 ) -> None:
     while not stop.is_set():
         await _wait_for_work(stop, interval)
         if not stop.is_set():
+            if sandbox_leases is not None:
+                await _renew_sandbox_lease(sandbox_leases, task)
             try:
                 await queue.extend_lease(task)
             except Exception:
@@ -93,6 +97,26 @@ async def _renew_task_lease(
                     )
 
 
+async def _renew_sandbox_lease(leases: SandboxLeaseService, task: RunTask) -> None:
+    """Keep the durable sandbox lease alive while the Run is still executing.
+
+    A failure here is logged rather than raised: the Run can still finish
+    correctly, and an un-renewed lease only means the reaper will question the
+    sandbox after it expires.
+    """
+
+    try:
+        lease = await leases.for_run(task.tenant_id, task.run_id)
+        if lease is None or lease.state is not SandboxLeaseState.ACTIVE:
+            return
+        await leases.renew(task.tenant_id, lease.lease_id, epoch=lease.epoch)
+    except Exception:  # noqa: BLE001 - renewal must never kill the worker
+        logger.exception(
+            "sandbox lease renewal failed",
+            extra={"tenant_id": task.tenant_id, "run_id": task.run_id},
+        )
+
+
 async def worker_loop(
     queue: TaskQueue,
     executor: RunExecutor,
@@ -100,6 +124,7 @@ async def worker_loop(
     stop: asyncio.Event,
     poll_interval: float,
     lease_heartbeat_interval: float = 20,
+    sandbox_leases: SandboxLeaseService | None = None,
     concurrency: int = 1,
     maintenance: Callable[[], Awaitable[object]] | None = None,
     metrics: ReliabilityMetrics | None = None,
@@ -126,6 +151,7 @@ async def worker_loop(
                 stop=heartbeat_stop,
                 interval=lease_heartbeat_interval,
                 metrics=metrics,
+                sandbox_leases=sandbox_leases,
             )
         )
         try:
@@ -361,6 +387,7 @@ async def serve(settings: Settings) -> None:
                 concurrency=settings.worker_concurrency,
                 metrics=container.reliability_metrics,
                 session_gate=getattr(container, "session_gate", None),
+                sandbox_leases=getattr(container, "sandbox_leases", None),
             )
         finally:
             stop.set()
