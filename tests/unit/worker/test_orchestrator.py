@@ -1147,6 +1147,7 @@ async def test_executes_run_and_cleans_sandbox(tmp_path: Path) -> None:
     events = await event_repository.list_after("tenant-a", "run-1", 0)
     assert [event.type for event in events] == [
         "run.provisioning",
+        "sandbox.provisioned",
         "run.running",
         "message.start",
         "message.delta",
@@ -2038,6 +2039,7 @@ async def test_recovered_provisioning_run_is_reclaimed_and_completed(
     assert result.fencing_token == 4
     assert [item.type for item in emitted] == [
         "run.recovered",
+        "sandbox.provisioned",
         "run.running",
         "message.start",
         "message.delta",

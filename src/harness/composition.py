@@ -159,6 +159,7 @@ from harness.storage.redis import (
     AsyncRedisClient,
     RedisCancellationWakeup,
     RedisEventBus,
+    RedisSessionGate,
     RedisTaskQueue,
 )
 from harness.storage.reliability_repository import PostgresReliabilityRepository
@@ -520,6 +521,11 @@ def build_production_container(
         redis_client,
         visibility_timeout_seconds=settings.worker_task_visibility_timeout_seconds,
         retry_delay_seconds=settings.worker_task_retry_delay_seconds,
+    )
+    session_gate = RedisSessionGate(
+        redis_client,
+        ttl_seconds=settings.worker_task_visibility_timeout_seconds,
+        refresh_interval_seconds=settings.worker_task_heartbeat_seconds,
     )
     bus = RedisEventBus(redis_client)
     cancellation_wakeup = RedisCancellationWakeup(redis_client)
@@ -1332,6 +1338,7 @@ def build_production_container(
         events=raw_event_repository,
         observed_events=observed_event_repository,
         task_queue=queue,
+        session_gate=session_gate,
         observability=observability,
         runtime=runtime,
         worker=worker,

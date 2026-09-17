@@ -4,6 +4,7 @@ import asyncio
 import logging
 import signal
 from collections.abc import Awaitable, Callable
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Protocol
 
 from harness.config import Settings
@@ -17,6 +18,37 @@ logger = logging.getLogger(__name__)
 
 class RunExecutor(Protocol):
     async def execute(self, tenant_id: str, run_id: str) -> Run: ...
+
+
+class SessionGate(Protocol):
+    """Orders Runs of one session across every worker that shares a queue."""
+
+    def acquire(
+        self, session_key: tuple[str, str]
+    ) -> AbstractAsyncContextManager[None]: ...
+
+
+class _LocalSessionGate:
+    """In-process session ordering; the historical worker_loop behaviour."""
+
+    def __init__(self) -> None:
+        self._locks: dict[tuple[str, str], asyncio.Lock] = {}
+        self._users: dict[tuple[str, str], int] = {}
+
+    @asynccontextmanager
+    async def acquire(self, session_key: tuple[str, str]):
+        lock = self._locks.setdefault(session_key, asyncio.Lock())
+        self._users[session_key] = self._users.get(session_key, 0) + 1
+        try:
+            async with lock:
+                yield
+        finally:
+            remaining = self._users[session_key] - 1
+            if remaining == 0:
+                self._users.pop(session_key, None)
+                self._locks.pop(session_key, None)
+            else:
+                self._users[session_key] = remaining
 
 
 async def run_once(orchestrator: RunOrchestrator, tenant_id: str, run_id: str) -> Run:
@@ -71,6 +103,7 @@ async def worker_loop(
     concurrency: int = 1,
     maintenance: Callable[[], Awaitable[object]] | None = None,
     metrics: ReliabilityMetrics | None = None,
+    session_gate: SessionGate | None = None,
 ) -> None:
     """Consume durable run tasks until shutdown is requested.
 
@@ -82,14 +115,9 @@ async def worker_loop(
         raise ValueError("worker concurrency must be at least 1")
 
     active: set[asyncio.Task[None]] = set()
-    session_locks: dict[tuple[str, str], asyncio.Lock] = {}
-    session_users: dict[tuple[str, str], int] = {}
+    gate = session_gate if session_gate is not None else _LocalSessionGate()
 
-    async def execute_task(
-        task: RunTask,
-        session_key: tuple[str, str],
-        session_lock: asyncio.Lock,
-    ) -> None:
+    async def execute_task(task: RunTask, session_key: tuple[str, str]) -> None:
         heartbeat_stop = asyncio.Event()
         heartbeat = asyncio.create_task(
             _renew_task_lease(
@@ -103,8 +131,9 @@ async def worker_loop(
         try:
             # Different sessions may use the worker concurrently. Runs belonging
             # to one session remain ordered so workspace snapshots and the
-            # provider conversation cannot race each other.
-            async with session_lock:
+            # provider conversation cannot race each other. The gate must be
+            # shared across replicas (Redis) for that ordering to hold cluster-wide.
+            async with gate.acquire(session_key):
                 await executor.execute(task.tenant_id, task.run_id)
         except Exception:
             logger.exception(
@@ -146,12 +175,6 @@ async def worker_loop(
         finally:
             heartbeat_stop.set()
             await heartbeat
-            remaining = session_users[session_key] - 1
-            if remaining == 0:
-                session_users.pop(session_key, None)
-                session_locks.pop(session_key, None)
-            else:
-                session_users[session_key] = remaining
 
     while not stop.is_set():
         if maintenance is not None:
@@ -182,9 +205,7 @@ async def worker_loop(
             await _wait_for_work(stop, poll_interval)
             continue
         session_key = (task.tenant_id, task.session_id or task.run_id)
-        session_lock = session_locks.setdefault(session_key, asyncio.Lock())
-        session_users[session_key] = session_users.get(session_key, 0) + 1
-        active.add(asyncio.create_task(execute_task(task, session_key, session_lock)))
+        active.add(asyncio.create_task(execute_task(task, session_key)))
 
     if active:
         await asyncio.gather(*active)
@@ -339,6 +360,7 @@ async def serve(settings: Settings) -> None:
                 lease_heartbeat_interval=settings.worker_task_heartbeat_seconds,
                 concurrency=settings.worker_concurrency,
                 metrics=container.reliability_metrics,
+                session_gate=getattr(container, "session_gate", None),
             )
         finally:
             stop.set()

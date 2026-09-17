@@ -264,6 +264,7 @@ class ApiContainer:
     event_wakeup: EventWakeup | None = None
     skill_conversation: SkillConversationService | None = None
     sandbox_maintenance: Callable[[], Awaitable[object]] | None = None
+    session_gate: object | None = None
     close: Callable[[], Awaitable[None]] | None = None
 
 

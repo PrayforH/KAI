@@ -84,6 +84,7 @@ from harness.sandbox.base import (
     SandboxHandle,
     SandboxIsolation,
     SandboxProvider,
+    sandbox_enforcement,
 )
 
 RuntimeAssetStager = Callable[[str, str, str, str, Path, bool], Awaitable[tuple[str, ...]]]
@@ -1038,6 +1039,19 @@ class RunOrchestrator:
                     run_id,
                     active_sandbox.provision(run),
                 )
+            await self._events.append(
+                tenant_id=tenant_id,
+                run_id=run_id,
+                session_id=run.session_id,
+                event_type="sandbox.provisioned",
+                payload={
+                    "provider": handle.provider,
+                    "isolation": handle.isolation_level.value,
+                    "enforcement": sandbox_enforcement(
+                        handle.provider, handle.isolation_level
+                    ).value,
+                },
+            )
             policy_resolution = (
                 await self._policy_resolver(
                     tenant_id,
@@ -1224,6 +1238,9 @@ class RunOrchestrator:
                 workspace=handle.path,
                 sandbox_provider=handle.provider,
                 sandbox_isolation=handle.isolation_level,
+                sandbox_enforcement=sandbox_enforcement(
+                    handle.provider, handle.isolation_level
+                ),
                 remote_workspace=handle.remote_workspace,
                 assistant_message_id=f"assistant-{run_id}-{uuid4().hex}",
                 steering=SteeringInbox(run, self._runs, self._events),
