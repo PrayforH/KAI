@@ -113,6 +113,10 @@ from harness.sandbox.kubernetes import (
     KubernetesSandboxProvider,
 )
 from harness.sandbox.local import LocalSandboxProvider
+from harness.sandbox.opensandbox import (
+    OpenSandboxSandboxProvider,
+    build_opensandbox_provider,
+)
 from harness.sharing.service import TeamSpaceService
 from harness.sharing.workspace_repositories import AgentIdentityService
 from harness.storage.api_access_repository import PostgresApiAccessKeyRepository
@@ -264,6 +268,8 @@ def _deployment_model_routes(settings: Settings) -> tuple[CcSwitchClaudeConfig, 
 def _sandbox(settings: Settings) -> SandboxProvider:
     if settings.sandbox_provider == "cubesandbox":
         return build_cubesandbox_provider(settings)
+    if settings.sandbox_provider == "opensandbox":
+        return build_opensandbox_provider(settings)
     if settings.sandbox_provider == "local":
         if not settings.allow_unsafe_local_sandbox:
             raise ValueError(
@@ -365,6 +371,15 @@ def _runtime_sandbox(
     backend: SandboxProvider,
 ) -> SandboxProvider:
     if settings.sandbox_execution_mode == "remote_cli":
+        if settings.sandbox_provider == "opensandbox":
+            # The provider exposes execd's command and file planes, not a
+            # bidirectional remote CLI transport. Running the model process in
+            # the Worker while claiming remote execution would silently drop the
+            # isolation the operator asked for, so refuse instead.
+            raise ValueError(
+                "HARNESS_SANDBOX_PROVIDER=opensandbox requires "
+                "HARNESS_SANDBOX_EXECUTION_MODE=worker_cli_deferred"
+            )
         return backend
     if settings.sandbox_provider == "local":
         raise ValueError(
@@ -1063,7 +1078,10 @@ def build_production_container(
                     "gvisor"
                     if isinstance(runtime_sandbox_backend, KubernetesSandboxProvider)
                     else runtime_sandbox_backend.provider_name
-                    if isinstance(runtime_sandbox_backend, E2BSandboxProvider)
+                    if isinstance(
+                        runtime_sandbox_backend,
+                        (E2BSandboxProvider, OpenSandboxSandboxProvider),
+                    )
                     else "daytona"
                     if isinstance(runtime_sandbox_backend, DaytonaSandboxProvider)
                     else "local"

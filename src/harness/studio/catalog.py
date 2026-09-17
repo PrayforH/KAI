@@ -304,6 +304,32 @@ def default_capability_catalog() -> CapabilityCatalog:
                     "productionAllowed": True,
                 }
             ),
+            ExecutionProfileMetadata.model_validate(
+                {
+                    "profileId": "opensandbox-gvisor",
+                    "label": "OpenSandbox gVisor 沙箱",
+                    "description": (
+                        "通过内网 OpenSandbox 分配 gVisor 隔离沙箱，执行命令并回收制品；"
+                        "沙箱内核边界由平台侧运行时保证，Harness 只选择镜像与出口策略。"
+                    ),
+                    "sandboxProvider": "opensandbox",
+                    "minimumEnforcement": "delegated",
+                    "networkAccess": (
+                        NetworkAccess.NONE,
+                        NetworkAccess.INTERNAL,
+                        NetworkAccess.EXTERNAL,
+                    ),
+                    "risk": CapabilityRisk.MEDIUM,
+                    "cpuMillis": 1000,
+                    "memoryMiB": 2048,
+                    "diskMiB": 10240,
+                    "ttlSeconds": 3600,
+                    "networkPolicyId": "registered-mcp-only",
+                    "allowedMcpReferences": (),
+                    "providerConfigReference": "opensandbox-managed",
+                    "productionAllowed": True,
+                }
+            ),
         ),
         templates=(
             TemplateCapability(

@@ -856,9 +856,9 @@ class ExecutionProfileMetadata(StudioModel):
     profile_id: str = Field(alias="profileId", pattern=r"^[a-z][a-z0-9-]*$")
     label: str = Field(min_length=1, max_length=160)
     description: str = Field(min_length=1, max_length=500)
-    sandbox_provider: Literal["local", "daytona", "e2b", "gvisor", "cubesandbox"] = Field(
-        alias="sandboxProvider"
-    )
+    sandbox_provider: Literal[
+        "local", "daytona", "e2b", "gvisor", "cubesandbox", "opensandbox"
+    ] = Field(alias="sandboxProvider")
     # The weakest enforcement tier this profile accepts. The deployment has to
     # reach it with a backend that actually delivers that tier, otherwise the
     # run is refused instead of silently running weaker than declared.
