@@ -99,6 +99,24 @@ HARNESS_OPENSANDBOX_IMAGE=python:3.12-slim   # 必须自带 python3 与 bash
 `networkPolicy={defaultAction: deny, egress: []}`（115 的运行配置注明 gVisor 下不建议提交
 networkPolicy，默认保持 `true` 即不下发策略）。
 
+### 4.1 174 发布记录（2026-09-17）
+
+- 发布目录 `/data/opensandbox-20260917-api/`：`Dockerfile`（`FROM kai/axis-api:timeline-total-20260917`
+  + `COPY files/harness ${SITE}` + 清理 `__pycache__`）、`files/harness/**`（feature 分支 HEAD 的
+  整包覆盖，5.0MB / 570 个 .py）、`compose.api.release.private.json`（api+worker →
+  `kai/axis-api:opensandbox-20260917`）、`compose.api.rollback.private.json`（→ `timeline-total-20260917`）。
+- 切换前：活动任务 0（runs 全部终态）；`deployment_snapshots` 为空，因此新增的
+  enforcement 下限门禁在当前 174 上没有可触发的输入。
+- 切换后：api + 3 worker 全部 healthy，`/healthz` 200，控制台 `GET /v1/agui/threads` 200。
+- 真任务级验证（新线程，经正式 API 入队，`public-opinion-agent` 0.3.13）：
+  run `run_356da1ffa9a643258bfd67ae890fdd8a` **succeeded**；事件含
+  `sandbox.provisioned` = `{"provider":"cubesandbox-deferred","isolation":"container","enforcement":"delegated"}`
+  （生产后端仍为 CubeSandbox，enforcement 事实由本轮实现上报）、`tool.request/allowed/result`、
+  `workspace.archived`、`run.succeeded`。
+- 回滚：确认无活动任务后
+  `docker compose -p agent-studio-174 -f compose.api.rollback.private.json up -d --no-deps --force-recreate --wait --scale worker=3 api worker`。
+  本轮无数据库迁移。
+
 ## 5. 后续待办
 
 | 序 | 事项 | 说明 |
