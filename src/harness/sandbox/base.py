@@ -38,6 +38,9 @@ _SANDBOX_ENFORCEMENT_BY_PROVIDER: dict[str, SandboxEnforcement] = {
     "daytona": SandboxEnforcement.DELEGATED,
     "e2b": SandboxEnforcement.DELEGATED,
     "cubesandbox": SandboxEnforcement.DELEGATED,
+    # OpenSandbox on the gVisor runtime delegates the kernel boundary to the
+    # provider; the platform only picks the image and the egress policy.
+    "opensandbox": SandboxEnforcement.DELEGATED,
 }
 
 
