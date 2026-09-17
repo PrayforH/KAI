@@ -296,6 +296,9 @@ class AguiThreadHistory(BaseModel):
     messages: list[AguiHistoryMessage]
     next_cursor: str | None = None
     has_more: bool = False
+    # Every visible run of the thread, so a client can show the whole timeline
+    # even while only the newest page is materialised.
+    total: int = 0
 
 
 @router.get(
@@ -748,6 +751,7 @@ async def get_agui_thread_history(
         messages=messages,
         next_cursor=_encode_history_cursor(page[0]) if has_more and page else None,
         has_more=has_more,
+        total=len(ordered),
     )
 
 

@@ -202,6 +202,10 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) {
 .conversation-index button > span { width: var(--index-line-width, 4px); height: 2px; background: var(--codex-muted); opacity: .45; transition: width 180ms cubic-bezier(.2,.8,.2,1), opacity 160ms ease, background-color 160ms ease; }
 .conversation-index button[aria-current] > span { opacity: .85; }
 .conversation-index button[data-highlighted="true"] > span { background: var(--codex-ink); opacity: 1; }
+/* Ticks for earlier runs that are not loaded yet: visible in the rail, dimmed,
+   and clicking one pulls the pages needed to reveal that turn. */
+.conversation-index button.conversation-index-pending > span { opacity: .22; }
+.conversation-index button.conversation-index-pending:hover > span { opacity: .55; background: var(--codex-ink); }
 .conversation-index button:focus-visible { outline: 1px solid var(--codex-muted); outline-offset: 0; border-radius: 3px; }
 .conversation-index-preview { position: absolute; left: 38px; transform: translateY(-50%); width: 320px; max-width: calc(100vw - 90px); padding: 12px 14px; border: 1px solid var(--codex-line); border-radius: 13px; background: var(--codex-surface-raised); color: var(--codex-ink); box-shadow: 0 8px 28px #0002; pointer-events: none; font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; animation: index-preview-in 140ms ease-out; }
 .conversation-index-preview strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
@@ -503,19 +507,11 @@ body.codex-theme-v1 .harness-composer-shell .composer-file-card .attachment-uplo
   transform: translateX(-50%);
   z-index: 6;
 }
-.history-load-earlier-button {
-  border: 1px solid rgba(28, 28, 31, 0.16);
-  background: var(--background, #ffffff);
-  color: inherit;
-  border-radius: 999px;
-  padding: 4px 14px;
+.history-load-earlier-status {
+  color: var(--codex-muted, #6b6b70);
   font-size: 12px;
   line-height: 20px;
-  cursor: pointer;
-  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.08);
 }
-.history-load-earlier-button:disabled { opacity: 0.6; cursor: default; }
-body.codex-theme-v1 .history-load-earlier-button { background: var(--codex-surface, #ffffff); }
 
 /* Oversized-message clamp notice (2026-09-17). */
 .aui-md-clamp {

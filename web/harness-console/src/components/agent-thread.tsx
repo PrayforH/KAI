@@ -1,5 +1,5 @@
 "use client";
-import { useThreadHistoryPagination } from "../lib/task-history";
+import { useAutoLoadEarlierMessages, useThreadHistoryPagination } from "../lib/task-history";
 import { startSteeringPolling } from "../lib/steering-poller";
 import { ConversationControl } from "./conversation-control";
 import { MessageAttachmentView } from "./message-attachment-view";
@@ -1708,6 +1708,7 @@ export function AgentThread({
   const historyPagination = useThreadHistoryPagination(threadId, {
     importRepository: (repository) => threadRuntime?.import(repository),
   });
+  useAutoLoadEarlierMessages(frame, historyPagination);
   const composerDraftScope = useMemo(
     () => ({ userId, threadId }),
     [threadId, userId],
@@ -1734,17 +1735,10 @@ export function AgentThread({
           <MessageEditorContext.Provider value={{ editor, setEditor }}>
             <VideoGenerationProvider>
             <div className="harness-thread-frame" ref={frame}>
-            <ConversationIndex frame={frame} threadId={threadId} />
-            {historyPagination.hasMore && !currentTaskBusy ? (
-              <div className="history-load-earlier">
-                <button
-                  type="button"
-                  className="history-load-earlier-button"
-                  onClick={() => void historyPagination.loadEarlier()}
-                  disabled={historyPagination.loading}
-                >
-                  {historyPagination.loading ? "加载中…" : "加载更早的消息"}
-                </button>
+            <ConversationIndex frame={frame} threadId={threadId} pagination={historyPagination} />
+            {historyPagination.loading ? (
+              <div className="history-load-earlier" role="status" aria-live="polite">
+                <span className="history-load-earlier-status">正在加载更早的消息…</span>
               </div>
             ) : null}
             <Thread
