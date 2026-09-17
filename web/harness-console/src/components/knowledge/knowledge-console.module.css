@@ -593,3 +593,20 @@
   .membersDialogHead { align-items: flex-start; }
   .membersDialogHead h2 { overflow-wrap: anywhere; }
 }
+
+/* Live guidance for the knowledge base identifier, so the value is valid
+   before the form is submitted instead of failing with the API's raw message. */
+.fieldHint,
+.fieldError {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.fieldHint {
+  color: var(--codex-faint, #8a8a8e);
+}
+
+.fieldError {
+  color: var(--codex-danger, #fa423e);
+}

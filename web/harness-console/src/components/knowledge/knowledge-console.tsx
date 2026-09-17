@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../auth-provider";
 import {
   studioClient,
@@ -10,6 +10,7 @@ import {
   type StudioKnowledgeBaseConfig,
   type WikiGranularity,
 } from "../../lib/studio-client";
+import { isValidKnowledgeReference, slugifyKnowledgeReference } from "../../lib/knowledge-reference";
 import { KnowledgeMembersPanel } from "./knowledge-members-panel";
 import { KnowledgeDrawerLayer } from "./knowledge-drawer-layer";
 import styles from "./knowledge-console.module.css";
@@ -59,6 +60,8 @@ export function KnowledgeConsole() {
   const [showCreate, setShowCreate] = useState(false);
   const [kbType, setKbType] = useState<KnowledgeBaseType>("rag");
   const [reference, setReference] = useState("");
+  // The identifier is suggested from the name until the operator types one.
+  const referenceEdited = useRef(false);
   const [displayName, setDisplayName] = useState("");
   const [description, setDescription] = useState("");
   const [creating, setCreating] = useState(false);
@@ -140,7 +143,8 @@ export function KnowledgeConsole() {
     return bases;
   }, [bases, filter, user?.user_id]);
 
-  const createDisabled = creating || !reference.trim() || !displayName.trim();
+  const referenceValid = isValidKnowledgeReference(reference);
+  const createDisabled = creating || !referenceValid || !displayName.trim();
 
   const usesRag = kbType === "rag" || kbType === "hybrid";
   const usesWiki = kbType === "wiki" || kbType === "hybrid";
@@ -411,16 +415,29 @@ export function KnowledgeConsole() {
                 <input
                   id="kb-reference"
                   value={reference}
-                  onChange={(event) => setReference(event.target.value)}
+                  aria-invalid={reference.trim().length > 0 && !referenceValid}
+                  aria-describedby="kb-reference-hint"
+                  onChange={(event) => { setReference(event.target.value); referenceEdited.current = true; }}
                   placeholder="case-library"
                 />
+                <p
+                  id="kb-reference-hint"
+                  className={reference.trim() && !referenceValid ? styles.fieldError : styles.fieldHint}
+                >
+                  {reference.trim() && !referenceValid
+                    ? "标识只能使用小写字母、数字和连字符，并以字母开头，例如 case-library。"
+                    : "标识用于地址与检索，创建后不可修改。"}
+                </p>
               </div>
               <div className={styles.field}>
                 <label htmlFor="kb-name">名称</label>
                 <input
                   id="kb-name"
                   value={displayName}
-                  onChange={(event) => setDisplayName(event.target.value)}
+                  onChange={(event) => {
+                    setDisplayName(event.target.value);
+                    if (!referenceEdited.current) setReference(slugifyKnowledgeReference(event.target.value));
+                  }}
                   placeholder="非法集资案例库"
                 />
               </div>
