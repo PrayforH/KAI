@@ -559,6 +559,11 @@ body.codex-theme-v1 .execution-action-static {
 }
 body.codex-theme-v1 .execution-action-static { grid-template-columns: 16px minmax(0, 1fr); }
 body.codex-theme-v1 .execution-action-icon { width: 16px; height: 16px; flex: 0 0 16px; }
+/* Icons draw ~2px inside their 16px box, so the process block is nudged left to
+   share the exact left edge of the reply text. The reference is the answer
+   text, not the icon box. */
+body.codex-theme-v1 .execution-action-icon,
+body.codex-theme-v1 .execution-reasoning-icon { margin-left: -2px; }
 body.codex-theme-v1 .execution-action-copy { padding-left: 0; }
 body.codex-theme-v1 .execution-action-body { margin: 6px 0 0 24px; width: calc(100% - 24px); }
 
@@ -579,12 +584,12 @@ body.codex-theme-v1 .execution-reasoning-chevron {
   transform: rotate(45deg);
   opacity: .72;
 }
-/* The rule is centred on the 16px thinking icon (its centre is 8px), and the
+/* The rule is centred on the nudged thinking icon (its centre is 6px), and the
    body keeps a fixed height with its own scrollbar so a long reasoning trace
    never stretches the reply. */
 body.codex-theme-v1 .execution-reasoning-body {
-  margin: 2px 0 0 8px;
-  padding: 2px 8px 2px 16px;
+  margin: 2px 0 0 6px;
+  padding: 2px 8px 2px 18px;
   border-left: 1px solid var(--codex-line);
   max-height: 250px;
   overflow-y: auto;
