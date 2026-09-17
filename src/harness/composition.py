@@ -107,8 +107,8 @@ from harness.runtime.session_store import PostgresSessionStore
 from harness.sandbox.base import (
     SandboxIsolation,
     SandboxProvider,
-    provider_meets_enforcement_floor,
     sandbox_enforcement,
+    sandbox_enforcement_rank,
     trust_enforcement_floor,
 )
 from harness.sandbox.cubesandbox import build_cubesandbox_provider
@@ -275,19 +275,33 @@ def _deployment_model_routes(settings: Settings) -> tuple[CcSwitchClaudeConfig, 
     return tuple(routes)
 
 
-def _sandbox(settings: Settings) -> SandboxProvider:
-    if settings.sandbox_provider == "cubesandbox":
+# Execution profiles name the hardened tier "gvisor"; the settings that build
+# that backend call it "kubernetes".
+_PROVIDER_SETTINGS_ID: dict[str, str] = {"gvisor": "kubernetes"}
+
+
+def _sandbox_for_provider(settings: Settings, provider: str) -> SandboxProvider:
+    """Build the backend an execution profile asks for.
+
+    A profile may name any configured backend, so this takes the provider id
+    instead of reading the single global setting. A profile the deployment
+    cannot build raises, which fails the Run closed rather than quietly running
+    somewhere the published snapshot did not ask for.
+    """
+
+    provider = _PROVIDER_SETTINGS_ID.get(provider, provider)
+    if provider == "cubesandbox":
         return build_cubesandbox_provider(settings)
-    if settings.sandbox_provider == "opensandbox":
+    if provider == "opensandbox":
         return build_opensandbox_provider(settings)
-    if settings.sandbox_provider == "local":
+    if provider == "local":
         if not settings.allow_unsafe_local_sandbox:
             raise ValueError(
                 "production local sandbox requires "
                 "HARNESS_ALLOW_UNSAFE_LOCAL_SANDBOX=true; use Daytona for untrusted Agents"
             )
         return LocalSandboxProvider()
-    if settings.sandbox_provider == "kubernetes":
+    if provider == "kubernetes":
         if not settings.kubernetes_image:
             raise ValueError("HARNESS_KUBERNETES_IMAGE is required for Kubernetes")
         try:
@@ -333,7 +347,7 @@ def _sandbox(settings: Settings) -> SandboxProvider:
             max_collect_bytes=settings.workspace_archive_max_bytes,
             max_collect_members=settings.workspace_archive_max_members,
         )
-    if settings.sandbox_provider == "e2b":
+    if provider == "e2b":
         api_key = settings.e2b_api_key.get_secret_value()
         if not api_key:
             raise ValueError("HARNESS_E2B_API_KEY is required for E2B")
@@ -388,12 +402,21 @@ def _configured_sandbox_provider(backend: SandboxProvider) -> str:
     return "local"
 
 
+def _sandbox(settings: Settings) -> SandboxProvider:
+    """The deployment's default backend, used when no profile selects one."""
+
+    return _sandbox_for_provider(settings, settings.sandbox_provider)
+
+
 def _runtime_sandbox(
     settings: Settings,
     backend: SandboxProvider,
+    *,
+    provider: str | None = None,
 ) -> SandboxProvider:
+    selected = provider or settings.sandbox_provider
     if settings.sandbox_execution_mode == "remote_cli":
-        if settings.sandbox_provider == "opensandbox":
+        if selected == "opensandbox":
             # The provider exposes execd's command and file planes, not a
             # bidirectional remote CLI transport. Running the model process in
             # the Worker while claiming remote execution would silently drop the
@@ -403,14 +426,14 @@ def _runtime_sandbox(
                 "HARNESS_SANDBOX_EXECUTION_MODE=worker_cli_deferred"
             )
         return backend
-    if settings.sandbox_provider == "local":
+    if selected == "local":
         raise ValueError(
             "HARNESS_SANDBOX_EXECUTION_MODE=worker_cli_deferred requires "
-            "Daytona, E2B, or Kubernetes"
+            "Daytona, E2B, Kubernetes, CubeSandbox or OpenSandbox"
         )
     return DeferredToolSandboxProvider(
         backend,
-        provider_name=settings.sandbox_provider,
+        provider_name=selected,
         max_active_runs=settings.worker_deferred_max_active_runs,
         remote_workspace_for=(
             backend.remote_workspace_for if isinstance(backend, E2BSandboxProvider) else None
@@ -1087,30 +1110,39 @@ def build_production_container(
         model_probe = ControlPlaneModelPreflightProbe(model_configurations)
         mcp_probe = StreamableHttpMcpProbe(tool_resolver)
 
-        async def resolve_runtime_sandbox(tenant_id: str, session: Session) -> SandboxProvider:
-            actual = _configured_sandbox_provider(runtime_sandbox_backend)
-            # A Session's trust high-watermark sets the weakest backend it still
-            # accepts, independent of any published execution profile: once
-            # untrusted content entered the Session, isolation may not drop.
-            # The context store is keyed by the Session's own user, which is
-            # who the runtime promotes trust for; the agent owner is a different
-            # identity and would silently read an empty state.
-            trust_state = await context_service.state(
-                tenant_id,
-                session.user_id,
-                session.session_id,
-            )
-            trust_floor = trust_enforcement_floor(trust_state.trust_high_watermark)
-            if (
-                settings.sandbox_trust_floor_mode == "enforce"
-                and not provider_meets_enforcement_floor(actual, trust_floor)
-            ):
-                raise SandboxGovernanceError(
-                    "session trust floor exceeds the configured sandbox provider: "
-                    f"session requires {trust_floor.value} enforcement, "
-                    f"{actual} provides "
-                    f"{sandbox_enforcement(actual, SandboxIsolation.CONTAINER).value}"
+        resolved_backends: dict[str, tuple[SandboxProvider, SandboxProvider]] = {
+            settings.sandbox_provider: (runtime_sandbox, runtime_sandbox_backend)
+        }
+
+        def backends_for(provider_id: str) -> tuple[SandboxProvider, SandboxProvider]:
+            """The (runtime, concrete) backend pair for one execution profile.
+
+            The pair is built once per provider and cached, so a profile can name
+            any backend the deployment has credentials for without that backend
+            being the global default.
+            """
+
+            cached = resolved_backends.get(provider_id)
+            if cached is None:
+                concrete = _sandbox_for_provider(settings, provider_id)
+                cached = (
+                    _runtime_sandbox(
+                        settings,
+                        concrete,
+                        provider=_PROVIDER_SETTINGS_ID.get(provider_id, provider_id),
+                    ),
+                    concrete,
                 )
+                resolved_backends[provider_id] = cached
+            return cached
+
+        async def resolve_runtime_sandbox(tenant_id: str, session: Session) -> SandboxProvider:
+            # A published snapshot decides where its Runs execute: the profile it
+            # froze names the backend. Without a snapshot the deployment's single
+            # setting decides, which is how every session ran before profiles
+            # carried a provider.
+            provider_id = settings.sandbox_provider
+            profile = None
             if session.deployment_snapshot_id is not None:
                 snapshot = await deployment_repository.get_snapshot(
                     tenant_id, session.deployment_snapshot_id
@@ -1126,15 +1158,43 @@ def build_production_container(
                 )
                 if profile is None:
                     raise RuntimeError("deployment_execution_profile_unavailable")
-                if profile.sandbox_provider != actual:
-                    raise RuntimeError("execution_profile_sandbox_provider_mismatch")
-                # The profile declares the weakest enforcement it accepts; a run
-                # is refused rather than silently executing weaker than declared.
-                if not provider_meets_enforcement_floor(actual, profile.minimum_enforcement):
-                    raise RuntimeError("execution_profile_enforcement_below_minimum")
+                provider_id = profile.sandbox_provider
+
+            # A Session's trust high-watermark sets the weakest backend it still
+            # accepts, independent of any published execution profile: once
+            # untrusted content entered the Session, isolation may not drop.
+            # The context store is keyed by the Session's own user, which is
+            # who the runtime promotes trust for; the agent owner is a different
+            # identity and would silently read an empty state.
+            trust_state = await context_service.state(
+                tenant_id,
+                session.user_id,
+                session.session_id,
+            )
+            trust_floor = trust_enforcement_floor(trust_state.trust_high_watermark)
+            if profile is not None and (
+                sandbox_enforcement_rank(profile.minimum_enforcement)
+                > sandbox_enforcement_rank(trust_floor)
+            ):
+                # The profile declares the weakest enforcement it accepts; the
+                # Session may demand a stronger one.
+                trust_floor = profile.minimum_enforcement
+            enforcement = sandbox_enforcement(provider_id, SandboxIsolation.CONTAINER)
+            if (
+                settings.sandbox_trust_floor_mode == "enforce"
+                and sandbox_enforcement_rank(enforcement)
+                < sandbox_enforcement_rank(trust_floor)
+            ):
+                raise SandboxGovernanceError(
+                    "sandbox provider is weaker than this Run requires: "
+                    f"requires {trust_floor.value} enforcement, "
+                    f"{provider_id} provides {enforcement.value}"
+                )
+
+            run_sandbox, run_backend = backends_for(provider_id)
 
             if settings.sandbox_execution_mode != "worker_cli_deferred":
-                return runtime_sandbox_backend
+                return run_backend
 
             root, children = await resolve_published_agent_versions(
                 registry,
@@ -1149,7 +1209,7 @@ def build_production_container(
                 for version in (root, *children.values())
             )
             if any(manifest.spec.runtime == "codex-app-server" for manifest in manifests):
-                return runtime_sandbox_backend
+                return run_backend
             catalog = (await capability_catalogs.get(tenant_id)).catalog
             read_only_mcp_references = frozenset(
                 capability.reference
@@ -1160,8 +1220,8 @@ def build_production_container(
                 manifests,
                 read_only_mcp_references=read_only_mcp_references,
             ):
-                return runtime_sandbox_backend
-            return runtime_sandbox
+                return run_backend
+            return run_sandbox
 
         sandbox_resolver = resolve_runtime_sandbox
     else:
