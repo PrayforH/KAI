@@ -32,6 +32,9 @@ class SandboxEnforcement(StrEnum):
 
 _SANDBOX_ENFORCEMENT_BY_PROVIDER: dict[str, SandboxEnforcement] = {
     "kubernetes": SandboxEnforcement.FULL,
+    # Execution profiles name the hardened tier "gvisor"; the runtime reaches it
+    # through the Kubernetes provider, so both ids map to the same tier.
+    "gvisor": SandboxEnforcement.FULL,
     "daytona": SandboxEnforcement.DELEGATED,
     "e2b": SandboxEnforcement.DELEGATED,
     "cubesandbox": SandboxEnforcement.DELEGATED,
@@ -52,6 +55,32 @@ def sandbox_enforcement(
         return SandboxEnforcement.NONE
     base = provider.removesuffix("-deferred")
     return _SANDBOX_ENFORCEMENT_BY_PROVIDER.get(base, SandboxEnforcement.NONE)
+
+
+_SANDBOX_ENFORCEMENT_RANK: dict[SandboxEnforcement, int] = {
+    SandboxEnforcement.NONE: 0,
+    SandboxEnforcement.DELEGATED: 1,
+    SandboxEnforcement.FULL: 2,
+}
+
+
+def sandbox_enforcement_rank(value: SandboxEnforcement) -> int:
+    """Order the enforcement tiers so a declared floor can reject weaker ones."""
+
+    return _SANDBOX_ENFORCEMENT_RANK[value]
+
+
+def provider_meets_enforcement_floor(provider: str, minimum: SandboxEnforcement) -> bool:
+    """Whether a concrete backend satisfies an execution profile's floor.
+
+    A profile declares the weakest enforcement it accepts; the deployment has to
+    match it with a backend that actually reaches that tier. Unmapped providers
+    derive ``none``, so an unknown backend can never satisfy a floor above it.
+    """
+
+    return sandbox_enforcement_rank(
+        sandbox_enforcement(provider, SandboxIsolation.CONTAINER)
+    ) >= sandbox_enforcement_rank(minimum)
 
 
 class SandboxHandle(BaseModel):
