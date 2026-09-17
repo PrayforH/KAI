@@ -492,6 +492,30 @@ describe("Harness proxy response compression", () => {
     expect(decompressed).toBe(payload);
   });
 
+  it("keeps a small JSON reply readable when gzip is accepted", async () => {
+    // Regression: the compressed path consumed the body before deciding the
+    // reply was too small, and the caller then reused the disturbed stream,
+    // which surfaced as "Harness API unavailable" on the knowledge page.
+    const payload = JSON.stringify({ bases: [{ reference: "kb-1", name: "合规库" }] });
+    expect(Buffer.byteLength(payload)).toBeLessThan(1024);
+    const request = new Request(`http://console.test/api/studio/knowledge/bases`, {
+      method: "GET",
+      headers: { "Accept-Encoding": "gzip, deflate, br" },
+    });
+
+    const response = await proxyAgentCatalogRequest(
+      request,
+      config,
+      async () =>
+        new Response(payload, { status: 200, headers: { "Content-Type": "application/json" } }),
+      "knowledge/bases",
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Encoding")).toBeNull();
+    expect(await response.text()).toBe(payload);
+  });
+
   it("leaves event streams uncompressed so a live run is never buffered", async () => {
     const streamed = async () =>
       new Response("data: first\n\n", {

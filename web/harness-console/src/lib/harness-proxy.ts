@@ -175,14 +175,17 @@ async function compressJsonResponse(
     return null;
   }
   const raw = await upstream.arrayBuffer();
-  if (raw.byteLength < COMPRESSION_MIN_BYTES) return null;
-
+  // Past this point the body is consumed, so every path must return a Response
+  // built from this buffer: handing `upstream.body` back to the caller throws
+  // "Response body object should not be disturbed or locked".
   const identity = () =>
     new Response(raw, {
       status: upstream.status,
       statusText: upstream.statusText,
       headers,
     });
+  if (raw.byteLength < COMPRESSION_MIN_BYTES) return identity();
+
   let compressed: ArrayBuffer;
   try {
     compressed = await new Response(
