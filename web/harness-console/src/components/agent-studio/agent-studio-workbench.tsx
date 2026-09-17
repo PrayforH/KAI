@@ -1161,6 +1161,17 @@ export function AgentStudioWorkbench() {
     }, 0);
   }
 
+  // The catalog card owns the configuration entry: opening an agent normally
+  // closes the full configuration editor, so the explicit "编辑" action selects
+  // the draft and opens that editor in one step.
+  async function openFullConfiguration(draftId: string) {
+    if (draftId !== draft.id && !await selectDraft(draftId)) return;
+    setBuilderAssistantMode("run");
+    setReturnParentId(null);
+    setViewMode("editor");
+    openConfiguration("identity");
+  }
+
   async function openTryRun() {
     setTestRequest(current => current + 1);
     const current = dirty ? await saveDraft() : draft;
@@ -2098,6 +2109,21 @@ export function AgentStudioWorkbench() {
                   <div className={styles.actionMenuPopover}>
                     <button
                       type="button"
+                      className={styles.actionMenuItem}
+                      data-icon="✎"
+                      disabled={saving || Boolean(switchingDraftId)}
+                      onClick={(event) => {
+                        event.currentTarget.closest("details")?.removeAttribute("open");
+                        void openFullConfiguration(agent.draftId);
+                      }}
+                    >
+                      <span>
+                        <strong>编辑</strong>
+                        <small>进入完整配置</small>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
                       className={`${styles.actionMenuItem} ${styles.actionMenuDanger}`}
                       data-icon="×"
                       disabled={!canEdit || deleting || saving || Boolean(agent.spaceId)}
@@ -2205,43 +2231,6 @@ export function AgentStudioWorkbench() {
                     if (file) void importBundle(file);
                   }}
                 />
-            <details className={styles.actionMenu} data-dismiss-on-outside>
-              <summary
-                className={styles.headerActionButton}
-                aria-label="编辑智能体配置"
-                title="编辑完整配置，或直接跳到某个配置分区"
-              >
-                <HeaderActionIcon name="contract" />
-                <span>配置</span>
-              </summary>
-              <div className={styles.actionMenuPopover}>
-                <header className={styles.actionMenuHeader}>
-                  <strong>编辑配置</strong>
-                  <small>完整配置 · 分区定位</small>
-                </header>
-                {([
-                  ["完整配置", "identity", undefined, "打开完整配置编辑器"],
-                  ["行为设定", "prompt", undefined, "系统提示词与输出要求"],
-                  ["技能", "skills", undefined, "可复用的行为模块"],
-                  ["MCP 与工具", "capabilities", undefined, "内置工具与外部 MCP"],
-                  ["知识库", "capabilities", "知识库", "引用知识与检索范围"],
-                  ["高级配置", "runtime", undefined, "运行环境与资源限制"],
-                ] as const).map(([label, section, anchor, hint]) => (
-                  <button
-                    key={label}
-                    type="button"
-                    className={styles.actionMenuItem}
-                    data-icon="↗"
-                    onClick={(event) => {
-                      event.currentTarget.closest("details")?.removeAttribute("open");
-                      openConfiguration(section, anchor);
-                    }}
-                  >
-                    <span><strong>{label}</strong><small>{hint}</small></span>
-                  </button>
-                ))}
-              </div>
-            </details>
             <details className={styles.actionMenu} data-dismiss-on-outside>
               <summary
                 className={`${styles.headerActionButton} ${styles.iconActionButton}`}

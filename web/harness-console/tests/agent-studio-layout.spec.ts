@@ -317,7 +317,7 @@ describe("Agent Studio management page", () => {
   });
 
   it("uses one action-button contract and structured overflow menu states", () => {
-    expect(workbench.match(/styles\.headerActionButton/g)).toHaveLength(3);
+    expect(workbench.match(/styles\.headerActionButton/g)).toHaveLength(2);
     expect(workbench.match(/className=\{styles\.actionMenuItem\}/g)).toHaveLength(12);
     expect(workbench).not.toContain("copilot-drawer");
     expect(workbench).not.toContain("CopilotDrawer");
@@ -330,14 +330,24 @@ describe("Agent Studio management page", () => {
     expect(workbench).toContain("data-dismiss-on-outside");
   });
 
-  it("enters the full configuration from one header menu with per-section jumps", () => {
-    const menuStart = workbench.indexOf('aria-label="编辑智能体配置"');
-    expect(menuStart).toBeGreaterThan(-1);
-    const menu = workbench.slice(menuStart, workbench.indexOf("aria-label=\"更多智能体操作\""));
-    for (const label of ["完整配置", "行为设定", "技能", "MCP 与工具", "知识库", "高级配置"]) {
-      expect(menu).toContain(`["${label}"`);
-    }
-    expect(menu).toContain("openConfiguration(section, anchor)");
+  it("enters the full configuration from the agent card menu, not from a header menu", () => {
+    // The card's overflow menu owns the configuration entry: one 编辑 item that
+    // opens the full configuration, next to the destructive action.
+    const cardMenuStart = workbench.indexOf("styles.agentCatalogMenu");
+    expect(cardMenuStart).toBeGreaterThan(-1);
+    const cardMenu = workbench.slice(cardMenuStart, workbench.indexOf("</details>", cardMenuStart));
+    expect(cardMenu).toContain("<strong>编辑</strong>");
+    expect(cardMenu).toContain("进入完整配置");
+    expect(cardMenu).toContain("void openFullConfiguration(agent.draftId)");
+    expect(cardMenu).toContain("删除智能体");
+    // Selecting a draft closes the full configuration editor, so the entry must
+    // reopen it explicitly instead of only entering the editor shell.
+    expect(workbench).toContain("async function openFullConfiguration(draftId: string)");
+    expect(workbench).toContain('openConfiguration("identity")');
+    // No per-section entry list, and no separate header configuration menu.
+    expect(workbench).not.toContain("编辑智能体配置");
+    expect(workbench).not.toContain("完整配置 · 分区定位");
+    expect(workbench).not.toContain("openConfiguration(section, anchor)");
     // The assets panel keeps a read-only overview; it must not carry its own
     // per-section entry list any more.
     expect(assetsPanel).not.toContain("配置编辑入口");
