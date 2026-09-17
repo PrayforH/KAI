@@ -594,7 +594,7 @@ function ActionIcon({ kind }: { kind: ActionIconKind }) {
     return <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 14.8.8-3.8L13 2.8a2 2 0 0 1 2.8 2.8l-8.2 8.2-3.6 1Z" /><path d="m11.8 4 3 3" /></svg>;
   }
   if (kind === "search") {
-    return <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M11.8 3.2a4.2 4.2 0 0 0-5.1 5.1L2.9 12l-1 3 3-1 3.8-3.8a4.2 4.2 0 0 0 5.1-5.1l-2.4 2.4-2-2 2.4-2.3Z" /></svg>;
+    return <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.8" cy="8.8" r="5.2" /><path d="m12.7 12.7 4 4" /></svg>;
   }
   if (kind === "agent") {
     return <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="6" r="3" /><path d="M4 17c.5-3.5 2.5-5.3 6-5.3s5.5 1.8 6 5.3" /></svg>;
