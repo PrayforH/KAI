@@ -367,3 +367,49 @@ body.codex-theme-v1 .task-version-switcher .task-agent-switcher-branch svg {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+
+/* Load-earlier pagination affordance for long threads (2026-09-17). */
+.history-load-earlier {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+}
+.history-load-earlier-button {
+  border: 1px solid rgba(28, 28, 31, 0.16);
+  background: var(--background, #ffffff);
+  color: inherit;
+  border-radius: 999px;
+  padding: 4px 14px;
+  font-size: 12px;
+  line-height: 20px;
+  cursor: pointer;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.08);
+}
+.history-load-earlier-button:disabled { opacity: 0.6; cursor: default; }
+body.codex-theme-v1 .history-load-earlier-button { background: var(--codex-surface, #ffffff); }
+
+/* Oversized-message clamp notice (2026-09-17). */
+.aui-md-clamp {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 0 4px;
+  padding: 6px 10px;
+  border: 1px dashed rgba(28, 28, 31, 0.2);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--codex-muted, #6b6b70);
+}
+.aui-md-clamp button {
+  border: 1px solid rgba(28, 28, 31, 0.16);
+  background: transparent;
+  color: inherit;
+  border-radius: 999px;
+  padding: 2px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}

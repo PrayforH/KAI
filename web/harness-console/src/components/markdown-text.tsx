@@ -4,6 +4,7 @@ import {
   MarkdownTextPrimitive,
   type CodeHeaderProps,
 } from "@assistant-ui/react-markdown";
+import { TextMessagePartProvider, useMessagePartText } from "@assistant-ui/react";
 import remarkGfm from "remark-gfm";
 import { memo, useState, type ComponentPropsWithoutRef } from "react";
 import { normalizeMessageText } from "../lib/message-text";
@@ -80,29 +81,48 @@ function WikiLink({
   );
 }
 
+const MESSAGE_TEXT_CLAMP_CHARS = 20_000;
+
 function MarkdownTextImpl() {
+  const part = useMessagePartText();
+  const [expanded, setExpanded] = useState(false);
+  const running = part.status.type === "running";
+  const oversized = !running && !expanded && part.text.length > MESSAGE_TEXT_CLAMP_CHARS;
+  const renderedText = oversized
+    ? part.text.slice(0, MESSAGE_TEXT_CLAMP_CHARS)
+    : part.text;
   return (
-    <MarkdownTextPrimitive
-      className="aui-md"
-      remarkPlugins={[remarkGfm, remarkWikiLinks]}
-      preprocess={normalizeMessageText}
-      // The live response store already batches network deltas per animation
-      // frame. A second character-by-character reveal exposes incomplete
-      // Markdown delimiters (for example `**`) until their closing token is
-      // replayed, which looks like a final-pass renderer. Parse every received
-      // delta immediately so Markdown remains formatted throughout streaming.
-      smooth={false}
-      // react-markdown blanks unknown protocols; wiki: must survive so the
-      // renderer can turn it into a page-opening button.
-      urlTransform={knowledgeUrlTransform}
-      components={{ CodeHeader, a: WikiLink, table: ScrollableTable }}
-      componentsByLanguage={{
-        mermaid: {
-          CodeHeader: MermaidCodeHeader,
-          SyntaxHighlighter: MermaidDiagram,
-        },
-      }}
-    />
+    <TextMessagePartProvider text={renderedText} isRunning={running}>
+      <MarkdownTextPrimitive
+        className="aui-md"
+        remarkPlugins={[remarkGfm, remarkWikiLinks]}
+        preprocess={normalizeMessageText}
+        // The live response store already batches network deltas per animation
+        // frame. A second character-by-character reveal exposes incomplete
+        // Markdown delimiters (for example `**`) until their closing token is
+        // replayed, which looks like a final-pass renderer. Parse every received
+        // delta immediately so Markdown remains formatted throughout streaming.
+        smooth={false}
+        // react-markdown blanks unknown protocols; wiki: must survive so the
+        // renderer can turn it into a page-opening button.
+        urlTransform={knowledgeUrlTransform}
+        components={{ CodeHeader, a: WikiLink, table: ScrollableTable }}
+        componentsByLanguage={{
+          mermaid: {
+            CodeHeader: MermaidCodeHeader,
+            SyntaxHighlighter: MermaidDiagram,
+          },
+        }}
+      />
+      {oversized ? (
+        <div className="aui-md-clamp">
+          <span>消息过长，已先显示前 {MESSAGE_TEXT_CLAMP_CHARS} 字符</span>
+          <button type="button" onClick={() => setExpanded(true)}>
+            展开全部（{part.text.length} 字符）
+          </button>
+        </div>
+      ) : null}
+    </TextMessagePartProvider>
   );
 }
 

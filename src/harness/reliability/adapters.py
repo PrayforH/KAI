@@ -35,8 +35,17 @@ class ObservedEventRepository:
     async def latest_sequence(self, tenant_id: str, run_id: str) -> int:
         return await self._delegate.latest_sequence(tenant_id, run_id)
 
-    async def list_after(self, tenant_id: str, run_id: str, after_sequence: int) -> list[RunEvent]:
-        events = await self._delegate.list_after(tenant_id, run_id, after_sequence)
+    async def list_after(
+        self,
+        tenant_id: str,
+        run_id: str,
+        after_sequence: int,
+        *,
+        types: tuple[str, ...] | None = None,
+    ) -> list[RunEvent]:
+        events = await self._delegate.list_after(
+            tenant_id, run_id, after_sequence, types=types
+        )
         if after_sequence <= 0:
             return events
         now = self._clock()

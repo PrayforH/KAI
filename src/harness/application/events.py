@@ -35,8 +35,12 @@ class EventService:
         tenant_id: str,
         run_id: str,
         after_sequence: int,
+        *,
+        types: tuple[str, ...] | None = None,
     ) -> list[RunEvent]:
-        return await self._repository.list_after(tenant_id, run_id, after_sequence)
+        return await self._repository.list_after(
+            tenant_id, run_id, after_sequence, types=types
+        )
 
     async def latest_for_session_type(
         self,

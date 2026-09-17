@@ -1,4 +1,5 @@
 "use client";
+import { useThreadHistoryPagination } from "../lib/task-history";
 import { ConversationControl } from "./conversation-control";
 import { MessageAttachmentView } from "./message-attachment-view";
 
@@ -1642,6 +1643,12 @@ export function AgentThread({
 }) {
   const frame = useRef<HTMLDivElement>(null);
   const [editor, setEditor] = useState<MessageEditorState>(null);
+  // Optional: AgentThread is also rendered by config tests without a runtime
+  // provider; without a runtime there is nothing to import earlier pages into.
+  const threadRuntime = useThreadRuntime({ optional: true });
+  const historyPagination = useThreadHistoryPagination(threadId, {
+    importRepository: (repository) => threadRuntime?.import(repository),
+  });
   const composerDraftScope = useMemo(
     () => ({ userId, threadId }),
     [threadId, userId],
@@ -1669,6 +1676,18 @@ export function AgentThread({
             <VideoGenerationProvider>
             <div className="harness-thread-frame" ref={frame}>
             <ConversationIndex frame={frame} threadId={threadId} />
+            {historyPagination.hasMore && !currentTaskBusy ? (
+              <div className="history-load-earlier">
+                <button
+                  type="button"
+                  className="history-load-earlier-button"
+                  onClick={() => void historyPagination.loadEarlier()}
+                  disabled={historyPagination.loading}
+                >
+                  {historyPagination.loading ? "加载中…" : "加载更早的消息"}
+                </button>
+              </div>
+            ) : null}
             <Thread
             assistantMessage={{
               allowCopy: false,

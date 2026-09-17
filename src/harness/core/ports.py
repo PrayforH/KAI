@@ -183,7 +183,12 @@ class EventRepository(Protocol):
     async def latest_sequence(self, tenant_id: str, run_id: str) -> int: ...
 
     async def list_after(
-        self, tenant_id: str, run_id: str, after_sequence: int
+        self,
+        tenant_id: str,
+        run_id: str,
+        after_sequence: int,
+        *,
+        types: tuple[str, ...] | None = None,
     ) -> list[RunEvent]: ...
 
     async def latest_for_session_type(
