@@ -256,7 +256,7 @@ function ExecutionCommentary({
       <details className="execution-reasoning" open={expanded} onToggle={event => setExpanded(event.currentTarget.open)}
         data-commentary-source={commentary.source} data-active={active ? "true" : "false"}>
         <summary className={active ? "execution-reasoning-summary execution-row-sweep" : "execution-reasoning-summary"}>
-          <span className="execution-reasoning-label">思考</span><span className="execution-reasoning-separator" aria-hidden="true">·</span><span ref={previewRef} className="execution-reasoning-preview">{preview}</span>
+          <span className="execution-reasoning-icon"><ThinkingIcon /></span><span className="execution-reasoning-label">思考</span><span className="execution-reasoning-separator" aria-hidden="true">·</span><span ref={previewRef} className="execution-reasoning-preview">{preview}</span>
         </summary>
         <div className="execution-reasoning-body">
           <TextMessagePartProvider text={commentary.text} isRunning={false}><MarkdownText /></TextMessagePartProvider>
@@ -574,6 +574,15 @@ function displayTimeline(view: RunViewModel, detailed = false): DisplayTimelineN
     index = cursor;
   }
   return display;
+}
+
+function ThinkingIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M10 3c.4 3.2 1.6 4.9 4.2 5.9-2.6 1-3.8 2.7-4.2 5.9-.4-3.2-1.6-4.9-4.2-5.9C8.4 7.9 9.6 6.2 10 3Z" />
+      <path d="M15.6 13.2c.2 1.5.7 2.2 1.9 2.6-1.2.4-1.7 1.1-1.9 2.6-.2-1.5-.7-2.2-1.9-2.6 1.2-.4 1.7-1.1 1.9-2.6Z" />
+    </svg>
+  );
 }
 
 function ActionIcon({ kind }: { kind: ActionIconKind }) {

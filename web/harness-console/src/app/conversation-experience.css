@@ -395,12 +395,17 @@ body.codex-theme-v1 .execution-log > * { min-width: 0; max-width: 100%; }
 body.codex-theme-v1 .execution-log { grid-template-columns: minmax(0, 1fr); }
 body.codex-theme-v1 .execution-reasoning { width: 100%; overflow: hidden; box-sizing: border-box; color: var(--codex-muted); font-size: 12px; }
 body.codex-theme-v1 .execution-reasoning-summary {
-  display: flex; align-items: center; gap: 8px; min-height: 26px; min-width: 0; max-width: 100%;
+  display: flex; align-items: center; gap: 9px; min-height: 26px; min-width: 0; max-width: 100%;
   list-style: none; cursor: pointer; position: relative; overflow: hidden;
 }
 body.codex-theme-v1 .execution-reasoning-summary::-webkit-details-marker { display: none; }
-body.codex-theme-v1 .execution-reasoning-summary::before { content: "›"; flex: none; transition: transform 150ms; }
-body.codex-theme-v1 .execution-reasoning[open] > summary::before { transform: rotate(90deg); }
+body.codex-theme-v1 .execution-reasoning-icon {
+  width: 16px; height: 16px; flex: 0 0 16px; color: var(--codex-faint);
+}
+body.codex-theme-v1 .execution-reasoning-icon svg {
+  width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.65;
+  stroke-linecap: round; stroke-linejoin: round;
+}
 body.codex-theme-v1 .execution-reasoning-label,
 body.codex-theme-v1 .execution-reasoning-separator { flex: 0 0 auto; white-space: nowrap; }
 body.codex-theme-v1 .execution-reasoning-preview { display: block; flex: 1 1 0%; min-width: 0; overflow: hidden; white-space: nowrap; color: var(--codex-faint); }
@@ -418,7 +423,6 @@ body.codex-theme-v1 .execution-row-sweep::after {
 @keyframes execution-row-sweep { from { left: -220px; } 90%, to { left: 100%; } }
 @media (prefers-reduced-motion: reduce) {
   body.codex-theme-v1 .execution-row-sweep::after { animation: none; display: none; }
-  body.codex-theme-v1 .execution-reasoning-summary::before { transition: none; }
 }
 /* Attachment cards share one box for preview, metadata and upload state. */
 body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments {
