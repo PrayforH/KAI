@@ -19,14 +19,25 @@ def ids(prefix: str) -> str:
 class FakeProvider:
     provider_name = "opensandbox-deferred"
 
-    def __init__(self, instances: list[str], *, created_at: datetime | None = None) -> None:
+    def __init__(
+        self,
+        instances: list[str],
+        *,
+        created_at: datetime | None = None,
+        runs: dict[str, str] | None = None,
+    ) -> None:
         self.instances = list(instances)
         self.created_at = created_at
+        self.runs = runs or {}
         self.reclaimed: list[str] = []
 
     async def inventory(self) -> list[SandboxInstance]:
         return [
-            SandboxInstance(sandbox_id=item, created_at=self.created_at)
+            SandboxInstance(
+                sandbox_id=item,
+                created_at=self.created_at,
+                metadata={"harness.run": self.runs[item]} if item in self.runs else {},
+            )
             for item in self.instances
         ]
 
@@ -104,7 +115,10 @@ async def test_report_separates_untracked_from_missing() -> None:
 
 @pytest.mark.asyncio
 async def test_reclaim_destroys_only_expired_untracked_sandboxes() -> None:
-    provider = FakeProvider(["sandbox-orphan", "sandbox-live"])
+    provider = FakeProvider(
+        ["sandbox-orphan", "sandbox-live"],
+        runs={"sandbox-orphan": "run-1", "sandbox-live": "run-2"},
+    )
     governance, leases, clock = service(provider)
     orphan = await leases.acquire(
         tenant_id="tenant-a",
@@ -165,7 +179,10 @@ async def test_a_stale_lease_is_closed_when_its_sandbox_vanished() -> None:
 
 @pytest.mark.asyncio
 async def test_a_failing_reclaim_does_not_stop_the_sweep() -> None:
-    provider = FakeProvider(["sandbox-orphan", "sandbox-other"])
+    provider = FakeProvider(
+        ["sandbox-orphan", "sandbox-other"],
+        runs={"sandbox-orphan": "run-0", "sandbox-other": "run-1"},
+    )
     governance, leases, clock = service(provider)
     for index, sandbox_id in enumerate(("sandbox-orphan", "sandbox-other")):
         await leases.acquire(
@@ -222,3 +239,57 @@ async def test_a_stray_sandbox_without_a_creation_time_is_left_alone() -> None:
     assert report.untracked == ("sandbox-unknown",)
     assert report.reclaimed == ()
     assert provider.reclaimed == []
+
+
+@pytest.mark.asyncio
+async def test_ownership_follows_the_run_when_the_ids_differ() -> None:
+    """A deferred provider hands out a local handle id, so ids never match.
+
+    Matching on the sandbox id would have made every running sandbox look
+    untracked, and the sweep would then have destroyed live Runs.
+    """
+
+    provider = FakeProvider(
+        ["platform-sandbox-1"], runs={"platform-sandbox-1": "run-1"}
+    )
+    governance, leases, clock = service(provider, ttl=60)
+    lease = await leases.acquire(
+        tenant_id="tenant-a",
+        session_id="session-1",
+        run_id="run-1",
+        owner="worker-1",
+        provider="opensandbox-deferred",
+        sandbox_id="run-1-deferred-4f2a",
+    )
+    clock[0] = START + timedelta(seconds=90)
+    await leases.renew("tenant-a", lease.lease_id, epoch=lease.epoch)
+
+    report = await governance.reclaim_orphans()
+
+    assert report.live_leases == 1
+    assert report.untracked == ()
+    assert provider.reclaimed == []
+
+
+@pytest.mark.asyncio
+async def test_an_abandoned_run_sandbox_is_reclaimed_by_its_metadata() -> None:
+    provider = FakeProvider(
+        ["platform-sandbox-2"], runs={"platform-sandbox-2": "run-9"}
+    )
+    governance, leases, clock = service(provider, ttl=60)
+    await leases.acquire(
+        tenant_id="tenant-a",
+        session_id="session-9",
+        run_id="run-9",
+        owner="worker-1",
+        provider="opensandbox-deferred",
+        sandbox_id="run-9-deferred-8b1c",
+    )
+    clock[0] = START + timedelta(seconds=120)
+
+    report = await governance.reclaim_orphans()
+
+    assert report.reclaimed == ("platform-sandbox-2",)
+    assert provider.reclaimed == ["platform-sandbox-2"]
+    closed = await leases.for_run("tenant-a", "run-9")
+    assert closed is not None and closed.state.value == "reclaimed"

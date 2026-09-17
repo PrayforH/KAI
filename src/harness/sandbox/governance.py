@@ -125,51 +125,56 @@ class SandboxGovernanceService:
         if callable(version_probe):
             report = report.model_copy(update={"platform_version": await version_probe()})
 
-        tracked = {lease.sandbox_id for lease in live}
+        # Ownership is matched on the Run the platform recorded in the sandbox
+        # metadata, not on the sandbox id: a deferred provider hands out its own
+        # local handle id, so the id a lease stores is not the platform's.
+        live_runs = {lease.run_id for lease in live}
+        owned_by_run = {
+            instance.sandbox_id
+            for instance in instances
+            if instance.metadata.get("harness.run") in live_runs
+        }
         present = {instance.sandbox_id for instance in instances}
+        tracked = {lease.sandbox_id for lease in live} | owned_by_run
         untracked = tuple(sorted(present - tracked))
         missing = tuple(sorted({lease.sandbox_id for lease in owned} - present))
 
         reclaimed: list[str] = []
         if reclaim:
-            reclaim_one = getattr(self._provider, "reclaim", None)
-            expired = {
-                lease.sandbox_id: lease for lease in await self._leases.expired()
-            }
+            expired = await self._leases.expired()
             by_id = {instance.sandbox_id: instance for instance in instances}
             grace = timedelta(seconds=self._lease_ttl)
             for sandbox_id in untracked:
-                lease = expired.get(sandbox_id)
+                instance = by_id[sandbox_id]
+                run_id = instance.metadata.get("harness.run")
+                lease = next(
+                    (item for item in expired if item.run_id == run_id), None
+                ) if run_id else None
+                if lease is None and run_id is not None:
+                    # Labelled with a Run whose lease has not expired: that
+                    # Execution may still be running, so it is not ours to end.
+                    continue
                 if lease is None:
-                    # Never destroy a sandbox whose lease is alive: it may belong
-                    # to a Run running right now. An instance with no lease record
-                    # at all is only reclaimed once it is older than a full lease
-                    # TTL, which outlasts the window between creating a sandbox
-                    # and recording its lease.
-                    created = by_id[sandbox_id].created_at
+                    # No Run label at all, so age is the only evidence: reclaim
+                    # it once it outlives a full lease TTL, longer than the gap
+                    # between creating a sandbox and recording its lease.
+                    created = instance.created_at
                     if created is None or now - created < grace:
                         continue
                     logger.warning(
                         "reclaiming an untracked sandbox with no lease record",
                         extra={"sandbox_id": sandbox_id},
                     )
-                    if await self._destroy(sandbox_id):
-                        reclaimed.append(sandbox_id)
-                    continue
-                if not callable(reclaim_one):
-                    continue
-                if not await self._destroy(sandbox_id):
-                    continue
-                await self._leases.mark_reclaimed(lease.tenant_id, lease.lease_id)
-                reclaimed.append(sandbox_id)
-            live_by_sandbox = {lease.sandbox_id: lease for lease in owned}
+                if await self._destroy(sandbox_id):
+                    reclaimed.append(sandbox_id)
+                    if lease is not None:
+                        await self._leases.mark_reclaimed(
+                            lease.tenant_id, lease.lease_id
+                        )
+            owned_by_sandbox = {lease.sandbox_id: lease for lease in owned}
             for sandbox_id in missing:
-                lease = live_by_sandbox[sandbox_id]
+                lease = owned_by_sandbox[sandbox_id]
                 await self._leases.mark_reclaimed(lease.tenant_id, lease.lease_id)
-            if reclaimed and self._metrics is not None:
-                self._metrics.increment(
-                    "harness_sandbox_orphans_reclaimed_total", len(reclaimed)
-                )
 
         if self._metrics is not None:
             self._metrics.gauge("harness_sandbox_live_leases", len(live))
