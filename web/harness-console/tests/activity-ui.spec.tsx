@@ -302,7 +302,7 @@ describe("Codex-style activity UI", () => {
     expect(html).toContain("预览 report.pdf");
     expect(html).toContain("?preview=1");
     expect(html).toContain("artifact-primary-link");
-    expect(html).toContain("点击预览 report.pdf");
+    expect(html).toContain("在侧栏预览 report.pdf");
     expect(html).not.toContain("artifact-actions");
   });
 

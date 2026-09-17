@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { requireAuthenticatedResponse } from "../lib/client-auth";
 import { PanelResizeHandle } from "./panel-resize-handle";
+import { RailFilePreview, previewKindFor, type PreviewTarget } from "./rail-file-preview";
 
 
 const PHASE_LABELS: Record<string, string> = {
@@ -43,6 +44,19 @@ interface RailFile {
   thread_id?: string;
 }
 
+/** Grok-style file chip: the type is readable before the name. */
+function fileChip(name: string, mediaType: string) {
+  const type = mediaType.toLowerCase();
+  const extension = name.toLowerCase().split(".").pop() ?? "";
+  if (type.startsWith("image/")) return "IMG";
+  if (type === "application/pdf" || extension === "pdf") return "PDF";
+  if (type.includes("markdown") || extension === "md") return "MD";
+  if (type === "text/csv" || extension === "csv") return "CSV";
+  if (type === "application/json" || extension === "json") return "JSON";
+  if (extension) return extension.slice(0, 4).toUpperCase();
+  return "FILE";
+}
+
 function formatFileSize(value?: number | null) {
   if (value === null || value === undefined) return "";
   if (value < 1_024) return `${value} B`;
@@ -60,6 +74,7 @@ export function WorkbenchRail({
   modelRoute,
   runPhase,
   threadId,
+  previewRequest,
 }: {
   open: boolean;
   onClose: () => void;
@@ -70,6 +85,7 @@ export function WorkbenchRail({
   modelRoute: string | null;
   runPhase: string | null;
   threadId: string;
+  previewRequest?: (PreviewTarget & { nonce: number }) | null;
 }) {
   const [tab, setTab] = useState<"files" | "details">("files");
   const [query, setQuery] = useState("");
@@ -79,6 +95,24 @@ export function WorkbenchRail({
   // Scope again at render time: effects run after task-switch renders.
   const files = loadedFiles.filter((file) => file.thread_id === threadId);
   const [filesLoading, setFilesLoading] = useState(true);
+  const [selected, setSelected] = useState<PreviewTarget | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const openPreview = (target: PreviewTarget) => { setSelected(target); setSelectedId(target.artifact_id); };
+  const closePreview = () => { setSelected(null); setSelectedId(null); };
+
+  // The transcript's artifact cards open their file here instead of a new tab.
+  useEffect(() => {
+    if (!previewRequest) return;
+    setTab("files");
+    setSelected(previewRequest);
+    setSelectedId(previewRequest.artifact_id);
+  }, [previewRequest]);
+
+  // A task switch shows that task's files, never the previous selection.
+  useEffect(() => {
+    setSelected(null);
+    setSelectedId(null);
+  }, [threadId]);
 
   useEffect(() => {
     if (!open) return;
@@ -150,38 +184,58 @@ export function WorkbenchRail({
             <strong className="workbench-rail-task">{taskTitle}</strong>
           </section>
           <section className="workbench-rail-section" hidden={tab !== "files"}>
-            <div className="rail-file-toolbar"><small>本任务的历史文件</small><button type="button" aria-label="刷新文件" onClick={() => setRefresh((value) => value + 1)}>↻</button></div>
-            <input className="rail-file-search" type="search" aria-label="搜索任务文件" placeholder="搜索文件…" value={query} onChange={(event) => setQuery(event.target.value)} />
-            {fileError ? <p role="alert">{fileError} <button type="button" onClick={() => setRefresh((value) => value + 1)}>重试</button></p> : filesLoading ? (
-              <span className="workbench-rail-files-empty">正在读取文件…</span>
-            ) : files.length === 0 ? (
-              <span className="workbench-rail-files-empty">生成的文档、图片与其他成果会保存在这里。</span>
-            ) : (
-              <div className="workbench-rail-files">
-                {!files.some((file) => file.name.toLowerCase().includes(query.toLowerCase())) && <p>没有匹配的文件</p>}
-                {files.filter((file) => file.name.toLowerCase().includes(query.toLowerCase())).map((file) => {
-                  const previewable =
-                    file.media_type.startsWith("text/") ||
-                    file.media_type.startsWith("image/") ||
-                    file.media_type === "application/json" ||
-                    file.media_type === "application/pdf";
-                  return (
-                    <div className="rail-file-row" key={file.artifact_id}><a
-                      className="workbench-rail-file"
-                      href={`/api/harness/artifacts/${encodeURIComponent(file.artifact_id)}?thread_id=${encodeURIComponent(threadId)}${previewable ? "&preview=1" : ""}`}
-                      target={previewable ? "_blank" : undefined}
-                      rel={previewable ? "noreferrer" : undefined}
-                      download={previewable ? undefined : file.name}
-                      title={previewable ? `预览 ${file.name}` : `下载 ${file.name}`}
-                    >
-                      <span className="workbench-rail-file-name">{file.name}</span>
-                      <span className="workbench-rail-file-size">
-                        {formatFileSize(file.size_bytes)}
-                      </span>
-                    </a><a className="rail-download" href={`/api/harness/artifacts/${encodeURIComponent(file.artifact_id)}?thread_id=${encodeURIComponent(threadId)}`} download={file.name} title={`下载 ${file.name}`} aria-label={`下载 ${file.name}`}>↓</a></div>
-                  );
-                })}
+            {selected ? (
+              <div className="rail-preview-wrap">
+                <button
+                  type="button"
+                  className="rail-preview-back"
+                  onClick={closePreview}
+                >
+                  ← 返回文件列表
+                </button>
+                <RailFilePreview target={selected} />
               </div>
+            ) : (
+              <>
+                <div className="rail-file-toolbar"><small>本任务的历史文件</small><button type="button" aria-label="刷新文件" onClick={() => setRefresh((value) => value + 1)}>↻</button></div>
+                <input className="rail-file-search" type="search" aria-label="搜索任务文件" placeholder="搜索文件…" value={query} onChange={(event) => setQuery(event.target.value)} />
+                {fileError ? <p role="alert">{fileError} <button type="button" onClick={() => setRefresh((value) => value + 1)}>重试</button></p> : filesLoading ? (
+                  <span className="workbench-rail-files-empty">正在读取文件…</span>
+                ) : files.length === 0 ? (
+                  <span className="workbench-rail-files-empty">生成的文档、图片与其他成果会保存在这里。</span>
+                ) : (
+                  <div className="workbench-rail-files">
+                    {!files.some((file) => file.name.toLowerCase().includes(query.toLowerCase())) && <p>没有匹配的文件</p>}
+                    {files.filter((file) => file.name.toLowerCase().includes(query.toLowerCase())).map((file) => {
+                      const kind = previewKindFor(file.media_type ?? "", file.name ?? "");
+                      const previewable = kind !== "none";
+                      const target: PreviewTarget = {
+                        artifact_id: file.artifact_id,
+                        name: file.name,
+                        media_type: file.media_type,
+                        size_bytes: file.size_bytes,
+                        thread_id: file.thread_id ?? threadId,
+                      };
+                      return (
+                        <div className="rail-file-row" key={file.artifact_id}>
+                          <button
+                            type="button"
+                            className="workbench-rail-file"
+                            aria-pressed={selectedId === file.artifact_id}
+                            onClick={() => openPreview(target)}
+                            title={previewable ? `在侧栏预览 ${file.name}` : `查看 ${file.name}`}
+                          >
+                            <span className="rail-file-chip" aria-hidden="true">{fileChip(file.name, file.media_type ?? "")}</span>
+                            <span className="workbench-rail-file-name">{file.name}</span>
+                            <span className="workbench-rail-file-size">{formatFileSize(file.size_bytes)}</span>
+                          </button>
+                          <a className="rail-download" href={`/api/harness/artifacts/${encodeURIComponent(file.artifact_id)}?thread_id=${encodeURIComponent(threadId)}`} download={file.name} title={`下载 ${file.name}`} aria-label={`下载 ${file.name}`}>↓</a>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
             )}
           </section>
           <div hidden={tab !== "details"}>

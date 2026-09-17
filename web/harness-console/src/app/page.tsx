@@ -20,6 +20,7 @@ import {
 import { TaskSidebar } from "../components/task-sidebar";
 import { ProductBrandMark, ProductLoading, PRODUCT_NAME } from "../components/product-brand";
 import { WorkbenchRail } from "../components/workbench-rail";
+import type { PreviewTarget } from "../components/rail-file-preview";
 import { useRunViewModel } from "../lib/activity-store";
 import { useRunStream } from "../lib/run-stream-store";
 import {
@@ -240,6 +241,20 @@ function AuthenticatedHome() {
   const [catalogRefreshKey, setCatalogRefreshKey] = useState(0);
   const [taskSidebarOpen, setTaskSidebarOpen] = useState(true);
   const [taskRailOpen, setTaskRailOpen] = useState(false);
+  const [railPreview, setRailPreview] = useState<(PreviewTarget & { nonce: number }) | null>(null);
+  const previewNonce = useRef(0);
+  // Artifact cards in the transcript ask the rail to show that file.
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent).detail as PreviewTarget | undefined;
+      if (!detail?.artifact_id) return;
+      previewNonce.current += 1;
+      setRailPreview({ ...detail, nonce: previewNonce.current });
+      setTaskRailOpen(true);
+    };
+    window.addEventListener("harness:preview-artifact", handler);
+    return () => window.removeEventListener("harness:preview-artifact", handler);
+  }, []);
   const [compactTaskSidebar, setCompactTaskSidebar] = useState(false);
   const [currentTaskTitle, setCurrentTaskTitle] = useState("新任务");
   const [currentThreadState, setCurrentThreadState] =
