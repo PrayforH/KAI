@@ -6,7 +6,7 @@ import { PanelResizeHandle } from "../panel-resize-handle";
 import type { PreviewTurn } from "./agent-preview";
 import styles from "./build-workspace.module.css";
 export type BuildChange = { label: string; before: string; after: string };
-export function AgentBuildAssets({ draft, turns, changes, pending, onClose, onCodeView, onCodeChanges, onEdit, initialTab = "config" }: {draft: StudioDraft; turns: PreviewTurn[]; changes: BuildChange[]; pending: boolean; initialTab?: "config" | "changes"; onClose:()=>void; onCodeView:()=>void; onCodeChanges?:()=>void; onEdit:(section?: "identity" | "prompt" | "skills" | "capabilities" | "runtime", label?: string)=>void}) {
+export function AgentBuildAssets({ draft, turns, changes, pending, onClose, onCodeView, onCodeChanges, initialTab = "config" }: {draft: StudioDraft; turns: PreviewTurn[]; changes: BuildChange[]; pending: boolean; initialTab?: "config" | "changes"; onClose:()=>void; onCodeView:()=>void; onCodeChanges?:()=>void}) {
   const [tab,setTab]=useState<"config"|"files"|"changes">(initialTab);
   const artifacts=turns.flatMap(turn=>turn.result.artifacts.filter(item=>item.status==="ready").map(item=>({...item, revision:turn.result.draftRevision})));
   return <aside className={styles.assets} aria-label="智能体资产"><PanelResizeHandle panel="assets"/>

@@ -4,7 +4,8 @@ import {
   MarkdownTextPrimitive,
   type CodeHeaderProps,
 } from "@assistant-ui/react-markdown";
-import { TextMessagePartProvider, useMessagePartText } from "@assistant-ui/react";
+import { TextMessagePartProvider, useMessagePartText, useSmooth } from "@assistant-ui/react";
+import remend from "remend";
 import remarkGfm from "remark-gfm";
 import { memo, useMemo, useState, type ComponentPropsWithoutRef } from "react";
 import { normalizeMessageText } from "../lib/message-text";
@@ -82,31 +83,42 @@ function WikiLink({
   );
 }
 
+const STREAM_SMOOTHING = { drainMs: 120, maxCharIntervalMs: 4, minCommitMs: 32 };
+const FINAL_SMOOTHING = { drainMs: 32, maxCharIntervalMs: 1, minCommitMs: 32 };
+// One multi-hundred-KB markdown message can block the main thread for seconds
+// (the 2026-09-17 "page unresponsive" reports). Render a prefix first and let
+// the user expand; the copy action still copies the complete provider text.
 const MESSAGE_TEXT_CLAMP_CHARS = 20_000;
+function markdownUrlTransform(url: string) {
+  return url === "streamdown:incomplete-link" ? url : knowledgeUrlTransform(url);
+}
 
 function MarkdownTextImpl() {
   const part = useMessagePartText();
+  const normalized = useMemo(() => ({ ...part, text: normalizeMessageText(part.text) }), [part]);
+  const smooth = useSmooth(normalized, part.status.type === "running" ? STREAM_SMOOTHING : FINAL_SMOOTHING);
+  const running = smooth.status.type === "running";
   const [expanded, setExpanded] = useState(false);
-  const running = part.status.type === "running";
-  const oversized = !running && !expanded && part.text.length > MESSAGE_TEXT_CLAMP_CHARS;
+  // Complete syntax only in the display projection, after smoothing. Stored
+  // text and the message copy action retain the exact provider response.
+  const displayText = useMemo(
+    () => running ? remend(smooth.text, { katex: false }) : smooth.text,
+    [running, smooth.text],
+  );
+  const oversized = !running && !expanded && displayText.length > MESSAGE_TEXT_CLAMP_CHARS;
   const renderedText = oversized
-    ? part.text.slice(0, MESSAGE_TEXT_CLAMP_CHARS)
-    : part.text;
+    ? displayText.slice(0, MESSAGE_TEXT_CLAMP_CHARS)
+    : displayText;
   return (
     <TextMessagePartProvider text={renderedText} isRunning={running}>
       <MarkdownTextPrimitive
         className="aui-md"
         remarkPlugins={[remarkGfm, remarkWikiLinks]}
-        preprocess={normalizeMessageText}
-        // The live response store already batches network deltas per animation
-        // frame. A second character-by-character reveal exposes incomplete
-        // Markdown delimiters (for example `**`) until their closing token is
-        // replayed, which looks like a final-pass renderer. Parse every received
-        // delta immediately so Markdown remains formatted throughout streaming.
         smooth={false}
+        defer
         // react-markdown blanks unknown protocols; wiki: must survive so the
         // renderer can turn it into a page-opening button.
-        urlTransform={knowledgeUrlTransform}
+        urlTransform={markdownUrlTransform}
         components={{ CodeHeader, a: WikiLink, table: ScrollableTable }}
         componentsByLanguage={{
           mermaid: {
@@ -119,7 +131,7 @@ function MarkdownTextImpl() {
         <div className="aui-md-clamp">
           <span>消息过长，已先显示前 {MESSAGE_TEXT_CLAMP_CHARS} 字符</span>
           <button type="button" onClick={() => setExpanded(true)}>
-            展开全部（{part.text.length} 字符）
+            展开全部（{displayText.length} 字符）
           </button>
         </div>
       ) : null}
