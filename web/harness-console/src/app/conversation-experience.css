@@ -539,3 +539,56 @@ body.codex-theme-v1 .history-load-earlier-button { background: var(--codex-surfa
   cursor: pointer;
   white-space: nowrap;
 }
+
+/* Execution timeline geometry (2026-09-17).
+   The log keeps ONE text column: a 16px icon gutter, an 8px gap, then text at
+   24px. Commentary prose, reasoning labels and expanded bodies all start on
+   that column so the middle of the reply no longer has a ragged left edge.
+   The values are declared explicitly because the same selectors are defined
+   more than once across the theme files with different gutters. */
+body.codex-theme-v1 .execution-tree,
+body.codex-theme-v1 .execution-log { margin-left: 0; padding-left: 0; }
+body.codex-theme-v1 .execution-log > * { margin-left: 0; padding-left: 0; }
+
+body.codex-theme-v1 .execution-action-summary,
+body.codex-theme-v1 .execution-action-static {
+  grid-template-columns: 16px minmax(0, 1fr) 8px;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+}
+body.codex-theme-v1 .execution-action-static { grid-template-columns: 16px minmax(0, 1fr); }
+body.codex-theme-v1 .execution-action-icon { width: 16px; height: 16px; flex: 0 0 16px; }
+body.codex-theme-v1 .execution-action-copy { padding-left: 0; }
+body.codex-theme-v1 .execution-action-body { margin: 6px 0 0 24px; width: calc(100% - 24px); }
+
+body.codex-theme-v1 .execution-commentary { padding-left: 24px; }
+
+/* Reasoning follows the ZCode reading: label row, then the body indented on
+   the text column behind a hairline rule. */
+body.codex-theme-v1 .execution-reasoning-summary { gap: 8px; }
+body.codex-theme-v1 .execution-reasoning-label { color: var(--codex-ink-soft); font-weight: 520; }
+body.codex-theme-v1 .execution-reasoning-chevron {
+  flex: 0 0 auto;
+  width: 6px; height: 6px;
+  margin: 1px 1px 0 2px;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  transform: rotate(45deg);
+  opacity: .72;
+}
+body.codex-theme-v1 .execution-reasoning-body {
+  margin: 2px 0 0;
+  padding: 2px 0 2px 24px;
+  border-left: 1px solid var(--codex-line);
+  color: var(--codex-muted);
+}
+
+/* Disclosure chevrons read as a dropdown (down) while open, never upward.
+   rotate(45deg) is the down orientation for a right+bottom bordered square. */
+body.codex-theme-v1 .execution-action[open] .execution-action-chevron { transform: rotate(45deg); }
+body.codex-theme-v1 .execution-ribbon > .execution-disclosure .execution-chevron,
+body.codex-theme-v1 .execution-ribbon[data-open="true"] > .execution-disclosure .execution-chevron {
+  transform: rotate(45deg);
+  margin-top: 2px;
+}
