@@ -4,6 +4,7 @@ import pytest
 from ag_ui.core import RunAgentInput, UserMessage
 from httpx import ASGITransport, AsyncClient
 
+from harness.agui.routes import _HISTORY_SNAPSHOT_VERSION as HISTORY_SNAPSHOT_VERSION
 from harness.api.app import create_memory_app
 
 FIXTURE_MANIFEST = Path("tests/fixtures/agents/echo-agent/agent.yaml")
@@ -104,7 +105,7 @@ async def test_history_paginates_runs_and_materializes_snapshots() -> None:
                 "tenant-a", run.run_id, 0, types=("history.snapshot",)
             )
             assert len(snapshots) == 1
-            assert snapshots[0].payload["version"] == 1
+            assert snapshots[0].payload["version"] == HISTORY_SNAPSHOT_VERSION
             expected_turn = run.input["prompt"].split()[-1]
             assert snapshots[0].payload["response_text"] == f"Echo: turn {expected_turn}"
 

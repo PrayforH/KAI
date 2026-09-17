@@ -550,8 +550,37 @@ def test_reasoning_preserves_long_provider_text_and_whitespace_with_redaction() 
         for item in activity["items"]
         if item["event_type"] == "reasoning.summary.delta"
     ]
-    assert summaries[0] == "完整摘要。" * 500 + " password=[REDACTED]"
-    assert summaries[1] == " "
+    # Deltas of one thinking block share a single item, so the long text and the
+    # trailing whitespace delta both survive in that item without truncation.
+    assert len(summaries) == 1
+    assert summaries[0] == "完整摘要。" * 500 + " password=[REDACTED] "
+
+
+def test_streaming_deltas_fold_into_one_item_per_message_or_thinking_block() -> None:
+    activity = build_run_activity(
+        [
+            event("run.running"),
+            event("reasoning.delta", {"text": "思", "item_id": "block-1"}, 2),
+            event("reasoning.delta", {"text": "考", "item_id": "block-1"}, 3),
+            event("reasoning.delta", {"text": "新的", "item_id": "block-2"}, 4),
+            event("message.delta", {"text": "进展", "message_id": "msg-1"}, 5),
+            event("message.delta", {"text": "说明", "message_id": "msg-1"}, 6),
+            event("message.delta", {"text": "另一条", "message_id": "msg-2"}, 7),
+        ]
+    )
+    assert activity is not None
+    folded = [item for item in activity["items"] if "delta" in item["event_type"]]
+    assert [(item["event_type"], item["summary"]) for item in folded] == [
+        ("reasoning.delta", "思考"),
+        ("reasoning.delta", "新的"),
+        ("message.delta", "进展说明"),
+        ("message.delta", "另一条"),
+    ]
+    # The folded item keeps the first delta's identity so the client's
+    # per-item grouping and ordering stay stable.
+    assert folded[0]["id"] == "event-2"
+    assert folded[0]["sequence"] == 2
+    assert folded[0]["metadata"] == {"item_id": "block-1"}
 
 
 def test_historical_budget_failure_is_explained() -> None:

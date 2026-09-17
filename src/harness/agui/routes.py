@@ -59,7 +59,10 @@ _STREAM_HEARTBEAT_SECONDS = 10.0
 # every streaming delta again. Legacy runs without a snapshot fall back to the
 # full fold once and write the snapshot back so later reads stay cheap.
 _HISTORY_SNAPSHOT_EVENT_TYPE = "history.snapshot"
-_HISTORY_SNAPSHOT_VERSION = 1
+# Version 2 folds streaming deltas into one activity item per message or
+# thinking block. Version 1 snapshots carry one item per token (thousands of
+# items, ~1MB per run) and are ignored so they rebuild compactly on next read.
+_HISTORY_SNAPSHOT_VERSION = 2
 _HISTORY_MARKER_EVENT_TYPES = (_HISTORY_SNAPSHOT_EVENT_TYPE, "run.steer.accepted")
 _HISTORY_RUN_PAGE_DEFAULT = 30
 _HISTORY_RUN_PAGE_MAX = 100

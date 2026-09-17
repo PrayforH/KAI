@@ -601,6 +601,44 @@ def _activity_item(event: RunEvent) -> dict[str, Any] | None:
     return None
 
 
+_STREAM_ITEM_KEYS = {
+    "message.delta": "message_id",
+    "reasoning.delta": "item_id",
+    "reasoning.summary.delta": "item_id",
+}
+
+
+def _merge_stream_item(
+    items: list[dict[str, Any]],
+    event: RunEvent,
+    item: dict[str, Any],
+) -> bool:
+    """Fold a streaming delta into the open item of the same stream.
+
+    Providers emit one event per token and every token became its own activity
+    item, so a 15-turn history carried roughly 3000 items per run at ~310 bytes
+    of id/timestamp/metadata overhead each while the actual text was a few KB.
+    Adjacent deltas of one message or thinking block now share one item; the
+    client already concatenated them for display, so nothing visible changes.
+    """
+
+    key = _STREAM_ITEM_KEYS.get(event.type)
+    if key is None or not items:
+        return False
+    previous = items[-1]
+    if previous.get("event_type") != event.type:
+        return False
+    previous_metadata = previous.get("metadata")
+    metadata = item.get("metadata")
+    if not isinstance(previous_metadata, dict) or not isinstance(metadata, dict):
+        return False
+    stream_id = metadata.get(key)
+    if stream_id is None or previous_metadata.get(key) != stream_id:
+        return False
+    previous["summary"] = f"{previous.get('summary') or ''}{item.get('summary') or ''}"
+    return True
+
+
 def build_run_activity(events: Sequence[RunEvent]) -> dict[str, Any] | None:
     """Fold durable run events into the same final activity used by live AG-UI."""
     if not events:
@@ -612,6 +650,8 @@ def build_run_activity(events: Sequence[RunEvent]) -> dict[str, Any] | None:
     for event in events:
         item = _activity_item(event)
         if item is None:
+            continue
+        if _merge_stream_item(items, event, item):
             continue
         items.append(item)
         if event.type.startswith("run.") or event.type == "runtime.result":
