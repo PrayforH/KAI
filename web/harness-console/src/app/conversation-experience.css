@@ -562,7 +562,9 @@ body.codex-theme-v1 .execution-action-icon { width: 16px; height: 16px; flex: 0 
 body.codex-theme-v1 .execution-action-copy { padding-left: 0; }
 body.codex-theme-v1 .execution-action-body { margin: 6px 0 0 24px; width: calc(100% - 24px); }
 
-body.codex-theme-v1 .execution-commentary { padding-left: 24px; }
+/* Process prose is flush with the icon gutter, matching the reply text's left
+   edge; only tool labels and reasoning bodies sit on the 24px text column. */
+body.codex-theme-v1 .execution-commentary { padding-left: 0; }
 
 /* Reasoning follows the ZCode reading: label row, then the body indented on
    the text column behind a hairline rule. */
@@ -577,11 +579,19 @@ body.codex-theme-v1 .execution-reasoning-chevron {
   transform: rotate(45deg);
   opacity: .72;
 }
+/* The rule is centred on the 16px thinking icon (its centre is 8px), and the
+   body keeps a fixed height with its own scrollbar so a long reasoning trace
+   never stretches the reply. */
 body.codex-theme-v1 .execution-reasoning-body {
-  margin: 2px 0 0;
-  padding: 2px 0 2px 24px;
+  margin: 2px 0 0 8px;
+  padding: 2px 8px 2px 16px;
   border-left: 1px solid var(--codex-line);
+  max-height: 250px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
   color: var(--codex-muted);
+  line-height: 1.6;
 }
 
 /* Disclosure chevrons read as a dropdown (down) while open, never upward.
