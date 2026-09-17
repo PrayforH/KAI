@@ -103,7 +103,7 @@ from harness.runtime.registry_codex_runtime import RegistryCodexRuntime, Registr
 from harness.runtime.registry_runtime import RegistryClaudeRuntime
 from harness.runtime.sdk_tool_gate import SdkToolGate
 from harness.runtime.session_store import PostgresSessionStore
-from harness.sandbox.base import SandboxProvider
+from harness.sandbox.base import SandboxProvider, provider_meets_enforcement_floor
 from harness.sandbox.cubesandbox import build_cubesandbox_provider
 from harness.sandbox.daytona import DaytonaSandboxProvider, SdkDaytonaClient
 from harness.sandbox.deferred import DeferredToolSandboxProvider
@@ -1067,6 +1067,10 @@ def build_production_container(
                 )
                 if profile.sandbox_provider != actual:
                     raise RuntimeError("execution_profile_sandbox_provider_mismatch")
+                # The profile declares the weakest enforcement it accepts; a run
+                # is refused rather than silently executing weaker than declared.
+                if not provider_meets_enforcement_floor(actual, profile.minimum_enforcement):
+                    raise RuntimeError("execution_profile_enforcement_below_minimum")
 
             if settings.sandbox_execution_mode != "worker_cli_deferred":
                 return runtime_sandbox_backend

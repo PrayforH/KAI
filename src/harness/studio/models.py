@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, m
 from harness.core.manifest import ToolExposureMode
 from harness.core.models import AgentRuntimeType
 from harness.evals.suite import EvalCase
+from harness.sandbox.base import SandboxEnforcement
 
 
 class StudioModel(BaseModel):
@@ -857,6 +858,12 @@ class ExecutionProfileMetadata(StudioModel):
     description: str = Field(min_length=1, max_length=500)
     sandbox_provider: Literal["local", "daytona", "e2b", "gvisor", "cubesandbox"] = Field(
         alias="sandboxProvider"
+    )
+    # The weakest enforcement tier this profile accepts. The deployment has to
+    # reach it with a backend that actually delivers that tier, otherwise the
+    # run is refused instead of silently running weaker than declared.
+    minimum_enforcement: SandboxEnforcement = Field(
+        default=SandboxEnforcement.NONE, alias="minimumEnforcement"
     )
     network_access: tuple[NetworkAccess, ...] = Field(alias="networkAccess")
     risk: CapabilityRisk

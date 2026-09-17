@@ -192,6 +192,7 @@ def default_capability_catalog() -> CapabilityCatalog:
                         "不提供进程、文件系统或网络强隔离，禁止用于生产发布。"
                     ),
                     "sandboxProvider": "local",
+                    "minimumEnforcement": "none",
                     "networkAccess": (
                         NetworkAccess.NONE,
                         NetworkAccess.INTERNAL,
@@ -217,6 +218,7 @@ def default_capability_catalog() -> CapabilityCatalog:
                         "保留租户、会话、产物和策略边界。"
                     ),
                     "sandboxProvider": "local",
+                    "minimumEnforcement": "none",
                     "networkAccess": (
                         NetworkAccess.NONE,
                         NetworkAccess.INTERNAL,
@@ -240,6 +242,7 @@ def default_capability_catalog() -> CapabilityCatalog:
                     "label": "E2B 公网隔离执行",
                     "description": ("在 E2B 隔离微虚拟机中执行，允许访问审核过的公网模型与 MCP。"),
                     "sandboxProvider": "e2b",
+                    "minimumEnforcement": "delegated",
                     "networkAccess": (
                         NetworkAccess.NONE,
                         NetworkAccess.EXTERNAL,
@@ -261,6 +264,7 @@ def default_capability_catalog() -> CapabilityCatalog:
                     "label": "私有化 gVisor",
                     "description": "每个 Run 在 Kubernetes gVisor Pod 中强隔离执行。",
                     "sandboxProvider": "gvisor",
+                    "minimumEnforcement": "full",
                     "networkAccess": (
                         NetworkAccess.NONE,
                         NetworkAccess.INTERNAL,
@@ -283,6 +287,7 @@ def default_capability_catalog() -> CapabilityCatalog:
                     "label": "CubeSandbox 私有化沙箱",
                     "description": "通过内网 CubeSandbox 为任务分配独立沙箱，执行命令并回收制品。",
                     "sandboxProvider": "cubesandbox",
+                    "minimumEnforcement": "delegated",
                     "networkAccess": (
                         NetworkAccess.NONE,
                         NetworkAccess.INTERNAL,
