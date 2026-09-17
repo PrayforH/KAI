@@ -1089,9 +1089,12 @@ def build_production_container(
             # A Session's trust high-watermark sets the weakest backend it still
             # accepts, independent of any published execution profile: once
             # untrusted content entered the Session, isolation may not drop.
+            # The context store is keyed by the Session's own user, which is
+            # who the runtime promotes trust for; the agent owner is a different
+            # identity and would silently read an empty state.
             trust_state = await context_service.state(
                 tenant_id,
-                session.resolved_agent_owner_user_id,
+                session.user_id,
                 session.session_id,
             )
             trust_floor = trust_enforcement_floor(trust_state.trust_high_watermark)
@@ -1159,7 +1162,7 @@ def build_production_container(
         runtime_sandbox_backend = runtime_sandbox
         sandbox_governance = SandboxGovernanceService(
             sandbox_leases,
-            runtime_sandbox_backend,
+            runtime_sandbox,
             clock=clock,
             metrics=reliability_metrics,
         )

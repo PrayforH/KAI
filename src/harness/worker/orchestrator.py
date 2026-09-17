@@ -1068,7 +1068,7 @@ class RunOrchestrator:
                 # to reach; recording both makes a below-floor Run auditable.
                 trust_state = await self._context_service.state(
                     tenant_id,
-                    session.resolved_agent_owner_user_id,
+                    session.user_id,
                     run.session_id,
                 )
                 floor = trust_enforcement_floor(trust_state.trust_high_watermark)
