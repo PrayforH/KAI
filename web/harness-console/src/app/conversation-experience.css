@@ -423,6 +423,7 @@ body.codex-theme-v1 .execution-row-sweep::after {
 @keyframes execution-row-sweep { from { left: -220px; } 90%, to { left: 100%; } }
 @media (prefers-reduced-motion: reduce) {
   body.codex-theme-v1 .execution-row-sweep::after { animation: none; display: none; }
+  body.codex-theme-v1 .execution-reasoning-chevron { transition: none; }
 }
 /* Attachment cards share one box for preview, metadata and upload state. */
 body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments {
@@ -578,6 +579,11 @@ body.codex-theme-v1 .execution-commentary-content {
   border-left: 0;
 }
 
+/* One vertical rhythm: every log row keeps the same box height, so 思考 and the
+   progress prose stop reading as more spaced than the tool rows. */
+body.codex-theme-v1 .execution-reasoning-summary { min-height: 20px; }
+body.codex-theme-v1 .execution-commentary { padding-bottom: 0; }
+
 /* Reasoning follows the ZCode reading: label row, then the body indented on
    the text column behind a hairline rule. */
 body.codex-theme-v1 .execution-reasoning-summary { gap: 8px; }
@@ -585,11 +591,15 @@ body.codex-theme-v1 .execution-reasoning-label { color: var(--codex-ink-soft); f
 body.codex-theme-v1 .execution-reasoning-chevron {
   flex: 0 0 auto;
   width: 6px; height: 6px;
-  margin: 1px 1px 0 2px;
+  margin: 0 1px 0 2px;
   border-right: 1px solid currentColor;
   border-bottom: 1px solid currentColor;
-  transform: rotate(45deg);
+  transform: rotate(-45deg);
+  transition: transform 130ms ease;
   opacity: .72;
+}
+body.codex-theme-v1 .execution-reasoning[open] .execution-reasoning-chevron {
+  transform: rotate(45deg);
 }
 /* The rule is centred on the nudged thinking icon (its centre is 6px), and the
    body keeps a fixed height with its own scrollbar so a long reasoning trace
@@ -606,11 +616,19 @@ body.codex-theme-v1 .execution-reasoning-body {
   line-height: 1.6;
 }
 
-/* Disclosure chevrons read as a dropdown (down) while open, never upward.
-   rotate(45deg) is the down orientation for a right+bottom bordered square. */
+/* Disclosure chevrons: the tip points right while collapsed and down while
+   open, and sits centred on its row. For a right+bottom bordered square
+   rotate(-45deg) points right and rotate(45deg) points down. */
+body.codex-theme-v1 .execution-action-chevron {
+  align-self: center;
+  margin-top: 0;
+  transform: rotate(-45deg);
+}
 body.codex-theme-v1 .execution-action[open] .execution-action-chevron { transform: rotate(45deg); }
-body.codex-theme-v1 .execution-ribbon > .execution-disclosure .execution-chevron,
+body.codex-theme-v1 .execution-ribbon > .execution-disclosure .execution-chevron {
+  margin-top: 0;
+  transform: rotate(-45deg);
+}
 body.codex-theme-v1 .execution-ribbon[data-open="true"] > .execution-disclosure .execution-chevron {
   transform: rotate(45deg);
-  margin-top: 2px;
 }
