@@ -12,6 +12,7 @@ import {
 } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { mapWithConcurrency } from "../../lib/concurrency";
 import {
   studioClient,
   type StudioKnowledgeBase,
@@ -94,7 +95,9 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
   useEffect(() => {
     if (base && !supportsWiki && tab !== "docs") setTab("docs");
   }, [base, supportsWiki, tab]);
-  const SPREADSHEET_TYPES = ["xls", "xlsx", "xlsm", "csv"];
+  // Files uploaded at once: quick without flooding the engine.
+const UPLOAD_CONCURRENCY = 3;
+const SPREADSHEET_TYPES = ["xls", "xlsx", "xlsm", "csv"];
   const isSpreadsheet = (fileType: string) =>
     SPREADSHEET_TYPES.includes((fileType || "").toLowerCase());
 
@@ -304,16 +307,20 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
       setUploading(true);
       setError("");
       setUploadProgress({ done: 0, total: files.length });
-      const failed: string[] = [];
+      let done = 0;
       try {
-        for (const [index, file] of files.entries()) {
+        const results = await mapWithConcurrency(files, UPLOAD_CONCURRENCY, async (file) => {
           try {
             await studioClient.uploadKnowledgeDocument(reference, file);
+            return { name: file.name, error: "" };
           } catch (cause) {
-            failed.push(`${file.name}：${cause instanceof Error ? cause.message : "上传失败"}`);
+            return { name: file.name, error: cause instanceof Error ? cause.message : "上传失败" };
+          } finally {
+            done += 1;
+            setUploadProgress({ done, total: files.length });
           }
-          setUploadProgress({ done: index + 1, total: files.length });
-        }
+        });
+        const failed = results.filter((result) => result.error);
         await loadDocuments();
         const accepted = files.length - failed.length;
         if (accepted > 0) {
@@ -324,7 +331,7 @@ export function KnowledgeBaseDetail({ reference }: { reference: string }) {
           );
         }
         if (failed.length > 0) {
-          setError(`上传失败：${failed.join("；")}`);
+          setError(`上传失败：${failed.map((item) => `${item.name}：${item.error}`).join("；")}`);
         }
       } finally {
         setUploading(false);
