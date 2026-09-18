@@ -67,6 +67,10 @@ export function ConversationIndex({ frame, threadId, pagination }: {
         if (node.dataset.turnId) next.push({ id: node.dataset.turnId, label: node.dataset.turnLabel || "附件消息", answer: "", node });
         else if (next.length && node.dataset.turnAnswer) next[next.length - 1].answer = node.dataset.turnAnswer.replace(/!?(\[([^\]]+)\])\([^)]*\)/g, "$2").replace(/[#*_`>]/g, "").trim();
       }
+      // A thread re-import wipes the message DOM for a frame; publishing an
+      // empty list then made every tick blink out and back. Once turns are
+      // known, keep the last scan until the DOM has turns again.
+      if (next.length === 0 && current.length > 0) { track(); return; }
       const changed = next.length !== current.length || next.some((entry, i) => entry.id !== current[i]?.id || entry.label !== current[i]?.label || entry.answer !== current[i]?.answer || entry.node !== current[i]?.node);
       current = next;
       if (changed) setEntries(next);

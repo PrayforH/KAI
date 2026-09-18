@@ -1007,95 +1007,6 @@ export function shouldShowArtifactForTurn(
   );
 }
 
-/** The artifacts this turn presents. They are summarised once, above the answer's
- * actions, and the drawer the summary opens is where they are actually browsed. */
-export function artifactsForTurn(
-  parts: readonly { type?: string; toolName?: string; args?: unknown }[],
-  viewRunId: string | undefined,
-  isLast: boolean,
-): ArtifactDetails[] {
-  return parts
-    .filter((part) => part.type === "tool-call" && part.toolName === "harness_present_artifact")
-    .filter((part) => {
-      const args = (part.args ?? {}) as Record<string, unknown>;
-      return shouldShowArtifactForTurn(
-        typeof args.run_id === "string" ? args.run_id : undefined,
-        viewRunId,
-        isLast,
-      );
-    })
-    .map((part) => (part.args ?? {}) as ArtifactDetails);
-}
-
-const ARTIFACT_THUMBNAIL_COUNT = 3;
-
-function artifactMark(name: string | undefined, mediaType: string | undefined) {
-  const type = (mediaType ?? "").toLowerCase();
-  if (type.startsWith("image/")) return "IMG";
-  if (type === "application/pdf") return "PDF";
-  if (type.includes("json")) return "JSON";
-  if (type.includes("markdown")) return "MD";
-  if (type.startsWith("video/")) return "VID";
-  const extension = (name ?? "").split(".").pop()?.toLowerCase() ?? "";
-  return extension ? extension.slice(0, 4).toUpperCase() : "FILE";
-}
-
-function isImageArtifact(details: ArtifactDetails) {
-  const type = (details.media_type ?? "").toLowerCase();
-  return type.startsWith("image/") || ["png", "jpg", "jpeg", "gif", "webp", "avif", "svg"].includes(
-    (details.name ?? "").split(".").pop()?.toLowerCase() ?? "",
-  );
-}
-
-/** One row above the answer's actions: a few thumbnails and the count, opening
- * the task's file drawer. */
-function ArtifactSummaryRow({ artifacts }: { artifacts: ArtifactDetails[] }) {
-  const [failed, setFailed] = useState<readonly string[]>([]);
-  if (artifacts.length === 0) return null;
-  const thumbs = artifacts.slice(0, ARTIFACT_THUMBNAIL_COUNT);
-  const extra = artifacts.length - thumbs.length;
-  const label = `查看本任务的 ${artifacts.length} 项产出`;
-  return (
-    <button
-      type="button"
-      className="artifact-summary-row"
-      aria-label={label}
-      title={label}
-      onClick={() => window.dispatchEvent(new CustomEvent("harness:open-files"))}
-    >
-      <span className="artifact-summary-thumbs" aria-hidden="true">
-        {thumbs.map((details) => (
-          <span className="artifact-thumb" key={details.artifact_id} data-mark={artifactMark(details.name, details.media_type)}>
-            {isImageArtifact(details) && !failed.includes(details.artifact_id) ? (
-              // Same-origin artifact endpoint; a failed image falls back to the mark.
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={`/api/harness/artifacts/${encodeURIComponent(details.artifact_id)}?preview=1`}
-                alt=""
-                loading="lazy"
-                onError={() => setFailed((current) => [...current, details.artifact_id])}
-              />
-            ) : null}
-            <b>{artifactMark(details.name, details.media_type)}</b>
-          </span>
-        ))}
-        {extra > 0 ? <span className="artifact-thumb artifact-thumb-more">+{extra}</span> : null}
-      </span>
-      <span className="artifact-summary-count">{artifacts.length} 项产出</span>
-    </button>
-  );
-}
-
-function ArtifactStackIcon() {
-  return (
-    <svg viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M8 1.8 14 4.7 8 7.6 2 4.7z" />
-      <path d="m2.6 7.6 5.4 2.6 5.4-2.6" />
-      <path d="m2.6 10.6 5.4 2.6 5.4-2.6" />
-    </svg>
-  );
-}
-
 function HarnessToolPart(part: ToolCallMessagePartProps) {
   const status = toolStatus(part);
   const args = objectValue(part.args);
@@ -1130,7 +1041,7 @@ function HarnessToolPart(part: ToolCallMessagePartProps) {
     );
   }
   if (part.toolName === "harness_present_artifact") {
-    return <HarnessArtifactPart />;
+    return <HarnessArtifactPart args={args} runId={runView?.runId} />;
   }
   if (shouldSuppressRawToolCard(runView, part.toolCallId)) {
     return null;
@@ -1147,10 +1058,18 @@ function HarnessToolPart(part: ToolCallMessagePartProps) {
   );
 }
 
-function HarnessArtifactPart() {
-  // Files are listed once, in the drawer the pill opens; an inline card per file
-  // was the duplicate that buried the end of a long answer.
-  return null;
+function HarnessArtifactPart({
+  args,
+  runId,
+}: {
+  args: Record<string, unknown>;
+  runId: string | undefined;
+}) {
+  const isLast = useAuiState((state) => state.message.isLast);
+  const artifactRunId =
+    typeof args.run_id === "string" ? args.run_id : undefined;
+  if (!shouldShowArtifactForTurn(artifactRunId, runId, isLast)) return null;
+  return <ArtifactCard details={args as unknown as ArtifactDetails} />;
 }
 
 const ReasoningPart: ReasoningMessagePartComponent = ({ text, status }) => (
@@ -1414,10 +1333,6 @@ function HarnessAssistantMessage() {
   const turnCitations = citationsForTurn(messageId, isLast, runView, durable?.success ? durable.data : undefined);
   if (turnCitations) capturedCitations.current = { messageId, citations: turnCitations };
   const answerCitations = capturedCitations.current.messageId === messageId ? capturedCitations.current.citations : [];
-  const turnArtifacts = useMemo(
-    () => artifactsForTurn(content, runView?.runId, isLast),
-    [content, runView?.runId, isLast],
-  );
   return (
     <AnswerCitationProvider citations={answerCitations}>
     <AssistantMessage.Root
@@ -1458,17 +1373,10 @@ function HarnessAssistantMessage() {
       ) : null}
       {!hasVideoGeneration ? (
         <div className="assistant-message-controls">
-          {messageStatus?.type === "running" ? null : (
-            <div className="artifact-summary-line">
-              <ArtifactSummaryRow artifacts={turnArtifacts} />
-            </div>
-          )}
           <HarnessBranchPicker />
           <AssistantActionBar.Root
             className="assistant-feedback-actions"
             hideWhenRunning
-            autohide="not-last"
-            autohideFloat="single-branch"
           >
             <MessageCopyButton
               className="assistant-message-copy"

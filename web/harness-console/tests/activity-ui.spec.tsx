@@ -9,7 +9,6 @@ import { ToolCard } from "../src/components/tool-card";
 import { completedToolBatch } from "../src/components/tool-card";
 import type { RunViewModel } from "../src/lib/run-view-model";
 import {
-  artifactsForTurn,
   hasProjectedTool,
   selectTurnActivity,
   shouldCaptureTurnActivity,
@@ -328,34 +327,5 @@ describe("Codex-style activity UI", () => {
     expect(html).toContain("高风险");
     expect(html).toContain("拒绝");
     expect(html).toContain("write-review");
-  });
-});
-
-describe("artifact summary row", () => {
-  const artifact = (runId: string, name = "out.csv", mediaType = "text/csv") => ({
-    type: "tool-call",
-    toolName: "harness_present_artifact",
-    args: { artifact_id: `a-${runId}-${name}`, run_id: runId, name, media_type: mediaType },
-  });
-
-  it("lists the files this turn presents, once per file", () => {
-    const parts = [
-      artifact("run_1", "data/by_region.csv"),
-      { type: "tool-call", toolName: "harness_run_activity", args: {} },
-      artifact("run_1", "deliverables/REPORT.md", "text/markdown"),
-      artifact("run_1", "charts/top10.svg", "image/svg+xml"),
-    ];
-
-    expect(artifactsForTurn(parts, "run_1", true).map((item) => item.name)).toEqual([
-      "data/by_region.csv",
-      "deliverables/REPORT.md",
-      "charts/top10.svg",
-    ]);
-  });
-
-  it("leaves out files from another run and turns without any", () => {
-    // The last turn must not claim the previous run's files.
-    expect(artifactsForTurn([artifact("run_0")], "run_1", true)).toEqual([]);
-    expect(artifactsForTurn([artifact("run_0")], "run_0", true)).toHaveLength(1);
   });
 });
