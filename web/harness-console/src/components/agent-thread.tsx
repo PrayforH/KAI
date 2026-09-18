@@ -1003,6 +1003,55 @@ export function shouldShowArtifactForTurn(
   );
 }
 
+/** A long run can present a dozen artifacts; three cards plus one footer is
+ * what the main chat clients show before folding the rest away. */
+export const ARTIFACT_CARD_PREVIEW = 3;
+
+export function artifactFoldPlan(
+  parts: readonly { type?: string; toolName?: string; args?: unknown }[],
+  viewRunId: string | undefined,
+  isLast: boolean,
+  options: { preview?: number; expanded?: boolean; running?: boolean } = {},
+) {
+  const preview = options.preview ?? ARTIFACT_CARD_PREVIEW;
+  const indices = parts
+    .map((part, index) => ({ part, index }))
+    .filter(({ part }) => part.type === "tool-call" && part.toolName === "harness_present_artifact")
+    .filter(({ part }) => {
+      const args = (part.args ?? {}) as Record<string, unknown>;
+      return shouldShowArtifactForTurn(
+        typeof args.run_id === "string" ? args.run_id : undefined,
+        viewRunId,
+        isLast,
+      );
+    })
+    .map(({ index }) => index);
+  const total = indices.length;
+  const folded = !options.running && !options.expanded && total > preview;
+  return {
+    total,
+    folded,
+    visible: new Set(folded ? indices.slice(0, preview) : indices),
+    footerIndex: folded ? indices[preview] : null,
+  };
+}
+
+type ArtifactFoldState = ReturnType<typeof artifactFoldPlan> & { expand: () => void };
+
+const ArtifactFoldContext = createContext<ArtifactFoldState | null>(null);
+
+function ArtifactFoldFooter({ state }: { state: ArtifactFoldState }) {
+  const hidden = state.total - ARTIFACT_CARD_PREVIEW;
+  return (
+    <div className="aui-md-clamp">
+      <span>本次产出共 {state.total} 项，另有 {hidden} 项未显示</span>
+      <button type="button" onClick={state.expand}>
+        展开全部（{state.total} 项）
+      </button>
+    </div>
+  );
+}
+
 function HarnessToolPart(part: ToolCallMessagePartProps) {
   const status = toolStatus(part);
   const args = objectValue(part.args);
@@ -1061,10 +1110,21 @@ function HarnessArtifactPart({
   args: Record<string, unknown>;
   runId: string | undefined;
 }) {
+  const aui = useAui();
   const isLast = useAuiState((state) => state.message.isLast);
+  const fold = useContext(ArtifactFoldContext);
   const artifactRunId =
     typeof args.run_id === "string" ? args.run_id : undefined;
   if (!shouldShowArtifactForTurn(artifactRunId, runId, isLast)) return null;
+  if (fold) {
+    const index =
+      aui.part.source === "message" && aui.part.query.type === "index"
+        ? aui.part.query.index
+        : -1;
+    if (fold.footerIndex === index) return <ArtifactFoldFooter state={fold} />;
+    // An unknown index means the part context is missing, so show the card.
+    if (index >= 0 && !fold.visible.has(index)) return null;
+  }
   return <ArtifactCard details={args as unknown as ArtifactDetails} />;
 }
 
@@ -1329,8 +1389,21 @@ function HarnessAssistantMessage() {
   const turnCitations = citationsForTurn(messageId, isLast, runView, durable?.success ? durable.data : undefined);
   if (turnCitations) capturedCitations.current = { messageId, citations: turnCitations };
   const answerCitations = capturedCitations.current.messageId === messageId ? capturedCitations.current.citations : [];
+  const [artifactsExpanded, setArtifactsExpanded] = useState(false);
+  const artifactFold = useMemo(
+    () => artifactFoldPlan(content, runView?.runId, isLast, {
+      expanded: artifactsExpanded,
+      running: messageStatus?.type === "running",
+    }),
+    [content, runView?.runId, isLast, artifactsExpanded, messageStatus?.type],
+  );
+  const artifactFoldState = useMemo(
+    () => ({ ...artifactFold, expand: () => setArtifactsExpanded(true) }),
+    [artifactFold],
+  );
   return (
     <AnswerCitationProvider citations={answerCitations}>
+    <ArtifactFoldContext.Provider value={artifactFoldState}>
     <AssistantMessage.Root
       className="harness-assistant-message"
       data-turn-answer={copyText.replace(/\s+/g, " ").slice(0, 360)}
@@ -1387,6 +1460,7 @@ function HarnessAssistantMessage() {
         </div>
       ) : null}
     </AssistantMessage.Root>
+    </ArtifactFoldContext.Provider>
     </AnswerCitationProvider>
   );
 }
