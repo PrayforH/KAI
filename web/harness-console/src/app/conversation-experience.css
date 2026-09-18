@@ -782,16 +782,19 @@ html body.codex-theme-v1 .execution-reasoning[open] .execution-reasoning-chevron
 }
 .rail-toolbar[hidden] { display: none !important; }
 .rail-files-section { display: flex; flex-direction: column; flex: 1 0 auto; min-height: 0; border-bottom: 0; }
-/* An open file keeps the browser beside it while the drawer has the room. */
+/* An open file keeps the browser beside it while the drawer has the room, and
+   both columns share exactly the drawer height so each one scrolls on its own. */
 .rail-files-section[data-previewing="true"] {
   display: grid;
+  flex: 1 1 auto;
+  min-height: 0;
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   gap: 10px;
 }
 .rail-files-section[data-previewing="true"] > .rail-file-column { display: none; }
-.rail-file-column { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
-.rail-preview-column { display: flex; flex-direction: column; min-height: 0; }
+.rail-file-column { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.rail-preview-column { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 @container rail (min-width: 460px) {
   .rail-files-section[data-previewing="true"] {
     grid-template-columns: minmax(150px, 0.34fr) minmax(0, 1fr);

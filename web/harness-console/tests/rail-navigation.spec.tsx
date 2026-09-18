@@ -110,6 +110,18 @@ it("squeezes a real column, and covers the conversation when expanded", () => {
   expect(experience).toMatch(/\.rail-files-section\[data-previewing="true"\]/);
 });
 
+it("gives both columns the drawer height so a long list scrolls on its own", () => {
+  const experience = readFileSync(
+    join(process.cwd(), "src/app/conversation-experience.css"),
+    "utf8",
+  );
+  // Without the clamp the tallest column stretches the drawer and no list scrolls.
+  expect(experience).toMatch(/\.rail-files-section\[data-previewing="true"\] \{[^}]*flex: 1 1 auto;/s);
+  expect(experience).toMatch(/\.rail-files-section\[data-previewing="true"\] \{[^}]*grid-template-rows: minmax\(0, 1fr\);/s);
+  expect(experience).toMatch(/\.rail-file-column \{[^}]*overflow-y: auto;/s);
+  expect(experience).toMatch(/\.rail-preview-column \{[^}]*overflow: hidden;/s);
+});
+
 it("asks the shell to give the drawer the whole conversation area", async () => {
   const onToggleExpanded = vi.fn();
   await render(vi.fn(), onToggleExpanded);
