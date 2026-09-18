@@ -141,13 +141,7 @@ async def lifecycle_index(sessions: SessionFactory, job: DataLifecycleJob) -> Li
             for item in cast(list[object], run.input.get("input_artifact_ids", []))
             if isinstance(item, str)
         }
-        if scope.kind is LifecycleScopeKind.TENANT:
-            input_rows = (
-                await db.scalars(
-                    select(InputArtifactRow).where(InputArtifactRow.tenant_id == tenant_id)
-                )
-            ).all()
-        elif scope.kind is LifecycleScopeKind.USER:
+        if scope.kind is LifecycleScopeKind.USER:
             input_rows = (
                 await db.scalars(
                     select(InputArtifactRow).where(
@@ -157,6 +151,9 @@ async def lifecycle_index(sessions: SessionFactory, job: DataLifecycleJob) -> Li
                 )
             ).all()
         elif referenced_inputs:
+            # Tenant retention follows the runs being removed, exactly like
+            # artifacts: it must not sweep the tenant's every upload. Inputs are
+            # only deleted alongside a run that referenced them.
             input_rows = (
                 await db.scalars(
                     select(InputArtifactRow).where(
