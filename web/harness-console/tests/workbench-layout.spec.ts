@@ -714,7 +714,9 @@ describe("full-page agent workbench", () => {
     );
     expect(markdown).toContain('className="aui-table-scroll"');
     expect(markdown).toContain('aria-label="表格，可横向滚动"');
-    expect(markdown).toContain("table: ScrollableTable");
+    // Tables fold when long, but every table still renders inside that region.
+    expect(markdown).toContain("table: CollapsibleTable");
+    expect(markdown).toContain("<ScrollableTable {...props}>");
     expect(markdown).toContain("smooth={false}");
     // Normalization runs before reveal; wiki links remain a Markdown plugin.
     expect(markdown).toContain("normalizeMessageText(part.text)");
