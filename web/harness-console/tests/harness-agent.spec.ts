@@ -550,7 +550,7 @@ describe("HarnessHttpAgent", () => {
   });
 });
 
-it.each(["reasoning.delta", "tool.request"])("hands visible progress to the activity before %s, preserving the final answer", async (boundary) => {
+it.each(["tool.request", "approval.requested", "subagent.started"])("hands visible progress to the activity before %s, preserving the final answer", async (boundary) => {
   liveResponseStore.clear(); activityStore.clear();
   const progress = "已找到资料，需要继续核验。".repeat(20);
   const entry = (event_type: string, sequence: number, summary: string) => ({
@@ -593,5 +593,40 @@ it.each(["reasoning.delta", "tool.request"])("hands visible progress to the acti
   });
   expect(handedOff).toBe(true);
   expect(liveResponseStore.getSnapshot()).toMatchObject({ text: "最终回答", visible: true, status: "complete" });
+  activityStore.clear(); liveResponseStore.clear();
+});
+
+it("keeps a streamed answer visible when thinking interrupts it", async () => {
+  liveResponseStore.clear(); activityStore.clear();
+  const answer = "答案是 42，因为上游口径按 2026 年新规调整。".repeat(10);
+  const entry = (event_type: string, sequence: number, summary: string | null) => ({
+    id: `event-${sequence}`, event_type, sequence, summary, title: "过程", kind: "run",
+    status: "running", timestamp: "2026-09-16T00:00:00Z", metadata: {},
+  });
+  const events = [
+    { type: "RUN_STARTED", threadId: "thread-mid", runId: "mid" },
+    { type: "TEXT_MESSAGE_START", messageId: "assistant-mid", role: "assistant" },
+    { type: "TEXT_MESSAGE_CONTENT", messageId: "assistant-mid", delta: answer },
+    { type: "ACTIVITY_DELTA", messageId: "activity-mid", activityType: "harness.run.v1",
+      patch: [{ op: "add", path: "/items/-", value: entry("reasoning.delta", 2, "再核对一次口径") }] },
+    { type: "TEXT_MESSAGE_CONTENT", messageId: "assistant-mid", delta: "结论：42。" },
+    { type: "TEXT_MESSAGE_END", messageId: "assistant-mid" },
+    { type: "RUN_FINISHED", threadId: "thread-mid", runId: "mid" },
+  ];
+  const seen: string[] = [];
+  const agent = new HarnessHttpAgent({ url: "http://harness/v1/agui", fetch: async () => new Response(
+    events.map(event => `data: ${JSON.stringify(event)}\n\n`).join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  ) });
+  await agent.runAgent({ runId: "mid" }, {
+    onTextMessageContentEvent: () => {
+      const snapshot = liveResponseStore.getSnapshot();
+      if (snapshot.text) seen.push(snapshot.text);
+    },
+  });
+  // The server's projection keeps text across a thinking block, so the client
+  // must keep streaming it instead of hiding it until the Run ends.
+  expect(liveResponseStore.getSnapshot()).toMatchObject({ text: `${answer}结论：42。`, visible: true });
+  expect(seen.at(0)).toBe(answer);
   activityStore.clear(); liveResponseStore.clear();
 });

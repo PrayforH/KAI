@@ -122,23 +122,27 @@ it("appends a single-line tail without replacing the row or changing manual expa
     { ...item("reasoning.delta", 4, "思考", " 仍然展开。"), metadata: { item_id: "thought-1" } }] });
   expect(reasoning.open).toBe(true);
 });
-it("retains intermediate prose and tool nodes through the next thinking block and action", () => {
-  const items = [
+it("retains intermediate prose and tool nodes across the next action", () => {
+  // A thinking block alone no longer ends the answer, so prose followed only by
+  // thinking stays with the response; prose followed by a tool moves to the
+  // process log, matching the server's final-answer projection.
+  const base = [
     { ...item("tool.request", 1, "读取"), kind: "tool", metadata: { tool_call_id: "stable-tool", name: "Read", arguments: { file_path: "notes.txt" } } },
     { ...item("tool.result", 2, "已读取"), metadata: { tool_call_id: "stable-tool" } },
     item("message.delta", 3, "说明", "已找到资料，继续核验。"),
     { ...item("reasoning.delta", 4, "思考", "下一轮核验"), metadata: { item_id: "next-thought" } },
   ];
-  const running = runActivitySchema.parse({ ...completed, run_id: "stable-process", status: "running", items });
+  const running = runActivitySchema.parse({ ...completed, run_id: "stable-process", status: "running", items: base });
   render(running);
-  const progress = host.querySelector('[data-commentary-source="progress"]');
   const tool = host.querySelector('.execution-action');
-  expect(progress?.textContent).toContain("已找到资料，继续核验。");
-  render(runActivitySchema.parse({ ...running, items: [...items,
+  // No tool follows the prose yet, so it is not logged as progress.
+  expect(host.querySelector('[data-commentary-source="progress"]')).toBeNull();
+  render(runActivitySchema.parse({ ...running, items: [...base,
     { ...item("reasoning.delta", 5, "思考", "补充内容"), metadata: { item_id: "next-thought" } },
     { ...item("tool.request", 6, "读取"), kind: "tool", metadata: { tool_call_id: "next-tool", name: "Read", arguments: { file_path: "next.txt" } } },
   ] }));
-  expect(host.querySelector('[data-commentary-source="progress"]')).toBe(progress);
-  expect(host.querySelector('.execution-action')).toBe(tool);
+  // A tool now follows: the prose becomes progress commentary in the log.
+  const progress = host.querySelector('[data-commentary-source="progress"]');
   expect(progress?.textContent).toContain("已找到资料，继续核验。");
+  expect(host.querySelector('.execution-action')).toBe(tool);
 });
