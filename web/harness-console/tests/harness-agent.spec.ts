@@ -631,44 +631,32 @@ it("keeps a streamed answer visible when thinking interrupts it", async () => {
   activityStore.clear(); liveResponseStore.clear();
 });
 
-describe("artifact card folding", () => {
-  const part = (index: number) => ({
+describe("artifact summary pill", () => {
+  const artifact = (runId: string) => ({
     type: "tool-call",
     toolName: "harness_present_artifact",
-    args: { run_id: "run_1", name: `stage${index}/out.csv` },
-  });
-  const many = Array.from({ length: 9 }, (_, index) => part(index));
-
-  it("keeps a preview and puts one footer right after it", async () => {
-    const { ARTIFACT_CARD_PREVIEW, artifactFoldPlan } = await import("../src/components/agent-thread");
-    const plan = artifactFoldPlan(many, "run_1", true);
-
-    expect(ARTIFACT_CARD_PREVIEW).toBe(3);
-    expect(plan.total).toBe(9);
-    expect(plan.folded).toBe(true);
-    expect([...plan.visible]).toEqual([0, 1, 2]);
-    expect(plan.footerIndex).toBe(3);
+    args: { run_id: runId, name: `stage/${runId}.csv` },
   });
 
-  it("leaves a short list, a streaming answer and an expanded answer unfolded", async () => {
-    const { artifactFoldPlan } = await import("../src/components/agent-thread");
-
-    expect(artifactFoldPlan(many.slice(0, 3), "run_1", true).folded).toBe(false);
-    expect(artifactFoldPlan(many, "run_1", true, { running: true }).folded).toBe(false);
-    expect(artifactFoldPlan(many, "run_1", true, { expanded: true }).folded).toBe(false);
-    // The footer is the first hidden card, so the cards above it stay intact.
-    expect(artifactFoldPlan(many, "run_1", true).visible.has(3)).toBe(false);
-  });
-
-  it("ignores cards that belong to an earlier run", async () => {
-    const { artifactFoldPlan } = await import("../src/components/agent-thread");
-    const mixed = [
-      { type: "tool-call", toolName: "harness_present_artifact", args: { run_id: "run_0" } },
-      ...many,
+  it("counts the artifacts the turn presents, once per file", async () => {
+    const { artifactCountForTurn } = await import("../src/components/agent-thread");
+    const parts = [
+      artifact("run_1"),
+      { type: "tool-call", toolName: "harness_run_activity", args: {} },
+      artifact("run_1"),
+      artifact("run_1"),
     ];
-    const plan = artifactFoldPlan(mixed, "run_1", true);
 
-    expect(plan.total).toBe(9);
-    expect(plan.visible.has(0)).toBe(false);
+    expect(artifactCountForTurn(parts, "run_1", true)).toBe(3);
+    expect(artifactCountForTurn(parts, "run_1", false)).toBe(3);
+  });
+
+  it("leaves out files from another run and turns without any", async () => {
+    const { artifactCountForTurn } = await import("../src/components/agent-thread");
+
+    // The last turn must not claim the previous run's files.
+    expect(artifactCountForTurn([artifact("run_0")], "run_1", true)).toBe(0);
+    expect(artifactCountForTurn([artifact("run_0")], "run_0", true)).toBe(1);
+    expect(artifactCountForTurn([{ type: "text", toolName: undefined, args: undefined }], "run_1", true)).toBe(0);
   });
 });

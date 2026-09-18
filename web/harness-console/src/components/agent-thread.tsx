@@ -1003,52 +1003,50 @@ export function shouldShowArtifactForTurn(
   );
 }
 
-/** A long run can present a dozen artifacts; three cards plus one footer is
- * what the main chat clients show before folding the rest away. */
-export const ARTIFACT_CARD_PREVIEW = 3;
-
-export function artifactFoldPlan(
+/** How many artifacts this turn presents — the pill's number, since the files
+ * themselves live in the drawer. */
+export function artifactCountForTurn(
   parts: readonly { type?: string; toolName?: string; args?: unknown }[],
   viewRunId: string | undefined,
   isLast: boolean,
-  options: { preview?: number; expanded?: boolean; running?: boolean } = {},
 ) {
-  const preview = options.preview ?? ARTIFACT_CARD_PREVIEW;
-  const indices = parts
-    .map((part, index) => ({ part, index }))
-    .filter(({ part }) => part.type === "tool-call" && part.toolName === "harness_present_artifact")
-    .filter(({ part }) => {
-      const args = (part.args ?? {}) as Record<string, unknown>;
-      return shouldShowArtifactForTurn(
-        typeof args.run_id === "string" ? args.run_id : undefined,
-        viewRunId,
-        isLast,
-      );
-    })
-    .map(({ index }) => index);
-  const total = indices.length;
-  const folded = !options.running && !options.expanded && total > preview;
-  return {
-    total,
-    folded,
-    visible: new Set(folded ? indices.slice(0, preview) : indices),
-    footerIndex: folded ? indices[preview] : null,
-  };
+  return parts.filter((part) => {
+    if (part.type !== "tool-call" || part.toolName !== "harness_present_artifact") return false;
+    const args = (part.args ?? {}) as Record<string, unknown>;
+    return shouldShowArtifactForTurn(
+      typeof args.run_id === "string" ? args.run_id : undefined,
+      viewRunId,
+      isLast,
+    );
+  }).length;
 }
 
-type ArtifactFoldState = ReturnType<typeof artifactFoldPlan> & { expand: () => void };
-
-const ArtifactFoldContext = createContext<ArtifactFoldState | null>(null);
-
-function ArtifactFoldFooter({ state }: { state: ArtifactFoldState }) {
-  const hidden = state.total - ARTIFACT_CARD_PREVIEW;
+function ArtifactStackIcon() {
   return (
-    <div className="aui-md-clamp">
-      <span>本次产出共 {state.total} 项，另有 {hidden} 项未显示</span>
-      <button type="button" onClick={state.expand}>
-        展开全部（{state.total} 项）
-      </button>
-    </div>
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M8 1.8 14 4.7 8 7.6 2 4.7z" />
+      <path d="m2.6 7.6 5.4 2.6 5.4-2.6" />
+      <path d="m2.6 10.6 5.4 2.6 5.4-2.6" />
+    </svg>
+  );
+}
+
+/** One collapsed entry point for everything the run produced, the way Grok ends
+ * an answer with its source count and opens the panel on click. */
+function ArtifactSummaryPill({ count }: { count: number }) {
+  if (count <= 0) return null;
+  const label = `查看本任务的 ${count} 项产出`;
+  return (
+    <button
+      type="button"
+      className="artifact-summary-pill"
+      aria-label={label}
+      title={label}
+      onClick={() => window.dispatchEvent(new CustomEvent("harness:open-files"))}
+    >
+      <span className="artifact-summary-mark" aria-hidden="true"><ArtifactStackIcon /></span>
+      <span>{count} 项产出</span>
+    </button>
   );
 }
 
@@ -1086,7 +1084,7 @@ function HarnessToolPart(part: ToolCallMessagePartProps) {
     );
   }
   if (part.toolName === "harness_present_artifact") {
-    return <HarnessArtifactPart args={args} runId={runView?.runId} />;
+    return <HarnessArtifactPart />;
   }
   if (shouldSuppressRawToolCard(runView, part.toolCallId)) {
     return null;
@@ -1103,29 +1101,10 @@ function HarnessToolPart(part: ToolCallMessagePartProps) {
   );
 }
 
-function HarnessArtifactPart({
-  args,
-  runId,
-}: {
-  args: Record<string, unknown>;
-  runId: string | undefined;
-}) {
-  const aui = useAui();
-  const isLast = useAuiState((state) => state.message.isLast);
-  const fold = useContext(ArtifactFoldContext);
-  const artifactRunId =
-    typeof args.run_id === "string" ? args.run_id : undefined;
-  if (!shouldShowArtifactForTurn(artifactRunId, runId, isLast)) return null;
-  if (fold) {
-    const index =
-      aui.part.source === "message" && aui.part.query.type === "index"
-        ? aui.part.query.index
-        : -1;
-    if (fold.footerIndex === index) return <ArtifactFoldFooter state={fold} />;
-    // An unknown index means the part context is missing, so show the card.
-    if (index >= 0 && !fold.visible.has(index)) return null;
-  }
-  return <ArtifactCard details={args as unknown as ArtifactDetails} />;
+function HarnessArtifactPart() {
+  // Files are listed once, in the drawer the pill opens; an inline card per file
+  // was the duplicate that buried the end of a long answer.
+  return null;
 }
 
 const ReasoningPart: ReasoningMessagePartComponent = ({ text, status }) => (
@@ -1389,21 +1368,12 @@ function HarnessAssistantMessage() {
   const turnCitations = citationsForTurn(messageId, isLast, runView, durable?.success ? durable.data : undefined);
   if (turnCitations) capturedCitations.current = { messageId, citations: turnCitations };
   const answerCitations = capturedCitations.current.messageId === messageId ? capturedCitations.current.citations : [];
-  const [artifactsExpanded, setArtifactsExpanded] = useState(false);
-  const artifactFold = useMemo(
-    () => artifactFoldPlan(content, runView?.runId, isLast, {
-      expanded: artifactsExpanded,
-      running: messageStatus?.type === "running",
-    }),
-    [content, runView?.runId, isLast, artifactsExpanded, messageStatus?.type],
-  );
-  const artifactFoldState = useMemo(
-    () => ({ ...artifactFold, expand: () => setArtifactsExpanded(true) }),
-    [artifactFold],
+  const artifactCount = useMemo(
+    () => artifactCountForTurn(content, runView?.runId, isLast),
+    [content, runView?.runId, isLast],
   );
   return (
     <AnswerCitationProvider citations={answerCitations}>
-    <ArtifactFoldContext.Provider value={artifactFoldState}>
     <AssistantMessage.Root
       className="harness-assistant-message"
       data-turn-answer={copyText.replace(/\s+/g, " ").slice(0, 360)}
@@ -1449,6 +1419,7 @@ function HarnessAssistantMessage() {
             autohide="not-last"
             autohideFloat="single-branch"
           >
+            <ArtifactSummaryPill count={artifactCount} />
             <MessageCopyButton
               className="assistant-message-copy"
               label="复制回答"
@@ -1460,7 +1431,6 @@ function HarnessAssistantMessage() {
         </div>
       ) : null}
     </AssistantMessage.Root>
-    </ArtifactFoldContext.Provider>
     </AnswerCitationProvider>
   );
 }

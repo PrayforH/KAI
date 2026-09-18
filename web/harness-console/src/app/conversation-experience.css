@@ -900,3 +900,36 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-prev
   color: var(--codex-ink);
   background: var(--codex-surface-subtle);
 }
+
+/* One collapsed entry point for everything a run produced, matching the source
+   count main chat clients put next to the answer's actions. */
+.artifact-summary-pill {
+  height: 26px;
+  margin-right: 4px;
+  padding: 0 10px 0 5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--codex-line-strong);
+  border-radius: 999px;
+  color: var(--codex-ink-soft);
+  background: var(--codex-surface-raised);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 140ms ease, border-color 140ms ease, background-color 140ms ease;
+}
+.artifact-summary-pill:hover,
+.artifact-summary-pill:focus-visible { color: var(--codex-ink); border-color: var(--codex-muted); background: var(--codex-surface-hover); }
+.artifact-summary-pill:focus-visible { outline: 2px solid var(--codex-accent, #ececec); outline-offset: 1px; }
+.artifact-summary-mark {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--codex-ink-soft);
+  background: var(--codex-accent-soft, rgb(236 236 236 / 14%));
+}
+.artifact-summary-mark svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linejoin: round; stroke-linecap: round; }
+@media (prefers-reduced-motion: reduce) { .artifact-summary-pill { transition: none; } }
