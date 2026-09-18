@@ -83,7 +83,24 @@
 @container (max-width: 700px) { .body { grid-template-columns: minmax(0, 1fr) 210px; }.breadcrumb > span:first-child { max-width: 140px; }.breadcrumb small, .download span { display: none; }.toolbar { padding: 0 12px; gap: 8px; }.fileHeader { padding: 0 10px; }.status span:nth-child(2) { display: none; } }
 @container (max-width: 500px) { .body { position: relative; display: flex; flex-direction: column-reverse; }.source { flex: 1; }.sidebar { height: 190px; flex-shrink: 0; border-left: none; border-bottom: 1px solid var(--source-line); }.sidebarFooter, .treeHeading { display: none; }.search { margin-bottom: 6px; }.breadcrumb > span:first-child, .breadcrumb > span:nth-child(2) { display: none; }.context { margin: 10px; padding: 8px 10px; }.fileHeader small { display: none; } }
 
-.sourceFrame { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: auto; }
+/* The palette travels with the editor, so any host that renders source — the
+   studio panel or the task rail — draws it the same way. */
+.sourceFrame {
+  --source-font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --source-font-mono: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --source-bg: #111111; --source-raised: #1b1b1b; --source-hover: #242424;
+  --source-line: #292929; --source-ink: #fcfcfc; --source-muted: #999999;
+  --source-keyword: #f67576; --source-string: #85df7b; --source-number: #6dcbf4;
+  --source-function: #b06dff; --source-selection: #264f78;
+  display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: auto;
+  background: var(--source-bg); color: var(--source-ink); color-scheme: dark;
+}
+.sourceFrame[data-theme="light"] {
+  --source-bg: #ffffff; --source-raised: #f7f7f7; --source-hover: #ededed;
+  --source-line: #e8e8e8; --source-ink: #0d0d0d; --source-muted: #737373;
+  --source-keyword: #d53538; --source-string: #008809; --source-number: #0071ea;
+  --source-function: #751ed9; --source-selection: #add6ff; color-scheme: light;
+}
 .viewTabs { display: flex; gap: 4px; padding: 8px 16px 0; }
 .viewTabs button { padding: 6px 12px; font-size: 12px; }
 .diffSummary { display: flex; align-items: center; gap: 12px; flex-shrink: 0; padding: 8px 16px; margin: 0; color: var(--source-muted); font-size: 11px; }
