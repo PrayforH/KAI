@@ -79,6 +79,12 @@ it("waits for the turn count and renders every tick at once", async () => {
   expect(host.querySelectorAll(".conversation-index-pending")).toHaveLength(2);
 
   // Nothing is indexed until that count is known.
-  await render({ prompts: [], total: 0 });
+  await render({ id: "task-empty", prompts: [], total: 0 });
   expect(host.querySelector("nav")).toBeNull();
+
+  // A first-page reload clears the count for a moment; the rail keeps its ticks.
+  await render({ id: "task-a", prompts: ["第一问", "第二问", "第三问"], total: 5 });
+  expect(host.querySelectorAll("nav button")).toHaveLength(5);
+  await render({ prompts: [], total: 0 });
+  expect(host.querySelectorAll("nav button")).toHaveLength(5);
 });

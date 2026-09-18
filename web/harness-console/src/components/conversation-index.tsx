@@ -89,10 +89,15 @@ export function ConversationIndex({ frame, threadId, pagination }: {
     }
   }, [active]);
   // The ticks are one list, so they wait for the count the history endpoint
-  // already returns: rendering from the imported turns first and adding the
-  // unloaded ones afterwards made the rail appear twice.
+  // already returns. That count only ever grows: a reload of the first page
+  // clears the accumulation for a moment, and reading that as "no turns" made
+  // the whole rail disappear and come back.
   const total = pagination?.total ?? 0;
-  const countable = pagination ? total > 0 : entries.length > 0;
+  const [knownTotal, setKnownTotal] = useState(total);
+  useEffect(() => { setKnownTotal(0); }, [threadId]);
+  useEffect(() => { setKnownTotal((current) => Math.max(current, total)); }, [total]);
+  const count = Math.max(knownTotal, total);
+  const countable = pagination ? count > 0 : entries.length > 0;
   if (!countable) return null;
   const preview = entries.find(entry => entry.id === hovered);
   const expandedIndex = entries.findIndex(entry => entry.id === hovered);
@@ -127,7 +132,7 @@ export function ConversationIndex({ frame, threadId, pagination }: {
     node.focus({ preventScroll: true });
   }
 
-  const pending = Math.max(0, (total || entries.length) - entries.length);
+  const pending = Math.max(0, (count || entries.length) - entries.length);
   return <nav className="conversation-index" data-expanded={Boolean(hovered)} aria-label="对话轮次索引" onMouseLeave={() => setHovered("")}>
     <div className="conversation-index-rail" data-revealing={revealing ? "true" : undefined}>
       {Array.from({ length: pending }, (_, index) => <button key={`pending-${index}`} type="button"
