@@ -25,6 +25,16 @@ export async function GET(
       "Content-Disposition",
       inlineContentDisposition(headers.get("Content-Disposition")),
     );
+    // The rail sandboxes generated pages in a frame; a preview opened in its
+    // own tab has no frame around it, so the same restriction travels as a
+    // header. Without it a generated page would run on the console origin and
+    // could read the signed-in session.
+    if ((headers.get("Content-Type") ?? "").toLowerCase().includes("text/html")) {
+      headers.set(
+        "Content-Security-Policy",
+        "sandbox allow-scripts allow-popups allow-forms allow-modals",
+      );
+    }
   }
   return new Response(upstream.body, { status: upstream.status, headers });
 }

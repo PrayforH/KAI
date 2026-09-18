@@ -93,6 +93,16 @@ function downloadUrl(target: PreviewTarget): string {
   return `/api/harness/artifacts/${encodeURIComponent(target.artifact_id)}${query ? `?${query}` : ""}`;
 }
 
+function ExternalLinkIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <path d="M6.4 3.6H3.6v8.8h8.8V9.6" />
+      <path d="M9.5 3.6h2.9v2.9" />
+      <path d="M12.4 3.6 7.3 8.7" />
+    </svg>
+  );
+}
+
 export function RailFilePreview({ target }: { target: PreviewTarget }) {
   const kind = previewKindFor(target.media_type ?? "", target.name ?? "");
   const url = contentUrl(target);
@@ -141,15 +151,32 @@ export function RailFilePreview({ target }: { target: PreviewTarget }) {
     <div className="rail-preview" data-kind={kind}>
       <header className="rail-preview-head">
         <span className="rail-preview-name" title={target.name}>{target.name}</span>
-        <a
-          className="rail-preview-download"
-          href={downloadUrl(target)}
-          download={target.name}
-          aria-label={`下载 ${target.name}`}
-          title={`下载 ${target.name}`}
-        >
-          ↓
-        </a>
+        <div className="rail-preview-actions">
+          {kind !== "none" && (
+            // A preview that is worth rendering deserves the whole browser
+            // window. The response restricts generated pages to the same
+            // sandbox as the rail frame, so the extra room costs no session.
+            <a
+              className="rail-preview-action"
+              href={url}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={`在新标签页打开 ${target.name}`}
+              title="在新标签页打开"
+            >
+              <ExternalLinkIcon />
+            </a>
+          )}
+          <a
+            className="rail-preview-download"
+            href={downloadUrl(target)}
+            download={target.name}
+            aria-label={`下载 ${target.name}`}
+            title={`下载 ${target.name}`}
+          >
+            ↓
+          </a>
+        </div>
       </header>
       <div className="rail-preview-body">
         {kind === "image" ? (
