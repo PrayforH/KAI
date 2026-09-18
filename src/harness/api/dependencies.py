@@ -956,6 +956,7 @@ def build_memory_container(
         cancellation_wakeup=cancellation_wakeup,
         context_service=context_service,
     )
+    automation_service.configure_executor(worker.execute)
     agui = AguiRunService(
         sessions=session_service,
         runs=run_service,

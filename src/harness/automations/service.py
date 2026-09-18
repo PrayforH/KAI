@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import secrets
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -60,6 +61,7 @@ class AutomationService:
         agent_name: str,
         registry: AgentRegistry | None = None,
         agent_version: str = "",
+        executor: Callable[[str, str], object] | None = None,
         clock: Callable[[], datetime] | None = None,
         id_generator: Callable[[str], str] | None = None,
     ) -> None:
@@ -70,8 +72,16 @@ class AutomationService:
         self._agent_name = agent_name
         self._registry = registry
         self._agent_version = agent_version
+        # Optional inline executor for single-process deployments that do not
+        # run a task-queue worker; production relies on the worker pool.
+        self._executor = executor
         self._clock = clock or (lambda: datetime.now(UTC))
         self._ids = id_generator or _default_id
+
+    def configure_executor(self, executor: Callable[[str, str], object]) -> None:
+        if self._executor is not None:
+            raise RuntimeError("automation executor is already configured")
+        self._executor = executor
 
     async def create(
         self,
@@ -413,4 +423,8 @@ class AutomationService:
             update={"session_id": session.session_id, "run_id": run.run_id}
         )
         await self._records.add(record)
+        if self._executor is not None:
+            asyncio.create_task(
+                self._executor(task.tenant_id, run.run_id)
+            )
         return record
