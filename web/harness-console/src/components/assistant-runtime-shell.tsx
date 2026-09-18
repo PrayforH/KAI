@@ -12,6 +12,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { activityStore, useRunViewModel } from "../lib/activity-store";
@@ -67,6 +68,8 @@ function DurableHistorySync({
 
   useEffect(() => {
     let disposed = false;
+    // One frame is enough to let the runtime finish mounting; a longer wait left
+    // the conversation area visibly empty after switching tasks.
     const timer = window.setTimeout(() => {
       void history
         .loadSnapshot((repository) => {
@@ -83,7 +86,7 @@ function DurableHistorySync({
             );
           }
         });
-    }, 120);
+    }, 16);
     return () => {
       disposed = true;
       window.clearTimeout(timer);
@@ -158,13 +161,19 @@ export function AssistantRuntimeShell({
     threadId,
   ]);
   const attachments = useMemo(() => createInputAttachmentAdapter(), []);
+  // The adapter carries only the thread. Rebuilding it for the agent's own
+  // options (a model route or knowledge selection that resolves a moment after
+  // opening a task) made DurableHistorySync re-import the snapshot and repaint
+  // the whole conversation.
+  const agentRef = useRef(agent);
+  agentRef.current = agent;
   const history = useMemo(
     () =>
       createThreadHistoryAdapter(threadId, {
         onActiveRun: (serverRunId) =>
-          agent.adoptActiveRun(threadId, serverRunId),
+          agentRef.current.adoptActiveRun(threadId, serverRunId),
       }),
-    [agent, threadId],
+    [threadId],
   );
   useEffect(
     () => () => {
