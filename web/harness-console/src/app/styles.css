@@ -4662,7 +4662,9 @@ textarea:not(.aui-composer-input):focus-visible,
 }
 
 .assistant-message-controls {
-  min-height: 28px;
+  /* One action bar (30px) sits in this row; reserving its height keeps the
+     conversation below from moving when the bar appears on hover. */
+  min-height: 30px;
   margin-top: 4px;
   display: flex;
   align-items: center;

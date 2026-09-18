@@ -397,7 +397,14 @@ describe("runtime agent key", () => {
 
     expect(runtimeAgentKey({ name: "a", version: "1" })).not.toBe(runtimeAgentKey({ name: "b", version: "1" }));
     expect(runtimeAgentKey({ name: "a", version: "1" })).not.toBe(runtimeAgentKey({ name: "a", version: "2" }));
-    expect(runtimeAgentKey({ name: "a", version: "1", ownerUserId: "u1" }))
-      .not.toBe(runtimeAgentKey({ name: "a", version: "1", ownerUserId: "u2" }));
+  });
+
+  it("stays the same when the catalog fills in the owner and the space", async () => {
+    const { runtimeAgentKey } = await import("../src/lib/task-agent-catalog");
+
+    // Those fields arrive after a task opens; keying on them remounted the
+    // conversation and made the turn rail blink.
+    expect(runtimeAgentKey({ name: "a", version: "1", spaceId: "space-1", ownerUserId: "u1", agentId: "agent_1" } as never))
+      .toBe(runtimeAgentKey({ name: "a", version: "1" }));
   });
 });

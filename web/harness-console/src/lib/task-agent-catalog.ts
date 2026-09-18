@@ -96,12 +96,13 @@ export function agentCoordinate(agent: Pick<TaskAgent, "name" | "version">) {
 }
 
 /**
- * Identity for the conversation runtime. The catalog enriches a task's agent with
- * its id after the thread is already open, and keying on that would remount the
- * whole conversation; the runtime only ever needs the coordinate.
+ * Identity for the conversation runtime. The catalog fills in an agent's id,
+ * owner and space a moment after a thread opens; keying on any of them remounted
+ * the whole conversation just after it appeared. The runtime is told the name and
+ * version, so those are what decide a rebuild.
  */
-export function runtimeAgentKey(agent: Pick<TaskAgent, "name" | "version"> & Partial<Pick<TaskAgent, "ownerUserId" | "spaceId">>): string {
-  return `${agent.spaceId ?? ""}:${agent.ownerUserId ?? ""}:${agent.name}@${agent.version}`;
+export function runtimeAgentKey(agent: Pick<TaskAgent, "name" | "version">): string {
+  return `${agent.name}@${agent.version}`;
 }
 
 export function findTaskAgent(

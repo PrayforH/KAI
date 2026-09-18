@@ -709,8 +709,9 @@ describe("full-page agent workbench", () => {
     expect(styles).toMatch(
       /\.harness-assistant-message\s*>\s*\.assistant-message-controls\s*\{[^}]*order:\s*3;/s,
     );
+    // The row reserves one action bar (30px) so revealing it on hover moves nothing.
     expect(styles).toMatch(
-      /\.assistant-message-controls\s*\{[^}]*min-height:\s*28px;[^}]*display:\s*flex;/s,
+      /\.assistant-message-controls\s*\{[^}]*min-height:\s*30px;[^}]*display:\s*flex;/s,
     );
     expect(styles).toMatch(
       /\.assistant-message-controls\s*>\s*\.aui-assistant-action-bar-root\[data-floating\]\s*\{[^}]*position:\s*static;[^}]*border:\s*0;[^}]*box-shadow:\s*none;/s,
