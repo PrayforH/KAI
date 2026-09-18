@@ -386,6 +386,24 @@ function HarnessComposer() {
   const steeringRunId = queue.find((item) => item.steerRunId)?.steerRunId ?? runView?.runId;
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const composingRef = useRef(false);
+  // The collapsed input shows a fixed number of rows; the chevron toggle
+  // expands it once the text overflows the collapsed window.
+  const [composerExpanded, setComposerExpanded] = useState(false);
+  const [composerOverflowing, setComposerOverflowing] = useState(false);
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!input) return;
+    const measure = () => {
+      setComposerOverflowing(input.scrollHeight > input.clientHeight + 2);
+    };
+    measure();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    observer?.observe(input);
+    return () => observer?.disconnect();
+  }, [composerText, composerAttachments.length, composerExpanded]);
+  useEffect(() => {
+    if (!composerText) setComposerExpanded(false);
+  }, [composerText]);
   const knowledge = useTaskKnowledge();
   const [wikiSlug, setWikiSlug] = useState<string | null>(null);
   useEffect(() => {
@@ -759,6 +777,11 @@ function HarnessComposer() {
           </div>
         )}
         <Composer.Attachments components={{ Attachment: HarnessComposerAttachment }} />
+        <div
+          className="composer-input-wrap"
+          data-expanded={composerExpanded ? "true" : "false"}
+          data-overflowing={composerOverflowing ? "true" : "false"}
+        >
         <ConversationInput
           ref={inputRef}
           onComposingChange={(value) => { composingRef.current = value; }}
@@ -791,6 +814,21 @@ function HarnessComposer() {
             }
           }}
         />
+        {(composerOverflowing || composerExpanded) && (
+          <button
+            type="button"
+            className="composer-expand-toggle"
+            aria-expanded={composerExpanded}
+            aria-label={composerExpanded ? "收起输入框" : "展开输入框"}
+            title={composerExpanded ? "收起输入框" : "展开输入框"}
+            onClick={() => setComposerExpanded((value) => !value)}
+          >
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <path d={composerExpanded ? "m5 12 5-5 5 5" : "m5 8 5 5 5-5"} />
+            </svg>
+          </button>
+        )}
+        </div>
         <div className="composer-footer">
         <div className="composer-toolbar">
           <Composer.AddAttachment>
