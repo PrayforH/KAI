@@ -534,6 +534,78 @@ select:not([multiple]):not(.task-model-control select):not(.task-agent-version-s
   background: var(--codex-danger-soft);
 }
 
+/* Quick theme-appearance switch inside the account popover: mirrors the
+   settings-appearance selector and shares the same color-mode store. */
+.account-theme {
+  display: grid;
+  gap: 6px;
+  padding: 9px 4px 11px;
+  border-bottom: 1px solid var(--codex-line);
+}
+
+.account-theme-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px;
+  color: var(--codex-muted);
+  font-size: 11px;
+  font-weight: 620;
+}
+
+.account-theme-label svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.account-theme-options {
+  display: grid;
+  gap: 2px;
+}
+
+.account-theme-option {
+  width: 100%;
+  min-height: 32px;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--codex-ink-soft);
+  background: transparent;
+  cursor: pointer;
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.account-theme-option:hover {
+  color: var(--codex-ink);
+  background: var(--codex-accent-soft);
+}
+
+.account-theme-option[aria-checked="true"] {
+  color: var(--codex-ink);
+  font-weight: 600;
+}
+
+.account-theme-check {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .task-agent-switcher {
   width: min(360px, 36vw);
   min-height: 36px;

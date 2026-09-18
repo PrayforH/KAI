@@ -802,6 +802,7 @@ class PostgresAguiThreadBindingRepository:
     ) -> list[AguiThreadBinding]:
         archived_at = AguiThreadBindingRow.payload["archived_at"].as_string()
         updated_at = AguiThreadBindingRow.payload["updated_at"].as_string()
+        pinned = AguiThreadBindingRow.payload["pinned_at"]
         statement = (
             select(AguiThreadBindingRow.payload)
             .where(
@@ -809,7 +810,14 @@ class PostgresAguiThreadBindingRepository:
                 AguiThreadBindingRow.user_id == user_id,
                 archived_at.is_not(None) if archived else archived_at.is_(None),
             )
-            .order_by(updated_at.desc(), AguiThreadBindingRow.thread_id.desc())
+            # Pinned tasks lead the recency order; the pinned timestamp only
+            # breaks ties between pinned rows.
+            .order_by(
+                pinned.is_not(None).desc(),
+                pinned.as_string().desc().nulls_last(),
+                updated_at.desc(),
+                AguiThreadBindingRow.thread_id.desc(),
+            )
             .limit(limit)
         )
         async with self._sessions() as session:
@@ -823,7 +831,7 @@ class PostgresAguiThreadBindingRepository:
         thread_id: str,
         *,
         title: str,
-        source: Literal["fallback", "model"],
+        source: Literal["fallback", "model", "user"],
         generated_at: datetime,
     ) -> AguiThreadBinding:
         async with self._sessions() as session:
@@ -888,6 +896,33 @@ class PostgresAguiThreadBindingRepository:
                     "archived_at": archived_at,
                     "updated_at": max(binding.updated_at, archived_at)
                     if archived_at is not None
+                    else binding.updated_at,
+                }
+            )
+            row.payload = updated.model_dump(mode="json")
+            await session.commit()
+            return updated
+
+    async def set_pinned(
+        self,
+        tenant_id: str,
+        user_id: str,
+        thread_id: str,
+        *,
+        pinned_at: datetime | None,
+    ) -> AguiThreadBinding:
+        async with self._sessions() as session:
+            row = await session.get(
+                AguiThreadBindingRow, (tenant_id, user_id, thread_id), with_for_update=True
+            )
+            if row is None:
+                raise NotFoundError(f"AG-UI thread binding not found: {thread_id}")
+            binding = AguiThreadBinding.model_validate(row.payload)
+            updated = binding.model_copy(
+                update={
+                    "pinned_at": pinned_at,
+                    "updated_at": max(binding.updated_at, pinned_at)
+                    if pinned_at is not None
                     else binding.updated_at,
                 }
             )

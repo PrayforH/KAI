@@ -60,7 +60,7 @@ describe("Skills catalog page", () => {
     expect(navigation).toContain('label: "技能"');
     expect(sidebar).toContain('active={activeNav}');
     expect(sidebar).toContain('visible={["knowledge", "agents", "capabilities"]}');
-    expect(sidebar).toContain('labelOverrides={{ capabilities: "技能 / MCP" }}');
+    expect(sidebar).toContain('labelOverrides={{ capabilities: "插件" }}');
   });
 
   it("supports search and a centered detail modal", () => {

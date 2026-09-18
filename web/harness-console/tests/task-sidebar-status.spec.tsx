@@ -8,7 +8,7 @@ import { runActivitySchema } from "../src/lib/activity-schema";
 import type { TaskSummary } from "../src/lib/task-history";
 
 const { loadTasks, markTaskRead } = vi.hoisted(() => ({ loadTasks: vi.fn(), markTaskRead: vi.fn() }));
-vi.mock("../src/lib/task-history", () => ({ loadTasks, markTaskRead, isTaskRead: (task: TaskSummary) => Boolean(task.last_read_at && Date.parse(task.last_read_at) >= Date.parse(task.updated_at)), prefetchThreadHistory: vi.fn().mockResolvedValue(undefined), setTaskArchived: vi.fn() }));
+vi.mock("../src/lib/task-history", () => ({ loadTasks, markTaskRead, isTaskRead: (task: TaskSummary) => Boolean(task.last_read_at && Date.parse(task.last_read_at) >= Date.parse(task.updated_at)), prefetchThreadHistory: vi.fn().mockResolvedValue(undefined), setTaskArchived: vi.fn(), peekCachedTasks: vi.fn(() => null), notifyTaskListChanged: vi.fn() }));
 vi.mock("../src/components/auth-provider", () => ({ useAuth: () => ({ user: { user_id: "test" } }) }));
 vi.mock("../src/components/account-menu", () => ({ AccountMenu: () => null }));
 vi.mock("../src/components/workspace-navigation", () => ({ WorkspaceNavigation: () => null }));

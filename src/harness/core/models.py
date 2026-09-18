@@ -271,9 +271,10 @@ class AguiThreadBinding(FrozenModel):
     session_id: str
     previous_session_ids: tuple[str, ...] = ()
     title: str | None = None
-    title_source: Literal["fallback", "model"] | None = None
+    title_source: Literal["fallback", "model", "user"] | None = None
     title_updated_at: datetime | None = None
     archived_at: datetime | None = None
+    pinned_at: datetime | None = None
     last_read_at: datetime | None = None
     created_at: datetime
     updated_at: datetime

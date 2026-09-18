@@ -935,6 +935,249 @@ body.codex-theme-v1:has(.console-shell) .console-header {
   color: #8f8f8f;
 }
 
+/* Header task details: the project chip doubles as the hover/click trigger
+   for the task-name / activity / version popover (ZCode-style folder card). */
+
+.task-details {
+  position: relative;
+  min-width: 0;
+}
+
+.task-details-trigger {
+  cursor: pointer;
+}
+
+.task-details-trigger:hover,
+.task-details-trigger[aria-expanded="true"] {
+  color: #d6d6d6;
+  background: #222222;
+}
+
+.task-details-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 130;
+  min-width: 240px;
+  max-width: min(72vw, 340px);
+  padding: 6px;
+  display: grid;
+  gap: 2px;
+  border: 1px solid #3a3a3a;
+  border-radius: 10px;
+  color: var(--codex-ink-soft);
+  background: #252525;
+  box-shadow: 0 24px 80px rgb(0 0 0 / 46%);
+}
+
+.task-details-row {
+  min-height: 30px;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border-radius: 7px;
+  font-size: 12px;
+}
+
+.task-details-row svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.task-details-row.is-folder {
+  color: #e4e4e4;
+  font-size: 12.5px;
+}
+
+.task-details-row.is-folder strong {
+  overflow: hidden;
+  font-weight: 580;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-details-row.is-folder svg {
+  color: #8f8f8f;
+}
+
+.task-details-row.is-path {
+  padding-left: 32px;
+  color: #969696;
+  font-family: var(--codex-font-mono);
+  font-size: 11.5px;
+}
+
+.task-details-row.is-path span,
+.task-details-row.is-activity span,
+.task-details-row.is-branch span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-details-row.is-activity,
+.task-details-row.is-branch {
+  color: #b6b6b6;
+}
+
+.task-details-row.is-branch {
+  margin-top: 4px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  border-top: 1px solid #303030;
+}
+
+/* Header "..." task actions: pin / rename / archive, mirroring the sidebar's
+   row actions so the active task can be managed from inside the chat page. */
+
+.task-header-actions {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.task-header-more svg {
+  fill: currentColor;
+  stroke: none;
+}
+
+.task-header-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 130;
+  min-width: 168px;
+  padding: 5px;
+  display: grid;
+  gap: 1px;
+  border: 1px solid #3a3a3a;
+  border-radius: 10px;
+  background: #252525;
+  box-shadow: 0 24px 80px rgb(0 0 0 / 46%);
+}
+
+.task-header-menu button {
+  width: 100%;
+  min-height: 32px;
+  padding: 0 9px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--codex-ink-soft);
+  background: transparent;
+  cursor: pointer;
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.task-header-menu button:hover:not(:disabled) {
+  color: var(--codex-ink);
+  background: var(--codex-surface-hover);
+}
+
+.task-header-menu button:disabled {
+  color: var(--codex-faint);
+  cursor: not-allowed;
+}
+
+.task-header-menu button svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.task-header-menu-error {
+  margin: 2px 4px 4px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  color: var(--codex-danger);
+  background: var(--codex-danger-soft);
+  font-size: 11.5px;
+}
+
+.task-rename-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 220;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 44%);
+}
+
+.task-rename-dialog {
+  width: min(92vw, 420px);
+  padding: 18px;
+  display: grid;
+  gap: 12px;
+  border: 1px solid #3a3a3a;
+  border-radius: 12px;
+  color: var(--codex-ink);
+  background: #252525;
+  box-shadow: 0 24px 80px rgb(0 0 0 / 46%);
+}
+
+.task-rename-dialog strong {
+  font-size: 14px;
+  font-weight: 620;
+}
+
+.task-rename-dialog input {
+  height: 38px;
+  padding: 0 11px;
+  border: 1px solid #444444;
+  border-radius: 8px;
+  color: var(--codex-ink);
+  background: #1d1d1d;
+  font-size: 13px;
+}
+
+.task-rename-dialog input:focus {
+  outline: none;
+  border-color: #6a6a6a;
+}
+
+.task-rename-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.task-rename-actions button {
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid #444444;
+  border-radius: 7px;
+  color: var(--codex-ink-soft);
+  background: transparent;
+  cursor: pointer;
+  font-size: 12.5px;
+}
+
+.task-rename-actions button[type="submit"] {
+  border-color: transparent;
+  color: var(--codex-on-accent);
+  background: var(--codex-accent);
+}
+
+.task-rename-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .task-context-version {
   max-width: 190px;
   color: #969696;
@@ -1866,6 +2109,85 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .header-ic
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .header-icon-button:focus-visible {
   color: #202024;
   background: #f0f0f1;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-details-trigger:hover,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-details-trigger[aria-expanded="true"] {
+  color: #3d3d42;
+  background: #ededee;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-details-popover,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-header-menu,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-rename-dialog {
+  border-color: #dedee1;
+  color: var(--codex-ink-soft);
+  background: rgb(255 255 255 / 98%);
+  box-shadow: 0 18px 54px rgb(28 28 35 / 13%);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-details-row.is-folder {
+  color: #252529;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-details-row.is-folder svg {
+  color: #77777c;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-details-row.is-path {
+  color: #85858b;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-details-row.is-activity,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-details-row.is-branch {
+  color: #55555a;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-details-row.is-branch {
+  border-top: 1px solid #ebebed;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-header-menu button {
+  color: #3d3d42;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-header-menu button:hover:not(:disabled) {
+  color: #171719;
+  background: #f0f0f1;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-header-menu button:disabled {
+  color: #b0b0b5;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-rename-backdrop {
+  background: rgb(20 20 24 / 32%);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-rename-dialog strong {
+  color: #171719;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-rename-dialog input {
+  border-color: #d6d6d9;
+  color: #171719;
+  background: #f7f7f8;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-rename-dialog input:focus {
+  border-color: #a8a8ae;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-rename-actions button {
+  border-color: #d6d6d9;
+  color: #3d3d42;
+  background: transparent;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-rename-actions button[type="submit"] {
+  border-color: transparent;
+  color: var(--codex-on-accent);
+  background: var(--codex-accent);
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .help-popover-env {

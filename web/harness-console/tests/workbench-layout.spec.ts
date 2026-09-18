@@ -232,7 +232,7 @@ describe("full-page agent workbench", () => {
     expect(taskSidebar).not.toContain("WorkspaceModeSwitcher");
     expect(studioSidebar).not.toContain("WorkspaceModeSwitcher");
     expect(taskSidebar).toContain('visible={["knowledge", "agents", "capabilities"]}');
-    expect(taskSidebar).toContain('labelOverrides={{ capabilities: "技能 / MCP" }}');
+    expect(taskSidebar).toContain('labelOverrides={{ capabilities: "插件" }}');
     expect(taskSidebar).not.toContain('visible={["agents", "files"]}');
     expect(studioSidebar).toContain('visible={["tasks", "agents"]}');
     expect(studioSidebar).not.toContain('"capabilities", "knowledge", "spaces"]');
@@ -242,7 +242,7 @@ describe("full-page agent workbench", () => {
     for (const [href, label] of [
       ["/", "任务"],
       ["/studio/agents", "智能体"],
-      ["/studio/capabilities", "MCP 能力"],
+      ["/studio/capabilities", "插件"],
       ["/studio/knowledge", "知识库"],
       ["/studio/skills", "技能"],
     ]) {

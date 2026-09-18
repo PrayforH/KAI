@@ -23,6 +23,8 @@ export interface TaskSummary {
   run_id?: string;
   created_at: string;
   updated_at: string;
+  archived_at?: string | null;
+  pinned_at?: string | null;
   last_read_at?: string | null;
   pending_approval?: (ApprovalDetails & { status: string }) | null;
 }
@@ -359,6 +361,56 @@ export function loadTasks(archived = false): Promise<TaskSummary[]> {
   return request;
 }
 
+/**
+ * Last fetched task list without a network round trip. Fresh sidebar mounts
+ * (page navigations) seed from this so the 任务/智能体 lists render in place
+ * instead of flashing the loading state and refreshing every row.
+ */
+export function peekCachedTasks(archived = false): TaskSummary[] | null {
+  return taskListSnapshots.get(archived)?.tasks ?? null;
+}
+
+/** Ask every mounted task sidebar to refresh immediately. */
+export function notifyTaskListChanged(): void {
+  window.dispatchEvent(new CustomEvent("harness:task-list-changed"));
+}
+
+export async function setTaskPinned(
+  threadId: string,
+  pinned: boolean,
+): Promise<void> {
+  const response = requireAuthenticatedResponse(
+    await fetch(`/api/agui/threads/${encodeURIComponent(threadId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pinned }),
+    }),
+  );
+  if (!response.ok) {
+    throw new Error((await response.text()) || `HTTP ${response.status}`);
+  }
+  taskListSnapshots.clear();
+}
+
+export async function setTaskTitle(
+  threadId: string,
+  title: string,
+): Promise<string> {
+  const response = requireAuthenticatedResponse(
+    await fetch(`/api/agui/threads/${encodeURIComponent(threadId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    }),
+  );
+  if (!response.ok) {
+    throw new Error((await response.text()) || `HTTP ${response.status}`);
+  }
+  const result = await response.json() as { title: string | null };
+  taskListSnapshots.clear();
+  return result.title ?? title;
+}
+
 export async function markTaskRead(threadId: string, updatedAt: string): Promise<string> {
   const response = requireAuthenticatedResponse(await fetch(
     `/api/agui/threads/${encodeURIComponent(threadId)}/read`, {
@@ -392,6 +444,7 @@ export async function setTaskArchived(
   if (!response.ok) {
     throw new Error((await response.text()) || `HTTP ${response.status}`);
   }
+  taskListSnapshots.clear();
 }
 
 export function createThreadHistoryAdapter(

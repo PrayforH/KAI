@@ -738,7 +738,11 @@ class InMemoryAguiThreadBindingRepository:
         ]
         return sorted(
             matches,
-            key=lambda binding: (binding.updated_at, binding.thread_id),
+            key=lambda binding: (
+                binding.pinned_at is not None,
+                binding.pinned_at or binding.updated_at,
+                binding.thread_id,
+            ),
             reverse=True,
         )[:limit]
 
@@ -749,7 +753,7 @@ class InMemoryAguiThreadBindingRepository:
         thread_id: str,
         *,
         title: str,
-        source: Literal["fallback", "model"],
+        source: Literal["fallback", "model", "user"],
         generated_at: datetime,
     ) -> AguiThreadBinding:
         thread_key = (tenant_id, user_id, thread_id)
@@ -807,6 +811,32 @@ class InMemoryAguiThreadBindingRepository:
                     "archived_at": archived_at,
                     "updated_at": max(binding.updated_at, archived_at)
                     if archived_at is not None
+                    else binding.updated_at,
+                }
+            )
+            self._by_thread[thread_key] = updated
+            self._store_session_aliases(updated)
+            return updated
+
+    async def set_pinned(
+        self,
+        tenant_id: str,
+        user_id: str,
+        thread_id: str,
+        *,
+        pinned_at: datetime | None,
+    ) -> AguiThreadBinding:
+        thread_key = (tenant_id, user_id, thread_id)
+        async with self._lock:
+            try:
+                binding = self._by_thread[thread_key]
+            except KeyError as error:
+                raise NotFoundError(f"AG-UI thread binding not found: {thread_id}") from error
+            updated = binding.model_copy(
+                update={
+                    "pinned_at": pinned_at,
+                    "updated_at": max(binding.updated_at, pinned_at)
+                    if pinned_at is not None
                     else binding.updated_at,
                 }
             )

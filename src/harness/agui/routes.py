@@ -193,6 +193,7 @@ class AguiThreadSummary(BaseModel):
     created_at: datetime
     updated_at: datetime
     archived_at: datetime | None = None
+    pinned_at: datetime | None = None
     last_read_at: datetime | None = None
     pending_approval: ApprovalRequest | None = None
 
@@ -206,14 +207,19 @@ class AguiThreadReadResult(BaseModel):
     last_read_at: datetime
 
 
-class AguiThreadArchiveInput(BaseModel):
-    archived: bool
+class AguiThreadUpdateInput(BaseModel):
+    archived: bool | None = None
+    pinned: bool | None = None
+    title: Annotated[str | None, Field(min_length=1, max_length=200)] = None
 
 
-class AguiThreadArchiveResult(BaseModel):
+class AguiThreadUpdateResult(BaseModel):
     thread_id: str
     archived: bool
     archived_at: datetime | None = None
+    pinned: bool
+    pinned_at: datetime | None = None
+    title: str | None = None
 
 
 class AguiContextRebaseResult(BaseModel):
@@ -609,6 +615,7 @@ async def list_agui_threads(
             created_at=binding.created_at,
             updated_at=latest.updated_at if latest is not None else binding.updated_at,
             archived_at=binding.archived_at,
+            pinned_at=binding.pinned_at,
             last_read_at=binding.last_read_at,
             pending_approval=pending,
         )
@@ -617,6 +624,7 @@ async def list_agui_threads(
     return sorted(
         summaries,
         key=lambda item: (
+            item.pinned_at is not None,
             item.pending_approval is not None,
             item.updated_at,
             item.thread_id,
@@ -657,15 +665,17 @@ async def mark_agui_thread_read(
 
 @router.patch(
     "/threads/{thread_id}",
-    response_model=AguiThreadArchiveResult,
+    response_model=AguiThreadUpdateResult,
 )
 async def update_agui_thread(
     thread_id: str,
-    body: AguiThreadArchiveInput,
+    body: AguiThreadUpdateInput,
     identity: Annotated[Identity, Depends(require_identity)],
     container: Annotated[ApiContainer, Depends(get_container)],
-) -> AguiThreadArchiveResult:
+) -> AguiThreadUpdateResult:
     ensure_permission(identity, "tasks:write")
+    if body.archived is None and body.pinned is None and body.title is None:
+        raise ConflictError("No thread update was requested")
     binding = await container.agui.get_binding(
         tenant_id=identity.tenant_id,
         user_id=identity.user_id,
@@ -681,16 +691,45 @@ async def update_agui_thread(
         )
         if active is not None:
             raise ConflictError("Active tasks cannot be archived")
-    updated = await container.agui.set_archived(
+    updated = await container.agui.get_thread_record(
         tenant_id=identity.tenant_id,
         user_id=identity.user_id,
         thread_id=thread_id,
-        archived=body.archived,
     )
-    return AguiThreadArchiveResult(
+    if body.archived is not None:
+        updated = await container.agui.set_archived(
+            tenant_id=identity.tenant_id,
+            user_id=identity.user_id,
+            thread_id=thread_id,
+            archived=body.archived,
+        )
+    if body.pinned is not None:
+        updated = await container.agui.set_pinned(
+            tenant_id=identity.tenant_id,
+            user_id=identity.user_id,
+            thread_id=thread_id,
+            pinned=body.pinned,
+        )
+    if body.title is not None:
+        renamed_title = body.title.strip()
+        if not renamed_title:
+            raise ConflictError("Task title cannot be empty")
+        renamed = await container.agui.rename_thread(
+            tenant_id=identity.tenant_id,
+            user_id=identity.user_id,
+            thread_id=thread_id,
+            title=renamed_title,
+        )
+        updated = updated.model_copy(
+            update={"title": renamed.title, "title_source": renamed.title_source}
+        )
+    return AguiThreadUpdateResult(
         thread_id=thread_id,
         archived=updated.archived_at is not None,
         archived_at=updated.archived_at,
+        pinned=updated.pinned_at is not None,
+        pinned_at=updated.pinned_at,
+        title=updated.title,
     )
 
 

@@ -42,7 +42,7 @@ describe("Studio unified shell", () => {
     expect(shell).toContain('pathname.startsWith("/studio/skills")');
     expect(taskSidebar).toContain('active={activeNav}');
     expect(taskSidebar).toContain('visible={["knowledge", "agents", "capabilities"]}');
-    expect(taskSidebar).toContain('labelOverrides={{ capabilities: "技能 / MCP" }}');
+    expect(taskSidebar).toContain('labelOverrides={{ capabilities: "插件" }}');
   });
 
   it("styles the unified shell with the monochrome console gate", () => {

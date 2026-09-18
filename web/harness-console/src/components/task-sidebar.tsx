@@ -14,6 +14,8 @@ import {
   loadTasks,
   markTaskRead,
   isTaskRead,
+  peekCachedTasks,
+  notifyTaskListChanged,
   prefetchThreadHistory,
   setTaskArchived,
   type TaskSummary,
@@ -137,9 +139,12 @@ export function TaskSidebar({
   /** Which workspace nav item is highlighted; defaults to the task page. */
   activeNav?: WorkspaceId;
 }) {
-  const [tasks, setTasks] = useState<TaskSummary[]>([]);
+  // Seed from the shared snapshot so navigating to a Studio page and back
+  // (a fresh mount) renders the previous list immediately instead of
+  // clearing it behind the loading state.
+  const [tasks, setTasks] = useState<TaskSummary[]>(() => peekCachedTasks() ?? []);
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => peekCachedTasks() === null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [updatingThreadId, setUpdatingThreadId] = useState("");
   const [showAllProjects, setShowAllProjects] = useState(false);
@@ -243,14 +248,24 @@ export function TaskSidebar({
       void refresh();
     }
 
+    // Pin / rename / archive from the task header mutates the list outside
+    // this component; refresh right away instead of waiting for the next tick.
+    function refreshOnListChanged() {
+      if (document.visibilityState === "hidden") return;
+      window.clearTimeout(timer);
+      void refresh();
+    }
+
     refreshWhenVisible();
     document.addEventListener("visibilitychange", refreshWhenVisible);
     window.addEventListener("focus", refreshWhenVisible);
+    window.addEventListener("harness:task-list-changed", refreshOnListChanged);
     return () => {
       active = false;
       window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", refreshWhenVisible);
       window.removeEventListener("focus", refreshWhenVisible);
+      window.removeEventListener("harness:task-list-changed", refreshOnListChanged);
     };
   }, [refreshKey, runView?.phase, user.user_id]);
 
@@ -270,6 +285,7 @@ export function TaskSidebar({
         return next;
       });
       setError("");
+      notifyTaskListChanged();
       if (task.thread_id === currentThreadId) onNewTask();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -418,7 +434,7 @@ export function TaskSidebar({
             <WorkspaceNavigation
               active={activeNav}
               visible={["knowledge", "agents", "capabilities"]}
-              labelOverrides={{ capabilities: "技能 / MCP" }}
+              labelOverrides={{ capabilities: "插件" }}
             />
           </div>
           <div className="task-list-toolbar">

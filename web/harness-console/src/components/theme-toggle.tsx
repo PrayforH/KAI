@@ -1,60 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-
-const STORAGE_KEY = "agent-harness-color-mode";
-
-type ColorMode = "light" | "dark";
-
-function isColorMode(value: string | null): value is ColorMode {
-  return value === "light" || value === "dark";
-}
-
-function applyColorMode(mode: ColorMode) {
-  const root = document.documentElement;
-  root.dataset.colorMode = mode;
-  root.style.colorScheme = mode;
-  document
-    .querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')
-    .forEach((meta) => {
-      meta.content = mode === "dark" ? "#181818" : "#ffffff";
-    });
-}
+import { useColorMode } from "../lib/color-mode";
 
 export function ThemeSelector() {
-  const [mode, setMode] = useState<ColorMode | null>(null);
-
-  const syncColorMode = useCallback(() => {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    const next = isColorMode(stored)
-      ? stored
-      : window.matchMedia("(prefers-color-scheme: dark)").matches
-        ? "dark"
-        : "light";
-    applyColorMode(next);
-    setMode(next);
-  }, []);
-
-  useEffect(() => {
-    const media = window.matchMedia("(prefers-color-scheme: dark)");
-    syncColorMode();
-    window.addEventListener("storage", syncColorMode);
-    media.addEventListener("change", syncColorMode);
-    return () => {
-      window.removeEventListener("storage", syncColorMode);
-      media.removeEventListener("change", syncColorMode);
-    };
-  }, [syncColorMode]);
-
-  function selectColorMode(next: ColorMode) {
-    try {
-      window.localStorage.setItem(STORAGE_KEY, next);
-    } catch {
-      // The selected theme still applies for the current page.
-    }
-    applyColorMode(next);
-    setMode(next);
-  }
+  const { mode, setColorMode } = useColorMode();
 
   return (
     <div
@@ -73,7 +22,7 @@ export function ThemeSelector() {
           role="radio"
           aria-checked={mode === value}
           data-theme-option={value}
-          onClick={() => selectColorMode(value)}
+          onClick={() => setColorMode(value)}
           key={value}
         >
           <span className="theme-option-preview" aria-hidden="true">

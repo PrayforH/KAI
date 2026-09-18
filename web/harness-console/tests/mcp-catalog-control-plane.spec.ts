@@ -28,7 +28,7 @@ const page = readFileSync(
 describe("MCP capability catalog", () => {
   it("has a discoverable Studio navigation entry and dedicated page", () => {
     expect(navigation).toContain('href: "/studio/capabilities"');
-    expect(navigation).toContain('label: "MCP 能力"');
+    expect(navigation).toContain('label: "插件"');
     expect(page).toContain('<StudioCapabilityManager defaultTab="mcp"');
   });
 

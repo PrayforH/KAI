@@ -203,6 +203,39 @@ class AguiRunService:
             archived_at=datetime.now(UTC) if archived else None,
         )
 
+    async def set_pinned(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        thread_id: str,
+        pinned: bool,
+    ) -> StoredAguiThreadBinding:
+        return await self._bindings.set_pinned(
+            tenant_id,
+            user_id,
+            thread_id,
+            pinned_at=datetime.now(UTC) if pinned else None,
+        )
+
+    async def rename_thread(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        thread_id: str,
+        title: str,
+    ) -> StoredAguiThreadBinding:
+        """Store the reader's explicit rename; model titles never override it."""
+        return await self._bindings.update_title(
+            tenant_id,
+            user_id,
+            thread_id,
+            title=title,
+            source="user",
+            generated_at=datetime.now(UTC),
+        )
+
     async def create_run(
         self,
         *,
@@ -327,7 +360,9 @@ class AguiRunService:
 
     async def resolve_title(self, binding: StoredAguiThreadBinding, prompts: list[str]) -> str:
         if binding.title and (
-            binding.title_source == "model" or self._title_generator is None or not prompts
+            binding.title_source in {"model", "user"}
+            or self._title_generator is None
+            or not prompts
         ):
             return binding.title
         generated_at = binding.title_updated_at or datetime.now(UTC)
@@ -397,6 +432,10 @@ class AguiRunService:
         generated_at: datetime,
     ) -> None:
         try:
+            stored = await self._bindings.get_by_thread(tenant_id, user_id, thread_id)
+            if stored.title_source == "user":
+                # A reader rename wins over every generated title.
+                return
             await self._bindings.update_title(
                 tenant_id,
                 user_id,
@@ -460,6 +499,10 @@ class AguiRunService:
     ) -> None:
         assert self._title_generator is not None
         try:
+            stored = await self._bindings.get_by_thread(tenant_id, user_id, thread_id)
+            if stored.title_source == "user":
+                # A reader rename wins over every generated title.
+                return
             title = await self._title_generator.generate(tenant_id, user_id, prompts)
             await self._bindings.update_title(
                 tenant_id,

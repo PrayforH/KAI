@@ -321,7 +321,7 @@ class AguiThreadBindingRepository(Protocol):
         thread_id: str,
         *,
         title: str,
-        source: Literal["fallback", "model"],
+        source: Literal["fallback", "model", "user"],
         generated_at: datetime,
     ) -> AguiThreadBinding: ...
 
@@ -336,6 +336,15 @@ class AguiThreadBindingRepository(Protocol):
         thread_id: str,
         *,
         archived_at: datetime | None,
+    ) -> AguiThreadBinding: ...
+
+    async def set_pinned(
+        self,
+        tenant_id: str,
+        user_id: str,
+        thread_id: str,
+        *,
+        pinned_at: datetime | None,
     ) -> AguiThreadBinding: ...
 
     async def rebind_session(

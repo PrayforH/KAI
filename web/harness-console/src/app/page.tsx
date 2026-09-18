@@ -17,6 +17,10 @@ import {
   TaskAgentSwitcher,
   taskAgentSwitchMode,
 } from "../components/task-agent-switcher";
+import {
+  TaskDetailsPopover,
+  TaskHeaderActions,
+} from "../components/task-header-actions";
 import { TaskSidebar } from "../components/task-sidebar";
 import { ProductBrandMark, ProductLoading, PRODUCT_NAME } from "../components/product-brand";
 import { SidebarLeftIcon, SidebarPanelIcon } from "../components/panel-icons";
@@ -185,20 +189,36 @@ function HeaderUtilities({
 function TaskContextBar({
   taskTitle,
   agent,
+  task,
+  onRenamed,
+  onArchived,
 }: {
   taskTitle: string;
   agent: TaskAgent | null;
+  task: TaskSummary | null;
+  onRenamed: (title: string) => void;
+  onArchived: () => void;
 }) {
   return (
     <div className="task-context-bar" aria-label="当前任务、项目与版本">
       <strong className="task-context-title">{taskTitle}</strong>
-      <span className="task-context-chip task-context-project">
-        <svg viewBox="0 0 20 20" aria-hidden="true">
-          <path d="M2.75 5.75a2 2 0 0 1 2-2h3.1l1.7 1.9h5.7a2 2 0 0 1 2 2v6.5a2 2 0 0 1-2 2H4.75a2 2 0 0 1-2-2Z" />
-        </svg>
-        {agent?.displayName ?? "agent-studio"}
-      </span>
-
+      {task ? (
+        <TaskDetailsPopover task={task} agent={agent} />
+      ) : (
+        <span className="task-context-chip task-context-project">
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M2.75 5.75a2 2 0 0 1 2-2h3.1l1.7 1.9h5.7a2 2 0 0 1 2 2v6.5a2 2 0 0 1-2 2H4.75a2 2 0 0 1-2-2Z" />
+          </svg>
+          {agent?.displayName ?? "agent-studio"}
+        </span>
+      )}
+      {task && (
+        <TaskHeaderActions
+          task={task}
+          onRenamed={onRenamed}
+          onArchived={onArchived}
+        />
+      )}
     </div>
   );
 }
@@ -242,6 +262,7 @@ function AuthenticatedHome() {
   }, []);
   const [compactTaskSidebar, setCompactTaskSidebar] = useState(false);
   const [currentTaskTitle, setCurrentTaskTitle] = useState("新任务");
+  const [currentTask, setCurrentTask] = useState<TaskSummary | null>(null);
   const [currentThreadState, setCurrentThreadState] =
     useState<TaskThreadState>("unknown");
   const [activeSkillLaunch, setActiveSkillLaunch] =
@@ -470,6 +491,7 @@ function AuthenticatedHome() {
     setSelectedAgent(nextAgent);
     setThreadId(nextThreadId);
     setCurrentTaskTitle("新任务");
+    setCurrentTask(null);
     setCurrentThreadState("empty");
     setModelRouteOverride(null);
     setActiveSkillLaunch(null);
@@ -489,14 +511,26 @@ function AuthenticatedHome() {
     createTaskWithAgent(nextAgent);
   }, [createTaskWithAgent, currentThreadState, focusTaskComposer, threadId, user.user_id]);
 
+  // Keep the header's task context (title + details popover data) synced with
+  // the durable task list: on thread switches, run phase changes, and after
+  // pin/rename/archive actions anywhere in the app.
   useEffect(() => {
-    if (!threadId || !runView?.runId) return;
+    if (!threadId) return;
     let active = true;
-    void loadTasks().then((tasks) => {
-      const current = tasks.find((task) => task.thread_id === threadId);
-      if (active && current) setCurrentTaskTitle(current.title);
-    }).catch(() => undefined);
-    return () => { active = false; };
+    const sync = () => {
+      void loadTasks().then((tasks) => {
+        if (!active) return;
+        const current = tasks.find((task) => task.thread_id === threadId) ?? null;
+        setCurrentTask(current);
+        if (current) setCurrentTaskTitle(current.title);
+      }).catch(() => undefined);
+    };
+    sync();
+    window.addEventListener("harness:task-list-changed", sync);
+    return () => {
+      active = false;
+      window.removeEventListener("harness:task-list-changed", sync);
+    };
   }, [threadId, runView?.runId, runView?.phase]);
 
   const startTaskInProject = useCallback((projectTask: TaskSummary) => {
@@ -646,7 +680,17 @@ function AuthenticatedHome() {
                   <SidebarExpandToggle onToggle={() => setTaskSidebarOpen(true)} />
                 </>
               )}
-              <TaskContextBar taskTitle={currentTaskTitle} agent={selectedAgent} />
+              <TaskContextBar
+                taskTitle={currentTaskTitle}
+                agent={selectedAgent}
+                task={currentTask}
+                onRenamed={setCurrentTaskTitle}
+                onArchived={() => {
+                  setCurrentTask(null);
+                  setCurrentTaskTitle("新任务");
+                  startNewTask();
+                }}
+              />
               {selectedAgent && selectedAgent.name !== "lead-agent" && (
                 <TaskAgentSwitcher
                   kind="version"
