@@ -70,37 +70,3 @@ it("folds a long table body but keeps its header", async () => {
   await click(container.querySelector(".aui-md-clamp button"));
   expect(container.querySelectorAll("tbody tr")).toHaveLength(25);
 });
-
-it("folds file bullets spread across many small lists", async () => {
-  // One agent answer listed its outputs in seven per-stage lists of a few files
-  // each, so a per-list limit never fired and the answer stayed a file dump.
-  const sections = Array.from({ length: 7 }, (_, section) => [
-    `**阶段${section + 1}**`,
-    `- \`stage${section + 1}/build.py\` — ${section + 10} 行`,
-    `- \`stage${section + 1}/out.csv\` ${section + 1}.2 KB`,
-    `- \`stage${section + 1}/REPORT.md\``,
-  ].join("\n")).join("\n\n");
-  const container = await render(`${sections}\n\n本次全部产出如上。`);
-
-  // Twelve file bullets stay, the rest fold behind one footer.
-  expect(container.textContent).toContain("另有 9 项未显示");
-  expect(container.textContent).toContain("stage1/build.py");
-  expect(container.textContent).not.toContain("stage7/REPORT.md");
-  expect(container.textContent).toContain("本次全部产出如上。");
-
-  await click(container.querySelector(".aui-md-clamp button"));
-  expect(container.textContent).toContain("stage7/REPORT.md");
-  expect(container.querySelector(".aui-md-clamp")).toBeNull();
-});
-
-it("keeps an answer with a few files untouched", async () => {
-  const container = await render([
-    "改动如下：",
-    "- `src/app/page.tsx` 增加入口",
-    "- `src/lib/api.ts` 调整请求",
-    "- 其余为说明文字。",
-  ].join("\n"));
-
-  expect(container.textContent).toContain("src/app/page.tsx");
-  expect(container.querySelector(".aui-md-clamp")).toBeNull();
-});

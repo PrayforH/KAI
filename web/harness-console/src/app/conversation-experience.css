@@ -572,28 +572,32 @@ body.codex-theme-v1 .harness-composer-shell .composer-file-ready {
 }
 
 /* Oversized-message clamp notice (2026-09-17). */
+/* A quiet line, not a notice box: it only ever says that a long list or table
+   is folded, and offers the way back. */
 .aui-md-clamp {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin: 8px 0 4px;
-  padding: 6px 10px;
-  border: 1px dashed rgba(28, 28, 31, 0.2);
-  border-radius: 8px;
+  margin: 6px 0 2px;
+  padding: 0;
+  border: 0;
+  color: var(--codex-muted);
   font-size: 12px;
-  color: var(--codex-muted, #6b6b70);
 }
+
 .aui-md-clamp button {
-  border: 1px solid rgba(28, 28, 31, 0.16);
+  border: 0;
+  padding: 2px 0;
   background: transparent;
-  color: inherit;
-  border-radius: 999px;
-  padding: 2px 12px;
-  font-size: 12px;
+  color: var(--codex-ink-soft);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
   cursor: pointer;
   white-space: nowrap;
 }
+.aui-md-clamp button:hover { color: var(--codex-ink); }
 
 /* Execution timeline geometry (2026-09-17).
    The log keeps ONE text column: a 16px icon gutter, an 8px gap, then text at

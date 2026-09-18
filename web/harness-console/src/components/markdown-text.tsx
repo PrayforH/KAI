@@ -180,27 +180,6 @@ const FINAL_SMOOTHING = { drainMs: 32, maxCharIntervalMs: 1, minCommitMs: 32 };
 // (the 2026-09-17 "page unresponsive" reports). Render a prefix first and let
 // the user expand; the copy action still copies the complete provider text.
 const MESSAGE_TEXT_CLAMP_CHARS = 20_000;
-// An agent that ships dozens of files often lists them across many small
-// per-section lists, so a per-list limit never triggers. This budget folds the
-// file bullets of the whole answer instead, leaving one way back to all of them.
-const MESSAGE_FILE_BULLET_LIMIT = 12;
-const FILE_BULLET_PATTERN = /^\s{0,3}(?:[-*+]|\d+\.)\s+.*[`/][\w./-]+\.(?:[a-z0-9]{1,5})[\s`（(,，.。]?/i;
-
-export function foldFileBullets(markdown: string, limit = MESSAGE_FILE_BULLET_LIMIT) {
-  const kept: string[] = [];
-  const hidden: string[] = [];
-  let seen = 0;
-  for (const line of markdown.split("\n")) {
-    if (!FILE_BULLET_PATTERN.test(line)) {
-      kept.push(line);
-      continue;
-    }
-    seen += 1;
-    if (seen <= limit) kept.push(line);
-    else hidden.push(line.trim());
-  }
-  return { text: kept.join("\n"), hidden };
-}
 function markdownUrlTransform(url: string) {
   return url === "streamdown:incomplete-link" ? url : knowledgeUrlTransform(url);
 }
@@ -221,13 +200,8 @@ function MarkdownTextImpl() {
   const renderedText = oversized
     ? displayText.slice(0, MESSAGE_TEXT_CLAMP_CHARS)
     : displayText;
-  const [filesOpen, setFilesOpen] = useState(false);
-  const folded = useMemo(
-    () => (running || filesOpen ? { text: renderedText, hidden: [] as string[] } : foldFileBullets(renderedText)),
-    [running, filesOpen, renderedText],
-  );
   return (
-    <TextMessagePartProvider text={folded.text} isRunning={running}>
+    <TextMessagePartProvider text={renderedText} isRunning={running}>
       <MarkdownTextPrimitive
         className="aui-md"
         remarkPlugins={[remarkGfm, remarkWikiLinks]}
@@ -250,16 +224,6 @@ function MarkdownTextImpl() {
           },
         }}
       />
-      {folded.hidden.length > 0 ? (
-        <div className="aui-md-clamp">
-          <span>
-            本次产出共 {folded.hidden.length + MESSAGE_FILE_BULLET_LIMIT} 项，另有 {folded.hidden.length} 项未显示
-          </span>
-          <button type="button" onClick={() => setFilesOpen(true)}>
-            展开全部（{folded.hidden.length + MESSAGE_FILE_BULLET_LIMIT} 项）
-          </button>
-        </div>
-      ) : null}
       {oversized ? (
         <div className="aui-md-clamp">
           <span>消息过长，已先显示前 {MESSAGE_TEXT_CLAMP_CHARS} 字符</span>
