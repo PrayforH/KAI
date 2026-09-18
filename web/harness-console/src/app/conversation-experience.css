@@ -217,6 +217,17 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) {
 .conversation-index-rail::-webkit-scrollbar { display: none; }
 .conversation-index button { display: flex; align-items: center; flex: 0 0 10px; width: 32px; height: 10px; padding: 0 0 0 10px; border: 0; background: transparent; cursor: pointer; }
 .conversation-index button > span { width: var(--index-line-width, 6px); height: 2px; background: var(--codex-muted); opacity: .45; transition: width 180ms cubic-bezier(.2,.8,.2,1), opacity 160ms ease, background-color 160ms ease; }
+/* The rail unfolds from its middle towards both ends as the turns arrive. */
+@keyframes conversation-index-reveal {
+  from { transform: scaleX(.3); opacity: 0; }
+}
+.conversation-index button > span {
+  transform-origin: center;
+  animation: conversation-index-reveal 280ms cubic-bezier(.2,.8,.2,1) var(--rail-reveal-delay, 0ms) backwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .conversation-index button > span { animation: none; }
+}
 .conversation-index button[aria-current] > span { opacity: .85; }
 .conversation-index button[data-highlighted="true"] > span { background: var(--codex-ink); opacity: 1; }
 /* Ticks for earlier runs that are not loaded yet read exactly like the loaded

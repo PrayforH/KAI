@@ -53,3 +53,16 @@ it("supports keyboard navigation, updates branches and clears empty conversation
   await render({ id: "empty", prompts: [] });
   expect(host.querySelector("nav")).toBeNull();
 });
+
+it("unfolds the rail from its middle towards both ends", async () => {
+  const { railRevealDelay } = await import("../src/components/conversation-index");
+
+  // The middle tick leads, the ends follow, and the two halves are symmetric.
+  expect(railRevealDelay(2, 5)).toBe("0ms");
+  expect(railRevealDelay(1, 5)).toBe("26ms");
+  expect(railRevealDelay(0, 5)).toBe("52ms");
+  expect(railRevealDelay(4, 5)).toBe("52ms");
+  // An even count has a middle pair.
+  expect(railRevealDelay(1, 4)).toBe("13ms");
+  expect(railRevealDelay(0, 4)).toBe("39ms");
+});

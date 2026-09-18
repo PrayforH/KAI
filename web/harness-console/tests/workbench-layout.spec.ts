@@ -348,6 +348,12 @@ describe("full-page agent workbench", () => {
     expect(taskSidebar).not.toContain("currentStatusRef");
   });
 
+  it("keeps the branch counter out of the message editor", () => {
+    // The editor replaces the message body; the 2/2 branch picker belongs to the
+    // resting message and was showing underneath the input.
+    expect(agentThread).toContain("{editing ? null : <BranchPicker />}");
+  });
+
   it("keeps an active task pinned while allowing another Agent to start a new task", () => {
     expect(page).toContain('runStream.status === "running"');
     expect(page).toContain('runView?.phase === "waiting_approval"');

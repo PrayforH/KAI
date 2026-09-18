@@ -1709,7 +1709,7 @@ function HarnessUserMessage() {
             </>
           )}
         </MessagePrimitive.If>
-        <BranchPicker />
+        {editing ? null : <BranchPicker />}
       </UserMessage.Root>
       {preResponseActivity ? (
         <div
