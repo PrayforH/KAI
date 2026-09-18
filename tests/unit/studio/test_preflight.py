@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -14,7 +14,7 @@ from harness.observability.provider import Observability, build_observability
 from harness.policy.models import PolicyDecision, PolicyRule
 from harness.policy.profiles import PolicyProfileRegistry, default_policy_profiles
 from harness.policy.rules import PolicyEngine
-from harness.sandbox.base import SandboxCommandResult, SandboxHandle
+from harness.sandbox.base import SandboxCommandResult, SandboxHandle, SandboxProvider
 from harness.sandbox.local import LocalSandboxProvider
 from harness.studio.catalog import default_capability_catalog
 from harness.studio.compiler import AgentDraftCompiler
@@ -87,6 +87,7 @@ async def context(
     model_delay: float = 0,
     observability: Observability | None = None,
     enforce_profile: bool = False,
+    sandbox_for_profile: Callable[[str], SandboxProvider] | None = None,
 ) -> tuple[LivePreflightRunner, PreviewDeployment, StageSandbox]:
     catalog = default_capability_catalog()
     studio = AgentStudioService(
@@ -129,6 +130,7 @@ async def context(
     runner = LivePreflightRunner(
         studio=studio,
         sandbox=sandbox,
+        sandbox_for_profile=sandbox_for_profile,
         model_probe=FakeModelPreflightProbe(fail_code=model_failure, delay_seconds=model_delay),
         mcp_probe=FakeMcpPreflightProbe(fail_code=mcp_failure),
         policies=policies or default_policy_profiles(),
@@ -335,3 +337,57 @@ async def test_preflight_trace_exports_only_allowlisted_stage_facts(tmp_path: Pa
     serialized = repr(spans)
     assert "systemPrompt" not in serialized
     assert "credential" not in serialized
+
+
+@pytest.mark.asyncio
+async def test_preflight_provisions_on_the_backend_the_profile_pins(tmp_path: Path) -> None:
+    """Preflight must exercise the pinned backend, not the deployment default."""
+
+    routed = StageSandbox(tmp_path / "routed")
+    asked: list[str] = []
+
+    def sandbox_for_profile(name: str) -> SandboxProvider:
+        asked.append(name)
+        return routed
+
+    runner, preview, default_sandbox = await context(
+        tmp_path, enforce_profile=True, sandbox_for_profile=sandbox_for_profile
+    )
+    # Pin a profile this build knows, so routing is what is under test.
+    known = next(
+        item
+        for item in default_capability_catalog().execution_profiles
+        if item.profile_id == "local-development"
+    )
+    pinned = preview.model_copy(
+        update={
+            "execution_profile": known.profile_id,
+            "execution_profile_version": known.version,
+        }
+    )
+
+    result = await runner.run(pinned, cancelled=never_cancelled)
+
+    # The resolver is asked for the backend the pinned profile declares.
+    assert asked == [known.sandbox_provider]
+    assert routed.destroyed is True
+    assert default_sandbox.destroyed is False
+    provision = next(
+        check for check in result.checks if check.stage is PreflightStage.SANDBOX_PROVISION
+    )
+    assert provision.status is PreflightCheckStatus.PASSED
+
+
+@pytest.mark.asyncio
+async def test_preflight_refuses_a_profile_this_build_does_not_know(tmp_path: Path) -> None:
+    routed = StageSandbox(tmp_path / "routed")
+    runner, preview, _default = await context(
+        tmp_path,
+        enforce_profile=True,
+        sandbox_for_profile=lambda name: routed,
+    )
+    unknown = preview.model_copy(update={"execution_profile": "no-such-profile"})
+
+    result = await runner.run(unknown, cancelled=never_cancelled)
+
+    assert result.error_code == "deployment_execution_profile_unavailable"

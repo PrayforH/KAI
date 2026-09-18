@@ -866,6 +866,14 @@ class ExecutionProfileMetadata(StudioModel):
         default=SandboxEnforcement.NONE, alias="minimumEnforcement"
     )
     network_access: tuple[NetworkAccess, ...] = Field(alias="networkAccess")
+    # Whether Runs on this profile must have the declared egress requirement
+    # applied to their sandbox. "declared" keeps the historical behaviour (the
+    # level is recorded but no backend enforces it); "enforced" derives an
+    # allow list per Run and refuses the Run when the backend cannot apply it.
+    # This is how enforcement is scoped to one Agent instead of a deployment.
+    egress_enforcement: Literal["declared", "enforced"] = Field(
+        default="declared", alias="egressEnforcement"
+    )
     risk: CapabilityRisk
     cpu_millis: int = Field(default=1000, alias="cpuMillis", ge=100, le=16_000)
     memory_mib: int = Field(default=2048, alias="memoryMiB", ge=128, le=65_536)

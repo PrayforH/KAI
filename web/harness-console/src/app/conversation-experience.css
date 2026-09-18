@@ -834,8 +834,33 @@ a.rail-bar-button { text-decoration: none; }
   white-space: nowrap;
 }
 
-.rail-preview-download { flex: 0 0 26px; text-align: center; color: #9a9a9a; text-decoration: none; }
-.rail-preview-download:hover { color: var(--codex-ink); }
+/* The file name takes the room; the per-file actions stay a fixed cluster. */
+.rail-preview-actions { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
+
+.rail-preview-action,
+.rail-preview-download {
+  width: 26px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  color: #9a9a9a;
+  text-decoration: none;
+  transition: color 140ms ease, background-color 140ms ease;
+}
+
+.rail-preview-action svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.4;
+}
+
+.rail-preview-action:hover,
+.rail-preview-download:hover { color: var(--codex-ink); background: var(--codex-surface-hover, #232323); }
 
 .rail-preview-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding-top: 8px; }
 
@@ -877,12 +902,15 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-prev
   color: var(--codex-ink);
 }
 
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-preview-action,
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-preview-download {
   color: var(--codex-muted);
 }
 
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-preview-action:hover,
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-preview-download:hover {
   color: var(--codex-ink);
+  background: var(--codex-surface-hover);
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-preview-note {

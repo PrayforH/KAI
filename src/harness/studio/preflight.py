@@ -55,6 +55,7 @@ class LivePreflightRunner:
         *,
         studio: AgentStudioService,
         sandbox: SandboxProvider,
+        sandbox_for_profile: Callable[[str], SandboxProvider] | None = None,
         model_probe: ModelPreflightProbe,
         mcp_probe: McpPreflightProbe,
         policies: PolicyProfileRegistry,
@@ -68,6 +69,9 @@ class LivePreflightRunner:
             raise ValueError("Preflight timeout must be positive")
         self._studio = studio
         self._sandbox = sandbox
+        # Preflight must exercise the backend the preview will actually run on,
+        # not the deployment default, or it validates the wrong environment.
+        self._sandbox_for_profile = sandbox_for_profile
         self._model_probe = model_probe
         self._mcp_probe = mcp_probe
         self._policies = policies
@@ -77,7 +81,31 @@ class LivePreflightRunner:
         self._enforce_execution_profile_provider = enforce_execution_profile_provider
         self._clock = clock or (lambda: datetime.now(UTC))
 
+    def _sandbox_for(self, preview: PreviewDeployment) -> SandboxProvider:
+        """Pick the backend this preview's execution profile pins."""
+
+        if self._sandbox_for_profile is None:
+            return self._sandbox
+        profile = next(
+            (
+                item
+                for item in default_capability_catalog().execution_profiles
+                if item.profile_id == preview.execution_profile
+                and item.version == preview.execution_profile_version
+            ),
+            None,
+        )
+        if profile is None:
+            raise PreflightCheckError(
+                "deployment_execution_profile_unavailable",
+                "Preview pins an Execution Profile this build does not know",
+            )
+        return self._sandbox_for_profile(profile.sandbox_provider)
+
     async def run(self, preview: PreviewDeployment, *, cancelled: CancelCheck) -> PreflightResult:
+        # Seeded with the default so teardown still has a backend if routing
+        # itself fails; the guarded provisioning step rebinds it to the pinned one.
+        sandbox = self._sandbox
         started_at = self._clock()
         checks: list[PreflightCheck] = []
         events: list[PreflightEvent] = []
@@ -270,7 +298,10 @@ class LivePreflightRunner:
             )
 
         async def provision_check() -> PreflightEvidence:
-            nonlocal handle
+            nonlocal handle, sandbox
+            # Selection happens inside the guarded check so an unknown or
+            # unserved profile is reported as a Preflight failure, not raised.
+            sandbox = self._sandbox_for(preview)
             now = self._clock()
             run = Run(
                 run_id=f"preflight-{preview.preview_id}",
@@ -283,7 +314,7 @@ class LivePreflightRunner:
                 fencing_token=preview.fencing_token,
                 input={"preflight": True},
             )
-            handle = await self._sandbox.provision(run)
+            handle = await sandbox.provision(run)
             profile = next(
                 (
                     item
@@ -316,7 +347,7 @@ class LivePreflightRunner:
             input_path = handle.path / ".harness-preflight" / "input.txt"
             input_path.parent.mkdir(parents=True, exist_ok=True)
             input_path.write_text("input-ready\n", encoding="utf-8")
-            await self._sandbox.prepare(handle)
+            await sandbox.prepare(handle)
             return PreflightEvidence(
                 summary="Workspace input staged in target Sandbox",
                 details={"inputFile": True},
@@ -325,7 +356,7 @@ class LivePreflightRunner:
         async def model_check() -> PreflightEvidence:
             assert manifest is not None and handle is not None
             return await self._model_probe.verify(
-                preview.tenant_id, manifest, self._sandbox, handle
+                preview.tenant_id, manifest, sandbox, handle
             )
 
         async def mcp_check() -> PreflightEvidence:
@@ -339,7 +370,7 @@ class LivePreflightRunner:
                 agent_name=draft.spec.name,
                 agent_version=draft.spec.version,
             )
-            return await self._mcp_probe.verify(manifest, identity, self._sandbox, handle)
+            return await self._mcp_probe.verify(manifest, identity, sandbox, handle)
 
         async def approval_check() -> PreflightEvidence:
             assert (
@@ -410,7 +441,7 @@ class LivePreflightRunner:
                 "printf 'edit-ready\\n' >> output/preflight.txt; "
                 "printf 'bash-ready\\n' >> output/preflight.txt"
             )
-            executed = await self._sandbox.execute(
+            executed = await sandbox.execute(
                 handle, ("bash", "-lc", command), timeout_seconds=30
             )
             if executed.exit_code != 0:
@@ -418,7 +449,7 @@ class LivePreflightRunner:
                     "workspace_command_failed",
                     "Target Sandbox could not read, write and edit the workspace",
                 )
-            await self._sandbox.collect(handle)
+            await sandbox.collect(handle)
             output = handle.path / "output" / "preflight.txt"
             if not output.is_file():
                 raise PreflightCheckError(
@@ -447,7 +478,7 @@ class LivePreflightRunner:
                     details={"destroyed": False},
                     skipped=True,
                 )
-            await self._sandbox.destroy(handle)
+            await sandbox.destroy(handle)
             return PreflightEvidence(
                 summary="Target Sandbox destroyed",
                 details={"destroyed": True, "provider": handle.provider},

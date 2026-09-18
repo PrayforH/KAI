@@ -12,6 +12,7 @@ from pathlib import Path
 from harness.core.models import Run
 from harness.sandbox.base import (
     SandboxCommandResult,
+    SandboxEgress,
     SandboxHandle,
     SandboxIsolation,
     SandboxProvider,
@@ -24,6 +25,13 @@ class _DeferredLease:
     remote: SandboxHandle | None = None
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     workspace_may_be_dirty: bool = False
+    # Kept on the lease, not the provider: the provider is shared by every Run
+    # while each Run declares its own egress requirement.
+    egress: SandboxEgress | None = None
+
+
+class UnsupportedEgressError(RuntimeError):
+    """Raised when a Run's egress requirement cannot be enforced by its backend."""
 
 
 class DeferredToolSandboxProvider:
@@ -57,6 +65,17 @@ class DeferredToolSandboxProvider:
         self._leases: dict[str, _DeferredLease] = {}
 
     async def provision(self, run: Run) -> SandboxHandle:
+        return await self.provision_with_egress(run, None)
+
+    async def provision_with_egress(
+        self, run: Run, egress: SandboxEgress | None
+    ) -> SandboxHandle:
+        """Provision carrying the Run's egress requirement to the backend.
+
+        The sandbox is only acquired on first tool use, so the policy has to
+        travel with the lease until then.
+        """
+
         await self._active_run_slots.acquire()
         try:
             path = Path(tempfile.mkdtemp(prefix=f"{run.run_id}-deferred-", dir=self._local_root))
@@ -64,7 +83,7 @@ class DeferredToolSandboxProvider:
             self._active_run_slots.release()
             raise
         sandbox_id = path.name
-        self._leases[sandbox_id] = _DeferredLease(run=run)
+        self._leases[sandbox_id] = _DeferredLease(run=run, egress=egress)
         return SandboxHandle(
             sandbox_id=sandbox_id,
             path=path,
@@ -75,6 +94,19 @@ class DeferredToolSandboxProvider:
             if self._remote_workspace_for
             else None,
         )
+
+    async def _provision_backend(self, lease: _DeferredLease) -> SandboxHandle:
+        """Hand the lease's egress requirement to the backend that can apply it."""
+
+        applies = getattr(self._backend, "provision_with_egress", None)
+        if lease.egress is None or not lease.egress.is_restrictive():
+            return await self._backend.provision(lease.run)
+        if applies is None:
+            raise UnsupportedEgressError(
+                f"{self._provider_name} cannot enforce a sandbox egress policy; "
+                "refusing rather than running with unrestricted egress"
+            )
+        return await applies(lease.run, lease.egress)
 
     async def prepare(self, handle: SandboxHandle) -> None:
         self._lease(handle)
@@ -94,7 +126,7 @@ class DeferredToolSandboxProvider:
                 return lease.remote
             provisioned: SandboxHandle | None = None
             try:
-                provisioned = await self._backend.provision(lease.run)
+                provisioned = await self._provision_backend(lease)
                 original_path = provisioned.path
                 remote = provisioned.model_copy(
                     update={"path": handle.path, "deferred_tool_execution": True}

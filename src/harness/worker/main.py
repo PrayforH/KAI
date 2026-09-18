@@ -281,6 +281,10 @@ async def serve(settings: Settings) -> None:
     from harness.composition import build_production_container
 
     container = build_production_container(settings)
+    if container.sandbox_startup is not None:
+        # A sandbox backend that cannot serve this deployment configuration
+        # should stop the Worker, not the first Run that needs it.
+        await container.sandbox_startup()
     metrics_server = await start_metrics_server(
         container.reliability_metrics,
         port=settings.worker_metrics_port,
