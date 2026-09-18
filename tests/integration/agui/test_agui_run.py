@@ -352,6 +352,69 @@ async def test_agui_thread_can_be_archived_restored_and_keeps_history() -> None:
 
 
 @pytest.mark.asyncio
+async def test_agui_thread_can_be_pinned_renamed_and_ranks_pinned_first() -> None:
+    app = create_memory_app(auto_execute=True)
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        await client.post(
+            "/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS
+        )
+        for index, thread_id in enumerate(["thread-pin-a", "thread-pin-b"]):
+            run = await client.post(
+                "/v1/agui?agent_name=echo-agent&agent_version=0.1.0",
+                json=_request(
+                    thread_id=thread_id,
+                    run_id=f"client-run-pin-{index}",
+                    prompt=f"pin me {index}",
+                ),
+                headers=HEADERS,
+            )
+            assert run.status_code == 200
+
+        renamed = await client.patch(
+            "/v1/agui/threads/thread-pin-b",
+            json={"title": "自定义任务名"},
+            headers=HEADERS,
+        )
+        assert renamed.status_code == 200
+        assert renamed.json()["title"] == "自定义任务名"
+
+        pinned = await client.patch(
+            "/v1/agui/threads/thread-pin-a",
+            json={"pinned": True},
+            headers=HEADERS,
+        )
+        assert pinned.status_code == 200
+        assert pinned.json()["pinned"] is True
+        assert pinned.json()["pinned_at"] is not None
+
+        pinned_list = await client.get("/v1/agui/threads", headers=HEADERS)
+        assert [item["thread_id"] for item in pinned_list.json()] == [
+            "thread-pin-a",
+            "thread-pin-b",
+        ]
+        assert pinned_list.json()[1]["title"] == "自定义任务名"
+
+        renamed_again = await client.patch(
+            "/v1/agui/threads/thread-pin-b",
+            json={"title": "  "},
+            headers=HEADERS,
+        )
+        assert renamed_again.status_code == 409
+
+        unpinned = await client.patch(
+            "/v1/agui/threads/thread-pin-a",
+            json={"pinned": False},
+            headers=HEADERS,
+        )
+        assert unpinned.status_code == 200
+        assert unpinned.json()["pinned"] is False
+        unpinned_list = await client.get("/v1/agui/threads", headers=HEADERS)
+        assert [item["thread_id"] for item in unpinned_list.json()][0] == "thread-pin-b"
+
+
+@pytest.mark.asyncio
 async def test_agui_history_restores_user_input_attachments() -> None:
     app = create_memory_app(auto_execute=True)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
