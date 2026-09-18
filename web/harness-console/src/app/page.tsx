@@ -224,6 +224,7 @@ function AuthenticatedHome() {
   const [catalogRefreshKey, setCatalogRefreshKey] = useState(0);
   const [taskSidebarOpen, setTaskSidebarOpen] = useState(true);
   const [taskRailOpen, setTaskRailOpen] = useState(false);
+  const [railExpanded, setRailExpanded] = useState(false);
   const [railPreview, setRailPreview] = useState<(PreviewTarget & { nonce: number }) | null>(null);
   const previewNonce = useRef(0);
   // Artifact cards in the transcript ask the rail to show that file.
@@ -592,7 +593,7 @@ function AuthenticatedHome() {
 
   return (
     <main
-      className={`console-shell${taskRailOpen ? " is-rail-open" : ""}`}
+      className={`console-shell${taskRailOpen ? " is-rail-open" : ""}${taskRailOpen && railExpanded ? " is-rail-expanded" : ""}`}
       id="main-content"
       data-task-thread-state={currentThreadState}
     >
@@ -712,6 +713,8 @@ function AuthenticatedHome() {
           key={threadId}
           open={taskRailOpen}
           onClose={() => setTaskRailOpen(false)}
+          expanded={railExpanded}
+          onToggleExpanded={() => setRailExpanded((current) => !current)}
           taskTitle={currentTaskTitle}
           agentDisplay={selectedAgent?.displayName ?? selectedAgent?.name ?? "—"}
           agentKey={selectedAgent ? `${selectedAgent.name}@${selectedAgent.version}` : "—"}

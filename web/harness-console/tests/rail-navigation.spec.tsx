@@ -23,7 +23,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function render(onClose = vi.fn()) {
+async function render(onClose = vi.fn(), onToggleExpanded = vi.fn()) {
   vi.stubGlobal("fetch", vi.fn(async () => Response.json(files)));
   host = document.createElement("div");
   document.body.appendChild(host);
@@ -33,6 +33,8 @@ async function render(onClose = vi.fn()) {
       <WorkbenchRail
         open
         onClose={onClose}
+        expanded={false}
+        onToggleExpanded={onToggleExpanded}
         taskTitle="任务"
         agentDisplay="agent"
         agentKey="agent@v1"
@@ -92,18 +94,28 @@ it("walks back and forward through the files it opened", async () => {
   expect(enabled(button("前进"))).toBe(false);
 });
 
-it("covers the conversation instead of taking a column, and may grow to half the viewport", () => {
+it("squeezes a real column, and covers the conversation when expanded", () => {
   const experience = readFileSync(
     join(process.cwd(), "src/app/conversation-experience.css"),
     "utf8",
   );
-  // The drawer overlays the reading column, so it never reserves a grid track.
-  expect(experience).not.toContain("grid-column: 3");
+  // The drawer takes a third column, so the reading column keeps a share of it.
+  expect(experience).toContain("grid-column: 3");
   expect(experience).toMatch(/--rail-panel-width:\s*clamp\([^;]*50vw\)/);
-  expect(experience).toContain(".rail-files-section { display: flex;");
+  // Expanded, the conversation column collapses to nothing and the drawer keeps the rest.
+  expect(experience).toContain(".console-shell.is-rail-expanded .workspace-stage.tasks-open { grid-template-columns: var(--app-sidebar-expanded-width) 0 minmax(0, 1fr); }");
+  expect(experience).toContain(".console-shell.is-rail-expanded .chat-stage { min-width: 0; overflow: hidden; }");
   // An open file shares the drawer with the browser once it is wide enough.
   expect(experience).toContain('@container rail (min-width: 460px)');
   expect(experience).toMatch(/\.rail-files-section\[data-previewing="true"\]/);
+});
+
+it("asks the shell to give the drawer the whole conversation area", async () => {
+  const onToggleExpanded = vi.fn();
+  await render(vi.fn(), onToggleExpanded);
+
+  await click(button("扩展占满对话区"));
+  expect(onToggleExpanded).toHaveBeenCalledTimes(1);
 });
 
 it("hands the whole drawer to the open file when the browser is hidden", async () => {

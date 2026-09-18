@@ -52,19 +52,3 @@ it("lets the overlay drawer grow to half the viewport and pulls it back when the
   expect(host.firstElementChild?.getAttribute("aria-valuemax")).toBe("400");
   expect(host.firstElementChild?.getAttribute("aria-valuenow")).toBe("400");
 });
-it("answers the drawer's expand button with the widest allowed width, then restores it", () => {
-  const request = () => act(() => {
-    window.dispatchEvent(new CustomEvent("harness:panel-width-request", {
-      detail: { panel: "rail", mode: "toggle-wide" },
-    }));
-  });
-  act(() => root.render(<PanelResizeHandle panel="rail" />));
-  press("Home");
-  expect(host.firstElementChild?.getAttribute("aria-valuenow")).toBe("280");
-
-  request();
-  expect(host.firstElementChild?.getAttribute("aria-valuenow")).toBe("512");
-
-  request();
-  expect(host.firstElementChild?.getAttribute("aria-valuenow")).toBe("280");
-});

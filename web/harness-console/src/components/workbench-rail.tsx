@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { requireAuthenticatedResponse } from "../lib/client-auth";
-import { PanelResizeHandle, PANEL_WIDTH_REQUEST } from "./panel-resize-handle";
+import { PanelResizeHandle } from "./panel-resize-handle";
 import { SidebarPanelIcon } from "./panel-icons";
 import { RailFilePreview, previewKindFor, type PreviewKind, type PreviewTarget } from "./rail-file-preview";
 
@@ -136,6 +136,8 @@ function formatFileSize(value?: number | null) {
 export function WorkbenchRail({
   open,
   onClose,
+  expanded,
+  onToggleExpanded,
   taskTitle,
   agentDisplay,
   agentKey,
@@ -147,6 +149,8 @@ export function WorkbenchRail({
 }: {
   open: boolean;
   onClose: () => void;
+  expanded: boolean;
+  onToggleExpanded: () => void;
   taskTitle: string;
   agentDisplay: string;
   agentKey: string;
@@ -160,7 +164,6 @@ export function WorkbenchRail({
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [listVisible, setListVisible] = useState(true);
-  const [wide, setWide] = useState(false);
   const [fileError, setFileError] = useState("");
   const [refresh, setRefresh] = useState(0);
   const [loadedFiles, setFiles] = useState<RailFile[]>([]);
@@ -292,14 +295,10 @@ export function WorkbenchRail({
             <button
               type="button"
               className="rail-bar-button"
-              aria-label={wide ? "还原宽度" : "扩大到屏幕一半"}
-              title={wide ? "还原宽度" : "扩大到屏幕一半"}
-              onClick={() => {
-                setWide((value) => !value);
-                window.dispatchEvent(new CustomEvent(PANEL_WIDTH_REQUEST, {
-                  detail: { panel: "rail", mode: "toggle-wide" },
-                }));
-              }}
+              aria-label={expanded ? "还原对话区" : "扩展占满对话区"}
+              title={expanded ? "还原对话区" : "扩展占满对话区"}
+              aria-pressed={expanded}
+              onClick={onToggleExpanded}
             >
               <ExpandIcon />
             </button>
