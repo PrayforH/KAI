@@ -250,7 +250,13 @@ class PostgresAutomationRecordRepository:
             row = await session.get(AutomationRecordRow, record_id)
             if row is None or row.tenant_id != tenant_id:
                 return None
-            updated = _record(row).model_copy(update=fields)
+            # model_copy bypasses validation, so raw status strings in
+            # ``fields`` must be re-coerced into the status enum.
+            updated = AutomationRunRecord.model_validate(
+                _record(row).model_copy(update=fields).model_dump(
+                    mode="json", by_alias=True
+                )
+            )
             row.status = updated.status.value
             row.payload = _record_payload(updated)
             await session.commit()
