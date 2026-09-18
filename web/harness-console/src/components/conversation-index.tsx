@@ -26,6 +26,17 @@ export function ConversationIndex({ frame, threadId, pagination }: {
   const [active, setActive] = useState("");
   const [hovered, setHovered] = useState("");
   const buttons = useRef(new Map<string, HTMLButtonElement>());
+  // The unfold is an entrance, not a reaction: later updates (an auto-loaded page
+  // turning pending ticks into loaded ones) rebuild tick elements, and without
+  // this they would replay the whole animation.
+  const [revealing, setRevealing] = useState(false);
+  const hasTicks = (pagination?.total ?? entries.length) > 0;
+  useEffect(() => {
+    if (!hasTicks) { setRevealing(false); return; }
+    setRevealing(true);
+    const timer = window.setTimeout(() => setRevealing(false), 900);
+    return () => window.clearTimeout(timer);
+  }, [hasTicks]);
   useEffect(() => {
     const root = frame.current;
     if (!root) return;
@@ -113,7 +124,7 @@ export function ConversationIndex({ frame, threadId, pagination }: {
 
   const pending = Math.max(0, (pagination?.total ?? entries.length) - entries.length);
   return <nav className="conversation-index" data-expanded={Boolean(hovered)} aria-label="对话轮次索引" onMouseLeave={() => setHovered("")}>
-    <div className="conversation-index-rail">
+    <div className="conversation-index-rail" data-revealing={revealing ? "true" : undefined}>
       {Array.from({ length: pending }, (_, index) => <button key={`pending-${index}`} type="button"
         className="conversation-index-pending" style={{ "--index-line-width": `${IDLE_LINE_WIDTH}px`, "--rail-reveal-delay": railRevealDelay(index, pending + entries.length) } as CSSProperties}
         aria-label={`第 ${index + 1} 轮：加载更早的轮次`}

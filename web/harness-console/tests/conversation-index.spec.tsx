@@ -31,6 +31,8 @@ it("indexes each user turn, previews labels and scrolls only its viewport", asyn
   await render();
   const buttons = host.querySelectorAll<HTMLButtonElement>("nav button");
   expect(buttons).toHaveLength(3);
+  // The unfold is an entrance: it is armed while the ticks first arrive.
+  expect(host.querySelector(".conversation-index-rail")?.getAttribute("data-revealing")).toBe("true");
   expect(buttons[0].getAttribute("aria-current")).toBe("location");
   act(() => buttons[1].focus());
   expect(host.querySelector(".conversation-index-preview")?.textContent).toContain("关于第二问的回答摘要");

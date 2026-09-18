@@ -221,12 +221,12 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) {
 @keyframes conversation-index-reveal {
   from { transform: scaleX(.3); opacity: 0; }
 }
-.conversation-index button > span {
+.conversation-index-rail[data-revealing="true"] button > span {
   transform-origin: center;
   animation: conversation-index-reveal 280ms cubic-bezier(.2,.8,.2,1) var(--rail-reveal-delay, 0ms) backwards;
 }
 @media (prefers-reduced-motion: reduce) {
-  .conversation-index button > span { animation: none; }
+  .conversation-index-rail[data-revealing="true"] button > span { animation: none; }
 }
 .conversation-index button[aria-current] > span { opacity: .85; }
 .conversation-index button[data-highlighted="true"] > span { background: var(--codex-ink); opacity: 1; }
