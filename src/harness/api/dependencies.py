@@ -61,7 +61,6 @@ from harness.core.manifest import AgentManifestSnapshot
 from harness.core.models import Run, RunStatus, Session
 from harness.core.ports import EventRepository, EventWakeup, TaskQueue
 from harness.deployments.controller import DeploymentController
-from harness.deployments.models import EnvironmentName
 from harness.deployments.queue import DeploymentTaskQueue
 from harness.deployments.repositories import (
     DeploymentRepository,
@@ -546,7 +545,8 @@ def build_memory_container(
         sessions=session_service,
         runs=run_service,
         agent_name=resolved_settings.automation_agent_name,
-        environment=EnvironmentName(resolved_settings.automation_environment),
+        registry=registry,
+        agent_version=resolved_settings.automation_agent_version,
         clock=clock,
         id_generator=id_generator,
     )

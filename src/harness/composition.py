@@ -45,7 +45,6 @@ from harness.core.manifest import AgentManifest, AgentManifestSnapshot
 from harness.core.models import ModelCompatibility, RunStatus, Session
 from harness.core.ports import ArtifactStore, TaskQueue
 from harness.deployments.controller import DeploymentController
-from harness.deployments.models import EnvironmentName
 from harness.deployments.queue import DeploymentTaskQueue
 from harness.deployments.service import DeploymentService
 from harness.evals.controller import EvalController
@@ -983,7 +982,8 @@ def build_production_container(
         sessions=session_service,
         runs=run_service,
         agent_name=settings.automation_agent_name,
-        environment=EnvironmentName(settings.automation_environment),
+        registry=registry,
+        agent_version=settings.automation_agent_version,
         clock=clock,
         id_generator=ids,
     )

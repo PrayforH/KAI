@@ -24,7 +24,7 @@ from harness.automations.models import (
 )
 from harness.core.errors import ConflictError, NotFoundError
 from harness.core.models import RunStatus
-from harness.deployments.models import EnvironmentName
+from harness.core.ports import AgentRegistry
 
 
 def _default_id(prefix: str) -> str:
@@ -58,7 +58,8 @@ class AutomationService:
         sessions: SessionService,
         runs: RunService,
         agent_name: str,
-        environment: EnvironmentName = EnvironmentName.PRODUCTION,
+        registry: AgentRegistry | None = None,
+        agent_version: str = "",
         clock: Callable[[], datetime] | None = None,
         id_generator: Callable[[str], str] | None = None,
     ) -> None:
@@ -67,7 +68,8 @@ class AutomationService:
         self._sessions = sessions
         self._runs = runs
         self._agent_name = agent_name
-        self._environment = environment
+        self._registry = registry
+        self._agent_version = agent_version
         self._clock = clock or (lambda: datetime.now(UTC))
         self._ids = id_generator or _default_id
 
@@ -263,6 +265,31 @@ class AutomationService:
             dispatched += 1
         return dispatched
 
+    async def _resolve_agent_version(self, task: AutomationTask) -> str:
+        """Pin the same Agent version the owner's console sessions would use.
+
+        An explicit configured version wins; otherwise the owner's latest
+        published version of the automation agent is resolved from the
+        registry, mirroring how new chat sessions are pinned on the web.
+        """
+
+        if self._agent_version:
+            return self._agent_version
+        if self._registry is None:
+            raise ConflictError("automation agent version resolution is unavailable")
+        versions = [
+            item
+            for item in await self._registry.list_catalog_for_user(
+                task.tenant_id, task.user_id
+            )
+            if item.name == self._agent_name and item.status.value == "published"
+        ]
+        if not versions:
+            raise ConflictError(
+                f"automation agent has no published version: {self._agent_name}"
+            )
+        return max(versions, key=lambda item: (item.created_at, item.version)).version
+
     def _advance(
         self,
         task: AutomationTask,
@@ -355,13 +382,13 @@ class AutomationService:
         prompt = task.prompt
         if task.model and task.model != "auto":
             prompt = f"[model:{task.model}]\n{task.prompt}"
+        agent_version = await self._resolve_agent_version(task)
         session = await self._sessions.create(
             task.tenant_id,
             workload_id,
             self._agent_name,
-            None,
+            agent_version,
             session_id=session_id,
-            environment=self._environment,
             api_key_id=task.task_id,
             agent_owner_user_id=task.user_id,
         )

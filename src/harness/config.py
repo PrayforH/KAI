@@ -58,7 +58,8 @@ class Settings(BaseSettings):
     local_auto_execute: bool = False
     # Scheduled automations invoke this Agent deployment when a task fires.
     automation_agent_name: str = "lead-agent"
-    automation_environment: Literal["test", "canary", "production"] = "production"
+    # Empty resolves the owner's latest published version from the registry.
+    automation_agent_version: str = ""
     api_bearer_token: SecretStr = SecretStr("")
 
     auth_jwt_secret: SecretStr = SecretStr("local-development-auth-secret-change-before-production")

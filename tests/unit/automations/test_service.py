@@ -45,6 +45,22 @@ class FakeRun:
     error_code: str | None = None
 
 
+class FakeVersion:
+    def __init__(self, name: str, version: str) -> None:
+        self.name = name
+        self.version = version
+        self.status = type("Status", (), {"value": "published"})()
+        self.created_at = datetime.now(UTC)
+
+
+class FakeRegistry:
+    def __init__(self, versions: list[FakeVersion]) -> None:
+        self.versions = versions
+
+    async def list_catalog_for_user(self, _tenant_id: str, _user_id: str) -> list[FakeVersion]:
+        return self.versions
+
+
 class FakeSessions:
     def __init__(self) -> None:
         self.created: list[tuple[str, str]] = []
@@ -91,6 +107,7 @@ def build_service(clock=None) -> tuple[AutomationService, FakeSessions, FakeRuns
         sessions=sessions,  # type: ignore[arg-type]
         runs=runs,  # type: ignore[arg-type]
         agent_name="lead-agent",
+        registry=FakeRegistry([FakeVersion("lead-agent", "1.0.2+platform.test")]),
         clock=clock or (lambda: now),
         id_generator=lambda prefix: f"{prefix}-1",
     )
