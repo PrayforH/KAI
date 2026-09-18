@@ -8,7 +8,9 @@ import { ConversationIndex } from "../src/components/conversation-index";
 let host: HTMLDivElement;
 let root: Root;
 let scroll: ReturnType<typeof vi.fn>;
-function Harness({ id = "task-a", prompts = ["第一问", "第二问", "第三问"] }: { id?: string; prompts?: string[] }) {
+function Harness({ id = "task-a", prompts = ["第一问", "第二问", "第三问"], total, loadEarlier = async () => {} }: {
+  id?: string; prompts?: string[]; total?: number; loadEarlier?: () => Promise<void>;
+}) {
   const frame = useRef<HTMLDivElement>(null);
   return <div ref={frame}><div className="aui-thread-viewport" ref={node => {
     if (!node) return;
@@ -16,7 +18,7 @@ function Harness({ id = "task-a", prompts = ["第一问", "第二问", "第三�
     node.getBoundingClientRect = () => ({ top: 10 } as DOMRect);
   }}>{prompts.map((prompt, i) => <article key={id + i} data-turn-id={id + i} data-turn-label={prompt} tabIndex={-1} ref={node => {
     if (node) node.getBoundingClientRect = () => ({ top: 10 + i * 300 - (node.parentElement?.scrollTop ?? 0) } as DOMRect);
-  }}>{prompt}<div data-turn-answer={`关于${prompt}的回答摘要`} /></article>)}</div><ConversationIndex frame={frame} threadId={id} /></div>;
+  }}>{prompt}<div data-turn-answer={`关于${prompt}的回答摘要`} /></article>)}</div><ConversationIndex frame={frame} threadId={id} pagination={total === undefined ? undefined : { total, hasMore: total > prompts.length, loadEarlier }} /></div>;
 }
 beforeEach(() => {
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
@@ -67,4 +69,16 @@ it("unfolds the rail from its middle towards both ends", async () => {
   // An even count has a middle pair.
   expect(railRevealDelay(1, 4)).toBe("13ms");
   expect(railRevealDelay(0, 4)).toBe("39ms");
+});
+
+it("waits for the turn count and renders every tick at once", async () => {
+  // The history endpoint reports 5 turns while only 3 are loaded: the rail shows
+  // all five together instead of growing from three to five.
+  await render({ total: 5 });
+  expect(host.querySelectorAll("nav button")).toHaveLength(5);
+  expect(host.querySelectorAll(".conversation-index-pending")).toHaveLength(2);
+
+  // Nothing is indexed until that count is known.
+  await render({ prompts: [], total: 0 });
+  expect(host.querySelector("nav")).toBeNull();
 });
