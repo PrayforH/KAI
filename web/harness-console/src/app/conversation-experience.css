@@ -946,5 +946,6 @@ body.codex-theme-v1 .assistant-message-controls .artifact-thumb + .artifact-thum
 body.codex-theme-v1 .assistant-message-controls .artifact-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 body.codex-theme-v1 .assistant-message-controls .artifact-thumb b { position: relative; z-index: 1; font-weight: 700; }
 body.codex-theme-v1 .assistant-message-controls .artifact-thumb:has(img) b { display: none; }
+body.codex-theme-v1 .assistant-message-controls .artifact-thumb-more { background: var(--codex-surface-hover); color: var(--codex-ink-soft); font-size: 9px; }
 body.codex-theme-v1 .assistant-message-controls .artifact-summary-count { font-variant-numeric: tabular-nums; }
 @media (prefers-reduced-motion: reduce) { body.codex-theme-v1 .assistant-message-controls .artifact-summary-row { transition: none; } }

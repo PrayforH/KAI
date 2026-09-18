@@ -1045,11 +1045,16 @@ function isImageArtifact(details: ArtifactDetails) {
   );
 }
 
-/** One row above the answer's actions: every artifact thumbnail plus the count,
- * opening the task's file drawer. Nothing is folded away. */
+const ARTIFACT_THUMBNAIL_COUNT = 3;
+
+/** One row above the answer's actions: a few thumbnails and the count, opening
+ * the task's file drawer. The row stays visible at all times; only its inner
+ * thumbnails cap at three with a +N chip, which is how it always looked. */
 function ArtifactSummaryRow({ artifacts }: { artifacts: ArtifactDetails[] }) {
   const [failed, setFailed] = useState<readonly string[]>([]);
   if (artifacts.length === 0) return null;
+  const thumbs = artifacts.slice(0, ARTIFACT_THUMBNAIL_COUNT);
+  const extra = artifacts.length - thumbs.length;
   const label = `查看本任务的 ${artifacts.length} 项产出`;
   return (
     <button
@@ -1060,7 +1065,7 @@ function ArtifactSummaryRow({ artifacts }: { artifacts: ArtifactDetails[] }) {
       onClick={() => window.dispatchEvent(new CustomEvent("harness:open-files"))}
     >
       <span className="artifact-summary-thumbs" aria-hidden="true">
-        {artifacts.map((details) => (
+        {thumbs.map((details) => (
           <span className="artifact-thumb" key={details.artifact_id} data-mark={artifactMark(details.name, details.media_type)}>
             {isImageArtifact(details) && !failed.includes(details.artifact_id) ? (
               // Same-origin artifact endpoint; a failed image falls back to the mark.
@@ -1075,6 +1080,7 @@ function ArtifactSummaryRow({ artifacts }: { artifacts: ArtifactDetails[] }) {
             <b>{artifactMark(details.name, details.media_type)}</b>
           </span>
         ))}
+        {extra > 0 ? <span className="artifact-thumb artifact-thumb-more">+{extra}</span> : null}
       </span>
       <span className="artifact-summary-count">{artifacts.length} 项产出</span>
     </button>
