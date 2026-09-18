@@ -126,12 +126,12 @@ from harness.reliability.service import ReliabilityService
 from harness.runtime.base import AgentRuntime
 from harness.runtime.cc_switch import load_cc_switch_claude_config
 from harness.runtime.codex_tool_gate import CodexToolGate
+from harness.runtime.deepagents_factory import build_deepagents_runtime
 from harness.runtime.default_tools import (
     default_tool_resolver,
     server_secret_credential_provider,
 )
 from harness.runtime.fake import FakeRuntime
-from harness.runtime.installed import INSTALLED_AGENT_RUNTIMES
 from harness.runtime.registry_codex_runtime import RegistryCodexRuntime, RegistryRuntimeRouter
 from harness.runtime.registry_runtime import RegistryClaudeRuntime
 from harness.runtime.sdk_tool_gate import SdkToolGate
@@ -873,33 +873,37 @@ def build_memory_container(
         runtime = (
             RegistryRuntimeRouter(
                 registry=registry,
-                runtimes=dict(
-                    zip(
-                        INSTALLED_AGENT_RUNTIMES,
-                        (
-                            claude_runtime,
-                            RegistryCodexRuntime(
-                                registry=registry,
-                                remote_memory_mcp=remote_memory_mcp,
-                                codex_path=Path(resolved_settings.codex_cli_path),
-                                model_configurations=model_configurations,
-                                tool_resolver=tool_resolver,
-                                model_by_route=resolved_settings.codex_model_by_route,
-                                provider_by_route=resolved_settings.codex_provider_by_route,
-                                approval_policy=resolved_settings.codex_approval_policy,
-                                network_access=resolved_settings.codex_network_access,
-                                tool_output_token_limit=(
-                                    resolved_settings.codex_tool_output_token_limit
-                                ),
-                                server_request_handler=CodexToolGate(
-                                    approvals=approval_service,
-                                    events=event_service,
-                                ).authorize,
-                            ),
+                runtimes={
+                    "claude-agent-sdk": claude_runtime,
+                    "codex-app-server": RegistryCodexRuntime(
+                        registry=registry,
+                        remote_memory_mcp=remote_memory_mcp,
+                        codex_path=Path(resolved_settings.codex_cli_path),
+                        model_configurations=model_configurations,
+                        tool_resolver=tool_resolver,
+                        model_by_route=resolved_settings.codex_model_by_route,
+                        provider_by_route=resolved_settings.codex_provider_by_route,
+                        approval_policy=resolved_settings.codex_approval_policy,
+                        network_access=resolved_settings.codex_network_access,
+                        tool_output_token_limit=(
+                            resolved_settings.codex_tool_output_token_limit
                         ),
-                        strict=False,
-                    )
-                ),
+                        server_request_handler=CodexToolGate(
+                            approvals=approval_service,
+                            events=event_service,
+                        ).authorize,
+                    ),
+                    "deepagents": build_deepagents_runtime(
+                        registry=registry,
+                        model_configurations=model_configurations,
+                        approvals=approval_service,
+                        events=event_service,
+                        quotas=enforced_quotas,
+                        context_service=context_service,
+                        observability=observability,
+                        tool_resolver=tool_resolver,
+                    ),
+                },
             )
             if resolved_settings.runtime == "multi"
             else claude_runtime

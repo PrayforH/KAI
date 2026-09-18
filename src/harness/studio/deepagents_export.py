@@ -44,6 +44,13 @@ from packaging.version import InvalidVersion, Version
 from harness.core.errors import ConflictError
 from harness.core.manifest import AgentManifestSnapshot
 from harness.core.models import AgentVersion
+from harness.runtime.deepagents_plan import (
+    BUILTIN_TO_FILESYSTEM_TOOL as _BUILTIN_TO_FS_TOOL,
+)
+from harness.runtime.deepagents_plan import (
+    DEEPAGENTS_PINNED_VERSION,
+    build_deepagents_plan,
+)
 from harness.studio.factory import create_draft_spec
 from harness.studio.models import (
     AgentDraft,
@@ -59,28 +66,19 @@ from harness.studio.models import (
     StudioModel,
 )
 
-DEEPAGENTS_PINNED_VERSION = "0.7.13"
-
-_BUILTIN_TO_FS_TOOL = {
-    "Read": "read_file",
-    "Glob": "glob",
-    "Grep": "grep",
-    "Write": "write_file",
-    "Edit": "edit_file",
-    "Bash": "execute",
-}
-# Always exposed so the skills progressive-disclosure loop (ls -> read_file)
-# stays usable; declared in agent-studio.json as export additions because the
-# platform capability catalog has no matching entries.
-_ALWAYS_ON_FS_TOOLS = ("ls", "read_file")
+__all__ = [
+    "DEEPAGENTS_PINNED_VERSION",
+    "DeepagentsProjectArchive",
+    "DeepagentsProjectComparison",
+    "DeepagentsProjectSource",
+    "ProjectSourceFile",
+    "draft_from_published_snapshot",
+    "export_deepagents_project",
+    "project_source",
+]
 
 _ENV_PLACEHOLDER_PREFIX = "$__ENV__"
 _ENV_PLACEHOLDER_SUFFIX = "__"
-
-_MODEL_PROVIDERS = (
-    ("claude", "anthropic"),
-    ("gemini", "google_genai"),
-)
 
 _GITIGNORE = """# Credentials never leave .env; keep it out of version control.
 .env
@@ -188,33 +186,11 @@ def _pascal(name: str) -> str:
     return "".join(part.capitalize() for part in _python_identifier(name).split("_"))
 
 
-_API_FORMAT_PROVIDER = {
-    "anthropic_compatible": "anthropic",
-    "openai_compatible": "openai",
-}
 _PROVIDER_CREDENTIAL_ENV = {
     "anthropic": ("ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL"),
     "openai": ("OPENAI_API_KEY", "OPENAI_BASE_URL"),
     "google_genai": ("GOOGLE_API_KEY", None),
 }
-
-
-def _deepagents_model(model: str, api_format: str | None = None) -> tuple[str, str]:
-    """Resolve the DeepAgents ``provider:model`` string and its provider name.
-
-    The platform route's ``apiFormat`` is authoritative when present; the model
-    name heuristic is only a fallback, because platform route models are often
-    aliases (``deepseek-v4-pro``) that say nothing about the wire protocol.
-    """
-
-    provider = _API_FORMAT_PROVIDER.get(api_format or "")
-    if provider is None:
-        lowered = model.lower()
-        provider = next(
-            (name for prefix, name in _MODEL_PROVIDERS if lowered.startswith(prefix)),
-            "openai",
-        )
-    return f"{provider}:{model}", provider
 
 
 def _env_placeholder(name: str) -> str:
@@ -965,23 +941,6 @@ def export_deepagents_project(
     capabilities = mcp_capabilities or {}
 
     has_bash = "Bash" in spec.builtin_tools
-    fs_tools: list[str] = list(_ALWAYS_ON_FS_TOOLS)
-    for builtin in spec.builtin_tools:
-        mapped = _BUILTIN_TO_FS_TOOL.get(builtin)
-        if mapped and mapped not in fs_tools:
-            fs_tools.append(mapped)
-    selected_fs = {
-        mapped
-        for builtin in spec.builtin_tools
-        if (mapped := _BUILTIN_TO_FS_TOOL.get(builtin)) is not None
-    }
-    added_tools = tuple(tool for tool in _ALWAYS_ON_FS_TOOLS if tool not in selected_fs)
-
-    # 0.7.13 constraint: FilesystemPermission requires a backend without
-    # command execution, so permissions survive only on the no-Bash branch.
-    shell_timeout = min(spec.limits.timeout_seconds or 300, 3600)
-    read_only = spec.permission_policy == "production-read-only"
-    permissions = read_only and not has_bash
 
     # The route catalog carries the authoritative wire protocol; the model name
     # alone (a platform alias such as `deepseek-v4-pro`) cannot decide it.
@@ -989,7 +948,24 @@ def export_deepagents_project(
     credential_managed = (
         model_route.credential_managed if model_route is not None else False
     )
-    model, provider = _deepagents_model(spec.model.model, api_format)
+    # The code view, this export and the platform runtime all read the same
+    # plan, so the source a user downloads cannot drift from what runs.
+    plan = build_deepagents_plan(
+        builtin_tools=spec.builtin_tools,
+        permission_policy=spec.permission_policy,
+        model=spec.model.model,
+        api_format=api_format,
+        max_turns=spec.limits.max_turns,
+        timeout_seconds=spec.limits.timeout_seconds,
+        with_mcp=bool(spec.mcp_servers),
+        with_skills=bool(resolved_skills),
+    )
+    fs_tools = list(plan.filesystem_tools)
+    added_tools = plan.added_export_tools
+    shell_timeout = plan.shell_timeout
+    read_only = plan.read_only
+    permissions = plan.permissions
+    model, provider = plan.model, plan.provider
     mcp_plans = tuple(
         _mcp_server_plan(reference, capabilities) for reference in spec.mcp_servers
     )

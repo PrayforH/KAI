@@ -99,12 +99,12 @@ from harness.reliability.probes import CapacityProbe, QueueStats
 from harness.reliability.service import ReliabilityService
 from harness.runtime.cc_switch import CcSwitchClaudeConfig
 from harness.runtime.codex_tool_gate import CodexToolGate
+from harness.runtime.deepagents_factory import build_deepagents_runtime
 from harness.runtime.default_tools import (
     default_tool_resolver,
     server_secret_credential_provider,
 )
 from harness.runtime.fake import FakeRuntime
-from harness.runtime.installed import INSTALLED_AGENT_RUNTIMES
 from harness.runtime.mcp_credentials import DynamicMcpCredentialProvider
 from harness.runtime.registry_codex_runtime import RegistryCodexRuntime, RegistryRuntimeRouter
 from harness.runtime.registry_runtime import RegistryClaudeRuntime
@@ -1215,31 +1215,35 @@ def build_production_container(
         runtime = (
             RegistryRuntimeRouter(
                 registry=registry,
-                runtimes=dict(
-                    zip(
-                        INSTALLED_AGENT_RUNTIMES,
-                        (
-                            claude_runtime,
-                            RegistryCodexRuntime(
-                                registry=registry,
-                                remote_memory_mcp=remote_memory_mcp,
-                                codex_path=Path(settings.codex_cli_path),
-                                model_configurations=model_configurations,
-                                tool_resolver=tool_resolver,
-                                model_by_route=settings.codex_model_by_route,
-                                provider_by_route=settings.codex_provider_by_route,
-                                approval_policy=settings.codex_approval_policy,
-                                network_access=settings.codex_network_access,
-                                tool_output_token_limit=settings.codex_tool_output_token_limit,
-                                server_request_handler=CodexToolGate(
-                                    approvals=approval_service,
-                                    events=events,
-                                ).authorize,
-                            ),
-                        ),
-                        strict=True,
-                    )
-                ),
+                runtimes={
+                    "claude-agent-sdk": claude_runtime,
+                    "codex-app-server": RegistryCodexRuntime(
+                        registry=registry,
+                        remote_memory_mcp=remote_memory_mcp,
+                        codex_path=Path(settings.codex_cli_path),
+                        model_configurations=model_configurations,
+                        tool_resolver=tool_resolver,
+                        model_by_route=settings.codex_model_by_route,
+                        provider_by_route=settings.codex_provider_by_route,
+                        approval_policy=settings.codex_approval_policy,
+                        network_access=settings.codex_network_access,
+                        tool_output_token_limit=settings.codex_tool_output_token_limit,
+                        server_request_handler=CodexToolGate(
+                            approvals=approval_service,
+                            events=events,
+                        ).authorize,
+                    ),
+                    "deepagents": build_deepagents_runtime(
+                        registry=registry,
+                        model_configurations=model_configurations,
+                        approvals=approval_service,
+                        events=events,
+                        quotas=enforced_quotas,
+                        context_service=context_service,
+                        observability=observability,
+                        tool_resolver=tool_resolver,
+                    ),
+                },
             )
             if settings.runtime == "multi"
             else claude_runtime

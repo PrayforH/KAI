@@ -67,7 +67,25 @@ export function stageForSection(section: StudioSection): StudioStage {
 export type StudioRisk = "low" | "medium" | "high";
 export type NetworkAccess = "none" | "internal" | "external";
 export type ToolExposureMode = "eager" | "on_demand";
-export type AgentRuntime = "claude-agent-sdk" | "codex-app-server";
+export type AgentRuntime = "claude-agent-sdk" | "codex-app-server" | "deepagents";
+
+const AGENT_RUNTIMES: readonly AgentRuntime[] = [
+  "claude-agent-sdk",
+  "codex-app-server",
+  "deepagents",
+];
+
+/**
+ * Keep every runtime the server can publish.
+ *
+ * Falling back on a two-value test would rewrite an unrecognised runtime to
+ * Claude, so merely opening a DeepAgents draft in the workbench and saving it
+ * would silently turn it into a Claude Agent — the exact "所见 ≠ 所跑" drift the
+ * DeepAgents runtime exists to remove.
+ */
+export function normalizeAgentRuntime(value: unknown): AgentRuntime {
+  return AGENT_RUNTIMES.find((runtime) => runtime === value) ?? "claude-agent-sdk";
+}
 
 export interface ModelRouteOption {
   id: string;
@@ -587,8 +605,7 @@ export function restoreStudioDraft(value: unknown): StudioDraft | null {
     evalCases,
     toolExposureMode:
       raw.toolExposureMode === "on_demand" ? "on_demand" : "eager",
-    runtime:
-      raw.runtime === "codex-app-server" ? "codex-app-server" : "claude-agent-sdk",
+    runtime: normalizeAgentRuntime(raw.runtime),
     restoreSession:
       typeof raw.restoreSession === "boolean"
         ? raw.restoreSession

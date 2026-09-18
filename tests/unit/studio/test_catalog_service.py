@@ -385,9 +385,10 @@ async def test_get_adds_platform_runtime_capabilities_to_tenant_legacy_catalog()
 
     assert upgraded.revision == 10
     assert upgraded.updated_by == "tenant-admin"
+    # The upgrade adds the platform's runtime set, so the assertion tracks the
+    # default catalog instead of a hardcoded pair that a new runtime would break.
     assert {item.runtime for item in upgraded.catalog.runtime_capabilities} == {
-        "claude-agent-sdk",
-        "codex-app-server",
+        item.runtime for item in default_capability_catalog().runtime_capabilities
     }
     assert repeated == upgraded
 

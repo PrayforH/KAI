@@ -35,6 +35,13 @@ class UnsupportedEgressError(RuntimeError):
     """Raised when a Run's egress requirement cannot be enforced by its backend."""
 
 
+# Remote file tools run as `python3 -c <script> <operation> <payload>`; the
+# operation is the only part of a command this provider can classify, so a
+# command whose third argument is one of these cannot have changed a file.
+_FILE_OPERATION_ARGV_INDEX = 3
+_READ_ONLY_FILE_OPERATIONS = frozenset({"read", "glob", "grep"})
+
+
 class DeferredToolSandboxProvider:
     """Run the model locally and acquire the configured Sandbox on first tool use.
 
@@ -164,19 +171,25 @@ class DeferredToolSandboxProvider:
 
     @staticmethod
     def _may_mutate_workspace(argv: Sequence[str]) -> bool:
-        """Conservatively identify deferred commands that can change files."""
-        if not argv:
-            return False
-        if argv[0] == "bash":
-            return True
+        """Conservatively decide whether a command can change workspace files.
+
+        Only the platform's own read-only remote file operations are provably
+        safe to skip. A runtime that drives the Sandbox through a shell command
+        string (``bash -lc "<anything>"``) hands the provider an opaque command
+        that can mutate anything, and so does a Bundle Python operator, so the
+        default answer is "assume it wrote something". The cost of a needless
+        synchronization is bounded by the workspace size; the cost of a missed
+        one is a file the platform never sees.
+        """
+
         if (
-            len(argv) >= 4
+            len(argv) > _FILE_OPERATION_ARGV_INDEX
             and argv[0] == "python3"
             and argv[1] == "-c"
-            and argv[3] in {"write", "edit"}
+            and argv[_FILE_OPERATION_ARGV_INDEX] in _READ_ONLY_FILE_OPERATIONS
         ):
-            return True
-        return False
+            return False
+        return True
 
     async def collect(self, handle: SandboxHandle) -> None:
         lease = self._lease(handle)

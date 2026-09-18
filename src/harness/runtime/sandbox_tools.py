@@ -23,6 +23,8 @@ _MAX_OUTPUT_CHARS = 256 * 1024
 # truncated frame that would reach the model as a corrupt image.
 _MAX_IMAGE_BYTES = 10 * 1024 * 1024
 _IMAGE_MIMES = ("image/png", "image/jpeg", "image/webp", "image/gif")
+# One Bundle operator call: a Sandbox round-trip plus the operator's own work.
+_BUNDLE_PYTHON_TIMEOUT_SECONDS = 120.0
 
 _BUNDLE_PYTHON_RUNNER = r"""
 import asyncio
@@ -439,41 +441,64 @@ def create_bundle_python_tools_mcp_server(
     return create_sdk_mcp_server(server_name, tools=tools)
 
 
-def create_bundle_python_tool(
-    *,
+def _materialized_bundle_path(
     snapshot: PythonToolSnapshot,
     materialized_path: Path | None,
-    executor: SandboxCommandExecutor,
-) -> SdkMcpTool[Any]:
+) -> Path:
     if (
         materialized_path is None
         or materialized_path.is_absolute()
         or ".." in materialized_path.parts
     ):
         raise ValueError(f"Bundle tool was not materialized: {snapshot.reference}")
+    return materialized_path
+
+
+async def run_bundle_python_tool(
+    *,
+    snapshot: PythonToolSnapshot,
+    materialized_path: Path | None,
+    executor: SandboxCommandExecutor,
+    arguments: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Run one Studio Bundle operator inside the Sandbox and render its result.
+
+    Shared by the Claude and DeepAgents runtimes: user-authored Python always
+    executes in the Sandbox and never in the control plane, and both runtimes
+    return the same ``{"content": [...], "isError": bool}`` envelope so a model
+    sees an identical tool result whichever kernel ran it.
+    """
+
+    path = _materialized_bundle_path(snapshot, materialized_path)
+    encoded = json.dumps(dict(arguments), ensure_ascii=False, separators=(",", ":"))
+    if len(encoded) > _MAX_ARGUMENT_CHARS:
+        return _tool_result("tool arguments exceed the Bundle operator limit", is_error=True)
+    result = await executor(
+        ("python3", "-c", _BUNDLE_PYTHON_RUNNER, path.as_posix(), encoded),
+        None,
+        _BUNDLE_PYTHON_TIMEOUT_SECONDS,
+    )
+    if result.exit_code != 0:
+        message = result.stderr.strip() or result.stdout.strip() or "Bundle tool failed"
+        return _tool_result(message, is_error=True)
+    return _tool_result(result.stdout)
+
+
+def create_bundle_python_tool(
+    *,
+    snapshot: PythonToolSnapshot,
+    materialized_path: Path | None,
+    executor: SandboxCommandExecutor,
+) -> SdkMcpTool[Any]:
+    _materialized_bundle_path(snapshot, materialized_path)
 
     async def handler(arguments: dict[str, Any]) -> dict[str, Any]:
-        encoded = json.dumps(arguments, ensure_ascii=False, separators=(",", ":"))
-        if len(encoded) > _MAX_ARGUMENT_CHARS:
-            return _tool_result(
-                "tool arguments exceed the Bundle operator limit",
-                is_error=True,
-            )
-        result = await executor(
-            (
-                "python3",
-                "-c",
-                _BUNDLE_PYTHON_RUNNER,
-                materialized_path.as_posix(),
-                encoded,
-            ),
-            None,
-            120.0,
+        return await run_bundle_python_tool(
+            snapshot=snapshot,
+            materialized_path=materialized_path,
+            executor=executor,
+            arguments=arguments,
         )
-        if result.exit_code != 0:
-            message = result.stderr.strip() or result.stdout.strip() or "Bundle tool failed"
-            return _tool_result(message, is_error=True)
-        return _tool_result(result.stdout)
 
     return SdkMcpTool(
         name=snapshot.name,

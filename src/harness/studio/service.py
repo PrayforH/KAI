@@ -27,6 +27,7 @@ from harness.studio.agent_builder import (
     AgentBuilderPatchRequest,
     CreateTaskDrivenDraftRequest,
     TaskDrivenDraftResult,
+    as_task_runtime_preference,
     build_agent_patch,
     configure_task_driven_draft,
     summarize_agent_display_name,
@@ -519,7 +520,10 @@ class AgentStudioService:
             child,
             CreateTaskDrivenDraftRequest(
                 task=request.responsibility,
-                runtimePreference=parent.spec.runtime,
+                # The preference only orders the production runtimes, while the
+                # fork's runtime is re-applied from the parent just below, so a
+                # preview runtime narrows to `auto` instead of failing validation.
+                runtimePreference=as_task_runtime_preference(parent.spec.runtime),
             ),
             await self.capabilities(tenant_id, user_id),
             await self._compiler_for(tenant_id, user_id),

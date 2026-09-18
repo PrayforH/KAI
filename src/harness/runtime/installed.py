@@ -11,4 +11,5 @@ from harness.core.models import AgentRuntimeType
 INSTALLED_AGENT_RUNTIMES: tuple[AgentRuntimeType, ...] = (
     "claude-agent-sdk",
     "codex-app-server",
+    "deepagents",
 )

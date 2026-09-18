@@ -11,6 +11,7 @@ from harness.core.manifest import AgentManifest
 from harness.core.models import ExecutionIdentity
 from harness.runtime.cc_switch import CcSwitchConfigError
 from harness.runtime.fake import FakeRuntime
+from harness.runtime.installed import INSTALLED_AGENT_RUNTIMES
 from harness.runtime.registry_codex_runtime import RegistryRuntimeRouter
 from harness.runtime.registry_runtime import RegistryClaudeRuntime
 from harness.runtime.tools import ToolResolver
@@ -78,7 +79,7 @@ def test_claude_sdk_composition_loads_cc_switch_runtime(tmp_path: Path) -> None:
     assert "composition-secret" not in repr(container)
 
 
-def test_multi_runtime_composition_installs_claude_and_codex(tmp_path: Path) -> None:
+def test_multi_runtime_composition_installs_every_registered_runtime(tmp_path: Path) -> None:
     path = tmp_path / "settings.json"
     path.write_text(
         json.dumps(
@@ -104,7 +105,7 @@ def test_multi_runtime_composition_installs_claude_and_codex(tmp_path: Path) -> 
 
     assert isinstance(container.runtime, RegistryRuntimeRouter)
     installed = vars(container.runtime)["_runtimes"]
-    assert set(installed) == {"claude-agent-sdk", "codex-app-server"}
+    assert set(installed) == set(INSTALLED_AGENT_RUNTIMES)
 
 
 @pytest.mark.asyncio
