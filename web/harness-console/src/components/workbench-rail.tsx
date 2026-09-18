@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { requireAuthenticatedResponse } from "../lib/client-auth";
 import { PanelResizeHandle } from "./panel-resize-handle";
+import { SidebarPanelIcon } from "./panel-icons";
 import { RailFilePreview, previewKindFor, type PreviewKind, type PreviewTarget } from "./rail-file-preview";
 
 
@@ -28,10 +29,31 @@ const SCOPE_LABELS: Record<string, string> = {
   restored: "本地",
 };
 
-function CloseIcon() {
+function RefreshIcon() {
   return (
-    <svg viewBox="0 0 16 16" aria-hidden="true">
-      <path d="m4 4 8 8M12 4l-8 8" />
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M15.8 8.4A6 6 0 1 0 16 11.7" />
+      <path d="M15.9 4.6v3.9h-3.9" />
+    </svg>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="9" cy="9" r="5.2" />
+      <path d="m13 13 3.4 3.4" />
+    </svg>
+  );
+}
+
+function ChevronIcon({ direction }: { direction: "back" | "forward" }) {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={direction === "back" ? "M12.2 5.4 7.6 10l4.6 4.6" : "M7.8 5.4 12.4 10l-4.6 4.6"} />
     </svg>
   );
 }
@@ -115,29 +137,38 @@ export function WorkbenchRail({
 }) {
   const [tab, setTab] = useState<"files" | "details">("files");
   const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
   const [fileError, setFileError] = useState("");
   const [refresh, setRefresh] = useState(0);
   const [loadedFiles, setFiles] = useState<RailFile[]>([]);
   // Scope again at render time: effects run after task-switch renders.
   const files = loadedFiles.filter((file) => file.thread_id === threadId);
   const [filesLoading, setFilesLoading] = useState(true);
-  const [selected, setSelected] = useState<PreviewTarget | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const openPreview = (target: PreviewTarget) => { setSelected(target); setSelectedId(target.artifact_id); };
-  const closePreview = () => { setSelected(null); setSelectedId(null); };
+  // The list is the first entry, so back always finds its way out of a preview.
+  const [trail, setTrail] = useState<{ items: (PreviewTarget | null)[]; index: number }>({
+    items: [null],
+    index: 0,
+  });
+  const selected = trail.items[trail.index] ?? null;
+  const show = (target: PreviewTarget | null) => setTrail((current) => ({
+    items: [...current.items.slice(0, current.index + 1), target],
+    index: current.index + 1,
+  }));
+  const step = (delta: number) => setTrail((current) => ({
+    ...current,
+    index: Math.min(current.items.length - 1, Math.max(0, current.index + delta)),
+  }));
 
   // The transcript's artifact cards open their file here instead of a new tab.
   useEffect(() => {
     if (!previewRequest) return;
     setTab("files");
-    setSelected(previewRequest);
-    setSelectedId(previewRequest.artifact_id);
+    show(previewRequest);
   }, [previewRequest]);
 
   // A task switch shows that task's files, never the previous selection.
   useEffect(() => {
-    setSelected(null);
-    setSelectedId(null);
+    setTrail({ items: [null], index: 0 });
   }, [threadId]);
 
   useEffect(() => {
@@ -188,43 +219,87 @@ export function WorkbenchRail({
     >
       {open && <PanelResizeHandle panel="rail" />}
       <div className="workbench-rail-panel" aria-hidden={!open}>
-        <header className="workbench-rail-header">
-          <strong>任务工作区</strong>
-          <button
-            type="button"
-            className="workbench-rail-close"
-            aria-label="收起任务上下文"
-            title="收起任务上下文"
-            onClick={onClose}
-          >
-            <CloseIcon />
-          </button>
+        <header className="rail-bar">
+          <nav className="rail-tabs" aria-label="工作区视图">
+            <button type="button" aria-pressed={tab === "files"} onClick={() => setTab("files")}>文件</button>
+            <button type="button" aria-pressed={tab === "details"} onClick={() => setTab("details")}>任务详情</button>
+          </nav>
+          <div className="rail-bar-actions">
+            <button
+              type="button"
+              className="rail-bar-button"
+              aria-label="后退"
+              title="后退"
+              disabled={trail.index === 0}
+              onClick={() => step(-1)}
+            >
+              <ChevronIcon direction="back" />
+            </button>
+            <button
+              type="button"
+              className="rail-bar-button"
+              aria-label="前进"
+              title="前进"
+              disabled={trail.index >= trail.items.length - 1}
+              onClick={() => step(1)}
+            >
+              <ChevronIcon direction="forward" />
+            </button>
+            <span className="rail-bar-divider" aria-hidden="true" />
+            <button
+              type="button"
+              className="rail-bar-button"
+              aria-label="刷新文件"
+              title="刷新文件"
+              onClick={() => setRefresh((value) => value + 1)}
+            >
+              <RefreshIcon />
+            </button>
+            <button
+              type="button"
+              className="rail-bar-button"
+              aria-label="搜索任务文件"
+              title="搜索任务文件"
+              aria-pressed={searchOpen}
+              onClick={() => setSearchOpen((value) => !value)}
+            >
+              <SearchIcon />
+            </button>
+            <button
+              type="button"
+              className="rail-bar-button"
+              aria-label="收起任务上下文"
+              title="收起任务上下文"
+              onClick={onClose}
+            >
+              <SidebarPanelIcon />
+            </button>
+          </div>
         </header>
-        <nav className="rail-tabs" aria-label="工作区视图">
-          <button type="button" aria-pressed={tab === "files"} onClick={() => setTab("files")}>文件</button>
-          <button type="button" aria-pressed={tab === "details"} onClick={() => setTab("details")}>任务详情</button>
-        </nav>
+        {searchOpen ? (
+          <div className="rail-search-row">
+            <input
+              className="rail-file-search"
+              type="search"
+              aria-label="搜索任务文件"
+              placeholder="搜索文件…"
+              autoFocus
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== "Escape") return;
+                setQuery("");
+                setSearchOpen(false);
+              }}
+            />
+          </div>
+        ) : null}
         <div className="workbench-rail-body">
-          <section className="workbench-rail-section">
-            <small>当前任务</small>
-            <strong className="workbench-rail-task">{taskTitle}</strong>
-          </section>
-          <section className="workbench-rail-section" hidden={tab !== "files"}>
+          <section className="workbench-rail-section rail-files-section" hidden={tab !== "files"}>
             {selected ? (
-              <div className="rail-preview-wrap">
-                <button
-                  type="button"
-                  className="rail-preview-back"
-                  onClick={closePreview}
-                >
-                  ← 返回文件列表
-                </button>
-                <RailFilePreview target={selected} />
-              </div>
+              <RailFilePreview target={selected} />
             ) : (
               <>
-                <div className="rail-file-toolbar"><small>本任务的历史文件</small><button type="button" aria-label="刷新文件" onClick={() => setRefresh((value) => value + 1)}>↻</button></div>
-                <input className="rail-file-search" type="search" aria-label="搜索任务文件" placeholder="搜索文件…" value={query} onChange={(event) => setQuery(event.target.value)} />
                 {fileError ? <p role="alert">{fileError} <button type="button" onClick={() => setRefresh((value) => value + 1)}>重试</button></p> : filesLoading ? (
                   <span className="workbench-rail-files-empty">正在读取文件…</span>
                 ) : files.length === 0 ? (
@@ -247,8 +322,7 @@ export function WorkbenchRail({
                           <button
                             type="button"
                             className="workbench-rail-file"
-                            aria-pressed={selectedId === file.artifact_id}
-                            onClick={() => openPreview(target)}
+                            onClick={() => show(target)}
                             title={previewable ? `在侧栏预览 ${file.name}` : `查看 ${file.name}`}
                           >
                             <span className="rail-file-icon" data-kind={kind}>{railFileIcon(kind)}</span>
@@ -265,6 +339,10 @@ export function WorkbenchRail({
             )}
           </section>
           <div hidden={tab !== "details"}>
+          <section className="workbench-rail-section">
+            <small>当前任务</small>
+            <strong className="workbench-rail-task">{taskTitle}</strong>
+          </section>
           <section className="workbench-rail-section">
             <small>智能体</small>
             <div className="workbench-rail-rows">

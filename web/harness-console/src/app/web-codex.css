@@ -195,54 +195,11 @@ body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-open .workbench-r
   background: #141414;
 }
 
-.workbench-rail-header {
-  height: 48px;
-  min-height: 48px;
-  padding: 0 8px 0 16px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid #292929;
-  color: #e8e8e8;
-}
-
-.workbench-rail-header strong {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-}
-
-.workbench-rail-close {
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  border: 0;
-  border-radius: 8px;
-  color: #9c9c9c;
-  background: transparent;
-  cursor: pointer;
-  transition: color 140ms ease, background-color 140ms ease;
-}
-
-.workbench-rail-close:hover {
-  color: #ffffff;
-  background: #2b2b2b;
-}
-
-.workbench-rail-close svg {
-  width: 15px;
-  height: 15px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.7;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
 .workbench-rail-body {
   min-height: 0;
   flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
   padding: 0 16px 16px;
   overflow-y: auto;
   scrollbar-color: #3d3d3d transparent;
@@ -272,6 +229,7 @@ body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-open .workbench-r
 
 .workbench-rail-files {
   display: grid;
+  grid-auto-columns: minmax(0, 1fr);
   gap: 4px;
 }
 

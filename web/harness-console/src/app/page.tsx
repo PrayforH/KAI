@@ -19,6 +19,7 @@ import {
 } from "../components/task-agent-switcher";
 import { TaskSidebar } from "../components/task-sidebar";
 import { ProductBrandMark, ProductLoading, PRODUCT_NAME } from "../components/product-brand";
+import { SidebarLeftIcon, SidebarPanelIcon } from "../components/panel-icons";
 import { WorkbenchRail } from "../components/workbench-rail";
 import type { PreviewTarget } from "../components/rail-file-preview";
 import { useRunViewModel } from "../lib/activity-store";
@@ -60,24 +61,6 @@ import {
 const TASK_SIDEBAR_COMPACT_QUERY = "(max-width: 820px)";
 
 const HELP_MANUAL_URL = "https://my.feishu.cn/docx/DdiCdPFcroUpUXxOumNcQpIin1g";
-
-function SidebarPanelIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <rect x="2.75" y="4.25" width="14.5" height="11.5" rx="2.5" />
-      <path d="M13.5 4.25v11.5" />
-    </svg>
-  );
-}
-
-function SidebarLeftIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <rect x="2.75" y="4.25" width="14.5" height="11.5" rx="2.5" />
-      <path d="M6.75 4.25v11.5" />
-    </svg>
-  );
-}
 
 function HelpIcon() {
   return (

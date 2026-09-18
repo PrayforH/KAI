@@ -36,3 +36,19 @@ it("expands a right panel toward the left and ignores corrupt saved values", () 
   press("End"); press("ArrowLeft");
   expect(localStorage.getItem("agent-harness-builder-width")).toBe("680");
 });
+it("lets the overlay drawer grow to half the viewport and pulls it back when the window narrows", () => {
+  // jsdom reports a 1024px viewport, so half of it is 512.
+  act(() => root.render(<PanelResizeHandle panel="rail" />));
+  expect(host.firstElementChild?.getAttribute("aria-valuemax")).toBe("512");
+
+  press("End");
+  expect(localStorage.getItem("agent-harness-rail-width")).toBe("512");
+  expect(host.firstElementChild?.getAttribute("aria-valuenow")).toBe("512");
+
+  act(() => {
+    vi.stubGlobal("innerWidth", 800);
+    window.dispatchEvent(new Event("resize"));
+  });
+  expect(host.firstElementChild?.getAttribute("aria-valuemax")).toBe("400");
+  expect(host.firstElementChild?.getAttribute("aria-valuenow")).toBe("400");
+});

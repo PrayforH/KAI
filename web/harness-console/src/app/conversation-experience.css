@@ -57,7 +57,7 @@ body.codex-theme-v1 .harness-composer-shell .aui-composer-input { resize: none; 
 .rail-file-toolbar { display: flex; align-items: center; justify-content: space-between; }
 .rail-file-toolbar button { background: transparent; border: 0; color: var(--codex-muted); cursor: pointer; padding: 5px; }
 .rail-file-search { width: 100%; padding: 9px 10px; border: 1px solid var(--codex-line); border-radius: 7px; background: transparent; color: var(--codex-ink); font-size: 12px; }
-.rail-file-row { display: flex; align-items: center; }
+.rail-file-row { display: flex; align-items: center; min-width: 0; }
 /* The row is a button, so the browser paints its own grey fill unless the base
    state is explicit; that made every file look selected. */
 .rail-file-row .workbench-rail-file { flex: 1; min-width: 0; padding: 8px 8px; gap: 9px; border: 0; border-radius: 8px; background: transparent; }
@@ -73,9 +73,9 @@ body.codex-theme-v1 .harness-composer-shell .aui-composer-input { resize: none; 
 @media (prefers-reduced-motion: reduce) { .run-pulse i, .reasoning-card .reasoning-mark { animation: none !important; } .project-name-viewport > span { transition: none; } }
 /* Reserve a real column on wide screens; compact screens use a drawer. */
 @media (min-width: 1100px) {
-  body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-open .workspace-stage.tasks-open { grid-template-columns: var(--app-sidebar-expanded-width) minmax(0, 1fr) var(--rail-panel-width, 300px); }
-  body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-open .workspace-stage:not(.tasks-open) { grid-template-columns: var(--app-sidebar-collapsed-width) minmax(0, 1fr) var(--rail-panel-width, 300px); }
-  body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-open .workbench-rail { position: relative; width: var(--rail-panel-width, 300px); min-height: 0; height: 100%; grid-column: 3; transform: none; transition: none; box-shadow: none; z-index: 2; }
+  /* The drawer covers the conversation instead of squeezing it, so the reading
+     column keeps its width whether or not the rail is open. */
+  body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-open .workbench-rail { width: var(--rail-panel-width, 300px); }
 }
 body.codex-theme-v1 .workbench-rail-panel { width: 100%; }
 @media (max-width: 1099px) { body.codex-theme-v1 .workbench-rail { width: min(340px, 90vw); } }
@@ -183,7 +183,8 @@ body.codex-theme-v1:has(.console-shell),
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) {
   --app-sidebar-expanded-width: clamp(220px, var(--preferred-sidebar-width, 264px), 380px);
   --builder-panel-width: clamp(340px, var(--preferred-builder-width, 420px), min(680px, calc(100vw - var(--app-sidebar-expanded-width) - 480px)));
-  --rail-panel-width: clamp(280px, var(--preferred-rail-width, 300px), min(520px, calc(100vw - var(--app-sidebar-expanded-width) - 400px)));
+  /* The drawer may cover up to half the viewport. */
+  --rail-panel-width: clamp(280px, var(--preferred-rail-width, 300px), 50vw);
 }
 .panel-resize-handle { position: absolute; top: 0; bottom: 0; width: 8px; z-index: 95; cursor: col-resize; touch-action: none; user-select: none; }
 .panel-resize-handle[data-side="left"] { right: 0; }
@@ -727,29 +728,45 @@ html body.codex-theme-v1 .execution-reasoning[open] .execution-reasoning-chevron
 .rail-file-icon[data-kind="html"] { color: #a9d0ff; }
 .rail-file-icon[data-kind="csv"] { color: #a9e0bd; }
 
-.workbench-rail-file[aria-pressed="true"] {
-  color: #ffffff;
-  background: #2b2b2b;
-}
-
 .workbench-rail-file .workbench-rail-file-name { flex: 1 1 auto; text-align: left; }
 
-.rail-preview-wrap { display: grid; gap: 8px; min-height: 0; }
-
-.rail-preview-back {
-  justify-self: start;
-  padding: 4px 8px;
-  border: 1px solid #2b2b2b;
-  border-radius: 6px;
-  color: #cfcfcf;
-  background: transparent;
-  font-size: 12px;
-  cursor: pointer;
+/* The drawer toolbar follows the file browser it opens: view tabs, then icon
+   actions, with the same panel mark that opens the drawer closing it again. */
+.rail-bar {
+  height: 46px;
+  min-height: 46px;
+  padding: 0 10px 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--codex-line);
 }
+.rail-bar .rail-tabs { padding: 0; border-bottom: 0; }
+.rail-bar .rail-tabs button { padding: 13px 0; }
+.rail-bar-actions { display: flex; align-items: center; gap: 2px; }
+.rail-bar-divider { width: 1px; height: 16px; margin: 0 4px; background: var(--codex-line); }
+.rail-bar-button {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  color: var(--codex-muted);
+  background: transparent;
+  cursor: pointer;
+  transition: color 140ms ease, background-color 140ms ease;
+}
+.rail-bar-button:hover:not(:disabled) { color: var(--codex-ink); background: #232323; }
+.rail-bar-button:disabled { color: #4a4a4a; cursor: default; }
+.rail-bar-button[aria-pressed="true"] { color: var(--codex-ink); background: #232323; }
+.rail-bar-button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.5; }
+.rail-search-row { padding: 0 16px 10px; }
+.rail-files-section { display: flex; flex-direction: column; flex: 1 0 auto; min-height: 0; border-bottom: 0; }
 
-.rail-preview-back:hover { border-color: #474747; color: #fff; background: #1f1f1f; }
-
-.rail-preview { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
+/* The preview takes whatever the drawer has left after its toolbar. */
+.rail-preview { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
 
 .rail-preview-head {
   display: flex;
@@ -773,14 +790,14 @@ html body.codex-theme-v1 .execution-reasoning[open] .execution-reasoning-chevron
 .rail-preview-download { flex: 0 0 26px; text-align: center; color: #9a9a9a; text-decoration: none; }
 .rail-preview-download:hover { color: #ffffff; }
 
-.rail-preview-body { min-height: 0; overflow: auto; padding-top: 8px; }
+.rail-preview-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding-top: 8px; }
 
 .rail-preview-note { margin: 0; color: #8a8a8a; font-size: 12px; line-height: 1.6; }
 
 .rail-preview-image { max-width: 100%; border-radius: 8px; }
 
-.rail-preview-pdf { width: 100%; height: 70vh; border: 0; border-radius: 8px; background: #fff; }
-.rail-preview-html { width: 100%; height: 70vh; border: 0; border-radius: 8px; background: #fff; }
+.rail-preview-pdf { width: 100%; height: 100%; min-height: 220px; border: 0; border-radius: 8px; background: #fff; }
+.rail-preview-html { width: 100%; height: 100%; min-height: 220px; border: 0; border-radius: 8px; background: #fff; }
 
 .rail-preview-code {
   margin: 0;
