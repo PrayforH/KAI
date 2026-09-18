@@ -100,8 +100,8 @@ it("does not fetch a file it cannot preview and offers the download instead", as
   expect(fetcher).not.toHaveBeenCalled();
   expect(container.textContent).toContain("暂不支持在线预览");
   expect(container.querySelector(".rail-preview-download")).not.toBeNull();
-  // Nothing would render in a tab either, so the file only offers the download.
-  expect(container.querySelector(".rail-preview-action")).toBeNull();
+  // Even an unpreviewable file opens in its own tab: the browser downloads it.
+  expect(container.querySelector(".rail-preview-action")).not.toBeNull();
 });
 
 it("renders a generated page in the rail without downloading or trusting it", async () => {

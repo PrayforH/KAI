@@ -152,21 +152,19 @@ export function RailFilePreview({ target }: { target: PreviewTarget }) {
       <header className="rail-preview-head">
         <span className="rail-preview-name" title={target.name}>{target.name}</span>
         <div className="rail-preview-actions">
-          {kind !== "none" && (
-            // A preview that is worth rendering deserves the whole browser
-            // window. The response restricts generated pages to the same
-            // sandbox as the rail frame, so the extra room costs no session.
-            <a
-              className="rail-preview-action"
-              href={url}
-              target="_blank"
-              rel="noreferrer"
-              aria-label={`在新标签页打开 ${target.name}`}
-              title="在新标签页打开"
-            >
-              <ExternalLinkIcon />
-            </a>
-          )}
+          {/* Every artifact opens in its own tab, previewable or not: the
+          authenticated content route answers with inline disposition, so the
+          browser renders what it can and downloads the rest. */}
+          <a
+            className="rail-preview-action"
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={`在新标签页打开 ${target.name}`}
+            title="在新标签页打开"
+          >
+            <ExternalLinkIcon />
+          </a>
           <a
             className="rail-preview-download"
             href={downloadUrl(target)}
