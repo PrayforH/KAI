@@ -2,7 +2,7 @@
   color-scheme: light;
   /* One band height for every top strip: the task header, the drawer header and
      the studio section bar all line up on it. */
-  --shell-header-height: 44px;
+  --shell-header-height: 46px;
   --paper: #eef2ed;
   --surface: #fbfcfa;
   --surface-raised: #ffffff;

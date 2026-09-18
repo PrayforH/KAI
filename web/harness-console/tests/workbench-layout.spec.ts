@@ -406,7 +406,7 @@ describe("full-page agent workbench", () => {
     expect(styles).not.toContain("linear-gradient");
   });
 
-  it("gives the page headers one height and leaves the drawer its own", () => {
+  it("gives the task header, the drawer header and the studio bar one height", () => {
     const experience = readFileSync(
       join(process.cwd(), "src/app/conversation-experience.css"),
       "utf8",
@@ -416,11 +416,10 @@ describe("full-page agent workbench", () => {
       "utf8",
     );
 
-    expect(styles).toMatch(/--shell-header-height:\s*44px;/);
+    expect(styles).toMatch(/--shell-header-height:\s*46px;/);
     expect(codexStyles).toMatch(/\.console-header \{[^}]*min-height: var\(--shell-header-height/);
     expect(sectionNavigation).toMatch(/\.bar \{[^}]*min-height: var\(--shell-header-height/);
-    // The task drawer is the file area's own band and keeps its own height.
-    expect(experience).toMatch(/\.rail-bar \{[^}]*height: 46px;/);
+    expect(experience).toMatch(/\.rail-bar \{[^}]*height: var\(--shell-header-height/);
   });
 
   it("uses a quiet task welcome without suggestion cards or shortcuts", () => {

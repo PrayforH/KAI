@@ -238,7 +238,7 @@ select:not([multiple]):not(.task-model-control select):not(.task-agent-version-s
 }
 
 .console-header {
-  min-height: var(--shell-header-height, 44px);
+  min-height: var(--shell-header-height, 46px);
   padding: 6px 10px 6px 12px;
   border-color: var(--codex-line);
   background: rgb(24 24 24 / 84%);
@@ -1804,7 +1804,7 @@ body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments {
 /* Task workspace v2: one continuous Codex canvas in both color modes */
 
 body.codex-theme-v1 .console-header {
-  min-height: var(--shell-header-height, 44px);
+  min-height: var(--shell-header-height, 46px);
   padding: 6px 12px;
   border-color: var(--codex-line);
   background: var(--codex-header-bg);

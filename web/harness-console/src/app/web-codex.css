@@ -875,8 +875,8 @@ body.codex-theme-v1:has(.console-shell) .command-center-search {
 
 body.codex-theme-v1:has(.console-shell) .console-header {
   z-index: 60;
-  min-height: var(--shell-header-height, 44px);
-  height: var(--shell-header-height, 44px);
+  min-height: var(--shell-header-height, 46px);
+  height: var(--shell-header-height, 46px);
   padding: 6px 16px 6px 18px;
   border-bottom: 1px solid #292929;
   background: var(--codex-header-bg);
@@ -1838,8 +1838,8 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-agen
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .console-header {
-  min-height: var(--shell-header-height, 44px);
-  height: var(--shell-header-height, 44px);
+  min-height: var(--shell-header-height, 46px);
+  height: var(--shell-header-height, 46px);
   border-bottom-color: #ededee;
   background: var(--codex-header-bg);
 }

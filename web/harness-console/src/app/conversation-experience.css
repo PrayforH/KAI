@@ -741,10 +741,8 @@ html body.codex-theme-v1 .execution-reasoning[open] .execution-reasoning-chevron
 /* The drawer toolbar follows the file browser it opens: view tabs, then icon
    actions, with the same panel mark that opens the drawer closing it again. */
 .rail-bar {
-  /* The drawer header is the file area's own band, so it is not part of the
-     page-level header height. */
-  height: 46px;
-  min-height: 46px;
+  height: var(--shell-header-height, 46px);
+  min-height: var(--shell-header-height, 46px);
   padding: 0 10px 0 16px;
   display: flex;
   align-items: center;
