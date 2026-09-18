@@ -901,6 +901,11 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-prev
   background: var(--codex-surface-subtle);
 }
 
+/* The message controls are one nowrap row; the artifact summary takes a line
+   of its own and lets the answer's actions wrap below it. */
+body.codex-theme-v1 .assistant-message-controls:has(.artifact-summary-line) { flex-wrap: wrap; }
+body.codex-theme-v1 .assistant-message-controls .artifact-summary-line { flex: 1 0 100%; display: flex; }
+
 /* One collapsed entry point for everything a run produced, on its own line
    above the answer's actions: a few thumbnails and the count open the task's
    file drawer, the way the main chat clients summarise sources. The scope keeps

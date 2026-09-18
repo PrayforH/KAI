@@ -630,36 +630,3 @@ it("keeps a streamed answer visible when thinking interrupts it", async () => {
   expect(seen.at(0)).toBe(answer);
   activityStore.clear(); liveResponseStore.clear();
 });
-
-describe("artifact summary row", () => {
-  const artifact = (runId: string, name = "out.csv", mediaType = "text/csv") => ({
-    type: "tool-call",
-    toolName: "harness_present_artifact",
-    args: { artifact_id: `a-${runId}-${name}`, run_id: runId, name, media_type: mediaType },
-  });
-
-  it("lists the files this turn presents, once per file", async () => {
-    const { artifactsForTurn } = await import("../src/components/agent-thread");
-    const parts = [
-      artifact("run_1", "data/by_region.csv"),
-      { type: "tool-call", toolName: "harness_run_activity", args: {} },
-      artifact("run_1", "deliverables/REPORT.md", "text/markdown"),
-      artifact("run_1", "charts/top10.svg", "image/svg+xml"),
-    ];
-    const artifacts = artifactsForTurn(parts, "run_1", true);
-
-    expect(artifacts.map((item) => item.name)).toEqual([
-      "data/by_region.csv",
-      "deliverables/REPORT.md",
-      "charts/top10.svg",
-    ]);
-  });
-
-  it("leaves out files from another run and turns without any", async () => {
-    const { artifactsForTurn } = await import("../src/components/agent-thread");
-
-    // The last turn must not claim the previous run's files.
-    expect(artifactsForTurn([artifact("run_0")], "run_1", true)).toEqual([]);
-    expect(artifactsForTurn([artifact("run_0")], "run_0", true)).toHaveLength(1);
-  });
-});

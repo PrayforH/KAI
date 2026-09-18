@@ -1454,7 +1454,11 @@ function HarnessAssistantMessage() {
       ) : null}
       {!hasVideoGeneration ? (
         <div className="assistant-message-controls">
-          {messageStatus?.type === "running" ? null : <ArtifactSummaryRow artifacts={turnArtifacts} />}
+          {messageStatus?.type === "running" ? null : (
+            <div className="artifact-summary-line">
+              <ArtifactSummaryRow artifacts={turnArtifacts} />
+            </div>
+          )}
           <HarnessBranchPicker />
           <AssistantActionBar.Root
             className="assistant-feedback-actions"
