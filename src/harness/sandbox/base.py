@@ -87,6 +87,25 @@ def provider_meets_enforcement_floor(provider: str, minimum: SandboxEnforcement)
     ) >= sandbox_enforcement_rank(minimum)
 
 
+_TRUST_ENFORCEMENT_FLOOR: dict[str, SandboxEnforcement] = {
+    "safe": SandboxEnforcement.NONE,
+    "sensitive": SandboxEnforcement.DELEGATED,
+    "untrusted": SandboxEnforcement.FULL,
+}
+
+
+def trust_enforcement_floor(trust: str) -> SandboxEnforcement:
+    """The weakest enforcement a Session's trust high-watermark still allows.
+
+    ``ContextTrust`` only ever rises within a Session, so one Run that ingested
+    untrusted content raises the floor for every later Run of that Session and
+    isolation can never drop back. An unrecognized level fails closed to
+    ``full`` rather than quietly permitting a weaker backend.
+    """
+
+    return _TRUST_ENFORCEMENT_FLOOR.get(str(trust), SandboxEnforcement.FULL)
+
+
 class SandboxHandle(BaseModel):
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 

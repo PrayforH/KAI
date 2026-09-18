@@ -29,6 +29,7 @@ from harness.runtime.tools import ToolResolver
 from harness.sandbox.deferred import DeferredToolSandboxProvider
 from harness.sandbox.e2b import E2BSandboxProvider
 from harness.sandbox.kubernetes import KubernetesSandboxProvider
+from harness.sandbox.opensandbox import OpenSandboxSandboxProvider
 from harness.storage.catalog_repository import PostgresCapabilityCatalogRepository
 from harness.storage.redis import RedisTaskQueue
 from harness.storage.repositories import PostgresEventRepository
@@ -313,7 +314,7 @@ async def test_production_container_can_defer_remote_sandbox_until_tool_use() ->
 
 
 def test_deferred_execution_rejects_unsafe_local_backend() -> None:
-    with pytest.raises(ValueError, match="requires Daytona, E2B, or Kubernetes"):
+    with pytest.raises(ValueError, match="requires Daytona, E2B, Kubernetes"):
         build_production_container(
             production_settings(sandbox_execution_mode="worker_cli_deferred")
         )
@@ -548,3 +549,24 @@ def test_only_the_enforced_profile_declares_sandbox_egress_enforcement() -> None
     # allow list cannot describe open internet access.
     enforced = profiles["cubesandbox-egress-enforced"]
     assert NetworkAccess.EXTERNAL not in enforced.network_access
+def test_a_profile_selects_its_own_backend() -> None:
+    """Execution profiles name the backend; the global setting is only a default."""
+
+    from harness.composition import _sandbox_for_provider
+
+    settings = production_settings(
+        sandbox_provider="local",
+        opensandbox_api_url="http://sandbox.example:8090",
+        opensandbox_api_key=SecretStr("key"),
+    )
+    built = _sandbox_for_provider(settings, "opensandbox")
+    assert isinstance(built, OpenSandboxSandboxProvider)
+
+    # A profile that names "gvisor" builds the Kubernetes backend, and an
+    # unbuildable profile fails the Run instead of silently using the default.
+    with pytest.raises(ValueError, match="HARNESS_KUBERNETES_IMAGE"):
+        _sandbox_for_provider(settings, "gvisor")
+    with pytest.raises(ValueError, match="HARNESS_OPENSANDBOX_API_URL"):
+        _sandbox_for_provider(
+            settings.model_copy(update={"opensandbox_api_url": ""}), "opensandbox"
+        )

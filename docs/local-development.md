@@ -102,7 +102,8 @@ HARNESS_SANDBOX_PROVIDER=daytona
 HARNESS_DAYTONA_API_URL=https://app.daytona.io/api
 HARNESS_DAYTONA_API_KEY=dtn_replace_me
 HARNESS_DAYTONA_REMOTE_WORKSPACE_ROOT=/home/daytona/harness
-HARNESS_DAYTONA_CLAUDE_CLI_VERSION=2.1.206
+# Empty follows the CLI bundled with claude-agent-sdk; set a value to pin it.
+HARNESS_DAYTONA_CLAUDE_CLI_VERSION=
 HARNESS_DAYTONA_CLAUDE_CLI_PATH=/home/daytona/.local/bin/claude
 ```
 

@@ -42,7 +42,7 @@ from harness.application.workspaces import (
 )
 from harness.context.checkpoint import ContextCheckpointService
 from harness.context.service import ContextService
-from harness.core.errors import ConflictError
+from harness.core.errors import ConflictError, SandboxGovernanceError
 from harness.core.models import AgentRuntimeType, ExecutionIdentity, Run, RunStatus, Session
 from harness.core.ports import CancellationWakeup, RunRepository, SessionRepository
 from harness.core.state_machine import transition
@@ -85,7 +85,10 @@ from harness.sandbox.base import (
     SandboxIsolation,
     SandboxProvider,
     sandbox_enforcement,
+    sandbox_enforcement_rank,
+    trust_enforcement_floor,
 )
+from harness.sandbox.lease import SandboxLease, SandboxLeaseService
 
 RuntimeAssetStager = Callable[[str, str, str, str, Path, bool], Awaitable[tuple[str, ...]]]
 PolicyResolver = Callable[
@@ -228,6 +231,7 @@ class RunOrchestrator:
         cancellation_wakeup_timeout_seconds: float = 30.0,
         context_checkpoints: ContextCheckpointService | None = None,
         context_service: ContextService | None = None,
+        sandbox_leases: SandboxLeaseService | None = None,
     ) -> None:
         if cancellation_poll_interval_seconds <= 0:
             raise ValueError("cancellation poll interval must be positive")
@@ -261,6 +265,7 @@ class RunOrchestrator:
         self._cancellation_wakeup_timeout_seconds = cancellation_wakeup_timeout_seconds
         self._context_checkpoints = context_checkpoints
         self._context_service = context_service
+        self._sandbox_leases = sandbox_leases
 
     def _stage(
         self,
@@ -813,6 +818,7 @@ class RunOrchestrator:
                 SubagentGovernanceError,
                 CredentialLeaseError,
                 McpCredentialError,
+                SandboxGovernanceError,
             ),
         ):
             payload["message"] = str(error)
@@ -822,6 +828,8 @@ class RunOrchestrator:
             error_code=(
                 f"quota_exceeded_{error.resource.value}"
                 if isinstance(error, QuotaExceededError)
+                else "sandbox_governance"
+                if isinstance(error, SandboxGovernanceError)
                 else "runtime_error"
             ),
             payload=payload,
@@ -1047,6 +1055,7 @@ class RunOrchestrator:
 
         handle: SandboxHandle | None = None
         terminal_status: RunStatus | None = None
+        lease: SandboxLease | None = None
         active_sandbox = self._sandbox
         output_baseline: Mapping[str, str] | None = None
         final_response_text = ""
@@ -1079,18 +1088,51 @@ class RunOrchestrator:
                     run_id,
                     active_sandbox.provision(run),
                 )
+            enforcement = sandbox_enforcement(handle.provider, handle.isolation_level)
+            if self._sandbox_leases is not None:
+                # Durable ownership: the lease outlives this process, so a Worker
+                # that dies mid-Run leaves a record a reaper can reclaim and an
+                # operator can audit.
+                lease = await self._sandbox_leases.acquire(
+                    tenant_id=tenant_id,
+                    session_id=run.session_id,
+                    run_id=run_id,
+                    owner=f"run-fence:{run.fencing_token}",
+                    provider=handle.provider,
+                    sandbox_id=handle.sandbox_id,
+                )
+            payload: dict[str, object] = {
+                "provider": handle.provider,
+                "isolation": handle.isolation_level.value,
+                "enforcement": enforcement.value,
+            }
+            if self._context_service is not None:
+                # The Session trust high-watermark sets the floor the backend had
+                # to reach; recording both makes a below-floor Run auditable.
+                trust_state = await self._context_service.state(
+                    tenant_id,
+                    session.user_id,
+                    run.session_id,
+                )
+                floor = trust_enforcement_floor(trust_state.trust_high_watermark)
+                payload.update(
+                    {
+                        "trust_watermark": trust_state.trust_high_watermark.value,
+                        "trust_floor": floor.value,
+                        "trust_floor_met": (
+                            sandbox_enforcement_rank(enforcement)
+                            >= sandbox_enforcement_rank(floor)
+                        ),
+                    }
+                )
+            if lease is not None:
+                payload.update({"lease_id": lease.lease_id, "lease_epoch": lease.epoch})
             await self._events.append(
                 tenant_id=tenant_id,
                 run_id=run_id,
                 session_id=run.session_id,
                 event_type="sandbox.provisioned",
-                payload={
-                    "provider": handle.provider,
-                    "isolation": handle.isolation_level.value,
-                    "enforcement": sandbox_enforcement(
-                        handle.provider, handle.isolation_level
-                    ).value,
-                },
+                payload=payload,
             )
             policy_resolution = (
                 await self._policy_resolver(
@@ -1874,3 +1916,16 @@ class RunOrchestrator:
                     )
                 with self._stage("harness.sandbox.destroy", {"run.id": run_id}):
                     await active_sandbox.destroy(handle)
+                if lease is not None and self._sandbox_leases is not None:
+                    # A failed destroy deliberately keeps the lease active: the
+                    # reaper then reclaims the sandbox instead of losing track
+                    # of it, and an operator can still see who owned it.
+                    try:
+                        await self._sandbox_leases.release(
+                            tenant_id, lease.lease_id, epoch=lease.epoch
+                        )
+                    except Exception:  # noqa: BLE001 - cleanup must not mask the result
+                        logger.exception(
+                            "failed to release the sandbox lease",
+                            extra={"tenant_id": tenant_id, "run_id": run_id},
+                        )

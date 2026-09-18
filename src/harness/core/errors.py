@@ -17,6 +17,10 @@ class ConflictError(HarnessDomainError):
     """Raised when an idempotency or optimistic concurrency rule is violated."""
 
 
+class SandboxGovernanceError(HarnessDomainError):
+    """A Run was refused because the sandbox deployment cannot honour policy."""
+
+
 class PermissionDeniedError(HarnessDomainError):
     """Raised when an authenticated actor cannot access a domain resource."""
 

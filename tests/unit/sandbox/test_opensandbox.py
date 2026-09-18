@@ -53,7 +53,11 @@ class FakeRemote:
             "/workspace/run-a/report.txt": b"collected",
         }
         self.calls: list[dict[str, Any]] = []
+        self.ensured_cli: tuple[str, str] | None = None
         self.killed = False
+
+    async def ensure_claude_cli(self, *, version: str, path: str) -> None:
+        self.ensured_cli = (version, path)
 
     async def create_folder(self, path: str) -> None:
         self.folders.append(path)
@@ -516,3 +520,87 @@ async def test_upload_splits_batches_and_keeps_every_file(tmp_path: Path) -> Non
     for remote_path, _ in entries:
         assert remote_path.encode() in joined
     await client.aclose()
+
+
+def _remote(handler: Any) -> Any:
+    from harness.sandbox.opensandbox import EXECD_PORT, OpenSandboxRemoteSandbox
+
+    client = httpx.AsyncClient(
+        base_url="http://sandbox.example", transport=_transport(handler)
+    )
+    return OpenSandboxRemoteSandbox(
+        sandbox_id="os-cli",
+        client=client,
+        execd_base=f"/v1/sandboxes/os-cli/proxy/{EXECD_PORT}",
+    )
+
+
+@pytest.mark.asyncio
+async def test_unpinned_cli_falls_back_to_the_installer_without_a_version(
+    tmp_path: Path,
+) -> None:
+    recorded: list[list[str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={})
+
+    remote = _remote(handler)
+    bundle = tmp_path / "claude"
+    bundle.write_bytes(b"not-an-elf")
+
+    async def fake_run(argv: Any, **_: Any) -> SandboxCommandResult:
+        recorded.append(list(argv))
+        if argv[0] == "bash":  # the installer itself
+            return SandboxCommandResult(exit_code=0)
+        if len(recorded) == 1:  # cache probe: no CLI yet
+            return SandboxCommandResult(exit_code=127, stderr="not found")
+        return SandboxCommandResult(exit_code=0, stdout="2.1.274 (Claude Code)\n")
+
+    remote.run = fake_run  # type: ignore[method-assign]
+    await remote._ensure_binary(bundle, "/root/.local/bin/claude", None)
+
+    installer = recorded[1]
+    assert installer[:2] == ["bash", "-c"]
+    assert "install.sh | bash" in installer[2]
+    assert "-s " not in installer[2]
+    assert recorded[2][-1] == "--version"
+
+
+@pytest.mark.asyncio
+async def test_pinned_cli_rejects_a_different_banner(tmp_path: Path) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={})
+
+    remote = _remote(handler)
+    bundle = tmp_path / "claude"
+    bundle.write_bytes(b"\x7fELF" + b"\x00" * 32)
+
+    async def fake_run(argv: Any, **_: Any) -> SandboxCommandResult:
+        return SandboxCommandResult(exit_code=0, stdout="2.1.206 (Claude Code)\n")
+
+    remote.run = fake_run  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError, match="version verification failed"):
+        await remote._ensure_binary(bundle, "/root/.local/bin/claude", "2.1.259")
+
+
+@pytest.mark.asyncio
+async def test_matching_cli_in_the_sandbox_skips_provisioning(tmp_path: Path) -> None:
+    calls: list[list[str]] = []
+    uploads: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        uploads.append(request)
+        return httpx.Response(200, json={})
+
+    remote = _remote(handler)
+    bundle = tmp_path / "claude"
+    bundle.write_bytes(b"\x7fELF" + b"\x00" * 32)
+
+    async def fake_run(argv: Any, **_: Any) -> SandboxCommandResult:
+        calls.append(list(argv))
+        return SandboxCommandResult(exit_code=0, stdout="2.1.259 (Claude Code)\n")
+
+    remote.run = fake_run  # type: ignore[method-assign]
+    await remote._ensure_binary(bundle, "/root/.local/bin/claude", "2.1.259")
+    assert len(calls) == 1
+    assert uploads == []

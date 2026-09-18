@@ -15,6 +15,12 @@ from e2b.sandbox.main import SandboxOpts  # pyright: ignore[reportMissingTypeStu
 
 from harness.config import Settings
 from harness.sandbox.base import SandboxResourceUsage
+from harness.sandbox.claude_cli import (
+    banner_matches,
+    bundled_cli_path,
+    version_pin,
+    version_text,
+)
 from harness.sandbox.e2b import (
     _LIST_SCAN_LIMIT,
     _MANAGED_RUN_KEY,
@@ -51,10 +57,7 @@ class CubeRemoteSandbox(SdkE2BRemoteSandbox):
     """Bootstrap from the Worker's pinned Linux SDK binary on private networks."""
 
     async def ensure_claude_cli(self, *, version: str, path: str) -> None:
-        import claude_agent_sdk
-
-        bundled = Path(claude_agent_sdk.__file__).parent / "_bundled" / "claude"
-        await self._ensure_binary(bundled, path, f"{version} (Claude Code)")
+        await self._ensure_binary(bundled_cli_path(), path, version_pin(version))
 
     async def ensure_codex_cli(self, *, version: str, path: str) -> None:
         import shutil
@@ -64,10 +67,10 @@ class CubeRemoteSandbox(SdkE2BRemoteSandbox):
             raise RuntimeError("CubeSandbox Codex requires the pinned CLI in the Linux Worker")
         await self._ensure_binary(Path(source).resolve(), path, f"codex-cli {version}")
 
-    async def _ensure_binary(self, bundled: Path, path: str, expected: str) -> None:
+    async def _ensure_binary(self, bundled: Path, path: str, expected: str | None) -> None:
         try:
             check = await self._sandbox.commands.run(f"{shlex.quote(path)} --version")
-            if check.stdout.strip() == expected:
+            if banner_matches(version_text(check.stdout, check.stderr), expected):
                 return
         except Exception:  # noqa: BLE001 - missing CLI is an expected template cache miss
             pass
@@ -81,13 +84,15 @@ class CubeRemoteSandbox(SdkE2BRemoteSandbox):
             stderr=asyncio.subprocess.PIPE,
         )
         stdout, _ = await asyncio.wait_for(process.communicate(), timeout=15)
-        if process.returncode != 0 or stdout.decode().strip() != expected:
+        if process.returncode != 0 or not banner_matches(
+            version_text(stdout.decode(), ""), expected
+        ):
             raise RuntimeError("Worker CLI does not match the pinned version")
         await self.create_folder(str(Path(path).parent))
         await self.upload(path, await asyncio.to_thread(bundled.read_bytes))
         await self._sandbox.commands.run(f"chmod 755 -- {shlex.quote(path)}")
         verified = await self._sandbox.commands.run(f"{shlex.quote(path)} --version")
-        if verified.stdout.strip() != expected:
+        if not banner_matches(version_text(verified.stdout, verified.stderr), expected):
             raise RuntimeError("CubeSandbox CLI version verification failed")
 
 

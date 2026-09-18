@@ -100,6 +100,8 @@ it("does not fetch a file it cannot preview and offers the download instead", as
   expect(fetcher).not.toHaveBeenCalled();
   expect(container.textContent).toContain("暂不支持在线预览");
   expect(container.querySelector(".rail-preview-download")).not.toBeNull();
+  // Nothing would render in a tab either, so the file only offers the download.
+  expect(container.querySelector(".rail-preview-action")).toBeNull();
 });
 
 it("renders a generated page in the rail without downloading or trusting it", async () => {
@@ -114,6 +116,30 @@ it("renders a generated page in the rail without downloading or trusting it", as
   // The page runs without the console origin, so its scripts cannot reach the session.
   expect(frame?.getAttribute("sandbox")).toContain("allow-scripts");
   expect(frame?.getAttribute("sandbox")).not.toContain("allow-same-origin");
+});
+
+it("offers the open file in a tab of its own", async () => {
+  vi.stubGlobal("fetch", vi.fn());
+  const container = await render(target("flow.html", "text/html"));
+  const link = container.querySelector(".rail-preview-action");
+
+  expect(link?.getAttribute("target")).toBe("_blank");
+  expect(link?.getAttribute("rel")).toBe("noreferrer");
+  expect(link?.getAttribute("href")).toContain("/api/harness/artifacts/a1");
+  // Inline disposition, so the tab renders the page instead of downloading it.
+  expect(link?.getAttribute("href")).toContain("preview=1");
+  expect(link?.getAttribute("title")).toBe("在新标签页打开");
+});
+
+it("serves that tab under the same sandbox as the rail frame", () => {
+  // A tab is not framed, so the restriction the iframe carries has to arrive
+  // as a header or the generated page would run on the console origin.
+  const route = readFileSync(
+    join(process.cwd(), "src/app/api/harness/artifacts/[artifactId]/route.ts"),
+    "utf8",
+  );
+  expect(route).toContain("Content-Security-Policy");
+  expect(route).toContain("sandbox allow-scripts allow-popups allow-forms allow-modals");
 });
 
 it("shows oversized files without pulling them into the panel", async () => {
