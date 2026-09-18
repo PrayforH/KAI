@@ -57,8 +57,16 @@ body.codex-theme-v1 .harness-composer-shell .aui-composer-input { resize: none; 
 .rail-file-toolbar { display: flex; align-items: center; justify-content: space-between; }
 .rail-file-toolbar button { background: transparent; border: 0; color: var(--codex-muted); cursor: pointer; padding: 5px; }
 .rail-file-search { width: 100%; padding: 9px 10px; border: 1px solid var(--codex-line); border-radius: 7px; background: transparent; color: var(--codex-ink); font-size: 12px; }
-.rail-file-row { display: flex; align-items: center; border-bottom: 1px solid var(--codex-line); }
-.rail-file-row .workbench-rail-file { flex: 1; min-width: 0; border: 0; }
+.rail-file-row { display: flex; align-items: center; }
+/* The row is a button, so the browser paints its own grey fill unless the base
+   state is explicit; that made every file look selected. */
+.rail-file-row .workbench-rail-file { flex: 1; min-width: 0; padding: 8px 8px; gap: 9px; border: 0; border-radius: 8px; background: transparent; }
+.rail-file-row .rail-download { opacity: 0; transition: opacity 120ms ease; }
+.rail-file-row:hover .rail-download,
+.rail-file-row:focus-within .rail-download { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .rail-file-row .rail-download { transition: none; }
+}
 .rail-download { flex: 0 0 30px; text-align: center; color: var(--codex-muted); text-decoration: none; }
 .workbench-rail [hidden] { display: none !important; }
 @media (max-width: 640px) { .composer-input-guide > span { display: none; } .composer-running-actions > span { max-width: 40%; } .prompt-queue { padding: 6px 8px; } }
@@ -429,75 +437,116 @@ body.codex-theme-v1 .execution-row-sweep::after {
   body.codex-theme-v1 .execution-row-sweep::after { animation: none; display: none; }
   body.codex-theme-v1 .execution-reasoning-chevron { transition: none; }
 }
-/* Attachment cards share one box for preview, metadata and upload state. */
+/* Attachments are one square thumbnail each: the preview is the card, the file
+   name rides on the built-in tooltip and the accessibility tree, and the
+   transfer state overlays the thumbnail instead of a row above the composer. */
 body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments {
   box-sizing: border-box;
   display: flex;
   flex: none;
+  flex-wrap: wrap;
   align-items: flex-start;
   gap: 8px;
   width: 100%;
   min-width: 0;
-  padding: 12px 12px 4px;
+  padding: 12px 12px 0;
 }
 body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments:empty { display: none; }
 body.codex-theme-v1 .harness-composer-shell .composer-file-card {
   position: relative;
-  flex: 0 0 232px;
-  width: 232px;
-  max-width: 100%;
-  min-width: 0;
+  flex: 0 0 72px;
+  width: 72px;
+  height: 72px;
 }
 body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments .aui-attachment-root {
-  height: auto;
+  height: 72px;
   min-width: 0;
   margin: 0;
 }
 body.codex-theme-v1 .harness-composer-shell .aui-attachment-content {
   box-sizing: border-box;
-  width: 100%;
-  height: 76px;
+  width: 72px;
+  height: 72px;
   min-width: 0;
-  justify-content: flex-start;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 10px 32px 24px 10px;
+  justify-content: center;
+  align-items: center;
+  gap: 0;
+  padding: 0;
   border-radius: 10px;
+  overflow: hidden;
 }
 body.codex-theme-v1 .harness-composer-shell .aui-attachment-thumb {
-  flex: 0 0 36px;
-  width: 36px;
-  height: 36px;
+  flex: 1 1 auto;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
 }
 body.codex-theme-v1 .harness-composer-shell .aui-attachment-thumb img { width: 100%; height: 100%; object-fit: cover; }
-body.codex-theme-v1 .harness-composer-shell .aui-attachment-text { flex: 1 1 0; min-width: 0; }
-body.codex-theme-v1 .harness-composer-shell .aui-attachment-name {
-  display: block;
-  margin: 0;
+body.codex-theme-v1 .harness-composer-shell .aui-attachment-thumb svg { width: 22px; height: 22px; }
+body.codex-theme-v1 .harness-composer-shell .aui-attachment-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
   overflow: hidden;
+  clip-path: inset(50%);
   white-space: nowrap;
-  text-overflow: ellipsis;
-  font-size: 12px;
-  line-height: 18px;
 }
-body.codex-theme-v1 .harness-composer-shell .aui-attachment-type { margin: 0; font-size: 11px; line-height: 18px; }
 body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments .aui-attachment-remove {
-  top: 6px;
-  right: 6px;
-  width: 24px;
-  height: 24px;
-  padding: 4px;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  padding: 2px;
+  opacity: 0;
+  transition: opacity 120ms ease;
 }
+body.codex-theme-v1 .harness-composer-shell .composer-file-card:hover .aui-attachment-remove,
+body.codex-theme-v1 .harness-composer-shell .composer-file-card:focus-within .aui-attachment-remove { opacity: 1; }
 body.codex-theme-v1 .harness-composer-shell .composer-file-card .attachment-upload-status {
-  inset: auto 32px 9px 56px;
-  color: var(--codex-muted);
+  inset: auto 0 0;
+  padding: 3px 6px 5px;
+  color: #dcdcdc;
+  background: rgb(0 0 0 / 62%);
   font-size: 10px;
-  line-height: 14px;
+  line-height: 13px;
+  pointer-events: none;
 }
 body.codex-theme-v1 .harness-composer-shell .composer-file-card .attachment-upload-status.error { color: var(--codex-danger, #c45443); }
-body.codex-theme-v1 .harness-composer-shell .composer-file-card .attachment-upload-status > span { max-width: 100%; }
-body.codex-theme-v1 .harness-composer-shell .composer-file-card .attachment-upload-track { margin-top: 2px; }
+body.codex-theme-v1 .harness-composer-shell .composer-file-card .attachment-upload-status > .upload-status-short {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+body.codex-theme-v1 .harness-composer-shell .composer-file-card .attachment-upload-status > .upload-status-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+body.codex-theme-v1 .harness-composer-shell .composer-file-card .attachment-upload-track { margin-top: 3px; }
+body.codex-theme-v1 .harness-composer-shell .composer-file-ready {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  color: #0f1a13;
+  background: var(--codex-success, #40c977);
+  font-size: 10px;
+  line-height: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments .aui-attachment-remove { transition: none; }
+}
 
 /* Load-earlier pagination affordance for long threads (2026-09-17). */
 .history-load-earlier {
@@ -660,24 +709,27 @@ html body.codex-theme-v1 .execution-reasoning[open] .execution-reasoning-chevron
   html body.codex-theme-v1 .execution-reasoning-chevron { transition: none; }
 }
 
-/* Task rail file browser (Grok-style): a type chip per row, and the file opens
+/* Task rail file browser (Grok-style): one glyph and one name per row, a fill
+   only on the row under the pointer or open in the preview, and the file opens
    as a preview inside the rail instead of a new tab or a download. */
-.rail-file-chip {
+.rail-file-icon {
   flex: 0 0 auto;
-  min-width: 30px;
-  padding: 1px 5px;
-  border: 1px solid #333;
-  border-radius: 5px;
-  color: #9a9a9a;
-  font: 600 9px/1.6 var(--codex-font-ui, ui-sans-serif);
-  letter-spacing: .04em;
-  text-align: center;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: #d4d4d4;
+  background: #2b2b2b;
 }
+.rail-file-icon svg { width: 13px; height: 13px; }
+.rail-file-icon[data-kind="image"] { color: #cbb9ff; }
+.rail-file-icon[data-kind="html"] { color: #a9d0ff; }
+.rail-file-icon[data-kind="csv"] { color: #a9e0bd; }
 
 .workbench-rail-file[aria-pressed="true"] {
-  border-color: #5a5a5a;
   color: #ffffff;
-  background: #232323;
+  background: #2b2b2b;
 }
 
 .workbench-rail-file .workbench-rail-file-name { flex: 1 1 auto; text-align: left; }
@@ -728,6 +780,7 @@ html body.codex-theme-v1 .execution-reasoning[open] .execution-reasoning-chevron
 .rail-preview-image { max-width: 100%; border-radius: 8px; }
 
 .rail-preview-pdf { width: 100%; height: 70vh; border: 0; border-radius: 8px; background: #fff; }
+.rail-preview-html { width: 100%; height: 70vh; border: 0; border-radius: 8px; background: #fff; }
 
 .rail-preview-code {
   margin: 0;

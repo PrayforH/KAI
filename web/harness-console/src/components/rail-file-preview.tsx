@@ -16,14 +16,17 @@ export interface PreviewTarget {
 
 const TEXT_PREVIEW_LIMIT_BYTES = 2 * 1024 * 1024;
 const CSV_PREVIEW_ROWS = 200;
+/** Kinds the browser renders on its own, so the rail never downloads the bytes. */
+const FRAMED_KINDS = new Set<PreviewKind>(["image", "pdf", "html", "none"]);
 
-type PreviewKind = "markdown" | "csv" | "json" | "code" | "image" | "pdf" | "none";
+export type PreviewKind = "markdown" | "csv" | "json" | "code" | "html" | "image" | "pdf" | "none";
 
 export function previewKindFor(mediaType: string, name: string): PreviewKind {
   const type = (mediaType || "").toLowerCase();
   const extension = name.toLowerCase().split(".").pop() ?? "";
   if (type.startsWith("image/")) return "image";
   if (type === "application/pdf" || extension === "pdf") return "pdf";
+  if (type === "text/html" || ["html", "htm"].includes(extension)) return "html";
   if (type.includes("markdown") || ["md", "markdown"].includes(extension)) return "markdown";
   if (type === "text/csv" || ["csv", "tsv"].includes(extension)) return "csv";
   if (type === "application/json" || extension === "json") return "json";
@@ -33,7 +36,7 @@ export function previewKindFor(mediaType: string, name: string): PreviewKind {
 
 const CODE_EXTENSIONS = new Set([
   "py", "ts", "tsx", "js", "jsx", "sh", "bash", "zsh", "yaml", "yml", "toml", "ini",
-  "log", "sql", "html", "css", "xml", "svg", "sed", "awk", "mjs", "cjs", "rs", "go",
+  "log", "sql", "css", "xml", "svg", "sed", "awk", "mjs", "cjs", "rs", "go",
 ]);
 
 /** Minimal RFC4180 reader: enough for a read-only table preview. */
@@ -93,10 +96,10 @@ export function RailFilePreview({ target }: { target: PreviewTarget }) {
   const url = contentUrl(target);
   const [text, setText] = useState("");
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(kind !== "image" && kind !== "pdf" && kind !== "none");
+  const [loading, setLoading] = useState(!FRAMED_KINDS.has(kind));
 
   useEffect(() => {
-    if (kind === "image" || kind === "pdf" || kind === "none") return;
+    if (FRAMED_KINDS.has(kind)) return;
     const controller = new AbortController();
     setText("");
     setError("");
@@ -150,6 +153,15 @@ export function RailFilePreview({ target }: { target: PreviewTarget }) {
           <img className="rail-preview-image" src={url} alt={target.name} />
         ) : kind === "pdf" ? (
           <iframe className="rail-preview-pdf" src={url} title={target.name} />
+        ) : kind === "html" ? (
+          // Generated pages run without the console origin, so their scripts
+          // cannot reach the session even though the artifact loads with it.
+          <iframe
+            className="rail-preview-html"
+            src={url}
+            title={target.name}
+            sandbox="allow-scripts allow-popups allow-forms allow-modals"
+          />
         ) : kind === "none" ? (
           <p className="rail-preview-note">该类型暂不支持在线预览，请下载后查看。</p>
         ) : loading ? (

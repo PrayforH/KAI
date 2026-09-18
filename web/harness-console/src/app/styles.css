@@ -3676,14 +3676,6 @@ body,
 .input-file-chip > button { margin-left: auto; border: 0; background: transparent; color: #718079; cursor: pointer; font-size: 18px; }
 
 .composer-dropzone { position: relative; }
-.upload-feedback { display: grid; gap: 5px; margin: 0 2px 6px; }
-.upload-feedback-item { display: flex; align-items: center; gap: 7px; min-height: 30px; padding: 5px 8px; border: 1px solid #d6dfda; border-radius: 5px; background: #f6f9f7; color: #56625d; font-size: 11px; }
-.upload-feedback-item > span:nth-child(2) { min-width: 0; flex: 1; overflow-wrap: anywhere; }
-.upload-feedback-item strong { color: #34423c; }
-.upload-feedback-item.uploading > span:first-child { animation: upload-spin 1s linear infinite; }
-.upload-feedback-item.ready { border-color: #bdd8c7; background: #f1f8f3; color: #3d684c; }
-.upload-feedback-item.error { border-color: #dfc0ba; background: #fbf3f1; color: #874b42; }
-.upload-feedback-item button { border: 0; background: transparent; color: inherit; cursor: pointer; font-size: 16px; line-height: 1; }
 @keyframes upload-spin { to { transform: rotate(360deg); } }
 .runtime-disclaimer { margin: 7px 0 0; color: #8b9690; font: 8px/1.4 ui-monospace, monospace; text-align: center; }
 .harness-assistant-message[data-direct-stream="true"]
@@ -3711,7 +3703,6 @@ textarea:not(.aui-composer-input):focus-visible,
 }
 
 @media (max-width: 760px) {
-  .upload-feedback-item { align-items: flex-start; }
 }
 
 /* assistant-ui React UI composition overrides */
@@ -8936,4 +8927,32 @@ textarea.user-message-editor-input:focus-visible {
 .auth-session-blocker button:focus-visible {
   outline: 3px solid rgb(236 236 236 / 28%);
   outline-offset: 2px;
+}
+
+/* One square thumbnail per attachment in every chat: the preview is the card,
+   the file name stays in the tooltip and the accessibility tree, and transfer
+   state overlays the thumbnail instead of a row above the input. */
+.composer-file-card { position: relative; flex: 0 0 72px; width: 72px; height: 72px; }
+.composer-file-card .aui-attachment-root { height: 72px; min-width: 0; margin: 0; }
+.composer-file-card .aui-attachment-content { box-sizing: border-box; width: 72px; height: 72px; padding: 0; gap: 0; border-radius: 10px; overflow: hidden; }
+.composer-file-card .aui-attachment-thumb { flex: 1 1 auto; display: grid; place-items: center; width: 100%; height: 100%; overflow: hidden; }
+.composer-file-card .aui-attachment-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.composer-file-card .aui-attachment-thumb svg { width: 22px; height: 22px; }
+.composer-file-card .aui-attachment-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.composer-file-card .aui-attachment-remove { top: 4px; right: 4px; width: 20px; height: 20px; padding: 2px; opacity: 0; transition: opacity 120ms ease; }
+.composer-file-card:hover .aui-attachment-remove,
+.composer-file-card:focus-within .aui-attachment-remove { opacity: 1; }
+.composer-file-card .attachment-upload-status { position: absolute; inset: auto 0 0; padding: 3px 6px 5px; color: #f2f5f3; background: rgb(0 0 0 / 62%); font-size: 10px; line-height: 13px; pointer-events: none; }
+.composer-file-card .attachment-upload-status > .upload-status-short { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-file-card .attachment-upload-status > .upload-status-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.composer-file-card .attachment-upload-status.error { color: #ffb9ad; }
+.composer-file-card .attachment-upload-track { height: 3px; margin-top: 3px; overflow: hidden; border-radius: 3px; background: rgb(255 255 255 / 28%); }
+.composer-file-card .attachment-upload-track > span { display: block; height: 100%; border-radius: inherit; background: currentColor; transition: width 160ms ease; }
+.composer-file-card .attachment-upload-track > span.indeterminate { width: 35%; animation: attachment-transfer 1.3s ease-in-out infinite; }
+.composer-file-card .composer-file-ready { position: absolute; right: 4px; bottom: 4px; display: grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; color: #fff; background: #1f9d55; font-size: 10px; line-height: 1; }
+@keyframes attachment-transfer { from { transform: translateX(-100%); } to { transform: translateX(390%); } }
+@media (prefers-reduced-motion: reduce) {
+  .composer-file-card .aui-attachment-remove { transition: none; }
+  .composer-file-card .attachment-upload-track > span { transition: none; }
+  .composer-file-card .attachment-upload-track > span.indeterminate { animation: none; width: 100%; opacity: .45; }
 }

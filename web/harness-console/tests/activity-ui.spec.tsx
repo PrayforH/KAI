@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { ActivitySummary } from "../src/components/activity-summary";
 import { ApprovalCard } from "../src/components/approval-card";
 import { ArtifactCard } from "../src/components/artifact-list";
+import { FileUploadStatus } from "../src/components/composer-attachment";
 import { SubagentCard } from "../src/components/subagent-card";
 import { ToolCard } from "../src/components/tool-card";
 import { completedToolBatch } from "../src/components/tool-card";
@@ -14,7 +15,6 @@ import {
   shouldKeepActivityInLatestSlot,
   shouldShowArtifactForTurn,
   shouldSuppressRawToolCard,
-  UploadFeedbackContent,
 } from "../src/components/agent-thread";
 import {
   activityOverview,
@@ -273,17 +273,18 @@ describe("Codex-style activity UI", () => {
 
   it("renders upload progress and actionable errors", () => {
     const html = renderToStaticMarkup(
-      <UploadFeedbackContent
-        items={[
-          { key: "a", fileName: "facts.txt", status: "uploading" },
-          { key: "b", fileName: "report.docx", status: "error", message: "too large" },
-        ]}
-        onDismiss={() => undefined}
-      />,
+      <>
+        <FileUploadStatus item={{ key: "a", fileName: "facts.txt", status: "uploading", progress: 42 }} />
+        <FileUploadStatus item={{ key: "b", fileName: "report.docx", status: "error", message: "too large" }} />
+      </>,
     );
-    expect(html).toContain("正在上传");
+    // The thumbnail-sized overlay keeps the short state, the full sentence stays readable.
+    expect(html).toContain('aria-hidden="true">42%<');
+    expect(html).toContain("正在上传 42%");
+    expect(html).toContain("上传失败");
     expect(html).toContain("上传失败：too large");
-    expect(html).toContain("关闭 report.docx 上传错误");
+    expect(html).toContain('role="progressbar"');
+    expect(html).toContain('aria-valuenow="42"');
   });
 
   it("renders authenticated preview and download actions for artifacts", () => {

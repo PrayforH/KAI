@@ -272,16 +272,16 @@ body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-open .workbench-r
 
 .workbench-rail-files {
   display: grid;
-  gap: 2px;
+  gap: 4px;
 }
 
 .workbench-rail-file {
   min-width: 0;
-  padding: 6px 8px;
+  padding: 8px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 9px;
   border: 1px solid #2b2b2b;
   border-radius: 8px;
   color: #cfcfcf;

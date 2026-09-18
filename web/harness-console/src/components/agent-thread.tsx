@@ -112,58 +112,11 @@ import {
   loadTaskComposerDraft,
   persistTaskComposerDraft,
 } from "../lib/task-composer-draft";
-import {
-  type UploadFeedback,
-  uploadFeedbackStore,
-  useUploadFeedback,
-} from "../lib/upload-feedback-store";
+import { HarnessComposerAttachment } from "./composer-attachment";
 import {
   skillCreatorPrompt,
   type SkillCreatorLaunch,
 } from "../lib/skill-creator-launch";
-
-export function UploadFeedbackContent({
-  items,
-  onDismiss,
-}: {
-  items: readonly UploadFeedback[];
-  onDismiss: (key: string) => void;
-}) {
-  if (items.length === 0) return null;
-  return (
-    <div className="upload-feedback" aria-live="polite" aria-label="附件上传状态">
-      {items.map((item) => (
-        <div key={item.key} className={`upload-feedback-item ${item.status}`}>
-          <span aria-hidden="true">
-            {item.status === "uploading" ? "↻" : item.status === "ready" ? "✓" : "!"}
-          </span>
-          <span>
-            <strong>{item.fileName}</strong>
-            {item.status === "uploading"
-              ? " 正在上传"
-              : item.status === "ready"
-                ? " 已就绪"
-                : ` 上传失败：${item.message ?? "未知错误"}`}
-          </span>
-          {item.status === "error" ? (
-            <button
-              type="button"
-              onClick={() => onDismiss(item.key)}
-              aria-label={`关闭 ${item.fileName} 上传错误`}
-            >
-              ×
-            </button>
-          ) : null}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function UploadFeedbackNotice() {
-  const items = useUploadFeedback();
-  return <UploadFeedbackContent items={items} onDismiss={uploadFeedbackStore.dismiss} />;
-}
 
 export function shouldShowComposerStop(
   threadRunning: boolean,
@@ -749,7 +702,6 @@ function HarnessComposer() {
           />
         </div>
       ) : null}
-      <UploadFeedbackNotice />
       <TaskModelVisionNotice
         disabled={runLocked || showStop || videoGenerating}
         requiresVision={composerAttachments.some((attachment) => attachment.type === "image")}
@@ -805,7 +757,7 @@ function HarnessComposer() {
             }}>×</button>
           </div>
         )}
-        <Composer.Attachments />
+        <Composer.Attachments components={{ Attachment: HarnessComposerAttachment }} />
         <ConversationInput
           ref={inputRef}
           onComposingChange={(value) => { composingRef.current = value; }}

@@ -908,35 +908,6 @@ select:not([multiple]):not(.task-model-control select):not(.task-agent-version-s
   background: var(--codex-surface-raised);
 }
 
-.upload-feedback {
-  border-color: var(--codex-line);
-  color: var(--codex-muted);
-  background: transparent;
-  box-shadow: none;
-}
-
-body.codex-theme-v1 .upload-feedback-item {
-  border-color: var(--codex-line-strong);
-  color: var(--codex-muted);
-  background: var(--codex-panel-solid);
-}
-
-body.codex-theme-v1 .upload-feedback-item strong {
-  color: var(--codex-ink-soft);
-}
-
-body.codex-theme-v1 .upload-feedback-item.ready {
-  border-color: rgb(64 201 119 / 34%);
-  color: var(--codex-success);
-  background: linear-gradient(90deg, var(--codex-success-soft), transparent 72%), var(--codex-panel-solid);
-}
-
-body.codex-theme-v1 .upload-feedback-item.error {
-  border-color: rgb(250 66 62 / 34%);
-  color: var(--codex-danger);
-  background: linear-gradient(90deg, var(--codex-danger-soft), transparent 72%), var(--codex-panel-solid);
-}
-
 body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments {
   gap: 8px;
 }

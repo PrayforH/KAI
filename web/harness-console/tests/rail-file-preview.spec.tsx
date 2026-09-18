@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
@@ -35,6 +37,8 @@ it("routes each file type to the right preview", () => {
   expect(previewKindFor("text/x-python", "build_flow.py")).toBe("code");
   expect(previewKindFor("image/png", "chart.png")).toBe("image");
   expect(previewKindFor("application/pdf", "deck.pdf")).toBe("pdf");
+  expect(previewKindFor("text/html", "flow.html")).toBe("html");
+  expect(previewKindFor("application/octet-stream", "flow.htm")).toBe("html");
   expect(previewKindFor("application/zip", "bundle.zip")).toBe("none");
   // A .sqlite file shipped as octet-stream still falls back to download.
   expect(previewKindFor("application/octet-stream", "db.sqlite")).toBe("none");
@@ -67,10 +71,37 @@ it("does not fetch a file it cannot preview and offers the download instead", as
   expect(container.querySelector(".rail-preview-download")).not.toBeNull();
 });
 
+it("renders a generated page in the rail without downloading or trusting it", async () => {
+  const fetcher = vi.fn();
+  vi.stubGlobal("fetch", fetcher);
+  const container = await render(target("flow.html", "text/html"));
+  const frame = container.querySelector("iframe.rail-preview-html");
+
+  expect(fetcher).not.toHaveBeenCalled();
+  expect(frame?.getAttribute("src")).toContain("/api/harness/artifacts/a1");
+  expect(frame?.getAttribute("title")).toBe("flow.html");
+  // The page runs without the console origin, so its scripts cannot reach the session.
+  expect(frame?.getAttribute("sandbox")).toContain("allow-scripts");
+  expect(frame?.getAttribute("sandbox")).not.toContain("allow-same-origin");
+});
+
 it("shows oversized files without pulling them into the panel", async () => {
   const fetcher = vi.fn();
   vi.stubGlobal("fetch", fetcher);
   const container = await render(target("huge.txt", "text/plain", { size_bytes: 9_000_000 }));
   expect(fetcher).not.toHaveBeenCalled();
   expect(container.textContent).toContain("文件较大");
+});
+
+it("keeps the file rows unfilled until they are hovered or open", () => {
+  // The row became a button: without an explicit base fill the browser paints its
+  // own grey, which made every file look selected at once.
+  const experience = readFileSync(
+    join(process.cwd(), "src/app/conversation-experience.css"),
+    "utf8",
+  );
+  const rule = /\.rail-file-row \.workbench-rail-file \{([^}]*)\}/.exec(experience)?.[1];
+
+  expect(rule).toContain("background: transparent");
+  expect(rule).toContain("border: 0");
 });

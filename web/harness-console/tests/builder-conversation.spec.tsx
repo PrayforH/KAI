@@ -24,6 +24,9 @@ function api(draft: StudioDraft): ApiAgentDraft {
 const run = { draftRevision: 1, run: { run_id: "run-1", status: "succeeded" },
   events: [], loop: [], approvals: [], artifacts: [], finalText: "试跑结果" } as unknown as StudioTryRun;
 beforeEach(() => {
+  // Transfers prefer XHR so they can report progress; these tests stub fetch,
+  // so they pin the composer to the fetch path.
+  vi.stubGlobal("XMLHttpRequest", undefined);
   HTMLElement.prototype.scrollTo = vi.fn();
   vi.spyOn(studioClient, "readBuilderMaterials").mockResolvedValue({context: "参考材料正文"});
   let nextRun = 0;
@@ -53,7 +56,7 @@ beforeEach(() => {
   }
   act(() => root.render(<Harness />));
 });
-afterEach(() => { act(() => root.unmount()); host.remove(); vi.restoreAllMocks(); updated.mockReset(); });
+afterEach(() => { vi.unstubAllGlobals(); act(() => root.unmount()); host.remove(); vi.restoreAllMocks(); updated.mockReset(); });
 async function click(text: string) {
   await act(async () => { [...host.querySelectorAll("button")].find((button) => button.textContent === text)!.click(); });
 }

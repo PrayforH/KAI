@@ -7,6 +7,7 @@ export type UploadFeedback = {
   fileName: string;
   status: "uploading" | "ready" | "error";
   message?: string;
+  progress?: number;
 };
 
 const EMPTY_UPLOAD_FEEDBACK: readonly UploadFeedback[] = [];
@@ -34,6 +35,12 @@ export function uploadKey(file: Pick<File, "name" | "size" | "lastModified">) {
 export const uploadFeedbackStore = {
   begin(key: string, fileName: string) {
     replace({ key, fileName, status: "uploading" });
+  },
+  progress(key: string, percent: number) {
+    const current = snapshot.find((entry) => entry.key === key);
+    if (current?.status === "uploading") {
+      replace({ ...current, progress: Math.min(100, Math.max(0, Math.round(percent))) });
+    }
   },
   succeed(key: string) {
     const current = snapshot.find((entry) => entry.key === key);

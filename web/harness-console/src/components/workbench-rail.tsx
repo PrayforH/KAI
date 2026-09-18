@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { requireAuthenticatedResponse } from "../lib/client-auth";
 import { PanelResizeHandle } from "./panel-resize-handle";
-import { RailFilePreview, previewKindFor, type PreviewTarget } from "./rail-file-preview";
+import { RailFilePreview, previewKindFor, type PreviewKind, type PreviewTarget } from "./rail-file-preview";
 
 
 const PHASE_LABELS: Record<string, string> = {
@@ -44,17 +44,43 @@ interface RailFile {
   thread_id?: string;
 }
 
-/** Grok-style file chip: the type is readable before the name. */
-function fileChip(name: string, mediaType: string) {
-  const type = mediaType.toLowerCase();
-  const extension = name.toLowerCase().split(".").pop() ?? "";
-  if (type.startsWith("image/")) return "IMG";
-  if (type === "application/pdf" || extension === "pdf") return "PDF";
-  if (type.includes("markdown") || extension === "md") return "MD";
-  if (type === "text/csv" || extension === "csv") return "CSV";
-  if (type === "application/json" || extension === "json") return "JSON";
-  if (extension) return extension.slice(0, 4).toUpperCase();
-  return "FILE";
+/** Grok-style row glyph: one small icon carries the file type. */
+export function railFileIcon(kind: PreviewKind) {
+  const paths =
+    kind === "image" ? (
+      <>
+        <rect x="2.2" y="3.2" width="11.6" height="9.6" rx="1.6" />
+        <circle cx="6.1" cy="6.8" r="1.15" />
+        <path d="M2.8 11.4 6.6 8l3.4 3.4 1.7-1.5 2.1 1.9" />
+      </>
+    ) : kind === "csv" ? (
+      <>
+        <rect x="2.2" y="3.2" width="11.6" height="9.6" rx="1.6" />
+        <path d="M2.2 6.6h11.6M6.2 3.2v9.6M10.2 3.2v9.6" />
+      </>
+    ) : kind === "html" ? (
+      <>
+        <rect x="2.2" y="3.2" width="11.6" height="9.6" rx="1.6" />
+        <path d="M2.2 6.2h11.6" />
+        <path d="M4.2 4.7h.01M6 4.7h.01" />
+      </>
+    ) : kind === "code" || kind === "json" ? (
+      <>
+        <path d="M6.2 5.6 3.4 8l2.8 2.4M9.8 5.6 12.6 8l-2.8 2.4" />
+      </>
+    ) : (
+      <>
+        <path d="M4.2 2.6h5l3 3v7.8H4.2z" />
+        <path d="M9.2 2.6v3.2h3" />
+        <path d="M6.2 8.4h4M6.2 10.6h4" />
+      </>
+    );
+  return (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {paths}
+    </svg>
+  );
 }
 
 function formatFileSize(value?: number | null) {
@@ -225,7 +251,7 @@ export function WorkbenchRail({
                             onClick={() => openPreview(target)}
                             title={previewable ? `在侧栏预览 ${file.name}` : `查看 ${file.name}`}
                           >
-                            <span className="rail-file-chip" aria-hidden="true">{fileChip(file.name, file.media_type ?? "")}</span>
+                            <span className="rail-file-icon" data-kind={kind}>{railFileIcon(kind)}</span>
                             <span className="workbench-rail-file-name">{file.name}</span>
                             <span className="workbench-rail-file-size">{formatFileSize(file.size_bytes)}</span>
                           </button>
