@@ -129,6 +129,28 @@ it("asks the shell to give the drawer the whole conversation area", async () => 
   expect(onToggleExpanded).toHaveBeenCalledTimes(1);
 });
 
+it("keeps the search field the width of the file list", async () => {
+  await render();
+  await click(button("搜索任务文件"));
+  await click(rowFor("report.md"));
+
+  const field = host!.querySelector(".rail-file-search");
+  expect(field).not.toBeNull();
+  // It sits in the browser column, so it is as wide as the rows below it.
+  expect(field!.closest(".rail-file-column")).not.toBeNull();
+  expect(host!.querySelector(".rail-search-row")).toBeNull();
+});
+
+it("tells the drawer's view icon apart from the list toggle", async () => {
+  await render();
+  const viewIcon = button("文件列表")?.querySelector("svg")?.innerHTML;
+  const listIcon = button("隐藏文件列表")?.querySelector("svg")?.innerHTML;
+
+  expect(viewIcon).toBeTruthy();
+  expect(listIcon).toBeTruthy();
+  expect(viewIcon).not.toBe(listIcon);
+});
+
 it("hands the whole drawer to the open file when the browser is hidden", async () => {
   await render();
   await click(rowFor("report.md"));

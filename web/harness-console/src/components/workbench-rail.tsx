@@ -27,11 +27,22 @@ function SearchIcon() {
   );
 }
 
+/** The browser column toggle in the file toolbar. */
 function FilesIcon() {
   return (
     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"
       strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M4.4 4.6h11.2M4.4 8h11.2M4.4 11.4h11.2M4.4 14.8h11.2" />
+    </svg>
+  );
+}
+
+/** The drawer's own view: the task's files, told apart from the list toggle. */
+function FolderIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3.1 6.2a1.8 1.8 0 0 1 1.8-1.8h2.7l1.5 1.8h6a1.8 1.8 0 0 1 1.8 1.8v6.1a1.8 1.8 0 0 1-1.8 1.8H4.9a1.8 1.8 0 0 1-1.8-1.8z" />
     </svg>
   );
 }
@@ -211,6 +222,23 @@ export function WorkbenchRail({
 
   const fileList = (
     <>
+      {searchOpen ? (
+        // The field belongs to the browser, so it takes the browser's width.
+        <input
+          className="rail-file-search"
+          type="search"
+          aria-label="搜索任务文件"
+          placeholder="搜索文件…"
+          autoFocus
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key !== "Escape") return;
+            setQuery("");
+            setSearchOpen(false);
+          }}
+        />
+      ) : null}
       {fileError ? <p role="alert">{fileError} <button type="button" onClick={() => setRefresh((value) => value + 1)}>重试</button></p> : filesLoading ? (
         <span className="workbench-rail-files-empty">正在读取文件…</span>
       ) : files.length === 0 ? (
@@ -270,7 +298,7 @@ export function WorkbenchRail({
               aria-current={selected ? undefined : "page"}
               onClick={() => show(null)}
             >
-              <FilesIcon />
+              <FolderIcon />
             </button>
             {observabilityHref ? (
               <a
@@ -367,24 +395,6 @@ export function WorkbenchRail({
             <RefreshIcon />
           </button>
         </div>
-        {searchOpen ? (
-          <div className="rail-search-row">
-            <input
-              className="rail-file-search"
-              type="search"
-              aria-label="搜索任务文件"
-              placeholder="搜索文件…"
-              autoFocus
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key !== "Escape") return;
-                setQuery("");
-                setSearchOpen(false);
-              }}
-            />
-          </div>
-        ) : null}
         <div className="workbench-rail-body">
           <section
             className="workbench-rail-section rail-files-section"

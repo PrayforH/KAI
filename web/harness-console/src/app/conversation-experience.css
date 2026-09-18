@@ -53,7 +53,8 @@ body.codex-theme-v1 .harness-composer-shell .aui-composer-input { resize: none; 
 .composer-input-error { font-size: 12px; color: var(--codex-danger); }
 .rail-file-toolbar { display: flex; align-items: center; justify-content: space-between; }
 .rail-file-toolbar button { background: transparent; border: 0; color: var(--codex-muted); cursor: pointer; padding: 5px; }
-.rail-file-search { width: 100%; padding: 9px 10px; border: 1px solid var(--codex-line); border-radius: 7px; background: transparent; color: var(--codex-ink); font-size: 12px; }
+.rail-file-search { position: sticky; top: 0; z-index: 1; width: 100%; margin-bottom: 8px; padding: 8px 10px; border: 1px solid var(--codex-line); border-radius: 7px; background: #141414; color: var(--codex-ink); font-size: 12px; }
+.rail-file-search::placeholder { color: #6c6c6c; }
 .rail-file-row { display: flex; align-items: center; min-width: 0; }
 /* The row is a button, so the browser paints its own grey fill unless the base
    state is explicit; that made every file look selected. */
@@ -772,7 +773,6 @@ a.rail-bar-button { text-decoration: none; }
 .rail-bar-button:disabled { color: #4a4a4a; cursor: default; }
 .rail-bar-button[aria-pressed="true"] { color: var(--codex-ink); background: #232323; }
 .rail-bar-button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.5; }
-.rail-search-row { padding: 0 16px 10px; }
 /* Second row: what the drawer does with the files it lists. */
 .rail-toolbar {
   height: 40px;
