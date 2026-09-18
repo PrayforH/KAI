@@ -216,7 +216,7 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) {
 .conversation-index-rail { display: flex; flex-direction: column; max-height: min(52dvh, 440px); overflow-y: auto; scrollbar-width: none; padding: 4px 0; }
 .conversation-index-rail::-webkit-scrollbar { display: none; }
 .conversation-index button { display: flex; align-items: center; flex: 0 0 10px; width: 32px; height: 10px; padding: 0 0 0 10px; border: 0; background: transparent; cursor: pointer; }
-.conversation-index button > span { width: var(--index-line-width, 4px); height: 2px; background: var(--codex-muted); opacity: .45; transition: width 180ms cubic-bezier(.2,.8,.2,1), opacity 160ms ease, background-color 160ms ease; }
+.conversation-index button > span { width: var(--index-line-width, 6px); height: 2px; background: var(--codex-muted); opacity: .45; transition: opacity 160ms ease, background-color 160ms ease; }
 .conversation-index button[aria-current] > span { opacity: .85; }
 .conversation-index button[data-highlighted="true"] > span { background: var(--codex-ink); opacity: 1; }
 /* Ticks for earlier runs that are not loaded yet read exactly like the loaded

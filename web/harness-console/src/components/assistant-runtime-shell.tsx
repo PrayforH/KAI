@@ -28,14 +28,17 @@ import {
 import { activateRuntimeThread } from "../lib/runtime-thread-scope";
 import type { TaskModelRoute } from "../lib/task-model-catalog";
 import { TaskKnowledgeProvider } from "./task-knowledge-context";
+import { ThreadHistoryReadyProvider } from "./thread-history-ready";
 import { TaskModelProvider } from "./task-model-context";
 
 function DurableHistorySync({
   revision,
   history,
+  onSettled,
 }: {
   revision: number;
   history: ReturnType<typeof createThreadHistoryAdapter>;
+  onSettled?: () => void;
 }) {
   const thread = useThreadRuntime();
   const running = useAuiState((state) => state.thread.isRunning);
@@ -71,6 +74,7 @@ function DurableHistorySync({
             thread.import(repository);
           }
         })
+        .finally(() => { if (!disposed) onSettled?.(); })
         .catch((error: unknown) => {
           if (!disposed) {
             console.error(
@@ -114,6 +118,7 @@ export function AssistantRuntimeShell({
 }) {
   const runView = useRunViewModel();
   const [historyRevision, setHistoryRevision] = useState(0);
+  const [historyReady, setHistoryReady] = useState(false);
   const [knowledgeReferences, setKnowledgeReferences] = useState<string[]>([]);
   const [knowledgeMode, setKnowledgeMode] = useState<"rag" | "wiki">("rag");
   const [loadedKnowledgeKey, setLoadedKnowledgeKey] = useState<string | null>(null);
@@ -200,6 +205,8 @@ export function AssistantRuntimeShell({
     runStreamStore.clear();
     runReuseStore.clear();
     uploadFeedbackStore.clear();
+    // The new thread is empty until its snapshot lands; keep the welcome away.
+    setHistoryReady(false);
   }, [threadId]);
   const runtime = useAgUiRuntime({
     agent,
@@ -211,7 +218,8 @@ export function AssistantRuntimeShell({
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      <DurableHistorySync revision={historyRevision} history={history} />
+      <ThreadHistoryReadyProvider value={historyReady}>
+      <DurableHistorySync revision={historyRevision} history={history} onSettled={() => setHistoryReady(true)} />
       <TaskModelProvider
         routes={modelRoutes}
         agentDefaultRouteId={agentDefaultModelRoute}
@@ -232,6 +240,7 @@ export function AssistantRuntimeShell({
           </div>
         </TaskKnowledgeProvider>
       </TaskModelProvider>
+      </ThreadHistoryReadyProvider>
     </AssistantRuntimeProvider>
   );
 }

@@ -3,6 +3,7 @@ import { useAutoLoadEarlierMessages, useThreadHistoryPagination } from "../lib/t
 import { startSteeringPolling } from "../lib/steering-poller";
 import { ConversationControl } from "./conversation-control";
 import { MessageAttachmentView } from "./message-attachment-view";
+import { useThreadHistoryReady } from "./thread-history-ready";
 
 import Link from "next/link";
 import {
@@ -925,6 +926,9 @@ function ApprovalToolBridge({
 }
 
 export function UserTaskWelcome() {
+  // While the stored conversation is loading the thread is empty by definition,
+  // so the welcome would flash and be replaced a moment later.
+  if (!useThreadHistoryReady()) return null;
   return (
     <ThreadWelcome.Root className="user-task-welcome">
       <ThreadWelcome.Center className="user-task-hero">
