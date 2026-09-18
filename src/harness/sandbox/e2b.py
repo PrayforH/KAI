@@ -444,10 +444,27 @@ class SdkE2BClient:
         return SdkE2BRemoteSandbox(sandbox)
 
     async def list_managed(self) -> list[tuple[str, Mapping[str, str]]]:
+        """List the sandboxes this platform created, with their Run markers.
+
+        The SDK's own parser requires every field of its model, while CubeSandbox
+        omits ``endAt`` for a sandbox it is still starting (observed on 174 as
+        ``KeyError: 'endAt'`` out of ``ListedSandbox.from_dict``). This listing
+        feeds the capacity gauge, warm reuse and the reaper, so a page whose shape
+        we cannot read ends that pass instead of taking all of governance down
+        with it. Ending early can only under-report: nothing is ever deleted on
+        the strength of this call alone, since reaping still requires the Run
+        markers and a liveness predicate.
+        """
+
         entries: list[tuple[str, Mapping[str, str]]] = []
         paginator = AsyncSandbox.list(api_key=self._api_key)
         while paginator.has_next and len(entries) < _LIST_SCAN_LIMIT:
-            for info in await paginator.next_items(api_key=self._api_key):
+            try:
+                page = await paginator.next_items(api_key=self._api_key)
+            except Exception:  # noqa: BLE001 - an unreadable page is not fatal
+                logger.warning("sandbox listing page could not be parsed; skipping the rest")
+                break
+            for info in page:
                 metadata = dict(info.metadata or {})
                 if _MANAGED_TENANT_KEY in metadata and _MANAGED_RUN_KEY in metadata:
                     entries.append((info.sandbox_id, metadata))

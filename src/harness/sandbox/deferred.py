@@ -16,6 +16,7 @@ from harness.sandbox.base import (
     SandboxHandle,
     SandboxIsolation,
     SandboxProvider,
+    SandboxResourceUsage,
 )
 
 
@@ -191,3 +192,24 @@ class DeferredToolSandboxProvider:
             shutil.rmtree(handle.path, ignore_errors=True)
             if lease is not None:
                 self._active_run_slots.release()
+
+    async def sandbox_logs(self, handle: SandboxHandle, limit: int = 40) -> tuple[str, ...]:
+        """Read the platform's log tail for a Run that actually reached a sandbox.
+
+        A Run that never used a tool owns no backend sandbox, and reading
+        diagnostics must never be the reason one gets created — so the lease is
+        read as it stands and an absent remote reports no logs.
+        """
+
+        lease = self._leases.get(handle.sandbox_id)
+        reader = getattr(self._backend, "sandbox_logs", None)
+        if lease is None or lease.remote is None or reader is None:
+            return ()
+        return await reader(lease.remote, limit)
+
+    async def sandbox_metrics(self, handle: SandboxHandle) -> SandboxResourceUsage | None:
+        lease = self._leases.get(handle.sandbox_id)
+        reader = getattr(self._backend, "sandbox_metrics", None)
+        if lease is None or lease.remote is None or reader is None:
+            return None
+        return await reader(lease.remote)

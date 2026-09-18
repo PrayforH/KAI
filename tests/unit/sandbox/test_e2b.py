@@ -7,7 +7,7 @@ from claude_agent_sdk import ClaudeAgentOptions
 
 from harness.core.models import Run, RunStatus
 from harness.sandbox.base import SandboxEgress, SandboxIsolation, SandboxResourceUsage
-from harness.sandbox.e2b import E2BSandboxProvider, _parse_log_payload
+from harness.sandbox.e2b import E2BSandboxProvider, SdkE2BClient, _parse_log_payload
 
 
 class FakeRemoteSession:
@@ -884,3 +884,54 @@ async def test_unreadable_data_plane_version_does_not_block_provisioning(
     provider = governed_provider(client, tmp_path)
     handle = await provider.provision(run())
     assert handle.sandbox_id == client.sandbox.id
+
+
+@pytest.mark.asyncio
+async def test_list_managed_keeps_the_entries_it_could_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CubeSandbox omits ``endAt`` while a sandbox starts, and the SDK parser raises.
+
+    That payload feeds the capacity gauge, warm reuse and the reaper, so an
+    unreadable page must end the pass rather than fail governance entirely.
+    """
+
+    class Item:
+        sandbox_id = "sbx-1"
+        metadata = {"harness.tenant": "tenant-a", "harness.run": "run-1"}
+
+    class Paginator:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.has_next = True
+
+        async def next_items(self, *, api_key: str) -> list[Item]:
+            del api_key
+            self.calls += 1
+            if self.calls == 1:
+                return [Item()]
+            raise KeyError("endAt")
+
+    monkeypatch.setattr("harness.sandbox.e2b.AsyncSandbox.list", lambda **_: Paginator())
+    client = SdkE2BClient(api_key="key")
+
+    assert await client.list_managed() == [
+        ("sbx-1", {"harness.tenant": "tenant-a", "harness.run": "run-1"})
+    ]
+
+
+@pytest.mark.asyncio
+async def test_list_managed_returns_nothing_when_the_first_page_is_unreadable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Paginator:
+        has_next = True
+
+        async def next_items(self, *, api_key: str) -> list[object]:
+            del api_key
+            raise KeyError("endAt")
+
+    monkeypatch.setattr("harness.sandbox.e2b.AsyncSandbox.list", lambda **_: Paginator())
+    client = SdkE2BClient(api_key="key")
+
+    assert await client.list_managed() == []

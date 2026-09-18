@@ -225,3 +225,84 @@ async def test_planned_remote_workspace_is_available_before_allocation(tmp_path:
         assert handle.deferred_tool_execution
     finally:
         await provider.destroy(handle)
+
+
+class LoggingSandbox(RecordingSandbox):
+    """A backend that reports its own platform log tail."""
+
+    def __init__(self, root: Path) -> None:
+        super().__init__(root)
+        self.log_reads = 0
+
+    async def sandbox_logs(self, handle: SandboxHandle, limit: int = 40) -> tuple[str, ...]:
+        del limit
+        self.log_reads += 1
+        return (f"log for {handle.sandbox_id}",)
+
+    async def sandbox_metrics(self, handle: SandboxHandle) -> object:
+        return {"sandbox_id": handle.sandbox_id}
+
+
+@pytest.mark.asyncio
+async def test_sandbox_logs_are_read_from_the_backend_once_a_tool_ran(tmp_path: Path) -> None:
+    """The deployed deferred wrapper must still expose the platform's log tail.
+
+    174 runs worker_cli_deferred, so a Run's sandbox is the wrapper's, not the
+    backend's; without this passthrough a failed Run publishes no sandbox.logs
+    event at all.
+    """
+
+    backend = LoggingSandbox(tmp_path)
+    provider = DeferredToolSandboxProvider(
+        backend,
+        provider_name="cubesandbox",
+        local_root=tmp_path,
+    )
+    handle = await provider.provision(run())
+    (handle.path / "restored.txt").write_text("session state")
+
+    # A Run that never used a tool owns no sandbox, and reading logs must not
+    # create one just to have something to report.
+    assert await provider.sandbox_logs(handle) == ()
+    assert backend.provisions == 0
+
+    await provider.execute(handle, ("python3", "-c", "print('hi')"))
+    assert (await provider.sandbox_logs(handle))[0].startswith("log for remote-")
+    assert backend.log_reads == 1
+    await provider.destroy(handle)
+
+
+@pytest.mark.asyncio
+async def test_sandbox_metrics_are_read_from_the_backend(tmp_path: Path) -> None:
+    backend = LoggingSandbox(tmp_path)
+    provider = DeferredToolSandboxProvider(
+        backend,
+        provider_name="cubesandbox",
+        local_root=tmp_path,
+    )
+    handle = await provider.provision(run())
+    (handle.path / "restored.txt").write_text("session state")
+    assert await provider.sandbox_metrics(handle) is None
+    await provider.execute(handle, ("python3", "-c", "print('hi')"))
+    assert await provider.sandbox_metrics(handle) == {"sandbox_id": "remote-run-deferred"}
+    await provider.destroy(handle)
+
+
+@pytest.mark.asyncio
+async def test_sandbox_logs_are_empty_when_the_backend_has_no_log_plane(
+    tmp_path: Path,
+) -> None:
+    """A backend without a log plane is skipped rather than failing the Run."""
+
+    backend = RecordingSandbox(tmp_path)
+    provider = DeferredToolSandboxProvider(
+        backend,
+        provider_name="daytona",
+        local_root=tmp_path,
+    )
+    handle = await provider.provision(run())
+    (handle.path / "restored.txt").write_text("session state")
+    await provider.execute(handle, ("python3", "-c", "print('hi')"))
+    assert await provider.sandbox_logs(handle) == ()
+    assert await provider.sandbox_metrics(handle) is None
+    await provider.destroy(handle)
