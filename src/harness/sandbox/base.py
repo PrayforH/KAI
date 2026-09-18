@@ -1,6 +1,7 @@
 """Sandbox lifecycle contract."""
 
 from collections.abc import Callable, Mapping, Sequence
+from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Protocol
@@ -118,6 +119,43 @@ class SandboxHandle(BaseModel):
         default=None, exclude=True, repr=False
     )
     deferred_tool_execution: bool = Field(default=False, exclude=True)
+
+
+class SandboxEgress(BaseModel):
+    """One Run's egress requirement, as the control plane declared it.
+
+    The platform derives it from what the Agent is allowed to reach; a backend
+    either enforces it or the Run is refused, because a declared egress rule
+    that nothing applies is not a weaker guarantee but a false one.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    allow_hosts: tuple[str, ...] = ()
+    deny_internet: bool = False
+
+    def is_restrictive(self) -> bool:
+        """Report whether this asks for less than unrestricted internet access."""
+
+        return self.deny_internet or bool(self.allow_hosts)
+
+
+class SandboxResourceUsage(BaseModel):
+    """One resource sample of a sandbox, when the platform can report it.
+
+    Platforms differ here: some expose per-sandbox usage, others only the
+    allocation agreed at creation. A backend that cannot sample reports nothing
+    rather than zeroes, so a missing number is never read as an idle sandbox.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    cpu_used_pct: float
+    mem_used_bytes: int
+    mem_total_bytes: int
+    disk_used_bytes: int
+    disk_total_bytes: int
+    sampled_at: datetime
 
 
 class SandboxCommandResult(BaseModel):

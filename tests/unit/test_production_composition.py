@@ -14,8 +14,11 @@ from pydantic import SecretStr
 from harness.api.app import create_app, create_configured_app
 from harness.api.dependencies import build_memory_container
 from harness.composition import (
+    _enabled_providers,
     _manifests_require_remote_cli,
     build_production_container,
+    profile_provider_name,
+    select_sandbox_provider,
 )
 from harness.config import Settings
 from harness.core.manifest import AgentManifest
@@ -31,11 +34,13 @@ from harness.storage.catalog_repository import PostgresCapabilityCatalogReposito
 from harness.storage.redis import RedisTaskQueue
 from harness.storage.repositories import PostgresEventRepository
 from harness.storage.studio_repository import PostgresAgentDraftRepository
+from harness.studio.catalog import default_capability_catalog
 from harness.studio.mcp_credential_store import (
     InMemoryMcpCredentialRepository,
     McpCredentialService,
     StoredMcpCredentialProvider,
 )
+from harness.studio.models import NetworkAccess
 from harness.studio.preflight import LivePreflightProvisioner, LivePreflightRunner
 
 
@@ -446,6 +451,104 @@ def test_production_composition_imports_in_clean_worker_process() -> None:
     assert result.returncode == 0, result.stderr
 
 
+def test_enabled_providers_keeps_the_default_and_adds_extras() -> None:
+    assert _enabled_providers(production_settings(sandbox_provider="cubesandbox")) == (
+        "cubesandbox",
+    )
+    assert _enabled_providers(
+        production_settings(sandbox_provider="cubesandbox", sandbox_extra_providers="kubernetes")
+    ) == ("cubesandbox", "kubernetes")
+    # Whitespace and a repeated name must not change what is served.
+    assert _enabled_providers(
+        production_settings(
+            sandbox_provider="cubesandbox",
+            sandbox_extra_providers=" kubernetes , e2b , cubesandbox ",
+        )
+    ) == ("cubesandbox", "kubernetes", "e2b")
+
+
+def test_enabled_providers_refuses_an_unknown_backend() -> None:
+    with pytest.raises(ValueError, match="unknown sandbox provider"):
+        _enabled_providers(
+            production_settings(sandbox_provider="cubesandbox", sandbox_extra_providers="nomad")
+        )
+
+
+def test_profile_provider_name_translates_the_gvisor_backend() -> None:
+    assert profile_provider_name("kubernetes") == "gvisor"
+    assert profile_provider_name("cubesandbox") == "cubesandbox"
+    assert profile_provider_name("daytona") == "daytona"
+
+
+def test_select_sandbox_provider_honours_a_pinned_backend() -> None:
+    enabled = {"cubesandbox": object(), "gvisor": object()}
+    assert select_sandbox_provider(pinned=None, enabled=enabled, default="cubesandbox") == (
+        "cubesandbox"
+    )
+    assert select_sandbox_provider(pinned="gvisor", enabled=enabled, default="cubesandbox") == (
+        "gvisor"
+    )
+
+
+def test_select_sandbox_provider_refuses_a_pinned_backend_that_is_not_enabled() -> None:
+    """A released Agent must not be relocated to another environment silently."""
+
+    with pytest.raises(RuntimeError, match="execution_profile_sandbox_provider_not_enabled"):
+        select_sandbox_provider(
+            pinned="gvisor", enabled={"cubesandbox": object()}, default="cubesandbox"
+        )
+
+
+def test_an_extra_provider_must_be_fully_configured() -> None:
+    """A half-configured extra backend fails startup instead of being absent."""
+
+    with pytest.raises(ValueError, match="KUBERNETES_IMAGE"):
+        build_production_container(
+            production_settings(
+                sandbox_provider="cubesandbox",
+                sandbox_extra_providers="kubernetes",
+                allow_unsafe_local_sandbox=False,
+                cubesandbox_api_url="http://cube.example:13000",
+                cubesandbox_proxy_url="http://cube.example:80",
+                cubesandbox_template="nexau-code",
+                cubesandbox_api_key=SecretStr("cube-key"),
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_container_serves_the_default_backend_with_extras_enabled() -> None:
+    container = build_production_container(
+        production_settings(
+            sandbox_provider="cubesandbox",
+            sandbox_extra_providers="e2b",
+            allow_unsafe_local_sandbox=False,
+            cubesandbox_api_url="http://cube.example:13000",
+            cubesandbox_proxy_url="http://cube.example:80",
+            cubesandbox_template="nexau-code",
+            cubesandbox_api_key=SecretStr("cube-key"),
+            e2b_api_key=SecretStr("e2b-test-key"),
+        )
+    )
+    try:
+        # The default backend is still what an unpinned Run uses, and it is the
+        # one the orchestrator falls back to.
+        assert isinstance(vars(container.worker)["_sandbox"], E2BSandboxProvider)
+    finally:
+        assert container.close is not None
+        await container.close()
+
+
+def test_only_the_enforced_profile_declares_sandbox_egress_enforcement() -> None:
+    """Enforcement is opt-in per execution profile, so one Agent can be gradated."""
+
+    profiles = {item.profile_id: item for item in default_capability_catalog().execution_profiles}
+    assert profiles["cubesandbox-egress-enforced"].egress_enforcement == "enforced"
+    assert profiles["cubesandbox-private"].egress_enforcement == "declared"
+    # The enforced profile must not claim egress levels it cannot express: an
+    # allow list cannot describe open internet access.
+    enforced = profiles["cubesandbox-egress-enforced"]
+    assert NetworkAccess.EXTERNAL not in enforced.network_access
 def test_a_profile_selects_its_own_backend() -> None:
     """Execution profiles name the backend; the global setting is only a default."""
 

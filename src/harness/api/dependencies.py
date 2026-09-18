@@ -265,6 +265,9 @@ class ApiContainer:
     skill_conversation: SkillConversationService | None = None
     sandbox_maintenance: Callable[[], Awaitable[object]] | None = None
     session_gate: object | None = None
+    # Awaited once by the Worker before it consumes tasks, so a misconfigured
+    # sandbox backend fails startup instead of failing the first Run.
+    sandbox_startup: Callable[[], Awaitable[object]] | None = None
     sandbox_leases: object | None = None
     sandbox_governance: object | None = None
     event_service: EventService | None = None

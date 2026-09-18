@@ -21,6 +21,20 @@ class Settings(BaseSettings):
         "local", "daytona", "e2b", "kubernetes", "cubesandbox", "opensandbox"
     ] = "local"
     sandbox_execution_mode: Literal["remote_cli", "worker_cli_deferred"] = "remote_cli"
+    # Additional backends this deployment serves, so an execution profile can
+    # route its Runs to one of them. HARNESS_SANDBOX_PROVIDER remains the default
+    # for Runs whose profile does not pin a backend. Every extra backend must be
+    # fully configured: a half-configured one fails startup rather than being
+    # silently unavailable. A profile naming a backend that is not enabled is
+    # refused instead of falling back to the default.
+    sandbox_extra_providers: str = ""
+    # "declared" keeps the historical behaviour: profiles state a network level
+    # but no backend applies it. "enforced" derives a host allow list per Run and
+    # refuses the Run when the backend cannot apply it.
+    sandbox_egress_enforcement: Literal["declared", "enforced"] = "declared"
+    # Operator escape hatch for destinations the Agent declaration cannot express
+    # (package mirrors an Agent's Bash step installs from, for example).
+    sandbox_egress_extra_hosts: str = ""
     # `report` records the Session trust floor in the run events and lets the
     # Run proceed; `enforce` refuses a Run whose backend cannot reach it.
     sandbox_trust_floor_mode: Literal["report", "enforce"] = "report"
@@ -106,7 +120,7 @@ class Settings(BaseSettings):
     daytona_target: str = ""
     daytona_snapshot: str = ""
     daytona_remote_workspace_root: str = "/home/daytona/harness"
-# Empty means "follow the CLI bundled with claude-agent-sdk"; set a value
+    # Empty means "follow the CLI bundled with claude-agent-sdk"; set a value
     # only to pin the remote CLI explicitly.
     daytona_claude_cli_version: str = ""
     daytona_claude_cli_path: str = "/home/daytona/.local/bin/claude"
@@ -130,7 +144,7 @@ class Settings(BaseSettings):
     e2b_template: str = "base"
     e2b_timeout_seconds: int = Field(default=3600, ge=60, le=86_400)
     e2b_remote_workspace_root: str = "/home/user/harness"
-# Empty means "follow the CLI bundled with claude-agent-sdk"; set a value
+    # Empty means "follow the CLI bundled with claude-agent-sdk"; set a value
     # only to pin the remote CLI explicitly.
     e2b_claude_cli_version: str = ""
     e2b_claude_cli_path: str = "/home/user/.local/bin/claude"
@@ -144,10 +158,28 @@ class Settings(BaseSettings):
     cubesandbox_allow_internet_access: bool = True
     cubesandbox_remote_workspace_root: str = "/home/user/harness"
     cubesandbox_claude_cli_path: str = "/home/user/.local/bin/claude"
-# Empty means "follow the CLI bundled with claude-agent-sdk"; set a value
+    # Empty means "follow the CLI bundled with claude-agent-sdk"; set a value
     # only to pin the remote CLI explicitly.
     cubesandbox_claude_cli_version: str = ""
     cubesandbox_codex_cli_path: str = "/home/user/.local/bin/codex"
+    # What happens to a session's sandbox when a Run finishes:
+    #   destroy   - delete it (default; strongest isolation between Runs)
+    #   keep_warm - leave the container running and reuse it (filesystem and
+    #               running processes stay live, at the cost of idle host resources)
+    #   pause     - snapshot the live state and release the host, so a later Run
+    #               resumes the same processes at no idle cost
+    # The last two trade isolation between Runs of one session for latency and
+    # are therefore opted into.
+    cubesandbox_idle_policy: Literal["destroy", "keep_warm", "pause"] = "destroy"
+    # JSON object mapping a mount path to a pre-existing platform volume, for
+    # example a "team-data" volume mounted at "/data". Volumes are provisioned
+    # on the CubeSandbox side;
+    # a name that does not exist there fails the create rather than mounting an
+    # empty directory.
+    cubesandbox_volume_mounts: str = ""
+    # Fail a deployment whose template is missing or not READY, instead of
+    # discovering it when the first Run tries to start.
+    cubesandbox_validate_template: bool = False
     opensandbox_api_key: SecretStr = SecretStr("")
     opensandbox_api_url: str = ""
     opensandbox_image: str = "python:3.12-slim"
@@ -157,11 +189,15 @@ class Settings(BaseSettings):
     opensandbox_cpu: str = "1000m"
     opensandbox_memory: str = "2048Mi"
     opensandbox_request_timeout_seconds: int = Field(default=30, ge=1, le=600)
+    # A first use of an uncached image blocks readiness on the registry pull;
+    # 54.7s and 80.8s were measured on the 174-side deployment, so 90s left
+    # almost no margin before reporting a false readiness failure.
+    opensandbox_ready_timeout_seconds: int = Field(default=180, ge=10, le=900)
     opensandbox_ready_timeout_seconds: int = Field(default=90, ge=10, le=900)
     # File transfers carry CLI binaries and workspace artifacts, so they get
     # their own budget instead of the short control-plane request timeout.
     opensandbox_transfer_timeout_seconds: int = Field(default=600, ge=30, le=3600)
-# Empty means "follow the CLI bundled with claude-agent-sdk"; set a value
+    # Empty means "follow the CLI bundled with claude-agent-sdk"; set a value
     # only to pin the remote CLI explicitly.
     opensandbox_claude_cli_version: str = ""
     opensandbox_claude_cli_path: str = "/root/.local/bin/claude"
@@ -174,7 +210,7 @@ class Settings(BaseSettings):
     kubernetes_kubeconfig: str = ""
     kubernetes_context: str = ""
     kubernetes_remote_workspace: str = "/workspace"
-# Empty means "follow the CLI bundled with claude-agent-sdk"; set a value
+    # Empty means "follow the CLI bundled with claude-agent-sdk"; set a value
     # only to pin the remote CLI explicitly.
     kubernetes_claude_cli_version: str = ""
     kubernetes_claude_cli_path: str = "/usr/local/bin/claude"

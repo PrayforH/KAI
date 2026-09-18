@@ -12,9 +12,11 @@ from pathlib import Path
 from harness.core.models import Run
 from harness.sandbox.base import (
     SandboxCommandResult,
+    SandboxEgress,
     SandboxHandle,
     SandboxIsolation,
     SandboxProvider,
+    SandboxResourceUsage,
 )
 
 
@@ -24,6 +26,13 @@ class _DeferredLease:
     remote: SandboxHandle | None = None
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     workspace_may_be_dirty: bool = False
+    # Kept on the lease, not the provider: the provider is shared by every Run
+    # while each Run declares its own egress requirement.
+    egress: SandboxEgress | None = None
+
+
+class UnsupportedEgressError(RuntimeError):
+    """Raised when a Run's egress requirement cannot be enforced by its backend."""
 
 
 class DeferredToolSandboxProvider:
@@ -57,6 +66,17 @@ class DeferredToolSandboxProvider:
         self._leases: dict[str, _DeferredLease] = {}
 
     async def provision(self, run: Run) -> SandboxHandle:
+        return await self.provision_with_egress(run, None)
+
+    async def provision_with_egress(
+        self, run: Run, egress: SandboxEgress | None
+    ) -> SandboxHandle:
+        """Provision carrying the Run's egress requirement to the backend.
+
+        The sandbox is only acquired on first tool use, so the policy has to
+        travel with the lease until then.
+        """
+
         await self._active_run_slots.acquire()
         try:
             path = Path(tempfile.mkdtemp(prefix=f"{run.run_id}-deferred-", dir=self._local_root))
@@ -64,7 +84,7 @@ class DeferredToolSandboxProvider:
             self._active_run_slots.release()
             raise
         sandbox_id = path.name
-        self._leases[sandbox_id] = _DeferredLease(run=run)
+        self._leases[sandbox_id] = _DeferredLease(run=run, egress=egress)
         return SandboxHandle(
             sandbox_id=sandbox_id,
             path=path,
@@ -75,6 +95,19 @@ class DeferredToolSandboxProvider:
             if self._remote_workspace_for
             else None,
         )
+
+    async def _provision_backend(self, lease: _DeferredLease) -> SandboxHandle:
+        """Hand the lease's egress requirement to the backend that can apply it."""
+
+        applies = getattr(self._backend, "provision_with_egress", None)
+        if lease.egress is None or not lease.egress.is_restrictive():
+            return await self._backend.provision(lease.run)
+        if applies is None:
+            raise UnsupportedEgressError(
+                f"{self._provider_name} cannot enforce a sandbox egress policy; "
+                "refusing rather than running with unrestricted egress"
+            )
+        return await applies(lease.run, lease.egress)
 
     async def prepare(self, handle: SandboxHandle) -> None:
         self._lease(handle)
@@ -94,7 +127,7 @@ class DeferredToolSandboxProvider:
                 return lease.remote
             provisioned: SandboxHandle | None = None
             try:
-                provisioned = await self._backend.provision(lease.run)
+                provisioned = await self._provision_backend(lease)
                 original_path = provisioned.path
                 remote = provisioned.model_copy(
                     update={"path": handle.path, "deferred_tool_execution": True}
@@ -159,3 +192,24 @@ class DeferredToolSandboxProvider:
             shutil.rmtree(handle.path, ignore_errors=True)
             if lease is not None:
                 self._active_run_slots.release()
+
+    async def sandbox_logs(self, handle: SandboxHandle, limit: int = 40) -> tuple[str, ...]:
+        """Read the platform's log tail for a Run that actually reached a sandbox.
+
+        A Run that never used a tool owns no backend sandbox, and reading
+        diagnostics must never be the reason one gets created — so the lease is
+        read as it stands and an absent remote reports no logs.
+        """
+
+        lease = self._leases.get(handle.sandbox_id)
+        reader = getattr(self._backend, "sandbox_logs", None)
+        if lease is None or lease.remote is None or reader is None:
+            return ()
+        return await reader(lease.remote, limit)
+
+    async def sandbox_metrics(self, handle: SandboxHandle) -> SandboxResourceUsage | None:
+        lease = self._leases.get(handle.sandbox_id)
+        reader = getattr(self._backend, "sandbox_metrics", None)
+        if lease is None or lease.remote is None or reader is None:
+            return None
+        return await reader(lease.remote)

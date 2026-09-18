@@ -306,6 +306,32 @@ def default_capability_catalog() -> CapabilityCatalog:
             ),
             ExecutionProfileMetadata.model_validate(
                 {
+                    "profileId": "cubesandbox-egress-enforced",
+                    "label": "CubeSandbox 沙箱（强制出口白名单）",
+                    "description": (
+                        "在 CubeSandbox 上运行，并把该 Agent 声明的出口要求落到实例："
+                        "沙箱只能访问它实际持有的 MCP 主机，其余出口被拒绝。"
+                    ),
+                    "sandboxProvider": "cubesandbox",
+                    "minimumEnforcement": "delegated",
+                    "networkAccess": (
+                        NetworkAccess.NONE,
+                        NetworkAccess.INTERNAL,
+                    ),
+                    "egressEnforcement": "enforced",
+                    "risk": CapabilityRisk.MEDIUM,
+                    "cpuMillis": 2000,
+                    "memoryMiB": 4096,
+                    "diskMiB": 20480,
+                    "ttlSeconds": 3600,
+                    "networkPolicyId": "registered-mcp-only",
+                    "allowedMcpReferences": (),
+                    "providerConfigReference": "cubesandbox-managed",
+                    "productionAllowed": True,
+                }
+            ),
+            ExecutionProfileMetadata.model_validate(
+                {
                     "profileId": "opensandbox-gvisor",
                     "label": "OpenSandbox gVisor 沙箱",
                     "description": (

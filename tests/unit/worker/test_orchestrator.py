@@ -471,6 +471,19 @@ class DomainConflictFailureRuntime(FakeRuntime):
         yield
 
 
+class LogPlaneSandboxProvider(LocalSandboxProvider):
+    """A backend that can also report its own sandbox log."""
+
+    def __init__(self, root: Path) -> None:
+        super().__init__(root=root)
+        self.log_reads: list[str] = []
+
+    async def sandbox_logs(self, handle: SandboxHandle, limit: int = 40) -> tuple[str, ...]:
+        del limit
+        self.log_reads.append(handle.sandbox_id)
+        return ("t1 execd ready", "t2 policy loaded")
+
+
 class ContainerSandboxProvider(LocalSandboxProvider):
     async def provision(self, run: Run) -> SandboxHandle:
         handle = await super().provision(run)
@@ -2054,6 +2067,42 @@ async def test_recovered_provisioning_run_is_reclaimed_and_completed(
         "message.completed",
         "run.succeeded",
     ]
+
+
+@pytest.mark.asyncio
+async def test_failed_run_records_the_platform_sandbox_log(tmp_path: Path) -> None:
+    """A failed Run carries the sandbox's own log, captured before teardown."""
+
+    sandbox = LogPlaneSandboxProvider(tmp_path)
+    orchestrator, _runtime, _runs, event_repository = await arrange(
+        tmp_path, fail_runtime=True, sandbox_override=sandbox
+    )
+
+    result = await orchestrator.execute("tenant-a", "run-1")
+
+    assert result.status is RunStatus.FAILED
+    # Read exactly once, before the sandbox was destroyed.
+    assert len(sandbox.log_reads) == 1
+    events = await event_repository.list_after("tenant-a", "run-1", 0)
+    logs = [event for event in events if event.type == "sandbox.logs"]
+    assert len(logs) == 1
+    assert logs[0].payload["provider"] == "local"
+    assert logs[0].payload["lines"] == ["t1 execd ready", "t2 policy loaded"]
+
+
+@pytest.mark.asyncio
+async def test_successful_run_records_no_sandbox_log(tmp_path: Path) -> None:
+    sandbox = LogPlaneSandboxProvider(tmp_path)
+    orchestrator, _runtime, _runs, event_repository = await arrange(
+        tmp_path, sandbox_override=sandbox
+    )
+
+    result = await orchestrator.execute("tenant-a", "run-1")
+
+    assert result.status is RunStatus.SUCCEEDED
+    assert sandbox.log_reads == []
+    events = await event_repository.list_after("tenant-a", "run-1", 0)
+    assert [event.type for event in events if event.type == "sandbox.logs"] == []
 
 
 @pytest.mark.asyncio

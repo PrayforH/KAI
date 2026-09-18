@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import shlex
 import shutil
@@ -53,6 +54,8 @@ from harness.sandbox.claude_cli import (
 )
 from harness.sandbox.governance import SandboxInstance
 from harness.sandbox.opensandbox_session import OpenSandboxPtySession
+
+logger = logging.getLogger(__name__)
 
 EXECD_PORT = 44_772
 _SUPPORTED_SANDBOX_STATES = frozenset({"Running", "Pending"})
@@ -534,8 +537,23 @@ class OpenSandboxClient:
             execd_base=f"/v1/sandboxes/{sandbox_id}/proxy/{EXECD_PORT}",
             transfer_timeout_seconds=self._transfer_timeout_seconds,
         )
-        await self._wait_until_ready(remote)
+        try:
+            await self._wait_until_ready(remote)
+        except BaseException:
+            # The sandbox exists from the moment create returns, so a readiness
+            # failure — a slow image pull is the common one — would otherwise
+            # leave an instance nothing tracks or reaps.
+            await self._discard(sandbox_id)
+            raise
         return remote
+
+    async def _discard(self, sandbox_id: str) -> None:
+        """Best-effort teardown of a sandbox this client created."""
+
+        try:
+            await self.http.delete(f"/v1/sandboxes/{sandbox_id}")
+        except Exception:  # noqa: BLE001 - teardown must not mask the cause
+            logger.warning("OpenSandbox failed to discard sandbox %s", sandbox_id)
 
     async def _wait_until_ready(self, remote: OpenSandboxRemoteSandbox) -> None:
         """Wait for the sandbox to run and execd to answer.

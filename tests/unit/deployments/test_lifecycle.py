@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
@@ -8,16 +9,25 @@ from pydantic import ValidationError
 from harness.api.dependencies import ApiContainer, build_memory_container
 from harness.config import Settings
 from harness.core.errors import ConflictError
+from harness.core.manifest import (
+    AgentManifest,
+    AgentManifestSnapshot,
+    ToolDirectoryEntry,
+    ToolDirectorySnapshot,
+)
+from harness.core.models import AgentVersion, AgentVersionStatus
 from harness.deployments.models import (
     CredentialScope,
     DeploymentSnapshot,
     DeploymentStatus,
     EnvironmentName,
     EnvironmentQuotaBoundary,
+    EnvironmentResourcePolicy,
     PromoteRequest,
     ReplaceEnvironmentPolicyRequest,
     RollbackRequest,
 )
+from harness.deployments.service import DeploymentService
 from harness.knowledge.models import (
     CreateKnowledgeBaseRequest,
     CreateKnowledgeSourceRequest,
@@ -29,9 +39,12 @@ from harness.quota.repositories import QuotaExceededError
 from harness.studio.models import (
     AgentDraft,
     AgentTemplate,
+    CapabilityCatalog,
+    CapabilityCatalogRecord,
     CapabilityRisk,
     CreateAgentDraftRequest,
     ExecutionProfileMetadata,
+    McpCapability,
     NetworkAccess,
     ReplaceAgentDraftRequest,
     ReplaceCapabilityCatalogRequest,
@@ -461,7 +474,7 @@ async def test_environment_allows_only_registered_knowledge_and_sessions_pin_sna
 
 
 @pytest.mark.asyncio
-async def test_promotion_rejects_agent_built_from_a_stale_tool_catalog() -> None:
+async def test_promotion_survives_a_catalog_revision_bump() -> None:
     container = build_memory_container()
     draft, first_version, _ = await published_versions(
         container,
@@ -485,17 +498,18 @@ async def test_promotion_rejects_agent_built_from_a_stale_tool_catalog() -> None
 
     assert updated_catalog.revision == published_catalog.revision + 1
     assert environment.resource_policy.capability_catalog_revision == updated_catalog.revision
-    with pytest.raises(ConflictError, match="tool directory catalog revision"):
-        await container.deployments.promote(
-            tenant_id=TENANT,
-            user_id=USER,
-            request=promotion(
-                agent_name=draft.spec.name,
-                version=first_version,
-                revision=environment.revision,
-                key="stale-tool-catalog-release",
-            ),
-        )
+    # The catalog is rewritten whole by platform jobs that only add to it, so an
+    # Agent published before such a rewrite must still be deployable.
+    snapshot = await promote_and_drain(
+        container,
+        promotion(
+            agent_name=draft.spec.name,
+            version=first_version,
+            revision=environment.revision,
+            key="stale-tool-catalog-release",
+        ),
+    )
+    assert snapshot.agent_version == first_version
 
 
 @pytest.mark.asyncio
@@ -734,4 +748,125 @@ async def test_profile_revision_requires_environment_approval_and_local_is_rejec
             tenant_id=TENANT,
             user_id=USER,
             request=unsafe,
+        )
+
+
+def _tool_catalog(catalog_revision: int, *, mcp_enabled: bool) -> CapabilityCatalogRecord:
+    """A catalog carrying one MCP resource, optionally disabled."""
+
+    return CapabilityCatalogRecord(
+        tenantId=TENANT,
+        revision=catalog_revision,
+        catalog=CapabilityCatalog(
+            modelRoutes=(),
+            builtinTools=(),
+            mcpServers=(
+                McpCapability(
+                    reference="team-search",
+                    serverName="team-search",
+                    label="Team search",
+                    description="Read-only search over team sources.",
+                    endpointUrl="http://team-search:8000/mcp",
+                    tools=("mcp__team-search__search",),
+                    risk=CapabilityRisk.MEDIUM,
+                    networkAccess=NetworkAccess.INTERNAL,
+                    sendsUserData=False,
+                    executionLocation="external-mcp",
+                    enabled=mcp_enabled,
+                ),
+            ),
+            policies=(),
+            executionProfiles=(),
+            templates=(),
+        ),
+        updatedBy="test",
+        updatedAt=datetime.now(UTC),
+    )
+
+
+def _version_with_tool_directory(reference: str, catalog_revision: int) -> AgentVersion:
+    manifest = AgentManifest.model_validate(
+        {
+            "apiVersion": "harness/v1alpha1",
+            "kind": "Agent",
+            "metadata": {"name": "catalog-agent", "version": "1.0.0"},
+            "spec": {
+                "runtime": "claude-agent-sdk",
+                "model": {"route": "deepseek-v4-flash", "model": "deepseek-flash"},
+                "prompt": {"system": "prompts/system.md"},
+                "tools": [{"mcp": reference}],
+                "permissions": {"policy": "default"},
+            },
+        }
+    )
+    snapshot = AgentManifestSnapshot(
+        manifest=manifest,
+        system_prompt="system",
+        content_hash="a" * 64,
+        tool_directory=ToolDirectorySnapshot.create(
+            catalog_revision=catalog_revision,
+            exposure_mode="eager",
+            entries=(
+                ToolDirectoryEntry(
+                    name="mcp__team-search__search",
+                    source="mcp",
+                    logicalReference=reference,
+                    description="Search team sources.",
+                    risk="medium",
+                    resultTrust="sensitive",
+                ),
+            ),
+        ),
+    )
+    return AgentVersion(
+        tenant_id=TENANT,
+        owner_user_id=USER,
+        name=manifest.metadata.name,
+        version=manifest.metadata.version,
+        status=AgentVersionStatus.PUBLISHED,
+        manifest_hash="c" * 64,
+        snapshot=snapshot.model_dump(mode="json", by_alias=True),
+        created_at=datetime.now(UTC),
+    )
+
+
+def _policy(catalog_revision: int) -> EnvironmentResourcePolicy:
+    return EnvironmentResourcePolicy(
+        executionProfileId="isolated-default",
+        executionProfileVersion=1,
+        capabilityCatalogRevision=catalog_revision,
+        allowedModelRoutes=("deepseek-v4-flash",),
+        allowedMcpReferences=("team-search",),
+        allowedKnowledgeReferences=(),
+    )
+
+
+def test_agent_tool_directory_is_resolved_by_content_not_by_revision() -> None:
+    """A published version stays deployable after the catalog moves on.
+
+    The revision an Agent was resolved at is immutable, while the catalog is
+    rewritten whole by platform jobs, so comparing the two would strand every
+    published version. What must hold is that the tools it shipped still exist.
+    """
+
+    version = _version_with_tool_directory("team-search", catalog_revision=7)
+    policy = _policy(catalog_revision=7)
+
+    # Same catalog content, different revision: accepted.
+    DeploymentService._validate_agent_policy(
+        version,
+        policy,
+        catalog=_tool_catalog(9, mcp_enabled=True),
+        execution_profile="isolated-default",
+        execution_profile_version=1,
+    )
+
+    # The resource the Agent shipped is gone: refused, naming it.
+    with pytest.raises(ConflictError, match="references unavailable MCP resources: team-search"):
+        DeploymentService._validate_agent_policy(
+            version,
+            policy,
+            catalog=_tool_catalog(9, mcp_enabled=False),
+            execution_profile="isolated-default",
+            execution_profile_version=1,
         )

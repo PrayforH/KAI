@@ -348,6 +348,72 @@ async def test_client_refuses_a_failed_sandbox() -> None:
 
 
 @pytest.mark.asyncio
+async def test_client_discards_a_sandbox_that_never_became_ready() -> None:
+    """A readiness failure must not leave an instance nothing tracks or reaps."""
+
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(f"{request.method} {request.url.path}")
+        if request.method == "POST":
+            return httpx.Response(202, json={"id": "os-3", "status": {"state": "Pending"}})
+        if request.method == "DELETE":
+            return httpx.Response(204)
+        return httpx.Response(200, json={"id": "os-3", "status": {"state": "Failed"}})
+
+    client = OpenSandboxClient(
+        api_url="http://sandbox.example",
+        api_key="key",
+        transport=_transport(handler),
+        ready_timeout_seconds=10,
+    )
+    with pytest.raises(RuntimeError, match="became Failed"):
+        await client.create(
+            image="python:3.12-slim",
+            timeout=600,
+            entrypoint=["tail", "-f", "/dev/null"],
+            resource_limits={},
+            metadata={},
+        )
+    assert "DELETE /v1/sandboxes/os-3" in seen
+    await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_client_discards_when_execd_cannot_be_reached() -> None:
+    """An unreachable command plane is a provisioning failure, not a leak."""
+
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(f"{request.method} {request.url.path}")
+        if request.method == "POST":
+            return httpx.Response(202, json={"id": "os-4", "status": {"state": "Pending"}})
+        if request.method == "DELETE":
+            return httpx.Response(204)
+        if request.url.path.endswith("/ping"):
+            raise httpx.ConnectError("execd unreachable")
+        return httpx.Response(200, json={"id": "os-4", "status": {"state": "Running"}})
+
+    client = OpenSandboxClient(
+        api_url="http://sandbox.example",
+        api_key="key",
+        transport=_transport(handler),
+        ready_timeout_seconds=10,
+    )
+    with pytest.raises(httpx.ConnectError):
+        await client.create(
+            image="python:3.12-slim",
+            timeout=600,
+            entrypoint=["tail", "-f", "/dev/null"],
+            resource_limits={},
+            metadata={},
+        )
+    assert "DELETE /v1/sandboxes/os-4" in seen
+    await client.aclose()
+
+
+@pytest.mark.asyncio
 async def test_remote_sandbox_speaks_the_exec_document_protocol() -> None:
     recorded: list[httpx.Request] = []
 

@@ -1,7 +1,7 @@
 """Production composition root using PostgreSQL, Redis, MinIO and Claude SDK."""
 
 import json
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -35,7 +35,7 @@ from harness.auth.service import AuthService, OAuthProviderConfig
 from harness.config import Settings
 from harness.context.checkpoint import ContextCheckpointService
 from harness.context.service import ContextService
-from harness.core.errors import SandboxGovernanceError
+from harness.core.errors import NotFoundError, SandboxGovernanceError
 from harness.core.manifest import AgentManifest, AgentManifestSnapshot
 from harness.core.models import ModelCompatibility, RunStatus, Session
 from harness.core.ports import ArtifactStore, TaskQueue
@@ -105,8 +105,10 @@ from harness.runtime.registry_runtime import RegistryClaudeRuntime
 from harness.runtime.sdk_tool_gate import SdkToolGate
 from harness.runtime.session_store import PostgresSessionStore
 from harness.sandbox.base import (
+    SandboxEgress,
     SandboxIsolation,
     SandboxProvider,
+    provider_meets_enforcement_floor,
     sandbox_enforcement,
     sandbox_enforcement_rank,
     trust_enforcement_floor,
@@ -114,7 +116,8 @@ from harness.sandbox.base import (
 from harness.sandbox.cubesandbox import build_cubesandbox_provider
 from harness.sandbox.daytona import DaytonaSandboxProvider, SdkDaytonaClient
 from harness.sandbox.deferred import DeferredToolSandboxProvider
-from harness.sandbox.e2b import E2BSandboxProvider, SdkE2BClient
+from harness.sandbox.e2b import E2BSandboxProvider, RunLiveness, SdkE2BClient
+from harness.sandbox.egress import EgressScopedSandbox, sandbox_egress_policy
 from harness.sandbox.governance import SandboxGovernanceService
 from harness.sandbox.kubernetes import (
     KubectlKubernetesClient,
@@ -275,6 +278,64 @@ def _deployment_model_routes(settings: Settings) -> tuple[CcSwitchClaudeConfig, 
     return tuple(routes)
 
 
+# Every backend a deployment can name in configuration, and how execution
+# profiles refer to it. The names differ for one backend: a profile calls a
+# per-Run gVisor Pod "gvisor" while the setting that selects it is "kubernetes",
+# so routing has to translate between the two.
+_SANDBOX_PROVIDER_NAMES = frozenset(
+    {"local", "daytona", "e2b", "kubernetes", "cubesandbox", "opensandbox"}
+)
+_PROFILE_PROVIDER_NAMES = {"kubernetes": "gvisor"}
+
+
+def profile_provider_name(configured: str) -> str:
+    """Name a backend the way execution profiles refer to it."""
+
+    return _PROFILE_PROVIDER_NAMES.get(configured, configured)
+
+
+def _enabled_providers(settings: Settings) -> tuple[str, ...]:
+    """Every backend this deployment serves, default first.
+
+    The default stays ``HARNESS_SANDBOX_PROVIDER``; ``HARNESS_SANDBOX_EXTRA_PROVIDERS``
+    adds the ones execution profiles may additionally route to. A duplicate or
+    empty entry is a configuration error rather than something to tolerate.
+    """
+
+    names = [settings.sandbox_provider]
+    for raw in settings.sandbox_extra_providers.split(","):
+        name = raw.strip()
+        if not name:
+            continue
+        if name not in _SANDBOX_PROVIDER_NAMES:
+            raise ValueError(f"unknown sandbox provider in HARNESS_SANDBOX_EXTRA_PROVIDERS: {name}")
+        if name not in names:
+            names.append(name)
+    return tuple(names)
+
+
+def select_sandbox_provider(
+    *,
+    pinned: str | None,
+    enabled: Mapping[str, SandboxProvider],
+    default: str,
+) -> str:
+    """Decide which backend serves a Run.
+
+    A published deployment pins its backend through its execution profile, so a
+    pinned name selects that backend even when the deployment's default has
+    changed since. A pinned backend this deployment no longer serves is refused
+    rather than served by the default: silently relocating a released Agent to
+    another environment is exactly what the pin exists to prevent.
+    """
+
+    if pinned is None:
+        return default
+    if pinned not in enabled:
+        raise RuntimeError("execution_profile_sandbox_provider_not_enabled")
+    return pinned
+
+
 # Execution profiles name the hardened tier "gvisor"; the settings that build
 # that backend call it "kubernetes".
 _PROVIDER_SETTINGS_ID: dict[str, str] = {"gvisor": "kubernetes"}
@@ -362,6 +423,8 @@ def _sandbox_for_provider(settings: Settings, provider: str) -> SandboxProvider:
             max_collect_bytes=settings.workspace_archive_max_bytes,
             max_collect_members=settings.workspace_archive_max_members,
         )
+    if provider != "daytona":
+        raise ValueError(f"unknown sandbox provider: {provider}")
     api_key = settings.daytona_api_key.get_secret_value()
     if not api_key:
         raise ValueError("HARNESS_DAYTONA_API_KEY is required for Daytona")
@@ -441,6 +504,24 @@ def _runtime_sandbox(
     )
 
 
+def sandbox_run_liveness(runs: RunService) -> RunLiveness:
+    """Report whether a Run still needs the sandbox it was given.
+
+    A backend can see its own instances but not Run state, so reaping asks the
+    control plane. A Run that has not reached a terminal status is still active
+    — including one whose Worker is merely slow — and is never reaped.
+    """
+
+    async def still_active(tenant_id: str, run_id: str) -> bool:
+        try:
+            run = await runs.get(tenant_id, run_id)
+        except NotFoundError:
+            return False
+        return not run.status.is_terminal
+
+    return still_active
+
+
 def _manifests_require_remote_cli(
     manifests: tuple[AgentManifest, ...],
     *,
@@ -478,19 +559,35 @@ def build_production_container(
         | None
     ) = None
     preflight_sandbox: SandboxProvider | None = None
-    sandbox_maintenance: Callable[[], Awaitable[object]] | None = None
+    # Only assigned when execution is enabled; the governance binding below
+    # runs in both branches, so it reads this through an isinstance check.
+    sandbox_backend: SandboxProvider | None = None
+    sandbox_startup: Callable[[], Awaitable[object]] | None = None
+    # One reaper per enabled backend; empty when execution is disabled. The
+    # backend maps are filled only in that branch but read by governance below,
+    # which runs in both.
+    sandbox_reapers: list[tuple[str, Callable[[], Awaitable[object]]]] = []
+    sandbox_backends: dict[str, SandboxProvider] = {}
+    sandbox_runtimes: dict[str, SandboxProvider] = {}
+    default_name = profile_provider_name(settings.sandbox_provider)
     credential_broker: InMemoryCredentialBroker | None = None
     # Production model routes and credentials are tenant control-plane data.
     # Environment-backed gateways remain supported by the local/dev composer,
     # but are deliberately ignored by the production container.
     if execution_enabled:
-        sandbox_backend = _sandbox(settings)
+        # Every backend this deployment serves, keyed the way execution profiles
+        # name them. The configured default stays first and is what Runs without
+        # a pinned profile use, so a deployment that sets one provider behaves
+        # exactly as before.
+        for configured in _enabled_providers(settings):
+            built = _sandbox_for_provider(settings, configured)
+            sandbox_backends[profile_provider_name(configured)] = built
+            sandbox_runtimes[profile_provider_name(configured)] = _runtime_sandbox(
+                settings, built, provider=configured
+            )
+        sandbox_backend = sandbox_backends[default_name]
         preflight_sandbox = sandbox_backend
-        if isinstance(sandbox_backend, KubernetesSandboxProvider):
-            sandbox_maintenance = sandbox_backend.reap_expired
-        elif isinstance(sandbox_backend, DaytonaSandboxProvider):
-            sandbox_maintenance = sandbox_backend.reap_expired
-        sandbox = _runtime_sandbox(settings, sandbox_backend)
+        sandbox = sandbox_runtimes[default_name]
         references_raw = json.loads(settings.mcp_secret_references_json)
         secrets_raw = json.loads(settings.mcp_server_secrets_json.get_secret_value())
         if not isinstance(references_raw, dict) or not isinstance(secrets_raw, dict):
@@ -843,6 +940,26 @@ def build_production_container(
         quota_plan_resolver=run_quota_plan,
         cancellation_wakeup=cancellation_wakeup,
     )
+    # Governance is per backend: every enabled backend is reaped and validated on
+    # its own, so adding one to the routing table cannot leave it unmanaged.
+    liveness = sandbox_run_liveness(run_service)
+    sandbox_reapers: list[tuple[str, Callable[[], Awaitable[object]]]] = []
+    for backend_name, backend in sandbox_backends.items():
+        if isinstance(backend, E2BSandboxProvider):
+            # Binding also opts the backend into reaping: without a liveness
+            # predicate it deletes nothing.
+            backend.bind_run_liveness(liveness)
+        if isinstance(
+            backend, (E2BSandboxProvider, KubernetesSandboxProvider, DaytonaSandboxProvider)
+        ):
+            sandbox_reapers.append((backend_name, backend.reap_expired))
+        validator = getattr(backend, "validate_template", None)
+        if (
+            validator is not None
+            and settings.cubesandbox_validate_template
+            and isinstance(backend, E2BSandboxProvider)
+        ):
+            sandbox_startup = validator
     trigger_service = AgentTriggerService(
         trigger_repository,
         sessions=session_service,
@@ -1032,9 +1149,11 @@ def build_production_container(
     sandbox_resolver: SandboxResolver | None = None
     if execution_enabled:
         assert execution_config is not None
+        # ``runtime_sandbox`` is the default backend's runtime and stays the
+        # orchestrator's fallback; per-Run routing below picks from the registry.
         (
             runtime_sandbox,
-            runtime_sandbox_backend,
+            _default_sandbox_backend,
             credential_provider,
             credential_broker,
         ) = execution_config
@@ -1110,39 +1229,25 @@ def build_production_container(
         model_probe = ControlPlaneModelPreflightProbe(model_configurations)
         mcp_probe = StreamableHttpMcpProbe(tool_resolver)
 
-        resolved_backends: dict[str, tuple[SandboxProvider, SandboxProvider]] = {
-            settings.sandbox_provider: (runtime_sandbox, runtime_sandbox_backend)
-        }
-
         def backends_for(provider_id: str) -> tuple[SandboxProvider, SandboxProvider]:
             """The (runtime, concrete) backend pair for one execution profile.
 
-            The pair is built once per provider and cached, so a profile can name
-            any backend the deployment has credentials for without that backend
-            being the global default.
+            Every enabled backend was built and validated at startup and the
+            resolver only selects from those, so this is a lookup rather than a
+            second place that could construct a differently configured backend.
             """
 
-            cached = resolved_backends.get(provider_id)
-            if cached is None:
-                concrete = _sandbox_for_provider(settings, provider_id)
-                cached = (
-                    _runtime_sandbox(
-                        settings,
-                        concrete,
-                        provider=_PROVIDER_SETTINGS_ID.get(provider_id, provider_id),
-                    ),
-                    concrete,
-                )
-                resolved_backends[provider_id] = cached
-            return cached
+            return sandbox_runtimes[provider_id], sandbox_backends[provider_id]
 
         async def resolve_runtime_sandbox(tenant_id: str, session: Session) -> SandboxProvider:
             # A published snapshot decides where its Runs execute: the profile it
-            # froze names the backend. Without a snapshot the deployment's single
-            # setting decides, which is how every session ran before profiles
-            # carried a provider.
-            provider_id = settings.sandbox_provider
+            # froze names the backend, and a pin this deployment does not serve is
+            # refused rather than served by the default. Without a snapshot the
+            # deployment's single setting decides, which is how every session ran
+            # before profiles carried a provider.
+            provider_id = default_name
             profile = None
+            pinned_egress_enforcement = False
             if session.deployment_snapshot_id is not None:
                 snapshot = await deployment_repository.get_snapshot(
                     tenant_id, session.deployment_snapshot_id
@@ -1158,7 +1263,18 @@ def build_production_container(
                 )
                 if profile is None:
                     raise RuntimeError("deployment_execution_profile_unavailable")
-                provider_id = profile.sandbox_provider
+                provider_id = select_sandbox_provider(
+                    pinned=profile.sandbox_provider,
+                    enabled=sandbox_backends,
+                    default=default_name,
+                )
+                pinned_egress_enforcement = profile.egress_enforcement == "enforced"
+                # The profile declares the weakest enforcement it accepts; a Run
+                # is refused rather than silently executing weaker than declared.
+                if not provider_meets_enforcement_floor(
+                    provider_id, profile.minimum_enforcement
+                ):
+                    raise RuntimeError("execution_profile_enforcement_below_minimum")
 
             # A Session's trust high-watermark sets the weakest backend it still
             # accepts, independent of any published execution profile: once
@@ -1193,8 +1309,17 @@ def build_production_container(
 
             run_sandbox, run_backend = backends_for(provider_id)
 
+            # Set once the Agent's manifests are known; scoped() below applies it
+            # to whichever provider this Run ends up with.
+            egress: SandboxEgress | None = None
+
+            def scoped(provider: SandboxProvider) -> SandboxProvider:
+                if egress is None or not egress.is_restrictive():
+                    return provider
+                return EgressScopedSandbox(provider, egress)
+
             if settings.sandbox_execution_mode != "worker_cli_deferred":
-                return run_backend
+                return scoped(run_backend)
 
             root, children = await resolve_published_agent_versions(
                 registry,
@@ -1208,8 +1333,26 @@ def build_production_container(
                 AgentManifestSnapshot.model_validate(version.snapshot).manifest
                 for version in (root, *children.values())
             )
+            if (
+                settings.sandbox_egress_enforcement == "enforced"
+                or pinned_egress_enforcement
+            ):
+                catalog_mcp = (await capability_catalogs.get(tenant_id)).catalog.mcp_servers
+                egress = sandbox_egress_policy(
+                    manifests,
+                    {
+                        capability.reference: capability
+                        for capability in catalog_mcp
+                        if capability.enabled
+                    },
+                    extra_hosts=tuple(
+                        host.strip()
+                        for host in settings.sandbox_egress_extra_hosts.split(",")
+                        if host.strip()
+                    ),
+                )
             if any(manifest.spec.runtime == "codex-app-server" for manifest in manifests):
-                return run_backend
+                return scoped(run_backend)
             catalog = (await capability_catalogs.get(tenant_id)).catalog
             read_only_mcp_references = frozenset(
                 capability.reference
@@ -1220,14 +1363,13 @@ def build_production_container(
                 manifests,
                 read_only_mcp_references=read_only_mcp_references,
             ):
-                return run_backend
-            return run_sandbox
+                return scoped(run_backend)
+            return scoped(run_sandbox)
 
         sandbox_resolver = resolve_runtime_sandbox
     else:
         runtime = FakeRuntime()
         runtime_sandbox = LocalSandboxProvider()
-        runtime_sandbox_backend = runtime_sandbox
         sandbox_governance = SandboxGovernanceService(
             sandbox_leases,
             runtime_sandbox,
@@ -1239,9 +1381,16 @@ def build_production_container(
         model_probe = FakeModelPreflightProbe()
         mcp_probe = FakeMcpPreflightProbe()
     assert preflight_sandbox is not None
+    def sandbox_for_profile(profile_name: str) -> SandboxProvider:
+        try:
+            return sandbox_backends[profile_name]
+        except KeyError as error:
+            raise RuntimeError("execution_profile_sandbox_provider_not_enabled") from error
+
     preflight_runner = LivePreflightRunner(
         studio=studio_service,
         sandbox=preflight_sandbox,
+        sandbox_for_profile=sandbox_for_profile,
         model_probe=model_probe,
         mcp_probe=mcp_probe,
         policies=policy_profiles,
@@ -1326,11 +1475,14 @@ def build_production_container(
             ).all()
         totals = {str(resource): int(total) for resource, total in rows}
         checked_out = getattr(engine.pool, "checkedout", None)
-        active_sandboxes = (
-            await runtime_sandbox_backend.active_count()
-            if isinstance(runtime_sandbox_backend, KubernetesSandboxProvider)
-            else None
-        )
+        # The gauge covers every backend serving this deployment, so capacity is
+        # visible even when Runs are spread across more than one.
+        counted = [
+            await backend.active_count()
+            for backend in sandbox_backends.values()
+            if isinstance(backend, (KubernetesSandboxProvider, E2BSandboxProvider))
+        ]
+        active_sandboxes = sum(counted) if counted else None
         return {
             "active_sandboxes": active_sandboxes,
             "database_pool_checked_out": (
@@ -1386,8 +1538,10 @@ def build_production_container(
                 "credential-lease", "credential_lease", credential_broker.reap_expired
             )
         )
-    if sandbox_maintenance is not None:
-        maintenance.append(MaintenanceReaper("sandbox-expiry", "sandbox", sandbox_maintenance))
+    for backend_name, reaper in sandbox_reapers:
+        maintenance.append(
+            MaintenanceReaper(f"sandbox-expiry:{backend_name}", "sandbox", reaper)
+        )
     if sandbox_governance is not None and sandbox_governance.can_reconcile:
         maintenance.append(
             MaintenanceReaper(
@@ -1485,6 +1639,9 @@ def build_production_container(
         auto_execute=False,
         event_wakeup=bus,
         skill_conversation=ControlPlaneSkillConversationService(model_configurations),
-        sandbox_maintenance=sandbox_maintenance,
+        sandbox_maintenance=next(
+            (reaper for name, reaper in sandbox_reapers if name == default_name), None
+        ),
+        sandbox_startup=sandbox_startup,
         close=close,
     )

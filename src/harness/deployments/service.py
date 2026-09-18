@@ -193,11 +193,18 @@ class DeploymentService:
         policy: EnvironmentResourcePolicy,
         catalog: CapabilityCatalogRecord,
     ) -> ExecutionProfileMetadata:
-        if policy.capability_catalog_revision != catalog.revision:
+        if policy.capability_catalog_revision > catalog.revision:
+            # Ahead of the catalog means the policy was authored against a
+            # revision this deployment does not have; that is a real mismatch.
             raise ConflictError(
-                "Environment policy capability catalog revision is stale: "
-                f"expected={catalog.revision} actual={policy.capability_catalog_revision}"
+                "Environment policy capability catalog revision is ahead of the catalog: "
+                f"catalog={catalog.revision} policy={policy.capability_catalog_revision}"
             )
+        # An older pin is not refused on its own. The catalog is rewritten whole by
+        # platform jobs that only add to it (model route import, route migration),
+        # so requiring equality made every environment unusable the moment one of
+        # them ran. What the pin was standing in for is checked below instead:
+        # every resource the policy names must still exist and be enabled.
         profile = next(
             (
                 item
@@ -248,6 +255,7 @@ class DeploymentService:
         version: AgentVersion,
         policy: EnvironmentResourcePolicy,
         *,
+        catalog: CapabilityCatalogRecord,
         execution_profile: str,
         execution_profile_version: int,
     ) -> None:
@@ -257,14 +265,27 @@ class DeploymentService:
         ):
             raise ConflictError("Deployment Execution Profile is outside the Environment policy")
         published_snapshot = AgentManifestSnapshot.model_validate(version.snapshot)
-        if (
-            published_snapshot.tool_directory is not None
-            and published_snapshot.tool_directory.catalog_revision
-            != policy.capability_catalog_revision
-        ):
-            raise ConflictError(
-                "Agent tool directory catalog revision is outside the Environment policy"
+        directory = published_snapshot.tool_directory
+        if directory is not None:
+            # The Agent's published tools are what has to keep working, so they
+            # are resolved against the catalog instead of compared by the
+            # revision they were resolved at. A version is an immutable release
+            # artifact, and the catalog keeps moving, so an equality on those
+            # revisions would strand every published version as soon as a
+            # platform job rewrote the catalog.
+            available_mcp = {
+                item.reference for item in catalog.catalog.mcp_servers if item.enabled
+            }
+            missing_tools = sorted(
+                entry.logical_reference
+                for entry in directory.entries
+                if entry.source == "mcp" and entry.logical_reference not in available_mcp
             )
+            if missing_tools:
+                raise ConflictError(
+                    "Agent tool directory references unavailable MCP resources: "
+                    + ", ".join(missing_tools)
+                )
         manifest = published_snapshot.manifest
         model_routes = {
             manifest.spec.model.route,
@@ -364,6 +385,7 @@ class DeploymentService:
             self._validate_agent_policy(
                 version,
                 request.policy,
+                catalog=catalog,
                 execution_profile=snapshot.execution_profile,
                 execution_profile_version=snapshot.execution_profile_version,
             )
@@ -456,6 +478,7 @@ class DeploymentService:
         self._validate_agent_policy(
             version,
             environment.resource_policy,
+            catalog=catalog,
             execution_profile=profile.profile_id,
             execution_profile_version=profile.version,
         )
@@ -678,6 +701,7 @@ class DeploymentService:
         self._validate_agent_policy(
             version,
             environment.resource_policy,
+            catalog=catalog,
             execution_profile=snapshot.execution_profile,
             execution_profile_version=snapshot.execution_profile_version,
         )

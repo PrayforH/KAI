@@ -1,24 +1,35 @@
 """CubeSandbox's E2B-compatible API with explicit private proxy routing."""
 
 import asyncio
+import json
 import shlex
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Unpack, cast
 from urllib.parse import urlsplit
 
+import httpx
 from e2b import AsyncSandbox
 from e2b.connection_config import ApiParams, ConnectionConfig
 from e2b.sandbox.main import SandboxOpts  # pyright: ignore[reportMissingTypeStubs]
 
 from harness.config import Settings
+from harness.sandbox.base import SandboxResourceUsage
 from harness.sandbox.claude_cli import (
     banner_matches,
     bundled_cli_path,
     version_pin,
     version_text,
 )
-from harness.sandbox.e2b import E2BRemoteSandbox, E2BSandboxProvider, SdkE2BRemoteSandbox
+from harness.sandbox.e2b import (
+    _LIST_SCAN_LIMIT,
+    _MANAGED_RUN_KEY,
+    _MANAGED_TENANT_KEY,
+    E2BRemoteSandbox,
+    E2BSandboxProvider,
+    SdkE2BRemoteSandbox,
+    _platform_logs,
+)
 
 
 class CubeAsyncSandbox(AsyncSandbox):
@@ -117,6 +128,8 @@ class SdkCubeSandboxClient:
         timeout: int,
         allow_internet_access: bool,
         metadata: Mapping[str, str],
+        network: Mapping[str, object] | None = None,
+        volume_mounts: Mapping[str, str] | None = None,
     ) -> E2BRemoteSandbox:
         sandbox = await CubeAsyncSandbox.create(
             template=template,
@@ -132,8 +145,131 @@ class SdkCubeSandboxClient:
             sandbox_url=self._proxy_url,
             request_timeout=30,
             debug=False,
+            network=dict(network) if network is not None else None,
+            volume_mounts=dict(volume_mounts) if volume_mounts else None,
         )
         return CubeRemoteSandbox(sandbox)
+
+    def _control_plane(self) -> dict[str, object]:
+        """Connection parameters for Cube API calls that are not data-plane."""
+
+        return {
+            "api_key": self._api_key,
+            "validate_api_key": False,
+            "api_headers": {"Authorization": f"Bearer {self._api_key}"},
+            "api_url": self._api_url,
+            "domain": self._domain,
+            "request_timeout": 30,
+            "debug": False,
+        }
+
+    async def list_managed(self) -> list[tuple[str, Mapping[str, str]]]:
+        entries: list[tuple[str, Mapping[str, str]]] = []
+        paginator = CubeAsyncSandbox.list(**cast(Any, self._control_plane()))
+        while paginator.has_next and len(entries) < _LIST_SCAN_LIMIT:
+            for info in await paginator.next_items():
+                metadata = dict(info.metadata or {})
+                if _MANAGED_TENANT_KEY in metadata and _MANAGED_RUN_KEY in metadata:
+                    entries.append((info.sandbox_id, metadata))
+        return entries
+
+    async def kill_sandbox(self, sandbox_id: str) -> None:
+        await CubeAsyncSandbox.kill(sandbox_id, **cast(Any, self._control_plane()))
+
+    async def attach(self, sandbox_id: str) -> E2BRemoteSandbox:
+        params = self._control_plane()
+        params["sandbox_url"] = self._proxy_url
+        sandbox = await CubeAsyncSandbox.connect(sandbox_id, **cast(Any, params))
+        return CubeRemoteSandbox(sandbox)
+
+    async def template_state(self, reference: str) -> str | None:
+        """Resolve a template ID or alias to its platform status.
+
+        CubeSandbox accepts either form at create time, so an operator switching
+        from an ID to an alias cannot tell them apart from the config alone;
+        reading the catalogue is what makes a wrong or failed template visible
+        before a Run depends on it.
+        """
+
+        token = str(reference).strip()
+        if not token:
+            return "MISSING"
+        async with httpx.AsyncClient(
+            base_url=self._api_url,
+            headers={"Authorization": f"Bearer {self._api_key}"},
+            timeout=30,
+        ) as client:
+            response = await client.get("/templates")
+            if response.status_code >= 400:
+                return None
+            templates = response.json()
+        if not isinstance(templates, list):
+            return None
+        for template in templates:
+            if not isinstance(template, Mapping):
+                continue
+            aliases = template.get("aliases") or ()
+            if template.get("templateID") == token or token in aliases:
+                return str(template.get("status") or "UNKNOWN")
+        return "MISSING"
+
+    async def snapshot(self, sandbox_id: str, name: str | None = None) -> str:
+        params = self._control_plane()
+        info = await CubeAsyncSandbox.create_snapshot(
+            sandbox_id, name=name, **cast(Any, params)
+        )
+        return str(info.snapshot_id)
+
+    async def pause_sandbox(self, sandbox_id: str) -> None:
+        await CubeAsyncSandbox.pause(sandbox_id, **cast(Any, self._control_plane()))
+
+    async def logs(self, sandbox_id: str, limit: int) -> tuple[str, ...]:
+        # Verified against the 174-side deployment: /sandboxes/{id}/logs answers
+        # with {"logs": [{"timestamp", "line"}]} and authenticates by Bearer.
+        return await _platform_logs(
+            self._api_url,
+            {"Authorization": f"Bearer {self._api_key}"},
+            sandbox_id,
+            limit,
+            path="/sandboxes/{sandbox_id}/logs",
+        )
+
+    async def metrics(self, sandbox_id: str) -> SandboxResourceUsage | None:
+        # CubeSandbox does not implement per-sandbox metrics: both the v1 and v2
+        # routes answer 404 and the SDK raises on the empty body. Report nothing
+        # rather than zeroes.
+        del sandbox_id
+        return None
+
+    async def envd_version(self, sandbox_id: str) -> str | None:
+        params = self._control_plane()
+        try:
+            info = await CubeAsyncSandbox.get_info(sandbox_id, **cast(Any, params))
+        except Exception:  # noqa: BLE001 - an absent version is not a failure here
+            return None
+        version = getattr(info, "envd_version", None)
+        return str(version) if version else None
+
+
+def _volume_mounts(raw: str) -> dict[str, str]:
+    """Parse the configured mount path to volume-name mapping."""
+
+    if not raw.strip():
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        raise ValueError("HARNESS_CUBESANDBOX_VOLUME_MOUNTS must be a JSON object") from None
+    if not isinstance(parsed, dict):
+        raise ValueError("HARNESS_CUBESANDBOX_VOLUME_MOUNTS must be a JSON object")
+    mounts: dict[str, str] = {}
+    for path, volume in parsed.items():
+        if not isinstance(path, str) or not path.startswith("/"):
+            raise ValueError("CubeSandbox volume mount paths must be absolute")
+        if not isinstance(volume, str) or not volume.strip():
+            raise ValueError("CubeSandbox volume names must be non-empty strings")
+        mounts[path] = volume
+    return mounts
 
 
 def build_cubesandbox_provider(settings: Settings) -> E2BSandboxProvider:
@@ -158,4 +294,6 @@ def build_cubesandbox_provider(settings: Settings) -> E2BSandboxProvider:
         codex_cli_sha256=settings.daytona_codex_cli_sha256,
         max_collect_bytes=settings.workspace_archive_max_bytes,
         max_collect_members=settings.workspace_archive_max_members,
+        idle_policy=settings.cubesandbox_idle_policy,
+        volume_mounts=_volume_mounts(settings.cubesandbox_volume_mounts),
     )

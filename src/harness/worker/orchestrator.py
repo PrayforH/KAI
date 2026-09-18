@@ -682,6 +682,45 @@ class RunOrchestrator:
                 with suppress(asyncio.CancelledError):
                     await task
 
+    async def _record_sandbox_logs(
+        self,
+        sandbox: SandboxProvider,
+        handle: SandboxHandle,
+        *,
+        tenant_id: str,
+        run: Run,
+    ) -> None:
+        """Attach a bounded tail of the platform's sandbox log to the Run.
+
+        Providers without a log plane are simply skipped, and every failure here
+        is swallowed: diagnostics must never mask the failure they describe.
+        """
+
+        read_logs = getattr(sandbox, "sandbox_logs", None)
+        if read_logs is None:
+            return
+        try:
+            lines = await read_logs(handle, 40)
+        except Exception:  # noqa: BLE001 - diagnostics are best effort
+            logger.warning("sandbox log capture failed run_id=%s", run.run_id)
+            return
+        if not lines:
+            return
+        try:
+            await self._events.append(
+                tenant_id=tenant_id,
+                run_id=run.run_id,
+                session_id=run.session_id,
+                event_type="sandbox.logs",
+                payload={
+                    "provider": handle.provider,
+                    "line_count": len(lines),
+                    "lines": list(lines),
+                },
+            )
+        except Exception:  # noqa: BLE001 - diagnostics must not fail teardown
+            logger.warning("sandbox log recording failed run_id=%s", run.run_id)
+
     async def _move(
         self,
         current: Run,
@@ -1015,6 +1054,7 @@ class RunOrchestrator:
             raise ConflictError(f"run is already owned or paused: {run_id} ({run.status.value})")
 
         handle: SandboxHandle | None = None
+        terminal_status: RunStatus | None = None
         lease: SandboxLease | None = None
         active_sandbox = self._sandbox
         output_baseline: Mapping[str, str] | None = None
@@ -1761,6 +1801,7 @@ class RunOrchestrator:
                 return latest
             raise
         except RuntimeExecutionTimeoutError:
+            terminal_status = RunStatus.TIMED_OUT
             workspace_durable = await self._recover_failed_workspace(
                 tenant_id=tenant_id,
                 run=run,
@@ -1834,6 +1875,7 @@ class RunOrchestrator:
                 payload=payload,
             )
         except Exception as error:  # noqa: BLE001 - boundary converts failures to Run state
+            terminal_status = RunStatus.FAILED
             workspace_durable = await self._recover_failed_workspace(
                 tenant_id=tenant_id,
                 run=run,
@@ -1864,6 +1906,14 @@ class RunOrchestrator:
                         )
                     except Exception:  # noqa: BLE001 - cleanup must still run
                         pass
+                # A failed Run's own output rarely explains the sandbox itself:
+                # the platform log covers provisioning, the window before the
+                # data plane answered, and teardown. Captured before destroy,
+                # bounded, and never allowed to change the Run's outcome.
+                if terminal_status in {RunStatus.FAILED, RunStatus.TIMED_OUT}:
+                    await self._record_sandbox_logs(
+                        active_sandbox, handle, tenant_id=tenant_id, run=run
+                    )
                 with self._stage("harness.sandbox.destroy", {"run.id": run_id}):
                     await active_sandbox.destroy(handle)
                 if lease is not None and self._sandbox_leases is not None:
