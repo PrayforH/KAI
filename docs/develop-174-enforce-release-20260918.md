@@ -64,3 +64,24 @@ docker compose -p agent-studio-174 -f compose.api.release.base.json \
 ```
 
 `0033` 只新增 `sandbox_leases` 表，旧镜像不读该表，回滚镜像无需回滚迁移。
+
+
+## 6. 处置：切回 `report`（用户决定，2026-09-18 20:40）
+
+考虑到第 4 节的影响面（174 上 66/192 个会话水位为 `untrusted`，且本机没有 `full` 档后端可用），决定把信任下限切回默认的 `report`，**保留** `HARNESS_CUBESANDBOX_VALIDATE_TEMPLATE=true`。
+
+- 落地方式：新增 `compose.api.release.report.json`（只注入 `VALIDATE_TEMPLATE`，不带 `TRUST_FLOOR_MODE`），重建 api + worker。
+- 生效证据：容器 label `com.docker.compose.project.config_files = /data/develop-bfa9f8a/compose.api.release.report.json`；容器 env 只剩 `HARNESS_CUBESANDBOX_VALIDATE_TEMPLATE=true`（`HARNESS_SANDBOX_TRUST_FLOOR_MODE` 未设 = 默认 `report`）；api + 3 worker 全部 `healthy`。
+- 功能验证（同一会话 A/B）：第一轮（水位 `safe`）`succeeded`；把该会话水位抬到 `untrusted` 后第二轮**仍然 `succeeded`**，且 `sandbox.provisioned` 事件记录了 `trust_watermark=untrusted`、`trust_floor=full`、`trust_floor_met=false` —— 违规事实可见但不阻断。验证后水位已复原为 `safe`。
+
+当前 174 生效的运行时开关（沙箱相关）：
+
+| 开关 | 值 | 说明 |
+| --- | --- | --- |
+| `HARNESS_SANDBOX_PROVIDER` | `cubesandbox` | 唯一后端 |
+| `HARNESS_SANDBOX_EXECUTION_MODE` | `worker_cli_deferred` | 工具在 microVM 内执行 |
+| `HARNESS_CUBESANDBOX_VALIDATE_TEMPLATE` | `true` | 启动期模板/数据面校验（平台不可达时不阻塞启动） |
+| `HARNESS_SANDBOX_TRUST_FLOOR_MODE` | 未设（`report`） | 记录不阻断 |
+| `HARNESS_SANDBOX_EGRESS_ENFORCEMENT` | 未设（`declared`） | 按 Agent 由 execution profile 决定（`cubesandbox-egress-enforced` 已可用） |
+| `HARNESS_CUBESANDBOX_IDLE_POLICY` | 未设（`destroy`） | 每轮销毁，不常驻 |
+| `HARNESS_SANDBOX_EXTRA_PROVIDERS` | 未设 | 只服务 cubesandbox |
