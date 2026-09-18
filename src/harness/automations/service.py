@@ -261,19 +261,48 @@ class AutomationService:
                     trigger=AutomationRecordTrigger.SCHEDULED,
                     scheduled_at=scheduled_at,
                 )
-            except Exception:
-                # Make the deterministic slot eligible for retry when dispatch
-                # fails before a worker can own the resulting Run.
-                await self._tasks.claim_due(
-                    task.task_id,
-                    expected_next_run_at=next_run_at,
-                    next_run_at=scheduled_at,
-                    status=AutomationStatus.ACTIVE.value,
-                    last_run_at=task.last_run_at or now,
+            except Exception as error:
+                # The slot stays claimed: once tasks expire, cron tasks wait
+                # for their next occurrence. Rolling the slot back would spin
+                # forever on deterministic failures such as a missing Agent
+                # version, so the failure is recorded instead.
+                await self._record_failure(
+                    task,
+                    trigger=AutomationRecordTrigger.SCHEDULED,
+                    scheduled_at=scheduled_at,
+                    started_at=scheduled_at or now,
+                    error=str(error) or error.__class__.__name__,
                 )
-                raise
             dispatched += 1
         return dispatched
+
+    async def _record_failure(
+        self,
+        task: AutomationTask,
+        *,
+        trigger: AutomationRecordTrigger,
+        scheduled_at: datetime | None,
+        started_at: datetime,
+        error: str,
+    ) -> None:
+        await self._records.add(
+            AutomationRunRecord(
+                tenantId=task.tenant_id,
+                recordId=self._ids("automationrun"),
+                taskId=task.task_id,
+                taskName=task.name,
+                userId=task.user_id,
+                trigger=trigger,
+                status=AutomationRecordStatus.FAILED,
+                sessionId="",
+                runId="",
+                scheduledAt=scheduled_at,
+                startedAt=started_at,
+                finishedAt=self._clock(),
+                durationMs=0,
+                error=error[:500],
+            )
+        )
 
     async def _resolve_agent_version(self, task: AutomationTask) -> str:
         """Pin the same Agent version the owner's console sessions would use.

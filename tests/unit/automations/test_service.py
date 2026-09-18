@@ -326,6 +326,49 @@ async def test_validity_until_expires_task_after_date() -> None:
     assert task.next_run_at is None
 
 
+class FailingSessions:
+    """Simulates deterministic dispatch failures (missing Agent, etc.)."""
+
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+
+    async def create(self, *_args: Any, **_kwargs: Any) -> FakeSession:
+        raise self.error
+
+
+@pytest.mark.asyncio
+async def test_deterministic_dispatch_failure_records_failure_without_retry_spin() -> None:
+    created_at = datetime(2026, 9, 19, 8, 0, tzinfo=UTC)
+    runs = FakeRuns()
+    now = datetime(2026, 9, 19, 8, 6, tzinfo=UTC)
+    service = AutomationService(
+        InMemoryAutomationTaskRepository(),
+        InMemoryAutomationRecordRepository(),
+        sessions=FailingSessions(ConflictError("automation agent has no published version: x")),  # type: ignore[arg-type]
+        runs=runs,  # type: ignore[arg-type]
+        agent_name="lead-agent",
+        registry=FakeRegistry([FakeVersion("lead-agent", "1.0.2")]),
+        clock=lambda: now,
+        id_generator=lambda prefix: f"{prefix}-1",
+    )
+    task = await service.create(
+        tenant_id="tenant-1",
+        user_id="user-1",
+        request=once_request(datetime(2026, 9, 19, 8, 5, tzinfo=UTC)),
+    )
+    assert await service.dispatch_due() == 1
+    reloaded = await service.get("tenant-1", "user-1", task.task_id)
+    assert reloaded.status is AutomationStatus.EXPIRED
+    records = await service.records(tenant_id="tenant-1", user_id="user-1")
+    assert records[0].status.value == "failed"
+    assert "no published version" in (records[0].error or "")
+    assert len(runs.runs) == 0
+    # No retry spin: expired once tasks never fire again.
+    now = datetime(2026, 9, 19, 8, 10, tzinfo=UTC)
+    service._clock = lambda: now
+    assert await service.dispatch_due() == 0
+
+
 @pytest.mark.asyncio
 async def test_permission_defaults_to_full_with_explicit_value() -> None:
     now = datetime(2026, 9, 19, 8, 0, tzinfo=UTC)
