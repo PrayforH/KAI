@@ -95,7 +95,7 @@ async def update_automation(
         raise _conflict(error) from error
 
 
-@router.post("/{task_id}:enable", response_model=AutomationTask)
+@router.post("/{task_id}/enable", response_model=AutomationTask)
 async def enable_automation(
     task_id: str,
     identity: Annotated[Identity, Depends(require_identity)],
@@ -117,7 +117,7 @@ async def enable_automation(
         raise _conflict(error) from error
 
 
-@router.post("/{task_id}:pause", response_model=AutomationTask)
+@router.post("/{task_id}/pause", response_model=AutomationTask)
 async def pause_automation(
     task_id: str,
     identity: Annotated[Identity, Depends(require_identity)],
@@ -139,7 +139,7 @@ async def pause_automation(
         raise _conflict(error) from error
 
 
-@router.post("/{task_id}:run", response_model=AutomationRunRecord)
+@router.post("/{task_id}/run", response_model=AutomationRunRecord)
 async def run_automation_now(
     task_id: str,
     identity: Annotated[Identity, Depends(require_identity)],

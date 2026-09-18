@@ -5,6 +5,7 @@ export type WorkspaceId =
   | "tasks"
   | "agents"
   | "files"
+  | "automation"
   | "capabilities"
   | "knowledge"
   | "skills"
@@ -20,6 +21,7 @@ export const workspaceItems: ReadonlyArray<{
   { id: "tasks", href: "/", label: "任务" },
   { id: "agents", href: "/studio/agents", label: "智能体" },
   { id: "files", href: "/studio/files", label: "我的文件" },
+  { id: "automation", href: "/studio/automation", label: "自动化" },
   { id: "capabilities", href: "/studio/capabilities", label: "插件" },
   { id: "knowledge", href: "/studio/knowledge", label: "知识库" },
   { id: "skills", href: "/studio/skills", label: "技能" },
@@ -55,6 +57,15 @@ export function WorkspaceIcon({ workspace }: { workspace: WorkspaceId }) {
     return (
       <svg viewBox="0 0 20 20" aria-hidden="true">
         <path d="M4.5 15.5V11h3v4.5m2-8v8h3v-8m2-3v11h3v-11" />
+      </svg>
+    );
+  }
+  if (workspace === "automation") {
+    return (
+      <svg viewBox="0 0 20 20" aria-hidden="true">
+        <path d="M15.5 10a5.5 5.5 0 1 1-1.6-3.9" />
+        <path d="M15.8 3.2v3.2h-3.2" />
+        <path d="m10 7.6 1.6 2.3-1.6 2.3-1.6-2.3z" />
       </svg>
     );
   }
