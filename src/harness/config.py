@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -57,9 +57,15 @@ class Settings(BaseSettings):
     otel_content_max_chars: int = Field(default=12_000, ge=256, le=100_000)
     local_auto_execute: bool = False
     # Scheduled automations invoke this Agent deployment when a task fires.
-    automation_agent_name: str = "lead-agent"
+    automation_agent_name: str = Field(
+        default="lead-agent",
+        validation_alias=AliasChoices("automation_agent_name", "HARNESS_AGENT_NAME"),
+    )
     # Empty resolves the owner's latest published version from the registry.
-    automation_agent_version: str = ""
+    automation_agent_version: str = Field(
+        default="",
+        validation_alias=AliasChoices("automation_agent_version", "HARNESS_AGENT_VERSION"),
+    )
     api_bearer_token: SecretStr = SecretStr("")
 
     auth_jwt_secret: SecretStr = SecretStr("local-development-auth-secret-change-before-production")
