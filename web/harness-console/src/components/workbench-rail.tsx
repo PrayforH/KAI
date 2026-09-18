@@ -7,28 +7,6 @@ import { SidebarPanelIcon } from "./panel-icons";
 import { RailFilePreview, previewKindFor, type PreviewKind, type PreviewTarget } from "./rail-file-preview";
 
 
-const PHASE_LABELS: Record<string, string> = {
-  idle: "空闲",
-  queued: "排队中",
-  running: "运行中",
-  waiting_approval: "待审批",
-  cancelling: "取消中",
-  cancelled: "已取消",
-  succeeded: "已完成",
-  completed: "已完成",
-  failed: "失败",
-  rejected: "已拒绝",
-  timed_out: "已超时",
-  unknown: "未知",
-};
-
-const SCOPE_LABELS: Record<string, string> = {
-  personal: "个人",
-  team: "团队",
-  historical: "历史",
-  restored: "本地",
-};
-
 function RefreshIcon() {
   return (
     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"
@@ -54,6 +32,16 @@ function FilesIcon() {
     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"
       strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M4.4 4.6h11.2M4.4 8h11.2M4.4 11.4h11.2M4.4 14.8h11.2" />
+    </svg>
+  );
+}
+
+/** Observability: one run's trace, drawn as a scope sweep. */
+function TraceIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M2.8 12.6h2.6l2-5.4 2.6 8 2.2-5.4 1.4 2.8h3.6" />
     </svg>
   );
 }
@@ -138,29 +126,22 @@ export function WorkbenchRail({
   onClose,
   expanded,
   onToggleExpanded,
-  taskTitle,
-  agentDisplay,
-  agentKey,
-  agentScope,
-  modelRoute,
-  runPhase,
   threadId,
   previewRequest,
+  observabilityHref,
+  runPhase,
 }: {
   open: boolean;
   onClose: () => void;
   expanded: boolean;
   onToggleExpanded: () => void;
-  taskTitle: string;
-  agentDisplay: string;
-  agentKey: string;
-  agentScope: string;
-  modelRoute: string | null;
-  runPhase: string | null;
   threadId: string;
   previewRequest?: (PreviewTarget & { nonce: number }) | null;
+  /** Langfuse trace for the current run, or null while no run exists. */
+  observabilityHref: string | null;
+  /** A phase change means the run may have written new artifacts. */
+  runPhase: string | null;
 }) {
-  const [tab, setTab] = useState<"files" | "details">("files");
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [listVisible, setListVisible] = useState(true);
@@ -188,7 +169,6 @@ export function WorkbenchRail({
   // The transcript's artifact cards open their file here instead of a new tab.
   useEffect(() => {
     if (!previewRequest) return;
-    setTab("files");
     show(previewRequest);
   }, [previewRequest]);
 
@@ -228,12 +208,6 @@ export function WorkbenchRail({
     void load();
     return () => controller.abort();
   }, [threadId, runPhase, open, refresh]);
-
-  const phaseKnown = runPhase && runPhase in PHASE_LABELS;
-  const phaseKey = (phaseKnown ? runPhase : "unknown") as
-    | keyof typeof PHASE_LABELS
-    | "unknown";
-  const scopeLabel = SCOPE_LABELS[agentScope] ?? agentScope;
 
   const fileList = (
     <>
@@ -287,10 +261,38 @@ export function WorkbenchRail({
       {open && <PanelResizeHandle panel="rail" />}
       <div className="workbench-rail-panel" aria-hidden={!open}>
         <header className="rail-bar">
-          <nav className="rail-tabs" aria-label="工作区视图">
-            <button type="button" aria-pressed={tab === "files"} onClick={() => setTab("files")}>文件</button>
-            <button type="button" aria-pressed={tab === "details"} onClick={() => setTab("details")}>任务详情</button>
-          </nav>
+          <div className="rail-bar-views">
+            <button
+              type="button"
+              className="rail-bar-button"
+              aria-label="文件列表"
+              title="文件列表"
+              aria-current={selected ? undefined : "page"}
+              onClick={() => show(null)}
+            >
+              <FilesIcon />
+            </button>
+            {observabilityHref ? (
+              <a
+                className="rail-bar-button"
+                aria-label="在 Langfuse 查看本次运行的 Trace"
+                title="在 Langfuse 查看本次运行的 Trace"
+                href={observabilityHref}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <TraceIcon />
+              </a>
+            ) : (
+              <span
+                className="rail-bar-button is-disabled"
+                aria-label="本次运行的 Trace 尚未生成"
+                title="运行开始后可查看观测"
+              >
+                <TraceIcon />
+              </span>
+            )}
+          </div>
           <div className="rail-bar-actions">
             <button
               type="button"
@@ -313,7 +315,7 @@ export function WorkbenchRail({
             </button>
           </div>
         </header>
-        <div className="rail-toolbar" hidden={tab !== "files"}>
+        <div className="rail-toolbar">
           <button
             type="button"
             className="rail-bar-button"
@@ -388,7 +390,6 @@ export function WorkbenchRail({
             className="workbench-rail-section rail-files-section"
             data-previewing={selected ? "true" : undefined}
             data-list-hidden={selected && !listVisible ? "true" : undefined}
-            hidden={tab !== "files"}
           >
             {selected ? (
               // A wide drawer shows the browser and the file side by side; a
@@ -399,40 +400,6 @@ export function WorkbenchRail({
               </>
             ) : fileList}
           </section>
-          <div hidden={tab !== "details"}>
-          <section className="workbench-rail-section">
-            <small>当前任务</small>
-            <strong className="workbench-rail-task">{taskTitle}</strong>
-          </section>
-          <section className="workbench-rail-section">
-            <small>智能体</small>
-            <div className="workbench-rail-rows">
-              <span className="workbench-rail-agent">{agentDisplay}</span>
-              <code>{agentKey}</code>
-            </div>
-          </section>
-          <section className="workbench-rail-section">
-            <small>归属</small>
-            <span className="workbench-rail-chip">{scopeLabel}</span>
-          </section>
-          <section className="workbench-rail-section">
-            <small>模型路由</small>
-            <span className="workbench-rail-rows">
-              <code>{modelRoute ?? "默认（跟随智能体）"}</code>
-            </span>
-          </section>
-          <section className="workbench-rail-section">
-            <small>运行阶段</small>
-            <span className={`workbench-rail-phase is-${phaseKey}`}>
-              <i aria-hidden="true" />
-              {PHASE_LABELS[phaseKey] ?? phaseKey}
-            </span>
-          </section>
-          <section className="workbench-rail-section">
-            <small>会话 ID</small>
-            <code className="workbench-rail-thread">{threadId}</code>
-          </section>
-          </div>
         </div>
       </div>
     </aside>

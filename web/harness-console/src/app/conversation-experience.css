@@ -51,9 +51,6 @@ body.codex-theme-v1 .harness-composer-shell .aui-composer-input { resize: none; 
 .composer-running-actions > span, .composer-input-guide > button { margin-right: auto; }
 .composer-help { padding: 8px 4px; margin: 0; font-size: 12px; color: var(--codex-muted); line-height: 1.7; }
 .composer-input-error { font-size: 12px; color: var(--codex-danger); }
-.rail-tabs { display: flex; gap: 16px; padding: 0 18px; border-bottom: 1px solid var(--codex-line); }
-.rail-tabs button { color: var(--codex-muted); background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 12px 0; font-size: 13px; cursor: pointer; }
-.rail-tabs button[aria-pressed="true"] { color: var(--codex-ink); border-bottom-color: currentColor; }
 .rail-file-toolbar { display: flex; align-items: center; justify-content: space-between; }
 .rail-file-toolbar button { background: transparent; border: 0; color: var(--codex-muted); cursor: pointer; padding: 5px; }
 .rail-file-search { width: 100%; padding: 9px 10px; border: 1px solid var(--codex-line); border-radius: 7px; background: transparent; color: var(--codex-ink); font-size: 12px; }
@@ -86,6 +83,8 @@ body.codex-theme-v1 .harness-composer-shell .aui-composer-input { resize: none; 
 }
 body.codex-theme-v1 .workbench-rail-panel { width: 100%; container-type: inline-size; container-name: rail; }
 @media (max-width: 1099px) { body.codex-theme-v1 .workbench-rail { width: min(340px, 90vw); } }
+/* Below the column breakpoint the drawer floats, so expanding takes the screen. */
+@media (max-width: 1099px) { body.codex-theme-v1 .console-shell.is-rail-expanded .workbench-rail { width: 100vw; } }
 body.codex-theme-v1 .harness-assistant-message > .turn-completion { order: 2; display: block; margin: 8px 0 0; opacity: 1; }
 
 /* Corrections from conversation review: quiet composer, inline completion time. */
@@ -172,7 +171,6 @@ body.codex-theme-v1 .composer-stop-secondary:hover { color: var(--codex-ink); ba
   .prompt-queue li > button { padding-inline: 5px; font-size: 11px; }
 }
 /* Quiet, readable surfaces in both themes. */
-body.codex-theme-v1:has(.console-shell) .workbench-rail-task { color: var(--codex-ink); font-weight: 500; }
 body.codex-theme-v1:has(.console-shell) .workbench-rail-section { border-color: var(--codex-line); border-width: 0 0 1px; }
 body.codex-theme-v1:has(.console-shell) .workbench-rail-footer { border-top: 1px solid var(--codex-line); color: var(--codex-muted); }
 body.codex-theme-v1:has(.console-shell) .aui-composer-root { box-shadow: 0 2px 6px rgb(0 0 0 / 3%); }
@@ -749,8 +747,11 @@ html body.codex-theme-v1 .execution-reasoning[open] .execution-reasoning-chevron
   gap: 8px;
   border-bottom: 1px solid var(--codex-line);
 }
-.rail-bar .rail-tabs { padding: 0; border-bottom: 0; }
-.rail-bar .rail-tabs button { padding: 13px 0; }
+.rail-bar-views { display: flex; align-items: center; gap: 2px; }
+/* The view the drawer is showing, and the icon that always leaves for Langfuse. */
+.rail-bar-views .rail-bar-button[aria-current] { color: var(--codex-ink); background: #232323; }
+.rail-bar-button.is-disabled { color: #4a4a4a; cursor: default; }
+a.rail-bar-button { text-decoration: none; }
 .rail-bar-actions { display: flex; align-items: center; gap: 2px; }
 .rail-bar-divider { width: 1px; height: 16px; margin: 0 4px; background: var(--codex-line); }
 .rail-bar-button {

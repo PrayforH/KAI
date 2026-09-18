@@ -23,7 +23,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function render(onClose = vi.fn(), onToggleExpanded = vi.fn()) {
+async function render(onClose = vi.fn(), onToggleExpanded = vi.fn(), observabilityHref: string | null = null) {
   vi.stubGlobal("fetch", vi.fn(async () => Response.json(files)));
   host = document.createElement("div");
   document.body.appendChild(host);
@@ -35,11 +35,7 @@ async function render(onClose = vi.fn(), onToggleExpanded = vi.fn()) {
         onClose={onClose}
         expanded={false}
         onToggleExpanded={onToggleExpanded}
-        taskTitle="任务"
-        agentDisplay="agent"
-        agentKey="agent@v1"
-        agentScope="personal"
-        modelRoute={null}
+        observabilityHref={observabilityHref}
         runPhase="completed"
         threadId="task-a"
       />,
@@ -148,7 +144,7 @@ it("hands the whole drawer to the open file when the browser is hidden", async (
   expect(host!.querySelectorAll(".workbench-rail-file")).toHaveLength(2);
 });
 
-it("opens the search field, closes the drawer with the panel mark, and keeps 当前任务 in the details tab", async () => {
+it("opens the search field and closes the drawer with the panel mark", async () => {
   const onClose = await render();
 
   expect(host!.querySelector(".rail-file-search")).toBeNull();
@@ -165,8 +161,33 @@ it("opens the search field, closes the drawer with the panel mark, and keeps 当
   await click(button("收起任务上下文"));
   expect(onClose).toHaveBeenCalledTimes(1);
 
-  // 当前任务 belongs to the details tab, so the file browser head stays one row.
-  const task = host!.querySelector(".workbench-rail-task");
-  expect(task).not.toBeNull();
-  expect(task!.closest("div[hidden]")).not.toBeNull();
+  // The view tabs are gone: the header carries the file and observability icons.
+  expect(host!.querySelector(".rail-tabs")).toBeNull();
+  expect(host!.querySelector(".workbench-rail-task")).toBeNull();
+});
+
+it("returns to the file list from the header icon", async () => {
+  await render();
+  await click(rowFor("report.md"));
+  expect(host!.querySelector(".rail-preview")).not.toBeNull();
+  expect(button("文件列表")?.getAttribute("aria-current")).toBeNull();
+
+  await click(button("文件列表"));
+  expect(host!.querySelector(".rail-preview")).toBeNull();
+  expect(button("文件列表")?.getAttribute("aria-current")).toBe("page");
+});
+
+it("links the current run into Langfuse, and says so before a run exists", async () => {
+  await render(vi.fn(), vi.fn(), "/api/harness/observability?run_id=run_1&trace_id=");
+  const link = host!.querySelector('a[href^="/api/harness/observability"]');
+  expect(link?.getAttribute("href")).toBe("/api/harness/observability?run_id=run_1&trace_id=");
+  expect(link?.getAttribute("target")).toBe("_blank");
+  expect(link?.getAttribute("aria-label")).toContain("Langfuse");
+
+  // Without a run there is nothing to open, so the icon states that instead.
+  await act(async () => root!.unmount());
+  host!.remove();
+  await render();
+  expect(host!.querySelector('a[href^="/api/harness/observability"]')).toBeNull();
+  expect(host!.querySelector('.rail-bar-button.is-disabled[aria-label*="Trace"]')).not.toBeNull();
 });

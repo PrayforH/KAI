@@ -158,8 +158,8 @@ describe("full-page agent workbench", () => {
     );
     expect(page).not.toContain("Agent Harness");
     expect(page).not.toContain('<span>新任务</span>');
-    expect(page).not.toContain("LangfuseTraceLink");
-    expect(page).not.toContain("Langfuse Trace");
+    // Observability is one drawer icon for the run on screen, not a developer surface.
+    expect(page).toContain("observabilityHref");
     expect(page).not.toContain("<DeveloperDrawer");
     expect(page).not.toContain("交互验证台");
     expect(page).not.toContain("切换开发者信息");

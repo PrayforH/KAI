@@ -219,13 +219,6 @@ body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-open .workbench-r
   letter-spacing: 0.1em;
 }
 
-.workbench-rail-task {
-  color: #ececec;
-  font-size: 13.5px;
-  font-weight: 550;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-}
 
 .workbench-rail-files {
   display: grid;
@@ -273,11 +266,6 @@ body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-open .workbench-r
   font-size: 12px;
 }
 
-.workbench-rail-rows {
-  min-width: 0;
-  display: grid;
-  gap: 3px;
-}
 
 .workbench-rail-rows code,
 .workbench-rail-thread {
@@ -286,77 +274,6 @@ body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-open .workbench-r
   font: 11.5px/1.5 var(--codex-font-mono);
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.workbench-rail-agent {
-  color: #dcdcdc;
-  font-size: 12.5px;
-  line-height: 1.4;
-}
-
-.workbench-rail-chip {
-  justify-self: start;
-  padding: 2px 8px;
-  border: 1px solid #343434;
-  border-radius: 6px;
-  color: #b9b9b9;
-  font-size: 11px;
-  line-height: 1.5;
-}
-
-.workbench-rail-phase {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  color: #bdbdbd;
-  font-size: 11.5px;
-}
-
-.workbench-rail-phase i {
-  width: 7px;
-  height: 7px;
-  flex: 0 0 7px;
-  border-radius: 50%;
-  background: #626262;
-}
-
-.workbench-rail-phase.is-running i {
-  background: #ececec;
-  animation: workbench-rail-pulse 1.6s ease-in-out infinite;
-}
-
-.workbench-rail-phase.is-queued i {
-  background: #8f8f8f;
-}
-
-.workbench-rail-phase.is-waiting_approval i {
-  background: #cf9f5e;
-}
-
-.workbench-rail-phase.is-succeeded i {
-  background: #58a66b;
-}
-
-.workbench-rail-phase.is-failed i,
-.workbench-rail-phase.is-rejected i,
-.workbench-rail-phase.is-timed_out i {
-  background: #e05a50;
-}
-
-.workbench-rail-phase.is-succeeded,
-.workbench-rail-phase.is-running {
-  color: #e6e6e6;
-}
-
-@keyframes workbench-rail-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-
-  50% {
-    opacity: 0.35;
-  }
 }
 
 .workbench-rail-manual {

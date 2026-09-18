@@ -13,7 +13,7 @@ it("never renders the previous task's files while the new task request is pendin
   vi.stubGlobal("fetch", fetcher);
   const container = document.createElement("div"); document.body.appendChild(container);
   const root = createRoot(container);
-  const props = { open: true, onClose() {}, expanded: false, onToggleExpanded() {}, taskTitle: "任务", agentDisplay: "相同智能体", agentKey: "echo", agentScope: "personal", modelRoute: null, runPhase: "completed" };
+  const props = { open: true, onClose() {}, expanded: false, onToggleExpanded() {}, observabilityHref: null, runPhase: "completed" };
   try {
     await act(async () => root.render(<WorkbenchRail {...props} threadId="task-a" />));
     expect(container.textContent).toContain("A-private.txt");

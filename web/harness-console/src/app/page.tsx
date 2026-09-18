@@ -22,7 +22,7 @@ import { ProductBrandMark, ProductLoading, PRODUCT_NAME } from "../components/pr
 import { SidebarLeftIcon, SidebarPanelIcon } from "../components/panel-icons";
 import { WorkbenchRail } from "../components/workbench-rail";
 import type { PreviewTarget } from "../components/rail-file-preview";
-import { useRunViewModel } from "../lib/activity-store";
+import { useRunActivity, useRunViewModel } from "../lib/activity-store";
 import { useRunStream } from "../lib/run-stream-store";
 import {
   bindThreadAgent,
@@ -246,6 +246,11 @@ function AuthenticatedHome() {
   const [activeSkillLaunch, setActiveSkillLaunch] =
     useState<SkillCreatorLaunch | null>(null);
   const runView = useRunViewModel();
+  const runActivity = useRunActivity();
+  // One click into Langfuse for the run on screen, or nothing before it exists.
+  const observabilityHref = runActivity?.run_id
+    ? `/api/harness/observability?run_id=${encodeURIComponent(runActivity.run_id)}&trace_id=${encodeURIComponent(runActivity.trace_id ?? "")}`
+    : null;
   const runStream = useRunStream();
   const currentTaskBusy = runStream.status === "running" || (
     runView?.phase === "queued" ||
@@ -715,11 +720,7 @@ function AuthenticatedHome() {
           onClose={() => setTaskRailOpen(false)}
           expanded={railExpanded}
           onToggleExpanded={() => setRailExpanded((current) => !current)}
-          taskTitle={currentTaskTitle}
-          agentDisplay={selectedAgent?.displayName ?? selectedAgent?.name ?? "—"}
-          agentKey={selectedAgent ? `${selectedAgent.name}@${selectedAgent.version}` : "—"}
-          agentScope={selectedAgent?.scope ?? "personal"}
-          modelRoute={modelRouteOverride ?? selectedAgent?.modelRoute ?? null}
+          observabilityHref={observabilityHref}
           runPhase={runView?.phase ?? null}
           threadId={threadId}
         />
