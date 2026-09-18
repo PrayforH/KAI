@@ -79,3 +79,31 @@
 已知环境提示：173 的 `kai/axis-api:governance-20260918` 是本地镜像，主机上没有
 `/data/agent-studio-governance/` 之外的构建记录；后续若从 Harbor 正式发布，需要先解决
 本机构建在 Node 下载步骤的网络问题。
+
+## 6. 事故与纠正：`enforce` 不能配 delegated-only 后端（2026-09-18）
+
+**现象**：用户报告 173 上"回复 DONE 都是失败的"。查库确认所有失败都是
+`sandbox_governance` / "session requires full enforcement, opensandbox provides delegated"，
+且受影响会话的 `trust_high_watermark` 是 `untrusted`——**是正常使用产生的**（会话抓取过外部
+内容就会升到 untrusted），不是探针造的数据。
+
+**原因**：我把验证用的 `HARNESS_SANDBOX_TRUST_FLOOR_MODE=enforce` 留在了 173 环境里。
+OpenSandbox（与 CubeSandbox）只是 `delegated` 级，而 untrusted 会话要求 `full`，
+于是任何"碰过不可信内容"的会话从此都跑不动。这正是该门禁的**设计意图**（fail closed），
+所以问题不在机制，而在于把它开在了没有 `full` 后端的环境上。
+
+**纠正**：173 改回 `report`（默认值）；我验证时人工提升的那一个会话
+（`session_53cdd181…`，提升前是 safe）已还原为 safe；真正因使用变 untrusted 的会话
+（`session_8f989d42714b…`）保留 untrusted（信任只升不降，不伪造历史）。恢复后用同一
+untrusted 会话跑通：run succeeded，事件 `trust_watermark=untrusted`、
+`trust_floor=full`、`trust_floor_met=false`，并正常创建租约（`lease_epoch=2`，可见 epoch 递增）。
+
+**部署规则（重要）**：
+
+- 后端为 `delegated`（CubeSandbox / OpenSandbox / E2B / Daytona）时保持
+  `HARNESS_SANDBOX_TRUST_FLOOR_MODE=report`。差额会写进每个 Run 的
+  `sandbox.provisioned` 事件，用它统计"换成 enforce 会拒掉多少"，再决定是否开启。
+- 只有存在能真正达到 `full` 的后端（K8s + gVisor + default-deny NetworkPolicy）时，
+  才把 `enforce` 打开；否则等于对所有抓过外部内容的会话停机。
+- 切换到 `enforce` 之前先确认这两个数字：`trust_floor_met=false` 的 Run 占比，
+  以及这些会话所属用户是否接受被拒。
