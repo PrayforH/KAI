@@ -8,6 +8,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import { AgentThread } from "../components/agent-thread";
 import { AuthProvider, useAuth } from "../components/auth-provider";
@@ -188,30 +189,30 @@ function HeaderUtilities({
 
 function TaskContextBar({
   taskTitle,
-  agent,
   task,
+  switcher,
   onRenamed,
   onArchived,
 }: {
   taskTitle: string;
-  agent: TaskAgent | null;
   task: TaskSummary | null;
+  /** Version switcher for switchable agents, folded into the folder popover. */
+  switcher?: ReactNode;
   onRenamed: (title: string) => void;
   onArchived: () => void;
 }) {
   return (
     <div className="task-context-bar" aria-label="当前任务、项目与版本">
-      <strong className="task-context-title">{taskTitle}</strong>
       {task ? (
-        <TaskDetailsPopover task={task} agent={agent} />
+        <TaskDetailsPopover task={task} switcher={switcher} />
       ) : (
-        <span className="task-context-chip task-context-project">
-          <svg viewBox="0 0 20 20" aria-hidden="true">
+        <span className="task-folder-static" aria-hidden="true">
+          <svg viewBox="0 0 20 20">
             <path d="M2.75 5.75a2 2 0 0 1 2-2h3.1l1.7 1.9h5.7a2 2 0 0 1 2 2v6.5a2 2 0 0 1-2 2H4.75a2 2 0 0 1-2-2Z" />
           </svg>
-          {agent?.displayName ?? "agent-studio"}
         </span>
       )}
+      <strong className="task-context-title">{taskTitle}</strong>
       {task && (
         <TaskHeaderActions
           task={task}
@@ -682,8 +683,18 @@ function AuthenticatedHome() {
               )}
               <TaskContextBar
                 taskTitle={currentTaskTitle}
-                agent={selectedAgent}
                 task={currentTask}
+                switcher={selectedAgent && selectedAgent.name !== "lead-agent" ? (
+                  <TaskAgentSwitcher
+                    kind="version"
+                    agents={availableTaskAgents}
+                    selected={selectedAgent}
+                    loading={agentsLoading}
+                    currentTaskBusy={currentTaskBusy}
+                    onChange={switchAgent}
+                    onRefresh={refreshAgentCatalog}
+                  />
+                ) : undefined}
                 onRenamed={setCurrentTaskTitle}
                 onArchived={() => {
                   setCurrentTask(null);
@@ -691,17 +702,6 @@ function AuthenticatedHome() {
                   startNewTask();
                 }}
               />
-              {selectedAgent && selectedAgent.name !== "lead-agent" && (
-                <TaskAgentSwitcher
-                  kind="version"
-                  agents={availableTaskAgents}
-                  selected={selectedAgent}
-                  loading={agentsLoading}
-                  currentTaskBusy={currentTaskBusy}
-                  onChange={switchAgent}
-                  onRefresh={refreshAgentCatalog}
-                />
-              )}
             </div>
             <HeaderUtilities
               taskRailOpen={taskRailOpen}
