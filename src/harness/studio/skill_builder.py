@@ -26,7 +26,7 @@ class SkillConversationContext(StudioModel):
     display_name: str = Field(alias="displayName", min_length=1, max_length=100)
     domain: str = Field(min_length=1, max_length=100)
     description: str = Field(min_length=1, max_length=500)
-    current_skill: DraftSkill = Field(alias="currentSkill")
+    current_skill: DraftSkill | None = Field(default=None, alias="currentSkill")
 
 
 class SkillConversationRequest(StudioModel):
@@ -42,6 +42,10 @@ class SkillConversationRequest(StudioModel):
 
 
 class SkillConversationReply(StudioModel):
+    creator_run_id: str | None = Field(default=None, alias="creatorRunId")
+    creator_source_revision: str | None = Field(default=None, alias="creatorSourceRevision")
+    artifact_ids: tuple[str, ...] = Field(default=(), alias="artifactIds")
+    artifact_names: tuple[str, ...] = Field(default=(), alias="artifactNames")
     status: Literal["clarifying", "ready"]
     reply: str = Field(min_length=1, max_length=4_000)
     skill: DraftSkill | None = None

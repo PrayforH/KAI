@@ -23,3 +23,17 @@ cases:
       terminalStatuses: [succeeded, rejected]
       forbiddenTools: [Write, Edit, Bash]
       maxDurationSeconds: 120
+  - id: compare-before-user-choice
+    tags: [general-assistant, conversation, user-choice]
+    prompt: 给我三种客户投诉处理方案，分别说明成本和影响。先让我选一个，再写详细执行步骤。
+    expect:
+      terminalStatuses: [succeeded]
+      forbiddenTools: [Write, Edit, Bash, mcp__harness-artifacts__publish_artifact]
+      maxDurationSeconds: 120
+  - id: chat-markdown-is-not-a-file
+    tags: [general-assistant, conversation]
+    prompt: 用 Markdown 表格比较三种学习方法的优缺点，直接展示在对话中。
+    expect:
+      terminalStatuses: [succeeded]
+      forbiddenTools: [Write, Edit, Bash, mcp__harness-artifacts__publish_artifact]
+      maxDurationSeconds: 120

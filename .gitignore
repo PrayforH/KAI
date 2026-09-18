@@ -11,6 +11,9 @@
 __pycache__/
 *.py[cod]
 node_modules/
+# A node_modules symlink (used to run web tests from a scratch worktree) is not
+# a directory, so the trailing-slash rule above does not match it.
+node_modules
 .next/
 *.tsbuildinfo
 work/

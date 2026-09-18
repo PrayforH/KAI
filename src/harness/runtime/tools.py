@@ -121,6 +121,7 @@ class ResolvedTools:
     unavailable_mcp: Mapping[str, tuple[str, ...]] = field(
         default_factory=lambda: MappingProxyType({})
     )
+    disabled_builtin_tools: frozenset[str] = frozenset()
 
 
 class ToolResolver:
@@ -178,6 +179,7 @@ class ToolResolver:
         tolerate_unavailable_mcp: bool = False,
     ) -> ResolvedTools:
         builtins: list[str] = []
+        disabled_builtins: set[str] = set()
         python_tools: list[SdkMcpTool[Any]] = []
         mcp_servers: dict[str, McpServerConfig] = {}
         allowed_tools: list[str] = []
@@ -212,6 +214,7 @@ class ToolResolver:
         for tool_spec in manifest.spec.tools:
             if tool_spec.builtin is not None:
                 if tool_spec.builtin in {"WebSearch", "WebFetch"} and not web_allowed:
+                    disabled_builtins.add(tool_spec.builtin)
                     continue
                 if tool_spec.builtin not in builtins:
                     builtins.append(tool_spec.builtin)
@@ -357,6 +360,7 @@ class ToolResolver:
             sensitive_names=frozenset(sensitive_names),
             sensitive_values=frozenset(sensitive_values),
             unavailable_mcp=MappingProxyType(unavailable_mcp),
+            disabled_builtin_tools=frozenset(disabled_builtins),
         )
 
     @staticmethod
@@ -412,8 +416,17 @@ def enforce_published_tool_directory(
     expected_mcp = {entry.name for entry in directory.entries if entry.source in {"mcp", "python"}}
     actual_builtins = set(resolved.builtin_tools)
     actual_mcp = set(resolved.allowed_tools)
-    if expected_builtins != actual_builtins:
-        raise ToolResolutionError("runtime builtin tools differ from the published tool directory")
+    # User/platform web settings can revoke published web tools at execution time.
+    # Keep the immutable directory intact and never re-enable revoked capabilities.
+    disabled_web = resolved.disabled_builtin_tools.intersection({"WebSearch", "WebFetch"})
+    missing_builtins = expected_builtins.difference(actual_builtins).difference(disabled_web)
+    extra_builtins = actual_builtins.difference(expected_builtins)
+    if missing_builtins or extra_builtins:
+        raise ToolResolutionError(
+            "runtime builtin tools differ from the published tool directory: "
+            f"missing={','.join(sorted(missing_builtins)) or 'none'}; "
+            f"unexpected={','.join(sorted(extra_builtins)) or 'none'}"
+        )
     unavailable_mcp = {tool for tools in resolved.unavailable_mcp.values() for tool in tools}
     missing_mcp = expected_mcp.difference(actual_mcp).difference(unavailable_mcp)
     if missing_mcp:

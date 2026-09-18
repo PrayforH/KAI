@@ -287,6 +287,9 @@ class E2BSandboxProvider:
         self._max_collect_members = max_collect_members
         self._sandboxes: dict[str, E2BRemoteSandbox] = {}
 
+    def remote_workspace_for(self, run: Run) -> str:
+        return f"{self._remote_workspace_root}/{run.run_id}"
+
     async def provision(self, run: Run) -> SandboxHandle:
         sandbox = await self._client.create(
             template=self._template,
@@ -300,7 +303,7 @@ class E2BSandboxProvider:
         )
         self._sandboxes[sandbox.id] = sandbox
         path = Path(tempfile.mkdtemp(prefix=f"{run.run_id}-", dir=self._local_root))
-        remote_workspace = f"{self._remote_workspace_root}/{run.run_id}"
+        remote_workspace = self.remote_workspace_for(run)
 
         def transport_factory(raw_options: object) -> object:
             if isinstance(raw_options, CodexAppServerOptions):

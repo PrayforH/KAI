@@ -431,9 +431,12 @@ def build_memory_container(
         McpCredentialCipher(resolved_settings.auth_jwt_secret),
         audit=audit,
     )
-    web_configurations = WebConfigurationService(mcp_credential_service,
-        enabled=resolved_settings.web_tools_enabled, provider=resolved_settings.web_search_provider,
-        api_key=resolved_settings.web_search_api_key.get_secret_value())
+    web_configurations = WebConfigurationService(
+        mcp_credential_service,
+        enabled=resolved_settings.web_tools_enabled,
+        provider=resolved_settings.web_search_provider,
+        api_key=resolved_settings.web_search_api_key.get_secret_value(),
+    )
     model_configurations = ModelConfigurationService(
         capability_catalogs,
         mcp_credential_service,
@@ -805,6 +808,11 @@ def build_memory_container(
             preflight_sandbox,
             provider_name=resolved_settings.sandbox_provider,
             max_active_runs=resolved_settings.worker_deferred_max_active_runs,
+            remote_workspace_for=(
+                preflight_sandbox.remote_workspace_for
+                if isinstance(preflight_sandbox, E2BSandboxProvider)
+                else None
+            ),
         )
     skill_conversation: SkillConversationService | None = None
     if resolved_settings.runtime == "fake":
@@ -858,7 +866,9 @@ def build_memory_container(
                                 provider_by_route=resolved_settings.codex_provider_by_route,
                                 approval_policy=resolved_settings.codex_approval_policy,
                                 network_access=resolved_settings.codex_network_access,
-                                tool_output_token_limit=(resolved_settings.codex_tool_output_token_limit),
+                                tool_output_token_limit=(
+                                    resolved_settings.codex_tool_output_token_limit
+                                ),
                                 server_request_handler=CodexToolGate(
                                     approvals=approval_service,
                                     events=event_service,

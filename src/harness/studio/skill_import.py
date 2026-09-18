@@ -206,3 +206,16 @@ def import_skill(content: bytes, *, filename: str) -> ImportedSkill:
         findings=tuple(dict.fromkeys(findings)),
         warnings=tuple(warnings),
     )
+
+
+def validate_authored_skill(skill: DraftSkill) -> None:
+    """Apply the same credential-file checks to model-authored and uploaded contents."""
+    _reject_secret("SKILL.md", (skill.description + "\n" + skill.instructions).encode())
+    size = len(skill.instructions.encode())
+    for file in skill.files:
+        payload = (file.content.encode() if file.content is not None
+                   else base64.b64decode(file.content_base64 or "", validate=True))
+        _reject_secret(file.path, payload)
+        size += len(payload)
+        if size > MAX_SKILL_UPLOAD_BYTES:
+            raise SkillImportError("共创 Skill 超过 100 MiB")

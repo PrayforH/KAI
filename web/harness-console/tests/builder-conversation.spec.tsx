@@ -6,6 +6,7 @@ import { AgentBuilderAssistant } from "../src/components/agent-studio/agent-buil
 import { DEFAULT_STUDIO_DRAFT, type StudioDraft } from "../src/lib/agent-studio";
 import { studioClient, studioDraftToSpec, type ApiAgentDraft, type StudioTryRun } from "../src/lib/studio-client";
 
+vi.mock("../src/components/agent-studio/agent-project-code", () => ({ AgentProjectCode: ({comparison, comparisonPending}: {comparison?: {before:{revision:number};after:{revision:number}};comparisonPending:boolean}) => <section aria-label="测试代码差异">{comparison?.before.revision} → {comparison?.after.revision} · {comparisonPending ? "待应用" : "已应用"}</section> }));
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 let root: Root;
 let host: HTMLDivElement;
@@ -30,12 +31,19 @@ beforeEach(() => {
   HTMLElement.prototype.scrollTo = vi.fn();
   vi.spyOn(studioClient, "readBuilderMaterials").mockResolvedValue({context: "参考材料正文"});
   let nextRun = 0;
-  vi.spyOn(studioClient, "createTryRun").mockImplementation(async (_id, revision) => ({ ...run, draftRevision: revision, run: { ...run.run, run_id: `run-${++nextRun}`, session_id: "preview-session" } }));
+  const sessionByRun = new Map<string, string>();
+  vi.spyOn(studioClient, "createTryRun").mockImplementation(async (_id, revision, _prompt, _key, options) => {
+    const runId = `run-${++nextRun}`;
+    const sessionId = (options?.continueFromRunId && sessionByRun.get(options.continueFromRunId)) || `session-${runId}`;
+    sessionByRun.set(runId, sessionId);
+    return { ...run, draftRevision: revision, run: { ...run.run, run_id: runId, session_id: sessionId } };
+  });
   vi.spyOn(studioClient, "streamTryRunEvents").mockResolvedValue();
   vi.spyOn(studioClient, "getTryRun").mockImplementation(async (_id, revision, runId) => ({ ...run, draftRevision: revision, run: { ...run.run, run_id: runId, session_id: "preview-session" } }));
   vi.spyOn(studioClient, "converseBuilder").mockResolvedValue({
     baseRevision: 1, reply: "建议输出表格", changedFields: ["systemPrompt"], changes: { systemPrompt: "输出表格" },
   });
+  vi.spyOn(studioClient, "previewBuilderProjectDiff").mockRejectedValue(new Error("Export unavailable in this test"));
   vi.spyOn(studioClient, "applyBuilderEdit").mockResolvedValue(api({ ...initial, revision: 2, systemPrompt: "输出表格" }));
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   function Harness() {
@@ -185,7 +193,7 @@ it("does not run when clarification fails, a task is missing, or an unapplied pr
 });
 
 it("protects Chinese composition Enter from sending and uses the main composer styling", async () => {
-  const input = host.querySelector<HTMLTextAreaElement>('[aria-label="智能体构建助手"] textarea:not([aria-label="对话预览输入"])')!;
+  const input = host.querySelector('[aria-label="智能体构建助手"] textarea:not([aria-label="对话预览输入"])') as HTMLTextAreaElement;
   act(() => {
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, "修改提示词");
     input.dispatchEvent(new Event("input", { bubbles: true }));
@@ -341,9 +349,46 @@ it("uses creation references on the left and previews images independently on th
   expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toMatchObject({inputArtifactIds: ["input_artifact_image"]});
 });
 
+it("captures the actual project comparison before apply and opens it after the revision changes", async () => {
+  const source = { revision: 1, filename: "agent.zip", digest: "a", framework_version: "0.7.13", files: [] };
+  vi.mocked(studioClient.previewBuilderProjectDiff).mockResolvedValue({before: source, after: {...source, revision: 2}});
+  act(() => enableWorkspace());
+  await send("输出改成表格");
+  await click("应用修改");
+  expect(studioClient.previewBuilderProjectDiff).toHaveBeenCalledWith("draft-multi", {expectedRevision: 1, changes: {systemPrompt: "输出表格"}});
+  expect(vi.mocked(studioClient.previewBuilderProjectDiff).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(studioClient.applyBuilderEdit).mock.invocationCallOrder[0]);
+  expect(host.textContent).toContain("1 → 2 · 已应用");
+  expect(updated.mock.lastCall?.[0].revision).toBe(2);
+});
+
+it("creates from the actual brief and reviews recommended Skills before installation", async () => {
+  vi.spyOn(studioClient, "createDraftFromTask").mockResolvedValue({draft: api(initial), recommendation: {
+    generatedByModel: true, capabilityCatalogRevision: 7,
+    recommendedSkills: [{packageId: "evidence-reporting", revision: 1, label: "证据报告", reason: "当前任务需要来源核验", risk: "low"}],
+    runtime: initial.runtime, modelRouteId: initial.modelRoute, model: initial.model,
+    template: initial.template, builtinTools: [], mcpServers: [], permissionPolicy: initial.policy,
+    executionProfile: initial.executionProfile, reasons: [], validation: {ready: true, issues: [], productionEligible: true, contentHash: null, packageHash: null, runtimeCompatibility: {runtime: initial.runtime, label: "Worker", stability: "stable", compatible: true, capabilities: [], limitations: []}},
+  }});
+  act(() => newDraft());
+  await send("联网核验公开资料并生成报告");
+  expect(studioClient.createDraftFromTask).toHaveBeenCalledWith({task: "联网核验公开资料并生成报告", runtimePreference: "auto"}, expect.any(Function), expect.any(AbortSignal));
+  expect(host.textContent).toContain("当前任务需要来源核验");
+  expect(studioClient.applyBuilderEdit).not.toHaveBeenCalled();
+  await act(async () => { host.querySelector<HTMLInputElement>('[aria-label="推荐 Skill"] input')!.click(); });
+  await click("审阅所选 Skill");
+  expect(host.textContent).toContain("修改预览");
+  expect(studioClient.applyBuilderEdit).not.toHaveBeenCalled();
+  await click("应用修改");
+  expect(studioClient.applyBuilderEdit).toHaveBeenCalledWith(initial.id, {expectedRevision: 1, changes: {
+    installSkills: [{packageId: "evidence-reporting", revision: 1}], capabilityCatalogRevision: 7,
+  }});
+});
+
 it("renders model deltas before the completed proposal and keeps changes reviewable", async () => {
   let finish: (reply: Awaited<ReturnType<typeof studioClient.converseBuilder>>) => void;
   vi.mocked(studioClient.converseBuilder).mockImplementation(async (_id, _body, progress) => {
+    expect(host.querySelector(".aui-composer-root")?.textContent).not.toContain("正在读取参考材料");
+    expect(studioClient.readBuilderMaterials).not.toHaveBeenCalled();
     progress?.({ type: "builder.reply", text: "正在逐步输出建议" });
     return new Promise(resolve => { finish = resolve; });
   });
@@ -357,4 +402,32 @@ it("renders model deltas before the completed proposal and keeps changes reviewa
   expect(host.textContent).toContain("建议完成");
   expect(host.querySelector('[aria-label="待确认的配置修改"]')).not.toBeNull();
   expect(studioClient.applyBuilderEdit).not.toHaveBeenCalled();
+});
+
+it("starts an empty test conversation and can resume a chosen history with its latest turn", async () => {
+  act(() => enableWorkspace());
+  await sendTest("第一组问题"); await sendTest("第一组追问");
+  const panel = () => host.querySelector('[aria-label="智能体效果测试"]')!;
+  expect(panel().querySelectorAll("[data-test-run]")).toHaveLength(2);
+  expect(panel().textContent).toContain("当前对话 2 轮");
+  await act(async () => {
+    const input = panel().querySelector("textarea")!;
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, "未发送内容");
+    input.dispatchEvent(new Event("input", {bubbles:true}));
+  });
+  await click("新对话");
+  expect(panel().querySelectorAll("[data-test-run]")).toHaveLength(0);
+  expect(panel().querySelector("textarea")!.value).toBe("");
+  expect(panel().textContent).toContain("新对话，不携带其他对话上下文");
+  await sendTest("第二组独立问题");
+  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({});
+  expect(panel().querySelectorAll("[data-test-run]")).toHaveLength(1);
+  await act(async () => {
+    const select = panel().querySelector("select")!;
+    select.value = "session-run-1";select.dispatchEvent(new Event("change",{bubbles:true}));
+  });
+  expect(panel().querySelectorAll("[data-test-run]")).toHaveLength(2);
+  await sendTest("回到第一组继续追问");
+  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({continueFromRunId:"run-2"});
+  expect(panel().querySelectorAll("[data-test-run]")).toHaveLength(3);
 });

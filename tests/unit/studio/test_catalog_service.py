@@ -991,3 +991,31 @@ async def test_disabling_a_route_pinned_by_published_versions_is_refused() -> No
     assert not next(
         item for item in result.record.catalog.model_routes if item.route_id == "glm-5-3-flash"
     ).enabled
+
+@pytest.mark.asyncio
+async def test_get_retires_duplicate_skill_creator_and_preserves_tenant_settings() -> None:
+    from harness.studio.models import SkillCapability
+    from harness.studio.platform_skills import platform_skill_package
+
+    repository = InMemoryCapabilityCatalogRepository()
+    catalog = default_capability_catalog()
+    old = platform_skill_package("skill-authoring-quality", 1)
+    retired = SkillCapability(packageId=old.package_id, label=old.display_name,
+        summary=old.summary, revision=old.revision, compatibleRuntimes=old.compatible_runtimes,
+        license=old.license, sourceUrl=old.source_url, sourceRevision=old.source_revision,
+        contentHash=old.content_hash, riskLevel=old.risk_level)
+    skills = tuple(s.model_copy(update={"enabled": False, "label": "旧名称"})
+                   if s.package_id == "skill-creator" else s for s in catalog.skills) + (retired,)
+    original = catalog.model_copy(update={"skills": skills})
+    await repository.seed(CapabilityCatalogRecord(tenantId="tenant-a", revision=4,
+        catalog=original, updatedBy="admin-a", updatedAt=NOW))
+    service = CapabilityCatalogService(
+        repository, InMemoryAgentDraftRepository(), clock=lambda: NOW)
+    result = await service.get("tenant-a")
+    assert result.revision == 5
+    assert "skill-authoring-quality" not in {s.package_id for s in result.catalog.skills}
+    creator = next(s for s in result.catalog.skills if s.package_id == "skill-creator")
+    assert creator.label == "Skill Creator（Claude 官方）" and not creator.enabled
+    assert result.catalog.model_routes == original.model_routes
+    assert result.catalog.mcp_servers == original.mcp_servers
+    assert (await service.get("tenant-a")).revision == 5

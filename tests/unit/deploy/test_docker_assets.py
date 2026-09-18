@@ -92,7 +92,9 @@ def test_compose_contains_deployable_application_and_infrastructure() -> None:
     assert "public-opinion-agent/agent.yaml" in optional_studio_manifests
     assert "networked-knowledge-research-agent/agent.yaml" in optional_studio_manifests
     assert services["otel-collector"]["profiles"] == ["observability"]
-    assert services["postgres"]["image"] == "postgres:18.4-bookworm"
+    # Migrations 0001 and 0031 create the vector extension, so the local
+    # cluster must use the pgvector-enabled Postgres build.
+    assert services["postgres"]["image"] == "pgvector/pgvector:0.8.6-pg18"
     assert services["postgres"]["volumes"] == [
         "postgres18-cluster-data:/var/lib/postgresql"
     ]

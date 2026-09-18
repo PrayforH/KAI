@@ -42,21 +42,7 @@ function buildCatalog(
   platformPackages: StudioPlatformSkillPackage[],
   studioDrafts: StudioAgentSkillCatalogEntry[],
 ): CatalogSkill[] {
-  const byName = new Map<string, CatalogSkill>([[
-    `platform:${DEFAULT_SKILL_CREATOR.name}`,
-    {
-      key: `platform:${DEFAULT_SKILL_CREATOR.name}`,
-      name: DEFAULT_SKILL_CREATOR.name,
-      displayName: "Skill Creator",
-      description: DEFAULT_SKILL_CREATOR.description,
-      instructions: DEFAULT_SKILL_CREATOR.instructions,
-      scope: "platform",
-      files: [{ path: "SKILL.md" }],
-      fileCount: 1,
-      agents: [],
-      package: null,
-    },
-  ]]);
+  const byName = new Map<string, CatalogSkill>();
   for (const item of platformPackages) {
     byName.set(`platform-package:${item.packageId}`, {
       key: `platform-package:${item.packageId}`,
@@ -578,7 +564,8 @@ export function SkillsCatalogPage() {
                   {disabledKeys.has(selectedSkill.key) ? "启用" : "禁用"}
                 </button>
               )}
-              {!selectedSkill.package && !disabledKeys.has(selectedSkill.key) && (
+              {(selectedSkill.name === DEFAULT_SKILL_CREATOR.name || !selectedSkill.package)
+                && !disabledKeys.has(selectedSkill.key) && (
                 <Link
                   className={styles.actionLink}
                   href={selectedSkill.name === DEFAULT_SKILL_CREATOR.name

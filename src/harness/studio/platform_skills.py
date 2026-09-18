@@ -21,7 +21,8 @@ from harness.studio.models import (
     PlatformSkillPackage,
 )
 
-_CATALOG_REVISION = 1
+_CATALOG_REVISION = 2
+RETIRED_PLATFORM_SKILLS = frozenset({"skill-authoring-quality"})
 _SOURCE_REVISION = "platform-skills-v1"
 _SOURCE_ROOT = (
     "https://github.com/PrayforH/agent-studio/blob/main/"
@@ -102,7 +103,7 @@ _VENDORED_DISPLAY = {
     "design-style-skill": ("PPT 设计风格", ("办公", "PPT", "设计")),
     "ppt-editing-skill": ("PPTX 模板编辑", ("办公", "PPT", "编辑")),
     "slide-making-skill": ("幻灯片制作", ("办公", "PPT", "制作")),
-    "skill-creator": ("Skill 创建与评测", ("Skill", "创建", "评测")),
+    "skill-creator": ("Skill Creator（Claude 官方）", ("Skill", "创建", "评测")),
     "mcp-builder": ("MCP 服务开发", ("MCP", "开发", "集成")),
     "internal-comms": ("内部沟通写作", ("写作", "沟通", "企业")),
     "theme-factory": ("主题与配色工厂", ("设计", "主题", "配色")),
@@ -201,7 +202,7 @@ def _vendored_package(skill: DraftSkill) -> PlatformSkillPackage:
     )
 
 
-def default_platform_skill_catalog() -> PlatformSkillCatalog:
+def _all_platform_skill_catalog() -> PlatformSkillCatalog:
     """Return the reviewed catalog of first-party and vendored Skill packages."""
 
     return PlatformSkillCatalog(
@@ -432,6 +433,14 @@ def default_platform_skill_catalog() -> PlatformSkillCatalog:
     )
 
 
+def default_platform_skill_catalog() -> PlatformSkillCatalog:
+    """Active reviewed packages; historical package lookup remains available."""
+    catalog = _all_platform_skill_catalog()
+    return catalog.model_copy(update={"packages": tuple(
+        package for package in catalog.packages
+        if package.package_id not in RETIRED_PLATFORM_SKILLS)})
+
+
 def platform_skill_catalog_listing() -> PlatformSkillCatalogListing:
     """Project the reviewed catalog into the payload the catalog browser reads.
 
@@ -500,7 +509,7 @@ def _listing_file_size(file: DraftSkillFile) -> int:
 
 
 def platform_skill_package(package_id: str, package_revision: int) -> PlatformSkillPackage:
-    catalog = default_platform_skill_catalog()
+    catalog = _all_platform_skill_catalog()
     package = next((item for item in catalog.packages if item.package_id == package_id), None)
     if package is None:
         raise NotFoundError(f"Platform Skill package not found: {package_id}")

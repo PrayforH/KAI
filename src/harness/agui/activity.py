@@ -498,10 +498,7 @@ def _activity_item(event: RunEvent) -> dict[str, Any] | None:
             ),
         )
     if event.type in {
-        "approval.approved",
-        "approval.rejected",
-        "approval.expired",
-        "approval.cancelled",
+        "approval.approved", "approval.rejected", "approval.expired", "approval.cancelled",
     }:
         approved = event.type.endswith("approved")
         return _item(
@@ -509,10 +506,8 @@ def _activity_item(event: RunEvent) -> dict[str, Any] | None:
             kind="tool",
             status="succeeded" if approved else "failed",
             title={
-                "approval.approved": "审批已通过",
-                "approval.rejected": "审批已拒绝",
-                "approval.expired": "审批已过期",
-                "approval.cancelled": "审批已取消",
+                "approval.approved": "审批已通过", "approval.rejected": "审批已拒绝",
+                "approval.expired": "审批已过期", "approval.cancelled": "审批已取消",
             }[event.type],
             metadata=_metadata(approval_id=payload.get("approval_id")),
         )

@@ -72,9 +72,7 @@ async def test_file_proxy_uses_argument_vector_and_reports_backend_failure() -> 
     assert calls[0][:2] == ("python3", "-c")
     assert calls[0][-2] == "read"
     assert result["isError"] is True
-    assert result["content"] == [
-        {"type": "text", "text": "path escaped workspace"}
-    ]
+    assert result["content"] == [{"type": "text", "text": "path escaped workspace"}]
 
 
 @pytest.mark.asyncio
@@ -99,9 +97,7 @@ async def test_bundle_python_tool_executes_source_in_workspace_sandbox(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await asyncio.wait_for(
-            process.communicate(), timeout=timeout_seconds
-        )
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout_seconds)
         return SandboxCommandResult(
             exit_code=process.returncode or 0,
             stdout=stdout.decode(),
@@ -126,3 +122,42 @@ async def test_bundle_python_tool_executes_source_in_workspace_sandbox(
     result = await tool.handler({"value": 4})
 
     assert result["content"] == [{"type": "text", "text": '{"result": 8}\n'}]
+
+
+@pytest.mark.asyncio
+async def test_absolute_remote_file_paths_stay_inside_the_workspace(tmp_path: Path) -> None:
+    import sys
+
+    workspace = tmp_path / "run"
+    workspace.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (workspace / "link").symlink_to(outside, target_is_directory=True)
+
+    async def execute(argv, _environment, _timeout):
+        process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            *argv[1:],
+            cwd=workspace,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        out, err = await process.communicate()
+        return SandboxCommandResult(
+            exit_code=process.returncode, stdout=out.decode(), stderr=err.decode()
+        )
+
+    tool = create_sandbox_tool(builtin="Write", description="test", schema={}, executor=execute)
+    result = await tool.handler(
+        {"file_path": str(workspace / "outputs/check.txt"), "content": "ok"}
+    )
+    assert not result.get("isError")
+    assert (workspace / "outputs/check.txt").read_text() == "ok"
+    for path in [
+        outside / "secret.txt",
+        workspace / "link/secret.txt",
+        workspace / "../outside/secret.txt",
+    ]:
+        denied = await tool.handler({"file_path": str(path), "content": "outside"})
+        assert denied["isError"] is True
+    assert not (outside / "secret.txt").exists()

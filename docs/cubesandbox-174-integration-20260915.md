@@ -2,6 +2,8 @@
 
 ## 结果
 
+本文记录首次启用阶段；随后 Web 与后端已统一升级，当前版本见 [合并发布记录](cube-hitl-codeview-174-release-20260915.md)。
+
 2026-09-15 已在 `172.20.109.174` 正式启用 CubeSandbox。API、3 个 Worker 与 quality-sync 使用新镜像，正式 Web 保持原版本。网页 `http://172.20.109.174:3501` 和 API `/healthz` 均返回 200。
 
 | 项目 | 生效配置 |

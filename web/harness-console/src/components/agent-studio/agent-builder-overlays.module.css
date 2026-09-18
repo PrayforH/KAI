@@ -270,3 +270,8 @@
 .builderAssistant[data-embedded="true"] .transcript { min-width: 0; overflow-x: hidden; }
 .message, .message > div { min-width: 0; overflow-wrap: anywhere; }
 .message pre { max-width: 100%; overflow: auto; }
+
+.skillSuggestion { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; cursor: pointer; }
+.skillSuggestion input { margin-top: 4px; accent-color: var(--foreground); }
+.skillSuggestion span { display: grid; gap: 4px; }
+.skillSuggestion small { color: var(--muted-foreground); line-height: 1.5; }

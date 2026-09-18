@@ -647,8 +647,15 @@ function AuthenticatedHome() {
               )}
               <TaskContextBar taskTitle={currentTaskTitle} agent={selectedAgent} />
               {selectedAgent && selectedAgent.name !== "lead-agent" && (
-                <TaskAgentSwitcher kind="version" agents={availableTaskAgents} selected={selectedAgent} loading={agentsLoading}
-                  currentTaskBusy={currentTaskBusy} onChange={switchAgent} onRefresh={refreshAgentCatalog} />
+                <TaskAgentSwitcher
+                  kind="version"
+                  agents={availableTaskAgents}
+                  selected={selectedAgent}
+                  loading={agentsLoading}
+                  currentTaskBusy={currentTaskBusy}
+                  onChange={switchAgent}
+                  onRefresh={refreshAgentCatalog}
+                />
               )}
             </div>
             <HeaderUtilities

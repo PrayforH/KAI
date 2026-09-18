@@ -378,7 +378,7 @@ describe("Agent Studio management page", () => {
     expect(builderOverlays).toContain("描述你想创建的智能体");
     expect(builderOverlays).toContain("在右侧测试效果");
     expect(builderOverlays).toContain("studioClient.createDraftFromTask");
-    expect(builderOverlays).toContain("只使用 Worker 运行；不访问外部网络");
+    expect(builderOverlays).not.toContain("只使用 Worker 运行；不访问外部网络");
     expect(builderOverlays).toContain('aria-label="发送消息"');
     expect(workbench).toContain("setBuilderAssistantOpen(true)");
     expect(workbench).toContain('data-builder-open={builderAssistantOpen}');
@@ -629,7 +629,7 @@ describe("Agent Studio management page", () => {
     expect(studioConfig).toContain("export const MCP_OPTIONS: McpOption[] = [];");
     expect(workbench).toContain("仅展示可配置工具");
     expect(workbench).toContain('new Set(["Task"])');
-    expect(builderOverlays).toContain("builtinTools: generatedDraft.builtinTools");
+    expect(builderOverlays).not.toContain("mcpServers.filter");
     expect(workbench).toContain("独立工作负载身份");
     expect(workbench).toContain("恢复同一会话的运行时线程上下文");
     expect(workbench).toContain("不宣称支持任意工具步骤的持久化 checkpoint");

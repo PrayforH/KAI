@@ -1,4 +1,5 @@
 "use client";
+import { WebCapabilityStatus } from "../web-configuration";
 import { isAgentVisible } from "../../lib/agent-visibility";
 import { useInternalAgentsPreference } from "../../lib/interface-preferences";
 
@@ -3132,6 +3133,7 @@ export function AgentStudioWorkbench() {
                 </div>
                 <div className={styles.workerToolPicker} aria-label="公开联网工具">
                   <h3>公开联网</h3>
+                  <WebCapabilityStatus />
                   <p>由平台提供搜索和网页读取，无需配置 MCP。勾选后保存并发布生效，同时受个人设置中的联网开关控制。</p>
                   <div className={styles.compactToolGrid}>
                     {options.tools.filter((tool) => ["WebSearch", "WebFetch"].includes(tool.id)).map((tool) => (

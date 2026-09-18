@@ -164,7 +164,7 @@ export function createInputAttachmentAdapter(
       } catch (error) {
         if (controller.signal.aborted) return;
         const message = error instanceof Error ? error.message : String(error);
-        uploadFeedbackStore.fail(key, message);
+        if (!controller.signal.aborted) uploadFeedbackStore.fail(key, message);
         throw error;
       } finally {
         uploads.delete(attachmentId);

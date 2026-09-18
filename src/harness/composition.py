@@ -390,6 +390,9 @@ def _runtime_sandbox(
         backend,
         provider_name=settings.sandbox_provider,
         max_active_runs=settings.worker_deferred_max_active_runs,
+        remote_workspace_for=(
+            backend.remote_workspace_for if isinstance(backend, E2BSandboxProvider) else None
+        ),
     )
 
 

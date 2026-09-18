@@ -23,6 +23,12 @@ from harness.runtime.tools import (
     ToolResolver,
     enforce_published_tool_directory,
 )
+from harness.studio.mcp_credential_store import (
+    InMemoryMcpCredentialRepository,
+    McpCredentialCipher,
+    McpCredentialService,
+)
+from harness.studio.web_configuration import ConfigureWebRequest, WebConfigurationService
 
 
 class UnexpectedCredentialProvider:
@@ -358,6 +364,11 @@ def test_published_tool_directory_filters_additions_and_rejects_missing_tools() 
     assert unchanged.allowed_tools == ("mcp__crm-prod__search",)
     with pytest.raises(ToolResolutionError, match="builtin tools differ"):
         enforce_published_tool_directory(snapshot, resolved(builtins=("Read", "Bash")))
+    with pytest.raises(ToolResolutionError, match="missing=Read"):
+        enforce_published_tool_directory(
+            snapshot,
+            replace(resolved(builtins=()), disabled_builtin_tools=frozenset({"Read"})),
+        )
     with pytest.raises(
         ToolResolutionError,
         match="published MCP tools are no longer available.*mcp__crm-prod__search",
@@ -382,3 +393,53 @@ def test_published_tool_directory_filters_additions_and_rejects_missing_tools() 
     )
     assert filtered.allowed_tools == ("mcp__crm-prod__search",)
     assert filtered.result_trust == {"mcp__crm-prod__search": ContextTrust.SENSITIVE}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["eager", "on_demand"])
+@pytest.mark.parametrize("disabled_by", ["platform", "user"])
+async def test_published_web_tools_respect_runtime_web_revocation(
+    mode: str, disabled_by: str,
+) -> None:
+    manifest = manifest_fixture(
+        {"builtin": "Read"}, {"builtin": "WebSearch"}, {"builtin": "WebFetch"},
+    )
+    manifest = AgentManifest.model_validate(manifest.model_dump() | {
+        "spec": manifest.spec.model_dump() | {"tool_exposure_mode": mode},
+    })
+    directory = ToolDirectorySnapshot.create(
+        catalog_revision=1,
+        exposure_mode=manifest.spec.tool_exposure_mode,
+        entries=tuple(ToolDirectoryEntry(
+            name=name, source="builtin", logicalReference=name,
+            description=name, risk="low", resultTrust="safe",
+        ) for name in ("Read", "WebSearch", "WebFetch")),
+    )
+    snapshot = AgentManifestSnapshot(
+        manifest=manifest, system_prompt="Use reviewed tools.",
+        tool_directory=directory, content_hash="a" * 64,
+    )
+    web = WebConfigurationService(McpCredentialService(
+        InMemoryMcpCredentialRepository(), McpCredentialCipher(SecretStr("test-key")),
+    ), api_key="platform-key")
+    identity = ExecutionIdentity(
+        tenant_id="tenant", user_id="one", project_id="p", session_id="s",
+        run_id="r", agent_name="domain-agent", agent_version="0.1.0",
+    )
+    await web.configure("tenant", "one", ConfigureWebRequest(enabled=disabled_by != "user"))
+    resolver = ToolResolver(web_enabled=disabled_by != "platform", web_configurations=web)
+    resolved = await resolver.resolve(manifest, identity)
+    assert resolved.builtin_tools == ("Read",)
+    assert resolved.disabled_builtin_tools == frozenset({"WebSearch", "WebFetch"})
+    assert enforce_published_tool_directory(snapshot, resolved).builtin_tools == ("Read",)
+    # An unexplained disappearance still fails, even for a web tool.
+    with pytest.raises(ToolResolutionError, match="missing=WebFetch,WebSearch"):
+        enforce_published_tool_directory(
+            snapshot, replace(resolved, disabled_builtin_tools=frozenset()),
+        )
+    assert snapshot.tool_directory == directory
+    await web.configure("tenant", "one", ConfigureWebRequest(enabled=True))
+    restored = await ToolResolver(web_configurations=web).resolve(manifest, identity)
+    assert enforce_published_tool_directory(snapshot, restored).builtin_tools == (
+        "Read", "WebSearch", "WebFetch",
+    )

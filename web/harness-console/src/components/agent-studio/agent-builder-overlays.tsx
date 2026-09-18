@@ -1,9 +1,12 @@
 "use client";
 import { ConversationControl } from "../conversation-control";
 
+import { uploadKey } from "../../lib/upload-feedback-store";
 import { createPortal } from "react-dom";
 import { WorkspaceAttachments, type WorkspaceFile } from "./workspace-attachments";
 import { AgentTestPanel } from "./agent-test-panel";
+import dynamic from "next/dynamic";
+const AgentProjectCode = dynamic(() => import("./agent-project-code").then(module => module.AgentProjectCode), { ssr: false });
 import { AgentBuildAssets, type BuildChange } from "./agent-build-assets";
 import workspaceStyles from "./build-workspace.module.css";
 import { PreviewRunResponse, PreviewMarkdown, type PreviewTurn } from "./agent-preview";
@@ -14,6 +17,7 @@ import {
   type StudioTaskDrivenRecommendation,
   type StudioTryRun,
   type StudioBuilderReply,
+  type DeepagentsProjectComparison,
 } from "../../lib/studio-client";
 import { createInputAttachmentAdapter, inputArtifactIdFromAttachment } from "../../lib/input-attachment-adapter";
 import { createRandomId } from "../../lib/random-id";
@@ -48,10 +52,14 @@ const editLabels: Record<string, string> = {
   displayName: "显示名称", description: "简介", systemPrompt: "系统提示词",
   taskContract: "任务与输出要求", builtinTools: "内置工具", mcpServers: "MCP",
   knowledgeReferences: "知识库", skillInstructions: "Skill 正文", removeSkills: "移除 Skill",
-  roleResponsibilities: "协作角色职责",
+  roleResponsibilities: "协作角色职责", createSkills: "创建 Agent Skill", installSkills: "安装推荐 Skill", updateSkills: "更新 Agent Skill",
+  capabilityCatalogRevision: "装配目录修订",
 };
 
 function beforeEdit(draft: StudioDraft, key: string): unknown {
+  if (key === "createSkills" || key === "installSkills") return [];
+  if (key === "updateSkills") return draft.skills;
+  if (key === "capabilityCatalogRevision") return "应用时重新校验";
   if (key === "skillInstructions") return draft.skills.map(({ name, instructions }) => ({ name, instructions }));
   if (key === "removeSkills") return draft.skills.map(({ name }) => name);
   if (key === "roleResponsibilities") return draft.subagents.map(({ alias, responsibility }) => ({ alias, responsibility }));
@@ -91,7 +99,6 @@ export function AgentBuilderAssistant({
   onClose,
   onCreated,
   prepareDraft,
-  knowledgeMcpReferences,
   hasUnsavedChanges,
   onUpdated,
   creationSession = 0,
@@ -113,10 +120,17 @@ export function AgentBuilderAssistant({
   testRequest?: number;
 }) {
   const [input, setInput] = useState("");
+  const [codeView, setCodeView] = useState(false);
+  const [lastComparison, setLastComparison] = useState<DeepagentsProjectComparison>();
+  const [codeComparison, setCodeComparison] = useState<DeepagentsProjectComparison>();
+  const [comparisonPending, setComparisonPending] = useState(false);
+  const [comparing, setComparing] = useState(false);
   const [assetsOpen, setAssetsOpen] = useState(true);
   const [assetTab, setAssetTab] = useState<"config" | "changes">("config");
   const [mobilePanel, setMobilePanel] = useState<"build" | "test">("build");
   const [selectedRunId, setSelectedRunId] = useState("");
+  const [testSessionId, setTestSessionId] = useState("");
+  const [testConversationEpoch, setTestConversationEpoch] = useState(0);
   const [lastChanges, setLastChanges] = useState<BuildChange[]>([]);
   const [attachments, setAttachments] = useState<WorkspaceFile[]>([]);
   const [readingMaterials, setReadingMaterials] = useState(false);
@@ -127,6 +141,7 @@ export function AgentBuilderAssistant({
   const [messages, setMessages] = useState<ConversationMessage[]>(() => initialMessages(mode, draft));
   const [workingDraft, setWorkingDraft] = useState<StudioDraft | null>(null);
   const [recommendation, setRecommendation] = useState(initialRecommendation);
+  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [result, setResult] = useState<StudioTryRun | null>(null);
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -143,6 +158,7 @@ export function AgentBuilderAssistant({
   const startingRef = useRef(false);
   const sessionKeyRef = useRef("");
   const epochRef = useRef(0);
+  const proposalRef = useRef(proposal); proposalRef.current = proposal;
   const latestRef = useRef({ hasUnsavedChanges, onUpdated });
   latestRef.current = { hasUnsavedChanges, onUpdated };
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -177,15 +193,16 @@ export function AgentBuilderAssistant({
     setEditing(false);
     setApplying(false);
     setProposal(null);
-    setLastChanges([]); setSelectedRunId(""); setAssetsOpen(true); setMobilePanel("build");
+    setCodeView(false); setLastComparison(undefined); setCodeComparison(undefined); setComparisonPending(false); setComparing(false); setLastChanges([]); setSelectedRunId(""); setAssetsOpen(true); setMobilePanel("build");
     setLastTestPrompt("");
+    setTestSessionId(""); setTestConversationEpoch(value => value + 1);
     setArchivedTurns([]); setCurrentFiles([]); setLastArtifactIds([]); setFeedbackTurn(null);
     setInput(initialPrompt);
     setMessages(initialMessages(mode, draft));
     setWorkingDraft(mode === "run" ? draft : null);
     setCreating(false);
     setBusy(false);
-    setRecommendation(initialRecommendation);
+    setRecommendation(initialRecommendation); setSelectedSkills([]);
     setResult(null);
     setError("");
     setAttachments([]); setUploading(false); setReadingMaterials(false); uploadLock.current = false; submitLock.current = false; followOutput.current = true;
@@ -194,7 +211,7 @@ export function AgentBuilderAssistant({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, mode, draft.id, creationSession]);
 
-  useEffect(() => { if (testRequest) { setMobilePanel("test"); window.setTimeout(() => workspaceTarget?.querySelector<HTMLTextAreaElement>('[aria-label="效果测试输入"]')?.focus(), 0); } }, [testRequest, workspaceTarget]);
+  useEffect(() => { if (testRequest) { setCodeView(false);setMobilePanel("test"); window.setTimeout(() => workspaceTarget?.querySelector<HTMLTextAreaElement>('[aria-label="效果测试输入"]')?.focus(), 0); } }, [testRequest, workspaceTarget]);
 
   useEffect(() => () => {
     epochRef.current += 1;
@@ -252,13 +269,15 @@ export function AgentBuilderAssistant({
     try {
       const adapter = createInputAttachmentAdapter();
       for (const file of files) {
+        const pendingId = `upload:${uploadKey(file)}`;
+        if (epoch === epochRef.current) setAttachments(list => [...list, {id: pendingId, name: file.name, mediaType: file.type, uploadKey: uploadKey(file)}]);
         const iterator = adapter.add({ file });
         if (!(Symbol.asyncIterator in iterator)) throw new Error("附件上传不可用");
         for await (const pending of iterator) {
           if (pending.status.type !== "requires-action") continue;
           const attachment = await adapter.send(pending);
           const id = inputArtifactIdFromAttachment(attachment);
-          if (id && epoch === epochRef.current) setAttachments(current => [...current, { id, name: file.name, mediaType: attachment.contentType }]);
+          if (id && epoch === epochRef.current) setAttachments(current => current.map(item => item.id === pendingId ? { id, name: file.name, mediaType: attachment.contentType } : item));
         }
       }
     } catch (reason) { if (epoch === epochRef.current) setError(reason instanceof Error ? reason.message : "上传失败"); }
@@ -274,7 +293,10 @@ export function AgentBuilderAssistant({
     try {
       const runnableDraft = targetDraft ?? await prepareDraft();
       if (epoch !== epochRef.current || !runnableDraft?.id || !value.trim()) return false;
-      const previous = continueConversation && result?.draftRevision === runnableDraft.revision ? result : null;
+      const latestTurn = workspaceTarget
+        ? [...archivedTurns.map(turn => turn.result), ...(result ? [result] : [])].findLast(turn => turn.run.session_id === testSessionId)
+        : result;
+      const previous = continueConversation && latestTurn?.draftRevision === runnableDraft.revision ? latestTurn : null;
       const started = await studioClient.createTryRun(
         runnableDraft.id,
         runnableDraft.revision,
@@ -288,7 +310,8 @@ export function AgentBuilderAssistant({
       setLastTestPrompt(value.trim());
       setCurrentFiles(names); setLastArtifactIds(artifactIds);
       setResult(started);
-      setMobilePanel("test");
+      setTestSessionId(started.run.session_id);
+      setCodeView(false);setMobilePanel("test");
       setSelectedRunId("");
       setMessages(current => [...current, { id: `run-${started.run.run_id}`, role: "assistant", text: "", runId: started.run.run_id }]);
       return true;
@@ -311,35 +334,19 @@ export function AgentBuilderAssistant({
     setCreating(true);
     setError("");
     try {
-      const task = [
-        value.trim(),
-        "",
-        "当前部署约束：只使用 Worker 运行；不访问外部网络；优先使用已有知识库和工作区数据。",
-      ].join("\n");
-      const created = await studioClient.createDraftFromTask({ task, ...(materialContext ? {sampleInput: materialContext} : {}), runtimePreference: "auto" }, event => {
+      const created = await studioClient.createDraftFromTask({task: value.trim(), ...(materialContext ? {sampleInput: materialContext} : {}), runtimePreference: "auto"}, event => {
         if (epoch === epochRef.current && event.text) setBuildProgress(event.text);
       }, controller.signal);
       if (epoch !== epochRef.current) return false;
-      const generatedDraft = apiDraftToStudioDraft(created.draft);
-      const restrictedDraft = {
-        ...generatedDraft,
-        builtinTools: generatedDraft.builtinTools,
-        mcpServers: generatedDraft.mcpServers.filter((reference) => knowledgeMcpReferences.includes(reference)),
-      };
-      const environmentRestricted = restrictedDraft.builtinTools.length !== generatedDraft.builtinTools.length
-        || restrictedDraft.mcpServers.length !== generatedDraft.mcpServers.length;
-      const nextDraft = environmentRestricted
-        ? apiDraftToStudioDraft(await studioClient.replaceDraft(restrictedDraft))
-        : generatedDraft;
-      if (epoch !== epochRef.current) return false;
+      const nextDraft = apiDraftToStudioDraft(created.draft);
       setWorkingDraft(nextDraft);
       sessionKeyRef.current = `run:${nextDraft.id}`;
-      setRecommendation(created.recommendation);
+      setRecommendation(created.recommendation); setSelectedSkills([]);
       setMessages((current) => [...current, {
         id: createRandomId(),
         role: "assistant",
         tone: "success",
-        text: `已创建“${nextDraft.displayName}”草稿。可以继续告诉我修改要求，或在右侧输入实际问题测试效果。${attachments.length ? "已将附件作为构建参考材料。" : ""}`,
+        text: `${created.recommendation?.generatedByModel ? "已由模型生成" : "已创建"}“${nextDraft.displayName}”草稿。可以继续告诉我修改要求，或在右侧输入实际问题测试效果。${attachments.length ? "已将附件作为构建参考材料。" : ""}`,
       }]);
       onCreated({ draft: nextDraft, prompt: value.trim(), recommendation: created.recommendation, autoRun: false });
       setAttachments([]); setAssetsOpen(true);
@@ -358,16 +365,18 @@ export function AgentBuilderAssistant({
   async function send() {
     const value = input.trim();
     if (!value || inputBusy || submitLock.current) return;
+    if (attachments.some(file => file.uploadKey)) { setError("请移除上传失败的文件后重试。"); return; }
     const sendAsTest = intent === "run";
     if (sendAsTest && proposal) { setError("请先应用或放弃当前修改建议，再开始试跑。"); return; }
     submitLock.current = true;
     const epoch = epochRef.current;
     const messageId = createRandomId();
     try {
-      setReadingMaterials(true); setError("");
+      setReadingMaterials(Boolean(attachments.length && !sendAsTest)); setError("");
       const materialContext = attachments.length && !sendAsTest
         ? (await studioClient.readBuilderMaterials(attachments.map(file=>file.id), activeDraft.modelRoute)).context : "";
       if (epoch !== epochRef.current) return;
+      setReadingMaterials(false);
       followOutput.current = true;
       setInput("");
       setMessages(current => [...current, { id: messageId, role: "user", text: value, files: attachments.map(file => file.name), artifactIds: attachments.map(file=>file.id), materialContext }]);
@@ -414,10 +423,13 @@ export function AgentBuilderAssistant({
         else if (event.type === "progress") setBuildProgress(event.text);
       }, controller.signal);
       if (epoch !== epochRef.current) return;
-      setMessages((current) => [...current, { id: createRandomId(), role: "assistant", text: reply.reply }]);
+      setMessages((current) => [...current, { id: createRandomId(), role: "assistant", text: reply.reply,
+        files: reply.creatorRuns?.flatMap(run => run.artifactNames),
+        artifactIds: reply.creatorRuns?.flatMap(run => run.artifactIds),
+      }]);
       const action = reply.action ?? "edit";
       if (action === "edit") {
-        if (reply.changedFields.length) setProposal({ ...reply, before: saved, testTurn: contextTurn ?? undefined });
+        if (reply.changedFields.length) { setProposal({ ...reply, before: saved, testTurn: contextTurn ?? undefined }); if (comparisonPending) {setCodeComparison(undefined); setCodeView(false);} }
       } else if (action === "run" || action === "rerun") {
         if (active || proposal || latestRef.current.hasUnsavedChanges) {
           setError(active ? "当前试跑尚未结束，请结束后再试。" : proposal
@@ -440,6 +452,26 @@ export function AgentBuilderAssistant({
     }
   }
 
+  async function previewCodeChanges() {
+    if (!proposal || comparing || applying) return;
+    const epoch = epochRef.current;
+    setComparing(true); setError("");
+    try {
+      const comparison = await studioClient.previewBuilderProjectDiff(activeDraft.id, {
+        expectedRevision: proposal.baseRevision, changes: proposal.changes,
+      });
+      if (epoch !== epochRef.current || proposalRef.current !== proposal) return;
+      setCodeComparison(comparison); setComparisonPending(true); setCodeView(true);
+    } catch (reason) {
+      if (epoch === epochRef.current) setError(reason instanceof Error ? reason.message : "无法生成代码差异，请重试");
+    } finally { if (epoch === epochRef.current) setComparing(false); }
+  }
+
+  function showLastComparison() {
+    if (!lastComparison) return;
+    setCodeComparison(lastComparison); setComparisonPending(false); setCodeView(true);
+  }
+
   async function applyEdit(rerun: boolean) {
     if (!proposal || applying || hasUnsavedChanges || activeDraft.revision !== proposal.baseRevision) return;
     if (rerun && active) return;
@@ -447,21 +479,33 @@ export function AgentBuilderAssistant({
     setApplying(true);
     setError("");
     try {
+      let comparison: DeepagentsProjectComparison | undefined;
+      let comparisonError = "";
+      try {
+        comparison = await studioClient.previewBuilderProjectDiff(activeDraft.id, {
+          expectedRevision: proposal.baseRevision, changes: proposal.changes,
+        });
+      } catch (reason) {
+        comparisonError = reason instanceof Error ? reason.message : "无法生成项目代码差异";
+      }
+      if (epoch !== epochRef.current) return;
       const saved = apiDraftToStudioDraft(await studioClient.applyBuilderEdit(activeDraft.id, {
         expectedRevision: proposal.baseRevision, changes: proposal.changes,
       }));
       if (epoch !== epochRef.current) return;
-      setLastChanges(Object.entries(proposal.changes).map(([key, value]) => ({label: editLabels[key] ?? key, before: showValue(beforeEdit(proposal.before, key)), after: showValue(value)})));
+      setLastChanges(Object.entries(proposal.changes).filter(([key]) => key !== "capabilityCatalogRevision").map(([key, value]) => ({label: editLabels[key] ?? key, before: showValue(beforeEdit(proposal.before, key)), after: showValue(value)})));
       setProposal(null);
+      setLastComparison(comparison); setCodeComparison(comparison); setComparisonPending(false);
       const localConflict = latestRef.current.hasUnsavedChanges;
       if (!localConflict) {
         setWorkingDraft(saved);
         latestRef.current.onUpdated(saved);
+        if (comparison && !rerun) setCodeView(true);
       }
       const text = localConflict
         ? "修改已保存，但主区域出现了新的未保存编辑，已保留本地内容；请重新加载或处理保存冲突后继续。"
         : `已更新“${saved.displayName}”草稿（修订 ${saved.revision}），未发布。${result && !terminal ? "当前试跑仍使用原配置；结束后可用新配置重新试跑。" : "可以继续提出修改要求。"}`;
-      setMessages((current) => [...current, { id: createRandomId(), role: "assistant", tone: "success", text }]);
+      setMessages((current) => [...current, { id: createRandomId(), role: "assistant", tone: "success", text: text + (comparisonError ? ` 代码差异未生成：${comparisonError}。可在智能体资产中查看配置改动。` : "") }]);
       if (rerun && !localConflict && lastTestPrompt) {
         const test = proposal.testTurn;
         await startRun(test?.prompt ?? lastTestPrompt, saved, false, test?.artifactIds ?? lastArtifactIds, test?.files ?? currentFiles);
@@ -495,14 +539,14 @@ export function AgentBuilderAssistant({
         setResult(null); setFeedbackTurn(null); setIntent("run"); setError("");
         setMessages(current => [...current, { id: createRandomId(), role: "assistant", tone: "muted", text: "已开启新的测试会话。" }]);
       }}>↺</button>}
-      {workspaceTarget ? <button type="button" title="查看配置与改动" aria-label="查看智能体资产" onClick={() => {setAssetTab("config");setAssetsOpen(current => !current);}}>☷</button> : <button type="button" aria-label="收起构建助手" onClick={onClose}>×</button>}</div>
+      {workspaceTarget ? <button type="button" title="查看配置与改动" aria-label="查看智能体资产" onClick={() => {setCodeView(false);setAssetTab("config");setAssetsOpen(current => !current);}}>☷</button> : <button type="button" aria-label="收起构建助手" onClick={onClose}>×</button>}</div>
     </header>
 
     <div className={styles.transcript} ref={transcriptRef} aria-live="polite" onScroll={event => { const el = event.currentTarget; followOutput.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120; }}>
       {messages.map((message) => {
         const turn = message.runId ? turns.find(turn => turn.result.run.run_id === message.runId) : undefined;
         return <article key={message.id} className={styles.message} data-role={message.role} data-tone={message.tone} data-source={turn ? "agent" : "builder"}>
-          <div>{turn ? workspaceTarget ? <button type="button" className={styles.runLink} onClick={() => {setSelectedRunId(turn.result.run.run_id);setMobilePanel("test");}}><span>{turn.result.run.status === "succeeded" ? "测试已完成" : ["failed", "cancelled", "timed_out", "rejected"].includes(turn.result.run.status) ? "测试已结束" : "正在测试"} · r{turn.result.draftRevision}</span><small>查看回答 ↗</small></button> : <PreviewRunResponse turn={turn} agentName={activeDraft.displayName} onImprove={improve} /> : <>
+          <div>{turn ? workspaceTarget ? <button type="button" className={styles.runLink} onClick={() => {setTestSessionId(turn.result.run.session_id);setSelectedRunId(turn.result.run.run_id);setCodeView(false);setMobilePanel("test");}}><span>{turn.result.run.status === "succeeded" ? "测试已完成" : ["failed", "cancelled", "timed_out", "rejected"].includes(turn.result.run.status) ? "测试已结束" : "正在测试"} · r{turn.result.draftRevision}</span><small>查看回答 ↗</small></button> : <PreviewRunResponse turn={turn} agentName={activeDraft.displayName} onImprove={improve} /> : <>
             {message.role === "assistant" && <small className={styles.speaker}>构建助手</small>}
             <PreviewMarkdown text={message.text} />
             {message.files?.length ? <WorkspaceAttachments files={message.files.map((name,i)=>({id:message.artifactIds?.[i] || `legacy-${i}`,name}))}/> : null}
@@ -510,20 +554,35 @@ export function AgentBuilderAssistant({
         </article>;
       })}
 
+      {readingMaterials && <p className={styles.editStatus} role="status">正在读取参考材料…</p>}
       {buildReply && <article className={styles.message} data-role="assistant"><small className={styles.speaker}>构建助手 · 正在生成</small><PreviewMarkdown text={buildReply} running /></article>}
       {buildProgress && <p className={styles.editStatus} role="status">{buildProgress}</p>}
       {active && !result && !buildProgress && <article className={styles.message} data-role="assistant" data-tone="muted">
         <span className={styles.assistantAvatar} aria-hidden="true">K</span>
-        <div className={styles.thinking}><i /><i /><i /><span>{creating ? "正在创建草稿" : busy ? "正在启动 Worker" : "正在执行试跑"}</span></div>
+        <div className={styles.thinking}><i /><i /><i /><span>{creating ? "正在调用模型生成初稿与 Skill 推荐" : busy ? "正在启动 Worker" : "正在执行试跑"}</span></div>
       </article>}
 
       {feedbackTurn && <div className={styles.editStatus}>正在改进所选回答 · 修订 {feedbackTurn.result.draftRevision}<button type="button" onClick={() => setFeedbackTurn(null)}>取消选择</button></div>}
-      {((editing && !buildProgress) || applying) && <p className={styles.editStatus} role="status">{editing ? intent === "auto" ? "正在结合上下文理解要求…" : "正在根据当前草稿生成修改建议…" : "正在保存修改…"}</p>}
+      {workspaceTarget && lastComparison && <button type="button" className={styles.runLink} onClick={showLastComparison} aria-label="查看本次代码差异"><span>已更新 · r{lastComparison.before.revision} → r{lastComparison.after.revision}</span><small>查看代码差异 ↗</small></button>}
+      {((editing && !buildProgress) || applying) && <p className={styles.editStatus} role="status">{editing ? intent === "auto" ? "正在结合上下文理解要求…" : "正在生成修改建议；创建 Skill 时将由 Worker 执行 skill-creator 校验与打包…" : "正在保存修改…"}</p>}
+      {recommendation?.recommendedSkills?.some(skill => !activeDraft.skills.some(installed => installed.name === skill.packageId)) && <section className={styles.editProposal} aria-label="推荐 Skill">
+        <strong>为此智能体推荐的 Skill</strong>
+        <p>模型根据需求推荐，选择后可查看完整代码差异。</p>
+        {recommendation.recommendedSkills.filter(skill => !activeDraft.skills.some(installed => installed.name === skill.packageId)).map(skill => <label key={skill.packageId} className={styles.skillSuggestion}>
+          <input type="checkbox" checked={selectedSkills.includes(skill.packageId)} disabled={inputBusy || Boolean(proposal)} onChange={event => setSelectedSkills(current => event.target.checked ? [...current, skill.packageId] : current.filter(id => id !== skill.packageId))}/>
+          <span><strong>{skill.label}</strong><small>{skill.reason}</small>{skill.risk === "review" && <small>包含脚本，应用前请审阅</small>}</span>
+        </label>)}
+        <div className={styles.editActions}><button type="button" disabled={!selectedSkills.length || inputBusy || Boolean(proposal) || hasUnsavedChanges} onClick={() => {
+          const installSkills = recommendation.recommendedSkills!.filter(skill => selectedSkills.includes(skill.packageId)).map(({packageId, revision}) => ({packageId, revision}));
+          setProposal({baseRevision: activeDraft.revision, before: activeDraft, action: "edit", reply: "安装所选推荐 Skill", changedFields: ["skills"], changes: {installSkills, capabilityCatalogRevision: recommendation.capabilityCatalogRevision}});
+        }}>审阅所选 Skill</button></div>
+      </section>}
       {proposal && <section className={styles.editProposal} aria-label="待确认的配置修改">
         <strong>修改预览 · 基于修订 {proposal.baseRevision}</strong>
-        {workspaceTarget && <button type="button" className={styles.diffLink} onClick={() => {setAssetTab("changes");setAssetsOpen(true);}}>查看完整差异 ↗</button>}
+        {workspaceTarget && <button type="button" className={styles.diffLink} disabled={comparing || applying || hasUnsavedChanges || activeDraft.revision !== proposal.baseRevision} onClick={() => void previewCodeChanges()}>{comparing ? "正在生成差异…" : "查看代码差异 ↗"}</button>}
+        {workspaceTarget && <button type="button" className={styles.diffLink} onClick={() => {setCodeView(false);setAssetTab("changes");setAssetsOpen(true);}}>查看完整差异 ↗</button>}
         <p>只修改当前草稿，不发布，也不改变正在运行的配置。</p>
-        {Object.entries(proposal.changes).map(([key, value]) => <details key={key}>
+        {Object.entries(proposal.changes).filter(([key]) => key !== "capabilityCatalogRevision").map(([key, value]) => <details key={key}>
           <summary>{editLabels[key] ?? key}</summary>
           <small>修改前</small><pre>{showValue(beforeEdit(proposal.before, key))}</pre>
           <small>修改后</small><pre>{showValue(value)}</pre>
@@ -550,7 +609,7 @@ export function AgentBuilderAssistant({
       </div>}
       <div className={`aui-composer-root ${styles.composerRoot}`}>
       {attachments.length > 0 && <WorkspaceAttachments files={attachments} disabled={inputBusy} onRemove={id=>setAttachments(current=>current.filter(file=>file.id!==id))}/>}
-      {readingMaterials && <span className={styles.composerHint} role="status">正在读取参考材料并处理要求…</span>}
+
       <label>
         <span className={styles.visuallyHidden}>输入消息</span>
         <textarea
@@ -582,14 +641,16 @@ export function AgentBuilderAssistant({
     </footer>
   </aside>;
   if (!workspaceTarget) return builder;
-  const changes = proposal ? Object.entries(proposal.changes).map(([key,value]) => ({label: editLabels[key] ?? key, before: showValue(beforeEdit(proposal.before,key)), after: showValue(value)})) : lastChanges;
-  return createPortal(<div className={workspaceStyles.workspace} data-assets={assetsOpen} data-mobile={mobilePanel}>
+  const changes = proposal ? Object.entries(proposal.changes).filter(([key]) => key !== "capabilityCatalogRevision").map(([key,value]) => ({label: editLabels[key] ?? key, before: showValue(beforeEdit(proposal.before,key)), after: showValue(value)})) : lastChanges;
+  return createPortal(<div className={workspaceStyles.workspace} data-assets={assetsOpen} data-code={codeView} data-mobile={mobilePanel}>
     <nav className={workspaceStyles.mobileTabs} aria-label="构建工作台视图"><button type="button" aria-pressed={mobilePanel === "build"} onClick={() => setMobilePanel("build")}>构建与修改</button><button type="button" aria-pressed={mobilePanel === "test"} onClick={() => setMobilePanel("test")}>效果测试</button></nav>
     {builder}
-    {assetsOpen && <AgentBuildAssets key={assetTab} initialTab={assetTab} draft={activeDraft} turns={turns} changes={changes} pending={Boolean(proposal)} onClose={() => setAssetsOpen(false)} />}
-    <AgentTestPanel draftId={activeDraft.id} revision={activeDraft.revision} agentName={activeDraft.displayName} model={activeDraft.model} turns={turns} busy={active} ready={draftReady} dirty={hasUnsavedChanges} error={error} selectedRunId={selectedRunId}
+    {assetsOpen && !codeView && <AgentBuildAssets key={assetTab} initialTab={assetTab} onCodeView={() => {setCodeComparison(undefined); setCodeView(true);}} onCodeChanges={lastComparison ? showLastComparison : undefined} draft={activeDraft} turns={turns} changes={changes} pending={Boolean(proposal)} onClose={() => setAssetsOpen(false)} />}
+    {codeView && <AgentProjectCode key={activeDraft.id} draftId={draftReady ? activeDraft.id : ""} revision={activeDraft.revision} name={activeDraft.name || activeDraft.displayName} dirty={hasUnsavedChanges} comparison={codeComparison} comparisonPending={comparisonPending} onClose={() => {setCodeView(false);setAssetsOpen(true);}} />}
+    <AgentTestPanel draftId={activeDraft.id} revision={activeDraft.revision} agentName={activeDraft.displayName} model={activeDraft.model} turns={turns.filter(turn => turn.result.run.session_id === testSessionId)} history={turns} sessionId={testSessionId} conversationEpoch={testConversationEpoch}
+      onSelectSession={id => {setTestSessionId(id);setTestConversationEpoch(value => value + 1);setSelectedRunId("");setError("");}} busy={active} ready={draftReady} dirty={hasUnsavedChanges} error={error} selectedRunId={selectedRunId}
       onSend={async (value,ids,names) => {if (proposal) {setError("请先应用或放弃左侧的配置建议，再测试。");return false;}return startRun(value, undefined, true, ids, names);}}
-      onReset={() => {if (result) setArchivedTurns(current => [...current,{prompt:lastTestPrompt,result,files:currentFiles,artifactIds:lastArtifactIds}]);setResult(null);setFeedbackTurn(null);setSelectedRunId("");setError("");}}
-      onCancel={cancelRun} onImprove={improve} onAssets={() => {setAssetTab("config");setAssetsOpen(current => !current);}} />
+      onReset={() => {if (result) setArchivedTurns(current => [...current,{prompt:lastTestPrompt,result,files:currentFiles,artifactIds:lastArtifactIds}]);setResult(null);setTestSessionId("");setTestConversationEpoch(value => value + 1);setLastTestPrompt("");setCurrentFiles([]);setLastArtifactIds([]);setFeedbackTurn(null);setSelectedRunId("");setError("");}}
+      onCancel={cancelRun} onImprove={improve} onAssets={() => {setCodeView(false);setAssetTab("config");setAssetsOpen(current => !current);}} />
   </div>, workspaceTarget);
 }

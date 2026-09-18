@@ -95,6 +95,11 @@ from harness.studio.builder_materials import BuilderMaterialsRequest, read_build
 from harness.studio.bundle_import import AgentBundleImportError
 from harness.studio.catalog_service import CapabilityCatalogService, CatalogResourceType
 from harness.studio.compiler import DraftCompilationError
+from harness.studio.deepagents_export import (
+    DeepagentsProjectComparison,
+    DeepagentsProjectSource,
+    project_source,
+)
 from harness.studio.mcp_credential_store import (
     ConfigureMcpCredentialRequest,
     McpCredentialService,
@@ -142,6 +147,7 @@ from harness.studio.models import (
     UpsertCatalogResourceRequest,
 )
 from harness.studio.platform_skills import (
+    RETIRED_PLATFORM_SKILLS,
     imported_platform_skill,
     platform_skill_catalog_listing,
     platform_skill_package,
@@ -181,6 +187,7 @@ from harness.studio.web_configuration import (
     WebConfiguration,
     WebConfigurationService,
 )
+from harness.studio.worker_skill_creator import WorkerSkillCreator
 
 
 @dataclass(frozen=True)
@@ -1420,6 +1427,8 @@ async def install_platform_skill_package(
     service: Annotated[AgentStudioService, Depends(get_studio_service)],
 ) -> InstalledSkill:
     try:
+        if package_id in RETIRED_PLATFORM_SKILLS:
+            raise ConflictError("此技能已停用，请使用 Skill Creator（Claude 官方）")
         package = platform_skill_package(package_id, body.package_revision)
         imported = imported_platform_skill(package)
         draft = await service.install_skill(
@@ -1604,30 +1613,25 @@ async def create_task_driven_draft(
     body: CreateTaskDrivenDraftRequest,
     actor: Annotated[StudioActor, Depends(require_studio_writer)],
     service: Annotated[AgentStudioService, Depends(get_studio_service)],
+    models: Annotated[ModelConfigurationService, Depends(get_model_configuration_service)],
 ) -> TaskDrivenDraftResult | StreamingResponse:
     """Compile one business task into a complete, explainable Agent draft."""
 
     if "text/event-stream" in request.headers.get("accept", ""):
-
         async def operation(emit: Progress) -> dict[str, Any]:
             result = await service.create_from_task(
-                tenant_id=actor.tenant_id,
-                user_id=actor.user_id,
-                request=body,
-                on_progress=emit,
+                tenant_id=actor.tenant_id, user_id=actor.user_id,
+                request=body, models=models, on_progress=emit,
             )
-            return result.model_copy(
-                update={
-                    "draft": compact_draft_for_editor(result.draft),
-                }
-            ).model_dump(mode="json", by_alias=True)
-
+            return result.model_copy(update={
+                "draft": compact_draft_for_editor(result.draft),
+            }).model_dump(mode="json", by_alias=True)
         return authoring_stream(operation)
     try:
         result = await service.create_from_task(
             tenant_id=actor.tenant_id,
             user_id=actor.user_id,
-            request=body,
+            request=body, models=models,
         )
         return result.model_copy(update={"draft": compact_draft_for_editor(result.draft)})
     except ValueError as error:
@@ -1881,6 +1885,8 @@ async def converse_agent_builder(
     actor: Annotated[StudioActor, Depends(require_studio_writer)],
     service: Annotated[AgentStudioService, Depends(get_studio_service)],
     models: Annotated[ModelConfigurationService, Depends(get_model_configuration_service)],
+    container: Annotated[ApiContainer, Depends(get_container)],
+    identity: Annotated[Identity, Depends(require_identity)],
 ) -> BuilderConversationReply | StreamingResponse:
     if "text/event-stream" in request.headers.get("accept", ""):
         # Ownership is checked before opening the stream and again by the service.
@@ -1893,24 +1899,41 @@ async def converse_agent_builder(
 
         async def operation(emit: Progress) -> dict[str, Any]:
             reply = await service.converse_builder(
-                actor.tenant_id,
-                actor.user_id,
-                draft_id,
-                body,
-                models,
+                actor.tenant_id, actor.user_id, draft_id, body, models,
+                WorkerSkillCreator(container, current, actor.user_id,
+                    lambda: _authorize_studio_actor(identity, "studio:preview")),
                 on_progress=emit,
             )
+            if reply.changes.install_skills:
+                _authorize_studio_actor(identity, "studio:catalog:write")
             return reply.model_dump(mode="json", by_alias=True, exclude_unset=True)
-
         return authoring_stream(operation)
     try:
-        return await service.converse_builder(
-            actor.tenant_id,
-            actor.user_id,
-            draft_id,
-            body,
-            models,
+        draft = await service.get(actor.tenant_id, actor.user_id, draft_id)
+        result = await service.converse_builder(
+            actor.tenant_id, actor.user_id, draft_id, body, models,
+            WorkerSkillCreator(container, draft, actor.user_id,
+                               lambda: _authorize_studio_actor(identity, "studio:preview")),
         )
+        if result.changes.install_skills:
+            _authorize_studio_actor(identity, "studio:catalog:write")
+        return result
+    except (ConflictError, NotFoundError, PermissionDeniedError) as error:
+        raise _translate_domain_error(error) from error
+
+
+@router.post("/drafts/{draft_id}/builder-project-diff")
+async def preview_builder_project_diff(
+    draft_id: str,
+    body: BuilderApplyRequest,
+    actor: Annotated[StudioActor, Depends(require_studio_writer)],
+    service: Annotated[AgentStudioService, Depends(get_studio_service)],
+    identity: Annotated[Identity, Depends(require_identity)],
+) -> DeepagentsProjectComparison:
+    try:
+        if body.changes.install_skills:
+            _authorize_studio_actor(identity, "studio:catalog:write")
+        return await service.compare_builder_project(actor.tenant_id, actor.user_id, draft_id, body)
     except (ConflictError, NotFoundError) as error:
         raise _translate_domain_error(error) from error
 
@@ -1921,8 +1944,11 @@ async def apply_agent_builder_edit(
     body: BuilderApplyRequest,
     actor: Annotated[StudioActor, Depends(require_studio_writer)],
     service: Annotated[AgentStudioService, Depends(get_studio_service)],
+    identity: Annotated[Identity, Depends(require_identity)],
 ) -> AgentDraft:
     try:
+        if body.changes.install_skills:
+            _authorize_studio_actor(identity, "studio:catalog:write")
         return await service.apply_builder_edit(actor.tenant_id, actor.user_id, draft_id, body)
     except (ConflictError, NotFoundError) as error:
         raise _translate_domain_error(error) from error
@@ -2204,27 +2230,16 @@ async def stream_studio_try_run_events(
                 last_emission = time.monotonic()
                 if event.type in _TRY_RUN_TERMINAL_EVENT_TYPES:
                     terminal = True
-            if events and (
-                terminal
-                or time.monotonic() - last_snapshot >= 1.0
-                or any(item.type.startswith("approval.") for item in events)
-            ):
+            if events and (terminal or time.monotonic() - last_snapshot >= 1.0
+                           or any(item.type.startswith("approval.") for item in events)):
                 view = await _studio_try_run_view(
-                    container,
-                    actor,
-                    draft_id,
-                    draft_revision,
-                    run_id,
+                    container, actor, draft_id, draft_revision, run_id,
                 )
                 snapshot = {
-                    "type": "studio.snapshot",
-                    "event_id": f"snapshot-{sequence}",
-                    "sequence": sequence,
-                    "timestamp": datetime.now(UTC).isoformat(),
+                    "type": "studio.snapshot", "event_id": f"snapshot-{sequence}",
+                    "sequence": sequence, "timestamp": datetime.now(UTC).isoformat(),
                     "payload": view.model_dump(
-                        mode="json",
-                        by_alias=True,
-                        exclude={"events", "final_text", "loop"},
+                        mode="json", by_alias=True, exclude={"events", "final_text", "loop"},
                     ),
                 }
                 yield "data: " + json.dumps(snapshot, separators=(",", ":")) + "\n\n"
@@ -2413,14 +2428,33 @@ async def download_nexau_bundle(
     )
 
 
+@router.get("/drafts/{draft_id}/deepagents-project/files")
+async def read_deepagents_project(
+    draft_id: str,
+    actor: Annotated[StudioActor, Depends(require_studio_reader)],
+    service: Annotated[AgentStudioService, Depends(get_studio_service)],
+    expected_revision: Annotated[int, Query(alias="expectedRevision", ge=1)],
+) -> DeepagentsProjectSource:
+    try:
+        exported = await service.deepagents_project(
+            actor.tenant_id, actor.user_id, draft_id, expected_revision=expected_revision,
+        )
+        return project_source(exported, expected_revision)
+    except (ConflictError, NotFoundError) as error:
+        raise _translate_domain_error(error) from error
+
+
 @router.get("/drafts/{draft_id}/deepagents-project")
 async def download_deepagents_project(
     draft_id: str,
     actor: Annotated[StudioActor, Depends(require_studio_reader)],
     service: Annotated[AgentStudioService, Depends(get_studio_service)],
+    expected_revision: Annotated[int | None, Query(alias="expectedRevision", ge=1)] = None,
 ) -> Response:
     try:
-        exported = await service.deepagents_project(actor.tenant_id, actor.user_id, draft_id)
+        exported = await service.deepagents_project(
+            actor.tenant_id, actor.user_id, draft_id, expected_revision=expected_revision,
+        )
     except (ConflictError, NotFoundError) as error:
         raise _translate_domain_error(error) from error
     return Response(

@@ -6,6 +6,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from typing import Any, cast
+from unittest.mock import AsyncMock, patch
 from zipfile import ZipFile
 
 import httpx
@@ -147,6 +148,18 @@ async def test_service_identity_can_build_and_publish_existing_bundle() -> None:
         deepagents = await client.get(
             f"/v1/studio/drafts/{draft_id}/deepagents-project", headers=headers
         )
+        source = await client.get(
+            f"/v1/studio/drafts/{draft_id}/deepagents-project/files",
+            headers=headers, params={"expectedRevision": 1},
+        )
+        denied_source = await client.get(
+            f"/v1/studio/drafts/{draft_id}/deepagents-project/files",
+            headers=headers | {"X-User-ID": "someone-else"}, params={"expectedRevision": 1},
+        )
+        stale_source = await client.get(
+            f"/v1/studio/drafts/{draft_id}/deepagents-project/files",
+            headers=headers, params={"expectedRevision": 2},
+        )
         published = await client.post(f"/v1/studio/drafts/{draft_id}/publish", headers=headers)
         drafts = await client.get("/v1/studio/drafts", headers=headers)
 
@@ -180,6 +193,14 @@ async def test_service_identity_can_build_and_publish_existing_bundle() -> None:
         config = yaml.safe_load(archive.read("agent.yaml"))
         assert manifest["agents"] == {config["name"]: "agent.yaml"}
     assert deepagents.status_code == 200
+    assert source.status_code == 200
+    assert denied_source.status_code == 404
+    assert stale_source.status_code == 409
+    assert source.json()["revision"] == 1
+    assert source.json()["digest"] == hashlib.sha256(deepagents.content).hexdigest()
+    with ZipFile(BytesIO(deepagents.content)) as archive:
+        for entry in source.json()["files"]:
+            assert entry["content"] == archive.read(entry["path"]).decode("utf-8")
     assert deepagents.headers["x-agent-export-format"] == "deepagents"
     assert deepagents.headers["content-disposition"] == (
         'attachment; filename="policy-researcher-0.1.0-deepagents.zip"'
@@ -351,7 +372,19 @@ async def test_delete_agent_requires_current_revision_and_no_subagent_dependents
     assert "政策研究助手" in blocked.json()["error"]["message"]
 
 
+INITIAL_AGENT_RESPONSE = json.dumps({
+    "displayName": "互联网舆情助手", "description": "分析舆情并输出报告",
+    "systemPrompt": ("## Mission\n分析舆情\n## Operating workflow\n收集材料并分析风险\n"
+                     "## Evidence and tool use\n核验来源\n## Safety boundaries\n遵守平台权限\n"
+                     "## Output contract\n输出结论、引用和报告"),
+    "taskContract": {"goal": "分析舆情", "inputs": ["用户材料"], "outputs": ["风险报告"]},
+    "recommendedSkills": [],
+})
+
+
 @pytest.mark.asyncio
+@patch("harness.studio.model_configuration.ModelConfigurationService.complete_text",
+       new=AsyncMock(return_value=INITIAL_AGENT_RESPONSE))
 async def test_task_driven_builder_compiles_codex_draft_from_tenant_capabilities() -> None:
     headers = {
         "Authorization": f"Bearer {SERVICE_TOKEN}",
@@ -407,6 +440,8 @@ async def test_task_driven_builder_compiles_codex_draft_from_tenant_capabilities
 
 
 @pytest.mark.asyncio
+@patch("harness.studio.model_configuration.ModelConfigurationService.complete_text",
+       new=AsyncMock(return_value=INITIAL_AGENT_RESPONSE))
 async def test_task_driven_builder_treats_office_assistant_as_writable() -> None:
     headers = {
         "Authorization": f"Bearer {SERVICE_TOKEN}",
@@ -911,8 +946,10 @@ async def test_studio_lists_and_installs_a_platform_skill_as_a_draft_snapshot() 
         )
 
     assert catalog.status_code == 200, catalog.text
-    assert catalog.json()["revision"] == 1
-    assert len(catalog.json()["packages"]) == 22
+    assert catalog.json()["revision"] == 2
+    assert len(catalog.json()["packages"]) == 21
+    assert "skill-creator" in {p["packageId"] for p in catalog.json()["packages"]}
+    assert "skill-authoring-quality" not in {p["packageId"] for p in catalog.json()["packages"]}
     assert created.json()["spec"]["skills"] == []
     assert installed.status_code == 200, installed.text
     installed_skill = installed.json()["draft"]["spec"]["skills"][0]

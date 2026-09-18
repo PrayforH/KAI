@@ -17,6 +17,14 @@ import type {
 
 export type StudioRole = "owner" | "admin" | "member" | "viewer";
 
+export type ProjectSourceFile = { path: string; size: number; digest?: string; content: string | null; unavailable: string | null };
+export type DeepagentsProjectSource = {
+  revision: number; filename: string; digest: string; framework_version: string;
+  files: ProjectSourceFile[];
+};
+
+export type DeepagentsProjectComparison = { before: DeepagentsProjectSource; after: DeepagentsProjectSource };
+
 export type LifecycleScope = {
   kind: "tenant" | "user" | "session" | "agent";
   subjectId: string;
@@ -655,6 +663,7 @@ export type StudioAgentBuilderPatch = {
 };
 
 export type StudioBuilderChanges = {
+  installSkills?: {packageId: string; revision: number}[];
   displayName?: string;
   description?: string;
   systemPrompt?: string;
@@ -663,10 +672,14 @@ export type StudioBuilderChanges = {
   mcpServers?: string[];
   knowledgeReferences?: string[];
   skillInstructions?: { name: string; instructions: string }[];
+  createSkills?: StudioDraft["skills"];
+  updateSkills?: StudioDraft["skills"];
+  capabilityCatalogRevision?: number;
   removeSkills?: string[];
   roleResponsibilities?: { alias: string; responsibility: string }[];
 };
 export type StudioBuilderReply = {
+  creatorRuns?: {runId: string; sourceRevision: string; artifactIds: string[]; artifactNames: string[]}[];
   baseRevision: number;
   reply: string;
   changedFields: string[];
@@ -759,6 +772,9 @@ export type StudioPreview = {
 };
 
 export type StudioTaskDrivenRecommendation = {
+  generatedByModel?: boolean;
+  capabilityCatalogRevision?: number;
+  recommendedSkills?: {packageId: string; revision: number; label: string; reason: string; risk: "low" | "review"}[];
   runtime: StudioDraft["runtime"];
   modelRouteId: string;
   model: string;
@@ -2051,6 +2067,11 @@ export const studioClient = {
     const init = { method: "POST", body: JSON.stringify(body), signal };
     return onProgress ? streamRequest(path, init, onProgress) : request(path, init);
   },
+  previewBuilderProjectDiff: (draftId: string, body: {
+    expectedRevision: number; changes: StudioBuilderChanges;
+  }): Promise<DeepagentsProjectComparison> => request(`drafts/${encodeURIComponent(draftId)}/builder-project-diff`, {
+    method: "POST", body: JSON.stringify(body),
+  }),
   applyBuilderEdit: async (draftId: string, body: {
     expectedRevision: number; changes: StudioBuilderChanges;
   }): Promise<ApiAgentDraft> => {
@@ -2549,9 +2570,17 @@ export const studioClient = {
     anchor.click();
     URL.revokeObjectURL(url);
   },
-  async downloadDeepagentsProject(draftId: string): Promise<void> {
+  async getDeepagentsProjectSource(draftId: string, revision: number, signal?: AbortSignal): Promise<DeepagentsProjectSource> {
+    const response = requireAuthenticatedResponse(await fetch(
+      `/api/studio/drafts/${encodeURIComponent(draftId)}/deepagents-project/files?expectedRevision=${revision}`,
+      { cache: "no-store", signal },
+    ));
+    if (!response.ok) throw await errorFrom(response);
+    return response.json();
+  },
+  async downloadDeepagentsProject(draftId: string, revision?: number): Promise<void> {
     const response = requireAuthenticatedResponse(
-      await fetch(`/api/studio/drafts/${encodeURIComponent(draftId)}/deepagents-project`, {
+      await fetch(`/api/studio/drafts/${encodeURIComponent(draftId)}/deepagents-project${revision === undefined ? "" : `?expectedRevision=${revision}`}`, {
         cache: "no-store",
       }),
     );

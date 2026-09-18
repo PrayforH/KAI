@@ -63,8 +63,6 @@ root = Path.cwd().resolve()
 
 def target(value):
     candidate = Path(value)
-    if candidate.is_absolute():
-        raise ValueError("path must be workspace-relative")
     resolved = (root / candidate).resolve()
     if resolved != root and root not in resolved.parents:
         raise ValueError("path escaped workspace")

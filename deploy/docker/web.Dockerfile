@@ -26,6 +26,8 @@ ENV NODE_ENV=production \
     HOSTNAME=0.0.0.0 \
     PORT=3000
 
+RUN apk upgrade --no-cache libcrypto3 libssl3 openssl
+
 RUN addgroup --system --gid 10001 nodejs \
     && adduser --system --uid 10001 --ingroup nodejs nextjs \
     # npm and its transitive build toolchain are not needed by the standalone

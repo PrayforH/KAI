@@ -62,3 +62,13 @@
 .fileChip { position: relative; max-width: 100%; min-width: 0; }
 .fileChip:has(.removeFile) { padding-right: 22px; }
 .removeFile { position: absolute; right: 0; top: 0; width: 22px; height: 22px; border: 0; border-radius: 50%; color: var(--studio-muted); background: var(--studio-panel-subtle); cursor: pointer; }
+
+.workspace[data-code="true"] { grid-template-columns: var(--build-width) minmax(0, 1fr); }
+.workspace[data-code="true"] > .testPanel { display: none; }
+@media (max-width: 760px) {
+  .workspace[data-code="true"] > aside, .workspace[data-code="true"] > .mobileTabs { display: none !important; }
+  .workspace[data-code="true"] > section[aria-label="DeepAgents 代码视图"] { flex: 1; }
+}
+
+.sessionPicker { display: flex; align-items: center; gap: 10px; padding: 8px 22px 0; flex-shrink: 0; color: var(--studio-muted); font-size: 12px; }
+.sessionPicker select { flex: 1; min-width: 0; max-width: 100%; padding: 5px 8px; border: 1px solid var(--studio-line); border-radius: 6px; background: var(--studio-panel); color: var(--studio-ink); font: inherit; }

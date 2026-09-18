@@ -1,0 +1,65 @@
+# Time-boxed, path-scoped exceptions for the repository misconfiguration scan.
+#
+# The container-security gate still fails on any new HIGH/CRITICAL finding; each
+# entry below records why an existing finding is accepted, for which file, and
+# when it must be revisited. Keep statements factual and re-review before the
+# expiry date.
+misconfigurations:
+  - id: AVD-DS-0002
+    paths:
+      - deploy/memory-v2/postgres.Dockerfile
+    expired_at: 2027-03-01
+    statement: >-
+      Layers pgvector into the official postgres:18.1 image. The upstream
+      entrypoint must start as root to initialize and chown the data volume
+      before dropping privileges to the postgres user, which is the account the
+      server process actually runs as.
+  - id: AVD-DS-0002
+    paths:
+      - deploy/codex-web-174/Dockerfile
+    expired_at: 2027-03-01
+    statement: >-
+      Deployment convenience image for the codex-web CLI on the 174 host. Its
+      state and CODEX_HOME directories are bind-mounted from the host under
+      /root/.codex, so the container user is fixed by the existing host layout;
+      changing it requires a coordinated deployment migration.
+  - id: AVD-DS-0002
+    paths:
+      - web/kai-webui/Dockerfile
+    expired_at: 2027-03-01
+    statement: >-
+      nginx:alpine serving pre-built static assets. The nginx master needs root
+      to bind port 80 and write its pid/cache; the served content is read-only
+      and contains no server-side code.
+  - id: AVD-DS-0002
+    paths:
+      - web/codex-webui/Dockerfile
+    expired_at: 2027-03-01
+    statement: >-
+      Unmodified upstream snapshot (see web/codex-webui.UPSTREAM.md), kept for
+      reference and not built or shipped by the release pipeline.
+  - id: AVD-KSV-0014
+    paths:
+      - deploy/helm/agent-harness/templates/egress-proxy.yaml
+    expired_at: 2027-03-01
+    statement: >-
+      The squid egress proxy writes its cache, log and pid files under the
+      container root filesystem. Hardening it with a read-only root needs
+      emptyDir volumes for /var/cache/squid, /var/log and /var/run plus a
+      cluster-level rollout; tracked separately from this release.
+  - id: AVD-KSV-0053
+    paths:
+      - deploy/helm/agent-harness/templates/sandbox-rbac.yaml
+    expired_at: 2027-03-01
+    statement: >-
+      The sandbox controller is the only component allowed to exec into
+      isolated sandbox pods; that is the product's execution boundary and the
+      permission is scoped to its own namespace and service account.
+  - id: AVD-KSV-0056
+    paths:
+      - deploy/helm/agent-harness/templates/sandbox-rbac.yaml
+    expired_at: 2027-03-01
+    statement: >-
+      The sandbox controller creates the per-run NetworkPolicies that enforce
+      the documented egress allowlist, so it must be able to manage
+      networkpolicies and read service endpoints in its own namespace.

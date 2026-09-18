@@ -135,7 +135,18 @@ class CreateTaskDrivenDraftRequest(StudioModel):
     )
 
 
+class RecommendedSkill(StudioModel):
+    package_id: str = Field(alias="packageId")
+    revision: int = Field(ge=1)
+    label: str
+    reason: str
+    risk: Literal["low", "review"]
+
+
 class TaskDrivenRecommendation(StudioModel):
+    generated_by_model: bool = Field(default=False, alias="generatedByModel")
+    recommended_skills: tuple[RecommendedSkill, ...] = Field(default=(), alias="recommendedSkills")
+    capability_catalog_revision: int | None = Field(default=None, alias="capabilityCatalogRevision")
     runtime: Literal["claude-agent-sdk", "codex-app-server"]
     model_route_id: str = Field(alias="modelRouteId")
     model: str
