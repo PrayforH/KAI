@@ -336,9 +336,13 @@ describe("full-page agent workbench", () => {
   });
 
   it("keeps the conversation runtime mounted while task status changes", () => {
+    // Keyed by the runtime coordinate: the catalog enriching the agent with its
+    // id must not remount the conversation.
     expect(page).toContain(
-      'key={`${threadId}:${agentItemKey(selectedAgent)}`}',
+      'key={`${threadId}:${runtimeAgentKey(selectedAgent)}`}',
     );
+    // agentItemKey prefers the agent id, which the catalog only fills in later.
+    expect(page).not.toContain("${threadId}:${agentItemKey");
     expect(page).not.toContain("refreshToken");
     expect(taskSidebar).not.toContain("onCurrentTaskStatusChange");
     expect(taskSidebar).not.toContain("currentStatusRef");

@@ -95,6 +95,15 @@ export function agentCoordinate(agent: Pick<TaskAgent, "name" | "version">) {
   return `${scoped.scope ?? "personal"}:${scoped.spaceId ?? "-"}:${scoped.ownerUserId ?? "-"}:${agent.name}@${agent.version}`;
 }
 
+/**
+ * Identity for the conversation runtime. The catalog enriches a task's agent with
+ * its id after the thread is already open, and keying on that would remount the
+ * whole conversation; the runtime only ever needs the coordinate.
+ */
+export function runtimeAgentKey(agent: Pick<TaskAgent, "name" | "version"> & Partial<Pick<TaskAgent, "ownerUserId" | "spaceId">>): string {
+  return `${agent.spaceId ?? ""}:${agent.ownerUserId ?? ""}:${agent.name}@${agent.version}`;
+}
+
 export function findTaskAgent(
   agents: readonly TaskAgent[],
   coordinates: Pick<TaskAgent, "name" | "version"> &

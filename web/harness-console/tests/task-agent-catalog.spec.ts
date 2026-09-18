@@ -381,3 +381,23 @@ describe("task agent catalog", () => {
   const other: TaskAgent = {...current,ownerUserId:"someone"};
   expect(currentSystemAssistant(other,current)).toBe(other);
  });
+
+describe("runtime agent key", () => {
+  it("stays the same when the catalog adds the agent id", async () => {
+    const { runtimeAgentKey } = await import("../src/lib/task-agent-catalog");
+    // A task summary only carries the coordinate; the catalog entry adds the id.
+    const fromTask = { name: "general-agent", version: "1.0.3" };
+    const fromCatalog = { agentId: "agent_9f", name: "general-agent", version: "1.0.3" };
+
+    expect(runtimeAgentKey(fromCatalog)).toBe(runtimeAgentKey(fromTask));
+  });
+
+  it("changes when the agent or its version changes", async () => {
+    const { runtimeAgentKey } = await import("../src/lib/task-agent-catalog");
+
+    expect(runtimeAgentKey({ name: "a", version: "1" })).not.toBe(runtimeAgentKey({ name: "b", version: "1" }));
+    expect(runtimeAgentKey({ name: "a", version: "1" })).not.toBe(runtimeAgentKey({ name: "a", version: "2" }));
+    expect(runtimeAgentKey({ name: "a", version: "1", ownerUserId: "u1" }))
+      .not.toBe(runtimeAgentKey({ name: "a", version: "1", ownerUserId: "u2" }));
+  });
+});

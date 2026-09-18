@@ -37,6 +37,7 @@ import {
   chatUsableAgents,
   currentSystemAssistant,
   findTaskAgent,
+  runtimeAgentKey,
   loadTaskAgentCatalog,
   type TaskAgent,
 } from "../lib/task-agent-catalog";
@@ -669,7 +670,7 @@ function AuthenticatedHome() {
             <div className="chat-surface">
               {threadId && selectedAgent ? (
                 <AssistantRuntimeShell
-                  key={`${threadId}:${agentItemKey(selectedAgent)}`}
+                  key={`${threadId}:${runtimeAgentKey(selectedAgent)}`}
                   threadId={threadId}
                   agentName={selectedAgent.name}
                   agentVersion={selectedAgent.version}

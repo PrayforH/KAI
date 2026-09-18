@@ -110,7 +110,7 @@ export function ConversationIndex({ frame, threadId, pagination }: {
   return <nav className="conversation-index" data-expanded={Boolean(hovered)} aria-label="对话轮次索引" onMouseLeave={() => setHovered("")}>
     <div className="conversation-index-rail">
       {Array.from({ length: pending }, (_, index) => <button key={`pending-${index}`} type="button"
-        className="conversation-index-pending" style={{ "--index-line-width": `${index === pending - 1 ? 6 : 4}px` } as CSSProperties}
+        className="conversation-index-pending" style={{ "--index-line-width": `${IDLE_LINE_WIDTH}px` } as CSSProperties}
         aria-label={`第 ${index + 1} 轮：加载更早的轮次`}
         onClick={() => void revealPending(index)}
       ><span aria-hidden="true" /></button>)}
