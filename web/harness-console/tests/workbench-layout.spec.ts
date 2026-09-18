@@ -399,11 +399,28 @@ describe("full-page agent workbench", () => {
     expect(styles).toMatch(
       /\.aui-thread-root\s*\{[^}]*--aui-thread-max-width:\s*50rem;/s,
     );
-    expect(styles).toMatch(/\.console-header\s*\{[^}]*min-height:\s*52px;/s);
+    expect(styles).toMatch(/\.console-header\s*\{[^}]*min-height:\s*var\(--shell-header-height\);/s);
     expect(styles).toMatch(
       /\.aui-thread-viewport-footer\s*\{[^}]*position:\s*sticky;/s,
     );
     expect(styles).not.toContain("linear-gradient");
+  });
+
+  it("gives the page headers one height and leaves the drawer its own", () => {
+    const experience = readFileSync(
+      join(process.cwd(), "src/app/conversation-experience.css"),
+      "utf8",
+    );
+    const sectionNavigation = readFileSync(
+      join(process.cwd(), "src/components/agent-studio/studio-section-navigation.module.css"),
+      "utf8",
+    );
+
+    expect(styles).toMatch(/--shell-header-height:\s*44px;/);
+    expect(codexStyles).toMatch(/\.console-header \{[^}]*min-height: var\(--shell-header-height/);
+    expect(sectionNavigation).toMatch(/\.bar \{[^}]*min-height: var\(--shell-header-height/);
+    // The task drawer is the file area's own band and keeps its own height.
+    expect(experience).toMatch(/\.rail-bar \{[^}]*height: 46px;/);
   });
 
   it("uses a quiet task welcome without suggestion cards or shortcuts", () => {

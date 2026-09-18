@@ -741,6 +741,8 @@ html body.codex-theme-v1 .execution-reasoning[open] .execution-reasoning-chevron
 /* The drawer toolbar follows the file browser it opens: view tabs, then icon
    actions, with the same panel mark that opens the drawer closing it again. */
 .rail-bar {
+  /* The drawer header is the file area's own band, so it is not part of the
+     page-level header height. */
   height: 46px;
   min-height: 46px;
   padding: 0 10px 0 16px;
@@ -863,3 +865,40 @@ a.rail-bar-button { text-decoration: none; }
 }
 
 .rail-preview-table th { position: sticky; top: 0; color: #ededed; background: #1f1f1f; }
+
+/* Preview chrome carried the same dark palette as the rail rows: on the light
+   panel the file name (#ededed), the download glyph and the header rule were
+   invisible. */
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-preview-head {
+  border-bottom-color: var(--codex-line);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-preview-name {
+  color: var(--codex-ink);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-preview-download {
+  color: var(--codex-muted);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-preview-download:hover {
+  color: var(--codex-ink);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-preview-note {
+  color: var(--codex-muted);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-preview-markdown {
+  color: var(--codex-ink-soft);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-preview-table th,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-preview-table td {
+  border-color: var(--codex-line);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-preview-table th {
+  color: var(--codex-ink);
+  background: var(--codex-surface-subtle);
+}

@@ -875,8 +875,8 @@ body.codex-theme-v1:has(.console-shell) .command-center-search {
 
 body.codex-theme-v1:has(.console-shell) .console-header {
   z-index: 60;
-  min-height: 48px;
-  height: 48px;
+  min-height: var(--shell-header-height, 44px);
+  height: var(--shell-header-height, 44px);
   padding: 6px 16px 6px 18px;
   border-bottom: 1px solid #292929;
   background: var(--codex-header-bg);
@@ -1838,8 +1838,8 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-agen
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .console-header {
-  min-height: 56px;
-  height: 56px;
+  min-height: var(--shell-header-height, 44px);
+  height: var(--shell-header-height, 44px);
   border-bottom-color: #ededee;
   background: var(--codex-header-bg);
 }
@@ -2051,6 +2051,66 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .workbench
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .workbench-rail-close:hover {
   color: #202024;
   background: #ededee;
+}
+
+/* The rail is a dark workbench by default. Its rows kept the dark palette in
+   light mode, which left #cfcfcf file names and near-black icon chips on the
+   #fafafa panel. Only the panel surface was themed before this. */
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .workbench-rail-body {
+  scrollbar-color: #c9c9c9 transparent;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .workbench-rail-section {
+  border-bottom-color: var(--codex-line);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .workbench-rail-section > small,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .workbench-rail-file-size,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .workbench-rail-files-empty {
+  color: var(--codex-muted);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .workbench-rail-file {
+  border-color: var(--codex-line);
+  color: var(--codex-ink-soft);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-file-row .workbench-rail-file:hover {
+  border-color: var(--codex-line-strong);
+  color: var(--codex-ink);
+  background: var(--codex-surface-hover);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-file-row .workbench-rail-file[aria-pressed="true"] {
+  color: var(--codex-ink);
+  background: var(--codex-surface-active);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-file-icon {
+  color: #4a4f55;
+  background: #ececee;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-file-icon[data-kind="image"] {
+  color: #6b4fd8;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-file-icon[data-kind="html"] {
+  color: #1f6fd0;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-file-icon[data-kind="csv"] {
+  color: #1c7a45;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-file-search {
+  border-color: var(--codex-line);
+  background: var(--codex-field);
+  color: var(--codex-ink);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-file-search::placeholder {
+  color: var(--codex-faint);
 }
 
 @media (max-width: 820px) {

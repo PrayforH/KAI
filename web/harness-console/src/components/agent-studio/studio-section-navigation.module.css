@@ -1,5 +1,5 @@
 .bar {
-  min-height: 44px;
+  min-height: var(--shell-header-height, 44px);
   display: flex;
   align-items: center;
   gap: 22px;
