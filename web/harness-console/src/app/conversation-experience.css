@@ -78,8 +78,9 @@ body.codex-theme-v1 .harness-composer-shell .aui-composer-input { resize: none; 
   body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-expanded .workspace-stage.tasks-open { grid-template-columns: var(--app-sidebar-expanded-width) 0 minmax(0, 1fr); }
   body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-expanded .workspace-stage:not(.tasks-open) { grid-template-columns: var(--app-sidebar-collapsed-width) 0 minmax(0, 1fr); }
   body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-expanded .workbench-rail { width: auto; }
-  /* A zero-width column still needs to clip the conversation it no longer shows. */
-  body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-expanded .chat-stage { min-width: 0; overflow: hidden; }
+  /* A zero-width column still needs to clip the conversation it no longer shows,
+     and its composer is fixed, so hiding has to go through visibility. */
+  body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-expanded .chat-stage { min-width: 0; overflow: hidden; visibility: hidden; }
 }
 body.codex-theme-v1 .workbench-rail-panel { width: 100%; container-type: inline-size; container-name: rail; }
 @media (max-width: 1099px) { body.codex-theme-v1 .workbench-rail { width: min(340px, 90vw); } }

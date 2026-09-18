@@ -100,7 +100,9 @@ it("squeezes a real column, and covers the conversation when expanded", () => {
   expect(experience).toMatch(/--rail-panel-width:\s*clamp\([^;]*50vw\)/);
   // Expanded, the conversation column collapses to nothing and the drawer keeps the rest.
   expect(experience).toContain(".console-shell.is-rail-expanded .workspace-stage.tasks-open { grid-template-columns: var(--app-sidebar-expanded-width) 0 minmax(0, 1fr); }");
-  expect(experience).toContain(".console-shell.is-rail-expanded .chat-stage { min-width: 0; overflow: hidden; }");
+  // The composer is fixed, so the collapsed column hides through visibility too.
+  expect(experience).toContain(".console-shell.is-rail-expanded .chat-stage { min-width: 0; overflow: hidden; visibility: hidden; }");
+  expect(experience).not.toContain("visibility: visible");
   // An open file shares the drawer with the browser once it is wide enough.
   expect(experience).toContain('@container rail (min-width: 460px)');
   expect(experience).toMatch(/\.rail-files-section\[data-previewing="true"\]/);
