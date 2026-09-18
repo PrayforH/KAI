@@ -53,13 +53,13 @@ body.codex-theme-v1 .harness-composer-shell .aui-composer-input { resize: none; 
 .composer-input-error { font-size: 12px; color: var(--codex-danger); }
 .rail-file-toolbar { display: flex; align-items: center; justify-content: space-between; }
 .rail-file-toolbar button { background: transparent; border: 0; color: var(--codex-muted); cursor: pointer; padding: 5px; }
-.rail-file-search { position: sticky; top: 0; z-index: 1; width: 100%; margin-bottom: 8px; padding: 8px 10px; border: 1px solid var(--codex-line); border-radius: 7px; background: #141414; color: var(--codex-ink); font-size: 12px; }
-.rail-file-search::placeholder { color: #6c6c6c; }
+.rail-file-search { position: sticky; top: 0; z-index: 1; width: 100%; margin-bottom: 8px; padding: 8px 10px; border: 1px solid var(--codex-line); border-radius: 7px; background: var(--codex-surface, #141414); color: var(--codex-ink); font-size: 12px; }
+.rail-file-search::placeholder { color: var(--codex-faint, #6c6c6c); }
 .rail-file-row { display: flex; align-items: center; min-width: 0; }
 /* The row is a button, so the browser paints its own grey fill unless the base
    state is explicit; that made every file look selected. */
 .rail-file-row .workbench-rail-file { flex: 1; min-width: 0; padding: 8px 8px; gap: 9px; border: 0; border-radius: 8px; background: transparent; }
-.workbench-rail-file[aria-pressed="true"] { color: #ffffff; background: #2b2b2b; }
+.workbench-rail-file[aria-pressed="true"] { color: var(--codex-ink); background: var(--codex-surface-active, #2b2b2b); }
 .rail-file-row .rail-download { opacity: 0; transition: opacity 120ms ease; }
 .rail-file-row:hover .rail-download,
 .rail-file-row:focus-within .rail-download { opacity: 1; }
@@ -752,8 +752,8 @@ html body.codex-theme-v1 .execution-reasoning[open] .execution-reasoning-chevron
 }
 .rail-bar-views { display: flex; align-items: center; gap: 2px; }
 /* The view the drawer is showing, and the icon that always leaves for Langfuse. */
-.rail-bar-views .rail-bar-button[aria-current] { color: var(--codex-ink); background: #232323; }
-.rail-bar-button.is-disabled { color: #4a4a4a; cursor: default; }
+.rail-bar-views .rail-bar-button[aria-current] { color: var(--codex-ink); background: var(--codex-surface-active, #232323); }
+.rail-bar-button.is-disabled { color: var(--codex-faint, #4a4a4a); cursor: default; }
 a.rail-bar-button { text-decoration: none; }
 .rail-bar-actions { display: flex; align-items: center; gap: 2px; }
 .rail-bar-divider { width: 1px; height: 16px; margin: 0 4px; background: var(--codex-line); }
@@ -769,9 +769,9 @@ a.rail-bar-button { text-decoration: none; }
   cursor: pointer;
   transition: color 140ms ease, background-color 140ms ease;
 }
-.rail-bar-button:hover:not(:disabled) { color: var(--codex-ink); background: #232323; }
-.rail-bar-button:disabled { color: #4a4a4a; cursor: default; }
-.rail-bar-button[aria-pressed="true"] { color: var(--codex-ink); background: #232323; }
+.rail-bar-button:hover:not(:disabled) { color: var(--codex-ink); background: var(--codex-surface-hover, #232323); }
+.rail-bar-button:disabled { color: var(--codex-faint, #4a4a4a); cursor: default; }
+.rail-bar-button[aria-pressed="true"] { color: var(--codex-ink); background: var(--codex-surface-active, #232323); }
 .rail-bar-button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.5; }
 /* Second row: what the drawer does with the files it lists. */
 .rail-toolbar {
@@ -833,7 +833,7 @@ a.rail-bar-button { text-decoration: none; }
 }
 
 .rail-preview-download { flex: 0 0 26px; text-align: center; color: #9a9a9a; text-decoration: none; }
-.rail-preview-download:hover { color: #ffffff; }
+.rail-preview-download:hover { color: var(--codex-ink); }
 
 .rail-preview-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding-top: 8px; }
 

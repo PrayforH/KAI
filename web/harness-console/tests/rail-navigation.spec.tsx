@@ -109,6 +109,23 @@ it("squeezes a real column, and covers the conversation when expanded", () => {
   expect(experience).toMatch(/\.rail-files-section\[data-previewing="true"\]/);
 });
 
+it("themes the drawer's controls instead of hard-coding a dark press state", () => {
+  const experience = readFileSync(
+    join(process.cwd(), "src/app/conversation-experience.css"),
+    "utf8",
+  );
+  // A hard-coded dark fill turned every pressed drawer button black in light mode.
+  const literals = experience
+    .split("\n")
+    .filter((line) => line.startsWith(".rail-bar-button") || line.startsWith(".rail-bar-views"))
+    .filter((line) => /background: #(2|1)/.test(line));
+
+  expect(literals).toEqual([]);
+  expect(experience).toMatch(/\.rail-bar-button\[aria-pressed="true"\] \{[^}]*background: var\(--codex-surface-active/);
+  expect(experience).toMatch(/\.rail-bar-button:hover:not\(:disabled\) \{[^}]*background: var\(--codex-surface-hover/);
+  expect(experience).toMatch(/\.rail-file-search \{[^}]*background: var\(--codex-surface/);
+});
+
 it("gives both columns the drawer height so a long list scrolls on its own", () => {
   const experience = readFileSync(
     join(process.cwd(), "src/app/conversation-experience.css"),
