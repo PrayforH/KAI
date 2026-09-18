@@ -844,18 +844,6 @@ a.rail-bar-button { text-decoration: none; }
 .rail-preview-pdf { width: 100%; height: 100%; min-height: 220px; border: 0; border-radius: 8px; background: #fff; }
 .rail-preview-html { width: 100%; height: 100%; min-height: 220px; border: 0; border-radius: 8px; background: #fff; }
 
-.rail-preview-code {
-  margin: 0;
-  padding: 8px 10px;
-  border: 1px solid #2b2b2b;
-  border-radius: 8px;
-  color: #d2d2d2;
-  background: #141414;
-  font: 11.5px/1.6 var(--codex-font-mono, ui-monospace, monospace);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
 .rail-preview-markdown { color: #d2d2d2; font-size: 12.5px; }
 .rail-preview-markdown .aui-md { font-size: 12.5px; line-height: 1.65; }
 

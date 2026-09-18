@@ -62,6 +62,37 @@ it("renders markdown content fetched from the artifact route", async () => {
   expect(container.querySelector(".rail-preview-download")?.getAttribute("href")).toContain("/api/harness/artifacts/a1");
 });
 
+// The code view's editor virtualizes through the browser's layout observers, so
+// this asserts the wiring and the props rather than the third-party DOM.
+vi.mock("../src/components/agent-studio/project-source-editor", () => ({
+  ProjectSourceEditor: ({ path, content, theme, wrap }: { path: string; content: string; theme: string; wrap: boolean }) => (
+    <pre data-testid="source-editor" data-path={path} data-theme={theme} data-wrap={String(wrap)}>{content}</pre>
+  ),
+}));
+
+it("renders source files through the code view's editor", async () => {
+  const fetcher = vi.fn(async () => new Response("def build():\n    return 1\n", { status: 200 }));
+  vi.stubGlobal("fetch", fetcher);
+  const container = await render(target("build_flow.py", "text/x-python"));
+
+  // Same component and theme the Agent Studio code view renders source with.
+  const editor = container.querySelector('[data-testid="source-editor"]');
+  expect(editor).not.toBeNull();
+  expect(editor?.getAttribute("data-path")).toBe("build_flow.py");
+  expect(editor?.getAttribute("data-theme")).toBe("dark");
+  expect(editor?.getAttribute("data-wrap")).toBe("true");
+  expect(editor?.textContent).toContain("def build()");
+  expect(container.querySelector(".rail-preview-code")).toBeNull();
+});
+
+it("pretty-prints json before it reaches the editor", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response('{"a":1}', { status: 200 })));
+  const container = await render(target("data.json", "application/json"));
+
+  expect(container.querySelector('[data-testid="source-editor"]')?.textContent)
+    .toContain('\n  "a": 1\n');
+});
+
 it("does not fetch a file it cannot preview and offers the download instead", async () => {
   const fetcher = vi.fn();
   vi.stubGlobal("fetch", fetcher);

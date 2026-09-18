@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { requireAuthenticatedResponse } from "../lib/client-auth";
+import { ProjectSourceEditor } from "./agent-studio/project-source-editor";
+import { useCodeTheme } from "./agent-studio/project-code-theme";
 import { MarkdownText } from "./markdown-text";
 import { TextMessagePartProvider } from "@assistant-ui/react";
 
@@ -94,6 +96,7 @@ function downloadUrl(target: PreviewTarget): string {
 export function RailFilePreview({ target }: { target: PreviewTarget }) {
   const kind = previewKindFor(target.media_type ?? "", target.name ?? "");
   const url = contentUrl(target);
+  const theme = useCodeTheme();
   const [text, setText] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(!FRAMED_KINDS.has(kind));
@@ -199,7 +202,13 @@ export function RailFilePreview({ target }: { target: PreviewTarget }) {
             )}
           </div>
         ) : (
-          <pre className="rail-preview-code"><code>{kind === "json" ? prettyJson(text) : text}</code></pre>
+          // Source files read like the code view's editor, so the rail matches it.
+          <ProjectSourceEditor
+            path={target.name}
+            content={kind === "json" ? prettyJson(text) : text}
+            theme={theme}
+            wrap
+          />
         )}
       </div>
     </div>
