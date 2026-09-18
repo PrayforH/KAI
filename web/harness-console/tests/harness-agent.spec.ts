@@ -631,32 +631,35 @@ it("keeps a streamed answer visible when thinking interrupts it", async () => {
   activityStore.clear(); liveResponseStore.clear();
 });
 
-describe("artifact summary pill", () => {
-  const artifact = (runId: string) => ({
+describe("artifact summary row", () => {
+  const artifact = (runId: string, name = "out.csv", mediaType = "text/csv") => ({
     type: "tool-call",
     toolName: "harness_present_artifact",
-    args: { run_id: runId, name: `stage/${runId}.csv` },
+    args: { artifact_id: `a-${runId}-${name}`, run_id: runId, name, media_type: mediaType },
   });
 
-  it("counts the artifacts the turn presents, once per file", async () => {
-    const { artifactCountForTurn } = await import("../src/components/agent-thread");
+  it("lists the files this turn presents, once per file", async () => {
+    const { artifactsForTurn } = await import("../src/components/agent-thread");
     const parts = [
-      artifact("run_1"),
+      artifact("run_1", "data/by_region.csv"),
       { type: "tool-call", toolName: "harness_run_activity", args: {} },
-      artifact("run_1"),
-      artifact("run_1"),
+      artifact("run_1", "deliverables/REPORT.md", "text/markdown"),
+      artifact("run_1", "charts/top10.svg", "image/svg+xml"),
     ];
+    const artifacts = artifactsForTurn(parts, "run_1", true);
 
-    expect(artifactCountForTurn(parts, "run_1", true)).toBe(3);
-    expect(artifactCountForTurn(parts, "run_1", false)).toBe(3);
+    expect(artifacts.map((item) => item.name)).toEqual([
+      "data/by_region.csv",
+      "deliverables/REPORT.md",
+      "charts/top10.svg",
+    ]);
   });
 
   it("leaves out files from another run and turns without any", async () => {
-    const { artifactCountForTurn } = await import("../src/components/agent-thread");
+    const { artifactsForTurn } = await import("../src/components/agent-thread");
 
     // The last turn must not claim the previous run's files.
-    expect(artifactCountForTurn([artifact("run_0")], "run_1", true)).toBe(0);
-    expect(artifactCountForTurn([artifact("run_0")], "run_0", true)).toBe(1);
-    expect(artifactCountForTurn([{ type: "text", toolName: undefined, args: undefined }], "run_1", true)).toBe(0);
+    expect(artifactsForTurn([artifact("run_0")], "run_1", true)).toEqual([]);
+    expect(artifactsForTurn([artifact("run_0")], "run_0", true)).toHaveLength(1);
   });
 });
