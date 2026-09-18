@@ -7,11 +7,6 @@ type Entry = { id: string; label: string; answer: string; node: HTMLElement };
 // The rail is the thread's time journey. Ticks stay readable when a task runs
 // for many turns, so they are sized from a shared scale instead of magic
 // numbers inline: idle, current, and the four neighbours of the hovered tick.
-/** Reveal delay for a tick: the rail unfolds from its middle towards both ends. */
-export function railRevealDelay(index: number, count: number, step = 26) {
-  return `${Math.round(Math.abs(index - (count - 1) / 2) * step)}ms`;
-}
-
 const IDLE_LINE_WIDTH = 6;
 const ACTIVE_LINE_WIDTH = 8;
 const NEIGHBOUR_LINE_WIDTHS = [19, 14, 10, 7, 6];
@@ -26,17 +21,6 @@ export function ConversationIndex({ frame, threadId, pagination }: {
   const [active, setActive] = useState("");
   const [hovered, setHovered] = useState("");
   const buttons = useRef(new Map<string, HTMLButtonElement>());
-  // The unfold is an entrance, not a reaction: later updates (an auto-loaded page
-  // turning pending ticks into loaded ones) rebuild tick elements, and without
-  // this they would replay the whole animation.
-  const [revealing, setRevealing] = useState(false);
-  const hasTicks = (pagination?.total ?? entries.length) > 0;
-  useEffect(() => {
-    if (!hasTicks) { setRevealing(false); return; }
-    setRevealing(true);
-    const timer = window.setTimeout(() => setRevealing(false), 900);
-    return () => window.clearTimeout(timer);
-  }, [hasTicks]);
   useEffect(() => {
     const root = frame.current;
     if (!root) return;
@@ -138,13 +122,13 @@ export function ConversationIndex({ frame, threadId, pagination }: {
 
   const pending = Math.max(0, (count || entries.length) - entries.length);
   return <nav className="conversation-index" data-expanded={Boolean(hovered)} aria-label="对话轮次索引" onMouseLeave={() => setHovered("")}>
-    <div className="conversation-index-rail" data-revealing={revealing ? "true" : undefined}>
+    <div className="conversation-index-rail">
       {Array.from({ length: pending }, (_, index) => <button key={`pending-${index}`} type="button"
-        className="conversation-index-pending" style={{ "--index-line-width": `${IDLE_LINE_WIDTH}px`, "--rail-reveal-delay": railRevealDelay(index, pending + entries.length) } as CSSProperties}
+        className="conversation-index-pending" style={{ "--index-line-width": `${IDLE_LINE_WIDTH}px`} as CSSProperties}
         aria-label={`第 ${index + 1} 轮：加载更早的轮次`}
         onClick={() => void revealPending(index)}
       ><span aria-hidden="true" /></button>)}
-      {entries.map((entry, index) => <button key={entry.id} ref={node => { if (node) buttons.current.set(entry.id, node); else buttons.current.delete(entry.id); }} type="button" style={{ "--index-line-width": `${expandedIndex < 0 ? (entry.id === active ? ACTIVE_LINE_WIDTH : IDLE_LINE_WIDTH) : NEIGHBOUR_LINE_WIDTHS[Math.min(4, Math.abs(index - expandedIndex))]}px`, "--rail-reveal-delay": railRevealDelay(pending + index, pending + entries.length) } as CSSProperties} data-highlighted={entry.id === hovered} aria-label={`第 ${index + 1} 轮：${entry.label}`} aria-current={entry.id === active ? "location" : undefined} onMouseEnter={() => setHovered(entry.id)} onFocus={() => setHovered(entry.id)} onBlur={() => setHovered("")} onKeyDown={event => {
+      {entries.map((entry, index) => <button key={entry.id} ref={node => { if (node) buttons.current.set(entry.id, node); else buttons.current.delete(entry.id); }} type="button" style={{ "--index-line-width": `${expandedIndex < 0 ? (entry.id === active ? ACTIVE_LINE_WIDTH : IDLE_LINE_WIDTH) : NEIGHBOUR_LINE_WIDTHS[Math.min(4, Math.abs(index - expandedIndex))]}px`} as CSSProperties} data-highlighted={entry.id === hovered} aria-label={`第 ${index + 1} 轮：${entry.label}`} aria-current={entry.id === active ? "location" : undefined} onMouseEnter={() => setHovered(entry.id)} onFocus={() => setHovered(entry.id)} onBlur={() => setHovered("")} onKeyDown={event => {
         const offset = event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : 0;
         const target = event.key === "Home" ? 0 : event.key === "End" ? entries.length - 1 : index + offset;
         if (offset || event.key === "Home" || event.key === "End") { event.preventDefault(); buttons.current.get(entries[Math.max(0, Math.min(entries.length - 1, target))].id)?.focus(); }

@@ -33,8 +33,8 @@ it("indexes each user turn, previews labels and scrolls only its viewport", asyn
   await render();
   const buttons = host.querySelectorAll<HTMLButtonElement>("nav button");
   expect(buttons).toHaveLength(3);
-  // The unfold is an entrance: it is armed while the ticks first arrive.
-  expect(host.querySelector(".conversation-index-rail")?.getAttribute("data-revealing")).toBe("true");
+  // The rail paints statically: no entrance animation is armed.
+  expect(host.querySelector(".conversation-index-rail")?.getAttribute("data-revealing")).toBeNull();
   expect(buttons[0].getAttribute("aria-current")).toBe("location");
   act(() => buttons[1].focus());
   expect(host.querySelector(".conversation-index-preview")?.textContent).toContain("关于第二问的回答摘要");
@@ -56,19 +56,6 @@ it("supports keyboard navigation, updates branches and clears empty conversation
   expect(host.querySelector("nav button")?.getAttribute("aria-label")).toContain("另一个分支");
   await render({ id: "empty", prompts: [] });
   expect(host.querySelector("nav")).toBeNull();
-});
-
-it("unfolds the rail from its middle towards both ends", async () => {
-  const { railRevealDelay } = await import("../src/components/conversation-index");
-
-  // The middle tick leads, the ends follow, and the two halves are symmetric.
-  expect(railRevealDelay(2, 5)).toBe("0ms");
-  expect(railRevealDelay(1, 5)).toBe("26ms");
-  expect(railRevealDelay(0, 5)).toBe("52ms");
-  expect(railRevealDelay(4, 5)).toBe("52ms");
-  // An even count has a middle pair.
-  expect(railRevealDelay(1, 4)).toBe("13ms");
-  expect(railRevealDelay(0, 4)).toBe("39ms");
 });
 
 it("waits for the turn count and renders every tick at once", async () => {

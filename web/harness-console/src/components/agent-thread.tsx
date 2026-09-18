@@ -1007,6 +1007,80 @@ export function shouldShowArtifactForTurn(
   );
 }
 
+/** The artifacts this turn presents. They are summarised once, above the answer's
+ * actions, and the drawer the summary opens is where they are actually browsed. */
+export function artifactsForTurn(
+  parts: readonly { type?: string; toolName?: string; args?: unknown }[],
+  viewRunId: string | undefined,
+  isLast: boolean,
+): ArtifactDetails[] {
+  return parts
+    .filter((part) => part.type === "tool-call" && part.toolName === "harness_present_artifact")
+    .filter((part) => {
+      const args = (part.args ?? {}) as Record<string, unknown>;
+      return shouldShowArtifactForTurn(
+        typeof args.run_id === "string" ? args.run_id : undefined,
+        viewRunId,
+        isLast,
+      );
+    })
+    .map((part) => (part.args ?? {}) as ArtifactDetails);
+}
+
+function artifactMark(name: string | undefined, mediaType: string | undefined) {
+  const type = (mediaType ?? "").toLowerCase();
+  if (type.startsWith("image/")) return "IMG";
+  if (type === "application/pdf") return "PDF";
+  if (type.includes("json")) return "JSON";
+  if (type.includes("markdown")) return "MD";
+  if (type.startsWith("video/")) return "VID";
+  const extension = (name ?? "").split(".").pop()?.toLowerCase() ?? "";
+  return extension ? extension.slice(0, 4).toUpperCase() : "FILE";
+}
+
+function isImageArtifact(details: ArtifactDetails) {
+  const type = (details.media_type ?? "").toLowerCase();
+  return type.startsWith("image/") || ["png", "jpg", "jpeg", "gif", "webp", "avif", "svg"].includes(
+    (details.name ?? "").split(".").pop()?.toLowerCase() ?? "",
+  );
+}
+
+/** One row above the answer's actions: every artifact thumbnail plus the count,
+ * opening the task's file drawer. Nothing is folded away. */
+function ArtifactSummaryRow({ artifacts }: { artifacts: ArtifactDetails[] }) {
+  const [failed, setFailed] = useState<readonly string[]>([]);
+  if (artifacts.length === 0) return null;
+  const label = `查看本任务的 ${artifacts.length} 项产出`;
+  return (
+    <button
+      type="button"
+      className="artifact-summary-row"
+      aria-label={label}
+      title={label}
+      onClick={() => window.dispatchEvent(new CustomEvent("harness:open-files"))}
+    >
+      <span className="artifact-summary-thumbs" aria-hidden="true">
+        {artifacts.map((details) => (
+          <span className="artifact-thumb" key={details.artifact_id} data-mark={artifactMark(details.name, details.media_type)}>
+            {isImageArtifact(details) && !failed.includes(details.artifact_id) ? (
+              // Same-origin artifact endpoint; a failed image falls back to the mark.
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={`/api/harness/artifacts/${encodeURIComponent(details.artifact_id)}?preview=1`}
+                alt=""
+                loading="lazy"
+                onError={() => setFailed((current) => [...current, details.artifact_id])}
+              />
+            ) : null}
+            <b>{artifactMark(details.name, details.media_type)}</b>
+          </span>
+        ))}
+      </span>
+      <span className="artifact-summary-count">{artifacts.length} 项产出</span>
+    </button>
+  );
+}
+
 function HarnessToolPart(part: ToolCallMessagePartProps) {
   const status = toolStatus(part);
   const args = objectValue(part.args);
@@ -1041,7 +1115,7 @@ function HarnessToolPart(part: ToolCallMessagePartProps) {
     );
   }
   if (part.toolName === "harness_present_artifact") {
-    return <HarnessArtifactPart args={args} runId={runView?.runId} />;
+    return <HarnessArtifactPart />;
   }
   if (shouldSuppressRawToolCard(runView, part.toolCallId)) {
     return null;
@@ -1058,18 +1132,9 @@ function HarnessToolPart(part: ToolCallMessagePartProps) {
   );
 }
 
-function HarnessArtifactPart({
-  args,
-  runId,
-}: {
-  args: Record<string, unknown>;
-  runId: string | undefined;
-}) {
-  const isLast = useAuiState((state) => state.message.isLast);
-  const artifactRunId =
-    typeof args.run_id === "string" ? args.run_id : undefined;
-  if (!shouldShowArtifactForTurn(artifactRunId, runId, isLast)) return null;
-  return <ArtifactCard details={args as unknown as ArtifactDetails} />;
+function HarnessArtifactPart() {
+  // One summary row carries the turn's files, so no card per file duplicates it.
+  return null;
 }
 
 const ReasoningPart: ReasoningMessagePartComponent = ({ text, status }) => (
@@ -1333,6 +1398,10 @@ function HarnessAssistantMessage() {
   const turnCitations = citationsForTurn(messageId, isLast, runView, durable?.success ? durable.data : undefined);
   if (turnCitations) capturedCitations.current = { messageId, citations: turnCitations };
   const answerCitations = capturedCitations.current.messageId === messageId ? capturedCitations.current.citations : [];
+  const turnArtifacts = useMemo(
+    () => artifactsForTurn(content, runView?.runId, isLast),
+    [content, runView?.runId, isLast],
+  );
   return (
     <AnswerCitationProvider citations={answerCitations}>
     <AssistantMessage.Root
@@ -1373,6 +1442,9 @@ function HarnessAssistantMessage() {
       ) : null}
       {!hasVideoGeneration ? (
         <div className="assistant-message-controls">
+          <div className="artifact-summary-line">
+            <ArtifactSummaryRow artifacts={turnArtifacts} />
+          </div>
           <HarnessBranchPicker />
           <AssistantActionBar.Root
             className="assistant-feedback-actions"
