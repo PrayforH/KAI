@@ -12,6 +12,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { activityStore, useRunViewModel } from "../lib/activity-store";
@@ -28,14 +29,17 @@ import {
 import { activateRuntimeThread } from "../lib/runtime-thread-scope";
 import type { TaskModelRoute } from "../lib/task-model-catalog";
 import { TaskKnowledgeProvider } from "./task-knowledge-context";
+import { ThreadHistoryReadyProvider } from "./thread-history-ready";
 import { TaskModelProvider } from "./task-model-context";
 
 function DurableHistorySync({
   revision,
   history,
+  onSettled,
 }: {
   revision: number;
   history: ReturnType<typeof createThreadHistoryAdapter>;
+  onSettled?: () => void;
 }) {
   const thread = useThreadRuntime();
   const running = useAuiState((state) => state.thread.isRunning);
@@ -64,6 +68,8 @@ function DurableHistorySync({
 
   useEffect(() => {
     let disposed = false;
+    // One frame is enough to let the runtime finish mounting; a longer wait left
+    // the conversation area visibly empty after switching tasks.
     const timer = window.setTimeout(() => {
       void history
         .loadSnapshot((repository) => {
@@ -71,6 +77,7 @@ function DurableHistorySync({
             thread.import(repository);
           }
         })
+        .finally(() => { if (!disposed) onSettled?.(); })
         .catch((error: unknown) => {
           if (!disposed) {
             console.error(
@@ -79,7 +86,7 @@ function DurableHistorySync({
             );
           }
         });
-    }, 120);
+    }, 16);
     return () => {
       disposed = true;
       window.clearTimeout(timer);
@@ -114,6 +121,7 @@ export function AssistantRuntimeShell({
 }) {
   const runView = useRunViewModel();
   const [historyRevision, setHistoryRevision] = useState(0);
+  const [historyReady, setHistoryReady] = useState(false);
   const [knowledgeReferences, setKnowledgeReferences] = useState<string[]>([]);
   const [knowledgeMode, setKnowledgeMode] = useState<"rag" | "wiki">("rag");
   const [loadedKnowledgeKey, setLoadedKnowledgeKey] = useState<string | null>(null);
@@ -153,13 +161,19 @@ export function AssistantRuntimeShell({
     threadId,
   ]);
   const attachments = useMemo(() => createInputAttachmentAdapter(), []);
+  // The adapter carries only the thread. Rebuilding it for the agent's own
+  // options (a model route or knowledge selection that resolves a moment after
+  // opening a task) made DurableHistorySync re-import the snapshot and repaint
+  // the whole conversation.
+  const agentRef = useRef(agent);
+  agentRef.current = agent;
   const history = useMemo(
     () =>
       createThreadHistoryAdapter(threadId, {
         onActiveRun: (serverRunId) =>
-          agent.adoptActiveRun(threadId, serverRunId),
+          agentRef.current.adoptActiveRun(threadId, serverRunId),
       }),
-    [agent, threadId],
+    [threadId],
   );
   useEffect(
     () => () => {
@@ -200,6 +214,8 @@ export function AssistantRuntimeShell({
     runStreamStore.clear();
     runReuseStore.clear();
     uploadFeedbackStore.clear();
+    // The new thread is empty until its snapshot lands; keep the welcome away.
+    setHistoryReady(false);
   }, [threadId]);
   const runtime = useAgUiRuntime({
     agent,
@@ -211,7 +227,8 @@ export function AssistantRuntimeShell({
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      <DurableHistorySync revision={historyRevision} history={history} />
+      <ThreadHistoryReadyProvider value={historyReady}>
+      <DurableHistorySync revision={historyRevision} history={history} onSettled={() => setHistoryReady(true)} />
       <TaskModelProvider
         routes={modelRoutes}
         agentDefaultRouteId={agentDefaultModelRoute}
@@ -232,6 +249,7 @@ export function AssistantRuntimeShell({
           </div>
         </TaskKnowledgeProvider>
       </TaskModelProvider>
+      </ThreadHistoryReadyProvider>
     </AssistantRuntimeProvider>
   );
 }

@@ -7,6 +7,7 @@ import { ProjectFileTree } from "./project-file-tree";
 import { projectSourceChanges } from "../../lib/project-source-changes";
 import { ProjectSourceDiff } from "./project-source-diff";
 import { ProjectSourceEditor } from "./project-source-editor";
+import { useCodeTheme } from "./project-code-theme";
 import styles from "./agent-project-code.module.css";
 
 type IconName = "back" | "next" | "search" | "copy" | "download" | "refresh" | "tree" | "code";
@@ -40,17 +41,10 @@ function FileMark({ path }: { path: string }) {
 export function AgentProjectCode({ draftId, revision, name, dirty, onClose, comparison, comparisonPending = false }: {
   draftId: string; revision: number; name: string; dirty: boolean; onClose: () => void; comparison?: DeepagentsProjectComparison; comparisonPending?: boolean;
 }) {
-  const [theme, setTheme] = useState<"dark" | "light">(() => typeof document !== "undefined" && document.documentElement.dataset.colorMode === "light" ? "light" : "dark");
+  const theme = useCodeTheme();
   const [wrap, setWrap] = useState(false);
   const [mode, setMode] = useState<"files" | "changes">(comparison ? "changes" : "files");
   useEffect(() => { if (comparison) setMode("changes"); }, [comparison]);
-  useEffect(() => {
-    const update = () => setTheme(document.documentElement.dataset.colorMode === "light" ? "light" : "dark");
-    update();
-    const observer = new MutationObserver(update);
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-color-mode"] });
-    return () => observer.disconnect();
-  }, []);
   const [loadedProject, setProject] = useState<DeepagentsProjectSource | null>(null);
   const [selected, setSelected] = useState("agent.py");
   const [filter, setFilter] = useState("");

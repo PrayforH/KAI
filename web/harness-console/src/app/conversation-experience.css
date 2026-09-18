@@ -51,26 +51,43 @@ body.codex-theme-v1 .harness-composer-shell .aui-composer-input { resize: none; 
 .composer-running-actions > span, .composer-input-guide > button { margin-right: auto; }
 .composer-help { padding: 8px 4px; margin: 0; font-size: 12px; color: var(--codex-muted); line-height: 1.7; }
 .composer-input-error { font-size: 12px; color: var(--codex-danger); }
-.rail-tabs { display: flex; gap: 16px; padding: 0 18px; border-bottom: 1px solid var(--codex-line); }
-.rail-tabs button { color: var(--codex-muted); background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 12px 0; font-size: 13px; cursor: pointer; }
-.rail-tabs button[aria-pressed="true"] { color: var(--codex-ink); border-bottom-color: currentColor; }
 .rail-file-toolbar { display: flex; align-items: center; justify-content: space-between; }
 .rail-file-toolbar button { background: transparent; border: 0; color: var(--codex-muted); cursor: pointer; padding: 5px; }
-.rail-file-search { width: 100%; padding: 9px 10px; border: 1px solid var(--codex-line); border-radius: 7px; background: transparent; color: var(--codex-ink); font-size: 12px; }
-.rail-file-row { display: flex; align-items: center; border-bottom: 1px solid var(--codex-line); }
-.rail-file-row .workbench-rail-file { flex: 1; min-width: 0; border: 0; }
+.rail-file-search { position: sticky; top: 0; z-index: 1; width: 100%; margin-bottom: 8px; padding: 8px 10px; border: 1px solid var(--codex-line); border-radius: 7px; background: var(--codex-surface, #141414); color: var(--codex-ink); font-size: 12px; }
+.rail-file-search::placeholder { color: var(--codex-faint, #6c6c6c); }
+.rail-file-row { display: flex; align-items: center; min-width: 0; }
+/* The row is a button, so the browser paints its own grey fill unless the base
+   state is explicit; that made every file look selected. */
+.rail-file-row .workbench-rail-file { flex: 1; min-width: 0; padding: 8px 8px; gap: 9px; border: 0; border-radius: 8px; background: transparent; }
+.workbench-rail-file[aria-pressed="true"] { color: var(--codex-ink); background: var(--codex-surface-active, #2b2b2b); }
+.rail-file-row .rail-download { opacity: 0; transition: opacity 120ms ease; }
+.rail-file-row:hover .rail-download,
+.rail-file-row:focus-within .rail-download { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .rail-file-row .rail-download { transition: none; }
+}
 .rail-download { flex: 0 0 30px; text-align: center; color: var(--codex-muted); text-decoration: none; }
 .workbench-rail [hidden] { display: none !important; }
 @media (max-width: 640px) { .composer-input-guide > span { display: none; } .composer-running-actions > span { max-width: 40%; } .prompt-queue { padding: 6px 8px; } }
 @media (prefers-reduced-motion: reduce) { .run-pulse i, .reasoning-card .reasoning-mark { animation: none !important; } .project-name-viewport > span { transition: none; } }
-/* Reserve a real column on wide screens; compact screens use a drawer. */
+/* The drawer takes a real column and squeezes the conversation; its expand
+   button gives it everything left of the navigation, covering the conversation. */
 @media (min-width: 1100px) {
   body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-open .workspace-stage.tasks-open { grid-template-columns: var(--app-sidebar-expanded-width) minmax(0, 1fr) var(--rail-panel-width, 300px); }
   body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-open .workspace-stage:not(.tasks-open) { grid-template-columns: var(--app-sidebar-collapsed-width) minmax(0, 1fr) var(--rail-panel-width, 300px); }
   body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-open .workbench-rail { position: relative; width: var(--rail-panel-width, 300px); min-height: 0; height: 100%; grid-column: 3; transform: none; transition: none; box-shadow: none; z-index: 2; }
+  body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-expanded .workspace-stage.tasks-open { grid-template-columns: var(--app-sidebar-expanded-width) 0 minmax(0, 1fr); }
+  body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-expanded .workspace-stage:not(.tasks-open) { grid-template-columns: var(--app-sidebar-collapsed-width) 0 minmax(0, 1fr); }
+  body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-expanded .workbench-rail { width: auto; }
+  /* Header and conversation share one column, so expanding hides both. The
+     composer and its popovers are fixed, which is why this goes through
+     visibility rather than clipping alone. */
+  body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-expanded .task-content-shell { min-width: 0; overflow: hidden; visibility: hidden; }
 }
-body.codex-theme-v1 .workbench-rail-panel { width: 100%; }
+body.codex-theme-v1 .workbench-rail-panel { width: 100%; container-type: inline-size; container-name: rail; }
 @media (max-width: 1099px) { body.codex-theme-v1 .workbench-rail { width: min(340px, 90vw); } }
+/* Below the column breakpoint the drawer floats, so expanding takes the screen. */
+@media (max-width: 1099px) { body.codex-theme-v1 .console-shell.is-rail-expanded .workbench-rail { width: 100vw; } }
 body.codex-theme-v1 .harness-assistant-message > .turn-completion { order: 2; display: block; margin: 8px 0 0; opacity: 1; }
 
 /* Corrections from conversation review: quiet composer, inline completion time. */
@@ -157,7 +174,6 @@ body.codex-theme-v1 .composer-stop-secondary:hover { color: var(--codex-ink); ba
   .prompt-queue li > button { padding-inline: 5px; font-size: 11px; }
 }
 /* Quiet, readable surfaces in both themes. */
-body.codex-theme-v1:has(.console-shell) .workbench-rail-task { color: var(--codex-ink); font-weight: 500; }
 body.codex-theme-v1:has(.console-shell) .workbench-rail-section { border-color: var(--codex-line); border-width: 0 0 1px; }
 body.codex-theme-v1:has(.console-shell) .workbench-rail-footer { border-top: 1px solid var(--codex-line); color: var(--codex-muted); }
 body.codex-theme-v1:has(.console-shell) .aui-composer-root { box-shadow: 0 2px 6px rgb(0 0 0 / 3%); }
@@ -175,7 +191,8 @@ body.codex-theme-v1:has(.console-shell),
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) {
   --app-sidebar-expanded-width: clamp(220px, var(--preferred-sidebar-width, 264px), 380px);
   --builder-panel-width: clamp(340px, var(--preferred-builder-width, 420px), min(680px, calc(100vw - var(--app-sidebar-expanded-width) - 480px)));
-  --rail-panel-width: clamp(280px, var(--preferred-rail-width, 300px), min(520px, calc(100vw - var(--app-sidebar-expanded-width) - 400px)));
+  /* The drawer may cover up to half the viewport. */
+  --rail-panel-width: clamp(280px, var(--preferred-rail-width, 300px), 50vw);
 }
 .panel-resize-handle { position: absolute; top: 0; bottom: 0; width: 8px; z-index: 95; cursor: col-resize; touch-action: none; user-select: none; }
 .panel-resize-handle[data-side="left"] { right: 0; }
@@ -199,13 +216,11 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) {
 .conversation-index-rail { display: flex; flex-direction: column; max-height: min(52dvh, 440px); overflow-y: auto; scrollbar-width: none; padding: 4px 0; }
 .conversation-index-rail::-webkit-scrollbar { display: none; }
 .conversation-index button { display: flex; align-items: center; flex: 0 0 10px; width: 32px; height: 10px; padding: 0 0 0 10px; border: 0; background: transparent; cursor: pointer; }
-.conversation-index button > span { width: var(--index-line-width, 4px); height: 2px; background: var(--codex-muted); opacity: .45; transition: width 180ms cubic-bezier(.2,.8,.2,1), opacity 160ms ease, background-color 160ms ease; }
+.conversation-index button > span { width: var(--index-line-width, 6px); height: 2px; background: var(--codex-muted); opacity: .45; transition: width 180ms cubic-bezier(.2,.8,.2,1), opacity 160ms ease, background-color 160ms ease; }
 .conversation-index button[aria-current] > span { opacity: .85; }
 .conversation-index button[data-highlighted="true"] > span { background: var(--codex-ink); opacity: 1; }
-/* Ticks for earlier runs that are not loaded yet: visible in the rail, dimmed,
-   and clicking one pulls the pages needed to reveal that turn. */
-.conversation-index button.conversation-index-pending > span { opacity: .22; }
-.conversation-index button.conversation-index-pending:hover > span { opacity: .55; background: var(--codex-ink); }
+/* Ticks for earlier runs that are not loaded yet read exactly like the loaded
+   ones; clicking one pulls the pages needed to reveal that turn. */
 .conversation-index button:focus-visible { outline: 1px solid var(--codex-muted); outline-offset: 0; border-radius: 3px; }
 .conversation-index-preview { position: absolute; left: 38px; transform: translateY(-50%); width: 320px; max-width: calc(100vw - 90px); padding: 12px 14px; border: 1px solid var(--codex-line); border-radius: 13px; background: var(--codex-surface-raised); color: var(--codex-ink); box-shadow: 0 8px 28px #0002; pointer-events: none; font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; animation: index-preview-in 140ms ease-out; }
 .conversation-index-preview strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
@@ -421,7 +436,7 @@ body.codex-theme-v1 .execution-reasoning-body .aui-md { color: var(--codex-muted
 body.codex-theme-v1 .execution-row-sweep { position: relative; overflow: hidden; }
 body.codex-theme-v1 .execution-row-sweep::after {
   content: ""; position: absolute; inset-block: 0; left: 0; width: 220px;
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--codex-bg, #101010) 65%, transparent), transparent);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--codex-surface, #101010) 65%, transparent), transparent);
   animation: execution-row-sweep 2.6s ease-out infinite; pointer-events: none;
 }
 @keyframes execution-row-sweep { from { left: -220px; } 90%, to { left: 100%; } }
@@ -429,75 +444,116 @@ body.codex-theme-v1 .execution-row-sweep::after {
   body.codex-theme-v1 .execution-row-sweep::after { animation: none; display: none; }
   body.codex-theme-v1 .execution-reasoning-chevron { transition: none; }
 }
-/* Attachment cards share one box for preview, metadata and upload state. */
+/* Attachments are one square thumbnail each: the preview is the card, the file
+   name rides on the built-in tooltip and the accessibility tree, and the
+   transfer state overlays the thumbnail instead of a row above the composer. */
 body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments {
   box-sizing: border-box;
   display: flex;
   flex: none;
+  flex-wrap: wrap;
   align-items: flex-start;
   gap: 8px;
   width: 100%;
   min-width: 0;
-  padding: 12px 12px 4px;
+  padding: 12px 12px 0;
 }
 body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments:empty { display: none; }
 body.codex-theme-v1 .harness-composer-shell .composer-file-card {
   position: relative;
-  flex: 0 0 232px;
-  width: 232px;
-  max-width: 100%;
-  min-width: 0;
+  flex: 0 0 72px;
+  width: 72px;
+  height: 72px;
 }
 body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments .aui-attachment-root {
-  height: auto;
+  height: 72px;
   min-width: 0;
   margin: 0;
 }
 body.codex-theme-v1 .harness-composer-shell .aui-attachment-content {
   box-sizing: border-box;
-  width: 100%;
-  height: 76px;
+  width: 72px;
+  height: 72px;
   min-width: 0;
-  justify-content: flex-start;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 10px 32px 24px 10px;
+  justify-content: center;
+  align-items: center;
+  gap: 0;
+  padding: 0;
   border-radius: 10px;
+  overflow: hidden;
 }
 body.codex-theme-v1 .harness-composer-shell .aui-attachment-thumb {
-  flex: 0 0 36px;
-  width: 36px;
-  height: 36px;
+  flex: 1 1 auto;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
 }
 body.codex-theme-v1 .harness-composer-shell .aui-attachment-thumb img { width: 100%; height: 100%; object-fit: cover; }
-body.codex-theme-v1 .harness-composer-shell .aui-attachment-text { flex: 1 1 0; min-width: 0; }
-body.codex-theme-v1 .harness-composer-shell .aui-attachment-name {
-  display: block;
-  margin: 0;
+body.codex-theme-v1 .harness-composer-shell .aui-attachment-thumb svg { width: 22px; height: 22px; }
+body.codex-theme-v1 .harness-composer-shell .aui-attachment-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
   overflow: hidden;
+  clip-path: inset(50%);
   white-space: nowrap;
-  text-overflow: ellipsis;
-  font-size: 12px;
-  line-height: 18px;
 }
-body.codex-theme-v1 .harness-composer-shell .aui-attachment-type { margin: 0; font-size: 11px; line-height: 18px; }
 body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments .aui-attachment-remove {
-  top: 6px;
-  right: 6px;
-  width: 24px;
-  height: 24px;
-  padding: 4px;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  padding: 2px;
+  opacity: 0;
+  transition: opacity 120ms ease;
 }
+body.codex-theme-v1 .harness-composer-shell .composer-file-card:hover .aui-attachment-remove,
+body.codex-theme-v1 .harness-composer-shell .composer-file-card:focus-within .aui-attachment-remove { opacity: 1; }
 body.codex-theme-v1 .harness-composer-shell .composer-file-card .attachment-upload-status {
-  inset: auto 32px 9px 56px;
-  color: var(--codex-muted);
+  inset: auto 0 0;
+  padding: 3px 6px 5px;
+  color: #dcdcdc;
+  background: rgb(0 0 0 / 62%);
   font-size: 10px;
-  line-height: 14px;
+  line-height: 13px;
+  pointer-events: none;
 }
 body.codex-theme-v1 .harness-composer-shell .composer-file-card .attachment-upload-status.error { color: var(--codex-danger, #c45443); }
-body.codex-theme-v1 .harness-composer-shell .composer-file-card .attachment-upload-status > span { max-width: 100%; }
-body.codex-theme-v1 .harness-composer-shell .composer-file-card .attachment-upload-track { margin-top: 2px; }
+body.codex-theme-v1 .harness-composer-shell .composer-file-card .attachment-upload-status > .upload-status-short {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+body.codex-theme-v1 .harness-composer-shell .composer-file-card .attachment-upload-status > .upload-status-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+body.codex-theme-v1 .harness-composer-shell .composer-file-card .attachment-upload-track { margin-top: 3px; }
+body.codex-theme-v1 .harness-composer-shell .composer-file-ready {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  color: #0f1a13;
+  background: var(--codex-success, #40c977);
+  font-size: 10px;
+  line-height: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  body.codex-theme-v1 .harness-composer-shell .aui-composer-attachments .aui-attachment-remove { transition: none; }
+}
 
 /* Load-earlier pagination affordance for long threads (2026-09-17). */
 .history-load-earlier {
@@ -514,28 +570,32 @@ body.codex-theme-v1 .harness-composer-shell .composer-file-card .attachment-uplo
 }
 
 /* Oversized-message clamp notice (2026-09-17). */
+/* A quiet line, not a notice box: it only ever says that a long list or table
+   is folded, and offers the way back. */
 .aui-md-clamp {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin: 8px 0 4px;
-  padding: 6px 10px;
-  border: 1px dashed rgba(28, 28, 31, 0.2);
-  border-radius: 8px;
+  margin: 6px 0 2px;
+  padding: 0;
+  border: 0;
+  color: var(--codex-muted);
   font-size: 12px;
-  color: var(--codex-muted, #6b6b70);
 }
+
 .aui-md-clamp button {
-  border: 1px solid rgba(28, 28, 31, 0.16);
+  border: 0;
+  padding: 2px 0;
   background: transparent;
-  color: inherit;
-  border-radius: 999px;
-  padding: 2px 12px;
-  font-size: 12px;
+  color: var(--codex-ink-soft);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
   cursor: pointer;
   white-space: nowrap;
 }
+.aui-md-clamp button:hover { color: var(--codex-ink); }
 
 /* Execution timeline geometry (2026-09-17).
    The log keeps ONE text column: a 16px icon gutter, an 8px gap, then text at
@@ -636,3 +696,256 @@ html body.codex-theme-v1 .execution-ribbon > .execution-disclosure .execution-ch
 html body.codex-theme-v1 .execution-ribbon[data-open="true"] > .execution-disclosure .execution-chevron {
   transform: rotate(45deg);
 }
+
+/* Per-step disclosure chevrons stay out of the way until they are relevant:
+   a transcript with dozens of steps showed one on every row. They come back on
+   hover, on keyboard focus, and while the row is open so the state is visible. */
+html body.codex-theme-v1 .execution-action-chevron,
+html body.codex-theme-v1 .execution-reasoning-chevron {
+  opacity: 0;
+  transition: opacity 120ms ease, transform 130ms ease;
+}
+
+html body.codex-theme-v1 .execution-action:hover .execution-action-chevron,
+html body.codex-theme-v1 .execution-action:focus-within .execution-action-chevron,
+html body.codex-theme-v1 .execution-action[open] .execution-action-chevron,
+html body.codex-theme-v1 .execution-reasoning:hover .execution-reasoning-chevron,
+html body.codex-theme-v1 .execution-reasoning:focus-within .execution-reasoning-chevron,
+html body.codex-theme-v1 .execution-reasoning[open] .execution-reasoning-chevron {
+  opacity: .72;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html body.codex-theme-v1 .execution-action-chevron,
+  html body.codex-theme-v1 .execution-reasoning-chevron { transition: none; }
+}
+
+/* Task rail file browser (Grok-style): one glyph and one name per row, a fill
+   only on the row under the pointer or open in the preview, and the file opens
+   as a preview inside the rail instead of a new tab or a download. */
+.rail-file-icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: #d4d4d4;
+  background: #2b2b2b;
+}
+.rail-file-icon svg { width: 13px; height: 13px; }
+.rail-file-icon[data-kind="image"] { color: #cbb9ff; }
+.rail-file-icon[data-kind="html"] { color: #a9d0ff; }
+.rail-file-icon[data-kind="csv"] { color: #a9e0bd; }
+
+.workbench-rail-file .workbench-rail-file-name { flex: 1 1 auto; text-align: left; }
+
+/* The drawer toolbar follows the file browser it opens: view tabs, then icon
+   actions, with the same panel mark that opens the drawer closing it again. */
+.rail-bar {
+  height: var(--shell-header-height, 46px);
+  min-height: var(--shell-header-height, 46px);
+  padding: 0 10px 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--codex-line);
+}
+.rail-bar-views { display: flex; align-items: center; gap: 2px; }
+/* The view the drawer is showing, and the icon that always leaves for Langfuse. */
+.rail-bar-views .rail-bar-button[aria-current] { color: var(--codex-ink); background: var(--codex-surface-active, #232323); }
+.rail-bar-button.is-disabled { color: var(--codex-faint, #4a4a4a); cursor: default; }
+a.rail-bar-button { text-decoration: none; }
+.rail-bar-actions { display: flex; align-items: center; gap: 2px; }
+.rail-bar-divider { width: 1px; height: 16px; margin: 0 4px; background: var(--codex-line); }
+.rail-bar-button {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  color: var(--codex-muted);
+  background: transparent;
+  cursor: pointer;
+  transition: color 140ms ease, background-color 140ms ease;
+}
+.rail-bar-button:hover:not(:disabled) { color: var(--codex-ink); background: var(--codex-surface-hover, #232323); }
+.rail-bar-button:disabled { color: var(--codex-faint, #4a4a4a); cursor: default; }
+.rail-bar-button[aria-pressed="true"] { color: var(--codex-ink); background: var(--codex-surface-active, #232323); }
+.rail-bar-button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.5; }
+/* Second row: what the drawer does with the files it lists. */
+.rail-toolbar {
+  height: 40px;
+  min-height: 40px;
+  padding: 0 10px 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-bottom: 1px solid var(--codex-line);
+}
+.rail-toolbar[hidden] { display: none !important; }
+.rail-files-section { display: flex; flex-direction: column; flex: 1 0 auto; min-height: 0; border-bottom: 0; }
+/* An open file keeps the browser beside it while the drawer has the room, and
+   both columns share exactly the drawer height so each one scrolls on its own. */
+.rail-files-section[data-previewing="true"] {
+  display: grid;
+  flex: 1 1 auto;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 10px;
+}
+.rail-files-section[data-previewing="true"] > .rail-file-column { display: none; }
+.rail-file-column { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.rail-preview-column { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+@container rail (min-width: 460px) {
+  .rail-files-section[data-previewing="true"] {
+    grid-template-columns: minmax(150px, 0.34fr) minmax(0, 1fr);
+  }
+  .rail-files-section[data-previewing="true"] > .rail-file-column { display: flex; }
+}
+/* Hiding the browser hands the whole drawer to the open file. */
+.rail-files-section[data-previewing="true"][data-list-hidden="true"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+.rail-files-section[data-previewing="true"][data-list-hidden="true"] > .rail-file-column { display: none; }
+
+/* The preview takes whatever the drawer has left after its toolbar. */
+.rail-preview { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+
+.rail-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 0 6px;
+  border-bottom: 1px solid #2b2b2b;
+}
+
+.rail-preview-name {
+  min-width: 0;
+  overflow: hidden;
+  color: #ededed;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rail-preview-download { flex: 0 0 26px; text-align: center; color: #9a9a9a; text-decoration: none; }
+.rail-preview-download:hover { color: var(--codex-ink); }
+
+.rail-preview-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding-top: 8px; }
+
+.rail-preview-note { margin: 0; color: #8a8a8a; font-size: 12px; line-height: 1.6; }
+
+.rail-preview-image { max-width: 100%; border-radius: 8px; }
+
+.rail-preview-pdf { width: 100%; height: 100%; min-height: 220px; border: 0; border-radius: 8px; background: #fff; }
+.rail-preview-html { width: 100%; height: 100%; min-height: 220px; border: 0; border-radius: 8px; background: #fff; }
+
+.rail-preview-markdown { color: #d2d2d2; font-size: 12.5px; }
+.rail-preview-markdown .aui-md { font-size: 12.5px; line-height: 1.65; }
+
+.rail-preview-table-wrap { overflow: auto; }
+
+.rail-preview-table {
+  border-collapse: collapse;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.rail-preview-table th,
+.rail-preview-table td {
+  padding: 4px 8px;
+  border: 1px solid #2b2b2b;
+  text-align: left;
+}
+
+.rail-preview-table th { position: sticky; top: 0; color: #ededed; background: #1f1f1f; }
+
+/* Preview chrome carried the same dark palette as the rail rows: on the light
+   panel the file name (#ededed), the download glyph and the header rule were
+   invisible. */
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-preview-head {
+  border-bottom-color: var(--codex-line);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-preview-name {
+  color: var(--codex-ink);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-preview-download {
+  color: var(--codex-muted);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-preview-download:hover {
+  color: var(--codex-ink);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-preview-note {
+  color: var(--codex-muted);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-preview-markdown {
+  color: var(--codex-ink-soft);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-preview-table th,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-preview-table td {
+  border-color: var(--codex-line);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-preview-table th {
+  color: var(--codex-ink);
+  background: var(--codex-surface-subtle);
+}
+
+/* One summary row for everything a run produced, on its own line above the
+   answer's actions. Every thumbnail stays visible and the row never hides;
+   clicking it opens the task's file drawer. The scope keeps it ahead of the
+   rule that flattens every button in the message controls. */
+body.codex-theme-v1 .assistant-message-controls:has(.artifact-summary-line) { flex-wrap: wrap; }
+body.codex-theme-v1 .assistant-message-controls .artifact-summary-line { flex: 1 0 100%; display: flex; }
+body.codex-theme-v1 .assistant-message-controls .artifact-summary-row {
+  width: fit-content;
+  margin: 2px 0 6px;
+  padding: 3px 10px 3px 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--codex-line-strong);
+  border-radius: 999px;
+  color: var(--codex-ink-soft);
+  background: var(--codex-surface-raised);
+  font: 500 12px/1 var(--codex-font-ui, ui-sans-serif);
+  cursor: pointer;
+  transition: color 140ms ease, border-color 140ms ease, background-color 140ms ease;
+}
+body.codex-theme-v1 .assistant-message-controls .artifact-summary-row:hover,
+body.codex-theme-v1 .assistant-message-controls .artifact-summary-row:focus-visible { color: var(--codex-ink); border-color: var(--codex-muted); background: var(--codex-surface-hover); }
+body.codex-theme-v1 .assistant-message-controls .artifact-summary-row:focus-visible { outline: 2px solid var(--codex-accent, #ececec); outline-offset: 1px; }
+body.codex-theme-v1 .assistant-message-controls .artifact-summary-thumbs { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0; }
+body.codex-theme-v1 .assistant-message-controls .artifact-thumb {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--codex-line);
+  border-radius: 6px;
+  background: var(--codex-surface);
+  color: var(--codex-muted);
+  font: 700 8px/1 var(--codex-font-ui, ui-sans-serif);
+  letter-spacing: .02em;
+}
+body.codex-theme-v1 .assistant-message-controls .artifact-thumb + .artifact-thumb { margin-left: -7px; }
+body.codex-theme-v1 .assistant-message-controls .artifact-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+body.codex-theme-v1 .assistant-message-controls .artifact-thumb b { position: relative; z-index: 1; font-weight: 700; }
+body.codex-theme-v1 .assistant-message-controls .artifact-thumb:has(img) b { display: none; }
+body.codex-theme-v1 .assistant-message-controls .artifact-thumb-more { background: var(--codex-surface-hover); color: var(--codex-ink-soft); font-size: 9px; }
+body.codex-theme-v1 .assistant-message-controls .artifact-summary-count { font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) { body.codex-theme-v1 .assistant-message-controls .artifact-summary-row { transition: none; } }

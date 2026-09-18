@@ -381,3 +381,30 @@ describe("task agent catalog", () => {
   const other: TaskAgent = {...current,ownerUserId:"someone"};
   expect(currentSystemAssistant(other,current)).toBe(other);
  });
+
+describe("runtime agent key", () => {
+  it("stays the same when the catalog adds the agent id", async () => {
+    const { runtimeAgentKey } = await import("../src/lib/task-agent-catalog");
+    // A task summary only carries the coordinate; the catalog entry adds the id.
+    const fromTask = { name: "general-agent", version: "1.0.3" };
+    const fromCatalog = { agentId: "agent_9f", name: "general-agent", version: "1.0.3" };
+
+    expect(runtimeAgentKey(fromCatalog)).toBe(runtimeAgentKey(fromTask));
+  });
+
+  it("changes when the agent or its version changes", async () => {
+    const { runtimeAgentKey } = await import("../src/lib/task-agent-catalog");
+
+    expect(runtimeAgentKey({ name: "a", version: "1" })).not.toBe(runtimeAgentKey({ name: "b", version: "1" }));
+    expect(runtimeAgentKey({ name: "a", version: "1" })).not.toBe(runtimeAgentKey({ name: "a", version: "2" }));
+  });
+
+  it("stays the same when the catalog fills in the owner and the space", async () => {
+    const { runtimeAgentKey } = await import("../src/lib/task-agent-catalog");
+
+    // Those fields arrive after a task opens; keying on them remounted the
+    // conversation and made the turn rail blink.
+    expect(runtimeAgentKey({ name: "a", version: "1", spaceId: "space-1", ownerUserId: "u1", agentId: "agent_1" } as never))
+      .toBe(runtimeAgentKey({ name: "a", version: "1" }));
+  });
+});

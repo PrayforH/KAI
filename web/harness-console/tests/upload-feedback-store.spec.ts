@@ -39,6 +39,25 @@ describe("upload feedback store", () => {
     ]);
   });
 
+  it("reports transfer progress only while the upload is running", () => {
+    uploadFeedbackStore.begin("a:3:1", "a.png");
+    uploadFeedbackStore.progress("a:3:1", 42.4);
+
+    expect(uploadFeedbackStore.getSnapshot()).toEqual([
+      { key: "a:3:1", fileName: "a.png", status: "uploading", progress: 42 },
+    ]);
+
+    uploadFeedbackStore.progress("a:3:1", 240);
+    expect(uploadFeedbackStore.getSnapshot()[0]?.progress).toBe(100);
+
+    uploadFeedbackStore.succeed("a:3:1");
+    uploadFeedbackStore.progress("a:3:1", 10);
+
+    expect(uploadFeedbackStore.getSnapshot()).toEqual([
+      { key: "a:3:1", fileName: "a.png", status: "ready" },
+    ]);
+  });
+
   it("returns one stable empty server snapshot for React hydration", () => {
     const first = uploadFeedbackStore.getServerSnapshot();
     const second = uploadFeedbackStore.getServerSnapshot();

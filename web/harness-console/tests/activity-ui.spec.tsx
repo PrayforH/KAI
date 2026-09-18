@@ -1,14 +1,15 @@
-import { FileUploadStatus } from "../src/components/composer-attachment";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { ActivitySummary } from "../src/components/activity-summary";
 import { ApprovalCard } from "../src/components/approval-card";
 import { ArtifactCard } from "../src/components/artifact-list";
+import { FileUploadStatus } from "../src/components/composer-attachment";
 import { SubagentCard } from "../src/components/subagent-card";
 import { ToolCard } from "../src/components/tool-card";
 import { completedToolBatch } from "../src/components/tool-card";
 import type { RunViewModel } from "../src/lib/run-view-model";
 import {
+  artifactsForTurn,
   hasProjectedTool,
   selectTurnActivity,
   shouldCaptureTurnActivity,
@@ -273,13 +274,18 @@ describe("Codex-style activity UI", () => {
 
   it("renders upload progress and actionable errors", () => {
     const html = renderToStaticMarkup(
-      <><FileUploadStatus item={{ key: "a", fileName: "facts.txt", status: "uploading", progress: 42 }} />
-        <FileUploadStatus item={{ key: "b", fileName: "report.docx", status: "error", message: "too large" }} /></>,
+      <>
+        <FileUploadStatus item={{ key: "a", fileName: "facts.txt", status: "uploading", progress: 42 }} />
+        <FileUploadStatus item={{ key: "b", fileName: "report.docx", status: "error", message: "too large" }} />
+      </>,
     );
-    expect(html).toContain("正在上传");
+    // The thumbnail-sized overlay keeps the short state, the full sentence stays readable.
+    expect(html).toContain('aria-hidden="true">42%<');
+    expect(html).toContain("正在上传 42%");
+    expect(html).toContain("上传失败");
     expect(html).toContain("上传失败：too large");
-    expect(html).toContain('aria-valuenow="42"');
     expect(html).toContain('role="progressbar"');
+    expect(html).toContain('aria-valuenow="42"');
   });
 
   it("renders authenticated preview and download actions for artifacts", () => {
@@ -298,7 +304,7 @@ describe("Codex-style activity UI", () => {
     expect(html).toContain("预览 report.pdf");
     expect(html).toContain("?preview=1");
     expect(html).toContain("artifact-primary-link");
-    expect(html).toContain("点击预览 report.pdf");
+    expect(html).toContain("在侧栏预览 report.pdf");
     expect(html).not.toContain("artifact-actions");
   });
 
@@ -322,5 +328,33 @@ describe("Codex-style activity UI", () => {
     expect(html).toContain("高风险");
     expect(html).toContain("拒绝");
     expect(html).toContain("write-review");
+  });
+});
+
+describe("artifact summary row", () => {
+  const artifact = (runId: string, name = "out.csv", mediaType = "text/csv") => ({
+    type: "tool-call",
+    toolName: "harness_present_artifact",
+    args: { artifact_id: `a-${runId}-${name}`, run_id: runId, name, media_type: mediaType },
+  });
+
+  it("lists the files this turn presents, once per file", () => {
+    const parts = [
+      artifact("run_1", "data/by_region.csv"),
+      { type: "tool-call", toolName: "harness_run_activity", args: {} },
+      artifact("run_1", "deliverables/REPORT.md", "text/markdown"),
+      artifact("run_1", "charts/top10.svg", "image/svg+xml"),
+    ];
+
+    expect(artifactsForTurn(parts, "run_1", true).map((item) => item.name)).toEqual([
+      "data/by_region.csv",
+      "deliverables/REPORT.md",
+      "charts/top10.svg",
+    ]);
+  });
+
+  it("leaves out files from another run and turns without any", () => {
+    expect(artifactsForTurn([artifact("run_0")], "run_1", true)).toEqual([]);
+    expect(artifactsForTurn([artifact("run_0")], "run_0", true)).toHaveLength(1);
   });
 });

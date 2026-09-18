@@ -19,7 +19,7 @@ import { toolActivitySentence } from "../lib/tool-presentation";
 import { KnowledgeCitations } from "./knowledge/knowledge-citations";
 import { MarkdownText } from "./markdown-text";
 import { useRunDetails } from "./run-details-context";
-import { isProcessBoundary } from "../lib/process-boundary";
+import { isResponseBoundary } from "../lib/process-boundary";
 import { useDetailedProcess } from "../lib/process-display-preference";
 
 const phaseLabels: Record<RunPhase, string> = {
@@ -197,7 +197,7 @@ function commentaryNodes(view: RunViewModel): CommentaryNode[] {
   const actionSequences = view.items
     .filter(
       (item) =>
-        isProcessBoundary(item.event_type),
+        isResponseBoundary(item.event_type),
     )
     .map((item) => item.sequence)
     .sort((left, right) => left - right);

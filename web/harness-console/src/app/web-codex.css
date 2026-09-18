@@ -195,54 +195,11 @@ body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-open .workbench-r
   background: #141414;
 }
 
-.workbench-rail-header {
-  height: 48px;
-  min-height: 48px;
-  padding: 0 8px 0 16px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid #292929;
-  color: #e8e8e8;
-}
-
-.workbench-rail-header strong {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-}
-
-.workbench-rail-close {
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  border: 0;
-  border-radius: 8px;
-  color: #9c9c9c;
-  background: transparent;
-  cursor: pointer;
-  transition: color 140ms ease, background-color 140ms ease;
-}
-
-.workbench-rail-close:hover {
-  color: #ffffff;
-  background: #2b2b2b;
-}
-
-.workbench-rail-close svg {
-  width: 15px;
-  height: 15px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.7;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
 .workbench-rail-body {
   min-height: 0;
   flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
   padding: 0 16px 16px;
   overflow-y: auto;
   scrollbar-color: #3d3d3d transparent;
@@ -262,26 +219,20 @@ body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-open .workbench-r
   letter-spacing: 0.1em;
 }
 
-.workbench-rail-task {
-  color: #ececec;
-  font-size: 13.5px;
-  font-weight: 550;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-}
 
 .workbench-rail-files {
   display: grid;
-  gap: 2px;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 4px;
 }
 
 .workbench-rail-file {
   min-width: 0;
-  padding: 6px 8px;
+  padding: 8px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 9px;
   border: 1px solid #2b2b2b;
   border-radius: 8px;
   color: #cfcfcf;
@@ -315,11 +266,6 @@ body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-open .workbench-r
   font-size: 12px;
 }
 
-.workbench-rail-rows {
-  min-width: 0;
-  display: grid;
-  gap: 3px;
-}
 
 .workbench-rail-rows code,
 .workbench-rail-thread {
@@ -328,77 +274,6 @@ body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-open .workbench-r
   font: 11.5px/1.5 var(--codex-font-mono);
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.workbench-rail-agent {
-  color: #dcdcdc;
-  font-size: 12.5px;
-  line-height: 1.4;
-}
-
-.workbench-rail-chip {
-  justify-self: start;
-  padding: 2px 8px;
-  border: 1px solid #343434;
-  border-radius: 6px;
-  color: #b9b9b9;
-  font-size: 11px;
-  line-height: 1.5;
-}
-
-.workbench-rail-phase {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  color: #bdbdbd;
-  font-size: 11.5px;
-}
-
-.workbench-rail-phase i {
-  width: 7px;
-  height: 7px;
-  flex: 0 0 7px;
-  border-radius: 50%;
-  background: #626262;
-}
-
-.workbench-rail-phase.is-running i {
-  background: #ececec;
-  animation: workbench-rail-pulse 1.6s ease-in-out infinite;
-}
-
-.workbench-rail-phase.is-queued i {
-  background: #8f8f8f;
-}
-
-.workbench-rail-phase.is-waiting_approval i {
-  background: #cf9f5e;
-}
-
-.workbench-rail-phase.is-succeeded i {
-  background: #58a66b;
-}
-
-.workbench-rail-phase.is-failed i,
-.workbench-rail-phase.is-rejected i,
-.workbench-rail-phase.is-timed_out i {
-  background: #e05a50;
-}
-
-.workbench-rail-phase.is-succeeded,
-.workbench-rail-phase.is-running {
-  color: #e6e6e6;
-}
-
-@keyframes workbench-rail-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-
-  50% {
-    opacity: 0.35;
-  }
 }
 
 .workbench-rail-manual {
@@ -1000,8 +875,8 @@ body.codex-theme-v1:has(.console-shell) .command-center-search {
 
 body.codex-theme-v1:has(.console-shell) .console-header {
   z-index: 60;
-  min-height: 48px;
-  height: 48px;
+  min-height: var(--shell-header-height, 46px);
+  height: var(--shell-header-height, 46px);
   padding: 6px 16px 6px 18px;
   border-bottom: 1px solid #292929;
   background: var(--codex-header-bg);
@@ -1963,8 +1838,8 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-agen
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .console-header {
-  min-height: 56px;
-  height: 56px;
+  min-height: var(--shell-header-height, 46px);
+  height: var(--shell-header-height, 46px);
   border-bottom-color: #ededee;
   background: var(--codex-header-bg);
 }
@@ -2176,6 +2051,66 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .workbench
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .workbench-rail-close:hover {
   color: #202024;
   background: #ededee;
+}
+
+/* The rail is a dark workbench by default. Its rows kept the dark palette in
+   light mode, which left #cfcfcf file names and near-black icon chips on the
+   #fafafa panel. Only the panel surface was themed before this. */
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .workbench-rail-body {
+  scrollbar-color: #c9c9c9 transparent;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .workbench-rail-section {
+  border-bottom-color: var(--codex-line);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .workbench-rail-section > small,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .workbench-rail-file-size,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .workbench-rail-files-empty {
+  color: var(--codex-muted);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .workbench-rail-file {
+  border-color: var(--codex-line);
+  color: var(--codex-ink-soft);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-file-row .workbench-rail-file:hover {
+  border-color: var(--codex-line-strong);
+  color: var(--codex-ink);
+  background: var(--codex-surface-hover);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-file-row .workbench-rail-file[aria-pressed="true"] {
+  color: var(--codex-ink);
+  background: var(--codex-surface-active);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-file-icon {
+  color: #4a4f55;
+  background: #ececee;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-file-icon[data-kind="image"] {
+  color: #6b4fd8;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-file-icon[data-kind="html"] {
+  color: #1f6fd0;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-file-icon[data-kind="csv"] {
+  color: #1c7a45;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-file-search {
+  border-color: var(--codex-line);
+  background: var(--codex-field);
+  color: var(--codex-ink);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-file-search::placeholder {
+  color: var(--codex-faint);
 }
 
 @media (max-width: 820px) {

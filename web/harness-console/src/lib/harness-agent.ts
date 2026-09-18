@@ -6,7 +6,7 @@ import {
   type RunAgentInput,
   type RunAgentResult,
 } from "@ag-ui/client";
-import { isProcessBoundary } from "./process-boundary";
+import { isResponseBoundary } from "./process-boundary";
 import { runActivitySchema } from "./activity-schema";
 import {
   type ActivityPatchOperation,
@@ -418,10 +418,16 @@ export class HarnessHttpAgent extends HttpAgent {
 
 // Publish the durable process before hiding its live prose, so there is no
 // blank frame while waiting for a tool event after a new thinking block.
-function syncProcessResponse(threadId?: string) {
+export function syncProcessResponse(threadId?: string) {
   const activity = activityStore.getSnapshot();
   if (!activity || activity.run_id !== liveResponseStore.getSnapshot().runId) return;
   const latest = [...activity.items].reverse().find(item =>
-    item.event_type === "message.delta" || isProcessBoundary(item.event_type));
-  if (latest && isProcessBoundary(latest.event_type)) liveResponseStore.hideForTool(threadId);
+    item.event_type === "message.delta" || isResponseBoundary(item.event_type));
+  // Only a tool, approval or subagent ends the answer, exactly as the server's
+  // response projection does. Thinking can arrive in the middle of an answer;
+  // treating it as a boundary hid the streaming reply, which then appeared in
+  // one shot when the Run finished.
+  if (latest && isResponseBoundary(latest.event_type)) {
+    liveResponseStore.hideForTool(threadId);
+  }
 }

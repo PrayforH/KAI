@@ -51,6 +51,10 @@ export function ConversationIndex({ frame, threadId, pagination }: {
         if (node.dataset.turnId) next.push({ id: node.dataset.turnId, label: node.dataset.turnLabel || "附件消息", answer: "", node });
         else if (next.length && node.dataset.turnAnswer) next[next.length - 1].answer = node.dataset.turnAnswer.replace(/!?(\[([^\]]+)\])\([^)]*\)/g, "$2").replace(/[#*_`>]/g, "").trim();
       }
+      // A thread re-import wipes the message DOM for a frame; publishing an
+      // empty list then made every tick blink out and back. Once turns are
+      // known, keep the last scan until the DOM has turns again.
+      if (next.length === 0 && current.length > 0) { track(); return; }
       const changed = next.length !== current.length || next.some((entry, i) => entry.id !== current[i]?.id || entry.label !== current[i]?.label || entry.answer !== current[i]?.answer || entry.node !== current[i]?.node);
       current = next;
       if (changed) setEntries(next);
@@ -72,7 +76,17 @@ export function ConversationIndex({ frame, threadId, pagination }: {
       else if (button.offsetTop + button.offsetHeight > rail.scrollTop + rail.clientHeight) rail.scrollTop = button.offsetTop + button.offsetHeight - rail.clientHeight;
     }
   }, [active]);
-  if (!entries.length) return null;
+  // The ticks are one list, so they wait for the count the history endpoint
+  // already returns. That count only ever grows: a reload of the first page
+  // clears the accumulation for a moment, and reading that as "no turns" made
+  // the whole rail disappear and come back.
+  const total = pagination?.total ?? 0;
+  const [knownTotal, setKnownTotal] = useState(total);
+  useEffect(() => { setKnownTotal(0); }, [threadId]);
+  useEffect(() => { setKnownTotal((current) => Math.max(current, total)); }, [total]);
+  const count = Math.max(knownTotal, total);
+  const countable = pagination ? count > 0 : entries.length > 0;
+  if (!countable) return null;
   const preview = entries.find(entry => entry.id === hovered);
   const expandedIndex = entries.findIndex(entry => entry.id === hovered);
   const previewButton = buttons.current.get(hovered);
@@ -106,15 +120,15 @@ export function ConversationIndex({ frame, threadId, pagination }: {
     node.focus({ preventScroll: true });
   }
 
-  const pending = Math.max(0, (pagination?.total ?? entries.length) - entries.length);
+  const pending = Math.max(0, (count || entries.length) - entries.length);
   return <nav className="conversation-index" data-expanded={Boolean(hovered)} aria-label="对话轮次索引" onMouseLeave={() => setHovered("")}>
     <div className="conversation-index-rail">
       {Array.from({ length: pending }, (_, index) => <button key={`pending-${index}`} type="button"
-        className="conversation-index-pending" style={{ "--index-line-width": `${index === pending - 1 ? 6 : 4}px` } as CSSProperties}
+        className="conversation-index-pending" style={{ "--index-line-width": `${IDLE_LINE_WIDTH}px`} as CSSProperties}
         aria-label={`第 ${index + 1} 轮：加载更早的轮次`}
         onClick={() => void revealPending(index)}
       ><span aria-hidden="true" /></button>)}
-      {entries.map((entry, index) => <button key={entry.id} ref={node => { if (node) buttons.current.set(entry.id, node); else buttons.current.delete(entry.id); }} type="button" style={{ "--index-line-width": `${expandedIndex < 0 ? (entry.id === active ? ACTIVE_LINE_WIDTH : IDLE_LINE_WIDTH) : NEIGHBOUR_LINE_WIDTHS[Math.min(4, Math.abs(index - expandedIndex))]}px` } as CSSProperties} data-highlighted={entry.id === hovered} aria-label={`第 ${index + 1} 轮：${entry.label}`} aria-current={entry.id === active ? "location" : undefined} onMouseEnter={() => setHovered(entry.id)} onFocus={() => setHovered(entry.id)} onBlur={() => setHovered("")} onKeyDown={event => {
+      {entries.map((entry, index) => <button key={entry.id} ref={node => { if (node) buttons.current.set(entry.id, node); else buttons.current.delete(entry.id); }} type="button" style={{ "--index-line-width": `${expandedIndex < 0 ? (entry.id === active ? ACTIVE_LINE_WIDTH : IDLE_LINE_WIDTH) : NEIGHBOUR_LINE_WIDTHS[Math.min(4, Math.abs(index - expandedIndex))]}px`} as CSSProperties} data-highlighted={entry.id === hovered} aria-label={`第 ${index + 1} 轮：${entry.label}`} aria-current={entry.id === active ? "location" : undefined} onMouseEnter={() => setHovered(entry.id)} onFocus={() => setHovered(entry.id)} onBlur={() => setHovered("")} onKeyDown={event => {
         const offset = event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : 0;
         const target = event.key === "Home" ? 0 : event.key === "End" ? entries.length - 1 : index + offset;
         if (offset || event.key === "Home" || event.key === "End") { event.preventDefault(); buttons.current.get(entries[Math.max(0, Math.min(entries.length - 1, target))].id)?.focus(); }

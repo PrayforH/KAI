@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -77,5 +79,15 @@ describe("DeepAgents source workspace", () => {
     await render(5);
     expect(host.querySelector("pre")).toBeNull();
     expect(host.querySelector('[role="alert"]')?.textContent).toContain("草稿修订已变化");
+  });
+  it("carries its palette on the editor, so the task rail renders source the same way", () => {
+    const module = readFileSync(join(process.cwd(), "src/components/agent-studio/agent-project-code.module.css"), "utf8");
+    const frame = /\.sourceFrame \{([^}]*)\}/.exec(module)?.[1] ?? "";
+
+    // The rail has no .workspace ancestor, so the frame itself must define the tokens.
+    expect(frame).toContain("--source-font-mono");
+    expect(frame).toContain("--source-bg");
+    expect(frame).toContain("background: var(--source-bg)");
+    expect(module).toMatch(/\.sourceFrame\[data-theme="light"\] \{[^}]*--source-bg: #ffffff/);
   });
 });

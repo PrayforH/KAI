@@ -160,8 +160,8 @@ describe("full-page agent workbench", () => {
     );
     expect(page).not.toContain("Agent Harness");
     expect(page).not.toContain('<span>新任务</span>');
-    expect(page).not.toContain("LangfuseTraceLink");
-    expect(page).not.toContain("Langfuse Trace");
+    // Observability is one drawer icon for the run on screen, not a developer surface.
+    expect(page).toContain("observabilityHref");
     expect(page).not.toContain("<DeveloperDrawer");
     expect(page).not.toContain("交互验证台");
     expect(page).not.toContain("切换开发者信息");
@@ -336,12 +336,22 @@ describe("full-page agent workbench", () => {
   });
 
   it("keeps the conversation runtime mounted while task status changes", () => {
+    // Keyed by the runtime coordinate: the catalog enriching the agent with its
+    // id must not remount the conversation.
     expect(page).toContain(
-      'key={`${threadId}:${agentItemKey(selectedAgent)}`}',
+      'key={`${threadId}:${runtimeAgentKey(selectedAgent)}`}',
     );
+    // agentItemKey prefers the agent id, which the catalog only fills in later.
+    expect(page).not.toContain("${threadId}:${agentItemKey");
     expect(page).not.toContain("refreshToken");
     expect(taskSidebar).not.toContain("onCurrentTaskStatusChange");
     expect(taskSidebar).not.toContain("currentStatusRef");
+  });
+
+  it("keeps the branch counter out of the message editor", () => {
+    // The editor replaces the message body; the 2/2 branch picker belongs to the
+    // resting message and was showing underneath the input.
+    expect(agentThread).toContain("{editing ? null : <BranchPicker />}");
   });
 
   it("keeps an active task pinned while allowing another Agent to start a new task", () => {
@@ -399,11 +409,27 @@ describe("full-page agent workbench", () => {
     expect(styles).toMatch(
       /\.aui-thread-root\s*\{[^}]*--aui-thread-max-width:\s*50rem;/s,
     );
-    expect(styles).toMatch(/\.console-header\s*\{[^}]*min-height:\s*52px;/s);
+    expect(styles).toMatch(/\.console-header\s*\{[^}]*min-height:\s*var\(--shell-header-height\);/s);
     expect(styles).toMatch(
       /\.aui-thread-viewport-footer\s*\{[^}]*position:\s*sticky;/s,
     );
     expect(styles).not.toContain("linear-gradient");
+  });
+
+  it("gives the task header, the drawer header and the studio bar one height", () => {
+    const experience = readFileSync(
+      join(process.cwd(), "src/app/conversation-experience.css"),
+      "utf8",
+    );
+    const sectionNavigation = readFileSync(
+      join(process.cwd(), "src/components/agent-studio/studio-section-navigation.module.css"),
+      "utf8",
+    );
+
+    expect(styles).toMatch(/--shell-header-height:\s*46px;/);
+    expect(codexStyles).toMatch(/\.console-header \{[^}]*min-height: var\(--shell-header-height/);
+    expect(sectionNavigation).toMatch(/\.bar \{[^}]*min-height: var\(--shell-header-height/);
+    expect(experience).toMatch(/\.rail-bar \{[^}]*height: var\(--shell-header-height/);
   });
 
   it("uses a quiet task welcome without suggestion cards or shortcuts", () => {
@@ -683,8 +709,9 @@ describe("full-page agent workbench", () => {
     expect(styles).toMatch(
       /\.harness-assistant-message\s*>\s*\.assistant-message-controls\s*\{[^}]*order:\s*3;/s,
     );
+    // The row reserves one action bar (30px) so revealing it on hover moves nothing.
     expect(styles).toMatch(
-      /\.assistant-message-controls\s*\{[^}]*min-height:\s*28px;[^}]*display:\s*flex;/s,
+      /\.assistant-message-controls\s*\{[^}]*min-height:\s*30px;[^}]*display:\s*flex;/s,
     );
     expect(styles).toMatch(
       /\.assistant-message-controls\s*>\s*\.aui-assistant-action-bar-root\[data-floating\]\s*\{[^}]*position:\s*static;[^}]*border:\s*0;[^}]*box-shadow:\s*none;/s,
@@ -698,7 +725,9 @@ describe("full-page agent workbench", () => {
     );
     expect(markdown).toContain('className="aui-table-scroll"');
     expect(markdown).toContain('aria-label="表格，可横向滚动"');
-    expect(markdown).toContain("table: ScrollableTable");
+    // Tables fold when long, but every table still renders inside that region.
+    expect(markdown).toContain("table: CollapsibleTable");
+    expect(markdown).toContain("<ScrollableTable {...props}>");
     expect(markdown).toContain("smooth={false}");
     // Normalization runs before reveal; wiki links remain a Markdown plugin.
     expect(markdown).toContain("normalizeMessageText(part.text)");

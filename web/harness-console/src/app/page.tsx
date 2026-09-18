@@ -19,8 +19,10 @@ import {
 } from "../components/task-agent-switcher";
 import { TaskSidebar } from "../components/task-sidebar";
 import { ProductBrandMark, ProductLoading, PRODUCT_NAME } from "../components/product-brand";
+import { SidebarLeftIcon, SidebarPanelIcon } from "../components/panel-icons";
 import { WorkbenchRail } from "../components/workbench-rail";
-import { useRunViewModel } from "../lib/activity-store";
+import type { PreviewTarget } from "../components/rail-file-preview";
+import { useRunActivity, useRunViewModel } from "../lib/activity-store";
 import { useRunStream } from "../lib/run-stream-store";
 import {
   bindThreadAgent,
@@ -35,6 +37,7 @@ import {
   chatUsableAgents,
   currentSystemAssistant,
   findTaskAgent,
+  runtimeAgentKey,
   loadTaskAgentCatalog,
   type TaskAgent,
 } from "../lib/task-agent-catalog";
@@ -59,24 +62,6 @@ import {
 const TASK_SIDEBAR_COMPACT_QUERY = "(max-width: 820px)";
 
 const HELP_MANUAL_URL = "https://my.feishu.cn/docx/DdiCdPFcroUpUXxOumNcQpIin1g";
-
-function SidebarPanelIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <rect x="2.75" y="4.25" width="14.5" height="11.5" rx="2.5" />
-      <path d="M13.5 4.25v11.5" />
-    </svg>
-  );
-}
-
-function SidebarLeftIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <rect x="2.75" y="4.25" width="14.5" height="11.5" rx="2.5" />
-      <path d="M6.75 4.25v11.5" />
-    </svg>
-  );
-}
 
 function HelpIcon() {
   return (
@@ -240,6 +225,21 @@ function AuthenticatedHome() {
   const [catalogRefreshKey, setCatalogRefreshKey] = useState(0);
   const [taskSidebarOpen, setTaskSidebarOpen] = useState(true);
   const [taskRailOpen, setTaskRailOpen] = useState(false);
+  const [railExpanded, setRailExpanded] = useState(false);
+  const [railPreview, setRailPreview] = useState<(PreviewTarget & { nonce: number }) | null>(null);
+  const previewNonce = useRef(0);
+  // Artifact cards in the transcript ask the rail to show that file.
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent).detail as PreviewTarget | undefined;
+      if (!detail?.artifact_id) return;
+      previewNonce.current += 1;
+      setRailPreview({ ...detail, nonce: previewNonce.current });
+      setTaskRailOpen(true);
+    };
+    window.addEventListener("harness:preview-artifact", handler);
+    return () => window.removeEventListener("harness:preview-artifact", handler);
+  }, []);
   const [compactTaskSidebar, setCompactTaskSidebar] = useState(false);
   const [currentTaskTitle, setCurrentTaskTitle] = useState("新任务");
   const [currentThreadState, setCurrentThreadState] =
@@ -247,6 +247,11 @@ function AuthenticatedHome() {
   const [activeSkillLaunch, setActiveSkillLaunch] =
     useState<SkillCreatorLaunch | null>(null);
   const runView = useRunViewModel();
+  const runActivity = useRunActivity();
+  // One click into Langfuse for the run on screen, or nothing before it exists.
+  const observabilityHref = runActivity?.run_id
+    ? `/api/harness/observability?run_id=${encodeURIComponent(runActivity.run_id)}&trace_id=${encodeURIComponent(runActivity.trace_id ?? "")}`
+    : null;
   const runStream = useRunStream();
   const currentTaskBusy = runStream.status === "running" || (
     runView?.phase === "queued" ||
@@ -594,7 +599,7 @@ function AuthenticatedHome() {
 
   return (
     <main
-      className={`console-shell${taskRailOpen ? " is-rail-open" : ""}`}
+      className={`console-shell${taskRailOpen ? " is-rail-open" : ""}${taskRailOpen && railExpanded ? " is-rail-expanded" : ""}`}
       id="main-content"
       data-task-thread-state={currentThreadState}
     >
@@ -665,7 +670,7 @@ function AuthenticatedHome() {
             <div className="chat-surface">
               {threadId && selectedAgent ? (
                 <AssistantRuntimeShell
-                  key={`${threadId}:${agentItemKey(selectedAgent)}`}
+                  key={`${threadId}:${runtimeAgentKey(selectedAgent)}`}
                   threadId={threadId}
                   agentName={selectedAgent.name}
                   agentVersion={selectedAgent.version}
@@ -721,11 +726,9 @@ function AuthenticatedHome() {
           key={threadId}
           open={taskRailOpen}
           onClose={() => setTaskRailOpen(false)}
-          taskTitle={currentTaskTitle}
-          agentDisplay={selectedAgent?.displayName ?? selectedAgent?.name ?? "—"}
-          agentKey={selectedAgent ? `${selectedAgent.name}@${selectedAgent.version}` : "—"}
-          agentScope={selectedAgent?.scope ?? "personal"}
-          modelRoute={modelRouteOverride ?? selectedAgent?.modelRoute ?? null}
+          expanded={railExpanded}
+          onToggleExpanded={() => setRailExpanded((current) => !current)}
+          observabilityHref={observabilityHref}
           runPhase={runView?.phase ?? null}
           threadId={threadId}
         />

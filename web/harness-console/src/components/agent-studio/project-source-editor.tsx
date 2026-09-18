@@ -8,7 +8,7 @@ export function ProjectSourceEditor({ path, content, theme, wrap }: {
 }) {
   const { ready, failed } = useCodeHighlight(path);
   const file = useMemo(() => ({ name: path, contents: content }), [path, content]);
-  return <div className={styles.sourceFrame} tabIndex={0} aria-label={`${path} 源代码`}>
+  return <div className={styles.sourceFrame} data-theme={theme} tabIndex={0} aria-label={`${path} 源代码`}>
     {failed ? <pre className={styles.plainSource}>{content}</pre> : !ready ? <div className={styles.loading} role="status">正在加载语法高亮…</div> :
       <Virtualizer key={path} className={styles.editor}><File file={file} metrics={codeMetrics} options={{
         theme: codeThemes, themeType: theme, disableFileHeader: true, overflow: wrap ? "wrap" : "scroll",

@@ -11,6 +11,19 @@ if (!registration.__kaiCodexThemesRegistered) {
 }
 export const codeMetrics = { ...DEFAULT_VIRTUAL_FILE_METRICS, lineHeight: 21.6 };
 export const codeThemes = { dark: "kai-codex-dark", light: "kai-codex-light" };
+/** The colour mode the rest of the shell is in, so source stays in the same theme. */
+export function useCodeTheme() {
+  const [theme, setTheme] = useState<"dark" | "light">(() =>
+    typeof document !== "undefined" && document.documentElement.dataset.colorMode === "light" ? "light" : "dark");
+  useEffect(() => {
+    const update = () => setTheme(document.documentElement.dataset.colorMode === "light" ? "light" : "dark");
+    update();
+    const observer = new MutationObserver(update);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-color-mode"] });
+    return () => observer.disconnect();
+  }, []);
+  return theme;
+}
 export function useCodeHighlight(path: string) {
   const [loaded, setLoaded] = useState("");
   const [failed, setFailed] = useState(false);

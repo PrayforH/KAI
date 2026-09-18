@@ -84,6 +84,7 @@ export function inputAttachmentType(
   return "file";
 }
 
+/** fetch() cannot report upload progress, so transfers use XHR when it exists. */
 export function uploadInputFile(
   form: FormData, signal: AbortSignal, onProgress: (percent: number) => void,
 ): Promise<Response> {

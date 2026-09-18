@@ -7,7 +7,7 @@ import {
 import { TextMessagePartProvider, useMessagePartText, useSmooth } from "@assistant-ui/react";
 import remend from "remend";
 import remarkGfm from "remark-gfm";
-import { memo, useMemo, useState, type ComponentPropsWithoutRef } from "react";
+import { Children, memo, useMemo, useState, type ComponentPropsWithoutRef, type ReactElement, type ReactNode } from "react";
 import { normalizeMessageText } from "../lib/message-text";
 import { MermaidCodeHeader, MermaidDiagram } from "./mermaid-diagram";
 import { citationTarget, knowledgeUrlTransform, remarkWikiLinks } from "../lib/knowledge-links";
@@ -45,6 +45,97 @@ function ScrollableTable(props: ComponentPropsWithoutRef<"table">) {
     >
       <table {...props} />
     </div>
+  );
+}
+
+// One run's file list can run to hundreds of rows, which buries the closing
+// paragraphs. Long lists and tables start folded, the way the main chat clients
+// fold long output, and the total stays visible next to the toggle.
+const LONG_BLOCK_ITEMS = 12;
+const LONG_BLOCK_PREVIEW = 8;
+
+type MarkdownElement = { type?: unknown; props?: { children?: ReactNode } };
+
+/** Markdown arrives with whitespace text nodes between elements, so counting or
+ * slicing the raw children would fold the wrong number of items. */
+function elementChildren(children: ReactNode): ReactElement[] {
+  return Children.toArray(children).filter(
+    (child): child is ReactElement => typeof child === "object" && child !== null && "type" in child,
+  );
+}
+
+function ClampFooter({ total, preview, unit, open, onToggle }: {
+  total: number; preview: number; unit: string; open: boolean; onToggle: () => void;
+}) {
+  return (
+    <div className="aui-md-clamp">
+      <span>
+        {open
+          ? `已展开全部 ${total} ${unit}`
+          : `共 ${total} ${unit}，另有 ${Math.max(total - preview, 0)} ${unit}未显示`}
+      </span>
+      <button type="button" onClick={onToggle}>
+        {open ? "收起" : `展开全部（${total} ${unit}）`}
+      </button>
+    </div>
+  );
+}
+
+function CollapsibleList({ ordered, children, node: _node, ...props }: ComponentPropsWithoutRef<"ul"> & { ordered?: boolean; node?: unknown }) {
+  const [open, setOpen] = useState(false);
+  const items = elementChildren(children);
+  const Tag = ordered ? "ol" : "ul";
+  if (items.length <= LONG_BLOCK_ITEMS) return <Tag {...props}>{children}</Tag>;
+  return (
+    <>
+      <Tag {...props}>{open ? children : items.slice(0, LONG_BLOCK_PREVIEW)}</Tag>
+      <ClampFooter
+        total={items.length}
+        preview={LONG_BLOCK_PREVIEW}
+        unit="项"
+        open={open}
+        onToggle={() => setOpen((value) => !value)}
+      />
+    </>
+  );
+}
+
+function CollapsibleUnorderedList(props: ComponentPropsWithoutRef<"ul">) {
+  return <CollapsibleList {...props} />;
+}
+
+function CollapsibleOrderedList(props: ComponentPropsWithoutRef<"ol">) {
+  return <CollapsibleList ordered {...props} />;
+}
+
+/** Fold a long table body, keeping its header and the row count in view. */
+function CollapsibleTable({ children, ...props }: ComponentPropsWithoutRef<"table">) {
+  const [open, setOpen] = useState(false);
+  const parts = elementChildren(children) as MarkdownElement[];
+  const body = parts.find((part) => part?.type === "tbody");
+  const rows = body?.props ? elementChildren(body.props.children) : [];
+  const folded = rows.length > LONG_BLOCK_ITEMS;
+  const table = (
+    <ScrollableTable {...props}>
+      {folded && !open
+        ? (parts.map((part) => part === body
+            ? { ...body, props: { ...body.props, children: rows.slice(0, LONG_BLOCK_PREVIEW) } }
+            : part) as ReactNode)
+        : children}
+    </ScrollableTable>
+  );
+  if (!folded) return table;
+  return (
+    <>
+      {table}
+      <ClampFooter
+        total={rows.length}
+        preview={LONG_BLOCK_PREVIEW}
+        unit="行"
+        open={open}
+        onToggle={() => setOpen((value) => !value)}
+      />
+    </>
   );
 }
 
@@ -119,7 +210,13 @@ function MarkdownTextImpl() {
         // react-markdown blanks unknown protocols; wiki: must survive so the
         // renderer can turn it into a page-opening button.
         urlTransform={markdownUrlTransform}
-        components={{ CodeHeader, a: WikiLink, table: ScrollableTable }}
+        components={{
+          CodeHeader,
+          a: WikiLink,
+          table: CollapsibleTable,
+          ul: CollapsibleUnorderedList,
+          ol: CollapsibleOrderedList,
+        }}
         componentsByLanguage={{
           mermaid: {
             CodeHeader: MermaidCodeHeader,

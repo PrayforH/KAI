@@ -1,5 +1,8 @@
 :root {
   color-scheme: light;
+  /* One band height for every top strip: the task header, the drawer header and
+     the studio section bar all line up on it. */
+  --shell-header-height: 46px;
   --paper: #eef2ed;
   --surface: #fbfcfa;
   --surface-raised: #ffffff;
@@ -287,7 +290,7 @@ textarea:not(.aui-composer-input):focus-visible {
 }
 
 .console-header {
-  min-height: 56px;
+  min-height: var(--shell-header-height);
   padding: 8px 16px;
   display: flex;
   align-items: center;
@@ -1616,8 +1619,8 @@ textarea:not(.aui-composer-input):focus-visible {
   }
 
   .console-header {
-    min-height: 56px;
-    padding: 10px 12px;
+    min-height: var(--shell-header-height);
+    padding: 6px 12px;
   }
 
   .brand-mark {
@@ -2293,7 +2296,7 @@ body,
 }
 
 .console-header {
-  min-height: 52px;
+  min-height: var(--shell-header-height);
   padding: 7px 12px;
   border-color: var(--line);
   background: rgb(255 255 255 / 92%);
@@ -3428,7 +3431,7 @@ body,
 
 @media (max-width: 720px) {
   .console-header {
-    min-height: 50px;
+    min-height: var(--shell-header-height);
     padding: 6px 8px;
   }
 
@@ -4659,7 +4662,9 @@ textarea:not(.aui-composer-input):focus-visible,
 }
 
 .assistant-message-controls {
-  min-height: 28px;
+  /* One action bar (30px) sits in this row; reserving its height keeps the
+     conversation below from moving when the bar appears on hover. */
+  min-height: 30px;
   margin-top: 4px;
   display: flex;
   align-items: center;
@@ -8929,18 +8934,30 @@ textarea.user-message-editor-input:focus-visible {
   outline-offset: 2px;
 }
 
-/* One attachment card carries both preview and transfer state in every chat. */
-.composer-file-card { position: relative; flex: 0 0 auto; }
-.composer-file-card .aui-attachment-root { height: 78px; }
-.composer-file-card .aui-attachment-content { padding-bottom: 22px; }
-.attachment-upload-status { position: absolute; inset: auto 12px 8px; font-size: 10px; color: var(--text-muted, #737873); pointer-events: none; }
-.attachment-upload-status > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; }
-.attachment-upload-status.error { color: #c45443; }
-.attachment-upload-track { height: 3px; margin-top: 4px; overflow: hidden; border-radius: 3px; background: color-mix(in srgb, currentColor 15%, transparent); }
-.attachment-upload-track > span { display: block; height: 100%; border-radius: inherit; background: currentColor; transition: width 160ms ease; }
-.attachment-upload-track > span.indeterminate { width: 35%; animation: attachment-transfer 1.3s ease-in-out infinite; }
+/* One square thumbnail per attachment in every chat: the preview is the card,
+   the file name stays in the tooltip and the accessibility tree, and transfer
+   state overlays the thumbnail instead of a row above the input. */
+.composer-file-card { position: relative; flex: 0 0 72px; width: 72px; height: 72px; }
+.composer-file-card .aui-attachment-root { height: 72px; min-width: 0; margin: 0; }
+.composer-file-card .aui-attachment-content { box-sizing: border-box; width: 72px; height: 72px; padding: 0; gap: 0; border-radius: 10px; overflow: hidden; }
+.composer-file-card .aui-attachment-thumb { flex: 1 1 auto; display: grid; place-items: center; width: 100%; height: 100%; overflow: hidden; }
+.composer-file-card .aui-attachment-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.composer-file-card .aui-attachment-thumb svg { width: 22px; height: 22px; }
+.composer-file-card .aui-attachment-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.composer-file-card .aui-attachment-remove { top: 4px; right: 4px; width: 20px; height: 20px; padding: 2px; opacity: 0; transition: opacity 120ms ease; }
+.composer-file-card:hover .aui-attachment-remove,
+.composer-file-card:focus-within .aui-attachment-remove { opacity: 1; }
+.composer-file-card .attachment-upload-status { position: absolute; inset: auto 0 0; padding: 3px 6px 5px; color: #f2f5f3; background: rgb(0 0 0 / 62%); font-size: 10px; line-height: 13px; pointer-events: none; }
+.composer-file-card .attachment-upload-status > .upload-status-short { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-file-card .attachment-upload-status > .upload-status-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.composer-file-card .attachment-upload-status.error { color: #ffb9ad; }
+.composer-file-card .attachment-upload-track { height: 3px; margin-top: 3px; overflow: hidden; border-radius: 3px; background: rgb(255 255 255 / 28%); }
+.composer-file-card .attachment-upload-track > span { display: block; height: 100%; border-radius: inherit; background: currentColor; transition: width 160ms ease; }
+.composer-file-card .attachment-upload-track > span.indeterminate { width: 35%; animation: attachment-transfer 1.3s ease-in-out infinite; }
+.composer-file-card .composer-file-ready { position: absolute; right: 4px; bottom: 4px; display: grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; color: #fff; background: #1f9d55; font-size: 10px; line-height: 1; }
 @keyframes attachment-transfer { from { transform: translateX(-100%); } to { transform: translateX(390%); } }
-@media (prefers-reduced-motion: reduce) { .attachment-upload-track > span { transition: none; } .attachment-upload-track > span.indeterminate { animation: none; width: 100%; opacity: .45; } }
-
-.workspace-file-pending { position: relative; min-width: 210px; max-width: 260px; height: 68px; padding: 10px 30px 28px 12px; border: 1px solid var(--border, #d4d8d3); border-radius: 9px; }
-.workspace-file-pending > strong { display: block; font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+@media (prefers-reduced-motion: reduce) {
+  .composer-file-card .aui-attachment-remove { transition: none; }
+  .composer-file-card .attachment-upload-track > span { transition: none; }
+  .composer-file-card .attachment-upload-track > span.indeterminate { animation: none; width: 100%; opacity: .45; }
+}

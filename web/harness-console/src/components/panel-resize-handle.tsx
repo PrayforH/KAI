@@ -7,22 +7,42 @@ const panels = {
   assets: { min: 240, max: 640, initial: 300, side: "left", label: "智能体资产" },
   sidebar: { min: 220, max: 380, initial: 264, side: "left", label: "左侧导航栏" },
   builder: { min: 340, max: 680, initial: 420, side: "right", label: "构建助手" },
-  rail: { min: 280, max: 520, initial: 300, side: "right", label: "任务工作区" },
+  // The drawer overlays the conversation, so it may grow to half the viewport.
+  rail: { min: 280, max: 520, initial: 300, side: "right", label: "任务工作区", viewportRatio: 0.5 },
 } as const;
 
 /** Shared pointer and keyboard resizing; CSS further limits widths to the viewport. */
 export function PanelResizeHandle({ panel }: { panel: keyof typeof panels }) {
   const config = panels[panel];
+  const ratio: number | undefined = "viewportRatio" in config ? config.viewportRatio : undefined;
   const [width, setWidth] = useState<number>(config.initial);
+  const [max, setMax] = useState<number>(config.max);
   const drag = useRef<{ x: number; width: number } | null>(null);
   const property = `--preferred-${panel}-width`;
   const key = `agent-harness-${panel}-width`;
+  function clamp(value: number) {
+    return Math.round(Math.min(max, Math.max(config.min, value)));
+  }
   function update(value: number) {
-    const next = Math.round(Math.min(config.max, Math.max(config.min, value)));
+    const next = clamp(value);
     setWidth(next);
     document.documentElement.style.setProperty(property, `${next}px`);
     try { localStorage.setItem(key, String(next)); } catch { /* Storage is optional. */ }
   }
+  useEffect(() => {
+    if (!ratio) return;
+    const measure = () => setMax(Math.max(config.min, Math.round(window.innerWidth * ratio)));
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  // Panel identity is fixed for this handle's lifetime.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [panel, ratio]);
+  useEffect(() => {
+    // A narrower window pulls an oversized drawer back into range.
+    setWidth((value) => clamp(value));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [max]);
   useEffect(() => {
     try {
       const saved = Number(localStorage.getItem(key));
@@ -35,7 +55,7 @@ export function PanelResizeHandle({ panel }: { panel: keyof typeof panels }) {
 
   return <div className="panel-resize-handle" data-panel={panel} data-side={config.side}
     role="separator" tabIndex={0} aria-label={`调整${config.label}宽度`}
-    aria-orientation="vertical" aria-valuemin={config.min} aria-valuemax={config.max}
+    aria-orientation="vertical" aria-valuemin={config.min} aria-valuemax={max}
     aria-valuenow={width} aria-valuetext={`${width} 像素`}
     title="拖动调整宽度 · 方向键微调 · 双击恢复默认"
     onDoubleClick={() => update(config.initial)}
@@ -59,7 +79,7 @@ export function PanelResizeHandle({ panel }: { panel: keyof typeof panels }) {
       if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
       event.preventDefault();
       if (event.key === "Home") update(config.min);
-      else if (event.key === "End") update(config.max);
+      else if (event.key === "End") update(max);
       else update(width + (event.key === "ArrowRight" ? 1 : -1) * (config.side === "left" ? 1 : -1) * (event.shiftKey ? 32 : 8));
     }}
   />;

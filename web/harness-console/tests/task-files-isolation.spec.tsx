@@ -13,7 +13,7 @@ it("never renders the previous task's files while the new task request is pendin
   vi.stubGlobal("fetch", fetcher);
   const container = document.createElement("div"); document.body.appendChild(container);
   const root = createRoot(container);
-  const props = { open: true, onClose() {}, taskTitle: "任务", agentDisplay: "相同智能体", agentKey: "echo", agentScope: "personal", modelRoute: null, runPhase: "completed" };
+  const props = { open: true, onClose() {}, expanded: false, onToggleExpanded() {}, observabilityHref: null, runPhase: "completed" };
   try {
     await act(async () => root.render(<WorkbenchRail {...props} threadId="task-a" />));
     expect(container.textContent).toContain("A-private.txt");
@@ -26,8 +26,13 @@ it("never renders the previous task's files while the new task request is pendin
     ])));
     expect(container.textContent).toContain("B-private.txt");
     expect(container.textContent).not.toContain("A-private.txt");
-    const fileLinks = [...container.querySelectorAll('a[href*="artifacts/"]')];
-    expect(fileLinks).toHaveLength(2);
-    expect(fileLinks.every((link) => link.getAttribute("href")?.includes("thread_id=task-b"))).toBe(true);
+    const downloadLinks = [...container.querySelectorAll('a.rail-download[href*="artifacts/"]')];
+    const previewButtons = [...container.querySelectorAll("button.workbench-rail-file")];
+    expect(downloadLinks).toHaveLength(1);
+    expect(previewButtons).toHaveLength(1);
+    expect(downloadLinks.every((link) => link.getAttribute("href")?.includes("thread_id=task-b"))).toBe(true);
+    expect(previewButtons.map((button) => button.textContent ?? "")).toEqual([
+      expect.stringContaining("B-private.txt"),
+    ]);
   } finally { await act(async () => root.unmount()); container.remove(); vi.unstubAllGlobals(); }
 });
