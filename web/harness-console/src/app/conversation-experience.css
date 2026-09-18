@@ -438,7 +438,7 @@ body.codex-theme-v1 .execution-reasoning-body .aui-md { color: var(--codex-muted
 body.codex-theme-v1 .execution-row-sweep { position: relative; overflow: hidden; }
 body.codex-theme-v1 .execution-row-sweep::after {
   content: ""; position: absolute; inset-block: 0; left: 0; width: 220px;
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--codex-bg, #101010) 65%, transparent), transparent);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--codex-surface, #101010) 65%, transparent), transparent);
   animation: execution-row-sweep 2.6s ease-out infinite; pointer-events: none;
 }
 @keyframes execution-row-sweep { from { left: -220px; } 90%, to { left: 100%; } }
