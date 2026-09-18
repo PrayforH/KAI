@@ -11,6 +11,11 @@ const panels = {
   rail: { min: 280, max: 520, initial: 300, side: "right", label: "任务工作区", viewportRatio: 0.5 },
 } as const;
 
+/** A panel's own controls ask this handle for widths, so one place owns the
+ * persisted preference and the handle keeps an accurate readout. */
+export const PANEL_WIDTH_REQUEST = "harness:panel-width-request";
+export type PanelWidthRequest = { panel: keyof typeof panels; mode: "toggle-wide" };
+
 /** Shared pointer and keyboard resizing; CSS further limits widths to the viewport. */
 export function PanelResizeHandle({ panel }: { panel: keyof typeof panels }) {
   const config = panels[panel];
@@ -18,6 +23,9 @@ export function PanelResizeHandle({ panel }: { panel: keyof typeof panels }) {
   const [width, setWidth] = useState<number>(config.initial);
   const [max, setMax] = useState<number>(config.max);
   const drag = useRef<{ x: number; width: number } | null>(null);
+  const widthRef = useRef(width);
+  widthRef.current = width;
+  const restored = useRef<number | null>(null);
   const property = `--preferred-${panel}-width`;
   const key = `agent-harness-${panel}-width`;
   function clamp(value: number) {
@@ -43,6 +51,24 @@ export function PanelResizeHandle({ panel }: { panel: keyof typeof panels }) {
     setWidth((value) => clamp(value));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [max]);
+  useEffect(() => {
+    const onRequest = (event: Event) => {
+      const detail = (event as CustomEvent<PanelWidthRequest>).detail;
+      if (!detail || detail.panel !== panel) return;
+      const current = widthRef.current;
+      if (current >= max - 2) {
+        update(restored.current ?? Math.min(config.initial, max));
+        restored.current = null;
+        return;
+      }
+      restored.current = current;
+      update(max);
+    };
+    window.addEventListener(PANEL_WIDTH_REQUEST, onRequest);
+    return () => window.removeEventListener(PANEL_WIDTH_REQUEST, onRequest);
+  // Panel identity is fixed for this handle's lifetime.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [panel, max]);
   useEffect(() => {
     try {
       const saved = Number(localStorage.getItem(key));

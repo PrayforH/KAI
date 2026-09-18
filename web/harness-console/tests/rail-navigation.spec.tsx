@@ -69,6 +69,10 @@ it("walks back and forward through the files it opened", async () => {
   await click(rowFor("report.md"));
   expect(previewing()).toBe(true);
   expect(host!.textContent).toContain("report.md");
+  // The browser stays beside the preview, with the open file marked.
+  expect(host!.querySelectorAll(".workbench-rail-file")).toHaveLength(2);
+  expect(host!.querySelector('.workbench-rail-file[aria-pressed="true"]')?.textContent)
+    .toContain("report.md");
   expect(enabled(button("后退"))).toBe(true);
   expect(enabled(button("前进"))).toBe(false);
 
@@ -97,6 +101,27 @@ it("covers the conversation instead of taking a column, and may grow to half the
   expect(experience).not.toContain("grid-column: 3");
   expect(experience).toMatch(/--rail-panel-width:\s*clamp\([^;]*50vw\)/);
   expect(experience).toContain(".rail-files-section { display: flex;");
+  // An open file shares the drawer with the browser once it is wide enough.
+  expect(experience).toContain('@container rail (min-width: 460px)');
+  expect(experience).toMatch(/\.rail-files-section\[data-previewing="true"\]/);
+});
+
+it("hands the whole drawer to the open file when the browser is hidden", async () => {
+  await render();
+  await click(rowFor("report.md"));
+
+  const section = () => host!.querySelector(".rail-files-section");
+  expect(section()?.getAttribute("data-previewing")).toBe("true");
+  expect(section()?.getAttribute("data-list-hidden")).toBeNull();
+
+  await click(button("隐藏文件列表"));
+  expect(section()?.getAttribute("data-list-hidden")).toBe("true");
+  expect(button("显示文件列表")).not.toBeNull();
+
+  // The browser is only hidden by CSS, so its rows are one click away.
+  await click(button("显示文件列表"));
+  expect(section()?.getAttribute("data-list-hidden")).toBeNull();
+  expect(host!.querySelectorAll(".workbench-rail-file")).toHaveLength(2);
 });
 
 it("opens the search field, closes the drawer with the panel mark, and keeps 当前任务 in the details tab", async () => {

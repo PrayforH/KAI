@@ -61,6 +61,7 @@ body.codex-theme-v1 .harness-composer-shell .aui-composer-input { resize: none; 
 /* The row is a button, so the browser paints its own grey fill unless the base
    state is explicit; that made every file look selected. */
 .rail-file-row .workbench-rail-file { flex: 1; min-width: 0; padding: 8px 8px; gap: 9px; border: 0; border-radius: 8px; background: transparent; }
+.workbench-rail-file[aria-pressed="true"] { color: #ffffff; background: #2b2b2b; }
 .rail-file-row .rail-download { opacity: 0; transition: opacity 120ms ease; }
 .rail-file-row:hover .rail-download,
 .rail-file-row:focus-within .rail-download { opacity: 1; }
@@ -77,7 +78,7 @@ body.codex-theme-v1 .harness-composer-shell .aui-composer-input { resize: none; 
      column keeps its width whether or not the rail is open. */
   body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-open .workbench-rail { width: var(--rail-panel-width, 300px); }
 }
-body.codex-theme-v1 .workbench-rail-panel { width: 100%; }
+body.codex-theme-v1 .workbench-rail-panel { width: 100%; container-type: inline-size; container-name: rail; }
 @media (max-width: 1099px) { body.codex-theme-v1 .workbench-rail { width: min(340px, 90vw); } }
 body.codex-theme-v1 .harness-assistant-message > .turn-completion { order: 2; display: block; margin: 8px 0 0; opacity: 1; }
 
@@ -763,7 +764,39 @@ html body.codex-theme-v1 .execution-reasoning[open] .execution-reasoning-chevron
 .rail-bar-button[aria-pressed="true"] { color: var(--codex-ink); background: #232323; }
 .rail-bar-button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.5; }
 .rail-search-row { padding: 0 16px 10px; }
+/* Second row: what the drawer does with the files it lists. */
+.rail-toolbar {
+  height: 40px;
+  min-height: 40px;
+  padding: 0 10px 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-bottom: 1px solid var(--codex-line);
+}
+.rail-toolbar[hidden] { display: none !important; }
 .rail-files-section { display: flex; flex-direction: column; flex: 1 0 auto; min-height: 0; border-bottom: 0; }
+/* An open file keeps the browser beside it while the drawer has the room. */
+.rail-files-section[data-previewing="true"] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 10px;
+}
+.rail-files-section[data-previewing="true"] > .rail-file-column { display: none; }
+.rail-file-column { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
+.rail-preview-column { display: flex; flex-direction: column; min-height: 0; }
+@container rail (min-width: 460px) {
+  .rail-files-section[data-previewing="true"] {
+    grid-template-columns: minmax(150px, 0.34fr) minmax(0, 1fr);
+  }
+  .rail-files-section[data-previewing="true"] > .rail-file-column { display: flex; }
+}
+/* Hiding the browser hands the whole drawer to the open file. */
+.rail-files-section[data-previewing="true"][data-list-hidden="true"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+.rail-files-section[data-previewing="true"][data-list-hidden="true"] > .rail-file-column { display: none; }
 
 /* The preview takes whatever the drawer has left after its toolbar. */
 .rail-preview { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }

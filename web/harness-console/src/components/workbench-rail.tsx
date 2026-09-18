@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { requireAuthenticatedResponse } from "../lib/client-auth";
-import { PanelResizeHandle } from "./panel-resize-handle";
+import { PanelResizeHandle, PANEL_WIDTH_REQUEST } from "./panel-resize-handle";
 import { SidebarPanelIcon } from "./panel-icons";
 import { RailFilePreview, previewKindFor, type PreviewKind, type PreviewTarget } from "./rail-file-preview";
 
@@ -45,6 +45,27 @@ function SearchIcon() {
       strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <circle cx="9" cy="9" r="5.2" />
       <path d="m13 13 3.4 3.4" />
+    </svg>
+  );
+}
+
+function FilesIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4.4 4.6h11.2M4.4 8h11.2M4.4 11.4h11.2M4.4 14.8h11.2" />
+    </svg>
+  );
+}
+
+function ExpandIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M11.6 4.4h4v4" />
+      <path d="M15.6 4.4 9.8 10.2" />
+      <path d="M8.4 15.6h-4v-4" />
+      <path d="M4.4 15.6 10.2 9.8" />
     </svg>
   );
 }
@@ -138,6 +159,8 @@ export function WorkbenchRail({
   const [tab, setTab] = useState<"files" | "details">("files");
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [listVisible, setListVisible] = useState(true);
+  const [wide, setWide] = useState(false);
   const [fileError, setFileError] = useState("");
   const [refresh, setRefresh] = useState(0);
   const [loadedFiles, setFiles] = useState<RailFile[]>([]);
@@ -209,6 +232,47 @@ export function WorkbenchRail({
     | "unknown";
   const scopeLabel = SCOPE_LABELS[agentScope] ?? agentScope;
 
+  const fileList = (
+    <>
+      {fileError ? <p role="alert">{fileError} <button type="button" onClick={() => setRefresh((value) => value + 1)}>重试</button></p> : filesLoading ? (
+        <span className="workbench-rail-files-empty">正在读取文件…</span>
+      ) : files.length === 0 ? (
+        <span className="workbench-rail-files-empty">生成的文档、图片与其他成果会保存在这里。</span>
+      ) : (
+        <div className="workbench-rail-files">
+          {!files.some((file) => file.name.toLowerCase().includes(query.toLowerCase())) && <p>没有匹配的文件</p>}
+          {files.filter((file) => file.name.toLowerCase().includes(query.toLowerCase())).map((file) => {
+            const kind = previewKindFor(file.media_type ?? "", file.name ?? "");
+            const previewable = kind !== "none";
+            const target: PreviewTarget = {
+              artifact_id: file.artifact_id,
+              name: file.name,
+              media_type: file.media_type,
+              size_bytes: file.size_bytes,
+              thread_id: file.thread_id ?? threadId,
+            };
+            return (
+              <div className="rail-file-row" key={file.artifact_id}>
+                <button
+                  type="button"
+                  className="workbench-rail-file"
+                  aria-pressed={selected?.artifact_id === file.artifact_id}
+                  onClick={() => show(target)}
+                  title={previewable ? `在侧栏预览 ${file.name}` : `查看 ${file.name}`}
+                >
+                  <span className="rail-file-icon" data-kind={kind}>{railFileIcon(kind)}</span>
+                  <span className="workbench-rail-file-name">{file.name}</span>
+                  <span className="workbench-rail-file-size">{formatFileSize(file.size_bytes)}</span>
+                </button>
+                <a className="rail-download" href={`/api/harness/artifacts/${encodeURIComponent(file.artifact_id)}?thread_id=${encodeURIComponent(threadId)}`} download={file.name} title={`下载 ${file.name}`} aria-label={`下载 ${file.name}`}>↓</a>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
+
   return (
     <aside
       className="workbench-rail"
@@ -228,42 +292,16 @@ export function WorkbenchRail({
             <button
               type="button"
               className="rail-bar-button"
-              aria-label="后退"
-              title="后退"
-              disabled={trail.index === 0}
-              onClick={() => step(-1)}
+              aria-label={wide ? "还原宽度" : "扩大到屏幕一半"}
+              title={wide ? "还原宽度" : "扩大到屏幕一半"}
+              onClick={() => {
+                setWide((value) => !value);
+                window.dispatchEvent(new CustomEvent(PANEL_WIDTH_REQUEST, {
+                  detail: { panel: "rail", mode: "toggle-wide" },
+                }));
+              }}
             >
-              <ChevronIcon direction="back" />
-            </button>
-            <button
-              type="button"
-              className="rail-bar-button"
-              aria-label="前进"
-              title="前进"
-              disabled={trail.index >= trail.items.length - 1}
-              onClick={() => step(1)}
-            >
-              <ChevronIcon direction="forward" />
-            </button>
-            <span className="rail-bar-divider" aria-hidden="true" />
-            <button
-              type="button"
-              className="rail-bar-button"
-              aria-label="刷新文件"
-              title="刷新文件"
-              onClick={() => setRefresh((value) => value + 1)}
-            >
-              <RefreshIcon />
-            </button>
-            <button
-              type="button"
-              className="rail-bar-button"
-              aria-label="搜索任务文件"
-              title="搜索任务文件"
-              aria-pressed={searchOpen}
-              onClick={() => setSearchOpen((value) => !value)}
-            >
-              <SearchIcon />
+              <ExpandIcon />
             </button>
             <button
               type="button"
@@ -276,6 +314,58 @@ export function WorkbenchRail({
             </button>
           </div>
         </header>
+        <div className="rail-toolbar" hidden={tab !== "files"}>
+          <button
+            type="button"
+            className="rail-bar-button"
+            aria-label={listVisible ? "隐藏文件列表" : "显示文件列表"}
+            title={listVisible ? "隐藏文件列表" : "显示文件列表"}
+            aria-pressed={listVisible}
+            onClick={() => setListVisible((value) => !value)}
+          >
+            <FilesIcon />
+          </button>
+          <button
+            type="button"
+            className="rail-bar-button"
+            aria-label="搜索任务文件"
+            title="搜索任务文件"
+            aria-pressed={searchOpen}
+            onClick={() => setSearchOpen((value) => !value)}
+          >
+            <SearchIcon />
+          </button>
+          <button
+            type="button"
+            className="rail-bar-button"
+            aria-label="后退"
+            title="后退"
+            disabled={trail.index === 0}
+            onClick={() => step(-1)}
+          >
+            <ChevronIcon direction="back" />
+          </button>
+          <button
+            type="button"
+            className="rail-bar-button"
+            aria-label="前进"
+            title="前进"
+            disabled={trail.index >= trail.items.length - 1}
+            onClick={() => step(1)}
+          >
+            <ChevronIcon direction="forward" />
+          </button>
+          <span className="rail-bar-divider" aria-hidden="true" />
+          <button
+            type="button"
+            className="rail-bar-button"
+            aria-label="刷新文件"
+            title="刷新文件"
+            onClick={() => setRefresh((value) => value + 1)}
+          >
+            <RefreshIcon />
+          </button>
+        </div>
         {searchOpen ? (
           <div className="rail-search-row">
             <input
@@ -295,48 +385,20 @@ export function WorkbenchRail({
           </div>
         ) : null}
         <div className="workbench-rail-body">
-          <section className="workbench-rail-section rail-files-section" hidden={tab !== "files"}>
+          <section
+            className="workbench-rail-section rail-files-section"
+            data-previewing={selected ? "true" : undefined}
+            data-list-hidden={selected && !listVisible ? "true" : undefined}
+            hidden={tab !== "files"}
+          >
             {selected ? (
-              <RailFilePreview target={selected} />
-            ) : (
+              // A wide drawer shows the browser and the file side by side; a
+              // narrow one keeps the preview full width and hides the browser.
               <>
-                {fileError ? <p role="alert">{fileError} <button type="button" onClick={() => setRefresh((value) => value + 1)}>重试</button></p> : filesLoading ? (
-                  <span className="workbench-rail-files-empty">正在读取文件…</span>
-                ) : files.length === 0 ? (
-                  <span className="workbench-rail-files-empty">生成的文档、图片与其他成果会保存在这里。</span>
-                ) : (
-                  <div className="workbench-rail-files">
-                    {!files.some((file) => file.name.toLowerCase().includes(query.toLowerCase())) && <p>没有匹配的文件</p>}
-                    {files.filter((file) => file.name.toLowerCase().includes(query.toLowerCase())).map((file) => {
-                      const kind = previewKindFor(file.media_type ?? "", file.name ?? "");
-                      const previewable = kind !== "none";
-                      const target: PreviewTarget = {
-                        artifact_id: file.artifact_id,
-                        name: file.name,
-                        media_type: file.media_type,
-                        size_bytes: file.size_bytes,
-                        thread_id: file.thread_id ?? threadId,
-                      };
-                      return (
-                        <div className="rail-file-row" key={file.artifact_id}>
-                          <button
-                            type="button"
-                            className="workbench-rail-file"
-                            onClick={() => show(target)}
-                            title={previewable ? `在侧栏预览 ${file.name}` : `查看 ${file.name}`}
-                          >
-                            <span className="rail-file-icon" data-kind={kind}>{railFileIcon(kind)}</span>
-                            <span className="workbench-rail-file-name">{file.name}</span>
-                            <span className="workbench-rail-file-size">{formatFileSize(file.size_bytes)}</span>
-                          </button>
-                          <a className="rail-download" href={`/api/harness/artifacts/${encodeURIComponent(file.artifact_id)}?thread_id=${encodeURIComponent(threadId)}`} download={file.name} title={`下载 ${file.name}`} aria-label={`下载 ${file.name}`}>↓</a>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                <div className="rail-file-column">{fileList}</div>
+                <div className="rail-preview-column"><RailFilePreview target={selected} /></div>
               </>
-            )}
+            ) : fileList}
           </section>
           <div hidden={tab !== "details"}>
           <section className="workbench-rail-section">
