@@ -536,6 +536,49 @@ artifact.ready {"name": "abs.txt", "source_path": "outputs/abs.txt", ...}
 就一定会出现"门放行 A、实际写 B"的缺口。修法不是让模型别用绝对路径，
 而是让两处**共用同一个根**。
 
+### 7.5 模型观测只长在 Claude 运行时里（已修：抽成公共件）
+
+用户问"发布了到主窗口对话，通过接通的 langfuse 可以看到么"。**能，但缺最关键的一行。**
+（173 的 Langfuse 走 OTel：`deploy/otel-collector/collector.yaml` 的 `otlphttp/langfuse`，
+仓库里没有 Langfuse SDK。）
+
+**实测（用 Langfuse API 回读，不是读代码推断）：**
+
+- DeepAgents 试跑 trace：**20 个观测 = 13 SPAN + AGENT + EVENT + 前端 span，`GENERATION` = 0**。
+- 对照 Claude 的主窗口对话：18 个观测里有 **1 TOOL + 1 GENERATION**，
+  generation 是 `harness.model.run`、`model=deepseek-flash`。
+
+**根因：** `langfuse.observation.type="generation"`、`observation.model.name`、
+`usage_details`（token）、`cost_details`（成本）、`annotate_current_io`
+**全部只写在 `claude_sdk.py::_model_messages` 里**；`deepagents_runtime.py` 的 `observability`
+只转发给工具门，运行时自己不发 span（Codex 连 `observability` 都没接）。
+`docs/production-agent-runbook.md` 那份"Langfuse / OTel 核对"清单是按 Claude 写的。
+
+**修法与"更优雅"的落点——抽成公共件 `observability/model_span.py`：**
+
+- `ModelRunFacts` + `model_run_facts(snapshot, ...)`：从已发布 Agent **一次性**推导属性集
+  （agent.*、gen_ai.*、langfuse.observation.*、harness.model/policy/skill、run.id）。
+- `ModelObservation`（上下文管理器）：开 `harness.model.run`、标注 input，
+  `record_result(usage=..., cost_usd=..., duration_ms=..., turns=..., stop_reason=..., output=...)`
+  把**运行时协议里的数字**命名后写上；`mark_error` / `annotate` 备用；
+  `__exit__` 在异常逃逸时标 ERROR（span 以 `set_status_on_exception=False` 打开）。
+- `_USAGE_ATTRIBUTES`：**一张表**三列（协议名 / 属性名 / Langfuse usage-details 名）。
+  **属性名沿用已发布的那些，没有新增**——抽取不得顺手改遥测契约。
+- **未上报 ≠ 0**：`permission_mode` 是 Claude 概念，DeepAgents 传 None → 属性不出现；
+  DeepAgents 无成本 → `cost_details` 缺席。"没上报"必须与"上报为 0"可区分。
+
+两侧随之变薄：`claude_sdk` 只剩从 `ResultMessage` 读数；
+`deepagents_runtime` 围绕 `astream` 开同一个观测，并用**同一个** `mapper.result_event(...)`
+的 payload 上报 —— 于是观测与落库的 `runtime.result` 不可能对不上。
+
+**验收（Langfuse 回读）：** DeepAgents trace 变成 **23 个观测 = 12 SPAN + 5 EVENT + 4 TOOL
++ 1 GENERATION + AGENT**，`harness.model.run`、`model=deepseek-v4-pro`、
+`usage={"input":5307,"output":145,"total":5452}`。**从 0 到 1。** 成本仍为空——不编。
+
+**教训：** "这个能力平台支持吗"要问**这份能力被写在哪个模块里**。观测的**词汇表**
+（`langfuse.observation.*` + token 三套命名）运行时中立，只有**读数**是运行时的；
+把词汇表和读数写在一起，就等于把整个能力绑给了那个运行时。
+
 ## 8. 风险
 
 | 风险 | 处置 |
