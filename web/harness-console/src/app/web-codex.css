@@ -48,9 +48,10 @@ body.codex-theme-v1 {
   --codex-control-transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
 }
 
-/* Light mode follows the quiet, cool-white hierarchy used by Doubao: a
-   barely tinted navigation rail, a white reading canvas, soft selection
-   surfaces, and blue reserved for focus and primary actions. */
+/* Light mode follows the quiet, cool-white hierarchy used by Doubao for the
+   neutral surfaces, but the accent is the workspace's monochrome one — near
+   black for primary actions and focus in light, white in dark — so the light
+   theme reads as one product with the dark theme and the Studio pages. */
 html[data-color-mode="light"] body.codex-theme-v1 {
   --codex-surface: #ffffff;
   --codex-surface-deep: #f1f1f2;
@@ -65,10 +66,10 @@ html[data-color-mode="light"] body.codex-theme-v1 {
   --codex-faint: #909096;
   --codex-line: #e8e8ea;
   --codex-line-strong: #d9d9dc;
-  --codex-accent: #2f75e8;
-  --codex-accent-hover: #2468d5;
-  --codex-accent-soft: rgb(47 117 232 / 10%);
-  --codex-accent-faint: rgb(47 117 232 / 6%);
+  --codex-accent: #1a1c1f;
+  --codex-accent-hover: #000000;
+  --codex-accent-soft: rgb(26 28 31 / 10%);
+  --codex-accent-faint: rgb(26 28 31 / 6%);
   --codex-skill: #6a6a6a;
   --codex-skill-soft: rgb(0 0 0 / 6%);
   --codex-warning: #996510;
@@ -2055,7 +2056,7 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) {
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) ::selection {
   color: var(--codex-ink);
-  background: rgb(47 117 232 / 18%);
+  background: rgb(26 28 31 / 12%);
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .product-brand-mark {
@@ -2386,7 +2387,7 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-c
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-root:focus-within {
   border-color: #c8d6ed;
-  box-shadow: 0 0 0 2px rgb(47 117 232 / 8%), 0 12px 38px rgb(27 27 34 / 11%);
+  box-shadow: 0 0 0 2px rgb(26 28 31 / 8%), 0 12px 38px rgb(27 27 34 / 11%);
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell[data-run-locked="true"] .aui-composer-root,

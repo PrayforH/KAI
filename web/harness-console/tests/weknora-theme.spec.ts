@@ -49,16 +49,16 @@ describe("Weknora-inspired product theme", () => {
     expect(layout).toContain('color: "#ffffff"');
   });
 
-  it("keeps the legacy product layer while the workbench uses a Doubao-like light shell", () => {
+  it("keeps the legacy product layer while the workbench uses a monochrome light shell", () => {
     expect(theme).toMatch(
       /html\[data-color-mode="light"\]\s*\{[^}]*--codex-surface:\s*#fbfcfb;[^}]*--codex-accent:\s*#16b364;/s,
     );
     expect(theme).toMatch(
       /html\[data-color-mode="light"\] body::before\s*\{[^}]*display:\s*none;/s,
     );
-    expect(themeSelector).toContain("清爽白底与克制蓝色强调");
+    expect(themeSelector).toContain("清爽白底与克制单色强调");
     expect(webCodexStyles).toMatch(
-      /html\[data-color-mode="light"\] body\.codex-theme-v1\s*\{[^}]*--codex-surface:\s*#ffffff;[^}]*--codex-surface-sidebar:\s*#f7f7f8;[^}]*--codex-accent:\s*#2f75e8;/s,
+      /html\[data-color-mode="light"\] body\.codex-theme-v1\s*\{[^}]*--codex-surface:\s*#ffffff;[^}]*--codex-surface-sidebar:\s*#f7f7f8;[^}]*--codex-accent:\s*#1a1c1f;/s,
     );
     expect(webCodexStyles).toMatch(
       /Doubao-inspired light task shell[\s\S]*?\.task-list-item\.is-active\s*\{[^}]*background:\s*#e9e9eb;[^}]*box-shadow:\s*none;/s,
