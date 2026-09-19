@@ -22,6 +22,7 @@ class ProjectService:
         clock: Callable[[], datetime] | None = None,
         id_generator: Callable[[str], str] | None = None,
         task_project_writer=None,
+        task_project_clearer=None,
     ) -> None:
         self._repository = repository
         self._clock = clock or (lambda: datetime.now(UTC))
@@ -29,6 +30,10 @@ class ProjectService:
         # Moves a task into (or out of) a project; supplied by the composition
         # root because the binding lives with the AG-UI thread record.
         self._task_project_writer = task_project_writer
+        self._task_project_clearer = task_project_clearer
+
+    def configure_task_project_clearer(self, clearer) -> None:
+        self._task_project_clearer = clearer
 
     def configure_task_project_writer(self, writer) -> None:
         if self._task_project_writer is not None:
@@ -92,6 +97,10 @@ class ProjectService:
 
     async def delete(self, *, tenant_id: str, user_id: str, project_id: str) -> None:
         await self.get(tenant_id=tenant_id, user_id=user_id, project_id=project_id)
+        # Detach the tasks first: a dangling project_id would hide them from both
+        # the 项目 and 任务 sections.
+        if self._task_project_clearer is not None:
+            await self._task_project_clearer(tenant_id, project_id)
         await self._repository.delete(tenant_id, project_id)
 
     async def assign_task(

@@ -903,6 +903,29 @@ class PostgresAguiThreadBindingRepository:
             await session.commit()
             return updated
 
+    async def clear_project(self, tenant_id: str, project_id: str) -> int:
+        """Detach every task of a project; used when the project is deleted."""
+
+        statement = (
+            update(AguiThreadBindingRow)
+            .where(
+                AguiThreadBindingRow.tenant_id == tenant_id,
+                AguiThreadBindingRow.project_id == project_id,
+            )
+            .values(
+                project_id=None,
+                payload=func.jsonb_set(
+                    cast(Any, AguiThreadBindingRow.payload),
+                    "{project_id}",
+                    func.to_jsonb(None),
+                ),
+            )
+        )
+        async with self._sessions() as session:
+            result = await session.execute(statement)
+            await session.commit()
+            return int(result.rowcount or 0)
+
     async def set_project(
         self,
         tenant_id: str,

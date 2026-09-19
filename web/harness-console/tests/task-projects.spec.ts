@@ -26,9 +26,14 @@ describe("project-grouped task list", () => {
 
   it("groups tasks by project and keeps everything else in 任务", () => {
     expect(sidebar).toContain("task.project_id === project.projectId");
-    expect(sidebar).toContain("byRecency.filter((task) => !task.project_id)");
+    expect(sidebar).toContain("!task.project_id || !known.has(task.project_id)");
     expect(sidebar).toContain('data-project-id={project.projectId}');
     expect(sidebar).toContain('aria-label="任务"');
+  });
+
+  it("keeps tasks visible when their project disappears", () => {
+    // A deleted project must not hide its tasks from both sections.
+    expect(sidebar).toContain("const known = new Set(projects.map((project) => project.projectId))");
   });
 
   it("offers project creation from the sidebar", () => {

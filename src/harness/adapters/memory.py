@@ -818,6 +818,18 @@ class InMemoryAguiThreadBindingRepository:
             self._store_session_aliases(updated)
             return updated
 
+    async def clear_project(self, tenant_id: str, project_id: str) -> int:
+        cleared = 0
+        async with self._lock:
+            for key, binding in list(self._by_thread.items()):
+                if binding.tenant_id != tenant_id or binding.project_id != project_id:
+                    continue
+                updated = binding.model_copy(update={"project_id": None})
+                self._by_thread[key] = updated
+                self._by_session[(tenant_id, binding.user_id, binding.session_id)] = updated
+                cleared += 1
+        return cleared
+
     async def set_project(
         self,
         tenant_id: str,

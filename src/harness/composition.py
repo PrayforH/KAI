@@ -1480,6 +1480,7 @@ def build_production_container(
         title_generator=ControlPlaneTaskTitleGenerator(model_configurations),
         knowledge_bindings=knowledge.resolve_bindings,
     )
+    project_service.configure_task_project_clearer(binding_repository.clear_project)
     project_service.configure_task_project_writer(
         lambda tenant_id, user_id, thread_id, project_id: agui.set_project(
             tenant_id=tenant_id,

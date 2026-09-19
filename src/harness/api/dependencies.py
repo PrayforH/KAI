@@ -978,6 +978,7 @@ def build_memory_container(
         clock=clock,
         id_generator=id_generator,
     )
+    project_service.configure_task_project_clearer(thread_bindings.clear_project)
     project_service.configure_task_project_writer(
         lambda tenant_id, user_id, thread_id, project_id: agui.set_project(
             tenant_id=tenant_id,

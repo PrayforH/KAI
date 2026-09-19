@@ -127,3 +127,18 @@ async def test_delete_removes_the_project() -> None:
 
 
 _ = Any
+
+
+@pytest.mark.asyncio
+async def test_delete_detaches_the_projects_tasks_first() -> None:
+    cleared: list[tuple[str, str]] = []
+
+    async def clearer(tenant_id: str, project_id: str) -> int:
+        cleared.append((tenant_id, project_id))
+        return 3
+
+    service, _moves = build_service()
+    service.configure_task_project_clearer(clearer)
+    project = await service.create(tenant_id="t", user_id="u", name="金融办")
+    await service.delete(tenant_id="t", user_id="u", project_id=project.project_id)
+    assert cleared == [("t", project.project_id)]

@@ -337,10 +337,14 @@ export function TaskSidebar({
       tasks: byRecency.filter((task) => task.project_id === project.projectId),
     })).filter((group) => group.tasks.length > 0 || known.has(group.project.projectId));
   }, [projects, byRecency]);
-  const looseTasks = useMemo(
-    () => byRecency.filter((task) => !task.project_id),
-    [byRecency],
-  );
+  // A task whose project was deleted (or is not visible here) falls back to the
+  // plain 任务 list instead of disappearing from both sections.
+  const looseTasks = useMemo(() => {
+    const known = new Set(projects.map((project) => project.projectId));
+    return byRecency.filter(
+      (task) => !task.project_id || !known.has(task.project_id),
+    );
+  }, [byRecency, projects]);
 
   useEffect(() => {
     if (!selected) return;
