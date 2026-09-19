@@ -68,11 +68,23 @@ def main() -> int:
                     f"args={json.dumps(payload.get('arguments'), ensure_ascii=False)[:300]}"
                 )
             elif kind == "tool.result":
+                # The result body is what says whether a tool worked: an error
+                # code alone cannot distinguish "searched and found nothing" from
+                # "the provider was never reachable".
+                body = json.dumps(
+                    {
+                        key: value
+                        for key, value in payload.items()
+                        if key in {"content", "text", "output", "error", "status", "decision"}
+                    },
+                    ensure_ascii=False,
+                )
                 print(
                     f"[{event.get('seq')}] tool.result "
                     f"name={payload.get('name')} "
                     f"status={payload.get('status') or payload.get('decision')} "
-                    f"error={payload.get('error_code')}"
+                    f"error={payload.get('error_code')} "
+                    f"body={body[:400]}"
                 )
             else:
                 print(
