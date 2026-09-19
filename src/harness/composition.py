@@ -85,6 +85,8 @@ from harness.platform_mcp.workload import (
 )
 from harness.policy.profiles import default_policy_profiles
 from harness.policy.runtime import ResolvedPolicy
+from harness.projects.pg_repositories import PostgresProjectRepository
+from harness.projects.service import ProjectService
 from harness.quality.controller import QualitySyncController
 from harness.quality.langfuse import DisabledQualityExporter, LangfuseQualityExporter
 from harness.quality.queue import QualityTaskQueue
@@ -976,6 +978,11 @@ def build_production_container(
         clock=clock,
         id_generator=ids,
     )
+    project_service = ProjectService(
+        PostgresProjectRepository(sessions),
+        clock=clock,
+        id_generator=ids,
+    )
     automation_service = AutomationService(
         automation_task_repository,
         automation_record_repository,
@@ -1473,6 +1480,14 @@ def build_production_container(
         title_generator=ControlPlaneTaskTitleGenerator(model_configurations),
         knowledge_bindings=knowledge.resolve_bindings,
     )
+    project_service.configure_task_project_writer(
+        lambda tenant_id, user_id, thread_id, project_id: agui.set_project(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            thread_id=thread_id,
+            project_id=project_id,
+        )
+    )
 
     async def infrastructure_facts(tenant_id: str) -> dict[str, int | None]:
         async with sessions() as db:
@@ -1633,6 +1648,7 @@ def build_production_container(
         runs=run_service,
         triggers=trigger_service,
         automations=automation_service,
+        projects=project_service,
         approvals=approval_service,
         artifacts=artifact_service,
         input_artifacts=input_service,

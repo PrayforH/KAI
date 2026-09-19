@@ -2769,3 +2769,63 @@ export const automationClient = {
     return request<ApiAutomationRunRecord[]>("automations/records");
   },
 };
+
+export interface ApiProject {
+  tenantId: string;
+  projectId: string;
+  userId: string;
+  name: string;
+  archivedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const projectClient = {
+  list(): Promise<ApiProject[]> {
+    return fetch("/api/studio/projects", { cache: "no-store" })
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json() as Promise<ApiProject[]>;
+      });
+  },
+  create(name: string): Promise<ApiProject> {
+    return request<ApiProject>("projects", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+  },
+  rename(projectId: string, name: string): Promise<ApiProject> {
+    return request<ApiProject>(`projects/${encodeURIComponent(projectId)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    });
+  },
+  archive(projectId: string): Promise<ApiProject> {
+    return request<ApiProject>(`projects/${encodeURIComponent(projectId)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ archived: true }),
+    });
+  },
+  remove(projectId: string): Promise<void> {
+    return request<void>(`projects/${encodeURIComponent(projectId)}`, {
+      method: "DELETE",
+    });
+  },
+};
+
+/** Bind a task to a project, or clear the binding with null. */
+export async function setTaskProject(
+  threadId: string,
+  projectId: string | null,
+): Promise<void> {
+  const response = requireAuthenticatedResponse(
+    await fetch(`/api/agui/threads/${encodeURIComponent(threadId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId }),
+    }),
+  );
+  if (!response.ok) {
+    throw new Error((await response.text()) || `HTTP ${response.status}`);
+  }
+}

@@ -818,6 +818,25 @@ class InMemoryAguiThreadBindingRepository:
             self._store_session_aliases(updated)
             return updated
 
+    async def set_project(
+        self,
+        tenant_id: str,
+        user_id: str,
+        thread_id: str,
+        *,
+        project_id: str | None,
+    ) -> AguiThreadBinding:
+        thread_key = (tenant_id, user_id, thread_id)
+        async with self._lock:
+            try:
+                binding = self._by_thread[thread_key]
+            except KeyError as error:
+                raise NotFoundError(f"AG-UI thread binding not found: {thread_id}") from error
+            updated = binding.model_copy(update={"project_id": project_id})
+            self._by_thread[thread_key] = updated
+            self._by_session[(tenant_id, user_id, binding.session_id)] = updated
+            return updated
+
     async def set_pinned(
         self,
         tenant_id: str,

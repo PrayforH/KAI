@@ -26,6 +26,7 @@ export interface TaskSummary {
   archived_at?: string | null;
   pinned_at?: string | null;
   last_read_at?: string | null;
+  project_id?: string | null;
   pending_approval?: (ApprovalDetails & { status: string }) | null;
 }
 
