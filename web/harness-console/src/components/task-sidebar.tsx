@@ -20,7 +20,13 @@ import {
   setTaskArchived,
   type TaskSummary,
 } from "../lib/task-history";
-import { formatTaskAge } from "../lib/task-list-age";
+import {
+  formatTaskAge,
+  taskTimeBucket,
+  TASK_TIME_BUCKET_LABELS,
+  type TaskTimeBucket,
+} from "../lib/task-list-age";
+import { agentDisplayName } from "../lib/agent-display-name";
 import { taskListRefreshDelay } from "../lib/task-list-refresh";
 
 
@@ -126,6 +132,7 @@ export function TaskSidebar({
   onNewTaskWithProject,
   searchControl,
   activeNav = "tasks",
+  agentLabels,
 }: {
   currentThreadId: string;
   collapsed: boolean;
@@ -138,6 +145,8 @@ export function TaskSidebar({
   searchControl?: ReactNode;
   /** Which workspace nav item is highlighted; defaults to the task page. */
   activeNav?: WorkspaceId;
+  /** Optional agent_name -> display label map; falls back to platform names. */
+  agentLabels?: Readonly<Record<string, string>>;
 }) {
   // Seed from the shared snapshot so navigating to a Studio page and back
   // (a fresh mount) renders the previous list immediately instead of
@@ -298,19 +307,57 @@ export function TaskSidebar({
     () => tasks.find((task) => task.thread_id === currentThreadId),
     [currentThreadId, tasks],
   );
-  const taskProjects = useMemo(() => {
+  const labelForAgent = useMemo(
+    () => (name: string) => agentLabels?.[name] ?? agentDisplayName(name),
+    [agentLabels],
+  );
+  // Primary view: pinned tasks first, then everything by recency. ChatGPT and
+  // Claude both lead with 最近 rather than with the executor, because "what did
+  // I just do" is the question the list answers most often.
+  const pinnedTasks = useMemo(
+    () =>
+      tasks
+        .filter((task) => Boolean(task.pinned_at))
+        .sort((a, b) => Date.parse(b.pinned_at ?? "") - Date.parse(a.pinned_at ?? "")),
+    [tasks],
+  );
+  const recentBuckets = useMemo(() => {
+    const buckets = new Map<TaskTimeBucket, TaskSummary[]>();
+    for (const task of tasks) {
+      if (task.pinned_at) continue;
+      const bucket = taskTimeBucket(task.updated_at);
+      const group = buckets.get(bucket);
+      if (group) group.push(task);
+      else buckets.set(bucket, [task]);
+    }
+    return (["today", "yesterday", "week", "earlier"] as const)
+      .map((id) => ({ id, tasks: buckets.get(id) ?? [] }))
+      .filter((bucket) => bucket.tasks.length > 0);
+  }, [tasks]);
+  // Secondary view: the same tasks grouped by the agent that ran them, kept
+  // collapsed so the default list stays a single reading column.
+  const agentGroups = useMemo(() => {
     const groups = new Map<string, TaskSummary[]>();
     for (const task of tasks) {
-      const project = task.agent_name || "agent-studio";
-      const group = groups.get(project);
+      const name = task.agent_name || "agent-studio";
+      const group = groups.get(name);
       if (group) group.push(task);
-      else groups.set(project, [task]);
+      else groups.set(name, [task]);
     }
-    return [...groups].map(([name, projectTasks]) => ({
-      name,
-      tasks: projectTasks,
-    }));
-  }, [tasks]);
+    return [...groups]
+      .map(([name, agentTasks]) => ({
+        name,
+        label: labelForAgent(name),
+        tasks: [...agentTasks].sort(
+          (a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at),
+        ),
+      }))
+      .sort(
+        (a, b) =>
+          Date.parse(b.tasks[0]?.updated_at ?? "") -
+          Date.parse(a.tasks[0]?.updated_at ?? ""),
+      );
+  }, [tasks, labelForAgent]);
   useEffect(() => {
     if (!selected) return;
     if (selected.pending_approval) {
@@ -441,69 +488,115 @@ export function TaskSidebar({
             <div className="task-list-heading">
               <span className="task-list-heading-copy">
                 <ProjectFolderIcon />
-                任务
+                最近
               </span>
             </div>
           </div>
           <div className="task-list" role="list">
-            {taskProjects.filter((project) => project.name === "lead-agent").map((project) => {
-              const tasksExpanded = expandedTaskGroups.has(project.name);
-              return <section className="task-project-group task-default-group" key={project.name} aria-label="任务">
+            {pinnedTasks.length > 0 && (
+              <section className="task-project-group task-pinned-group" aria-label="置顶任务">
                 <div className="task-project-items">
-                  {(tasksExpanded ? project.tasks : project.tasks.slice(0, 5)).map(renderTaskRow)}
-                  {project.tasks.length > 5 && <button type="button" className="task-list-item tasks-show-more"
-                    aria-label={`${tasksExpanded ? "收起" : "展开"}通用任务`} aria-expanded={tasksExpanded}
-                    onClick={() => setExpandedTaskGroups((current) => {
-                      const next = new Set(current);
-                      if (next.has(project.name)) next.delete(project.name); else next.add(project.name);
-                      return next;
-                    })}><span className="task-list-title">{tasksExpanded ? "收起显示" : `展开显示（${project.tasks.length - 5}）`}</span></button>}
+                  {pinnedTasks.map(renderTaskRow)}
                 </div>
-              </section>;
+              </section>
+            )}
+            {recentBuckets.map((bucket) => {
+              const expanded = expandedTaskGroups.has(`recent:${bucket.id}`);
+              const visible = expanded ? bucket.tasks : bucket.tasks.slice(0, 5);
+              return (
+                <section
+                  className="task-project-group task-recent-group"
+                  key={bucket.id}
+                  aria-label={TASK_TIME_BUCKET_LABELS[bucket.id]}
+                  data-bucket={bucket.id}
+                >
+                  <div className="task-bucket-head">
+                    <span className="task-bucket-label">
+                      {TASK_TIME_BUCKET_LABELS[bucket.id]}
+                    </span>
+                    <span className="task-bucket-count">{bucket.tasks.length}</span>
+                  </div>
+                  <div className="task-project-items">
+                    {visible.map(renderTaskRow)}
+                    {bucket.tasks.length > 5 && (
+                      <button
+                        type="button"
+                        className="task-list-item tasks-show-more"
+                        aria-label={`${expanded ? "收起" : "展开"}${TASK_TIME_BUCKET_LABELS[bucket.id]}的任务`}
+                        aria-expanded={expanded}
+                        onClick={() =>
+                          setExpandedTaskGroups((current) => {
+                            const next = new Set(current);
+                            const key = `recent:${bucket.id}`;
+                            if (next.has(key)) next.delete(key);
+                            else next.add(key);
+                            return next;
+                          })
+                        }
+                      >
+                        <span className="task-list-title">
+                          {expanded ? "收起显示" : `展开显示（${bucket.tasks.length - 5}）`}
+                        </span>
+                      </button>
+                    )}
+                  </div>
+                </section>
+              );
             })}
-            {taskProjects.some((project) => project.name !== "lead-agent") && (
+            {agentGroups.length > 0 && (
               <div className="task-list-toolbar task-agent-section-heading">
                 <div className="task-list-heading">
-                  <span className="task-list-heading-copy">智能体</span>
+                  <span className="task-list-heading-copy">按智能体</span>
                 </div>
               </div>
             )}
-            {(showAllProjects ? taskProjects.filter((project) => project.name !== "lead-agent") : taskProjects.filter((project) => project.name !== "lead-agent").slice(0, 5)).map((project) => {
-              const projectCollapsed = collapsedProjects.has(project.name);
+            {(showAllProjects ? agentGroups : agentGroups.slice(0, 5)).map((project) => {
+              const projectCollapsed = !expandedTaskGroups.has(`agent:${project.name}`);
               const tasksExpanded = expandedTaskGroups.has(project.name);
               return (
                 <section
                   className={`task-project-group${projectCollapsed ? " is-collapsed" : ""}`}
                   key={project.name}
-                  aria-label={project.name}
+                  aria-label={project.label}
                 >
                   <div className="task-project-head">
                     <button
                       type="button"
                       className="task-project-heading"
                       aria-expanded={!projectCollapsed}
-                      aria-label={`${projectCollapsed ? "展开" : "收起"}项目 ${project.name}`}
-                      title={`${projectCollapsed ? "展开" : "收起"}项目 ${project.name}`}
+                      aria-label={`${projectCollapsed ? "展开" : "收起"}智能体 ${project.label}`}
+                      title={`${projectCollapsed ? "展开" : "收起"}智能体 ${project.label}`}
                       onClick={() => {
-                        setCollapsedProjects((current) => {
+                        setExpandedTaskGroups((current) => {
                           const next = new Set(current);
-                          if (next.has(project.name)) next.delete(project.name);
-                          else next.add(project.name);
+                          const key = `agent:${project.name}`;
+                          if (next.has(key)) next.delete(key);
+                          else next.add(key);
                           return next;
                         });
                       }}
                     >
                       <ProjectFolderIcon open={!projectCollapsed} />
-                      <strong className="project-name-viewport"><span onMouseEnter={(event) => {
-                        const node = event.currentTarget;
-                        node.style.setProperty("--name-overflow", `${Math.min(0, node.parentElement!.clientWidth - node.scrollWidth)}px`);
-                      }}>{project.name}</span></strong>
+                      <strong className="project-name-viewport">
+                        <span
+                          onMouseEnter={(event) => {
+                            const node = event.currentTarget;
+                            node.style.setProperty(
+                              "--name-overflow",
+                              `${Math.min(0, node.parentElement!.clientWidth - node.scrollWidth)}px`,
+                            );
+                          }}
+                        >
+                          {project.label}
+                        </span>
+                      </strong>
+                      <span className="task-bucket-count">{project.tasks.length}</span>
                     </button>
                     <button
                       type="button"
                       className="task-project-add"
-                      aria-label={`在 ${project.name} 下新建任务`}
-                      title={`在 ${project.name} 下新建任务`}
+                      aria-label={`在 ${project.label} 下新建任务`}
+                      title={`在 ${project.label} 下新建任务`}
                       disabled={!onNewTaskWithProject || !project.tasks[0]}
                       onClick={() => {
                         if (onNewTaskWithProject && project.tasks[0]) {
@@ -517,26 +610,41 @@ export function TaskSidebar({
                   {!projectCollapsed && (
                     <div className="task-project-items">
                       {(tasksExpanded ? project.tasks : project.tasks.slice(0, 5)).map(renderTaskRow)}
-                      {project.tasks.length > 5 && <button
-                        type="button"
-                        className="task-list-item tasks-show-more"
-                        aria-label={`${tasksExpanded ? "收起" : "展开"} ${project.name} 的任务`}
-                        aria-expanded={tasksExpanded}
-                        onClick={() => setExpandedTaskGroups((current) => {
-                          const next = new Set(current);
-                          if (next.has(project.name)) next.delete(project.name);
-                          else next.add(project.name);
-                          return next;
-                        })}
-                      ><span className="task-list-title">{tasksExpanded ? "收起显示" : `展开显示（${project.tasks.length - 5}）`}</span></button>}
+                      {project.tasks.length > 5 && (
+                        <button
+                          type="button"
+                          className="task-list-item tasks-show-more"
+                          aria-label={`${tasksExpanded ? "收起" : "展开"} ${project.label} 的任务`}
+                          aria-expanded={tasksExpanded}
+                          onClick={() =>
+                            setExpandedTaskGroups((current) => {
+                              const next = new Set(current);
+                              if (next.has(project.name)) next.delete(project.name);
+                              else next.add(project.name);
+                              return next;
+                            })
+                          }
+                        >
+                          <span className="task-list-title">
+                            {tasksExpanded ? "收起显示" : `展开显示（${project.tasks.length - 5}）`}
+                          </span>
+                        </button>
+                      )}
                     </div>
                   )}
                 </section>
               );
             })}
-            {taskProjects.filter((project) => project.name !== "lead-agent").length > 5 && <button type="button" className="projects-show-more" aria-expanded={showAllProjects} onClick={() => setShowAllProjects((value) => !value)}>
-              {showAllProjects ? "收起智能体" : `展示更多（${taskProjects.filter((project) => project.name !== "lead-agent").length - 5}）`}
-            </button>}
+            {agentGroups.length > 5 && (
+              <button
+                type="button"
+                className="projects-show-more"
+                aria-expanded={showAllProjects}
+                onClick={() => setShowAllProjects((value) => !value)}
+              >
+                {showAllProjects ? "收起智能体" : `展示更多（${agentGroups.length - 5}）`}
+              </button>
+            )}
             {loading && tasks.length === 0 && (
               <div className="task-list-state" aria-live="polite">
                 <span className="task-list-spinner" aria-hidden="true" />

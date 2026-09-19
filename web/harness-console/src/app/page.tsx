@@ -463,6 +463,18 @@ function AuthenticatedHome() {
   }, [refreshAgentCatalog]);
 
   const availableTaskAgents = useMemo(() => taskAgents, [taskAgents]);
+  // The sidebar groups tasks by the agent that ran them, so the browser view
+  // shows the same display labels the header and switcher use.
+  const agentDisplayLabels = useMemo(
+    () =>
+      Object.fromEntries(
+        taskAgents.map((agent) => [
+          agent.name,
+          agentDisplayName(agent.name, agent.displayName),
+        ]),
+      ),
+    [taskAgents],
+  );
 
   useEffect(() => {
     if (runStream.threadId === threadId && runStream.runId) {
@@ -660,6 +672,7 @@ function AuthenticatedHome() {
           onSelect={switchTask}
           onNewTask={startNewTask}
           onNewTaskWithProject={startTaskInProject}
+          agentLabels={agentDisplayLabels}
           searchControl={(
             <ProductivityCommandCenter
               agents={availableTaskAgents}
