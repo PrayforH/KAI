@@ -2405,17 +2405,17 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-c
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .composer-skill-context {
-  border-color: #c9d9e8;
-  color: #3574a8;
-  background: #edf5fb;
+  border-color: var(--codex-line);
+  color: var(--codex-ink-soft);
+  background: var(--codex-surface-subtle);
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .composer-skill-context > small {
-  color: #718597;
+  color: var(--codex-muted);
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .composer-skill-context > button {
-  color: #718597;
+  color: var(--codex-muted);
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .composer-skill-context > button:hover {

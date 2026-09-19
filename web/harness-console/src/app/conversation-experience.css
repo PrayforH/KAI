@@ -802,6 +802,11 @@ html body.codex-theme-v1 .execution-reasoning[open] .execution-reasoning-chevron
 .rail-file-icon svg { width: 13px; height: 13px; }
 .rail-file-icon[data-kind="image"] { color: #cbb9ff; }
 .rail-file-icon[data-kind="html"] { color: #a9d0ff; }
+
+/* The pastels above need darker twins on a white rail. */
+html[data-color-mode="light"] .rail-file-icon[data-kind="image"] { color: #6b4fb0; }
+html[data-color-mode="light"] .rail-file-icon[data-kind="html"] { color: #1f5f9e; }
+html[data-color-mode="light"] .rail-file-icon[data-kind="doc"] { color: #1f5f9e; }
 .rail-file-icon[data-kind="csv"] { color: #a9e0bd; }
 
 .workbench-rail-file .workbench-rail-file-name { flex: 1 1 auto; text-align: left; }
