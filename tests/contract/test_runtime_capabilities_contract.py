@@ -181,6 +181,57 @@ def test_compiler_feature_gates_follow_fixture_capabilities() -> None:
     assert "runtime_python_tools_unsupported" not in _issue_codes(compiler, claude_draft)
 
 
+def test_deepagents_accepts_both_text_protocols() -> None:
+    """DeepAgents is the only runtime that speaks both wire protocols."""
+
+    compiler = _compiler()
+    formats = _routes_by_format()
+    for api_format in ("anthropic_compatible", "openai_compatible"):
+        draft = _draft("deepagents", formats[api_format])
+        codes = _issue_codes(compiler, draft)
+        assert "runtime_model_protocol_incompatible" not in codes
+        assert "runtime_unknown" not in codes
+
+
+def test_deepagents_gates_what_the_runtime_cannot_run() -> None:
+    """Every unsupported capability is a publish-time error, never a silent drop."""
+
+    compiler = _compiler()
+    route = _routes_by_format()["anthropic_compatible"]
+    base = _draft("deepagents", route)
+
+    # WebSearch/WebFetch are only connected on the Claude runtime.
+    web = base.model_copy(
+        update={"spec": base.spec.model_copy(update={"builtin_tools": ("WebSearch",)})}
+    )
+    assert "web_tools_runtime_unsupported" in _issue_codes(compiler, web)
+
+    # `Task` is the platform's Sub Agent builtin; the runtime installs no child.
+    subagents = base.model_copy(
+        update={"spec": base.spec.model_copy(update={"builtin_tools": ("Task",)})}
+    )
+    assert "runtime_subagents_unsupported" in _issue_codes(compiler, subagents)
+
+    # Studio Bundle operators are supported: they run in the Sandbox.
+    python_tools = base.model_copy(
+        update={
+            "spec": base.spec.model_copy(
+                update={
+                    "python_tools": (
+                        DraftPythonTool(
+                            name="deepagents_contract_tool",
+                            description="契约用例算子",
+                            input_schema={"type": "object"},
+                            code="def run():\n    return {}\n",
+                        ),
+                    ),
+                }
+            )
+        }
+    )
+    assert "runtime_python_tools_unsupported" not in _issue_codes(compiler, python_tools)
+
+
 def test_unregistered_runtime_is_rejected_by_the_compiler() -> None:
     """A runtime missing from the catalog (not installed) hits runtime_unknown."""
 

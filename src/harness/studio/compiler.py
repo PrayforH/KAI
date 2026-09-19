@@ -29,6 +29,7 @@ from harness.studio.bundle_format import (
     STUDIO_BUNDLE_METADATA_FILENAME,
     StudioBundleMetadata,
 )
+from harness.studio.catalog import BUILTIN_TOOL_RUNTIME_FEATURES
 from harness.studio.models import (
     AgentDraft,
     CapabilityCatalog,
@@ -424,10 +425,17 @@ class AgentDraftCompiler:
                     )
                 )
             if route.models and spec.model.model not in route.models:
+                # Name the models the route does expose. A saved draft outlives a
+                # route edit, so this fires mostly on a stale draft, and the
+                # operator cannot fix it without knowing the current model id --
+                # which is often not the route's own name.
                 issues.append(
                     ValidationIssue(
                         code="model_not_available",
-                        message=(f"模型 {spec.model.model} 不属于路由 {spec.model.route_id}"),
+                        message=(
+                            f"模型 {spec.model.model} 不属于路由 {spec.model.route_id}；"
+                            f"该路由可用模型：{', '.join(route.models)}"
+                        ),
                         severity=ValidationSeverity.ERROR,
                         path="model.model",
                     )
@@ -468,17 +476,14 @@ class AgentDraftCompiler:
                     )
                 )
 
-        if {"WebSearch", "WebFetch"}.intersection(
-            spec.builtin_tools
-        ) and spec.runtime != "claude-agent-sdk":
-            issues.append(
-                ValidationIssue(
-                    code="web_tools_runtime_unsupported",
-                    message="平台内置联网目前支持 Claude SDK 运行时；其他运行时可保留 MCP。",
-                    severity=ValidationSeverity.ERROR,
-                    path="builtinTools",
-                )
-            )
+        # A builtin tool the selected runtime cannot honour has to fail here. It
+        # is the same rule the Builder's assembly catalog applies when it decides
+        # what to offer, read from the same declaration.
+        builtin_features = {
+            BUILTIN_TOOL_RUNTIME_FEATURES[name]
+            for name in spec.builtin_tools
+            if name in BUILTIN_TOOL_RUNTIME_FEATURES
+        }
         builtins = {tool.name for tool in self._catalog.builtin_tools}
         for name in spec.builtin_tools:
             if name not in builtins:
@@ -491,10 +496,17 @@ class AgentDraftCompiler:
                     )
                 )
         if runtime is not None:
-            unsupported: tuple[tuple[bool, str, str, str, str], ...] = (
+            # Both codes are written out rather than derived from `feature`: these
+            # are user-visible report codes, and three of them already shipped
+            # under Codex's historical `codex_*` names. The web row keeps
+            # `web_tools_runtime_unsupported` for the same reason -- it predates
+            # the generic `runtime_<feature>_unsupported` shape.
+            # (enabled, feature, code, codex_code, message, path)
+            unsupported: tuple[tuple[bool, str, str, str, str, str], ...] = (
                 (
                     bool(spec.python_tools),
                     "python_tools",
+                    "runtime_python_tools_unsupported",
                     "codex_python_tools_unsupported",
                     "当前运行时尚未接通 Studio 自定义算子，请移除后发布",
                     "pythonTools",
@@ -502,6 +514,7 @@ class AgentDraftCompiler:
                 (
                     bool(spec.knowledge_references),
                     "knowledge",
+                    "runtime_knowledge_unsupported",
                     "codex_knowledge_unsupported",
                     "当前运行时尚未接通 Studio Knowledge，请移除后发布",
                     "knowledgeReferences",
@@ -509,30 +522,36 @@ class AgentDraftCompiler:
                 (
                     spec.tool_exposure_mode == "on_demand",
                     "tool_search",
+                    "runtime_tool_search_unsupported",
                     "codex_tool_search_unsupported",
                     "当前运行时尚未接通 Studio 按需工具加载，请改为启动时加载",
                     "toolExposureMode",
                 ),
                 (
-                    bool(spec.subagents) or "Task" in spec.builtin_tools,
+                    bool(spec.subagents) or "subagents" in builtin_features,
                     "subagents",
+                    "runtime_subagents_unsupported",
                     "runtime_subagents_unsupported",
                     "当前运行时尚未接通 Studio Sub Agent",
                     "subagents",
                 ),
+                (
+                    "web" in builtin_features,
+                    "web",
+                    "web_tools_runtime_unsupported",
+                    "web_tools_runtime_unsupported",
+                    "平台内置联网尚未接通此运行时；请改用 MCP 工具源，或切到已接通的内置运行时",
+                    "builtinTools",
+                ),
             )
             issues.extend(
                 ValidationIssue(
-                    code=(
-                        legacy_code
-                        if spec.runtime == "codex-app-server" and legacy_code.startswith("codex_")
-                        else f"runtime_{feature}_unsupported"
-                    ),
+                    code=codex_code if spec.runtime == "codex-app-server" else code,
                     message=f"{runtime.label}：{message}",
                     severity=ValidationSeverity.ERROR,
                     path=path,
                 )
-                for enabled, feature, legacy_code, message, path in unsupported
+                for enabled, feature, code, codex_code, message, path in unsupported
                 if enabled and feature not in runtime_features
             )
         mcp_servers = {server.reference: server for server in self._catalog.mcp_servers}

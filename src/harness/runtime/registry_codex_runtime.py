@@ -26,6 +26,7 @@ from harness.runtime.codex_runtime import (
     CodexServerRequestHandler,
 )
 from harness.runtime.execution_contract import VISIBLE_EXECUTION_CONTRACT
+from harness.runtime.installed import INSTALLED_AGENT_RUNTIMES
 from harness.runtime.tools import (
     ResolvedTools,
     ToolResolutionError,
@@ -297,6 +298,18 @@ class RegistryRuntimeRouter:
         registry: AgentRegistry,
         runtimes: Mapping[AgentRuntimeType, AgentRuntime],
     ) -> None:
+        # The router is the only place that can turn a published Manifest into a
+        # running kernel, so it refuses to exist while an installed runtime is
+        # missing: a partial registry would leave such an Agent unrunnable
+        # behind a runtime type the console advertises.
+        missing = tuple(
+            runtime for runtime in INSTALLED_AGENT_RUNTIMES if runtime not in runtimes
+        )
+        if missing:
+            raise ValueError(
+                "installed Agent runtimes are not wired into the router: "
+                + ", ".join(missing)
+            )
         self._registry = registry
         self._runtimes = dict(runtimes)
 

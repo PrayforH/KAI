@@ -24,6 +24,29 @@ from harness.studio.models import (
 
 TaskRuntimePreference = Literal["auto", "codex-app-server", "claude-agent-sdk"]
 
+# The runtimes a recommendation can be asked to aim for. This is deliberately
+# narrower than the publishable set: a preview runtime such as DeepAgents can be
+# published and forked, but a recommendation only ever orders the production
+# runtimes, so anything else degrades to `auto`.
+_RECOMMENDABLE_RUNTIMES: tuple[TaskRuntimePreference, ...] = (
+    "claude-agent-sdk",
+    "codex-app-server",
+)
+
+
+def as_task_runtime_preference(runtime: str) -> TaskRuntimePreference:
+    """Narrow a published runtime to one a recommendation can honour.
+
+    Forking a draft carries the parent's runtime along, and a preview runtime is
+    a preference this vocabulary cannot express. Degrading to `auto` keeps the
+    fork working; the caller re-applies the parent's runtime explicitly anyway.
+    """
+
+    for candidate in _RECOMMENDABLE_RUNTIMES:
+        if runtime == candidate:
+            return candidate
+    return "auto"
+
 _DISPLAY_NAME_ROLE_SUFFIXES = (
     "智能体",
     "助手",

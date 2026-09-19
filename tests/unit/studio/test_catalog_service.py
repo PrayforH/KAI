@@ -385,9 +385,10 @@ async def test_get_adds_platform_runtime_capabilities_to_tenant_legacy_catalog()
 
     assert upgraded.revision == 10
     assert upgraded.updated_by == "tenant-admin"
+    # The upgrade adds the platform's runtime set, so the assertion tracks the
+    # default catalog instead of a hardcoded pair that a new runtime would break.
     assert {item.runtime for item in upgraded.catalog.runtime_capabilities} == {
-        "claude-agent-sdk",
-        "codex-app-server",
+        item.runtime for item in default_capability_catalog().runtime_capabilities
     }
     assert repeated == upgraded
 
@@ -1019,3 +1020,50 @@ async def test_get_retires_duplicate_skill_creator_and_preserves_tenant_settings
     assert result.catalog.model_routes == original.model_routes
     assert result.catalog.mcp_servers == original.mcp_servers
     assert (await service.get("tenant-a")).revision == 5
+
+
+@pytest.mark.asyncio
+async def test_a_stored_runtime_declaration_follows_the_platform() -> None:
+    """What a runtime can do is a platform statement, not a tenant setting.
+
+    `_append_missing` only adds a runtime that is absent. An entry that is
+    already stored was therefore frozen at whatever the platform said the day it
+    was seeded -- so a newly declared capability reached fresh tenants only, and
+    every rule reading it began refusing the capability on existing deployments.
+    """
+
+    defaults = default_capability_catalog()
+    stale = defaults.model_copy(
+        update={
+            "runtime_capabilities": tuple(
+                item.model_copy(
+                    update={
+                        "capabilities": tuple(
+                            name for name in item.capabilities if name != "web"
+                        ),
+                        "limitations": ("stale limitation",),
+                    }
+                )
+                for item in defaults.runtime_capabilities
+                if item.runtime == "claude-agent-sdk"
+            )
+        }
+    )
+    repository = InMemoryCapabilityCatalogRepository()
+    await repository.seed(
+        CapabilityCatalogRecord(
+            tenantId="runtime-refresh",
+            revision=4,
+            catalog=stale,
+            updatedBy="user-admin",
+            updatedAt=NOW,
+        )
+    )
+    service = CapabilityCatalogService(repository, InMemoryAgentDraftRepository())
+    upgraded = await service.get("runtime-refresh")
+
+    runtimes = {item.runtime: item for item in upgraded.catalog.runtime_capabilities}
+    assert "web" in runtimes["claude-agent-sdk"].capabilities
+    assert runtimes["claude-agent-sdk"].limitations != ("stale limitation",)
+    # The other runtimes are added because the stored catalog never had them.
+    assert set(runtimes) == {"claude-agent-sdk", "codex-app-server", "deepagents"}

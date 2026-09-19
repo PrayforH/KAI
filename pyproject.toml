@@ -43,6 +43,29 @@ dependencies = [
     "pgvector>=0.4,<0.5",
 ]
 
+[project.optional-dependencies]
+# The DeepAgents runtime is an opt-in execution kernel, not a platform
+# dependency: without this extra the platform still runs on Claude Agent SDK and
+# Codex. `HARNESS_RUNTIME=multi` is what actually needs it, and `build_deepagents_runtime`
+# refuses to compose a multi-runtime deployment without it. The API image installs
+# it (see deploy/docker/api.Dockerfile) because it is also the Worker image, and
+# the Worker is the process that executes a DeepAgents Run.
+deepagents = [
+    # Pinned: the export renderer and the runtime read the same plan, so a
+    # version bump must re-run both contract suites together.
+    "deepagents==0.7.13",
+    # deepagents 0.7.13 ships langchain-anthropic and langchain-google-genai but
+    # not langchain-openai, which the openai_compatible route branch needs.
+    "langchain-openai>=1.0,<2.0",
+    # Streamable HTTP MCP registrations, loaded as LangChain tools. The export
+    # renderer pins the same range, so an exported project and the platform
+    # runtime speak to an MCP server the same way.
+    "langchain-mcp-adapters>=0.3,<0.4",
+    # No checkpointer package: session continuity stays with the platform, which
+    # replays the session's durable history into each Run. Binding a LangGraph
+    # thread would switch that replay off (see runtime/deepagents_events.py).
+]
+
 [project.scripts]
 harness = "harness.cli:entrypoint"
 harness-worker = "harness.worker.main:entrypoint"

@@ -85,6 +85,27 @@ def _retire_platform_model_routes(
     return catalog.model_copy(update={"model_routes": routes})
 
 
+def _refresh_platform_runtime_capabilities(
+    runtime_capabilities: tuple[RuntimeCapability, ...],
+) -> tuple[RuntimeCapability, ...]:
+    """Bring platform-owned runtime declarations up to date.
+
+    `_append_missing` only adds a runtime that is absent; it never updates one
+    already stored. But what a runtime can do is a platform statement rather than
+    a tenant setting -- the catalog is how the compiler, the Builder and the
+    console all learn it -- so an existing entry has to follow the platform too.
+    Otherwise a newly declared capability reaches a freshly seeded tenant and no
+    one else, and every rule that consults it starts firing against existing
+    deployments: the compiler read the stored claude entry, found no `web`, and
+    refused the built-in internet the platform still supports.
+    """
+
+    platform = {
+        item.runtime: item for item in default_capability_catalog().runtime_capabilities
+    }
+    return tuple(platform.get(item.runtime, item) for item in runtime_capabilities)
+
+
 def _append_missing[
     CatalogEntry: (
         ModelRouteCapability,
@@ -336,12 +357,15 @@ class CapabilityCatalogService:
                 _upgrade_known_legacy_permission_copy(catalog_for_upgrade) or retired_catalog
             )
             catalog_for_runtime_upgrade = upgraded_catalog or current.catalog
-            runtime_capabilities, runtime_capabilities_changed = _append_missing(
+            runtime_capabilities, _added = _append_missing(
                 catalog_for_runtime_upgrade.runtime_capabilities,
                 default_capability_catalog().runtime_capabilities,
                 lambda item: item.runtime,
             )
-            if runtime_capabilities_changed:
+            runtime_capabilities = _refresh_platform_runtime_capabilities(
+                runtime_capabilities
+            )
+            if runtime_capabilities != catalog_for_runtime_upgrade.runtime_capabilities:
                 upgraded_catalog = catalog_for_runtime_upgrade.model_copy(
                     update={"runtime_capabilities": runtime_capabilities}
                 )

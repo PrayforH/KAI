@@ -67,7 +67,25 @@ export function stageForSection(section: StudioSection): StudioStage {
 export type StudioRisk = "low" | "medium" | "high";
 export type NetworkAccess = "none" | "internal" | "external";
 export type ToolExposureMode = "eager" | "on_demand";
-export type AgentRuntime = "claude-agent-sdk" | "codex-app-server";
+export type AgentRuntime = "claude-agent-sdk" | "codex-app-server" | "deepagents";
+
+const AGENT_RUNTIMES: readonly AgentRuntime[] = [
+  "claude-agent-sdk",
+  "codex-app-server",
+  "deepagents",
+];
+
+/**
+ * Keep every runtime the server can publish.
+ *
+ * Falling back on a two-value test would rewrite an unrecognised runtime to
+ * Claude, so merely opening a DeepAgents draft in the workbench and saving it
+ * would silently turn it into a Claude Agent — the exact "所见 ≠ 所跑" drift the
+ * DeepAgents runtime exists to remove.
+ */
+export function normalizeAgentRuntime(value: unknown): AgentRuntime {
+  return AGENT_RUNTIMES.find((runtime) => runtime === value) ?? "claude-agent-sdk";
+}
 
 export interface ModelRouteOption {
   id: string;
@@ -259,12 +277,18 @@ export interface StudioContract {
   issues: string[];
 }
 
+// Display-only fallback for when the deployment catalog has not loaded. It
+// deliberately carries **no** model ids: which models a route exposes is decided
+// by the deployment, and a hardcoded list here is a second copy that drifts
+// silently. The last one claimed the `deepseek-v4-flash` route served a model of
+// the same name long after the route had moved to `deepseek-flash`, so the
+// console approved drafts the server then refused.
 export const MODEL_ROUTES: ModelRouteOption[] = [
   {
     id: "deepseek-v4-flash",
     label: "DeepSeek V4 Flash",
     provider: "deepseek",
-    models: ["deepseek-v4-flash"],
+    models: [],
     capabilities: ["streaming", "tool_use"],
     apiFormat: "anthropic_compatible",
   },
@@ -272,7 +296,7 @@ export const MODEL_ROUTES: ModelRouteOption[] = [
     id: "deepseek-v4-pro",
     label: "DeepSeek V4 Pro",
     provider: "deepseek",
-    models: ["deepseek-v4-pro"],
+    models: [],
     capabilities: ["streaming", "tool_use"],
     apiFormat: "anthropic_compatible",
   },
@@ -280,11 +304,32 @@ export const MODEL_ROUTES: ModelRouteOption[] = [
     id: "minimax-m3",
     label: "MiniMax M3",
     provider: "minimax",
-    models: ["MiniMax-M3"],
+    models: [],
     capabilities: ["streaming", "tool_use", "vision"],
     apiFormat: "anthropic_compatible",
   },
 ];
+
+// Builtin tools that need a runtime feature before a runtime can execute them.
+// Mirrors `BUILTIN_TOOL_RUNTIME_FEATURES` in `src/harness/studio/catalog.py`,
+// which is the authoritative copy the server validates and offers choices from.
+// The feature names come from the runtime capability catalog, so the check is
+// "does this runtime declare the feature" rather than "is this runtime called
+// claude-agent-sdk" -- adding a runtime is then a catalog change, not a code
+// change in the console.
+export const BUILTIN_TOOL_RUNTIME_FEATURES: Record<string, string> = {
+  Task: "subagents",
+  WebSearch: "web",
+  WebFetch: "web",
+};
+
+export function builtinToolAvailable(
+  toolId: string,
+  runtimeCapabilities: readonly string[] | undefined,
+): boolean {
+  const feature = BUILTIN_TOOL_RUNTIME_FEATURES[toolId];
+  return feature ? Boolean(runtimeCapabilities?.includes(feature)) : true;
+}
 
 export const BUILTIN_TOOLS: BuiltinToolOption[] = [
   { id: "WebSearch", label: "搜索公开网页", description: "平台统一搜索，只发送公开关键词，无需配置 MCP。", risk: "low", approval: "公开关键词自动允许" },
@@ -587,8 +632,7 @@ export function restoreStudioDraft(value: unknown): StudioDraft | null {
     evalCases,
     toolExposureMode:
       raw.toolExposureMode === "on_demand" ? "on_demand" : "eager",
-    runtime:
-      raw.runtime === "codex-app-server" ? "codex-app-server" : "claude-agent-sdk",
+    runtime: normalizeAgentRuntime(raw.runtime),
     restoreSession:
       typeof raw.restoreSession === "boolean"
         ? raw.restoreSession
@@ -616,7 +660,11 @@ export function evaluateStudioDraft(
     draft.systemPrompt.includes(heading),
   ).length;
   if (!route) issues.push("模型路由未注册");
-  if (route && !route.models.includes(draft.model)) {
+  // A route that publishes no model list is one this client does not know well
+  // enough to judge, which is not the same as a mismatch: the deployment catalog
+  // is the authority, and the server Compiler owns that conclusion (see the
+  // runtime-compatibility note below).
+  if (route && route.models.length > 0 && !route.models.includes(draft.model)) {
     issues.push("所选模型不属于当前路由");
   }
   if (

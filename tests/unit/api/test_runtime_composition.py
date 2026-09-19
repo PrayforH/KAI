@@ -6,15 +6,21 @@ import pytest
 from pydantic import SecretStr
 
 from harness.api.dependencies import build_memory_container
+from harness.application.approvals import ApprovalService
+from harness.application.events import EventService
 from harness.config import Settings
 from harness.core.manifest import AgentManifest
 from harness.core.models import ExecutionIdentity
+from harness.core.ports import AgentRegistry
 from harness.runtime.cc_switch import CcSwitchConfigError
+from harness.runtime.deepagents_factory import build_deepagents_runtime
 from harness.runtime.fake import FakeRuntime
+from harness.runtime.installed import INSTALLED_AGENT_RUNTIMES
 from harness.runtime.registry_codex_runtime import RegistryRuntimeRouter
 from harness.runtime.registry_runtime import RegistryClaudeRuntime
 from harness.runtime.tools import ToolResolver
 from harness.sandbox.kubernetes import KubernetesSandboxProvider
+from harness.studio.model_configuration import ModelConfigurationService
 
 
 def tavily_manifest() -> AgentManifest:
@@ -78,7 +84,7 @@ def test_claude_sdk_composition_loads_cc_switch_runtime(tmp_path: Path) -> None:
     assert "composition-secret" not in repr(container)
 
 
-def test_multi_runtime_composition_installs_claude_and_codex(tmp_path: Path) -> None:
+def test_multi_runtime_composition_installs_every_registered_runtime(tmp_path: Path) -> None:
     path = tmp_path / "settings.json"
     path.write_text(
         json.dumps(
@@ -104,7 +110,63 @@ def test_multi_runtime_composition_installs_claude_and_codex(tmp_path: Path) -> 
 
     assert isinstance(container.runtime, RegistryRuntimeRouter)
     installed = vars(container.runtime)["_runtimes"]
-    assert set(installed) == {"claude-agent-sdk", "codex-app-server"}
+    assert set(installed) == set(INSTALLED_AGENT_RUNTIMES)
+
+
+def test_multi_runtime_composition_arms_the_deepagents_tool_gate(tmp_path: Path) -> None:
+    """A DeepAgents Run must be able to authorize its first tool call.
+
+    The gate refuses to exist without a policy source, so a composition root that
+    forgot to hand one down would build a runtime that fails on the first tool
+    call of every Run — which is exactly how this was first noticed, on a live
+    deployment rather than in the suite.
+    """
+
+    path = tmp_path / "settings.json"
+    path.write_text(
+        json.dumps(
+            {
+                "env": {
+                    "ANTHROPIC_BASE_URL": "https://gateway.example",
+                    "ANTHROPIC_AUTH_TOKEN": "composition-secret",
+                    "ANTHROPIC_MODEL": "composition-model",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    container = build_memory_container(
+        settings=Settings(
+            runtime="multi",
+            cc_switch_settings_path=str(path),
+            codex_cli_path="/opt/codex",
+            codex_model_by_route={"default": "gpt-test"},
+        )
+    )
+
+    installed = vars(cast(RegistryRuntimeRouter, container.runtime))["_runtimes"]
+    deepagents = installed["deepagents"]
+    # Deliberately the registry rather than one resolved engine: the gate
+    # authorizes each Run against the policy that Run's own snapshot names, and
+    # only a registry can resolve an arbitrary policy id.
+    assert vars(deepagents)["_policy_profiles"] is not None
+
+
+def test_the_deepagents_factory_refuses_a_runtime_with_no_policy_source() -> None:
+    """The factory is the composition-time boundary, so it fails while booting.
+
+    Left to the gate, the same mistake would surface on the first DeepAgents Run
+    instead — after a Sandbox had already been provisioned for it.
+    """
+
+    with pytest.raises(ValueError, match="exactly one of policy or policy_profiles"):
+        build_deepagents_runtime(
+            registry=cast(AgentRegistry, None),
+            model_configurations=cast(ModelConfigurationService, None),
+            approvals=cast(ApprovalService, None),
+            events=cast(EventService, None),
+        )
 
 
 @pytest.mark.asyncio

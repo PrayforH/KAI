@@ -15,11 +15,13 @@ from harness.knowledge.models import (
 )
 from harness.knowledge.repositories import InMemoryKnowledgeRepository
 from harness.knowledge.service import KnowledgeService
+from harness.studio.agent_builder import as_task_runtime_preference
 from harness.studio.catalog import default_capability_catalog
 from harness.studio.compiler import AgentDraftCompiler, DraftCompilationError
 from harness.studio.models import (
     AgentTemplate,
     CreateAgentDraftRequest,
+    CreateInternalSubagentRequest,
     DraftSubagent,
     ReplaceAgentDraftRequest,
 )
@@ -480,3 +482,58 @@ async def test_create_uses_enabled_profile_when_default_is_disabled() -> None:
     )
     draft = await service.create(tenant_id="tenant-a", user_id="builder", request=create_request())
     assert draft.spec.execution_profile == "cubesandbox-private"
+
+
+@pytest.mark.asyncio
+async def test_a_deepagents_parent_can_still_spawn_an_internal_subagent() -> None:
+    """Forking carries the parent's runtime, which the preference vocabulary lacks.
+
+    `TaskRuntimePreference` names only the production runtimes, so forwarding a
+    preview runtime verbatim failed validation and turned the fork into a 500.
+    The child keeps the parent's runtime regardless: the fork re-applies it.
+    """
+
+    catalog = default_capability_catalog()
+    ids = iter(["draft_parent", "draft_child"])
+    service = AgentStudioService(
+        InMemoryAgentDraftRepository(),
+        AgentDraftCompiler(catalog),
+        catalog,
+        clock=lambda: NOW,
+        id_generator=lambda: next(ids),
+    )
+    created = await service.create(
+        tenant_id="tenant-a", user_id="builder", request=create_request()
+    )
+    parent = await service.replace(
+        tenant_id="tenant-a",
+        user_id="builder",
+        draft_id=created.draft_id,
+        request=ReplaceAgentDraftRequest(
+            expectedRevision=1,
+            spec=created.spec.model_copy(update={"runtime": "deepagents"}),
+        ),
+    )
+    assert parent.spec.runtime == "deepagents"
+
+    spawned = await service.create_internal_subagent(
+        tenant_id="tenant-a",
+        user_id="builder",
+        parent_id=parent.draft_id,
+        request=CreateInternalSubagentRequest(
+            expectedRevision=parent.revision,
+            displayName="条款检索员",
+            responsibility="按条款编号检索合同原文并给出出处。",
+        ),
+    )
+
+    assert spawned.child.spec.runtime == "deepagents"
+
+
+def test_a_preview_runtime_narrows_to_auto_for_a_recommendation() -> None:
+    """The recommender only ever orders the production runtimes."""
+
+    assert as_task_runtime_preference("deepagents") == "auto"
+    assert as_task_runtime_preference("claude-agent-sdk") == "claude-agent-sdk"
+    assert as_task_runtime_preference("codex-app-server") == "codex-app-server"
+    assert as_task_runtime_preference("a-future-runtime") == "auto"
