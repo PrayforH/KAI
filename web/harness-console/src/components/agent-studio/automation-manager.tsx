@@ -280,6 +280,7 @@ export function AutomationManager() {
   const [recordQuery, setRecordQuery] = useState("");
   const [recordStatus, setRecordStatus] = useState<"all" | ApiAutomationRunRecord["status"]>("all");
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
+  const [expandedRecords, setExpandedRecords] = useState<Set<string>>(new Set());
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showToast = useCallback((message: string) => {
@@ -579,6 +580,26 @@ export function AutomationManager() {
                       {record.finishedAt && <span>结束：{formatTime(record.finishedAt)}</span>}
                       <span>耗时：{relativeDuration(record.durationMs)}</span>
                     </p>
+                    {record.outputSummary && (
+                      <button
+                        type="button"
+                        className={`${styles.recordOutput} ${expandedRecords.has(record.recordId) ? styles.recordOutputExpanded : ""}`}
+                        onClick={() =>
+                          setExpandedRecords((current) => {
+                            const next = new Set(current);
+                            if (next.has(record.recordId)) next.delete(record.recordId);
+                            else next.add(record.recordId);
+                            return next;
+                          })
+                        }
+                      >
+                        {expandedRecords.has(record.recordId)
+                          ? record.outputSummary
+                          : record.outputSummary.length > 80
+                            ? `${record.outputSummary.slice(0, 80)}…（点击展开）`
+                            : record.outputSummary}
+                      </button>
+                    )}
                     {record.error && <p className={styles.recordError}>失败原因：{record.error}</p>}
                   </div>
                 </li>

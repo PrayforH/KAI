@@ -33,6 +33,49 @@ ZONE = "Asia/Shanghai"
 class FakeSession:
     session_id: str = "session-1"
     deployment_snapshot_id: str = "snapshot-1"
+    agent_version: str = "1.0.2+platform.test"
+
+
+class FakeBindings:
+    def __init__(self) -> None:
+        self.by_thread: dict[tuple[str, str, str], Any] = {}
+        self.rebinds: list[str] = []
+
+    async def get_by_thread(self, tenant_id: str, user_id: str, thread_id: str) -> Any:
+        binding = self.by_thread.get((tenant_id, user_id, thread_id))
+        if binding is None:
+            from harness.core.errors import NotFoundError
+
+            raise NotFoundError(f"AG-UI thread binding not found: {thread_id}")
+        return binding
+
+    async def add(self, binding: Any) -> None:
+        self.by_thread[(binding.tenant_id, binding.user_id, binding.thread_id)] = binding
+
+    async def rebind_session(
+        self,
+        tenant_id: str,
+        user_id: str,
+        thread_id: str,
+        *,
+        expected_session_id: str,
+        session_id: str,
+        updated_at: datetime,
+    ) -> Any:
+        self.rebinds.append(thread_id)
+        binding = self.by_thread[(tenant_id, user_id, thread_id)]
+        assert binding.session_id == expected_session_id
+        updated = binding.model_copy(update={"session_id": session_id})
+        self.by_thread[(tenant_id, user_id, thread_id)] = updated
+        return updated
+
+
+class FakeEvents:
+    def __init__(self, events: list[Any]) -> None:
+        self.events = events
+
+    async def list_after(self, _tenant_id: str, _run_id: str, _sequence: int) -> list[Any]:
+        return self.events
 
 
 @dataclass
@@ -64,12 +107,22 @@ class FakeRegistry:
 class FakeSessions:
     def __init__(self) -> None:
         self.created: list[tuple[str, str]] = []
+        self.sessions: dict[str, FakeSession] = {}
 
     async def create(
-        self, tenant_id: str, user_id: str, agent_name: str, *_args: Any, **_kwargs: Any
+        self, tenant_id: str, user_id: str, agent_name: str, *_args: Any, **kwargs: Any
     ) -> FakeSession:
         self.created.append((user_id, agent_name))
-        return FakeSession()
+        session = FakeSession(session_id=kwargs.get("session_id", f"session-{len(self.created)}"))
+        self.sessions[session.session_id] = session
+        return session
+
+    async def get(self, _tenant_id: str, session_id: str) -> FakeSession:
+        from harness.core.errors import NotFoundError
+
+        if session_id not in self.sessions:
+            raise NotFoundError(f"Session not found: {session_id}")
+        return self.sessions[session_id]
 
 
 class FakeRuns:
@@ -101,6 +154,7 @@ def build_service(clock=None) -> tuple[AutomationService, FakeSessions, FakeRuns
     sessions = FakeSessions()
     runs = FakeRuns()
     now = datetime(2026, 9, 19, 8, 0, tzinfo=UTC)
+    bindings = FakeBindings()
     service = AutomationService(
         InMemoryAutomationTaskRepository(),
         InMemoryAutomationRecordRepository(),
@@ -108,6 +162,9 @@ def build_service(clock=None) -> tuple[AutomationService, FakeSessions, FakeRuns
         runs=runs,  # type: ignore[arg-type]
         agent_name="lead-agent",
         registry=FakeRegistry([FakeVersion("lead-agent", "1.0.2+platform.test")]),
+        executor=None,
+        bindings=bindings,  # type: ignore[arg-type]
+        events=FakeEvents([]),  # type: ignore[arg-type]
         clock=clock or (lambda: now),
         id_generator=lambda prefix: f"{prefix}-1",
     )
@@ -326,11 +383,56 @@ async def test_validity_until_expires_task_after_date() -> None:
     assert task.next_run_at is None
 
 
+@pytest.mark.asyncio
+async def test_result_delivery_binds_thread_with_task_title() -> None:
+    now = datetime(2026, 9, 19, 8, 0, tzinfo=UTC)
+    service, sessions, runs = build_service(clock=lambda: now)
+    bindings = service._bindings
+    task = await service.create(
+        tenant_id="tenant-1", user_id="user-1", request=cron_request("0 8 * * *")
+    )
+    record = await service.run_now(
+        tenant_id="tenant-1", user_id="user-1", task_id=task.task_id
+    )
+    binding = bindings.by_thread[("tenant-1", "user-1", f"automation_{task.task_id}")]
+    assert binding.title == "每日 AI 新闻推送"
+    assert binding.title_source == "user"
+    assert binding.session_id == record.session_id
+    # The session is stable per (task, agent version): a second run reuses it.
+    record2 = await service.run_now(
+        tenant_id="tenant-1", user_id="user-1", task_id=task.task_id
+    )
+    assert record2.session_id == record.session_id
+    assert bindings.rebinds == []
+
+
+@pytest.mark.asyncio
+async def test_record_extracts_output_summary_from_events() -> None:
+    now = datetime(2026, 9, 19, 8, 0, tzinfo=UTC)
+    service, _sessions, runs = build_service(clock=lambda: now)
+    deltas = [
+        type("Event", (), {"type": "message.delta", "payload": {"text": "今日 AI 要点：…"}, "event_id": "1"})(),
+    ]
+    service._events = FakeEvents(deltas)
+    task = await service.create(
+        tenant_id="tenant-1", user_id="user-1", request=cron_request("0 8 * * *")
+    )
+    await service.run_now(tenant_id="tenant-1", user_id="user-1", task_id=task.task_id)
+    run = next(iter(runs.runs.values()))
+    run.status = RunStatus.SUCCEEDED
+    records = await service.records(tenant_id="tenant-1", user_id="user-1")
+    assert records[0].status.value == "success"
+    assert records[0].output_summary == "今日 AI 要点：…"
+
+
 class FailingSessions:
     """Simulates deterministic dispatch failures (missing Agent, etc.)."""
 
     def __init__(self, error: Exception) -> None:
         self.error = error
+
+    async def get(self, _tenant_id: str, _session_id: str) -> FakeSession:
+        raise self.error
 
     async def create(self, *_args: Any, **_kwargs: Any) -> FakeSession:
         raise self.error

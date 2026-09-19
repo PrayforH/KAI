@@ -301,6 +301,26 @@
   font-size: 12px;
 }
 
+.recordOutput {
+  margin: 0;
+  padding: 8px 12px;
+  border: 0;
+  border-left: 3px solid var(--auto-running);
+  border-radius: 8px;
+  background: var(--auto-hover);
+  color: var(--auto-ink);
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: left;
+  cursor: pointer;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.recordOutputExpanded {
+  white-space: pre-wrap;
+}
+
 .recordError {
   margin: 0;
   color: var(--auto-danger);
