@@ -54,7 +54,7 @@ grep 全仓（`src/`），`deepagents` 只出现在 `studio/deepagents_export.py
 | `studio/platform_skills.py` | 平台 Skill 包声明兼容两个运行时 | ⚠️ **刻意不改**，改为在 catalog `limitations` 里明说（见 §5.2） |
 | `deploy/docker/api.Dockerfile` | `uv export` 不带 extra | ✅ 加 `--extra deepagents`（该镜像同时是 Worker 镜像） |
 
-### 1.3 顺带修掉的两个真实缺陷
+### 1.3 顺带修掉的三个真实缺陷
 
 1. **173 三个 worker 全崩**：`HARNESS_CUBESANDBOX_API_KEY` 在 `.env.production` 中缺失，
    `SdkCubeSandboxClient.__init__` 直接 `ValueError`。**与本次改动无关**，但它使任何"在 173 跑一个真任务"
@@ -400,31 +400,126 @@ ERROR:harness.worker.orchestrator:run execution failed
 （`tests/unit/runtime/test_deepagents_runtime.py` 专门钉住这一点，
 并用一条非空洞性断言证明映射器确实会产出该事件）。
 
-### 7.3 `artifact.ready`：DeepAgents 目前没有制品通路（未闭合项）
+### 7.3 `artifact.ready`：先误判为"能力缺口"，实测后纠正
 
-闭环的 17 项检查里唯一未通过的是 `artifact.ready`，`artifacts=0`。
-查清后这不是提示词的问题，而是一条**能力缺口**：
+闭环第一次跑完时 17 项检查里唯一未通过的是 `artifact.ready`，`artifacts=0`。
+当时的判断是"DeepAgents 没有制品通路"，**这个判断是错的**，需要在此更正并留下过程。
 
-- `publish_artifact` 是 `claude_sdk.py:975-978` 用
-  `create_artifact_mcp_server()`（`artifact_tools.py:224`，基于
-  `claude_agent_sdk.create_sdk_mcp_server`）注册的**进程内 MCP 工具**；
-- `DeepagentsStreamMapper` / `registry_deepagents_runtime.py` 只把
-  **streamable HTTP** 的 MCP 注册变成连接，`sdk` 传输被明确限定为
-  Studio Bundle 算子，所以 `harness-artifacts` 不会出现在 DeepAgents 的图里；
-- 全仓只有 `artifact_tools.py` / `claude_sdk.py` / `config.py` /
-  `policy/rules.py` / `policy/profiles.py` 提到 `harness-artifacts`，
-  **没有任何非 Claude 通路**。
+**错在哪：** 只去找了"模型能调用的发布工具"。`publish_artifact` 确实是
+`claude_sdk.py:975-978` 用 `create_artifact_mcp_server()`
+（`artifact_tools.py:224`，基于 `claude_agent_sdk.create_sdk_mcp_server`）注册的
+**进程内 MCP 工具**，`harness-artifacts` 也确实不会进 DeepAgents 的图
+（`registry_deepagents_runtime.py` 只把 streamable HTTP 注册变成连接，
+`sdk` 传输限定为 Studio Bundle 算子）。到此为止都是对的。
 
-需要说明的是：**Codex 运行时同样没有**（`codex_runtime.py` 里没有任何 artifact 引用），
-catalog 的 `artifacts` 能力在三个运行时上是**一致的**，因此并非"对 DeepAgents 单独虚报"，
-而是平台把 `artifacts` 当作平台级能力（`ArtifactPublisher` + Worker 的 `artifact.ready`）。
-所以 DeepAgents 在这点上是**与 Codex 持平**，不是回退。
+**漏掉的是 Worker 里那条与运行时无关的通路**：`orchestrator._publish_workspace_outputs`
+在 Run 结束时收集两类候选（`orchestrator.py:487-512`）：
 
-补齐的路径很干净（`ArtifactPublisher` 本身与运行时无关，只有 SDK 外壳是 Claude 专属）：
-把工具注册为 `mcp__harness-artifacts__publish_artifact`——**沿用同一个规范名**，
-于是 `default_policy_rules` 的 `harness-artifact-publish`、配额、AG-UI 词汇表
-全都无需改动；`ArtifactPublisher` 自己写 `artifact.ready`，与门写 `tool.request` 同理，
-不能再去产出 `artifact.output`（否则 Worker 会二次发布）。
+1. **`<workspace>/outputs/**`** 下的全部文件（排除符号链接）——这是 Run 交付产物的
+   正式契约，任何运行时都走这条路；
+2. **最终回复里点名的文件**，由 `final_artifact_paths` 用
+   `_MARKDOWN_ARTIFACT_PATH` / `_PLAIN_ARTIFACT_PATH` 解析，排除
+   `.claude` / `.git` / `.harness-runtime` / `.tmp` / `inputs` 这些非交付根。
+
+两条都已发布的路径会被跳过（按 `source_path` 去重），所以不会重复发布。
+
+**为什么第一次没触发：** 提示词让模型"在工作区创建 `hello.txt`"。文件落在工作区**根目录**，
+不在 `outputs/` 下（规则 1 不命中）；而 `_PLAIN_ARTIFACT_PATH` 的正则要求路径
+**至少含一段目录**（`(?:\.?/?[A-Za-z0-9_.-]+/)+`），裸文件名 `hello.txt` 不匹配
+（规则 2 也不命中）。所以那次 `artifacts=0` 是**规则的正确结果，不是能力缺失**。
+
+**实测证据：** 用平台 Skill `minimax-docx` 跑一次（它的 SKILL.md 指导模型写入
+`outputs/`），Run 成功后事件流里出现 `artifact.ready`，载荷
+`{"name": "weekly.docx", "media_type": "application/octet-stream", ...}`，
+`/v1/runs/{id}/artifacts` 可见该文件。闭环脚本据此改为让模型写 `outputs/`，
+并把 `artifact.ready` 与"产出了被要求的文件"两条恢复为**断言**。
+
+**结论：** DeepAgents 的制品能力与其它运行时**完全一致**——走的是平台级的
+workspace 收集。catalog 把 `artifacts` 作为平台级能力统一声明，是准确的。
+唯一仍然只有 Claude 拥有的是那个**进程内 `publish_artifact` 工具**（模型可以
+在 Run 中途主动发布），而 Codex 同样没有。因此这**不是**缺口，也**不需要**为
+DeepAgents 补一个 `mcp__harness-artifacts__publish_artifact` 工具。
+
+**教训：** 判断"某运行时是否支持某能力"，要去读**平台侧的收集/结算逻辑**，
+不能只看"这个运行时能不能调到某个工具"。前者才是能力的实际来源。
+
+### 7.4 模型用绝对路径写文件时，产物落到了工作区里的"嵌套副本"（已修）
+
+7.3 纠正后闭环脚本改成让模型写 `outputs/hello.txt`，脚本仍报 `artifact.ready` 缺失、
+`artifacts=0`，而工具调用里**明明写成功了**：
+
+```
+TOOL {"name": "Write", "arguments": {"file_path": "/home/user/harness/run_956c.../outputs/hello.txt",
+                                     "content": "[REDACTED]"}}
+--- 最终回复 ---
+已在工作区 `outputs/` 目录下创建 `hello.txt`
+```
+
+模型写的是**沙箱里的绝对路径**。Worker 日志给出了决定性证据——整条 Run 只对沙箱文件
+API 发过一次请求，路径被**拼接了两遍**：
+
+```
+GET http://172.20.109.111/files?path=%2Fhome%2Fuser%2Fharness%2Frun_956c...%2F
+                                        home%2Fuser%2Fharness%2Frun_956c...%2Foutputs%2Fhello.txt
+```
+
+**根因：** `HarnessSandboxBackend.workspace_relative()`
+（`runtime/deepagents_backend.py`）把**任何**绝对路径当作 DeepAgents 的*虚拟*路径，
+剥掉前导 `/` 后当作工作区相对路径使用。于是
+`/home/user/harness/<run_id>/outputs/hello.txt` 被读作
+`home/user/harness/<run_id>/outputs/hello.txt`，而命令的工作目录已经是
+`/home/user/harness/<run_id>`，最终写到
+`<workspace>/home/user/harness/<run_id>/outputs/hello.txt`。
+`collect` 把这个嵌套目录整棵同步回来，`_publish_workspace_outputs` 只看
+`<workspace>/outputs/`，自然是空的。
+
+**为什么只有 DeepAgents 中招：**
+
+- 模型得知这个绝对路径的成本是**零**：平台自己的 `Bash` 工具跑一句 `pwd` 就返回了
+  沙箱真实工作区路径（本次事件流第一步就是 `Bash {"command": "pwd"}`）。而
+  `VISIBLE_EXECUTION_CONTRACT` 只禁止把绝对路径*当作交付物展示*，并没有禁止使用它。
+- `BaseSandbox` 的契约本来就是**绝对路径**：`read`/`write` 的入参文档写的是
+  "Absolute path"，`glob` 的返回值也是绝对路径（`_absolutize_glob_path`），
+  `_glob_search_root(None)` 返回 `"/"`。也就是说，**偏离契约的是这个后端，不是模型**。
+- 平台自己那套远程文件工具（`runtime/sandbox_tools.py` 的 `_REMOTE_TOOL_SCRIPT`）
+  处理得是对的：`(root / candidate).resolve()` 在 `candidate` 为绝对路径时按
+  pathlib 语义**丢弃左侧**，所以绝对路径解析正确、且仍受工作区包含性检查。
+- 门（`DeepagentsToolGate`）用的是运行时中立的 `RunFileCapabilities._normalize`，
+  它**已经**会识别 `context.remote_workspace` 与 `/workspace` 别名，把该路径正确判为
+  `outputs/hello.txt` 并放行。**门放行的名字与后端实际写入的位置不一致**——
+  这是一次"审计说创建了 A，字节写到了 B"的完整性缺口，比单纯少一个产物更严重。
+
+**修法（保持最小、并让后端与门对齐）：**
+
+1. `workspace_relative(value, *, root=...)` 新增根剥离：绝对路径若落在沙箱工作区根
+   之下，先剥掉该根；`/workspace` 作为平台级别名同样剥离（`RunFileCapabilities`
+   与 Bash 安全审查都这么读它）。
+2. `HarnessSandboxBackend` 新增 `_relative()`：只有当路径是绝对路径时才去要工作区根，
+   而根**优先取 `context.remote_workspace`**——那正是门用来解析模型路径的同一个值，
+   于是后端与门**在构造上**不可能分歧；取不到时回退到 `pwd`（`local` 提供者就是这种情况），
+   而 `pwd` 返回的正是模型会看到、会复用的那个字符串。相对路径不产生任何额外往返。
+3. 其余绝对路径仍按虚拟路径处理，因此 `FilesystemMiddleware` 传下来的 `/`、`/outputs`
+   语义不变，且虚拟路径**永远出不去工作区**（前导 `/` 是被丢弃而不是被解析）。
+
+**验证（这次是正面复现，不是碰运气）：** 闭环脚本改为跑两个场景，差别只在提示词如何拼路径——
+相对拼法，以及让模型先 `pwd` 再用绝对路径。实测 `run_762c2e9f3d4c4b55b612f254a130bfbf`
+的工具参数与失败那次**完全同形**：
+
+```
+tool.request name=Bash  args={"command": "pwd"}
+tool.request name=Write args={"file_path": "/home/user/harness/run_762c.../outputs/abs.txt", ...}
+tool.request name=Read  args={"file_path": "/home/user/harness/run_762c.../outputs/abs.txt"}
+artifact.ready {"name": "abs.txt", "source_path": "outputs/abs.txt", ...}
+```
+
+`RESULT: 33/33 checks passed`，两个场景 `status=succeeded`，`artifacts=1`，
+且 `source_path` 恰为 `outputs/<name>`（新加的断言：产物必须来自工作区相对源，
+出现重复目录段即视为"被重新定根"）。
+
+**教训：** 当平台把一个"命名空间"（这里是沙箱绝对路径）通过自己的工具交给模型，
+后端就必须能解析这个命名空间；只要后端和策略门对同一个字符串有两种理解，
+就一定会出现"门放行 A、实际写 B"的缺口。修法不是让模型别用绝对路径，
+而是让两处**共用同一个根**。
 
 ## 8. 风险
 
@@ -483,5 +578,8 @@ tests/contract/test_runtime_capabilities_contract.py
 tests/unit/runtime/test_deepagents_plan.py               9
 tests/unit/runtime/test_deepagents_events.py            11
 tests/unit/runtime/test_registry_deepagents_runtime.py   9（deepagents 缺失时 skip）
+tests/unit/runtime/test_deepagents_tool_gate.py         12（7.1 的回归：门此前零直测）
+tests/unit/runtime/test_deepagents_runtime.py            3（7.2 的回归：withhold 且仍计数）
+tests/unit/runtime/test_deepagents_backend.py           24（7.4 的回归：两种拼法解析到同一文件）
 tests/contract/test_runtime_capabilities_contract.py    +2（DeepAgents 协议/门禁）
 ```

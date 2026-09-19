@@ -9,13 +9,21 @@ so the workspace the Agent sees is the workspace the platform owns.
 Only two primitives are needed — run a command, move bytes — and both already
 exist on the platform's Sandbox contract, so no new sandbox API is introduced.
 
-Path handling: the platform Sandbox runs commands with the Run workspace as the
-working directory, so a virtual absolute path (``/notes.md``) is rewritten to a
-workspace-relative one (``notes.md``). ``..`` segments are rejected instead of
-resolved, so a model cannot walk out of the workspace through a relative path.
-``aglob`` is the exception: DeepAgents absolutizes its search root, so the
-backend asks the Sandbox for its working directory once and rebases matches
-back to workspace paths.
+Path handling: two spellings both mean "inside the Run workspace", and the model
+is entitled to either. A workspace-relative path (``outputs/report.md``) is used
+as given. An absolute path under the Sandbox workspace root
+(``/home/user/harness/<run_id>/outputs/report.md``) has that root stripped first,
+because it is what ``Bash`` reports for ``pwd`` -- a model that asks the Sandbox
+where it is will use that spelling for the rest of the Run, and
+``BaseSandbox`` documents absolute paths as its contract. Every other absolute
+path is read as a DeepAgents *virtual* path, where ``/`` is the workspace: the
+FilesystemMiddleware roots its own paths that way, and ``RunFileCapabilities``
+already reads ``/workspace`` as a workspace alias. ``..`` segments are rejected
+instead of resolved, so a model cannot walk out of the workspace, and a virtual
+path cannot either, because its leading ``/`` is dropped rather than resolved.
+``aglob`` is the exception to relative reporting: DeepAgents absolutizes its
+search root, so the backend searches from the real workspace root and rebases
+matches back to workspace paths.
 
 Two contracts with the platform Sandbox are load-bearing:
 
@@ -86,8 +94,37 @@ sys.stdout.write(base64.b64encode(target.read_bytes()).decode("ascii"))
 """
 
 
-def workspace_relative(value: str | None) -> str:
-    """Rewrite a DeepAgents virtual path into a workspace-relative one."""
+# `/workspace` is the platform's own spelling of "the remote workspace": the Bash
+# safety review lists it as a workspace root and `RunFileCapabilities` reads a
+# path under it as workspace-relative. A provider whose remote root *is*
+# `/workspace` matches through `root` and never needs this alias; one whose root
+# is elsewhere needs it, or a write the gate authorized as `notes.md` would land
+# in a directory literally named `workspace`.
+_WORKSPACE_ALIASES: tuple[str, ...] = ("/workspace",)
+
+
+def _without_workspace_root(text: str, root: str | None) -> str:
+    """Drop a leading Sandbox workspace root from an absolute path."""
+
+    for candidate in (root, *_WORKSPACE_ALIASES):
+        if not candidate:
+            continue
+        normalized = candidate.rstrip("/")
+        if normalized and (text == normalized or text.startswith(f"{normalized}/")):
+            return text[len(normalized) :]
+    return text
+
+
+def workspace_relative(value: str | None, *, root: str | None = None) -> str:
+    """Rewrite a model-supplied path into a workspace-relative one.
+
+    ``root`` is the Sandbox workspace root, when the caller knows it. Passing it
+    is what makes the two spellings of "inside the workspace" agree: without it,
+    an absolute path the model read back from ``pwd`` would be read as a virtual
+    path, and ``outputs/report.md`` would be written to
+    ``<root>/home/user/harness/<run_id>/outputs/report.md`` -- a file the gate
+    authorized under one name and the platform never looks for under another.
+    """
 
     if value is None:
         return "."
@@ -98,7 +135,10 @@ def workspace_relative(value: str | None) -> str:
         raise ValueError("workspace path contains control characters")
     if text.startswith("~"):
         raise ValueError("workspace path must not be home-relative")
-    parts = [part for part in text.lstrip("/").split("/") if part not in {"", "."}]
+    parts = [
+        part for part in _without_workspace_root(text, root).lstrip("/").split("/")
+        if part not in {"", "."}
+    ]
     if ".." in parts:
         raise ValueError("workspace path must not traverse outside the workspace")
     return "/".join(parts) or "."
@@ -138,12 +178,14 @@ class HarnessSandboxBackend(BaseSandbox):
         executor: SandboxCommandExecutor,
         *,
         sandbox_id: str,
+        remote_workspace: str | None = None,
         timeout_seconds: float = DEFAULT_EXECUTE_TIMEOUT_SECONDS,
     ) -> None:
         if timeout_seconds <= 0:
             raise ValueError("Sandbox backend timeout must be positive")
         self._executor = executor
         self._sandbox_id = sandbox_id
+        self._remote_workspace = remote_workspace
         self._timeout_seconds = timeout_seconds
         self._root: str | None = None
 
@@ -154,22 +196,42 @@ class HarnessSandboxBackend(BaseSandbox):
     async def _workspace_root(self) -> str:
         """Absolute path of the Run workspace inside the Sandbox, read once.
 
+        The declared remote workspace wins because it is the same value the
+        policy gate resolves model paths against, so backend and gate cannot
+        disagree about where a file lives. Asking the Sandbox for its working
+        directory is the fallback for a provider that declares none, and it
+        returns the string ``Bash`` reports for ``pwd`` -- which is what a model
+        that asks will then use.
+
         Every command already runs with the workspace as its working directory,
-        which is why paths are rewritten to be relative. ``BaseSandbox.aglob``
+        which is why relative paths need no root at all. ``BaseSandbox.aglob``
         is the exception: it absolutizes its search root before building the
         remote command, so a relative root would turn a glob of the workspace
-        into a walk of the whole Sandbox filesystem. Asking the Sandbox for its
-        working directory is the only way to stay correct without assuming a
-        provider-specific mount point.
+        into a walk of the whole Sandbox filesystem.
         """
 
         if self._root is None:
-            result = await self._executor(("pwd",), None, self._timeout_seconds)
-            root = result.stdout.strip().splitlines()[-1].strip() if result.stdout.strip() else ""
-            if result.exit_code != 0 or not root.startswith("/"):
-                raise RuntimeError("Sandbox workspace root could not be determined")
-            self._root = root.rstrip("/") or "/"
+            if self._remote_workspace:
+                self._root = self._remote_workspace.rstrip("/") or "/"
+            else:
+                result = await self._executor(("pwd",), None, self._timeout_seconds)
+                stdout = result.stdout.strip()
+                root = stdout.splitlines()[-1].strip() if stdout else ""
+                if result.exit_code != 0 or not root.startswith("/"):
+                    raise RuntimeError("Sandbox workspace root could not be determined")
+                self._root = root.rstrip("/") or "/"
         return self._root
+
+    async def _relative(self, value: str | None) -> str:
+        """Resolve one model-supplied path into the workspace.
+
+        Only a rooted path needs the workspace root, and reading it is cached,
+        so the common workspace-relative call costs no extra Sandbox round trip.
+        """
+
+        if value is None or not value.strip().startswith("/"):
+            return workspace_relative(value)
+        return workspace_relative(value, root=await self._workspace_root())
 
     # -- platform primitives -------------------------------------------------
 
@@ -185,7 +247,7 @@ class HarnessSandboxBackend(BaseSandbox):
         responses: list[FileUploadResponse] = []
         for raw_path, payload in files:
             try:
-                relative = workspace_relative(raw_path)
+                relative = await self._relative(raw_path)
             except ValueError:
                 responses.append(FileUploadResponse(path=raw_path, error="invalid_path"))
                 continue
@@ -198,7 +260,7 @@ class HarnessSandboxBackend(BaseSandbox):
         responses: list[FileDownloadResponse] = []
         for raw_path in paths:
             try:
-                relative = workspace_relative(raw_path)
+                relative = await self._relative(raw_path)
             except ValueError:
                 responses.append(FileDownloadResponse(path=raw_path, error="invalid_path"))
                 continue
@@ -251,13 +313,13 @@ class HarnessSandboxBackend(BaseSandbox):
     # -- virtual -> workspace-relative paths ---------------------------------
 
     async def als(self, path: str) -> Any:
-        return await BaseSandbox.als(self, workspace_relative(path))
+        return await BaseSandbox.als(self, await self._relative(path))
 
     async def aread(self, file_path: str, offset: int = 0, limit: int = 2000) -> Any:
-        return await BaseSandbox.aread(self, workspace_relative(file_path), offset, limit)
+        return await BaseSandbox.aread(self, await self._relative(file_path), offset, limit)
 
     async def awrite(self, file_path: str, content: str) -> Any:
-        return await BaseSandbox.awrite(self, workspace_relative(file_path), content)
+        return await BaseSandbox.awrite(self, await self._relative(file_path), content)
 
     async def aedit(
         self,
@@ -268,18 +330,18 @@ class HarnessSandboxBackend(BaseSandbox):
     ) -> Any:
         return await BaseSandbox.aedit(
             self,
-            workspace_relative(file_path),
+            await self._relative(file_path),
             old_string,
             new_string,
             replace_all,
         )
 
     async def adelete(self, file_path: str) -> Any:
-        return await BaseSandbox.adelete(self, workspace_relative(file_path))
+        return await BaseSandbox.adelete(self, await self._relative(file_path))
 
     async def aglob(self, pattern: str, path: str | None = None) -> Any:
         root = await self._workspace_root()
-        relative = workspace_relative(path)
+        relative = await self._relative(path)
         search_root = root if relative == "." else f"{root}/{relative}"
         return _rebase_glob(await BaseSandbox.aglob(self, pattern, search_root), root)
 
@@ -294,7 +356,7 @@ class HarnessSandboxBackend(BaseSandbox):
         return await BaseSandbox.agrep(
             self,
             pattern,
-            workspace_relative(path),
+            await self._relative(path),
             glob,
             max_count=max_count,
         )

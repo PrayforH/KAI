@@ -4,7 +4,11 @@ This is the acceptance check for the DeepAgents runtime: it walks the whole
 path a user walks and asserts the event contract the platform promises.
 
     create draft -> set runtime=deepagents -> validate -> code view
-    -> export ZIP -> publish -> try run -> observe runtime events
+    -> export ZIP -> publish -> try runs -> observe runtime events
+
+Two Runs are driven, differing only in how the prompt spells the file path: a
+workspace-relative one, and the Sandbox-absolute one a model gets from `pwd`.
+Both have to end with the artifact published.
 
 Run it **inside an api container**, not on the host, so it reaches the same
 control plane the Worker does and inherits the deployment's bearer token:
@@ -25,6 +29,7 @@ import json
 import os
 import sys
 import time
+from dataclasses import dataclass
 
 import httpx
 
@@ -77,6 +82,168 @@ def _read_events(client: httpx.Client, run_id: str) -> list[dict]:
         if isinstance(event, dict):
             events.append(event)
     return events
+
+
+@dataclass(frozen=True)
+class Scenario:
+    """One Run's prompt, and the artifact it is expected to produce."""
+
+    label: str
+    prompt: str
+    artifact_name: str
+
+
+# The Worker collects `<workspace>/outputs/**` at run end, so both prompts ask
+# for `outputs/`. A file dropped in the workspace root is only published if the
+# final answer names it *with a directory segment*.
+#
+# The two scenarios differ in how the model spells the path, because that is
+# where the platform's own `Bash` tool hands it a choice: `pwd` reports the
+# Sandbox's real absolute workspace path, and a model that asks where it is will
+# use that spelling for the rest of the Run. The backend has to resolve both
+# spellings to the same file. When it did not, the tool gate authorized
+# `outputs/abs.txt` while the bytes landed in a nested copy of the workspace
+# root, and the Run reported success having published nothing.
+SCENARIOS: tuple[Scenario, ...] = (
+    Scenario(
+        label="workspace-relative spelling",
+        prompt=(
+            "请在工作区的 outputs/ 目录下创建 hello.txt，内容为 deepagents loop ok，"
+            "然后简要说明你做了什么。"
+        ),
+        artifact_name="hello.txt",
+    ),
+    Scenario(
+        label="absolute spelling",
+        prompt=(
+            "先用 Bash 执行 pwd 确认当前工作目录，然后在 outputs/ 目录下创建 abs.txt，"
+            "内容为 deepagents absolute path ok。写入时请使用 pwd 输出的绝对路径，"
+            "即 <工作目录>/outputs/abs.txt。最后简要说明你做了什么。"
+        ),
+        artifact_name="abs.txt",
+    ),
+)
+
+TERMINAL_STATUSES = frozenset({"succeeded", "failed", "cancelled"})
+
+
+def _start_and_wait(
+    client: httpx.Client,
+    draft_id: str,
+    revision: int,
+    scenario: Scenario,
+    stamp: str,
+) -> tuple[str, str, set[str], list[dict]]:
+    """Start one Run and wait for a terminal status, collecting its events."""
+
+    started = client.post(
+        f"/v1/studio/drafts/{draft_id}/try-runs",
+        json={
+            "expectedRevision": revision,
+            "prompt": scenario.prompt,
+            "idempotencyKey": f"deepagents-loop-{stamp}-{scenario.artifact_name}",
+        },
+    )
+    if not check(
+        f"[{scenario.label}] start run",
+        started.status_code == 202,
+        f"HTTP {started.status_code}",
+    ):
+        print(started.text[:900])
+        return "", "not_started", set(), []
+
+    run_id = str(started.json()["run"]["run_id"])
+    seen: set[str] = set()
+    status = "?"
+    deadline = time.time() + 420
+    while time.time() < deadline:
+        seen |= read_event_types(client, run_id)
+        detail = client.get(f"/v1/runs/{run_id}")
+        if detail.status_code == 200:
+            status = str(detail.json().get("status", "?"))
+        if status in TERMINAL_STATUSES:
+            break
+        time.sleep(5)
+    seen |= read_event_types(client, run_id)
+    return run_id, status, seen, _read_events(client, run_id)
+
+
+def _assert_scenario(
+    client: httpx.Client,
+    run_id: str,
+    status: str,
+    seen: set[str],
+    events: list[dict],
+    scenario: Scenario,
+) -> None:
+    """The event contract one Run has to satisfy, checked against the live stream."""
+
+    label = scenario.label
+    check(f"[{label}] run reached a terminal state", status in TERMINAL_STATUSES, status)
+    check(f"[{label}] run succeeded", status == "succeeded", status)
+    check(f"[{label}] model.route.selected observed", "model.route.selected" in seen)
+    check(f"[{label}] tool.request observed", "tool.request" in seen)
+    check(f"[{label}] runtime.result observed", "runtime.result" in seen)
+    # Artifacts are collected by the Worker from `<workspace>/outputs/**`, which
+    # is runtime-neutral: every runtime delivers this way, not only the one with
+    # an in-process publish tool.
+    check(f"[{label}] artifact.ready observed", "artifact.ready" in seen)
+    check(
+        f"[{label}] no runtime thread was bound",
+        not any("thread" in name for name in seen),
+        ", ".join(sorted(name for name in seen if "thread" in name)) or "none",
+    )
+
+    # The gate is the only writer of `tool.request`. A second copy would carry the
+    # runtime's own tool name, so the Worker's generic policy pass would re-decide
+    # a call the gate already decided -- and record the unredacted arguments and a
+    # bogus denial while doing it.
+    requests = [event for event in events if event.get("type") == "tool.request"]
+    request_ids = [
+        str((event.get("payload") or {}).get("tool_call_id") or "") for event in requests
+    ]
+    check(
+        f"[{label}] one tool.request per tool call",
+        len(request_ids) == len(set(request_ids)),
+        f"{len(requests)} requests, {len(set(request_ids))} distinct calls",
+    )
+    check(
+        f"[{label}] no bogus policy_denied on a call that ran",
+        not any(
+            (event.get("payload") or {}).get("error", {}).get("rule") == "implicit-deny"
+            for event in events
+            if event.get("type") == "tool.result"
+        ),
+    )
+
+    # A published artifact is addressed by its workspace-relative source, and the
+    # prompt asked for exactly `outputs/<name>`. Anything deeper is the signature
+    # of a path re-rooted inside the workspace instead of resolved within it --
+    # the Sandbox's absolute path, appended to the workspace root.
+    sources = [
+        str((event.get("payload") or {}).get("source_path") or "")
+        for event in events
+        if event.get("type") == "artifact.ready"
+    ]
+    check(
+        f"[{label}] every artifact came from a workspace-relative source",
+        all(source == f"outputs/{scenario.artifact_name}" for source in sources),
+        ", ".join(sources) or "none",
+    )
+
+    artifacts = client.get(f"/v1/runs/{run_id}/artifacts")
+    if artifacts.status_code != 200:
+        check(f"[{label}] artifact list readable", False, f"HTTP {artifacts.status_code}")
+        return
+    items = artifacts.json()
+    print(f"       artifacts={len(items)}")
+    for item in items[:5]:
+        print(f"         - {item.get('name')}")
+    check(
+        f"[{label}] the Run published the file it was asked for",
+        any(item.get("name") == scenario.artifact_name for item in items),
+        ", ".join(str(item.get("name")) for item in items) or "none",
+    )
 
 
 def main() -> int:
@@ -174,96 +341,28 @@ def main() -> int:
         revision = refreshed.json()["revision"]
     print(f"       revision after publish={revision}")
 
-    # -------------------------------------------------------------- try run
+    # -------------------------------------------------------------- try runs
     print("\n== 7. run ==")
-    started = client.post(
-        f"/v1/studio/drafts/{draft_id}/try-runs",
-        json={
-            "expectedRevision": revision,
-            "prompt": "在工作区创建 hello.txt，内容为 deepagents loop ok，然后简要说明你做了什么。",
-            "idempotencyKey": f"deepagents-loop-{stamp}",
-        },
-    )
-    if not check("start run", started.status_code == 202, f"HTTP {started.status_code}"):
-        print(started.text[:900])
-        return 1
-    run_id = started.json()["run"]["run_id"]
-    print(f"       runId={run_id}")
+    statuses: dict[str, str] = {}
+    for scenario in SCENARIOS:
+        run_id, status, seen, events = _start_and_wait(
+            client, draft_id, revision, scenario, stamp
+        )
+        statuses[scenario.label] = status
+        print(f"\n  -- {scenario.label} --")
+        print(f"       runId={run_id}")
+        print(f"       status={status}")
+        print(f"       event types observed ({len(seen)}): {sorted(seen)}")
 
-    seen: set[str] = set()
-    terminal = {"succeeded", "failed", "cancelled"}
-    status = "?"
-    deadline = time.time() + 420
-    while time.time() < deadline:
-        seen |= read_event_types(client, run_id)
-        detail = client.get(f"/v1/runs/{run_id}")
-        if detail.status_code == 200:
-            status = detail.json().get("status", "?")
-        if status in terminal:
-            break
-        time.sleep(5)
-    seen |= read_event_types(client, run_id)
+        # A failure surfaces only as `run.failed`; the reason lives in the last few
+        # events, so print them rather than making the operator go to the Worker log.
+        if status == "failed":
+            print("  -- failure diagnostics --")
+            for event in events[-6:]:
+                payload = json.dumps(event.get("payload") or {}, ensure_ascii=False)
+                print(f"     {event.get('type')}: {payload[:400]}")
 
-    print(f"       status={status}")
-    print(f"       event types observed ({len(seen)}): {sorted(seen)}")
-
-    # A failure surfaces only as `run.failed`; the reason lives in the last few
-    # events, so print them rather than making the operator go to the Worker log.
-    if status == "failed":
-        print("\n  -- failure diagnostics --")
-        for event in _read_events(client, run_id)[-6:]:
-            payload = json.dumps(event.get("payload") or {}, ensure_ascii=False)
-            print(f"     {event.get('type')}: {payload[:400]}")
-
-    # ------------------------------------------------------------- assertions
-    print("\n== 8. event contract ==")
-    check("run reached a terminal state", status in terminal, status)
-    check("run succeeded", status == "succeeded", status)
-    check("model.route.selected observed", "model.route.selected" in seen)
-    check("tool.request observed", "tool.request" in seen)
-    check("runtime.result observed", "runtime.result" in seen)
-    check(
-        "no runtime thread was bound",
-        not any("thread" in name for name in seen),
-        ", ".join(sorted(n for n in seen if "thread" in n)) or "none",
-    )
-
-    # The gate is the only writer of `tool.request`. A second copy would carry the
-    # runtime's own tool name, so the Worker's generic policy pass would re-decide
-    # a call the gate already decided -- and record the unredacted arguments and a
-    # bogus denial while doing it.
-    events = _read_events(client, run_id)
-    requests = [event for event in events if event.get("type") == "tool.request"]
-    request_ids = [
-        str((event.get("payload") or {}).get("tool_call_id") or "") for event in requests
-    ]
-    check(
-        "one tool.request per tool call",
-        len(request_ids) == len(set(request_ids)),
-        f"{len(requests)} requests, {len(set(request_ids))} distinct calls",
-    )
-    check(
-        "no bogus policy_denied on a call that ran",
-        not any(
-            (event.get("payload") or {}).get("error", {}).get("rule") == "implicit-deny"
-            for event in events
-            if event.get("type") == "tool.result"
-        ),
-    )
-
-    # `publish_artifact` is a Claude-SDK in-process MCP tool, so a DeepAgents Run
-    # has no artifact route yet (design doc 7.3). Reported, not asserted.
-    print(
-        f"       artifact.ready observed: {'artifact.ready' in seen}"
-        "  (DeepAgents has no artifact route yet)"
-    )
-
-    artifacts = client.get(f"/v1/runs/{run_id}/artifacts")
-    if artifacts.status_code == 200:
-        items = artifacts.json()
-        print(f"       artifacts={len(items)}")
-        for item in items[:5]:
-            print(f"         - {item.get('name')}")
+        _assert_scenario(client, run_id, status, seen, events, scenario)
 
     # ------------------------------------------------------------------ report
     failed = [label for label, ok, _ in RESULTS if not ok]
@@ -273,7 +372,7 @@ def main() -> int:
         print("FAILED:")
         for label in failed:
             print(f"  - {label}")
-    print(f"draftId={draft_id} revision={revision} runId={run_id} status={status}")
+    print(f"draftId={draft_id} revision={revision} statuses={json.dumps(statuses)}")
     print("=" * 64)
     return 1 if failed else 0
 

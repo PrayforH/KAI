@@ -256,6 +256,10 @@ class DeepagentsRuntime:
             backend=HarnessSandboxBackend(
                 context.sandbox_command_executor,
                 sandbox_id=context.run.run_id,
+                # The same root the tool gate resolves model paths against, so a
+                # path the gate authorizes as `outputs/report.md` is the path
+                # this backend writes -- not a second, nested copy of it.
+                remote_workspace=context.remote_workspace,
                 timeout_seconds=float(plan.shell_timeout),
             ),
         )
