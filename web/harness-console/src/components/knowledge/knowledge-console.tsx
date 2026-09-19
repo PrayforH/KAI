@@ -15,6 +15,7 @@ import { isValidKnowledgeReference, slugifyKnowledgeReference } from "../../lib/
 import { KnowledgeMembersPanel } from "./knowledge-members-panel";
 import { KnowledgeDrawerLayer } from "./knowledge-drawer-layer";
 import styles from "./knowledge-console.module.css";
+import { StudioPageHeader } from "../agent-studio/studio-page-header";
 
 const KB_TYPE_LABELS: Record<KnowledgeBaseType, string> = {
   rag: "RAG",
@@ -238,11 +239,22 @@ export function KnowledgeConsole() {
 
   return (
     <section className={styles.content}>
-        <div className={styles.hero}>
-          <div className={styles.heroText}>
-            <h1>知识库</h1>
-            <p>管理文档、Wiki 页面与知识图谱，为问答提供可信来源</p>
-          </div>
+        <StudioPageHeader
+          ariaLabel="知识库范围"
+          active={filter}
+          onSelect={setFilter}
+          tabs={[
+            { id: "all", label: `全部 ${bases.length}` },
+            {
+              id: "mine",
+              label: `我创建的 ${
+                user?.user_id
+                  ? bases.filter((base) => base.createdBy === user.user_id).length
+                  : 0
+              }`,
+            },
+          ]}
+        >
           {canManage ? (
             <button
               type="button"
@@ -252,29 +264,7 @@ export function KnowledgeConsole() {
               新建知识库
             </button>
           ) : null}
-        </div>
-
-        <div className={styles.tabs}>
-          <button
-            type="button"
-            className={`${styles.tab} ${filter === "all" ? styles.tabActive : ""}`}
-            aria-pressed={filter === "all"}
-            onClick={() => setFilter("all")}
-          >
-            全部 {bases.length}
-          </button>
-          <button
-            type="button"
-            className={`${styles.tab} ${filter === "mine" ? styles.tabActive : ""}`}
-            aria-pressed={filter === "mine"}
-            onClick={() => setFilter("mine")}
-          >
-            我创建的{" "}
-            {user?.user_id
-              ? bases.filter((base) => base.createdBy === user.user_id).length
-              : 0}
-          </button>
-        </div>
+        </StudioPageHeader>
 
         {error ? <p className={styles.error}>{error}</p> : null}
         {notice ? <p className={styles.notice}>{notice}</p> : null}

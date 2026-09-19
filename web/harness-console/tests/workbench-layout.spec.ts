@@ -422,14 +422,15 @@ describe("full-page agent workbench", () => {
       join(process.cwd(), "src/app/conversation-experience.css"),
       "utf8",
     );
-    const sectionNavigation = readFileSync(
-      join(process.cwd(), "src/components/agent-studio/studio-section-navigation.module.css"),
+    const pageHeader = readFileSync(
+      join(process.cwd(), "src/components/agent-studio/studio-page-header.module.css"),
       "utf8",
     );
 
     expect(styles).toMatch(/--shell-header-height:\s*46px;/);
     expect(codexStyles).toMatch(/\.console-header \{[^}]*min-height: var\(--shell-header-height/);
-    expect(sectionNavigation).toMatch(/\.bar \{[^}]*min-height: var\(--shell-header-height/);
+    // Every Studio page's section tabs share the console header's height.
+    expect(pageHeader).toMatch(/\.header \{[^}]*min-height: var\(--shell-header-height/);
     expect(experience).toMatch(/\.rail-bar \{[^}]*height: var\(--shell-header-height/);
   });
 

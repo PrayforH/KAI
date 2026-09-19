@@ -1,3 +1,44 @@
+
+/* Theme contract shared by every Studio page: the same semantic roles the
+   automation page uses. Dark is the default palette; the light block at the end
+   flips every role, so no rule needs a per-color override. */
+.page,
+.content {
+  --kb-bg: #181818;
+  --kb-panel: #242424;
+  --kb-hover: #303030;
+  --kb-line: #303030;
+  --kb-line-strong: #444444;
+  --kb-ink-strong: #ffffff;
+  --kb-ink: #d6d6d6;
+  --kb-muted: #a1a1a1;
+  --kb-faint: #737373;
+  --kb-on-accent: #07111a;
+  --kb-solid: #ececec;
+  --kb-link: #a9d4ff;
+  --kb-danger: #fa423e;
+  --kb-success: #40c977;
+  --kb-warning: #e6aa4a;
+}
+
+:global(html[data-color-mode="light"]) .page,
+:global(html[data-color-mode="light"]) .content {
+  --kb-bg: #ffffff;
+  --kb-panel: #f7f8f9;
+  --kb-hover: #ececec;
+  --kb-line: #e5e5e5;
+  --kb-line-strong: #d4d4d4;
+  --kb-ink-strong: #14161a;
+  --kb-ink: #2c2f33;
+  --kb-muted: #6b6f76;
+  --kb-faint: #8f9399;
+  --kb-on-accent: #ffffff;
+  --kb-solid: #1a1c1f;
+  --kb-link: #1a4f8a;
+  --kb-danger: #b42318;
+  --kb-success: #1a7f47;
+  --kb-warning: #8a6d1f;
+}
 .content {
   min-width: 0;
   width: min(1160px, 100%);
