@@ -209,11 +209,17 @@ class AguiThreadReadResult(BaseModel):
 
 
 class AguiThreadUpdateInput(BaseModel):
+    # The console sends camelCase for the project move; accept both spellings so
+    # a client using either convention is understood.
+    model_config = ConfigDict(populate_by_name=True)
+
     archived: bool | None = None
     pinned: bool | None = None
     title: Annotated[str | None, Field(min_length=1, max_length=200)] = None
     # null clears the project (the task returns to the plain 任务 list).
-    project_id: Annotated[str | None, Field(max_length=128)] = None
+    project_id: Annotated[
+        str | None, Field(alias="projectId", max_length=128)
+    ] = None
 
 
 class AguiThreadUpdateResult(BaseModel):
