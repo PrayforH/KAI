@@ -935,22 +935,55 @@ body.codex-theme-v1:has(.console-shell) .console-header {
   color: #8f8f8f;
 }
 
-/* Header task details: the project chip doubles as the hover/click trigger
-   for the task-name / activity / version popover (ZCode-style folder card). */
+/* Header task details: a single bare folder icon sits before the title and
+   doubles as the hover/click trigger for the task card (ZCode-style folder). */
 
 .task-details {
   position: relative;
   min-width: 0;
+  display: inline-flex;
+  flex: 0 0 auto;
 }
 
-.task-details-trigger {
+.task-folder-trigger {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  color: #8f8f8f;
+  background: transparent;
   cursor: pointer;
 }
 
-.task-details-trigger:hover,
-.task-details-trigger[aria-expanded="true"] {
-  color: #d6d6d6;
-  background: #222222;
+.task-folder-trigger svg,
+.task-folder-static svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.task-folder-trigger:hover,
+.task-folder-trigger[aria-expanded="true"],
+.task-folder-trigger:focus-visible {
+  color: #e4e4e4;
+  background: #262626;
+}
+
+.task-folder-static {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  display: grid;
+  place-items: center;
+  color: #6a6a6a;
 }
 
 .task-details-popover {
@@ -1032,6 +1065,21 @@ body.codex-theme-v1:has(.console-shell) .console-header {
   padding-top: 6px;
   padding-bottom: 6px;
   border-top: 1px solid #303030;
+}
+
+/* The version switcher folded into the folder card replaces the static
+   version row for switchable agents. */
+
+.task-details-row.is-switcher {
+  display: block;
+  min-height: 0;
+  margin-top: 4px;
+  padding: 6px 2px 2px;
+  border-top: 1px solid #303030;
+}
+
+.task-details-row.is-switcher .task-agent-switcher {
+  width: 100%;
 }
 
 /* Header "..." task actions: pin / rename / archive, mirroring the sidebar's
@@ -2194,10 +2242,23 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .header-ic
   background: #f0f0f1;
 }
 
-html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-details-trigger:hover,
-html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-details-trigger[aria-expanded="true"] {
-  color: #3d3d42;
-  background: #ededee;
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-folder-trigger {
+  color: #747479;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-folder-trigger:hover,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-folder-trigger[aria-expanded="true"],
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-folder-trigger:focus-visible {
+  color: #202024;
+  background: #f0f0f1;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-folder-static {
+  color: #9a9aa0;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-details-row.is-switcher {
+  border-top-color: #ebebed;
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-details-popover,
