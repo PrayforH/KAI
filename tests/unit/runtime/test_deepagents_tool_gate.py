@@ -137,9 +137,7 @@ async def _arrange(
         workspace=tmp_path,
         assistant_message_id="assistant-deepagents-message",
         resolved_policy=resolved_policy,
-        sandbox_command_executor=(
-            cast(Any, _sandbox_executor) if with_sandbox_executor else None
-        ),
+        sandbox_command_executor=(cast(Any, _sandbox_executor) if with_sandbox_executor else None),
     )
     gate = DeepagentsToolGate(
         context=context,
@@ -338,13 +336,38 @@ async def test_a_bundle_operator_needs_both_declaration_and_a_sandbox(tmp_path: 
     """An in-process Bundle operator would run in the Worker, so it is refused."""
 
     declared = frozenset({_BUNDLE_OPERATOR})
-    sandboxed, _, _ = await _arrange(
-        tmp_path, declared_tools=declared, with_sandbox_executor=True
-    )
+    sandboxed, _, _ = await _arrange(tmp_path, declared_tools=declared, with_sandbox_executor=True)
     worker_local, _, _ = await _arrange(tmp_path, declared_tools=declared)
 
     assert not _denied(await _invoke(sandboxed, name=_BUNDLE_OPERATOR, arguments={}))
     assert _denied(await _invoke(worker_local, name=_BUNDLE_OPERATOR, arguments={}))
+
+
+@pytest.mark.asyncio
+async def test_a_declared_bundle_operator_cannot_override_explicit_deny(tmp_path: Path) -> None:
+    gate, events, _ = await _arrange(
+        tmp_path,
+        profiles=False,
+        policy_rules=[
+            PolicyRule(name="blocked-operator", tool=_BUNDLE_OPERATOR, decision=PolicyDecision.DENY)
+        ],
+        declared_tools=frozenset({_BUNDLE_OPERATOR}),
+        with_sandbox_executor=True,
+    )
+    called = False
+
+    async def handler(request: ToolCallRequest) -> ToolMessage | Command[Any]:
+        nonlocal called
+        called = True
+        return await _echo(request)
+
+    output = await _invoke(gate, name=_BUNDLE_OPERATOR, handler=handler)
+
+    assert _denied(output)
+    assert not called
+    emitted = await events.list_after("tenant-a", "run-deepagents", 0)
+    assert [event.type for event in emitted] == ["tool.request", "tool.result"]
+    assert "blocked-operator" in emitted[-1].payload["error"]["message"]
 
 
 @pytest.mark.asyncio

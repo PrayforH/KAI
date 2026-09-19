@@ -152,9 +152,17 @@ class DeepagentsStreamMapper:
 
     def _message(self, *, node: str, message: object) -> list[RuntimeEvent]:
         events: list[RuntimeEvent] = []
+        # Count each completed model response before branching on tool calls.
+        # Middleware may replay messages in its own updates; only the model
+        # node reports new model usage, including the final answer's turn.
+        if node == "model":
+            self._turns += 1
+            usage = getattr(message, "usage_metadata", None)
+            if isinstance(usage, dict):
+                self._input_tokens += _int_usage(usage.get("input_tokens"))
+                self._output_tokens += _int_usage(usage.get("output_tokens"))
         tool_calls = getattr(message, "tool_calls", None)
         if tool_calls:
-            self._turns += 1
             for call in tool_calls:
                 if not isinstance(call, dict):
                     continue
@@ -183,10 +191,6 @@ class DeepagentsStreamMapper:
                 )
             )
             return events
-        usage = getattr(message, "usage_metadata", None)
-        if isinstance(usage, dict):
-            self._input_tokens += _int_usage(usage.get("input_tokens"))
-            self._output_tokens += _int_usage(usage.get("output_tokens"))
         events.extend(self._close_turn())
         return events
 

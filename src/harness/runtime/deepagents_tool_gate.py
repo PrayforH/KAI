@@ -286,6 +286,7 @@ class DeepagentsToolGate(AgentMiddleware):
             )
         if (
             result.decision is PolicyDecision.DENY
+            and result.rule_name == "implicit-deny"
             and raw_name.startswith("mcp__harness-python-")
             and raw_name in self._declared_tools
             and context.sandbox_command_executor is not None
