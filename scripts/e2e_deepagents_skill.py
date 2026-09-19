@@ -9,11 +9,26 @@ discover it the way it discovers any Skill: list the directory, then read the
 `SKILL.md`. So the evidence to look for is a tool call that lists or reads
 inside the Skill root -- without one, the Skill was mounted but never used.
 
-The catalog's `skillReferences` path is gated on `compatibleRuntimes` and does
-not list DeepAgents, so this uses the direct-mount endpoint
-(`/drafts/{id}/skills/catalog/{package}/install`) instead. That path bypasses
-the reference lifecycle by design, which is what makes the experiment possible
-before the catalog is changed.
+Two routes reach that same place, and they are not interchangeable:
+
+* ``reference`` -- ``spec.skillReferences``. This is the product route, and it is
+  the one ``compatibleRuntimes`` gates: while a package excludes a runtime,
+  ``resolve_skills`` drops the reference silently and ``validate`` rejects it.
+  A Skill that is declared and then not mounted is the worst outcome, so this
+  route is the one that has to be exercised.
+* ``direct`` -- ``POST /drafts/{id}/skills/catalog/{package}/install``. It
+  bypasses the reference lifecycle by design, which is what made the experiment
+  possible before the catalog was changed.
+
+    docker cp scripts/e2e_deepagents_skill.py <api-container>:/tmp/skill.py
+    docker exec <api-container> /app/.venv/bin/python /tmp/skill.py minimax-docx reference
+
+`prompt` (3rd argument) exists because a Skill's own prerequisites decide whether
+a Run can finish: `minimax-docx` requires the .NET SDK and will spend the whole
+Run trying to install it. That is a per-Skill, per-sandbox-template concern and
+it applies to every runtime, so it must not be confused with the question this
+probe answers. Use a Skill whose prerequisites the template already satisfies
+when the object is a fully green Run.
 """
 
 from __future__ import annotations
@@ -30,9 +45,14 @@ TENANT = "local"
 USER = "builder-a"
 
 PACKAGE = sys.argv[1] if len(sys.argv) > 1 else "minimax-docx"
+ROUTE = sys.argv[2] if len(sys.argv) > 2 else "reference"
 PROMPT = (
-    "请使用已挂载的技能，生成一份简短的 Word 文档，内容是一份三行的项目周报，"
-    "保存为 weekly.docx，并说明你使用了哪个技能。"
+    sys.argv[3]
+    if len(sys.argv) > 3
+    else (
+        "请使用已挂载的技能，生成一份简短的 Word 文档，内容是一份三行的项目周报，"
+        "保存为 weekly.docx，并说明你使用了哪个技能。"
+    )
 )
 
 HEADERS = {
@@ -104,36 +124,81 @@ def main() -> int:
     draft = replaced.json()
     print(f"       revision={draft['revision']} runtime={draft['spec']['runtime']}")
 
-    print("\n== 2. mount the Skill ==")
-    installed = client.post(
-        f"/v1/studio/drafts/{draft_id}/skills/catalog/{PACKAGE}/install",
-        json={"expectedRevision": draft["revision"], "packageRevision": 1},
-    )
-    if not check(
-        "install skill",
-        installed.status_code in (200, 201),
-        f"HTTP {installed.status_code}",
-    ):
-        print(installed.text[:800])
-        return 1
-    body = installed.json()
-    draft = body["draft"]
-    print(
-        f"       skillName={body.get('skillName')} files={body.get('fileCount')}"
-        f" binaries={body.get('binaryFileCount')} risk={body.get('riskLevel')}"
-    )
-    for finding in (body.get("findings") or [])[:3]:
-        print(f"         finding: {finding}")
+    print(f"\n== 2. mount the Skill ({ROUTE} route) ==")
     revision = draft["revision"]
-    print(f"       revision={revision} skills={[s.get('name') for s in draft['spec']['skills']]}")
+    if ROUTE == "reference":
+        # The product route: declare the reference and let the compiler resolve
+        # it. Nothing is copied into `spec.skills` by the caller.
+        spec = draft["spec"]
+        spec["skillReferences"] = [PACKAGE]
+        declared = client.put(
+            f"/v1/studio/drafts/{draft_id}",
+            json={"expectedRevision": revision, "spec": spec},
+        )
+        if not check(
+            "declare the reference",
+            declared.status_code == 200,
+            f"HTTP {declared.status_code}",
+        ):
+            print(declared.text[:800])
+            return 1
+        draft = declared.json()
+        revision = draft["revision"]
+        print(
+            f"       revision={revision}"
+            f" skillReferences={draft['spec'].get('skillReferences')}"
+            f" skills={[s.get('name') for s in draft['spec']['skills']]}"
+        )
+    else:
+        installed = client.post(
+            f"/v1/studio/drafts/{draft_id}/skills/catalog/{PACKAGE}/install",
+            json={"expectedRevision": revision, "packageRevision": 1},
+        )
+        if not check(
+            "install skill",
+            installed.status_code in (200, 201),
+            f"HTTP {installed.status_code}",
+        ):
+            print(installed.text[:800])
+            return 1
+        body = installed.json()
+        draft = body["draft"]
+        print(
+            f"       skillName={body.get('skillName')} files={body.get('fileCount')}"
+            f" binaries={body.get('binaryFileCount')} risk={body.get('riskLevel')}"
+        )
+        for finding in (body.get("findings") or [])[:3]:
+            print(f"         finding: {finding}")
+        revision = draft["revision"]
+        print(
+            f"       revision={revision}"
+            f" skills={[s.get('name') for s in draft['spec']['skills']]}"
+        )
 
     print("\n== 3. validate ==")
     validated = client.post(f"/v1/studio/drafts/{draft_id}/validate")
     if check("validate", validated.status_code == 200, f"HTTP {validated.status_code}"):
         report = validated.json()
-        print(f"       ready={report.get('ready')} issues={len(report.get('issues') or [])}")
+        codes = [issue.get("code") for issue in (report.get("issues") or [])]
+        print(f"       ready={report.get('ready')} issues={len(codes)}")
         for issue in (report.get("issues") or [])[:6]:
             print(f"         - {issue.get('code')}: {issue.get('message')}")
+        if ROUTE == "reference":
+            # This is the whole point of the gate: an incompatible reference has
+            # to fail here, and a compatible one has to produce a manifest that
+            # actually lists the Skill.
+            check(
+                "no runtime-incompatible reference",
+                "skill_reference_runtime_incompatible" not in codes,
+                ", ".join(str(code) for code in codes) or "no issues",
+            )
+            check("validation is ready", bool(report.get("ready")))
+            manifest = str(report.get("manifestYaml") or "")
+            check(
+                "the manifest lists the Skill",
+                f"skills/{PACKAGE}" in manifest,
+                f"skills/{PACKAGE}",
+            )
 
     print("\n== 4. publish ==")
     published = client.post(
@@ -212,6 +277,11 @@ def main() -> int:
             if event.get("type") == "agent.assets.staged"
         ),
     )
+    check("artifact.ready observed", "artifact.ready" in seen)
+    artifacts = client.get(f"/v1/runs/{run_id}/artifacts")
+    if artifacts.status_code == 200:
+        names = [str(item.get("name")) for item in artifacts.json()]
+        print(f"       artifacts={len(names)}: {names}")
 
     if status == "failed":
         print("\n  -- failure diagnostics --")

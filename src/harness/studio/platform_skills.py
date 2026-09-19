@@ -7,6 +7,7 @@ import json
 from functools import lru_cache
 
 from harness.core.errors import ConflictError, NotFoundError
+from harness.core.models import AgentRuntimeType
 from harness.evals.suite import EvalCase, EvalExpectation
 from harness.studio.models import (
     DraftSkill,
@@ -23,6 +24,17 @@ from harness.studio.models import (
 
 _CATALOG_REVISION = 2
 RETIRED_PLATFORM_SKILLS = frozenset({"skill-authoring-quality"})
+# Which runtimes a platform Skill has been reviewed on. DeepAgents is listed
+# because it was measured, not because it was assumed: `minimax-docx` mounted
+# into a DeepAgents Run, the kernel read its `SKILL.md`, ran `scripts/env_check.sh`
+# and produced the document. Adding a fourth runtime means repeating that, since
+# the flag gates `skillReferences` at compile time -- a package that cannot run
+# has to fail there rather than degrade silently at run time.
+_COMPATIBLE_RUNTIMES: tuple[AgentRuntimeType, ...] = (
+    "claude-agent-sdk",
+    "codex-app-server",
+    "deepagents",
+)
 _SOURCE_REVISION = "platform-skills-v1"
 _SOURCE_ROOT = (
     "https://github.com/PrayforH/agent-studio/blob/main/"
@@ -73,7 +85,7 @@ def _package(
         displayName=display_name,
         summary=summary,
         tags=tags,
-        compatibleRuntimes=("claude-agent-sdk", "codex-app-server"),
+        compatibleRuntimes=_COMPATIBLE_RUNTIMES,
         license=license_name,
         sourceUrl=resolved_source_url,
         sourceRevision=source_revision,
@@ -112,6 +124,19 @@ _VENDORED_DISPLAY = {
     "webapp-testing": ("Web 应用测试", ("测试", "Playwright", "前端")),
     "canvas-design": ("平面视觉设计", ("设计", "海报", "视觉")),
     "algorithmic-art": ("生成式艺术", ("设计", "生成艺术", "p5.js")),
+}
+
+# A Skill that cannot finish on the platform's Sandbox template is still worth
+# offering -- the model may legitimately decline to use it -- but the catalog has
+# to say so, because the failure mode is a Run that spends its entire budget
+# trying to install the missing prerequisite. These are declared by the Skill
+# itself and were confirmed against a live Sandbox; they are a property of the
+# Skill together with the template, not of any one runtime.
+_VENDORED_PREREQUISITES = {
+    "minimax-docx": (
+        "依赖 .NET SDK：Skill 自带 env_check.sh 判定其为必需项，"
+        "而本平台当前 Sandbox 模板未预装，setup.sh 会联网安装并可能耗尽 Run 时间预算"
+    ),
 }
 
 _VENDORED_EVALUATION = {
@@ -174,19 +199,22 @@ def _vendored_package(skill: DraftSkill) -> PlatformSkillPackage:
         file.path.startswith("scripts/") or file.path.endswith((".py", ".js", ".mjs", ".sh"))
         for file in skill.files
     )
+    findings = ["包含沙箱内可执行文件：scripts/"] if has_scripts else []
+    if prerequisite := _VENDORED_PREREQUISITES.get(skill.name):
+        findings.append(prerequisite)
     return PlatformSkillPackage(
         packageId=skill.name,
         revision=1,
         displayName=display_name,
         summary=f"{skill.description[:180]}（上游 {license_name}，随包附带许可证原文）",
         tags=tags,
-        compatibleRuntimes=("claude-agent-sdk", "codex-app-server"),
+        compatibleRuntimes=_COMPATIBLE_RUNTIMES,
         license=license_name,
         sourceUrl=source_url,
         sourceRevision=source_revision,
         contentHash=digest,
         riskLevel="review" if has_scripts else "low",
-        findings=("包含沙箱内可执行文件：scripts/",) if has_scripts else (),
+        findings=tuple(findings),
         skill=skill.model_copy(update={"source": source}),
         evaluationCases=(
             EvalCase(

@@ -438,7 +438,6 @@ def default_capability_catalog() -> CapabilityCatalog:
                     "Only streamable HTTP MCP registrations are supported",
                     "Platform memory bank is not connected",
                     "File-based AGENTS.md memory is never enabled",
-                    "Platform catalog Skills are not reviewed for this runtime; embed the Skill",
                 ),
             ),
         ),

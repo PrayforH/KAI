@@ -1155,6 +1155,34 @@ def test_skill_references_resolve_into_bundle_with_platform_provenance() -> None
     assert "skills/minimax-xlsx/SKILL.md" in packaged
 
 
+def test_a_deepagents_draft_resolves_platform_skill_references() -> None:
+    """A reviewed platform Skill is offered to every runtime it was measured on.
+
+    `compatibleRuntimes` is the compile-time gate: while it excluded DeepAgents,
+    a reference was silently dropped from the bundle by `resolve_skills` and
+    rejected outright by `validate`. Both are wrong for a Skill that has been run
+    on this runtime, and silence is the worse half -- the code view would show a
+    Skill the Run never gets.
+    """
+
+    compiler = AgentDraftCompiler(default_capability_catalog())
+    base = draft()
+    spec = base.spec.model_copy(
+        update={"runtime": "deepagents", "skill_references": ("minimax-docx",)}
+    )
+    candidate = base.model_copy(update={"spec": spec})
+
+    resolved = compiler.resolve_skills(candidate)
+    assert [skill.name for skill in resolved] == ["minimax-docx"]
+
+    validation = compiler.validate(candidate)
+    assert not any(
+        issue.code == "skill_reference_runtime_incompatible" for issue in validation.issues
+    )
+    assert validation.ready
+    assert "skills/minimax-docx" in yaml.safe_load(validation.manifest_yaml)["spec"]["skills"]
+
+
 def test_skill_reference_conflicts_disable_and_unknown_block_compilation() -> None:
     compiler_catalog = default_capability_catalog()
     disabled = compiler_catalog.skills[0]

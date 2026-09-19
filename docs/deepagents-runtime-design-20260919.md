@@ -264,18 +264,33 @@ DeepAgents 是**唯一同时支持两种文本协议**的运行时，所以 `res
 明确**不支持并在编译期报错**：Sub Agent、知识库、按需工具加载、MCP `sse`/`stdio`、
 WebSearch/WebFetch 内置联网、`memory` 文件式记忆。
 
-### 5.2 平台 Skill 包（刻意保留的限制）
+### 5.2 平台 Skill 包（已由实测放开）
 
-平台自带的目录 Skill 包（`platform_skills.py`）声明 `compatibleRuntimes=("claude-agent-sdk",
-"codex-app-server")`。本次**没有**给它们加 `deepagents`，理由是：
+平台自带的目录 Skill 包（`platform_skills.py`）原先只声明
+`compatibleRuntimes=("claude-agent-sdk", "codex-app-server")`。当时的判断是：运行时的
+Skill 通路已经实现，但"某个具体 vendored Skill 在 DeepAgents 上真的跑得通"是**产品声明**，
+不能在没验证过的情况下加，所以先在 catalog `limitations` 里明说这条边界。
 
-- 这些是第三方 vendored Skill，部分带 `scripts/` 可执行文件；
-- 运行时的 Skill 通路（`materialize_skill_snapshot_set` + `skills=[".claude/skills"]`）已经实现，
-  Agent **自带**的 Skill 快照可以正常用；
-- 但"某个具体 vendored Skill 在 DeepAgents 上真的跑得通"是**产品声明**，不能在没验证过的情况下加。
+**现在已放开，依据是测量而不是推断：**
 
-所以选择在 catalog `limitations` 里**明说**这条边界，让控制台告诉用户，而不是在编译期给一个
-没有上下文的报错。**待办**：在 173 上把 `docx` / `pptx` 这类 Skill 真跑一遍，验证通过后再放开。
+- **参考路径（产品路径）**：`spec.skillReferences=["internal-comms"]` → 校验
+  `ready=True, issues=0`、不再出现 `skill_reference_runtime_incompatible`、manifest 列出
+  `skills/internal-comms`；Run 内 `agent.assets.staged {"skills": ["internal-comms"]}`，
+  内核读了 `SKILL.md` **和** `references/examples/3p-updates.md`（即真的按 Skill 的引用走），
+  写出 `outputs/weekly-3p.md` 并触发 `artifact.ready`。**13/13 全通过。**
+- **直挂路径**：`minimax-docx` 经 `/drafts/{id}/skills/catalog/{package}/install` 挂载，
+  内核读 `SKILL.md`、跑 `scripts/env_check.sh`、产出文档。**9/9 全通过。**
+
+这条 `compatibleRuntimes` 门在**编译期**生效（`compiler.py:113` 静默跳过、
+`compiler.py:629` 报 ERROR），所以在放开之前，一个声明了引用的 DeepAgents 草稿会出现
+**代码视图里有 Skill、实际运行拿不到**的分裂——正是本项目最不该有的那种不一致。
+
+**顺带记录一条与运行时无关的发现：** `minimax-docx` 走参考路径时 Run **超时**了。
+原因不是运行时，而是该 Skill 自带 `env_check.sh` 判定 **.NET SDK 为必需项**，而平台当前
+Sandbox 模板没预装，于是模型照 Skill 的指引去 `wget dotnet-install.sh` + `pip3 install
+python-docx`，把预算烧光。这是"Skill × 沙箱模板"的前置条件问题，**Claude / Codex 同样会踩**。
+处置：在 `_VENDORED_PREREQUISITES` 里把这个前置条件写进该包的 `findings`，
+让控制台如实告诉用户，而不是让用户看到一个莫名超时的 Run。
 
 ## 6. 依赖与镜像
 
