@@ -600,6 +600,19 @@ export function AutomationManager() {
                             : record.outputSummary}
                       </button>
                     )}
+                    {record.artifacts && record.artifacts.length > 0 && (
+                      <div className={styles.recordArtifacts}>
+                        <span className={styles.recordArtifactsLabel}>产出</span>
+                        {record.artifacts.map((artifact) => (
+                          <span key={artifact.artifactId} className={styles.recordArtifact}>
+                            <FileIcon /> {artifact.name}
+                            {artifact.sizeBytes != null && (
+                              <small>{Math.max(1, Math.round(artifact.sizeBytes / 1024))} KB</small>
+                            )}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     {record.error && <p className={styles.recordError}>失败原因：{record.error}</p>}
                   </div>
                 </li>
@@ -816,6 +829,15 @@ function RefreshIcon() {
     <svg viewBox="0 0 20 20" aria-hidden="true">
       <path d="M15.5 10a5.5 5.5 0 1 1-1.6-3.9" />
       <path d="M15.8 3.2v3.2h-3.2" />
+    </svg>
+  );
+}
+
+function FileIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M5.5 3.5h6l3 3v10h-9z" />
+      <path d="M11.5 3.5v3h3" />
     </svg>
   );
 }

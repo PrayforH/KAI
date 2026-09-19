@@ -959,7 +959,9 @@ def build_memory_container(
         context_service=context_service,
     )
     automation_service.configure_executor(worker.execute)
-    automation_service.configure_result_delivery(thread_bindings, observed_events)
+    automation_service.configure_result_delivery(
+        thread_bindings, observed_events, artifact_repository
+    )
     agui = AguiRunService(
         sessions=session_service,
         runs=run_service,

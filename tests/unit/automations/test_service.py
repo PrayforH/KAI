@@ -294,17 +294,30 @@ async def test_records_derive_terminal_status_from_run() -> None:
 
 
 @pytest.mark.asyncio
-async def test_prompt_includes_model_override_when_pinned() -> None:
+async def test_pinned_model_becomes_route_override() -> None:
     now = datetime(2026, 9, 19, 8, 0, tzinfo=UTC)
     service, _sessions, runs = build_service(clock=lambda: now)
+    counter = {"n": 0}
+
+    def seq_id(prefix: str) -> str:
+        counter["n"] += 1
+        return f"{prefix}-{counter['n']}"
+
+    service._ids = seq_id
     task = await service.create(
         tenant_id="tenant-1",
         user_id="user-1",
         request=cron_request("0 8 * * *", model="glm-5"),
     )
     await service.run_now(tenant_id="tenant-1", user_id="user-1", task_id=task.task_id)
-    assert isinstance(runs.inputs[0]["prompt"], str)
-    assert str(runs.inputs[0]["prompt"]).startswith("[model:glm-5]")
+    assert runs.inputs[0].get("model_route_override") == "glm-5"
+    auto_task = await service.create(
+        tenant_id="tenant-1",
+        user_id="user-1",
+        request=cron_request("0 9 * * *"),
+    )
+    await service.run_now(tenant_id="tenant-1", user_id="user-1", task_id=auto_task.task_id)
+    assert "model_route_override" not in runs.inputs[1]
 
 
 @pytest.mark.asyncio

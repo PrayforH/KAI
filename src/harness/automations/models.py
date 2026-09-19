@@ -120,6 +120,13 @@ class UpdateAutomationTaskRequest(StudioModel):
     validity: AutomationValidity = Field(default_factory=AutomationValidity)
 
 
+class AutomationRecordArtifact(StudioModel):
+    artifact_id: str = Field(alias="artifactId")
+    name: str = Field(max_length=260)
+    media_type: str = Field(alias="mediaType", max_length=120)
+    size_bytes: int | None = Field(default=None, alias="sizeBytes")
+
+
 class AutomationRunRecord(StudioModel):
     tenant_id: str = Field(alias="tenantId")
     record_id: str = Field(alias="recordId")
@@ -135,4 +142,5 @@ class AutomationRunRecord(StudioModel):
     finished_at: datetime | None = Field(default=None, alias="finishedAt")
     duration_ms: int | None = Field(default=None, alias="durationMs")
     output_summary: str | None = Field(default=None, alias="outputSummary")
+    artifacts: tuple[AutomationRecordArtifact, ...] = ()
     error: str | None = None
