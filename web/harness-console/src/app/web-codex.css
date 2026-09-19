@@ -545,7 +545,8 @@ body.codex-theme-v1:has(.console-shell) .task-list {
   min-height: 30px;
   padding: 4px 30px 4px 10px;
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr);
+  /* icon · name · task count */
+  grid-template-columns: 16px minmax(0, 1fr) auto;
   align-items: center;
   gap: 9px;
   border: 0;

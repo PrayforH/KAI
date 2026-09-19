@@ -267,6 +267,35 @@ body.codex-theme-v1 .task-title-viewport { display: block; min-width: 0; overflo
 
 body.codex-theme-v1 .tasks-show-more { opacity: .65; }
 
+body.codex-theme-v1:has(.console-shell) .task-bucket-head,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-bucket-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 10px 4px;
+  color: var(--codex-faint, #737373);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-bucket-count,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-bucket-count {
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--codex-accent-faint, rgb(236 236 236 / 7%));
+  color: var(--codex-muted, #9a9a9a);
+  font-size: 10px;
+  font-weight: 600;
+  text-align: center;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-pinned-group .task-project-items,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-pinned-group .task-project-items {
+  border-inline-start: 2px solid var(--codex-accent-soft, rgb(236 236 236 / 14%));
+}
+
 body.codex-theme-v1:has(.console-shell) .task-default-group .task-project-items,
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-default-group .task-project-items {
   margin-left: 0; padding-left: 0; border-left: 0;
