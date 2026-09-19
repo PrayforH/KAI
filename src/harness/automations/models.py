@@ -134,4 +134,5 @@ class AutomationRunRecord(StudioModel):
     started_at: datetime = Field(alias="startedAt")
     finished_at: datetime | None = Field(default=None, alias="finishedAt")
     duration_ms: int | None = Field(default=None, alias="durationMs")
+    output_summary: str | None = Field(default=None, alias="outputSummary")
     error: str | None = None

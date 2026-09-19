@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import logging
 import secrets
 from collections.abc import Callable
 from datetime import UTC, datetime
 
+from harness.agui.response import final_response_text
 from harness.application.runs import RunService
 from harness.application.sessions import SessionService
 from harness.automations.cronexpr import next_fire_after
@@ -24,8 +27,11 @@ from harness.automations.models import (
     UpdateAutomationTaskRequest,
 )
 from harness.core.errors import ConflictError, NotFoundError
-from harness.core.models import RunStatus
+from harness.core.events import RunEvent
+from harness.core.models import AguiThreadBinding, RunStatus
 from harness.core.ports import AgentRegistry
+
+logger = logging.getLogger(__name__)
 
 
 def _default_id(prefix: str) -> str:
@@ -62,6 +68,8 @@ class AutomationService:
         registry: AgentRegistry | None = None,
         agent_version: str = "",
         executor: Callable[[str, str], object] | None = None,
+        bindings=None,  # AguiThreadBindingRepository, for result delivery
+        events=None,  # EventRepository, for run output summaries
         clock: Callable[[], datetime] | None = None,
         id_generator: Callable[[str], str] | None = None,
     ) -> None:
@@ -75,6 +83,10 @@ class AutomationService:
         # Optional inline executor for single-process deployments that do not
         # run a task-queue worker; production relies on the worker pool.
         self._executor = executor
+        # Result delivery: every task owns one chat thread whose sessions hold
+        # the runs, so each execution lands in the owner's task list.
+        self._bindings = bindings
+        self._events = events
         self._clock = clock or (lambda: datetime.now(UTC))
         self._ids = id_generator or _default_id
 
@@ -82,6 +94,12 @@ class AutomationService:
         if self._executor is not None:
             raise RuntimeError("automation executor is already configured")
         self._executor = executor
+
+    def configure_result_delivery(self, bindings, events) -> None:
+        """Attach the thread-binding and event repositories after assembly."""
+
+        self._bindings = bindings
+        self._events = events
 
     async def create(
         self,
@@ -363,6 +381,49 @@ class AutomationService:
             enriched.append(await self._with_live_status(tenant_id, record))
         return enriched
 
+    async def _deliver_thread(
+        self, task: AutomationTask, session_id: str, now: datetime
+    ) -> None:
+        """Expose the task's run conversation in the owner's task list."""
+
+        if self._bindings is None:
+            return
+        thread_id = f"automation_{task.task_id}"
+        try:
+            binding = await self._bindings.get_by_thread(
+                task.tenant_id, task.user_id, thread_id
+            )
+        except NotFoundError:
+            try:
+                await self._bindings.add(
+                    AguiThreadBinding(
+                        tenant_id=task.tenant_id,
+                        user_id=task.user_id,
+                        thread_id=thread_id,
+                        session_id=session_id,
+                        title=task.name,
+                        title_source="user",
+                        title_updated_at=now,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+            except ConflictError:
+                logger.info(
+                    "automation thread binding already exists task=%s",
+                    task.task_id,
+                )
+            return
+        if binding.session_id != session_id:
+            await self._bindings.rebind_session(
+                task.tenant_id,
+                task.user_id,
+                thread_id,
+                expected_session_id=binding.session_id,
+                session_id=session_id,
+                updated_at=now,
+            )
+
     async def _with_live_status(
         self, tenant_id: str, record: AutomationRunRecord
     ) -> AutomationRunRecord:
@@ -385,6 +446,13 @@ class AutomationService:
             fields["duration_ms"] = max(
                 0, int((run.updated_at - run.created_at).total_seconds() * 1000)
             )
+            if (
+                fields["status"] == AutomationRecordStatus.SUCCESS.value
+                and self._events is not None
+            ):
+                fields["output_summary"] = await self._summarize_output(
+                    tenant_id, run.run_id
+                )
             updated = await self._records.update_status(
                 tenant_id, record.record_id, **fields
             )
@@ -394,6 +462,17 @@ class AutomationService:
                     updated.model_dump(mode="json", by_alias=True)
                 )
         return record
+
+    async def _summarize_output(self, tenant_id: str, run_id: str) -> str | None:
+        """Extract the agent's final answer for the run record."""
+
+        try:
+            events: list[RunEvent] = await self._events.list_after(tenant_id, run_id, 0)
+            summary = final_response_text(events).strip()
+        except Exception:  # noqa: BLE001 - the summary is best-effort display data
+            logger.debug("automation output summary failed run=%s", run_id, exc_info=True)
+            return None
+        return summary[:2000] or None
 
     async def _execute(
         self,
@@ -416,21 +495,28 @@ class AutomationService:
             scheduledAt=scheduled_at,
             startedAt=now,
         )
-        session_id = f"automation_session_{record.record_id}"
         workload_id = f"automation:{task.task_id}"
         prompt = task.prompt
         if task.model and task.model != "auto":
             prompt = f"[model:{task.model}]\n{task.prompt}"
         agent_version = await self._resolve_agent_version(task)
-        session = await self._sessions.create(
-            task.tenant_id,
-            workload_id,
-            self._agent_name,
-            agent_version,
-            session_id=session_id,
-            api_key_id=task.task_id,
-            agent_owner_user_id=task.user_id,
-        )
+        # One session per (task, agent version): every execution appends its
+        # messages to the same conversation the owner sees in the task list.
+        version_key = hashlib.sha256(agent_version.encode()).hexdigest()[:12]
+        session_id = f"automation_session_{task.task_id}_{version_key}"
+        try:
+            session = await self._sessions.get(task.tenant_id, session_id)
+        except NotFoundError:
+            session = await self._sessions.create(
+                task.tenant_id,
+                workload_id,
+                self._agent_name,
+                agent_version,
+                session_id=session_id,
+                api_key_id=task.task_id,
+                agent_owner_user_id=task.user_id,
+            )
+        await self._deliver_thread(task, session.session_id, now)
         run = await self._runs.create(
             task.tenant_id,
             session.session_id,

@@ -14,6 +14,7 @@ from starlette.applications import Starlette
 
 from harness.adapters.memory import (
     InMemoryAgentRegistry,
+    InMemoryAguiThreadBindingRepository,
     InMemoryApprovalRepository,
     InMemoryArtifactRepository,
     InMemoryArtifactStore,
@@ -539,6 +540,7 @@ def build_memory_container(
         clock=clock,
         id_generator=id_generator,
     )
+    thread_bindings = InMemoryAguiThreadBindingRepository()
     automation_service = AutomationService(
         InMemoryAutomationTaskRepository(),
         InMemoryAutomationRecordRepository(),
@@ -957,11 +959,13 @@ def build_memory_container(
         context_service=context_service,
     )
     automation_service.configure_executor(worker.execute)
+    automation_service.configure_result_delivery(thread_bindings, observed_events)
     agui = AguiRunService(
         sessions=session_service,
         runs=run_service,
         input_artifacts=input_artifact_service,
         contexts=context_service,
+        bindings=thread_bindings,
         knowledge_bindings=knowledge.resolve_bindings,
     )
 

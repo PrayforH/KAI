@@ -2695,6 +2695,7 @@ export interface ApiAutomationRunRecord {
   startedAt: string;
   finishedAt?: string | null;
   durationMs?: number | null;
+  outputSummary?: string | null;
   error?: string | null;
 }
 

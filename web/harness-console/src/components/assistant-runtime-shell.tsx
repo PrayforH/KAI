@@ -175,12 +175,16 @@ export function AssistantRuntimeShell({
       }),
     [threadId],
   );
+  // The history adapter is keyed by threadId only: disposing it whenever the
+  // agent binding re-resolves (catalog loads after mount for deep-linked or
+  // delivered threads) would abort the first history load and leave the
+  // conversation permanently empty.
+  useEffect(() => () => history.dispose(), [history]);
   useEffect(
     () => () => {
-      history.dispose();
       void agent.detachActiveRun();
     },
-    [agent, history],
+    [agent],
   );
   useEffect(() => {
     try {
