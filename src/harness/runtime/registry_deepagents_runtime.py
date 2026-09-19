@@ -287,6 +287,7 @@ class RegistryDeepagentsRuntime:
                 bundle_operators=_bundle_operators(
                     snapshot, resolved, materialized=staged.materialized
                 ),
+                package_hash=version.package_hash,
             ),
             approvals=self._approvals,
             events=self._events,

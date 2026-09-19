@@ -51,6 +51,7 @@ from harness.core.manifest import (
     PythonToolSnapshot,
     materialize_skill_snapshot_set,
 )
+from harness.observability.model_span import model_observation, model_run_facts
 from harness.observability.provider import Observability
 from harness.policy.profiles import PolicyProfileRegistry
 from harness.policy.rules import PolicyEngine
@@ -121,6 +122,9 @@ class DeepagentsRuntimeConfig:
     mcp_servers: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
     declared_tools: frozenset[str] = frozenset()
     bundle_operators: tuple[BundleOperator, ...] = ()
+    # The published package hash, carried so a DeepAgents trace describes the
+    # same Agent identity a Claude trace does.
+    package_hash: str | None = None
 
 
 class _NoSubagentsMiddleware(AgentMiddleware):
@@ -271,44 +275,80 @@ class DeepagentsRuntime:
         tool_calls = 0
         started_at = time.monotonic()
         timeout = float(spec.limits.timeout_seconds) if spec.limits.timeout_seconds else None
-        try:
-            async with asyncio.timeout(timeout):
-                async for mode, payload in graph.astream(
-                    {"messages": [{"role": "user", "content": self._prompt(context)}]},
-                    config={"recursion_limit": plan.recursion_limit},
-                    stream_mode=["messages", "updates"],
-                ):
-                    for event in self._map(mapper, mode=mode, payload=payload):
-                        if event.type == "tool.request":
-                            tool_calls += 1
-                            if tool_call_limit is not None and tool_calls > tool_call_limit:
-                                raise RuntimeResultError(
-                                    "deepagents_tool_call_limit",
-                                    error_code="deepagents_tool_call_limit",
-                                    user_message=(
-                                        f"本次运行的工具调用超过上限 {tool_call_limit}，已终止。"
-                                    ),
-                                )
-                            # Counted, then withheld: the gate is the only writer
-                            # of this fact. It names the tool in the platform
-                            # vocabulary and redacts the arguments against that
-                            # name, whereas this copy would carry the runtime's
-                            # own name (`write_file`, not `Write`). The worker's
-                            # generic policy pass keys both its re-decision and
-                            # its redaction on that name, so a second copy makes
-                            # it deny a call the gate already allowed -- and
-                            # record the unredacted arguments while doing it.
-                            # `ClaudeSdkRuntime` withholds it for the same
-                            # reason.
-                            continue
-                        yield event
-        except TimeoutError as error:
-            raise RuntimeExecutionTimeoutError(
-                "the DeepAgents runtime exceeded its Manifest timeout"
-            ) from error
-        yield mapper.result_event(
-            duration_ms=max(0, round((time.monotonic() - started_at) * 1000))
+        prompt = self._prompt(context)
+        # The same observation every runtime opens, so Langfuse shows a
+        # generation for a DeepAgents Run too. DeepAgents has no SDK permission
+        # mode, so that attribute is simply not reported.
+        facts = model_run_facts(
+            config.snapshot,
+            run_id=context.run.run_id,
+            route_id=config.route_id,
+            model=config.model,
+            provider=config.provider,
+            package_hash=config.package_hash,
         )
+        with model_observation(self._observability, facts, input_value=prompt) as observation:
+            # The Worker treats the last completed message as the Run's answer, so
+            # the observation reports that same string rather than every delta the
+            # run produced -- the two must not disagree about what was said.
+            active_text: list[str] = []
+            final_text = ""
+            try:
+                async with asyncio.timeout(timeout):
+                    async for mode, payload in graph.astream(
+                        {"messages": [{"role": "user", "content": prompt}]},
+                        config={"recursion_limit": plan.recursion_limit},
+                        stream_mode=["messages", "updates"],
+                    ):
+                        for event in self._map(mapper, mode=mode, payload=payload):
+                            if event.type == "tool.request":
+                                tool_calls += 1
+                                if tool_call_limit is not None and tool_calls > tool_call_limit:
+                                    raise RuntimeResultError(
+                                        "deepagents_tool_call_limit",
+                                        error_code="deepagents_tool_call_limit",
+                                        user_message=(
+                                            "本次运行的工具调用超过上限 "
+                                            f"{tool_call_limit}，已终止。"
+                                        ),
+                                    )
+                                # Counted, then withheld: the gate is the only writer
+                                # of this fact. It names the tool in the platform
+                                # vocabulary and redacts the arguments against that
+                                # name, whereas this copy would carry the runtime's
+                                # own name (`write_file`, not `Write`). The worker's
+                                # generic policy pass keys both its re-decision and
+                                # its redaction on that name, so a second copy makes
+                                # it deny a call the gate already allowed -- and
+                                # record the unredacted arguments while doing it.
+                                # `ClaudeSdkRuntime` withholds it for the same
+                                # reason.
+                                continue
+                            if event.type == "message.start":
+                                active_text = []
+                            elif event.type == "message.delta":
+                                active_text.append(str(event.payload.get("text") or ""))
+                            elif event.type == "message.completed":
+                                final_text = "".join(active_text)
+                            yield event
+            except TimeoutError as error:
+                raise RuntimeExecutionTimeoutError(
+                    "the DeepAgents runtime exceeded its Manifest timeout"
+                ) from error
+            # Reported from the same payload the Worker consumes, so the
+            # observation and the durable `runtime.result` cannot disagree about
+            # what the run cost.
+            result = mapper.result_event(
+                duration_ms=max(0, round((time.monotonic() - started_at) * 1000))
+            )
+            observation.record_result(
+                usage=cast(Mapping[str, int], result.payload.get("usage") or {}),
+                duration_ms=cast(int, result.payload.get("duration_ms")),
+                turns=cast(int, result.payload.get("num_turns")),
+                stop_reason=cast(str | None, result.payload.get("stop_reason")),
+                output=final_text or None,
+            )
+        yield result
 
     @staticmethod
     def _map(

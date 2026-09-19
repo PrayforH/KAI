@@ -41,6 +41,7 @@ from harness.runtime.deepagents_runtime import (  # noqa: E402
     DeepagentsRuntime,
     DeepagentsRuntimeConfig,
 )
+from tests.conftest import SpanRecorder
 
 NOW = datetime(2026, 9, 19, tzinfo=UTC)
 
@@ -141,11 +142,25 @@ def _tool_call_batch(tool_call_id: str, name: str, arguments: dict[str, Any]) ->
     return ("updates", {"model": {"messages": [message]}})
 
 
+def _usage_batch(input_tokens: int, output_tokens: int) -> tuple[str, object]:
+    """One `updates` batch reporting what a model turn cost."""
+
+    message = SimpleNamespace(
+        tool_calls=None,
+        tool_call_id=None,
+        status=None,
+        content="",
+        usage_metadata={"input_tokens": input_tokens, "output_tokens": output_tokens},
+    )
+    return ("updates", {"model": {"messages": [message]}})
+
+
 def _runtime(
     monkeypatch: pytest.MonkeyPatch,
     *,
     batches: list[tuple[str, object]],
     max_tool_calls: int | None = None,
+    observability: object | None = None,
 ) -> DeepagentsRuntime:
     graph = _FakeGraph(batches)
     monkeypatch.setattr(
@@ -158,6 +173,7 @@ def _runtime(
         approvals=cast(Any, None),
         events=cast(Any, None),
         policy=PolicyEngine(default_policy_rules()),
+        observability=cast(Any, observability),
     )
 
 
@@ -228,3 +244,67 @@ async def test_a_run_within_the_limit_completes_normally(
 
     assert events[-1].type == "runtime.result"
     assert events[-1].payload["subtype"] == "success"
+
+
+@pytest.mark.asyncio
+async def test_a_run_opens_the_shared_model_observation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, span_recorder: SpanRecorder
+) -> None:
+    """A traced DeepAgents Run has to carry a generation, like every other runtime.
+
+    `langfuse.observation.type` is what makes the backend render one at all, and
+    it lives in `observability/model_span`; this pins that the runtime uses it
+    rather than growing a second, silently different idea of what a model call
+    reports. The numbers must also match the durable event, or the trace and the
+    Run record would disagree about what the Run cost.
+    """
+
+    runtime = _runtime(
+        monkeypatch,
+        batches=[_usage_batch(12, 5)],
+        observability=span_recorder.observability,
+    )
+
+    events = await _drain(runtime, _context(tmp_path))
+
+    attributes = span_recorder.attributes("harness.model.run")
+    assert attributes["langfuse.observation.type"] == "generation"
+    assert attributes["langfuse.observation.model.name"] == "gateway-model"
+    assert attributes["harness.model.route"] == "route-1"
+    assert attributes["gen_ai.usage.input_tokens"] == 12
+    assert attributes["gen_ai.usage.output_tokens"] == 5
+    # DeepAgents has no SDK permission mode, so none is claimed for it.
+    assert "harness.model.permission_mode" not in attributes
+
+    result = next(event for event in events if event.type == "runtime.result")
+    assert result.payload["usage"] == {"input_tokens": 12, "output_tokens": 5}
+    assert attributes["harness.model.turns"] == result.payload["num_turns"]
+
+
+@pytest.mark.asyncio
+async def test_the_observation_reports_the_answer_the_worker_reports(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, span_recorder: SpanRecorder
+) -> None:
+    """Its output has to be the Run's answer, not every delta the run produced.
+
+    The Worker treats the last completed message as the answer and derives the
+    trace-level output and the artifact paths from it, so an observation that
+    accumulated all deltas would show a different text than the trace it belongs
+    to.
+    """
+
+    text = SimpleNamespace(content="已完成", tool_calls=None, tool_call_id=None, status=None)
+    runtime = _runtime(
+        monkeypatch,
+        batches=[
+            ("messages", (text, {})),
+            _usage_batch(3, 2),
+        ],
+        observability=span_recorder.observability,
+    )
+
+    await _drain(runtime, _context(tmp_path))
+
+    attributes = span_recorder.attributes("harness.model.run")
+    assert attributes["langfuse.observation.output"] == "已完成"
+    assert attributes["langfuse.trace.output"] == "已完成"
