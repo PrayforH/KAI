@@ -56,6 +56,21 @@ describe("Automation manager", () => {
     expect(styles).toContain("@media (max-width: 620px)");
   });
 
+  it("jumps from a run record to its automation task", () => {
+    expect(component).toContain("openTaskFromRecord");
+    expect(component).toContain("recordTaskLink");
+    expect(component).toContain("taskCardFocused");
+    expect(component).toContain("scrollIntoView");
+    // A deleted task must not pretend to navigate.
+    expect(component).toContain("已删除，无法跳转");
+    expect(styles).toContain(".recordTaskLink");
+    expect(styles).toContain(".taskCardFocused");
+  });
+
+  it("names the module 自动化任务", () => {
+    expect(page).toContain('title: "自动化任务"');
+  });
+
   it("shows a next-run preview before saving", () => {
     expect(component).toContain("下次执行");
     expect(component).toContain("previewNextRun");

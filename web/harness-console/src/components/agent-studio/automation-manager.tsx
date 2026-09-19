@@ -281,6 +281,8 @@ export function AutomationManager() {
   const [recordStatus, setRecordStatus] = useState<"all" | ApiAutomationRunRecord["status"]>("all");
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
   const [expandedRecords, setExpandedRecords] = useState<Set<string>>(new Set());
+  const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
+  const taskRefs = useRef<Map<string, HTMLLIElement>>(new Map());
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showToast = useCallback((message: string) => {
@@ -400,6 +402,19 @@ export function AutomationManager() {
     }
   }
 
+  function openTaskFromRecord(record: ApiAutomationRunRecord) {
+    const exists = tasks.some((task) => task.taskId === record.taskId);
+    if (!exists) {
+      showToast(`任务「${record.taskName}」已删除，无法跳转`);
+      return;
+    }
+    setTab("tasks");
+    setFocusedTaskId(record.taskId);
+    window.setTimeout(() => {
+      taskRefs.current.get(record.taskId)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 60);
+  }
+
   async function refreshRecords() {
     await loadRecords();
     showToast("运行记录已刷新");
@@ -418,6 +433,12 @@ export function AutomationManager() {
   }, [records, recordQuery, recordStatus]);
 
   const nextRunPreview = previewNextRun(form);
+  useEffect(() => {
+    if (!focusedTaskId) return;
+    const timer = window.setTimeout(() => setFocusedTaskId(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [focusedTaskId]);
+
   const modelOptions = [{ id: "auto", label: "Auto" }, ...MODEL_ROUTES.map((route) => ({ id: route.id, label: route.label }))];
   const permissionLabels: Record<AutomationPermissionKind, string> = {
     full: "允许完全访问",
@@ -500,7 +521,20 @@ export function AutomationManager() {
           ) : (
             <ul className={styles.taskList}>
               {tasks.map((task) => (
-                <li key={task.taskId} className={styles.taskCard} data-status={task.status}>
+                <li
+                  key={task.taskId}
+                  ref={(node) => {
+                    if (node) taskRefs.current.set(task.taskId, node);
+                    else taskRefs.current.delete(task.taskId);
+                  }}
+                  className={
+                    focusedTaskId === task.taskId
+                      ? `${styles.taskCard} ${styles.taskCardFocused}`
+                      : styles.taskCard
+                  }
+                  data-status={task.status}
+                  data-focused={focusedTaskId === task.taskId || undefined}
+                >
                   <div className={styles.taskMain}>
                     <div className={styles.taskTitleRow}>
                       <strong>{task.name}</strong>
@@ -567,7 +601,14 @@ export function AutomationManager() {
                 <li key={record.recordId} className={styles.recordCard} data-status={record.status}>
                   <div className={styles.recordMain}>
                     <div className={styles.taskTitleRow}>
-                      <strong>{record.taskName}</strong>
+                      <button
+                        type="button"
+                        className={styles.recordTaskLink}
+                        title="跳转到该自动化任务"
+                        onClick={() => openTaskFromRecord(record)}
+                      >
+                        {record.taskName}
+                      </button>
                       <span className={styles.recordBadge} data-kind={record.status}>
                         {RECORD_STATUS_LABELS[record.status]}
                       </span>

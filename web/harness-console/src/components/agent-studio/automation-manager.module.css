@@ -234,6 +234,23 @@
   box-shadow: 0 6px 20px rgb(0 0 0 / 6%);
 }
 
+.taskCardFocused {
+  border-color: var(--auto-running);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--auto-running) 30%, transparent);
+}
+
+.taskCardFocused::after {
+  content: "已定位";
+  align-self: flex-start;
+  margin-left: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--auto-running) 16%, transparent);
+  color: var(--auto-running);
+  font-size: 11px;
+  font-weight: 650;
+}
+
 .taskCard[data-status="paused"] {
   opacity: 0.75;
 }
@@ -359,6 +376,24 @@
 .recordArtifact small {
   color: var(--auto-muted);
   font-weight: 500;
+}
+
+.recordTaskLink {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--auto-ink);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+  border-bottom: 1px dashed transparent;
+}
+
+.recordTaskLink:hover {
+  border-bottom-color: var(--auto-running);
+  color: var(--auto-running);
 }
 
 .recordError {
