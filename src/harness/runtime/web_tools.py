@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import json
+import os
 import re
 import socket
 import zlib
@@ -200,9 +201,13 @@ class PublicWebClient:
         self,
         api_key: Callable[[], Awaitable[str]] | None = None,
         provider: Literal["tavily", "minimax"] = "minimax",
+        proxy: str = "",
     ) -> None:
         self._api_key = api_key
         self._provider = provider
+        # Deployments whose containers have no direct egress route all public
+        # web traffic through this HTTP proxy (HARNESS_WEB_TOOLS_PROXY).
+        self._proxy = proxy or os.environ.get("HARNESS_WEB_TOOLS_PROXY", "").strip() or None
 
     async def fetch(self, url: str) -> dict[str, Any]:
         current = validate_public_url(url)
@@ -210,8 +215,12 @@ class PublicWebClient:
             async with asyncio.timeout(25):
                 for hop in range(6):
                     # New pool for each hop: no proxy env, cookies, cached DNS or credentials.
-                    async with httpcore.AsyncConnectionPool(
-                        network_backend=PublicNetworkBackend()
+                    async with (
+                        httpcore.AsyncConnectionPool(proxy=self._proxy)
+                        if self._proxy
+                        else httpcore.AsyncConnectionPool(
+                            network_backend=PublicNetworkBackend()
+                        )
                     ) as pool:
                         async with pool.stream(
                             "GET",
@@ -318,7 +327,12 @@ class PublicWebClient:
         try:
             async with (
                 asyncio.timeout(25),
-                httpx.AsyncClient(trust_env=False, follow_redirects=False, timeout=20) as client,
+                httpx.AsyncClient(
+                    trust_env=False,
+                    follow_redirects=False,
+                    timeout=20,
+                    **({"proxy": self._proxy} if self._proxy else {}),
+                ) as client,
             ):
                 async with client.stream(
                     "POST",
