@@ -32,7 +32,7 @@ describe("workspace navigation ordering", () => {
   });
 
   it("places 自动化 above the 技能/MCP entry in the canonical nav list", () => {
-    expect(navigation).toContain('{ id: "automation", href: "/studio/automation", label: "自动化" }');
+    expect(navigation).toContain('{ id: "automation", href: "/studio/automation", label: "自动化任务" }');
     expect(navigation.indexOf('id: "automation"')).toBeLessThan(
       navigation.indexOf('id: "capabilities"'),
     );

@@ -234,6 +234,11 @@
   box-shadow: 0 6px 20px rgb(0 0 0 / 6%);
 }
 
+.taskCardFocused {
+  border-color: var(--auto-running);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--auto-running) 22%, transparent);
+}
+
 .taskCard[data-status="paused"] {
   opacity: 0.75;
 }
@@ -359,6 +364,24 @@
 .recordArtifact small {
   color: var(--auto-muted);
   font-weight: 500;
+}
+
+.recordTaskLink {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--auto-ink);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+  border-bottom: 1px dashed transparent;
+}
+
+.recordTaskLink:hover {
+  border-bottom-color: var(--auto-running);
+  color: var(--auto-running);
 }
 
 .recordError {
