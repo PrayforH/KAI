@@ -27,6 +27,7 @@ from harness.studio.agent_builder import (
     AgentBuilderPatchRequest,
     CreateTaskDrivenDraftRequest,
     TaskDrivenDraftResult,
+    as_task_runtime_preference,
     build_agent_patch,
     configure_task_driven_draft,
     summarize_agent_display_name,
@@ -46,6 +47,7 @@ from harness.studio.builder_conversation import (
     partial_builder_reply,
 )
 from harness.studio.bundle_import import AgentBundleImportError, parse_agent_bundle
+from harness.studio.catalog import builtin_tools_for_runtime
 from harness.studio.catalog_service import CapabilityCatalogService
 from harness.studio.compiler import (
     AgentDraftCompiler,
@@ -519,7 +521,10 @@ class AgentStudioService:
             child,
             CreateTaskDrivenDraftRequest(
                 task=request.responsibility,
-                runtimePreference=parent.spec.runtime,
+                # The preference only orders the production runtimes, while the
+                # fork's runtime is re-applied from the parent just below, so a
+                # preview runtime narrows to `auto` instead of failing validation.
+                runtimePreference=as_task_runtime_preference(parent.spec.runtime),
             ),
             await self.capabilities(tenant_id, user_id),
             await self._compiler_for(tenant_id, user_id),
@@ -1040,6 +1045,23 @@ class AgentStudioService:
         ]
         context.pop("pythonTools", None)
         catalog_revision, catalog = await self._builder_catalog(tenant_id, user_id)
+        runtime_features = next(
+            (
+                set(item.capabilities)
+                for item in catalog.runtime_capabilities
+                if item.runtime == current.spec.runtime
+            ),
+            set(),
+        )
+        # Offer only tools this runtime can actually honour. A tool it cannot
+        # execute must not appear among the Builder's choices: the model would
+        # select it, the draft would save, and the failure would surface only at
+        # publish time as an error the operator has no way to act on from the
+        # conversation. Same declaration the compiler refuses on.
+        offerable_tools = builtin_tools_for_runtime(
+            catalog.builtin_tools,
+            runtime_features,
+        )
         prompt = json.dumps({
             "assemblyCatalog": {
                 "revision": catalog_revision,
@@ -1047,7 +1069,7 @@ class AgentStudioService:
                     "label": s.label, "summary": s.summary, "risk": s.risk_level}
                     for s in catalog.skills if s.enabled
                     and current.spec.runtime in s.compatible_runtimes],
-                "builtinTools": [item.model_dump() for item in catalog.builtin_tools],
+                "builtinTools": [item.model_dump() for item in offerable_tools],
                 "mcpServers": [{"reference": item.reference, "label": item.label,
                     "description": item.description, "category": item.category,
                     "tools": item.tools, "risk": item.risk,

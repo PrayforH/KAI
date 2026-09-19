@@ -409,6 +409,7 @@ class ModelConfigurationService:
             provider=("anthropic" if route.auth_scheme == "x-api-key" else "new-api"),
             credential=secret,
             auth_scheme=route.auth_scheme,
+            api_format=route.api_format,
             compatibility=ModelCompatibility.FULL,
             capabilities=frozenset(route.capabilities),
         )

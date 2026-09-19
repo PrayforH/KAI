@@ -29,9 +29,14 @@ RUN python -c 'import os, urllib.request; version=os.environ["CODEX_VERSION"]; r
     && /opt/codex/vendor/x86_64-unknown-linux-musl/bin/codex --version
 
 COPY pyproject.toml uv.lock README.md ./
+# The DeepAgents kernel is an optional extra rather than a base dependency, but
+# this image is both the API and the Worker, and the Worker is the process that
+# executes a DeepAgents Run. Install it here so `HARNESS_RUNTIME=multi` can
+# register every runtime in INSTALLED_AGENT_RUNTIMES.
 RUN uv export \
     --frozen \
     --no-dev \
+    --extra deepagents \
     --no-hashes \
     --no-emit-project \
     --output-file /tmp/requirements.txt \

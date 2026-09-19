@@ -1,7 +1,6 @@
 """Claude Agent SDK runtime adapter with explicit gateway routing."""
 
 import asyncio
-import json
 import logging
 import shutil
 from collections.abc import AsyncIterator, Callable, Mapping
@@ -48,6 +47,7 @@ from harness.knowledge.service import KnowledgeService
 from harness.knowledge.workload import RemoteKnowledgeMcpProvider
 from harness.memory_bank.service import MemoryBankService
 from harness.memory_bank.workload import RemoteMemoryMcpProvider
+from harness.observability.model_span import model_observation, model_run_facts
 from harness.observability.provider import Observability
 from harness.policy.models import ContextTrust
 from harness.runtime.artifact_tools import (
@@ -599,100 +599,38 @@ class ClaudeSdkRuntime:
         route: ModelRoute,
         prompt: str,
     ) -> AsyncIterator[object]:
-        manifest = self._snapshot.manifest
-        base_attributes: dict[str, str | bool | int | float] = {
-            "agent.name": manifest.metadata.name,
-            "agent.version": manifest.metadata.version,
-            "agent.content_hash": self._snapshot.content_hash,
-            "gen_ai.operation.name": "chat",
-            "gen_ai.provider.name": route.provider,
-            "gen_ai.request.model": route.model,
-            "langfuse.observation.type": "generation",
-            "langfuse.observation.model.name": route.model,
-            "langfuse.observation.metadata.provider": route.provider,
-            "langfuse.observation.metadata.route_id": route.route_id,
-            "langfuse.version": manifest.metadata.version,
-            "harness.model.route": route.route_id,
-            "harness.model.permission_mode": permission_mode_for_route(route),
-            "harness.policy.profile": manifest.spec.permissions.policy,
-            "harness.skill.count": len(self._snapshot.skill_snapshots),
-        }
-        if self._agent_version.package_hash is not None:
-            base_attributes["agent.package_hash"] = self._agent_version.package_hash
-        with self._span(
-            "harness.model.run",
+        # The observation's vocabulary lives in `observability/model_span`; what
+        # follows is only what this SDK reports, read out of its ResultMessage.
+        facts = model_run_facts(
+            self._snapshot,
             run_id=run_id,
-            attributes=base_attributes,
-        ):
-            if self._observability is not None:
-                self._observability.annotate_current_io(input_value=prompt)
+            route_id=route.route_id,
+            model=route.model,
+            provider=route.provider,
+            permission_mode=permission_mode_for_route(route),
+            package_hash=self._agent_version.package_hash,
+        )
+        with model_observation(self._observability, facts, input_value=prompt) as observation:
             async for message in messages:
-                if isinstance(message, ResultMessage) and self._observability is not None:
+                if isinstance(message, ResultMessage):
                     subtype = result_subtype(message)
-                    usage = result_usage(message)
-                    result_attributes: dict[str, str | bool | int | float] = {
-                        "harness.model.duration_ms": message.duration_ms,
-                        "harness.model.api_duration_ms": message.duration_api_ms,
-                        "harness.model.turns": message.num_turns,
-                        "harness.model.is_error": message.is_error,
-                    }
-                    if message.total_cost_usd is not None:
-                        result_attributes["harness.model.cost_usd"] = message.total_cost_usd
-                    if message.stop_reason is not None:
-                        result_attributes["harness.model.stop_reason"] = message.stop_reason
+                    observation.record_result(
+                        usage=result_usage(message),
+                        cost_usd=message.total_cost_usd,
+                        duration_ms=message.duration_ms,
+                        api_duration_ms=message.duration_api_ms,
+                        turns=message.num_turns,
+                        stop_reason=message.stop_reason,
+                        output=message.result,
+                        is_error=message.is_error,
+                        status_message=subtype if message.is_error else None,
+                    )
                     if message.api_error_status is not None:
-                        result_attributes["harness.model.api_error_status"] = (
-                            message.api_error_status
+                        observation.annotate(
+                            {"harness.model.api_error_status": message.api_error_status}
                         )
-                    for source, target in (
-                        ("input_tokens", "gen_ai.usage.input_tokens"),
-                        ("output_tokens", "gen_ai.usage.output_tokens"),
-                        (
-                            "cache_creation_input_tokens",
-                            "harness.usage.cache_creation_input_tokens",
-                        ),
-                        (
-                            "cache_read_input_tokens",
-                            "harness.usage.cache_read_input_tokens",
-                        ),
-                    ):
-                        if source in usage:
-                            result_attributes[target] = usage[source]
-                    usage_details = {
-                        target: usage[source]
-                        for source, target in (
-                            ("input_tokens", "input"),
-                            ("output_tokens", "output"),
-                            ("cache_creation_input_tokens", "cache_creation_input"),
-                            ("cache_read_input_tokens", "cache_read_input"),
-                        )
-                        if source in usage
-                    }
-                    if usage_details:
-                        result_attributes["langfuse.observation.usage_details"] = json.dumps(
-                            usage_details, separators=(",", ":")
-                        )
-                    if message.total_cost_usd is not None:
-                        result_attributes["langfuse.observation.cost_details"] = json.dumps(
-                            {"total": message.total_cost_usd},
-                            separators=(",", ":"),
-                        )
-                    result_attributes["langfuse.observation.level"] = (
-                        "ERROR" if message.is_error else "DEFAULT"
-                    )
-                    result_attributes["langfuse.observation.status_message"] = (
-                        subtype if message.is_error else "模型处理完成"
-                    )
-                    self._observability.annotate_current_span(result_attributes)
-                    self._observability.annotate_current_io(
-                        output_value=message.result,
-                    )
-                    self._observability.annotate_current_io(
-                        output_value=message.result,
-                        trace_level=True,
-                    )
                     if message.is_error:
-                        self._observability.mark_current_span_error(subtype)
+                        observation.mark_error(subtype)
                 yield message
                 if isinstance(message, ResultMessage) and message.is_error:
                     provider_result = message.result if isinstance(message.result, str) else ""

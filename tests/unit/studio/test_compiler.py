@@ -1155,6 +1155,34 @@ def test_skill_references_resolve_into_bundle_with_platform_provenance() -> None
     assert "skills/minimax-xlsx/SKILL.md" in packaged
 
 
+def test_a_deepagents_draft_resolves_platform_skill_references() -> None:
+    """A reviewed platform Skill is offered to every runtime it was measured on.
+
+    `compatibleRuntimes` is the compile-time gate: while it excluded DeepAgents,
+    a reference was silently dropped from the bundle by `resolve_skills` and
+    rejected outright by `validate`. Both are wrong for a Skill that has been run
+    on this runtime, and silence is the worse half -- the code view would show a
+    Skill the Run never gets.
+    """
+
+    compiler = AgentDraftCompiler(default_capability_catalog())
+    base = draft()
+    spec = base.spec.model_copy(
+        update={"runtime": "deepagents", "skill_references": ("minimax-docx",)}
+    )
+    candidate = base.model_copy(update={"spec": spec})
+
+    resolved = compiler.resolve_skills(candidate)
+    assert [skill.name for skill in resolved] == ["minimax-docx"]
+
+    validation = compiler.validate(candidate)
+    assert not any(
+        issue.code == "skill_reference_runtime_incompatible" for issue in validation.issues
+    )
+    assert validation.ready
+    assert "skills/minimax-docx" in yaml.safe_load(validation.manifest_yaml)["spec"]["skills"]
+
+
 def test_skill_reference_conflicts_disable_and_unknown_block_compilation() -> None:
     compiler_catalog = default_capability_catalog()
     disabled = compiler_catalog.skills[0]
@@ -1178,3 +1206,79 @@ def test_skill_reference_conflicts_disable_and_unknown_block_compilation() -> No
     assert {"skill_reference_disabled", "skill_reference_unknown"} <= codes
     assert not validation.ready
     assert compiler.resolve_skills(candidate) == ()
+
+
+def test_the_builder_offers_only_tools_the_runtime_can_run() -> None:
+    """What the Builder may choose from and what publishing accepts must agree.
+
+    The gap this closes was a draft that saved cleanly and then refused to
+    publish: the Builder's assembly catalog listed a tool the selected runtime
+    cannot execute, so the model selected it and the operator met the failure
+    with no way to act on it from the conversation.
+    """
+
+    from harness.studio.catalog import (
+        BUILTIN_TOOL_RUNTIME_FEATURES,
+        builtin_tools_for_runtime,
+        default_capability_catalog,
+    )
+
+    catalog = default_capability_catalog()
+    features = {
+        item.runtime: set(item.capabilities) for item in catalog.runtime_capabilities
+    }
+
+    def offered(runtime: str) -> set[str]:
+        return {
+            item.name
+            for item in builtin_tools_for_runtime(
+                catalog.builtin_tools, features[runtime]
+            )
+        }
+
+    assert {"WebSearch", "WebFetch"} <= offered("claude-agent-sdk")
+    for runtime in ("codex-app-server", "deepagents"):
+        assert not {"WebSearch", "WebFetch"} & offered(runtime)
+    # `Task` is the platform's Sub Agent builtin, and only a runtime that
+    # installs a child may offer it.
+    assert "Task" in offered("claude-agent-sdk")
+    assert "Task" in offered("codex-app-server")
+    assert "Task" not in offered("deepagents")
+    # Every other builtin is platform-wide.
+    assert {"Read", "Write", "Bash"} <= offered("deepagents")
+    assert set(BUILTIN_TOOL_RUNTIME_FEATURES) <= {
+        item.name for item in catalog.builtin_tools
+    }
+
+
+def test_an_unavailable_model_names_the_ones_the_route_serves() -> None:
+    """The operator cannot repair a stale model id without knowing the current one.
+
+    A saved draft outlives a route edit, so this fires mostly on a draft whose
+    route has since corrected its model id -- which is often not the route's own
+    name, and therefore not guessable from the error alone.
+    """
+
+    compiler = AgentDraftCompiler(default_capability_catalog())
+    base = draft()
+    route = next(
+        item
+        for item in default_capability_catalog().model_routes
+        if item.models
+    )
+    spec = base.spec.model_copy(
+        update={
+            "model": base.spec.model.model_copy(
+                update={"route_id": route.route_id, "model": "not-a-real-model"}
+            )
+        }
+    )
+    candidate = base.model_copy(update={"spec": spec})
+
+    issues = {
+        issue.code: issue.message
+        for issue in compiler.validate(candidate).issues
+        if issue.code == "model_not_available"
+    }
+    assert issues, "a model outside the route's list must be reported"
+    assert route.models[0] in issues["model_not_available"]

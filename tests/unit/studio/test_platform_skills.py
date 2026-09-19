@@ -162,3 +162,20 @@ def test_catalog_listing_file_sizes_cover_text_and_binary_payloads() -> None:
     # Two padding characters mean a 4-byte payload, not the 6 raw base64/4*3 gives.
     assert _listing_file_size(DraftSkillFile(path="bin", contentBase64="YWJjZA==")) == 4
     assert _listing_file_size(DraftSkillFile(path="bin", contentBase64="YWJjZGVm")) == 6
+
+
+def test_vendored_prerequisites_name_real_packages() -> None:
+    """A typo in the map would silently drop the warning it exists to give.
+
+    A prerequisite the catalog fails to mention produces a Run that spends its
+    whole budget installing the missing dependency, with no hint in the console
+    that the Skill needed it.
+    """
+
+    from harness.studio.platform_skills import _VENDORED_PREREQUISITES
+
+    catalog = default_platform_skill_catalog()
+    known = {package.package_id for package in catalog.packages}
+    assert set(_VENDORED_PREREQUISITES) <= known
+    for package_id, note in _VENDORED_PREREQUISITES.items():
+        assert note in platform_skill_package(package_id, 1).findings

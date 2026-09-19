@@ -243,9 +243,15 @@ async def test_capabilities_are_the_runtime_compatibility_source_of_truth() -> N
 
     assert response.status_code == 200
     runtimes = {item["runtime"]: item for item in response.json()["runtimeCapabilities"]}
-    assert {"claude-agent-sdk", "codex-app-server"} == set(runtimes)
+    assert {"claude-agent-sdk", "codex-app-server", "deepagents"} == set(runtimes)
     assert {"mcp_http", "subagents"} <= set(runtimes["codex-app-server"]["capabilities"])
     assert "openai_compatible" in runtimes["codex-app-server"]["modelApiFormats"]
+    # DeepAgents speaks both text protocols but installs no Sub Agent.
+    assert {"anthropic_compatible", "openai_compatible"} == set(
+        runtimes["deepagents"]["modelApiFormats"]
+    )
+    assert "subagents" not in runtimes["deepagents"]["capabilities"]
+    assert "mcp_http" in runtimes["deepagents"]["capabilities"]
 
 
 @pytest.mark.asyncio

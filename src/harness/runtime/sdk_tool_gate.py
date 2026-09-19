@@ -39,8 +39,10 @@ from harness.policy.rules import PolicyEngine
 from harness.quota.models import QuotaResource
 from harness.quota.repositories import QuotaExceededError
 from harness.quota.service import QuotaService
+from harness.runtime.approval_review import approval_argument_summary, approval_risk
 from harness.runtime.audit_redaction import redact_text, redact_tool_arguments
 from harness.runtime.base import RuntimeContext
+from harness.runtime.file_capabilities import RunFileCapabilities
 from harness.runtime.input_redaction import (
     INTERNAL_AGENT_ASSET_MARKER,
     STAGED_INPUT_READ_MARKER,
@@ -63,47 +65,11 @@ class ToolGate(Protocol):
     ) -> dict[HookEvent, list[HookMatcher]]: ...
 
 
-_APPROVAL_ARGUMENT_KEYS = (
-    "command",
-    "file_path",
-    "path",
-    "query",
-    "url",
-    "urls",
-    "description",
-    "subagent_type",
-    "pattern",
-    "glob",
-)
-
 _TRUST_PRECEDENCE = {
     ContextTrust.SAFE: 0,
     ContextTrust.SENSITIVE: 1,
     ContextTrust.UNTRUSTED: 2,
 }
-
-
-def _approval_argument_summary(arguments: dict[str, Any]) -> dict[str, Any]:
-    summary: dict[str, Any] = {}
-    for key in _APPROVAL_ARGUMENT_KEYS:
-        value = arguments.get(key)
-        if isinstance(value, str):
-            summary[key] = redact_text(value)
-        elif isinstance(value, list):
-            values = cast(list[object], value)
-            if all(isinstance(item, str) for item in values):
-                summary[key] = [
-                    redact_text(item, limit=200) for item in values[:5] if isinstance(item, str)
-                ]
-    return summary
-
-
-def _approval_risk(tool_name: str) -> str:
-    if tool_name == "Bash":
-        return "high"
-    if tool_name in {"Write", "Edit"}:
-        return "medium"
-    return "low"
 
 
 def _hook_output(
@@ -126,52 +92,8 @@ def _hook_output(
     )
 
 
-class _RunFileCapabilities:
-    """Track successful, run-created files without trusting model claims."""
-
-    def __init__(self, context: RuntimeContext) -> None:
-        self._workspace = context.workspace.resolve()
-        self._remote_workspace = (
-            PurePosixPath(context.remote_workspace)
-            if context.remote_workspace is not None
-            else None
-        )
-        self._initial_exists: dict[Path, bool] = {}
-        self._generated: set[Path] = set()
-        self._pending_writes: dict[str, Path] = {}
-        self._protected: set[Path] = set()
-        for value in (*context.input_files, *context.processed_input_paths):
-            target = self._normalize(value)
-            if target is not None:
-                self._protected.add(target)
-
-    def _normalize(self, value: str) -> Path | None:
-        if not value.strip():
-            return None
-        pure = PurePosixPath(value)
-        if pure.is_absolute() and len(pure.parts) >= 2 and pure.parts[1] == "workspace":
-            candidate = self._workspace.joinpath(*pure.parts[2:])
-        elif (
-            pure.is_absolute()
-            and self._remote_workspace is not None
-            and pure.is_relative_to(self._remote_workspace)
-        ):
-            candidate = self._workspace.joinpath(*pure.relative_to(self._remote_workspace).parts)
-        else:
-            candidate = Path(value)
-            if not candidate.is_absolute():
-                candidate = self._workspace / candidate
-        try:
-            resolved = candidate.resolve(strict=False)
-        except (OSError, RuntimeError):
-            return None
-        if resolved == self._workspace or not resolved.is_relative_to(self._workspace):
-            return None
-        return resolved
-
-    def target(self, arguments: dict[str, Any]) -> Path | None:
-        value = arguments.get("file_path", arguments.get("path"))
-        return self._normalize(value) if isinstance(value, str) else None
+class _ClaudeRunFileCapabilities(RunFileCapabilities):
+    """Workspace file capabilities plus Claude's stale Skill reference repair."""
 
     def normalize_skill_read(
         self,
@@ -247,46 +169,14 @@ class _RunFileCapabilities:
         updated["file_path"] = matches[0].relative_to(self._workspace).as_posix()
         return updated
 
-    def is_generated(self, target: Path) -> bool:
-        return target in self._generated
-
-    def generated_python_files(self) -> frozenset[str]:
-        values: set[str] = set()
-        for target in self._generated:
-            if target.suffix.lower() != ".py":
-                continue
-            relative = target.relative_to(self._workspace).as_posix()
-            values.update(
-                {
-                    relative,
-                    f"./{relative}",
-                    target.as_posix(),
-                    f"/workspace/{relative}",
-                }
-            )
-            if self._remote_workspace is not None:
-                values.add((self._remote_workspace / relative).as_posix())
-        return frozenset(values)
-
-    def observe(self, target: Path) -> None:
-        self._initial_exists.setdefault(target, target.exists())
-
-    def note_authorized_write(self, tool_call_id: str, target: Path) -> None:
-        existed = self._initial_exists[target]
-        relative = target.relative_to(self._workspace)
-        protected = target in self._protected or (
-            bool(relative.parts) and relative.parts[0] == "inputs"
-        )
-        if not existed and not protected:
-            self._pending_writes[tool_call_id] = target
-
     def note_success(self, hook_input: PostToolUseHookInput) -> None:
-        target = self._pending_writes.pop(hook_input["tool_use_id"], None)
-        if canonical_tool_name(hook_input["tool_name"]) == "Write" and target is not None:
-            self._generated.add(target)
+        self.note_write_succeeded(
+            hook_input["tool_use_id"],
+            canonical_tool_name(hook_input["tool_name"]),
+        )
 
     def note_failure(self, hook_input: PostToolUseFailureHookInput) -> None:
-        self._pending_writes.pop(hook_input["tool_use_id"], None)
+        self.note_write_failed(hook_input["tool_use_id"])
 
 
 class SdkToolGate:
@@ -347,7 +237,7 @@ class SdkToolGate:
                     for name, child_policy_id in subagent_policy_ids.items()
                 }
         implicit_deny = PolicyEngine([])
-        file_capabilities = _RunFileCapabilities(context)
+        file_capabilities = _ClaudeRunFileCapabilities(context)
         tool_traces: dict[str, tuple[int, str, dict[str, Any], str]] = {}
         current_context_trust: ContextTrust | None = None
         pending_result_trust: dict[str, tuple[str, ContextTrust, str]] = {}
@@ -654,7 +544,7 @@ class SdkToolGate:
         *,
         policy: PolicyEngine,
         policy_id: str,
-        file_capabilities: _RunFileCapabilities,
+        file_capabilities: _ClaudeRunFileCapabilities,
         allowed_subagent_aliases: frozenset[str] = frozenset(),
         declared_tools: frozenset[str] = frozenset(),
         context_trust: ContextTrust = ContextTrust.SAFE,
@@ -809,11 +699,11 @@ class SdkToolGate:
                 message_id=context.assistant_message_id,
                 inline=True,
                 tool_name=tool_name,
-                argument_summary=_approval_argument_summary(arguments),
+                argument_summary=approval_argument_summary(arguments),
                 sandbox_provider=context.sandbox_provider,
                 sandbox_isolation=context.sandbox_isolation.value,
                 policy_rule=result.rule_name,
-                risk=_approval_risk(tool_name),
+                risk=approval_risk(tool_name),
             )
             try:
                 decision = await self._approvals.wait_for_decision(approval.approval_id)

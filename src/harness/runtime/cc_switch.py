@@ -14,6 +14,15 @@ class CcSwitchConfigError(ValueError):
 
 
 class CcSwitchClaudeConfig(BaseModel):
+    """One resolved model route, ready to hand to a runtime.
+
+    ``provider`` is the control plane's routing identity and ``auth_scheme`` is
+    how the credential travels; neither says which wire protocol the route
+    speaks. ``api_format`` does, and it is the only field a runtime that speaks
+    more than one protocol can dispatch on, so it is carried rather than
+    re-derived from the catalog.
+    """
+
     model_config = ConfigDict(frozen=True)
 
     route_id: str | None = None
@@ -22,6 +31,12 @@ class CcSwitchClaudeConfig(BaseModel):
     provider: Literal["new-api", "anthropic"]
     credential: SecretStr
     auth_scheme: Literal["bearer", "x-api-key"] | None = None
+    api_format: Literal[
+        "anthropic_compatible",
+        "openai_compatible",
+        "openai_images",
+        "openai_videos",
+    ] | None = None
     compatibility: ModelCompatibility = ModelCompatibility.FULL
     capabilities: frozenset[str] = frozenset({"streaming", "tool_use"})
 

@@ -58,6 +58,12 @@ jobs:
       - run: uv sync --frozen --group dev
         env:
           UV_DEFAULT_INDEX: https://pypi.tuna.tsinghua.edu.cn/simple
+      - name: Verify DeepAgents with its optional runtime installed
+        run: |
+          uv run --frozen --extra deepagents pytest -q \
+            tests/unit/runtime/test_deepagents_*.py \
+            tests/unit/runtime/test_registry_deepagents_runtime.py \
+            tests/integration/runtime/test_deepagents_graph.py
       - name: Start MinIO test service
         run: |
           docker run -d --name harness-test-minio \

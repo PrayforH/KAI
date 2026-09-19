@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-AgentRuntimeType = Literal["claude-agent-sdk", "codex-app-server"]
+AgentRuntimeType = Literal["claude-agent-sdk", "codex-app-server", "deepagents"]
 
 
 class FrozenModel(BaseModel):
