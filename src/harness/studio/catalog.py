@@ -1,5 +1,7 @@
 """Reviewed capabilities that Agent drafts may reference by logical ID."""
 
+from collections.abc import Container, Mapping, Sequence
+
 from harness.studio.models import (
     AgentTemplate,
     BuiltinToolCapability,
@@ -45,6 +47,38 @@ def _platform_skill_capabilities() -> tuple[SkillCapability, ...]:
             riskLevel=package.risk_level,
         )
         for package in default_platform_skill_catalog().packages
+    )
+
+
+# Builtin tools that need a runtime feature before a runtime can honour them. A
+# runtime whose capability list lacks the feature cannot execute the tool, so the
+# Builder must not offer it and the compiler must refuse it. Both read this map,
+# so "which runtimes support this tool" is decided once -- by the runtime
+# capability list -- instead of by the runtime's name spelled out at each site.
+# Every builtin absent from this map is platform-wide: the platform executes it
+# the same way for every runtime.
+BUILTIN_TOOL_RUNTIME_FEATURES: Mapping[str, str] = {
+    "Task": "subagents",
+    "WebSearch": "web",
+    "WebFetch": "web",
+}
+
+
+def builtin_tools_for_runtime(
+    tools: Sequence[BuiltinToolCapability],
+    runtime_capabilities: Container[str],
+) -> tuple[BuiltinToolCapability, ...]:
+    """The builtin tools a runtime can actually execute.
+
+    The same predicate the compiler refuses on, so what the Builder offers and
+    what publishing accepts cannot disagree.
+    """
+
+    return tuple(
+        item
+        for item in tools
+        if (feature := BUILTIN_TOOL_RUNTIME_FEATURES.get(item.name)) is None
+        or feature in runtime_capabilities
     )
 
 
@@ -390,6 +424,11 @@ def default_capability_catalog() -> CapabilityCatalog:
                     "knowledge",
                     "subagents",
                     "tool_search",
+                    # The platform's built-in internet tools. Naming the runtime
+                    # feature rather than special-casing a runtime id is what
+                    # lets the compiler, the Builder's assembly catalog and the
+                    # console all read one declaration instead of three copies.
+                    "web",
                     "session_resume",
                     "approvals",
                     "artifacts",
@@ -413,6 +452,7 @@ def default_capability_catalog() -> CapabilityCatalog:
                     "Studio Python tools are not connected",
                     "Knowledge references are not connected",
                     "On-demand tool search is not connected",
+                    "Platform web tools are not connected; use an MCP server instead",
                     "Only streamable HTTP MCP registrations are supported",
                 ),
             ),
@@ -435,6 +475,7 @@ def default_capability_catalog() -> CapabilityCatalog:
                     "Studio Sub Agents are not connected",
                     "Knowledge references are not connected",
                     "On-demand tool search is not connected",
+                    "Platform web tools are not connected; use an MCP server instead",
                     "Only streamable HTTP MCP registrations are supported",
                     "Platform memory bank is not connected",
                     "File-based AGENTS.md memory is never enabled",

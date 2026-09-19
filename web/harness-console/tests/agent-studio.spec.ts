@@ -72,13 +72,39 @@ describe("Agent Studio effective contract", () => {
     expect(manual.version).toBe("2.0.0");
   });
 
-  it("offers DeepSeek V4 models as distinct executable routes", () => {
-    const flash = MODEL_ROUTES.find((item) => item.id === "deepseek-v4-flash");
-    const pro = MODEL_ROUTES.find((item) => item.id === "deepseek-v4-pro");
-
-    expect(flash?.models).toEqual(["deepseek-v4-flash"]);
-    expect(pro?.models).toEqual(["deepseek-v4-pro"]);
+  it("does not invent the models a route serves", () => {
+    // The deployment catalog owns which models a route exposes. This fallback is
+    // display-only, and pinning model ids here is what let it disagree with the
+    // server: it claimed `deepseek-v4-flash` served a model of that name after
+    // the route had already moved to `deepseek-flash`.
+    expect(MODEL_ROUTES.every((item) => item.models.length === 0)).toBe(true);
     expect(MODEL_ROUTES.some((item) => item.id === "anthropic-official")).toBe(false);
+  });
+
+  it("defers the model-membership verdict to a route that publishes its models", () => {
+    const unknownRoute = evaluateStudioDraft({
+      ...DEFAULT_STUDIO_DRAFT,
+      modelRoute: "deepseek-v4-flash",
+      model: "anything-at-all",
+    });
+    const knownRoute = evaluateStudioDraft(
+      { ...DEFAULT_STUDIO_DRAFT, modelRoute: "catalogued", model: "not-listed" },
+      {
+        routes: [
+          {
+            id: "catalogued",
+            label: "Catalogued",
+            provider: "deepseek",
+            models: ["listed"],
+            capabilities: ["streaming", "tool_use"],
+            apiFormat: "anthropic_compatible",
+          },
+        ],
+      },
+    );
+
+    expect(unknownRoute.issues.join()).not.toContain("所选模型不属于当前路由");
+    expect(knownRoute.issues.join()).toContain("所选模型不属于当前路由");
   });
 
   it("uses a neutral general Lead instead of a business Agent template", () => {

@@ -15,6 +15,7 @@ import {
   REQUIRED_PROMPT_HEADINGS,
   STUDIO_STAGES,
   applyStudioDraftUpdate,
+  builtinToolAvailable,
   evaluateStudioDraft,
   mcpOptionsForDraft,
   stageForSection,
@@ -3139,7 +3140,7 @@ export function AgentStudioWorkbench() {
                     {options.tools.filter((tool) => ["WebSearch", "WebFetch"].includes(tool.id)).map((tool) => (
                       <label key={tool.id} data-enabled={draft.builtinTools.includes(tool.id)}>
                         <input type="checkbox" aria-label={`${tool.id} · ${tool.label}`} checked={draft.builtinTools.includes(tool.id)}
-                          disabled={!canEdit || draft.runtime !== "claude-agent-sdk"}
+                          disabled={!canEdit || !builtinToolAvailable(tool.id, activeRuntimeCapability?.capabilities)}
                           onChange={(event) => updateDraft({builtinTools: event.target.checked
                             ? Array.from(new Set([...draft.builtinTools, tool.id]))
                             : draft.builtinTools.filter((name) => name !== tool.id)})} />
@@ -3410,8 +3411,18 @@ export function AgentStudioWorkbench() {
                               )
                             : runtime !== "codex-app-server"
                           : false;
+                        // A tool the new runtime cannot execute would stay checked
+                        // and block publish with an error the operator has no way
+                        // to act on from this panel, so drop it as the runtime
+                        // changes rather than leaving a disabled tick behind.
+                        const keptTools = draft.builtinTools.filter((tool) =>
+                          builtinToolAvailable(tool, targetCapability?.capabilities),
+                        );
                         updateDraft({
                           runtime,
+                          ...(keptTools.length === draft.builtinTools.length
+                            ? {}
+                            : { builtinTools: keptTools }),
                           ...(currentRouteCompatible || !compatibleRoute
                             ? {}
                             : {

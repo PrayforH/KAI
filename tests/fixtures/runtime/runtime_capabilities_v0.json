@@ -12,6 +12,7 @@
       "knowledge",
       "subagents",
       "tool_search",
+      "web",
       "session_resume",
       "approvals",
       "artifacts"
@@ -42,6 +43,7 @@
       "Studio Python tools are not connected",
       "Knowledge references are not connected",
       "On-demand tool search is not connected",
+      "Platform web tools are not connected; use an MCP server instead",
       "Only streamable HTTP MCP registrations are supported"
     ]
   },
@@ -67,6 +69,7 @@
       "Studio Sub Agents are not connected",
       "Knowledge references are not connected",
       "On-demand tool search is not connected",
+      "Platform web tools are not connected; use an MCP server instead",
       "Only streamable HTTP MCP registrations are supported",
       "Platform memory bank is not connected",
       "File-based AGENTS.md memory is never enabled"
