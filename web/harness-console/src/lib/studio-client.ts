@@ -2696,6 +2696,7 @@ export interface ApiAutomationRunRecord {
   userId: string;
   trigger: AutomationRecordTriggerKind;
   status: AutomationRecordStatusKind;
+  threadId?: string;
   sessionId: string;
   runId: string;
   scheduledAt?: string | null;

@@ -135,6 +135,9 @@ class AutomationRunRecord(StudioModel):
     user_id: str = Field(alias="userId", min_length=1)
     trigger: AutomationRecordTrigger
     status: AutomationRecordStatus = AutomationRecordStatus.RUNNING
+    # The console task thread this execution belongs to, so a record can open
+    # the conversation that shows the run.
+    thread_id: str = Field(default="", alias="threadId", max_length=256)
     session_id: str = Field(alias="sessionId")
     run_id: str = Field(alias="runId")
     scheduled_at: datetime | None = Field(default=None, alias="scheduledAt")

@@ -56,6 +56,14 @@ describe("Automation manager", () => {
     expect(styles).toContain("@media (max-width: 620px)");
   });
 
+  it("opens the run's conversation and can still locate its task", () => {
+    expect(component).toContain("openRecordConversation");
+    expect(component).toContain("/?thread=");
+    expect(component).toContain("打开这次执行所在的会话");
+    expect(component).toContain("定位任务");
+    expect(styles).toContain(".recordTaskAction");
+  });
+
   it("jumps from a run record to its automation task", () => {
     expect(component).toContain("openTaskFromRecord");
     expect(component).toContain("recordTaskLink");

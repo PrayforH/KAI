@@ -34,6 +34,12 @@ from harness.core.ports import AgentRegistry
 logger = logging.getLogger(__name__)
 
 
+def thread_id_for_task(task_id: str) -> str:
+    """The console thread that carries one automation task's conversations."""
+
+    return f"automation_{task_id}"
+
+
 def _default_id(prefix: str) -> str:
     return f"{prefix}_{secrets.token_hex(16)}"
 
@@ -316,6 +322,7 @@ class AutomationService:
                 userId=task.user_id,
                 trigger=trigger,
                 status=AutomationRecordStatus.FAILED,
+                threadId=thread_id_for_task(task.task_id),
                 sessionId="",
                 runId="",
                 scheduledAt=scheduled_at,
@@ -382,6 +389,12 @@ class AutomationService:
         stored = await self._records.list_for_user(tenant_id, user_id, limit=limit)
         enriched: list[AutomationRunRecord] = []
         for record in stored:
+            if not record.thread_id:
+                # Records written before the thread link existed still resolve it
+                # from the convention, so old history stays navigable.
+                record = record.model_copy(
+                    update={"thread_id": thread_id_for_task(record.task_id)}
+                )
             enriched.append(await self._with_live_status(tenant_id, record))
         return enriched
 
@@ -392,7 +405,7 @@ class AutomationService:
 
         if self._bindings is None:
             return
-        thread_id = f"automation_{task.task_id}"
+        thread_id = thread_id_for_task(task.task_id)
         try:
             binding = await self._bindings.get_by_thread(
                 task.tenant_id, task.user_id, thread_id
@@ -517,6 +530,7 @@ class AutomationService:
             userId=task.user_id,
             trigger=trigger,
             status=AutomationRecordStatus.RUNNING,
+            threadId=thread_id_for_task(task.task_id),
             sessionId="",
             runId="",
             scheduledAt=scheduled_at,
