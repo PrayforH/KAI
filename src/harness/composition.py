@@ -984,6 +984,8 @@ def build_production_container(
         agent_name=settings.automation_agent_name,
         registry=registry,
         agent_version=settings.automation_agent_version,
+        bindings=binding_repository,
+        events=observed_event_repository,
         clock=clock,
         id_generator=ids,
     )
