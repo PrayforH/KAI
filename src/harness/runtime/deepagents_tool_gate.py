@@ -60,6 +60,7 @@ from harness.quota.service import QuotaService
 from harness.runtime.approval_review import approval_argument_summary, approval_risk
 from harness.runtime.audit_redaction import redact_text, redact_tool_arguments
 from harness.runtime.base import RuntimeContext
+from harness.runtime.deepagents_paths import workspace_relative
 from harness.runtime.deepagents_plan import FILESYSTEM_TOOL_TO_BUILTIN
 from harness.runtime.file_capabilities import RunFileCapabilities
 from harness.runtime.input_redaction import (
@@ -135,6 +136,18 @@ class DeepagentsToolGate(AgentMiddleware):
         # `ToolCall.args` is a required mapping in the middleware contract, so read
         # it directly rather than re-validating a shape the caller already promised.
         arguments: dict[str, Any] = dict(tool_call.get("args") or {})
+        invalid_path = False
+        if raw_name in FILESYSTEM_TOOL_TO_BUILTIN:
+            for key in ("file_path", "path"):
+                value = arguments.get(key)
+                if isinstance(value, str):
+                    try:
+                        arguments[key] = workspace_relative(
+                            value, root=context.remote_workspace or str(context.workspace)
+                        )
+                    except ValueError:
+                        invalid_path = True
+            request = request.override(tool_call={**tool_call, "args": arguments})
         context_trust = await self._context_trust_high_watermark()
         started_at_ns = time.time_ns()
 
@@ -171,6 +184,12 @@ class DeepagentsToolGate(AgentMiddleware):
                 tool_name, cast(dict[str, Any], audit_arguments)
             )
         await self._append("tool.request", request_payload)
+
+        if invalid_path:
+            kind = "write" if tool_name in {"Write", "Edit"} else "file"
+            reason = f"{kind} path must stay within the run workspace"
+            await self._deny(tool_call_id, reason)
+            return self._denied(tool_call_id, raw_name, reason)
 
         write_target = None
         if tool_name in {"Write", "Edit"}:

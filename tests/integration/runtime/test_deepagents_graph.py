@@ -1,5 +1,8 @@
 """Exercise actual DeepAgents graphs; only model responses and MCP discovery are faked."""
 
+# Graph integration tests intentionally inspect middleware and fixture internals.
+# pyright: reportPrivateUsage=false
+
 from __future__ import annotations
 
 import asyncio
@@ -61,7 +64,10 @@ async def test_discovered_mcp_tool_executes_through_the_policy_gate(
             discoveries.append(server_name)
             return [discovered.model_copy(update={"name": "lookup"})]
 
-    monkeypatch.setattr(_McpToolsMiddleware, "_client", lambda self: Client())
+    def client_factory(self: Any) -> Client:
+        return Client()
+
+    monkeypatch.setattr(_McpToolsMiddleware, "_client", client_factory)
     rules = (
         [PolicyRule(name="blocked-mcp", tool=name, decision=PolicyDecision.DENY)]
         if (explicit_deny)
@@ -105,7 +111,7 @@ async def test_discovered_mcp_tool_executes_through_the_policy_gate(
         ),
     )
 
-    result = await graph.ainvoke({"messages": [{"role": "user", "content": "lookup"}]})
+    result = await cast(Any, graph).ainvoke({"messages": [{"role": "user", "content": "lookup"}]})
 
     messages = [m for m in result["messages"] if isinstance(m, ToolMessage)]
     assert len(messages) == 1
@@ -203,7 +209,9 @@ async def test_read_only_graph_reads_but_denies_writes_before_sandbox_execution(
         ),
     )
 
-    result = await graph.ainvoke({"messages": [{"role": "user", "content": "read then write"}]})
+    result = await cast(Any, graph).ainvoke(
+        {"messages": [{"role": "user", "content": "read then write"}]}
+    )
 
     messages = [m for m in result["messages"] if isinstance(m, ToolMessage)]
     assert len(messages) == 2

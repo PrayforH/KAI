@@ -413,3 +413,35 @@ async def test_the_request_event_is_redacted_for_the_durable_stream(tmp_path: Pa
 
     request = (await events.list_after("tenant-a", "run-deepagents", 0))[0]
     assert "sk-live-0123456789abcdef" not in str(request.payload)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "path", ["outputs/review.txt", "/outputs/review.txt", "/workspace/outputs/review.txt"]
+)
+async def test_virtual_paths_are_authorized_and_executed_as_the_same_workspace_file(
+    tmp_path: Path,
+    path: str,
+) -> None:
+    gate, _, _ = await _arrange(
+        tmp_path,
+        profiles=False,
+        policy_rules=[
+            PolicyRule(
+                name="output-only",
+                tool="Write",
+                path_glob="outputs/*",
+                decision=PolicyDecision.ALLOW,
+            ),
+        ],
+    )
+    received: list[str] = []
+
+    async def handler(request: ToolCallRequest) -> ToolMessage | Command[Any]:
+        received.append(request.tool_call["args"]["file_path"])
+        return await _echo(request)
+
+    result = await _invoke(gate, name="write_file", arguments={"file_path": path}, handler=handler)
+
+    assert not _denied(result)
+    assert received == ["outputs/review.txt"]
