@@ -433,7 +433,7 @@ export function TaskSidebar({
           <div className="task-sidebar-mode">
             <WorkspaceNavigation
               active={activeNav}
-              visible={["knowledge", "agents", "capabilities"]}
+              visible={["knowledge", "agents", "automation", "capabilities"]}
               labelOverrides={{ capabilities: "插件" }}
             />
           </div>

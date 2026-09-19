@@ -76,7 +76,7 @@ RUN python -c 'import os, urllib.request; v=os.environ["NODE_VERSION"]; r=os.env
     && rm -f /tmp/node.tar.xz \
     && npm install --global --registry="${NPM_REGISTRY}" docx pptxgenjs \
     && npm cache clean --force \
-    && node -e "require('docx'); require('pptxgenjs'); console.log('office npm libs ok')"
+    && NODE_PATH=/usr/local/lib/node_modules node -e "require('docx'); require('pptxgenjs'); console.log('office npm libs ok')"
 ENV NODE_PATH=/usr/local/lib/node_modules
 RUN groupadd --system --gid 10001 harness \
     && useradd --system --uid 10001 --gid harness --home-dir /app harness \

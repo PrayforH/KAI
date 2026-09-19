@@ -339,6 +339,9 @@ async def serve(settings: Settings) -> None:
         async def trigger_maintenance() -> None:
             await container.triggers.dispatch_due()
 
+        async def automation_maintenance() -> None:
+            await container.automations.dispatch_due()
+
         control_tasks = [
             asyncio.create_task(
                 maintenance_loop(
@@ -378,6 +381,14 @@ async def serve(settings: Settings) -> None:
                     stop=stop,
                     poll_interval=1.0,
                     label="triggers",
+                )
+            ),
+            asyncio.create_task(
+                maintenance_loop(
+                    automation_maintenance,
+                    stop=stop,
+                    poll_interval=1.0,
+                    label="automations",
                 )
             ),
         ]

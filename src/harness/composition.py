@@ -32,6 +32,11 @@ from harness.auth.api_access import ApiAccessService
 from harness.auth.audit import AuditService
 from harness.auth.repositories import PostgresAuditRepository, PostgresAuthRepository
 from harness.auth.service import AuthService, OAuthProviderConfig
+from harness.automations.pg_repositories import (
+    PostgresAutomationRecordRepository,
+    PostgresAutomationTaskRepository,
+)
+from harness.automations.service import AutomationService
 from harness.config import Settings
 from harness.context.checkpoint import ContextCheckpointService
 from harness.context.service import ContextService
@@ -643,6 +648,8 @@ def build_production_container(
     environment_repository = PostgresEnvironmentRepository(sessions)
     deployment_repository = PostgresDeploymentRepository(sessions)
     trigger_repository = PostgresAgentTriggerRepository(sessions)
+    automation_task_repository = PostgresAutomationTaskRepository(sessions)
+    automation_record_repository = PostgresAutomationRecordRepository(sessions)
     quality_repository = PostgresQualityRepository(sessions)
     capability_catalog_repository = PostgresCapabilityCatalogRepository(sessions)
     mcp_credential_repository = PostgresMcpCredentialRepository(sessions)
@@ -966,6 +973,17 @@ def build_production_container(
         runs=run_service,
         registry=registry,
         audit=audit,
+        clock=clock,
+        id_generator=ids,
+    )
+    automation_service = AutomationService(
+        automation_task_repository,
+        automation_record_repository,
+        sessions=session_service,
+        runs=run_service,
+        agent_name=settings.automation_agent_name,
+        registry=registry,
+        agent_version=settings.automation_agent_version,
         clock=clock,
         id_generator=ids,
     )
@@ -1611,6 +1629,7 @@ def build_production_container(
         sessions=session_service,
         runs=run_service,
         triggers=trigger_service,
+        automations=automation_service,
         approvals=approval_service,
         artifacts=artifact_service,
         input_artifacts=input_service,

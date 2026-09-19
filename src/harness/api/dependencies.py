@@ -48,6 +48,11 @@ from harness.auth.service import (
     AuthService,
     OAuthProviderConfig,
 )
+from harness.automations.repositories import (
+    InMemoryAutomationRecordRepository,
+    InMemoryAutomationTaskRepository,
+)
+from harness.automations.service import AutomationService
 from harness.config import Settings
 from harness.context.repositories import InMemoryContextRepository
 from harness.context.service import ContextService
@@ -239,6 +244,7 @@ class ApiContainer:
     sessions: SessionService
     runs: RunService
     triggers: AgentTriggerService
+    automations: AutomationService
     approvals: ApprovalService
     artifacts: ArtifactService
     input_artifacts: InputArtifactService
@@ -530,6 +536,17 @@ def build_memory_container(
         runs=run_service,
         registry=registry,
         audit=audit,
+        clock=clock,
+        id_generator=id_generator,
+    )
+    automation_service = AutomationService(
+        InMemoryAutomationTaskRepository(),
+        InMemoryAutomationRecordRepository(),
+        sessions=session_service,
+        runs=run_service,
+        agent_name=resolved_settings.automation_agent_name,
+        registry=registry,
+        agent_version=resolved_settings.automation_agent_version,
         clock=clock,
         id_generator=id_generator,
     )
@@ -939,6 +956,7 @@ def build_memory_container(
         cancellation_wakeup=cancellation_wakeup,
         context_service=context_service,
     )
+    automation_service.configure_executor(worker.execute)
     agui = AguiRunService(
         sessions=session_service,
         runs=run_service,
@@ -1034,6 +1052,7 @@ def build_memory_container(
         sessions=session_service,
         runs=run_service,
         triggers=trigger_service,
+        automations=automation_service,
         approvals=approval_service,
         artifacts=artifact_service,
         input_artifacts=input_artifact_service,

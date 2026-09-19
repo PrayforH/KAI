@@ -59,7 +59,7 @@ describe("Skills catalog page", () => {
     expect(navigation).toContain('href: "/studio/skills"');
     expect(navigation).toContain('label: "技能"');
     expect(sidebar).toContain('active={activeNav}');
-    expect(sidebar).toContain('visible={["knowledge", "agents", "capabilities"]}');
+    expect(sidebar).toContain('visible={["knowledge", "agents", "automation", "capabilities"]}');
     expect(sidebar).toContain('labelOverrides={{ capabilities: "插件" }}');
   });
 
