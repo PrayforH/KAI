@@ -125,9 +125,11 @@ async def test_discovered_mcp_tool_executes_through_the_policy_gate(
 
 
 @pytest.mark.asyncio
-async def test_read_only_graph_reads_but_denies_writes_before_sandbox_execution(
+@pytest.mark.parametrize("read_only", [True, False])
+async def test_graph_enforces_file_policy_during_real_sandbox_execution(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    read_only: bool,
 ) -> None:
     (tmp_path / "evidence.txt").write_text("read-only evidence", encoding="utf-8")
     commands: list[tuple[str, ...]] = []
@@ -145,9 +147,11 @@ async def test_read_only_graph_reads_but_denies_writes_before_sandbox_execution(
             exit_code=process.returncode or 0, stdout=stdout.decode(), stderr=stderr.decode()
         )
 
+    policy_id = "production-read-only" if read_only else "local-standard"
+    rules = read_only_policy_rules() if read_only else default_policy_rules()
     gate, events, context = await _arrange(
         tmp_path,
-        resolved_policy=_resolved_policy("production-read-only", read_only_policy_rules()),
+        resolved_policy=_resolved_policy(policy_id, rules),
     )
     context = context.model_copy(
         update={
@@ -161,9 +165,7 @@ async def test_read_only_graph_reads_but_denies_writes_before_sandbox_execution(
         update={
             "spec": spec.model_copy(
                 update={
-                    "permissions": spec.permissions.model_copy(
-                        update={"policy": "production-read-only"}
-                    ),
+                    "permissions": spec.permissions.model_copy(update={"policy": policy_id}),
                 }
             )
         }
@@ -172,7 +174,7 @@ async def test_read_only_graph_reads_but_denies_writes_before_sandbox_execution(
         config=replace(config, snapshot=config.snapshot.model_copy(update={"manifest": manifest})),
         approvals=gate._approvals,
         events=events,
-        policy=PolicyEngine(read_only_policy_rules()),
+        policy=PolicyEngine(rules),
     )
     model = ScriptedModel(
         responses=[
@@ -187,7 +189,7 @@ async def test_read_only_graph_reads_but_denies_writes_before_sandbox_execution(
                 tool_calls=[
                     {
                         "name": "write_file",
-                        "args": {"file_path": "out.txt", "content": "bad"},
+                        "args": {"file_path": "/out.txt", "content": "review output"},
                         "id": "write1",
                     }
                 ],
@@ -197,7 +199,7 @@ async def test_read_only_graph_reads_but_denies_writes_before_sandbox_execution(
     )
     monkeypatch.setattr(runtime, "_chat_model", lambda: model)
     plan = build_deepagents_plan(
-        builtin_tools=("Read", "Write"), permission_policy="production-read-only", model="fake"
+        builtin_tools=("Read", "Write"), permission_policy=policy_id, model="fake"
     )
     graph = runtime._build_graph(
         context,
@@ -217,7 +219,11 @@ async def test_read_only_graph_reads_but_denies_writes_before_sandbox_execution(
     assert len(messages) == 2
     assert messages[0].status == "success"
     assert "read-only evidence" in str(messages[0].content)
-    assert messages[1].status == "error"
-    assert "denied by platform policy" in str(messages[1].content)
     assert commands
-    assert not (tmp_path / "out.txt").exists()
+    if read_only:
+        assert messages[1].status == "error"
+        assert "denied by platform policy" in str(messages[1].content)
+        assert not (tmp_path / "out.txt").exists()
+    else:
+        assert messages[1].status == "success"
+        assert (tmp_path / "out.txt").read_text() == "review output"
