@@ -2681,6 +2681,13 @@ export interface ApiAutomationTask {
   updatedAt: string;
 }
 
+export interface ApiAutomationRecordArtifact {
+  artifactId: string;
+  name: string;
+  mediaType: string;
+  sizeBytes?: number | null;
+}
+
 export interface ApiAutomationRunRecord {
   tenantId: string;
   recordId: string;
@@ -2696,6 +2703,7 @@ export interface ApiAutomationRunRecord {
   finishedAt?: string | null;
   durationMs?: number | null;
   outputSummary?: string | null;
+  artifacts?: ApiAutomationRecordArtifact[];
   error?: string | null;
 }
 

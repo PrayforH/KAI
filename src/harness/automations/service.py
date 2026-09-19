@@ -70,6 +70,7 @@ class AutomationService:
         executor: Callable[[str, str], object] | None = None,
         bindings=None,  # AguiThreadBindingRepository, for result delivery
         events=None,  # EventRepository, for run output summaries
+        artifacts=None,  # ArtifactRepository, for run deliverables
         clock: Callable[[], datetime] | None = None,
         id_generator: Callable[[str], str] | None = None,
     ) -> None:
@@ -87,6 +88,7 @@ class AutomationService:
         # the runs, so each execution lands in the owner's task list.
         self._bindings = bindings
         self._events = events
+        self._artifacts = artifacts
         self._clock = clock or (lambda: datetime.now(UTC))
         self._ids = id_generator or _default_id
 
@@ -95,11 +97,13 @@ class AutomationService:
             raise RuntimeError("automation executor is already configured")
         self._executor = executor
 
-    def configure_result_delivery(self, bindings, events) -> None:
+    def configure_result_delivery(self, bindings, events, artifacts=None) -> None:
         """Attach the thread-binding and event repositories after assembly."""
 
         self._bindings = bindings
         self._events = events
+        if artifacts is not None:
+            self._artifacts = artifacts
 
     async def create(
         self,
@@ -446,13 +450,15 @@ class AutomationService:
             fields["duration_ms"] = max(
                 0, int((run.updated_at - run.created_at).total_seconds() * 1000)
             )
-            if (
-                fields["status"] == AutomationRecordStatus.SUCCESS.value
-                and self._events is not None
-            ):
-                fields["output_summary"] = await self._summarize_output(
-                    tenant_id, run.run_id
-                )
+            if fields["status"] == AutomationRecordStatus.SUCCESS.value:
+                if self._events is not None:
+                    fields["output_summary"] = await self._summarize_output(
+                        tenant_id, run.run_id
+                    )
+                if self._artifacts is not None:
+                    fields["artifacts"] = await self._collect_artifacts(
+                        tenant_id, run.run_id
+                    )
             updated = await self._records.update_status(
                 tenant_id, record.record_id, **fields
             )
@@ -462,6 +468,27 @@ class AutomationService:
                     updated.model_dump(mode="json", by_alias=True)
                 )
         return record
+
+    async def _collect_artifacts(self, tenant_id: str, run_id: str) -> tuple[...]:
+        """List the run's ready deliverables for the record card."""
+
+        try:
+            artifacts = await self._artifacts.list_for_run(tenant_id, run_id)
+        except Exception:  # noqa: BLE001 - deliverables are best-effort display data
+            logger.debug("automation artifact listing failed run=%s", run_id, exc_info=True)
+            return ()
+        from harness.automations.models import AutomationRecordArtifact
+
+        return tuple(
+            AutomationRecordArtifact(
+                artifactId=artifact.artifact_id,
+                name=artifact.name,
+                mediaType=artifact.media_type,
+                sizeBytes=artifact.size_bytes,
+            )
+            for artifact in artifacts
+            if artifact.status.value == "ready"
+        )
 
     async def _summarize_output(self, tenant_id: str, run_id: str) -> str | None:
         """Extract the agent's final answer for the run record."""
@@ -497,8 +524,6 @@ class AutomationService:
         )
         workload_id = f"automation:{task.task_id}"
         prompt = task.prompt
-        if task.model and task.model != "auto":
-            prompt = f"[model:{task.model}]\n{task.prompt}"
         agent_version = await self._resolve_agent_version(task)
         # One session per (task, agent version): every execution appends its
         # messages to the same conversation the owner sees in the task list.
@@ -517,22 +542,30 @@ class AutomationService:
                 agent_owner_user_id=task.user_id,
             )
         await self._deliver_thread(task, session.session_id, now)
-        run = await self._runs.create(
-            task.tenant_id,
-            session.session_id,
-            f"automation:{record.record_id}",
-            input={
-                "prompt": prompt,
-                "automation_task_id": task.task_id,
-                "automation_record_id": record.record_id,
-                "automation_trigger": trigger.value,
-                "automation_permission": task.permission.value,
+        # A pinned model must be a platform-registered route id; the runtime
+        # resolves it through the control plane like any console task.
+        run_input: dict[str, object] = {
+            "prompt": prompt,
+            "automation_task_id": task.task_id,
+            "automation_record_id": record.record_id,
+            "automation_trigger": trigger.value,
+            "automation_permission": task.permission.value,
+            **(
+                {"model_route_override": task.model}
+                if task.model and task.model != "auto"
+                else {}
+            ),
                 **(
                     {"automation_workspace_id": task.workspace_id}
                     if task.workspace_id
                     else {}
                 ),
-            },
+            }
+        run = await self._runs.create(
+            task.tenant_id,
+            session.session_id,
+            f"automation:{record.record_id}",
+            input=run_input,
         )
         record = record.model_copy(
             update={"session_id": session.session_id, "run_id": run.run_id}
