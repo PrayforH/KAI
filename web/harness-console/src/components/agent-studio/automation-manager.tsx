@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./automation-manager.module.css";
 import {
@@ -265,6 +266,7 @@ interface WorkspaceOption {
 }
 
 export function AutomationManager() {
+  const router = useRouter();
   const [tab, setTab] = useState<Tab>("tasks");
   const [tasks, setTasks] = useState<ApiAutomationTask[]>([]);
   const [records, setRecords] = useState<ApiAutomationRunRecord[]>([]);
@@ -400,6 +402,11 @@ export function AutomationManager() {
     } catch {
       showToast("删除失败，请稍后重试");
     }
+  }
+
+  function openRecordConversation(record: ApiAutomationRunRecord) {
+    const threadId = record.threadId || `automation_${record.taskId}`;
+    router.push(`/?thread=${encodeURIComponent(threadId)}`);
   }
 
   function openTaskFromRecord(record: ApiAutomationRunRecord) {
@@ -604,10 +611,18 @@ export function AutomationManager() {
                       <button
                         type="button"
                         className={styles.recordTaskLink}
-                        title="跳转到该自动化任务"
-                        onClick={() => openTaskFromRecord(record)}
+                        title="打开这次执行所在的会话"
+                        onClick={() => openRecordConversation(record)}
                       >
                         {record.taskName}
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.recordTaskAction}
+                        title="在定时任务中定位该任务"
+                        onClick={() => openTaskFromRecord(record)}
+                      >
+                        定位任务
                       </button>
                       <span className={styles.recordBadge} data-kind={record.status}>
                         {RECORD_STATUS_LABELS[record.status]}
