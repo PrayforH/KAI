@@ -19,6 +19,8 @@ from harness.application.events import EventService
 from harness.context.service import ContextService
 from harness.core.ports import AgentRegistry
 from harness.observability.provider import Observability
+from harness.policy.profiles import PolicyProfileRegistry
+from harness.policy.rules import PolicyEngine
 from harness.quota.service import QuotaService
 from harness.runtime.base import AgentRuntime
 from harness.runtime.tools import ToolResolver
@@ -35,9 +37,21 @@ def build_deepagents_runtime(
     context_service: ContextService | None = None,
     observability: Observability | None = None,
     tool_resolver: ToolResolver | None = None,
+    policy: PolicyEngine | None = None,
+    policy_profiles: PolicyProfileRegistry | None = None,
 ) -> AgentRuntime:
-    """Build the DeepAgents registry wrapper, or explain why it is unavailable."""
+    """Build the DeepAgents registry wrapper, or explain why it is unavailable.
 
+    Exactly one policy source is required, for the same reason the tool gate
+    requires it: every DeepAgents tool call is authorized against the policy of
+    the Run being served. A registry is the more useful of the two, because it
+    can resolve whichever policy a published snapshot names.
+    """
+
+    if (policy is None) == (policy_profiles is None):
+        raise ValueError(
+            "build_deepagents_runtime needs exactly one of policy or policy_profiles"
+        )
     try:
         from harness.runtime.registry_deepagents_runtime import RegistryDeepagentsRuntime
     except ImportError as error:
@@ -55,4 +69,6 @@ def build_deepagents_runtime(
         context_service=context_service,
         observability=observability,
         tool_resolver=tool_resolver,
+        policy=policy,
+        policy_profiles=policy_profiles,
     )

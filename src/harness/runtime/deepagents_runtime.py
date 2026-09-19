@@ -52,6 +52,8 @@ from harness.core.manifest import (
     materialize_skill_snapshot_set,
 )
 from harness.observability.provider import Observability
+from harness.policy.profiles import PolicyProfileRegistry
+from harness.policy.rules import PolicyEngine
 from harness.quota.service import QuotaService
 from harness.runtime.base import (
     RuntimeContext,
@@ -216,13 +218,19 @@ class DeepagentsRuntime:
         quotas: QuotaService | None = None,
         context_service: ContextService | None = None,
         observability: Observability | None = None,
+        policy: PolicyEngine | None = None,
+        policy_profiles: PolicyProfileRegistry | None = None,
     ) -> None:
+        # Forwarded, not consumed: the gate built in `_build_graph` is what
+        # authorizes each tool call, and it owns the exactly-one contract.
         self._config = config
         self._approvals = approvals
         self._events = events
         self._quotas = quotas
         self._context_service = context_service
         self._observability = observability
+        self._policy = policy
+        self._policy_profiles = policy_profiles
 
     async def execute(self, context: RuntimeContext) -> AsyncIterator[RuntimeEvent]:
         config = self._config
@@ -277,6 +285,18 @@ class DeepagentsRuntime:
                                         f"本次运行的工具调用超过上限 {tool_call_limit}，已终止。"
                                     ),
                                 )
+                            # Counted, then withheld: the gate is the only writer
+                            # of this fact. It names the tool in the platform
+                            # vocabulary and redacts the arguments against that
+                            # name, whereas this copy would carry the runtime's
+                            # own name (`write_file`, not `Write`). The worker's
+                            # generic policy pass keys both its re-decision and
+                            # its redaction on that name, so a second copy makes
+                            # it deny a call the gate already allowed -- and
+                            # record the unredacted arguments while doing it.
+                            # `ClaudeSdkRuntime` withholds it for the same
+                            # reason.
+                            continue
                         yield event
         except TimeoutError as error:
             raise RuntimeExecutionTimeoutError(
@@ -355,6 +375,8 @@ class DeepagentsRuntime:
                 context=context,
                 approvals=self._approvals,
                 events=self._events,
+                policy=self._policy,
+                profiles=self._policy_profiles,
                 quotas=self._quotas,
                 context_service=self._context_service,
                 observability=self._observability,

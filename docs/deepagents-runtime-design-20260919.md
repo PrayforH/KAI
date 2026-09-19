@@ -295,13 +295,136 @@ WebSearch/WebFetch 内置联网、`memory` 文件式记忆。
 `runtime=fake` / `runtime=claude-sdk` 照常运行（`Settings.runtime` 默认就是 `fake`），
 只是 `multi` 不可用（与缺 `codex` CLI 时 Codex 不可用同一语义）。
 
+### 6.1 增量镜像里唯一一处版本变更：`wcmatch`
+
+增量镜像复用现网 `develop-bfa9f8a` 作为 base，extra 的 38 个包全部是新增，
+**唯一会动的既有包是 `wcmatch`：base 装的是 `10.2.1`，extra 拉进来的是 `11.0.1`。**
+
+冲突是 pip 报出来的：
+
+```
+e2b 2.33.0 requires wcmatch<11,>=10.1, but you have wcmatch 11.0.1 which is incompatible.
+```
+
+查清后结论是**名义冲突，不阻塞**：
+
+- `deepagents 0.7.13` 的元数据写死 `wcmatch>=11.0`，**没有 11 以下的可能**；
+- base 里的 `e2b 2.33.0` 要求 `wcmatch>=10.1,<11`；
+- 而 `uv.lock`（项目自己的事实来源）解析结果是 `e2b==2.51.0` + `wcmatch==11.0.1`——
+  也就是说 **base 镜像相对自己的 lock 是陈旧的**（`e2b 2.33.0` vs lock 的 `2.51.0`），
+  上游早已把 e2b 升到允许 wcmatch 11 的版本；
+- 全仓只有 `e2b/template/utils.py` 用到 `from wcmatch import glob`，
+  该模块只服务于 **模板构建**（`e2b.template.*` / `e2b.template_async.*`）。
+  平台侧 `sandbox/e2b.py`、`sandbox/cubesandbox.py` 只 import
+  `AsyncSandbox` / `ConnectionConfig` / `SandboxOpts` / `ENVD_*`，
+  **从不引用 `e2b.template`，也从不自行构建模板**（模板由外部预构建，平台按 id 引用，
+  例如 `tpl-f116a5f3d1c442b2b1690f4d`）。
+
+因此这里**刻意不在 extra 里钉 `e2b`**：把 e2b 从 `2.33.0` 升到 `2.51.0` 会让本改动的
+影响面从"DeepAgents 运行时"外溢到 Claude / Codex 的沙箱通路，而收益为零
+（唯一受影响的代码路径平台根本不执行）。正确的修法是把 base 镜像对齐到自己的 `uv.lock`，
+那属于基础镜像的事，不属于 DeepAgents overlay。
+
 ## 7. 173 验证方案
 
 1. 修复 `HARNESS_CUBESANDBOX_API_KEY`（补值 + 重建 api/worker），确认三 worker healthy —— **已完成**；
-2. 在 173 上以现网镜像为 base 构建增量镜像（Harbor 与清华 PyPI 镜像在 173 均可达）；
+2. 在 173 上以现网镜像为 base 构建增量镜像（Harbor 与清华 PyPI 镜像在 173 均可达）——
+   **已完成**（`kai/axis-api:deepagents-20260919.2`，api + 3 worker 全 healthy）；
 3. 走完整闭环：建草稿（runtime=deepagents）→ 校验 → 代码视图 → 导出 ZIP → 发布 →
    新建任务运行 → 观察 `model.route.selected` / `tool.request` / `artifact.ready` / `runtime.result`；
-4. 记录回滚点与镜像 digest。
+4. 记录回滚点与镜像 digest —— 回滚即从 `-f` 链里去掉 `compose.deepagents-20260919.yaml`。
+
+### 7.1 闭环在第 7 步暴露的第一个真实缺陷（已修）
+
+`/v1/runs/{id}/events` 走到 `run.queued → run.provisioning → sandbox.provisioned →
+run.running → run.failed`，`model.route.selected` 从未出现。Worker 日志给出根因：
+
+```
+ERROR:harness.worker.orchestrator:run execution failed
+  error_type=ValueError message=configure exactly one policy engine or profile registry
+```
+
+`DeepagentsToolGate.__init__` 强制 `(policy is None) == (profiles is None)` 即报错，
+而 `DeepagentsRuntime` 既不接收也不转发策略来源，于是门在**第一次工具调用**就炸——
+每一次 DeepAgents Run 都必然失败。
+
+根因不在门，而在**接线**：`composition.py` / `api/dependencies.py` 构造
+`build_deepagents_runtime(...)` 时没有传策略来源（Claude 通路是
+`SdkToolGate(profiles=policy_profiles, ...)`，一直是对的）。
+
+修法与防线：
+
+- `DeepagentsRuntime` / `RegistryDeepagentsRuntime` 接收 `policy` / `policy_profiles` 并转发给门；
+- `build_deepagents_runtime` 在**组合期**校验"恰好一个策略来源"，
+  使同类漏接在**启动时**炸掉，而不是等 Sandbox 都 provision 完才在第一个 Run 上炸；
+- 传的是**注册表**而非某个已解析的 engine：门的策略以**该 Run 自己的快照**为准，
+  只有注册表能解析任意 policy id；
+- 新增 `tests/unit/runtime/test_deepagents_tool_gate.py`（12 例）。
+  此前这个门**没有任何直接测试**——它是模型与工具之间唯一的授权点，
+  也是这次缺陷漏到线上的直接原因。
+
+### 7.2 闭环跑通后暴露的第二个真实缺陷：`tool.request` 被写了两遍
+
+修好接线后闭环即成功（`status=succeeded`，17 种事件）。但事件流里每次工具调用都有
+**两条 `tool.request`**：
+
+| 序号 | 写入方 | `name` | 参数 |
+| --- | --- | --- | --- |
+| 162 | `DeepagentsToolGate` | `Bash`（平台词汇） | `{"command":"pwd"}`，已脱敏 |
+| 195 | Worker 通用策略通道 | `execute`（运行时词汇） | 原文 |
+
+第二条还跟了一条 `tool.result`，写着 `policy_denied / implicit-deny`——**而工具其实执行成功了**。
+
+根因是**一份事实被两个 loop 解释**（正是 9-11 记录过的 Codex 那类摩擦）：
+`DeepagentsStreamMapper` 会产出 `tool.request`，`DeepagentsRuntime` 只拿它计数、
+**没有从产出流里剔除**，于是 Worker 的通用策略通道又处理了一遍。对比
+`ClaudeSdkRuntime`（`claude_sdk.py:1455`）——它明确 `if self._tool_gate is not None`
+就把 `tool.request` 全部滤掉。门的文档字符串也早已声明"the runtime drops
+`tool.request` from the events it yields"，只是**实现没跟上声明**。
+
+三处后果，都从这一条重复事件来：
+
+1. **重复事件**：审计流里每次调用两条；
+2. **脱敏被绕过**：Worker 用 `redact_tool_arguments(name, ...)` 脱敏，而脱敏表
+   `_CONTENT_FIELDS_BY_TOOL` 按**平台名**（`Write`）索引；运行时名是 `write_file`，
+   查不到条目，于是 `content` 明文落库。173 上可见
+   `"content": "[REDACTED]"`（门）与 `"content": "deepagents loop ok"`（Worker）并存——
+   对携带密钥的参数就是一次真实泄漏；
+3. **假的拒绝**：Worker 拿运行时名求策略，`execute`/`write_file`/`read_file`
+   不匹配任何平台规则，必然 `implicit-deny`，于是留下一条与事实相反的 `tool.result`。
+   更严重的是 `ASK` 分支：`orchestrator.py:1676` 会**挂起 Run 等审批**——
+   即"第二套暂停恢复机制"，正是 I2 明令禁止的。
+
+修法（`deepagents_runtime.py`）：**计数之后 `continue`，不再产出**。
+计数放在丢弃之前，所以 Manifest 的 `maxToolCalls` 上限不受影响
+（`tests/unit/runtime/test_deepagents_runtime.py` 专门钉住这一点，
+并用一条非空洞性断言证明映射器确实会产出该事件）。
+
+### 7.3 `artifact.ready`：DeepAgents 目前没有制品通路（未闭合项）
+
+闭环的 17 项检查里唯一未通过的是 `artifact.ready`，`artifacts=0`。
+查清后这不是提示词的问题，而是一条**能力缺口**：
+
+- `publish_artifact` 是 `claude_sdk.py:975-978` 用
+  `create_artifact_mcp_server()`（`artifact_tools.py:224`，基于
+  `claude_agent_sdk.create_sdk_mcp_server`）注册的**进程内 MCP 工具**；
+- `DeepagentsStreamMapper` / `registry_deepagents_runtime.py` 只把
+  **streamable HTTP** 的 MCP 注册变成连接，`sdk` 传输被明确限定为
+  Studio Bundle 算子，所以 `harness-artifacts` 不会出现在 DeepAgents 的图里；
+- 全仓只有 `artifact_tools.py` / `claude_sdk.py` / `config.py` /
+  `policy/rules.py` / `policy/profiles.py` 提到 `harness-artifacts`，
+  **没有任何非 Claude 通路**。
+
+需要说明的是：**Codex 运行时同样没有**（`codex_runtime.py` 里没有任何 artifact 引用），
+catalog 的 `artifacts` 能力在三个运行时上是**一致的**，因此并非"对 DeepAgents 单独虚报"，
+而是平台把 `artifacts` 当作平台级能力（`ArtifactPublisher` + Worker 的 `artifact.ready`）。
+所以 DeepAgents 在这点上是**与 Codex 持平**，不是回退。
+
+补齐的路径很干净（`ArtifactPublisher` 本身与运行时无关，只有 SDK 外壳是 Claude 专属）：
+把工具注册为 `mcp__harness-artifacts__publish_artifact`——**沿用同一个规范名**，
+于是 `default_policy_rules` 的 `harness-artifact-publish`、配额、AG-UI 词汇表
+全都无需改动；`ArtifactPublisher` 自己写 `artifact.ready`，与门写 `tool.request` 同理，
+不能再去产出 `artifact.output`（否则 Worker 会二次发布）。
 
 ## 8. 风险
 

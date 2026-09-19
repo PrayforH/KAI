@@ -41,6 +41,8 @@ from harness.deployments.boundaries import (
     enforce_runtime_model_route,
 )
 from harness.observability.provider import Observability
+from harness.policy.profiles import PolicyProfileRegistry
+from harness.policy.rules import PolicyEngine
 from harness.quota.service import QuotaService
 from harness.runtime.base import RuntimeContext, RuntimeEvent
 from harness.runtime.deepagents_runtime import (
@@ -206,6 +208,8 @@ class RegistryDeepagentsRuntime:
         context_service: ContextService | None = None,
         observability: Observability | None = None,
         tool_resolver: ToolResolver | None = None,
+        policy: PolicyEngine | None = None,
+        policy_profiles: PolicyProfileRegistry | None = None,
     ) -> None:
         # DeepAgents is a new kernel with no legacy deployment to support, so the
         # control plane is required rather than optional: a runtime that fell
@@ -218,6 +222,8 @@ class RegistryDeepagentsRuntime:
         self._context_service = context_service
         self._observability = observability
         self._tool_resolver = tool_resolver or ToolResolver()
+        self._policy = policy
+        self._policy_profiles = policy_profiles
 
     async def execute(self, context: RuntimeContext) -> AsyncIterator[RuntimeEvent]:
         session = context.session
@@ -287,6 +293,8 @@ class RegistryDeepagentsRuntime:
             quotas=self._quotas,
             context_service=self._context_service,
             observability=self._observability,
+            policy=self._policy,
+            policy_profiles=self._policy_profiles,
         )
         async for event in runtime.execute(context):
             yield event
