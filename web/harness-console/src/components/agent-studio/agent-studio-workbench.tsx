@@ -3136,11 +3136,15 @@ export function AgentStudioWorkbench() {
                   <h3>公开联网</h3>
                   <WebCapabilityStatus />
                   <p>由平台提供搜索和网页读取，无需配置 MCP。勾选后保存并发布生效，同时受个人设置中的联网开关控制。</p>
+                  {/* A tick the runtime cannot honour stays clearable: the tool is
+                      unusable either way, and a disabled box would leave a saved
+                      draft that can never publish and no way to remove the cause. */}
                   <div className={styles.compactToolGrid}>
                     {options.tools.filter((tool) => ["WebSearch", "WebFetch"].includes(tool.id)).map((tool) => (
                       <label key={tool.id} data-enabled={draft.builtinTools.includes(tool.id)}>
                         <input type="checkbox" aria-label={`${tool.id} · ${tool.label}`} checked={draft.builtinTools.includes(tool.id)}
-                          disabled={!canEdit || !builtinToolAvailable(tool.id, activeRuntimeCapability?.capabilities)}
+                          disabled={!canEdit || (!draft.builtinTools.includes(tool.id)
+                            && !builtinToolAvailable(tool.id, activeRuntimeCapability?.capabilities))}
                           onChange={(event) => updateDraft({builtinTools: event.target.checked
                             ? Array.from(new Set([...draft.builtinTools, tool.id]))
                             : draft.builtinTools.filter((name) => name !== tool.id)})} />
