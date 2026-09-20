@@ -31,9 +31,7 @@ describe("shared studio page header", () => {
     expect(headerCss).toContain('html[data-color-mode="light"]');
   });
 
-  it("is the layout every studio page uses", () => {
-    expect(read("src/components/agent-studio/automation-manager.tsx")).toContain("<StudioPageHeader");
-    expect(read("src/components/knowledge/knowledge-console.tsx")).toContain("<StudioPageHeader");
+  it("is the layout the 技能/MCP switch uses", () => {
     expect(read("src/components/agent-studio/studio-section-navigation.tsx")).toContain(
       "<StudioPageHeaderLinks",
     );
@@ -41,5 +39,18 @@ describe("shared studio page header", () => {
     expect(read("src/components/agent-studio/studio-section-navigation.module.css")).not.toContain(
       "border-bottom",
     );
+  });
+
+  it("leaves the automation page and the knowledge page on their own layouts", () => {
+    // Both pages were reverted to their own headers: the shared sticky header
+    // cost the knowledge page its title block and overlapped the automation
+    // toolbar.
+    const automation = read("src/components/agent-studio/automation-manager.tsx");
+    const knowledge = read("src/components/knowledge/knowledge-console.tsx");
+    expect(automation).not.toContain("<StudioPageHeader");
+    expect(automation).toContain("<header className={styles.header}>");
+    expect(knowledge).not.toContain("<StudioPageHeader");
+    expect(knowledge).toContain("styles.hero");
+    expect(knowledge).toContain("新建知识库");
   });
 });

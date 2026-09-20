@@ -1,7 +1,6 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { StudioPageHeader } from "./studio-page-header";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./automation-manager.module.css";
 import {
@@ -456,20 +455,32 @@ export function AutomationManager() {
 
   return (
     <div className={styles.manager}>
-      <StudioPageHeader
-        ariaLabel="自动化视图"
-        active={tab}
-        onSelect={(next) => {
-          setTab(next);
-          if (next === "records") void loadRecords();
-        }}
-        tabs={[
-          { id: "tasks", label: "定时任务", icon: <ClockIcon /> },
-          { id: "records", label: "运行记录", icon: <RecordsIcon /> },
-        ]}
-      >
+      <header className={styles.header}>
+        <div className={styles.tabs} role="tablist" aria-label="自动化视图">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "tasks"}
+            className={tab === "tasks" ? styles.tabActive : styles.tab}
+            onClick={() => setTab("tasks")}
+          >
+            <ClockIcon /> 定时任务
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "records"}
+            className={tab === "records" ? styles.tabActive : styles.tab}
+            onClick={() => {
+              setTab("records");
+              void loadRecords();
+            }}
+          >
+            <RecordsIcon /> 运行记录
+          </button>
+        </div>
         {tab === "records" && (
-          <>
+          <div className={styles.recordToolbar}>
             <select
               className={styles.statusFilter}
               value={recordStatus}
@@ -491,14 +502,14 @@ export function AutomationManager() {
             <button type="button" className={styles.refresh} title="刷新" onClick={() => void refreshRecords()}>
               <RefreshIcon />
             </button>
-          </>
+          </div>
         )}
         {tab === "tasks" && tasks.length > 0 && (
           <button type="button" className={styles.headerAdd} onClick={() => openCreate()}>
             + 添加自动化
           </button>
         )}
-      </StudioPageHeader>
+      </header>
 
       {error && <p className={styles.error}>{error}</p>}
 
