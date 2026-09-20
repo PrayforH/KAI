@@ -157,6 +157,41 @@ async def test_fetch_blocks_private_destination_before_http():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("scheme", ["http", "https"])
+@pytest.mark.parametrize("from_environment", [False, True])
+async def test_fetch_reads_through_configured_proxy(monkeypatch, scheme, from_environment):
+    import httpcore
+
+    proxy = "http://proxy.example:3128"
+    monkeypatch.setenv("HARNESS_WEB_TOOLS_PROXY", proxy if from_environment else "")
+    content = b"<html><title>Public source</title><p>Verified text</p></html>"
+    response = (
+        b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: "
+        + str(len(content)).encode() + b"\r\n\r\n" + content
+    )
+    responses = ([b"HTTP/1.1 200 Connection established\r\n\r\n"]
+                 if scheme == "https" else []) + [response]
+    backend = httpcore.AsyncMockBackend(responses)
+    connect = AsyncMock(wraps=backend.connect_tcp)
+    monkeypatch.setattr(backend, "connect_tcp", connect)
+    real_pool = httpcore.AsyncConnectionPool
+
+    def pool_with_mock_network(**kwargs):
+        return real_pool(**kwargs, network_backend=backend)
+
+    # Keep the real connection pool and proxy protocol; replace only network I/O.
+    with patch("harness.runtime.web_tools.httpcore.AsyncConnectionPool", pool_with_mock_network):
+        result = await PublicWebClient(proxy="" if from_environment else proxy).fetch(
+            f"{scheme}://example.com/"
+        )
+    assert result["title"] == "Public source"
+    assert "Verified text" in result["content"]
+    assert result["trust"] == "untrusted"
+    assert connect.call_args.kwargs["host"] == "proxy.example"
+    assert connect.call_args.kwargs["port"] == 3128
+
+
+@pytest.mark.asyncio
 async def test_redirect_to_private_network_is_checked_again():
     import httpcore
 
