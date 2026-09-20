@@ -329,6 +329,7 @@ export function AgentStudioWorkbench() {
   const [activeSection, setActiveSection] =
     useState<StudioSection>("identity");
   const [agentQuery, setAgentQuery] = useState("");
+  const [agentScope, setAgentScope] = useState("all");
   const [viewMode, setViewMode] = useState<"catalog" | "editor">("catalog");
   const editorOpened = useRef(false);
   if (viewMode === "editor") editorOpened.current = true;
@@ -464,7 +465,7 @@ export function AgentStudioWorkbench() {
   );
   const filteredAgentRows = useMemo(() => {
     const query = agentQuery.trim().toLocaleLowerCase();
-    const visible = drafts.filter((agent) => isAgentVisible(agent, showInternalAgents));
+    const visible = drafts.filter((agent) => isAgentVisible(agent, showInternalAgents) && (agentScope === "all" || (agentScope === "personal" ? !agent.spaceId : agentScope === "team" ? Boolean(agent.spaceId) : !agent.publishedVersion)));
     if (!query) return visible;
     return visible.filter((agent) =>
       [agent.displayName, agent.name, agent.version, agent.publishedVersion ?? "草稿"]
@@ -472,7 +473,7 @@ export function AgentStudioWorkbench() {
         .toLocaleLowerCase()
         .includes(query),
     );
-  }, [agentQuery, drafts, showInternalAgents]);
+  }, [agentQuery, agentScope, drafts, showInternalAgents]);
 
   useEffect(() => {
     if (!releaseFeedbackOpen) return;
@@ -2026,7 +2027,7 @@ export function AgentStudioWorkbench() {
                 <h1>智能体</h1>
                 <span>{drafts.filter((agent) => isAgentVisible(agent, false)).length} 个智能体</span>
               </div>
-              <span>选择智能体，继续配置或开始试跑</span>
+              <span>管理能力、查看运行，让每一次改进都有依据</span>
             </div>
             <div className={styles.agentCatalogActions}>
 
@@ -2054,6 +2055,7 @@ export function AgentStudioWorkbench() {
               </button>
             </div>
           </header>
+          <nav className={styles.catalogFilters} aria-label="智能体筛选">{[["all", "全部智能体"], ["personal", "我的智能体"], ["team", "团队共享"], ["draft", "未发布"]].map(([value, label]) => <button key={value} aria-pressed={agentScope === value} onClick={() => setAgentScope(value)}>{label}</button>)}<span>{filteredAgentRows.length} 个结果</span></nav>
           <div className={styles.agentCatalogList}>
             {filteredAgentRows.map((agent) => (
               <article
@@ -2071,7 +2073,7 @@ export function AgentStudioWorkbench() {
                   onFocus={() => {
                     void studioClient.prefetchDraft(agent.draftId, agent.revision).catch(() => {});
                   }}
-                  onClick={() => void openDraftEditor(agent.draftId)}
+                  onClick={() => router.push(`/studio/agents/${encodeURIComponent(agent.name)}?draft=${encodeURIComponent(agent.draftId)}`)}
                 >
                   <span className={styles.agentMonogram} aria-hidden="true">
                     {agent.displayName.slice(0, 1)}
@@ -2097,12 +2099,13 @@ export function AgentStudioWorkbench() {
                     <span>{agent.networkToolsEnabled ? "含联网工具" : "仅内部能力"}</span>
                   </div>
                   <div className={styles.agentCatalogFooter}>
-                    <code>{agent.name}@{agent.version}</code>
+                    <code>{agent.spaceId ? "团队" : "个人"} · 构建版本 {agent.version}</code>
                     <span className={styles.agentCardAction} aria-hidden="true">
-                      {switchingDraftId === agent.draftId ? "…" : "→"}
+                      查看工作区 →
                     </span>
                   </div>
                 </button>
+                <button className={styles.catalogEdit} disabled={saving || Boolean(switchingDraftId)} onClick={() => void openDraftEditor(agent.draftId)}>构建与试运行</button>
                 <details className={`${styles.actionMenu} ${styles.agentCatalogMenu}`} data-dismiss-on-outside>
                   <summary aria-label={`${agent.displayName}的更多操作`} title="更多操作">
                     <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" fill="currentColor"><circle cx="5" cy="10" r="1.2"/><circle cx="10" cy="10" r="1.2"/><circle cx="15" cy="10" r="1.2"/></svg>
@@ -2209,6 +2212,7 @@ export function AgentStudioWorkbench() {
             )}
           </div>
           <div className={styles.headerActions}>
+            {draft.id && <button className={styles.headerActionButton} disabled={saving} onClick={async () => { if (dirty) { const saved = await saveDraft(); if (!saved) return; } router.push(`/studio/agents/${encodeURIComponent(draft.name)}?draft=${encodeURIComponent(draft.id)}`); }}>智能体概览 ↗</button>}
 
             <button
               type="button"

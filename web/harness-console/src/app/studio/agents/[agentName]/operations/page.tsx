@@ -1,13 +1,8 @@
-import type { Metadata } from "next";
-import { AgentOperationsWorkspace } from "../../../../../components/agent-studio/agent-operations-workspace";
-
-export const metadata: Metadata = {
-  title: "Evaluate & Operate",
-  description: "Agent 评测、环境、部署和触发器运行控制面。",
-};
-
-export default async function AgentOperationsPage({ params, searchParams }: { params: Promise<{ agentName: string }>; searchParams: Promise<{ evolutionJob?: string; candidate?: string }> }) {
-  const { agentName } = await params;
-  const query = await searchParams;
-  return <AgentOperationsWorkspace agentName={decodeURIComponent(agentName)} evolutionJob={query.evolutionJob} candidateId={query.candidate} />;
+import { redirect } from "next/navigation";
+export default async function Page({ params, searchParams }: { params: Promise<{ agentName: string }>; searchParams: Promise<{ evolutionJob?: string; candidate?: string }> }) {
+  const [{ agentName }, query] = await Promise.all([params, searchParams]);
+  const search = new URLSearchParams({ section: query.evolutionJob ? "release" : "evaluation" });
+  if (query.evolutionJob) search.set("evolutionJob", query.evolutionJob);
+  if (query.candidate) search.set("candidate", query.candidate);
+  redirect(`/studio/agents/${encodeURIComponent(agentName)}?${search}`);
 }

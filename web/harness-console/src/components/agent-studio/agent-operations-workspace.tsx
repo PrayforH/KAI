@@ -32,7 +32,7 @@ const CASE_TAG_LABELS: Record<string, string> = {
   safety: "安全",
 };
 
-export function AgentOperationsWorkspace({ agentName, evolutionJob, candidateId }: { agentName: string; evolutionJob?: string; candidateId?: string }) {
+export function AgentOperationsWorkspace({ agentName, evolutionJob, candidateId, view = "all" }: { agentName: string; evolutionJob?: string; candidateId?: string; view?: "all" | "evaluation" | "release" }) {
   const { membership } = useAuth();
   const [releaseTarget, setReleaseTarget] = useState<{ version: string; packageHash: string } | null>(null);
   const [draft, setDraft] = useState<StudioDraft | null>(null);
@@ -48,15 +48,16 @@ export function AgentOperationsWorkspace({ agentName, evolutionJob, candidateId 
   const [selectedRunId, setSelectedRunId] = useState("");
   const canManage = membership.role === "owner" || membership.role === "admin";
 
-  const selectedVersion = evolutionJob ? releaseTarget?.version : draft?.publishedVersion;
-  const selectedPackageHash = evolutionJob ? releaseTarget?.packageHash : draft?.publishedPackageHash;
+  const selectedVersion = releaseTarget?.version;
+  const selectedPackageHash = releaseTarget?.packageHash;
 
   async function refresh() {
+    setReleaseTarget(null);
     const [summaries, caps, allDatasets, allRuns, envs, deps, snaps] = await Promise.all([
       studioClient.listAccessibleDrafts(), studioClient.capabilities(), studioClient.listEvalDatasets(), studioClient.listEvalRuns(),
       studioClient.listEnvironments(agentName), studioClient.listDeployments(agentName), studioClient.listDeploymentSnapshots(agentName),
     ]);
-    const summary = summaries.find((item) => item.name === agentName);
+    const summary = summaries.find((item) => item.name === agentName && !item.spaceId);
     if (!summary) throw new Error(`没有找到 Agent：${agentName}`);
     const source = apiDraftToStudioDraft(await studioClient.getDraft(summary.draftId));
     setDraft(source); setCapabilities(caps);
@@ -68,6 +69,11 @@ export function AgentOperationsWorkspace({ agentName, evolutionJob, candidateId 
       const candidate = job.candidates.find(c => c.candidateId === candidateId && c.status === "released");
       if (job.agentName !== agentName || !candidate?.releasedVersion) throw new Error("请选择已发布且属于当前 Agent 的候选");
       setReleaseTarget({ version: candidate.releasedVersion, packageHash: candidate.packageHash });
+    }
+    if (!evolutionJob && source.agentId) {
+      const versions = await studioClient.listPersonalAgentVersions(source.agentId);
+      const current = versions.find(v => v.version === v.current_version);
+      if (current?.package_hash) setReleaseTarget({ version: current.version, packageHash: current.package_hash });
     }
     setNotice(evolutionJob ? "已选择审核发布的改进版本；环境部署仍需单独执行。" : "Evaluate & Operate 已同步");
   }
@@ -170,11 +176,11 @@ export function AgentOperationsWorkspace({ agentName, evolutionJob, candidateId 
     finally { setBusy(""); }
   }
 
-  return <section className={styles.content}>
-      <header className={styles.hero}><div><span>EVALUATE &amp; OPERATE</span><h1>{draft?.displayName ?? agentName}</h1><p>Dataset、版本评测、环境策略、部署历史与触发器集中在运行控制面。</p></div><Link href={`/studio/agents?draft=${encodeURIComponent(draft?.id ?? "")}&section=evaluation`}>返回 Builder</Link></header>
+  return <section className={styles.content} data-embedded={view !== "all"}>
+      {view === "all" && <><header className={styles.hero}><div><span>EVALUATE &amp; OPERATE</span><h1>{draft?.displayName ?? agentName}</h1><p>Dataset、版本评测、环境策略、部署历史与触发器集中在运行控制面。</p></div><Link href={`/studio/agents?draft=${encodeURIComponent(draft?.id ?? "")}&section=evaluation`}>返回 Builder</Link></header>
       <p><Link href={`/studio/agents/${encodeURIComponent(agentName)}/evolution`}>持续改进：候选、对照实验与审核 →</Link></p>
-      <div className={styles.metrics}><article><span>DATASET</span><strong>{latestDataset ? `v${latestDataset.version}` : "未固化"}</strong><small>{latestDataset ? `${latestDataset.cases.length} 用例 · 正常 ${caseTagCounts.happy} / 歧义 ${caseTagCounts.ambiguous} / 安全 ${caseTagCounts.safety}` : "0 cases"}</small></article><article><span>EVAL RUNS</span><strong>{runs.length}</strong><small>{activeRun?.run.status ?? (terminalRunMetrics ? `近 ${terminalRunMetrics.runs} 次通过率 ${terminalRunMetrics.passRate}%` : "无活动运行")}</small></article><article><span>ENVIRONMENTS</span><strong>{environments.length}</strong><small>{deployments.length} 次部署</small></article><article><span>VERSION</span><strong>{selectedVersion ?? "未发布"}</strong><small>{draft?.runtime ?? "—"}</small></article></div>
-      <section className={styles.panel}><header><div><span>01 / EVALUATE</span><h2>耐久 Dataset 与固定版本评测</h2></div><div><button disabled={!canManage || !draft || Boolean(busy)} onClick={() => void createDataset()}>{busy === "dataset" ? "固化中…" : latestDataset ? "创建 Dataset 新版本" : "固化为发布必测集"}</button><button disabled={!canManage || !draft || Boolean(busy) || busy === "import"} onClick={() => fileInputRef.current?.click()}>{busy === "import" ? "导入中…" : "导入题库"}</button><input ref={fileInputRef} hidden type="file" accept=".json,.csv,application/json,text/csv" onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void importBank(file); event.currentTarget.value = ""; }} /><button disabled={!canManage || !latestDataset || !selectedVersion || Boolean(activeRun) || Boolean(busy)} onClick={() => void runEval()}>{busy === "eval" ? "排队中…" : "运行已发布版本 Eval"}</button></div></header>{runs.slice(0, 8).map((item) => <article className={styles.row} key={item.run.evalRunId}><div><strong>{item.run.agentVersion} · Dataset v{item.run.datasetVersion}</strong><small>{item.run.status} · {item.passedCases}/{item.totalCases} 通过</small></div>{["queued", "running", "cancelling"].includes(item.run.status) && <button onClick={() => void studioClient.cancelEvalRun(item.run.evalRunId).then(refresh)}>取消</button>}</article>)}{runs.length === 0 && <p className={styles.empty}>尚无 Eval 运行。</p>}
+      <div className={styles.metrics}><article><span>DATASET</span><strong>{latestDataset ? `v${latestDataset.version}` : "未固化"}</strong><small>{latestDataset ? `${latestDataset.cases.length} 用例 · 正常 ${caseTagCounts.happy} / 歧义 ${caseTagCounts.ambiguous} / 安全 ${caseTagCounts.safety}` : "0 cases"}</small></article><article><span>EVAL RUNS</span><strong>{runs.length}</strong><small>{activeRun?.run.status ?? (terminalRunMetrics ? `近 ${terminalRunMetrics.runs} 次通过率 ${terminalRunMetrics.passRate}%` : "无活动运行")}</small></article><article><span>ENVIRONMENTS</span><strong>{environments.length}</strong><small>{deployments.length} 次部署</small></article><article><span>VERSION</span><strong>{selectedVersion ?? "未发布"}</strong><small>{draft?.runtime ?? "—"}</small></article></div></>}
+      {view !== "release" && <section className={styles.panel}><header><div><span>01 / EVALUATE</span><h2>耐久 Dataset 与固定版本评测</h2></div><div><button disabled={!canManage || !draft || Boolean(busy)} onClick={() => void createDataset()}>{busy === "dataset" ? "固化中…" : latestDataset ? "创建 Dataset 新版本" : "固化为发布必测集"}</button><button disabled={!canManage || !draft || Boolean(busy) || busy === "import"} onClick={() => fileInputRef.current?.click()}>{busy === "import" ? "导入中…" : "导入题库"}</button><input ref={fileInputRef} hidden type="file" accept=".json,.csv,application/json,text/csv" onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void importBank(file); event.currentTarget.value = ""; }} /><button disabled={!canManage || !latestDataset || !selectedVersion || Boolean(activeRun) || Boolean(busy)} onClick={() => void runEval()}>{busy === "eval" ? "排队中…" : "运行已发布版本 Eval"}</button></div></header>{runs.slice(0, 8).map((item) => <article className={styles.row} key={item.run.evalRunId}><div><strong>{item.run.agentVersion} · Dataset v{item.run.datasetVersion}</strong><small>{item.run.status} · {item.passedCases}/{item.totalCases} 通过</small></div>{["queued", "running", "cancelling"].includes(item.run.status) && <button onClick={() => void studioClient.cancelEvalRun(item.run.evalRunId).then(refresh)}>取消</button>}</article>)}{runs.length === 0 && <p className={styles.empty}>尚无 Eval 运行。</p>}
         {terminalRuns.length > 0 && selectedRun && caseAnalysis && (
           <div className={styles.caseAnalysis}>
             <header>
@@ -218,10 +224,10 @@ export function AgentOperationsWorkspace({ agentName, evolutionJob, candidateId 
             </table>
           </div>
         )}
-      </section>
-      <section className={styles.panel}><header><div><span>02 / DEPLOY</span><h2>环境指针与部署历史</h2></div></header><div className={styles.environmentGrid}>{environments.map((environment) => <article key={environment.name}><span>{environment.name.toUpperCase()}</span><strong>{environment.routes.map((route) => `${snapshotById.get(route.snapshotId)?.agentVersion ?? "unknown"} · ${route.weight}%`).join(" / ") || "尚未部署"}</strong><small>revision {environment.revision}</small><button disabled={!canManage || !selectedVersion || Boolean(busy)} onClick={() => void promote(environment)}>{busy === `promote-${environment.name}` ? "提交中…" : "部署当前版本"}</button><details><summary>回滚到历史验证快照</summary>{snapshots.filter(s => s.environment === environment.name && s.evalGatePassed && !environment.routes.some(r => r.snapshotId === s.snapshotId)).map(s => <button key={s.snapshotId} disabled={!canManage || Boolean(busy)} onClick={() => void rollback(environment, s.snapshotId)}>回滚至 {s.agentVersion}</button>)}</details></article>)}</div><div>{deployments.slice(0, 8).map((item) => <article className={styles.row} key={item.deployment.deploymentId}><div><strong>{item.deployment.environment} · {item.deployment.action}</strong><small>{item.target.agentVersion} · {item.deployment.status}{item.deployment.errorCode ? ` · ${item.deployment.errorCode}` : ""}</small></div></article>)}</div></section>
+      </section>}
+      {view !== "evaluation" && <><p>环境部署目标：<strong>{selectedVersion ?? "暂无已确认的发布版本"}</strong>。个人默认版本与各环境路由分别管理。</p><section className={styles.panel}><header><div><span>02 / DEPLOY</span><h2>环境指针与部署历史</h2></div></header><div className={styles.environmentGrid}>{environments.map((environment) => <article key={environment.name}><span>{environment.name.toUpperCase()}</span><strong>{environment.routes.map((route) => `${snapshotById.get(route.snapshotId)?.agentVersion ?? "unknown"} · ${route.weight}%`).join(" / ") || "尚未部署"}</strong><small>revision {environment.revision}</small><button disabled={!canManage || !selectedVersion || Boolean(busy)} onClick={() => void promote(environment)}>{busy === `promote-${environment.name}` ? "提交中…" : "部署当前版本"}</button><details><summary>回滚到历史验证快照</summary>{snapshots.filter(s => s.environment === environment.name && s.evalGatePassed && !environment.routes.some(r => r.snapshotId === s.snapshotId)).map(s => <button key={s.snapshotId} disabled={!canManage || Boolean(busy)} onClick={() => void rollback(environment, s.snapshotId)}>回滚至 {s.agentVersion}</button>)}</details></article>)}</div><div>{deployments.slice(0, 8).map((item) => <article className={styles.row} key={item.deployment.deploymentId}><div><strong>{item.deployment.environment} · {item.deployment.action}</strong><small>{item.target.agentVersion} · {item.deployment.status}{item.deployment.errorCode ? ` · ${item.deployment.errorCode}` : ""}</small></div></article>)}</div></section>
       {capabilities && <EnvironmentPolicyControlPlane agentName={agentName} environments={environments} capabilities={capabilities} canManage={canManage} onUpdated={(updated) => setEnvironments((current) => current.map((item) => item.name === updated.name ? updated : item))} />}
-      <AgentTriggerControlPlane agentName={agentName} publishedVersion={draft?.publishedVersion ?? null} environments={environments} canManage={canManage} />
-      <footer>{notice}</footer>
+      <AgentTriggerControlPlane agentName={agentName} publishedVersion={draft?.publishedVersion ?? null} environments={environments} canManage={canManage} /></>}
+      <footer role="status">{notice}</footer>
   </section>;
 }

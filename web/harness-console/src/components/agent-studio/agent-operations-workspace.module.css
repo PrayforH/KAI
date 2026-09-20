@@ -298,3 +298,5 @@
     grid-template-columns: 1fr;
   }
 }
+.content[data-embedded="true"] { padding:0; max-width:none; }
+.content[data-embedded="true"] .panel { border-radius:8px; }

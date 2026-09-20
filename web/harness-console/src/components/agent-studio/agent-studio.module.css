@@ -8159,3 +8159,18 @@
 .importFeedback[data-error="true"] { color: var(--codex-danger); }
 .importFeedback span { flex: 1; overflow-wrap: anywhere; }
 .importFeedback button { border: 0; padding: 0 3px; background: transparent; color: inherit; font-size: 18px; cursor: pointer; }
+
+/* Agent directory: workspace navigation and direct construction. */
+.catalogFilters { display:flex; align-items:center; gap:8px; margin-top:28px; border-bottom:1px solid var(--studio-line); padding-bottom:12px; flex-wrap:wrap; }
+.catalogFilters button { border:0; background:transparent; color:var(--studio-muted); padding:8px 12px; border-radius:6px; cursor:pointer; font:inherit; font-size:13px; }
+.catalogFilters button[aria-pressed="true"] { background:var(--codex-surface-raised); color:var(--studio-ink); }
+.catalogFilters button:focus-visible,.catalogEdit:focus-visible { outline:2px solid var(--studio-green); outline-offset:3px; }
+.catalogFilters>span { margin-left:auto; color:var(--studio-muted); font-size:12px; }
+.agentCatalogList { margin-top:22px; gap:16px; }
+.agentCatalogCard { border-radius:10px; box-shadow:none; }
+.agentCatalogCard:hover { transform:none; }
+.agentCatalogOpen { min-height:220px; padding-bottom:48px; }
+.catalogEdit { position:absolute; bottom:13px; left:20px; border:0; background:transparent; color:var(--studio-muted); font:inherit; font-size:12px; padding:5px 0; cursor:pointer; }
+.catalogEdit:hover { color:var(--studio-ink); }
+.agentCatalogFooter code { font-size:11px; }
+.agentCatalogFooter .agentCardAction { font-size:12px; white-space:nowrap; }

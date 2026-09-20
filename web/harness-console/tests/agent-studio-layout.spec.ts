@@ -317,7 +317,7 @@ describe("Agent Studio management page", () => {
   });
 
   it("uses one action-button contract and structured overflow menu states", () => {
-    expect(workbench.match(/styles\.headerActionButton/g)).toHaveLength(2);
+    expect(workbench.match(/styles\.headerActionButton/g)).toHaveLength(3);
     expect(workbench.match(/className=\{styles\.actionMenuItem\}/g)).toHaveLength(12);
     expect(workbench).not.toContain("copilot-drawer");
     expect(workbench).not.toContain("CopilotDrawer");
@@ -436,7 +436,8 @@ describe("Agent Studio management page", () => {
     expect(workbench).toContain("setSwitchingDraftId(draftId)");
     expect(workbench).toContain("draftSwitchingRef.current = false");
     expect(workbench).toContain("disabled={saving || Boolean(switchingDraftId)}");
-    expect(workbench).toContain('? "…" : "→"');
+    expect(workbench).toContain("查看工作区 →");
+    expect(workbench).toContain("构建与试运行");
   });
 
   it("requires explicit destructive confirmation before replacing a conflicted local draft", () => {
