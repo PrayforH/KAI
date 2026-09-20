@@ -267,12 +267,49 @@ body.codex-theme-v1 .task-title-viewport { display: block; min-width: 0; overflo
 
 body.codex-theme-v1 .tasks-show-more { opacity: .65; }
 
+body.codex-theme-v1:has(.console-shell) .task-project-create,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-create {
+  margin-inline-start: auto;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--codex-muted, #9a9a9a);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-project-create:hover,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-create:hover {
+  background: var(--codex-accent-soft, rgb(236 236 236 / 14%));
+  color: var(--codex-ink, #fff);
+}
+
+body.codex-theme-v1:has(.console-shell) .task-project-empty,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-empty {
+  margin: 2px 10px 8px;
+  color: var(--codex-faint, #737373);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-list-toolbar,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-list-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 body.codex-theme-v1:has(.console-shell) .task-bucket-head,
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-bucket-head {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: 12px 10px 4px;
+  margin: 8px 8px 2px;
   color: var(--codex-faint, #737373);
   font-size: 11px;
   font-weight: 600;
@@ -301,8 +338,20 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-defa
   margin-left: 0; padding-left: 0; border-left: 0;
 }
 
-body.codex-theme-v1:has(.console-shell) .task-agent-section-heading { margin: 14px -10px 0; }
-html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-agent-section-heading { margin-inline: -8px; }
+/* Root tasks align with section labels; only agent children are indented. */
+body.codex-theme-v1:has(.console-shell) :is(.task-default-group, .task-pinned-group) .task-list-item {
+  padding-left: 8px;
+}
+
+body.codex-theme-v1:has(.console-shell) :is(.task-default-group, .task-pinned-group) .task-status {
+  left: 0;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-list > .task-default-group:first-child .task-bucket-head {
+  margin-top: 2px;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-agent-section-heading { margin: 6px 0 0; }
 
 /* Settings and the account menu use the same UI typography as the main workspace. */
 html body.codex-theme-v1 .settings-shell,
@@ -765,6 +814,11 @@ html body.codex-theme-v1 .execution-reasoning[open] .execution-reasoning-chevron
 .rail-file-icon svg { width: 13px; height: 13px; }
 .rail-file-icon[data-kind="image"] { color: #cbb9ff; }
 .rail-file-icon[data-kind="html"] { color: #a9d0ff; }
+
+/* The pastels above need darker twins on a white rail. */
+html[data-color-mode="light"] .rail-file-icon[data-kind="image"] { color: #6b4fb0; }
+html[data-color-mode="light"] .rail-file-icon[data-kind="html"] { color: #1f5f9e; }
+html[data-color-mode="light"] .rail-file-icon[data-kind="doc"] { color: #1f5f9e; }
 .rail-file-icon[data-kind="csv"] { color: #a9e0bd; }
 
 .workbench-rail-file .workbench-rail-file-name { flex: 1 1 auto; text-align: left; }
@@ -1006,3 +1060,7 @@ body.codex-theme-v1 .assistant-message-controls .artifact-thumb:has(img) b { dis
 body.codex-theme-v1 .assistant-message-controls .artifact-thumb-more { background: var(--codex-surface-hover); color: var(--codex-ink-soft); font-size: 9px; }
 body.codex-theme-v1 .assistant-message-controls .artifact-summary-count { font-variant-numeric: tabular-nums; }
 @media (prefers-reduced-motion: reduce) { body.codex-theme-v1 .assistant-message-controls .artifact-summary-row { transition: none; } }
+
+.task-project-create-error { margin: 4px 8px; color: var(--codex-ink); font-size: 12px; line-height: 1.5; }
+body.codex-theme-v1:has(.console-shell) .task-project-add:disabled { display: grid; cursor: wait; }
+body.codex-theme-v1:has(.console-shell) .task-project-add[aria-busy="true"] { opacity: .6; }

@@ -8,6 +8,7 @@ import time
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal, cast
+from uuid import uuid4
 
 from ag_ui.core import (
     BaseEvent,
@@ -195,7 +196,16 @@ class AguiThreadSummary(BaseModel):
     archived_at: datetime | None = None
     pinned_at: datetime | None = None
     last_read_at: datetime | None = None
+    project_id: str | None = None
     pending_approval: ApprovalRequest | None = None
+
+
+class AguiProjectThreadCreateInput(BaseModel):
+    project_id: Annotated[str, Field(min_length=1, max_length=128)]
+    agent_name: Annotated[str, Field(min_length=1, max_length=128)]
+    agent_version: Annotated[str, Field(min_length=1, max_length=64)]
+    agent_owner_user_id: Annotated[str | None, Field(max_length=128)] = None
+    space_id: Annotated[str | None, Field(max_length=128)] = None
 
 
 class AguiThreadReadInput(BaseModel):
@@ -208,12 +218,21 @@ class AguiThreadReadResult(BaseModel):
 
 
 class AguiThreadUpdateInput(BaseModel):
+    # The console sends camelCase for the project move; accept both spellings so
+    # a client using either convention is understood.
+    model_config = ConfigDict(populate_by_name=True)
+
     archived: bool | None = None
     pinned: bool | None = None
     title: Annotated[str | None, Field(min_length=1, max_length=200)] = None
+    # null clears the project (the task returns to the plain 任务 list).
+    project_id: Annotated[
+        str | None, Field(alias="projectId", max_length=128)
+    ] = None
 
 
 class AguiThreadUpdateResult(BaseModel):
+    project_id: str | None = None
     thread_id: str
     archived: bool
     archived_at: datetime | None = None
@@ -532,6 +551,44 @@ async def run_agui_agent(
     )
 
 
+@router.post("/threads", response_model=AguiThreadSummary, status_code=201)
+async def create_project_thread(
+    body: AguiProjectThreadCreateInput,
+    identity: Annotated[Identity, Depends(require_identity)],
+    container: Annotated[ApiContainer, Depends(get_container)],
+) -> AguiThreadSummary:
+    ensure_permission(identity, "tasks:write")
+    project = await container.projects.get(
+        tenant_id=identity.tenant_id, user_id=identity.user_id, project_id=body.project_id,
+    )
+    if project.archived_at is not None:
+        raise ConflictError("Cannot create tasks in an archived project")
+    resolved_owner = body.agent_owner_user_id or identity.user_id
+    connection_mode = "caller_owned"
+    if body.space_id is not None:
+        release = await container.team_spaces.require_agent_access(
+            identity.tenant_id, identity.user_id, body.space_id,
+            resolved_owner, body.agent_name, body.agent_version,
+        )
+        connection_mode = release.connection_mode.value
+    elif resolved_owner != identity.user_id:
+        raise ConflictError("agent_owner_user_id requires a team space grant")
+    binding = await container.agui.create_project_thread(
+        tenant_id=identity.tenant_id, user_id=identity.user_id,
+        thread_id=str(uuid4()), agent_name=body.agent_name, agent_version=body.agent_version,
+        agent_owner_user_id=resolved_owner, space_id=body.space_id,
+        connection_mode=connection_mode, project_id=body.project_id,
+    )
+    return AguiThreadSummary(
+        thread_id=binding.thread_id, session_id=binding.session_id,
+        title=await container.agui.resolve_title(binding, []),
+        agent_name=body.agent_name, agent_version=body.agent_version,
+        agent_owner_user_id=resolved_owner, space_id=body.space_id,
+        status="idle", project_id=binding.project_id,
+        created_at=binding.created_at, updated_at=binding.updated_at,
+    )
+
+
 @router.get("/threads", response_model=list[AguiThreadSummary])
 async def list_agui_threads(
     identity: Annotated[Identity, Depends(require_identity)],
@@ -617,6 +674,7 @@ async def list_agui_threads(
             archived_at=binding.archived_at,
             pinned_at=binding.pinned_at,
             last_read_at=binding.last_read_at,
+            project_id=binding.project_id,
             pending_approval=pending,
         )
 
@@ -674,7 +732,13 @@ async def update_agui_thread(
     container: Annotated[ApiContainer, Depends(get_container)],
 ) -> AguiThreadUpdateResult:
     ensure_permission(identity, "tasks:write")
-    if body.archived is None and body.pinned is None and body.title is None:
+    requested_project = "project_id" in body.model_fields_set
+    if (
+        body.archived is None
+        and body.pinned is None
+        and body.title is None
+        and not requested_project
+    ):
         raise ConflictError("No thread update was requested")
     binding = await container.agui.get_binding(
         tenant_id=identity.tenant_id,
@@ -723,8 +787,20 @@ async def update_agui_thread(
         updated = updated.model_copy(
             update={"title": renamed.title, "title_source": renamed.title_source}
         )
+    if requested_project:
+        projects = getattr(container, "projects", None)
+        if projects is None:
+            raise ConflictError("Project store is not configured")
+        project_id = await projects.assign_task(
+            tenant_id=identity.tenant_id,
+            user_id=identity.user_id,
+            thread_id=thread_id,
+            project_id=body.project_id,
+        )
+        updated = updated.model_copy(update={"project_id": project_id})
     return AguiThreadUpdateResult(
         thread_id=thread_id,
+        project_id=updated.project_id,
         archived=updated.archived_at is not None,
         archived_at=updated.archived_at,
         pinned=updated.pinned_at is not None,

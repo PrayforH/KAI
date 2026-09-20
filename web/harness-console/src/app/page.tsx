@@ -23,6 +23,8 @@ import {
   TaskHeaderActions,
 } from "../components/task-header-actions";
 import { TaskSidebar } from "../components/task-sidebar";
+import { createProjectTask } from "../lib/project-task";
+import { ApiProject, projectClient } from "../lib/studio-client";
 import { ProductBrandMark, ProductLoading, PRODUCT_NAME } from "../components/product-brand";
 import { SidebarLeftIcon, SidebarPanelIcon } from "../components/panel-icons";
 import { WorkbenchRail } from "../components/workbench-rail";
@@ -193,6 +195,8 @@ function TaskContextBar({
   switcher,
   onRenamed,
   onArchived,
+  projects = [],
+  onProjectChanged,
 }: {
   taskTitle: string;
   task: TaskSummary | null;
@@ -200,6 +204,8 @@ function TaskContextBar({
   switcher?: ReactNode;
   onRenamed: (title: string) => void;
   onArchived: () => void;
+  projects?: readonly ApiProject[];
+  onProjectChanged?: () => void;
 }) {
   return (
     <div className="task-context-bar" aria-label="当前任务、项目与版本">
@@ -216,8 +222,10 @@ function TaskContextBar({
       {task && (
         <TaskHeaderActions
           task={task}
+          projects={projects}
           onRenamed={onRenamed}
           onArchived={onArchived}
+          onProjectChanged={() => onProjectChanged?.()}
         />
       )}
     </div>
@@ -465,6 +473,27 @@ function AuthenticatedHome() {
   const availableTaskAgents = useMemo(() => taskAgents, [taskAgents]);
   // The sidebar groups tasks by the agent that ran them, so the browser view
   // shows the same display labels the header and switcher use.
+  const [projects, setProjects] = useState<ApiProject[]>([]);
+  const refreshProjects = useCallback(() => {
+    void projectClient
+      .list()
+      .then(setProjects)
+      .catch(() => setProjects([]));
+  }, []);
+  useEffect(() => {
+    refreshProjects();
+  }, [refreshProjects]);
+  const createProject = useCallback(async () => {
+    const name = window.prompt("项目名称，例如：金融办");
+    if (!name || !name.trim()) return;
+    try {
+      await projectClient.create(name.trim());
+      refreshProjects();
+    } catch (cause) {
+      window.alert(cause instanceof Error ? cause.message : "创建项目失败");
+    }
+  }, [refreshProjects]);
+
   const agentDisplayLabels = useMemo(
     () =>
       Object.fromEntries(
@@ -546,27 +575,11 @@ function AuthenticatedHome() {
     };
   }, [threadId, runView?.runId, runView?.phase]);
 
-  const startTaskInProject = useCallback((projectTask: TaskSummary) => {
-    const projectAgent =
-      taskAgents.find(
-        (agent) =>
-          agent.name === projectTask.agent_name &&
-          agent.version === projectTask.agent_version &&
-          agent.ownerUserId === projectTask.agent_owner_user_id &&
-          agent.spaceId === (projectTask.space_id ?? undefined),
-      ) ?? {
-        name: projectTask.agent_name,
-        version: projectTask.agent_version,
-        displayName: agentDisplayName(projectTask.agent_name),
-        domain: "historical" as const,
-        ownerUserId: projectTask.agent_owner_user_id,
-        scope: projectTask.space_id
-          ? ("team" as const)
-          : ("personal" as const),
-        spaceId: projectTask.space_id ?? undefined,
-      };
-    startTaskWithAgent(currentSystemAssistant(projectAgent, systemAssistant) ?? projectAgent);
-  }, [startTaskWithAgent, taskAgents, systemAssistant]);
+  async function startTaskInProject(project: ApiProject) {
+    const task = await createProjectTask(project.projectId, systemAssistant);
+    switchTask(task);
+    focusTaskComposer();
+  }
 
   const startNewTask = useCallback(() => {
     const candidate = selectedAgent && taskAgents.some(
@@ -620,6 +633,7 @@ function AuthenticatedHome() {
     );
     setCurrentThreadState("durable");
     setCurrentTaskTitle(task.title);
+    setCurrentTask(task);
     setActiveSkillLaunch(null);
     setThreadId(selectThread(storage, task.thread_id));
     closeCompactTaskSidebar();
@@ -673,6 +687,9 @@ function AuthenticatedHome() {
           onNewTask={startNewTask}
           onNewTaskWithProject={startTaskInProject}
           agentLabels={agentDisplayLabels}
+          projects={projects}
+          onProjectsChanged={refreshProjects}
+          onCreateProject={() => void createProject()}
           searchControl={(
             <ProductivityCommandCenter
               agents={availableTaskAgents}
@@ -697,6 +714,13 @@ function AuthenticatedHome() {
               <TaskContextBar
                 taskTitle={currentTaskTitle}
                 task={currentTask}
+                projects={projects}
+                onProjectChanged={() => {
+                  // The task moved between sections: reload both the list and
+                  // the per-project counts.
+                  refreshProjects();
+                  window.dispatchEvent(new CustomEvent("harness:task-list-changed"));
+                }}
                 switcher={selectedAgent && selectedAgent.name !== "lead-agent" ? (
                   <TaskAgentSwitcher
                     kind="version"

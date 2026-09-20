@@ -63,6 +63,9 @@ describe("Studio unified shell", () => {
     expect(sectionNavigation).toContain('href: "/studio/skills"');
     expect(sectionNavigation).toContain('href: "/studio/capabilities"');
     expect(sectionNavigation).not.toContain('href: "/studio/agents"');
-    expect(sectionNavigation).toContain('aria-label="技能与 MCP 管理"');
+    // The section switch now renders through the shared page header so its
+    // tabs sit in the same place as the automation page's.
+    expect(sectionNavigation).toContain('ariaLabel="技能与 MCP 管理"');
+    expect(sectionNavigation).toContain("StudioPageHeaderLinks");
   });
 });

@@ -48,9 +48,10 @@ body.codex-theme-v1 {
   --codex-control-transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
 }
 
-/* Light mode follows the quiet, cool-white hierarchy used by Doubao: a
-   barely tinted navigation rail, a white reading canvas, soft selection
-   surfaces, and blue reserved for focus and primary actions. */
+/* Light mode follows the quiet, cool-white hierarchy used by Doubao for the
+   neutral surfaces, but the accent is the workspace's monochrome one — near
+   black for primary actions and focus in light, white in dark — so the light
+   theme reads as one product with the dark theme and the Studio pages. */
 html[data-color-mode="light"] body.codex-theme-v1 {
   --codex-surface: #ffffff;
   --codex-surface-deep: #f1f1f2;
@@ -65,10 +66,10 @@ html[data-color-mode="light"] body.codex-theme-v1 {
   --codex-faint: #909096;
   --codex-line: #e8e8ea;
   --codex-line-strong: #d9d9dc;
-  --codex-accent: #2f75e8;
-  --codex-accent-hover: #2468d5;
-  --codex-accent-soft: rgb(47 117 232 / 10%);
-  --codex-accent-faint: rgb(47 117 232 / 6%);
+  --codex-accent: #1a1c1f;
+  --codex-accent-hover: #000000;
+  --codex-accent-soft: rgb(26 28 31 / 10%);
+  --codex-accent-faint: rgb(26 28 31 / 6%);
   --codex-skill: #6a6a6a;
   --codex-skill-soft: rgb(0 0 0 / 6%);
   --codex-warning: #996510;
@@ -321,6 +322,7 @@ body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-open .workbench-r
 
 body.codex-theme-v1:has(.console-shell) .task-sidebar,
 body.codex-theme-v1:has(.console-shell) .task-sidebar.is-collapsed {
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   border-right: 1px solid #303030;
   background: var(--codex-surface-sidebar);
   box-shadow: none;
@@ -341,8 +343,9 @@ body.codex-theme-v1:has(.console-shell) .harness-composer-shell svg {
 }
 
 body.codex-theme-v1:has(.console-shell) .task-sidebar-brand {
-  min-height: 56px;
-  padding: 8px 12px 6px 22px;
+  min-height: var(--shell-header-height, 46px);
+  height: var(--shell-header-height, 46px);
+  padding: 6px 10px 6px 16px;
   border: 0;
 }
 
@@ -416,7 +419,7 @@ body.codex-theme-v1:has(.console-shell) .task-rail-toggle svg {
 }
 
 body.codex-theme-v1:has(.console-shell) .task-sidebar-primary {
-  padding: 0 10px 4px;
+  padding: 0 8px 2px;
   display: grid;
   gap: 2px;
   border: 0;
@@ -425,14 +428,14 @@ body.codex-theme-v1:has(.console-shell) .task-sidebar-primary {
 body.codex-theme-v1:has(.console-shell) .task-sidebar-primary > button,
 body.codex-theme-v1:has(.console-shell) .task-sidebar-search-control .command-center-trigger {
   width: 100%;
-  min-height: 38px;
-  height: 38px;
-  padding: 0 12px;
+  min-height: 32px;
+  height: 32px;
+  padding: 0 8px;
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr);
+  grid-template-columns: 18px minmax(0, 1fr);
   align-items: center;
   justify-content: initial;
-  gap: 10px;
+  gap: 8px;
   border: 0;
   border-radius: 8px;
   color: #d2d2d2;
@@ -458,13 +461,13 @@ body.codex-theme-v1:has(.console-shell) .task-sidebar-search-control .command-ce
 
 body.codex-theme-v1:has(.console-shell) .task-sidebar-primary > button svg,
 body.codex-theme-v1:has(.console-shell) .task-sidebar-search-control .command-center-trigger svg {
-  width: 19px;
-  height: 19px;
+  width: 18px;
+  height: 18px;
   color: currentColor;
 }
 
 body.codex-theme-v1:has(.console-shell) .task-sidebar-mode {
-  padding: 0 10px 8px;
+  padding: 0 8px 6px;
 }
 
 body.codex-theme-v1:has(.console-shell) .task-sidebar-mode [data-workspace-navigation="expanded"] {
@@ -473,10 +476,10 @@ body.codex-theme-v1:has(.console-shell) .task-sidebar-mode [data-workspace-navig
 }
 
 body.codex-theme-v1:has(.console-shell) .task-sidebar-mode a {
-  min-height: 38px;
-  padding: 0 12px;
-  grid-template-columns: 20px minmax(0, 1fr);
-  gap: 10px;
+  min-height: 32px;
+  padding: 0 8px;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
   border-radius: 8px;
   color: #d2d2d2;
   background: transparent;
@@ -491,17 +494,17 @@ body.codex-theme-v1:has(.console-shell) .task-sidebar-mode a:hover {
 }
 
 body.codex-theme-v1:has(.console-shell) .task-sidebar-mode a svg {
-  width: 19px;
-  height: 19px;
+  width: 18px;
+  height: 18px;
 }
 
 body.codex-theme-v1:has(.console-shell) .task-list-toolbar {
-  padding: 6px 0 2px;
+  padding: 2px 0;
 }
 
 body.codex-theme-v1:has(.console-shell) .task-list-toolbar .task-list-heading {
   min-height: 26px;
-  padding: 4px 10px 3px 22px;
+  padding: 3px 16px;
   color: #9a9a9a;
   font-size: 13px;
   font-weight: 600;
@@ -521,8 +524,23 @@ body.codex-theme-v1:has(.console-shell) .task-list-heading small {
 }
 
 body.codex-theme-v1:has(.console-shell) .task-list {
-  padding: 0 10px 14px;
+  padding: 0 8px 10px;
   scrollbar-color: #494949 transparent;
+}
+
+/* 项目 and 任务 share one scrolling column: the sidebar is a fixed-row grid, so
+   a second flexible child would leave the project list stretched and the task
+   list stranded at the bottom. */
+body.codex-theme-v1:has(.console-shell) .task-list-scroll {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: #494949 transparent;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-list-scroll .task-list {
+  overflow: visible;
 }
 
 .task-project-group + .task-project-group {
@@ -543,12 +561,12 @@ body.codex-theme-v1:has(.console-shell) .task-list {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 30px;
-  padding: 4px 30px 4px 10px;
+  padding: 4px 30px 4px 8px;
   display: grid;
   /* icon · name · task count */
-  grid-template-columns: 16px minmax(0, 1fr) auto;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   border: 0;
   border-radius: 7px;
   color: #9a9a9a;
@@ -639,6 +657,7 @@ body.codex-theme-v1:has(.console-shell) .task-list {
 
 body.codex-theme-v1:has(.console-shell) .task-list-row {
   min-width: 0;
+  margin-top: 0;
 }
 
 body.codex-theme-v1:has(.console-shell) .task-list-item,
@@ -646,7 +665,7 @@ body.codex-theme-v1:has(.console-shell) .task-list-item:hover,
 body.codex-theme-v1:has(.console-shell) .task-list-item.is-active {
   position: relative;
   min-height: 30px;
-  padding: 5px 6px 5px 35px;
+  padding: 4px 6px 4px 34px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1118,7 +1137,7 @@ body.codex-theme-v1:has(.console-shell) .console-header {
   padding: 0 9px;
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   border: 0;
   border-radius: 7px;
   color: var(--codex-ink-soft);
@@ -2055,7 +2074,7 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) {
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) ::selection {
   color: var(--codex-ink);
-  background: rgb(47 117 232 / 18%);
+  background: rgb(26 28 31 / 12%);
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .product-brand-mark {
@@ -2386,7 +2405,7 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-c
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-root:focus-within {
   border-color: #c8d6ed;
-  box-shadow: 0 0 0 2px rgb(47 117 232 / 8%), 0 12px 38px rgb(27 27 34 / 11%);
+  box-shadow: 0 0 0 2px rgb(26 28 31 / 8%), 0 12px 38px rgb(27 27 34 / 11%);
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell[data-run-locked="true"] .aui-composer-root,
@@ -2405,17 +2424,17 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-c
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .composer-skill-context {
-  border-color: #c9d9e8;
-  color: #3574a8;
-  background: #edf5fb;
+  border-color: var(--codex-line);
+  color: var(--codex-ink-soft);
+  background: var(--codex-surface-subtle);
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .composer-skill-context > small {
-  color: #718597;
+  color: var(--codex-muted);
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .composer-skill-context > button {
-  color: #718597;
+  color: var(--codex-muted);
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .composer-skill-context > button:hover {

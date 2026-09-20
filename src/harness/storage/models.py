@@ -1193,6 +1193,29 @@ class AguiThreadBindingRow(Base):
     user_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     thread_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     session_id: Mapped[str] = mapped_column(String(128), index=True)
+    # Owning project for the task list's 项目 view; NULL means a plain 任务.
+    project_id: Mapped[str | None] = mapped_column(String(128), index=True, nullable=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
+class ProjectRow(Base):
+    """A user-owned container that groups tasks, independent of the Agent."""
+
+    __tablename__ = "projects"
+    __table_args__ = (
+        Index("ix_projects_tenant_user", "tenant_id", "user_id", "created_at"),
+        UniqueConstraint("tenant_id", "user_id", "name", name="uq_projects_user_name"),
+    )
+
+    project_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(128), index=True)
+    user_id: Mapped[str] = mapped_column(String(128))
+    name: Mapped[str] = mapped_column(String(120))
+    archived_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     payload: Mapped[dict[str, Any]] = mapped_column(JSON)
 
 

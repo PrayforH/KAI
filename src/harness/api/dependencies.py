@@ -110,6 +110,8 @@ from harness.platform_mcp.workload import (
 )
 from harness.policy.profiles import PolicyProfileRegistry, default_policy_profiles
 from harness.policy.runtime import ResolvedPolicy
+from harness.projects.repositories import InMemoryProjectRepository
+from harness.projects.service import ProjectService
 from harness.quality.controller import QualitySyncController
 from harness.quality.langfuse import DisabledQualityExporter
 from harness.quality.queue import QualityTaskQueue
@@ -246,6 +248,7 @@ class ApiContainer:
     runs: RunService
     triggers: AgentTriggerService
     automations: AutomationService
+    projects: ProjectService
     approvals: ApprovalService
     artifacts: ArtifactService
     input_artifacts: InputArtifactService
@@ -978,6 +981,20 @@ def build_memory_container(
         bindings=thread_bindings,
         knowledge_bindings=knowledge.resolve_bindings,
     )
+    project_service = ProjectService(
+        InMemoryProjectRepository(),
+        clock=clock,
+        id_generator=id_generator,
+    )
+    project_service.configure_task_project_clearer(thread_bindings.clear_project)
+    project_service.configure_task_project_writer(
+        lambda tenant_id, user_id, thread_id, project_id: agui.set_project(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            thread_id=thread_id,
+            project_id=project_id,
+        )
+    )
 
     async def lifecycle_reap() -> int:
         await lifecycle.enqueue_due_retention_jobs()
@@ -1067,6 +1084,7 @@ def build_memory_container(
         runs=run_service,
         triggers=trigger_service,
         automations=automation_service,
+        projects=project_service,
         approvals=approval_service,
         artifacts=artifact_service,
         input_artifacts=input_artifact_service,

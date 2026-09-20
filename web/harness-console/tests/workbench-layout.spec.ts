@@ -132,7 +132,8 @@ describe("full-page agent workbench", () => {
   it("uses a compact project icon language in the task tree", () => {
     expect(taskSidebar).toContain("function ProjectFolderIcon({ open = false }");
     expect(taskSidebar).toContain("<ProjectFolderIcon />");
-    expect(taskSidebar).toContain('<ProjectFolderIcon open={!projectCollapsed} />');
+    // Projects and the collapsed agent view both use the open/closed folder.
+    expect(taskSidebar).toContain("<ProjectFolderIcon open={!collapsed} />");
     expect(webCodexStyles).toMatch(
       /\.task-project-heading svg,[\s\S]*?stroke-width:\s*1\.6;/s,
     );
@@ -270,7 +271,7 @@ describe("full-page agent workbench", () => {
     expect(taskSidebar).not.toContain('role="tablist" aria-label="任务范围"');
     expect(taskSidebar).not.toContain("已归档");
     expect(taskSidebar).not.toContain('aria-label="搜索最近任务"');
-    expect(taskSidebar).toContain("project.tasks.slice(0, 5)");
+    expect(taskSidebar).toContain("(expanded ? projectTasks : projectTasks.slice(0, 5))");
     expect(taskSidebar).toContain('className="task-list-archive"');
     expect(taskSidebar).toContain("setTaskArchived");
     expect(taskSidebar).toContain("loadTasks(false)");
@@ -421,14 +422,15 @@ describe("full-page agent workbench", () => {
       join(process.cwd(), "src/app/conversation-experience.css"),
       "utf8",
     );
-    const sectionNavigation = readFileSync(
-      join(process.cwd(), "src/components/agent-studio/studio-section-navigation.module.css"),
+    const pageHeader = readFileSync(
+      join(process.cwd(), "src/components/agent-studio/studio-page-header.module.css"),
       "utf8",
     );
 
     expect(styles).toMatch(/--shell-header-height:\s*46px;/);
     expect(codexStyles).toMatch(/\.console-header \{[^}]*min-height: var\(--shell-header-height/);
-    expect(sectionNavigation).toMatch(/\.bar \{[^}]*min-height: var\(--shell-header-height/);
+    // Every Studio page's section tabs share the console header's height.
+    expect(pageHeader).toMatch(/\.header \{[^}]*min-height: var\(--shell-header-height/);
     expect(experience).toMatch(/\.rail-bar \{[^}]*height: var\(--shell-header-height/);
   });
 

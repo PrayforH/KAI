@@ -3092,7 +3092,7 @@ html[data-color-mode="light"] .tool-batch-list {
 
 html[data-color-mode="light"] .aui-md :not(pre) > code,
 html[data-color-mode="light"] .chat-surface [data-testid="copilot-assistant-message"] :not(pre) > code {
-  color: #075fa9;
+  color: var(--codex-ink);
   background: var(--codex-code-inline);
 }
 

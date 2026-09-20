@@ -11,6 +11,7 @@ import {
   type TaskSummary,
 } from "../lib/task-history";
 import { useConfirmationDialog } from "./confirmation-dialog";
+import { setTaskProject, type ApiProject } from "../lib/studio-client";
 
 const activeStatuses = new Set(["queued", "running", "waiting_approval", "cancelling"]);
 
@@ -38,6 +39,14 @@ function BranchIcon() {
       <circle cx="6" cy="15" r="1.9" />
       <circle cx="14" cy="7.5" r="1.9" />
       <path d="M6 6.9v6.2M14 9.4c0 2.5-1.8 3.4-4.2 3.7-1.2.15-2.4.4-3.1 1" />
+    </svg>
+  );
+}
+
+function ProjectIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M3.5 6.5h4l1.4 1.8h7.6v7.2H3.5z" />
     </svg>
   );
 }
@@ -259,12 +268,17 @@ function RenameTaskDialog({
  */
 export function TaskHeaderActions({
   task,
+  projects = [],
   onRenamed,
   onArchived,
+  onProjectChanged,
 }: {
   task: TaskSummary;
+  /** Projects the task can be moved into; empty hides the project actions. */
+  projects?: readonly ApiProject[];
   onRenamed?: (title: string) => void;
   onArchived?: () => void;
+  onProjectChanged?: (projectId: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
@@ -330,6 +344,21 @@ export function TaskHeaderActions({
     })();
   };
 
+  /** Move the task into a project, or out of the current one. */
+  async function moveToProject(projectId: string | null) {
+    setBusy(true);
+    try {
+      await setTaskProject(task.thread_id, projectId);
+      setError("");
+      close();
+      onProjectChanged?.(projectId);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="task-header-actions" ref={containerRef}>
       <button
@@ -354,6 +383,35 @@ export function TaskHeaderActions({
             <RenameIcon />
             <span>重命名任务</span>
           </button>
+          {projects.length > 0 && (
+            <>
+              {projects
+                .filter((project) => project.projectId !== task.project_id)
+                .map((project) => (
+                  <button
+                    key={project.projectId}
+                    type="button"
+                    role="menuitem"
+                    disabled={busy}
+                    onClick={() => void moveToProject(project.projectId)}
+                  >
+                    <ProjectIcon />
+                    <span>移入「{project.name}」</span>
+                  </button>
+                ))}
+              {task.project_id && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={busy}
+                  onClick={() => void moveToProject(null)}
+                >
+                  <ProjectIcon />
+                  <span>移出项目</span>
+                </button>
+              )}
+            </>
+          )}
           <button
             type="button"
             role="menuitem"

@@ -5,6 +5,8 @@ import {
   createThreadHistoryAdapter,
   invalidateThreadHistory,
   loadTasks,
+  notifyTaskListChanged,
+  peekCachedTasks,
   prefetchThreadHistory,
   TASK_LIST_REQUEST_TIMEOUT_MS,
 } from "../src/lib/task-history";
@@ -212,4 +214,28 @@ describe("thread history activity restoration", () => {
     expect((await iterator.next()).done).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+});
+
+
+it("refreshes a mutated task list and prevents an older read from replacing it", async () => {
+  vi.stubGlobal("window", { dispatchEvent: vi.fn() });
+  notifyTaskListChanged();
+  let finishOld!: (response: Response) => void;
+  const oldResponse = new Promise<Response>((resolve) => { finishOld = resolve; });
+  const created = { thread_id: "new-project-task", project_id: "project-1" };
+  const fetchMock = vi.fn().mockReturnValueOnce(oldResponse).mockResolvedValueOnce(Response.json([created]));
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    const stale = loadTasks();
+    notifyTaskListChanged();
+    await expect(loadTasks()).resolves.toEqual([created]);
+    finishOld(Response.json([]));
+    await stale;
+    expect(peekCachedTasks()).toEqual([created]);
+    await expect(loadTasks()).resolves.toEqual([created]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  } finally {
+    notifyTaskListChanged();
+    vi.unstubAllGlobals();
+  }
 });
