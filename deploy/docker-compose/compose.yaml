@@ -14,6 +14,7 @@ x-python-build: &python-build
 x-harness-environment: &harness-environment
   HARNESS_ENVIRONMENT: production
   HARNESS_RUNTIME: ${HARNESS_RUNTIME:-claude-sdk}
+  HARNESS_RUNTIME_KERNELS: '${HARNESS_RUNTIME_KERNELS:-["claude-agent-sdk","codex-app-server","deepagents"]}'
   HARNESS_CODEX_CLI_PATH: ${HARNESS_CODEX_CLI_PATH:-/usr/local/bin/codex}
   HARNESS_CODEX_MODEL_BY_ROUTE: ${HARNESS_CODEX_MODEL_BY_ROUTE:-{}}
   HARNESS_CODEX_PROVIDER_BY_ROUTE: ${HARNESS_CODEX_PROVIDER_BY_ROUTE:-{}}
@@ -130,6 +131,7 @@ x-harness-environment: &harness-environment
 x-control-environment: &control-environment
   HARNESS_ENVIRONMENT: production
   HARNESS_RUNTIME: ${HARNESS_RUNTIME:-claude-sdk}
+  HARNESS_RUNTIME_KERNELS: '${HARNESS_RUNTIME_KERNELS:-["claude-agent-sdk","codex-app-server","deepagents"]}'
   HARNESS_DATABASE_URL: postgresql+asyncpg://harness:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/harness
   HARNESS_REDIS_URL: redis://redis:6379/0
   HARNESS_MINIO_ENDPOINT: minio:9000

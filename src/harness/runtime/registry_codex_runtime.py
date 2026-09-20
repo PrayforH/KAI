@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Collection, Mapping
 from pathlib import Path
 from typing import cast
 from urllib.parse import urlsplit
@@ -297,19 +297,17 @@ class RegistryRuntimeRouter:
         *,
         registry: AgentRegistry,
         runtimes: Mapping[AgentRuntimeType, AgentRuntime],
+        enabled_runtimes: Collection[AgentRuntimeType] = INSTALLED_AGENT_RUNTIMES,
     ) -> None:
-        # The router is the only place that can turn a published Manifest into a
-        # running kernel, so it refuses to exist while an installed runtime is
-        # missing: a partial registry would leave such an Agent unrunnable
-        # behind a runtime type the console advertises.
-        missing = tuple(
-            runtime for runtime in INSTALLED_AGENT_RUNTIMES if runtime not in runtimes
-        )
+        # A deployment may explicitly serve a subset, but every enabled kernel
+        # must be wired. An omitted kernel never falls back to another runtime.
+        missing = tuple(runtime for runtime in enabled_runtimes if runtime not in runtimes)
         if missing:
             raise ValueError(
-                "installed Agent runtimes are not wired into the router: "
-                + ", ".join(missing)
+                "installed Agent runtimes are not wired into the router: " + ", ".join(missing)
             )
+        if not enabled_runtimes or set(runtimes) != set(enabled_runtimes):
+            raise ValueError("runtime wiring must exactly match the enabled kernels")
         self._registry = registry
         self._runtimes = dict(runtimes)
 
@@ -327,6 +325,6 @@ class RegistryRuntimeRouter:
             raise ConflictError("Session runtime does not match the Agent manifest")
         runtime = self._runtimes.get(runtime_type)
         if runtime is None:
-            raise ConflictError(f"Agent runtime is not installed: {runtime_type}")
+            raise ConflictError(f"Agent runtime is not enabled on this deployment: {runtime_type}")
         async for event in runtime.execute(context):
             yield event
