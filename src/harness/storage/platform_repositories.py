@@ -760,6 +760,7 @@ class PostgresAguiThreadBindingRepository:
                     user_id=binding.user_id,
                     thread_id=binding.thread_id,
                     session_id=binding.session_id,
+                    project_id=binding.project_id,
                     payload=binding.model_dump(mode="json"),
                 )
             )
@@ -914,10 +915,8 @@ class PostgresAguiThreadBindingRepository:
             )
             .values(
                 project_id=None,
-                payload=func.jsonb_set(
-                    cast(Any, AguiThreadBindingRow.payload),
-                    "{project_id}",
-                    func.to_jsonb(None),
+                payload=sql_cast(AguiThreadBindingRow.payload, JSONB).op("||")(
+                    {"project_id": None}
                 ),
             )
         )
