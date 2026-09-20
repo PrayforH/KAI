@@ -66,11 +66,13 @@ python -m pytest -q \
 - 本地源码与镜像内 317 个 Python 文件的聚合 SHA-256 一致：`694e63ebbc9785ec1aa8c792452ae1a704b9920daa59ba5d226ec32e7a1cc246`。
 - 174 配置目录：`/data/agent-studio/docker-compose`。
 - 环境专用覆盖文件：`compose.deepagents-174.yaml`，固定 API/worker 镜像和运行时。
-- `.env.production` 的 `COMPOSE_FILE` 已包含该覆盖文件；重启入口为 `up-deepagents-174.sh`。
+- `.env.production` 持久化运行时、内核集合和后端专用镜像标签；旧 Compose 配置已补齐这些变量的透传。
+- `HARNESS_HARBOR_API_IMAGE_TAG` 仅覆盖后端镜像，不改变前端或依赖镜像标签；空值兼容原来的统一镜像标签。
+- 重启入口为 `up-deepagents-174.sh`，显式加载三个 Compose 文件；原来的 base + Harbor 命令也已验证解析到相同的后端镜像与内核。
 - 部署前活动任务数为 0，仅替换此项目的 API 与三个 worker。
 - 备份：`/data/agent-studio/backups/deepagents-runtime-174-20260920`，其中环境文件和完整配置含凭据，不应复制到日志或仓库。
 - 证据：`/data/agent-studio/builds/deepagents-runtime-174-4f95e64b/`，包含测试日志、构建文件、实机脚本和 `live-evidence.txt`。
 
-需要回滚时，恢复备份中的 `compose.yaml` 与 `env.production`，使用原来的两个
+需要回滚时，恢复备份中的 `compose.yaml`、`compose.harbor.yaml` 与 `env.production`，使用原来的两个
 Compose 文件重建 API/worker。原镜像仍保留。回滚会恢复 Claude-only 配置，
 DeepAgents 会话也会重新受到本次故障影响。
