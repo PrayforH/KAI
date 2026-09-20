@@ -8,6 +8,7 @@ from pydantic import SecretStr
 from harness.api.dependencies import build_memory_container
 from harness.application.approvals import ApprovalService
 from harness.application.events import EventService
+from harness.composition import build_production_container
 from harness.config import Settings
 from harness.core.manifest import AgentManifest
 from harness.core.models import ExecutionIdentity
@@ -113,6 +114,59 @@ def test_multi_runtime_composition_installs_every_registered_runtime(tmp_path: P
     assert set(installed) == set(INSTALLED_AGENT_RUNTIMES)
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("production", [False, True])
+@pytest.mark.parametrize("deepagents_enabled", [False, True])
+async def test_composition_constructs_only_enabled_kernels(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    production: bool,
+    deepagents_enabled: bool,
+) -> None:
+    path = tmp_path / "settings.json"
+    path.write_text(
+        json.dumps(
+            {
+                "env": {
+                    "ANTHROPIC_BASE_URL": "https://gateway.example",
+                    "ANTHROPIC_AUTH_TOKEN": "test-secret",
+                    "ANTHROPIC_MODEL": "test-model",
+                }
+            }
+        )
+    )
+
+    def forbidden_factory(**_kwargs: object) -> None:
+        pytest.fail("a disabled runtime must not be constructed")
+
+    module = "harness.composition" if production else "harness.api.dependencies"
+    monkeypatch.setattr(f"{module}.RegistryCodexRuntime", forbidden_factory)
+    kernels = {"claude-agent-sdk", "deepagents"} if deepagents_enabled else {"claude-agent-sdk"}
+    if not deepagents_enabled:
+        monkeypatch.setattr(f"{module}.build_deepagents_runtime", forbidden_factory)
+    settings = Settings(
+        runtime="multi",
+        runtime_kernels=frozenset(kernels),
+        environment="production" if production else "local",
+        cc_switch_settings_path=str(path),
+        allow_unsafe_local_sandbox=True,
+        api_bearer_token=SecretStr("a" * 32),
+        minio_access_key=SecretStr("test-access"),
+        minio_secret_key=SecretStr("test-secret"),
+    )
+    container = (
+        build_production_container(settings)
+        if production
+        else build_memory_container(settings=settings)
+    )
+    try:
+        assert isinstance(container.runtime, RegistryRuntimeRouter)
+        assert set(vars(container.runtime)["_runtimes"]) == kernels
+    finally:
+        if container.close is not None:
+            await container.close()
+
+
 def test_multi_runtime_composition_arms_the_deepagents_tool_gate(tmp_path: Path) -> None:
     """A DeepAgents Run must be able to authorize its first tool call.
 
@@ -193,9 +247,7 @@ async def test_local_claude_composition_uses_server_owned_mcp_registry(
             mcp_secret_references_json=json.dumps(
                 {"tavily-readonly": {"api_key": "TAVILY_API_KEY"}}
             ),
-            mcp_server_secrets_json=SecretStr(
-                json.dumps({"TAVILY_API_KEY": "local-key"})
-            ),
+            mcp_server_secrets_json=SecretStr(json.dumps({"TAVILY_API_KEY": "local-key"})),
         )
     )
     runtime = cast(RegistryClaudeRuntime, container.runtime)
@@ -223,9 +275,7 @@ def test_claude_sdk_composition_fails_instead_of_falling_back(tmp_path: Path) ->
 def test_daytona_composition_requires_explicit_credentials() -> None:
     with pytest.raises(ValueError, match="HARNESS_DAYTONA_API_KEY"):
         build_memory_container(
-            settings=Settings(
-                sandbox_provider="daytona", daytona_api_key=SecretStr("")
-            )
+            settings=Settings(sandbox_provider="daytona", daytona_api_key=SecretStr(""))
         )
 
 

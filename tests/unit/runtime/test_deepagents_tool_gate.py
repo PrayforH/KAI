@@ -137,9 +137,7 @@ async def _arrange(
         workspace=tmp_path,
         assistant_message_id="assistant-deepagents-message",
         resolved_policy=resolved_policy,
-        sandbox_command_executor=(
-            cast(Any, _sandbox_executor) if with_sandbox_executor else None
-        ),
+        sandbox_command_executor=(cast(Any, _sandbox_executor) if with_sandbox_executor else None),
     )
     gate = DeepagentsToolGate(
         context=context,
@@ -338,13 +336,38 @@ async def test_a_bundle_operator_needs_both_declaration_and_a_sandbox(tmp_path: 
     """An in-process Bundle operator would run in the Worker, so it is refused."""
 
     declared = frozenset({_BUNDLE_OPERATOR})
-    sandboxed, _, _ = await _arrange(
-        tmp_path, declared_tools=declared, with_sandbox_executor=True
-    )
+    sandboxed, _, _ = await _arrange(tmp_path, declared_tools=declared, with_sandbox_executor=True)
     worker_local, _, _ = await _arrange(tmp_path, declared_tools=declared)
 
     assert not _denied(await _invoke(sandboxed, name=_BUNDLE_OPERATOR, arguments={}))
     assert _denied(await _invoke(worker_local, name=_BUNDLE_OPERATOR, arguments={}))
+
+
+@pytest.mark.asyncio
+async def test_a_declared_bundle_operator_cannot_override_explicit_deny(tmp_path: Path) -> None:
+    gate, events, _ = await _arrange(
+        tmp_path,
+        profiles=False,
+        policy_rules=[
+            PolicyRule(name="blocked-operator", tool=_BUNDLE_OPERATOR, decision=PolicyDecision.DENY)
+        ],
+        declared_tools=frozenset({_BUNDLE_OPERATOR}),
+        with_sandbox_executor=True,
+    )
+    called = False
+
+    async def handler(request: ToolCallRequest) -> ToolMessage | Command[Any]:
+        nonlocal called
+        called = True
+        return await _echo(request)
+
+    output = await _invoke(gate, name=_BUNDLE_OPERATOR, handler=handler)
+
+    assert _denied(output)
+    assert not called
+    emitted = await events.list_after("tenant-a", "run-deepagents", 0)
+    assert [event.type for event in emitted] == ["tool.request", "tool.result"]
+    assert "blocked-operator" in emitted[-1].payload["error"]["message"]
 
 
 @pytest.mark.asyncio
@@ -390,3 +413,35 @@ async def test_the_request_event_is_redacted_for_the_durable_stream(tmp_path: Pa
 
     request = (await events.list_after("tenant-a", "run-deepagents", 0))[0]
     assert "sk-live-0123456789abcdef" not in str(request.payload)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "path", ["outputs/review.txt", "/outputs/review.txt", "/workspace/outputs/review.txt"]
+)
+async def test_virtual_paths_are_authorized_and_executed_as_the_same_workspace_file(
+    tmp_path: Path,
+    path: str,
+) -> None:
+    gate, _, _ = await _arrange(
+        tmp_path,
+        profiles=False,
+        policy_rules=[
+            PolicyRule(
+                name="output-only",
+                tool="Write",
+                path_glob="outputs/*",
+                decision=PolicyDecision.ALLOW,
+            ),
+        ],
+    )
+    received: list[str] = []
+
+    async def handler(request: ToolCallRequest) -> ToolMessage | Command[Any]:
+        received.append(request.tool_call["args"]["file_path"])
+        return await _echo(request)
+
+    result = await _invoke(gate, name="write_file", arguments={"file_path": path}, handler=handler)
+
+    assert not _denied(result)
+    assert received == ["outputs/review.txt"]

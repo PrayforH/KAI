@@ -48,9 +48,10 @@ body.codex-theme-v1 {
   --codex-control-transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
 }
 
-/* Light mode follows the quiet, cool-white hierarchy used by Doubao: a
-   barely tinted navigation rail, a white reading canvas, soft selection
-   surfaces, and blue reserved for focus and primary actions. */
+/* Light mode follows the quiet, cool-white hierarchy used by Doubao for the
+   neutral surfaces, but the accent is the workspace's monochrome one — near
+   black for primary actions and focus in light, white in dark — so the light
+   theme reads as one product with the dark theme and the Studio pages. */
 html[data-color-mode="light"] body.codex-theme-v1 {
   --codex-surface: #ffffff;
   --codex-surface-deep: #f1f1f2;
@@ -65,10 +66,10 @@ html[data-color-mode="light"] body.codex-theme-v1 {
   --codex-faint: #909096;
   --codex-line: #e8e8ea;
   --codex-line-strong: #d9d9dc;
-  --codex-accent: #2f75e8;
-  --codex-accent-hover: #2468d5;
-  --codex-accent-soft: rgb(47 117 232 / 10%);
-  --codex-accent-faint: rgb(47 117 232 / 6%);
+  --codex-accent: #1a1c1f;
+  --codex-accent-hover: #000000;
+  --codex-accent-soft: rgb(26 28 31 / 10%);
+  --codex-accent-faint: rgb(26 28 31 / 6%);
   --codex-skill: #6a6a6a;
   --codex-skill-soft: rgb(0 0 0 / 6%);
   --codex-warning: #996510;
@@ -525,6 +526,27 @@ body.codex-theme-v1:has(.console-shell) .task-list {
   scrollbar-color: #494949 transparent;
 }
 
+/* 项目 and 任务 share one scrolling column: the sidebar is a fixed-row grid, so
+   a second flexible child would leave the project list stretched and the task
+   list stranded at the bottom. */
+body.codex-theme-v1:has(.console-shell) .task-list-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: #494949 transparent;
+}
+
+/* One left edge for the section labels, the project rows and the task rows. */
+body.codex-theme-v1:has(.console-shell) .task-project-heading {
+  padding-left: 12px;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-list-item,
+body.codex-theme-v1:has(.console-shell) .task-list-item:hover,
+body.codex-theme-v1:has(.console-shell) .task-list-item.is-active {
+  padding-left: 12px;
+}
+
 .task-project-group + .task-project-group {
   margin-top: 6px;
 }
@@ -545,7 +567,8 @@ body.codex-theme-v1:has(.console-shell) .task-list {
   min-height: 30px;
   padding: 4px 30px 4px 10px;
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr);
+  /* icon · name · task count */
+  grid-template-columns: 16px minmax(0, 1fr) auto;
   align-items: center;
   gap: 9px;
   border: 0;
@@ -935,22 +958,55 @@ body.codex-theme-v1:has(.console-shell) .console-header {
   color: #8f8f8f;
 }
 
-/* Header task details: the project chip doubles as the hover/click trigger
-   for the task-name / activity / version popover (ZCode-style folder card). */
+/* Header task details: a single bare folder icon sits before the title and
+   doubles as the hover/click trigger for the task card (ZCode-style folder). */
 
 .task-details {
   position: relative;
   min-width: 0;
+  display: inline-flex;
+  flex: 0 0 auto;
 }
 
-.task-details-trigger {
+.task-folder-trigger {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  color: #8f8f8f;
+  background: transparent;
   cursor: pointer;
 }
 
-.task-details-trigger:hover,
-.task-details-trigger[aria-expanded="true"] {
-  color: #d6d6d6;
-  background: #222222;
+.task-folder-trigger svg,
+.task-folder-static svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.task-folder-trigger:hover,
+.task-folder-trigger[aria-expanded="true"],
+.task-folder-trigger:focus-visible {
+  color: #e4e4e4;
+  background: #262626;
+}
+
+.task-folder-static {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  display: grid;
+  place-items: center;
+  color: #6a6a6a;
 }
 
 .task-details-popover {
@@ -1032,6 +1088,21 @@ body.codex-theme-v1:has(.console-shell) .console-header {
   padding-top: 6px;
   padding-bottom: 6px;
   border-top: 1px solid #303030;
+}
+
+/* The version switcher folded into the folder card replaces the static
+   version row for switchable agents. */
+
+.task-details-row.is-switcher {
+  display: block;
+  min-height: 0;
+  margin-top: 4px;
+  padding: 6px 2px 2px;
+  border-top: 1px solid #303030;
+}
+
+.task-details-row.is-switcher .task-agent-switcher {
+  width: 100%;
 }
 
 /* Header "..." task actions: pin / rename / archive, mirroring the sidebar's
@@ -1401,6 +1472,89 @@ body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-in
 
 body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-input::placeholder {
   color: #767676;
+}
+
+/* Collapsed composer window: the input caps at a fixed row count once the
+   text grows long; the chevron toggle expands it (dropdown style). */
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .composer-input-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .composer-input-wrap .aui-composer-input {
+  display: block;
+  width: 100%;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .composer-input-wrap:not([data-expanded="true"]) .aui-composer-input {
+  max-height: 100px;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .composer-input-wrap[data-overflowing="true"]:not([data-expanded="true"])::after {
+  content: "";
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  bottom: 1px;
+  height: 36px;
+  border-radius: 0 0 14px 14px;
+  background: linear-gradient(180deg, rgb(31 31 31 / 0%), #1f1f1f 80%);
+  pointer-events: none;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .composer-expand-toggle {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #444444;
+  border-radius: 50%;
+  color: #d6d6d6;
+  background: #2a2a2a;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 32%);
+  cursor: pointer;
+  z-index: 3;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .composer-expand-toggle:hover,
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .composer-expand-toggle:focus-visible {
+  color: #ffffff;
+  background: #333333;
+}
+
+body.codex-theme-v1:has(.console-shell) .harness-composer-shell .composer-expand-toggle svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .composer-input-wrap[data-overflowing="true"]:not([data-expanded="true"])::after {
+  background: linear-gradient(180deg, rgb(255 255 255 / 0%), #ffffff 80%);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .composer-expand-toggle {
+  border-color: #d9d9dc;
+  color: #55555a;
+  background: #ffffff;
+  box-shadow: 0 4px 14px rgb(27 27 34 / 14%);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .composer-expand-toggle:hover,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .composer-expand-toggle:focus-visible {
+  color: #171719;
+  background: #f0f0f1;
 }
 
 body.codex-theme-v1:has(.console-shell) .composer-skill-context {
@@ -1923,7 +2077,7 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) {
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) ::selection {
   color: var(--codex-ink);
-  background: rgb(47 117 232 / 18%);
+  background: rgb(26 28 31 / 12%);
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .product-brand-mark {
@@ -2111,10 +2265,23 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .header-ic
   background: #f0f0f1;
 }
 
-html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-details-trigger:hover,
-html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-details-trigger[aria-expanded="true"] {
-  color: #3d3d42;
-  background: #ededee;
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-folder-trigger {
+  color: #747479;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-folder-trigger:hover,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-folder-trigger[aria-expanded="true"],
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-folder-trigger:focus-visible {
+  color: #202024;
+  background: #f0f0f1;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-folder-static {
+  color: #9a9aa0;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-details-row.is-switcher {
+  border-top-color: #ebebed;
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-details-popover,
@@ -2241,7 +2408,7 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-c
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-root:focus-within {
   border-color: #c8d6ed;
-  box-shadow: 0 0 0 2px rgb(47 117 232 / 8%), 0 12px 38px rgb(27 27 34 / 11%);
+  box-shadow: 0 0 0 2px rgb(26 28 31 / 8%), 0 12px 38px rgb(27 27 34 / 11%);
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell[data-run-locked="true"] .aui-composer-root,
@@ -2260,17 +2427,17 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-c
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .composer-skill-context {
-  border-color: #c9d9e8;
-  color: #3574a8;
-  background: #edf5fb;
+  border-color: var(--codex-line);
+  color: var(--codex-ink-soft);
+  background: var(--codex-surface-subtle);
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .composer-skill-context > small {
-  color: #718597;
+  color: var(--codex-muted);
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .composer-skill-context > button {
-  color: #718597;
+  color: var(--codex-muted);
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .composer-skill-context > button:hover {

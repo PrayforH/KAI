@@ -903,6 +903,52 @@ class PostgresAguiThreadBindingRepository:
             await session.commit()
             return updated
 
+    async def clear_project(self, tenant_id: str, project_id: str) -> int:
+        """Detach every task of a project; used when the project is deleted."""
+
+        statement = (
+            update(AguiThreadBindingRow)
+            .where(
+                AguiThreadBindingRow.tenant_id == tenant_id,
+                AguiThreadBindingRow.project_id == project_id,
+            )
+            .values(
+                project_id=None,
+                payload=func.jsonb_set(
+                    cast(Any, AguiThreadBindingRow.payload),
+                    "{project_id}",
+                    func.to_jsonb(None),
+                ),
+            )
+        )
+        async with self._sessions() as session:
+            result = await session.execute(statement)
+            await session.commit()
+            return int(result.rowcount or 0)
+
+    async def set_project(
+        self,
+        tenant_id: str,
+        user_id: str,
+        thread_id: str,
+        *,
+        project_id: str | None,
+    ) -> AguiThreadBinding:
+        """Move one task into a project, or out of every project when null."""
+
+        async with self._sessions() as session:
+            row = await session.get(
+                AguiThreadBindingRow, (tenant_id, user_id, thread_id), with_for_update=True
+            )
+            if row is None:
+                raise NotFoundError(f"AG-UI thread binding not found: {thread_id}")
+            binding = AguiThreadBinding.model_validate(row.payload)
+            updated = binding.model_copy(update={"project_id": project_id})
+            row.project_id = project_id
+            row.payload = updated.model_dump(mode="json")
+            await session.commit()
+            return updated
+
     async def set_pinned(
         self,
         tenant_id: str,

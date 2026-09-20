@@ -276,6 +276,8 @@ class AguiThreadBinding(FrozenModel):
     archived_at: datetime | None = None
     pinned_at: datetime | None = None
     last_read_at: datetime | None = None
+    # Owning project for the task list's 项目 view; None means a plain 任务.
+    project_id: str | None = None
     created_at: datetime
     updated_at: datetime
 

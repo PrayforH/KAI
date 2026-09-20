@@ -1,0 +1,96 @@
+/* Shared Studio header: section tabs pinned at the top of the page body,
+   page actions on the right. Light is the default palette; the codex-theme-v1
+   block maps every value onto the shared tokens so dark and light both work. */
+
+.header {
+  --pgh-ink: #1a1a1a;
+  --pgh-muted: #8a8a8a;
+  --pgh-line: #e5e5e5;
+  --pgh-surface: #ffffff;
+  --pgh-hover: #ececec;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  min-height: var(--shell-header-height, 46px);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 6px clamp(20px, 3.4vw, 44px);
+  border-bottom: 1px solid var(--pgh-line);
+  background: var(--pgh-surface);
+}
+
+.tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
+}
+
+.tab,
+.tabActive {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 15px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--pgh-muted);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.tab svg,
+.tabActive svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tab:hover {
+  color: var(--pgh-ink);
+  background: var(--pgh-hover);
+}
+
+.tabActive {
+  color: var(--pgh-ink);
+  background: var(--pgh-hover);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+/* codex-theme-v1 ------------------------------------------------------- */
+
+.header {
+  --pgh-ink: var(--codex-ink, #f0f0f0);
+  --pgh-muted: var(--codex-muted, #9a9a9a);
+  --pgh-line: var(--codex-line, #3a3d40);
+  --pgh-surface: var(--codex-surface, #1e1f22);
+  --pgh-hover: var(--codex-surface-hover, #33363a);
+}
+
+:global(html[data-color-mode="dark"]) .header,
+:global([data-theme="codex-theme-v1"]) .header {
+  color-scheme: dark;
+}
+
+:global(html[data-color-mode="light"]) .header {
+  color-scheme: light;
+}

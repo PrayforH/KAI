@@ -14,6 +14,7 @@ x-python-build: &python-build
 x-harness-environment: &harness-environment
   HARNESS_ENVIRONMENT: production
   HARNESS_RUNTIME: ${HARNESS_RUNTIME:-claude-sdk}
+  HARNESS_RUNTIME_KERNELS: '${HARNESS_RUNTIME_KERNELS:-["claude-agent-sdk","codex-app-server","deepagents"]}'
   HARNESS_CODEX_CLI_PATH: ${HARNESS_CODEX_CLI_PATH:-/usr/local/bin/codex}
   HARNESS_CODEX_MODEL_BY_ROUTE: ${HARNESS_CODEX_MODEL_BY_ROUTE:-{}}
   HARNESS_CODEX_PROVIDER_BY_ROUTE: ${HARNESS_CODEX_PROVIDER_BY_ROUTE:-{}}
@@ -120,6 +121,8 @@ x-harness-environment: &harness-environment
   HARNESS_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces
   HARNESS_OTEL_SERVICE_NAME: claude-agent-harness
   HARNESS_OTEL_ENVIRONMENT: ${LANGFUSE_ENVIRONMENT:-production}
+  HARNESS_WEB_SEARCH_API_KEY: ${HARNESS_WEB_SEARCH_API_KEY:-}
+  HARNESS_WEB_TOOLS_PROXY: ${HARNESS_WEB_TOOLS_PROXY:-}
   HARNESS_MEMORY_WORKLOAD_TOKEN_SECRET: ${HARNESS_MEMORY_WORKLOAD_TOKEN_SECRET:?set HARNESS_MEMORY_WORKLOAD_TOKEN_SECRET}
   HARNESS_MEMORY_MCP_PUBLIC_URL: ${HARNESS_MEMORY_MCP_PUBLIC_URL:-}
   HARNESS_KNOWLEDGE_WORKLOAD_TOKEN_SECRET: ${HARNESS_KNOWLEDGE_WORKLOAD_TOKEN_SECRET:-${HARNESS_MEMORY_WORKLOAD_TOKEN_SECRET}}
@@ -128,6 +131,7 @@ x-harness-environment: &harness-environment
 x-control-environment: &control-environment
   HARNESS_ENVIRONMENT: production
   HARNESS_RUNTIME: ${HARNESS_RUNTIME:-claude-sdk}
+  HARNESS_RUNTIME_KERNELS: '${HARNESS_RUNTIME_KERNELS:-["claude-agent-sdk","codex-app-server","deepagents"]}'
   HARNESS_DATABASE_URL: postgresql+asyncpg://harness:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/harness
   HARNESS_REDIS_URL: redis://redis:6379/0
   HARNESS_MINIO_ENDPOINT: minio:9000
@@ -163,6 +167,8 @@ x-control-environment: &control-environment
   HARNESS_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces
   HARNESS_OTEL_SERVICE_NAME: claude-agent-harness
   HARNESS_OTEL_ENVIRONMENT: ${LANGFUSE_ENVIRONMENT:-production}
+  HARNESS_WEB_SEARCH_API_KEY: ${HARNESS_WEB_SEARCH_API_KEY:-}
+  HARNESS_WEB_TOOLS_PROXY: ${HARNESS_WEB_TOOLS_PROXY:-}
 
 services:
   postgres:

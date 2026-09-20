@@ -77,9 +77,7 @@ def test_tool_calls_become_tool_requests_and_close_the_turn() -> None:
     events = mapper.updates(
         {
             "model": {
-                "messages": [
-                    _ai([{"id": "call-1", "name": "execute", "args": {"command": "ls"}}])
-                ]
+                "messages": [_ai([{"id": "call-1", "name": "execute", "args": {"command": "ls"}}])]
             }
         }
     )
@@ -145,8 +143,41 @@ def test_usage_is_accumulated_across_turns() -> None:
     assert result.payload["duration_ms"] == 1234
     assert result.payload["subtype"] == "success"
     assert result.payload["is_error"] is False
-    # At least one turn is reported so a zero-tool Run still looks like a turn.
-    assert result.payload["num_turns"] == 1
+    assert result.payload["num_turns"] == 2
+
+
+def test_tool_call_turns_contribute_usage_and_final_answer_counts_as_a_turn() -> None:
+    mapper = DeepagentsStreamMapper()
+    mapper.updates(
+        {
+            "model": {
+                "messages": [
+                    _ai(
+                        [{"id": "c1", "name": "read_file", "args": {"file_path": "a.txt"}}],
+                        usage_metadata={"input_tokens": 100, "output_tokens": 20},
+                    )
+                ]
+            }
+        }
+    )
+    mapper.updates({"tools": {"messages": [_ai(tool_call_id="c1", content="hello")]}})
+    mapper.updates(
+        {
+            "model": {
+                "messages": [
+                    _ai(
+                        content="done",
+                        usage_metadata={"input_tokens": 200, "output_tokens": 10},
+                    )
+                ]
+            }
+        }
+    )
+
+    result = mapper.result_event(duration_ms=1)
+
+    assert result.payload["usage"] == {"input_tokens": 300, "output_tokens": 30}
+    assert result.payload["num_turns"] == 2
 
 
 def test_route_selection_is_announced_once_and_never_binds_a_thread() -> None:

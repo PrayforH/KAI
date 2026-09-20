@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
-from deepagents import FilesystemMiddleware, FilesystemPermission, create_deep_agent
+from deepagents import FilesystemMiddleware, create_deep_agent
 from langchain.agents.middleware import AgentMiddleware, TodoListMiddleware
 from langchain_core.language_models import BaseChatModel
 from langchain_core.tools import StructuredTool
@@ -81,7 +81,6 @@ _MCP_TRANSPORT = "streamable_http"
 # runtime can dispatch on the protocol instead of guessing from the model name.
 _ANTHROPIC_API_FORMAT = "anthropic_compatible"
 _OPENAI_API_FORMAT = "openai_compatible"
-_READ_ONLY_PERMISSIONS = (FilesystemPermission(operations=["write"], paths=["/**"], mode="deny"),)
 
 
 @dataclass(frozen=True)
@@ -191,7 +190,7 @@ class _McpToolsMiddleware(AgentMiddleware):
             for server in self._connections:
                 for tool in await client.get_tools(server_name=server):
                     name = f"mcp__{server}__{tool.name}"
-                    if self._declared_tools and name not in self._declared_tools:
+                    if name not in self._declared_tools:
                         continue
                     discovered.append(tool.model_copy(update={"name": name}))
             self._tools = discovered
@@ -202,6 +201,17 @@ class _McpToolsMiddleware(AgentMiddleware):
         if not tools:
             return await handler(request)
         return await handler(request.override(tools=[*request.tools, *tools]))
+
+    async def awrap_tool_call(self, request: Any, handler: Any) -> Any:
+        # Tools discovered after graph compilation are absent from ToolNode's
+        # static registry. Supply the reviewed instance, then continue through
+        # the remaining middleware so the platform gate still authorizes it.
+        if request.tool is None:
+            name = request.tool_call["name"]
+            tool = next((tool for tool in await self._load() if tool.name == name), None)
+            if tool is not None:
+                request = request.override(tool=tool)
+        return await handler(request)
 
     def wrap_model_call(self, request: Any, handler: Any) -> Any:
         raise RuntimeError(
@@ -401,14 +411,14 @@ class DeepagentsRuntime:
             materialize_skill_snapshot_set((snapshot,), context.workspace)
         middleware: list[AgentMiddleware] = [
             TodoListMiddleware(),
-            # The built-in FilesystemMiddleware is replaced rather than
-            # extended: `tools` is what withholds `delete`, and `_permissions`
-            # is the same private hook the export renderer uses (verified on
-            # 0.7.13) to deny writes on a read-only draft.
+            # Tool selection withholds `delete`. Read-only enforcement belongs
+            # to DeepagentsToolGate and the Run's resolved platform policy:
+            # DeepAgents 0.7.13 rejects `_permissions` on Sandbox backends even
+            # when the execute tool is omitted. The standalone export uses a
+            # non-executing backend for that configuration and keeps its rules.
             FilesystemMiddleware(
                 backend=backend,
                 tools=list(plan.filesystem_tools),
-                _permissions=list(_READ_ONLY_PERMISSIONS) if plan.permissions else None,
             ),
         ]
         if config.mcp_servers:

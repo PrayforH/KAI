@@ -14,6 +14,7 @@ from starlette.applications import Starlette
 
 from harness.adapters.memory import (
     InMemoryAgentRegistry,
+    InMemoryAguiThreadBindingRepository,
     InMemoryApprovalRepository,
     InMemoryArtifactRepository,
     InMemoryArtifactStore,
@@ -61,7 +62,6 @@ from harness.core.manifest import AgentManifestSnapshot
 from harness.core.models import Run, RunStatus, Session
 from harness.core.ports import EventRepository, EventWakeup, TaskQueue
 from harness.deployments.controller import DeploymentController
-from harness.deployments.models import EnvironmentName
 from harness.deployments.queue import DeploymentTaskQueue
 from harness.deployments.repositories import (
     DeploymentRepository,
@@ -112,6 +112,8 @@ from harness.platform_mcp.workload import (
 )
 from harness.policy.profiles import PolicyProfileRegistry, default_policy_profiles
 from harness.policy.runtime import ResolvedPolicy
+from harness.projects.repositories import InMemoryProjectRepository
+from harness.projects.service import ProjectService
 from harness.quality.controller import QualitySyncController
 from harness.quality.langfuse import DisabledQualityExporter
 from harness.quality.queue import QualityTaskQueue
@@ -249,6 +251,7 @@ class ApiContainer:
     runs: RunService
     triggers: AgentTriggerService
     automations: AutomationService
+    projects: ProjectService
     approvals: ApprovalService
     artifacts: ArtifactService
     input_artifacts: InputArtifactService
@@ -543,13 +546,15 @@ def build_memory_container(
         clock=clock,
         id_generator=id_generator,
     )
+    thread_bindings = InMemoryAguiThreadBindingRepository()
     automation_service = AutomationService(
         InMemoryAutomationTaskRepository(),
         InMemoryAutomationRecordRepository(),
         sessions=session_service,
         runs=run_service,
         agent_name=resolved_settings.automation_agent_name,
-        environment=EnvironmentName(resolved_settings.automation_environment),
+        registry=registry,
+        agent_version=resolved_settings.automation_agent_version,
         clock=clock,
         id_generator=id_generator,
     )
@@ -876,40 +881,45 @@ def build_memory_container(
         runtime = (
             RegistryRuntimeRouter(
                 registry=registry,
+                enabled_runtimes=resolved_settings.runtime_kernels,
                 runtimes={
-                    "claude-agent-sdk": claude_runtime,
-                    "codex-app-server": RegistryCodexRuntime(
-                        registry=registry,
-                        remote_memory_mcp=remote_memory_mcp,
-                        codex_path=Path(resolved_settings.codex_cli_path),
-                        model_configurations=model_configurations,
-                        tool_resolver=tool_resolver,
-                        model_by_route=resolved_settings.codex_model_by_route,
-                        provider_by_route=resolved_settings.codex_provider_by_route,
-                        approval_policy=resolved_settings.codex_approval_policy,
-                        network_access=resolved_settings.codex_network_access,
-                        tool_output_token_limit=(
-                            resolved_settings.codex_tool_output_token_limit
+                    name: factory()
+                    for name, factory in {
+                        "claude-agent-sdk": lambda: claude_runtime,
+                        "codex-app-server": lambda: RegistryCodexRuntime(
+                            registry=registry,
+                            remote_memory_mcp=remote_memory_mcp,
+                            codex_path=Path(resolved_settings.codex_cli_path),
+                            model_configurations=model_configurations,
+                            tool_resolver=tool_resolver,
+                            model_by_route=resolved_settings.codex_model_by_route,
+                            provider_by_route=resolved_settings.codex_provider_by_route,
+                            approval_policy=resolved_settings.codex_approval_policy,
+                            network_access=resolved_settings.codex_network_access,
+                            tool_output_token_limit=(
+                                resolved_settings.codex_tool_output_token_limit
+                            ),
+                            server_request_handler=CodexToolGate(
+                                approvals=approval_service,
+                                events=event_service,
+                            ).authorize,
                         ),
-                        server_request_handler=CodexToolGate(
+                        "deepagents": lambda: build_deepagents_runtime(
+                            registry=registry,
+                            model_configurations=model_configurations,
                             approvals=approval_service,
                             events=event_service,
-                        ).authorize,
-                    ),
-                    "deepagents": build_deepagents_runtime(
-                        registry=registry,
-                        model_configurations=model_configurations,
-                        approvals=approval_service,
-                        events=event_service,
-                        quotas=enforced_quotas,
-                        context_service=context_service,
-                        observability=observability,
-                        tool_resolver=tool_resolver,
-                        # See composition.py: a DeepAgents Run is authorized
-                        # against the policy its own snapshot names, so the
-                        # registry is passed rather than one resolved engine.
-                        policy_profiles=active_policy_profiles,
-                    ),
+                            quotas=enforced_quotas,
+                            context_service=context_service,
+                            observability=observability,
+                            tool_resolver=tool_resolver,
+                            # See composition.py: a DeepAgents Run is authorized
+                            # against the policy its own snapshot names, so the
+                            # registry is passed rather than one resolved engine.
+                            policy_profiles=active_policy_profiles,
+                        ),
+                    }.items()
+                    if name in resolved_settings.runtime_kernels
                 },
             )
             if resolved_settings.runtime == "multi"
@@ -967,12 +977,31 @@ def build_memory_container(
         cancellation_wakeup=cancellation_wakeup,
         context_service=context_service,
     )
+    automation_service.configure_executor(worker.execute)
+    automation_service.configure_result_delivery(
+        thread_bindings, observed_events, artifact_repository
+    )
     agui = AguiRunService(
         sessions=session_service,
         runs=run_service,
         input_artifacts=input_artifact_service,
         contexts=context_service,
+        bindings=thread_bindings,
         knowledge_bindings=knowledge.resolve_bindings,
+    )
+    project_service = ProjectService(
+        InMemoryProjectRepository(),
+        clock=clock,
+        id_generator=id_generator,
+    )
+    project_service.configure_task_project_clearer(thread_bindings.clear_project)
+    project_service.configure_task_project_writer(
+        lambda tenant_id, user_id, thread_id, project_id: agui.set_project(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            thread_id=thread_id,
+            project_id=project_id,
+        )
     )
 
     async def lifecycle_reap() -> int:
@@ -1069,6 +1098,7 @@ def build_memory_container(
         runs=run_service,
         triggers=trigger_service,
         automations=automation_service,
+        projects=project_service,
         approvals=approval_service,
         artifacts=artifact_service,
         input_artifacts=input_artifact_service,

@@ -8,6 +8,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import { AgentThread } from "../components/agent-thread";
 import { AuthProvider, useAuth } from "../components/auth-provider";
@@ -22,6 +23,7 @@ import {
   TaskHeaderActions,
 } from "../components/task-header-actions";
 import { TaskSidebar } from "../components/task-sidebar";
+import { ApiProject, projectClient } from "../lib/studio-client";
 import { ProductBrandMark, ProductLoading, PRODUCT_NAME } from "../components/product-brand";
 import { SidebarLeftIcon, SidebarPanelIcon } from "../components/panel-icons";
 import { WorkbenchRail } from "../components/workbench-rail";
@@ -188,35 +190,41 @@ function HeaderUtilities({
 
 function TaskContextBar({
   taskTitle,
-  agent,
   task,
+  switcher,
   onRenamed,
   onArchived,
+  projects = [],
+  onProjectChanged,
 }: {
   taskTitle: string;
-  agent: TaskAgent | null;
   task: TaskSummary | null;
+  /** Version switcher for switchable agents, folded into the folder popover. */
+  switcher?: ReactNode;
   onRenamed: (title: string) => void;
   onArchived: () => void;
+  projects?: readonly ApiProject[];
+  onProjectChanged?: () => void;
 }) {
   return (
     <div className="task-context-bar" aria-label="当前任务、项目与版本">
-      <strong className="task-context-title">{taskTitle}</strong>
       {task ? (
-        <TaskDetailsPopover task={task} agent={agent} />
+        <TaskDetailsPopover task={task} switcher={switcher} />
       ) : (
-        <span className="task-context-chip task-context-project">
-          <svg viewBox="0 0 20 20" aria-hidden="true">
+        <span className="task-folder-static" aria-hidden="true">
+          <svg viewBox="0 0 20 20">
             <path d="M2.75 5.75a2 2 0 0 1 2-2h3.1l1.7 1.9h5.7a2 2 0 0 1 2 2v6.5a2 2 0 0 1-2 2H4.75a2 2 0 0 1-2-2Z" />
           </svg>
-          {agent?.displayName ?? "agent-studio"}
         </span>
       )}
+      <strong className="task-context-title">{taskTitle}</strong>
       {task && (
         <TaskHeaderActions
           task={task}
+          projects={projects}
           onRenamed={onRenamed}
           onArchived={onArchived}
+          onProjectChanged={() => onProjectChanged?.()}
         />
       )}
     </div>
@@ -462,6 +470,39 @@ function AuthenticatedHome() {
   }, [refreshAgentCatalog]);
 
   const availableTaskAgents = useMemo(() => taskAgents, [taskAgents]);
+  // The sidebar groups tasks by the agent that ran them, so the browser view
+  // shows the same display labels the header and switcher use.
+  const [projects, setProjects] = useState<ApiProject[]>([]);
+  const refreshProjects = useCallback(() => {
+    void projectClient
+      .list()
+      .then(setProjects)
+      .catch(() => setProjects([]));
+  }, []);
+  useEffect(() => {
+    refreshProjects();
+  }, [refreshProjects]);
+  const createProject = useCallback(async () => {
+    const name = window.prompt("项目名称，例如：金融办");
+    if (!name || !name.trim()) return;
+    try {
+      await projectClient.create(name.trim());
+      refreshProjects();
+    } catch (cause) {
+      window.alert(cause instanceof Error ? cause.message : "创建项目失败");
+    }
+  }, [refreshProjects]);
+
+  const agentDisplayLabels = useMemo(
+    () =>
+      Object.fromEntries(
+        taskAgents.map((agent) => [
+          agent.name,
+          agentDisplayName(agent.name, agent.displayName),
+        ]),
+      ),
+    [taskAgents],
+  );
 
   useEffect(() => {
     if (runStream.threadId === threadId && runStream.runId) {
@@ -659,6 +700,10 @@ function AuthenticatedHome() {
           onSelect={switchTask}
           onNewTask={startNewTask}
           onNewTaskWithProject={startTaskInProject}
+          agentLabels={agentDisplayLabels}
+          projects={projects}
+          onProjectsChanged={refreshProjects}
+          onCreateProject={() => void createProject()}
           searchControl={(
             <ProductivityCommandCenter
               agents={availableTaskAgents}
@@ -682,8 +727,25 @@ function AuthenticatedHome() {
               )}
               <TaskContextBar
                 taskTitle={currentTaskTitle}
-                agent={selectedAgent}
                 task={currentTask}
+                projects={projects}
+                onProjectChanged={() => {
+                  // The task moved between sections: reload both the list and
+                  // the per-project counts.
+                  refreshProjects();
+                  window.dispatchEvent(new CustomEvent("harness:task-list-changed"));
+                }}
+                switcher={selectedAgent && selectedAgent.name !== "lead-agent" ? (
+                  <TaskAgentSwitcher
+                    kind="version"
+                    agents={availableTaskAgents}
+                    selected={selectedAgent}
+                    loading={agentsLoading}
+                    currentTaskBusy={currentTaskBusy}
+                    onChange={switchAgent}
+                    onRefresh={refreshAgentCatalog}
+                  />
+                ) : undefined}
                 onRenamed={setCurrentTaskTitle}
                 onArchived={() => {
                   setCurrentTask(null);
@@ -691,17 +753,6 @@ function AuthenticatedHome() {
                   startNewTask();
                 }}
               />
-              {selectedAgent && selectedAgent.name !== "lead-agent" && (
-                <TaskAgentSwitcher
-                  kind="version"
-                  agents={availableTaskAgents}
-                  selected={selectedAgent}
-                  loading={agentsLoading}
-                  currentTaskBusy={currentTaskBusy}
-                  onChange={switchAgent}
-                  onRefresh={refreshAgentCatalog}
-                />
-              )}
             </div>
             <HeaderUtilities
               taskRailOpen={taskRailOpen}

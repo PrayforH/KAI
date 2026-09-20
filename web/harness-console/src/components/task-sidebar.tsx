@@ -21,6 +21,12 @@ import {
   type TaskSummary,
 } from "../lib/task-history";
 import { formatTaskAge } from "../lib/task-list-age";
+import { agentDisplayName } from "../lib/agent-display-name";
+import {
+  ApiProject,
+  projectClient,
+  setTaskProject,
+} from "../lib/studio-client";
 import { taskListRefreshDelay } from "../lib/task-list-refresh";
 
 
@@ -126,6 +132,10 @@ export function TaskSidebar({
   onNewTaskWithProject,
   searchControl,
   activeNav = "tasks",
+  agentLabels,
+  projects = [],
+  onProjectsChanged,
+  onCreateProject,
 }: {
   currentThreadId: string;
   collapsed: boolean;
@@ -138,6 +148,13 @@ export function TaskSidebar({
   searchControl?: ReactNode;
   /** Which workspace nav item is highlighted; defaults to the task page. */
   activeNav?: WorkspaceId;
+  /** Optional agent_name -> display label map; falls back to platform names. */
+  agentLabels?: Readonly<Record<string, string>>;
+  /** Projects shown above the plain task list, in creation order. */
+  projects?: readonly ApiProject[];
+  onProjectsChanged?: () => void;
+  /** Opens the project creation flow owned by the page. */
+  onCreateProject?: () => void;
 }) {
   // Seed from the shared snapshot so navigating to a Studio page and back
   // (a fresh mount) renders the previous list immediately instead of
@@ -298,19 +315,37 @@ export function TaskSidebar({
     () => tasks.find((task) => task.thread_id === currentThreadId),
     [currentThreadId, tasks],
   );
-  const taskProjects = useMemo(() => {
-    const groups = new Map<string, TaskSummary[]>();
-    for (const task of tasks) {
-      const project = task.agent_name || "agent-studio";
-      const group = groups.get(project);
-      if (group) group.push(task);
-      else groups.set(project, [task]);
-    }
-    return [...groups].map(([name, projectTasks]) => ({
-      name,
-      tasks: projectTasks,
-    }));
-  }, [tasks]);
+  const labelForAgent = useMemo(
+    () => (name: string) => agentLabels?.[name] ?? agentDisplayName(name),
+    [agentLabels],
+  );
+  const byRecency = useMemo(
+    () =>
+      [...tasks].sort(
+        (a, b) =>
+          Number(Boolean(b.pinned_at)) - Number(Boolean(a.pinned_at)) ||
+          Date.parse(b.updated_at) - Date.parse(a.updated_at),
+      ),
+    [tasks],
+  );
+  // 项目 first, then everything without a project. A project is a user-owned
+  // container, so a task's Agent no longer decides where it appears.
+  const projectGroups = useMemo(() => {
+    const known = new Set(projects.map((project) => project.projectId));
+    return projects.map((project) => ({
+      project,
+      tasks: byRecency.filter((task) => task.project_id === project.projectId),
+    })).filter((group) => group.tasks.length > 0 || known.has(group.project.projectId));
+  }, [projects, byRecency]);
+  // A task whose project was deleted (or is not visible here) falls back to the
+  // plain 任务 list instead of disappearing from both sections.
+  const looseTasks = useMemo(() => {
+    const known = new Set(projects.map((project) => project.projectId));
+    return byRecency.filter(
+      (task) => !task.project_id || !known.has(task.project_id),
+    );
+  }, [byRecency, projects]);
+
   useEffect(() => {
     if (!selected) return;
     if (selected.pending_approval) {
@@ -433,110 +468,155 @@ export function TaskSidebar({
           <div className="task-sidebar-mode">
             <WorkspaceNavigation
               active={activeNav}
-              visible={["knowledge", "agents", "capabilities"]}
+              visible={["knowledge", "agents", "automation", "capabilities"]}
               labelOverrides={{ capabilities: "插件" }}
             />
           </div>
+          <div className="task-list-scroll">
           <div className="task-list-toolbar">
             <div className="task-list-heading">
               <span className="task-list-heading-copy">
                 <ProjectFolderIcon />
-                任务
+                项目
               </span>
             </div>
+            <button
+              type="button"
+              className="task-project-create"
+              aria-label="新建项目"
+              title="新建项目"
+              onClick={() => onCreateProject?.()}
+            >
+              ＋
+            </button>
           </div>
           <div className="task-list" role="list">
-            {taskProjects.filter((project) => project.name === "lead-agent").map((project) => {
-              const tasksExpanded = expandedTaskGroups.has(project.name);
-              return <section className="task-project-group task-default-group" key={project.name} aria-label="任务">
-                <div className="task-project-items">
-                  {(tasksExpanded ? project.tasks : project.tasks.slice(0, 5)).map(renderTaskRow)}
-                  {project.tasks.length > 5 && <button type="button" className="task-list-item tasks-show-more"
-                    aria-label={`${tasksExpanded ? "收起" : "展开"}通用任务`} aria-expanded={tasksExpanded}
-                    onClick={() => setExpandedTaskGroups((current) => {
-                      const next = new Set(current);
-                      if (next.has(project.name)) next.delete(project.name); else next.add(project.name);
-                      return next;
-                    })}><span className="task-list-title">{tasksExpanded ? "收起显示" : `展开显示（${project.tasks.length - 5}）`}</span></button>}
-                </div>
-              </section>;
-            })}
-            {taskProjects.some((project) => project.name !== "lead-agent") && (
-              <div className="task-list-toolbar task-agent-section-heading">
-                <div className="task-list-heading">
-                  <span className="task-list-heading-copy">智能体</span>
-                </div>
-              </div>
-            )}
-            {(showAllProjects ? taskProjects.filter((project) => project.name !== "lead-agent") : taskProjects.filter((project) => project.name !== "lead-agent").slice(0, 5)).map((project) => {
-              const projectCollapsed = collapsedProjects.has(project.name);
-              const tasksExpanded = expandedTaskGroups.has(project.name);
+            {projectGroups.map(({ project, tasks: projectTasks }) => {
+              const collapsed = !expandedTaskGroups.has(`project:${project.projectId}`);
+              const expanded = expandedTaskGroups.has(project.projectId);
               return (
                 <section
-                  className={`task-project-group${projectCollapsed ? " is-collapsed" : ""}`}
-                  key={project.name}
+                  className={`task-project-group task-user-project${collapsed ? " is-collapsed" : ""}`}
+                  key={project.projectId}
                   aria-label={project.name}
+                  data-project-id={project.projectId}
                 >
                   <div className="task-project-head">
                     <button
                       type="button"
                       className="task-project-heading"
-                      aria-expanded={!projectCollapsed}
-                      aria-label={`${projectCollapsed ? "展开" : "收起"}项目 ${project.name}`}
-                      title={`${projectCollapsed ? "展开" : "收起"}项目 ${project.name}`}
+                      aria-expanded={!collapsed}
+                      aria-label={`${collapsed ? "展开" : "收起"}项目 ${project.name}`}
+                      title={`${collapsed ? "展开" : "收起"}项目 ${project.name}`}
                       onClick={() => {
-                        setCollapsedProjects((current) => {
+                        setExpandedTaskGroups((current) => {
                           const next = new Set(current);
-                          if (next.has(project.name)) next.delete(project.name);
-                          else next.add(project.name);
+                          const key = `project:${project.projectId}`;
+                          if (next.has(key)) next.delete(key);
+                          else next.add(key);
                           return next;
                         });
                       }}
                     >
-                      <ProjectFolderIcon open={!projectCollapsed} />
-                      <strong className="project-name-viewport"><span onMouseEnter={(event) => {
-                        const node = event.currentTarget;
-                        node.style.setProperty("--name-overflow", `${Math.min(0, node.parentElement!.clientWidth - node.scrollWidth)}px`);
-                      }}>{project.name}</span></strong>
+                      <ProjectFolderIcon open={!collapsed} />
+                      <strong className="project-name-viewport">
+                        <span
+                          onMouseEnter={(event) => {
+                            const node = event.currentTarget;
+                            node.style.setProperty(
+                              "--name-overflow",
+                              `${Math.min(0, node.parentElement!.clientWidth - node.scrollWidth)}px`,
+                            );
+                          }}
+                        >
+                          {project.name}
+                        </span>
+                      </strong>
+                      <span className="task-bucket-count">{projectTasks.length}</span>
                     </button>
-                    <button
-                      type="button"
-                      className="task-project-add"
-                      aria-label={`在 ${project.name} 下新建任务`}
-                      title={`在 ${project.name} 下新建任务`}
-                      disabled={!onNewTaskWithProject || !project.tasks[0]}
-                      onClick={() => {
-                        if (onNewTaskWithProject && project.tasks[0]) {
-                          onNewTaskWithProject(project.tasks[0]);
-                        }
-                      }}
-                    >
-                      <AddToProjectIcon />
-                    </button>
-                  </div>
-                  {!projectCollapsed && (
-                    <div className="task-project-items">
-                      {(tasksExpanded ? project.tasks : project.tasks.slice(0, 5)).map(renderTaskRow)}
-                      {project.tasks.length > 5 && <button
+                    {projectTasks.length > 0 && (
+                      <button
                         type="button"
-                        className="task-list-item tasks-show-more"
-                        aria-label={`${tasksExpanded ? "收起" : "展开"} ${project.name} 的任务`}
-                        aria-expanded={tasksExpanded}
-                        onClick={() => setExpandedTaskGroups((current) => {
-                          const next = new Set(current);
-                          if (next.has(project.name)) next.delete(project.name);
-                          else next.add(project.name);
-                          return next;
-                        })}
-                      ><span className="task-list-title">{tasksExpanded ? "收起显示" : `展开显示（${project.tasks.length - 5}）`}</span></button>}
+                        className="task-project-add"
+                        aria-label={`在 ${project.name} 下新建任务`}
+                        title={`在 ${project.name} 下新建任务`}
+                        disabled={!onNewTaskWithProject}
+                        onClick={() => {
+                          if (onNewTaskWithProject && projectTasks[0]) {
+                            onNewTaskWithProject(projectTasks[0]);
+                          }
+                        }}
+                      >
+                        <AddToProjectIcon />
+                      </button>
+                    )}
+                  </div>
+                  {!collapsed && (
+                    <div className="task-project-items">
+                      {projectTasks.length === 0 && (
+                        <p className="task-project-empty">还没有任务，把任务移入这里即可</p>
+                      )}
+                      {(expanded ? projectTasks : projectTasks.slice(0, 5)).map(renderTaskRow)}
+                      {projectTasks.length > 5 && (
+                        <button
+                          type="button"
+                          className="task-list-item tasks-show-more"
+                          aria-label={`${expanded ? "收起" : "展开"} ${project.name} 的任务`}
+                          aria-expanded={expanded}
+                          onClick={() =>
+                            setExpandedTaskGroups((current) => {
+                              const next = new Set(current);
+                              if (next.has(project.projectId)) next.delete(project.projectId);
+                              else next.add(project.projectId);
+                              return next;
+                            })
+                          }
+                        >
+                          <span className="task-list-title">
+                            {expanded ? "收起显示" : `展开显示（${projectTasks.length - 5}）`}
+                          </span>
+                        </button>
+                      )}
                     </div>
                   )}
                 </section>
               );
             })}
-            {taskProjects.filter((project) => project.name !== "lead-agent").length > 5 && <button type="button" className="projects-show-more" aria-expanded={showAllProjects} onClick={() => setShowAllProjects((value) => !value)}>
-              {showAllProjects ? "收起智能体" : `展示更多（${taskProjects.filter((project) => project.name !== "lead-agent").length - 5}）`}
-            </button>}
+          </div>
+          <div className="task-list-toolbar task-agent-section-heading">
+            <div className="task-list-heading">
+              <span className="task-list-heading-copy">任务</span>
+            </div>
+          </div>
+          <div className="task-list" role="list">
+            {looseTasks.length === 0 && tasks.length > 0 && (
+              <p className="task-project-empty">所有任务都在项目中</p>
+            )}
+            <section className="task-project-group task-default-group" aria-label="任务">
+              <div className="task-project-items">
+                {(expandedTaskGroups.has("tasks") ? looseTasks : looseTasks.slice(0, 5)).map(renderTaskRow)}
+                {looseTasks.length > 5 && (
+                  <button
+                    type="button"
+                    className="task-list-item tasks-show-more"
+                    aria-label={`${expandedTaskGroups.has("tasks") ? "收起" : "展开"}任务`}
+                    aria-expanded={expandedTaskGroups.has("tasks")}
+                    onClick={() =>
+                      setExpandedTaskGroups((current) => {
+                        const next = new Set(current);
+                        if (next.has("tasks")) next.delete("tasks");
+                        else next.add("tasks");
+                        return next;
+                      })
+                    }
+                  >
+                    <span className="task-list-title">
+                      {expandedTaskGroups.has("tasks") ? "收起显示" : `展开显示（${looseTasks.length - 5}）`}
+                    </span>
+                  </button>
+                )}
+              </div>
+            </section>
             {loading && tasks.length === 0 && (
               <div className="task-list-state" aria-live="polite">
                 <span className="task-list-spinner" aria-hidden="true" />
@@ -558,6 +638,7 @@ export function TaskSidebar({
                 <button type="button" onClick={retryTasks}>重新加载</button>
               </div>
             )}
+          </div>
           </div>
           <div className="task-sidebar-account">
             <AccountMenu />

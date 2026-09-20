@@ -45,7 +45,6 @@ from harness.core.manifest import AgentManifest, AgentManifestSnapshot
 from harness.core.models import ModelCompatibility, RunStatus, Session
 from harness.core.ports import ArtifactStore, TaskQueue
 from harness.deployments.controller import DeploymentController
-from harness.deployments.models import EnvironmentName
 from harness.deployments.queue import DeploymentTaskQueue
 from harness.deployments.service import DeploymentService
 from harness.evals.controller import EvalController
@@ -88,6 +87,8 @@ from harness.platform_mcp.workload import (
 )
 from harness.policy.profiles import default_policy_profiles
 from harness.policy.runtime import ResolvedPolicy
+from harness.projects.pg_repositories import PostgresProjectRepository
+from harness.projects.service import ProjectService
 from harness.quality.controller import QualitySyncController
 from harness.quality.langfuse import DisabledQualityExporter, LangfuseQualityExporter
 from harness.quality.queue import QualityTaskQueue
@@ -979,13 +980,22 @@ def build_production_container(
         clock=clock,
         id_generator=ids,
     )
+    project_service = ProjectService(
+        PostgresProjectRepository(sessions),
+        clock=clock,
+        id_generator=ids,
+    )
     automation_service = AutomationService(
         automation_task_repository,
         automation_record_repository,
         sessions=session_service,
         runs=run_service,
         agent_name=settings.automation_agent_name,
-        environment=EnvironmentName(settings.automation_environment),
+        registry=registry,
+        agent_version=settings.automation_agent_version,
+        bindings=binding_repository,
+        events=observed_event_repository,
+        artifacts=artifact_repository,
         clock=clock,
         id_generator=ids,
     )
@@ -1217,39 +1227,44 @@ def build_production_container(
         runtime = (
             RegistryRuntimeRouter(
                 registry=registry,
+                enabled_runtimes=settings.runtime_kernels,
                 runtimes={
-                    "claude-agent-sdk": claude_runtime,
-                    "codex-app-server": RegistryCodexRuntime(
-                        registry=registry,
-                        remote_memory_mcp=remote_memory_mcp,
-                        codex_path=Path(settings.codex_cli_path),
-                        model_configurations=model_configurations,
-                        tool_resolver=tool_resolver,
-                        model_by_route=settings.codex_model_by_route,
-                        provider_by_route=settings.codex_provider_by_route,
-                        approval_policy=settings.codex_approval_policy,
-                        network_access=settings.codex_network_access,
-                        tool_output_token_limit=settings.codex_tool_output_token_limit,
-                        server_request_handler=CodexToolGate(
+                    name: factory()
+                    for name, factory in {
+                        "claude-agent-sdk": lambda: claude_runtime,
+                        "codex-app-server": lambda: RegistryCodexRuntime(
+                            registry=registry,
+                            remote_memory_mcp=remote_memory_mcp,
+                            codex_path=Path(settings.codex_cli_path),
+                            model_configurations=model_configurations,
+                            tool_resolver=tool_resolver,
+                            model_by_route=settings.codex_model_by_route,
+                            provider_by_route=settings.codex_provider_by_route,
+                            approval_policy=settings.codex_approval_policy,
+                            network_access=settings.codex_network_access,
+                            tool_output_token_limit=settings.codex_tool_output_token_limit,
+                            server_request_handler=CodexToolGate(
+                                approvals=approval_service,
+                                events=events,
+                            ).authorize,
+                        ),
+                        "deepagents": lambda: build_deepagents_runtime(
+                            registry=registry,
+                            model_configurations=model_configurations,
                             approvals=approval_service,
                             events=events,
-                        ).authorize,
-                    ),
-                    "deepagents": build_deepagents_runtime(
-                        registry=registry,
-                        model_configurations=model_configurations,
-                        approvals=approval_service,
-                        events=events,
-                        quotas=enforced_quotas,
-                        context_service=context_service,
-                        observability=observability,
-                        tool_resolver=tool_resolver,
-                        # The registry, not the resolved engine: a DeepAgents
-                        # Run is authorized against the policy its own snapshot
-                        # names, and this is the only object that can resolve an
-                        # arbitrary policy id.
-                        policy_profiles=policy_profiles,
-                    ),
+                            quotas=enforced_quotas,
+                            context_service=context_service,
+                            observability=observability,
+                            tool_resolver=tool_resolver,
+                            # The registry, not the resolved engine: a DeepAgents
+                            # Run is authorized against the policy its own snapshot
+                            # names, and this is the only object that can resolve an
+                            # arbitrary policy id.
+                            policy_profiles=policy_profiles,
+                        ),
+                    }.items()
+                    if name in settings.runtime_kernels
                 },
             )
             if settings.runtime == "multi"
@@ -1481,6 +1496,15 @@ def build_production_container(
         title_generator=ControlPlaneTaskTitleGenerator(model_configurations),
         knowledge_bindings=knowledge.resolve_bindings,
     )
+    project_service.configure_task_project_clearer(binding_repository.clear_project)
+    project_service.configure_task_project_writer(
+        lambda tenant_id, user_id, thread_id, project_id: agui.set_project(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            thread_id=thread_id,
+            project_id=project_id,
+        )
+    )
 
     async def infrastructure_facts(tenant_id: str) -> dict[str, int | None]:
         async with sessions() as db:
@@ -1648,6 +1672,7 @@ def build_production_container(
         runs=run_service,
         triggers=trigger_service,
         automations=automation_service,
+        projects=project_service,
         approvals=approval_service,
         artifacts=artifact_service,
         input_artifacts=input_service,

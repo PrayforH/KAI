@@ -2642,3 +2642,190 @@ export function capabilityOptions(catalog: StudioCapabilities): {
     runtimes: catalog.runtimeCapabilities ?? [],
   };
 }
+
+export type AutomationScheduleType = "once" | "cron";
+export type AutomationStatusKind = "active" | "paused" | "expired";
+export type AutomationPermissionKind = "full" | "restricted" | "readonly";
+export type AutomationRecordStatusKind = "running" | "success" | "failed" | "cancelled";
+export type AutomationRecordTriggerKind = "scheduled" | "manual";
+
+export interface ApiAutomationSchedule {
+  type: AutomationScheduleType;
+  at?: string | null;
+  cron?: string | null;
+  timezone: string;
+}
+
+export interface ApiAutomationValidity {
+  type: "forever" | "until";
+  until?: string | null;
+}
+
+export interface ApiAutomationTask {
+  tenantId: string;
+  taskId: string;
+  userId: string;
+  name: string;
+  prompt: string;
+  model: string;
+  workspaceId: string | null;
+  permission: AutomationPermissionKind;
+  schedule: ApiAutomationSchedule;
+  validity: ApiAutomationValidity;
+  status: AutomationStatusKind;
+  nextRunAt: string | null;
+  lastRunAt: string | null;
+  revision: number;
+  sourceTemplateId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ApiAutomationRecordArtifact {
+  artifactId: string;
+  name: string;
+  mediaType: string;
+  sizeBytes?: number | null;
+}
+
+export interface ApiAutomationRunRecord {
+  tenantId: string;
+  recordId: string;
+  taskId: string;
+  taskName: string;
+  userId: string;
+  trigger: AutomationRecordTriggerKind;
+  status: AutomationRecordStatusKind;
+  threadId?: string;
+  sessionId: string;
+  runId: string;
+  scheduledAt?: string | null;
+  startedAt: string;
+  finishedAt?: string | null;
+  durationMs?: number | null;
+  outputSummary?: string | null;
+  artifacts?: ApiAutomationRecordArtifact[];
+  error?: string | null;
+}
+
+export interface AutomationTaskInput {
+  name: string;
+  prompt: string;
+  model?: string;
+  workspaceId?: string | null;
+  permission?: AutomationPermissionKind;
+  schedule: ApiAutomationSchedule;
+  validity?: ApiAutomationValidity;
+  sourceTemplateId?: string | null;
+}
+
+export const automationClient = {
+  list(): Promise<ApiAutomationTask[]> {
+    return request<ApiAutomationTask[]>("automations");
+  },
+  create(input: AutomationTaskInput): Promise<ApiAutomationTask> {
+    return request<ApiAutomationTask>("automations", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+  update(
+    taskId: string,
+    expectedRevision: number,
+    input: AutomationTaskInput,
+  ): Promise<ApiAutomationTask> {
+    return request<ApiAutomationTask>(
+      `automations/${encodeURIComponent(taskId)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ ...input, expectedRevision }),
+      },
+    );
+  },
+  pause(taskId: string): Promise<ApiAutomationTask> {
+    return request<ApiAutomationTask>(
+      `automations/${encodeURIComponent(taskId)}/pause`,
+      { method: "POST" },
+    );
+  },
+  enable(taskId: string): Promise<ApiAutomationTask> {
+    return request<ApiAutomationTask>(
+      `automations/${encodeURIComponent(taskId)}/enable`,
+      { method: "POST" },
+    );
+  },
+  run(taskId: string): Promise<ApiAutomationRunRecord> {
+    return request<ApiAutomationRunRecord>(
+      `automations/${encodeURIComponent(taskId)}/run`,
+      { method: "POST" },
+    );
+  },
+  remove(taskId: string): Promise<void> {
+    return request<void>(`automations/${encodeURIComponent(taskId)}`, {
+      method: "DELETE",
+    });
+  },
+  records(): Promise<ApiAutomationRunRecord[]> {
+    return request<ApiAutomationRunRecord[]>("automations/records");
+  },
+};
+
+export interface ApiProject {
+  tenantId: string;
+  projectId: string;
+  userId: string;
+  name: string;
+  archivedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const projectClient = {
+  list(): Promise<ApiProject[]> {
+    return fetch("/api/studio/projects", { cache: "no-store" })
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json() as Promise<ApiProject[]>;
+      });
+  },
+  create(name: string): Promise<ApiProject> {
+    return request<ApiProject>("projects", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+  },
+  rename(projectId: string, name: string): Promise<ApiProject> {
+    return request<ApiProject>(`projects/${encodeURIComponent(projectId)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    });
+  },
+  archive(projectId: string): Promise<ApiProject> {
+    return request<ApiProject>(`projects/${encodeURIComponent(projectId)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ archived: true }),
+    });
+  },
+  remove(projectId: string): Promise<void> {
+    return request<void>(`projects/${encodeURIComponent(projectId)}`, {
+      method: "DELETE",
+    });
+  },
+};
+
+/** Bind a task to a project, or clear the binding with null. */
+export async function setTaskProject(
+  threadId: string,
+  projectId: string | null,
+): Promise<void> {
+  const response = requireAuthenticatedResponse(
+    await fetch(`/api/agui/threads/${encodeURIComponent(threadId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId }),
+    }),
+  );
+  if (!response.ok) {
+    throw new Error((await response.text()) || `HTTP ${response.status}`);
+  }
+}

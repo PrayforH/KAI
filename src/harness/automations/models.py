@@ -120,6 +120,13 @@ class UpdateAutomationTaskRequest(StudioModel):
     validity: AutomationValidity = Field(default_factory=AutomationValidity)
 
 
+class AutomationRecordArtifact(StudioModel):
+    artifact_id: str = Field(alias="artifactId")
+    name: str = Field(max_length=260)
+    media_type: str = Field(alias="mediaType", max_length=120)
+    size_bytes: int | None = Field(default=None, alias="sizeBytes")
+
+
 class AutomationRunRecord(StudioModel):
     tenant_id: str = Field(alias="tenantId")
     record_id: str = Field(alias="recordId")
@@ -128,10 +135,15 @@ class AutomationRunRecord(StudioModel):
     user_id: str = Field(alias="userId", min_length=1)
     trigger: AutomationRecordTrigger
     status: AutomationRecordStatus = AutomationRecordStatus.RUNNING
+    # The console task thread this execution belongs to, so a record can open
+    # the conversation that shows the run.
+    thread_id: str = Field(default="", alias="threadId", max_length=256)
     session_id: str = Field(alias="sessionId")
     run_id: str = Field(alias="runId")
     scheduled_at: datetime | None = Field(default=None, alias="scheduledAt")
     started_at: datetime = Field(alias="startedAt")
     finished_at: datetime | None = Field(default=None, alias="finishedAt")
     duration_ms: int | None = Field(default=None, alias="durationMs")
+    output_summary: str | None = Field(default=None, alias="outputSummary")
+    artifacts: tuple[AutomationRecordArtifact, ...] = ()
     error: str | None = None

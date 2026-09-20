@@ -203,6 +203,24 @@ class AguiRunService:
             archived_at=datetime.now(UTC) if archived else None,
         )
 
+    async def set_project(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        thread_id: str,
+        project_id: str | None,
+    ) -> str | None:
+        """Bind a task to a project; the caller validates project ownership."""
+
+        binding = await self._bindings.set_project(
+            tenant_id,
+            user_id,
+            thread_id,
+            project_id=project_id,
+        )
+        return binding.project_id
+
     async def set_pinned(
         self,
         *,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { formatTaskAge } from "../lib/task-list-age";
 import {
@@ -11,7 +11,7 @@ import {
   type TaskSummary,
 } from "../lib/task-history";
 import { useConfirmationDialog } from "./confirmation-dialog";
-import type { TaskAgent } from "../lib/task-agent-catalog";
+import { setTaskProject, type ApiProject } from "../lib/studio-client";
 
 const activeStatuses = new Set(["queued", "running", "waiting_approval", "cancelling"]);
 
@@ -39,6 +39,14 @@ function BranchIcon() {
       <circle cx="6" cy="15" r="1.9" />
       <circle cx="14" cy="7.5" r="1.9" />
       <path d="M6 6.9v6.2M14 9.4c0 2.5-1.8 3.4-4.2 3.7-1.2.15-2.4.4-3.1 1" />
+    </svg>
+  );
+}
+
+function ProjectIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M3.5 6.5h4l1.4 1.8h7.6v7.2H3.5z" />
     </svg>
   );
 }
@@ -101,10 +109,17 @@ function useDismissable(open: boolean, close: () => void) {
 }
 
 /**
- * Hover/click popover on the header's project chip: task name, the task's
- * project folder and the version binding it runs on (the branch analogue).
+ * Header folder trigger: one bare folder icon before the task title. Hover or
+ * click opens the task card (name, project folder, activity) and — when the
+ * task runs a switchable agent — the version switcher folded inside.
  */
-export function TaskDetailsPopover({ task, agent }: { task: TaskSummary; agent: TaskAgent | null }) {
+export function TaskDetailsPopover({
+  task,
+  switcher,
+}: {
+  task: TaskSummary;
+  switcher?: ReactNode;
+}) {
   const [open, setOpen] = useState(false);
   const hoverTimer = useRef<number>(0);
   const closeTimer = useRef<number>(0);
@@ -117,7 +132,7 @@ export function TaskDetailsPopover({ task, agent }: { task: TaskSummary; agent: 
     hoverTimer.current = window.setTimeout(() => setOpen(true), 220);
   };
   // Leaving the wrapper schedules a short close so crossing the popover gap
-  // (the chip and the popover are 8px apart) does not flicker the card.
+  // (the trigger and the popover are 8px apart) does not flicker the card.
   const scheduleClose = () => {
     window.clearTimeout(hoverTimer.current);
     window.clearTimeout(closeTimer.current);
@@ -130,7 +145,6 @@ export function TaskDetailsPopover({ task, agent }: { task: TaskSummary; agent: 
   }, []);
 
   const age = formatTaskAge(task.updated_at);
-  const folderName = agent?.displayName ?? task.agent_name;
 
   return (
     <div
@@ -148,14 +162,14 @@ export function TaskDetailsPopover({ task, agent }: { task: TaskSummary; agent: 
     >
       <button
         type="button"
-        className="task-context-chip task-context-project task-details-trigger"
+        className="task-folder-trigger"
         aria-expanded={open}
         aria-haspopup="dialog"
         aria-label="任务详情"
+        title="任务详情"
         onClick={() => setOpen((value) => !value)}
       >
         <ProjectFolderIcon />
-        {folderName}
       </button>
       {open && (
         <div className="task-details-popover" role="dialog" aria-label="任务详情">
@@ -170,10 +184,14 @@ export function TaskDetailsPopover({ task, agent }: { task: TaskSummary; agent: 
             <RecentActivityIcon />
             <span>最近活动 {age === "刚刚" ? "刚刚" : `${age}前`}</span>
           </div>
-          <div className="task-details-row is-branch">
-            <BranchIcon />
-            <span>{task.agent_version}</span>
-          </div>
+          {switcher ? (
+            <div className="task-details-row is-branch is-switcher">{switcher}</div>
+          ) : (
+            <div className="task-details-row is-branch">
+              <BranchIcon />
+              <span>{task.agent_version}</span>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -250,12 +268,17 @@ function RenameTaskDialog({
  */
 export function TaskHeaderActions({
   task,
+  projects = [],
   onRenamed,
   onArchived,
+  onProjectChanged,
 }: {
   task: TaskSummary;
+  /** Projects the task can be moved into; empty hides the project actions. */
+  projects?: readonly ApiProject[];
   onRenamed?: (title: string) => void;
   onArchived?: () => void;
+  onProjectChanged?: (projectId: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
@@ -321,6 +344,21 @@ export function TaskHeaderActions({
     })();
   };
 
+  /** Move the task into a project, or out of the current one. */
+  async function moveToProject(projectId: string | null) {
+    setBusy(true);
+    try {
+      await setTaskProject(task.thread_id, projectId);
+      setError("");
+      close();
+      onProjectChanged?.(projectId);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="task-header-actions" ref={containerRef}>
       <button
@@ -345,6 +383,35 @@ export function TaskHeaderActions({
             <RenameIcon />
             <span>重命名任务</span>
           </button>
+          {projects.length > 0 && (
+            <>
+              {projects
+                .filter((project) => project.projectId !== task.project_id)
+                .map((project) => (
+                  <button
+                    key={project.projectId}
+                    type="button"
+                    role="menuitem"
+                    disabled={busy}
+                    onClick={() => void moveToProject(project.projectId)}
+                  >
+                    <ProjectIcon />
+                    <span>移入「{project.name}」</span>
+                  </button>
+                ))}
+              {task.project_id && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={busy}
+                  onClick={() => void moveToProject(null)}
+                >
+                  <ProjectIcon />
+                  <span>移出项目</span>
+                </button>
+              )}
+            </>
+          )}
           <button
             type="button"
             role="menuitem"

@@ -1,0 +1,19 @@
+# Serve Claude and DeepAgents without enabling the Codex app-server kernel.
+# Keep image selection in the release/Harbor overlay. Unlike the Codex overlay,
+# this does not change Docker's seccomp profile or require host user namespaces.
+x-deepagents-runtime-environment: &deepagents-runtime-environment
+  HARNESS_RUNTIME: multi
+  HARNESS_RUNTIME_KERNELS: '["claude-agent-sdk","deepagents"]'
+
+services:
+  api:
+    environment:
+      <<: *deepagents-runtime-environment
+
+  worker:
+    environment:
+      <<: *deepagents-runtime-environment
+
+  quality-sync:
+    environment:
+      <<: *deepagents-runtime-environment

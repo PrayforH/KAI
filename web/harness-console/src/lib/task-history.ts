@@ -26,6 +26,7 @@ export interface TaskSummary {
   archived_at?: string | null;
   pinned_at?: string | null;
   last_read_at?: string | null;
+  project_id?: string | null;
   pending_approval?: (ApprovalDetails & { status: string }) | null;
 }
 
@@ -455,15 +456,23 @@ export function createThreadHistoryAdapter(
   return {
     async loadSnapshot(onLoaded) {
       invalidateThreadHistory(threadId);
-      const history = await loadThreadHistory(threadId, disposal.signal);
-      const repository = ExportedMessageRepository.fromArray(history ? fromAgUiMessages(history.messages, { showThinking: true }) : []);
+      const history = await loadThreadHistory(threadId).catch((error) => {
+        if (disposal.signal.aborted) return null;
+        throw error;
+      });
+      const converted = history ? fromAgUiMessages(history.messages, { showThinking: true }) : [];
+      const repository = ExportedMessageRepository.fromArray(converted);
       // Import terminal text before publishing the phase that stops recovery polling.
       onLoaded?.(repository);
       if (history) publishHistoryActivity(history, threadId);
       return repository;
     },
     async load() {
-      const history = await loadThreadHistory(threadId, disposal.signal);
+      // Deliberately not bound to the disposal signal: the shell remounts when
+      // the agent binding re-resolves, and an abort here would be cached by the
+      // runtime core, leaving the delivered conversation permanently empty.
+      // The signal only stops the resume polling below.
+      const history = await loadThreadHistory(threadId);
       if (!history) {
         return ExportedMessageRepository.fromArray([]);
       }

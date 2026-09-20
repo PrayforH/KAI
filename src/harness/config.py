@@ -2,8 +2,11 @@
 
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from harness.core.models import AgentRuntimeType
+from harness.runtime.installed import INSTALLED_AGENT_RUNTIMES
 
 
 class Settings(BaseSettings):
@@ -17,6 +20,10 @@ class Settings(BaseSettings):
 
     environment: Literal["local", "test", "production"] = "local"
     runtime: Literal["fake", "claude-sdk", "multi"] = "fake"
+    # In multi mode, only these kernels are constructed and allowed to execute.
+    runtime_kernels: frozenset[AgentRuntimeType] = Field(
+        default=frozenset(INSTALLED_AGENT_RUNTIMES), min_length=1
+    )
     sandbox_provider: Literal[
         "local", "daytona", "e2b", "kubernetes", "cubesandbox", "opensandbox"
     ] = "local"
@@ -57,8 +64,15 @@ class Settings(BaseSettings):
     otel_content_max_chars: int = Field(default=12_000, ge=256, le=100_000)
     local_auto_execute: bool = False
     # Scheduled automations invoke this Agent deployment when a task fires.
-    automation_agent_name: str = "lead-agent"
-    automation_environment: Literal["test", "canary", "production"] = "production"
+    automation_agent_name: str = Field(
+        default="lead-agent",
+        validation_alias=AliasChoices("automation_agent_name", "HARNESS_AGENT_NAME"),
+    )
+    # Empty resolves the owner's latest published version from the registry.
+    automation_agent_version: str = Field(
+        default="",
+        validation_alias=AliasChoices("automation_agent_version", "HARNESS_AGENT_VERSION"),
+    )
     api_bearer_token: SecretStr = SecretStr("")
 
     auth_jwt_secret: SecretStr = SecretStr("local-development-auth-secret-change-before-production")

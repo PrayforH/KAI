@@ -47,7 +47,9 @@ export function StudioUnifiedShell({
   const goHome = () => router.push("/");
   const routeWorkspace: WorkspaceId = pathname.startsWith("/studio/files")
     ? "files"
-    : pathname.startsWith("/studio/skills")
+    : pathname.startsWith("/studio/automation")
+      ? "automation"
+      : pathname.startsWith("/studio/skills")
       ? "skills"
       : pathname.startsWith("/studio/capabilities")
         ? "capabilities"

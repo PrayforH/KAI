@@ -1,0 +1,893 @@
+/* 自动化管理页面。浅色值为基础，深色值统一在文件尾部的 codex-theme-v1
+   段覆盖；两套主题都只允许引用 --codex-* 语义 token，禁止写死颜色。 */
+
+.manager {
+  --auto-ink: #1a1a1a;
+  --auto-muted: #8a8a8a;
+  --auto-faint: #b3b3b3;
+  --auto-line: #e5e5e5;
+  --auto-card: #ffffff;
+  --auto-page: #ffffff;
+  --auto-hover: #ececec;
+  --auto-danger: #e5484d;
+  --auto-success: #2f9e63;
+  --auto-running: #3b82c4;
+  --auto-warning: #b7813a;
+  min-height: 100%;
+  padding: 28px clamp(20px, 3.4vw, 44px) 72px;
+  color: var(--auto-ink);
+  background: var(--auto-page);
+  font-family: var(--codex-font-ui, -apple-system, "PingFang SC", sans-serif);
+}
+
+.manager * {
+  box-sizing: border-box;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
+}
+
+.tab,
+.tabActive {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--auto-muted);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.tab svg,
+.tabActive svg,
+.refresh svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tab:hover {
+  color: var(--auto-ink);
+  background: var(--auto-hover);
+}
+
+.tabActive {
+  color: var(--auto-ink);
+  background: var(--auto-hover);
+}
+
+.headerAdd {
+  min-height: 36px;
+  padding: 0 18px;
+  margin-left: auto;
+  border: 0;
+  border-radius: 999px;
+  background: var(--auto-ink);
+  color: var(--auto-page);
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.recordToolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.statusFilter,
+.search {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--auto-line);
+  border-radius: 10px;
+  background: var(--auto-card);
+  color: var(--auto-ink);
+  font-size: 13px;
+}
+
+.search {
+  width: 220px;
+}
+
+.statusFilter:focus-visible,
+.search:focus-visible,
+.refresh:focus-visible {
+  outline: 2px solid var(--auto-running);
+  outline-offset: 1px;
+}
+
+.refresh {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--auto-line);
+  border-radius: 10px;
+  background: var(--auto-card);
+  color: var(--auto-ink);
+  cursor: pointer;
+}
+
+.refresh:hover {
+  background: var(--auto-hover);
+}
+
+.error {
+  margin: 14px 0 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  color: var(--auto-danger);
+  background: var(--auto-hover);
+}
+
+.loading {
+  padding: 60px 0;
+  text-align: center;
+  color: var(--auto-muted);
+  font-size: 14px;
+}
+
+.section {
+  margin-top: 26px;
+}
+
+.emptyTasks,
+.emptyRecords {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 64px 0 34px;
+  text-align: center;
+}
+
+.emptyAlarm,
+.emptyDoc {
+  display: grid;
+  place-items: center;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: var(--auto-hover);
+  color: var(--auto-faint);
+}
+
+.emptyAlarm svg,
+.emptyDoc svg {
+  width: 44px;
+  height: 44px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.emptyTasks p,
+.emptyRecords p {
+  margin: 0;
+  color: var(--auto-muted);
+  font-size: 14px;
+}
+
+.primaryAction {
+  min-height: 40px;
+  padding: 0 22px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--auto-ink);
+  color: var(--auto-page);
+  font-size: 14px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.primaryAction:hover {
+  opacity: 0.9;
+}
+
+.taskList {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 34px;
+  padding: 0;
+  list-style: none;
+}
+
+.taskCard,
+.recordCard {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border: 1px solid var(--auto-line);
+  border-radius: 14px;
+  background: var(--auto-card);
+  transition: box-shadow 140ms ease;
+}
+
+.taskCard:hover,
+.recordCard:hover {
+  box-shadow: 0 6px 20px rgb(0 0 0 / 6%);
+}
+
+.taskCardFocused {
+  border-color: var(--auto-running);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--auto-running) 30%, transparent);
+}
+
+.taskCardFocused::after {
+  content: "已定位";
+  align-self: flex-start;
+  margin-left: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--auto-running) 16%, transparent);
+  color: var(--auto-running);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.taskCard[data-status="paused"] {
+  opacity: 0.75;
+}
+
+.taskCard[data-status="expired"],
+.recordCard[data-status="cancelled"] {
+  opacity: 0.6;
+}
+
+.taskMain,
+.recordMain {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.taskTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.taskTitleRow strong {
+  font-size: 15px;
+}
+
+.statusBadge,
+.recordBadge {
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 650;
+  background: var(--auto-hover);
+  color: var(--auto-muted);
+}
+
+.recordBadge[data-kind="success"] {
+  color: var(--auto-success);
+  background: color-mix(in srgb, var(--auto-success) 14%, transparent);
+}
+
+.recordBadge[data-kind="failed"] {
+  color: var(--auto-danger);
+  background: color-mix(in srgb, var(--auto-danger) 14%, transparent);
+}
+
+.recordBadge[data-kind="running"] {
+  color: var(--auto-running);
+  background: color-mix(in srgb, var(--auto-running) 14%, transparent);
+}
+
+.triggerTag {
+  color: var(--auto-muted);
+  font-size: 11px;
+}
+
+.taskMeta,
+.recordMeta {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin: 0;
+  color: var(--auto-muted);
+  font-size: 12px;
+}
+
+.recordOutput {
+  margin: 0;
+  padding: 8px 12px;
+  border: 0;
+  border-left: 3px solid var(--auto-running);
+  border-radius: 8px;
+  background: var(--auto-hover);
+  color: var(--auto-ink);
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: left;
+  cursor: pointer;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.recordOutputExpanded {
+  white-space: pre-wrap;
+}
+
+.recordArtifacts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.recordArtifactsLabel {
+  color: var(--auto-muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.recordArtifact {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid var(--auto-line);
+  border-radius: 8px;
+  background: var(--auto-hover);
+  color: var(--auto-ink);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.recordArtifact svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.recordArtifact small {
+  color: var(--auto-muted);
+  font-weight: 500;
+}
+
+.recordTaskLink {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--auto-ink);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+  border-bottom: 1px dashed transparent;
+}
+
+.recordTaskLink:hover {
+  border-bottom-color: var(--auto-running);
+  color: var(--auto-running);
+}
+
+.recordTaskAction {
+  padding: 2px 8px;
+  border: 1px solid var(--auto-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--auto-muted);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.recordTaskAction:hover {
+  color: var(--auto-ink);
+  background: var(--auto-hover);
+}
+
+.recordError {
+  margin: 0;
+  color: var(--auto-danger);
+  font-size: 12px;
+}
+
+.taskActions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.taskActions button {
+  min-height: 32px;
+  padding: 0 13px;
+  border: 1px solid var(--auto-line);
+  border-radius: 9px;
+  background: var(--auto-card);
+  color: var(--auto-ink);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.taskActions button:hover {
+  background: var(--auto-hover);
+}
+
+.dangerAction {
+  color: var(--auto-danger) !important;
+}
+
+.templatesTitle {
+  margin: 8px 0 16px;
+  font-size: 17px;
+  letter-spacing: -0.01em;
+}
+
+.templateGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.templateCard {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid var(--auto-line);
+  border-radius: 14px;
+  background: var(--auto-card);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 140ms ease, box-shadow 140ms ease;
+}
+
+.templateCard:hover {
+  background: var(--auto-hover);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 5%);
+}
+
+.templateIcon {
+  font-size: 20px;
+  line-height: 1.4;
+}
+
+.templateBody {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.templateBody strong {
+  font-size: 14px;
+}
+
+.templateBody small {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  color: var(--auto-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.recordList {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* 弹窗 ---------------------------------------------------------------- */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(0 0 0 / 40%);
+}
+
+.modal {
+  width: min(720px, 100%);
+  max-height: calc(100dvh - 64px);
+  overflow-y: auto;
+  display: grid;
+  gap: 18px;
+  padding: 26px 28px;
+  border-radius: 18px;
+  background: var(--auto-card);
+  color: var(--auto-ink);
+  box-shadow: 0 24px 64px rgb(0 0 0 / 24%);
+}
+
+.modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.modalHeader h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.modalClose {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--auto-muted);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.modalClose:hover {
+  background: var(--auto-hover);
+  color: var(--auto-ink);
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+}
+
+.field > label {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.field input,
+.field textarea,
+.promptBox select {
+  font: inherit;
+}
+
+.field input[type="text"],
+.field input[type="datetime-local"],
+.field input[type="time"],
+.field input[type="date"],
+.field select {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--auto-line);
+  border-radius: 10px;
+  background: var(--auto-card);
+  color: var(--auto-ink);
+  font-size: 13px;
+}
+
+.field input[type="text"] {
+  min-height: 44px;
+}
+
+.field input:focus-visible,
+.field textarea:focus-visible,
+.field select:focus-visible,
+.promptBox textarea:focus-visible {
+  outline: 2px solid var(--auto-running);
+  outline-offset: 1px;
+}
+
+.inputInvalid {
+  border-color: var(--auto-danger) !important;
+}
+
+.fieldError {
+  color: var(--auto-danger);
+  font-size: 11px;
+}
+
+.promptBox {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--auto-line);
+  border-radius: 14px;
+  background: var(--auto-card);
+}
+
+.promptBox textarea {
+  min-height: 120px;
+  resize: vertical;
+  border: 0;
+  background: transparent;
+  color: var(--auto-ink);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.promptBox textarea::placeholder {
+  color: var(--auto-muted);
+}
+
+.promptBox textarea:focus-visible {
+  outline: none !important;
+}
+
+.promptFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.promptAdd {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--auto-muted);
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.modelPicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--auto-ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.modelPicker svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.modelPicker select {
+  min-height: 30px;
+  padding: 0 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.fieldRow {
+  display: flex;
+  gap: 26px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.inlineField,
+.inlineDanger,
+.inlineFieldPlain {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.inlineField svg,
+.inlineDanger svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.inlineField select,
+.inlineDanger select {
+  min-height: 34px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.inlineDanger {
+  color: var(--auto-danger);
+}
+
+.inlineFieldPlain input {
+  min-height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--auto-line);
+  border-radius: 8px;
+  background: var(--auto-card);
+  color: var(--auto-ink);
+  font-size: 13px;
+}
+
+.inlineFieldPlain select {
+  min-height: 34px;
+  padding: 0 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.nextRunPreview {
+  margin: 0;
+  color: var(--auto-muted);
+  font-size: 12px;
+}
+
+.modalFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.cancelButton,
+.confirmButton {
+  min-height: 40px;
+  padding: 0 22px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.cancelButton {
+  border: 1px solid var(--auto-line);
+  background: var(--auto-card);
+  color: var(--auto-ink);
+}
+
+.confirmButton {
+  border: 0;
+  background: var(--auto-ink);
+  color: var(--auto-page);
+}
+
+.confirmButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.toast {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 70;
+  max-width: 420px;
+  padding: 12px 18px;
+  border-radius: 12px;
+  background: var(--auto-ink);
+  color: var(--auto-page);
+  font-size: 13px;
+  box-shadow: 0 12px 36px rgb(0 0 0 / 24%);
+}
+
+@media (max-width: 980px) {
+  .templateGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .templateGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .taskCard,
+  .recordCard {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .search {
+    width: 150px;
+  }
+}
+
+/* codex-theme-v1 ------------------------------------------------------- */
+
+.manager {
+  --auto-ink: var(--codex-ink, #f0f0f0);
+  --auto-muted: var(--codex-muted, #9a9a9a);
+  --auto-faint: var(--codex-faint, #737373);
+  --auto-line: var(--codex-line, #3a3d40);
+  --auto-card: var(--codex-surface-raised, #26282b);
+  --auto-page: var(--codex-surface, #1e1f22);
+  --auto-hover: var(--codex-surface-hover, #33363a);
+  --auto-danger: var(--codex-danger, #ff6369);
+  --auto-success: var(--codex-success, #4cd98a);
+  --auto-running: #6cb2ff;
+  background:
+    radial-gradient(circle at 54% -8%, rgb(236 236 236 / 5%), transparent 30rem),
+    var(--auto-page);
+}
+
+.headerAdd,
+.primaryAction,
+.confirmButton {
+  background: var(--codex-accent, #ececec);
+  color: var(--codex-on-accent, #07111a);
+}
+
+.statusBadge {
+  background: var(--codex-accent-faint, rgb(236 236 236 / 7%));
+}
+
+.field input[type="text"],
+.field input[type="datetime-local"],
+.field input[type="time"],
+.field input[type="date"],
+.field select,
+.inlineFieldPlain input {
+  background: var(--codex-field, #191919);
+  border-color: var(--auto-line);
+}
+
+.taskCard,
+.recordCard,
+.templateCard,
+.promptBox {
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 2%);
+}
+
+.taskActions button {
+  background: var(--auto-card);
+}
+
+.refresh,
+.statusFilter,
+.search,
+.cancelButton {
+  background: var(--auto-card);
+}
+
+.emptyAlarm,
+.emptyDoc {
+  color: var(--auto-muted);
+}
+
+:global(html[data-color-mode="light"]) .headerAdd,
+:global(html[data-color-mode="light"]) .primaryAction,
+:global(html[data-color-mode="light"]) .confirmButton {
+  background: #1a1a1a;
+  color: #ffffff;
+}

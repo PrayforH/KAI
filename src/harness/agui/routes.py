@@ -195,6 +195,7 @@ class AguiThreadSummary(BaseModel):
     archived_at: datetime | None = None
     pinned_at: datetime | None = None
     last_read_at: datetime | None = None
+    project_id: str | None = None
     pending_approval: ApprovalRequest | None = None
 
 
@@ -208,12 +209,21 @@ class AguiThreadReadResult(BaseModel):
 
 
 class AguiThreadUpdateInput(BaseModel):
+    # The console sends camelCase for the project move; accept both spellings so
+    # a client using either convention is understood.
+    model_config = ConfigDict(populate_by_name=True)
+
     archived: bool | None = None
     pinned: bool | None = None
     title: Annotated[str | None, Field(min_length=1, max_length=200)] = None
+    # null clears the project (the task returns to the plain 任务 list).
+    project_id: Annotated[
+        str | None, Field(alias="projectId", max_length=128)
+    ] = None
 
 
 class AguiThreadUpdateResult(BaseModel):
+    project_id: str | None = None
     thread_id: str
     archived: bool
     archived_at: datetime | None = None
@@ -617,6 +627,7 @@ async def list_agui_threads(
             archived_at=binding.archived_at,
             pinned_at=binding.pinned_at,
             last_read_at=binding.last_read_at,
+            project_id=binding.project_id,
             pending_approval=pending,
         )
 
@@ -674,7 +685,13 @@ async def update_agui_thread(
     container: Annotated[ApiContainer, Depends(get_container)],
 ) -> AguiThreadUpdateResult:
     ensure_permission(identity, "tasks:write")
-    if body.archived is None and body.pinned is None and body.title is None:
+    requested_project = "project_id" in body.model_fields_set
+    if (
+        body.archived is None
+        and body.pinned is None
+        and body.title is None
+        and not requested_project
+    ):
         raise ConflictError("No thread update was requested")
     binding = await container.agui.get_binding(
         tenant_id=identity.tenant_id,
@@ -723,8 +740,20 @@ async def update_agui_thread(
         updated = updated.model_copy(
             update={"title": renamed.title, "title_source": renamed.title_source}
         )
+    if requested_project:
+        projects = getattr(container, "projects", None)
+        if projects is None:
+            raise ConflictError("Project store is not configured")
+        project_id = await projects.assign_task(
+            tenant_id=identity.tenant_id,
+            user_id=identity.user_id,
+            thread_id=thread_id,
+            project_id=body.project_id,
+        )
+        updated = updated.model_copy(update={"project_id": project_id})
     return AguiThreadUpdateResult(
         thread_id=thread_id,
+        project_id=updated.project_id,
         archived=updated.archived_at is not None,
         archived_at=updated.archived_at,
         pinned=updated.pinned_at is not None,
