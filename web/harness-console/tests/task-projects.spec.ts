@@ -55,3 +55,22 @@ describe("project-grouped task list", () => {
     expect(page).toMatch(/refreshProjects\(\);\s*\n\s*window\.dispatchEvent\(new CustomEvent\("harness:task-list-changed"\)\);/);
   });
 });
+
+describe("project and task sections share one column", () => {
+  const css = readFileSync(join(process.cwd(), "src/app/web-codex.css"), "utf8");
+
+  it("scrolls 项目 and 任务 together instead of leaving a gap", () => {
+    // The sidebar is a fixed-row grid: a second flexible child would stretch the
+    // project list and strand the task list at the bottom.
+    expect(sidebar).toContain('className="task-list-scroll"');
+    expect(css).toMatch(/\.task-list-scroll\s*\{[^}]*overflow-y:\s*auto;/);
+    expect(css).toMatch(/\.task-list-scroll\s*\{[^}]*min-height:\s*0;/);
+    const opens = (sidebar.match(/className="task-list-scroll"/g) ?? []).length;
+    expect(opens).toBe(1);
+  });
+
+  it("gives task rows, project rows and the section labels one left edge", () => {
+    expect(css).toMatch(/\.task-project-heading\s*\{[^}]*padding-left:\s*12px;/);
+    expect(css).toMatch(/\.task-list-item,\s*[\s\S]*?\.task-list-item\.is-active\s*\{[^}]*padding-left:\s*12px;/);
+  });
+});

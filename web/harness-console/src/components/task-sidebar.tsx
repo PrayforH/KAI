@@ -472,6 +472,7 @@ export function TaskSidebar({
               labelOverrides={{ capabilities: "插件" }}
             />
           </div>
+          <div className="task-list-scroll">
           <div className="task-list-toolbar">
             <div className="task-list-heading">
               <span className="task-list-heading-copy">
@@ -637,6 +638,7 @@ export function TaskSidebar({
                 <button type="button" onClick={retryTasks}>重新加载</button>
               </div>
             )}
+          </div>
           </div>
           <div className="task-sidebar-account">
             <AccountMenu />
