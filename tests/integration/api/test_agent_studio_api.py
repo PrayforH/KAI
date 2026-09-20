@@ -1458,7 +1458,10 @@ async def test_webhook_trigger_is_secret_scoped_idempotent_and_disableable() -> 
 
 
 @pytest.mark.asyncio
-async def test_a2a_chatops_schedule_and_platform_mcp_use_existing_control_plane() -> None:
+@pytest.mark.parametrize("schedule_fields", [{"intervalSeconds": 3600}, {"cron": "0 9 * * 1-5"}])
+async def test_a2a_chatops_schedule_and_platform_mcp_use_existing_control_plane(
+    schedule_fields: dict[str, object],
+) -> None:
     application, container = app_and_container(auto_execute=False)
     headers = {
         "Authorization": f"Bearer {SERVICE_TOKEN}",
@@ -1568,7 +1571,7 @@ async def test_a2a_chatops_schedule_and_platform_mcp_use_existing_control_plane(
                 "environment": "production",
                 "kind": "schedule",
                 "schedule": {
-                    "intervalSeconds": 3600,
+                    **schedule_fields,
                     "timezone": "Asia/Shanghai",
                     "prompt": "生成小时报告",
                 },
@@ -1611,6 +1614,8 @@ async def test_a2a_chatops_schedule_and_platform_mcp_use_existing_control_plane(
     assert schedule.status_code == 201
     assert schedule.json()["trigger"]["nextFireAt"]
     assert sorted(dispatch_counts) == [0, 1]
+    updated_schedule = await trigger_repository.get("tenant-a", schedule_id)
+    assert updated_schedule.next_fire_at == stored_schedule.schedule.next_after(due_at)
     assert len(schedule_runs) == 1
     assert mcp_access.status_code == 200
     assert mcp_access.json()["mutations_enabled"] is False

@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, model_validator
 
+from harness.automations.cronexpr import next_fire_after, parse_cron
+from harness.core.errors import ConflictError
 from harness.core.models import RunStatus
 from harness.deployments.models import EnvironmentName
 from harness.studio.models import StudioModel
@@ -21,9 +24,30 @@ class TriggerKind(StrEnum):
 
 
 class TriggerSchedule(StudioModel):
-    interval_seconds: int = Field(alias="intervalSeconds", ge=60, le=31_536_000)
+    interval_seconds: int | None = Field(
+        default=None, alias="intervalSeconds", ge=60, le=31_536_000
+    )
+    cron: str | None = Field(default=None, min_length=1, max_length=120)
     timezone: str = Field(default="UTC", min_length=1, max_length=80)
     prompt: str = Field(min_length=1, max_length=200_000)
+
+    @model_validator(mode="after")
+    def valid_schedule(self) -> TriggerSchedule:
+        if (self.interval_seconds is None) == (self.cron is None):
+            raise ValueError("Choose exactly one of intervalSeconds or cron")
+        try:
+            ZoneInfo(self.timezone)
+            if self.cron:
+                parse_cron(self.cron)
+        except (ZoneInfoNotFoundError, ValueError, ConflictError) as error:
+            raise ValueError(str(error)) from error
+        return self
+
+    def next_after(self, after: datetime) -> datetime:
+        if self.cron:
+            return next_fire_after(self.cron, after, self.timezone)
+        assert self.interval_seconds is not None
+        return after + timedelta(seconds=self.interval_seconds)
 
 
 class TriggerChatOps(StudioModel):

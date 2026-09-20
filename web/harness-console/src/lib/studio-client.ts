@@ -991,7 +991,8 @@ export type StudioAgentTrigger = {
   lastInvokedAt: string | null;
   nextFireAt: string | null;
   schedule: {
-    intervalSeconds: number;
+    intervalSeconds?: number | null;
+    cron?: string | null;
     timezone: string;
     prompt: string;
   } | null;

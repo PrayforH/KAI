@@ -2,7 +2,7 @@ import type { EvolutionJob } from "./evolution-client";
 import type { StudioQualityScore } from "./studio-client";
 export const AGENT_SECTIONS = [
   ["overview", "概览"], ["diagnostics", "运行与诊断"], ["experiments", "改进实验"],
-  ["evaluation", "评测验收"], ["release", "发布与效果"], ["datasets", "评测集"], ["experience", "经验库"],
+  ["evaluation", "评测验收"], ["release", "发布与效果"], ["datasets", "评测集"], ["experience", "经验库"], ["automation", "自动运行"], ["integrations", "集成"],
 ] as const;
 export type AgentSection = typeof AGENT_SECTIONS[number][0];
 export function agentSection(value?: string): AgentSection {

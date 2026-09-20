@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import secrets
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from hmac import compare_digest
 
 from harness.application.runs import RunService
@@ -95,7 +95,7 @@ class AgentTriggerService:
             schedule=request.schedule,
             chatops=request.chatops,
             nextFireAt=(
-                now + timedelta(seconds=request.schedule.interval_seconds)
+                request.schedule.next_after(now)
                 if request.schedule is not None
                 else None
             ),
@@ -366,7 +366,7 @@ class AgentTriggerService:
             if trigger.schedule is None or trigger.next_fire_at is None:
                 continue
             scheduled_at = trigger.next_fire_at
-            next_fire_at = scheduled_at + timedelta(seconds=trigger.schedule.interval_seconds)
+            next_fire_at = trigger.schedule.next_after(scheduled_at)
             advanced = await self._repository.advance_schedule(
                 trigger.trigger_id,
                 expected_next_fire_at=scheduled_at,

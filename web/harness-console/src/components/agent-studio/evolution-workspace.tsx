@@ -40,7 +40,7 @@ export function EvolutionWorkspace({ agentName, stage = "all", initialJob = "", 
   async function load() {
     const [all, summaries, bank] = await Promise.all([evolutionRequest<EvolutionJob[]>(), studioClient.listAccessibleDrafts(), studioClient.listEvalDatasets()]);
     setJobs(all.filter(j => j.agentName === agentName));
-    const summary = summaries.find(d => d.name === agentName);
+    const summary = summaries.find(d => d.name === agentName && !d.spaceId);
     if (summary) setDraft(await studioClient.getDraft(summary.draftId));
     const choices = (bank as Dataset[]).filter(d => d.agentName === agentName && (d.split ?? "validation") === "validation");
     setDatasets(choices);

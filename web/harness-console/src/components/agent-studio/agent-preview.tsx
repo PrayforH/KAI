@@ -1,5 +1,7 @@
 "use client";
 import { ApprovalCard } from "../approval-card";
+import { ApprovalBatch } from "./approval-batch";
+import { RunTrace } from "./run-trace";
 import { TextMessagePartProvider } from "@assistant-ui/react";
 import { MarkdownText } from "../markdown-text";
 import { ActivitySummary } from "../activity-summary";
@@ -26,9 +28,9 @@ export function PreviewRunResponse({ turn, agentName, onImprove }: { turn: Previ
             <details className={styles.diagnostics}><summary>执行详情 · {result.events.filter(event => event.type === "tool.request").length} 次工具调用</summary>
               <p>修订 {result.draftRevision} · 执行状态不代表回答质量已通过评测。</p>
               <details><summary>本轮输入</summary><p>{turn.prompt}</p>{turn.files?.map((name, index) => <small key={index}>{name}</small>)}</details>
-              <details><summary>原始事件 · {result.events.length}</summary>{result.events.map(event => <details key={event.sequence}><summary>{event.sequence} · {event.type}</summary><pre>{JSON.stringify(event.payload, null, 2)}</pre></details>)}</details>
+              <RunTrace events={result.events} />
             </details>
-            {!terminal && result.approvals.filter(item => item.status === "pending").map(item => <ApprovalCard
+            {!terminal && result.approvals.length > 1 ? <ApprovalBatch key={result.run.run_id} approvals={result.approvals} /> : !terminal && result.approvals.filter(item => item.status === "pending").map(item => <ApprovalCard
               key={item.approval_id}
               details={{ ...item, run_id: result.run.run_id, tool_name: item.tool_name ?? undefined, risk: item.risk ?? undefined }}
               complete={false}

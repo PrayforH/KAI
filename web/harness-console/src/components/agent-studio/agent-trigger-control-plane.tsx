@@ -49,6 +49,9 @@ export function AgentTriggerControlPlane({
   );
   const [schedulePrompt, setSchedulePrompt] = useState("执行定时任务");
   const [intervalMinutes, setIntervalMinutes] = useState(60);
+  const [scheduleMode, setScheduleMode] = useState("interval");
+  const [cron, setCron] = useState("0 9 * * 1-5");
+  const [timezone, setTimezone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
   const [environment, setEnvironment] =
     useState<StudioEnvironmentName>("production");
   const [busy, setBusy] = useState("");
@@ -107,8 +110,8 @@ export function AgentTriggerControlPlane({
         kind,
         schedule: kind === "schedule"
           ? {
-              intervalSeconds: intervalMinutes * 60,
-              timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+              ...(scheduleMode === "cron" ? { cron } : { intervalSeconds: intervalMinutes * 60 }),
+              timezone,
               prompt: schedulePrompt,
             }
           : undefined,
@@ -275,6 +278,8 @@ export function AgentTriggerControlPlane({
               </button>
               {kind === "schedule" && (
                 <div className={styles.scheduleFields}>
+                  <label><span>执行规律</span><select value={scheduleMode} onChange={event => setScheduleMode(event.target.value)}><option value="interval">固定间隔</option><option value="cron">Cron 日历计划</option></select></label>
+                  {scheduleMode === "interval" ?
                   <label>
                     <span>间隔（分钟）</span>
                     <input
@@ -284,6 +289,8 @@ export function AgentTriggerControlPlane({
                       onChange={(event) => setIntervalMinutes(Number(event.target.value))}
                     />
                   </label>
+                  : <label><span>Cron（分 时 日 月 周）</span><input value={cron} onChange={event => setCron(event.target.value)} placeholder="0 9 * * 1-5" /><select aria-label="常用 Cron 计划" value="" onChange={event => setCron(event.target.value)}><option value="">选择常用计划</option><option value="0 9 * * 1-5">工作日 09:00</option><option value="0 9 * * 1">每周一 09:00</option><option value="0 9 1 * *">每月 1 日 09:00</option></select></label>}
+                  <label><span>时区</span><input value={timezone} onChange={event => setTimezone(event.target.value)} placeholder="Asia/Shanghai" /></label>
                   <label>
                     <span>任务内容</span>
                     <input
@@ -341,6 +348,7 @@ export function AgentTriggerControlPlane({
                   {trigger.nextFireAt && (
                     <small>下次执行 {new Date(trigger.nextFireAt).toLocaleString("zh-CN")}</small>
                   )}
+                  {trigger.schedule && <small>{trigger.schedule.cron ? `Cron ${trigger.schedule.cron}` : `每 ${Number(trigger.schedule.intervalSeconds) / 60} 分钟`} · {trigger.schedule.timezone}</small>}
                 </div>
                 <div className={styles.actions}>
                   <button
