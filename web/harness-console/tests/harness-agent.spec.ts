@@ -582,7 +582,13 @@ it.each(["tool.request", "approval.requested", "subagent.started"])("hands visib
     { headers: { "Content-Type": "text/event-stream" } },
   ) });
   await agent.runAgent({ runId: "handoff" }, {
-    onActivitySnapshotEvent: () => { expect(liveResponseStore.getSnapshot().visible).toBe(true); },
+    onActivitySnapshotEvent: () => {
+      if (activityStore.getSnapshot()?.items.some(item => item.event_type === boundary)) {
+        expect(activityStore.getSnapshot()?.items[0].summary).toBe(progress);
+        expect(liveResponseStore.getSnapshot().visible).toBe(false);
+        handedOff = true;
+      } else expect(liveResponseStore.getSnapshot().visible).toBe(true);
+    },
     onToolCallStartEvent: () => { expect(liveResponseStore.getSnapshot().visible).toBe(true); },
     onActivityDeltaEvent: () => {
       expect(activityStore.getSnapshot()?.items[0].summary).toBe(progress);

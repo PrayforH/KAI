@@ -2,8 +2,6 @@
 
 import {
   AssistantRuntimeProvider,
-  useThreadRuntime,
-  useAuiState,
 } from "@assistant-ui/react";
 import { useAgUiRuntime } from "@assistant-ui/react-ag-ui";
 import type { ReactNode } from "react";
@@ -29,72 +27,10 @@ import {
 import { activateRuntimeThread } from "../lib/runtime-thread-scope";
 import type { TaskModelRoute } from "../lib/task-model-catalog";
 import { TaskKnowledgeProvider } from "./task-knowledge-context";
+import { DurableHistorySync } from "./durable-history-sync";
 import { ThreadHistoryReadyProvider } from "./thread-history-ready";
 import { TaskModelProvider } from "./task-model-context";
 
-function DurableHistorySync({
-  revision,
-  history,
-  onSettled,
-}: {
-  revision: number;
-  history: ReturnType<typeof createThreadHistoryAdapter>;
-  onSettled?: () => void;
-}) {
-  const thread = useThreadRuntime();
-  const running = useAuiState((state) => state.thread.isRunning);
-  const view = useRunViewModel();
-  const needsRecovery = !running && ["running", "queued", "waiting_approval"].includes(view?.phase ?? "");
-  useEffect(() => {
-    if (!needsRecovery) return;
-    let disposed = false;
-    let pending = false;
-    async function refresh() {
-      if (pending || thread.getState().isRunning) return;
-      pending = true;
-      try {
-        await history.loadSnapshot((repository) => {
-          if (!disposed && !thread.getState().isRunning) thread.import(repository);
-        });
-      } catch (error) {
-        if (!disposed) console.error("[Harness Console] Failed to recover active task", error);
-      } finally { pending = false; }
-    }
-    const timer = window.setInterval(() => void refresh(), 1500);
-    void refresh();
-    return () => { disposed = true; window.clearInterval(timer); };
-  }, [history, needsRecovery, thread]);
-
-
-  useEffect(() => {
-    let disposed = false;
-    // One frame is enough to let the runtime finish mounting; a longer wait left
-    // the conversation area visibly empty after switching tasks.
-    const timer = window.setTimeout(() => {
-      void history
-        .loadSnapshot((repository) => {
-          if (!disposed && repository && !thread.getState().isRunning) {
-            thread.import(repository);
-          }
-        })
-        .finally(() => { if (!disposed) onSettled?.(); })
-        .catch((error: unknown) => {
-          if (!disposed) {
-            console.error(
-              "[Harness Console] Failed to refresh durable history",
-              error,
-            );
-          }
-        });
-    }, 16);
-    return () => {
-      disposed = true;
-      window.clearTimeout(timer);
-    };
-  }, [history, revision, thread]);
-
-  return null;
-}
 
 export function AssistantRuntimeShell({
   threadId,
@@ -232,7 +168,7 @@ export function AssistantRuntimeShell({
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <ThreadHistoryReadyProvider value={historyReady}>
-      <DurableHistorySync revision={historyRevision} history={history} onSettled={() => setHistoryReady(true)} />
+      <DurableHistorySync threadId={threadId} revision={historyRevision} history={history} onSettled={() => setHistoryReady(true)} />
       <TaskModelProvider
         routes={modelRoutes}
         agentDefaultRouteId={agentDefaultModelRoute}

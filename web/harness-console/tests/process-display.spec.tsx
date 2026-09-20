@@ -146,3 +146,18 @@ it("retains intermediate prose and tool nodes across the next action", () => {
   expect(progress?.textContent).toContain("已找到资料，继续核验。");
   expect(host.querySelector('.execution-action')).toBe(tool);
 });
+
+it("does not parse hidden Markdown and bounds the preview while retaining expanded text", () => {
+  const text = "这是完整思考的开头。" + "长推理段落。".repeat(4000) + "这是最新片段。";
+  render(runActivitySchema.parse({ ...thought, run_id: "bounded-thought", status: "running", items: [
+    { ...item("reasoning.delta", 1, "思考", text), metadata: { item_id: "long" } },
+  ] }));
+  const row = host.querySelector<HTMLDetailsElement>(".execution-reasoning")!;
+  expect(row.querySelector(".execution-reasoning-body")).toBeNull();
+  expect(row.querySelector(".execution-reasoning-preview")!.textContent!.length).toBeLessThanOrEqual(600);
+  expect(row.textContent).toContain("这是最新片段。");
+  act(() => { row.open = true; row.dispatchEvent(new Event("toggle")); });
+  expect(row.querySelector(".execution-reasoning-body")?.textContent).toContain("这是完整思考的开头。");
+  act(() => { row.open = false; row.dispatchEvent(new Event("toggle")); });
+  expect(row.querySelector(".execution-reasoning-body")).toBeNull();
+});

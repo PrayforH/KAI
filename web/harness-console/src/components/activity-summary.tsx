@@ -1,7 +1,7 @@
 "use client";
 
 import { TextMessagePartProvider } from "@assistant-ui/react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { RunActivity } from "../lib/activity-schema";
 import { useRunViewModel } from "../lib/activity-store";
 import { activeElapsedMs, elapsedAnchorFor, type ElapsedAnchor } from "../lib/run-elapsed";
@@ -237,7 +237,7 @@ function commentaryNodes(view: RunViewModel): CommentaryNode[] {
   return [...grouped.values()];
 }
 
-function ExecutionCommentary({
+const ExecutionCommentary = memo(function ExecutionCommentary({
   commentary,
   active,
 }: {
@@ -246,7 +246,7 @@ function ExecutionCommentary({
 }) {
   const previewRef = useRef<HTMLSpanElement>(null);
   const [expanded, setExpanded] = useState(false);
-  const preview = commentary.text.replaceAll("**", "").replace(/\s+/g, " ").trim();
+  const preview = useMemo(() => commentary.text.slice(-600).replaceAll("**", "").replace(/\s+/g, " ").trim(), [commentary.text]);
   useLayoutEffect(() => {
     const row = previewRef.current;
     if (row && !expanded) row.scrollLeft = row.scrollWidth;
@@ -258,9 +258,9 @@ function ExecutionCommentary({
         <summary className={active ? "execution-reasoning-summary execution-row-sweep" : "execution-reasoning-summary"}>
           <span className="execution-reasoning-icon"><ThinkingIcon /></span><span className="execution-reasoning-label">思考</span><span className="execution-reasoning-separator" aria-hidden="true">·</span><span ref={previewRef} className="execution-reasoning-preview">{preview}</span><span className="execution-reasoning-chevron" aria-hidden="true" />
         </summary>
-        <div className="execution-reasoning-body">
+        {expanded && <div className="execution-reasoning-body">
           <TextMessagePartProvider text={commentary.text} isRunning={false}><MarkdownText /></TextMessagePartProvider>
-        </div>
+        </div>}
       </details>
     );
   }
@@ -277,7 +277,7 @@ function ExecutionCommentary({
       </div>
     </article>
   );
-}
+}, (previous, next) => previous.active === next.active && previous.commentary.id === next.commentary.id && previous.commentary.source === next.commentary.source && previous.commentary.text === next.commentary.text);
 
 function rawTimeline(view: RunViewModel): RawTimelineNode[] {
   return [

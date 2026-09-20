@@ -344,10 +344,10 @@ it("uses one stable native assistant message for streaming output", () => {
 });
 
 it("does not render the native text slot while the live response owns it", () => {
-  expect(shouldSuppressNativeAssistantText(true, "streaming")).toBe(true);
-  expect(shouldSuppressNativeAssistantText(true, "complete")).toBe(true);
-  expect(shouldSuppressNativeAssistantText(false, "streaming")).toBe(false);
-  expect(shouldSuppressNativeAssistantText(true, "idle")).toBe(false);
+  expect(shouldSuppressNativeAssistantText(true, { status: "streaming", visible: false, text: "" })).toBe(true);
+  expect(shouldSuppressNativeAssistantText(true, { status: "complete", visible: true, text: "final" })).toBe(true);
+  expect(shouldSuppressNativeAssistantText(false, { status: "streaming", visible: true, text: "final" })).toBe(false);
+  expect(shouldSuppressNativeAssistantText(true, { status: "idle", visible: false, text: "" })).toBe(false);
 });
 
 it("keeps interrupted live output attached to its own regenerated branch", () => {
@@ -368,4 +368,11 @@ it("attaches a resumed run to the latest optimistic assistant turn", () => {
   expect(turnOwnsRun("__optimistic__42", "run_2", true, "run_2")).toBe(true);
   expect(turnOwnsRun("__optimistic__42", "run_2", false, "run_2")).toBe(false);
   expect(turnOwnsRun("__optimistic__42", "run_2", true, "run_3")).toBe(false);
+});
+
+ it("restores native history text when a terminal stream has no visible answer", () => {
+  for (const status of ["complete", "error"] as const) {
+    expect(shouldSuppressNativeAssistantText(true, { status, visible: false, text: "tool preface" })).toBe(false);
+    expect(shouldSuppressNativeAssistantText(true, { status, visible: true, text: "  " })).toBe(false);
+  }
 });
