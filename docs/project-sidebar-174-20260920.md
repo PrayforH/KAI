@@ -41,3 +41,12 @@ API 在现有 `deepagents-174-4f95e64b` 镜像上只更新 AG-UI routes/service 
 - Web：停止并移除 `axis-web-project-sidebar-20260920`，将停止态的 `axis-web-f9af1db2-rollback-project-sidebar-20260920` 恢复命名为 `axis-web-20260920-f9af1db2` 并启动。
 - API：将发布目录中的 `compose.deepagents.before.yaml` 恢复到 `/data/agent-studio/docker-compose/compose.deepagents-174.yaml`，使用原 compose.yaml + compose.harbor.yaml + compose.deepagents-174.yaml 组合执行 `up -d --no-deps --wait api`。
 - 本次修复没有新增数据库迁移；0035 是本次合入的既有项目模块迁移，174 原本已应用。
+
+## 后续调整：项目弹窗与侧栏对齐
+
+- 去除项目行任务计数；项目分组与项目行的“＋”统一为 26px，右边缘对齐。桌面悬停对应行或键盘聚焦时显示，触屏保持可用。
+- 普通任务与项目内任务共用缩进，文字距侧栏左边缘均为 42px；导航及分组标题仍从 16px 开始。
+- 使用共享“创建项目”弹窗替代浏览器 prompt，首页与 Studio 管理页均可创建。支持名称输入（最多 120 字符）、空白校验、提交中防重复、失败重试、键盘关闭和焦点限制。项目 API 仅支持名称，本次没有添加源文件夹功能。
+- 验证：前端 114 个测试文件通过（744 通过、1 跳过）；linux/amd64 生产镜像构建通过。浏览器验证深浅色、移动端、操作按钮对齐、任务缩进、失败重试以及创建后即时刷新。174 使用服务授权测试上下文验证真实项目与任务接口，验收数据已清理；没有验证密码登录流程。
+- 3501 更新为 `kai/axis-web:project-dialog-20260920`，容器 `axis-web-project-dialog-20260920`，发布目录 `/data/project-dialog-20260920`。API 与其他服务沿用原版本。
+- 此版 Web 回滚：停止并移除 `axis-web-project-dialog-20260920`，将 `axis-web-sidebar-rollback-dialog-20260920` 恢复命名为 `axis-web-project-sidebar-20260920` 并启动。原有更早版本仍保留。

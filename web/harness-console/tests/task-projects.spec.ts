@@ -38,8 +38,8 @@ describe("project-grouped task list", () => {
 
   it("offers project creation from the sidebar", () => {
     expect(sidebar).toContain('aria-label="新建项目"');
-    expect(sidebar).toContain("onCreateProject?.()");
-    expect(page).toContain("projectClient.create(");
+    expect(sidebar).toContain("<ProjectCreateDialog");
+    expect(page).not.toContain("window.prompt");
   });
 
   it("moves tasks in and out of projects from the task menu", () => {
@@ -51,7 +51,7 @@ describe("project-grouped task list", () => {
     expect(client).toContain("projectId");
   });
 
-  it("refreshes the list and the project counts after a move", () => {
+  it("refreshes the list after a move", () => {
     expect(page).toMatch(/refreshProjects\(\);\s*\n\s*window\.dispatchEvent\(new CustomEvent\("harness:task-list-changed"\)\);/);
   });
 });

@@ -33,12 +33,13 @@ export function StudioUnifiedShell({
   const [agents, setAgents] = useState<TaskAgent[]>([]);
   const [defaultAgent, setDefaultAgent] = useState<TaskAgent | null>(null);
   const [projects, setProjects] = useState<ApiProject[]>([]);
+  const [projectRevision, setProjectRevision] = useState(0);
 
   useEffect(() => {
     let active = true;
     projectClient.list().then((items) => { if (active) setProjects(items); }).catch(() => {});
     return () => { active = false; };
-  }, [user.user_id]);
+  }, [user.user_id, projectRevision]);
 
   useEffect(() => {
     let active = true;
@@ -82,6 +83,7 @@ export function StudioUnifiedShell({
         }
         onNewTask={goHome}
         projects={projects}
+        onProjectsChanged={() => setProjectRevision((revision) => revision + 1)}
         onNewTaskWithProject={async (project) => {
           const task = await createProjectTask(project.projectId, defaultAgent);
           router.push(`/?thread=${encodeURIComponent(task.thread_id)}`);

@@ -563,8 +563,7 @@ body.codex-theme-v1:has(.console-shell) .task-list-scroll .task-list {
   min-height: 30px;
   padding: 4px 30px 4px 8px;
   display: grid;
-  /* icon · name · task count */
-  grid-template-columns: 18px minmax(0, 1fr) auto;
+  grid-template-columns: 18px minmax(0, 1fr);
   align-items: center;
   gap: 8px;
   border: 0;
@@ -626,8 +625,8 @@ body.codex-theme-v1:has(.console-shell) .task-list-scroll .task-list {
   transition: opacity 120ms ease, color 120ms ease, background-color 120ms ease;
 }
 
-.task-project-group:hover .task-project-add,
-.task-project-add:focus-visible {
+.task-project-head:hover .task-project-add,
+.task-project-head:focus-within .task-project-add {
   opacity: 1;
 }
 

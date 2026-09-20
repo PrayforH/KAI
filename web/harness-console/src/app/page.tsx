@@ -483,17 +483,6 @@ function AuthenticatedHome() {
   useEffect(() => {
     refreshProjects();
   }, [refreshProjects]);
-  const createProject = useCallback(async () => {
-    const name = window.prompt("项目名称，例如：金融办");
-    if (!name || !name.trim()) return;
-    try {
-      await projectClient.create(name.trim());
-      refreshProjects();
-    } catch (cause) {
-      window.alert(cause instanceof Error ? cause.message : "创建项目失败");
-    }
-  }, [refreshProjects]);
-
   const agentDisplayLabels = useMemo(
     () =>
       Object.fromEntries(
@@ -689,7 +678,6 @@ function AuthenticatedHome() {
           agentLabels={agentDisplayLabels}
           projects={projects}
           onProjectsChanged={refreshProjects}
-          onCreateProject={() => void createProject()}
           searchControl={(
             <ProductivityCommandCenter
               agents={availableTaskAgents}

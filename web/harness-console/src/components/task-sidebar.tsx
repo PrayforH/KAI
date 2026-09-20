@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ProjectCreateDialog } from "./project-create-dialog";
 import { PanelResizeHandle } from "./panel-resize-handle";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AccountMenu } from "./account-menu";
@@ -133,7 +134,6 @@ export function TaskSidebar({
   agentLabels,
   projects = [],
   onProjectsChanged,
-  onCreateProject,
 }: {
   currentThreadId: string;
   collapsed: boolean;
@@ -151,8 +151,6 @@ export function TaskSidebar({
   /** Projects shown above the plain task list, in creation order. */
   projects?: readonly ApiProject[];
   onProjectsChanged?: () => void;
-  /** Opens the project creation flow owned by the page. */
-  onCreateProject?: () => void;
 }) {
   // Seed from the shared snapshot so navigating to a Studio page and back
   // (a fresh mount) renders the previous list immediately instead of
@@ -169,6 +167,7 @@ export function TaskSidebar({
   const [expandedTaskGroups, setExpandedTaskGroups] = useState<ReadonlySet<string>>(() => new Set());
   const [creatingProjectId, setCreatingProjectId] = useState<string | null>(null);
   const [projectCreateError, setProjectCreateError] = useState("");
+  const [projectDialogOpen, setProjectDialogOpen] = useState(false);
   const projectCreationPending = useRef(false);
   const sidebarRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -193,7 +192,7 @@ export function TaskSidebar({
   }, [activeNav, currentThreadId, tasks, user.user_id]);
 
   useDialogFocus({
-    open: overlayOpen,
+    open: overlayOpen && !projectDialogOpen,
     panelRef: sidebarRef,
     initialFocusRef: closeButtonRef,
     onEscape: onToggle,
@@ -495,7 +494,7 @@ export function TaskSidebar({
             />
           </div>
           <div className="task-list-scroll">
-          <div className="task-list-toolbar">
+          <div className="task-list-toolbar task-project-toolbar">
             <div className="task-list-heading">
               <span className="task-list-heading-copy">
                 <ProjectFolderIcon />
@@ -507,10 +506,9 @@ export function TaskSidebar({
               className="task-project-create"
               aria-label="新建项目"
               title="新建项目"
-              onClick={() => onCreateProject?.()}
-              disabled={!onCreateProject}
+              onClick={() => setProjectDialogOpen(true)}
             >
-              ＋
+              <AddToProjectIcon />
             </button>
           </div>
           <div className="task-list" role="list">
@@ -556,7 +554,6 @@ export function TaskSidebar({
                           {project.name}
                         </span>
                       </strong>
-                      <span className="task-bucket-count">{projectTasks.length}</span>
                     </button>
                     <button
                         type="button"
@@ -664,6 +661,13 @@ export function TaskSidebar({
           </div>
         </>
       )}
+      {projectDialogOpen && <ProjectCreateDialog
+        onClose={() => setProjectDialogOpen(false)}
+        onCreated={(project) => {
+          setExpandedTaskGroups((current) => new Set(current).add(`project:${project.projectId}`));
+          onProjectsChanged?.();
+        }}
+      />}
     </aside>
   );
 }
