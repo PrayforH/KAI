@@ -1273,3 +1273,13 @@ class AutomationRecordRow(Base):
     run_id: Mapped[str] = mapped_column(String(128), index=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     payload: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
+class EvolutionJobRow(Base):
+    __tablename__ = "evolution_jobs"
+    tenant_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    job_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(String(128), index=True)
+    agent_name: Mapped[str] = mapped_column(String(128), index=True)
+    revision: Mapped[int] = mapped_column(Integer)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON)

@@ -1297,6 +1297,13 @@ class AgentStudioService:
         compiler = await self._compiler_for(tenant_id, owner_user_id)
         return compiler.compile(await self.get(tenant_id, owner_user_id, draft_id))
 
+    async def compile_frozen(self, tenant_id: str, owner_user_id: str,
+                             draft_id: str, spec: AgentDraftSpec) -> CompiledAgentDraft:
+        """Compile a frozen candidate without mutating the authoring draft."""
+        draft = await self.get(tenant_id, owner_user_id, draft_id)
+        compiler = await self._compiler_for(tenant_id, owner_user_id)
+        return compiler.compile(draft.model_copy(update={"spec": spec}))
+
     async def preview_graph(
         self, tenant_id: str, owner_user_id: str, draft_id: str
     ) -> CompiledPreviewGraph:

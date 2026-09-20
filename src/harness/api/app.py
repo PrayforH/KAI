@@ -336,6 +336,9 @@ def create_app(container: ApiContainer) -> FastAPI:
         agui_routes.router,
     ):
         app.include_router(router, prefix="/v1")
+    from harness.evolution.api import router as evolution_router
+
+    app.include_router(evolution_router)
     app.include_router(studio_routes.router)
     app.include_router(knowledge_routes.router)
     app.include_router(governance_routes.router)

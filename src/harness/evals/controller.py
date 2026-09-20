@@ -200,6 +200,7 @@ class EvalController:
             current.agent_version,
             session_id=f"eval_session_{digest}",
             agent_owner_user_id=current.requested_by,
+            **({"preview": True} if current.preview_execution else {}),
         )
         return await self._replace(
             current,
@@ -269,6 +270,8 @@ class EvalController:
                 passed=scored.passed,
                 durationSeconds=scored.duration_seconds,
                 failures=scored.failures,
+                failureDetails=scored.failure_details,
+                usage=scored.usage,
                 tools=scored.tools,
                 approvalRequested=scored.approval_requested,
                 subagents=scored.subagents,

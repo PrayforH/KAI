@@ -14,8 +14,11 @@ type RefreshFlight = {
 // while the browser applies the replacement cookies.
 const refreshFlights = new Map<string, RefreshFlight>();
 
-export const ACCESS_COOKIE = "harness_access_token";
-export const REFRESH_COOKIE = "harness_refresh_token";
+// Isolated deployments on another port still share the browser's cookie jar.
+// An optional server-side namespace prevents validation logins replacing live sessions.
+const cookiePrefix = process.env.AUTH_COOKIE_PREFIX ?? "harness";
+export const ACCESS_COOKIE = `${cookiePrefix}_access_token`;
+export const REFRESH_COOKIE = `${cookiePrefix}_refresh_token`;
 
 export type AuthUser = {
   user_id: string;

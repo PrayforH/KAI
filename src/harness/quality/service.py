@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 from collections.abc import Callable
 from datetime import UTC, datetime
 
@@ -62,8 +63,6 @@ class QualityService:
                 "harness_trace_terminal_total",
                 labels={"completeness": "complete" if trace_id else "missing"},
             )
-        if not trace_id:
-            return []
         events = await self._events.list_after(run.tenant_id, run.run_id, 0)
         artifacts = await self._artifacts.list_for_run(run.tenant_id, run.run_id)
         duration = max(0.0, (run.updated_at - run.created_at).total_seconds())
@@ -84,7 +83,7 @@ class QualityService:
             "tool_reliability": 1.0 if tool_errors == 0 else 0.0,
             "approval_completion": 1.0 if approvals_decided >= approvals_requested else 0.0,
             "duration_budget": 1.0 if duration <= 900 else 0.0,
-            "cost_budget": 1.0 if cost is None or cost <= 1 else 0.0,
+            "cost_budget": None if cost is None else (1.0 if cost <= 1 else 0.0),
             "artifact_integrity": 1.0 if self._artifacts_valid(artifacts) else 0.0,
         }
         result: list[QualityScore] = []
@@ -105,8 +104,6 @@ class QualityService:
             raise NotFoundError(f"Run not found: {run_id}")
         existing = await self._repository.list_scores(tenant_id, session.agent_name)
         trace_id = next((item.trace_id for item in existing if item.run_id == run_id), None)
-        if trace_id is None:
-            raise ConflictError("Run trace is not available for feedback")
         return await self._store_score(
             run, session, trace_id, "user_feedback", request.value, ScoreSource.HUMAN, user_id
         )
@@ -208,9 +205,9 @@ class QualityService:
         self,
         run: Run,
         session: Session,
-        trace_id: str,
+        trace_id: str | None,
         name: str,
-        value: float,
+        value: float | None,
         source: ScoreSource,
         created_by: str,
     ) -> QualityScore:
@@ -218,7 +215,7 @@ class QualityService:
             tenantId=run.tenant_id,
             scoreId=_stable("quality_score", run.run_id, name, source.value, created_by),
             runId=run.run_id,
-            traceId=trace_id,
+            traceId=trace_id or None,
             sessionId=run.session_id,
             agentName=session.agent_name,
             agentVersion=session.agent_version,
@@ -234,8 +231,22 @@ class QualityService:
             createdBy=created_by,
             createdAt=self._clock(),
         )
-        await self._repository.add_score(score)
-        await self._enqueue(run.tenant_id, "score", score.score_id)
+        try:
+            await self._repository.add_score(score)
+        except ConflictError:
+            existing = await self._repository.get_score(run.tenant_id, score.score_id)
+            if existing.value != score.value or existing.source != score.source:
+                raise ConflictError(
+                    "Quality observation already recorded with another value"
+                ) from None
+            # Trace enrichment does not change the immutable observation itself.
+            if existing.trace_id is None and score.trace_id:
+                score = existing.model_copy(update={"trace_id": score.trace_id})
+                await self._repository.attach_trace(score)
+            else:
+                score = existing
+        if score.trace_id and score.value is not None:
+            await self._enqueue(run.tenant_id, "score", score.score_id)
         await self._evaluate_alerts(score)
         return score
 
@@ -256,6 +267,8 @@ class QualityService:
         await self._queue.enqueue(QualityTask(tenant_id=tenant_id, sync_id=sync.sync_id))
 
     async def _evaluate_alerts(self, score: QualityScore) -> None:
+        if score.value is None:
+            return
         session = await self._sessions.get(score.tenant_id, score.session_id)
         owner_user_id = session.resolved_agent_owner_user_id
         for rule in await self.list_rules(score.tenant_id, owner_user_id, score.agent_name):
@@ -265,10 +278,12 @@ class QualityService:
                 item
                 for item in await self.list_scores(score.tenant_id, owner_user_id, score.agent_name)
                 if item.agent_version == score.agent_version and item.name == score.name
+                and item.value is not None
             ]
             if len(matching) < rule.minimum_samples:
                 continue
-            observed = sum(item.value for item in matching) / len(matching)
+            total = sum(item.value for item in matching if item.value is not None)
+            observed = total / len(matching)
             incident_id = _stable("quality_incident", rule.rule_id, score.agent_version)
             previous = next(
                 (
@@ -301,7 +316,8 @@ class QualityService:
         for event in reversed(events):
             if event.type == "runtime.result":
                 value = event.payload.get("total_cost_usd")
-                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                if (isinstance(value, (int, float)) and not isinstance(value, bool)
+                        and math.isfinite(value) and value >= 0):
                     return float(value)
         return None
 

@@ -54,6 +54,8 @@ class LangfuseQualityExporter:
         self._transport = transport
 
     async def export_score(self, score: QualityScore) -> None:
+        if score.trace_id is None or score.value is None:
+            return
         payload = {
             "id": score.score_id,
             "traceId": score.trace_id,

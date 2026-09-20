@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 import shutil
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Literal
@@ -51,6 +52,8 @@ class AgentService:
         self._default_report: AgentPackageReport | None = None
         self._default_platform_digest: str | None = None
         self._agent_ids = agent_ids
+        self.publication_guard: Callable[[str, str, AgentManifestSnapshot, str | None],
+                                         Awaitable[None]] | None = None
 
     def validate(
         self,
@@ -339,6 +342,8 @@ class AgentService:
         package_hash: str | None = None,
         agent_id: str | None = None,
     ) -> AgentVersion:
+        if self.publication_guard is not None:
+            await self.publication_guard(tenant_id, owner_user_id, snapshot, package_hash)
         manifest = snapshot.manifest
         resolved_agent_id = agent_id
         if resolved_agent_id is None and self._agent_ids is not None:

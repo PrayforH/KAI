@@ -664,14 +664,17 @@ async def test_completion_forwards_provider_deltas_before_stream_finishes(api_fo
                 assert len(received) == index  # Consumer sees data before the next provider chunk.
                 event = ({"choices": [{"delta": {"content": text}}]}
                          if api_format == "openai_compatible" else
-                         {"type": "content_block_delta", "delta": {"type": "text_delta", "text": text}})
+                         {"type": "content_block_delta",
+                          "delta": {"type": "text_delta", "text": text}})
                 yield ("data: " + json.dumps(event) + "\r\n\r\n").encode()
             yield (b"data: [DONE]\n\n" if api_format == "openai_compatible" else
                    b'data: {"type":"message_stop"}\n\n')
 
     def handler(req: httpx.Request) -> httpx.Response:
         assert json.loads(req.content)["stream"] is True
-        return httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=LiveStream())
+        return httpx.Response(
+            200, headers={"content-type": "text/event-stream"}, stream=LiveStream()
+        )
 
     async def consume(text: str) -> None:
         received.append(text)

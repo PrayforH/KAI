@@ -182,3 +182,23 @@ def test_llm_judge_cannot_be_the_only_automatic_blocker() -> None:
             minimumValue=0.8,
             blocksPromotion=True,
         )
+
+
+@pytest.mark.asyncio
+async def test_quality_without_telemetry_is_durable_and_unknown_cost_is_not_zero() -> None:
+    container = build_memory_container()
+    draft, _, session, run = await seed_run(container, "quality-without-trace")
+    first = await container.quality.record_terminal_run(run, session, "")
+    second = await container.quality.record_terminal_run(run, session, "")
+    assert first == second
+    assert len(first) == 6 and all(score.trace_id is None for score in first)
+    assert next(score for score in first if score.name == "cost_budget").value is None
+    feedback = await container.quality.human_feedback(
+        tenant_id="tenant-a", user_id="builder-a", run_id=run.run_id,
+        request=HumanFeedbackRequest(value=0),
+    )
+    assert feedback.value == 0 and feedback.trace_id is None
+    attached = await container.quality.record_terminal_run(run, session, "f" * 32)
+    assert all(score.trace_id == "f" * 32 for score in attached)
+    scores = await container.quality.list_scores("tenant-a", "builder-a", draft.spec.name)
+    assert len(scores) == 7

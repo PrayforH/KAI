@@ -6,7 +6,7 @@ import zipfile
 from collections.abc import Callable
 from datetime import UTC, datetime
 from io import BytesIO
-from typing import cast
+from typing import Literal, cast
 from uuid import uuid4
 
 from harness.auth.audit import AuditService
@@ -32,6 +32,8 @@ from harness.evals.models import (
 )
 from harness.evals.queue import EvalTask, EvalTaskQueue
 from harness.evals.repositories import EvalDatasetRepository, EvalRunRepository
+from harness.evals.suite import EvalCase
+from harness.studio.models import AgentDraft
 from harness.studio.preview_service import PreviewService
 from harness.studio.service import AgentStudioService
 
@@ -98,6 +100,7 @@ class EvalControlPlaneService:
             draft=draft,
             name=request.name,
             required=request.required,
+            split=request.split,
             dataset_id=request.dataset_id,
             cases=draft.spec.evaluation_cases,
             action="studio.eval_dataset.create",
@@ -123,6 +126,7 @@ class EvalControlPlaneService:
             draft=draft,
             name=request.name,
             required=request.required,
+            split=request.split,
             dataset_id=request.dataset_id,
             cases=cases_from_imported(imported),
             action="studio.eval_dataset.import",
@@ -130,7 +134,7 @@ class EvalControlPlaneService:
 
     async def _require_evaluable_draft(
         self, tenant_id: str, user_id: str, draft_id: str, expected_revision: int
-    ):
+    ) -> AgentDraft:
         draft = await self._studio.get(tenant_id, user_id, draft_id)
         if draft.revision != expected_revision:
             raise ConflictError(
@@ -146,11 +150,12 @@ class EvalControlPlaneService:
         *,
         tenant_id: str,
         user_id: str,
-        draft,
+        draft: AgentDraft,
         name: str,
         required: bool,
+        split: Literal["train", "validation", "holdout"] = "validation",
         dataset_id: str | None,
-        cases,
+        cases: tuple[EvalCase, ...],
         action: str,
     ) -> EvalDatasetVersion:
         if not cases:
@@ -191,6 +196,7 @@ class EvalControlPlaneService:
             name=name,
             agentName=draft.spec.name,
             required=required,
+            split=split,
             sourceDraftId=draft.draft_id,
             sourceDraftRevision=draft.revision,
             sourceContentHash=compiled.report.snapshot.content_hash,
@@ -235,10 +241,17 @@ class EvalControlPlaneService:
         tenant_id: str,
         user_id: str,
         request: CreateEvalRunRequest,
+        allow_preview: bool = False,
     ) -> EvalRunView:
         existing = await self._runs.find_by_idempotency(tenant_id, user_id, request.idempotency_key)
         if existing is not None:
             self._ensure_same_run(existing, request)
+            if existing.preview_execution != allow_preview:
+                raise ConflictError("Eval execution mode cannot change")
+            if not existing.status.is_terminal:
+                await self._queue.enqueue(
+                    EvalTask(tenant_id=tenant_id, eval_run_id=existing.eval_run_id)
+                )
             return await self._view(existing)
         dataset = await self._datasets.get(
             tenant_id, user_id, request.dataset_id, request.dataset_version
@@ -248,7 +261,9 @@ class EvalControlPlaneService:
         version = await self._registry.get(
             tenant_id, user_id, request.agent_name, request.agent_version
         )
-        if version.status is not AgentVersionStatus.PUBLISHED:
+        if version.status is not AgentVersionStatus.PUBLISHED and not (
+            allow_preview and version.status is AgentVersionStatus.VALIDATED
+        ):
             raise ConflictError("Eval Runs require a published Agent version")
         if not _published_evaluation_enabled(version.snapshot):
             raise ConflictError("Agent Eval is disabled for this version")
@@ -269,6 +284,9 @@ class EvalControlPlaneService:
             datasetVersion=dataset.version,
             agentName=request.agent_name,
             agentVersion=request.agent_version,
+            previewExecution=allow_preview,
+            manifestHash=version.manifest_hash,
+            packageHash=version.package_hash,
             previewId=request.preview_id,
             environment=request.environment,
             requestedBy=user_id,
@@ -379,7 +397,10 @@ class EvalControlPlaneService:
             for run in await self._runs.list_for_tenant(tenant_id)
             if run.requested_by == owner_user_id
             if run.agent_name == agent_name
-            and run.agent_version == agent_version
+            and (run.agent_version == agent_version or (
+                run.manifest_hash == version.manifest_hash
+                and run.package_hash is not None and run.package_hash == version.package_hash
+            ))
             and run.status is EvalRunStatus.PASSED
         }
         missing = tuple(

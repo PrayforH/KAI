@@ -500,8 +500,10 @@ async def test_interrupted_inline_wait_can_be_closed_idempotently() -> None:
 async def test_inline_expiry_is_terminal_even_when_waiter_is_local() -> None:
     now = NOW
     service, runs, _ = await arrange(clock=lambda: now)
-    approval = await service.request(tenant_id="tenant-a", run_id="run-1", tool_call_id="local-expiry",
-                                     reason="confirm", inline=True)
+    approval = await service.request(
+        tenant_id="tenant-a", run_id="run-1", tool_call_id="local-expiry",
+        reason="confirm", inline=True,
+    )
     now += timedelta(minutes=6)
     assert await service.wait_for_decision(approval.approval_id) is ApprovalStatus.EXPIRED
     assert (await runs.get("tenant-a", "run-1")).status is RunStatus.REJECTED
@@ -521,5 +523,7 @@ async def test_decision_after_cancellation_does_not_approve_or_restart_run() -> 
                              decision=ApprovalStatus.APPROVED)
     assert (await service.get("tenant-a", approval.approval_id)).status is ApprovalStatus.CANCELLED
     assert (await runs.get("tenant-a", "run-1")).status is RunStatus.CANCELLED
-    assert not any(e.type == "approval.approved" for e in await events.list_after("tenant-a", "run-1", 0))
+    assert not any(
+        e.type == "approval.approved" for e in await events.list_after("tenant-a", "run-1", 0)
+    )
     assert await service.wait_for_decision(approval.approval_id) is ApprovalStatus.CANCELLED

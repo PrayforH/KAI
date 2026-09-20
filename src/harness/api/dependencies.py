@@ -79,6 +79,8 @@ from harness.evals.repositories import (
     InMemoryEvalRunRepository,
 )
 from harness.evals.service import EvalControlPlaneService
+from harness.evolution.repositories import InMemoryEvolutionRepository
+from harness.evolution.service import EvolutionService
 from harness.governance.repositories import InMemoryGovernanceRepository
 from harness.governance.service import GovernanceService
 from harness.inputs.processors import DefaultInputProcessor
@@ -223,6 +225,7 @@ class ApiContainer:
     preview_controller: PreviewController
     eval_dataset_repository: EvalDatasetRepository
     eval_run_repository: EvalRunRepository
+    evolution: EvolutionService
     evals: EvalControlPlaneService
     eval_controller: EvalController
     environment_repository: EnvironmentRepository
@@ -1002,6 +1005,11 @@ def build_memory_container(
     ]
     if sandbox_maintenance is not None:
         maintenance.append(MaintenanceReaper("sandbox-expiry", "sandbox", sandbox_maintenance))
+    evolution = EvolutionService(
+        InMemoryEvolutionRepository(), studio_service, eval_service, agent_service, quality_service
+    )
+    agent_service.publication_guard = evolution.publication_guard
+    maintenance.append(MaintenanceReaper("evolution", "evolution", evolution.reconcile_pending))
     reliability_controller = ReliabilityController(
         runs=runs,
         events=event_service,
@@ -1020,6 +1028,7 @@ def build_memory_container(
         id_generator=id_generator,
     )
     return ApiContainer(
+        evolution=evolution,
         environment=resolved_settings.environment,
         api_bearer_token=resolved_settings.api_bearer_token,
         auth=auth,

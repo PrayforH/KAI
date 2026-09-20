@@ -51,6 +51,8 @@ from harness.deployments.service import DeploymentService
 from harness.evals.controller import EvalController
 from harness.evals.queue import EvalTaskQueue
 from harness.evals.service import EvalControlPlaneService
+from harness.evolution.pg_repository import PostgresEvolutionRepository
+from harness.evolution.service import EvolutionService
 from harness.execution.credentials import (
     BrokerMcpCredentialProvider,
     CredentialResourceKind,
@@ -1575,6 +1577,12 @@ def build_production_container(
                 "sandbox-orphans", "sandbox", sandbox_governance.reclaim_orphans
             )
         )
+    evolution = EvolutionService(
+        PostgresEvolutionRepository(sessions), studio_service, eval_service,
+        agent_service, quality_service
+    )
+    agent_service.publication_guard = evolution.publication_guard
+    maintenance.append(MaintenanceReaper("evolution", "evolution", evolution.reconcile_pending))
     reliability_controller = ReliabilityController(
         runs=runs,
         events=events,
@@ -1599,6 +1607,7 @@ def build_production_container(
         await engine.dispose()
 
     return ApiContainer(
+        evolution=evolution,
         environment="production",
         api_bearer_token=settings.api_bearer_token,
         auth=auth,

@@ -49,6 +49,23 @@ class PostgresQualityRepository:
             "Quality Score already exists",
         )
 
+    async def attach_trace(self, score: QualityScore) -> None:
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(QualityScoreRow).where(
+                    QualityScoreRow.tenant_id == score.tenant_id,
+                    QualityScoreRow.score_id == score.score_id,
+                ).with_for_update()
+            )
+            if row is None:
+                raise NotFoundError("Quality Score not found")
+            previous = QualityScore.model_validate(row.payload)
+            if previous.trace_id is None:
+                row.payload = previous.model_copy(update={"trace_id": score.trace_id}).model_dump(
+                    mode="json", by_alias=True
+                )
+            await session.commit()
+
     async def get_score(self, tenant_id: str, score_id: str) -> QualityScore:
         async with self._sessions() as session:
             row = await session.get(QualityScoreRow, (tenant_id, score_id))

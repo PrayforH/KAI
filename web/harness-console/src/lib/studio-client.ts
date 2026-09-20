@@ -1055,14 +1055,14 @@ export type StudioQualityScore = {
   tenantId: string;
   scoreId: string;
   runId: string;
-  traceId: string;
+  traceId: string | null;
   sessionId: string;
   agentName: string;
   agentVersion: string;
   deploymentSnapshotId: string | null;
   evalRunId: string | null;
   name: string;
-  value: number;
+  value: number | null;
   source: "rule" | "human" | "llm_judge";
   createdBy: string;
   createdAt: string;

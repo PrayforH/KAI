@@ -38,6 +38,12 @@ class EvalExpectation(EvalModel):
     output_contains: tuple[str, ...] = Field(default=(), alias="outputContains")
     approval_required: bool = Field(default=False, alias="approvalRequired")
     max_duration_seconds: float = Field(default=120, alias="maxDurationSeconds", gt=0)
+    max_cost_usd: float | None = Field(default=None, alias="maxCostUsd", gt=0)
+    max_model_tokens: int | None = Field(default=None, alias="maxModelTokens", gt=0)
+    max_tool_calls: int | None = Field(default=None, alias="maxToolCalls", ge=0)
+    tool_call_sequence: tuple[str, ...] = Field(default=(), alias="toolCallSequence")
+    output_json_equals: dict[str, object] | None = Field(default=None, alias="outputJsonEquals")
+
 
     @model_validator(mode="after")
     def disjoint_tools(self) -> EvalExpectation:
@@ -87,6 +93,7 @@ class EvalCase(EvalModel):
     id: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9-]*$")
     tags: tuple[str, ...] = Field(min_length=1)
     prompt: str = Field(min_length=1)
+    family: str | None = Field(default=None, min_length=1, max_length=200)
     input_files: tuple[EvalInputFile, ...] = Field(
         default=(), alias="inputFiles"
     )

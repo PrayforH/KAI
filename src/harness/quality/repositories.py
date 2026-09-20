@@ -15,6 +15,7 @@ from harness.quality.models import (
 
 class QualityRepository(Protocol):
     async def add_score(self, score: QualityScore) -> None: ...
+    async def attach_trace(self, score: QualityScore) -> None: ...
     async def get_score(self, tenant_id: str, score_id: str) -> QualityScore: ...
     async def list_scores(self, tenant_id: str, agent_name: str) -> list[QualityScore]: ...
     async def add_rule(self, rule: AlertRule) -> None: ...
@@ -44,6 +45,14 @@ class InMemoryQualityRepository:
             if existing is not None and existing != score:
                 raise ConflictError("Quality Score already exists")
             self._scores[key] = score
+
+    async def attach_trace(self, score: QualityScore) -> None:
+        async with self._lock:
+            previous = self._scores[(score.tenant_id, score.score_id)]
+            if previous.trace_id is None:
+                self._scores[(score.tenant_id, score.score_id)] = previous.model_copy(
+                    update={"trace_id": score.trace_id}
+                )
 
     async def get_score(self, tenant_id: str, score_id: str) -> QualityScore:
         try:

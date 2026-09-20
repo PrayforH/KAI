@@ -6,7 +6,8 @@ export const metadata: Metadata = {
   description: "Agent 评测、环境、部署和触发器运行控制面。",
 };
 
-export default async function AgentOperationsPage({ params }: { params: Promise<{ agentName: string }> }) {
+export default async function AgentOperationsPage({ params, searchParams }: { params: Promise<{ agentName: string }>; searchParams: Promise<{ evolutionJob?: string; candidate?: string }> }) {
   const { agentName } = await params;
-  return <AgentOperationsWorkspace agentName={decodeURIComponent(agentName)} />;
+  const query = await searchParams;
+  return <AgentOperationsWorkspace agentName={decodeURIComponent(agentName)} evolutionJob={query.evolutionJob} candidateId={query.candidate} />;
 }

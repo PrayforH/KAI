@@ -1,0 +1,86 @@
+{
+  "release_before_review": 409,
+  "wrong_report_hash": 409,
+  "release": "released",
+  "empty_observation": {
+    "candidateId": "candidate_b221f1348cbef48bd92a0739",
+    "agentVersion": "0.1.0+evo.b221f1348cbef48b",
+    "totalRuns": 0,
+    "succeededRuns": 0,
+    "unknownCostRuns": 0,
+    "feedbackCount": 0,
+    "feedbackMean": null,
+    "conclusion": "暂无发布后样本，不能判断业务收益。",
+    "observedAt": "2026-09-20T09:00:43.167792Z"
+  },
+  "experience": "reviewed",
+  "post_release_run": "run_fc27c9dda75a48f3b51d478782a990ec",
+  "post_release_observation": {
+    "candidateId": "candidate_b221f1348cbef48bd92a0739",
+    "agentVersion": "0.1.0+evo.b221f1348cbef48b",
+    "totalRuns": 1,
+    "succeededRuns": 1,
+    "unknownCostRuns": 0,
+    "feedbackCount": 0,
+    "feedbackMean": null,
+    "conclusion": "仅汇总当前所有者的该发布版本样本；不构成业务收益因果结论。",
+    "observedAt": "2026-09-20T09:07:49.294289Z"
+  },
+  "canary_bootstrap": {
+    "deploymentId": "deployment_31b2b981348b4cb2a70612231148107e",
+    "snapshotId": "deployment_snapshot_510b54a0046d46719f6a81e02a6617a9",
+    "gate": true,
+    "status": "succeeded"
+  },
+  "canary_routes": [
+    {
+      "snapshotId": "deployment_snapshot_510b54a0046d46719f6a81e02a6617a9",
+      "weight": 90
+    },
+    {
+      "snapshotId": "deployment_snapshot_48effdc15465478084a0f4a1926166e8",
+      "weight": 10
+    }
+  ],
+  "environment_rollback": {
+    "status": "succeeded",
+    "routes": [
+      {
+        "snapshotId": "deployment_snapshot_510b54a0046d46719f6a81e02a6617a9",
+        "weight": 100
+      }
+    ]
+  },
+  "personal_rollback": {
+    "status": "rolled_back",
+    "defaultVersion": "0.1.0",
+    "jobStatus": "completed"
+  },
+  "restart_persistence": "passed",
+  "jobId": "evo_3cc4b19fd62e5236875766c197009ee0",
+  "agentName": "evolution-smoke-165948",
+  "report": {
+    "status": "passed",
+    "reportHash": "f6237514692590f363c5cc99b32c3ab4faa4c02ce27860f37b1d2031a9fc8f2c",
+    "caseCount": 3,
+    "improved": [
+      "trial-1:case-1",
+      "trial-1:case-2",
+      "trial-1:case-3"
+    ],
+    "regressed": [],
+    "unresolved": [],
+    "unknownCostCount": 0,
+    "baselineCost": 0.027185,
+    "candidateCost": 0.02845,
+    "conclusion": "固定验证集的工程对照；不代表独立留出集或真实业务收益。"
+  },
+  "trials": [
+    {
+      "trialId": "evo_3cc4b19fd62e5236875766c197009ee0:candidate_b221f1348cbef48bd92a0739:1",
+      "baselineRunId": "eval_run_c39442e220d5468d95421fa65bad86e8",
+      "candidateRunId": "eval_run_8d278b7f0f53451d923041221afcad01"
+    }
+  ],
+  "ui_verification": "passed: report, candidate deployment selection, personal rollback"
+}

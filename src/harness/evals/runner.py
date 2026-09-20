@@ -9,10 +9,12 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, cast
+from uuid import uuid4
 from xml.etree import ElementTree
 
 import httpx
 
+from harness.evals.diagnostics import EvalFailure, EvalUsage, failure, usage_from_events
 from harness.evals.suite import EvalCase, EvalSuite
 
 _TERMINAL_STATUSES = {"cancelled", "succeeded", "failed", "timed_out", "rejected"}
@@ -38,6 +40,8 @@ class EvalCaseResult:
     approval_requested: bool
     subagents: tuple[str, ...] = ()
     peak_concurrent_subagents: int = 0
+    failure_details: tuple[EvalFailure, ...] = ()
+    usage: EvalUsage = EvalUsage()
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -47,6 +51,8 @@ class EvalCaseResult:
             "duration_seconds": self.duration_seconds,
             "passed": self.passed,
             "failures": list(self.failures),
+            "failure_details": [f.model_dump(mode="json") for f in self.failure_details],
+            "usage": self.usage.model_dump(mode="json", by_alias=True),
             "tools": list(self.tools),
             "approval_requested": self.approval_requested,
             "subagents": list(self.subagents),
@@ -151,6 +157,28 @@ def _event_payload(event: dict[str, object]) -> dict[str, object]:
     return cast(dict[str, object], payload) if isinstance(payload, dict) else {}
 
 
+def _assistant_messages(events: tuple[dict[str, object], ...]) -> list[str]:
+    """Join transport deltas inside a message; chunks are not word/line boundaries."""
+    messages: list[str] = []
+    chunks: list[str] = []
+    for event in events:
+        kind = event.get("type")
+        text = _event_payload(event).get("text")
+        if kind == "message.start" and chunks:
+            messages.append("".join(chunks))
+            chunks = []
+        elif kind == "message.delta" and isinstance(text, str):
+            chunks.append(text)
+        elif kind == "message.completed":
+            completed = text if isinstance(text, str) and text else "".join(chunks)
+            if completed:
+                messages.append(completed)
+            chunks = []
+    if chunks:
+        messages.append("".join(chunks))
+    return messages
+
+
 def evaluate_recorded_run(case: EvalCase, run: RecordedRun) -> EvalCaseResult:
     tools = tuple(
         str(_event_payload(event).get("name", ""))
@@ -185,12 +213,8 @@ def evaluate_recorded_run(case: EvalCase, run: RecordedRun) -> EvalCaseResult:
                 )
         elif isinstance(task_id, str):
             active_subagents.discard(task_id)
-    output = "\n".join(
-        str(_event_payload(event).get("text", ""))
-        for event in run.events
-        if event.get("type") in {"message.delta", "message.completed"}
-        and _event_payload(event).get("text")
-    )
+    messages = _assistant_messages(run.events)
+    output = "\n".join(messages)
     failures: list[str] = []
     if run.status not in case.expect.terminal_statuses:
         failures.append(f"unexpected status: {run.status}")
@@ -234,7 +258,36 @@ def evaluate_recorded_run(case: EvalCase, run: RecordedRun) -> EvalCaseResult:
             f"duration exceeded {case.expect.max_duration_seconds:.1f}s: "
             f"{run.duration_seconds:.1f}s"
         )
+    usage = usage_from_events(run.events)
+    for label, observed, maximum in (
+        ("cost", usage.cost_usd, case.expect.max_cost_usd),
+        ("model tokens", usage.model_tokens, case.expect.max_model_tokens),
+        ("tool calls", usage.tool_calls, case.expect.max_tool_calls),
+    ):
+        if maximum is not None:
+            if observed is None:
+                failures.append(f"{label} evidence unavailable")
+            elif observed > maximum:
+                failures.append(f"{label} budget exceeded: {observed} > {maximum}")
+    position = 0
+    for required in case.expect.tool_call_sequence:
+        try:
+            position = tools.index(required, position) + 1
+        except ValueError:
+            failures.append(f"tool sequence missing ordered step: {required}")
+            break
+    if case.expect.output_json_equals is not None:
+        candidate_output = messages[-1] if messages else ""
+        try:
+            parsed = json.loads(candidate_output)
+        except (ValueError, TypeError):
+            failures.append("output is not valid JSON")
+        else:
+            if parsed != case.expect.output_json_equals:
+                failures.append("output JSON does not match expected object")
     return EvalCaseResult(
+        failure_details=tuple(failure(detail) for detail in failures),
+        usage=usage,
         case_id=case.id,
         run_id=run.run_id,
         status=run.status,
@@ -258,7 +311,9 @@ class EvalRunner:
         *,
         agent_version: str,
         package_root: Path | None = None,
+        trial_id: str | None = None,
     ) -> EvalReport:
+        trial_id = trial_id or uuid4().hex
         results: list[EvalCaseResult] = []
         for case in suite.cases:
             loop = asyncio.get_running_loop()
@@ -285,7 +340,7 @@ class EvalRunner:
                         )
                     )
                 idempotency_key = hashlib.sha256(
-                    f"{suite.agent}:{agent_version}:{case.id}:{case.prompt}".encode()
+                    f"{trial_id}:{suite.agent}:{agent_version}:{case.id}:{case.prompt}".encode()
                 ).hexdigest()
                 run_id = await self._client.create_run(
                     session_id,

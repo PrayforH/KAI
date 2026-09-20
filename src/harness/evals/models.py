@@ -8,6 +8,7 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
+from harness.evals.diagnostics import EvalFailure, EvalUsage
 from harness.evals.suite import EvalCase
 from harness.studio.models import StudioModel
 
@@ -51,6 +52,7 @@ class EvalDatasetVersion(StudioModel):
     version: int = Field(ge=1)
     name: str = Field(min_length=1, max_length=160)
     agent_name: str = Field(alias="agentName", pattern=r"^[a-z][a-z0-9-]*$")
+    split: Literal["train", "validation", "holdout"] = "validation"
     required: bool = True
     source_draft_id: str = Field(alias="sourceDraftId", min_length=1)
     source_draft_revision: int = Field(alias="sourceDraftRevision", ge=1)
@@ -92,6 +94,9 @@ class EvalRun(StudioModel):
     dataset_version: int = Field(alias="datasetVersion", ge=1)
     agent_name: str = Field(alias="agentName", pattern=r"^[a-z][a-z0-9-]*$")
     agent_version: str = Field(alias="agentVersion", min_length=1)
+    preview_execution: bool = Field(default=False, alias="previewExecution")
+    manifest_hash: str | None = Field(default=None, alias="manifestHash")
+    package_hash: str | None = Field(default=None, alias="packageHash")
     preview_id: str | None = Field(default=None, alias="previewId")
     environment: str | None = None
     requested_by: str = Field(alias="requestedBy", min_length=1)
@@ -122,6 +127,8 @@ class EvalCaseResult(StudioModel):
     status: EvalCaseStatus
     passed: bool
     duration_seconds: float = Field(alias="durationSeconds", ge=0)
+    failure_details: tuple[EvalFailure, ...] = Field(default=(), alias="failureDetails")
+    usage: EvalUsage = EvalUsage()
     failures: tuple[str, ...] = ()
     tools: tuple[str, ...] = ()
     approval_requested: bool = Field(default=False, alias="approvalRequested")
@@ -159,6 +166,7 @@ class ImportEvalDatasetRequest(StudioModel):
     draft_id: str = Field(alias="draftId", min_length=1)
     expected_revision: int = Field(alias="expectedRevision", ge=1)
     name: str = Field(min_length=1, max_length=160)
+    split: Literal["train", "validation", "holdout"] = "validation"
     required: bool = True
     dataset_id: str | None = Field(default=None, alias="datasetId")
     format: Literal["json", "csv"]
@@ -170,6 +178,7 @@ class CreateEvalDatasetVersionRequest(StudioModel):
     expected_revision: int = Field(alias="expectedRevision", ge=1)
     name: str = Field(min_length=1, max_length=160)
     dataset_id: str | None = Field(default=None, alias="datasetId")
+    split: Literal["train", "validation", "holdout"] = "validation"
     required: bool = True
 
 
