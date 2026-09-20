@@ -1690,7 +1690,10 @@ textarea:not(.aui-composer-input):focus-visible {
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
+  /* brand · 新建任务 · workspace nav · the scrolling 项目/任务 column · account.
+     Keep this in step with the sidebar's top-level children: a row too many
+     hands the flexible row to the account block and lifts it off the bottom. */
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   border-right: 1px solid var(--line);
   background: #f3f5f2;
 }
