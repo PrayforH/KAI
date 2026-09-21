@@ -44,8 +44,8 @@ describe("project-grouped task list", () => {
 
   it("moves tasks in and out of projects from the task menu", () => {
     expect(headerActions).toContain("moveToProject");
-    expect(headerActions).toContain("移入「");
-    expect(headerActions).toContain("移出项目");
+    expect(headerActions).toContain('NestedMenu label="移入项目"');
+    expect(headerActions).toContain("移出当前项目");
     expect(headerActions).toContain("setTaskProject(task.thread_id, projectId)");
     expect(client).toContain("export async function setTaskProject");
     expect(client).toContain("projectId");

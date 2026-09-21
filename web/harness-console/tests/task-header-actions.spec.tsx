@@ -5,12 +5,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TaskHeaderActions } from "../src/components/task-header-actions";
 import type { TaskSummary } from "../src/lib/task-history";
 
-const { setTaskPinned, setTaskTitle, setTaskArchived, notifyTaskListChanged } = vi.hoisted(() => ({
+const { setTaskPinned, setTaskTitle, setTaskArchived, notifyTaskListChanged, setTaskProject } = vi.hoisted(() => ({
   setTaskPinned: vi.fn(),
   setTaskTitle: vi.fn(),
   setTaskArchived: vi.fn(),
   notifyTaskListChanged: vi.fn(),
+  setTaskProject: vi.fn(),
 }));
+
+vi.mock("../src/lib/studio-client", () => ({ setTaskProject }));
 
 vi.mock("../src/lib/task-history", () => ({
   setTaskPinned,
@@ -58,6 +61,7 @@ describe("task header actions", () => {
     setTaskPinned.mockResolvedValue(undefined);
     setTaskTitle.mockResolvedValue("新标题");
     setTaskArchived.mockResolvedValue(undefined);
+    setTaskProject.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -107,6 +111,23 @@ describe("task header actions", () => {
     });
     expect(setTaskPinned).toHaveBeenCalledWith("thread-1", false);
     expect(notifyTaskListChanged).toHaveBeenCalled();
+  });
+
+  it("reveals project destinations only in the submenu and moves on selection", async () => {
+    const projects = ["current", "target"].map((id) => ({
+      projectId: id, name: id, tenantId: "local", userId: "user-1",
+      createdAt: "2026-09-21", updatedAt: "2026-09-21",
+    }));
+    render(<TaskHeaderActions task={task({ project_id: "current" })} projects={projects} />);
+    act(() => container.querySelector<HTMLButtonElement>(".task-header-more")!.click());
+    expect(menuItems()).toEqual(["置顶任务", "重命名任务", "移入项目", "归档任务"]);
+    act(() => container.querySelector<HTMLButtonElement>(".nested-menu-trigger")!.click());
+    expect(setTaskProject).not.toHaveBeenCalled();
+    const options = container.querySelectorAll<HTMLButtonElement>(".nested-menu-panel button");
+    expect(Array.from(options, (option) => option.textContent)).toEqual(["target", "移出当前项目"]);
+    await act(async () => options[0].click());
+    expect(setTaskProject).toHaveBeenCalledWith("thread-1", "target");
+    expect(container.querySelector(".task-header-menu")).toBeNull();
   });
 
   it("renames through the thread PATCH and reports the new title", async () => {

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { NestedMenu } from "./nested-menu";
 import { formatTaskAge } from "../lib/task-list-age";
 import {
   notifyTaskListChanged,
@@ -383,8 +384,8 @@ export function TaskHeaderActions({
             <RenameIcon />
             <span>重命名任务</span>
           </button>
-          {projects.length > 0 && (
-            <>
+          {(projects.length > 0 || task.project_id) && (
+            <NestedMenu label="移入项目" icon={<ProjectIcon />} disabled={busy}>
               {projects
                 .filter((project) => project.projectId !== task.project_id)
                 .map((project) => (
@@ -396,7 +397,7 @@ export function TaskHeaderActions({
                     onClick={() => void moveToProject(project.projectId)}
                   >
                     <ProjectIcon />
-                    <span>移入「{project.name}」</span>
+                    <span>{project.name}</span>
                   </button>
                 ))}
               {task.project_id && (
@@ -407,10 +408,10 @@ export function TaskHeaderActions({
                   onClick={() => void moveToProject(null)}
                 >
                   <ProjectIcon />
-                  <span>移出项目</span>
+                  <span>移出当前项目</span>
                 </button>
               )}
-            </>
+            </NestedMenu>
           )}
           <button
             type="button"

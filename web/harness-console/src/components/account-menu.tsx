@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "./auth-provider";
+import { NestedMenu } from "./nested-menu";
 import { ProductIcon } from "./product-icon";
 import { useColorMode, type ColorMode } from "../lib/color-mode";
 
@@ -29,17 +30,13 @@ function ThemeQuickSwitch() {
     { value: "light", label: "浅色主题" },
   ];
   return (
-    <div className="account-theme" role="radiogroup" aria-label="主题外观">
-      <span className="account-theme-label">
-        <PaletteIcon />
-        主题外观
-      </span>
-      <div className="account-theme-options">
+    <div className="account-theme">
+      <NestedMenu label="主题外观" icon={<PaletteIcon />}>
         {options.map((option) => (
           <button
             key={option.value}
             type="button"
-            role="radio"
+            role="menuitemradio"
             aria-checked={mode === option.value}
             className="account-theme-option"
             onClick={() => setColorMode(option.value)}
@@ -52,7 +49,7 @@ function ThemeQuickSwitch() {
             )}
           </button>
         ))}
-      </div>
+      </NestedMenu>
     </div>
   );
 }
