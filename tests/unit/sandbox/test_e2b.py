@@ -1,13 +1,18 @@
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from claude_agent_sdk import ClaudeAgentOptions
 
 from harness.core.models import Run, RunStatus
 from harness.sandbox.base import SandboxEgress, SandboxIsolation, SandboxResourceUsage
-from harness.sandbox.e2b import E2BSandboxProvider, SdkE2BClient, _parse_log_payload
+from harness.sandbox.e2b import (
+    E2BSandboxProvider,
+    SdkE2BClient,
+    SdkE2BRemoteSandbox,
+    _parse_log_payload,
+)
 
 
 class FakeRemoteSession:
@@ -935,3 +940,63 @@ async def test_list_managed_returns_nothing_when_the_first_page_is_unreadable(
     client = SdkE2BClient(api_key="key")
 
     assert await client.list_managed() == []
+
+
+class _RecordingFilesystem:
+    """Records the deadline each collection RPC is issued with."""
+
+    def __init__(self) -> None:
+        self.list_timeouts: list[float | None] = []
+        self.read_timeouts: list[float | None] = []
+
+    async def list(
+        self,
+        path: str,
+        depth: int = 1,
+        user: str | None = None,
+        request_timeout: float | None = None,
+    ) -> list[object]:
+        del path, depth, user
+        self.list_timeouts.append(request_timeout)
+        return []
+
+    async def read(
+        self,
+        path: str,
+        format: str = "text",
+        user: str | None = None,
+        request_timeout: float | None = None,
+        gzip: bool = False,
+    ) -> bytearray:
+        del path, format, user, gzip
+        self.read_timeouts.append(request_timeout)
+        return bytearray(b"collected")
+
+
+class _FilesystemOnlySandbox:
+    def __init__(self) -> None:
+        self.sandbox_id = "e2b-sandbox-files"
+        self.files = _RecordingFilesystem()
+
+
+@pytest.mark.asyncio
+async def test_workspace_collection_sets_its_own_request_deadline() -> None:
+    """Collection must not inherit the connection's `request_timeout`.
+
+    That value is sized for control-plane calls (CubeSandbox pins 30s) and the
+    e2b SDK turns it into the deadline of the *whole* call. Enumerating a
+    workspace the model just unpacked legitimately outlives it — and because
+    collection runs after the answer is already durable, the platform would
+    otherwise fail a Run that had already succeeded.
+    """
+
+    sandbox = _FilesystemOnlySandbox()
+    remote = SdkE2BRemoteSandbox(cast(Any, sandbox))
+
+    assert await remote.list_files("/workspace") == []
+    assert await remote.download("/workspace/report.md") == b"collected"
+
+    # The connection's control-plane timeout is 30s; collection must outlive it.
+    assert sandbox.files.list_timeouts == sandbox.files.read_timeouts
+    assert sandbox.files.list_timeouts
+    assert all(timeout is not None and timeout > 30 for timeout in sandbox.files.list_timeouts)

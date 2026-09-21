@@ -808,6 +808,7 @@ class RunOrchestrator:
             run_id,
             type(error).__name__,
             redact_text(str(error), limit=400),
+            exc_info=error,
         )
         payload = {"error_type": type(error).__name__}
         if isinstance(

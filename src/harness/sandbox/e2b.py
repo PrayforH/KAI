@@ -71,6 +71,14 @@ _MANAGED_RUN_KEY = "harness.run"
 # Bounds one reap pass; a deployment hosting thousands of foreign sandboxes must
 # not turn a maintenance tick into an unbounded scan.
 _LIST_SCAN_LIMIT = 1000
+# Workspace collection walks the entire tree, so it must not inherit the
+# connection's `request_timeout`. That value is sized for control-plane calls
+# (CubeSandbox pins 30s) and becomes the *deadline of the whole call* for
+# `files.list`/`files.read`: a Run whose model legitimately unpacked a large
+# archive would blow it while enumerating the result, and because collection
+# happens after the answer is durable the platform would fail a Run that had
+# already succeeded. Collection is bounded by the member/size budgets instead.
+_COLLECT_REQUEST_TIMEOUT_SECONDS = 900
 # Records what an idle sandbox was kept as, so the next Run of the session can
 # adopt it and the reaper can tell a deliberate idle instance from an orphan.
 # The reaper skips these: they are reclaimed by the platform TTL once the
@@ -377,7 +385,11 @@ class SdkE2BRemoteSandbox:
         await filesystem.write(remote_path, content)
 
     async def list_files(self, remote_path: str) -> list[tuple[str, bool, int | None]]:
-        entries = await self._sandbox.files.list(remote_path, depth=100)
+        entries = await self._sandbox.files.list(
+            remote_path,
+            depth=100,
+            request_timeout=_COLLECT_REQUEST_TIMEOUT_SECONDS,
+        )
         return [
             (
                 str(entry.path),
@@ -388,7 +400,14 @@ class SdkE2BRemoteSandbox:
         ]
 
     async def download(self, remote_path: str) -> bytes:
-        return cast(bytes, await self._sandbox.files.read(remote_path, format="bytes"))
+        return cast(
+            bytes,
+            await self._sandbox.files.read(
+                remote_path,
+                format="bytes",
+                request_timeout=_COLLECT_REQUEST_TIMEOUT_SECONDS,
+            ),
+        )
 
     async def kill(self) -> None:
         await self._sandbox.kill()

@@ -25,6 +25,15 @@ def authoring_stream(
                 result = await operation(queue.put)
                 await queue.put({"type": "result", "result": result})
             except (ConflictError, NotFoundError, PermissionDeniedError) as error:
+                # The message only reaches the client inside the SSE body, so
+                # without this line a rejected builder turn leaves no server-side
+                # trace at all and the failure cannot be told apart from any
+                # other gate in the chain.
+                logging.getLogger(__name__).warning(
+                    "authoring stream rejected error_type=%s message=%s",
+                    type(error).__name__,
+                    error,
+                )
                 await queue.put({"type": "error", "message": str(error)})
             except Exception:
                 logging.getLogger(__name__).exception("authoring stream failed")
