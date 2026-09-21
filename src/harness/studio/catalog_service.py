@@ -382,12 +382,16 @@ class CapabilityCatalogService:
                 upgraded_catalog = catalog_for_skills.model_copy(update={"skills": catalog_skills})
             updated_by = current.updated_by
         # Retire the superseded authoring package without resetting tenant settings.
+        # The vendored tree is optional, so the canonical creator may be absent: the
+        # retirement still applies, only the label refresh is skipped.
         catalog_for_retirement = upgraded_catalog or current.catalog
-        canonical_creator = next(s for s in default_capability_catalog().skills
-                                 if s.package_id == "skill-creator")
+        canonical_creator = next(
+            (s for s in default_capability_catalog().skills if s.package_id == "skill-creator"),
+            None,
+        )
         active_skills = tuple(
             skill.model_copy(update={"label": canonical_creator.label})
-            if skill.package_id == "skill-creator" else skill
+            if canonical_creator is not None and skill.package_id == "skill-creator" else skill
             for skill in catalog_for_retirement.skills
             if skill.package_id not in RETIRED_PLATFORM_SKILLS)
         if active_skills != catalog_for_retirement.skills:

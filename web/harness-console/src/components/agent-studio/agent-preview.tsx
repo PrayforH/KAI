@@ -4,6 +4,11 @@ import { TextMessagePartProvider } from "@assistant-ui/react";
 import { MarkdownText } from "../markdown-text";
 import { ActivitySummary } from "../activity-summary";
 import { studioClient, type StudioTryRun } from "../../lib/studio-client";
+import {
+  isTerminalRunStatus,
+  runFailureMessage,
+  runStatusLabel,
+} from "../../lib/run-status";
 import { projectTryRunConversation } from "./try-run-stream";
 import styles from "./agent-preview.module.css";
 
@@ -13,11 +18,11 @@ export function PreviewMarkdown({ text, running = false }: { text: string; runni
 }
 export function PreviewRunResponse({ turn, agentName, onImprove }: { turn: PreviewTurn; agentName: string; onImprove: (turn: PreviewTurn) => void }) {
         const result = turn.result;
-        const terminal = ["succeeded", "failed", "cancelled", "timed_out", "rejected"].includes(result.run.status);
+        const terminal = isTerminalRunStatus(result.run.status);
         const projected = projectTryRunConversation(result.events);
         const answer = terminal ? result.finalText || projected.answerText : projected.answerText;
         const route = result.events.find(event=>event.type === "model.route.selected")?.payload;
-        const status = ({ succeeded: "已完成", failed: "运行失败", cancelled: "已停止", timed_out: "已超时", rejected: "被拒绝", waiting_approval: "等待审批", queued: "排队中", provisioning: "准备中", running: "正在运行", cancelling: "正在停止" })[result.run.status];
+        const status = runStatusLabel(result.run.status);
   return           <div className={styles.answer}>
             <small className={styles.speaker}>{agentName} <span>· 试跑{!terminal || result.run.status !== "succeeded" ? ` · ${status}` : ""}</span></small>
             {route && typeof route.model === "string" && <small className={styles.speaker}>本轮模型：{route.model}{route.agent_default_route && route.route_id !== route.agent_default_route ? " · 已适配图片输入" : ""}</small>}
@@ -35,7 +40,7 @@ export function PreviewRunResponse({ turn, agentName, onImprove }: { turn: Previ
               onDecision={async decision => { await studioClient.decideTryRunApproval(item.approval_id, decision); }}
             />)}
             {answer && <PreviewMarkdown text={answer} running={!terminal} />}
-            {terminal && !answer && <p>{result.run.status === "succeeded" ? "本轮已结束，未返回文字。可查看交付文件和执行详情。" : `本轮未完成。${result.run.error_code || "请查看执行详情后重试。"}`}</p>}
+            {terminal && !answer && <p>{result.run.status === "succeeded" ? "本轮已结束，未返回文字。可查看交付文件和执行详情。" : `本轮未完成。${runFailureMessage(result.run.error_code)}`}</p>}
             {result.artifacts.filter(item => item.status === "ready").map(item => <a key={item.artifact_id} href={studioClient.tryRunArtifactHref(item.artifact_id)} download={item.name}>{item.name}</a>)}
             {terminal && <button type="button" className={styles.improve} onClick={() => onImprove(turn)}>改进这次回答</button>}
           </div>;

@@ -13,7 +13,13 @@ INTERNAL_AGENT_ASSET_MARKER = "internal_agent_asset_access"
 
 
 def internal_agent_asset_access(payload: dict[str, Any]) -> bool:
-    """Return true when a tool reads non-user-facing Agent instructions."""
+    """Return true when a tool call reads non-user-facing Agent instructions.
+
+    The evidence is a protected path, never a command verb: ``sort``, ``od``,
+    redirection or ``python -c "open(...)"`` reach the same file as ``cat``, so a
+    whitelist of read commands would silently let Skill and system-prompt bodies
+    into the durable event stream.
+    """
     name = str(payload.get("name", "")).casefold()
     arguments = payload.get("arguments")
     if not isinstance(arguments, dict):
@@ -24,12 +30,7 @@ def internal_agent_asset_access(payload: dict[str, Any]) -> bool:
         candidates = (raw,) if isinstance(raw, str) else ()
     elif name == "bash":
         command = values.get("command")
-        if not isinstance(command, str) or not any(
-            token in command.casefold()
-            for token in ("cat ", "sed ", "head ", "tail ", "grep ", "rg ", "awk ")
-        ):
-            return bool(payload.get(INTERNAL_AGENT_ASSET_MARKER))
-        candidates = (command,)
+        candidates = (command,) if isinstance(command, str) else ()
     else:
         return bool(payload.get(INTERNAL_AGENT_ASSET_MARKER))
     for candidate in candidates:

@@ -4,6 +4,7 @@ import { TEAM_COLLABORATION_ENABLED } from "./agent-visibility";
 import type { RunActivity } from "./activity-schema";
 import { requireAuthenticatedResponse } from "./client-auth";
 import { createRandomId } from "./random-id";
+import type { StudioRunStatus } from "./run-status";
 import { streamAgui } from "./agui";
 import type {
   BuiltinToolOption,
@@ -16,6 +17,8 @@ import type {
 } from "./agent-studio";
 
 export type StudioRole = "owner" | "admin" | "member" | "viewer";
+
+export type { StudioRunStatus };
 
 export type ProjectSourceFile = { path: string; size: number; digest?: string; content: string | null; unavailable: string | null };
 export type DeepagentsProjectSource = {
@@ -811,7 +814,7 @@ export type StudioTryRun = {
   run: {
     run_id: string;
     session_id: string;
-    status: "queued" | "provisioning" | "running" | "waiting_approval" | "cancelling" | "cancelled" | "succeeded" | "failed" | "timed_out" | "rejected";
+    status: StudioRunStatus;
     error_code: string | null;
   };
   events: Array<{

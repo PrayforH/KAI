@@ -940,8 +940,6 @@ def export_deepagents_project(
     resolved_skills = tuple(skills) if skills is not None else tuple(spec.skills)
     capabilities = mcp_capabilities or {}
 
-    has_bash = "Bash" in spec.builtin_tools
-
     # The route catalog carries the authoritative wire protocol; the model name
     # alone (a platform alias such as `deepseek-v4-pro`) cannot decide it.
     api_format = model_route.api_format if model_route is not None else None
@@ -987,7 +985,7 @@ def export_deepagents_project(
         "ApprovalService（WAITING_APPROVAL / TTL / CAS 决策）不可导出；"
         "导出项目使用 LangGraph 会话与 interrupt_on，不承接平台原有审批记录与策略。"
     )
-    if has_bash:
+    if plan.has_bash:
         dropped["Bash 策略门"] = (
             "execute 使用宿主机权限，不经过 bash_safety，也不受 workspace 路径隔离。"
         )
@@ -1050,13 +1048,13 @@ def export_deepagents_project(
         spec=spec,
         model=model,
         fs_tools=tuple(fs_tools),
-        has_bash=has_bash,
+        has_bash=plan.has_bash,
         shell_timeout=shell_timeout,
         read_only=read_only,
         permissions=permissions,
         with_mcp=bool(spec.mcp_servers),
         with_skills=bool(resolved_skills),
-        recursion_limit=max((spec.limits.max_turns or 100) * 2, 50),
+        recursion_limit=plan.recursion_limit,
         module_prefix=module_prefix,
     )
 
@@ -1075,7 +1073,7 @@ def export_deepagents_project(
             required_environment=tuple(required_environment),
             dropped=dropped,
             added_tools=added_tools,
-            has_bash=has_bash,
+            has_bash=plan.has_bash,
             with_mcp=bool(spec.mcp_servers),
         )
         env_example = _render_env_example(

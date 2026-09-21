@@ -106,8 +106,9 @@ docker compose \
 ```dotenv
 HARNESS_AGENT_NAME=lead-agent
 HARNESS_AGENT_VERSION=1.0.0
-HARNESS_MCP_SECRET_REFERENCES_JSON={"tavily-readonly":{"api_key":"TAVILY_API_KEY"}}
-HARNESS_MCP_SERVER_SECRETS_JSON={"TAVILY_API_KEY":"replace-with-tavily-api-key"}
+# 不内置 MCP：只为当前 Agent Manifest 实际声明的逻辑引用配置凭据。
+HARNESS_MCP_SECRET_REFERENCES_JSON={"<reference>":{"api_key":"<SECRET_ENV_NAME>"}}
+HARNESS_MCP_SERVER_SECRETS_JSON={"<SECRET_ENV_NAME>":"replace-me"}
 ```
 
 然后幂等发布三个依赖包，并只重建读取这些环境变量的服务：

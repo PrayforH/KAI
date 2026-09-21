@@ -33,6 +33,10 @@ def test_local_defaults_disable_external_model_and_otel() -> None:
     assert settings.new_api_auth_scheme == "bearer"
     assert settings.web_tools_enabled is True
     assert settings.web_search_provider == "minimax"
+    # The readiness budget follows a measured 54.7s/80.8s registry pull, not a guess:
+    # a second definition of this field once silently halved it to the value the
+    # comment above it rejects.
+    assert settings.opensandbox_ready_timeout_seconds == 180
 
 
 def test_observability_content_capture_rejects_implicit_or_unbounded_modes() -> None:

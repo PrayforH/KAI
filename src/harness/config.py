@@ -205,7 +205,7 @@ class Settings(BaseSettings):
     cubesandbox_volume_mounts: str = ""
     # Fail a deployment whose template is missing or not READY, instead of
     # discovering it when the first Run tries to start.
-    cubesandbox_validate_template: bool = False
+    cubesandbox_validate_template: bool = True
     opensandbox_api_key: SecretStr = SecretStr("")
     opensandbox_api_url: str = ""
     opensandbox_image: str = "python:3.12-slim"

@@ -1,5 +1,6 @@
 "use client";
 
+import { isFailedRunStatus } from "../lib/run-status";
 import Link from "next/link";
 import { ProjectCreateDialog } from "./project-create-dialog";
 import { PanelResizeHandle } from "./panel-resize-handle";
@@ -120,7 +121,6 @@ function ScrollingTaskTitle({ title }: { title: string }) {
 }
 
 const activeStatuses = new Set(["queued", "running", "waiting_approval", "cancelling"]);
-const errorStatuses = new Set(["failed", "timed_out", "rejected"]);
 
 export function TaskSidebar({
   currentThreadId,
@@ -376,7 +376,7 @@ export function TaskSidebar({
       else if (runView.phase === "failed") status = task.status === "timed_out" ? "timed_out" : "failed";
       else if (task.status !== "cancelling" || !activeStatuses.has(runView.phase)) status = runView.phase;
     }
-    const hasError = errorStatuses.has(status);
+    const hasError = isFailedRunStatus(status);
     const statusLabel = statusLabels[status] ?? status;
     const unreadResult =
       status === "succeeded" &&

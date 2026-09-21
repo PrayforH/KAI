@@ -161,7 +161,7 @@ subagents:
 或专业审查，不适合为了“看起来像多智能体”拆分简单流程。当前仅支持一层委派，
 Sub Agent 只使用自己的 builtin tools、Prompt、Skills、Policy 和轮次上限。
 
-仓库中的 `public-opinion-agent@0.1.2` 展示了 `mcp: tavily-readonly`、`helper-agent@1.0.0`、证据引用、风险分级和中文报告契约。外部搜索由 Lead 直接执行，子 Agent 只归纳工作区证据。它复用共享审批与运行界面，没有另建事件协议或 Web UI。
+仓库中的 `public-opinion-agent@0.3.22` 展示了 `mcp: sentiment_query_mcp`、`helper-agent@1.0.0`、证据引用、风险分级和中文报告契约。外部搜索由 Lead 直接执行，子 Agent 只归纳工作区证据。它复用共享审批与运行界面，没有另建事件协议或 Web UI。
 
 ## 3. 选择最小权限 Profile
 

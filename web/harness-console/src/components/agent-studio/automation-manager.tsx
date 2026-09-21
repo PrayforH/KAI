@@ -11,9 +11,21 @@ import {
   type AutomationTaskInput,
 } from "../../lib/studio-client";
 import { MODEL_ROUTES } from "../../lib/agent-studio";
+import {
+  WEEKDAY_LABELS,
+  buildCron,
+  formatDuration,
+  formatScheduleTime,
+  localDatetimeValue,
+  localTimezone,
+  nextWeekdayEvenHour,
+  readCronFrequency,
+  scheduleSummary,
+  type ScheduleFrequency,
+} from "../../lib/automation-schedule";
 
 type Tab = "tasks" | "records";
-type FrequencyType = "once" | "daily" | "weekly" | "weekdays" | "custom";
+type FrequencyType = ScheduleFrequency;
 
 interface TemplateDef {
   id: string;
@@ -40,64 +52,6 @@ const TEMPLATES: TemplateDef[] = [
   { id: "meeting", icon: "🗂️", name: "会议前准备", description: "在会议开始前提醒你整理议题、目标、待确认问题和关键…", frequency: "once", time: "09:00" },
   { id: "wallpaper", icon: "🐱", name: "可爱萌宠手机壁纸", description: "随机从 7 种不同风格中挑选一种，为你生成一张 9:16 壁纸…", frequency: "daily", time: "09:30" },
 ];
-
-const WEEKDAY_LABELS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
-
-function localTimezone(): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Shanghai";
-  } catch {
-    return "Asia/Shanghai";
-  }
-}
-
-function pad(value: number): string {
-  return String(value).padStart(2, "0");
-}
-
-function localDatetimeValue(date: Date): string {
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-function buildCron(form: FrequencyType, time: string, weekday: number): string {
-  const [hour, minute] = time.split(":").map((item) => Number(item) || 0);
-  if (form === "daily") return `${minute} ${hour} * * *`;
-  if (form === "weekly") return `${minute} ${hour} * * ${weekday}`;
-  if (form === "weekdays") return "0 */2 * * 1-5";
-  return "0 9 * * *";
-}
-
-function scheduleSummary(task: ApiAutomationTask): string {
-  const schedule = task.schedule;
-  if (schedule.type === "once" && schedule.at) {
-    return `单次 ${formatTime(schedule.at)}`;
-  }
-  const cron = schedule.cron ?? "";
-  const parts = cron.split(/\s+/);
-  if (parts.length !== 5) return cron;
-  const [minute, hour, , , weekday] = parts;
-  if (hour.startsWith("*/")) {
-    return `工作日每 ${Number(hour.slice(2))} 小时`;
-  }
-  const timeText = `${pad(Number(hour))}:${pad(Number(minute))}`;
-  if (weekday === "*" || weekday === "?") return `每天 ${timeText}`;
-  return `每周${WEEKDAY_LABELS[Number(weekday) % 7]} ${timeText}`;
-}
-
-function formatTime(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "—";
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-function relativeDuration(ms: number | null | undefined): string {
-  if (ms == null) return "—";
-  if (ms < 1000) return `${ms} ms`;
-  const seconds = Math.round(ms / 1000);
-  if (seconds < 60) return `${seconds} 秒`;
-  return `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
-}
 
 const RECORD_STATUS_LABELS: Record<ApiAutomationRunRecord["status"], string> = {
   running: "运行中",
@@ -133,7 +87,7 @@ function emptyForm(): FormState {
     prompt: "",
     model: "auto",
     workspaceId: "",
-    permission: "full",
+    permission: "restricted",
     frequency: "once",
     at: defaultOnceAt(),
     time: "08:00",
@@ -168,24 +122,19 @@ function formFromTask(task: ApiAutomationTask): FormState {
   let at = base.at;
   let time = base.time;
   let weekday = base.weekday;
-  let cron = task.schedule.cron ?? base.cron;
+  const cron = task.schedule.cron ?? base.cron;
   if (task.schedule.type === "once") {
     frequency = "once";
     at = task.schedule.at ? localDatetimeValue(new Date(task.schedule.at)) : base.at;
   } else {
-    const parts = cron.split(/\s+/);
-    if (parts.length === 5) {
-      const [minute, hour, , , weekdayField] = parts;
-      if (hour.startsWith("*/")) {
-        frequency = "weekdays";
-      } else if (weekdayField === "*") {
-        frequency = "daily";
-        time = `${pad(Number(hour))}:${pad(Number(minute))}`;
-      } else if (/^[0-6]$/.test(weekdayField)) {
-        frequency = "weekly";
-        time = `${pad(Number(hour))}:${pad(Number(minute))}`;
-        weekday = Number(weekdayField);
-      }
+    // Only a cron that is exactly what a frequency produces may be shown as that
+    // frequency; anything else keeps its expression, so opening and saving a task
+    // cannot silently change when it runs.
+    const reading = readCronFrequency(cron, weekday);
+    if (reading) {
+      frequency = reading.frequency;
+      if ("time" in reading) time = reading.time;
+      if ("weekday" in reading) weekday = reading.weekday;
     }
   }
   return {
@@ -230,25 +179,16 @@ function formToInput(form: FormState): AutomationTaskInput {
 }
 
 function previewNextRun(form: FormState): string | null {
-  if (form.frequency === "once") return form.at ? formatTime(new Date(form.at).toISOString()) : null;
+  if (form.frequency === "once") return form.at ? formatScheduleTime(new Date(form.at).toISOString()) : null;
   if (form.frequency === "custom") return null;
+  if (form.frequency === "weekdays") {
+    // The weekday template fires on even hours only, so the preview asks the same
+    // question the cron does instead of stepping a day and hoping.
+    return formatScheduleTime(nextWeekdayEvenHour(new Date()).toISOString());
+  }
   const [hour, minute] = form.time.split(":").map(Number);
   const candidate = new Date();
   candidate.setSeconds(0, 0);
-  if (form.frequency === "weekdays") {
-    // Next even hour on a weekday, matching the 0 */2 * * 1-5 schedule.
-    let days = 0;
-    while ([0, 6].includes((candidate.getDay() + days) % 7) && days < 7) days += 1;
-    candidate.setDate(candidate.getDate() + days);
-    const nextEvenHour = Math.ceil((candidate.getHours() + 1) / 2) * 2;
-    if (nextEvenHour > 23) {
-      candidate.setDate(candidate.getDate() + 1);
-      candidate.setHours(0, 0);
-    } else {
-      candidate.setHours(nextEvenHour, 0);
-    }
-    return formatTime(candidate.toISOString());
-  }
   candidate.setHours(hour || 0, minute || 0);
   if (form.frequency === "weekly") {
     let delta = (form.weekday - candidate.getDay() + 7) % 7;
@@ -257,7 +197,7 @@ function previewNextRun(form: FormState): string | null {
   } else if (candidate <= new Date()) {
     candidate.setDate(candidate.getDate() + 1);
   }
-  return formatTime(candidate.toISOString());
+  return formatScheduleTime(candidate.toISOString());
 }
 
 interface WorkspaceOption {
@@ -353,11 +293,11 @@ export function AutomationManager() {
       if (editingTask) {
         const updated = await automationClient.update(editingTask.taskId, editingTask.revision, formToInput(form));
         setTasks((current) => current.map((item) => (item.taskId === updated.taskId ? updated : item)));
-        showToast(`已保存，下次执行：${formatTime(updated.nextRunAt)}`);
+        showToast(`已保存，下次执行：${formatScheduleTime(updated.nextRunAt)}`);
       } else {
         const created = await automationClient.create(formToInput(form));
         setTasks((current) => [...current, created]);
-        showToast(`自动化任务已创建，下次执行：${formatTime(created.nextRunAt)}`);
+        showToast(`自动化任务已创建，下次执行：${formatScheduleTime(created.nextRunAt)}`);
       }
       setModalOpen(false);
     } catch (submitError) {
@@ -552,7 +492,7 @@ export function AutomationManager() {
                     <p className={styles.taskMeta}>
                       <span>{scheduleSummary(task)}</span>
                       {task.nextRunAt && task.status === "active" && (
-                        <span>下次执行：{formatTime(task.nextRunAt)}</span>
+                        <span>下次执行：{formatScheduleTime(task.nextRunAt)}</span>
                       )}
                     </p>
                   </div>
@@ -632,9 +572,9 @@ export function AutomationManager() {
                       </small>
                     </div>
                     <p className={styles.recordMeta}>
-                      <span>开始：{formatTime(record.startedAt)}</span>
-                      {record.finishedAt && <span>结束：{formatTime(record.finishedAt)}</span>}
-                      <span>耗时：{relativeDuration(record.durationMs)}</span>
+                      <span>开始：{formatScheduleTime(record.startedAt)}</span>
+                      {record.finishedAt && <span>结束：{formatScheduleTime(record.finishedAt)}</span>}
+                      <span>耗时：{formatDuration(record.durationMs)}</span>
                     </p>
                     {record.outputSummary && (
                       <button

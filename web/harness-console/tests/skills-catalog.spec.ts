@@ -92,13 +92,17 @@ describe("Skills catalog page", () => {
     expect(styles).toMatch(/\.groups\s*\{[^}]*border:\s*1px solid/s);
   });
 
-  it("right-aligns row actions and provides persistent enable switches", () => {
-    expect(component).toContain('role="switch"');
-    expect(component).toContain("aria-checked={enabled}");
-    expect(component).toContain("DISABLED_SKILLS_STORAGE_KEY");
+  it("right-aligns row actions and hides a row locally without claiming platform state", () => {
+    // The toggle only writes a per-browser preference, so its labels must not read as
+    // platform enablement ("已禁用"/"启用"): nothing here changes what the platform
+    // serves. Wiring it to the catalog API means updating these labels too.
+    expect(component).toContain("HIDDEN_SKILLS_STORAGE_KEY");
     expect(component).toContain("window.localStorage.setItem");
+    expect(component).toContain("从本机列表隐藏");
+    expect(component).toContain("（不改变平台启用状态）");
+    expect(component).not.toContain('role="switch"');
     expect(styles).toMatch(/\.rowActions\s*\{[^}]*justify-content:\s*flex-end/s);
-    expect(styles).toContain('.skillToggle[aria-checked="true"]');
+    expect(styles).toContain(".skillToggle[aria-pressed=\"true\"]");
   });
 
   it("loads agent skills in one request without per-draft reads", () => {
