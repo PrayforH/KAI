@@ -428,12 +428,12 @@
   transition: transform 120ms ease, background-color 120ms ease;
 }
 
-.skillToggle[aria-checked="true"] {
+.skillToggle[aria-pressed="true"] {
   border-color: var(--codex-accent, #ececec);
   background: var(--codex-accent, #ececec);
 }
 
-.skillToggle[aria-checked="true"] > span {
+.skillToggle[aria-pressed="true"] > span {
   background: var(--codex-on-accent, #07111a);
   transform: translateX(14px);
 }

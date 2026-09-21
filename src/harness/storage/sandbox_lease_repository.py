@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from harness.core.errors import ConflictError, NotFoundError
@@ -97,22 +97,44 @@ class PostgresSandboxLeaseRepository:
             return None if row is None else _to_domain(row)
 
     async def replace(self, lease: SandboxLease, *, expected_epoch: int) -> bool:
-        """Compare-and-set on the epoch, so a stale owner cannot rewrite a lease."""
+        """Compare-and-set on the epoch, so a stale owner cannot rewrite a lease.
+
+        The epoch comparison is part of the UPDATE. Reading the row first and
+        writing it after would let two concurrent holders both pass the check and
+        overwrite each other, which is exactly the situation the lease exists to
+        prevent: several workers share one session's sandbox.
+        """
 
         async with self._sessions() as session:
-            row = await session.get(SandboxLeaseRow, (lease.tenant_id, lease.lease_id))
-            if row is None:
-                raise NotFoundError("sandbox lease not found")
-            if row.epoch != expected_epoch:
-                return False
-            row.epoch = lease.epoch
-            row.state = lease.state.value
-            row.expires_at = lease.expires_at
-            row.renewed_at = lease.renewed_at
-            row.released_at = lease.released_at
-            row.reclaimed_at = lease.reclaimed_at
+            outcome = await session.execute(
+                update(SandboxLeaseRow)
+                .where(
+                    SandboxLeaseRow.tenant_id == lease.tenant_id,
+                    SandboxLeaseRow.lease_id == lease.lease_id,
+                    SandboxLeaseRow.epoch == expected_epoch,
+                )
+                .values(
+                    epoch=lease.epoch,
+                    state=lease.state.value,
+                    expires_at=lease.expires_at,
+                    renewed_at=lease.renewed_at,
+                    released_at=lease.released_at,
+                    reclaimed_at=lease.reclaimed_at,
+                )
+            )
             await session.commit()
-            return True
+            if outcome.rowcount:
+                return True
+            # A false compare-and-set and a missing lease are different answers.
+            exists = await session.scalar(
+                select(SandboxLeaseRow.lease_id).where(
+                    SandboxLeaseRow.tenant_id == lease.tenant_id,
+                    SandboxLeaseRow.lease_id == lease.lease_id,
+                )
+            )
+            if exists is None:
+                raise NotFoundError("sandbox lease not found")
+            return False
 
     async def list_live(self, tenant_id: str | None = None) -> Sequence[SandboxLease]:
         async with self._sessions() as session:

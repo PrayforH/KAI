@@ -373,9 +373,9 @@ export function TaskHeaderActions({
       >
         <DotsIcon />
       </button>
+      {error && <div className="task-header-menu-error" role="alert">{error}</div>}
       {open && (
         <div className="task-header-menu" role="menu" aria-label="更多任务操作">
-          {error && <div className="task-header-menu-error" role="alert">{error}</div>}
           <button type="button" role="menuitem" disabled={busy} onClick={togglePinned}>
             <PinIcon />
             <span>{pinned ? "取消置顶任务" : "置顶任务"}</span>

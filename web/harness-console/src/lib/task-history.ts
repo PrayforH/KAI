@@ -280,11 +280,15 @@ export function useThreadHistoryPagination(
     try {
       const page = await loadThreadHistory(threadId, undefined, entry.nextCursor);
       if (!page) return;
+      // Another reader may have seeded newer messages while this page was in flight:
+      // prepend to the current list rather than to the pre-request snapshot, or those
+      // messages are dropped and a stale list is imported back into the runtime.
+      const latest = accumulatedHistory.get(threadId) ?? entry;
       accumulatedHistory.set(threadId, {
-        messages: [...page.messages, ...entry.messages],
+        messages: [...page.messages, ...latest.messages],
         nextCursor: page.next_cursor ?? null,
         hasMore: page.has_more ?? false,
-        total: page.total ?? entry.total,
+        total: page.total ?? latest.total,
         loading: false,
       });
       publishAccumulatedHistory(threadId);
@@ -296,7 +300,10 @@ export function useThreadHistoryPagination(
         ),
       );
     } catch (error) {
-      accumulatedHistory.set(threadId, { ...entry, loading: false });
+      accumulatedHistory.set(threadId, {
+        ...(accumulatedHistory.get(threadId) ?? entry),
+        loading: false,
+      });
       publishAccumulatedHistory(threadId);
       console.error("[Harness Console] Failed to load earlier messages", error);
     }

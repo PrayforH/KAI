@@ -44,7 +44,6 @@ from harness.application.events import EventService
 from harness.context.service import ContextService
 from harness.core.models import ApprovalStatus
 from harness.observability.provider import Observability
-from harness.policy.bash_safety import sandboxed_bash_is_low_risk
 from harness.policy.models import (
     ContextTrust,
     PolicyContext,
@@ -71,6 +70,7 @@ from harness.runtime.input_redaction import (
     staged_read_path,
 )
 from harness.runtime.sandbox_tools import canonical_tool_name
+from harness.runtime.tool_allow_overrides import apply_allow_overrides
 
 _DENIED_PREFIX = "Tool call denied by platform policy"
 
@@ -269,53 +269,26 @@ class DeepagentsToolGate(AgentMiddleware):
         tool_name: str,
         arguments: dict[str, Any],
     ) -> PolicyResult:
-        """Apply the platform's three narrow allow overrides, in order.
+        """Apply the platform's narrow allow overrides.
 
         Each one only fires on an ``implicit-deny`` or a sandboxed ``Bash``
-        review, so an operator's explicit rule always wins.
+        review, so an operator's explicit rule always wins. The rules themselves
+        live in ``tool_allow_overrides`` so this gate and the Claude SDK hook
+        cannot drift apart.
         """
 
         context = self._context
-        if (
-            tool_name == "Bash"
-            and result.decision is PolicyDecision.ASK
-            and sandboxed_bash_is_low_risk(
-                str(arguments.get("command", "")),
-                workspace=str(context.workspace),
-                remote_workspace=context.remote_workspace,
-                generated_python_files=self._file_capabilities.generated_python_files(),
-            )
-        ):
-            return PolicyResult(
-                decision=PolicyDecision.ALLOW,
-                rule_name="sandbox-low-risk-bash",
-                reason="matched sandbox low-risk Bash policy",
-            )
-        if (
-            result.decision is PolicyDecision.DENY
-            and result.rule_name == "implicit-deny"
-            and raw_name.startswith("mcp__")
-            and not raw_name.startswith("mcp__harness-python-")
-            and (raw_name in self._declared_tools or tool_name in self._declared_tools)
-        ):
-            return PolicyResult(
-                decision=PolicyDecision.ALLOW,
-                rule_name="published-mcp-tool",
-                reason="matched MCP tool declared by the published Agent tool directory",
-            )
-        if (
-            result.decision is PolicyDecision.DENY
-            and result.rule_name == "implicit-deny"
-            and raw_name.startswith("mcp__harness-python-")
-            and raw_name in self._declared_tools
-            and context.sandbox_command_executor is not None
-        ):
-            return PolicyResult(
-                decision=PolicyDecision.ALLOW,
-                rule_name="declared-sandbox-python-tool",
-                reason="matched declared Bundle Python tool in isolated Sandbox",
-            )
-        return result
+        return apply_allow_overrides(
+            result,
+            raw_tool_name=raw_name,
+            tool_name=tool_name,
+            arguments=arguments,
+            declared_tools=self._declared_tools,
+            sandbox_command_executor=context.sandbox_command_executor,
+            workspace=str(context.workspace),
+            remote_workspace=context.remote_workspace,
+            generated_python_files=self._file_capabilities.generated_python_files(),
+        )
 
     async def _request_approval(
         self,

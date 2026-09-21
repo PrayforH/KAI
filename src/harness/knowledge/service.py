@@ -50,6 +50,7 @@ from harness.knowledge.models import (
 )
 from harness.knowledge.ports import (
     EngineBaseConfig,
+    EngineDocumentStatus,
     KnowledgeEngineError,
     KnowledgeEngineNotConfiguredError,
     KnowledgeEnginePort,
@@ -63,6 +64,12 @@ TeamGrantChecker = Callable[[str, str, tuple[str, ...], str], Awaitable[bool]]
 
 def _id(prefix: str) -> str:
     return f"{prefix}_{uuid4().hex}"
+
+
+def _engine_base_id(source: KnowledgeSource) -> str:
+    """The engine-side base a knowledge source is bound to."""
+
+    return str(getattr(source.config, "weknora_base_id", "") or "")
 
 
 class KnowledgeService:
@@ -225,7 +232,7 @@ class KnowledgeService:
             remote_id = base.engine_ref
             if not remote_id:
                 source = await self.repository.get_source(tenant_id, reference)
-                remote_id = getattr(source.config, "weknora_base_id", "")
+                remote_id = _engine_base_id(source)
             if remote_id:
                 await self._require_engine().delete_base(remote_id)
         await self.repository.delete_base_members(tenant_id, reference)
@@ -916,7 +923,7 @@ class KnowledgeService:
         only a cache, so a create/delete must refresh it instead of waiting for
         the next manual sync.
         """
-        remote_id = getattr(source.config, "weknora_base_id", "")
+        remote_id = _engine_base_id(source)
         if not remote_id:
             return
         documents = await self._require_engine().list_documents(remote_id)
@@ -951,7 +958,7 @@ class KnowledgeService:
             return base
         cached = source.checkpoint.get("documents")
         fallback = cached if isinstance(cached, int) and cached >= 0 else 0
-        remote_id = getattr(source.config, "weknora_base_id", "")
+        remote_id = _engine_base_id(source)
         if self._engine is None or not remote_id:
             return base.model_copy(update={"document_count": fallback})
         try:
@@ -1067,6 +1074,27 @@ class KnowledgeService:
             return source
         raise NotFoundError(f"knowledge source not found: {reference}")
 
+    async def _require_owned_document(
+        self,
+        source: KnowledgeSource,
+        document_id: str,
+    ) -> EngineDocumentStatus:
+        """Return the document only when it belongs to the source's engine base.
+
+        The engine addresses documents by a globally unique id, so authorizing the
+        source alone would let a caller read, download or delete a document of any
+        other base — another tenant's included — by presenting its id. WeKnora
+        reports the owning base on every document, so a mismatch is conclusive;
+        when an engine reports no base at all, the source grant is the only
+        authorization available and remains in force.
+        """
+
+        document = await self._require_engine().get_document(document_id)
+        base_id = _engine_base_id(source)
+        if base_id and document.knowledge_base_id and document.knowledge_base_id != base_id:
+            raise NotFoundError(f"knowledge document not found: {document_id}")
+        return document
+
     async def list_source_documents(
         self,
         tenant_id: str,
@@ -1074,7 +1102,7 @@ class KnowledgeService:
         reference: str,
     ) -> list[KnowledgeDocumentStatus]:
         source = await self._accessible_weknora_source(tenant_id, actor_id, reference)
-        remote_id = getattr(source.config, "weknora_base_id", "")
+        remote_id = _engine_base_id(source)
         documents = await self._require_engine().list_documents(remote_id)
         return [
             KnowledgeDocumentStatus(
@@ -1103,7 +1131,7 @@ class KnowledgeService:
     ) -> KnowledgeDocumentStatus:
         await self._require_editor(tenant_id, actor_id, reference)
         source = await self.repository.get_source(tenant_id, reference)
-        remote_id = getattr(source.config, "weknora_base_id", "")
+        remote_id = _engine_base_id(source)
         document_id = await self._require_engine().create_manual_document(
             remote_id,
             title=title,
@@ -1129,7 +1157,7 @@ class KnowledgeService:
     ) -> KnowledgeDocumentStatus:
         await self._require_editor(tenant_id, actor_id, reference)
         source = await self.repository.get_source(tenant_id, reference)
-        remote_id = getattr(source.config, "weknora_base_id", "")
+        remote_id = _engine_base_id(source)
         document_id = await self._require_engine().upload_document(
             remote_id,
             filename=filename,
@@ -1152,8 +1180,8 @@ class KnowledgeService:
         reference: str,
         document_id: str,
     ) -> KnowledgeDocumentStatus:
-        await self._accessible_weknora_source(tenant_id, actor_id, reference)
-        item = await self._require_engine().get_document(document_id)
+        source = await self._accessible_weknora_source(tenant_id, actor_id, reference)
+        item = await self._require_owned_document(source, document_id)
         return KnowledgeDocumentStatus(
             tenantId=tenant_id,
             sourceReference=reference,
@@ -1177,8 +1205,8 @@ class KnowledgeService:
     ) -> None:
         await self._require_editor(tenant_id, actor_id, reference)
         source = await self.repository.get_source(tenant_id, reference)
-        remote_id = getattr(source.config, "weknora_base_id", "")
-        await self._require_engine().delete_document(remote_id, document_id)
+        await self._require_owned_document(source, document_id)
+        await self._require_engine().delete_document(_engine_base_id(source), document_id)
         await self._record(
             tenant_id,
             actor_id,
@@ -1197,8 +1225,8 @@ class KnowledgeService:
     ) -> None:
         await self._require_editor(tenant_id, actor_id, reference)
         source = await self.repository.get_source(tenant_id, reference)
-        remote_id = getattr(source.config, "weknora_base_id", "")
-        await self._require_engine().reparse_document(remote_id, document_id)
+        await self._require_owned_document(source, document_id)
+        await self._require_engine().reparse_document(_engine_base_id(source), document_id)
         await self._record(
             tenant_id,
             actor_id,
@@ -1214,22 +1242,16 @@ class KnowledgeService:
         reference: str,
         document_id: str,
     ) -> list[KnowledgeDocumentChunk]:
-        await self._accessible_weknora_source(tenant_id, actor_id, reference)
+        source = await self._accessible_weknora_source(tenant_id, actor_id, reference)
+        document = await self._require_owned_document(source, document_id)
         chunks = await self._require_engine().list_chunks(document_id)
-        title = document_id
-        if chunks:
-            try:
-                document = await self._require_engine().get_document(document_id)
-                title = document.title
-            except KnowledgeEngineError:
-                title = document_id
         return [
             KnowledgeDocumentChunk(
                 tenantId=tenant_id,
                 sourceReference=reference,
                 documentId=document_id,
                 chunkId=item.chunk_id,
-                title=title,
+                title=document.title,
                 content=item.content,
                 seq=item.seq,
             )
@@ -1248,8 +1270,8 @@ class KnowledgeService:
         WeKnora's chunk text flattens spreadsheets to ``A: value`` lines, so the
         table is rebuilt from the downloadable original file.
         """
-        await self._accessible_weknora_source(tenant_id, actor_id, reference)
-        document = await self._require_engine().get_document(document_id)
+        source = await self._accessible_weknora_source(tenant_id, actor_id, reference)
+        document = await self._require_owned_document(source, document_id)
         filename = document.title or document.document_id
         if not is_spreadsheet(filename):
             raise ConflictError("document is not a spreadsheet")
@@ -1275,22 +1297,17 @@ class KnowledgeService:
         reference: str,
         chunk_id: str,
     ) -> KnowledgeDocumentChunk:
-        await self._accessible_weknora_source(tenant_id, actor_id, reference)
+        source = await self._accessible_weknora_source(tenant_id, actor_id, reference)
         chunk = await self._require_engine().get_chunk(chunk_id)
         if chunk is None:
             raise NotFoundError("knowledge chunk not found")
-        title = chunk.document_id
-        try:
-            document = await self._require_engine().get_document(chunk.document_id)
-            title = document.title
-        except KnowledgeEngineError:
-            title = chunk.document_id
+        document = await self._require_owned_document(source, chunk.document_id)
         return KnowledgeDocumentChunk(
             tenantId=tenant_id,
             sourceReference=reference,
             documentId=chunk.document_id,
             chunkId=chunk.chunk_id,
-            title=title,
+            title=document.title,
             content=chunk.content,
             seq=chunk.seq,
         )
@@ -1409,7 +1426,7 @@ class KnowledgeService:
         reference: str,
     ) -> list[KnowledgeWikiPage]:
         source = await self._accessible_weknora_source(tenant_id, actor_id, reference)
-        remote_id = getattr(source.config, "weknora_base_id", "")
+        remote_id = _engine_base_id(source)
         pages = await self._require_engine().list_wiki_pages(remote_id)
         return [
             KnowledgeWikiPage(
@@ -1433,7 +1450,7 @@ class KnowledgeService:
         slug: str,
     ) -> KnowledgeWikiPage:
         source = await self._accessible_weknora_source(tenant_id, actor_id, reference)
-        remote_id = getattr(source.config, "weknora_base_id", "")
+        remote_id = _engine_base_id(source)
         item = await self._require_engine().get_wiki_page(remote_id, slug)
         return KnowledgeWikiPage(
             slug=item.slug,
@@ -1456,7 +1473,7 @@ class KnowledgeService:
         limit: int = 20,
     ) -> list[KnowledgeWikiPage]:
         source = await self._accessible_weknora_source(tenant_id, actor_id, reference)
-        remote_id = getattr(source.config, "weknora_base_id", "")
+        remote_id = _engine_base_id(source)
         pages = await self._require_engine().search_wiki_pages(
             remote_id,
             query,
@@ -1510,7 +1527,7 @@ class KnowledgeService:
                 source,
             ):
                 continue
-            remote_id = getattr(source.config, "weknora_base_id", "")
+            remote_id = _engine_base_id(source)
             if not remote_id:
                 continue
             # Propagate retrieval failures instead of presenting them as no evidence.
@@ -1555,7 +1572,7 @@ class KnowledgeService:
         reference: str,
     ) -> KnowledgeWikiGraph:
         source = await self._accessible_weknora_source(tenant_id, actor_id, reference)
-        remote_id = getattr(source.config, "weknora_base_id", "")
+        remote_id = _engine_base_id(source)
         graph = await self._require_engine().wiki_graph(remote_id)
         return KnowledgeWikiGraph(
             nodes=tuple(
@@ -1577,7 +1594,7 @@ class KnowledgeService:
         reference: str,
     ) -> KnowledgeWikiStats:
         source = await self._accessible_weknora_source(tenant_id, actor_id, reference)
-        remote_id = getattr(source.config, "weknora_base_id", "")
+        remote_id = _engine_base_id(source)
         stats = await self._require_engine().wiki_stats(remote_id)
         return KnowledgeWikiStats(
             totalPages=stats.total_pages,

@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import re
+import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -107,6 +108,13 @@ def _knowledge_mode_override(request: RunAgentInput) -> str | None:
     return cast(str, value)
 
 
+# How long a failed title generation suppresses the next attempt for the same
+# thread. Long enough that browsing the task list cannot amplify one broken model
+# route into a call per refresh, short enough that a transient failure recovers
+# within a session.
+_TITLE_RETRY_COOLDOWN_SECONDS = 300.0
+
+
 class AguiRunService:
     def __init__(
         self,
@@ -128,6 +136,10 @@ class AguiRunService:
         self._knowledge_bindings = knowledge_bindings
         self._title_tasks: set[asyncio.Task[None]] = set()
         self._title_task_keys: set[tuple[str, str, str, datetime]] = set()
+        # A generator failure leaves the deterministic title in place, so nothing
+        # about the stored binding changes. Without a cooldown, every task-list
+        # refresh would queue the same model call again for the same thread.
+        self._title_retry_at: dict[tuple[str, str, str], float] = {}
         self._run_bindings: dict[tuple[str, str, str, str], str] = {}
         self._lock = asyncio.Lock()
 
@@ -485,6 +497,9 @@ class AguiRunService:
     ) -> None:
         if self._title_generator is None or not prompts:
             return
+        retry_at = self._title_retry_at.get((tenant_id, user_id, thread_id))
+        if retry_at is not None and time.monotonic() < retry_at:
+            return
         key = (tenant_id, user_id, thread_id, generated_at)
         if key in self._title_task_keys:
             return
@@ -516,10 +531,12 @@ class AguiRunService:
         generated_at: datetime,
     ) -> None:
         assert self._title_generator is not None
+        retry_key = (tenant_id, user_id, thread_id)
         try:
             stored = await self._bindings.get_by_thread(tenant_id, user_id, thread_id)
             if stored.title_source == "user":
                 # A reader rename wins over every generated title.
+                self._title_retry_at.pop(retry_key, None)
                 return
             title = await self._title_generator.generate(tenant_id, user_id, prompts)
             await self._bindings.update_title(
@@ -531,8 +548,12 @@ class AguiRunService:
                 generated_at=generated_at,
             )
         except Exception:
-            # A title must never block the Agent run; the deterministic title remains valid.
+            # A title must never block the Agent run; the deterministic title stays
+            # valid. Remember the failure so a browsing reader cannot turn it into a
+            # retry per refresh; the next attempt is one cooldown away.
+            self._title_retry_at[retry_key] = time.monotonic() + _TITLE_RETRY_COOLDOWN_SECONDS
             return
+        self._title_retry_at.pop(retry_key, None)
 
     async def rebase_context(
         self,

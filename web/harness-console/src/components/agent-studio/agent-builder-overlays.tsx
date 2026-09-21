@@ -14,6 +14,7 @@ const AgentProjectCode = dynamic(() => import("./agent-project-code").then(modul
 import { AgentBuildAssets, type BuildChange } from "./agent-build-assets";
 import workspaceStyles from "./build-workspace.module.css";
 import { PreviewRunResponse, PreviewMarkdown, type PreviewTurn } from "./agent-preview";
+import { isTerminalRunStatus } from "../../lib/run-status";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   apiDraftToStudioDraft,
@@ -73,16 +74,6 @@ function beforeEdit(draft: StudioDraft, key: string): unknown {
 
 function showValue(value: unknown): string {
   return typeof value === "string" ? value : JSON.stringify(value, null, 2) ?? "未设置";
-}
-
-function tryRunFailureMessage(errorCode?: string | null): string {
-  if (errorCode === "runtime_error") {
-    return "运行环境未能启动，请检查模型渠道配置后重新试跑。";
-  }
-  if (errorCode === "runtime_timeout") {
-    return "试跑超时，运行已安全停止；可缩小任务范围后重试。";
-  }
-  return errorCode || "试跑未通过，请调整要求后再试。";
 }
 
 function initialMessages(mode: AssistantMode, draft: StudioDraft): ConversationMessage[] {
@@ -170,6 +161,7 @@ export function AgentBuilderAssistant({
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [reconnecting, setReconnecting] = useState(false);
   const [intent, setIntent] = useState<"auto" | "run" | "edit">("auto");
   const [editing, setEditing] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -196,7 +188,7 @@ export function AgentBuilderAssistant({
   const activeDraft = workingDraft && workingDraft.id !== draft.id ? workingDraft : draft;
   const draftReady = mode === "run" ? Boolean(activeDraft.id) : Boolean(workingDraft?.id);
   const terminal = useMemo(
-    () => result ? ["cancelled", "succeeded", "failed", "timed_out", "rejected"].includes(result.run.status) : false,
+    () => isTerminalRunStatus(result?.run.status),
     [result],
   );
   const active = creating || busy || Boolean(result && !terminal);
@@ -306,7 +298,7 @@ export function AgentBuilderAssistant({
           }, controller.signal);
         } catch {
           if (controller.signal.aborted) return;
-          setError("实时连接中断，正在自动恢复…");
+          setReconnecting(true);
         }
         if (controller.signal.aborted) return;
         try {
@@ -314,8 +306,8 @@ export function AgentBuilderAssistant({
           if (controller.signal.aborted) return;
           sequence = Math.max(sequence, next.events.at(-1)?.sequence ?? 0);
           setResult(current => current?.run.run_id === next.run.run_id ? mergeTryRunView(current, next) : current);
-          setError(current => current === "实时连接中断，正在自动恢复…" ? "" : current);
-          if (["cancelled", "succeeded", "failed", "timed_out", "rejected"].includes(next.run.status)) return;
+          setReconnecting(false);
+          if (isTerminalRunStatus(next.run.status)) return;
         } catch (reason) {
           if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "运行状态恢复失败");
         }
@@ -684,7 +676,7 @@ export function AgentBuilderAssistant({
       {messages.map((message) => {
         const turn = message.runId ? turns.find(turn => turn.result.run.run_id === message.runId) : undefined;
         return <article key={message.id} className={styles.message} data-role={message.role} data-tone={message.tone} data-source={turn ? "agent" : "builder"}>
-          <div>{turn ? workspaceTarget ? <button type="button" className={styles.runLink} onClick={() => {setTestSessionId(turn.result.run.session_id);setSelectedRunId(turn.result.run.run_id);setCodeView(false);setMobilePanel("test");}}><span>{turn.result.run.status === "succeeded" ? "测试已完成" : ["failed", "cancelled", "timed_out", "rejected"].includes(turn.result.run.status) ? "测试已结束" : "正在测试"} · r{turn.result.draftRevision}</span><small>查看回答 ↗</small></button> : <PreviewRunResponse turn={turn} agentName={activeDraft.displayName} /> : <>
+          <div>{turn ? workspaceTarget ? <button type="button" className={styles.runLink} onClick={() => {setTestSessionId(turn.result.run.session_id);setSelectedRunId(turn.result.run.run_id);setCodeView(false);setMobilePanel("test");}}><span>{turn.result.run.status === "succeeded" ? "测试已完成" : isTerminalRunStatus(turn.result.run.status) ? "测试已结束" : "正在测试"} · r{turn.result.draftRevision}</span><small>查看回答 ↗</small></button> : <PreviewRunResponse turn={turn} agentName={activeDraft.displayName} /> : <>
             {message.role === "assistant" && <small className={styles.speaker}>构建助手</small>}
             <PreviewMarkdown text={message.text} />
             {message.files?.length ? <WorkspaceAttachments files={message.files.map((name,i)=>({id:message.artifactIds?.[i] || `legacy-${i}`,name}))}/> : null}
@@ -704,6 +696,7 @@ export function AgentBuilderAssistant({
       {((editing && !buildProgress) || applying) && <p className={styles.editStatus} role="status">{editing ? intent === "auto" ? "正在结合上下文理解要求…" : "正在生成修改建议；创建 Skill 时将由 Worker 执行 skill-creator 校验与打包…" : "正在保存修改…"}</p>}
       {reviewContent}
       {error && <p className={styles.error} role="alert">{error}</p>}
+      {reconnecting && !error && <p className={styles.error} role="status">实时连接中断，正在自动恢复…</p>}
     </div>
 
     <footer className={`${styles.composer} harness-composer-shell`} onPaste={event=>{const files=Array.from(event.clipboardData.files);if(files.length){event.preventDefault();void upload(files);}}} onDragOver={event=>{if(Array.from(event.dataTransfer.types).includes("Files"))event.preventDefault();}} onDrop={event=>{const files=Array.from(event.dataTransfer.files);if(files.length){event.preventDefault();void upload(files);}}}>

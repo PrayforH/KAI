@@ -32,7 +32,7 @@ interface CatalogSkill {
   package: StudioPlatformSkillPackage | null;
 }
 
-const DISABLED_SKILLS_STORAGE_KEY = "harness-skill-catalog-disabled:v1";
+const HIDDEN_SKILLS_STORAGE_KEY = "harness-skill-catalog-hidden:v1";
 
 const CATALOG_PAGE_SIZE = 20;
 
@@ -115,7 +115,7 @@ export function SkillsCatalogPage() {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [targetDraftId, setTargetDraftId] = useState("");
   const [installing, setInstalling] = useState(false);
-  const [disabledKeys, setDisabledKeys] = useState<Set<string>>(new Set());
+  const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set());
   const [creationMode, setCreationMode] = useState<"conversation" | "upload" | null>(null);
   const [uploadDraftId, setUploadDraftId] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -152,22 +152,22 @@ export function SkillsCatalogPage() {
 
   useEffect(() => {
     try {
-      const stored = JSON.parse(window.localStorage.getItem(DISABLED_SKILLS_STORAGE_KEY) ?? "[]");
+      const stored = JSON.parse(window.localStorage.getItem(HIDDEN_SKILLS_STORAGE_KEY) ?? "[]");
       if (Array.isArray(stored)) {
-        setDisabledKeys(new Set(stored.filter((key): key is string => typeof key === "string")));
+        setHiddenKeys(new Set(stored.filter((key): key is string => typeof key === "string")));
       }
     } catch {
-      setDisabledKeys(new Set());
+      setHiddenKeys(new Set());
     }
   }, []);
 
   const toggleSkill = useCallback((key: string) => {
-    setDisabledKeys((current) => {
+    setHiddenKeys((current) => {
       const next = new Set(current);
       if (next.has(key)) next.delete(key);
       else next.add(key);
       try {
-        window.localStorage.setItem(DISABLED_SKILLS_STORAGE_KEY, JSON.stringify([...next]));
+        window.localStorage.setItem(HIDDEN_SKILLS_STORAGE_KEY, JSON.stringify([...next]));
       } catch {
         // The switch still works for this session when local storage is unavailable.
       }
@@ -376,9 +376,9 @@ export function SkillsCatalogPage() {
             <div className={styles.groups}>
               <section className={styles.group}>
                 {pageSkills.map((skill) => {
-                  const enabled = !disabledKeys.has(skill.key);
+                  const visible = !hiddenKeys.has(skill.key);
                   return (
-                    <div className={styles.row} data-enabled={enabled} key={skill.key}>
+                    <div className={styles.row} data-enabled={visible} key={skill.key}>
                       <button
                         className={styles.rowMain}
                         type="button"
@@ -402,10 +402,9 @@ export function SkillsCatalogPage() {
                           <button
                             className={styles.skillToggle}
                             type="button"
-                            role="switch"
-                            aria-checked={enabled}
-                            aria-label={`${enabled ? "禁用" : "启用"} ${skill.name}`}
-                            title={enabled ? "禁用" : "启用"}
+                            aria-pressed={!visible}
+                            aria-label={`${visible ? "从本机列表隐藏" : "在本机列表显示"} ${skill.name}（不改变平台启用状态）`}
+                            title={visible ? "从本机列表隐藏（不改变平台启用状态）" : "在本机列表显示"}
                             onClick={() => toggleSkill(skill.key)}
                           >
                             <span />
@@ -517,7 +516,7 @@ export function SkillsCatalogPage() {
               <h4>最近状态</h4>
               <span>{selectedSkill.package
                 ? "平台包只在导入时复制；平台后续更新不会改变已导入或已发布版本。"
-                : `${disabledKeys.has(selectedSkill.key) ? "已禁用" : "已启用"} · 需要在新版本发布时固化为不可变快照。`}</span>
+                : `${hiddenKeys.has(selectedSkill.key) ? "已从本机列表隐藏" : "在本机列表中显示"}（不影响平台启用状态） · 需要在新版本发布时固化为不可变快照。`}</span>
             </section>
           </div>
           {canManage && (
@@ -561,11 +560,11 @@ export function SkillsCatalogPage() {
                   type="button"
                   onClick={() => toggleSkill(selectedSkill.key)}
                 >
-                  {disabledKeys.has(selectedSkill.key) ? "启用" : "禁用"}
+                  {hiddenKeys.has(selectedSkill.key) ? "在本机列表显示" : "从本机列表隐藏"}
                 </button>
               )}
               {(selectedSkill.name === DEFAULT_SKILL_CREATOR.name || !selectedSkill.package)
-                && !disabledKeys.has(selectedSkill.key) && (
+                && !hiddenKeys.has(selectedSkill.key) && (
                 <Link
                   className={styles.actionLink}
                   href={selectedSkill.name === DEFAULT_SKILL_CREATOR.name

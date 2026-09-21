@@ -1543,3 +1543,53 @@ async def test_governed_result_policy_cannot_weaken_catalog_trust(
     )
     assert trust_change.payload["current"] == "untrusted"
     assert "policy_rule" not in trust_change.payload
+
+
+@pytest.mark.asyncio
+async def test_explicit_policy_deny_overrides_declared_bundle_python_tool(
+    tmp_path: Path,
+) -> None:
+    """An operator's explicit rule wins over the declared-tool override.
+
+    The two runtimes' gates must agree here: the override exists only to lift the
+    *implicit* deny that a policy profile cannot know about, never to reopen a tool
+    an operator closed on purpose.
+    """
+
+    tool_name = "mcp__harness-python-domain-agent__normalize_score"
+    gate, _, _, events, context = await _arrange(
+        tmp_path,
+        sandbox_isolation=SandboxIsolation.CONTAINER,
+        policy_rules=[
+            PolicyRule(
+                name="deny-bundle-python-scoring",
+                tool=tool_name,
+                decision=PolicyDecision.DENY,
+            )
+        ],
+    )
+
+    async def execute(
+        _argv: Sequence[str],
+        _environment: Mapping[str, str] | None,
+        _timeout_seconds: float,
+    ) -> SandboxCommandResult:
+        return SandboxCommandResult(exit_code=0, stdout="ok")
+
+    context = context.model_copy(update={"sandbox_command_executor": execute})
+    matcher = gate.hooks(
+        context,
+        result_trust_by_tool={tool_name: ContextTrust.SAFE},
+    )["PreToolUse"][0]
+    output = cast(
+        SyncHookJSONOutput,
+        await matcher.hooks[0](
+            _input(tool_name, {"value": 0.8}, "tool-bundle-python-denied"),
+            "tool-bundle-python-denied",
+            {"signal": None},
+        ),
+    )
+
+    assert _decision(output) == "deny"
+    emitted = await events.list_after("tenant-a", "run-sdk", 0)
+    assert [event.type for event in emitted] == ["tool.request", "tool.result"]

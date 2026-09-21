@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from harness.core.errors import NotFoundError
 from harness.knowledge.directory import DirectoryUser, InMemoryUserDirectory
 from harness.knowledge.models import (
     AddKnowledgeMembersRequest,
@@ -49,6 +50,16 @@ class FakeEngine:
             )
         ]
         self.fail_base_ids: set[str] = set()
+        # Which engine base serves a document id. A real engine addresses documents
+        # globally, so ownership has to be part of the double for the service to be
+        # testable for it.
+        self.base_id_by_document: dict[str, str] = {}
+        self.deleted_documents: list[str] = []
+        self.reparsed_documents: list[str] = []
+        self.downloaded_documents: list[str] = []
+
+    def base_id_of(self, document_id: str) -> str:
+        return self.base_id_by_document.get(document_id, "remote-1")
 
     async def create_base(
         self,
@@ -92,17 +103,17 @@ class FakeEngine:
         return "doc-file"
 
     async def delete_document(self, base_id: str, document_id: str) -> None:
-        return None
+        self.deleted_documents.append(document_id)
 
     async def reparse_document(self, base_id: str, document_id: str) -> None:
-        return None
+        self.reparsed_documents.append(document_id)
 
     async def get_document(self, document_id: str) -> EngineDocumentStatus:
         return EngineDocumentStatus(
             document_id=document_id,
             title="手册.pdf",
             parse_status="completed",
-            knowledge_base_id="remote-1",
+            knowledge_base_id=self.base_id_of(document_id),
         )
 
     async def list_chunks(self, document_id: str) -> tuple[EngineChunk, ...]:
@@ -112,7 +123,7 @@ class FakeEngine:
                 document_id=document_id,
                 content="切片内容",
                 seq=0,
-                knowledge_base_id="remote-1",
+                knowledge_base_id=self.base_id_of(document_id),
             ),
         )
 
@@ -123,8 +134,12 @@ class FakeEngine:
             chunk_id=chunk_id,
             document_id="doc-1",
             content="切片内容",
-            knowledge_base_id="remote-1",
+            knowledge_base_id=self.base_id_of("doc-1"),
         )
+
+    async def download_document(self, document_id: str) -> bytes:
+        self.downloaded_documents.append(document_id)
+        return b"name,value\nalpha,1\n"
 
     async def search(
         self,
@@ -722,3 +737,42 @@ async def test_base_counts_only_refresh_visible_bases() -> None:
     engine.list_documents = AsyncMock(return_value=())
     assert await service.list_bases("local", "unrelated") == ()
     engine.list_documents.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_document_operations_refuse_a_document_from_another_base() -> None:
+    """A document id is global in the engine; the source's base decides access.
+
+    Without the ownership check, any caller who can reach one source could read,
+    download, re-parse or delete another base's document — another tenant's
+    included — by presenting its id.
+    """
+
+    service, engine = make_service()
+    await service.create_source("local", "user-1", weknora_source())
+
+    # An owned document still works, so the rule is not a blanket refusal.
+    await service.delete_source_document("local", "user-1", "case-library", "doc-1")
+    assert engine.deleted_documents == ["doc-1"]
+
+    engine.base_id_by_document["doc-foreign"] = "remote-2"
+    with pytest.raises(NotFoundError):
+        await service.get_source_document("local", "user-1", "case-library", "doc-foreign")
+    with pytest.raises(NotFoundError):
+        await service.list_source_chunks("local", "user-1", "case-library", "doc-foreign")
+    with pytest.raises(NotFoundError):
+        await service.get_source_document_table("local", "user-1", "case-library", "doc-foreign")
+    with pytest.raises(NotFoundError):
+        await service.delete_source_document("local", "user-1", "case-library", "doc-foreign")
+    with pytest.raises(NotFoundError):
+        await service.reparse_source_document("local", "user-1", "case-library", "doc-foreign")
+
+    # A chunk is resolved through its own document, so a foreign chunk is refused too.
+    engine.base_id_by_document["doc-1"] = "remote-2"
+    with pytest.raises(NotFoundError):
+        await service.get_source_chunk("local", "user-1", "case-library", "chunk-1")
+
+    # Nothing destructive or exfiltrating happened along the way.
+    assert engine.deleted_documents == ["doc-1"]
+    assert engine.reparsed_documents == []
+    assert engine.downloaded_documents == []

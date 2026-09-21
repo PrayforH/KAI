@@ -104,7 +104,7 @@ def test_dev_up_starts_only_local_infrastructure_from_production_compose() -> No
 def test_domain_agent_guide_documents_shared_general_capabilities() -> None:
     guide = Path("docs/domain-agents.md").read_text()
 
-    assert "mcp: tavily-readonly" in guide
+    assert "mcp: sentiment_query_mcp" in guide
     assert "helper-agent@1.0.0" in guide
     assert "共享审批与运行界面" in guide
     assert "Policy" in guide

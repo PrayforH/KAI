@@ -26,7 +26,6 @@ from harness.application.events import EventService
 from harness.context.service import ContextService
 from harness.core.models import ApprovalStatus
 from harness.observability.provider import Observability
-from harness.policy.bash_safety import sandboxed_bash_is_low_risk
 from harness.policy.models import (
     ContextTrust,
     PolicyContext,
@@ -51,6 +50,7 @@ from harness.runtime.input_redaction import (
     staged_read_path,
 )
 from harness.runtime.sandbox_tools import canonical_tool_name, proxy_tool_name
+from harness.runtime.tool_allow_overrides import apply_allow_overrides
 
 
 class ToolGate(Protocol):
@@ -646,44 +646,17 @@ class SdkToolGate:
                 )
             )
         )
-        if (
-            tool_name == "Bash"
-            and result.decision is PolicyDecision.ASK
-            and sandboxed_bash_is_low_risk(
-                str(arguments.get("command", "")),
-                workspace=str(context.workspace),
-                remote_workspace=context.remote_workspace,
-                generated_python_files=file_capabilities.generated_python_files(),
-            )
-        ):
-            result = PolicyResult(
-                decision=PolicyDecision.ALLOW,
-                rule_name="sandbox-low-risk-bash",
-                reason="matched sandbox low-risk Bash policy",
-            )
-        if (
-            result.decision is PolicyDecision.DENY
-            and result.rule_name == "implicit-deny"
-            and raw_tool_name.startswith("mcp__")
-            and not raw_tool_name.startswith("mcp__harness-python-")
-            and (raw_tool_name in declared_tools or tool_name in declared_tools)
-        ):
-            result = PolicyResult(
-                decision=PolicyDecision.ALLOW,
-                rule_name="published-mcp-tool",
-                reason=("matched MCP tool declared by the published Agent tool directory"),
-            )
-        if (
-            result.decision is PolicyDecision.DENY
-            and raw_tool_name.startswith("mcp__harness-python-")
-            and raw_tool_name in declared_tools
-            and context.sandbox_command_executor is not None
-        ):
-            result = PolicyResult(
-                decision=PolicyDecision.ALLOW,
-                rule_name="declared-sandbox-python-tool",
-                reason="matched declared Bundle Python tool in isolated Sandbox",
-            )
+        result = apply_allow_overrides(
+            result,
+            raw_tool_name=raw_tool_name,
+            tool_name=tool_name,
+            arguments=arguments,
+            declared_tools=declared_tools,
+            sandbox_command_executor=context.sandbox_command_executor,
+            workspace=str(context.workspace),
+            remote_workspace=context.remote_workspace,
+            generated_python_files=file_capabilities.generated_python_files(),
+        )
 
         if result.decision is PolicyDecision.DENY:
             await self._append_denied(context, tool_call_id, result.reason)

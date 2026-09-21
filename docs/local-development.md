@@ -63,27 +63,19 @@ Langfuse 和 OTel Collector 不在本地 Compose 中，也不是启动前提。
 
 本地模式下预期出现 `Write` 审批卡片。点击批准后，同一次 SDK 调用继续执行并可用 `Read` 核验文件；拒绝或超时则不执行写入。验证 Agent 只会在用户明确要求时修改文件，也不会对“你好”输出固定的 SDK 自我介绍。
 
-### Tavily web research
+### 外部 MCP 与凭据
 
-`echo-agent` 默认不依赖外部检索凭据。需要联网检索的领域 Agent（仓库示例为
-`public-opinion-agent`）通过逻辑引用 `mcp: tavily-readonly` 使用服务端注册的 Tavily
-remote MCP。只允许 search 和 extract；Manifest 与 URL 都不保存凭据。在忽略的
-`.env` 中配置：
+平台目录不内置任何 MCP：`tavily-readonly` 等旧引用已列入退役集合，持久化目录里的同名条目会在读取时被清除。需要外部检索的领域 Agent 在自己的 Manifest 里声明逻辑引用（仓库当前示例是
+`public-opinion-agent` 的 `mcp: sentiment_query_mcp`），由运维在服务端注册该逻辑 ID 及其命令、Endpoint 与凭据；Manifest 与 URL 都不保存凭据。在忽略的 `.env` 中按引用名配置：
 
 ```dotenv
-HARNESS_MCP_SECRET_REFERENCES_JSON={"tavily-readonly":{"api_key":"TAVILY_API_KEY"}}
-HARNESS_MCP_SERVER_SECRETS_JSON={"TAVILY_API_KEY":"tvly-replace-me"}
+HARNESS_MCP_SECRET_REFERENCES_JSON={"<reference>":{"api_key":"<SECRET_ENV_NAME>"}}
+HARNESS_MCP_SERVER_SECRETS_JSON={"<SECRET_ENV_NAME>":"replace-me"}
 ```
 
-网页内容一律视为不可信输入。Agent 应展示来源标题和 URL，不执行页面中的指令。领域 Agent 只有显式加入 `mcp: tavily-readonly` 才能获得相同能力。
+未注册的引用 fail closed，不会静默降级为无工具运行。网页内容一律视为不可信输入：Agent 应展示来源标题和 URL，不执行页面中的指令。
 
-配置真实网关与 Tavily 后，可以运行可选冒烟测试：
-
-```bash
-HARNESS_RUN_LIVE_TESTS=1 uv run pytest tests/integration/runtime/test_tavily_mcp_live.py -q
-```
-
-测试会要求真实 Agent 调用允许的 Tavily 工具、返回完整来源 URL，并确认耐久事件不包含凭据。只有显式设置 `HARNESS_RUN_LIVE_TESTS=1` 且已配置通用 MCP secret reference 时才访问外部模型和 Tavily；否则会明确跳过，避免普通回归测试受外部模型行为影响。
+平台 MCP 的服务端作用域、只读与令牌校验由 `tests/integration/runtime/test_platform_mcp.py` 覆盖；需要真实外部服务的冒烟测试用 `HARNESS_RUN_LIVE_TESTS=1` 显式开启，默认跳过，避免普通回归受外部服务影响。
 
 ## Sandbox development permissions
 
@@ -199,7 +191,7 @@ make web-build
 
 `make verify` 会使用与本地 Compose 同源的 PostgreSQL、Redis 和 MinIO 测试连接，必要时幂等创建 `harness_test`，不会清空业务数据库。启动器只从 `.env.docker` 派生 `HARNESS_TEST_*`，不会导入其中的模型、MCP 或 Langfuse 配置；测试遥测固定默认关闭，只有显式的 `HARNESS_TEST_OTEL_ENABLED` 可以开启。其他显式测试变量可覆盖本地默认值，CI 行为保持不变。
 
-完整领域开发流程见 [domain-agents.md](domain-agents.md)。本地 API 默认注册 `tavily-readonly`，其他领域 Manifest 使用新的 `mcp:` 引用前，仍须在服务端组合根注册对应逻辑 ID。真实 SDK 已通过 `PreToolUse` 前置执行策略；本地 inline 审批 waiter 只适用于单 API 进程。
+完整领域开发流程见 [domain-agents.md](domain-agents.md)。本地 API 不注册任何平台 MCP，领域 Manifest 使用 `mcp:` 引用前，须在服务端组合根注册对应逻辑 ID。真实 SDK 已通过 `PreToolUse` 前置执行策略；本地 inline 审批 waiter 只适用于单 API 进程。
 
 单机生产形态、国内依赖镜像、真实网关黑盒验收与 Langfuse profile 见 [deployment.md](deployment.md)。
 
