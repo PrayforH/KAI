@@ -107,6 +107,9 @@
 .sharedThread :global(.user-task-hero) {min-height:160px;padding:24px;}
 .sharedThread :global(.user-task-intro h1) {font-size:24px;}
 .turnExtensions {display:flex;flex-wrap:wrap;gap:12px;margin:12px 0;color:var(--studio-muted);font-size:11px;}
+/* Callers hand this container elements that can render to nothing; an empty
+   box still claimed its 12px margins and read as a gap under the process log. */
+.turnExtensions:empty {display:none;}
 .turnExtensions>button {background:transparent;border:0;color:inherit;font:inherit;cursor:pointer;}
 .turnExtensions>details>summary {cursor:pointer;}
 .turnExtensions>details[open] {width:100%;}
