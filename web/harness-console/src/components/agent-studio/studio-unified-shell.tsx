@@ -7,6 +7,8 @@ import { useAuth } from "../auth-provider";
 import { TaskSidebar } from "../task-sidebar";
 import { ProductivityCommandCenter } from "../productivity-command-center";
 import { loadTaskAgentCatalog, type TaskAgent } from "../../lib/task-agent-catalog";
+import { createProjectTask } from "../../lib/project-task";
+import { projectClient, type ApiProject } from "../../lib/studio-client";
 import type { TaskSummary } from "../../lib/task-history";
 import type { WorkspaceId } from "../workspace-navigation";
 
@@ -29,12 +31,21 @@ export function StudioUnifiedShell({
   const [showInternalAgents] = useInternalAgentsPreference();
   const [collapsed, setCollapsed] = useState(false);
   const [agents, setAgents] = useState<TaskAgent[]>([]);
+  const [defaultAgent, setDefaultAgent] = useState<TaskAgent | null>(null);
+  const [projects, setProjects] = useState<ApiProject[]>([]);
+  const [projectRevision, setProjectRevision] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    projectClient.list().then((items) => { if (active) setProjects(items); }).catch(() => {});
+    return () => { active = false; };
+  }, [user.user_id, projectRevision]);
 
   useEffect(() => {
     let active = true;
     loadTaskAgentCatalog(user.user_id, showInternalAgents)
       .then((catalog) => {
-        if (active) setAgents(catalog.agents);
+        if (active) { setAgents(catalog.agents); setDefaultAgent(catalog.defaultAgent); }
       })
       .catch(() => {
         if (active) setAgents([]);
@@ -71,9 +82,12 @@ export function StudioUnifiedShell({
           router.push(`/?thread=${encodeURIComponent(task.thread_id)}`)
         }
         onNewTask={goHome}
-        onNewTaskWithProject={(task: TaskSummary) =>
-          router.push(`/?thread=${encodeURIComponent(task.thread_id)}`)
-        }
+        projects={projects}
+        onProjectsChanged={() => setProjectRevision((revision) => revision + 1)}
+        onNewTaskWithProject={async (project) => {
+          const task = await createProjectTask(project.projectId, defaultAgent);
+          router.push(`/?thread=${encodeURIComponent(task.thread_id)}`);
+        }}
         searchControl={
           <ProductivityCommandCenter
             agents={agents}

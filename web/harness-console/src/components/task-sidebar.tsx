@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ProjectCreateDialog } from "./project-create-dialog";
 import { PanelResizeHandle } from "./panel-resize-handle";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AccountMenu } from "./account-menu";
@@ -24,8 +25,6 @@ import { formatTaskAge } from "../lib/task-list-age";
 import { agentDisplayName } from "../lib/agent-display-name";
 import {
   ApiProject,
-  projectClient,
-  setTaskProject,
 } from "../lib/studio-client";
 import { taskListRefreshDelay } from "../lib/task-list-refresh";
 
@@ -135,7 +134,6 @@ export function TaskSidebar({
   agentLabels,
   projects = [],
   onProjectsChanged,
-  onCreateProject,
 }: {
   currentThreadId: string;
   collapsed: boolean;
@@ -143,8 +141,8 @@ export function TaskSidebar({
   onToggle: () => void;
   onSelect: (task: TaskSummary) => void;
   onNewTask: () => void;
-  /** Start a task inside an explicit project, using any row of that group. */
-  onNewTaskWithProject?: (projectTask: TaskSummary) => void;
+  /** Persist a new task in this project, including when it has no tasks yet. */
+  onNewTaskWithProject?: (project: ApiProject) => Promise<void>;
   searchControl?: ReactNode;
   /** Which workspace nav item is highlighted; defaults to the task page. */
   activeNav?: WorkspaceId;
@@ -153,8 +151,6 @@ export function TaskSidebar({
   /** Projects shown above the plain task list, in creation order. */
   projects?: readonly ApiProject[];
   onProjectsChanged?: () => void;
-  /** Opens the project creation flow owned by the page. */
-  onCreateProject?: () => void;
 }) {
   // Seed from the shared snapshot so navigating to a Studio page and back
   // (a fresh mount) renders the previous list immediately instead of
@@ -169,6 +165,10 @@ export function TaskSidebar({
     () => new Set(),
   );
   const [expandedTaskGroups, setExpandedTaskGroups] = useState<ReadonlySet<string>>(() => new Set());
+  const [creatingProjectId, setCreatingProjectId] = useState<string | null>(null);
+  const [projectCreateError, setProjectCreateError] = useState("");
+  const [projectDialogOpen, setProjectDialogOpen] = useState(false);
+  const projectCreationPending = useRef(false);
   const sidebarRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const expandButtonRef = useRef<HTMLButtonElement>(null);
@@ -192,7 +192,7 @@ export function TaskSidebar({
   }, [activeNav, currentThreadId, tasks, user.user_id]);
 
   useDialogFocus({
-    open: overlayOpen,
+    open: overlayOpen && !projectDialogOpen,
     panelRef: sidebarRef,
     initialFocusRef: closeButtonRef,
     onEscape: onToggle,
@@ -269,8 +269,8 @@ export function TaskSidebar({
     // this component; refresh right away instead of waiting for the next tick.
     function refreshOnListChanged() {
       if (document.visibilityState === "hidden") return;
-      window.clearTimeout(timer);
-      void refresh();
+      // Replace an in-flight pre-mutation read instead of dropping the refresh.
+      setRefreshKey((current) => current + 1);
     }
 
     refreshWhenVisible();
@@ -315,6 +315,11 @@ export function TaskSidebar({
     () => tasks.find((task) => task.thread_id === currentThreadId),
     [currentThreadId, tasks],
   );
+  useEffect(() => {
+    if (!selected?.project_id) return;
+    const key = `project:${selected.project_id}`;
+    setExpandedTaskGroups((current) => current.has(key) ? current : new Set(current).add(key));
+  }, [selected?.project_id]);
   const labelForAgent = useMemo(
     () => (name: string) => agentLabels?.[name] ?? agentDisplayName(name),
     [agentLabels],
@@ -423,6 +428,22 @@ export function TaskSidebar({
     );
   }
 
+  async function startProjectTask(project: ApiProject) {
+    if (!onNewTaskWithProject || projectCreationPending.current) return;
+    projectCreationPending.current = true;
+    setCreatingProjectId(project.projectId);
+    setProjectCreateError("");
+    try {
+      await onNewTaskWithProject(project);
+      setExpandedTaskGroups((current) => new Set(current).add(`project:${project.projectId}`));
+    } catch (cause) {
+      setProjectCreateError(cause instanceof Error ? cause.message : "新建任务失败，请重试");
+    } finally {
+      projectCreationPending.current = false;
+      setCreatingProjectId(null);
+    }
+  }
+
   return (
     <aside
       ref={sidebarRef}
@@ -473,7 +494,7 @@ export function TaskSidebar({
             />
           </div>
           <div className="task-list-scroll">
-          <div className="task-list-toolbar">
+          <div className="task-list-toolbar task-project-toolbar">
             <div className="task-list-heading">
               <span className="task-list-heading-copy">
                 <ProjectFolderIcon />
@@ -485,12 +506,13 @@ export function TaskSidebar({
               className="task-project-create"
               aria-label="新建项目"
               title="新建项目"
-              onClick={() => onCreateProject?.()}
+              onClick={() => setProjectDialogOpen(true)}
             >
-              ＋
+              <AddToProjectIcon />
             </button>
           </div>
           <div className="task-list" role="list">
+            {projectCreateError && <p className="task-project-create-error" role="alert">{projectCreateError}</p>}
             {projectGroups.map(({ project, tasks: projectTasks }) => {
               const collapsed = !expandedTaskGroups.has(`project:${project.projectId}`);
               const expanded = expandedTaskGroups.has(project.projectId);
@@ -532,29 +554,23 @@ export function TaskSidebar({
                           {project.name}
                         </span>
                       </strong>
-                      <span className="task-bucket-count">{projectTasks.length}</span>
                     </button>
-                    {projectTasks.length > 0 && (
-                      <button
+                    <button
                         type="button"
                         className="task-project-add"
                         aria-label={`在 ${project.name} 下新建任务`}
                         title={`在 ${project.name} 下新建任务`}
-                        disabled={!onNewTaskWithProject}
-                        onClick={() => {
-                          if (onNewTaskWithProject && projectTasks[0]) {
-                            onNewTaskWithProject(projectTasks[0]);
-                          }
-                        }}
+                        disabled={!onNewTaskWithProject || creatingProjectId !== null}
+                        aria-busy={creatingProjectId === project.projectId}
+                        onClick={() => void startProjectTask(project)}
                       >
                         <AddToProjectIcon />
-                      </button>
-                    )}
+                    </button>
                   </div>
                   {!collapsed && (
                     <div className="task-project-items">
                       {projectTasks.length === 0 && (
-                        <p className="task-project-empty">还没有任务，把任务移入这里即可</p>
+                        <p className="task-project-empty">还没有任务，点击右侧 ＋ 新建</p>
                       )}
                       {(expanded ? projectTasks : projectTasks.slice(0, 5)).map(renderTaskRow)}
                       {projectTasks.length > 5 && (
@@ -645,6 +661,13 @@ export function TaskSidebar({
           </div>
         </>
       )}
+      {projectDialogOpen && <ProjectCreateDialog
+        onClose={() => setProjectDialogOpen(false)}
+        onCreated={(project) => {
+          setExpandedTaskGroups((current) => new Set(current).add(`project:${project.projectId}`));
+          onProjectsChanged?.();
+        }}
+      />}
     </aside>
   );
 }

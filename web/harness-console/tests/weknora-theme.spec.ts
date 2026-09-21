@@ -82,7 +82,7 @@ describe("Weknora-inspired product theme", () => {
     // The shared row box stays the single definition, and no light selector
     // re-declares it.
     expect(webCodexStyles).toMatch(
-      /min-height:\s*30px;\s*padding:\s*5px 6px 5px 35px;/,
+      /min-height:\s*30px;\s*padding:\s*4px 6px 4px 34px;/,
     );
     expect(webCodexStyles).not.toMatch(
       /html\[data-color-mode="light"\][^{]*\.task-list-item[^{]*\{[^}]*padding/s,

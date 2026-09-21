@@ -38,8 +38,8 @@ describe("project-grouped task list", () => {
 
   it("offers project creation from the sidebar", () => {
     expect(sidebar).toContain('aria-label="新建项目"');
-    expect(sidebar).toContain("onCreateProject?.()");
-    expect(page).toContain("projectClient.create(");
+    expect(sidebar).toContain("<ProjectCreateDialog");
+    expect(page).not.toContain("window.prompt");
   });
 
   it("moves tasks in and out of projects from the task menu", () => {
@@ -51,7 +51,7 @@ describe("project-grouped task list", () => {
     expect(client).toContain("projectId");
   });
 
-  it("refreshes the list and the project counts after a move", () => {
+  it("refreshes the list after a move", () => {
     expect(page).toMatch(/refreshProjects\(\);\s*\n\s*window\.dispatchEvent\(new CustomEvent\("harness:task-list-changed"\)\);/);
   });
 });
@@ -69,8 +69,8 @@ describe("project and task sections share one column", () => {
     expect(opens).toBe(1);
   });
 
-  it("gives task rows, project rows and the section labels one left edge", () => {
-    expect(css).toMatch(/\.task-project-heading\s*\{[^}]*padding-left:\s*12px;/);
-    expect(css).toMatch(/\.task-list-item,\s*[\s\S]*?\.task-list-item\.is-active\s*\{[^}]*padding-left:\s*12px;/);
+  it("uses compact project padding and a small indent for child tasks", () => {
+    expect(css).toMatch(/\.task-project-heading\s*\{[^}]*padding:\s*4px 30px 4px 8px;/);
+    expect(css).toMatch(/\.task-list-item,\s*[\s\S]*?\.task-list-item\.is-active\s*\{[^}]*padding:\s*4px 6px 4px 34px;/);
   });
 });

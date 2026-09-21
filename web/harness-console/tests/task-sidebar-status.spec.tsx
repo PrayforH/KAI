@@ -98,3 +98,40 @@ it("uses server read state on a fresh device and notices later results", async (
     expect(markTaskRead).toHaveBeenCalledWith("remote", "2026-09-07T00:01:00Z");
   } finally { await act(async () => root.unmount()); container.remove(); }
 });
+
+it("creates from an empty project's plus, prevents duplicate clicks, and expands it", async () => {
+  loadTasks.mockResolvedValue([]);
+  let finish!: () => void;
+  const create = vi.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
+  const project = { projectId: "empty-project", name: "空项目", tenantId: "test", userId: "test", createdAt: "2026-09-20T00:00:00Z", updatedAt: "2026-09-20T00:00:00Z" };
+  const container = document.createElement("div"); document.body.appendChild(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(<TaskSidebar currentThreadId="" collapsed={false} onToggle={() => {}} onSelect={() => {}} onNewTask={() => {}} projects={[project]} onNewTaskWithProject={create} />));
+    const button = container.querySelector<HTMLButtonElement>('[aria-label="在 空项目 下新建任务"]')!;
+    expect(button).not.toBeNull();
+    await act(async () => { button.click(); button.click(); });
+    expect(create).toHaveBeenCalledExactlyOnceWith(project);
+    expect(button.disabled).toBe(true);
+    await act(async () => finish());
+    expect(button.disabled).toBe(false);
+    expect(container.querySelector('[aria-label="收起项目 空项目"]')).not.toBeNull();
+  } finally { await act(async () => root.unmount()); container.remove(); }
+});
+
+it("keeps project creation failures visible and allows retry", async () => {
+  loadTasks.mockResolvedValue([]);
+  const create = vi.fn().mockRejectedValue(new Error("新建任务失败，请稍后重试"));
+  const project = { projectId: "project", name: "项目", tenantId: "test", userId: "test", createdAt: "", updatedAt: "" };
+  const container = document.createElement("div"); document.body.appendChild(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(<TaskSidebar currentThreadId="" collapsed={false} onToggle={() => {}} onSelect={() => {}} onNewTask={() => {}} projects={[project]} onNewTaskWithProject={create} />));
+    const button = container.querySelector<HTMLButtonElement>('[aria-label="在 项目 下新建任务"]')!;
+    await act(async () => button.click());
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe("新建任务失败，请稍后重试");
+    expect(button.disabled).toBe(false);
+    await act(async () => button.click());
+    expect(create).toHaveBeenCalledTimes(2);
+  } finally { await act(async () => root.unmount()); container.remove(); }
+});

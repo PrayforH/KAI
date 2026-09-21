@@ -1,6 +1,8 @@
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock
 
+import httpx
 import pytest
 from e2b.connection_config import ConnectionConfig
 from packaging.version import Version
@@ -52,29 +54,111 @@ async def test_cube_routes_each_instance_without_leaking_api_credential() -> Non
 async def test_cube_auth_and_lifecycle_parameters(
     monkeypatch: pytest.MonkeyPatch, credential: str
 ) -> None:
-    created = AsyncMock()
-    monkeypatch.setattr(CubeAsyncSandbox, "create", created)
+    requests = []
+    original_client = httpx.AsyncClient
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            201,
+            json={
+                "sandboxID": "cube-created",
+                "envdVersion": "0.4.0",
+                "domain": "cube.app",
+            },
+        )
+
+    def client_factory(**kwargs):
+        kwargs.setdefault("transport", httpx.MockTransport(respond))
+        return original_client(**kwargs)
+
+    monkeypatch.setattr(httpx, "AsyncClient", client_factory)
     client = SdkCubeSandboxClient(
         api_url="http://cube-api:13000",
         api_key=credential,
         proxy_url="http://cube-proxy:80",
         domain="cube.app",
     )
-    await client.create(
+    sandbox = await client.create(
         template="template-id",
         timeout=600,
         allow_internet_access=False,
         metadata={"harness.tenant": "tenant-a"},
+        network={"allow_out": ["pypi.org"], "deny_out": ["0.0.0.0/0"]},
+        volume_mounts={"/data": "team-data"},
     )
-    kwargs = created.call_args.kwargs
-    assert kwargs["api_headers"] == {"Authorization": "Bearer cube-token"}
-    assert kwargs["api_key"] == "cube-token"
-    assert kwargs["validate_api_key"] is False
-    assert kwargs["secure"] is True
-    assert kwargs["allow_internet_access"] is False
-    assert kwargs["metadata"] == {"harness.tenant": "tenant-a"}
-    assert kwargs["sandbox_url"] == "http://cube-proxy:80"
-    assert kwargs["template"] == "template-id"
+    assert sandbox.id == "cube-created"
+    assert len(requests) == 1
+    request = requests[0]
+    assert request.method == "POST"
+    assert str(request.url) == "http://cube-api:13000/sandboxes"
+    assert request.headers["Authorization"] == "Bearer cube-token"
+    body = json.loads(request.content)
+    assert body["templateID"] == "template-id"
+    assert body["secure"] is True
+    assert body["allow_internet_access"] is False
+    assert body["metadata"] == {"harness.tenant": "tenant-a"}
+    assert body["network"] == {"allowOut": ["pypi.org"], "denyOut": ["0.0.0.0/0"]}
+    assert body["volumeMounts"] == [{"path": "/data", "name": "team-data"}]
+
+
+@pytest.mark.asyncio
+async def test_cube_reconnect_uses_v1_and_preserves_instance_routing(monkeypatch):
+    requests = []
+    original_client = httpx.AsyncClient
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "sandboxID": "kept-instance",
+                "envdVersion": "0.4.0",
+                "envdAccessToken": "instance-secret",
+            },
+        )
+
+    def client_factory(**kwargs):
+        kwargs.setdefault("transport", httpx.MockTransport(respond))
+        return original_client(**kwargs)
+
+    monkeypatch.setattr(httpx, "AsyncClient", client_factory)
+    client = SdkCubeSandboxClient(
+        api_url="http://api", api_key="key", proxy_url="http://proxy", domain="cube.app"
+    )
+    sandbox = await client.attach("kept-instance")
+    assert sandbox.id == "kept-instance"
+    assert len(requests) == 1
+    assert str(requests[0].url) == "http://api/sandboxes/kept-instance/connect"
+    assert requests[0].method == "POST"
+    assert json.loads(requests[0].content) == {}
+    config = sandbox._sandbox.connection_config
+    assert config.sandbox_headers["Host"] == "49983-kept-instance.cube.app"
+    assert config.sandbox_headers["X-Access-Token"] == "instance-secret"
+    assert "Authorization" not in config.sandbox_headers
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [401, 405, 503])
+async def test_cube_creation_errors_propagate_without_fallback(monkeypatch, status):
+    original_client = httpx.AsyncClient
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(status, text="control plane unavailable")
+
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda **kwargs: original_client(**kwargs, transport=httpx.MockTransport(respond)),
+    )
+    client = SdkCubeSandboxClient(
+        api_url="http://api", api_key="key", proxy_url="http://proxy", domain="cube.app"
+    )
+    with pytest.raises(httpx.HTTPStatusError):
+        await client.create(template="tpl", timeout=60, allow_internet_access=True, metadata={})
+    assert len(requests) == 1
 
 
 def test_cube_requires_explicit_endpoints_and_key() -> None:

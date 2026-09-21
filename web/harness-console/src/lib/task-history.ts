@@ -350,7 +350,9 @@ export function loadTasks(archived = false): Promise<TaskSummary[]> {
     TASK_LIST_REQUEST_TIMEOUT_MS,
   )
     .then((tasks) => {
-      taskListSnapshots.set(archived, { receivedAt: Date.now(), tasks });
+      if (taskListRequests.get(archived) === request) {
+        taskListSnapshots.set(archived, { receivedAt: Date.now(), tasks });
+      }
       return tasks;
     })
     .finally(() => {
@@ -373,6 +375,8 @@ export function peekCachedTasks(archived = false): TaskSummary[] | null {
 
 /** Ask every mounted task sidebar to refresh immediately. */
 export function notifyTaskListChanged(): void {
+  taskListSnapshots.clear();
+  taskListRequests.clear();
   window.dispatchEvent(new CustomEvent("harness:task-list-changed"));
 }
 

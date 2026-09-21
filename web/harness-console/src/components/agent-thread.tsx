@@ -1233,7 +1233,7 @@ function HarnessAssistantText(part: TextMessagePartProps) {
   if (
     shouldSuppressNativeAssistantText(
       ownsLiveResponse(isLast, messageId, live.messageId),
-      live.status,
+      live,
     ) || isIntermediateAssistantTextPart(parts, partIndex)
   ) {
     return null;
@@ -1381,9 +1381,10 @@ export function ownsLiveResponse(
 
 export function shouldSuppressNativeAssistantText(
   ownsLive: boolean,
-  liveStatus: LiveResponseSnapshot["status"],
+  live: Pick<LiveResponseSnapshot, "status" | "visible" | "text">,
 ) {
-  return ownsLive && liveStatus !== "idle";
+  // A hidden/empty terminal stream must not suppress the durable answer.
+  return ownsLive && (live.status === "streaming" || (live.visible && Boolean(live.text.trim())));
 }
 
 export function messageOwnsRun(messageId: string, runId: string) {
@@ -1420,8 +1421,8 @@ function HarnessAssistantMessage() {
   // text may still be waiting to see whether a tool call follows, so basing
   // this only on visible text lets assistant-ui paint the same preface once.
   const ownsLive = ownsLiveResponse(isLast, messageId, live.messageId);
-  const directStream = ownsLive && live.status !== "idle";
-  const copyText = ownsLive && live.text.trim()
+  const directStream = shouldSuppressNativeAssistantText(ownsLive, live);
+  const copyText = ownsLive && live.visible && live.text.trim()
     ? normalizeMessageText(live.text)
     : normalizeMessageText(
         content

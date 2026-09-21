@@ -270,8 +270,11 @@ body.codex-theme-v1 .tasks-show-more { opacity: .65; }
 body.codex-theme-v1:has(.console-shell) .task-project-create,
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-create {
   margin-inline-start: auto;
-  width: 22px;
-  height: 22px;
+  margin-inline-end: 14px;
+  width: 26px;
+  height: 26px;
+  opacity: 0;
+  transition: opacity 120ms ease;
   display: grid;
   place-items: center;
   border: 0;
@@ -309,7 +312,7 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-buck
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: 12px 10px 4px;
+  margin: 8px 8px 2px;
   color: var(--codex-faint, #737373);
   font-size: 11px;
   font-weight: 600;
@@ -338,8 +341,11 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-defa
   margin-left: 0; padding-left: 0; border-left: 0;
 }
 
-body.codex-theme-v1:has(.console-shell) .task-agent-section-heading { margin: 14px -10px 0; }
-html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-agent-section-heading { margin-inline: -8px; }
+body.codex-theme-v1:has(.console-shell) .task-list > .task-default-group:first-child .task-bucket-head {
+  margin-top: 2px;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-agent-section-heading { margin: 6px 0 0; }
 
 /* Settings and the account menu use the same UI typography as the main workspace. */
 html body.codex-theme-v1 .settings-shell,
@@ -1048,3 +1054,15 @@ body.codex-theme-v1 .assistant-message-controls .artifact-thumb:has(img) b { dis
 body.codex-theme-v1 .assistant-message-controls .artifact-thumb-more { background: var(--codex-surface-hover); color: var(--codex-ink-soft); font-size: 9px; }
 body.codex-theme-v1 .assistant-message-controls .artifact-summary-count { font-variant-numeric: tabular-nums; }
 @media (prefers-reduced-motion: reduce) { body.codex-theme-v1 .assistant-message-controls .artifact-summary-row { transition: none; } }
+
+.task-project-create-error { margin: 4px 8px; color: var(--codex-ink); font-size: 12px; line-height: 1.5; }
+body.codex-theme-v1:has(.console-shell) .task-project-add:disabled { display: grid; cursor: wait; }
+body.codex-theme-v1:has(.console-shell) .task-project-add[aria-busy="true"] { opacity: .6; }
+
+/* Project actions share one right edge and only reveal for their own row. */
+.task-project-create svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+body.codex-theme-v1:has(.console-shell) .task-project-toolbar:hover .task-project-create,
+body.codex-theme-v1:has(.console-shell) .task-project-toolbar:focus-within .task-project-create { opacity: 1; }
+@media (hover: none) {
+  body.codex-theme-v1:has(.console-shell) :is(.task-project-create, .task-project-add) { opacity: 1; }
+}

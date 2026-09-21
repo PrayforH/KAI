@@ -216,7 +216,7 @@ class PublicWebClient:
                 for hop in range(6):
                     # New pool for each hop: no proxy env, cookies, cached DNS or credentials.
                     async with (
-                        httpcore.AsyncConnectionPool(proxy=self._proxy)
+                        httpcore.AsyncConnectionPool(proxy=httpcore.Proxy(self._proxy))
                         if self._proxy
                         else httpcore.AsyncConnectionPool(
                             network_backend=PublicNetworkBackend()

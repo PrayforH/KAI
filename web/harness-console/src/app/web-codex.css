@@ -322,6 +322,7 @@ body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-open .workbench-r
 
 body.codex-theme-v1:has(.console-shell) .task-sidebar,
 body.codex-theme-v1:has(.console-shell) .task-sidebar.is-collapsed {
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   border-right: 1px solid #303030;
   background: var(--codex-surface-sidebar);
   box-shadow: none;
@@ -342,8 +343,9 @@ body.codex-theme-v1:has(.console-shell) .harness-composer-shell svg {
 }
 
 body.codex-theme-v1:has(.console-shell) .task-sidebar-brand {
-  min-height: 56px;
-  padding: 8px 12px 6px 22px;
+  min-height: var(--shell-header-height, 46px);
+  height: var(--shell-header-height, 46px);
+  padding: 6px 10px 6px 16px;
   border: 0;
 }
 
@@ -417,7 +419,7 @@ body.codex-theme-v1:has(.console-shell) .task-rail-toggle svg {
 }
 
 body.codex-theme-v1:has(.console-shell) .task-sidebar-primary {
-  padding: 0 10px 4px;
+  padding: 0 8px 2px;
   display: grid;
   gap: 2px;
   border: 0;
@@ -426,14 +428,14 @@ body.codex-theme-v1:has(.console-shell) .task-sidebar-primary {
 body.codex-theme-v1:has(.console-shell) .task-sidebar-primary > button,
 body.codex-theme-v1:has(.console-shell) .task-sidebar-search-control .command-center-trigger {
   width: 100%;
-  min-height: 38px;
-  height: 38px;
-  padding: 0 12px;
+  min-height: 32px;
+  height: 32px;
+  padding: 0 8px;
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr);
+  grid-template-columns: 18px minmax(0, 1fr);
   align-items: center;
   justify-content: initial;
-  gap: 10px;
+  gap: 8px;
   border: 0;
   border-radius: 8px;
   color: #d2d2d2;
@@ -459,13 +461,13 @@ body.codex-theme-v1:has(.console-shell) .task-sidebar-search-control .command-ce
 
 body.codex-theme-v1:has(.console-shell) .task-sidebar-primary > button svg,
 body.codex-theme-v1:has(.console-shell) .task-sidebar-search-control .command-center-trigger svg {
-  width: 19px;
-  height: 19px;
+  width: 18px;
+  height: 18px;
   color: currentColor;
 }
 
 body.codex-theme-v1:has(.console-shell) .task-sidebar-mode {
-  padding: 0 10px 8px;
+  padding: 0 8px 6px;
 }
 
 body.codex-theme-v1:has(.console-shell) .task-sidebar-mode [data-workspace-navigation="expanded"] {
@@ -474,10 +476,10 @@ body.codex-theme-v1:has(.console-shell) .task-sidebar-mode [data-workspace-navig
 }
 
 body.codex-theme-v1:has(.console-shell) .task-sidebar-mode a {
-  min-height: 38px;
-  padding: 0 12px;
-  grid-template-columns: 20px minmax(0, 1fr);
-  gap: 10px;
+  min-height: 32px;
+  padding: 0 8px;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
   border-radius: 8px;
   color: #d2d2d2;
   background: transparent;
@@ -492,17 +494,17 @@ body.codex-theme-v1:has(.console-shell) .task-sidebar-mode a:hover {
 }
 
 body.codex-theme-v1:has(.console-shell) .task-sidebar-mode a svg {
-  width: 19px;
-  height: 19px;
+  width: 18px;
+  height: 18px;
 }
 
 body.codex-theme-v1:has(.console-shell) .task-list-toolbar {
-  padding: 6px 0 2px;
+  padding: 2px 0;
 }
 
 body.codex-theme-v1:has(.console-shell) .task-list-toolbar .task-list-heading {
   min-height: 26px;
-  padding: 4px 10px 3px 22px;
+  padding: 3px 16px;
   color: #9a9a9a;
   font-size: 13px;
   font-weight: 600;
@@ -522,7 +524,7 @@ body.codex-theme-v1:has(.console-shell) .task-list-heading small {
 }
 
 body.codex-theme-v1:has(.console-shell) .task-list {
-  padding: 0 10px 14px;
+  padding: 0 8px 10px;
   scrollbar-color: #494949 transparent;
 }
 
@@ -531,20 +533,14 @@ body.codex-theme-v1:has(.console-shell) .task-list {
    list stranded at the bottom. */
 body.codex-theme-v1:has(.console-shell) .task-list-scroll {
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-color: #494949 transparent;
 }
 
-/* One left edge for the section labels, the project rows and the task rows. */
-body.codex-theme-v1:has(.console-shell) .task-project-heading {
-  padding-left: 12px;
-}
-
-body.codex-theme-v1:has(.console-shell) .task-list-item,
-body.codex-theme-v1:has(.console-shell) .task-list-item:hover,
-body.codex-theme-v1:has(.console-shell) .task-list-item.is-active {
-  padding-left: 12px;
+body.codex-theme-v1:has(.console-shell) .task-list-scroll .task-list {
+  overflow: visible;
 }
 
 .task-project-group + .task-project-group {
@@ -565,12 +561,11 @@ body.codex-theme-v1:has(.console-shell) .task-list-item.is-active {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 30px;
-  padding: 4px 30px 4px 10px;
+  padding: 4px 30px 4px 8px;
   display: grid;
-  /* icon · name · task count */
-  grid-template-columns: 16px minmax(0, 1fr) auto;
+  grid-template-columns: 18px minmax(0, 1fr);
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   border: 0;
   border-radius: 7px;
   color: #9a9a9a;
@@ -630,8 +625,8 @@ body.codex-theme-v1:has(.console-shell) .task-list-item.is-active {
   transition: opacity 120ms ease, color 120ms ease, background-color 120ms ease;
 }
 
-.task-project-group:hover .task-project-add,
-.task-project-add:focus-visible {
+.task-project-head:hover .task-project-add,
+.task-project-head:focus-within .task-project-add {
   opacity: 1;
 }
 
@@ -661,6 +656,7 @@ body.codex-theme-v1:has(.console-shell) .task-list-item.is-active {
 
 body.codex-theme-v1:has(.console-shell) .task-list-row {
   min-width: 0;
+  margin-top: 0;
 }
 
 body.codex-theme-v1:has(.console-shell) .task-list-item,
@@ -668,7 +664,7 @@ body.codex-theme-v1:has(.console-shell) .task-list-item:hover,
 body.codex-theme-v1:has(.console-shell) .task-list-item.is-active {
   position: relative;
   min-height: 30px;
-  padding: 5px 6px 5px 35px;
+  padding: 4px 6px 4px 34px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1140,7 +1136,7 @@ body.codex-theme-v1:has(.console-shell) .console-header {
   padding: 0 9px;
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   border: 0;
   border-radius: 7px;
   color: var(--codex-ink-soft);

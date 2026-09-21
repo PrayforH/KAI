@@ -8,6 +8,7 @@ import time
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal, cast
+from uuid import uuid4
 
 from ag_ui.core import (
     BaseEvent,
@@ -197,6 +198,14 @@ class AguiThreadSummary(BaseModel):
     last_read_at: datetime | None = None
     project_id: str | None = None
     pending_approval: ApprovalRequest | None = None
+
+
+class AguiProjectThreadCreateInput(BaseModel):
+    project_id: Annotated[str, Field(min_length=1, max_length=128)]
+    agent_name: Annotated[str, Field(min_length=1, max_length=128)]
+    agent_version: Annotated[str, Field(min_length=1, max_length=64)]
+    agent_owner_user_id: Annotated[str | None, Field(max_length=128)] = None
+    space_id: Annotated[str | None, Field(max_length=128)] = None
 
 
 class AguiThreadReadInput(BaseModel):
@@ -539,6 +548,44 @@ async def run_agui_agent(
         stream(),
         media_type="text/event-stream",
         headers=headers,
+    )
+
+
+@router.post("/threads", response_model=AguiThreadSummary, status_code=201)
+async def create_project_thread(
+    body: AguiProjectThreadCreateInput,
+    identity: Annotated[Identity, Depends(require_identity)],
+    container: Annotated[ApiContainer, Depends(get_container)],
+) -> AguiThreadSummary:
+    ensure_permission(identity, "tasks:write")
+    project = await container.projects.get(
+        tenant_id=identity.tenant_id, user_id=identity.user_id, project_id=body.project_id,
+    )
+    if project.archived_at is not None:
+        raise ConflictError("Cannot create tasks in an archived project")
+    resolved_owner = body.agent_owner_user_id or identity.user_id
+    connection_mode = "caller_owned"
+    if body.space_id is not None:
+        release = await container.team_spaces.require_agent_access(
+            identity.tenant_id, identity.user_id, body.space_id,
+            resolved_owner, body.agent_name, body.agent_version,
+        )
+        connection_mode = release.connection_mode.value
+    elif resolved_owner != identity.user_id:
+        raise ConflictError("agent_owner_user_id requires a team space grant")
+    binding = await container.agui.create_project_thread(
+        tenant_id=identity.tenant_id, user_id=identity.user_id,
+        thread_id=str(uuid4()), agent_name=body.agent_name, agent_version=body.agent_version,
+        agent_owner_user_id=resolved_owner, space_id=body.space_id,
+        connection_mode=connection_mode, project_id=body.project_id,
+    )
+    return AguiThreadSummary(
+        thread_id=binding.thread_id, session_id=binding.session_id,
+        title=await container.agui.resolve_title(binding, []),
+        agent_name=body.agent_name, agent_version=body.agent_version,
+        agent_owner_user_id=resolved_owner, space_id=body.space_id,
+        status="idle", project_id=binding.project_id,
+        created_at=binding.created_at, updated_at=binding.updated_at,
     )
 
 

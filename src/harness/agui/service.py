@@ -716,6 +716,28 @@ class AguiRunService:
             for item in resolved
         ]
 
+    async def create_project_thread(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        thread_id: str,
+        agent_name: str,
+        agent_version: str,
+        agent_owner_user_id: str,
+        space_id: str | None,
+        connection_mode: Literal["caller_owned", "service_owned"],
+        project_id: str,
+    ) -> StoredAguiThreadBinding:
+        """Persist an empty task and its project without starting a model run."""
+        await self._resolve_binding(
+            tenant_id=tenant_id, user_id=user_id, thread_id=thread_id,
+            agent_name=agent_name, agent_version=agent_version,
+            agent_owner_user_id=agent_owner_user_id, space_id=space_id,
+            connection_mode=connection_mode, project_id=project_id,
+        )
+        return await self._bindings.get_by_thread(tenant_id, user_id, thread_id)
+
     async def _resolve_binding(
         self,
         *,
@@ -727,6 +749,7 @@ class AguiRunService:
         agent_owner_user_id: str | None,
         space_id: str | None,
         connection_mode: Literal["caller_owned", "service_owned"] = "caller_owned",
+        project_id: str | None = None,
     ) -> AguiThreadBinding:
         async with self._lock:
             try:
@@ -734,6 +757,8 @@ class AguiRunService:
             except NotFoundError:
                 stored = None
             if stored is not None:
+                if project_id is not None:
+                    raise ConflictError("Task already exists")
                 session = await self._sessions.get(tenant_id, stored.session_id)
                 existing = AguiThreadBinding(
                     session_id=session.session_id,
@@ -817,6 +842,7 @@ class AguiRunService:
                     tenant_id=tenant_id,
                     user_id=user_id,
                     thread_id=thread_id,
+                    project_id=project_id,
                     session_id=session.session_id,
                     created_at=timestamp,
                     updated_at=timestamp,

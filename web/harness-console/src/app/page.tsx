@@ -23,6 +23,7 @@ import {
   TaskHeaderActions,
 } from "../components/task-header-actions";
 import { TaskSidebar } from "../components/task-sidebar";
+import { createProjectTask } from "../lib/project-task";
 import { ApiProject, projectClient } from "../lib/studio-client";
 import { ProductBrandMark, ProductLoading, PRODUCT_NAME } from "../components/product-brand";
 import { SidebarLeftIcon, SidebarPanelIcon } from "../components/panel-icons";
@@ -482,17 +483,6 @@ function AuthenticatedHome() {
   useEffect(() => {
     refreshProjects();
   }, [refreshProjects]);
-  const createProject = useCallback(async () => {
-    const name = window.prompt("项目名称，例如：金融办");
-    if (!name || !name.trim()) return;
-    try {
-      await projectClient.create(name.trim());
-      refreshProjects();
-    } catch (cause) {
-      window.alert(cause instanceof Error ? cause.message : "创建项目失败");
-    }
-  }, [refreshProjects]);
-
   const agentDisplayLabels = useMemo(
     () =>
       Object.fromEntries(
@@ -574,27 +564,11 @@ function AuthenticatedHome() {
     };
   }, [threadId, runView?.runId, runView?.phase]);
 
-  const startTaskInProject = useCallback((projectTask: TaskSummary) => {
-    const projectAgent =
-      taskAgents.find(
-        (agent) =>
-          agent.name === projectTask.agent_name &&
-          agent.version === projectTask.agent_version &&
-          agent.ownerUserId === projectTask.agent_owner_user_id &&
-          agent.spaceId === (projectTask.space_id ?? undefined),
-      ) ?? {
-        name: projectTask.agent_name,
-        version: projectTask.agent_version,
-        displayName: agentDisplayName(projectTask.agent_name),
-        domain: "historical" as const,
-        ownerUserId: projectTask.agent_owner_user_id,
-        scope: projectTask.space_id
-          ? ("team" as const)
-          : ("personal" as const),
-        spaceId: projectTask.space_id ?? undefined,
-      };
-    startTaskWithAgent(currentSystemAssistant(projectAgent, systemAssistant) ?? projectAgent);
-  }, [startTaskWithAgent, taskAgents, systemAssistant]);
+  async function startTaskInProject(project: ApiProject) {
+    const task = await createProjectTask(project.projectId, systemAssistant);
+    switchTask(task);
+    focusTaskComposer();
+  }
 
   const startNewTask = useCallback(() => {
     const candidate = selectedAgent && taskAgents.some(
@@ -648,6 +622,7 @@ function AuthenticatedHome() {
     );
     setCurrentThreadState("durable");
     setCurrentTaskTitle(task.title);
+    setCurrentTask(task);
     setActiveSkillLaunch(null);
     setThreadId(selectThread(storage, task.thread_id));
     closeCompactTaskSidebar();
@@ -703,7 +678,6 @@ function AuthenticatedHome() {
           agentLabels={agentDisplayLabels}
           projects={projects}
           onProjectsChanged={refreshProjects}
-          onCreateProject={() => void createProject()}
           searchControl={(
             <ProductivityCommandCenter
               agents={availableTaskAgents}

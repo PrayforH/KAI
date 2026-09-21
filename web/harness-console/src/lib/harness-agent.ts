@@ -6,6 +6,7 @@ import {
   type RunAgentInput,
   type RunAgentResult,
 } from "@ag-ui/client";
+import { compactActivityStream } from "./activity-stream";
 import { isResponseBoundary } from "./process-boundary";
 import { runActivitySchema } from "./activity-schema";
 import {
@@ -232,7 +233,7 @@ export class HarnessHttpAgent extends HttpAgent {
       runId: input.runId,
       idKind: "client",
     };
-    return super.run(this.withModelOverride(input));
+    return compactActivityStream(super.run(this.withModelOverride(input)));
   }
 
   adoptActiveRun(threadId: string, serverRunId: string): void {
