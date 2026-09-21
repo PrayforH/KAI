@@ -878,40 +878,45 @@ def build_memory_container(
         runtime = (
             RegistryRuntimeRouter(
                 registry=registry,
+                enabled_runtimes=resolved_settings.runtime_kernels,
                 runtimes={
-                    "claude-agent-sdk": claude_runtime,
-                    "codex-app-server": RegistryCodexRuntime(
-                        registry=registry,
-                        remote_memory_mcp=remote_memory_mcp,
-                        codex_path=Path(resolved_settings.codex_cli_path),
-                        model_configurations=model_configurations,
-                        tool_resolver=tool_resolver,
-                        model_by_route=resolved_settings.codex_model_by_route,
-                        provider_by_route=resolved_settings.codex_provider_by_route,
-                        approval_policy=resolved_settings.codex_approval_policy,
-                        network_access=resolved_settings.codex_network_access,
-                        tool_output_token_limit=(
-                            resolved_settings.codex_tool_output_token_limit
+                    name: factory()
+                    for name, factory in {
+                        "claude-agent-sdk": lambda: claude_runtime,
+                        "codex-app-server": lambda: RegistryCodexRuntime(
+                            registry=registry,
+                            remote_memory_mcp=remote_memory_mcp,
+                            codex_path=Path(resolved_settings.codex_cli_path),
+                            model_configurations=model_configurations,
+                            tool_resolver=tool_resolver,
+                            model_by_route=resolved_settings.codex_model_by_route,
+                            provider_by_route=resolved_settings.codex_provider_by_route,
+                            approval_policy=resolved_settings.codex_approval_policy,
+                            network_access=resolved_settings.codex_network_access,
+                            tool_output_token_limit=(
+                                resolved_settings.codex_tool_output_token_limit
+                            ),
+                            server_request_handler=CodexToolGate(
+                                approvals=approval_service,
+                                events=event_service,
+                            ).authorize,
                         ),
-                        server_request_handler=CodexToolGate(
+                        "deepagents": lambda: build_deepagents_runtime(
+                            registry=registry,
+                            model_configurations=model_configurations,
                             approvals=approval_service,
                             events=event_service,
-                        ).authorize,
-                    ),
-                    "deepagents": build_deepagents_runtime(
-                        registry=registry,
-                        model_configurations=model_configurations,
-                        approvals=approval_service,
-                        events=event_service,
-                        quotas=enforced_quotas,
-                        context_service=context_service,
-                        observability=observability,
-                        tool_resolver=tool_resolver,
-                        # See composition.py: a DeepAgents Run is authorized
-                        # against the policy its own snapshot names, so the
-                        # registry is passed rather than one resolved engine.
-                        policy_profiles=active_policy_profiles,
-                    ),
+                            quotas=enforced_quotas,
+                            context_service=context_service,
+                            observability=observability,
+                            tool_resolver=tool_resolver,
+                            # See composition.py: a DeepAgents Run is authorized
+                            # against the policy its own snapshot names, so the
+                            # registry is passed rather than one resolved engine.
+                            policy_profiles=active_policy_profiles,
+                        ),
+                    }.items()
+                    if name in resolved_settings.runtime_kernels
                 },
             )
             if resolved_settings.runtime == "multi"

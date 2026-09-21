@@ -5,6 +5,9 @@ from typing import Literal
 from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from harness.core.models import AgentRuntimeType
+from harness.runtime.installed import INSTALLED_AGENT_RUNTIMES
+
 
 class Settings(BaseSettings):
     """Settings shared by the local API and worker processes."""
@@ -17,6 +20,10 @@ class Settings(BaseSettings):
 
     environment: Literal["local", "test", "production"] = "local"
     runtime: Literal["fake", "claude-sdk", "multi"] = "fake"
+    # In multi mode, only these kernels are constructed and allowed to execute.
+    runtime_kernels: frozenset[AgentRuntimeType] = Field(
+        default=frozenset(INSTALLED_AGENT_RUNTIMES), min_length=1
+    )
     sandbox_provider: Literal[
         "local", "daytona", "e2b", "kubernetes", "cubesandbox", "opensandbox"
     ] = "local"

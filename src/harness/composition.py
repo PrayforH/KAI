@@ -1225,39 +1225,44 @@ def build_production_container(
         runtime = (
             RegistryRuntimeRouter(
                 registry=registry,
+                enabled_runtimes=settings.runtime_kernels,
                 runtimes={
-                    "claude-agent-sdk": claude_runtime,
-                    "codex-app-server": RegistryCodexRuntime(
-                        registry=registry,
-                        remote_memory_mcp=remote_memory_mcp,
-                        codex_path=Path(settings.codex_cli_path),
-                        model_configurations=model_configurations,
-                        tool_resolver=tool_resolver,
-                        model_by_route=settings.codex_model_by_route,
-                        provider_by_route=settings.codex_provider_by_route,
-                        approval_policy=settings.codex_approval_policy,
-                        network_access=settings.codex_network_access,
-                        tool_output_token_limit=settings.codex_tool_output_token_limit,
-                        server_request_handler=CodexToolGate(
+                    name: factory()
+                    for name, factory in {
+                        "claude-agent-sdk": lambda: claude_runtime,
+                        "codex-app-server": lambda: RegistryCodexRuntime(
+                            registry=registry,
+                            remote_memory_mcp=remote_memory_mcp,
+                            codex_path=Path(settings.codex_cli_path),
+                            model_configurations=model_configurations,
+                            tool_resolver=tool_resolver,
+                            model_by_route=settings.codex_model_by_route,
+                            provider_by_route=settings.codex_provider_by_route,
+                            approval_policy=settings.codex_approval_policy,
+                            network_access=settings.codex_network_access,
+                            tool_output_token_limit=settings.codex_tool_output_token_limit,
+                            server_request_handler=CodexToolGate(
+                                approvals=approval_service,
+                                events=events,
+                            ).authorize,
+                        ),
+                        "deepagents": lambda: build_deepagents_runtime(
+                            registry=registry,
+                            model_configurations=model_configurations,
                             approvals=approval_service,
                             events=events,
-                        ).authorize,
-                    ),
-                    "deepagents": build_deepagents_runtime(
-                        registry=registry,
-                        model_configurations=model_configurations,
-                        approvals=approval_service,
-                        events=events,
-                        quotas=enforced_quotas,
-                        context_service=context_service,
-                        observability=observability,
-                        tool_resolver=tool_resolver,
-                        # The registry, not the resolved engine: a DeepAgents
-                        # Run is authorized against the policy its own snapshot
-                        # names, and this is the only object that can resolve an
-                        # arbitrary policy id.
-                        policy_profiles=policy_profiles,
-                    ),
+                            quotas=enforced_quotas,
+                            context_service=context_service,
+                            observability=observability,
+                            tool_resolver=tool_resolver,
+                            # The registry, not the resolved engine: a DeepAgents
+                            # Run is authorized against the policy its own snapshot
+                            # names, and this is the only object that can resolve an
+                            # arbitrary policy id.
+                            policy_profiles=policy_profiles,
+                        ),
+                    }.items()
+                    if name in settings.runtime_kernels
                 },
             )
             if settings.runtime == "multi"

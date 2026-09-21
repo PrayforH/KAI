@@ -6,12 +6,13 @@ import shlex
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Unpack, cast
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 import httpx
 from e2b import AsyncSandbox
 from e2b.connection_config import ApiParams, ConnectionConfig
 from e2b.sandbox.main import SandboxOpts  # pyright: ignore[reportMissingTypeStubs]
+from packaging.version import Version
 
 from harness.config import Settings
 from harness.sandbox.base import SandboxResourceUsage
@@ -131,22 +132,57 @@ class SdkCubeSandboxClient:
         network: Mapping[str, object] | None = None,
         volume_mounts: Mapping[str, str] | None = None,
     ) -> E2BRemoteSandbox:
-        sandbox = await CubeAsyncSandbox.create(
-            template=template,
-            timeout=timeout,
-            secure=True,
-            allow_internet_access=allow_internet_access,
-            metadata=dict(metadata),
-            api_key=self._api_key,
-            validate_api_key=False,
-            api_headers={"Authorization": f"Bearer {self._api_key}"},
-            api_url=self._api_url,
-            domain=self._domain,
-            sandbox_url=self._proxy_url,
-            request_timeout=30,
-            debug=False,
-            network=dict(network) if network is not None else None,
-            volume_mounts=dict(volume_mounts) if volume_mounts else None,
+        # Cube implements POST /sandboxes. E2B 2.51 switched its create()
+        # factory to POST /v2/sandboxes, which Cube rejects with 405. Keep
+        # the Cube control-plane contract explicit; use E2B for envd only.
+        body: dict[str, object] = {
+            "templateID": template,
+            "timeout": timeout,
+            "secure": True,
+            "allow_internet_access": allow_internet_access,
+            "metadata": dict(metadata),
+            "envVars": {},
+            "autoPause": False,
+        }
+        if network is not None:
+            names = {
+                "allow_out": "allowOut",
+                "deny_out": "denyOut",
+                "allow_public_traffic": "allowPublicTraffic",
+            }
+            if set(network) - names.keys():
+                raise ValueError("Unsupported CubeSandbox network policy fields")
+            body["network"] = {names[key]: value for key, value in network.items()}
+        if volume_mounts:
+            body["volumeMounts"] = [
+                {"path": path, "name": name} for path, name in volume_mounts.items()
+            ]
+        return await self._connect_response("/sandboxes", body)
+
+    async def _connect_response(self, path: str, body: Mapping[str, object]) -> E2BRemoteSandbox:
+        async with httpx.AsyncClient(timeout=30, trust_env=False) as client:
+            response = await client.post(
+                f"{self._api_url}{path}",
+                headers={"Authorization": f"Bearer {self._api_key}"},
+                json=body,
+            )
+            response.raise_for_status()
+            data = response.json()
+        sandbox = CubeAsyncSandbox(
+            sandbox_id=data["sandboxID"],
+            sandbox_domain=data.get("domain"),
+            envd_version=Version(data["envdVersion"]),
+            envd_access_token=data.get("envdAccessToken"),
+            traffic_access_token=data.get("trafficAccessToken"),
+            connection_config=ConnectionConfig(
+                **cast(Any, self._control_plane()),
+                sandbox_url=self._proxy_url,
+                extra_sandbox_headers=(
+                    {"X-Access-Token": data["envdAccessToken"]}
+                    if data.get("envdAccessToken")
+                    else {}
+                ),
+            ),
         )
         return CubeRemoteSandbox(sandbox)
 
@@ -177,10 +213,8 @@ class SdkCubeSandboxClient:
         await CubeAsyncSandbox.kill(sandbox_id, **cast(Any, self._control_plane()))
 
     async def attach(self, sandbox_id: str) -> E2BRemoteSandbox:
-        params = self._control_plane()
-        params["sandbox_url"] = self._proxy_url
-        sandbox = await CubeAsyncSandbox.connect(sandbox_id, **cast(Any, params))
-        return CubeRemoteSandbox(sandbox)
+        # The upstream connect factory also switched to /v2 in E2B 2.51.
+        return await self._connect_response(f"/sandboxes/{quote(sandbox_id, safe='')}/connect", {})
 
     async def template_state(self, reference: str) -> str | None:
         """Resolve a template ID or alias to its platform status.
@@ -215,9 +249,7 @@ class SdkCubeSandboxClient:
 
     async def snapshot(self, sandbox_id: str, name: str | None = None) -> str:
         params = self._control_plane()
-        info = await CubeAsyncSandbox.create_snapshot(
-            sandbox_id, name=name, **cast(Any, params)
-        )
+        info = await CubeAsyncSandbox.create_snapshot(sandbox_id, name=name, **cast(Any, params))
         return str(info.snapshot_id)
 
     async def pause_sandbox(self, sandbox_id: str) -> None:
