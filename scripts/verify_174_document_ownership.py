@@ -37,9 +37,16 @@ async def main() -> int:
     own_read = await knowledge.get_source_document(TENANT, USER, SOURCE_A, own.document_id)
     report["ownReads"] = own_read.document_id == own.document_id
 
+    foreign_document = foreign.document_id
     for label, call in (
-        ("foreignDetail", knowledge.get_source_document(TENANT, USER, SOURCE_A, foreign.document_id)),
-        ("foreignChunks", knowledge.list_source_chunks(TENANT, USER, SOURCE_A, foreign.document_id)),
+        (
+            "foreignDetail",
+            knowledge.get_source_document(TENANT, USER, SOURCE_A, foreign_document),
+        ),
+        (
+            "foreignChunks",
+            knowledge.list_source_chunks(TENANT, USER, SOURCE_A, foreign_document),
+        ),
     ):
         try:
             await call
