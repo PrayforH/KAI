@@ -248,7 +248,7 @@ it("keeps failed preview input retryable and supplies the selected turn as build
   await previewSend("保留我的输入");
   expect((host.querySelector('textarea') as HTMLTextAreaElement).value).toBe("保留我的输入");
   expect(host.textContent).toContain("选择这轮材料");
-  await click("改进这次回答");
+  await click("修改配置");
   await send("请修正这次回答缺少引用的问题");
   const context = JSON.parse(vi.mocked(studioClient.converseBuilder).mock.lastCall![1].runContext);
   expect(context.task).toBe("选择这轮材料");
@@ -256,13 +256,13 @@ it("keeps failed preview input retryable and supplies the selected turn as build
   expect(context.output).toBe("试跑结果");
 });
 
-it("reruns the selected older example when applying its improvement", async () => {
+it("reruns the latest example when applying a configuration change", async () => {
   await click("试跑"); await send("旧案例 A");
   await previewSend("后续案例 B");
-  await act(async () => { [...host.querySelectorAll("button")].find(button => button.textContent === "改进这次回答")!.click(); });
-  await send("改进案例 A 的配置");
+  await click("修改配置");
+  await send("修改系统提示词，改进案例 B 的配置");
   await click("应用并重新试跑");
-  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[2]).toBe("旧案例 A");
+  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[2]).toBe("后续案例 B");
   expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({});
 });
 
@@ -281,8 +281,8 @@ it("uses one composer to edit and run without losing task context", async () => 
   expect(host.querySelector('[aria-label="智能体构建助手"]')).toBeNull();
   await sendTest("业务原始问题"); await sendTest("继续追问");
   expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({continueFromRunId:"run-1"});
-  await click("改进这次回答"); await send("输出改成表格");
-  expect(JSON.parse(vi.mocked(studioClient.converseBuilder).mock.lastCall![1].runContext).task).toBe("业务原始问题");
+  await sendTest("修改系统提示词，输出改成表格");
+  expect(JSON.parse(vi.mocked(studioClient.converseBuilder).mock.lastCall![1].runContext).task).toBe("继续追问");
   expect(host.querySelector('[aria-label="待确认的配置修改"]')).not.toBeNull();
   await click("应用修改");
   expect(updated.mock.lastCall?.[0].revision).toBe(2);

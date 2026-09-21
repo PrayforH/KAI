@@ -8220,3 +8220,13 @@
 .historyDetail :global([data-diffs]) {max-width:100%;}
 .historyRestore {border-top:1px solid var(--studio-line);padding-top:16px;}
 .historyRestore button {padding:7px 12px;border:1px solid var(--studio-line);border-radius:6px;background:var(--studio-panel);margin-right:8px;}
+
+/* Neutral, aligned identity and configuration controls. */
+.studioShell[data-agent-focused=true] .titleLine { align-items: center; flex-wrap: nowrap; gap: 10px; }
+.studioShell[data-agent-focused=true] .titleLine h1 { font-size: 15px; letter-spacing: normal; }
+.studioShell[data-agent-focused=true] .titleBlock { gap: 14px; }
+.studioShell[data-agent-focused=true] .eyebrow { color: var(--studio-muted); font-size: 11px; margin: 0; letter-spacing: normal; }
+.studioShell[data-agent-focused=true] .draftDot { background: var(--studio-muted); }
+.agentIdentityIcon { display: grid; place-items: center; width: 28px; height: 28px; flex: 0 0 28px; border-radius: 6px; color: var(--studio-ink-soft); background: var(--studio-panel-subtle); }
+.versionTrigger { display: inline-flex; align-items: center; gap: 5px; }
+.versionTrigger svg { width: 14px; height: 14px; }

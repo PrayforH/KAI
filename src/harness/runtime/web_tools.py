@@ -431,7 +431,13 @@ def create_web_mcp_server(names: set[str], client: PublicWebClient) -> McpSdkSer
                     ]
                 }
             except WebAccessError as error:
-                return {"content": [{"type": "text", "text": str(error)}], "isError": True}
+                # SDK handlers use snake_case; retain the wire spelling for
+                # compatibility with SDK versions that accept MCP envelopes.
+                return {
+                    "content": [{"type": "text", "text": str(error)}],
+                    "is_error": True,
+                    "isError": True,
+                }
 
         tools.append(
             SdkMcpTool(

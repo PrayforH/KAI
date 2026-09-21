@@ -279,3 +279,22 @@ async def test_fetch_decodes_compressed_pages_with_expanded_size_limit(encoding,
             assert result["title"] == "Public source"
             assert "Verified text" in result["content"]
             assert result["trust"] == "untrusted"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "name,arguments",
+    [("search", {"query": "public query"}), ("fetch", {"url": "https://example.com/"})],
+)
+async def test_web_failure_survives_sdk_mcp_result_serialization(name, arguments):
+    from mcp.types import CallToolRequest
+
+    from harness.runtime.web_tools import create_web_mcp_server
+
+    client = PublicWebClient()
+    client.fetch = AsyncMock(side_effect=WebAccessError("网页读取超时或连接失败"))
+    server = create_web_mcp_server({"WebSearch", "WebFetch"}, client)["instance"]
+    request = CallToolRequest(method="tools/call", params={"name": name, "arguments": arguments})
+    result = await server.request_handlers[CallToolRequest](request)
+    assert result.root.isError is True
+    assert result.root.content[0].text

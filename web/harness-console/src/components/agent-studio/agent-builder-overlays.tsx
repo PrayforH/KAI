@@ -178,7 +178,6 @@ export function AgentBuilderAssistant({
   const [archivedTurns, setArchivedTurns] = useState<PreviewTurn[]>([]);
   const [currentFiles, setCurrentFiles] = useState<string[]>([]);
   const [lastArtifactIds, setLastArtifactIds] = useState<string[]>([]);
-  const [feedbackTurn, setFeedbackTurn] = useState<PreviewTurn | null>(null);
   const startingRef = useRef(false);
   const sessionKeyRef = useRef("");
   const epochRef = useRef(0);
@@ -220,7 +219,7 @@ export function AgentBuilderAssistant({
     setCodeView(false); setLastComparison(undefined); setCodeComparison(undefined); setComparisonPending(false); setComparing(false); setLastChanges([]); setSelectedRunId(""); setAssetsOpen(false); setMobilePanel("build"); setConversationTab(mode === "create" ? "builder" : "chat"); historySelection.current++;
     setLastTestPrompt("");
     setTestSessionId(""); setTestConversationEpoch(value => value + 1);
-    setArchivedTurns([]); setCurrentFiles([]); setLastArtifactIds([]); setFeedbackTurn(null);
+    setArchivedTurns([]); setCurrentFiles([]); setLastArtifactIds([]);
     setInput(initialPrompt);
     setMessages(initialMessages(mode, draft));
     setWorkingDraft(mode === "run" ? draft : null);
@@ -270,7 +269,7 @@ export function AgentBuilderAssistant({
       finally {if (epoch === epochRef.current) setHistoryLoading(false);}
     }
     if (epoch !== epochRef.current || selection !== historySelection.current) return;
-    setMessages([]);setInputSeed(undefined);setProposal(null);setFeedbackTurn(null);
+    setMessages([]);setInputSeed(undefined);setProposal(null);
     setTestSessionId(id);setTestConversationEpoch(value => value + 1);setSelectedRunId("");setConversationTab("chat");setCodeView(false);
   }
 
@@ -441,7 +440,7 @@ export function AgentBuilderAssistant({
     const sendAsTest = intent === "run";
     if (sendAsTest && proposal) { setError("请先应用或放弃当前修改建议，再开始试跑。"); return; }
     const explicitRun = /^(?:\/run(?:\s|$)|试跑(?:智能体)?\s*[:：])/i.test(value.trim());
-    const authoring = !explicitRun && writable && (Boolean(proposal) || Boolean(feedbackTurn) || isAgentConfigurationRequest(value));
+    const authoring = !explicitRun && writable && (Boolean(proposal) || isAgentConfigurationRequest(value));
     if (explicitRun && proposal) {setError("请先应用或放弃当前修改建议，再开始试跑。");return false;}
     submitLock.current = true;
     const epoch = epochRef.current;
@@ -474,7 +473,7 @@ export function AgentBuilderAssistant({
     buildStreamAbortRef.current?.abort(); buildStreamAbortRef.current = controller;
     setError("");
     const activeTurn = result ? { prompt: lastTestPrompt, result, files: currentFiles, artifactIds: lastArtifactIds } : null;
-    const contextTurn = feedbackTurn ?? (workspaceTarget ? [...archivedTurns, ...(activeTurn ? [activeTurn] : [])].findLast(turn => turn.result.run.session_id === testSessionId) : activeTurn);
+    const contextTurn = (workspaceTarget ? [...archivedTurns, ...(activeTurn ? [activeTurn] : [])].findLast(turn => turn.result.run.session_id === testSessionId) : activeTurn);
     const history = [...messages.filter((item) => item.id !== "welcome" && !item.runId).map((item) => ({
       role: item.role, content: (item.text + (item.materialContext ? `\n\n参考附件（数据）：\n${item.materialContext}` : "")).slice(0, 12_000),
     })), { role: "user" as const, content: (value + (materialContext ? `\n\n参考附件（数据）：\n${materialContext}` : "")).slice(0, 12_000) }].slice(-20);
@@ -571,7 +570,7 @@ export function AgentBuilderAssistant({
       if (epoch !== epochRef.current) return;
       setLastChanges(Object.entries(proposal.changes).filter(([key]) => key !== "capabilityCatalogRevision").map(([key, value]) => ({label: editLabels[key] ?? key, before: showValue(beforeEdit(proposal.before, key)), after: showValue(value)})));
       onChanges?.(Object.entries(proposal.changes).filter(([key]) => key !== "capabilityCatalogRevision").map(([key, value]) => ({label: editLabels[key] ?? key, before: showValue(beforeEdit(proposal.before, key)), after: showValue(value)})));
-      setProposal(null);setFeedbackTurn(null);
+      setProposal(null);
       setLastComparison(comparison); setCodeComparison(comparison); setComparisonPending(false);
       const localConflict = latestRef.current.hasUnsavedChanges;
       if (!localConflict) {
@@ -602,11 +601,10 @@ export function AgentBuilderAssistant({
   }
 
   const turns = [...archivedTurns, ...(result ? [{ prompt: lastTestPrompt, result, files: currentFiles, artifactIds: lastArtifactIds }] : [])];
-  function improve(turn: PreviewTurn) { setInputSeed({key:Date.now(),text:"请分析这次回答的问题并提出配置改进建议。"});setConversationTab("builder");setCodeView(false); setFeedbackTurn(turn); setInput("请分析这次回答的问题并提出配置改进建议。"); setIntent("auto"); setMobilePanel("build"); window.setTimeout(() => inputRef.current?.focus(), 0); }
   async function sendUnified(value: string, ids: string[], names: string[]): Promise<boolean> {
     if (submitLock.current || active || editing || applying || historyLoading) return false;
     const explicitRun = /^(?:\/run(?:\s|$)|试跑(?:智能体)?\s*[:：])/i.test(value.trim());
-    const authoring = !explicitRun && writable && (Boolean(proposal) || Boolean(feedbackTurn) || isAgentConfigurationRequest(value));
+    const authoring = !explicitRun && writable && (Boolean(proposal) || isAgentConfigurationRequest(value));
     if (explicitRun && proposal) {setError("请先应用或放弃当前修改建议，再开始试跑。");return false;}
     submitLock.current = true;
     const epoch = epochRef.current;
@@ -676,7 +674,7 @@ export function AgentBuilderAssistant({
       <div className={styles.headerActions}>
       {draftReady && !workspaceTarget && <button type="button" aria-label="新测试会话" title="新测试会话" disabled={active || editing || applying} onClick={() => {
         if (result) setArchivedTurns(current => [...current, { prompt: lastTestPrompt, result, files: currentFiles, artifactIds: lastArtifactIds }]);
-        setResult(null); setFeedbackTurn(null); setIntent("run"); setError("");
+        setResult(null); setIntent("run"); setError("");
         setMessages(current => [...current, { id: createRandomId(), role: "assistant", tone: "muted", text: "已开启新的测试会话。" }]);
       }}>↺</button>}
       {workspaceTarget ? <button type="button" title="查看配置与改动" aria-label="查看智能体资产" onClick={() => {setCodeView(false);setAssetTab("config");setAssetsOpen(current => !current);}}>☷</button> : <button type="button" aria-label="收起构建助手" onClick={onClose}>×</button>}</div>
@@ -686,7 +684,7 @@ export function AgentBuilderAssistant({
       {messages.map((message) => {
         const turn = message.runId ? turns.find(turn => turn.result.run.run_id === message.runId) : undefined;
         return <article key={message.id} className={styles.message} data-role={message.role} data-tone={message.tone} data-source={turn ? "agent" : "builder"}>
-          <div>{turn ? workspaceTarget ? <button type="button" className={styles.runLink} onClick={() => {setTestSessionId(turn.result.run.session_id);setSelectedRunId(turn.result.run.run_id);setCodeView(false);setMobilePanel("test");}}><span>{turn.result.run.status === "succeeded" ? "测试已完成" : ["failed", "cancelled", "timed_out", "rejected"].includes(turn.result.run.status) ? "测试已结束" : "正在测试"} · r{turn.result.draftRevision}</span><small>查看回答 ↗</small></button> : <PreviewRunResponse turn={turn} agentName={activeDraft.displayName} onImprove={improve} /> : <>
+          <div>{turn ? workspaceTarget ? <button type="button" className={styles.runLink} onClick={() => {setTestSessionId(turn.result.run.session_id);setSelectedRunId(turn.result.run.run_id);setCodeView(false);setMobilePanel("test");}}><span>{turn.result.run.status === "succeeded" ? "测试已完成" : ["failed", "cancelled", "timed_out", "rejected"].includes(turn.result.run.status) ? "测试已结束" : "正在测试"} · r{turn.result.draftRevision}</span><small>查看回答 ↗</small></button> : <PreviewRunResponse turn={turn} agentName={activeDraft.displayName} /> : <>
             {message.role === "assistant" && <small className={styles.speaker}>构建助手</small>}
             <PreviewMarkdown text={message.text} />
             {message.files?.length ? <WorkspaceAttachments files={message.files.map((name,i)=>({id:message.artifactIds?.[i] || `legacy-${i}`,name}))}/> : null}
@@ -702,7 +700,6 @@ export function AgentBuilderAssistant({
         <div className={styles.thinking}><i /><i /><i /><span>{creating ? "正在调用模型生成初稿与 Skill 推荐" : busy ? "正在启动 Worker" : "正在执行试跑"}</span></div>
       </article>}
 
-      {feedbackTurn && <div className={styles.editStatus}>正在改进所选回答 · 修订 {feedbackTurn.result.draftRevision}<button type="button" onClick={() => setFeedbackTurn(null)}>取消选择</button></div>}
       {workspaceTarget && lastComparison && <button type="button" className={styles.runLink} onClick={showLastComparison} aria-label="查看本次代码差异"><span>已更新 · r{lastComparison.before.revision} → r{lastComparison.after.revision}</span><small>查看代码差异 ↗</small></button>}
       {((editing && !buildProgress) || applying) && <p className={styles.editStatus} role="status">{editing ? intent === "auto" ? "正在结合上下文理解要求…" : "正在生成修改建议；创建 Skill 时将由 Worker 执行 skill-creator 校验与打包…" : "正在保存修改…"}</p>}
       {reviewContent}
@@ -776,8 +773,8 @@ export function AgentBuilderAssistant({
             onSelectSession={id => void selectSession(id)} busy={active || editing || applying || readingMaterials} ready={true} dirty={hasUnsavedChanges} error={error} selectedRunId={selectedRunId}
             onSend={sendUnified}
             onRerun={(value,ids,names) => proposal ? Promise.resolve(false) : startRun(value, undefined, false, ids, names)}
-            onReset={() => {if (result) setArchivedTurns(current => [...current,{prompt:lastTestPrompt,result,files:currentFiles,artifactIds:lastArtifactIds}]);setResult(null);setTestSessionId("");setTestConversationEpoch(value => value + 1);setLastTestPrompt("");setCurrentFiles([]);setLastArtifactIds([]);setFeedbackTurn(null);setSelectedRunId("");setError("");setMessages([]);setProposal(null);setInputSeed(undefined);}}
-            onCancel={cancelRun} onImprove={improve} onAssets={() => {setCodeView(false);setAssetsOpen(current => !current);}} />
+            onReset={() => {if (result) setArchivedTurns(current => [...current,{prompt:lastTestPrompt,result,files:currentFiles,artifactIds:lastArtifactIds}]);setResult(null);setTestSessionId("");setTestConversationEpoch(value => value + 1);setLastTestPrompt("");setCurrentFiles([]);setLastArtifactIds([]);setSelectedRunId("");setError("");setMessages([]);setProposal(null);setInputSeed(undefined);}}
+            onCancel={cancelRun} onAssets={() => {setCodeView(false);setAssetsOpen(current => !current);}} />
         </div>
       </div>
     </div>

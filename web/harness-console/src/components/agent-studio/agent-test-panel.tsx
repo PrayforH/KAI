@@ -42,7 +42,6 @@ export function AgentTestPanel({
   onRerun,
   onReset,
   onCancel,
-  onImprove,
   onAssets,
   onConfigureKnowledge = onAssets,
   userId = "playground",
@@ -81,7 +80,6 @@ export function AgentTestPanel({
   onRerun?: (value: string, ids: string[], names: string[]) => Promise<boolean>;
   onReset: () => void;
   onCancel: () => Promise<void>;
-  onImprove: (turn: PreviewTurn) => void;
   onAssets: () => void;
   onConfigureKnowledge?: () => void;
 }) {
@@ -304,7 +302,6 @@ export function AgentTestPanel({
           onRerun={onRerun}
           onCancel={onCancel}
           onReset={reset}
-          onImprove={onImprove}
           onAssets={onAssets}
           onConfigureKnowledge={onConfigureKnowledge}
           incomingFiles={incomingFiles}

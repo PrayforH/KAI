@@ -1,4 +1,5 @@
 "use client";
+import { ConfigurationIcon as Icon } from "./configuration-icon";
 import Link from "next/link";
 import type { StudioDraft, StudioSection } from "../../lib/agent-studio";
 import { skillCreatorHref } from "../../lib/skill-creator-launch";
@@ -10,9 +11,6 @@ export function AgentaConfiguration({
   writable,
   onEdit,
   onSave,
-  onPublish,
-  onCode,
-  onBuildChat,
   onCollapse,
 }: {
   draft: StudioDraft;
@@ -26,7 +24,6 @@ export function AgentaConfiguration({
   onBuildChat: () => void;
   onCollapse?: () => void;
 }) {
-  const operations = `/studio/agents/${encodeURIComponent(draft.name)}?${new URLSearchParams({ draft: draft.id, section: "automation" })}`;
   return (
     <section className={styles.configuration} aria-label="智能体配置">
       <header className={styles.configHeader}>
@@ -40,20 +37,20 @@ export function AgentaConfiguration({
       </header>
       <div className={styles.configScroll}>
         <button className={styles.configRow} onClick={() => onEdit("identity")}>
-          <span>
-            ◇ <strong>模型</strong>
-          </span>
+          <span className={styles.rowLabel}><Icon name="model" /><strong>模型</strong></span>
           <small>
-            {draft.runtime} · {draft.model || "选择模型"} ›
+            {draft.model || "选择模型"}
           </small>
+          <Icon name="chevron" className={styles.chevron} />
         </button>
         <details className={styles.configGroup} open>
           <summary>
-            <strong>指令</strong>
-            <small>1 file</small>
+            <span className={styles.rowLabel}><Icon name="file" /><strong>指令</strong></span>
+            <small>1 个文件</small>
+            <Icon name="chevron" className={styles.chevron} />
           </summary>
           <button className={styles.fileRow} onClick={() => onEdit("prompt")}>
-            <span className={styles.fileIcon}>≡</span>
+            <span className={styles.fileIcon}><Icon name="file" /></span>
             <span>
               <strong>
                 AGENTS.md <small>指令</small>
@@ -63,24 +60,25 @@ export function AgentaConfiguration({
                   "定义智能体的职责、边界和输出要求"}
               </p>
             </span>
-            <span>›</span>
+            <Icon name="chevron" className={styles.chevron} />
           </button>
         </details>
         <details className={styles.configGroup} open>
           <summary>
-            <strong>工具</strong>
+            <span className={styles.rowLabel}><Icon name="tools" /><strong>工具</strong></span>
             <small>
               {draft.builtinTools.length +
                 draft.mcpServers.length +
                 draft.pythonTools.length}{" "}
-              tools
+              个工具
             </small>
+            <Icon name="chevron" className={styles.chevron} />
           </summary>
           <button
             className={styles.addRow}
             onClick={() => onEdit("capabilities")}
           >
-            ＋ 添加工具与集成
+            <Icon name="plus" /> 添加工具与集成
           </button>
           {draft.builtinTools.map((tool) => (
             <button
@@ -88,10 +86,10 @@ export function AgentaConfiguration({
               className={styles.toolRow}
               onClick={() => onEdit("capabilities")}
             >
-              <span className={styles.toolIcon}>io</span>
+              <span className={styles.toolIcon}><Icon name="tools" /></span>
               <strong>{tool}</strong>
               <small>built-in</small>
-              <span>›</span>
+              <Icon name="chevron" className={styles.chevron} />
             </button>
           ))}
           {draft.mcpServers.map((tool) => (
@@ -100,10 +98,10 @@ export function AgentaConfiguration({
               className={styles.toolRow}
               onClick={() => onEdit("capabilities")}
             >
-              <span className={styles.toolIcon}>↗</span>
+              <span className={styles.toolIcon}><Icon name="mcp" /></span>
               <strong>{tool}</strong>
               <small>MCP</small>
-              <span>›</span>
+              <Icon name="chevron" className={styles.chevron} />
             </button>
           ))}
           {draft.pythonTools.map((tool) => (
@@ -112,7 +110,7 @@ export function AgentaConfiguration({
               className={styles.toolRow}
               onClick={() => onEdit("capabilities")}
             >
-              <span className={styles.toolIcon}>py</span>
+              <span className={styles.toolIcon}><Icon name="code" /></span>
               <strong>{tool.name}</strong>
               <small>Python</small>
             </button>
@@ -120,8 +118,9 @@ export function AgentaConfiguration({
         </details>
         <details className={styles.configGroup} open={draft.skills.length > 0}>
           <summary>
-            <strong>Skills</strong>
-            <small>{draft.skills.length || "None"}</small>
+            <span className={styles.rowLabel}><Icon name="skill" /><strong>Skills</strong></span>
+            <small>{draft.skills.length || "无"}</small>
+            <Icon name="chevron" className={styles.chevron} />
           </summary>
           {draft.skills.map((skill) => (
             <button
@@ -129,16 +128,16 @@ export function AgentaConfiguration({
               className={styles.fileRow}
               onClick={() => onEdit("skills")}
             >
-              <span className={styles.fileIcon}>S</span>
+              <span className={styles.fileIcon}><Icon name="skill" /></span>
               <span>
                 <strong>{skill.name}</strong>
                 <p>{skill.description}</p>
               </span>
-              <span>›</span>
+              <Icon name="chevron" className={styles.chevron} />
             </button>
           ))}
           <button className={styles.addRow} onClick={() => onEdit("skills")}>
-            ＋ 添加、导入或编辑 Skill
+            <Icon name="plus" /> 添加、导入或编辑 Skill
           </button>
           <Link
             className={styles.addRow}
@@ -154,19 +153,22 @@ export function AgentaConfiguration({
           className={styles.configRow}
           onClick={() => onEdit("capabilities")}
         >
-          <strong>文件与知识</strong>
-          <small>{draft.knowledgeReferences.length} 项知识引用 ›</small>
+          <span className={styles.rowLabel}><Icon name="knowledge" /><strong>文件与知识</strong></span>
+          <small>{draft.knowledgeReferences.length} 项知识引用</small>
+          <Icon name="chevron" className={styles.chevron} />
         </button>
         <button
           className={styles.configRow}
           onClick={() => onEdit("orchestration")}
         >
-          <strong>Subagents</strong>
-          <small>{draft.subagents.length} 个协作角色 ›</small>
+          <span className={styles.rowLabel}><Icon name="agent" /><strong>Subagents</strong></span>
+          <small>{draft.subagents.length} 个协作角色</small>
+          <Icon name="chevron" className={styles.chevron} />
         </button>
         <button className={styles.configRow} onClick={() => onEdit("runtime")}>
-          <strong>高级设置</strong>
-          <small>运行时、权限与沙箱 ›</small>
+          <span className={styles.rowLabel}><Icon name="settings" /><strong>高级设置</strong></span>
+          <small>运行时、权限与沙箱</small>
+          <Icon name="chevron" className={styles.chevron} />
         </button>
 
       </div>

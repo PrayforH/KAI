@@ -142,7 +142,6 @@ export function AgentPlaygroundThread({
   onRerun,
   onCancel,
   onReset,
-  onImprove,
   onAssets,
   onConfigureKnowledge,
   incomingFiles,
@@ -167,7 +166,6 @@ export function AgentPlaygroundThread({
   onRerun?: (value: string, ids: string[], names: string[]) => Promise<boolean>;
   onCancel: () => Promise<void>;
   onReset: () => void;
-  onImprove: (turn: PreviewTurn) => void;
   onAssets: () => void;
   onConfigureKnowledge: () => void;
   incomingFiles?: {
@@ -322,9 +320,6 @@ export function AgentPlaygroundThread({
           {extra}
           {turn.result.run.run_id === latest?.run.run_id &&
             pending.length > 1 && <ApprovalBatch approvals={pending} />}
-          {terminalStatuses.has(turn.result.run.status) && (
-            <button onClick={() => onImprove(turn)}>改进这次回答</button>
-          )}
         </div>
       );
     },

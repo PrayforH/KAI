@@ -160,7 +160,8 @@
   font-weight: 550;
 }
 .configRow small {
-  max-width: 55%;
+  max-width: 52%;
+  margin-left: auto;
   font-size: 11px;
   color: var(--studio-muted);
   text-align: right;
@@ -184,14 +185,10 @@
   gap: 8px;
   font-size: 13px;
 }
-.configGroup summary::after {
-  content: "⌄";
-  color: var(--studio-muted);
-}
-.configGroup summary strong {
-  font-weight: 550;
-  flex: 1;
-}
+.configGroup[open] > summary > .chevron { transform: rotate(90deg); }
+.configGroup > summary::-webkit-details-marker { display: none; }
+.configGroup summary strong { font-weight: 550; }
+.configGroup summary > small { margin-left: auto; }
 .configGroup small {
   color: var(--studio-muted);
   font-weight: 400;
@@ -241,14 +238,16 @@
   flex: 0 0 28px;
   height: 28px;
   border-radius: 4px;
-  background: #0c8d86;
-  color: white;
+  background: var(--studio-panel-subtle);
+  color: var(--studio-muted);
   font:
     12px ui-monospace,
     monospace;
 }
 .addRow {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   border: 0;
   background: transparent;
   color: var(--studio-muted);
@@ -727,3 +726,9 @@
   font: inherit;
   opacity: 0.5;
 }
+
+.rowLabel { display: flex; align-items: center; gap: 12px; min-width: 0; flex-shrink: 0; }
+.rowLabel > svg { width: 20px; height: 20px; flex: 0 0 20px; color: var(--studio-muted); }
+.chevron { width: 16px; height: 16px; flex: 0 0 16px; color: var(--studio-muted); }
+.configRow, .configGroup > summary { min-height: 56px; gap: 12px; }
+.configGroup:not([open]) { padding-bottom: 0; }

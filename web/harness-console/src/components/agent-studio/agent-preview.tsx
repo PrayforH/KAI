@@ -13,7 +13,7 @@ export type PreviewTurn = { prompt: string; result: StudioTryRun; files?: string
 export function PreviewMarkdown({ text, running = false }: { text: string; running?: boolean }) {
   return <TextMessagePartProvider text={text} isRunning={running}><MarkdownText /></TextMessagePartProvider>;
 }
-export function PreviewRunResponse({ turn, agentName, onImprove }: { turn: PreviewTurn; agentName: string; onImprove: (turn: PreviewTurn) => void }) {
+export function PreviewRunResponse({ turn, agentName }: { turn: PreviewTurn; agentName: string }) {
         const result = turn.result;
         const terminal = ["succeeded", "failed", "cancelled", "timed_out", "rejected"].includes(result.run.status);
         const projected = projectTryRunConversation(result.events);
@@ -39,6 +39,5 @@ export function PreviewRunResponse({ turn, agentName, onImprove }: { turn: Previ
             {answer && <PreviewMarkdown text={answer} running={!terminal} />}
             {terminal && !answer && <p>{result.run.status === "succeeded" ? "本轮已结束，未返回文字。可查看交付文件和执行详情。" : `本轮未完成。${result.run.error_code || "请查看执行详情后重试。"}`}</p>}
             {result.artifacts.filter(item => item.status === "ready").map(item => <a key={item.artifact_id} href={studioClient.tryRunArtifactHref(item.artifact_id)} download={item.name}>{item.name}</a>)}
-            {terminal && <button type="button" className={styles.improve} onClick={() => onImprove(turn)}>改进这次回答</button>}
           </div>;
 }

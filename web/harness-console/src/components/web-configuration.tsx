@@ -24,7 +24,7 @@ export function WebConfiguration() {
       <label className="settings-preference-row"><span><strong>搜索服务</strong><small>网页读取不需要搜索服务密钥。</small></span><select aria-label="联网搜索服务" disabled={busy} value={config.provider} onChange={e=>{setKey("");void save({...config,provider:e.target.value as Config['provider']})}}><option value="platform">平台默认（{config.platformProvider}）</option><option value="minimax">MiniMax</option><option value="tavily">Tavily</option></select></label>
       <label className="settings-web-key"><span>搜索 API Key</span><SecretInput aria-label="搜索 API Key" revealLabel="搜索 API Key" value={key} autoComplete="new-password" onChange={e=>setKey(e.target.value)} placeholder={config.personalKeyConfigured?'已保存个人密钥，输入可替换':config.credentialConfigured?'正在使用平台密钥，可填写个人密钥':'填写该搜索服务的 API Key'}/><small>密钥加密保存，仅供当前账号使用；平台密钥不在页面回显。</small></label>
       <div className="settings-web-actions"><button type="button" disabled={busy||!key.trim()} onClick={()=>void save(config,false,key)}>保存密钥</button>{config.personalKeyConfigured&&<button type="button" disabled={busy} onClick={()=>{setKey("");void save(config,true)}}>移除个人密钥</button>}</div>
-      <p>实际可用能力 = 个人联网开关开启 + 智能体已勾选对应工具。开启开关不会自动为智能体添加工具；工具配置仍需保存并发布。</p>
+      <p>智能体勾选工具并保存后可试跑，发布后用于正式对话。搜索还需有效的服务密钥，网页读取取决于环境的网络连接。</p>
     </>}
     {!config&&!message&&<p>正在读取联网配置…</p>}{message&&<p role="status">{message}</p>}
   </section>
@@ -46,8 +46,8 @@ export function WebCapabilityStatus() {
   if (!config) return null;
   return <p role="status">{!config.platformEnabled ? "当前环境已关闭公开联网。"
     : !config.effectiveEnabled ? "当前账号已关闭联网，已勾选的 WebSearch / WebFetch 也不会加载。"
-    : `当前账号联网已开启 · 搜索使用 ${config.provider === "platform" ? config.platformProvider : config.provider}${config.personalKeyConfigured ? " 个人配置" : " 平台配置"}。`}
-    {config.effectiveEnabled && !config.credentialConfigured ? "搜索密钥未配置，仍可读取公开网页。" : ""}
+    : `当前账号已允许联网 · 搜索使用 ${config.provider === "platform" ? config.platformProvider : config.provider}${config.personalKeyConfigured ? " 个人配置" : " 平台配置"}。`}
+    {config.effectiveEnabled && !config.credentialConfigured ? "搜索暂不可用：未配置服务密钥。网页读取无需密钥，但仍需环境网络连通。" : ""}
     {" "}<a href="/settings#configuration">查看用户联网配置 ↗</a>
   </p>;
 }

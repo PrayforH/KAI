@@ -1,4 +1,5 @@
 "use client";
+import { ConfigurationIcon } from "./configuration-icon";
 import { AgentVersionHistory } from "./agent-version-history";
 import { PanelResizeHandle } from "../panel-resize-handle";
 import { WebCapabilityStatus } from "../web-configuration";
@@ -2191,7 +2192,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
             <div className={styles.eyebrow}>
               <span className={styles.draftDot} />
               {publishedCurrent ? "已发布" : "草稿"}
-              <button ref={versionHistoryTriggerRef} className={styles.versionTrigger} disabled={!draft.id} aria-label={`版本历史 · v${draft.version}`} aria-expanded={versionHistoryOpen} aria-controls="personal-version-history" title="查看版本历史" onClick={() => setVersionHistoryOpen(true)}>v{draft.version}</button>
+              <button ref={versionHistoryTriggerRef} className={styles.versionTrigger} disabled={!draft.id} aria-label={`版本历史 · v${draft.version}`} aria-expanded={versionHistoryOpen} aria-controls="personal-version-history" title="查看版本历史" onClick={() => setVersionHistoryOpen(true)}><ConfigurationIcon name="history" />v{draft.version}</button>
               <span className={styles.syncState} data-dirty={dirty} role="status">
                 <span aria-hidden="true">·</span>
                 {saving
@@ -2206,7 +2207,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
               </span>
             </div>
             <div className={styles.titleLine}>
-              <h1>{draft.displayName}</h1>
+              <span className={styles.agentIdentityIcon}><ConfigurationIcon name="agent" /></span><h1>{draft.displayName}</h1>
               <code>{draft.name}@{draft.version}</code>
             </div>
             <p>{draft.description}</p>
@@ -3219,7 +3220,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                 <div className={styles.workerToolPicker} aria-label="公开联网工具">
                   <h3>公开联网</h3>
                   <WebCapabilityStatus />
-                  <p>由平台提供搜索和网页读取，无需配置 MCP。勾选后保存并发布生效，同时受个人设置中的联网开关控制。</p>
+                  <p>由平台提供搜索和网页读取，无需配置 MCP。勾选并保存后可在此试跑；发布后应用于正式对话。同时受个人联网设置及搜索服务配置控制。</p>
                   {/* A tick the runtime cannot honour stays clearable: the tool is
                       unusable either way, and a disabled box would leave a saved
                       draft that can never publish and no way to remove the cause. */}
