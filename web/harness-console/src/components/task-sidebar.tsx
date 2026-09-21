@@ -98,9 +98,9 @@ function ScrollingTaskTitle({ title }: { title: string }) {
     const measure = () => {
       const overflow = Math.max(0, text.scrollWidth - viewport.clientWidth);
       viewport.style.setProperty("--task-title-overflow", `${-overflow}px`);
-      // Travel the clipped part at roughly 40px per second plus a small fixed
-      // lead-in, so hovering a long task name reveals it without a long wait.
-      viewport.style.setProperty("--task-title-duration", `${Math.max(2.5, overflow / 40 + 1.4)}s`);
+      // Reveal the clipped part at 80px per second; CSS holds the final
+      // position until the pointer or keyboard focus leaves the row.
+      viewport.style.setProperty("--task-title-duration", `${Math.max(0.8, overflow / 80)}s`);
       viewport.dataset.overflow = String(overflow > 0);
     };
     measure();

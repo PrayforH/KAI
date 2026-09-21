@@ -254,7 +254,7 @@ body.codex-theme-v1 .task-title-viewport { display: block; min-width: 0; overflo
 .task-title-text { display: block; width: max-content; min-width: 100%; white-space: nowrap; }
 .task-list-item:hover .task-title-viewport[data-overflow="true"] .task-title-text,
 .task-list-item:focus-visible .task-title-viewport[data-overflow="true"] .task-title-text {
-  animation: task-title-scroll var(--task-title-duration, 5s) linear .5s infinite alternate;
+  animation: task-title-scroll var(--task-title-duration, 2s) linear .2s 1 forwards;
 }
 @keyframes task-title-scroll {
   0% { transform: translateX(0); }
