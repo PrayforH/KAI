@@ -198,8 +198,13 @@ class EvolutionService:
             changes["candidates"] = tuple(
                 candidate if c.candidate_id == candidate.candidate_id else c for c in job.candidates
             )
-        updated = job.model_copy(
-            update={
+        # Validate the next state instead of `model_copy`: this is the only write
+        # path, and `model_copy` skips every field validator, so a status that is
+        # not in the JobStatus literal would reach the row and only surface much
+        # later as a validation error while reading it back.
+        updated = EvolutionJob.model_validate(
+            {
+                **job.model_dump(),
                 **changes,
                 "revision": job.revision + 1,
                 "history": (
@@ -636,8 +641,7 @@ class EvolutionService:
         self, tenant: str, owner: str, job_id: str, candidate_id: str, revision: int
     ) -> EvolutionJob:
         job = await self.get(tenant, owner, job_id)
-        if job.revision != revision:
-            raise ConflictError("Evolution revision changed")
+        self._active(job, revision)
         candidate = self._candidate(job, candidate_id)
         if candidate.status != "released":
             raise ConflictError("Only a released candidate can be rolled back")
@@ -715,8 +719,7 @@ class EvolutionService:
         self, tenant: str, owner: str, job_id: str, experience_id: str, revision: int, status: str
     ) -> EvolutionJob:
         job = await self.get(tenant, owner, job_id)
-        if job.revision != revision:
-            raise ConflictError("Evolution revision changed")
+        self._active(job, revision)
         exp = next((e for e in job.experiences if e.experience_id == experience_id), None)
         if exp is None:
             raise NotFoundError("Experience not found")
@@ -733,8 +736,7 @@ class EvolutionService:
         self, tenant: str, owner: str, job_id: str, candidate_id: str, revision: int
     ) -> EvolutionJob:
         job = await self.get(tenant, owner, job_id)
-        if job.revision != revision:
-            raise ConflictError("Evolution revision changed")
+        self._active(job, revision)
         candidate = self._candidate(job, candidate_id)
         if candidate.released_version is None or self.quality is None:
             raise ConflictError("Observation requires a released candidate and quality collection")

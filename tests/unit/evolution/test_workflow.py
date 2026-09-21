@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
+from pydantic import ValidationError
 
 from harness.api.app import create_app
 from harness.api.dependencies import ApiContainer, Identity, build_memory_container
@@ -324,3 +325,38 @@ async def test_evolution_routes_require_scope_and_hide_other_owners() -> None:
             },
         )
         assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_stopped_job_rejects_mutation_and_the_write_path_validates() -> None:
+    """The two defects the review found in the same service.
+
+    The activity guard was re-implemented per call site, and each hand-written
+    copy dropped the status/expiry half, so a stopped job stayed editable. The
+    only write path used `model_copy`, which skips every validator, so a status
+    outside the literal reached the row and only failed on the way back out.
+    """
+
+    c = build_memory_container()
+    _, _, job = await seed(c)
+
+    cancelled = job.model_copy(update={"revision": job.revision + 1, "status": "cancelled"})
+    await c.evolution.repository.replace(job.revision, cancelled)
+    with pytest.raises(ConflictError, match="stopped or expired"):
+        await c.evolution.observe("t", "u", job.job_id, "candidate-1", cancelled.revision)
+
+    expired = cancelled.model_copy(
+        update={
+            "revision": cancelled.revision + 1,
+            "status": "active",
+            "expires_at": datetime.now(UTC) - timedelta(seconds=1),
+        }
+    )
+    await c.evolution.repository.replace(cancelled.revision, expired)
+    with pytest.raises(ConflictError, match="stopped or expired"):
+        await c.evolution.set_experience(
+            "t", "u", job.job_id, "experience-1", expired.revision, "reviewed"
+        )
+
+    with pytest.raises(ValidationError):
+        await c.evolution._save(expired, "test", status="not-a-status")
