@@ -17,7 +17,7 @@ services:
     - postgres18-cluster-data:/var/lib/postgresql
     restart: unless-stopped
   redis:
-    image: redis:8.4.0
+    image: redis:8.10.1-alpine
     command:
     - redis-server
     - --appendonly

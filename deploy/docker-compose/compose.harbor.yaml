@@ -29,7 +29,7 @@ services:
 
   redis:
     <<: *harbor-image
-    image: ${HARNESS_HARBOR_REGISTRY:-harbor.shdata.com:5000}/${HARNESS_HARBOR_DEPENDENCY_PROJECT:-dependencies-ai}/redis:${HARNESS_HARBOR_REDIS_TAG:-7.0-alpine}
+    image: ${HARNESS_HARBOR_REGISTRY:-harbor.shdata.com:5000}/${HARNESS_HARBOR_DEPENDENCY_PROJECT:-dependencies-ai}/redis:${HARNESS_HARBOR_REDIS_TAG:-8.10.1-alpine}
 
   minio:
     <<: *harbor-image

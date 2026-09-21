@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { resolveTaskLaunchMode } from "../src/lib/task-launch";
 
 describe("task launch mode", () => {
-  it("focuses the current shell when it has no durable task yet", () => {
-    expect(resolveTaskLaunchMode("empty", "new-task")).toBe("focus-current");
-    expect(resolveTaskLaunchMode("unknown", "new-task")).toBe("focus-current");
+  it("creates a new task even before the previous history has loaded", () => {
+    expect(resolveTaskLaunchMode("empty", "new-task")).toBe("create-thread");
+    expect(resolveTaskLaunchMode("unknown", "new-task")).toBe("create-thread");
   });
 
   it("reuses an empty shell when the user selects an Agent", () => {

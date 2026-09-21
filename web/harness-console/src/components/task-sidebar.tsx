@@ -26,6 +26,7 @@ import { agentDisplayName } from "../lib/agent-display-name";
 import {
   ApiProject,
 } from "../lib/studio-client";
+import { useSidebarGroups } from "../lib/sidebar-state";
 import { taskListRefreshDelay } from "../lib/task-list-refresh";
 
 
@@ -78,11 +79,11 @@ function ArchiveIcon() {
   );
 }
 
-function ProjectFolderIcon({ open = false }: { open?: boolean }) {
+function ProjectFolderIcon() {
   return (
     <svg className="task-project-folder" viewBox="0 0 20 20" aria-hidden="true">
       <path d="M2.75 5.75a2 2 0 0 1 2-2h3.1l1.7 1.9h5.7a2 2 0 0 1 2 2v6.5a2 2 0 0 1-2 2H4.75a2 2 0 0 1-2-2Z" />
-      {open && <path d="M5.5 9.75h9" />}
+      <path d="M2.75 8h14.5" />
     </svg>
   );
 }
@@ -97,9 +98,9 @@ function ScrollingTaskTitle({ title }: { title: string }) {
     const measure = () => {
       const overflow = Math.max(0, text.scrollWidth - viewport.clientWidth);
       viewport.style.setProperty("--task-title-overflow", `${-overflow}px`);
-      // Travel the clipped part at roughly 40px per second plus a small fixed
-      // lead-in, so hovering a long task name reveals it without a long wait.
-      viewport.style.setProperty("--task-title-duration", `${Math.max(2.5, overflow / 40 + 1.4)}s`);
+      // Reveal the clipped part at 80px per second; CSS holds the final
+      // position until the pointer or keyboard focus leaves the row.
+      viewport.style.setProperty("--task-title-duration", `${Math.max(0.8, overflow / 80)}s`);
       viewport.dataset.overflow = String(overflow > 0);
     };
     measure();
@@ -160,11 +161,6 @@ export function TaskSidebar({
   const [loading, setLoading] = useState(() => peekCachedTasks() === null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [updatingThreadId, setUpdatingThreadId] = useState("");
-  const [showAllProjects, setShowAllProjects] = useState(false);
-  const [collapsedProjects, setCollapsedProjects] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
-  const [expandedTaskGroups, setExpandedTaskGroups] = useState<ReadonlySet<string>>(() => new Set());
   const [creatingProjectId, setCreatingProjectId] = useState<string | null>(null);
   const [projectCreateError, setProjectCreateError] = useState("");
   const [projectDialogOpen, setProjectDialogOpen] = useState(false);
@@ -175,6 +171,7 @@ export function TaskSidebar({
   const wasOverlayOpenRef = useRef(false);
   const runView = useRunViewModel();
   const { user } = useAuth();
+  const [expandedTaskGroups, setExpandedTaskGroups] = useSidebarGroups(user.user_id);
 
   // Acknowledge only the version displayed on a visible task page. Server
   // watermarks are shared across devices; failed writes retry on list refresh.
@@ -315,11 +312,23 @@ export function TaskSidebar({
     () => tasks.find((task) => task.thread_id === currentThreadId),
     [currentThreadId, tasks],
   );
+  const previousSelectedThread = useRef(currentThreadId);
   useEffect(() => {
+    const changed = previousSelectedThread.current !== currentThreadId;
+    previousSelectedThread.current = currentThreadId;
     if (!selected?.project_id) return;
     const key = `project:${selected.project_id}`;
-    setExpandedTaskGroups((current) => current.has(key) ? current : new Set(current).add(key));
-  }, [selected?.project_id]);
+    const hiddenKey = `collapsed:${selected.project_id}`;
+    setExpandedTaskGroups((current) => {
+      // Restore a deliberate collapse on remount; selecting another task can
+      // still reveal its containing folder.
+      if (!changed && current.has(hiddenKey)) return current;
+      if (current.has(key)) return current;
+      const next = new Set(current).add(key);
+      next.delete(hiddenKey);
+      return next;
+    });
+  }, [currentThreadId, selected?.project_id, setExpandedTaskGroups]);
   const labelForAgent = useMemo(
     () => (name: string) => agentLabels?.[name] ?? agentDisplayName(name),
     [agentLabels],
@@ -534,13 +543,18 @@ export function TaskSidebar({
                         setExpandedTaskGroups((current) => {
                           const next = new Set(current);
                           const key = `project:${project.projectId}`;
-                          if (next.has(key)) next.delete(key);
-                          else next.add(key);
+                          if (next.has(key)) {
+                            next.delete(key);
+                            next.add(`collapsed:${project.projectId}`);
+                          } else {
+                            next.add(key);
+                            next.delete(`collapsed:${project.projectId}`);
+                          }
                           return next;
                         });
                       }}
                     >
-                      <ProjectFolderIcon open={!collapsed} />
+                      <ProjectFolderIcon />
                       <strong className="project-name-viewport">
                         <span
                           onMouseEnter={(event) => {
