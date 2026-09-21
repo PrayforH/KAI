@@ -754,7 +754,7 @@ function HarnessComposer() {
         }} />
       {steeringNotice && <p className="composer-status-announcement" role="status">{steeringNotice}</p>}
       {inputError && <p className="composer-input-error" role="alert">{inputError}</p>}
-      <TaskKnowledgeSelection disabled={busy || Boolean(conversationScope)} />
+      {!conversationScope?.compactComposer && <TaskKnowledgeSelection disabled={busy || Boolean(conversationScope)} />}
       <Composer.Root onSubmitCapture={(event: FormEvent) => { event.preventDefault(); event.stopPropagation(); if (!composingRef.current) submitComposer(); }}>
         <ComposerAssist options={options} index={suggestionIndex} onChoose={chooseSuggestion} />
         {wikiSlug ? (
@@ -790,7 +790,7 @@ function HarnessComposer() {
           onComposingChange={(value) => { composingRef.current = value; }}
           className="aui-composer-input"
           aria-label="消息输入"
-          placeholder={busy ? "继续补充…" : knowledge.selected.length ? "输入问题，将基于上方选中的知识库回答" : "随心输入，/ 命令 · @ 知识库 · $ 技能"}
+          placeholder={conversationScope?.composerPlaceholder ?? (busy ? "继续补充…" : knowledge.selected.length ? "输入问题，将基于上方选中的知识库回答" : "随心输入，/ 命令 · @ 知识库 · $ 技能")}
           rows={Math.min(8, Math.max(2, composerText.split("\n").length))}
           aria-controls={options.length ? "composer-suggestions" : undefined}
           aria-activedescendant={options.length ? `composer-option-${suggestionIndex}` : undefined}
@@ -839,7 +839,7 @@ function HarnessComposer() {
               <path d="M10 4.5v11M4.5 10h11" />
             </svg>
           </Composer.AddAttachment>
-          {conversationScope ? <button type="button" className="aui-composer-attach" aria-label="配置智能体知识库" title="配置智能体知识库" onClick={conversationScope.onConfigureKnowledge}>@</button> : <TaskKnowledgeControl disabled={runLocked || showStop || videoGenerating} />}
+          {!conversationScope?.compactComposer && <>{conversationScope ? <button type="button" className="aui-composer-attach" aria-label="配置智能体知识库" title="配置智能体知识库" onClick={conversationScope.onConfigureKnowledge}>@</button> : <TaskKnowledgeControl disabled={runLocked || showStop || videoGenerating} />}
           <TaskAgentSwitcher
             agents={agentSelection.agents}
             selected={agentSelection.selected}
@@ -849,7 +849,7 @@ function HarnessComposer() {
             onRefresh={agentSelection.onRefresh}
           />
           {!conversationScope && <TaskKnowledgeModeSwitch disabled={runLocked || showStop || videoGenerating} />}
-          <TaskModelControl disabled={Boolean(conversationScope) || runLocked || showStop || videoGenerating} />
+          <TaskModelControl disabled={Boolean(conversationScope) || runLocked || showStop || videoGenerating} /></>}
           {showStop && Boolean(composerText.trim() || composerAttachments.length) && <ConversationControl action="stop" aria-label="停止运行" onClick={() => void stopRun()} />}
         </div>
         {showStop && !composerText.trim() && !composerAttachments.length ? (
@@ -1459,7 +1459,7 @@ function HarnessAssistantMessage() {
     <AnswerCitationProvider citations={answerCitations}>
     <AssistantMessage.Root
       className="harness-assistant-message"
-      data-test-run={conversationScope ? messageId.replace(/^assistant-/, "") : undefined}
+      data-test-run={conversationScope && messageId.startsWith("assistant-") ? messageId.replace(/^assistant-/, "") : undefined}
       data-turn-answer={copyText.replace(/\s+/g, " ").slice(0, 360)}
       data-direct-stream={directStream ? "true" : "false"}
     >

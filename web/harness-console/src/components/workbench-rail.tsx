@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { requireAuthenticatedResponse } from "../lib/client-auth";
 import { PanelResizeHandle } from "./panel-resize-handle";
 import { SidebarPanelIcon } from "./panel-icons";
@@ -78,12 +78,14 @@ function ChevronIcon({ direction }: { direction: "back" | "forward" }) {
   );
 }
 
-interface RailFile {
+export interface RailFile {
   artifact_id: string;
   name: string;
   media_type: string;
   size_bytes?: number | null;
   thread_id?: string;
+  change?: "已修改" | "已新增" | "已删除";
+  downloadHref?: string;
 }
 
 /** Grok-style row glyph: one small icon carries the file type. */
@@ -141,7 +143,9 @@ export function WorkbenchRail({
   previewRequest,
   observabilityHref,
   runPhase,
+  workspace,
 }: {
+  workspace?: { files: RailFile[]; loading: boolean; error: string; onRefresh?: () => void; renderPreview: (file: RailFile) => ReactNode; note?: string };
   open: boolean;
   onClose: () => void;
   expanded: boolean;
@@ -156,12 +160,14 @@ export function WorkbenchRail({
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [listVisible, setListVisible] = useState(true);
-  const [fileError, setFileError] = useState("");
+  const [loadedError, setFileError] = useState("");
   const [refresh, setRefresh] = useState(0);
   const [loadedFiles, setFiles] = useState<RailFile[]>([]);
   // Scope again at render time: effects run after task-switch renders.
-  const files = loadedFiles.filter((file) => file.thread_id === threadId);
-  const [filesLoading, setFilesLoading] = useState(true);
+  const files = workspace?.files ?? loadedFiles.filter((file) => file.thread_id === threadId);
+  const fileError = workspace?.error ?? loadedError;
+  const [loadedLoading, setFilesLoading] = useState(true);
+  const filesLoading = workspace?.loading ?? loadedLoading;
   // The list is the first entry, so back always finds its way out of a preview.
   const [trail, setTrail] = useState<{ items: (PreviewTarget | null)[]; index: number }>({
     items: [null],
@@ -189,7 +195,7 @@ export function WorkbenchRail({
   }, [threadId]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || workspace) return;
     if (!threadId) {
       setFiles([]);
       setFilesLoading(false);
@@ -218,10 +224,13 @@ export function WorkbenchRail({
     }
     void load();
     return () => controller.abort();
-  }, [threadId, runPhase, open, refresh]);
+  }, [threadId, runPhase, open, refresh, Boolean(workspace)]);
 
+  const refreshFiles = () => workspace ? workspace.onRefresh?.() : setRefresh(value => value + 1);
+  const selectedFile = files.find(file => file.artifact_id === selected?.artifact_id);
   const fileList = (
     <>
+      {workspace?.note && <p className="workbench-rail-files-empty">{workspace.note}</p>}
       {searchOpen ? (
         // The field belongs to the browser, so it takes the browser's width.
         <input
@@ -239,7 +248,7 @@ export function WorkbenchRail({
           }}
         />
       ) : null}
-      {fileError ? <p role="alert">{fileError} <button type="button" onClick={() => setRefresh((value) => value + 1)}>重试</button></p> : filesLoading ? (
+      {fileError ? <p role="alert">{fileError} <button type="button" onClick={refreshFiles}>重试</button></p> : filesLoading ? (
         <span className="workbench-rail-files-empty">正在读取文件…</span>
       ) : files.length === 0 ? (
         <span className="workbench-rail-files-empty">生成的文档、图片与其他成果会保存在这里。</span>
@@ -267,9 +276,9 @@ export function WorkbenchRail({
                 >
                   <span className="rail-file-icon" data-kind={kind}>{railFileIcon(kind)}</span>
                   <span className="workbench-rail-file-name">{file.name}</span>
-                  <span className="workbench-rail-file-size">{formatFileSize(file.size_bytes)}</span>
+                  <span className="workbench-rail-file-size" data-change={file.change}>{file.change || formatFileSize(file.size_bytes)}</span>
                 </button>
-                <a className="rail-download" href={`/api/harness/artifacts/${encodeURIComponent(file.artifact_id)}?thread_id=${encodeURIComponent(threadId)}`} download={file.name} title={`下载 ${file.name}`} aria-label={`下载 ${file.name}`}>↓</a>
+                {(!workspace || file.downloadHref) && <a className="rail-download" href={file.downloadHref ?? `/api/harness/artifacts/${encodeURIComponent(file.artifact_id)}?thread_id=${encodeURIComponent(threadId)}`} download={file.name} title={`下载 ${file.name}`} aria-label={`下载 ${file.name}`}>↓</a>}
               </div>
             );
           })}
@@ -300,7 +309,7 @@ export function WorkbenchRail({
             >
               <FolderIcon />
             </button>
-            {observabilityHref ? (
+            {!workspace && (observabilityHref ? (
               <a
                 className="rail-bar-button"
                 aria-label="在 Langfuse 查看本次运行的 Trace"
@@ -319,7 +328,7 @@ export function WorkbenchRail({
               >
                 <TraceIcon />
               </span>
-            )}
+            ))}
           </div>
           <div className="rail-bar-actions">
             <button
@@ -385,15 +394,15 @@ export function WorkbenchRail({
             <ChevronIcon direction="forward" />
           </button>
           <span className="rail-bar-divider" aria-hidden="true" />
-          <button
+          {(!workspace || workspace.onRefresh) && <button
             type="button"
             className="rail-bar-button"
             aria-label="刷新文件"
             title="刷新文件"
-            onClick={() => setRefresh((value) => value + 1)}
+            onClick={refreshFiles}
           >
             <RefreshIcon />
-          </button>
+          </button>}
         </div>
         <div className="workbench-rail-body">
           <section
@@ -406,7 +415,7 @@ export function WorkbenchRail({
               // narrow one keeps the preview full width and hides the browser.
               <>
                 <div className="rail-file-column">{fileList}</div>
-                <div className="rail-preview-column"><RailFilePreview target={selected} /></div>
+                <div className="rail-preview-column">{workspace && selectedFile ? workspace.renderPreview(selectedFile) : <RailFilePreview target={selected} />}</div>
               </>
             ) : fileList}
           </section>

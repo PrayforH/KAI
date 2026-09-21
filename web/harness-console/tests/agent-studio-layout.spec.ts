@@ -231,9 +231,10 @@ describe("Agent Studio management page", () => {
     expect(workbench).toContain('aria-controls="personal-version-history"');
     expect(workbench).toContain("studioClient.listPersonalAgentVersions");
     expect(workbench).toContain("studioClient.promotePersonalAgentVersion");
-    expect(workbench).toContain("切换只影响之后创建的任务");
-    expect(workbench).toContain("已有任务不会改变");
-    expect(workbench).toContain("回退是移动当前指针");
+    const history = readFileSync(join(process.cwd(), "src/components/agent-studio/agent-version-history.tsx"), "utf8");
+    expect(history).toContain("切换只影响新任务，已有任务保持原版本");
+    expect(history).toContain("版本修改详情");
+    expect(history).toContain("ProjectSourceDiff");
     expect(workbench).toContain("panelRef: versionHistoryRailRef");
     expect(workbench).toContain("initialFocusRef: versionHistoryCloseRef");
     expect(workbench).not.toContain("versionHistoryCloseRef.current?.focus()");
@@ -317,7 +318,7 @@ describe("Agent Studio management page", () => {
   });
 
   it("uses one action-button contract and structured overflow menu states", () => {
-    expect(workbench.match(/styles\.headerActionButton/g)).toHaveLength(4);
+    expect(workbench.match(/styles\.headerActionButton/g)).toHaveLength(5);
     expect(workbench.match(/className=\{styles\.actionMenuItem\}/g)).toHaveLength(12);
     expect(workbench).not.toContain("copilot-drawer");
     expect(workbench).not.toContain("CopilotDrawer");
@@ -376,7 +377,7 @@ describe("Agent Studio management page", () => {
     expect(workbench).toContain('setBuilderAssistantMode("create")');
     expect(workbench).toContain("<AgentBuilderAssistant");
     expect(builderOverlays).toContain("描述你想创建的智能体");
-    expect(builderOverlays).toContain("在右侧测试效果");
+    expect(builderOverlays).toContain("继续测试效果");
     expect(builderOverlays).toContain("studioClient.createDraftFromTask");
     expect(builderOverlays).not.toContain("只使用 Worker 运行；不访问外部网络");
     expect(builderOverlays).toContain('aria-label="发送消息"');
@@ -437,7 +438,7 @@ describe("Agent Studio management page", () => {
     expect(workbench).toContain("draftSwitchingRef.current = false");
     expect(workbench).toContain("disabled={saving || Boolean(switchingDraftId)}");
     expect(workbench).toContain("查看工作区 →");
-    expect(workbench).toContain("构建与试运行");
+    expect(workbench).toContain("版本历史");
   });
 
   it("requires explicit destructive confirmation before replacing a conflicted local draft", () => {

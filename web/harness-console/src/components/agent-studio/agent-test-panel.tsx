@@ -5,6 +5,7 @@ import {
   type KeyboardEvent,
   type FocusEvent,
 } from "react";
+import type { ThreadMessageLike } from "@assistant-ui/react";
 import type { StudioDraft } from "../../lib/agent-studio";
 import type { StudioTryRunSummary } from "../../lib/studio-client";
 import type { PreviewTurn } from "./agent-preview";
@@ -12,6 +13,9 @@ import { AgentPlaygroundThread } from "./agent-playground-thread";
 import styles from "./build-workspace.module.css";
 export function AgentTestPanel({
   navigation,
+  messageOverride,
+  afterLastMessage,
+  inputSeed,
   sessionRail = false,
   savedRuns = [],
   historyLoading = false,
@@ -44,6 +48,9 @@ export function AgentTestPanel({
   userId = "playground",
 }: {
   navigation?: ReactNode;
+  messageOverride?: ThreadMessageLike[];
+  afterLastMessage?: ReactNode;
+  inputSeed?: {key: number; text: string};
   sessionRail?: boolean;
   savedRuns?: StudioTryRunSummary[];
   historyLoading?: boolean;
@@ -157,6 +164,7 @@ export function AgentTestPanel({
         <header className={styles.conversationHeader}>
           {navigation}
           <div className={styles.conversationControls}>
+            <button type="button" aria-label="查看对话文件" title="文件" onClick={onAssets}><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M3 5h5l2 2h7v9H3z" /></svg></button>
             {!sessionRail && sessions.length > 0 && onSelectSession ? (
               <details
                 className={styles.conversationMenu}
@@ -225,17 +233,7 @@ export function AgentTestPanel({
                 ···
               </summary>
               <div className={styles.conversationPopover}>
-                <button
-                  aria-label="查看对话文件"
-                  onClick={(event) => {
-                    onAssets();
-                    event.currentTarget
-                      .closest("details")
-                      ?.removeAttribute("open");
-                  }}
-                >
-                  查看对话文件
-                </button>
+
                 {!!examples.length && (
                   <label>
                     从评测用例开始
@@ -288,6 +286,8 @@ export function AgentTestPanel({
         <AgentPlaygroundThread
           key={`${draftId}:${conversationEpoch}`}
           turns={turns}
+          messageOverride={messageOverride}
+          afterLastMessage={afterLastMessage}
           draft={draft}
           agentName={agentName}
           model={model}
@@ -298,7 +298,7 @@ export function AgentTestPanel({
           busy={busy}
           loading={historyLoading}
           error={error}
-          seed={seed}
+          seed={inputSeed ?? seed}
           selectedRunId={selectedRunId}
           onSend={onSend}
           onRerun={onRerun}

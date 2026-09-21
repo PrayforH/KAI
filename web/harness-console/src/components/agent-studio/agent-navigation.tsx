@@ -36,8 +36,7 @@ export function AgentNavigation({
       </div>
       <nav>
         {[
-          ["overview", "概览", "▦"],
-          ["playground", "Playground", "◈"],
+          ["playground", "工作台", "◈"],
           ["sessions", "会话", "☷"],
         ].map(([id, title, icon]) =>
           draftId ? (
@@ -61,32 +60,6 @@ export function AgentNavigation({
           ),
         )}
       </nav>
-      {draftId && (
-        <details
-          className={styles.qualityNav}
-          open={!["overview", "playground", "sessions"].includes(active)}
-        >
-          <summary>质量与运营</summary>
-          {[
-            ["diagnostics", "运行诊断"],
-            ["experiments", "改进实验"],
-            ["evaluation", "评测验收"],
-            ["release", "版本与部署"],
-            ["datasets", "评测集"],
-            ["experience", "经验库"],
-            ["automation", "自动运行"],
-            ["integrations", "集成目录"],
-          ].map(([id, title]) => (
-            <Link
-              key={id}
-              href={href(id)}
-              aria-current={active === id ? "page" : undefined}
-            >
-              {title}
-            </Link>
-          ))}
-        </details>
-      )}
       <div className={styles.navFoot}>
         <Link href="/studio/skills">Skills 与 skill-creator ↗</Link>
         <Link href="/studio/capabilities">模型与集成设置 ↗</Link>

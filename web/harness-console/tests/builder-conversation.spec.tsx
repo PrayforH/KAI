@@ -81,7 +81,7 @@ async function click(text: string) {
 }
 async function send(value: string) {
   await act(async () => {
-    const input = host.querySelector<HTMLTextAreaElement>('[aria-label="智能体构建助手"] textarea:not([aria-label="对话预览输入"])')!;
+    const input = host.querySelector<HTMLTextAreaElement>('[aria-label="智能体构建助手"] textarea:not([aria-label="对话预览输入"])') ?? host.querySelector<HTMLTextAreaElement>('[aria-label="消息输入"]')!;
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, value);
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
@@ -267,6 +267,7 @@ it("reruns the selected older example when applying its improvement", async () =
 });
 
 async function sendTest(value: string) {
+  vi.mocked(studioClient.converseBuilder).mockResolvedValueOnce({baseRevision:1, action:"run",task:value,reply:"开始运行",changedFields:[],changes:{}});
   await act(async () => {
     const input = host.querySelector('[aria-label="智能体效果测试"] [aria-label="消息输入"]')!;
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, value);
@@ -274,98 +275,61 @@ async function sendTest(value: string) {
   });
   await act(async () => { (host.querySelector('[aria-label="智能体效果测试"] [aria-label="发送消息"]') as HTMLButtonElement).click(); });
 }
-it("keeps build and test contexts separate and opens files on demand", async () => {
+it("uses one composer to edit and run without losing task context", async () => {
   act(() => enableWorkspace());
+  expect(host.querySelectorAll("textarea")).toHaveLength(1);
   expect(host.querySelector('[aria-label="智能体资产"]')).toBeNull();
+  expect(host.querySelector('[aria-label="智能体构建助手"]')).toBeNull();
   await sendTest("业务原始问题"); await sendTest("继续追问");
-  expect(studioClient.converseBuilder).not.toHaveBeenCalled();
-  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({continueFromRunId: "run-1"});
-  expect(host.querySelector('[aria-label="智能体构建助手"]')?.textContent).not.toContain("试跑结果");
-  expect(host.querySelector('[aria-label="智能体效果测试"]')?.textContent).toContain("试跑结果");
-  await act(async () => { (host.querySelector('[aria-label="智能体效果测试"] [aria-label="查看对话文件"]') as HTMLButtonElement).click(); });
-  expect(host.querySelector('[aria-label="智能体资产"]')).not.toBeNull();
-  expect(host.textContent).toContain("尚无交付文件");
-  await click("新对话"); await sendTest("独立案例");
-  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({});
-});
-it("links a test answer to build changes and shows the new revision before replaying", async () => {
-  act(() => enableWorkspace()); await sendTest("需要改进的材料");
+  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({continueFromRunId:"run-1"});
   await click("改进这次回答"); await send("输出改成表格");
-  expect(JSON.parse(vi.mocked(studioClient.converseBuilder).mock.lastCall![1].runContext).task).toBe("需要改进的材料");
-  await click("查看完整差异 ↗");
-  expect(host.querySelector('[aria-label="智能体资产"]')?.textContent).toContain("修改前");
+  expect(JSON.parse(vi.mocked(studioClient.converseBuilder).mock.lastCall![1].runContext).task).toBe("业务原始问题");
+  expect(host.querySelector('[aria-label="待确认的配置修改"]')).not.toBeNull();
   await click("应用修改");
-  expect(host.querySelector('[aria-label="智能体效果测试"]')?.textContent).toContain("配置已更新至 r2");
+  expect(updated.mock.lastCall?.[0].revision).toBe(2);
   await sendTest("新配置测试");
   expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[1]).toBe(2);
   expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({});
+  expect(host.textContent).toContain("业务原始问题");
+  expect(host.querySelectorAll("textarea")).toHaveLength(1);
+  await click("新对话"); await sendTest("独立案例");
+  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({});
 });
 
-it("uploads from either workspace composer and retains failed test attachments for retry", async () => {
+it("preserves attachments and text after failed unified sends, and supplies files to both edit and run", async () => {
   act(() => enableWorkspace());
-  vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify({input_artifact_id: "input_artifact_example", name: "材料.txt", media_type: "text/plain", status: "ready", size_bytes: 8}), {status: 200}));
-  async function attach(label: string) {
-    await act(async () => {
-      if (label === "添加测试附件") {
-        const event = new Event("paste", {bubbles:true,cancelable:true});
-        Object.defineProperty(event, "clipboardData", {value:{files:[new File(["原始材料"], "材料.txt", {type:"text/plain"})]}});
-        host.querySelector('[aria-label="智能体效果测试"] [aria-label="消息输入"]')!.dispatchEvent(event);
-        return;
-      }
-      const input = host.querySelector(`[aria-label="${label}"]`)!;
-      Object.defineProperty(input, "files", {configurable: true, value: [new File(["原始材料"], "材料.txt", {type: "text/plain"})]});
-      input.dispatchEvent(new Event("change", {bubbles: true}));
+  vi.spyOn(globalThis,"fetch").mockImplementation(async()=>new Response(JSON.stringify({input_artifact_id:"input_artifact_example",name:"材料.txt",media_type:"text/plain",status:"ready",size_bytes:8}),{status:200}));
+  async function attach() {
+    await act(async()=>{
+      const event = new Event("paste",{bubbles:true,cancelable:true});
+      Object.defineProperty(event,"clipboardData",{value:{files:[new File(["原始材料"],"材料.txt",{type:"text/plain"})]}});
+      host.querySelector('[aria-label="消息输入"]')!.dispatchEvent(event);
     });
   }
-  await attach("添加构建附件");
+  await attach();
   vi.mocked(studioClient.readBuilderMaterials).mockRejectedValueOnce(new Error("读取失败"));
   await send("根据附件修改格式");
-  expect(host.querySelector('[aria-label="移除 材料.txt"]')).not.toBeNull();
+  expect(host.querySelector<HTMLTextAreaElement>('[aria-label="消息输入"]')!.value).toContain("根据附件修改格式");
+  expect(host.querySelector('.harness-composer-shell .composer-file-card')?.textContent).toContain("材料.txt");
   await send("根据附件修改格式");
-  expect(studioClient.createTryRun).not.toHaveBeenCalled();
   expect(vi.mocked(studioClient.converseBuilder).mock.lastCall?.[1].messages.at(-1)?.content).toContain("参考材料正文");
-  expect(host.querySelector('[aria-label="智能体效果测试"] .harness-composer-shell')?.textContent).not.toContain("材料.txt");
-  await click("放弃建议");
-  await attach("添加测试附件");
-  vi.mocked(studioClient.createTryRun).mockRejectedValueOnce(new Error("视觉模型不可用"));
-  await sendTest("再测试一次");
-  expect(host.querySelector('[aria-label="智能体效果测试"] .harness-composer-shell .composer-file-card')?.textContent).toContain("材料.txt");
-  expect(host.querySelector<HTMLTextAreaElement>('[aria-label="智能体效果测试"] [aria-label="消息输入"]')?.value).toBe("再测试一次");
-  await sendTest("再测试一次");
-  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toMatchObject({inputArtifactIds: ["input_artifact_example"]});
+  await click("放弃建议"); await attach();
+  vi.mocked(studioClient.createTryRun).mockRejectedValueOnce(new Error("临时中断"));
+  await sendTest("分析附件");
+  expect(host.querySelector('.harness-composer-shell .composer-file-card')?.textContent).toContain("材料.txt");
+  await sendTest("分析附件");
+  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toMatchObject({inputArtifactIds:["input_artifact_example"]});
 });
 
-it("uses creation references on the left and previews images independently on the right", async () => {
-  act(() => { enableWorkspace(); newDraft(); });
-  vi.spyOn(studioClient, "createDraftFromTask").mockResolvedValue({draft: api({...initial, id: "new-draft", builtinTools: [], mcpServers: []}), recommendation: null});
-  vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify({input_artifact_id: "input_artifact_image", name: "图片.png", media_type: "image/png", status: "ready", size_bytes: 8}), {status: 200}));
-  const file = new File(["png"], "图片.png", {type: "image/png"});
-  await act(async () => {
-    const input = host.querySelector('[aria-label="添加构建附件"]')!;
-    Object.defineProperty(input, "files", {value: [file]});
-    input.dispatchEvent(new Event("change", {bubbles: true}));
-  });
-  await send("创建能识图的助手");
-  expect(studioClient.createTryRun).not.toHaveBeenCalled();
-  expect(host.querySelector('[aria-label="智能体效果测试"]')?.textContent).not.toContain("图片.png");
-  expect(vi.mocked(studioClient.createDraftFromTask).mock.lastCall?.[0].sampleInput).toBe("参考材料正文");
-  expect(host.querySelector('[aria-label="智能体构建助手"] img')?.getAttribute("src")).toContain("input_artifact_image/content");
-  await sendTest("描述这张图片");
-  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[2]).toBe("描述这张图片");
-  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({});
-  act(() => toggleOpen(false)); act(() => toggleOpen(true));
-  expect(host.querySelector('[aria-label="智能体效果测试"] .harness-composer-shell')?.textContent).not.toContain("图片.png");
-  await act(async () => {
-    const event = new Event("paste", {bubbles: true, cancelable: true});
-    Object.defineProperty(event, "clipboardData", {value: {files: [file]}});
-    host.querySelector('[aria-label="智能体效果测试"] [aria-label="消息输入"]')!.dispatchEvent(event);
-  });
-  expect(host.querySelector('[aria-label="智能体效果测试"]')?.textContent).toContain("图片.png");
-  await sendTest("再看看这张图");
-  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toMatchObject({inputArtifactIds: ["input_artifact_image"]});
+it("opens conversation files without restoring an asset-management panel", async()=>{
+  await act(async()=>enableWorkspace());
+  await click("查看对话文件");
+  expect(host.querySelector('[aria-label="任务工作区"]')).not.toBeNull();
+  expect(host.querySelector('[aria-label="智能体资产"]')).toBeNull();
+  await click("收起任务上下文");
 });
 
-it("captures the actual project comparison before apply and opens it after the revision changes", async () => {
+it("captures project comparison before apply without replacing the conversation", async () => {
   const source = { revision: 1, filename: "agent.zip", digest: "a", framework_version: "0.7.13", files: [] };
   vi.mocked(studioClient.previewBuilderProjectDiff).mockResolvedValue({before: source, after: {...source, revision: 2}});
   act(() => enableWorkspace());
@@ -373,7 +337,8 @@ it("captures the actual project comparison before apply and opens it after the r
   await click("应用修改");
   expect(studioClient.previewBuilderProjectDiff).toHaveBeenCalledWith("draft-multi", {expectedRevision: 1, changes: {systemPrompt: "输出表格"}});
   expect(vi.mocked(studioClient.previewBuilderProjectDiff).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(studioClient.applyBuilderEdit).mock.invocationCallOrder[0]);
-  expect(host.textContent).toContain("1 → 2 · 已应用");
+  expect(host.querySelector('[aria-label="测试代码差异"]')).toBeNull();
+  expect(host.querySelector('[aria-label="消息输入"]')).not.toBeNull();
   expect(updated.mock.lastCall?.[0].revision).toBe(2);
 });
 
@@ -454,7 +419,7 @@ it("preserves unfinished test input when switching Build and Chat", async () => 
   const input=host.querySelector<HTMLTextAreaElement>('[aria-label="智能体效果测试"] [aria-label="消息输入"]')!;
   await act(async()=>{Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value")!.set!.call(input,"保留这段输入");input.dispatchEvent(new Event("input",{bubbles:true}));});
   await act(async()=>switchMode("chat"));
-  expect(host.querySelector('[aria-label="历史会话"]')).not.toBeNull();
+  expect(host.querySelector('[aria-label="历史会话"]')).toBeNull();
   expect(host.querySelector<HTMLTextAreaElement>('[aria-label="智能体效果测试"] [aria-label="消息输入"]')?.value).toBe("保留这段输入");
   await act(async()=>switchMode("build"));
   expect(host.querySelector<HTMLTextAreaElement>('[aria-label="智能体效果测试"] [aria-label="消息输入"]')?.value).toBe("保留这段输入");
@@ -469,12 +434,10 @@ it("restores persisted turns in chronological order and continues the latest rev
   vi.spyOn(studioClient,"createDraftFromTask").mockResolvedValue({draft:api(initial),recommendation:null} as never);
   await send("创建一个智能体");
   await act(async()=>{enableWorkspace();switchMode("chat");});
-  const session=host.querySelector<HTMLButtonElement>('[aria-label="历史会话"] .sessionList button');
-  // CSS modules can hash the class; query by semantic container instead.
-  const button=session??host.querySelector<HTMLButtonElement>('[aria-label="历史会话"] button[aria-pressed]');
-  expect(button).not.toBeNull();
+  const select=host.querySelector<HTMLSelectElement>('[aria-label="切换测试对话"]');
+  expect(select).not.toBeNull();
   vi.mocked(studioClient.getTryRun).mockImplementation(async(_id,revision,id)=>({...run,draftRevision:revision,run:{...run.run,run_id:id,session_id:"saved-session"},finalText:`回答 ${id}`}));
-  await act(async()=>button!.click());
+  await act(async()=>{select!.value="saved-session";select!.dispatchEvent(new Event("change",{bubbles:true}));});
   const prompts=[...host.querySelectorAll('[data-test-run]')].map(item=>item.textContent);
   expect(prompts[0]).toContain("回答 saved-1");expect(prompts[1]).toContain("回答 saved-2");
   await sendTest("第三轮");

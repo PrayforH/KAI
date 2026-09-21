@@ -233,3 +233,17 @@ it("links the current run into Langfuse, and says so before a run exists", async
   expect(host!.querySelector('a[href^="/api/harness/observability"]')).toBeNull();
   expect(host!.querySelector('.rail-bar-button.is-disabled[aria-label*="Trace"]')).not.toBeNull();
 });
+
+it("uses supplied agent files and their change previews without fetching another task", async () => {
+  const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
+  host = document.createElement("div"); document.body.appendChild(host); root = createRoot(host);
+  const refresh = vi.fn();
+  await act(async () => root!.render(<WorkbenchRail open onClose={vi.fn()} expanded={false} onToggleExpanded={vi.fn()} threadId="draft-a" observabilityHref={null} runPhase={null}
+    workspace={{files:[{artifact_id:"source:agent.py",name:"agent.py",media_type:"text/plain",change:"已修改"}],loading:false,error:"",onRefresh:refresh,renderPreview: file => <pre>{file.name} 的差异</pre>}} />));
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect(host.querySelector('[data-change="已修改"]')).not.toBeNull();
+  await click(rowFor("agent.py"));
+  expect(host.textContent).toContain("agent.py 的差异");
+  expect(button("版本历史")).toBeNull();
+  await click(button("刷新文件"));expect(refresh).toHaveBeenCalledOnce();
+});

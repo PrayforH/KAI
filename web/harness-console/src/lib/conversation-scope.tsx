@@ -7,6 +7,8 @@ import type { LiveResponseSnapshot } from "./live-response-store";
 import type { PendingApprovalSnapshot } from "./approval-store";
 /** A Playground uses the task conversation UI with its own run state, never the active task's globals. */
 export interface ConversationScope {
+  compactComposer?: boolean;
+  composerPlaceholder?: string;
   activity?: RunActivity;
   view?: RunViewModel;
   stream: RunStreamSnapshot;

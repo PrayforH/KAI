@@ -1,0 +1,47 @@
+{
+  "date": "2026-09-21",
+  "frontendTests": {
+    "filesPassed": 122,
+    "passed": 773,
+    "skipped": 1
+  },
+  "localBrowser": {
+    "base": "http://127.0.0.1:3403",
+    "runId": "run_bf3d30728fee4d2598794a869ac0c865",
+    "sessionId": "studio_try_d99001ae6a8bc9aa2f28b83753daecf9",
+    "oneComposer": true,
+    "configInputRetention": true,
+    "historyInputRetention": true,
+    "historyRestore": true,
+    "upload": true,
+    "errors": [],
+    "overflow": false
+  },
+  "editAndRun": {
+    "base": "http://127.0.0.1:3403",
+    "editApply": true,
+    "historyChanges": true,
+    "unifiedComposer": true,
+    "uploadIconOnly": true,
+    "draftRevision": 5,
+    "runId": "run_c48301548b9741e983cbbc5c6547fe5b",
+    "status": "succeeded"
+  },
+  "footerRemoved": true,
+  "limitations": [
+    "构建助手对话与最近改动仅在本次打开期间保留",
+    "质量运营隐藏入口，原服务与明确 URL 仍保留",
+    "历史发布版本无文件快照接口，仅展示版本元数据；新打开期间的修改支持逐行比较"
+  ],
+  "fileAndHistoryPanels": {
+    "base": "http://127.0.0.1:3403",
+    "editApply": true,
+    "historyChanges": true,
+    "separateFileRail": true,
+    "modifiedFileBadge": true,
+    "unifiedComposer": true,
+    "uploadIconOnly": true,
+    "footerRemoved": true,
+    "draftRevision": 12
+  }
+}

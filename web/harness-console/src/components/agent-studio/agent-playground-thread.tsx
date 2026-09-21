@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   AssistantRuntimeProvider,
   useExternalStoreRuntime,
@@ -124,6 +124,8 @@ export function previewThreadMessages(
 }
 export function AgentPlaygroundThread({
   turns,
+  messageOverride,
+  afterLastMessage,
   draft,
   agentName,
   model,
@@ -147,6 +149,8 @@ export function AgentPlaygroundThread({
   onIncomingFilesUsed,
 }: {
   turns: PreviewTurn[];
+  messageOverride?: ThreadMessageLike[];
+  afterLastMessage?: ReactNode;
   draft?: StudioDraft;
   agentName: string;
   model: string;
@@ -185,7 +189,7 @@ export function AgentPlaygroundThread({
     };
   }, []);
   const attachments = useMemo(() => createInputAttachmentAdapter(), []);
-  const messages = useMemo(() => previewThreadMessages(turns), [turns]);
+  const messages = useMemo(() => messageOverride ?? previewThreadMessages(turns), [messageOverride, turns]);
   async function submit(message: AppendMessage, rerun = false) {
     const text = message.content
       .filter((part) => part.type === "text")
@@ -281,6 +285,8 @@ export function AgentPlaygroundThread({
   const pending =
     latest?.approvals.filter((item) => item.status === "pending") ?? [];
   const scope: ConversationScope = {
+    compactComposer: true,
+    composerPlaceholder: "输入任务，或告诉我如何调整智能体…",
     activity,
     view: activity ? reduceRunViewModel(undefined, activity) : undefined,
     stream: { status: busy ? "running" : "idle", runId: latest?.run.run_id },
@@ -307,9 +313,11 @@ export function AgentPlaygroundThread({
       const turn = turns.find(
         (item) => `assistant-${item.result.run.run_id}` === id,
       );
-      if (!turn) return null;
+      const extra = id === messages.at(-1)?.id ? afterLastMessage : null;
+      if (!turn) return extra;
       return (
         <div className={styles.turnExtensions}>
+          {extra}
           {turn.result.run.run_id === latest?.run.run_id &&
             pending.length > 1 && <ApprovalBatch approvals={pending} />}
           <details>

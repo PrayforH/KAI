@@ -26,7 +26,8 @@ it("uses the authoritative current version, preserves construction, and has real
   await act(async()=>root.render(<AgentWorkspace agentName="archive" section="overview"/>));
   const play=[...host.querySelectorAll("a")].find(a=>a.textContent?.includes("开始使用"));
   expect(play?.getAttribute("href")).toBe("/?agent=archive&version=2.0&owner=owner");
-  expect(host.querySelector('a[aria-current="page"]')?.textContent).toContain("概览");
+  expect(host.querySelector('a[href*="section=overview"]')).toBeNull();
+  expect(host.textContent).not.toContain("质量与运营");
   expect(host.textContent).toContain("构建版本 1.0");
   expect(host.querySelector('a[href="/studio/agents/archive?section=playground&draft=draft"]')).not.toBeNull();
 });

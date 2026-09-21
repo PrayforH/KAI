@@ -1,4 +1,5 @@
 "use client";
+import { AgentVersionHistory } from "./agent-version-history";
 import { WebCapabilityStatus } from "../web-configuration";
 import { isAgentVisible } from "../../lib/agent-visibility";
 import { useInternalAgentsPreference } from "../../lib/interface-preferences";
@@ -64,7 +65,7 @@ const AgentBuilderAssistant = dynamic(() => import("./agent-builder-overlays").t
 import styles from "./agent-studio.module.css";
 import { AgentTemplateGallery } from "./agent-template-gallery";
 import { createAgentFromTemplate, type AgentTemplate } from "../../lib/agent-templates";
-import { AgentNavigation } from "./agent-navigation";
+import { type BuildChange } from "./agent-build-assets";
 import { AgentaConfiguration } from "./agenta-configuration";
 import agentaStyles from "./agenta-workspace.module.css";
 
@@ -343,7 +344,8 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
   const [activeSection, setActiveSection] =
     useState<StudioSection>("identity");
   const [agentQuery, setAgentQuery] = useState("");
-  const [agentScope, setAgentScope] = useState("all");
+  const [recentChanges, setRecentChanges] = useState<BuildChange[]>([]);
+  useEffect(() => { setRecentChanges([]); }, [draft.id]);
   const [viewMode, setViewMode] = useState<"catalog" | "editor">("catalog");
   const editorOpened = useRef(false);
   if (viewMode === "editor") editorOpened.current = true;
@@ -401,15 +403,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
     [capabilities],
   );
   useDialogFocus({open: configEditorOpen, panelRef: configEditorRef, onEscape: () => setConfigEditorOpen(false)});
-  useDialogFocus({
-    open: versionHistoryOpen,
-    panelRef: versionHistoryRailRef,
-    initialFocusRef: versionHistoryCloseRef,
-    onEscape: () => {
-      setVersionHistoryOpen(false);
-      setPromoteTarget("");
-    },
-  });
+  useDialogFocus({open: versionHistoryOpen, panelRef: versionHistoryRailRef, initialFocusRef: versionHistoryCloseRef, onEscape: () => {setVersionHistoryOpen(false);setPromoteTarget("");}});
   const visibleMcpOptions = useMemo(
     () => mcpOptionsForDraft(draft, options.mcp),
     [draft.name, draft.domain, options.mcp],
@@ -480,7 +474,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
   );
   const filteredAgentRows = useMemo(() => {
     const query = agentQuery.trim().toLocaleLowerCase();
-    const visible = drafts.filter((agent) => isAgentVisible(agent, showInternalAgents) && (agentScope === "all" || (agentScope === "personal" ? !agent.spaceId : agentScope === "team" ? Boolean(agent.spaceId) : !agent.publishedVersion)));
+    const visible = drafts.filter((agent) => isAgentVisible(agent, showInternalAgents));
     if (!query) return visible;
     return visible.filter((agent) =>
       [agent.displayName, agent.name, agent.version, agent.publishedVersion ?? "草稿"]
@@ -488,7 +482,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
         .toLocaleLowerCase()
         .includes(query),
     );
-  }, [agentQuery, agentScope, drafts, showInternalAgents]);
+  }, [agentQuery, drafts, showInternalAgents]);
 
   useEffect(() => {
     if (!releaseFeedbackOpen) return;
@@ -2043,6 +2037,11 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
     return <main className={styles.studioStateShell} id="main-content"><section className={styles.studioStateCard} role="alert"><span className={styles.studioStateMark}>!</span><h1>{PRODUCT_NAME}数据暂不可用</h1><p>{loadError}</p><button type="button" onClick={() => window.location.reload()}>重新加载</button></section></main>;
   }
 
+  const versionHistoryContent = <AgentVersionHistory key={draft.id} draft={draft} changes={recentChanges} versions={personalVersions} loading={versionHistoryLoading} error={versionHistoryError} canPublish={canPublish} promoting={promotingVersion} confirmVersion={promoteTarget} onConfirm={setPromoteTarget} onPromote={version => void promotePersonalVersion(version)} onRetry={() => {
+    if (!draft.agentId) return;
+    setVersionHistoryLoading(true);setVersionHistoryError("");
+    void studioClient.listPersonalAgentVersions(draft.agentId).then(setPersonalVersions).catch(error => setVersionHistoryError(error instanceof Error ? error.message : "版本历史暂时不可用")).finally(() => setVersionHistoryLoading(false));
+  }} />;
   return (
     <main
       className={`${styles.studioShell} ${styles.workbenchContent} ${viewMode === "editor" ? agentaStyles.frame : ""}`}
@@ -2089,7 +2088,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
             </div>
           </header>
           {templatesOpen && <AgentTemplateGallery busy={templateBusy} error={templateError} onSelect={template => void createTemplate(template)} onBlank={() => {setTemplatesOpen(false);void startNewDraft();}} onClose={() => setTemplatesOpen(false)} />}
-          <nav className={styles.catalogFilters} aria-label="智能体筛选">{[["all", "全部智能体"], ["personal", "我的智能体"], ["team", "团队共享"], ["draft", "未发布"]].map(([value, label]) => <button key={value} aria-pressed={agentScope === value} onClick={() => setAgentScope(value)}>{label}</button>)}<span>{filteredAgentRows.length} 个结果</span></nav>
+
           <div className={styles.agentCatalogList}>
             {filteredAgentRows.map((agent) => (
               <article
@@ -2133,13 +2132,12 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                     <span>{agent.networkToolsEnabled ? "含联网工具" : "仅内部能力"}</span>
                   </div>
                   <div className={styles.agentCatalogFooter}>
-                    <code>{agent.spaceId ? "团队" : "个人"} · 构建版本 {agent.version}</code>
+                    <code>v{agent.version}</code>
                     <span className={styles.agentCardAction} aria-hidden="true">
                       查看工作区 →
                     </span>
                   </div>
                 </button>
-                <button className={styles.catalogEdit} disabled={saving || Boolean(switchingDraftId)} onClick={() => void openDraftEditor(agent.draftId)}>构建与试运行</button>
                 <details className={`${styles.actionMenu} ${styles.agentCatalogMenu}`} data-dismiss-on-outside>
                   <summary aria-label={`${agent.displayName}的更多操作`} title="更多操作">
                     <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" fill="currentColor"><circle cx="5" cy="10" r="1.2"/><circle cx="10" cy="10" r="1.2"/><circle cx="15" cy="10" r="1.2"/></svg>
@@ -2186,7 +2184,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
           </div>
         </section>
       ) : (
-      <><AgentNavigation name={draft.name} label={draft.displayName} draftId={draft.id} active={initialView} onBack={() => void returnToCatalog()} /><section className={styles.editorShell} data-readonly={!canEdit} data-config-editor={configEditorOpen}>
+      <><section className={styles.editorShell} data-readonly={!canEdit} data-config-editor={configEditorOpen}>
         <header className={styles.editorHeader}>
           <button
             type="button"
@@ -2222,45 +2220,13 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
               <button type="button" disabled={!canEdit || subagentBusy}
                 onClick={() => void changePlacement(draft.id, null)}>转为独立智能体</button>
             </div>}
-            {draft.publishedVersion && (
-              <div className={styles.publicationBadge} data-current={publishedCurrent}>
-                <span>{publishedCurrent ? "不可变版本已发布" : "存在历史发布版本"}</span>
-                <code>{draft.name}@{draft.publishedVersion}</code>
-                {draft.publishedHash && <code>{draft.publishedHash.slice(0, 12)}</code>}
-                {draft.agentId && !draft.spaceId && (
-                  <button
-                    type="button"
-                    ref={versionHistoryTriggerRef}
-                    className={styles.versionHistoryButton}
-                    aria-expanded={versionHistoryOpen}
-                    aria-controls="personal-version-history"
-                    onClick={() => {
-                    setVersionHistoryOpen(true);
-                    }}
-                  >
-                    版本历史
-                    <small>{versionHistoryLoading ? "…" : personalVersions.length}</small>
-                  </button>
-                )}
-              </div>
-            )}
+
           </div>
           <div className={styles.headerActions}>
-            <div className={agentaStyles.modeSwitch} role="group" aria-label="Playground 模式"><button aria-pressed={playgroundMode === "build"} onClick={() => setPlaygroundMode("build")}>Build</button><button aria-pressed={playgroundMode === "chat"} onClick={() => setPlaygroundMode("chat")}>Chat</button></div>
+            <button className={styles.headerActionButton} aria-pressed={playgroundMode === "build"} onClick={() => setPlaygroundMode(value => value === "build" ? "chat" : "build")}>配置</button>
+            <button ref={versionHistoryTriggerRef} className={styles.headerActionButton} disabled={!draft.id} aria-expanded={versionHistoryOpen} aria-controls="personal-version-history" onClick={() => setVersionHistoryOpen(true)}>版本历史</button>
             <button className={styles.headerActionButton} disabled={!draft.id} onClick={() => setCodeRequest(value => value + 1)}>代码</button>
-            {draft.id && <button className={styles.headerActionButton} disabled={saving} onClick={async () => { if (dirty) { const saved = await saveDraft(); if (!saved) return; } router.push(`/studio/agents/${encodeURIComponent(draft.name)}?draft=${encodeURIComponent(draft.id)}`); }}>智能体概览 ↗</button>}
 
-            <button
-              type="button"
-              className={`${styles.headerActionButton} ${styles.publishButton}`}
-              data-state={serverValidation && !serverValidation.ready ? "blocked" : "ready"}
-              disabled={!canEdit || !draft.id || saving || inspecting || publishing}
-              onClick={() => void handleReleaseAction()}
-              title="保存草稿、检查发布条件并发布当前版本"
-            >
-              <HeaderActionIcon name="release" />
-              <span>{publishing ? "发布中…" : inspecting ? "检查中…" : "发布"}</span>
-            </button>
                 <input
                   ref={bundleInputRef}
                   hidden
@@ -2285,6 +2251,17 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                   <strong>更多操作</strong>
                   <small>任务 · 导入与导出</small>
                 </header>
+            <button
+              type="button"
+              className={`${styles.headerActionButton} ${styles.publishButton}`}
+              data-state={serverValidation && !serverValidation.ready ? "blocked" : "ready"}
+              disabled={!canEdit || !draft.id || saving || inspecting || publishing}
+              onClick={() => void handleReleaseAction()}
+              title="保存草稿、检查发布条件并发布当前版本"
+            >
+              <HeaderActionIcon name="release" />
+              <span>{publishing ? "发布中…" : inspecting ? "检查中…" : "发布"}</span>
+            </button>
                 {taskHref && (
                   <Link
                     className={styles.actionMenuItem}
@@ -4010,170 +3987,16 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
           </fieldset>
         </div>
 
-        <footer className={styles.editorFooter}>
-          <span className={conflict || versionConflict || notice.includes("阻塞") ? styles.noticeError : styles.noticeDot} aria-hidden="true" />
-          <span title={notice}>{notice}</span>
-          <code>{draft.id ? `revision ${draft.revision}` : "unsaved"}</code>
-        </footer>
+
       </section></>
       )}
 
+      {notice && !importFeedback && !/^(正在读取控制面草稿|已从控制面(?:加载|切换)草稿|已保存到控制面|已通过对话更新)/.test(notice) && <div className={styles.importFeedback} role="status"><span>{notice}</span><button type="button" aria-label="关闭状态提示" onClick={() => setNotice("")}>×</button></div>}
       {importFeedback && <div className={styles.importFeedback} role={importFeedback.error ? "alert" : "status"} data-error={Boolean(importFeedback.error)}><span>{importFeedback.message}</span>{!importingBundle && <button type="button" aria-label="关闭导入提示" onClick={()=>setImportFeedback(null)}>×</button>}</div>}
-      {versionHistoryOpen && (
-        <button
-          type="button"
-          className={styles.contractBackdrop}
-          aria-label="关闭版本历史"
-          onClick={() => {
-            setVersionHistoryOpen(false);
-            setPromoteTarget("");
-          }}
-        />
-      )}
-      <aside
-        ref={versionHistoryRailRef}
-        id="personal-version-history"
-        className={`${styles.contractRail} ${styles.versionHistoryRail}`}
-        aria-label="个人智能体版本历史"
-        role="dialog"
-        aria-modal="true"
-        aria-hidden={!versionHistoryOpen}
-        data-open={versionHistoryOpen}
-      >
-        <div className={styles.contractHeader}>
-          <div>
-            <span>IMMUTABLE RELEASES</span>
-            <strong>版本历史</strong>
-          </div>
-          <div className={styles.contractHeaderActions}>
-            <span className={styles.riskBadge}>
-              {personalVersions.length} 个版本
-            </span>
-            <button
-              type="button"
-              ref={versionHistoryCloseRef}
-              aria-label="关闭版本历史"
-              onClick={() => {
-                setVersionHistoryOpen(false);
-                setPromoteTarget("");
-              }}
-            >
-              <svg viewBox="0 0 16 16" aria-hidden="true">
-                <path d="m4.5 4.5 7 7m0-7-7 7" />
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        <section className={styles.versionHistoryIntro}>
-          <span>当前运行指针</span>
-          <strong>{draft.name}@{currentPersonalVersion ?? "尚未发布"}</strong>
-          <p>切换只影响之后创建的任务。历史版本、已有任务和运行中的 Session 保持原绑定。</p>
-        </section>
-
-        {versionHistoryLoading && (
-          <div className={styles.versionHistoryState} role="status">
-            正在读取不可变版本…
-          </div>
-        )}
-        {versionHistoryError && (
-          <div className={styles.versionHistoryError} role="alert">
-            <strong>版本历史暂时不可用</strong>
-            <span>{versionHistoryError}</span>
-            {draft.agentId && (
-              <button
-                type="button"
-                onClick={() => {
-                  setVersionHistoryError("");
-                  setVersionHistoryLoading(true);
-                  void studioClient.listPersonalAgentVersions(draft.agentId as string)
-                    .then(setPersonalVersions)
-                    .catch((error: unknown) => setVersionHistoryError(
-                      error instanceof Error ? error.message : "版本历史暂时不可用",
-                    ))
-                    .finally(() => setVersionHistoryLoading(false));
-                }}
-              >
-                重新加载
-              </button>
-            )}
-          </div>
-        )}
-
-        {!versionHistoryLoading && !versionHistoryError && (
-          <ol className={styles.versionTimeline}>
-            {personalVersions.map((item, index) => {
-              const current = item.version === item.current_version;
-              const confirming = promoteTarget === item.version;
-              return (
-                <li key={item.version} data-current={current}>
-                  <span className={styles.versionSequence} aria-hidden="true">
-                    {String(personalVersions.length - index).padStart(2, "0")}
-                  </span>
-                  <article>
-                    <header>
-                      <div>
-                        <strong>{item.version}</strong>
-                        {current && <em>当前</em>}
-                      </div>
-                      <time dateTime={item.created_at}>
-                        {new Date(item.created_at).toLocaleString("zh-CN", {
-                          month: "2-digit",
-                          day: "2-digit",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </time>
-                    </header>
-                    <dl>
-                      <div><dt>内容</dt><dd>{item.manifest_hash.slice(0, 12)}</dd></div>
-                      <div><dt>Bundle</dt><dd>{item.package_hash?.slice(0, 12) ?? "未记录"}</dd></div>
-                    </dl>
-                    {current ? (
-                      <p className={styles.versionCurrentNote}>新任务默认使用这个版本</p>
-                    ) : confirming ? (
-                      <div className={styles.versionPromoteConfirm} role="group" aria-label={`确认切换到 ${item.version}`}>
-                        <p>将新任务切换到 {item.version}？已有任务不会改变。</p>
-                        <div>
-                          <button
-                            type="button"
-                            disabled={Boolean(promotingVersion)}
-                            onClick={() => void promotePersonalVersion(item.version)}
-                          >
-                            {promotingVersion === item.version ? "切换中…" : "确认切换"}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={Boolean(promotingVersion)}
-                            onClick={() => setPromoteTarget("")}
-                          >
-                            取消
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        className={styles.versionPromoteButton}
-                        disabled={!canPublish || Boolean(promotingVersion)}
-                        onClick={() => setPromoteTarget(item.version)}
-                      >
-                        设为当前版本
-                      </button>
-                    )}
-                  </article>
-                </li>
-              );
-            })}
-            {personalVersions.length === 0 && (
-              <li className={styles.versionHistoryEmpty}>还没有可切换的发布版本。</li>
-            )}
-          </ol>
-        )}
-
-        <footer className={styles.versionHistoryFootnote}>
-          回退是移动当前指针，不会修改或删除任何不可变版本。
-        </footer>
+      {versionHistoryOpen && <button type="button" className={styles.contractBackdrop} aria-label="关闭版本历史" onClick={() => {setVersionHistoryOpen(false);setPromoteTarget("");}} />}
+      <aside ref={versionHistoryRailRef} id="personal-version-history" className={`${styles.contractRail} ${styles.versionHistoryRail}`} aria-label="智能体版本历史" role="dialog" aria-modal="true" aria-hidden={!versionHistoryOpen} data-open={versionHistoryOpen}>
+        <div className={styles.contractHeader}><div><span>VERSIONS</span><strong>版本历史</strong></div><div className={styles.contractHeaderActions}><span className={styles.riskBadge}>{personalVersions.length} 个版本</span><button type="button" ref={versionHistoryCloseRef} aria-label="关闭版本历史" onClick={() => {setVersionHistoryOpen(false);setPromoteTarget("");}}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 4.5 7 7m0-7-7 7" /></svg></button></div></div>
+        {versionHistoryContent}
       </aside>
       {editorOpened.current && <AgentBuilderAssistant
         workspaceTarget={workspaceTarget}
@@ -4182,6 +4005,8 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
         initialSessionId={initialSessionId}
         playgroundMode={playgroundMode}
         codeRequest={codeRequest}
+        writable={canEdit}
+        onChanges={setRecentChanges}
         buildChatRequest={buildChatRequest}
         configuration={<AgentaConfiguration draft={draft} dirty={dirty} saving={saving} writable={canEdit} onEdit={openConfiguration} onSave={() => void saveDraft()} onPublish={() => void handleReleaseAction()} onCode={() => setCodeRequest(value => value + 1)} onBuildChat={() => setBuildChatRequest(value => value + 1)} />}
         testRequest={testRequest}

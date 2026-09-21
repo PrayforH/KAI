@@ -28,14 +28,8 @@ export function AgentaConfiguration({
   return (
     <section className={styles.configuration} aria-label="智能体配置">
       <header className={styles.configHeader}>
-        <strong>Configuration</strong>
+        <strong>配置</strong>
         <div>
-          <button
-            disabled={!draft.id || saving || !writable}
-            onClick={onPublish}
-          >
-            发布
-          </button>
           <button disabled={!dirty || saving || !writable} onClick={onSave}>
             {saving ? "保存中…" : "保存"}
           </button>
@@ -44,7 +38,7 @@ export function AgentaConfiguration({
       <div className={styles.configScroll}>
         <button className={styles.configRow} onClick={() => onEdit("identity")}>
           <span>
-            ◇ <strong>Model & harness</strong>
+            ◇ <strong>模型</strong>
           </span>
           <small>
             {draft.runtime} · {draft.model || "选择模型"} ›
@@ -52,7 +46,7 @@ export function AgentaConfiguration({
         </button>
         <details className={styles.configGroup} open>
           <summary>
-            <strong>Instructions</strong>
+            <strong>指令</strong>
             <small>1 file</small>
           </summary>
           <button className={styles.fileRow} onClick={() => onEdit("prompt")}>
@@ -71,7 +65,7 @@ export function AgentaConfiguration({
         </details>
         <details className={styles.configGroup} open>
           <summary>
-            <strong>Tools</strong>
+            <strong>工具</strong>
             <small>
               {draft.builtinTools.length +
                 draft.mcpServers.length +
@@ -157,7 +151,7 @@ export function AgentaConfiguration({
           className={styles.configRow}
           onClick={() => onEdit("capabilities")}
         >
-          <strong>Files & knowledge</strong>
+          <strong>文件与知识</strong>
           <small>{draft.knowledgeReferences.length} 项知识引用 ›</small>
         </button>
         <button
@@ -168,37 +162,10 @@ export function AgentaConfiguration({
           <small>{draft.subagents.length} 个协作角色 ›</small>
         </button>
         <button className={styles.configRow} onClick={() => onEdit("runtime")}>
-          <strong>Advanced</strong>
+          <strong>高级设置</strong>
           <small>运行时、权限与沙箱 ›</small>
         </button>
-        <div className={styles.groupLabel}>Triggers</div>
-        {draft.id ? (
-          <>
-            <Link className={styles.configRow} href={operations}>
-              <strong>Subscriptions</strong>
-              <small>应用事件与 Webhook ›</small>
-            </Link>
-            <Link className={styles.configRow} href={operations}>
-              <strong>Schedules</strong>
-              <small>Cron 与时区 ›</small>
-            </Link>
-          </>
-        ) : (
-          <p className={styles.hint}>创建草稿后配置自动运行。</p>
-        )}
-        <div className={styles.groupLabel}>Developer</div>
-        <button
-          className={styles.configRow}
-          disabled={!draft.id}
-          onClick={onCode}
-        >
-          <strong>DeepAgents 代码</strong>
-          <small>文件树与代码差异 ›</small>
-        </button>
-        <button className={styles.configRow} onClick={onBuildChat}>
-          <strong>对话构建</strong>
-          <small>描述需求，审阅修改建议 ›</small>
-        </button>
+
       </div>
     </section>
   );
