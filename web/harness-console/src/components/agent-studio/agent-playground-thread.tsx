@@ -2,16 +2,17 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   AssistantRuntimeProvider,
+  ExportedMessageRepository,
   useExternalStoreRuntime,
   type AppendMessage,
   type AssistantRuntime,
   type ThreadMessageLike,
+  type ThreadMessage,
   type CompleteAttachment,
 } from "@assistant-ui/react";
 import { AgentThread } from "../agent-thread";
 import { TaskModelProvider } from "../task-model-context";
 import { TaskKnowledgeProvider } from "../task-knowledge-context";
-import { RunDetailsProvider } from "../run-details-context";
 import {
   ConversationScopeProvider,
   type ConversationScope,
@@ -26,7 +27,6 @@ import type { StudioDraft } from "../../lib/agent-studio";
 import type { PreviewTurn } from "./agent-preview";
 import { projectTryRunConversation } from "./try-run-stream";
 import { ApprovalBatch } from "./approval-batch";
-import { RunTrace } from "./run-trace";
 import styles from "./build-workspace.module.css";
 const terminalStatuses = new Set([
   "succeeded",
@@ -177,7 +177,6 @@ export function AgentPlaygroundThread({
   onIncomingFilesUsed?: () => void;
 }) {
   const [localError, setLocalError] = useState("");
-  const [traceRun, setTraceRun] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const submitLock = useRef(false);
   const runtimeRef = useRef<AssistantRuntime | null>(null);
@@ -190,6 +189,9 @@ export function AgentPlaygroundThread({
   }, []);
   const attachments = useMemo(() => createInputAttachmentAdapter(), []);
   const messages = useMemo(() => messageOverride ?? previewThreadMessages(turns), [messageOverride, turns]);
+  // This workspace owns a linear transcript. Removed progress placeholders and
+  // messages from another session must not remain as alternate answer branches.
+  const messageRepository = useMemo(() => ExportedMessageRepository.fromArray(messages), [messages]);
   async function submit(message: AppendMessage, rerun = false) {
     const text = message.content
       .filter((part) => part.type === "text")
@@ -230,9 +232,8 @@ export function AgentPlaygroundThread({
       }
     }
   }
-  const runtime = useExternalStoreRuntime({
-    messages,
-    convertMessage: (message: ThreadMessageLike) => message,
+  const runtime = useExternalStoreRuntime<ThreadMessage>({
+    messageRepository,
     isRunning: busy || submitting,
     isDisabled: !ready,
     isSendDisabled: loading,
@@ -281,15 +282,16 @@ export function AgentPlaygroundThread({
         ?.scrollIntoView({ block: "start", behavior: "smooth" });
   }, [selectedRunId]);
   const latest = turns.at(-1)?.result;
-  const activity = latest?.activity ?? undefined;
+  const currentRun = messages.at(-1)?.id === `assistant-${latest?.run.run_id}` ? latest : undefined;
+  const activity = currentRun?.activity ?? undefined;
   const pending =
-    latest?.approvals.filter((item) => item.status === "pending") ?? [];
+    currentRun?.approvals.filter((item) => item.status === "pending") ?? [];
   const scope: ConversationScope = {
     compactComposer: true,
     composerPlaceholder: "输入任务，或告诉我如何调整智能体…",
     activity,
     view: activity ? reduceRunViewModel(undefined, activity) : undefined,
-    stream: { status: busy ? "running" : "idle", runId: latest?.run.run_id },
+    stream: { status: busy ? "running" : "idle", runId: currentRun?.run.run_id },
     live: { text: "", status: "idle", visible: false },
     approval:
       pending.length === 1
@@ -320,10 +322,6 @@ export function AgentPlaygroundThread({
           {extra}
           {turn.result.run.run_id === latest?.run.run_id &&
             pending.length > 1 && <ApprovalBatch approvals={pending} />}
-          <details>
-            <summary>执行详情 · r{turn.result.draftRevision}</summary>
-            <RunTrace events={turn.result.events} />
-          </details>
           {terminalStatuses.has(turn.result.run.status) && (
             <button onClick={() => onImprove(turn)}>改进这次回答</button>
           )}
@@ -368,10 +366,6 @@ export function AgentPlaygroundThread({
             overrideRouteId={null}
             onOverrideChange={() => {}}
           >
-            <RunDetailsProvider
-              selectedRunId={traceRun}
-              onOpen={(value) => setTraceRun(value.run_id)}
-            >
               <AssistantRuntimeProvider runtime={runtime}>
                 <AgentThread
                   userId={userId}
@@ -381,30 +375,10 @@ export function AgentPlaygroundThread({
                   currentTaskBusy
                 />
               </AssistantRuntimeProvider>
-            </RunDetailsProvider>
           </TaskModelProvider>
         </TaskKnowledgeProvider>
       </ConversationScopeProvider>
-      {traceRun && (
-        <aside
-          className={styles.traceDrawer}
-          role="dialog"
-          aria-label="试运行详情"
-        >
-          <header>
-            <strong>运行详情</strong>
-            <button onClick={() => setTraceRun(null)} aria-label="关闭运行详情">
-              ×
-            </button>
-          </header>
-          <RunTrace
-            events={
-              turns.find((item) => item.result.run.run_id === traceRun)?.result
-                .events ?? []
-            }
-          />
-        </aside>
-      )}
+
     </div>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 import { AgentVersionHistory } from "./agent-version-history";
+import { PanelResizeHandle } from "../panel-resize-handle";
 import { WebCapabilityStatus } from "../web-configuration";
 import { isAgentVisible } from "../../lib/agent-visibility";
 import { useInternalAgentsPreference } from "../../lib/interface-preferences";
@@ -3988,6 +3989,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
       {importFeedback && <div className={styles.importFeedback} role={importFeedback.error ? "alert" : "status"} data-error={Boolean(importFeedback.error)}><span>{importFeedback.message}</span>{!importingBundle && <button type="button" aria-label="关闭导入提示" onClick={()=>setImportFeedback(null)}>×</button>}</div>}
       {versionHistoryOpen && <button type="button" className={styles.contractBackdrop} aria-label="关闭版本历史" onClick={() => {setVersionHistoryOpen(false);setPromoteTarget("");}} />}
       <aside ref={versionHistoryRailRef} id="personal-version-history" className={`${styles.contractRail} ${styles.versionHistoryRail}`} aria-label="智能体版本历史" role="dialog" aria-modal="true" aria-hidden={!versionHistoryOpen} data-open={versionHistoryOpen}>
+        {versionHistoryOpen && <PanelResizeHandle panel="history" />}
         <div className={styles.contractHeader}><div><span>VERSIONS</span><strong>版本历史</strong></div><div className={styles.contractHeaderActions}><span className={styles.riskBadge}>{personalVersions.length} 个版本</span><button type="button" ref={versionHistoryCloseRef} aria-label="关闭版本历史" onClick={() => {setVersionHistoryOpen(false);setPromoteTarget("");}}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 4.5 7 7m0-7-7 7" /></svg></button></div></div>
         {versionHistoryContent}
       </aside>

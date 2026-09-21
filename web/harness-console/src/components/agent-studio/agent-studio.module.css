@@ -8203,7 +8203,8 @@
 .studioShell[data-agent-focused=true] .headerActions { flex-wrap: nowrap; }
 .historyDiff { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; overflow-y: auto; font-size: 12px; }
 
-.versionHistoryRail {width:min(940px,82vw)!important;max-width:none!important;}
+.versionHistoryRail {width:min(var(--preferred-history-width,1100px),90vw)!important;max-width:none!important;}
+.versionHistoryRail > :global(.panel-resize-handle) {left:0;}
 .historyLayout {display:grid;grid-template-columns:220px minmax(0,1fr);flex:1;min-height:0;overflow:hidden;}
 .historyVersions {padding:12px;border-right:1px solid var(--studio-line);overflow:auto;}
 .historyVersions > button {width:100%;display:flex;flex-direction:column;gap:6px;padding:12px;text-align:left;background:transparent;border:0;border-radius:6px;color:var(--studio-ink);}

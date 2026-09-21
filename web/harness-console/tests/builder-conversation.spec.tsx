@@ -459,3 +459,17 @@ it("sends a greeting to the current agent instead of the builder", async () => {
   expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.slice(0,3)).toEqual(["draft-multi",1,"你好"]);
   expect(host.querySelector('[data-test-run="run-1"]')).not.toBeNull();
 });
+
+it("replaces builder progress with one answer without retaining a false branch", async () => {
+  let finish!: (reply: Awaited<ReturnType<typeof studioClient.converseBuilder>>) => void;
+  vi.mocked(studioClient.converseBuilder).mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  await act(async () => enableWorkspace());
+  await send("修改系统提示词，以后回答简短一点");
+  expect(studioClient.converseBuilder).toHaveBeenCalledTimes(1);
+  await act(async () => finish({baseRevision:1, action:"reply", reply:"请说明希望保留哪些审查规则。", changedFields:[], changes:{}}));
+  expect(host.querySelectorAll('.harness-branch-picker')).toHaveLength(0);
+  expect(host.querySelector('[data-turn-answer="请说明希望保留哪些审查规则。"]')).not.toBeNull();
+  expect(host.querySelectorAll('.harness-assistant-message')).toHaveLength(1);
+  expect(studioClient.converseBuilder).toHaveBeenCalledTimes(1);
+  expect(studioClient.createTryRun).not.toHaveBeenCalled();
+});

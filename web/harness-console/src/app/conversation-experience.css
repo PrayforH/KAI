@@ -1067,4 +1067,10 @@ body.codex-theme-v1:has(.console-shell) .task-project-toolbar:focus-within .task
 @media (hover: none) {
   body.codex-theme-v1:has(.console-shell) :is(.task-project-create, .task-project-add) { opacity: 1; }
 }
-html body.codex-theme-v1 .user-task-intro .welcome-brand-mark { display: flex; width: 48px; height: 48px; margin: 0 auto 28px; opacity: .28; filter: grayscale(1) blur(.25px); }
+html body.codex-theme-v1 .user-task-intro .welcome-brand-mark { display: flex; width: 48px; height: 48px; margin: 0 auto 28px; transform: translateY(10px); opacity: .28; filter: grayscale(1) blur(.25px); }
+
+/* The agent composer stays at the bottom, including before the first message. */
+body.codex-theme-v1:has(.console-shell) [data-build-workspace="true"] .aui-thread-viewport:has(.user-task-welcome) { justify-content:flex-start; padding-block:0; }
+body.codex-theme-v1:has(.console-shell) [data-build-workspace="true"] .user-task-welcome { flex:1; min-height:0; justify-content:center; padding:0; }
+body.codex-theme-v1:has(.console-shell) [data-build-workspace="true"] .aui-thread-viewport:has(.user-task-welcome) .aui-thread-viewport-footer { position:sticky; bottom:0; width:min(800px,100%); max-width:800px; margin-top:0; padding:2px 0 10px; }
+body.codex-theme-v1:has(.console-shell) [data-build-workspace="true"] .aui-thread-viewport:has(.user-task-welcome) .harness-composer-shell { max-width:800px; }

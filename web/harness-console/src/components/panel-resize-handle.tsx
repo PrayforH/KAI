@@ -9,6 +9,7 @@ const panels = {
   builder: { min: 340, max: 680, initial: 420, side: "right", label: "构建助手" },
   // The drawer overlays the conversation, so it may grow to half the viewport.
   rail: { min: 280, max: 520, initial: 300, side: "right", label: "任务工作区", viewportRatio: 0.5 },
+  history: { min: 640, max: 1600, initial: 1100, side: "right", label: "版本历史", viewportRatio: 0.9 },
 } as const;
 
 /** Shared pointer and keyboard resizing; CSS further limits widths to the viewport. */
