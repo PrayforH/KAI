@@ -45,8 +45,8 @@
     "draftRevision": 12
   },
   "deployment": {
-    "webRevision": "8c1c63ebab804f971a0b0ad2febb771ed5a9c13c",
-    "webImage": "kai/axis-web:evolution-simplify-8c1c63eb",
+    "webRevision": "bc2d2f9f7f47a91768f807f9f0378fa7b7ba7147",
+    "webImage": "kai/axis-web:evolution-simplify-bc2d2f9f",
     "apiRevision": "db2c4da9596a3f9f989c1be0c1cd62ab70b84e63",
     "loginHttpStatus": 200,
     "apiHealthHttpStatus": 200,
@@ -60,6 +60,28 @@
       "uploadIconOnly": true,
       "footerRemoved": true,
       "draftRevision": 14
-    }
-  }
+    },
+    "uploadRun": {
+      "base": "http://172.20.109.173:3302",
+      "runId": "run_53e3ebfcc5074fe3a02d97f4d584d291",
+      "sessionId": "studio_try_76984ea78ed44073bec641fc2e2f7ece",
+      "status": "succeeded",
+      "oneComposer": true,
+      "configInputRetention": true,
+      "historyInputRetention": true,
+      "historyRestore": true,
+      "upload": true,
+      "errors": [],
+      "overflow": false
+    },
+    "qaMaxTurnsRestored": 1
+  },
+  "routingRegression": {
+    "testsPassed": 21,
+    "productionBuild": "passed"
+  },
+  "validationNotes": [
+    "最初 QA 草稿 maxTurns=1，读取附件触发 error_max_turns；临时设为 8 后真实试跑 succeeded，验收后确认 maxTurns 已恢复为 1。",
+    "模型自动意图识别存在误判；明确试跑前缀现在直接执行。"
+  ]
 }
