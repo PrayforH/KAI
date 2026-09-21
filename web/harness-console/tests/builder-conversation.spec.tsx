@@ -77,7 +77,7 @@ beforeEach(() => {
 });
 afterEach(() => { vi.unstubAllGlobals(); act(() => root.unmount()); host.remove(); vi.restoreAllMocks(); updated.mockReset(); });
 async function click(text: string) {
-  await act(async () => { [...host.querySelectorAll("button")].find((button) => button.textContent === text)!.click(); });
+  await act(async () => { [...host.querySelectorAll("button")].find((button) => (button.textContent === text || button.getAttribute("aria-label") === text))!.click(); });
 }
 async function send(value: string) {
   await act(async () => {
@@ -282,7 +282,7 @@ it("keeps build and test contexts separate and opens files on demand", async () 
   expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({continueFromRunId: "run-1"});
   expect(host.querySelector('[aria-label="智能体构建助手"]')?.textContent).not.toContain("试跑结果");
   expect(host.querySelector('[aria-label="智能体效果测试"]')?.textContent).toContain("试跑结果");
-  await act(async () => { (host.querySelector('[aria-label="智能体效果测试"] header button') as HTMLButtonElement).click(); });
+  await act(async () => { (host.querySelector('[aria-label="智能体效果测试"] [aria-label="查看对话文件"]') as HTMLButtonElement).click(); });
   expect(host.querySelector('[aria-label="智能体资产"]')).not.toBeNull();
   expect(host.textContent).toContain("尚无交付文件");
   await click("新对话"); await sendTest("独立案例");

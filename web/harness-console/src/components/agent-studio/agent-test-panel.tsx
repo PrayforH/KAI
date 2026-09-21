@@ -1,11 +1,17 @@
 "use client";
-import { useState } from "react";
+import {
+  useState,
+  type ReactNode,
+  type KeyboardEvent,
+  type FocusEvent,
+} from "react";
 import type { StudioDraft } from "../../lib/agent-studio";
 import type { StudioTryRunSummary } from "../../lib/studio-client";
 import type { PreviewTurn } from "./agent-preview";
 import { AgentPlaygroundThread } from "./agent-playground-thread";
 import styles from "./build-workspace.module.css";
 export function AgentTestPanel({
+  navigation,
   sessionRail = false,
   savedRuns = [],
   historyLoading = false,
@@ -37,6 +43,7 @@ export function AgentTestPanel({
   onConfigureKnowledge = onAssets,
   userId = "playground",
 }: {
+  navigation?: ReactNode;
   sessionRail?: boolean;
   savedRuns?: StudioTryRunSummary[];
   historyLoading?: boolean;
@@ -147,69 +154,136 @@ export function AgentTestPanel({
         </aside>
       )}
       <section className={styles.testPanel} aria-label="智能体效果测试">
-        <header className={styles.panelHeader}>
-          <div>
-            <strong>Chat</strong>
-            <small>{model || "智能体默认模型"}</small>
-          </div>
-          <div className={styles.headerActions}>
-            <button onClick={onAssets}>文件</button>
-            <button disabled={locked} onClick={reset}>
-              新对话
+        <header className={styles.conversationHeader}>
+          {navigation}
+          <div className={styles.conversationControls}>
+            {!sessionRail && sessions.length > 0 && onSelectSession ? (
+              <details
+                className={styles.conversationMenu}
+                onKeyDown={dismissMenu}
+                onBlur={blurMenu}
+              >
+                <summary
+                  aria-label="选择试跑会话"
+                  title={turns[0]?.prompt || "新对话"}
+                >
+                  <span>{turns[0]?.prompt || "新对话"}</span>
+                  <span aria-hidden="true">⌄</span>
+                </summary>
+                <div className={styles.conversationPopover}>
+                  <label>
+                    历史会话
+                    <select
+                      aria-label="切换测试对话"
+                      value={sessionId}
+                      disabled={locked}
+                      onChange={(event) => {
+                        setSeed(undefined);
+                        onSelectSession(event.target.value);
+                        event.currentTarget
+                          .closest("details")
+                          ?.removeAttribute("open");
+                      }}
+                    >
+                      <option value="">新对话</option>
+                      {sessions.map((item, index) => (
+                        <option key={item.id} value={item.id}>
+                          对话 {index + 1} · {item.prompt.slice(0, 36)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {historyError && <p role="alert">{historyError}</p>}
+                </div>
+              </details>
+            ) : (
+              <span
+                className={styles.conversationTitle}
+                title={turns[0]?.prompt}
+              >
+                {turns[0]?.prompt || "新对话"}
+              </span>
+            )}
+            <button
+              aria-label="新对话"
+              title="新对话"
+              disabled={locked}
+              onClick={reset}
+            >
+              ＋
             </button>
+            <details
+              className={styles.conversationMenu}
+              onKeyDown={dismissMenu}
+              onBlur={blurMenu}
+            >
+              <summary
+                className={styles.moreSummary}
+                aria-label="对话选项"
+                title="对话选项"
+              >
+                ···
+              </summary>
+              <div className={styles.conversationPopover}>
+                <button
+                  aria-label="查看对话文件"
+                  onClick={(event) => {
+                    onAssets();
+                    event.currentTarget
+                      .closest("details")
+                      ?.removeAttribute("open");
+                  }}
+                >
+                  查看对话文件
+                </button>
+                {!!examples.length && (
+                  <label>
+                    从评测用例开始
+                    <select
+                      aria-label="选择评测用例"
+                      value=""
+                      disabled={locked}
+                      onChange={(event) => {
+                        const sample = examples.find(
+                          (item) => item.id === event.target.value,
+                        );
+                        if (sample)
+                          setSeed({ key: Date.now(), text: sample.prompt });
+                        event.currentTarget
+                          .closest("details")
+                          ?.removeAttribute("open");
+                      }}
+                    >
+                      <option value="">选择用例填入输入框</option>
+                      {examples.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.id} · {item.prompt.slice(0, 60)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <small>
+                  草稿 r{revision}
+                  {turns.length ? ` · 当前对话 ${turns.length} 轮` : ""}
+                </small>
+              </div>
+            </details>
           </div>
         </header>
-        {!sessionRail && sessions.length > 0 && onSelectSession && (
-          <label className={styles.sessionPicker}>
-            测试对话
-            <select
-              aria-label="切换测试对话"
-              value={sessionId}
-              disabled={locked}
-              onChange={(event) => {
-                setSeed(undefined);
-                onSelectSession(event.target.value);
-              }}
-            >
-              <option value="">新对话</option>
-              {sessions.map((item, index) => (
-                <option key={item.id} value={item.id}>
-                  对话 {index + 1} · {item.prompt.slice(0, 36)}
-                </option>
-              ))}
-            </select>
-          </label>
+        {(!ready || dirty || (last && last.draftRevision !== revision)) && (
+          <div className={styles.revisionNote} role="status">
+            {!ready
+              ? "先创建智能体，再开始对话"
+              : dirty
+                ? "发送前会保存配置修改"
+                : `配置已更新至 r${revision} · 下一次测试将开启新会话`}
+          </div>
         )}
-        <div className={styles.revisionNote} role="status">
-          {!ready
-            ? "先创建智能体，再开始对话"
-            : dirty
-              ? "发送前会保存配置修改"
-              : last && last.draftRevision !== revision
-                ? `配置已更新至 r${revision} · 下一次测试将开启新会话`
-                : `草稿 r${revision} · ${turns.length ? `当前对话 ${turns.length} 轮` : "新对话"}`}
-        </div>
-        {!!examples.length && (
-          <label className={styles.sessionPicker}>
-            从评测用例开始
-            <select
-              value=""
-              disabled={locked}
-              onChange={(event) => {
-                const sample = examples.find(
-                  (item) => item.id === event.target.value,
-                );
-                if (sample) setSeed({ key: Date.now(), text: sample.prompt });
-              }}
-            >
-              <option value="">选择一个用例填入输入框</option>
-              {examples.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.id} · {item.prompt.slice(0, 60)}
-                </option>
-              ))}
-            </select>
-          </label>
+        {!sessionRail && historyError && (
+          <p className={styles.revisionNote} role="alert">
+            {historyError}
+          </p>
         )}
         <AgentPlaygroundThread
           key={`${draftId}:${conversationEpoch}`}
@@ -239,4 +313,14 @@ export function AgentTestPanel({
       </section>
     </div>
   );
+}
+
+function dismissMenu(event: KeyboardEvent<HTMLDetailsElement>) {
+  if (event.key !== "Escape") return;
+  event.currentTarget.open = false;
+  event.currentTarget.querySelector("summary")?.focus();
+}
+function blurMenu(event: FocusEvent<HTMLDetailsElement>) {
+  if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+    event.currentTarget.open = false;
 }

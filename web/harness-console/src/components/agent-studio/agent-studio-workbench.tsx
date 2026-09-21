@@ -2187,7 +2187,6 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
         </section>
       ) : (
       <><AgentNavigation name={draft.name} label={draft.displayName} draftId={draft.id} active={initialView} onBack={() => void returnToCatalog()} /><section className={styles.editorShell} data-readonly={!canEdit} data-config-editor={configEditorOpen}>
-        <div className={agentaStyles.breadcrumb}>Agents <span>/</span> {draft.displayName} <span>/</span> {initialView === "sessions" ? "Sessions" : "Playground"}</div>
         <header className={styles.editorHeader}>
           <button
             type="button"

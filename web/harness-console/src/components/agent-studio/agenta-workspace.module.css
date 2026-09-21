@@ -337,20 +337,6 @@
     display: none;
   }
 }
-.breadcrumb {
-  height: 40px;
-  flex: 0 0 40px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 0 20px;
-  border-bottom: 1px solid var(--studio-line, var(--codex-line));
-  color: var(--studio-muted, var(--codex-muted));
-  font-size: 12px;
-}
-.breadcrumb span {
-  opacity: 0.5;
-}
 .modeSwitch {
   display: flex;
   padding: 3px;
