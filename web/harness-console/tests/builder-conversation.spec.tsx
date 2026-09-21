@@ -79,6 +79,17 @@ afterEach(() => { vi.unstubAllGlobals(); act(() => root.unmount()); host.remove(
 async function click(text: string) {
   await act(async () => { [...host.querySelectorAll("button")].find((button) => (button.textContent === text || button.getAttribute("aria-label") === text))!.click(); });
 }
+// Starting a conversation and switching between them share one menu, so the
+// new-conversation row lives behind the session summary.
+async function startNewConversation() {
+  await act(async () => {
+    (host.querySelector('[aria-label="会话：新建或切换"]') as HTMLElement).click();
+  });
+  await act(async () => {
+    const menu = host.querySelector('[aria-label="会话：新建或切换"]')!.closest("details")!;
+    [...menu.querySelectorAll("button")].find((button) => button.textContent?.includes("新对话"))!.click();
+  });
+}
 async function send(value: string) {
   await act(async () => {
     const input = host.querySelector<HTMLTextAreaElement>('[aria-label="智能体构建助手"] textarea:not([aria-label="对话预览输入"])') ?? host.querySelector<HTMLTextAreaElement>('[aria-label="消息输入"]')!;
@@ -291,7 +302,7 @@ it("uses one composer to edit and run without losing task context", async () => 
   expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({});
   expect(host.textContent).toContain("业务原始问题");
   expect(host.querySelectorAll("textarea")).toHaveLength(1);
-  await click("新对话"); await sendTest("独立案例");
+  await startNewConversation(); await sendTest("独立案例");
   expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({});
 });
 
@@ -395,7 +406,7 @@ it("starts an empty test conversation and can resume a chosen history with its l
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, "未发送内容");
     input.dispatchEvent(new Event("input", {bubbles:true}));
   });
-  await click("新对话");
+  await startNewConversation();
   expect(panel().querySelectorAll("[data-test-run]")).toHaveLength(0);
   expect(panel().querySelector("textarea")!.value).toBe("");
   expect(panel().textContent).toContain("帮你做些什么？");
@@ -403,8 +414,12 @@ it("starts an empty test conversation and can resume a chosen history with its l
   expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({});
   expect(panel().querySelectorAll("[data-test-run]")).toHaveLength(1);
   await act(async () => {
-    const select = panel().querySelector("select")!;
-    select.value = "session-run-1";select.dispatchEvent(new Event("change",{bubbles:true}));
+    (panel().querySelector('[aria-label="会话：新建或切换"]') as HTMLElement).click();
+  });
+  await act(async () => {
+    const menu = panel().querySelector('[aria-label="会话：新建或切换"]')!.closest("details")!;
+    const row = [...menu.querySelectorAll("button")].find((item) => /第一组/.test(item.textContent ?? ""));
+    row!.click();
   });
   expect(panel().querySelectorAll("[data-test-run]")).toHaveLength(2);
   await sendTest("回到第一组继续追问");
@@ -433,10 +448,13 @@ it("restores persisted turns in chronological order and continues the latest rev
   vi.spyOn(studioClient,"createDraftFromTask").mockResolvedValue({draft:api(initial),recommendation:null} as never);
   await send("创建一个智能体");
   await act(async()=>{enableWorkspace();switchMode("chat");});
-  const select=host.querySelector<HTMLSelectElement>('[aria-label="切换测试对话"]');
-  expect(select).not.toBeNull();
+  const sessionMenu=host.querySelector('[aria-label="会话：新建或切换"]');
+  expect(sessionMenu).not.toBeNull();
   vi.mocked(studioClient.getTryRun).mockImplementation(async(_id,revision,id)=>({...run,draftRevision:revision,run:{...run.run,run_id:id,session_id:"saved-session"},finalText:`回答 ${id}`}));
-  await act(async()=>{select!.value="saved-session";select!.dispatchEvent(new Event("change",{bubbles:true}));});
+  await act(async()=>{(sessionMenu as HTMLElement).click();});
+  const sessionRow=[...host.querySelectorAll("button")].find(item=>/对话 1/.test(item.textContent ?? ""));
+  expect(sessionRow).toBeTruthy();
+  await act(async()=>{sessionRow!.click();});
   const prompts=[...host.querySelectorAll('[data-test-run]')].map(item=>item.textContent);
   expect(prompts[0]).toContain("回答 saved-1");expect(prompts[1]).toContain("回答 saved-2");
   await sendTest("第三轮");

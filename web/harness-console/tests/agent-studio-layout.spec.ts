@@ -46,6 +46,13 @@ const styles = readFileSync(
   join(process.cwd(), "src/components/agent-studio/agent-studio.module.css"),
   "utf8",
 );
+const agentaConfiguration = readFileSync(
+  join(
+    process.cwd(),
+    "src/components/agent-studio/agenta-configuration.tsx",
+  ),
+  "utf8",
+);
 const appStyles = readFileSync(
   join(process.cwd(), "src/app/styles.css"),
   "utf8",
@@ -318,7 +325,12 @@ describe("Agent Studio management page", () => {
   });
 
   it("uses one action-button contract and structured overflow menu states", () => {
-    expect(workbench.match(/styles\.headerActionButton/g)).toHaveLength(3);
+    // The configuration's code view belongs to the configuration panel, so the
+    // top bar keeps only the release action and the overflow menu.
+    expect(workbench.match(/styles\.headerActionButton/g)).toHaveLength(2);
+    expect(workbench).not.toContain(">代码</button>");
+    expect(agentaConfiguration).toContain("onClick={onCode}");
+    expect(agentaConfiguration).toContain("查看这份配置的代码视图");
     expect(workbench.match(/className=\{styles\.actionMenuItem\}/g)).toHaveLength(12);
     expect(workbench).not.toContain("copilot-drawer");
     expect(workbench).not.toContain("CopilotDrawer");
