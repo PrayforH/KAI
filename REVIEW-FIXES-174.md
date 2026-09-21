@@ -6,12 +6,20 @@
 
 ## 部署内容
 
-| 组件 | 镜像 | 说明 |
+镜像全部在本地 buildx 构建 linux/amd64 后推送 Harbor，174 只负责拉取与重建。先做过一次
+174 侧增量镜像（只为快速验证），随后已用 Harbor 全量镜像替换，当前运行的就是下面这两个 digest。
+
+| 组件 | 镜像 | digest |
 | --- | --- | --- |
-| API | `kai/axis-api:reviewfix-20260921` | 基于原运行镜像的增量层，只覆盖 `src/harness` |
-| Worker ×3 | `kai/axis-worker:reviewfix-20260921` | 同上 |
-| Web（3301） | `harbor.shdata.com:5000/agent-studio/amd64/agent-studio-web:reviewfix-20260921` | 本地 buildx 构建 linux/amd64 后推送 |
-| Web（3501） | 同上 | `update_3501.sh reviewfix-20260921`，旧容器保留为 `axis-web-submenus-20260921-rollback-reviewfix-20260921` |
+| API | `harbor.shdata.com:5000/agent-studio/amd64/agent-studio-api:reviewfix-20260921` | `sha256:6d0febe3356cdb8e05a05f38d1b7588913f31e51a053721564ee4fb1a9e8b8a3` |
+| Worker ×3 | 同上（compose 用 `entrypoint: entrypoint-worker` 区分） | 同上 |
+| Web（3301） | `harbor.shdata.com:5000/agent-studio/amd64/agent-studio-web:reviewfix-20260921` | `sha256:566507a0fe5d92bf6c7c98d73929d72bc13b3a70b8b428dad0ff5ddab7247802` |
+| Web（3501） | 同一 web 镜像 | 同上；`update_3501.sh reviewfix-20260921`，旧容器保留为 `axis-web-submenus-20260921-rollback-reviewfix-20260921` |
+
+构建命令：`HARNESS_BUILD_COMPONENTS="api web" bash scripts/build_harbor_174.sh reviewfix-20260921`；
+174 上的 overlay（`compose.deepagents-174.yaml`）把 api/worker/web 的 `image:` 指向上述 Harbor tag，
+沿用 `up-deepagents-174.sh` 重建。从运行基线 `4f95e64b` 到本分支没有依赖、迁移或内置资产差异，
+所以全量镜像的差异就是源码。
 
 无数据库迁移：本次只改 `src/harness` 与 `web/harness-console`。
 
@@ -51,7 +59,9 @@
 
 ## 已知与本轮无关的既有问题
 
-- 174 主机上 `npm ci` 在 Docker 构建中崩溃（`Exit handler never called!`），所以 web 镜像改为
-  在本地构建 amd64 并推 Harbor，再在 174 拉取。
+- 174 主机上 `npm ci` 在 Docker 构建中崩溃（`Exit handler never called!`），所以 api/web 镜像统一
+  在本地 buildx 构建并推 Harbor，174 只拉取；`update_3501.sh` 与 overlay 都不在 174 上构建。
+- 174 主机没有 python3/uv，镜像内 venv 无 pytest：测试只能在本地跑，174 只做运行态验证
+  （脚本放在 `/tmp` 后用 `docker cp` 进容器执行）。
 - `docs/deployment.md` 等文档里的历史设计记录仍提到 `tavily-readonly`，属历史文档；
   运行手册（`local-development.md` / `deployment.md` 的配置段）已按当前实现改写。
