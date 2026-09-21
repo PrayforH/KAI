@@ -398,7 +398,7 @@ it("starts an empty test conversation and can resume a chosen history with its l
   await click("新对话");
   expect(panel().querySelectorAll("[data-test-run]")).toHaveLength(0);
   expect(panel().querySelector("textarea")!.value).toBe("");
-  expect(panel().textContent).toContain("开始一个新任务");
+  expect(panel().textContent).toContain("帮你做些什么？");
   await sendTest("第二组独立问题");
   expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({});
   expect(panel().querySelectorAll("[data-test-run]")).toHaveLength(1);

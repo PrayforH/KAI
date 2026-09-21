@@ -90,8 +90,8 @@ it("registers the approval renderer through the assistant-ui Thread config", () 
 it("presents task-first guidance through a custom assistant-ui welcome", () => {
   const html = renderToStaticMarkup(<AgentThread userId="user-a" threadId="thread-a" />);
 
-  expect(html).toContain("开始一个新任务");
-  expect(html).toContain("执行过程、工具调用和产出，都会留在这段对话里");
+  expect(html).toContain("今天想一起完成些什么？");
+  expect(html).not.toContain("执行过程、工具调用和产出，都会留在这段对话里");
   expect(html).not.toContain("常规操作自动完成");
   expect(html).not.toContain("隔离执行 · 自动风险分级");
   expect(html).not.toContain("分析与规划");

@@ -8195,7 +8195,11 @@
 
 /* Focused desktop workspace: one canvas; auxiliary history stays in a drawer. */
 .studioShell.workbenchContent[data-agent-focused=true] { grid-template-columns: minmax(0,1fr); }
-.studioShell[data-agent-focused=true] .editorBackButton { display: inline-flex; }
+.studioShell[data-agent-focused=true] .titleBlock { justify-content: flex-start; text-align: left; }
+:global(.studio-unified-content[data-sidebar-collapsed="true"]) .studioShell[data-agent-focused=true] .editorHeader { padding-left: 58px; }
+.versionTrigger { border: 1px solid var(--studio-line); border-radius: 5px; background: var(--studio-panel-subtle); color: var(--studio-ink-soft); font: inherit; padding: 3px 7px; cursor: pointer; }
+.versionTrigger:hover { background: var(--studio-panel); color: var(--studio-ink); }
+.versionTrigger:focus-visible { outline: 2px solid var(--studio-muted); outline-offset: 2px; }
 .studioShell[data-agent-focused=true] .headerActions { flex-wrap: nowrap; }
 .historyDiff { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; overflow-y: auto; font-size: 12px; }
 

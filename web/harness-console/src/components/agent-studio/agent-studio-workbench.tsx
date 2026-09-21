@@ -2186,17 +2186,11 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
       ) : (
       <><section className={styles.editorShell} data-readonly={!canEdit} data-config-editor={configEditorOpen}>
         <header className={styles.editorHeader}>
-          <button
-            type="button"
-            className={styles.editorBackButton}
-            onClick={() => void returnToCatalog()}
-          >
-            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 10H4m5-6-6 6 6 6" /></svg><span>智能体</span>
-          </button>
           <div className={styles.titleBlock}>
             <div className={styles.eyebrow}>
               <span className={styles.draftDot} />
-              {publishedCurrent ? "已发布" : "草稿"} (v{draft.version})
+              {publishedCurrent ? "已发布" : "草稿"}
+              <button ref={versionHistoryTriggerRef} className={styles.versionTrigger} disabled={!draft.id} aria-label={`版本历史 · v${draft.version}`} aria-expanded={versionHistoryOpen} aria-controls="personal-version-history" title="查看版本历史" onClick={() => setVersionHistoryOpen(true)}>v{draft.version}</button>
               <span className={styles.syncState} data-dirty={dirty} role="status">
                 <span aria-hidden="true">·</span>
                 {saving
@@ -2223,8 +2217,17 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
 
           </div>
           <div className={styles.headerActions}>
-            <button className={styles.headerActionButton} aria-pressed={playgroundMode === "build"} onClick={() => setPlaygroundMode(value => value === "build" ? "chat" : "build")}>配置</button>
-            <button ref={versionHistoryTriggerRef} className={styles.headerActionButton} disabled={!draft.id} aria-expanded={versionHistoryOpen} aria-controls="personal-version-history" onClick={() => setVersionHistoryOpen(true)}>版本历史</button>
+            <button
+              type="button"
+              className={`${styles.headerActionButton} ${styles.publishButton}`}
+              data-state={serverValidation && !serverValidation.ready ? "blocked" : "ready"}
+              disabled={!canEdit || !draft.id || saving || inspecting || publishing}
+              onClick={() => void handleReleaseAction()}
+              title="保存草稿、检查发布条件并发布当前版本"
+            >
+              <HeaderActionIcon name="release" />
+              <span>{publishing ? "发布中…" : inspecting ? "检查中…" : "发布"}</span>
+            </button>
             <button className={styles.headerActionButton} disabled={!draft.id} onClick={() => setCodeRequest(value => value + 1)}>代码</button>
 
                 <input
@@ -2251,17 +2254,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                   <strong>更多操作</strong>
                   <small>任务 · 导入与导出</small>
                 </header>
-            <button
-              type="button"
-              className={`${styles.headerActionButton} ${styles.publishButton}`}
-              data-state={serverValidation && !serverValidation.ready ? "blocked" : "ready"}
-              disabled={!canEdit || !draft.id || saving || inspecting || publishing}
-              onClick={() => void handleReleaseAction()}
-              title="保存草稿、检查发布条件并发布当前版本"
-            >
-              <HeaderActionIcon name="release" />
-              <span>{publishing ? "发布中…" : inspecting ? "检查中…" : "发布"}</span>
-            </button>
+
                 {taskHref && (
                   <Link
                     className={styles.actionMenuItem}
@@ -4004,11 +3997,12 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
         onConfigureKnowledge={() => openConfiguration("capabilities")}
         initialSessionId={initialSessionId}
         playgroundMode={playgroundMode}
+        onExpandConfiguration={() => setPlaygroundMode("build")}
         codeRequest={codeRequest}
         writable={canEdit}
         onChanges={setRecentChanges}
         buildChatRequest={buildChatRequest}
-        configuration={<AgentaConfiguration draft={draft} dirty={dirty} saving={saving} writable={canEdit} onEdit={openConfiguration} onSave={() => void saveDraft()} onPublish={() => void handleReleaseAction()} onCode={() => setCodeRequest(value => value + 1)} onBuildChat={() => setBuildChatRequest(value => value + 1)} />}
+        configuration={<AgentaConfiguration onCollapse={() => setPlaygroundMode("chat")} draft={draft} dirty={dirty} saving={saving} writable={canEdit} onEdit={openConfiguration} onSave={() => void saveDraft()} onPublish={() => void handleReleaseAction()} onCode={() => setCodeRequest(value => value + 1)} onBuildChat={() => setBuildChatRequest(value => value + 1)} />}
         testRequest={testRequest}
         open={viewMode === "editor" && Boolean(workspaceTarget)}
         mode={builderAssistantMode}

@@ -107,7 +107,7 @@ export function AgentBuilderAssistant({
   hasUnsavedChanges,
   onUpdated,
   creationSession = 0,
-  workspaceTarget, writable = true, onChanges, testRequest = 0, userId, onConfigureKnowledge, initialSessionId, configuration, playgroundMode = "build", codeRequest = 0, buildChatRequest = 0,
+  workspaceTarget, writable = true, onChanges, testRequest = 0, userId, onConfigureKnowledge, initialSessionId, configuration, playgroundMode = "build", codeRequest = 0, buildChatRequest = 0, onExpandConfiguration,
 }: {
   open: boolean;
   mode: AssistantMode;
@@ -129,6 +129,7 @@ export function AgentBuilderAssistant({
   userId?: string;
   onConfigureKnowledge?: () => void;
   playgroundMode?: "build" | "chat";
+  onExpandConfiguration?: () => void;
   codeRequest?: number;
   buildChatRequest?: number;
   testRequest?: number;
@@ -770,7 +771,7 @@ export function AgentBuilderAssistant({
         {assetsOpen && <AgentWorkspaceFiles key={activeDraft.id} draft={activeDraft} baseline={fileBaseline.current} turns={visibleTurns} onClose={() => setAssetsOpen(false)} />}
         {codeView && <AgentProjectCode key={activeDraft.id} draftId={draftReady ? activeDraft.id : ""} revision={activeDraft.revision} name={activeDraft.name || activeDraft.displayName} dirty={hasUnsavedChanges} comparison={codeComparison} comparisonPending={comparisonPending} onClose={() => setCodeView(false)} />}
         <div className={workspaceStyles.preservedPanel} hidden={codeView}>
-          <AgentTestPanel navigation={<strong>对话</strong>} draft={activeDraft} userId={userId} onConfigureKnowledge={onConfigureKnowledge} sessionRail={false} savedRuns={savedRuns} historyLoading={historyLoading} historyError={historyError} examples={[]} draftId={activeDraft.id} revision={activeDraft.revision} agentName={activeDraft.displayName} model={activeDraft.model} turns={visibleTurns} history={turns} sessionId={testSessionId} conversationEpoch={testConversationEpoch}
+          <AgentTestPanel navigation={<>{playgroundMode === "chat" && onExpandConfiguration && <button type="button" aria-label="展开配置栏" title="展开配置栏" aria-expanded="false" onClick={onExpandConfiguration}><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="2" /><path d="M8 4v12m3-9 3 3-3 3" /></svg></button>}<strong>对话</strong></>} draft={activeDraft} userId={userId} onConfigureKnowledge={onConfigureKnowledge} sessionRail={false} savedRuns={savedRuns} historyLoading={historyLoading} historyError={historyError} examples={[]} draftId={activeDraft.id} revision={activeDraft.revision} agentName={activeDraft.displayName} model={activeDraft.model} turns={visibleTurns} history={turns} sessionId={testSessionId} conversationEpoch={testConversationEpoch}
             messageOverride={transcript} inputSeed={inputSeed} afterLastMessage={reviewContent}
             onSelectSession={id => void selectSession(id)} busy={active || editing || applying || readingMaterials} ready={true} dirty={hasUnsavedChanges} error={error} selectedRunId={selectedRunId}
             onSend={sendUnified}

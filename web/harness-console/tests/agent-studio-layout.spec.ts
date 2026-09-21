@@ -318,7 +318,7 @@ describe("Agent Studio management page", () => {
   });
 
   it("uses one action-button contract and structured overflow menu states", () => {
-    expect(workbench.match(/styles\.headerActionButton/g)).toHaveLength(5);
+    expect(workbench.match(/styles\.headerActionButton/g)).toHaveLength(3);
     expect(workbench.match(/className=\{styles\.actionMenuItem\}/g)).toHaveLength(12);
     expect(workbench).not.toContain("copilot-drawer");
     expect(workbench).not.toContain("CopilotDrawer");

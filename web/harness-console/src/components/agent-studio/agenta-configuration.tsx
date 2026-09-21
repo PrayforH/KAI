@@ -13,6 +13,7 @@ export function AgentaConfiguration({
   onPublish,
   onCode,
   onBuildChat,
+  onCollapse,
 }: {
   draft: StudioDraft;
   dirty: boolean;
@@ -23,6 +24,7 @@ export function AgentaConfiguration({
   onPublish: () => void;
   onCode: () => void;
   onBuildChat: () => void;
+  onCollapse?: () => void;
 }) {
   const operations = `/studio/agents/${encodeURIComponent(draft.name)}?${new URLSearchParams({ draft: draft.id, section: "automation" })}`;
   return (
@@ -33,6 +35,7 @@ export function AgentaConfiguration({
           <button disabled={!dirty || saving || !writable} onClick={onSave}>
             {saving ? "保存中…" : "保存"}
           </button>
+          {onCollapse && <button className={styles.configCollapse} aria-label="收起配置栏" title="收起配置栏" aria-expanded="true" onClick={onCollapse}><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="2" /><path d="M8 4v12m5-9-3 3 3 3" /></svg></button>}
         </div>
       </header>
       <div className={styles.configScroll}>

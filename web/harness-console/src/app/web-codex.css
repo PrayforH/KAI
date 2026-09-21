@@ -1908,6 +1908,8 @@ body.codex-theme-v1:has(.console-shell) .user-task-hero {
   flex-grow: 0;
 }
 
+body.codex-theme-v1:has(.console-shell) .user-task-intro { width: 100%; max-width: none; }
+
 body.codex-theme-v1:has(.console-shell) .user-task-kicker,
 body.codex-theme-v1:has(.console-shell) .user-task-intro > p:last-child {
   display: none;
@@ -1918,12 +1920,14 @@ body.codex-theme-v1:has(.console-shell) .user-task-intro h1 {
   margin: 0;
   color: #d8d8d8;
   font-size: clamp(26px, 2.4vw, 36px);
-  font-weight: 610;
+  font-weight: 400;
   line-height: 1.15;
   letter-spacing: -0.035em;
   text-align: center;
   text-wrap: balance;
 }
+
+.welcome-agent-name { margin-inline: .25em; text-decoration: underline dotted; text-underline-offset: .18em; text-decoration-color: var(--codex-faint); overflow-wrap: anywhere; }
 
 body.codex-theme-v1:has(.console-shell) .aui-thread-viewport:has(.user-task-welcome) .aui-thread-viewport-footer {
   position: relative;

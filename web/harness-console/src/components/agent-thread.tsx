@@ -5,6 +5,7 @@ import { startSteeringPolling } from "../lib/steering-poller";
 import { ConversationControl } from "./conversation-control";
 import { MessageAttachmentView } from "./message-attachment-view";
 import { useThreadHistoryReady } from "./thread-history-ready";
+import { ProductBrandMark } from "./product-brand";
 
 import Link from "next/link";
 import {
@@ -970,6 +971,8 @@ function ApprovalToolBridge({
 }
 
 export function UserTaskWelcome() {
+  const scope = useConversationScope();
+  const { selected } = useContext(AgentSelectionContext);
   // While the stored conversation is loading the thread is empty by definition,
   // so the welcome would flash and be replaced a moment later.
   if (!useThreadHistoryReady()) return null;
@@ -977,11 +980,8 @@ export function UserTaskWelcome() {
     <ThreadWelcome.Root className="user-task-welcome">
       <ThreadWelcome.Center className="user-task-hero">
         <div className="user-task-intro">
-          <p className="user-task-kicker"><span aria-hidden="true" />Agent Studio</p>
-          <h1>开始一个新任务</h1>
-          <p>
-            描述要达成的结果，或附上资料。执行过程、工具调用和产出，都会留在这段对话里。
-          </p>
+          <ProductBrandMark className="welcome-brand-mark" />
+          <h1>{scope && selected ? <>今天想让<span className="welcome-agent-name">{selected.displayName}</span>帮你做些什么？</> : "今天想一起完成些什么？"}</h1>
         </div>
       </ThreadWelcome.Center>
     </ThreadWelcome.Root>

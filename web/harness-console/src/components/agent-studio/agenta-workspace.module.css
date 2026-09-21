@@ -138,6 +138,7 @@
   overflow: auto;
   min-height: 0;
 }
+.configHeader .configCollapse { display: grid; place-items: center; padding: 4px; border-color: transparent; background: transparent; }
 .configRow {
   width: 100%;
   display: flex;

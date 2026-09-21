@@ -228,10 +228,8 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) {
 @keyframes index-preview-in { from { opacity: 0; transform: translate(5px, -50%) scale(.98); } to { opacity: 1; transform: translate(0, -50%) scale(1); } }
 @media (max-width: 640px) { .conversation-index { left: 0; } .conversation-index button { width: 20px; } .conversation-index button { padding-left: 5px; } .conversation-index-preview { left: 38px; } .harness-thread-frame .aui-thread-viewport { padding-left: 30px !important; } }
 @media (prefers-reduced-motion: reduce) { .conversation-index button > span { transition: none; } .conversation-index-preview { animation: none; } }
-/* The focused builder uses its own full-width toolbar and returns to the catalog. */
-body.codex-theme-v1:has(.console-shell) .console-shell.studio-unified:has([data-build-workspace="true"]) { grid-template-columns: minmax(0, 1fr); }
-.studio-unified:has([data-build-workspace="true"]) > .task-sidebar, .studio-unified:has([data-build-workspace="true"]) .studio-sidebar-expand { display: none !important; }
-.studio-unified:has([data-build-workspace="true"]) .studio-unified-content { grid-column: 1; width: 100%; overflow: hidden; }
+/* Agent workspaces retain the shared sidebar and its user-controlled collapse. */
+.studio-unified:has([data-build-workspace="true"]) .studio-unified-content { overflow: hidden; }
 
 /* Use the homepage composer geometry in both builder conversations. */
 body.codex-theme-v1:has(.console-shell) [data-build-workspace="true"] .harness-composer-shell .aui-composer-root { display: flex; flex-direction: column; gap: 0; }
@@ -248,6 +246,9 @@ body.codex-theme-v1:has(.console-shell) [data-build-workspace="true"] .message-a
 [data-build-workspace="true"] .harness-composer-shell [data-workspace-attachments] { max-height: min(140px, 20dvh); overflow-y: auto; flex-shrink: 1; min-height: 0; }
 
 body.codex-theme-v1:has(.console-shell) [data-build-workspace="true"] .harness-composer-shell[data-test-composer] { max-width: 828px; margin-inline: auto; }
+
+/* Shared chat already centers its messages and footer on the same 800px column. */
+body.codex-theme-v1:has(.console-shell) [data-build-workspace="true"] .aui-thread-viewport-footer .harness-composer-shell { padding-inline: 0; }
 
 /* Reveal clipped task names without moving adjacent status/actions. */
 body.codex-theme-v1 .task-title-viewport { display: block; min-width: 0; overflow: hidden; }
@@ -1066,6 +1067,4 @@ body.codex-theme-v1:has(.console-shell) .task-project-toolbar:focus-within .task
 @media (hover: none) {
   body.codex-theme-v1:has(.console-shell) :is(.task-project-create, .task-project-add) { opacity: 1; }
 }
-body.codex-theme-v1:has(.console-shell) .console-shell.studio-unified:has([data-agent-focused="true"]) {grid-template-columns:minmax(0,1fr);}
-.studio-unified:has([data-agent-focused="true"]) > .task-sidebar,.studio-unified:has([data-agent-focused="true"]) .studio-sidebar-expand {display:none!important;}
-.studio-unified:has([data-agent-focused="true"]) .studio-unified-content {grid-column:1;width:100%;overflow:hidden;}
+html body.codex-theme-v1 .user-task-intro .welcome-brand-mark { display: flex; width: 48px; height: 48px; margin: 0 auto 28px; opacity: .28; filter: grayscale(1) blur(.25px); }

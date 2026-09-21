@@ -167,7 +167,7 @@ describe("full-page agent workbench", () => {
     expect(page).not.toContain("交互验证台");
     expect(page).not.toContain("切换开发者信息");
     expect(page).not.toContain("developerMode");
-    expect(agentThread).toContain("<h1>开始一个新任务</h1>");
+    expect(agentThread).toContain("今天想一起完成些什么？");
     expect(agentThread).not.toContain("<h2>从一个任务开始</h2>");
     expect(styles).toContain(".user-task-intro h1");
     expect(styles).not.toContain(".user-task-intro h2");
