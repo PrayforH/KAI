@@ -408,3 +408,16 @@ describe("runtime agent key", () => {
       .toBe(runtimeAgentKey({ name: "a", version: "1" }));
   });
 });
+
+it("uses the caller's current system release when the configured version is missing", async () => {
+  invalidateClientReads();
+  vi.stubGlobal("fetch",vi.fn(async (url: string) => Response.json(url.endsWith("runtime-config") ? {name:"lead-agent",version:"1.0.0"} : url.endsWith("/drafts") ? [] : [
+    {name:"lead-agent",version:"9.0.0",current_version:"9.0.0",display_name:"Other",domain:"general",owner_user_id:"other",scope:"personal"},
+    {name:"lead-agent",version:"1.0.2+platform.fix",current_version:"1.0.2+platform.fix",display_name:"通用助手",domain:"general",owner_user_id:"me",scope:"personal"},
+  ])));
+  try {
+    const catalog=await loadTaskAgentCatalog("me");
+    expect(catalog.defaultAgent).toMatchObject({version:"1.0.2+platform.fix",ownerUserId:"me"});
+    expect(catalog.agents.some(agent=>agent.version==="1.0.0")).toBe(false);
+  } finally {invalidateClientReads();vi.unstubAllGlobals();}
+});

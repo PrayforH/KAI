@@ -1,4 +1,5 @@
 "use client";
+import { isAgentConfigurationRequest } from "../../lib/agent-conversation-intent";
 import type { ThreadMessageLike, CompleteAttachment } from "@assistant-ui/react";
 import { previewThreadMessages } from "./agent-playground-thread";
 import { ConversationControl } from "../conversation-control";
@@ -439,6 +440,7 @@ export function AgentBuilderAssistant({
     const sendAsTest = intent === "run";
     if (sendAsTest && proposal) { setError("请先应用或放弃当前修改建议，再开始试跑。"); return; }
     const explicitRun = /^(?:\/run(?:\s|$)|试跑(?:智能体)?\s*[:：])/i.test(value.trim());
+    const authoring = !explicitRun && writable && (Boolean(proposal) || Boolean(feedbackTurn) || isAgentConfigurationRequest(value));
     if (explicitRun && proposal) {setError("请先应用或放弃当前修改建议，再开始试跑。");return false;}
     submitLock.current = true;
     const epoch = epochRef.current;
@@ -481,7 +483,7 @@ export function AgentBuilderAssistant({
       const reply = await studioClient.converseBuilder(saved.id, {
         expectedRevision: saved.revision,
         messages: history,
-        intent: intent === "auto" ? "auto" : "edit",
+        intent: workspaceTarget ? "edit" : intent === "auto" ? "auto" : "edit",
         runContext: JSON.stringify({
           runId: contextTurn?.result.run.run_id,
           draftRevision: contextTurn?.result.draftRevision, status: contextTurn?.result.run.status,
@@ -568,7 +570,7 @@ export function AgentBuilderAssistant({
       if (epoch !== epochRef.current) return;
       setLastChanges(Object.entries(proposal.changes).filter(([key]) => key !== "capabilityCatalogRevision").map(([key, value]) => ({label: editLabels[key] ?? key, before: showValue(beforeEdit(proposal.before, key)), after: showValue(value)})));
       onChanges?.(Object.entries(proposal.changes).filter(([key]) => key !== "capabilityCatalogRevision").map(([key, value]) => ({label: editLabels[key] ?? key, before: showValue(beforeEdit(proposal.before, key)), after: showValue(value)})));
-      setProposal(null);
+      setProposal(null);setFeedbackTurn(null);
       setLastComparison(comparison); setCodeComparison(comparison); setComparisonPending(false);
       const localConflict = latestRef.current.hasUnsavedChanges;
       if (!localConflict) {
@@ -603,6 +605,7 @@ export function AgentBuilderAssistant({
   async function sendUnified(value: string, ids: string[], names: string[]): Promise<boolean> {
     if (submitLock.current || active || editing || applying || historyLoading) return false;
     const explicitRun = /^(?:\/run(?:\s|$)|试跑(?:智能体)?\s*[:：])/i.test(value.trim());
+    const authoring = !explicitRun && writable && (Boolean(proposal) || Boolean(feedbackTurn) || isAgentConfigurationRequest(value));
     if (explicitRun && proposal) {setError("请先应用或放弃当前修改建议，再开始试跑。");return false;}
     submitLock.current = true;
     const epoch = epochRef.current;
@@ -612,10 +615,10 @@ export function AgentBuilderAssistant({
     let accepted = false;
     try {
       setReadingMaterials(Boolean(ids.length));
-      const materialContext = ids.length && !explicitRun ? (await studioClient.readBuilderMaterials(ids, activeDraft.modelRoute)).context : "";
+      const materialContext = ids.length && (!draftReady || authoring) ? (await studioClient.readBuilderMaterials(ids, activeDraft.modelRoute)).context : "";
       if (epoch !== epochRef.current) return false;
       setMessages(current => [...current, {id:messageId, role:"user",text:value, artifactIds:ids,files:names,materialContext}]);
-      accepted = Boolean(!draftReady ? await createDraft(value, materialContext) : explicitRun || !writable ? await startRun(value, undefined, true, ids, names) : await converse(value, materialContext, files));
+      accepted = Boolean(!draftReady ? await createDraft(value, materialContext) : authoring ? await converse(value, materialContext, files) : await startRun(value, undefined, true, ids, names));
       return accepted;
     } catch (reason) {
       if (epoch === epochRef.current) setError(reason instanceof Error ? reason.message : "发送失败，请重试。");

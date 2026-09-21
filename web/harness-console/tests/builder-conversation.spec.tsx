@@ -267,7 +267,6 @@ it("reruns the selected older example when applying its improvement", async () =
 });
 
 async function sendTest(value: string) {
-  vi.mocked(studioClient.converseBuilder).mockResolvedValueOnce({baseRevision:1, action:"run",task:value,reply:"开始运行",changedFields:[],changes:{}});
   await act(async () => {
     const input = host.querySelector('[aria-label="智能体效果测试"] [aria-label="消息输入"]')!;
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, value);
@@ -308,10 +307,10 @@ it("preserves attachments and text after failed unified sends, and supplies file
   }
   await attach();
   vi.mocked(studioClient.readBuilderMaterials).mockRejectedValueOnce(new Error("读取失败"));
-  await send("根据附件修改格式");
-  expect(host.querySelector<HTMLTextAreaElement>('[aria-label="消息输入"]')!.value).toContain("根据附件修改格式");
+  await send("根据附件修改系统提示词中的输出格式");
+  expect(host.querySelector<HTMLTextAreaElement>('[aria-label="消息输入"]')!.value).toContain("根据附件修改系统提示词中的输出格式");
   expect(host.querySelector('.harness-composer-shell .composer-file-card')?.textContent).toContain("材料.txt");
-  await send("根据附件修改格式");
+  await send("根据附件修改系统提示词中的输出格式");
   expect(vi.mocked(studioClient.converseBuilder).mock.lastCall?.[1].messages.at(-1)?.content).toContain("参考材料正文");
   await click("放弃建议"); await attach();
   vi.mocked(studioClient.createTryRun).mockRejectedValueOnce(new Error("临时中断"));
@@ -333,7 +332,7 @@ it("captures project comparison before apply without replacing the conversation"
   const source = { revision: 1, filename: "agent.zip", digest: "a", framework_version: "0.7.13", files: [] };
   vi.mocked(studioClient.previewBuilderProjectDiff).mockResolvedValue({before: source, after: {...source, revision: 2}});
   act(() => enableWorkspace());
-  await send("输出改成表格");
+  await send("修改系统提示词，输出改成表格");
   await click("应用修改");
   expect(studioClient.previewBuilderProjectDiff).toHaveBeenCalledWith("draft-multi", {expectedRevision: 1, changes: {systemPrompt: "输出表格"}});
   expect(vi.mocked(studioClient.previewBuilderProjectDiff).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(studioClient.applyBuilderEdit).mock.invocationCallOrder[0]);
@@ -450,4 +449,13 @@ it("runs an explicit trial request directly while preserving the shared message"
   expect(studioClient.converseBuilder).not.toHaveBeenCalled();
   expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[2]).toBe("试跑智能体：分析这段材料");
   expect(host.querySelectorAll("textarea")).toHaveLength(1);
+});
+
+it("sends a greeting to the current agent instead of the builder", async () => {
+  await act(async () => enableWorkspace());
+  await send("你好");
+  expect(studioClient.converseBuilder).not.toHaveBeenCalled();
+  expect(studioClient.readBuilderMaterials).not.toHaveBeenCalled();
+  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.slice(0,3)).toEqual(["draft-multi",1,"你好"]);
+  expect(host.querySelector('[data-test-run="run-1"]')).not.toBeNull();
 });
