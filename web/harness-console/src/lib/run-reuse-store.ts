@@ -1,4 +1,5 @@
 "use client";
+import { useConversationScope } from "./conversation-scope";
 
 import { useSyncExternalStore } from "react";
 
@@ -33,9 +34,11 @@ export const runReuseStore = {
 };
 
 export function useRunReuseNotice(): RunReuseNotice | null {
-  return useSyncExternalStore(
+  const scope = useConversationScope();
+  const globalSnapshot = useSyncExternalStore(
     runReuseStore.subscribe,
     runReuseStore.getSnapshot,
     () => emptySnapshot,
   );
+  return scope ? null : globalSnapshot;
 }

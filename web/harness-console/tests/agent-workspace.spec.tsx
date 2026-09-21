@@ -5,9 +5,9 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { agentSection, nextAgentAction, qualityGroups } from "../src/lib/agent-workspace";
 import type { EvolutionJob } from "../src/lib/evolution-client";
 import type { StudioQualityScore } from "../src/lib/studio-client";
-const mock = vi.hoisted(() => ({ summaries: vi.fn(), quality: vi.fn(), datasets: vi.fn(), versions: vi.fn(), jobs: vi.fn() }));
+const mock = vi.hoisted(() => ({ summaries: vi.fn(), quality: vi.fn(), datasets: vi.fn(), versions: vi.fn(), jobs: vi.fn(), history: vi.fn() }));
 vi.mock("../src/components/auth-provider", () => ({ useAuth: () => ({user:{user_id:"owner"},membership:{role:"owner"}}) }));
-vi.mock("../src/lib/studio-client", () => ({ studioClient: {listAccessibleDrafts:mock.summaries,listQualityScores:mock.quality,listEvalDatasets:mock.datasets,listPersonalAgentVersions:mock.versions} }));
+vi.mock("../src/lib/studio-client", () => ({ studioClient: {listAccessibleDrafts:mock.summaries,listQualityScores:mock.quality,listEvalDatasets:mock.datasets,listPersonalAgentVersions:mock.versions,listTryRuns:mock.history} }));
 vi.mock("../src/lib/evolution-client", () => ({ evolutionRequest:mock.jobs }));
 vi.mock("../src/components/agent-studio/evolution-workspace", () => ({EvolutionWorkspace:()=> <div>实验组件</div>}));
 vi.mock("../src/components/agent-studio/agent-operations-workspace", () => ({AgentOperationsWorkspace:()=> <div>部署组件</div>}));
@@ -17,6 +17,7 @@ let host: HTMLDivElement; let root: ReturnType<typeof createRoot>;
 beforeEach(() => {
   vi.clearAllMocks(); host=document.createElement("div");document.body.append(host);root=createRoot(host);
   mock.summaries.mockResolvedValue([{draftId:"draft",agentId:"id",name:"archive",displayName:"档案助手",spaceId:null,version:"1.0",publishedVersion:"1.0"}]);
+  mock.history.mockResolvedValue([]);
   mock.quality.mockResolvedValue([]);mock.datasets.mockResolvedValue([]);mock.jobs.mockResolvedValue([]);
   mock.versions.mockResolvedValue([{version:"2.0",current_version:"2.0",created_at:"2026-09-20T00:00:00Z"}]);
 });
@@ -25,9 +26,9 @@ it("uses the authoritative current version, preserves construction, and has real
   await act(async()=>root.render(<AgentWorkspace agentName="archive" section="overview"/>));
   const play=[...host.querySelectorAll("a")].find(a=>a.textContent?.includes("开始使用"));
   expect(play?.getAttribute("href")).toBe("/?agent=archive&version=2.0&owner=owner");
-  expect(host.querySelector('a[aria-current="page"]')?.textContent).toBe("概览");
+  expect(host.querySelector('a[aria-current="page"]')?.textContent).toContain("概览");
   expect(host.textContent).toContain("构建版本 1.0");
-  expect(host.querySelector('a[href="/studio/agents?draft=draft"]')).not.toBeNull();
+  expect(host.querySelector('a[href="/studio/agents/archive?section=playground&draft=draft"]')).not.toBeNull();
 });
 it("does not read personal quality or experiments for an identically named team agent", async () => {
   mock.summaries.mockResolvedValue([{draftId:"team-draft",spaceId:"team",name:"archive",displayName:"团队档案"}]);

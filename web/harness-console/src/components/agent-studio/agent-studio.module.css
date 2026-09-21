@@ -8174,3 +8174,22 @@
 .catalogEdit:hover { color:var(--studio-ink); }
 .agentCatalogFooter code { font-size:11px; }
 .agentCatalogFooter .agentCardAction { font-size:12px; white-space:nowrap; }
+/* Focused Agent layout follows Agenta's compact two-level chrome. */
+.studioShell.workbenchContent[data-agent-focused=true] {display:grid;grid-template-columns:228px minmax(0,1fr);gap:0;}
+.studioShell[data-agent-focused=true] .editorShell {min-width:0;overflow:hidden;border:0;border-radius:0;}
+.studioShell[data-agent-focused=true] .editorHeader {display:flex;padding:8px 16px;gap:12px;min-height:48px;border-bottom:1px solid var(--studio-line);}
+.studioShell[data-agent-focused=true] .editorBackButton {display:none;}
+.studioShell[data-agent-focused=true] .titleBlock {flex:1;gap:6px;}
+.studioShell[data-agent-focused=true] .titleLine h1 {font-size:13px;}
+.studioShell[data-agent-focused=true] .titleLine code {display:none;}
+.studioShell[data-agent-focused=true] .eyebrow {font-size:10px;}
+.studioShell[data-agent-focused=true] .headerActions {gap:6px;}
+.studioShell[data-agent-focused=true] .headerActions > button:first-of-type:not(:only-child) {padding:5px 8px;}
+.studioShell[data-agent-focused=true] .workspaceShortcuts,.studioShell[data-agent-focused=true] .workspaceMetadata {display:none;}
+.studioShell[data-agent-focused=true] .editorBody:not([hidden]) {margin:0;inset:0 0 0 auto;width:min(760px,85vw);height:100dvh;max-height:100dvh;border-radius:0;padding:0 24px 24px;}
+.studioShell[data-agent-focused=true] .panelViewport {padding:16px 0;}
+@media(max-width:760px){.studioShell.workbenchContent[data-agent-focused=true]{grid-template-columns:150px minmax(0,1fr)}.studioShell[data-agent-focused=true] .headerActions>button:not(.publishButton){display:block}.studioShell[data-agent-focused=true] .headerActions>button:nth-of-type(2){display:none}.studioShell[data-agent-focused=true] .editorHeader{flex-wrap:wrap;gap:6px}.studioShell[data-agent-focused=true] .titleBlock{min-width:120px}.studioShell[data-agent-focused=true] .editorBody{width:95vw;}}
+@media(max-width:540px){.studioShell.workbenchContent[data-agent-focused=true]{display:flex;flex-direction:column}.studioShell[data-agent-focused=true] .editorShell{flex:1;height:auto;}}
+
+.studioShell[data-agent-focused=true] .editorFooter {display:flex;flex:0 0 auto;min-height:25px;padding:5px 16px;font-size:11px;border-top:1px solid var(--studio-line);}
+@media(max-width:540px){.studioShell[data-agent-focused=true] .headerActions {display:flex;flex-wrap:nowrap;width:100%;}.studioShell[data-agent-focused=true] .headerActions .publishButton {width:auto;min-width:0;margin-left:auto;}.studioShell[data-agent-focused=true] .headerActions .actionMenu {width:auto;}.studioShell[data-agent-focused=true] .titleLine h1 {max-width:70vw;}.studioShell[data-agent-focused=true] .editorHeader {padding:8px 12px;}}

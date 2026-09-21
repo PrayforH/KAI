@@ -253,6 +253,28 @@ class PostgresSessionRepository:
     def __init__(self, sessions: SessionFactory) -> None:
         self._sessions = sessions
 
+    async def list_studio_previews(
+        self, tenant_id: str, user_id: str, draft_id: str, *, limit: int
+    ) -> list[Session]:
+        statement = (
+            select(SessionRow.payload)
+            .where(
+                SessionRow.tenant_id == tenant_id,
+                SessionRow.user_id == user_id,
+                SessionRow.payload["environment"].as_string() == "preview",
+                SessionRow.payload["agent_version"]
+                .as_string()
+                .startswith(f"preview-{draft_id}-", autoescape=True),
+            )
+            .order_by(SessionRow.payload["created_at"].as_string().desc())
+            .limit(limit)
+        )
+        async with self._sessions() as session:
+            return [
+                Session.model_validate(payload)
+                for payload in (await session.scalars(statement)).all()
+            ]
+
     async def add(self, session: Session) -> None:
         async with self._sessions() as db_session:
             db_session.add(

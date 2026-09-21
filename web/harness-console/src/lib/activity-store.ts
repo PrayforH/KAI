@@ -1,4 +1,5 @@
 "use client";
+import { useConversationScope } from "./conversation-scope";
 
 import { useSyncExternalStore } from "react";
 import type { RunActivity } from "./activity-schema";
@@ -80,17 +81,21 @@ export const activityStore = {
 };
 
 export function useRunActivity(): RunActivity | undefined {
-  return useSyncExternalStore(
+  const scope = useConversationScope();
+  const globalSnapshot = useSyncExternalStore(
     activityStore.subscribe,
     activityStore.getSnapshot,
     () => undefined,
   );
+  return scope ? scope.activity : globalSnapshot;
 }
 
 export function useRunViewModel(): RunViewModel | undefined {
-  return useSyncExternalStore(
+  const scope = useConversationScope();
+  const globalSnapshot = useSyncExternalStore(
     activityStore.subscribe,
     activityStore.getViewSnapshot,
     () => undefined,
   );
+  return scope ? scope.view : globalSnapshot;
 }

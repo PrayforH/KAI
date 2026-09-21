@@ -134,6 +134,19 @@ class InMemorySessionRepository:
         self._items: dict[tuple[str, str], Session] = {}
         self._lock = asyncio.Lock()
 
+    async def list_studio_previews(
+        self, tenant_id: str, user_id: str, draft_id: str, *, limit: int
+    ) -> list[Session]:
+        matches = [
+            item
+            for (tenant, _), item in self._items.items()
+            if tenant == tenant_id
+            and item.user_id == user_id
+            and item.environment == "preview"
+            and item.agent_version.startswith(f"preview-{draft_id}-")
+        ]
+        return sorted(matches, key=lambda item: item.created_at, reverse=True)[:limit]
+
     async def add(self, session: Session) -> None:
         key = (session.tenant_id, session.session_id)
         async with self._lock:

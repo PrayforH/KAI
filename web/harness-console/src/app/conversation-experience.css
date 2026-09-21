@@ -1066,3 +1066,6 @@ body.codex-theme-v1:has(.console-shell) .task-project-toolbar:focus-within .task
 @media (hover: none) {
   body.codex-theme-v1:has(.console-shell) :is(.task-project-create, .task-project-add) { opacity: 1; }
 }
+body.codex-theme-v1:has(.console-shell) .console-shell.studio-unified:has([data-agent-focused="true"]) {grid-template-columns:minmax(0,1fr);}
+.studio-unified:has([data-agent-focused="true"]) > .task-sidebar,.studio-unified:has([data-agent-focused="true"]) .studio-sidebar-expand {display:none!important;}
+.studio-unified:has([data-agent-focused="true"]) .studio-unified-content {grid-column:1;width:100%;overflow:hidden;}

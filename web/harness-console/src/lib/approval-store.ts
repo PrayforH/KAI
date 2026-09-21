@@ -1,4 +1,5 @@
 "use client";
+import { useConversationScope } from "./conversation-scope";
 
 import { useSyncExternalStore } from "react";
 import type { ApprovalDetails } from "../components/approval-card";
@@ -64,9 +65,11 @@ export const approvalStore = {
 };
 
 export function usePendingApproval(): PendingApprovalSnapshot {
-  return useSyncExternalStore(
+  const scope = useConversationScope();
+  const globalSnapshot = useSyncExternalStore(
     approvalStore.subscribe,
     approvalStore.getSnapshot,
     () => emptySnapshot,
   );
+  return scope ? scope.approval : globalSnapshot;
 }

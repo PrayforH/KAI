@@ -1,4 +1,5 @@
 "use client";
+import { useConversationScope } from "./conversation-scope";
 
 import { useSyncExternalStore } from "react";
 import { isActiveRuntimeThread } from "./runtime-thread-scope";
@@ -67,9 +68,11 @@ export const runStreamStore = {
 };
 
 export function useRunStream(): RunStreamSnapshot {
-  return useSyncExternalStore(
+  const scope = useConversationScope();
+  const globalSnapshot = useSyncExternalStore(
     runStreamStore.subscribe,
     runStreamStore.getSnapshot,
     () => emptySnapshot,
   );
+  return scope ? scope.stream : globalSnapshot;
 }

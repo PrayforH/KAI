@@ -1,4 +1,5 @@
 "use client";
+import { useConversationScope } from "../lib/conversation-scope";
 import { useAutoLoadEarlierMessages, useThreadHistoryPagination } from "../lib/task-history";
 import { startSteeringPolling } from "../lib/steering-poller";
 import { ConversationControl } from "./conversation-control";
@@ -312,6 +313,7 @@ function MessageFeedbackButtons({ runId }: { runId?: string }) {
 }
 
 function HarnessComposer() {
+  const conversationScope = useConversationScope();
   const aui = useAui();
   const { routes, overrideRouteId } = useTaskModel();
   const threadRunning = useAuiState((state) => state.thread.isRunning);
@@ -357,7 +359,7 @@ function HarnessComposer() {
       ["completed", "failed", "rejected", "cancelled"].includes(runView.phase) &&
       runView?.pendingApprovalId !== visibleApprovalId
     ) {
-      approvalStore.settle(visibleApprovalId);
+      if (!conversationScope) approvalStore.settle(visibleApprovalId);
     }
   }, [pendingApproval.details?.approval_id, pendingApproval.visible, runView?.pendingApprovalId]);
   const showStop = shouldShowComposerStop(
@@ -419,7 +421,7 @@ function HarnessComposer() {
     caret,
     agentSelection.agents,
     agentSelection.selected?.skills,
-    knowledge.available,
+    conversationScope ? [] : knowledge.available,
     knowledge.selected,
   );
   const busy = threadRunning || showStop || runLocked || videoGenerating;
@@ -465,9 +467,9 @@ function HarnessComposer() {
   }, [busy, queue, queueLoaded, queuePaused, runView?.phase, steeringIds, threadRuntime]);
   function command(value: string) {
     if (value === "/stop") { void stopRun(); }
-    else if (value === "/files") window.dispatchEvent(new Event("harness:open-files"));
+    else if (value === "/files") {if (conversationScope) conversationScope.onOpenFiles();else window.dispatchEvent(new Event("harness:open-files"));}
     else if (value === "/help") setHelpOpen((current) => !current);
-    else if (value === "/new") window.dispatchEvent(new Event("harness:new-task"));
+    else if (value === "/new") {if (conversationScope) conversationScope.onNew();else window.dispatchEvent(new Event("harness:new-task"));}
     else if (value !== "/clear") return false;
     aui.composer().setText("");
     return true;
@@ -705,6 +707,7 @@ function HarnessComposer() {
             complete={false}
             onDecision={async (decision) => {
               const approvalId = pendingApproval.details!.approval_id;
+              if (conversationScope) {await conversationScope.onApproval(approvalId, decision);return;}
               const response = requireAuthenticatedResponse(
                 await fetch(
                   `/api/harness/approvals/${encodeURIComponent(approvalId)}`,
@@ -751,7 +754,7 @@ function HarnessComposer() {
         }} />
       {steeringNotice && <p className="composer-status-announcement" role="status">{steeringNotice}</p>}
       {inputError && <p className="composer-input-error" role="alert">{inputError}</p>}
-      <TaskKnowledgeSelection disabled={busy} />
+      <TaskKnowledgeSelection disabled={busy || Boolean(conversationScope)} />
       <Composer.Root onSubmitCapture={(event: FormEvent) => { event.preventDefault(); event.stopPropagation(); if (!composingRef.current) submitComposer(); }}>
         <ComposerAssist options={options} index={suggestionIndex} onChoose={chooseSuggestion} />
         {wikiSlug ? (
@@ -836,7 +839,7 @@ function HarnessComposer() {
               <path d="M10 4.5v11M4.5 10h11" />
             </svg>
           </Composer.AddAttachment>
-          <TaskKnowledgeControl disabled={runLocked || showStop || videoGenerating} />
+          {conversationScope ? <button type="button" className="aui-composer-attach" aria-label="配置智能体知识库" title="配置智能体知识库" onClick={conversationScope.onConfigureKnowledge}>@</button> : <TaskKnowledgeControl disabled={runLocked || showStop || videoGenerating} />}
           <TaskAgentSwitcher
             agents={agentSelection.agents}
             selected={agentSelection.selected}
@@ -845,8 +848,8 @@ function HarnessComposer() {
             onChange={agentSelection.onChange}
             onRefresh={agentSelection.onRefresh}
           />
-          <TaskKnowledgeModeSwitch disabled={runLocked || showStop || videoGenerating} />
-          <TaskModelControl disabled={runLocked || showStop || videoGenerating} />
+          {!conversationScope && <TaskKnowledgeModeSwitch disabled={runLocked || showStop || videoGenerating} />}
+          <TaskModelControl disabled={Boolean(conversationScope) || runLocked || showStop || videoGenerating} />
           {showStop && Boolean(composerText.trim() || composerAttachments.length) && <ConversationControl action="stop" aria-label="停止运行" onClick={() => void stopRun()} />}
         </div>
         {showStop && !composerText.trim() && !composerAttachments.length ? (
@@ -956,10 +959,13 @@ function ApprovalToolBridge({
   details: ApprovalDetails;
   complete: boolean;
 }) {
+  const conversationScope = useConversationScope();
   useEffect(() => {
+    if (conversationScope) return;
     if (complete) approvalStore.settle(details.approval_id);
     else approvalStore.show(details);
-  }, [complete, details]);
+  }, [complete, details, conversationScope]);
+  if (conversationScope && !complete) return <ApprovalCard details={details} complete={false} onDecision={decision => conversationScope.onApproval(details.approval_id, decision)} />;
   return null;
 }
 
@@ -1089,6 +1095,7 @@ const ARTIFACT_THUMBNAIL_COUNT = 3;
  * the task's file drawer. The row stays visible at all times; only its inner
  * thumbnails cap at three with a +N chip, which is how it always looked. */
 function ArtifactSummaryRow({ artifacts }: { artifacts: ArtifactDetails[] }) {
+  const conversationScope = useConversationScope();
   const [failed, setFailed] = useState<readonly string[]>([]);
   if (artifacts.length === 0) return null;
   const thumbs = artifacts.slice(0, ARTIFACT_THUMBNAIL_COUNT);
@@ -1100,7 +1107,7 @@ function ArtifactSummaryRow({ artifacts }: { artifacts: ArtifactDetails[] }) {
       className="artifact-summary-row"
       aria-label={label}
       title={label}
-      onClick={() => window.dispatchEvent(new CustomEvent("harness:open-files"))}
+      onClick={() => conversationScope ? conversationScope.onOpenFiles() : window.dispatchEvent(new CustomEvent("harness:open-files"))}
     >
       <span className="artifact-summary-thumbs" aria-hidden="true">
         {thumbs.map((details) => (
@@ -1407,6 +1414,7 @@ export function turnOwnsRun(
 }
 
 function HarnessAssistantMessage() {
+  const conversationScope = useConversationScope();
   const live = useLiveResponse();
   const isLast = useAuiState((state) => state.message.isLast);
   const messageId = useAuiState((state) => state.message.id);
@@ -1451,6 +1459,7 @@ function HarnessAssistantMessage() {
     <AnswerCitationProvider citations={answerCitations}>
     <AssistantMessage.Root
       className="harness-assistant-message"
+      data-test-run={conversationScope ? messageId.replace(/^assistant-/, "") : undefined}
       data-turn-answer={copyText.replace(/\s+/g, " ").slice(0, 360)}
       data-direct-stream={directStream ? "true" : "false"}
     >
@@ -1505,6 +1514,7 @@ function HarnessAssistantMessage() {
           </AssistantActionBar.Root>
         </div>
       ) : null}
+      {conversationScope?.afterMessage(messageId)}
     </AssistantMessage.Root>
     </AnswerCitationProvider>
   );

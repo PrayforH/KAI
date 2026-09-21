@@ -62,6 +62,11 @@ import { SkillConversationBuilder } from "./skill-conversation-builder";
 const StudioCodeEditor = dynamic(() => import("./studio-code-editor").then((module) => module.StudioCodeEditor));
 const AgentBuilderAssistant = dynamic(() => import("./agent-builder-overlays").then((module) => module.AgentBuilderAssistant));
 import styles from "./agent-studio.module.css";
+import { AgentTemplateGallery } from "./agent-template-gallery";
+import { createAgentFromTemplate, type AgentTemplate } from "../../lib/agent-templates";
+import { AgentNavigation } from "./agent-navigation";
+import { AgentaConfiguration } from "./agenta-configuration";
+import agentaStyles from "./agenta-workspace.module.css";
 
 const sectionLabels: Record<StudioSection, string> = {
   identity: "基本信息",
@@ -278,7 +283,16 @@ function validationIssueSection(
   return "identity";
 }
 
-export function AgentStudioWorkbench() {
+export function AgentStudioWorkbench({ agentName, initialView = "playground", initialSessionId }: { agentName?: string; initialSessionId?: string; initialView?: "playground" | "sessions" } = {}) {
+  const [playgroundMode, setPlaygroundMode] = useState<"build" | "chat">(initialView === "sessions" ? "chat" : "build");
+  useEffect(() => {setPlaygroundMode(initialView === "sessions" ? "chat" : "build");}, [initialView]);
+  const configEditorRef = useRef<HTMLDivElement>(null);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [templateBusy, setTemplateBusy] = useState(false);
+  const [templateError, setTemplateError] = useState("");
+  const templateLock = useRef(false);
+  const [codeRequest, setCodeRequest] = useState(0);
+  const [buildChatRequest, setBuildChatRequest] = useState(0);
   const router = useRouter();
   const { membership, user } = useAuth();
   useDismissablePopovers();
@@ -386,6 +400,7 @@ export function AgentStudioWorkbench() {
       : { routes: [], tools: [], mcp: [], profiles: [], templates: [], runtimes: [] },
     [capabilities],
   );
+  useDialogFocus({open: configEditorOpen, panelRef: configEditorRef, onEscape: () => setConfigEditorOpen(false)});
   useDialogFocus({
     open: versionHistoryOpen,
     panelRef: versionHistoryRailRef,
@@ -529,10 +544,11 @@ export function AgentStudioWorkbench() {
         const navigationState = new URLSearchParams(window.location.search);
         const requestedDraftId = navigationState.get("draft");
         const requestedSection = navigationState.get("section");
-        setViewMode(requestedDraftId || requestedSection ? "editor" : "catalog");
+        setViewMode(agentName || requestedDraftId || requestedSection ? "editor" : "catalog");
         const targetDraft = requestedDraftId
-          ? serverDrafts.find((item) => item.draftId === requestedDraftId)
-          : null;
+          ? serverDrafts.find((item) => item.draftId === requestedDraftId && (!agentName || item.name === agentName))
+          : agentName ? serverDrafts.find(item => item.name === agentName && !item.spaceId) : null;
+        if ((requestedDraftId || agentName) && !targetDraft) throw new Error("未找到此智能体，或你没有访问权限。");
         if (requestedSection && requestedSection in sectionLabels) {
           // Builder is currently a single-page editor. Legacy deep links still
           // open the draft, but no longer expose retired orchestration,
@@ -546,6 +562,7 @@ export function AgentStudioWorkbench() {
         );
         if (!active) return;
         if (targetDraft) {
+          setBuilderAssistantMode("run");
           const selected = await studioClient.getDraft(targetDraft.draftId, {
             expectedRevision: targetDraft.revision,
           });
@@ -583,7 +600,7 @@ export function AgentStudioWorkbench() {
     }
     void load();
     return () => { active = false; };
-  }, [canEdit]);
+  }, [canEdit, agentName]);
 
   useEffect(() => {
     if (loading || loadError || viewMode !== "editor" || !configEditorOpen) return;
@@ -822,6 +839,7 @@ export function AgentStudioWorkbench() {
       if (decision === "discard") setDirty(false);
     }
     setBuilderAssistantOpen(false); setConfigEditorOpen(false); setReturnParentId(null); setViewMode("catalog");
+    if (agentName) router.push("/studio/agents");
   }
 
   async function returnToParent() {
@@ -1127,6 +1145,20 @@ export function AgentStudioWorkbench() {
       return;
     }
     await publishDraft(release.draft, release.validation);
+  }
+
+  async function createTemplate(template: AgentTemplate) {
+    if (!canEdit || templateLock.current) return;
+    templateLock.current = true;setTemplateBusy(true);setTemplateError("");
+    try {
+      const created = await createAgentFromTemplate(template, `${template.id}-${createRandomId().slice(0,8)}`);
+      setDraft(created.draft);setDirty(!created.saved);setConflict(false);setServerValidation(null);
+      setBuilderAssistantMode("run");setBuilderAssistantOpen(true);setConfigEditorOpen(false);setViewMode("editor");setPlaygroundMode("build");setTemplatesOpen(false);
+      setNotice(created.saved ? `已从“${template.name}”创建草稿，可修改配置并试运行。` : `草稿已创建，模板配置尚未保存：${created.error}。修改已保留，请重试保存。`);
+      void studioClient.listAccessibleDrafts().then(setDrafts).catch(() => {});
+      if (created.saved) router.push(`/studio/agents/${encodeURIComponent(created.draft.name)}?section=playground&draft=${encodeURIComponent(created.draft.id)}`);
+    } catch (reason) {setTemplateError(reason instanceof Error ? reason.message : "创建失败，请重试");}
+    finally {templateLock.current = false;setTemplateBusy(false);}
   }
 
   async function startNewDraft() {
@@ -2013,7 +2045,8 @@ export function AgentStudioWorkbench() {
 
   return (
     <main
-      className={`${styles.studioShell} ${styles.workbenchContent}`}
+      className={`${styles.studioShell} ${styles.workbenchContent} ${viewMode === "editor" ? agentaStyles.frame : ""}`}
+      data-agent-focused={viewMode === "editor"}
       data-studio-integration="api"
       data-view={viewMode}
       data-build-workspace={viewMode === "editor"}
@@ -2048,13 +2081,14 @@ export function AgentStudioWorkbench() {
                 type="button"
                 className={styles.catalogCreateButton}
                 disabled={!canEdit || saving}
-                onClick={() => void startNewDraft()}
+                onClick={() => {setTemplateError("");setTemplatesOpen(true);}}
               >
                 <span aria-hidden="true">＋</span>
                 新建智能体
               </button>
             </div>
           </header>
+          {templatesOpen && <AgentTemplateGallery busy={templateBusy} error={templateError} onSelect={template => void createTemplate(template)} onBlank={() => {setTemplatesOpen(false);void startNewDraft();}} onClose={() => setTemplatesOpen(false)} />}
           <nav className={styles.catalogFilters} aria-label="智能体筛选">{[["all", "全部智能体"], ["personal", "我的智能体"], ["team", "团队共享"], ["draft", "未发布"]].map(([value, label]) => <button key={value} aria-pressed={agentScope === value} onClick={() => setAgentScope(value)}>{label}</button>)}<span>{filteredAgentRows.length} 个结果</span></nav>
           <div className={styles.agentCatalogList}>
             {filteredAgentRows.map((agent) => (
@@ -2152,7 +2186,8 @@ export function AgentStudioWorkbench() {
           </div>
         </section>
       ) : (
-      <section className={styles.editorShell} data-readonly={!canEdit} data-config-editor={configEditorOpen}>
+      <><AgentNavigation name={draft.name} label={draft.displayName} draftId={draft.id} active={initialView} onBack={() => void returnToCatalog()} /><section className={styles.editorShell} data-readonly={!canEdit} data-config-editor={configEditorOpen}>
+        <div className={agentaStyles.breadcrumb}>Agents <span>/</span> {draft.displayName} <span>/</span> {initialView === "sessions" ? "Sessions" : "Playground"}</div>
         <header className={styles.editorHeader}>
           <button
             type="button"
@@ -2212,6 +2247,8 @@ export function AgentStudioWorkbench() {
             )}
           </div>
           <div className={styles.headerActions}>
+            <div className={agentaStyles.modeSwitch} role="group" aria-label="Playground 模式"><button aria-pressed={playgroundMode === "build"} onClick={() => setPlaygroundMode("build")}>Build</button><button aria-pressed={playgroundMode === "chat"} onClick={() => setPlaygroundMode("chat")}>Chat</button></div>
+            <button className={styles.headerActionButton} disabled={!draft.id} onClick={() => setCodeRequest(value => value + 1)}>代码</button>
             {draft.id && <button className={styles.headerActionButton} disabled={saving} onClick={async () => { if (dirty) { const saved = await saveDraft(); if (!saved) return; } router.push(`/studio/agents/${encodeURIComponent(draft.name)}?draft=${encodeURIComponent(draft.id)}`); }}>智能体概览 ↗</button>}
 
             <button
@@ -2560,8 +2597,8 @@ export function AgentStudioWorkbench() {
 
         <div className={styles.buildWorkspaceMount} ref={setWorkspaceTarget} />
         {configEditorOpen && <button type="button" className={styles.configEditorBackdrop} aria-label="关闭完整配置" onClick={() => setConfigEditorOpen(false)} />}
-        <div className={styles.editorBody} hidden={!configEditorOpen}>
-          <header className={styles.configEditorHeading}><strong>完整配置 · {draft.displayName}</strong><div><button type="button" disabled={!dirty || saving} onClick={() => void saveDraft()}>保存配置</button><button type="button" aria-label="收起完整配置" onClick={() => setConfigEditorOpen(false)}>×</button></div></header>
+        <div className={styles.editorBody} ref={configEditorRef} role="dialog" aria-modal={configEditorOpen || undefined} aria-label={sectionLabels[activeSection]} hidden={!configEditorOpen}>
+          <header className={styles.configEditorHeading}><strong>{sectionLabels[activeSection]} · {draft.displayName}</strong><div><button type="button" disabled={!dirty || saving} onClick={() => void saveDraft()}>保存配置</button><button type="button" aria-label="收起完整配置" onClick={() => setConfigEditorOpen(false)}>×</button></div></header>
           <nav className={styles.stageNav} aria-label="Agent 构建五阶段" hidden>
             {STUDIO_STAGES.map((stage) => {
               const state = stageState(stage.id);
@@ -2623,7 +2660,7 @@ export function AgentStudioWorkbench() {
                 </ul>
               </div>
             )}
-            {true && (
+            {activeSection === "identity" && (
               <section className={styles.configPanel} aria-labelledby="identity-title">
                 <PanelHeading
                   id="identity-title"
@@ -2651,6 +2688,79 @@ export function AgentStudioWorkbench() {
                       ))}
                     </select>
                   </Field>
+                  <Field label="Agent Runtime" hint="发布后固定到版本 Bundle">
+                    <select
+                      value={draft.runtime}
+                      onChange={(event) => {
+                        const runtime = event.target.value as StudioDraft["runtime"];
+                        const targetCapability = activeRuntimeCapabilities.find(
+                          (item) => item.runtime === runtime,
+                        );
+                        const compatibleRoute = options.routes.find((route) =>
+                          targetCapability
+                            ? targetCapability.modelApiFormats.includes(
+                                route.apiFormat ?? "anthropic_compatible",
+                              )
+                            : runtime !== "codex-app-server",
+                        );
+                        const currentRouteCompatible = selectedRoute
+                          ? targetCapability
+                            ? targetCapability.modelApiFormats.includes(
+                                selectedRoute.apiFormat ?? "anthropic_compatible",
+                              )
+                            : runtime !== "codex-app-server"
+                          : false;
+                        // A tool the new runtime cannot execute would stay checked
+                        // and block publish with an error the operator has no way
+                        // to act on from this panel, so drop it as the runtime
+                        // changes rather than leaving a disabled tick behind.
+                        const keptTools = draft.builtinTools.filter((tool) =>
+                          builtinToolAvailable(tool, targetCapability?.capabilities),
+                        );
+                        updateDraft({
+                          runtime,
+                          ...(keptTools.length === draft.builtinTools.length
+                            ? {}
+                            : { builtinTools: keptTools }),
+                          ...(currentRouteCompatible || !compatibleRoute
+                            ? {}
+                            : {
+                                modelRoute: compatibleRoute.id,
+                                model: compatibleRoute.models[0],
+                              }),
+                        });
+                      }}
+                    >
+                      {(activeRuntimeCapabilities.length > 0
+                        ? activeRuntimeCapabilities
+                        : [
+                            {
+                              runtime: "claude-agent-sdk" as const,
+                              label: "Claude Agent SDK",
+                              stability: "stable" as const,
+                              capabilities: [],
+                              modelApiFormats: ["anthropic_compatible" as const],
+                              limitations: [],
+                            },
+                            {
+                              runtime: "codex-app-server" as const,
+                              label: "Codex App Server",
+                              stability: "preview" as const,
+                              capabilities: [],
+                              modelApiFormats: ["openai_compatible" as const],
+                              limitations: [],
+                            },
+                          ]
+                      ).map((runtimeCapability) => (
+                        <option key={runtimeCapability.runtime} value={runtimeCapability.runtime}>
+                          {runtimeCapability.label}
+                          {runtimeCapability.stability !== "stable"
+                            ? ` · ${runtimeCapability.stability === "preview" ? "预览" : "实验"}`
+                            : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
                   <Field label="场景说明" wide>
                     <textarea
                       rows={3}
@@ -2662,7 +2772,7 @@ export function AgentStudioWorkbench() {
               </section>
             )}
 
-            {true && (
+            {activeSection === "prompt" && (
               <section className={styles.configPanel} aria-labelledby="prompt-title">
                 <PanelHeading
                   id="prompt-title"
@@ -2712,7 +2822,7 @@ export function AgentStudioWorkbench() {
                       <div>
                         <span className={styles.promptFileMark} aria-hidden="true">M↓</span>
                         <span>
-                          <strong>system.md</strong>
+                          <strong>AGENTS.md</strong>
                           <small>{dirty ? "本轮修改尚未保存" : `已保存 · revision ${draft.revision}`}</small>
                         </span>
                       </div>
@@ -2762,7 +2872,7 @@ export function AgentStudioWorkbench() {
               </section>
             )}
 
-            {!draft.parentDraftId && (
+            {activeSection === "orchestration" && !draft.parentDraftId && (
               <section className={styles.configPanel} aria-labelledby="collaboration-title">
                 <div className={styles.groupHeading}>
                   <div>
@@ -2860,7 +2970,7 @@ export function AgentStudioWorkbench() {
               </section>
             )}
 
-            {true && (
+            {activeSection === "skills" && (
               <section
                 className={styles.configPanel}
                 data-compact-skill="true"
@@ -3117,7 +3227,7 @@ export function AgentStudioWorkbench() {
               </section>
             )}
 
-            {true && (
+            {activeSection === "capabilities" && (
               <section className={styles.configPanel} aria-labelledby="capabilities-title">
                 <div className={styles.skillPanelHeading}>
                 <PanelHeading
@@ -3388,7 +3498,7 @@ export function AgentStudioWorkbench() {
               </section>
             )}
 
-            {true && (
+            {activeSection === "runtime" && (
               <section className={styles.configPanel} aria-labelledby="runtime-title">
                 <PanelHeading
                   id="runtime-title"
@@ -3397,79 +3507,7 @@ export function AgentStudioWorkbench() {
                   description="配置智能体运行时、执行方式和工具权限。"
                 />
                 <div className={styles.formGridSingle}>
-                  <Field label="Agent Runtime" hint="发布后固定到版本 Bundle">
-                    <select
-                      value={draft.runtime}
-                      onChange={(event) => {
-                        const runtime = event.target.value as StudioDraft["runtime"];
-                        const targetCapability = activeRuntimeCapabilities.find(
-                          (item) => item.runtime === runtime,
-                        );
-                        const compatibleRoute = options.routes.find((route) =>
-                          targetCapability
-                            ? targetCapability.modelApiFormats.includes(
-                                route.apiFormat ?? "anthropic_compatible",
-                              )
-                            : runtime !== "codex-app-server",
-                        );
-                        const currentRouteCompatible = selectedRoute
-                          ? targetCapability
-                            ? targetCapability.modelApiFormats.includes(
-                                selectedRoute.apiFormat ?? "anthropic_compatible",
-                              )
-                            : runtime !== "codex-app-server"
-                          : false;
-                        // A tool the new runtime cannot execute would stay checked
-                        // and block publish with an error the operator has no way
-                        // to act on from this panel, so drop it as the runtime
-                        // changes rather than leaving a disabled tick behind.
-                        const keptTools = draft.builtinTools.filter((tool) =>
-                          builtinToolAvailable(tool, targetCapability?.capabilities),
-                        );
-                        updateDraft({
-                          runtime,
-                          ...(keptTools.length === draft.builtinTools.length
-                            ? {}
-                            : { builtinTools: keptTools }),
-                          ...(currentRouteCompatible || !compatibleRoute
-                            ? {}
-                            : {
-                                modelRoute: compatibleRoute.id,
-                                model: compatibleRoute.models[0],
-                              }),
-                        });
-                      }}
-                    >
-                      {(activeRuntimeCapabilities.length > 0
-                        ? activeRuntimeCapabilities
-                        : [
-                            {
-                              runtime: "claude-agent-sdk" as const,
-                              label: "Claude Agent SDK",
-                              stability: "stable" as const,
-                              capabilities: [],
-                              modelApiFormats: ["anthropic_compatible" as const],
-                              limitations: [],
-                            },
-                            {
-                              runtime: "codex-app-server" as const,
-                              label: "Codex App Server",
-                              stability: "preview" as const,
-                              capabilities: [],
-                              modelApiFormats: ["openai_compatible" as const],
-                              limitations: [],
-                            },
-                          ]
-                      ).map((runtimeCapability) => (
-                        <option key={runtimeCapability.runtime} value={runtimeCapability.runtime}>
-                          {runtimeCapability.label}
-                          {runtimeCapability.stability !== "stable"
-                            ? ` · ${runtimeCapability.stability === "preview" ? "预览" : "实验"}`
-                            : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
+
                 </div>
                 <details className={styles.advancedRuntimeSettings}>
                   <summary>
@@ -3978,7 +4016,7 @@ export function AgentStudioWorkbench() {
           <span title={notice}>{notice}</span>
           <code>{draft.id ? `revision ${draft.revision}` : "unsaved"}</code>
         </footer>
-      </section>
+      </section></>
       )}
 
       {importFeedback && <div className={styles.importFeedback} role={importFeedback.error ? "alert" : "status"} data-error={Boolean(importFeedback.error)}><span>{importFeedback.message}</span>{!importingBundle && <button type="button" aria-label="关闭导入提示" onClick={()=>setImportFeedback(null)}>×</button>}</div>}
@@ -4140,6 +4178,13 @@ export function AgentStudioWorkbench() {
       </aside>
       {editorOpened.current && <AgentBuilderAssistant
         workspaceTarget={workspaceTarget}
+        userId={user.user_id}
+        onConfigureKnowledge={() => openConfiguration("capabilities")}
+        initialSessionId={initialSessionId}
+        playgroundMode={playgroundMode}
+        codeRequest={codeRequest}
+        buildChatRequest={buildChatRequest}
+        configuration={<AgentaConfiguration draft={draft} dirty={dirty} saving={saving} writable={canEdit} onEdit={openConfiguration} onSave={() => void saveDraft()} onPublish={() => void handleReleaseAction()} onCode={() => setCodeRequest(value => value + 1)} onBuildChat={() => setBuildChatRequest(value => value + 1)} />}
         testRequest={testRequest}
         open={viewMode === "editor" && Boolean(workspaceTarget)}
         mode={builderAssistantMode}

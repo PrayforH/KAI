@@ -173,6 +173,11 @@ class SessionService:
             return existing
         return session
 
+    async def list_studio_previews(
+        self, tenant_id: str, user_id: str, draft_id: str, *, limit: int = 100
+    ) -> list[Session]:
+        return await self._sessions.list_studio_previews(tenant_id, user_id, draft_id, limit=limit)
+
     async def get(self, tenant_id: str, session_id: str) -> Session:
         return await self._sessions.get(tenant_id, session_id)
 

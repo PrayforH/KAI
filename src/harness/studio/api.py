@@ -178,6 +178,7 @@ from harness.studio.try_run import (
     CreateStudioTryRunRequest,
     SolidifiedAgentResult,
     SolidifyStudioTryRunRequest,
+    StudioTryRunSummary,
     StudioTryRunView,
     build_codex_loop,
     final_text,
@@ -2011,6 +2012,34 @@ async def _require_studio_try_run(
     ):
         raise NotFoundError(f"Studio Try Run not found: {run_id}")
     return run
+
+
+@router.get("/drafts/{draft_id}/try-runs", response_model=list[StudioTryRunSummary])
+async def list_studio_try_runs(
+    draft_id: str,
+    request: Request,
+    actor: Annotated[StudioActor, Depends(require_studio_reader)],
+    service: Annotated[AgentStudioService, Depends(get_studio_service)],
+) -> list[StudioTryRunSummary]:
+    """Restore recent Playground conversations without exposing another user's runs."""
+    container = request.app.state.container
+    try:
+        await service.get(actor.tenant_id, actor.user_id, draft_id)
+        sessions = await container.sessions.list_studio_previews(
+            actor.tenant_id, actor.user_id, draft_id, limit=100
+        )
+        revisions = {
+            session.session_id: int(
+                session.agent_version.removeprefix(f"preview-{draft_id}-").split("-", 1)[0]
+            )
+            for session in sessions
+        }
+        runs = await container.runs.list_for_sessions(actor.tenant_id, list(revisions), limit=200)
+        return [
+            StudioTryRunSummary(draftRevision=revisions[run.session_id], run=run) for run in runs
+        ]
+    except (ConflictError, NotFoundError) as error:
+        raise _translate_domain_error(error) from error
 
 
 @router.post(

@@ -3427,3 +3427,63 @@ async def test_agent_skill_catalog_is_batched_scoped_and_omits_file_payloads() -
         assert hidden.json() == []
         anonymous = await client.get("/v1/studio/skills/agents")
         assert anonymous.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_playground_history_restores_turns_and_excludes_other_scopes() -> None:
+    application, container = app_and_container(auto_execute=True)
+    headers = {
+        "Authorization": f"Bearer {SERVICE_TOKEN}",
+        "X-Tenant-ID": "playground-history",
+        "X-User-ID": "owner",
+    }
+    async with AsyncClient(
+        transport=ASGITransport(app=application), base_url="http://test"
+    ) as client:
+        draft = (
+            await client.post(
+                "/v1/studio/drafts", headers=headers, json=draft_request("history-agent")
+            )
+        ).json()
+        other = (
+            await client.post(
+                "/v1/studio/drafts", headers=headers, json=draft_request("other-agent")
+            )
+        ).json()
+        url = f"/v1/studio/drafts/{draft['draftId']}/try-runs"
+        first = await client.post(
+            url,
+            headers=headers,
+            json={
+                "expectedRevision": 1,
+                "prompt": "First prompt",
+                "idempotencyKey": "history-first",
+            },
+        )
+        assert first.status_code == 202, first.text
+        run_id = first.json()["run"]["run_id"]
+        second = await client.post(
+            url,
+            headers=headers,
+            json={
+                "expectedRevision": 1,
+                "prompt": "Follow-up",
+                "idempotencyKey": "history-second",
+                "continueFromRunId": run_id,
+            },
+        )
+        assert second.status_code == 202, second.text
+        response = await client.get(url, headers=headers)
+        assert response.status_code == 200, response.text
+        assert {row["run"]["input"]["prompt"] for row in response.json()} == {
+            "First prompt",
+            "Follow-up",
+        }
+        assert {row["draftRevision"] for row in response.json()} == {1}
+        assert len({row["run"]["session_id"] for row in response.json()}) == 1
+        empty = await client.get(f"/v1/studio/drafts/{other['draftId']}/try-runs", headers=headers)
+        assert empty.status_code == 200
+        assert empty.json() == []
+        for override in ({"X-User-ID": "other"}, {"X-Tenant-ID": "other"}):
+            denied = await client.get(url, headers={**headers, **override})
+            assert denied.status_code == 404, denied.text

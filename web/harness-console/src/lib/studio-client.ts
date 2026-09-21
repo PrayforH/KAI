@@ -804,6 +804,8 @@ export type CodexLoopStage = {
   }>;
 };
 
+export type StudioTryRunSummary = { draftRevision: number; run: StudioTryRun["run"] & { input: { prompt?: string; input_artifact_ids?: string[] }; created_at: string } };
+
 export type StudioTryRun = {
   activity?: RunActivity | null;
   draftId: string;
@@ -2234,6 +2236,7 @@ export const studioClient = {
     method: "POST",
     body: JSON.stringify({ expectedRevision, prompt, idempotencyKey, ...options }),
   }),
+  listTryRuns: (draftId: string) => request<StudioTryRunSummary[]>(`drafts/${encodeURIComponent(draftId)}/try-runs`),
   getTryRun: (draftId: string, draftRevision: number, runId: string) =>
     request<StudioTryRun>(
       `drafts/${encodeURIComponent(draftId)}/try-runs/${encodeURIComponent(runId)}`

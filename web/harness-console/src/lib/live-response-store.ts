@@ -1,4 +1,5 @@
 "use client";
+import { useConversationScope } from "./conversation-scope";
 
 import { useSyncExternalStore } from "react";
 import { isActiveRuntimeThread } from "./runtime-thread-scope";
@@ -275,9 +276,11 @@ export const liveResponseStore = {
 };
 
 export function useLiveResponse(): LiveResponseSnapshot {
-  return useSyncExternalStore(
+  const scope = useConversationScope();
+  const globalSnapshot = useSyncExternalStore(
     liveResponseStore.subscribe,
     liveResponseStore.getSnapshot,
     () => emptySnapshot,
   );
+  return scope ? scope.live : globalSnapshot;
 }

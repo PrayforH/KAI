@@ -317,7 +317,7 @@ describe("Agent Studio management page", () => {
   });
 
   it("uses one action-button contract and structured overflow menu states", () => {
-    expect(workbench.match(/styles\.headerActionButton/g)).toHaveLength(3);
+    expect(workbench.match(/styles\.headerActionButton/g)).toHaveLength(4);
     expect(workbench.match(/className=\{styles\.actionMenuItem\}/g)).toHaveLength(12);
     expect(workbench).not.toContain("copilot-drawer");
     expect(workbench).not.toContain("CopilotDrawer");
@@ -385,7 +385,7 @@ describe("Agent Studio management page", () => {
     expect(builderOverlays).not.toContain("AgentBuilderCopilot");
     expect(workbench).not.toContain("createPersonalStudioDraft");
     expect(workbench).toContain("disabled={!canEdit || saving}");
-    expect(workbench).toContain("onClick={() => void startNewDraft()}");
+    expect(workbench).toContain("onBlank={() => {setTemplatesOpen(false);void startNewDraft();}}");
     expect(workbench).toContain(': "尚未保存"');
   });
 
@@ -861,7 +861,7 @@ describe("Agent Studio management page", () => {
   it("keeps the empty Agent catalog quiet until the user explicitly creates one", () => {
     expect(workbench).not.toContain("if (canEdit) setNewAgentOpen(true)");
     expect(workbench).toContain('setNotice(serverDrafts.length > 0 ? "" : canEdit ? "当前没有草稿，可新建第一个 Agent"');
-    expect(workbench).toContain('className={`${styles.studioShell} ${styles.workbenchContent}`}');
+    expect(workbench).toContain('data-agent-focused={viewMode === "editor"}');
   });
 
   it("uses compact gray cards and a constrained editor canvas", () => {

@@ -53,6 +53,11 @@ class SolidifiedAgentResult(StudioModel):
     loop: tuple[CodexLoopStage, ...] = Field(min_length=5, max_length=5)
 
 
+class StudioTryRunSummary(StudioModel):
+    draft_revision: int = Field(alias="draftRevision", ge=1)
+    run: Run
+
+
 class StudioTryRunView(StudioModel):
     draft_id: str = Field(alias="draftId")
     draft_revision: int = Field(alias="draftRevision", ge=1)

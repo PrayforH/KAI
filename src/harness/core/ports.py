@@ -108,6 +108,10 @@ class AgentIdentityProvider(Protocol):
 
 
 class SessionRepository(Protocol):
+    async def list_studio_previews(
+        self, tenant_id: str, user_id: str, draft_id: str, *, limit: int
+    ) -> list[Session]: ...
+
     async def add(self, session: Session) -> None: ...
 
     async def get(self, tenant_id: str, session_id: str) -> Session: ...

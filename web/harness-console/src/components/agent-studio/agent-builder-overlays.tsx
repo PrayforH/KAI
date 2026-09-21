@@ -10,12 +10,13 @@ const AgentProjectCode = dynamic(() => import("./agent-project-code").then(modul
 import { AgentBuildAssets, type BuildChange } from "./agent-build-assets";
 import workspaceStyles from "./build-workspace.module.css";
 import { PreviewRunResponse, PreviewMarkdown, type PreviewTurn } from "./agent-preview";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   apiDraftToStudioDraft,
   studioClient,
   type StudioTaskDrivenRecommendation,
   type StudioTryRun,
+  type StudioTryRunSummary,
   type StudioBuilderReply,
   type DeepagentsProjectComparison,
 } from "../../lib/studio-client";
@@ -102,7 +103,7 @@ export function AgentBuilderAssistant({
   hasUnsavedChanges,
   onUpdated,
   creationSession = 0,
-  workspaceTarget, testRequest = 0,
+  workspaceTarget, testRequest = 0, userId, onConfigureKnowledge, initialSessionId, configuration, playgroundMode = "build", codeRequest = 0, buildChatRequest = 0,
 }: {
   open: boolean;
   mode: AssistantMode;
@@ -117,16 +118,29 @@ export function AgentBuilderAssistant({
   onUpdated: (draft: StudioDraft) => void;
   creationSession?: number;
   workspaceTarget?: HTMLElement | null;
+  configuration?: ReactNode;
+  initialSessionId?: string;
+  userId?: string;
+  onConfigureKnowledge?: () => void;
+  playgroundMode?: "build" | "chat";
+  codeRequest?: number;
+  buildChatRequest?: number;
   testRequest?: number;
 }) {
+  const [conversationTab, setConversationTab] = useState<"chat" | "builder">(mode === "create" ? "builder" : "chat");
+  const [savedRuns, setSavedRuns] = useState<StudioTryRunSummary[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
+  const historySelection = useRef(0);
+  const restoredSessionKey = useRef("");
   const [input, setInput] = useState("");
   const [codeView, setCodeView] = useState(false);
   const [lastComparison, setLastComparison] = useState<DeepagentsProjectComparison>();
   const [codeComparison, setCodeComparison] = useState<DeepagentsProjectComparison>();
   const [comparisonPending, setComparisonPending] = useState(false);
   const [comparing, setComparing] = useState(false);
-  const [assetsOpen, setAssetsOpen] = useState(true);
-  const [assetTab, setAssetTab] = useState<"config" | "changes">("config");
+  const [assetsOpen, setAssetsOpen] = useState(false);
+  const [assetTab, setAssetTab] = useState<"config" | "files" | "changes">("config");
   const [mobilePanel, setMobilePanel] = useState<"build" | "test">("build");
   const [selectedRunId, setSelectedRunId] = useState("");
   const [testSessionId, setTestSessionId] = useState("");
@@ -193,7 +207,7 @@ export function AgentBuilderAssistant({
     setEditing(false);
     setApplying(false);
     setProposal(null);
-    setCodeView(false); setLastComparison(undefined); setCodeComparison(undefined); setComparisonPending(false); setComparing(false); setLastChanges([]); setSelectedRunId(""); setAssetsOpen(true); setMobilePanel("build");
+    setCodeView(false); setLastComparison(undefined); setCodeComparison(undefined); setComparisonPending(false); setComparing(false); setLastChanges([]); setSelectedRunId(""); setAssetsOpen(false); setMobilePanel("build"); setConversationTab(mode === "create" ? "builder" : "chat"); historySelection.current++;
     setLastTestPrompt("");
     setTestSessionId(""); setTestConversationEpoch(value => value + 1);
     setArchivedTurns([]); setCurrentFiles([]); setLastArtifactIds([]); setFeedbackTurn(null);
@@ -211,7 +225,54 @@ export function AgentBuilderAssistant({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, mode, draft.id, creationSession]);
 
-  useEffect(() => { if (testRequest) { setCodeView(false);setMobilePanel("test"); window.setTimeout(() => workspaceTarget?.querySelector<HTMLTextAreaElement>('[aria-label="效果测试输入"]')?.focus(), 0); } }, [testRequest, workspaceTarget]);
+  useEffect(() => { if (testRequest) { setConversationTab("chat");setCodeView(false);setMobilePanel("test"); window.setTimeout(() => workspaceTarget?.querySelector<HTMLTextAreaElement>('[aria-label="智能体效果测试"] [aria-label="消息输入"]')?.focus(), 0); } }, [testRequest, workspaceTarget]);
+
+  useEffect(() => { if (codeRequest) {setCodeComparison(undefined);setComparisonPending(false);setCodeView(true);setAssetsOpen(false);} }, [codeRequest]);
+  useEffect(() => { if (buildChatRequest) {setConversationTab("builder");setCodeView(false);} }, [buildChatRequest]);
+  useEffect(() => { if (playgroundMode === "chat") {setConversationTab("chat");setCodeView(false);} }, [playgroundMode]);
+  useEffect(() => {
+    let current = true;
+    setSavedRuns([]); setHistoryError("");
+    if (!draftReady) return;
+    setHistoryLoading(true);
+    void studioClient.listTryRuns(activeDraft.id).then(runs => {if (current) setSavedRuns(runs);}).catch(reason => {if (current) setHistoryError(reason instanceof Error ? reason.message : "历史会话读取失败");}).finally(() => {if (current) setHistoryLoading(false);});
+    return () => {current = false;};
+  }, [activeDraft.id, draftReady]);
+
+  async function selectSession(id: string) {
+    if (active || historyLoading) return;
+    const selection = ++historySelection.current;
+    const epoch = epochRef.current;
+    const missing = savedRuns.filter(item => item.run.session_id === id && !archivedTurns.some(turn => turn.result.run.run_id === item.run.run_id) && item.run.run_id !== result?.run.run_id);
+    setError("");
+    if (missing.length) {
+      setHistoryLoading(true);
+      try {
+        const restored: PreviewTurn[] = await Promise.all(missing.sort((a,b) => a.run.created_at.localeCompare(b.run.created_at)).map(async item => ({prompt: item.run.input.prompt || "历史任务", artifactIds: item.run.input.input_artifact_ids, files: item.run.input.input_artifact_ids?.map((_,index) => `附件 ${index+1}`), result: await studioClient.getTryRun(activeDraft.id, item.draftRevision, item.run.run_id)})));
+        if (epoch !== epochRef.current || selection !== historySelection.current) return;
+        // Preserve the newest run as the active view so interrupted streams can resume.
+        const all: PreviewTurn[] = [...archivedTurns, ...(result ? [{prompt: lastTestPrompt, result, files: currentFiles, artifactIds: lastArtifactIds}] : []), ...restored];
+        const selected = all.filter(turn => turn.result.run.session_id === id).sort((a,b) => (savedRuns.find(item => item.run.run_id === a.result.run.run_id)?.run.created_at || "").localeCompare(savedRuns.find(item => item.run.run_id === b.result.run.run_id)?.run.created_at || ""));
+        const latest = selected.at(-1)!;
+        setArchivedTurns([...new Map(all.filter(turn => turn.result.run.run_id !== latest.result.run.run_id).map(turn => [turn.result.run.run_id, turn])).values()]);
+        setResult(latest.result);setLastTestPrompt(latest.prompt);setCurrentFiles(latest.files || []);setLastArtifactIds(latest.artifactIds || []);
+      } catch (reason) {if (epoch === epochRef.current) setError(reason instanceof Error ? reason.message : "会话恢复失败");return;}
+      finally {if (epoch === epochRef.current) setHistoryLoading(false);}
+    }
+    if (epoch !== epochRef.current || selection !== historySelection.current) return;
+    setTestSessionId(id);setTestConversationEpoch(value => value + 1);setSelectedRunId("");setConversationTab("chat");setCodeView(false);
+  }
+
+  useEffect(() => {
+    if (!initialSessionId || historyLoading || !savedRuns.length) return;
+    const key = `${activeDraft.id}:${initialSessionId}`;
+    if (restoredSessionKey.current === key) return;
+    restoredSessionKey.current = key;
+    if (savedRuns.some(item => item.run.session_id === initialSessionId)) void selectSession(initialSessionId);
+    else setError("此会话不在最近的历史记录中，或当前账号无法读取。");
+    // selectSession reads the current draft and loaded index only once per deep link.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialSessionId, activeDraft.id, historyLoading, savedRuns]);
 
   useEffect(() => () => {
     epochRef.current += 1;
@@ -285,7 +346,7 @@ export function AgentBuilderAssistant({
   }
 
   async function startRun(value: string, targetDraft?: StudioDraft, continueConversation = false, artifactIds: string[] = [], names: string[] = []): Promise<boolean> {
-    if (startingRef.current || (result && !terminal)) return false;
+    if (historyLoading || startingRef.current || (result && !terminal)) return false;
     startingRef.current = true;
     const epoch = epochRef.current;
     setBusy(true);
@@ -311,7 +372,7 @@ export function AgentBuilderAssistant({
       setCurrentFiles(names); setLastArtifactIds(artifactIds);
       setResult(started);
       setTestSessionId(started.run.session_id);
-      setCodeView(false);setMobilePanel("test");
+      setCodeView(false);setMobilePanel("test");setConversationTab("chat");
       setSelectedRunId("");
       setMessages(current => [...current, { id: `run-${started.run.run_id}`, role: "assistant", text: "", runId: started.run.run_id }]);
       return true;
@@ -524,7 +585,7 @@ export function AgentBuilderAssistant({
   }
 
   const turns = [...archivedTurns, ...(result ? [{ prompt: lastTestPrompt, result, files: currentFiles, artifactIds: lastArtifactIds }] : [])];
-  function improve(turn: PreviewTurn) { setFeedbackTurn(turn); setInput("请分析这次回答的问题并提出配置改进建议。"); setIntent("auto"); setMobilePanel("build"); window.setTimeout(() => inputRef.current?.focus(), 0); }
+  function improve(turn: PreviewTurn) { setConversationTab("builder");setCodeView(false); setFeedbackTurn(turn); setInput("请分析这次回答的问题并提出配置改进建议。"); setIntent("auto"); setMobilePanel("build"); window.setTimeout(() => inputRef.current?.focus(), 0); }
   if (!open) return null;
   const builder = <aside className={styles.builderAssistant} data-embedded={Boolean(workspaceTarget)} aria-label="智能体构建助手">
     <PanelResizeHandle panel={workspaceTarget ? "build" : "builder"} />
@@ -642,15 +703,20 @@ export function AgentBuilderAssistant({
   </aside>;
   if (!workspaceTarget) return builder;
   const changes = proposal ? Object.entries(proposal.changes).filter(([key]) => key !== "capabilityCatalogRevision").map(([key,value]) => ({label: editLabels[key] ?? key, before: showValue(beforeEdit(proposal.before,key)), after: showValue(value)})) : lastChanges;
-  return createPortal(<div className={workspaceStyles.workspace} data-assets={assetsOpen} data-code={codeView} data-mobile={mobilePanel}>
-    <nav className={workspaceStyles.mobileTabs} aria-label="构建工作台视图"><button type="button" aria-pressed={mobilePanel === "build"} onClick={() => setMobilePanel("build")}>构建与修改</button><button type="button" aria-pressed={mobilePanel === "test"} onClick={() => setMobilePanel("test")}>效果测试</button></nav>
-    {builder}
-    {assetsOpen && !codeView && <AgentBuildAssets key={assetTab} initialTab={assetTab} onCodeView={() => {setCodeComparison(undefined); setCodeView(true);}} onCodeChanges={lastComparison ? showLastComparison : undefined} draft={activeDraft} turns={turns} changes={changes} pending={Boolean(proposal)} onClose={() => setAssetsOpen(false)} />}
-    {codeView && <AgentProjectCode key={activeDraft.id} draftId={draftReady ? activeDraft.id : ""} revision={activeDraft.revision} name={activeDraft.name || activeDraft.displayName} dirty={hasUnsavedChanges} comparison={codeComparison} comparisonPending={comparisonPending} onClose={() => {setCodeView(false);setAssetsOpen(true);}} />}
-    <AgentTestPanel examples={activeDraft.evalCases} draftId={activeDraft.id} revision={activeDraft.revision} agentName={activeDraft.displayName} model={activeDraft.model} turns={turns.filter(turn => turn.result.run.session_id === testSessionId)} history={turns} sessionId={testSessionId} conversationEpoch={testConversationEpoch}
-      onSelectSession={id => {setTestSessionId(id);setTestConversationEpoch(value => value + 1);setSelectedRunId("");setError("");}} busy={active} ready={draftReady} dirty={hasUnsavedChanges} error={error} selectedRunId={selectedRunId}
+  return createPortal(<div className={workspaceStyles.agentaPlayground} data-mode={playgroundMode}>
+    {playgroundMode === "build" && configuration}
+    <div className={workspaceStyles.conversationArea}>
+      <nav className={workspaceStyles.conversationTabs} aria-label="工作区内容"><button aria-pressed={!codeView && conversationTab === "chat"} onClick={() => {setConversationTab("chat");setCodeView(false);}}>Chat</button><button aria-pressed={!codeView && conversationTab === "builder"} onClick={() => {setConversationTab("builder");setCodeView(false);}}>对话构建</button><button aria-pressed={codeView} disabled={!draftReady} onClick={() => {setCodeComparison(undefined);setComparisonPending(false);setCodeView(true);}}>DeepAgents 代码</button><button onClick={() => {setAssetTab("files");setAssetsOpen(current => !current);}}>文件</button></nav>
+      <div className={workspaceStyles.conversationBody}>
+        <div className={workspaceStyles.preservedPanel} hidden={codeView || conversationTab !== "builder"}>{builder}</div>
+    {assetsOpen && <AgentBuildAssets key={assetTab} initialTab={assetTab} onCodeView={() => {setCodeComparison(undefined); setCodeView(true);}} onCodeChanges={lastComparison ? showLastComparison : undefined} draft={activeDraft} turns={turns} changes={changes} pending={Boolean(proposal)} onClose={() => setAssetsOpen(false)} />}
+    {codeView && <AgentProjectCode key={activeDraft.id} draftId={draftReady ? activeDraft.id : ""} revision={activeDraft.revision} name={activeDraft.name || activeDraft.displayName} dirty={hasUnsavedChanges} comparison={codeComparison} comparisonPending={comparisonPending} onClose={() => setCodeView(false)} />}
+    <div className={workspaceStyles.preservedPanel} hidden={codeView || conversationTab !== "chat"}><AgentTestPanel draft={activeDraft} userId={userId} onConfigureKnowledge={onConfigureKnowledge} sessionRail={playgroundMode === "chat"} savedRuns={savedRuns} historyLoading={historyLoading} historyError={historyError} examples={activeDraft.evalCases} draftId={activeDraft.id} revision={activeDraft.revision} agentName={activeDraft.displayName} model={activeDraft.model} turns={turns.filter(turn => turn.result.run.session_id === testSessionId)} history={turns} sessionId={testSessionId} conversationEpoch={testConversationEpoch}
+      onSelectSession={id => void selectSession(id)} busy={active} ready={draftReady} dirty={hasUnsavedChanges} error={error} selectedRunId={selectedRunId}
       onSend={async (value,ids,names) => {if (proposal) {setError("请先应用或放弃左侧的配置建议，再测试。");return false;}return startRun(value, undefined, true, ids, names);}}
+      onRerun={(value,ids,names) => startRun(value, undefined, false, ids, names)}
       onReset={() => {if (result) setArchivedTurns(current => [...current,{prompt:lastTestPrompt,result,files:currentFiles,artifactIds:lastArtifactIds}]);setResult(null);setTestSessionId("");setTestConversationEpoch(value => value + 1);setLastTestPrompt("");setCurrentFiles([]);setLastArtifactIds([]);setFeedbackTurn(null);setSelectedRunId("");setError("");}}
-      onCancel={cancelRun} onImprove={improve} onAssets={() => {setCodeView(false);setAssetTab("config");setAssetsOpen(current => !current);}} />
+      onCancel={cancelRun} onImprove={improve} onAssets={() => {setCodeView(false);setAssetTab("files");setAssetsOpen(current => !current);}} /></div>
+      </div></div>
   </div>, workspaceTarget);
 }

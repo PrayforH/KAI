@@ -72,3 +72,45 @@
 
 .sessionPicker { display: flex; align-items: center; gap: 10px; padding: 8px 22px 0; flex-shrink: 0; color: var(--studio-muted); font-size: 12px; }
 .sessionPicker select { flex: 1; min-width: 0; max-width: 100%; padding: 5px 8px; border: 1px solid var(--studio-line); border-radius: 6px; background: var(--studio-panel); color: var(--studio-ink); font: inherit; }
+/* Agenta-inspired configuration / conversation workspace. Hidden panels stay mounted. */
+.agentaPlayground {display:grid;grid-template-columns:minmax(320px,400px) minmax(0,1fr);height:100%;min-height:0;min-width:0;overflow:hidden;background:var(--studio-paper);color:var(--studio-ink);}
+.agentaPlayground[data-mode=chat] {grid-template-columns:minmax(0,1fr);}
+.conversationArea {display:flex;flex-direction:column;min-width:0;min-height:0;}
+.conversationTabs {display:flex;align-items:center;gap:4px;height:48px;flex:0 0 48px;padding:0 14px;border-bottom:1px solid var(--studio-line);}
+.conversationTabs button {border:0;background:transparent;padding:7px 9px;border-radius:4px;font:inherit;font-size:12px;color:var(--studio-muted);cursor:pointer;}
+.conversationTabs button[aria-pressed=true] {background:var(--studio-panel-subtle);color:var(--studio-ink);}
+.conversationTabs button:last-child {margin-left:auto;}
+.conversationBody {position:relative;display:flex;flex:1;min-height:0;min-width:0;overflow:hidden;}
+.preservedPanel {display:flex;flex:1;min-height:0;min-width:0;overflow:hidden;}
+.preservedPanel[hidden] {display:none!important;}
+.preservedPanel > aside {width:100%!important;max-width:none!important;flex:1;border:0;}
+.conversationBody > section {flex:1;min-width:0;}
+.conversationBody > .assets {position:absolute!important;inset:0 0 0 auto!important;z-index:12;width:min(360px,100%)!important;border-left:1px solid var(--studio-line);box-shadow:-8px 0 24px #0001;}
+.testLayout {display:grid;grid-template-columns:minmax(0,1fr);flex:1;min-width:0;min-height:0;}
+.testLayout[data-session-rail=true] {grid-template-columns:260px minmax(0,1fr);}
+.sessionRail {display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--studio-line);background:var(--studio-panel-subtle);padding:12px;font-size:12px;}
+.sessionRail header {display:flex;align-items:center;justify-content:space-between;height:30px;margin-bottom:10px;}
+.sessionRail header button {border:1px solid var(--studio-line);background:var(--studio-paper);color:var(--studio-ink);border-radius:4px;cursor:pointer;}
+.sessionRail input {width:100%;box-sizing:border-box;border:1px solid var(--studio-line);background:var(--studio-paper);color:var(--studio-ink);padding:8px 10px;border-radius:5px;font:inherit;}
+.sessionList {overflow:auto;margin-top:12px;min-height:0;}
+.sessionList button {width:100%;display:flex;flex-direction:column;gap:6px;text-align:left;padding:12px 10px;border:0;border-radius:5px;background:transparent;color:var(--studio-ink);font:inherit;cursor:pointer;}
+.sessionList button[aria-pressed=true] {background:var(--studio-paper);box-shadow:0 0 0 1px var(--studio-line);}
+.sessionList button strong {font-weight:500;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.sessionList button small,.sessionList p {color:var(--studio-muted);font-size:11px;line-height:1.6;}
+.agentaPlayground button:disabled {opacity:.45;cursor:default;}
+@media(max-width:1100px){.agentaPlayground{grid-template-columns:320px minmax(0,1fr)}.testLayout[data-session-rail=true]{grid-template-columns:200px minmax(0,1fr)}}
+@media(max-width:850px){.agentaPlayground{display:flex;flex-direction:column;overflow:auto}.agentaPlayground>section{max-height:40%;flex-shrink:0;border-bottom:1px solid var(--studio-line)}.conversationArea{flex:1;min-height:350px}.testLayout[data-session-rail=true]{grid-template-columns:160px minmax(0,1fr)}.panelHeader small{display:none}.testTranscript{padding:16px}.conversationTabs{padding:0 5px}}
+@media(max-width:540px){.testLayout[data-session-rail=true]{display:flex;flex-direction:column}.sessionRail{max-height:150px;flex-shrink:0}.sessionRail header{display:none}.sessionList{display:flex;margin:6px 0 0}.sessionList button{min-width:150px;width:150px}.testPanel{flex:1}.conversationTabs button{font-size:11px;padding:7px}}
+.sharedThread {position:relative;display:flex;flex-direction:column;flex:1;min-height:0;min-width:0;overflow:hidden;}
+.sharedThread :global(.harness-thread-frame) {flex:1;min-height:0;height:100%;width:100%;}
+.sharedThread :global(.aui-thread-root) {height:100%;min-height:0;}
+.sharedThread :global(.harness-user-message),.sharedThread :global(.harness-assistant-message) {max-width:100%;}
+.sharedThread :global(.user-task-hero) {min-height:160px;padding:24px;}
+.sharedThread :global(.user-task-intro h1) {font-size:24px;}
+.turnExtensions {display:flex;flex-wrap:wrap;gap:12px;margin:12px 0;color:var(--studio-muted);font-size:11px;}
+.turnExtensions>button {background:transparent;border:0;color:inherit;font:inherit;cursor:pointer;}
+.turnExtensions>details>summary {cursor:pointer;}
+.turnExtensions>details[open] {width:100%;}
+.traceDrawer {position:absolute;inset:0 0 0 auto;z-index:20;width:min(600px,100%);background:var(--studio-paper);border-left:1px solid var(--studio-line);padding:20px;overflow:auto;box-shadow:-10px 0 30px #0002;}
+.traceDrawer>header {display:flex;justify-content:space-between;margin-bottom:20px;}
+.traceDrawer>header button {border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;}
