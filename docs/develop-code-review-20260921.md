@@ -309,8 +309,11 @@ canonical_creator = next(s for s in default_capability_catalog().skills if s.pac
 - 脱敏与 Creator 提示词：`python -c open(...)`/`sort`/`cat` 命中脱敏，用户产物不误伤；提示词五个必需小节齐全且产物名与校验一致。
 - 真实运行 `run_538d410de5094c5e83db30a555c23368`：succeeded、runtime=deepagents、1 轮、5013/348 tokens。
 - 3301 与 3501 均运行 `agent-studio-web:reviewfix-20260921`，health=healthy、HTTP 200，产物中可见新文案且旧兜底文案为 0 命中。
-- 镜像按仓库流程在**本地** buildx 构建 linux/amd64 后推送 Harbor，174 只拉取：`agent-studio-api:reviewfix-20260921`
-  （digest `sha256:6d0febe3…b8a3`，同时承担 api 与 worker 两种 entrypoint）与 `agent-studio-web:reviewfix-20260921`
-  （digest `sha256:566507a0…7802`）。切换后重跑归属、脱敏/提示词与真实运行三项验证，结果不变；
-  镜像内 harness 与本地源码聚合哈希仍为 `48760584…f235de`。
+- 分支已 rebase 到 `origin/develop`（上游另有 2 个提交修了同一处 config 重复字段并加了 desktop local 设置项；
+  迁移头那处保留"自派生"而不是写死 `0035`），随后快进合并并推送：`origin/develop = 0523fc10`。
+- 镜像在**本地** buildx 构建 linux/amd64 后推 Harbor，174 只拉取，当前部署即 `develop@0523fc10`：
+  `agent-studio-api:develop-20260921-0523fc10`（digest `sha256:a7edb92e…9d58`，同时承担 api 与 worker 两种 entrypoint）、
+  `agent-studio-web:develop-20260921-0523fc10`（digest `sha256:9a542f5f…d017`），3501 同镜像。
+  镜像内 harness 与本地源码聚合哈希一致（`74ca13ae…f9af`，318 文件），配置、归属、脱敏/提示词与真实运行
+  （`run_c81ccb0d…`，succeeded）四项验证在 develop 镜像上重跑均通过。
 - 未验证项与回滚步骤见 `REVIEW-FIXES-174.md`。

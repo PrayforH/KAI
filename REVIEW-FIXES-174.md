@@ -6,21 +6,27 @@
 
 ## 部署内容
 
-镜像全部在本地 buildx 构建 linux/amd64 后推送 Harbor，174 只负责拉取与重建。先做过一次
-174 侧增量镜像（只为快速验证），随后已用 Harbor 全量镜像替换，当前运行的就是下面这两个 digest。
+镜像全部在本地 buildx 构建 linux/amd64 后推送 Harbor，174 只负责拉取与重建。**当前部署用的是
+develop 自己的 tag**，即 `develop@0523fc10` 的镜像：
 
 | 组件 | 镜像 | digest |
 | --- | --- | --- |
-| API | `harbor.shdata.com:5000/agent-studio/amd64/agent-studio-api:reviewfix-20260921` | `sha256:6d0febe3356cdb8e05a05f38d1b7588913f31e51a053721564ee4fb1a9e8b8a3` |
+| API | `harbor.shdata.com:5000/agent-studio/amd64/agent-studio-api:develop-20260921-0523fc10` | `sha256:a7edb92ec1628107eee8396899532af3dd3e7f4b6d138f4834ed4080855d9d58` |
 | Worker ×3 | 同上（compose 用 `entrypoint: entrypoint-worker` 区分） | 同上 |
-| Web（3301） | `harbor.shdata.com:5000/agent-studio/amd64/agent-studio-web:reviewfix-20260921` | `sha256:566507a0fe5d92bf6c7c98d73929d72bc13b3a70b8b428dad0ff5ddab7247802` |
-| Web（3501） | 同一 web 镜像 | 同上；`update_3501.sh reviewfix-20260921`，旧容器保留为 `axis-web-submenus-20260921-rollback-reviewfix-20260921` |
+| Web（3301） | `harbor.shdata.com:5000/agent-studio/amd64/agent-studio-web:develop-20260921-0523fc10` | `sha256:9a542f5f12be9189bbb66a505a5d285f3d7baec6bc3ed59636f87a460259d017` |
+| Web（3501） | 同一 web 镜像（容器 `axis-web-20260921-0523fc10`） | 同上 |
 
-构建命令：`HARNESS_BUILD_COMPONENTS="api web" bash scripts/build_harbor_174.sh reviewfix-20260921`；
+构建命令（**一次只传一个组件**：`HARNESS_BUILD_COMPONENTS="api web"` 这种写法只构建到了 web，
+分别跑两次 `=api` / `=web` 才是可靠的）：
+
+```sh
+HARNESS_BUILD_COMPONENTS=api bash scripts/build_harbor_174.sh develop-20260921-0523fc10
+HARNESS_BUILD_COMPONENTS=web bash scripts/build_harbor_174.sh develop-20260921-0523fc10
+```
+
 174 上的 overlay（`compose.deepagents-174.yaml`）把 api/worker/web 的 `image:` 指向上述 Harbor tag，
-沿用 `up-deepagents-174.sh` 重建。从运行基线 `4f95e64b` 到本分支没有依赖、迁移或内置资产差异，
-所以全量镜像的差异就是源码。
-
+沿用 `up-deepagents-174.sh` 重建；3501 用 `bash update_3501.sh develop-20260921-0523fc10`。
+从运行基线 `4f95e64b` 到 develop 当前提交没有依赖、迁移或内置资产差异，所以全量镜像的差异就是源码。
 无数据库迁移：本次只改 `src/harness` 与 `web/harness-console`。
 
 镜像内 `harness` 包与本地源码逐字节一致：318 个 Python 文件，聚合 SHA-256
@@ -39,6 +45,20 @@
 | 真实运行回归 | `scripts/verify_174_real_run.py`：真实入队 → worker → 沙箱 → 模型 | `run_538d410de5094c5e83db30a555c23368` 终态 `succeeded`，runtime=deepagents，`is_error=false`，1 轮，5013/348 tokens，完整回答 |
 | 前端产物 | 两个 web 容器内 `.next/static/chunks` 检索 | 新文案（本机隐藏、运行环境未能启动、工作日每/每天每）命中；旧的裸错误码兜底文案为 0 命中 |
 | 本地回归 | `pytest tests/unit`、`vitest run` | 见仓库测试结果；新增测试覆盖跨库归属、租约 CAS、按路径脱敏、标题退避、无 vendored 树、排程往返 |
+
+## 验证的成本（本轮实测）
+
+| 步骤 | 耗时 | 说明 |
+| --- | --- | --- |
+| 配置、脱敏、Creator 提示词（纯逻辑） | < 0.01s | 无 I/O |
+| 构造生产容器 | 0.34s | `execution_enabled=False` |
+| 文档归属（3 次引擎调用） | 0.30s | 复用了已知 document id |
+| 真实运行（入队→worker→沙箱→模型） | 15s | 沙箱 `keep_warm`，走 deepagents 路由 |
+| 一次 ssh + docker cp + docker exec 往返 | 约 20s | 固定开销，与检查数量无关 |
+
+`scripts/verify_174_review_fixes.py` 把三类非运行检查合到一个进程里，并复用已知 document id：
+早期版本每次都调用 `list_source_documents`，而 WeKnora 会为此把整个 base 分页读完（最多 50 页 × 100 条），
+两次调用就占掉了大部分时间。**要快就避免重新列举文档，并且把多个检查合到一次容器调用里。**
 
 ## 未在本轮验证的项（诚实记录）
 
