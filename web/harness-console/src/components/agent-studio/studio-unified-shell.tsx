@@ -2,13 +2,14 @@
 import { useInternalAgentsPreference } from "../../lib/interface-preferences";
 
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useAuth } from "../auth-provider";
 import { TaskSidebar } from "../task-sidebar";
 import { ProductivityCommandCenter } from "../productivity-command-center";
 import { loadTaskAgentCatalog, type TaskAgent } from "../../lib/task-agent-catalog";
 import { createProjectTask } from "../../lib/project-task";
-import { projectClient, type ApiProject } from "../../lib/studio-client";
+import { useSidebarProjects } from "../../lib/sidebar-state";
+import { createNewThread, createUserScopedStorage } from "../../lib/thread-store";
 import type { TaskSummary } from "../../lib/task-history";
 import type { WorkspaceId } from "../workspace-navigation";
 
@@ -26,20 +27,14 @@ export function StudioUnifiedShell({
   children: ReactNode;
 }) {
   const router = useRouter();
+  const navigationRevision = useRef(0);
   const pathname = usePathname();
   const { user } = useAuth();
   const [showInternalAgents] = useInternalAgentsPreference();
   const [collapsed, setCollapsed] = useState(false);
   const [agents, setAgents] = useState<TaskAgent[]>([]);
   const [defaultAgent, setDefaultAgent] = useState<TaskAgent | null>(null);
-  const [projects, setProjects] = useState<ApiProject[]>([]);
-  const [projectRevision, setProjectRevision] = useState(0);
-
-  useEffect(() => {
-    let active = true;
-    projectClient.list().then((items) => { if (active) setProjects(items); }).catch(() => {});
-    return () => { active = false; };
-  }, [user.user_id, projectRevision]);
+  const [projects, refreshProjects] = useSidebarProjects(user.user_id);
 
   useEffect(() => {
     let active = true;
@@ -55,7 +50,15 @@ export function StudioUnifiedShell({
     };
   }, [user.user_id, showInternalAgents]);
 
-  const goHome = () => router.push("/");
+  const selectTask = (task: TaskSummary) => {
+    navigationRevision.current += 1;
+    router.push(`/?thread=${encodeURIComponent(task.thread_id)}`);
+  };
+  const goHome = () => {
+    navigationRevision.current += 1;
+    const id = createNewThread(createUserScopedStorage(window.localStorage, user.user_id));
+    router.push(`/?thread=${encodeURIComponent(id)}`);
+  };
   const routeWorkspace: WorkspaceId = pathname.startsWith("/studio/files")
     ? "files"
     : pathname.startsWith("/studio/automation")
@@ -78,23 +81,21 @@ export function StudioUnifiedShell({
         currentThreadId=""
         collapsed={collapsed}
         onToggle={() => setCollapsed((current) => !current)}
-        onSelect={(task: TaskSummary) =>
-          router.push(`/?thread=${encodeURIComponent(task.thread_id)}`)
-        }
+        onSelect={selectTask}
         onNewTask={goHome}
         projects={projects}
-        onProjectsChanged={() => setProjectRevision((revision) => revision + 1)}
+        onProjectsChanged={refreshProjects}
         onNewTaskWithProject={async (project) => {
+          const revision = ++navigationRevision.current;
           const task = await createProjectTask(project.projectId, defaultAgent);
+          if (navigationRevision.current !== revision) return;
           router.push(`/?thread=${encodeURIComponent(task.thread_id)}`);
         }}
         searchControl={
           <ProductivityCommandCenter
             agents={agents}
             onNewTask={goHome}
-            onSelectTask={(task: TaskSummary) =>
-              router.push(`/?thread=${encodeURIComponent(task.thread_id)}`)
-            }
+            onSelectTask={selectTask}
             onStartWithAgent={() => goHome()}
           />
         }

@@ -135,3 +135,34 @@ it("keeps project creation failures visible and allows retry", async () => {
     expect(create).toHaveBeenCalledTimes(2);
   } finally { await act(async () => root.unmount()); container.remove(); }
 });
+
+it("preserves project expansion and show-more choices when workspace navigation remounts the sidebar", async () => {
+  loadTasks.mockResolvedValue(Array.from({ length: 7 }, (_, i) => ({ ...task("succeeded", String(i)), project_id: "project-a" })));
+  const props = { currentThreadId: "", collapsed: false, onToggle() {}, onSelect() {}, onNewTask() {}, projects: [{ projectId: "project-a", name: "研究", userId: "test", tenantId: "local", createdAt: "", updatedAt: "" }] };
+  const container = document.createElement("div"); document.body.appendChild(container);
+  let root = createRoot(container);
+  try {
+    await act(async () => root.render(<TaskSidebar {...props} />));
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="展开项目 研究"]')!.click());
+    await act(async () => container.querySelector<HTMLButtonElement>('.tasks-show-more')!.click());
+    expect(container.querySelectorAll('.task-list-row')).toHaveLength(7);
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(<TaskSidebar {...props} activeNav="capabilities" />));
+    expect(container.querySelector('[aria-label="收起项目 研究"]')).not.toBeNull();
+    expect(container.querySelectorAll('.task-list-row')).toHaveLength(7);
+  } finally { await act(async () => root.unmount()); container.remove(); }
+});
+
+it("preserves a deliberately collapsed current project across remounts", async () => {
+  loadTasks.mockResolvedValue([{ ...task("succeeded", "selected"), project_id: "project-a" }]);
+  const props = { currentThreadId: "selected", collapsed: false, onToggle() {}, onSelect() {}, onNewTask() {}, projects: [{ projectId: "project-a", name: "研究", userId: "test", tenantId: "local", createdAt: "", updatedAt: "" }] };
+  const container = document.createElement("div"); let root = createRoot(container);
+  try {
+    await act(async () => root.render(<TaskSidebar {...props} />));
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="收起项目 研究"]')!.click());
+    await act(async () => root.unmount()); root = createRoot(container);
+    await act(async () => root.render(<TaskSidebar {...props} />));
+    expect(container.querySelector('[aria-label="展开项目 研究"]')).not.toBeNull();
+  } finally { await act(async () => root.unmount()); }
+});

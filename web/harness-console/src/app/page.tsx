@@ -24,7 +24,8 @@ import {
 } from "../components/task-header-actions";
 import { TaskSidebar } from "../components/task-sidebar";
 import { createProjectTask } from "../lib/project-task";
-import { ApiProject, projectClient } from "../lib/studio-client";
+import { ApiProject } from "../lib/studio-client";
+import { useSidebarProjects } from "../lib/sidebar-state";
 import { ProductBrandMark, ProductLoading, PRODUCT_NAME } from "../components/product-brand";
 import { SidebarLeftIcon, SidebarPanelIcon } from "../components/panel-icons";
 import { WorkbenchRail } from "../components/workbench-rail";
@@ -270,6 +271,7 @@ function AuthenticatedHome() {
     return () => window.removeEventListener("harness:preview-artifact", handler);
   }, []);
   const [compactTaskSidebar, setCompactTaskSidebar] = useState(false);
+  const taskSelectionRevision = useRef(0);
   const [currentTaskTitle, setCurrentTaskTitle] = useState("新任务");
   const [currentTask, setCurrentTask] = useState<TaskSummary | null>(null);
   const [currentThreadState, setCurrentThreadState] =
@@ -307,6 +309,7 @@ function AuthenticatedHome() {
     let active = true;
     const storage = createUserScopedStorage(window.localStorage, user.user_id);
     const storedThreadId = loadOrCreateThread(storage);
+    const selectionRevision = taskSelectionRevision.current;
     const initialSearch = new URLSearchParams(window.location.search);
     const requestedSkillLaunch = parseSkillCreatorLaunch(initialSearch);
     const requestedThreadId = initialSearch.get("thread");
@@ -347,6 +350,14 @@ function AuthenticatedHome() {
             .catch(() => ({ available: false as const, tasks: [] as TaskSummary[] })),
         ]);
         if (!active) return;
+        // Catalog data can still refresh, but an older load cannot select a task
+        // after the user has clicked New Task or chosen another conversation.
+        if (taskSelectionRevision.current !== selectionRevision) {
+          setTaskAgents(chatUsableAgents(catalog.agents));
+          setSystemAssistant(catalog.defaultAgent);
+          setModelRoutes(routes);
+          return;
+        }
         const search = initialSearch;
         const requestedName = search.get("agent");
         const requestedVersion = search.get("version");
@@ -437,7 +448,7 @@ function AuthenticatedHome() {
         bindThreadAgent(storage, currentThreadId, selected);
         setAgentsError("");
       } catch (error) {
-        if (!active) return;
+        if (!active || taskSelectionRevision.current !== selectionRevision) return;
         setAgentsError(
           error instanceof Error ? error.message : "智能体目录暂不可用",
         );
@@ -473,16 +484,7 @@ function AuthenticatedHome() {
   const availableTaskAgents = useMemo(() => taskAgents, [taskAgents]);
   // The sidebar groups tasks by the agent that ran them, so the browser view
   // shows the same display labels the header and switcher use.
-  const [projects, setProjects] = useState<ApiProject[]>([]);
-  const refreshProjects = useCallback(() => {
-    void projectClient
-      .list()
-      .then(setProjects)
-      .catch(() => setProjects([]));
-  }, []);
-  useEffect(() => {
-    refreshProjects();
-  }, [refreshProjects]);
+  const [projects, refreshProjects] = useSidebarProjects(user.user_id);
   const agentDisplayLabels = useMemo(
     () =>
       Object.fromEntries(
@@ -516,8 +518,10 @@ function AuthenticatedHome() {
   }, [closeCompactTaskSidebar]);
 
   const createTaskWithAgent = useCallback((nextAgent: TaskAgent) => {
+    taskSelectionRevision.current += 1;
     const storage = createUserScopedStorage(window.localStorage, user.user_id);
     const nextThreadId = createNewThread(storage);
+    window.history.replaceState(window.history.state, "", `/?thread=${encodeURIComponent(nextThreadId)}`);
     bindThreadAgent(storage, nextThreadId, nextAgent);
     setSelectedAgent(nextAgent);
     setThreadId(nextThreadId);
@@ -565,7 +569,9 @@ function AuthenticatedHome() {
   }, [threadId, runView?.runId, runView?.phase]);
 
   async function startTaskInProject(project: ApiProject) {
+    const selectionRevision = ++taskSelectionRevision.current;
     const task = await createProjectTask(project.projectId, systemAssistant);
+    if (taskSelectionRevision.current !== selectionRevision) return;
     switchTask(task);
     focusTaskComposer();
   }
@@ -578,19 +584,12 @@ function AuthenticatedHome() {
       : taskAgents[0];
     const nextAgent = currentSystemAssistant(candidate ?? null, systemAssistant);
     if (!nextAgent) return;
-    const launchMode = resolveTaskLaunchMode(currentThreadState, "new-task");
-    if (launchMode === "focus-current") {
-      if (selectedAgent && nextAgent.version !== selectedAgent.version) {
-        bindThreadAgent(taskStorage(), threadId, nextAgent);
-        setSelectedAgent(nextAgent);
-      }
-      focusTaskComposer();
-      return;
-    }
     createTaskWithAgent(nextAgent);
-  }, [createTaskWithAgent, currentThreadState, focusTaskComposer, selectedAgent, taskAgents, systemAssistant, threadId]);
+  }, [createTaskWithAgent, selectedAgent, taskAgents, systemAssistant]);
 
   function switchTask(task: TaskSummary) {
+    taskSelectionRevision.current += 1;
+    window.history.replaceState(window.history.state, "", `/?thread=${encodeURIComponent(task.thread_id)}`);
     const nextAgent =
       taskAgents.find(
         (agent) =>
