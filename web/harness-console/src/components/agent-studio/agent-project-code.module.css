@@ -80,7 +80,7 @@
 .notice:not(:empty) { position: absolute; bottom: 45px; left: 50%; transform: translateX(-50%); max-width: 85%; padding: 10px 16px; background: var(--source-raised); border: 1px solid var(--source-line); border-radius: 9px; box-shadow: 0 6px 24px #0002; font-size: 12px; }
 @keyframes pulse { to { opacity: .45; } }
 @media (prefers-reduced-motion: reduce) { .loading div { animation: none; } }
-@container (max-width: 700px) { .body { grid-template-columns: minmax(0, 1fr) 210px; }.breadcrumb > span:first-child { max-width: 140px; }.breadcrumb small, .download span { display: none; }.toolbar { padding: 0 12px; gap: 8px; }.fileHeader { padding: 0 10px; }.status span:nth-child(2) { display: none; } }
+@container (max-width: 700px) { .body { grid-template-columns: minmax(0, 1fr) 210px; }.breadcrumb > span:first-child { max-width: 140px; }.breadcrumb small { display: none; }.toolbar { padding: 0 12px; gap: 8px; }.fileHeader { padding: 0 10px; }.status span:nth-child(2) { display: none; } }
 @container (max-width: 500px) { .body { position: relative; display: flex; flex-direction: column-reverse; }.source { flex: 1; }.sidebar { height: 190px; flex-shrink: 0; border-left: none; border-bottom: 1px solid var(--source-line); }.sidebarFooter, .treeHeading { display: none; }.search { margin-bottom: 6px; }.breadcrumb > span:first-child, .breadcrumb > span:nth-child(2) { display: none; }.context { margin: 10px; padding: 8px 10px; }.fileHeader small { display: none; } }
 
 /* The palette travels with the editor, so any host that renders source — the
