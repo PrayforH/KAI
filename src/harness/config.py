@@ -102,6 +102,15 @@ class Settings(BaseSettings):
     minio_bucket: str = "harness-artifacts"
     minio_secure: bool = False
 
+    # Desktop ("local") deployment. The data directory and the embedded
+    # database are what make a single-machine install self-contained: nothing
+    # to administer, and no state inside the application bundle, so replacing
+    # or reinstalling the app never moves a user's agents, sessions or
+    # artifacts. Left empty, the root is the platform-appropriate per-user
+    # directory (see harness.local.paths).
+    local_data_root: str = ""
+    local_embedded_database: bool = True
+
     new_api_base_url: str = ""
     new_api_key: SecretStr = SecretStr("")
     new_api_model: str = ""
@@ -210,7 +219,6 @@ class Settings(BaseSettings):
     # 54.7s and 80.8s were measured on the 174-side deployment, so 90s left
     # almost no margin before reporting a false readiness failure.
     opensandbox_ready_timeout_seconds: int = Field(default=180, ge=10, le=900)
-    opensandbox_ready_timeout_seconds: int = Field(default=90, ge=10, le=900)
     # File transfers carry CLI binaries and workspace artifacts, so they get
     # their own budget instead of the short control-plane request timeout.
     opensandbox_transfer_timeout_seconds: int = Field(default=600, ge=30, le=3600)
