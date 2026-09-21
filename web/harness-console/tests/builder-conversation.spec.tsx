@@ -443,3 +443,11 @@ it("restores persisted turns in chronological order and continues the latest rev
   await sendTest("第三轮");
   expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toMatchObject({continueFromRunId:"saved-2"});
 });
+
+it("runs an explicit trial request directly while preserving the shared message", async () => {
+  await act(async () => enableWorkspace());
+  await send("试跑智能体：分析这段材料");
+  expect(studioClient.converseBuilder).not.toHaveBeenCalled();
+  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[2]).toBe("试跑智能体：分析这段材料");
+  expect(host.querySelectorAll("textarea")).toHaveLength(1);
+});

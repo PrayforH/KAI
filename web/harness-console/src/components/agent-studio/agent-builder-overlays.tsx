@@ -438,6 +438,8 @@ export function AgentBuilderAssistant({
     if (attachments.some(file => file.uploadKey)) { setError("请移除上传失败的文件后重试。"); return; }
     const sendAsTest = intent === "run";
     if (sendAsTest && proposal) { setError("请先应用或放弃当前修改建议，再开始试跑。"); return; }
+    const explicitRun = /^(?:\/run(?:\s|$)|试跑(?:智能体)?\s*[:：])/i.test(value.trim());
+    if (explicitRun && proposal) {setError("请先应用或放弃当前修改建议，再开始试跑。");return false;}
     submitLock.current = true;
     const epoch = epochRef.current;
     const messageId = createRandomId();
@@ -600,6 +602,8 @@ export function AgentBuilderAssistant({
   function improve(turn: PreviewTurn) { setInputSeed({key:Date.now(),text:"请分析这次回答的问题并提出配置改进建议。"});setConversationTab("builder");setCodeView(false); setFeedbackTurn(turn); setInput("请分析这次回答的问题并提出配置改进建议。"); setIntent("auto"); setMobilePanel("build"); window.setTimeout(() => inputRef.current?.focus(), 0); }
   async function sendUnified(value: string, ids: string[], names: string[]): Promise<boolean> {
     if (submitLock.current || active || editing || applying || historyLoading) return false;
+    const explicitRun = /^(?:\/run(?:\s|$)|试跑(?:智能体)?\s*[:：])/i.test(value.trim());
+    if (explicitRun && proposal) {setError("请先应用或放弃当前修改建议，再开始试跑。");return false;}
     submitLock.current = true;
     const epoch = epochRef.current;
     const messageId = createRandomId();
@@ -608,10 +612,10 @@ export function AgentBuilderAssistant({
     let accepted = false;
     try {
       setReadingMaterials(Boolean(ids.length));
-      const materialContext = ids.length ? (await studioClient.readBuilderMaterials(ids, activeDraft.modelRoute)).context : "";
+      const materialContext = ids.length && !explicitRun ? (await studioClient.readBuilderMaterials(ids, activeDraft.modelRoute)).context : "";
       if (epoch !== epochRef.current) return false;
       setMessages(current => [...current, {id:messageId, role:"user",text:value, artifactIds:ids,files:names,materialContext}]);
-      accepted = Boolean(!draftReady ? await createDraft(value, materialContext) : writable ? await converse(value, materialContext, files) : await startRun(value, undefined, true, ids, names));
+      accepted = Boolean(!draftReady ? await createDraft(value, materialContext) : explicitRun || !writable ? await startRun(value, undefined, true, ids, names) : await converse(value, materialContext, files));
       return accepted;
     } catch (reason) {
       if (epoch === epochRef.current) setError(reason instanceof Error ? reason.message : "发送失败，请重试。");
