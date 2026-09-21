@@ -1,0 +1,185 @@
+{
+  "date": "2026-09-21",
+  "webRevision": "3675dc73c4ced2bfed9fab29cccba2b7ef1de6b2",
+  "webImage": "kai/axis-web:evolution-conversation-3675dc73",
+  "backendRevision": "db2c4da9",
+  "health": {
+    "webLogin": 200,
+    "apiHealth": 200
+  },
+  "checks": {
+    "fullFrontend": {
+      "passed": 791,
+      "skipped": 1
+    },
+    "postDetailRemovalRelatedTests": 23,
+    "typecheck": "passed",
+    "productionBuild": "passed",
+    "branchRegression": "temporary progress must not become a second answer",
+    "builderReplyHasNoInheritedRunTime": true,
+    "duplicateRunDetailsRemoved": true,
+    "layout": {
+      "base": "http://172.20.109.173:3302",
+      "measurements": [
+        {
+          "label": "1440",
+          "message": {
+            "x": 736,
+            "width": 632,
+            "right": 1368
+          },
+          "user": {
+            "x": 736,
+            "width": 632,
+            "right": 1368
+          },
+          "composer": {
+            "x": 736,
+            "width": 632,
+            "right": 1368
+          },
+          "overflow": false
+        },
+        {
+          "label": "1920",
+          "message": {
+            "x": 892,
+            "width": 800,
+            "right": 1692
+          },
+          "user": {
+            "x": 892,
+            "width": 800,
+            "right": 1692
+          },
+          "composer": {
+            "x": 892,
+            "width": 800,
+            "right": 1692
+          },
+          "overflow": false
+        },
+        {
+          "label": "1920 configuration toggled",
+          "message": {
+            "x": 692,
+            "width": 800,
+            "right": 1492
+          },
+          "user": {
+            "x": 692,
+            "width": 800,
+            "right": 1492
+          },
+          "composer": {
+            "x": 692,
+            "width": 800,
+            "right": 1492
+          },
+          "overflow": false
+        },
+        {
+          "label": "1920 files open",
+          "message": {
+            "x": 482,
+            "width": 800,
+            "right": 1282
+          },
+          "user": {
+            "x": 482,
+            "width": 800,
+            "right": 1282
+          },
+          "composer": {
+            "x": 482,
+            "width": 800,
+            "right": 1282
+          },
+          "overflow": false
+        },
+        {
+          "label": "1920 files and config open",
+          "message": {
+            "x": 736,
+            "width": 692,
+            "right": 1428
+          },
+          "user": {
+            "x": 736,
+            "width": 692,
+            "right": 1428
+          },
+          "composer": {
+            "x": 736,
+            "width": 692,
+            "right": 1428
+          },
+          "overflow": false
+        },
+        {
+          "label": "1920 sidebar collapsed",
+          "message": {
+            "x": 550,
+            "width": 800,
+            "right": 1350
+          },
+          "user": {
+            "x": 550,
+            "width": 800,
+            "right": 1350
+          },
+          "composer": {
+            "x": 550,
+            "width": 800,
+            "right": 1350
+          },
+          "overflow": false
+        }
+      ],
+      "mainGreeting": true,
+      "agentGreeting": true,
+      "emptyComposerAtBottom": true,
+      "historyResize": true,
+      "errors": []
+    },
+    "currentAgentGreeting": {
+      "base": "http://172.20.109.173:3302",
+      "runId": "run_95c7abf0b2264355b0efd7d2d23de27b",
+      "draftId": "draft_057c0ae6da1443919cb2e32a26064472",
+      "status": "succeeded",
+      "greetingBuilderCalls": 0,
+      "explicitEditBuilderCalls": 1,
+      "activityVisible": true,
+      "activityEventTypes": [
+        "run.queued",
+        "run.provisioning",
+        "sandbox.provisioned",
+        "agent.assets.staged",
+        "run.running",
+        "policy.resolved",
+        "model.route.selected",
+        "tool.directory.loaded",
+        "runtime.steering.ready",
+        "runtime.system",
+        "message.start",
+        "message.delta",
+        "message.completed",
+        "runtime.steering.closed",
+        "runtime.result",
+        "workspace.archived",
+        "context.digest.created",
+        "run.succeeded"
+      ],
+      "errors": []
+    },
+    "mainChat": {
+      "base": "http://172.20.109.173:3302",
+      "activityVisible": true,
+      "statuses": [
+        200
+      ],
+      "errors": []
+    }
+  },
+  "scope": "173 isolated validation web on 3302; API and worker unchanged; Jev not integrated"
+}
