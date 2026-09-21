@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -11,6 +12,7 @@ from harness.sandbox.e2b import (
     E2BSandboxProvider,
     SdkE2BClient,
     SdkE2BRemoteSandbox,
+    SdkE2BRemoteSession,
     _parse_log_payload,
 )
 
@@ -1000,3 +1002,50 @@ async def test_workspace_collection_sets_its_own_request_deadline() -> None:
     assert sandbox.files.list_timeouts == sandbox.files.read_timeouts
     assert sandbox.files.list_timeouts
     assert all(timeout is not None and timeout > 30 for timeout in sandbox.files.list_timeouts)
+
+
+class _ExitedProcess:
+    async def wait(self) -> object:
+        return SimpleNamespace(exit_code=0)
+
+
+class _RecordingCommands:
+    def __init__(self) -> None:
+        self.runs: list[dict[str, object]] = []
+
+    async def run(self, command: str, **kwargs: object) -> _ExitedProcess:
+        self.runs.append({"command": command, **kwargs})
+        return _ExitedProcess()
+
+
+class _CommandsOnlySandbox:
+    def __init__(self) -> None:
+        self.sandbox_id = "e2b-sandbox-commands"
+        self.commands = _RecordingCommands()
+
+
+@pytest.mark.asyncio
+async def test_remote_session_sets_its_own_request_deadline() -> None:
+    """Opening a command stream must not inherit the control-plane deadline.
+
+    The e2b SDK turns the connection's `request_timeout` into the deadline for
+    opening the envd stream, and CubeSandbox pins that value at 30s for
+    control-plane work. A stream slower to open than that has the data-plane
+    proxy answer 504, which the SDK raises as a TimeoutException carrying the
+    proxy's HTML body — so a transient hiccup fails a Run the model had nothing
+    to do with. The command's own budget must stay with the caller.
+    """
+
+    sandbox = _CommandsOnlySandbox()
+    session = SdkE2BRemoteSession(cast(Any, sandbox))
+
+    await session.start(["bash", "-lc", "echo hi"], "/workspace", {})
+
+    assert sandbox.commands.runs
+    run = sandbox.commands.runs[0]
+    request_timeout = run["request_timeout"]
+    assert request_timeout is not None and request_timeout > 30
+    # `timeout=0` keeps the local deadline authoritative for command duration.
+    assert run["timeout"] == 0
+
+    await session.wait()

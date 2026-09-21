@@ -2230,7 +2230,6 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
               <HeaderActionIcon name="release" />
               <span>{publishing ? "发布中…" : inspecting ? "检查中…" : "发布"}</span>
             </button>
-            <button className={styles.headerActionButton} disabled={!draft.id} onClick={() => setCodeRequest(value => value + 1)}>代码</button>
 
                 <input
                   ref={bundleInputRef}

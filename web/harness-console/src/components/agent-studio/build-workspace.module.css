@@ -126,12 +126,22 @@
 .conversationMenu {position:relative;min-width:0;}
 .conversationMenu>summary {list-style:none;}
 .conversationMenu>summary::-webkit-details-marker {display:none;}
-.conversationMenu .moreSummary {width:30px;font-size:19px;letter-spacing:1px;}
 .conversationPopover {position:absolute;right:0;top:calc(100% + 7px);z-index:20;width:300px;padding:12px;background:var(--studio-panel);border:1px solid var(--studio-line);border-radius:8px;box-shadow:0 8px 24px #00000012;display:grid;gap:14px;color:var(--studio-ink);font-size:12px;}
 .conversationPopover label {display:grid;gap:7px;color:var(--studio-muted);}
 .conversationPopover select {width:100%;min-width:0;border:1px solid var(--studio-line);border-radius:5px;background:var(--studio-panel);color:var(--studio-ink);font:inherit;padding:7px;}
 .conversationPopover>button {text-align:left;border:0;border-radius:4px;background:transparent;padding:6px;color:var(--studio-ink);font:inherit;cursor:pointer;}
 .conversationPopover>button:hover {background:var(--studio-panel-subtle);}
+/* One menu holds starting a conversation and switching between them: the new
+   row leads, the history follows as rows rather than a native select. */
+.conversationPopover .newConversationRow {display:flex;align-items:center;gap:8px;font-weight:550;padding:8px;}
+.conversationPopover .popoverSection {display:grid;gap:6px;min-width:0;}
+.conversationPopover .popoverSectionTitle {margin:0;color:var(--studio-muted);font-size:11px;}
+.conversationPopover .sessionList {display:grid;gap:2px;max-height:220px;overflow:auto;min-width:0;}
+.conversationPopover .popoverRow {display:grid;gap:2px;text-align:left;border:0;border-radius:4px;background:transparent;padding:7px 8px;color:var(--studio-ink);font:inherit;cursor:pointer;min-width:0;}
+.conversationPopover .popoverRow:hover {background:var(--studio-panel-subtle);}
+.conversationPopover .popoverRow[aria-current="true"] {background:var(--studio-panel-subtle);font-weight:550;}
+.conversationPopover .popoverRow small {color:var(--studio-muted);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.conversationPopover .popoverRow:disabled,.conversationPopover .newConversationRow:disabled {opacity:.5;cursor:default;}
 .conversationPopover>small {color:var(--studio-muted);font-size:11px;}
 
 .workspaceFiles {position:relative;order:2;z-index:25;width:420px;flex:0 0 420px;min-width:320px;height:100%;background:var(--studio-panel);border-left:1px solid var(--studio-line);box-shadow:-8px 0 24px #0001;}

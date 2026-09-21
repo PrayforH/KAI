@@ -79,6 +79,15 @@ _LIST_SCAN_LIMIT = 1000
 # happens after the answer is durable the platform would fail a Run that had
 # already succeeded. Collection is bounded by the member/size budgets instead.
 _COLLECT_REQUEST_TIMEOUT_SECONDS = 900
+# Commands carry the same exposure as collection, one layer earlier: the SDK
+# turns the connection's `request_timeout` into the deadline for opening the
+# envd stream, and CubeSandbox pins that value at 30s for control-plane work.
+# A stream slower to open than that has the data-plane proxy answer 504, which
+# the SDK raises as a TimeoutException whose message is the proxy's HTML body.
+# The command's own budget is unchanged — `timeout=0` below leaves the deadline
+# to the caller's `timeout_seconds` — so this bounds only opening the stream,
+# and stays well below the sandbox TTL that `_keep_alive` renews.
+_COMMAND_REQUEST_TIMEOUT_SECONDS = 900
 # Records what an idle sandbox was kept as, so the next Run of the session can
 # adopt it and the reaper can tell a deliberate idle instance from an orphan.
 # The reaper skips these: they are reclaimed by the platform TTL once the
@@ -290,6 +299,7 @@ class SdkE2BRemoteSession:
             on_stdout=stdout,
             on_stderr=stderr,
             timeout=0,
+            request_timeout=_COMMAND_REQUEST_TIMEOUT_SECONDS,
         )
         self._wait_task = asyncio.create_task(self._wait_for_exit())
 

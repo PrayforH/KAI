@@ -8,6 +8,7 @@ const shapes = {
   code: <><path d="m8 7-5 5 5 5m8-10 5 5-5 5m-3-13-2 16" /></>,
   skill: <><path d="m2 9 10-5 10 5-10 5zM6 11v6q6 5 12 0v-6m4-2v8" /></>,
   knowledge: <><path d="M3 5h6l3 3h9v12H3z" /></>,
+  knowledgeOpen: <><path d="M3 6h5.5l2 2H21v4" /><path d="M2.5 12h18.5l-2 8H2z" /></>,
   agent: <><rect x="4" y="7" width="16" height="14" rx="3" /><path d="M12 3v4M8 16h8" /><circle cx="8" cy="12" r=".75" /><circle cx="16" cy="12" r=".75" /></>,
   settings: <><path d="M3 6h3m4 0h11M3 12h11m4 0h3M3 18h3m4 0h11" /><circle cx="8" cy="6" r="2" /><circle cx="16" cy="12" r="2" /><circle cx="8" cy="18" r="2" /></>,
   chevron: <path d="m9 5 7 7-7 7" />,

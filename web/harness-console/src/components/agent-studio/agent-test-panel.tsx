@@ -163,43 +163,96 @@ export function AgentTestPanel({
           {navigation}
           <div className={styles.conversationControls}>
             <button type="button" aria-label="查看对话文件" title="文件" onClick={onAssets}><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M3 5h5l2 2h7v9H3z" /></svg></button>
-            {!sessionRail && sessions.length > 0 && onSelectSession ? (
+            {!sessionRail && onSelectSession ? (
               <details
                 className={styles.conversationMenu}
                 onKeyDown={dismissMenu}
                 onBlur={blurMenu}
               >
                 <summary
-                  aria-label="选择试跑会话"
+                  aria-label="会话：新建或切换"
                   title={turns[0]?.prompt || "新对话"}
                 >
                   <span>{turns[0]?.prompt || "新对话"}</span>
                   <span aria-hidden="true">⌄</span>
                 </summary>
                 <div className={styles.conversationPopover}>
-                  <label>
-                    历史会话
-                    <select
-                      aria-label="切换测试对话"
-                      value={sessionId}
-                      disabled={locked}
-                      onChange={(event) => {
-                        setSeed(undefined);
-                        onSelectSession(event.target.value);
-                        event.currentTarget
-                          .closest("details")
-                          ?.removeAttribute("open");
-                      }}
-                    >
-                      <option value="">新对话</option>
-                      {sessions.map((item, index) => (
-                        <option key={item.id} value={item.id}>
-                          对话 {index + 1} · {item.prompt.slice(0, 36)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  {historyError && <p role="alert">{historyError}</p>}
+                  {/* Starting a conversation and switching between them are the
+                      same intent, so they share one menu instead of a lone ＋
+                      next to a picker. */}
+                  <button
+                    type="button"
+                    className={styles.newConversationRow}
+                    disabled={locked}
+                    onClick={(event) => {
+                      setSeed(undefined);
+                      reset();
+                      event.currentTarget
+                        .closest("details")
+                        ?.removeAttribute("open");
+                    }}
+                  >
+                    <span aria-hidden="true">＋</span> 新对话
+                  </button>
+                  {sessions.length > 0 && (
+                    <div className={styles.popoverSection}>
+                      <p className={styles.popoverSectionTitle}>历史会话</p>
+                      <div className={styles.sessionList}>
+                        {sessions.map((item, index) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            className={styles.popoverRow}
+                            aria-current={item.id === sessionId}
+                            disabled={locked}
+                            onClick={(event) => {
+                              setSeed(undefined);
+                              onSelectSession(item.id);
+                              event.currentTarget
+                                .closest("details")
+                                ?.removeAttribute("open");
+                            }}
+                          >
+                            <span>对话 {index + 1}</span>
+                            <small>{item.prompt}</small>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {!!examples.length && (
+                    <label>
+                      评测用例
+                      <select
+                        aria-label="选择评测用例"
+                        value=""
+                        disabled={locked}
+                        onChange={(event) => {
+                          const sample = examples.find(
+                            (item) => item.id === event.target.value,
+                          );
+                          if (sample)
+                            setSeed({ key: Date.now(), text: sample.prompt });
+                          event.currentTarget
+                            .closest("details")
+                            ?.removeAttribute("open");
+                        }}
+                      >
+                        <option value="">选择用例填入输入框</option>
+                        {examples.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.id} · {item.prompt.slice(0, 60)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                  <small>
+                    草稿 r{revision}
+                    {turns.length ? ` · 当前对话 ${turns.length} 轮` : ""}
+                    {historyLoading ? " · 读取会话中…" : ""}
+                  </small>
+                  {historyError && <small role="alert">{historyError}</small>}
                 </div>
               </details>
             ) : (
@@ -210,61 +263,6 @@ export function AgentTestPanel({
                 {turns[0]?.prompt || "新对话"}
               </span>
             )}
-            <button
-              aria-label="新对话"
-              title="新对话"
-              disabled={locked}
-              onClick={reset}
-            >
-              ＋
-            </button>
-            <details
-              className={styles.conversationMenu}
-              onKeyDown={dismissMenu}
-              onBlur={blurMenu}
-            >
-              <summary
-                className={styles.moreSummary}
-                aria-label="对话选项"
-                title="对话选项"
-              >
-                ···
-              </summary>
-              <div className={styles.conversationPopover}>
-
-                {!!examples.length && (
-                  <label>
-                    从评测用例开始
-                    <select
-                      aria-label="选择评测用例"
-                      value=""
-                      disabled={locked}
-                      onChange={(event) => {
-                        const sample = examples.find(
-                          (item) => item.id === event.target.value,
-                        );
-                        if (sample)
-                          setSeed({ key: Date.now(), text: sample.prompt });
-                        event.currentTarget
-                          .closest("details")
-                          ?.removeAttribute("open");
-                      }}
-                    >
-                      <option value="">选择用例填入输入框</option>
-                      {examples.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.id} · {item.prompt.slice(0, 60)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-                <small>
-                  草稿 r{revision}
-                  {turns.length ? ` · 当前对话 ${turns.length} 轮` : ""}
-                </small>
-              </div>
-            </details>
           </div>
         </header>
         {(!ready || dirty || (last && last.draftRevision !== revision)) && (

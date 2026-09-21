@@ -315,11 +315,17 @@ export function AgentPlaygroundThread({
       );
       const extra = id === messages.at(-1)?.id ? afterLastMessage : null;
       if (!turn) return extra;
+      const approvals =
+        turn.result.run.run_id === latest?.run.run_id && pending.length > 1 ? (
+          <ApprovalBatch approvals={pending} />
+        ) : null;
+      // An empty wrapper still carries the 12px margins from the stylesheet and
+      // reads as a gap between the process log and the answer.
+      if (!extra && !approvals) return null;
       return (
         <div className={styles.turnExtensions}>
           {extra}
-          {turn.result.run.run_id === latest?.run.run_id &&
-            pending.length > 1 && <ApprovalBatch approvals={pending} />}
+          {approvals}
         </div>
       );
     },

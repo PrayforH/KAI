@@ -730,5 +730,8 @@
 .rowLabel { display: flex; align-items: center; gap: 12px; min-width: 0; flex-shrink: 0; }
 .rowLabel > svg { width: 20px; height: 20px; flex: 0 0 20px; color: var(--studio-muted); }
 .chevron { width: 16px; height: 16px; flex: 0 0 16px; color: var(--studio-muted); }
+/* Rows that carry their own mark instead of a disclosure chevron keep the same
+   16px box, so every row still ends on one right edge. */
+.configTrail { width: 16px; height: 16px; flex: 0 0 16px; color: var(--studio-muted); }
 .configRow, .configGroup > summary { min-height: 56px; gap: 12px; }
 .configGroup:not([open]) { padding-bottom: 0; }

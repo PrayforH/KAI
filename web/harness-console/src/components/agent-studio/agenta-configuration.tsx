@@ -11,6 +11,7 @@ export function AgentaConfiguration({
   writable,
   onEdit,
   onSave,
+  onCode,
   onCollapse,
 }: {
   draft: StudioDraft;
@@ -29,6 +30,9 @@ export function AgentaConfiguration({
       <header className={styles.configHeader}>
         <strong>配置</strong>
         <div>
+          <button disabled={!draft.id} onClick={onCode} title="查看这份配置的代码视图">
+            代码
+          </button>
           <button disabled={!dirty || saving || !writable} onClick={onSave}>
             {saving ? "保存中…" : "保存"}
           </button>
@@ -153,9 +157,9 @@ export function AgentaConfiguration({
           className={styles.configRow}
           onClick={() => onEdit("capabilities")}
         >
-          <span className={styles.rowLabel}><Icon name="knowledge" /><strong>文件与知识</strong></span>
+          <span className={styles.rowLabel}><strong>文件与知识</strong></span>
           <small>{draft.knowledgeReferences.length} 项知识引用</small>
-          <Icon name="chevron" className={styles.chevron} />
+          <Icon name="knowledgeOpen" className={styles.configTrail} />
         </button>
         <button
           className={styles.configRow}
