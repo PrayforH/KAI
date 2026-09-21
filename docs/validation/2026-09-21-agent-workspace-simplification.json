@@ -43,5 +43,23 @@
     "uploadIconOnly": true,
     "footerRemoved": true,
     "draftRevision": 12
+  },
+  "deployment": {
+    "webRevision": "8c1c63ebab804f971a0b0ad2febb771ed5a9c13c",
+    "webImage": "kai/axis-web:evolution-simplify-8c1c63eb",
+    "apiRevision": "db2c4da9596a3f9f989c1be0c1cd62ab70b84e63",
+    "loginHttpStatus": 200,
+    "apiHealthHttpStatus": 200,
+    "browser": {
+      "base": "http://172.20.109.173:3302",
+      "editApply": true,
+      "historyChanges": true,
+      "separateFileRail": true,
+      "modifiedFileBadge": true,
+      "unifiedComposer": true,
+      "uploadIconOnly": true,
+      "footerRemoved": true,
+      "draftRevision": 14
+    }
   }
 }
