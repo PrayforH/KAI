@@ -360,3 +360,33 @@ async def test_stopped_job_rejects_mutation_and_the_write_path_validates() -> No
 
     with pytest.raises(ValidationError):
         await c.evolution._save(expired, "test", status="not-a-status")
+
+
+@pytest.mark.asyncio
+async def test_publication_guard_compares_the_whole_release_identity() -> None:
+    """A release is the pair (manifest hash, package hash).
+
+    The guard asks that question in six places, so this pins the property they
+    must all keep: a candidate that was repackaged — same manifest, new package
+    — is not the job's own baseline and must not publish past an active job.
+    """
+
+    c = build_memory_container()
+    _, _, job = await seed(c)
+    compiled = await c.studio.compile_frozen("t", "u", job.source_draft_id, job.baseline)
+
+    assert (compiled.report.snapshot.content_hash, compiled.report.package_hash) == (
+        job.baseline_manifest_hash,
+        job.baseline_package_hash,
+    )
+
+    # The baseline itself publishes while the job is still active.
+    await c.evolution.publication_guard(
+        "t", "u", compiled.report.snapshot, compiled.report.package_hash
+    )
+
+    # The same manifest with a rebuilt package is not the baseline.
+    with pytest.raises(ConflictError, match="Active evolution owns publication"):
+        await c.evolution.publication_guard(
+            "t", "u", compiled.report.snapshot, f"{compiled.report.package_hash}-rebuilt"
+        )
