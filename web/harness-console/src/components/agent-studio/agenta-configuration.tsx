@@ -25,6 +25,11 @@ export function AgentaConfiguration({
   onBuildChat: () => void;
   onCollapse?: () => void;
 }) {
+  const toolSources = [
+    { id: "builtin", icon: "tools" as const, label: "内置工具", count: draft.builtinTools.length, names: draft.builtinTools.join("、") },
+    { id: "mcp", icon: "mcp" as const, label: "MCP 服务", count: draft.mcpServers.length, names: draft.mcpServers.join("、") },
+    { id: "python", icon: "code" as const, label: "Python 算子", count: draft.pythonTools.length, names: draft.pythonTools.map((tool) => tool.name).join("、") },
+  ];
   return (
     <section className={styles.configuration} aria-label="智能体配置">
       <header className={styles.configHeader}>
@@ -84,39 +89,20 @@ export function AgentaConfiguration({
           >
             <Icon name="plus" /> 添加工具与集成
           </button>
-          {draft.builtinTools.map((tool) => (
+          {/* One row per source. Every per-tool row opened the same editor, so
+              enumerating them only lengthened the panel; the editor owns the
+              detail and the names stay on the row's title. */}
+          {toolSources.map((source) => (
             <button
-              key={tool}
+              key={source.id}
               className={styles.toolRow}
+              title={source.names || undefined}
               onClick={() => onEdit("capabilities")}
             >
-              <span className={styles.toolIcon}><Icon name="tools" /></span>
-              <strong>{tool}</strong>
-              <small>built-in</small>
+              <span className={styles.toolIcon}><Icon name={source.icon} /></span>
+              <strong>{source.label}</strong>
+              <small>{source.count ? `${source.count} 项` : "未启用"}</small>
               <Icon name="chevron" className={styles.chevron} />
-            </button>
-          ))}
-          {draft.mcpServers.map((tool) => (
-            <button
-              key={tool}
-              className={styles.toolRow}
-              onClick={() => onEdit("capabilities")}
-            >
-              <span className={styles.toolIcon}><Icon name="mcp" /></span>
-              <strong>{tool}</strong>
-              <small>MCP</small>
-              <Icon name="chevron" className={styles.chevron} />
-            </button>
-          ))}
-          {draft.pythonTools.map((tool) => (
-            <button
-              key={tool.name}
-              className={styles.toolRow}
-              onClick={() => onEdit("capabilities")}
-            >
-              <span className={styles.toolIcon}><Icon name="code" /></span>
-              <strong>{tool.name}</strong>
-              <small>Python</small>
             </button>
           ))}
         </details>
@@ -171,7 +157,7 @@ export function AgentaConfiguration({
         </button>
         <button className={styles.configRow} onClick={() => onEdit("runtime")}>
           <span className={styles.rowLabel}><Icon name="settings" /><strong>高级设置</strong></span>
-          <small>运行时、权限与沙箱</small>
+          <small>{draft.runtime || "运行时、权限与沙箱"}</small>
           <Icon name="chevron" className={styles.chevron} />
         </button>
 

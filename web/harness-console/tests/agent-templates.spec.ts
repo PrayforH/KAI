@@ -84,3 +84,13 @@ it("retains the created draft and edited template when the second write fails", 
   expect(result.draft.systemPrompt).toContain(AGENT_TEMPLATES[1].description);
   expect(createDraft).toHaveBeenCalledOnce();
 });
+
+it("applies a template without persisting its id as the draft domain", () => {
+  // `domain` is the draft's own category and feeds its generated prompts; a
+  // template id is a slug and used to be written there.
+  const template = AGENT_TEMPLATES[0];
+  const applied = applyAgentTemplate({ ...DEFAULT_STUDIO_DRAFT, domain: "general-assistant" }, template);
+  expect(applied.domain).toBe("general-assistant");
+  expect(applied.domain).not.toBe(template.id);
+  expect(applied.displayName).toBe(template.name);
+});

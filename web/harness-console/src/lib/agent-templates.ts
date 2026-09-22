@@ -134,7 +134,6 @@ export function applyAgentTemplate(
     ...draft,
     displayName: template.name,
     description: template.description,
-    domain: template.id,
     taskContract: {
       ...draft.taskContract,
       audience: "使用此工作流的用户",

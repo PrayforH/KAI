@@ -186,6 +186,22 @@
   font-size: 13px;
 }
 .configGroup[open] > summary > .chevron { transform: rotate(90deg); }
+/* Opening a group reveals its rows; the panel is the navigation surface, so the
+   reveal is the only motion and it stays short. */
+@keyframes studio-group-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.configGroup[open] > :not(summary) {
+  animation: studio-group-in 150ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .configGroup[open] > :not(summary) {
+    animation: none;
+  }
+}
 .configGroup > summary::-webkit-details-marker { display: none; }
 .configGroup summary strong { font-weight: 550; }
 .configGroup summary > small { margin-left: auto; }

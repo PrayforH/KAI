@@ -5318,6 +5318,25 @@
   font: 500 9px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+/* One arrival motion for every side panel, so opening a rail reads as the same
+   gesture whether it holds versions, assets or MCP servers. */
+@keyframes studio-rail-in {
+  from { opacity: 0; transform: translateX(14px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.contractRail[data-open="true"],
+.editorBody:not([hidden]) {
+  animation: studio-rail-in 180ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .contractRail[data-open="true"],
+  .editorBody:not([hidden]) {
+    animation: none;
+  }
+}
+
 .contractRail {
   position: fixed;
   z-index: 61;
