@@ -100,7 +100,48 @@ job 仍可被修改。三处改为共用 `_active`；`refresh` 保留「非 acti
 MCP 目录内容、只带 `/studio/skills` 的跳转（Next 的 RSC 跳转是 200 + 客户端跳转，故状态码仍为
 200，判据看内容）；vitest 128 文件 / 811 passed。
 
-## 6. 未完成（用户清单中的后三项 + 评审 P1，下一步）
+## 6. 第三批：#5 / #6 / #7（同日夜）
+
+| 项 | 内容 |
+| --- | --- |
+| 版本 | `53d4e750`（#7）、`d6bada40`（#5/#6 + 模板 domain）、`394c6b75`（面板渲染测试） |
+| 镜像 | api/worker `kai/axis-api:evolution-d6bada40`，web `kai/axis-web:evolution-d6bada40` |
+| 回滚点 | `backups/d6bada40/compose.json`（回到 `evolution-e2ab001a`） |
+
+**#5 配置面板抽屉做减法**：工具组原来把 5 个内置工具逐个列成一行，而每行点开的是**同一个**
+编辑器——只增加高度、不增加信息。改成按来源各一行（内置工具 / MCP 服务 / Python 算子）并给出
+数量，工具名留在该行 `title` 里；「高级设置」不再写死「运行时、权限与沙箱」，改显示草稿的
+`runtime`。截图确认：面板从 6 行工具变成 3 行来源，高级设置显示 `deepagents`。
+
+**#6 动效统一**：侧栏（版本历史、配置编辑器、MCP）共用一个 `studio-rail-in` 进场；
+展开的分组用 `studio-group-in` 轻微揭示；会话菜单浮层用 `studio-popover-in` 从锚点缩放进入。
+三处都在 `prefers-reduced-motion: reduce` 下关闭。配置编辑器用 `hidden` 属性切换，所以动画挂在
+`:not([hidden])` 上才能每次打开都重放（挂在 `data-open` 上等于永不播放）。
+
+**#7 Skill 勾选**：智能体的 Skills 区新增「平台技能」清单，直接读
+`GET /v1/studio/skills/catalog`，勾选即按**精确包版本**安装（`installPlatformSkill`，
+与其它安装走同一 revision 守卫），取消勾选走既有卸载流程，`riskLevel === "review"` 的包在行上
+标注「需审阅」。截图确认：21 项可用、每项一个复选框。
+
+**评审 P1（模板 domain）**：`applyAgentTemplate` 原来写 `domain: template.id`，于是
+`pr-reviewer` 这类 slug 被持久化成草稿的领域，而 `domain` 会参与生成该草稿自己的评测 prompt
+（`agent-studio-workbench.tsx:234`）。改为只更新身份字段，并加测试固定 domain 不被覆盖。
+
+**评审 P1（发布门禁）**：快照/包哈希判据在 `service.py` 手写 6 处，而它的**正路径此前无测试**。
+没有测试就拍平 6 处比较等于把门禁交给运气，所以先补测试
+`test_publication_guard_compares_the_whole_release_identity`：固定「同 manifest、不同 package
+不得被当作基线」这一性质（正是 6 处必须共同守住的不变量），覆盖此前缺的正路径。
+
+测试：vitest 129 文件 / 815 passed；`pytest tests/unit` 1476 passed；
+新增 `tests/agenta-configuration.spec.tsx` 用 jsdom 渲染面板，把 #5 的行结构钉住（比截图更硬）。
+
+## 7. 仍未做
+
+- 状态字面量收敛成 StrEnum（评审 P1-4）、`run-status.ts` 标签的多处自建（P1-7）、
+  `agent-builder-overlays.tsx` 重复的意图正则（P1-3）等；
+- 上面 6 处哈希判据的**收敛重构**（测试已就位，可以安全做）；
+- 状态码/文案类打磨（评审 P2：布尔当计数、`budget_exhausted` 标签、`generation_attempts` 死字段）。
+
 
 - **#5** 参考 agenta 简化智能体配置下方「工具 / 高级设置」抽屉；
 - **#6** 抽屉等整体动效优化；
