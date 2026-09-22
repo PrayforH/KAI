@@ -44,7 +44,6 @@ function render(overrides: Partial<Parameters<typeof AgentaConfiguration>[0]> = 
         onPublish={() => {}}
         onCode={() => {}}
         onBuildChat={() => {}}
-        onOpenMcp={() => {}}
         onAddMcp={() => {}}
         {...overrides}
       />,
@@ -83,21 +82,21 @@ it("shows the draft's runtime on the advanced row and the code entry in the head
   expect(buttons.some((button) => button.text === "代码" && button.title === "查看这份配置的代码视图")).toBe(true);
 });
 
-it("offers MCP as a panel row whose + opens the add form", () => {
+it("lists the bound MCP servers in a group and links to their management page", () => {
   const onAddMcp = vi.fn();
-  const onOpenMcp = vi.fn();
-  render({ onAddMcp, onOpenMcp });
-  const row = [...host.querySelectorAll("button")].find((button) =>
-    (button.textContent ?? "").includes("MCP 服务器"),
+  render({ onAddMcp });
+  const summary = [...host.querySelectorAll("summary")].find((node) =>
+    (node.textContent ?? "").includes("MCP 服务器"),
   );
-  expect(row?.textContent).toContain("1 项已启用");
-  row?.click();
-  expect(onOpenMcp).toHaveBeenCalledTimes(1);
-  // The + is a sibling control, not a button nested inside a button.
-  const add = host.querySelector<HTMLButtonElement>('[aria-label="添加 MCP 服务器"]');
-  expect(add).toBeTruthy();
-  expect(add?.closest("button")).toBe(add);
+  expect(summary?.textContent).toContain("1 个已绑定");
+  // Expanding shows what this agent bound, which is the panel's job; binding
+  // itself happens in the Tools section and management on its own page.
+  expect(host.textContent).toContain("knowledge-search");
+  const add = [...host.querySelectorAll("button")].find((button) =>
+    (button.textContent ?? "").includes("添加 MCP 服务器"),
+  );
   add?.click();
   expect(onAddMcp).toHaveBeenCalledTimes(1);
-  expect(onOpenMcp).toHaveBeenCalledTimes(1);
+  const manage = host.querySelector('a[href="/studio/capabilities"]');
+  expect(manage?.textContent).toContain("管理 MCP 服务器");
 });

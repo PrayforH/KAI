@@ -34,12 +34,12 @@ describe("MCP capability catalog", () => {
     // MCP is an agent asset: the workspace nav no longer carries it, the old
     // route redirects, and the agent's Tools group owns the entry.
     expect(navigation).not.toContain('href: "/studio/capabilities"');
-    expect(page).toContain('redirect("/studio/skills")');
+    // Management keeps its own page; it is deliberately absent from the nav.
+    expect(page).toContain("<McpCatalogControlPlane />");
     // The panel row opens the catalog in a drawer and the + opens the form,
     // which is itself a drawer. The catalog view is a page layout, so mounting
     // it bare painted into the workbench.
     expect(workbench).toContain("setMcpStartInForm(true); setMcpManagerOpen(true);");
-    expect(workbench).toContain("{mcpManagerOpen && !mcpStartInForm && (");
     expect(workbench).toContain("<McpCatalogControlPlane startInForm />");
     expect(component).toContain("startInForm = false");
     expect(component).toContain("useState(startInForm)");

@@ -12,7 +12,6 @@ export function AgentaConfiguration({
   onEdit,
   onSave,
   onCode,
-  onOpenMcp,
   onAddMcp,
   onCollapse,
 }: {
@@ -25,7 +24,6 @@ export function AgentaConfiguration({
   onPublish: () => void;
   onCode: () => void;
   onBuildChat: () => void;
-  onOpenMcp: () => void;
   onAddMcp: () => void;
   onCollapse?: () => void;
 }) {
@@ -110,22 +108,29 @@ export function AgentaConfiguration({
             </button>
           ))}
         </details>
-        <div className={styles.configRowGroup}>
-          <button className={styles.configRowMain} onClick={onOpenMcp}>
+        <details className={styles.configGroup} open={draft.mcpServers.length > 0}>
+          <summary>
             <span className={styles.rowLabel}><Icon name="mcp" /><strong>MCP 服务器</strong></span>
-            <small>{draft.mcpServers.length ? `${draft.mcpServers.length} 项已启用` : "无"}</small>
+            <small>{draft.mcpServers.length ? `${draft.mcpServers.length} 个已绑定` : "无"}</small>
             <Icon name="chevron" className={styles.chevron} />
+          </summary>
+          <button className={styles.addRow} onClick={onAddMcp}>
+            <Icon name="plus" /> 添加 MCP 服务器
           </button>
-          <button
-            type="button"
-            className={styles.rowAdd}
-            aria-label="添加 MCP 服务器"
-            title="添加 MCP 服务器"
-            onClick={onAddMcp}
-          >
-            ＋
-          </button>
-        </div>
+          {draft.mcpServers.map((server) => (
+            <div key={server} className={styles.toolRow}>
+              <span className={styles.toolIcon}><Icon name="mcp" /></span>
+              <strong>{server}</strong>
+              <small>已绑定</small>
+            </div>
+          ))}
+          {!draft.mcpServers.length && (
+            <p className={styles.groupEmpty}>尚未绑定 MCP 服务器；在「工具」里勾选，或用上面的按钮注册新的。</p>
+          )}
+          <Link className={styles.addRow} href="/studio/capabilities">
+            管理 MCP 服务器 ↗
+          </Link>
+        </details>
         <details className={styles.configGroup} open={draft.skills.length > 0}>
           <summary>
             <span className={styles.rowLabel}><Icon name="skill" /><strong>Skills</strong></span>

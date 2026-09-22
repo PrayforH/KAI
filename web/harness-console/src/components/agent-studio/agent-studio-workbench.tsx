@@ -4086,20 +4086,6 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
 
       {notice && !importFeedback && !/^(正在读取控制面草稿|已从控制面(?:加载|切换)草稿|已保存到控制面|已通过对话更新)/.test(notice) && <div className={styles.importFeedback} role="status"><span>{notice}</span><button type="button" aria-label="关闭状态提示" onClick={() => setNotice("")}>×</button></div>}
       {importFeedback && <div className={styles.importFeedback} role={importFeedback.error ? "alert" : "status"} data-error={Boolean(importFeedback.error)}><span>{importFeedback.message}</span>{!importingBundle && <button type="button" aria-label="关闭导入提示" onClick={()=>setImportFeedback(null)}>×</button>}</div>}
-      {mcpManagerOpen && !mcpStartInForm && (
-        <>
-          <button type="button" className={styles.contractBackdrop} aria-label="关闭 MCP 服务器管理" onClick={() => setMcpManagerOpen(false)} />
-          <aside ref={mcpManagerRef} className={styles.contractRail} aria-label="MCP 服务器管理" role="dialog" aria-modal="true" data-open="true">
-            <div className={styles.contractHeader}>
-              <div><span>MCP</span><strong>MCP 服务器</strong></div>
-              <div className={styles.contractHeaderActions}>
-                <button type="button" ref={mcpManagerCloseRef} aria-label="关闭 MCP 服务器管理" onClick={() => setMcpManagerOpen(false)}>×</button>
-              </div>
-            </div>
-            <McpCatalogControlPlane />
-          </aside>
-        </>
-      )}
       {mcpManagerOpen && mcpStartInForm && (
         <McpCatalogControlPlane startInForm />
       )}
@@ -4120,7 +4106,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
         writable={canEdit}
         onChanges={setRecentChanges}
         buildChatRequest={buildChatRequest}
-        configuration={<AgentaConfiguration onCollapse={() => setPlaygroundMode("chat")} draft={draft} dirty={dirty} saving={saving} writable={canEdit} onEdit={openConfiguration} onSave={() => void saveDraft()} onPublish={() => void handleReleaseAction()} onCode={() => setCodeRequest(value => value + 1)} onBuildChat={() => setBuildChatRequest(value => value + 1)} onOpenMcp={() => {setMcpStartInForm(false); setMcpManagerOpen(true);}} onAddMcp={() => {setMcpStartInForm(true); setMcpManagerOpen(true);}} />}
+        configuration={<AgentaConfiguration onCollapse={() => setPlaygroundMode("chat")} draft={draft} dirty={dirty} saving={saving} writable={canEdit} onEdit={openConfiguration} onSave={() => void saveDraft()} onPublish={() => void handleReleaseAction()} onCode={() => setCodeRequest(value => value + 1)} onBuildChat={() => setBuildChatRequest(value => value + 1)} onAddMcp={() => {setMcpStartInForm(true); setMcpManagerOpen(true);}} />}
         testRequest={testRequest}
         open={viewMode === "editor" && Boolean(workspaceTarget)}
         mode={builderAssistantMode}
