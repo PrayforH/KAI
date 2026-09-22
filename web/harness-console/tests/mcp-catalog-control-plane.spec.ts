@@ -35,10 +35,12 @@ describe("MCP capability catalog", () => {
     // route redirects, and the agent's Tools group owns the entry.
     expect(navigation).not.toContain('href: "/studio/capabilities"');
     expect(page).toContain('redirect("/studio/skills")');
-    // The panel row opens the control plane; the + opens it on the form, which
-    // is itself the drawer — no card in between.
-    expect(workbench).toContain("<McpCatalogControlPlane startInForm={mcpStartInForm} />");
+    // The panel row opens the catalog in a drawer and the + opens the form,
+    // which is itself a drawer. The catalog view is a page layout, so mounting
+    // it bare painted into the workbench.
     expect(workbench).toContain("setMcpStartInForm(true); setMcpManagerOpen(true);");
+    expect(workbench).toContain("{mcpManagerOpen && !mcpStartInForm && (");
+    expect(workbench).toContain("<McpCatalogControlPlane startInForm />");
     expect(component).toContain("startInForm = false");
     expect(component).toContain("useState(startInForm)");
   });
@@ -122,13 +124,15 @@ describe("MCP capability catalog", () => {
     expect(styles).toMatch(/\.detailDrawer\s*\{[^}]*width:\s*min\(720px, 100%\)/s);
   });
 
-  it("authorizes MCP access to explicit network-compatible execution profiles", () => {
+  it("keeps a new registration usable by defaulting its profile authorization", () => {
+    // The form no longer hosts the profile card: the default is what keeps a
+    // fresh registration usable (an unauthorized MCP is refused by every
+    // profile), and profile governance has its own control plane.
     expect(component).toContain("allowedProfileIds");
-    expect(component).toContain("允许在哪些 Execution Profile 中使用");
-    expect(component).toContain("与 MCP 定义原子保存");
+    expect(component).not.toContain("允许在哪些 Execution Profile 中使用");
+    expect(component).toContain('profile.sandboxProvider === "local"');
     expect(component).toContain("profile.networkAccess.includes");
-    expect(component).toContain("生产授权前，请确认该 Sandbox 能访问此内网地址");
-    expect(component).toContain("尚未授权 Profile");
+    expect(component).toContain("allowedProfileIds,");
   });
 
   it("discovers an address and supports multi-tool selection", () => {
@@ -147,33 +151,21 @@ describe("MCP capability catalog", () => {
     expect(component).toContain('type="search"');
   });
 
-  it("groups real connection fields and keeps public headers separate from secrets", () => {
-    for (const title of [
-      "01",
-      "基本信息",
-      "02",
-      "连接配置",
-      "03",
-      "鉴权",
-      "04",
-      "运行边界",
-      "05",
-      "连接测试与工具",
-    ]) {
-      expect(component).toContain(title);
+  it("keeps the connection fields on one surface and secrets out of the headers", () => {
+    // The numbered step cards are gone: the fields carry the form, and the
+    // governance knobs sit inside one 高级设置 disclosure.
+    expect(component).not.toContain("formSectionTitle");
+    for (const field of ["引用标识", "显示名称", "能力说明", "鉴权方式"]) {
+      expect(component).toContain(`<span>${field}</span>`);
     }
-    expect(component).toContain("customHeaderRows");
-    expect(component).toContain("customHeadersFromRows");
+    expect(component).toContain("检测连接并识别工具");
     expect(component).toContain("自定义请求头（可选）");
     expect(component).toContain("MANAGED_AUTH_HEADER_NAMES");
     expect(component).toContain("密钥、Token 和 Cookie 不能放入自定义请求头");
     expect(component).toContain("自动检测");
-    expect(styles).toMatch(/\.formSectionTitle\s*\{[^}]*grid-template-columns:\s*20px minmax\(0, 1fr\);/s);
-    expect(styles).toMatch(/\.formSectionTitle\s*>\s*span\s*\{[^}]*font:\s*700 9px\/1\.2/s);
-    expect(styles).toContain("font-variant-numeric: tabular-nums");
-    expect(component.match(/className=\{styles\.formSection\}/g)).toHaveLength(5);
-    expect(styles).toMatch(/\.formSection\s*\{[^}]*border-radius:\s*12px;[^}]*background:\s*var\(--panel\);/s);
-    expect(styles).toMatch(/@media \(max-width: 680px\)[\s\S]*?\.formSection\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/s);
+    // One surface, and a narrower drawer for a shorter form.
+    expect(styles).toMatch(/\.formSection\s*\{[^}]*border:\s*0;/s);
+    expect(styles).toMatch(/\.editorBackdrop \.editor\s*\{[^}]*width:\s*min\(460px/s);
   });
 
   it("explains which agents need resync after the reviewed tool list changes", () => {

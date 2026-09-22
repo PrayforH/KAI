@@ -46,7 +46,7 @@
 }
 
 .editorBackdrop .editor {
-  width: min(680px, calc(100vw - var(--studio-sidebar-collapsed-width)));
+  width: min(460px, calc(100vw - var(--studio-sidebar-collapsed-width)));
   height: 100vh;
   max-height: 100vh;
   overflow: auto;
@@ -1422,4 +1422,14 @@
   margin: 6px 0 10px;
   color: var(--studio-muted);
   font-size: 11px;
+}
+
+/* The registration form is one surface: the section boxes said nothing the
+   fields did not, and the numbered steps made a five-field form look long. */
+.formSection {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 10px 0;
+  box-shadow: none;
 }

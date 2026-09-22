@@ -386,6 +386,8 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
   // next to the list that decides which ones this agent may use.
   const [mcpManagerOpen, setMcpManagerOpen] = useState(false);
   const [mcpStartInForm, setMcpStartInForm] = useState(false);
+  const mcpManagerRef = useRef<HTMLElement | null>(null);
+  const mcpManagerCloseRef = useRef<HTMLButtonElement | null>(null);
   const [personalVersions, setPersonalVersions] = useState<PersonalAgentVersion[]>([]);
   const [versionHistoryLoading, setVersionHistoryLoading] = useState(false);
   const [versionHistoryError, setVersionHistoryError] = useState("");
@@ -417,6 +419,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
   );
   useDialogFocus({open: configEditorOpen, panelRef: configEditorRef, onEscape: () => setConfigEditorOpen(false)});
   useDialogFocus({open: versionHistoryOpen, panelRef: versionHistoryRailRef, initialFocusRef: versionHistoryCloseRef, onEscape: () => {setVersionHistoryOpen(false);setPromoteTarget("");}});
+  useDialogFocus({open: mcpManagerOpen && !mcpStartInForm, panelRef: mcpManagerRef, initialFocusRef: mcpManagerCloseRef, onEscape: () => setMcpManagerOpen(false)});
   const visibleMcpOptions = useMemo(
     () => mcpOptionsForDraft(draft, options.mcp),
     [draft.name, draft.domain, options.mcp],
@@ -4083,8 +4086,22 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
 
       {notice && !importFeedback && !/^(正在读取控制面草稿|已从控制面(?:加载|切换)草稿|已保存到控制面|已通过对话更新)/.test(notice) && <div className={styles.importFeedback} role="status"><span>{notice}</span><button type="button" aria-label="关闭状态提示" onClick={() => setNotice("")}>×</button></div>}
       {importFeedback && <div className={styles.importFeedback} role={importFeedback.error ? "alert" : "status"} data-error={Boolean(importFeedback.error)}><span>{importFeedback.message}</span>{!importingBundle && <button type="button" aria-label="关闭导入提示" onClick={()=>setImportFeedback(null)}>×</button>}</div>}
-      {mcpManagerOpen && (
-        <McpCatalogControlPlane startInForm={mcpStartInForm} />
+      {mcpManagerOpen && !mcpStartInForm && (
+        <>
+          <button type="button" className={styles.contractBackdrop} aria-label="关闭 MCP 服务器管理" onClick={() => setMcpManagerOpen(false)} />
+          <aside ref={mcpManagerRef} className={styles.contractRail} aria-label="MCP 服务器管理" role="dialog" aria-modal="true" data-open="true">
+            <div className={styles.contractHeader}>
+              <div><span>MCP</span><strong>MCP 服务器</strong></div>
+              <div className={styles.contractHeaderActions}>
+                <button type="button" ref={mcpManagerCloseRef} aria-label="关闭 MCP 服务器管理" onClick={() => setMcpManagerOpen(false)}>×</button>
+              </div>
+            </div>
+            <McpCatalogControlPlane />
+          </aside>
+        </>
+      )}
+      {mcpManagerOpen && mcpStartInForm && (
+        <McpCatalogControlPlane startInForm />
       )}
       {versionHistoryOpen && <button type="button" className={styles.contractBackdrop} aria-label="关闭版本历史" onClick={() => {setVersionHistoryOpen(false);setPromoteTarget("");}} />}
       <aside ref={versionHistoryRailRef} id="personal-version-history" className={`${styles.contractRail} ${styles.versionHistoryRail}`} aria-label="智能体版本历史" role="dialog" aria-modal="true" aria-hidden={!versionHistoryOpen} data-open={versionHistoryOpen}>

@@ -491,13 +491,6 @@ export function McpCatalogControlPlane({
     return Object.fromEntries(entries);
   }
 
-  function toggleAllowedProfile(profileId: string) {
-    setAllowedProfileIds((current) =>
-      current.includes(profileId)
-        ? current.filter((item) => item !== profileId)
-        : [...current, profileId],
-    );
-  }
 
   async function discover() {
     const reference = draft.reference.trim();
@@ -905,13 +898,6 @@ export function McpCatalogControlPlane({
             </header>
             <form onSubmit={save}>
               <section className={styles.formSection}>
-              <div className={styles.formSectionTitle}>
-                <span>01</span>
-                <div>
-                  <strong>基本信息</strong>
-                  <small>稳定标识、名称和用途边界</small>
-                </div>
-              </div>
               <label>
                 <span>引用标识</span>
                 <input
@@ -959,13 +945,6 @@ export function McpCatalogControlPlane({
               </label>
               </section>
               <section className={styles.formSection}>
-              <div className={styles.formSectionTitle}>
-                <span>02</span>
-                <div>
-                  <strong>连接配置</strong>
-                  <small>地址、网络范围和非敏感请求头</small>
-                </div>
-              </div>
               <label className={styles.endpointField}>
                 <span>{knowledgeMode ? "知识服务 MCP 地址" : "MCP 地址"}</span>
                 <input
@@ -1092,13 +1071,6 @@ export function McpCatalogControlPlane({
               </details>
               </section>
               <section className={styles.formSection}>
-              <div className={styles.formSectionTitle}>
-                <span>03</span>
-                <div>
-                  <strong>鉴权</strong>
-                  <small>凭据加密托管，保存后不再回显</small>
-                </div>
-              </div>
               <label>
                 <span>鉴权方式</span>
                 <select
@@ -1173,71 +1145,9 @@ export function McpCatalogControlPlane({
               )}
               </section>
               <section className={styles.formSection}>
-              <div className={styles.formSectionTitle}>
-                <span>04</span>
-                <div>
-                  <strong>运行边界</strong>
-                  <small>Execution Profile、数据发送和预检要求</small>
-                </div>
-              </div>
-              <section className={styles.profileAuthorization}>
-                <header>
-                  <div>
-                    <strong>允许在哪些 Execution Profile 中使用</strong>
-                    <span>
-                      与 MCP 定义原子保存；未勾选的 Profile 会继续拒绝该连接。
-                    </span>
-                  </div>
-                  <span>{allowedProfileIds.length} 个已授权</span>
-                </header>
-                <div>
-                  {(record?.catalog.executionProfiles ?? []).map((profile) => {
-                    const networkCompatible = profile.networkAccess.includes(
-                      draft.networkAccess,
-                    );
-                    const needsPrivateRouteConfirmation =
-                      draft.networkAccess === "internal"
-                      && profile.sandboxProvider !== "local";
-                    return (
-                      <label
-                        data-compatible={networkCompatible && profile.enabled}
-                        key={profile.profileId}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={allowedProfileIds.includes(profile.profileId)}
-                          disabled={!networkCompatible || !profile.enabled}
-                          onChange={() => toggleAllowedProfile(profile.profileId)}
-                        />
-                        <span>
-                          <strong>{profile.label}</strong>
-                          <code>{profile.profileId}</code>
-                          <small>
-                            {!profile.enabled
-                              ? "Profile 已停用"
-                              : !networkCompatible
-                                ? `不支持${NETWORK_LABELS[draft.networkAccess]}`
-                                : profile.sandboxProvider === "local"
-                                  ? "本地 Preview；内网连接的安全默认项"
-                                  : needsPrivateRouteConfirmation
-                                    ? "生产授权前，请确认该 Sandbox 能访问此内网地址"
-                                    : "显式授权后可在此隔离环境调用"}
-                          </small>
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </section>
+              
               </section>
               <section className={styles.formSection}>
-              <div className={styles.formSectionTitle}>
-                <span>05</span>
-                <div>
-                  <strong>连接测试与工具</strong>
-                  <small>真实执行 initialize 与 tools/list 后再保存</small>
-                </div>
-              </div>
               <div className={styles.discoveryAction}>
                 <div>
                   <strong>检测连接并识别工具</strong>
