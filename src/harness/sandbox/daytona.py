@@ -46,6 +46,7 @@ from harness.sandbox.base import (
     SandboxCommandResult,
     SandboxHandle,
     SandboxIsolation,
+    replace_collected_file,
 )
 from harness.sandbox.claude_cli import (
     banner_matches,
@@ -417,21 +418,14 @@ def _extract_daytona_workspace_archive(
             data = source.read(max_bytes + 1)
             if len(data) != member.size:
                 raise ValueError("invalid Daytona workspace archive")
-            target.parent.mkdir(parents=True, exist_ok=True)
             if target.is_symlink():
                 raise ValueError("unsafe Daytona workspace archive member")
-            if target.exists():
-                if not target.is_file():
-                    raise ValueError("unsafe Daytona workspace archive member")
-                # Inputs are intentionally staged read-only. Collection replaces
-                # the local mirror with the remote copy, so make an existing
-                # worker-owned file writable before truncating it.
-                target.chmod(0o600)
-            target.write_bytes(data)
+            if target.exists() and not target.is_file():
+                raise ValueError("unsafe Daytona workspace archive member")
             # A remote archive may report mode 000. Keep the local control-plane
             # mirror owner-readable so snapshotting cannot fail after a
             # successful model response.
-            target.chmod((member.mode & 0o755) | 0o400)
+            replace_collected_file(target, data, mode=(member.mode & 0o755) | 0o400)
 
 
 SessionKey = tuple[str, str]

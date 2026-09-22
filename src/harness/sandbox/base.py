@@ -1,10 +1,12 @@
 """Sandbox lifecycle contract."""
 
+import os
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Protocol
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -166,6 +168,36 @@ class SandboxCommandResult(BaseModel):
     exit_code: int
     stdout: str = ""
     stderr: str = ""
+
+
+def replace_collected_file(target: Path, content: bytes, *, mode: int | None = None) -> None:
+    """Mirror one collected remote file onto its local workspace copy.
+
+    An input artifact is staged read-only, so collection cannot write through the
+    local file: the Worker user owns it and is still denied by the absent write
+    bit. Publishing a temporary sibling and renaming it over the target needs
+    write permission on the directory alone, and leaves the read-only shape the
+    input staging step depends on intact.
+
+    ``mode`` is the mode the remote side reported, when it reports one; otherwise
+    the target keeps the mode it already had.
+    """
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    preserved = mode
+    if preserved is None:
+        try:
+            preserved = target.stat().st_mode & 0o777
+        except FileNotFoundError:
+            preserved = None
+    temporary = target.with_name(f".{target.name}.{uuid4().hex}.tmp")
+    try:
+        temporary.write_bytes(content)
+        if preserved is not None:
+            temporary.chmod(preserved)
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 class SandboxProvider(Protocol):

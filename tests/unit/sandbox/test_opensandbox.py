@@ -71,14 +71,15 @@ class FakeRemote:
     async def list_files(self, remote_path: str) -> list[tuple[str, bool, int | None]]:
         if self.escape_path is not None:
             return [(self.escape_path, False, 3)]
-        return [
-            ("/workspace/run-a/nested", True, None),
-            (
-                "/workspace/run-a/report.txt",
-                False,
-                len(self.remote_files["/workspace/run-a/report.txt"]),
-            ),
+        entries: list[tuple[str, bool, int | None]] = [
+            ("/workspace/run-a/nested", True, None)
         ]
+        entries.extend(
+            (path, False, len(content))
+            for path, content in self.remote_files.items()
+            if path.startswith(remote_path + "/")
+        )
+        return entries
 
     async def download(self, remote_path: str) -> bytes:
         return self.remote_files[remote_path]
@@ -205,6 +206,24 @@ async def test_collect_rejects_unsafe_or_oversized_results(tmp_path: Path) -> No
     escaping_handle = await escaping.provision(run())
     with pytest.raises(ValueError, match="escaped local collection root"):
         await escaping.collect(escaping_handle)
+
+
+@pytest.mark.asyncio
+async def test_collect_overwrites_read_only_staged_input(tmp_path: Path) -> None:
+    client = FakeClient()
+    subject = provider(client, tmp_path)
+    handle = await subject.provision(run())
+    staged_input = handle.path / "inputs" / "original" / "工作簿1.xlsx"
+    staged_input.parent.mkdir(parents=True)
+    staged_input.write_bytes(b"staged")
+    staged_input.chmod(0o444)
+    client.remote.remote_files["/workspace/run-a/inputs/original/工作簿1.xlsx"] = b"remote"
+
+    await subject.collect(handle)
+
+    assert staged_input.read_bytes() == b"remote"
+    assert staged_input.stat().st_mode & 0o400
+    await subject.destroy(handle)
 
 
 @pytest.mark.asyncio

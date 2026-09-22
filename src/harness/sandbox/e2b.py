@@ -29,6 +29,7 @@ from harness.sandbox.base import (
     SandboxHandle,
     SandboxIsolation,
     SandboxResourceUsage,
+    replace_collected_file,
 )
 from harness.sandbox.claude_cli import (
     banner_matches,
@@ -837,7 +838,7 @@ class E2BSandboxProvider:
             if collected_size > self._max_collect_bytes:
                 raise ValueError("E2B workspace exceeds collection size limit")
             local.parent.mkdir(parents=True, exist_ok=True)
-            local.write_bytes(content)
+            replace_collected_file(local, content)
 
     async def _keep_alive(self, sandbox: E2BRemoteSandbox) -> None:
         """Extend the platform TTL while the Run is still using the sandbox.

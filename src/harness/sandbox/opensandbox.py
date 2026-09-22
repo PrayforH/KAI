@@ -44,7 +44,12 @@ from harness.runtime.codex_app_server import (
     DaytonaCodexAppServerProcess,
 )
 from harness.runtime.daytona_transport import DaytonaClaudeTransport
-from harness.sandbox.base import SandboxCommandResult, SandboxHandle, SandboxIsolation
+from harness.sandbox.base import (
+    SandboxCommandResult,
+    SandboxHandle,
+    SandboxIsolation,
+    replace_collected_file,
+)
 from harness.sandbox.claude_cli import (
     banner_matches,
     bundled_cli_path,
@@ -745,7 +750,7 @@ class OpenSandboxSandboxProvider:
             if collected_size > self._max_collect_bytes:
                 raise ValueError("OpenSandbox workspace exceeds collection size limit")
             local.parent.mkdir(parents=True, exist_ok=True)
-            local.write_bytes(content)
+            replace_collected_file(local, content)
 
     async def destroy(self, handle: SandboxHandle) -> None:
         sandbox = self._sandboxes.pop(handle.sandbox_id, None)

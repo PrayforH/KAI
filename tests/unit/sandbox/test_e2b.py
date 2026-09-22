@@ -256,6 +256,25 @@ async def test_e2b_collection_limits_are_enforced(tmp_path: Path) -> None:
     await provider.destroy(handle)
 
 
+@pytest.mark.asyncio
+async def test_e2b_collect_overwrites_read_only_staged_input(tmp_path: Path) -> None:
+    client = FakeClient()
+    provider = E2BSandboxProvider(client=client, local_root=tmp_path)
+    handle = await provider.provision(run())
+    staged_input = handle.path / "inputs" / "original" / "工作簿1.xlsx"
+    staged_input.parent.mkdir(parents=True)
+    staged_input.write_bytes(b"staged")
+    staged_input.chmod(0o444)
+    remote_path = "/home/user/harness/run-a/inputs/original/工作簿1.xlsx"
+    client.sandbox.remote_files[remote_path] = b"remote"
+
+    await provider.collect(handle)
+
+    assert staged_input.read_bytes() == b"remote"
+    assert staged_input.stat().st_mode & 0o400
+    await provider.destroy(handle)
+
+
 def managed_sandbox(
     sandbox_id: str, *, run_id: str, tenant_id: str = "tenant-a"
 ) -> tuple[str, dict[str, str]]:

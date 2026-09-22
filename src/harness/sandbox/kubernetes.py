@@ -27,7 +27,12 @@ from claude_agent_sdk import ClaudeAgentOptions
 
 from harness.core.models import Run
 from harness.runtime.daytona_transport import DaytonaClaudeTransport, RemoteClaudeSession
-from harness.sandbox.base import SandboxCommandResult, SandboxHandle, SandboxIsolation
+from harness.sandbox.base import (
+    SandboxCommandResult,
+    SandboxHandle,
+    SandboxIsolation,
+    replace_collected_file,
+)
 from harness.sandbox.claude_cli import (
     banner_matches,
     version_pin,
@@ -617,7 +622,7 @@ def _extract_workspace_archive(
             if len(data) != member.size:
                 raise ValueError("invalid Kubernetes workspace archive")
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(data)
+            replace_collected_file(target, data)
 
 
 class KubernetesSandboxProvider:
