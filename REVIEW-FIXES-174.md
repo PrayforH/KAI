@@ -46,6 +46,17 @@ HARNESS_BUILD_COMPONENTS=web bash scripts/build_harbor_174.sh develop-20260921-0
 | 前端产物 | 两个 web 容器内 `.next/static/chunks` 检索 | 新文案（本机隐藏、运行环境未能启动、工作日每/每天每）命中；旧的裸错误码兜底文案为 0 命中 |
 | 本地回归 | `pytest tests/unit`、`vitest run` | 见仓库测试结果；新增测试覆盖跨库归属、租约 CAS、按路径脱敏、标题退避、无 vendored 树、排程往返 |
 
+## 当前 174 部署（会随后续提交变化）
+
+| 时间 | tag | 组件 | 说明 |
+| --- | --- | --- | --- |
+| 2026-09-21 | `develop-20260921-3f58c360` | api + worker×3 + 3301/3501 web | 合并后入口/知识库控件；= 当时的 `origin/develop` |
+
+**注意并发会话**：本仓库同时有另一个会话在同一个 worktree（`/Users/xiaokai/Documents/agent-studio-review-fixes`）
+的同一分支上提交并部署——它把 `dd776bff`（sandbox collect 只读输入）提交到了 `fix/develop-review-20260921`
+上，并用 `develop-20260922-dd776bff` 只改了 overlay 的 api/worker 两行。切 tag 前必须**先看运行中容器
+用的是哪个 tag**：如果比自己准备上的更新，直接覆盖就是降级。
+
 ## 验证的成本（本轮实测）
 
 | 步骤 | 耗时 | 说明 |
