@@ -160,7 +160,28 @@ MCP 目录内容、只带 `/studio/skills` 的跳转（Next 的 RSC 跳转是 20
 用 `studioClient.listKnowledgeBases()` 的勾选列表绑定 `draft.knowledgeReferences`，
 让每一行抽屉都直达自己的配置项。
 
-## 8. 仍未做
+## 8. 第五批：MCP 注册表单瘦身（同日）
+
+| 项 | 内容 |
+| --- | --- |
+| 版本 | `d76ab875` |
+| 镜像 | web `kai/axis-web:evolution-d76ab875`（api/worker 仍 `evolution-d6bada40`） |
+| 回滚点 | `backups/d76ab875/compose.json` |
+
+用户反馈「MCP 的配置项太多了」。原来三步共 11 个字段，其中两格说的是同一件事：
+`引用标识` 已经决定工具名前缀（`save()` 里本就有 `const serverName = draft.serverName?.trim() || reference;`），
+所以独立的「MCP 服务名」是冗余的。做法：
+
+- 删掉「MCP 服务名」字段（沿用既有派生，`save()` 的兜底断言进测试）；
+- 「能力说明」从 3 行改 1 行；
+- 治理类项「传输类型读数 / 自定义请求头 / 风险级别 / 网络范围 / 执行位置」保留默认值，
+  整体收进 `高级设置（可选）` 折叠块。
+
+现在注册只需 **引用标识 / 显示名称 / 能力说明 / MCP 地址 / 鉴权方式** 五项，截图确认
+（02 里只剩 MCP 地址 + 折叠的高级设置）。测试两头都钉住：折叠块存在，且那些治理项确实在其内部
+（`tests/mcp-catalog-control-plane.spec.ts`）。vitest 129 文件 / 818 passed。
+
+## 9. 仍未做
 
 - 状态字面量收敛成 StrEnum（评审 P1-4）、`run-status.ts` 标签的多处自建（P1-7）、
   `agent-builder-overlays.tsx` 重复的意图正则（P1-3）等；
