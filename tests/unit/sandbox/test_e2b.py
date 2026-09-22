@@ -312,7 +312,7 @@ async def test_e2b_collect_overwrites_read_only_staged_input(tmp_path: Path) -> 
 @pytest.mark.asyncio
 async def test_e2b_prepare_stages_every_file_in_one_batched_write(tmp_path: Path) -> None:
     client = FakeClient()
-    provider = E2BSandboxProvider(client=client, local_root=tmp_path)
+    provider = E2BSandboxProvider(client=client, local_root=tmp_path)  # pyright: ignore[reportArgumentType]
     handle = await provider.provision(run())
     (handle.path / "outputs").mkdir()
     for name in ("a.txt", "b.txt", "c.txt"):
@@ -334,7 +334,7 @@ async def test_e2b_collect_takes_one_archive_instead_of_one_request_per_file(
     tmp_path: Path,
 ) -> None:
     client = FakeClient()
-    provider = E2BSandboxProvider(client=client, local_root=tmp_path)
+    provider = E2BSandboxProvider(client=client, local_root=tmp_path)  # pyright: ignore[reportArgumentType]
     handle = await provider.provision(run())
     for index in range(40):
         client.sandbox.remote_files[f"/home/user/harness/run-a/f{index:03d}.txt"] = (
@@ -357,7 +357,7 @@ async def test_e2b_collect_falls_back_when_the_image_cannot_archive(
     tmp_path: Path,
 ) -> None:
     client = FakeClient()
-    provider = E2BSandboxProvider(client=client, local_root=tmp_path)
+    provider = E2BSandboxProvider(client=client, local_root=tmp_path)  # pyright: ignore[reportArgumentType]
     handle = await provider.provision(run())
     client.sandbox.remote_files["/home/user/harness/run-a/report.md"] = b"report"
     client.sandbox.archive_error = WorkspaceArchiveUnavailableError("tar: command not found")
@@ -376,7 +376,7 @@ async def test_e2b_collect_rejects_an_archive_that_escapes_the_workspace(
     tmp_path: Path,
 ) -> None:
     client = FakeClient()
-    provider = E2BSandboxProvider(client=client, local_root=tmp_path)
+    provider = E2BSandboxProvider(client=client, local_root=tmp_path)  # pyright: ignore[reportArgumentType]
     handle = await provider.provision(run())
     client.sandbox.remote_files["/home/user/harness/run-a/ok.txt"] = b"ok"
     client.sandbox.archive = workspace_tar({"../escaped.txt": b"escaped"})
