@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AgentaConfiguration } from "../src/components/agent-studio/agenta-configuration";
 import { DEFAULT_STUDIO_DRAFT, type StudioDraft } from "../src/lib/agent-studio";
 
@@ -14,10 +14,10 @@ const draft: StudioDraft = {
   ...DEFAULT_STUDIO_DRAFT,
   id: "draft-panel",
   revision: 3,
-  runtime: "multi",
+  runtime: "deepagents",
   builtinTools: ["Read", "Glob", "Grep", "Write", "Bash"],
   mcpServers: ["knowledge-search"],
-  pythonTools: [{ name: "summarise", description: "", source: "x" } as StudioDraft["pythonTools"][number]],
+  pythonTools: [{ name: "summarise", description: "汇总", inputSchema: {}, code: "def run(): pass" }],
 };
 
 beforeEach(() => {
@@ -31,7 +31,7 @@ afterEach(() => {
   host.remove();
 });
 
-function render() {
+function render(overrides: Partial<Parameters<typeof AgentaConfiguration>[0]> = {}) {
   act(() =>
     root.render(
       <AgentaConfiguration
@@ -44,6 +44,9 @@ function render() {
         onPublish={() => {}}
         onCode={() => {}}
         onBuildChat={() => {}}
+        onOpenMcp={() => {}}
+        onAddMcp={() => {}}
+        {...overrides}
       />,
     ),
   );
@@ -74,8 +77,27 @@ it("shows the draft's runtime on the advanced row and the code entry in the head
   const advanced = buttons.find((button) => button.text.startsWith("高级设置"));
     expect(advanced).toBeTruthy();
     // The row reports the draft's runtime rather than a static description.
-    expect(advanced?.text).toContain("multi");
-  expect(host.textContent).toContain("multi");
+    expect(advanced?.text).toContain("deepagents");
+  expect(host.textContent).toContain("deepagents");
   expect(host.textContent).not.toContain("运行时、权限与沙箱");
   expect(buttons.some((button) => button.text === "代码" && button.title === "查看这份配置的代码视图")).toBe(true);
+});
+
+it("offers MCP as a panel row whose + opens the add form", () => {
+  const onAddMcp = vi.fn();
+  const onOpenMcp = vi.fn();
+  render({ onAddMcp, onOpenMcp });
+  const row = [...host.querySelectorAll("button")].find((button) =>
+    (button.textContent ?? "").includes("MCP 服务器"),
+  );
+  expect(row?.textContent).toContain("1 项已启用");
+  row?.click();
+  expect(onOpenMcp).toHaveBeenCalledTimes(1);
+  // The + is a sibling control, not a button nested inside a button.
+  const add = host.querySelector<HTMLButtonElement>('[aria-label="添加 MCP 服务器"]');
+  expect(add).toBeTruthy();
+  expect(add?.closest("button")).toBe(add);
+  add?.click();
+  expect(onAddMcp).toHaveBeenCalledTimes(1);
+  expect(onOpenMcp).toHaveBeenCalledTimes(1);
 });

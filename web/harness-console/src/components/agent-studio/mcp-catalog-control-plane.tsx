@@ -117,8 +117,11 @@ function derivedStatus(
 
 export function McpCatalogControlPlane({
   mode = "mcp",
+  startInForm = false,
 }: {
   mode?: "mcp" | "knowledge";
+  /** Open the registration form straight away: the form is itself the drawer. */
+  startInForm?: boolean;
 }) {
   const knowledgeMode = mode === "knowledge";
   const category = knowledgeMode ? "knowledge" : "tool";
@@ -139,7 +142,7 @@ export function McpCatalogControlPlane({
     value: string;
   }>>([]);
   const [editingReference, setEditingReference] = useState<string | null>(null);
-  const [showForm, setShowForm] = useState(false);
+  const [showForm, setShowForm] = useState(startInForm);
   const [pendingDisable, setPendingDisable] =
     useState<StudioCatalogImpact | null>(null);
   const [pendingDelete, setPendingDelete] = useState<{

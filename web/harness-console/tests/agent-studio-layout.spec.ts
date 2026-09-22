@@ -307,8 +307,15 @@ describe("Agent Studio management page", () => {
     expect(styles).toContain(".contractHeader > .contractHeaderActions");
     expect(styles).toMatch(/\.contractHeader\s*>\s*\.contractHeaderActions\s*\{[^}]*display:\s*flex;/s);
     expect(styles).toMatch(/\.riskBadge\s*\{[^}]*min-height:\s*24px;[^}]*border-radius:\s*6px;/s);
-    // One close affordance per rail: the version drawer and the MCP rail.
-    expect(workbench.match(/m4\.5 4\.5 7 7m0-7-7 7/g)).toHaveLength(2);
+    expect(workbench.match(/m4\.5 4\.5 7 7m0-7-7 7/g)).toHaveLength(1);
+  });
+
+  it("labels the catalog card action instead of boxing it into an icon", () => {
+    // The action carries the text 查看工作区; a fixed 30px square (plus nowrap)
+    // painted the label outside the card.
+    expect(styles).toMatch(/\.agentCardAction\s*\{[^}]*display:\s*inline-flex;/s);
+    expect(styles).not.toMatch(/\.agentCardAction\s*\{[^}]*width:\s*30px;/s);
+    expect(styles).toMatch(/\.agentCardAction\s*\{[^}]*white-space:\s*nowrap;/s);
   });
 
   it("keeps Studio focused and exposes the published Agent as a task action", () => {

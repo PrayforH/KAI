@@ -12,6 +12,8 @@ export function AgentaConfiguration({
   onEdit,
   onSave,
   onCode,
+  onOpenMcp,
+  onAddMcp,
   onCollapse,
 }: {
   draft: StudioDraft;
@@ -23,6 +25,8 @@ export function AgentaConfiguration({
   onPublish: () => void;
   onCode: () => void;
   onBuildChat: () => void;
+  onOpenMcp: () => void;
+  onAddMcp: () => void;
   onCollapse?: () => void;
 }) {
   const toolSources = [
@@ -106,6 +110,22 @@ export function AgentaConfiguration({
             </button>
           ))}
         </details>
+        <div className={styles.configRowGroup}>
+          <button className={styles.configRowMain} onClick={onOpenMcp}>
+            <span className={styles.rowLabel}><Icon name="mcp" /><strong>MCP 服务器</strong></span>
+            <small>{draft.mcpServers.length ? `${draft.mcpServers.length} 项已启用` : "无"}</small>
+            <Icon name="chevron" className={styles.chevron} />
+          </button>
+          <button
+            type="button"
+            className={styles.rowAdd}
+            aria-label="添加 MCP 服务器"
+            title="添加 MCP 服务器"
+            onClick={onAddMcp}
+          >
+            ＋
+          </button>
+        </div>
         <details className={styles.configGroup} open={draft.skills.length > 0}>
           <summary>
             <span className={styles.rowLabel}><Icon name="skill" /><strong>Skills</strong></span>

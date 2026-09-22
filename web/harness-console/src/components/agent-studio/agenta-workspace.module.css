@@ -743,6 +743,46 @@
   opacity: 0.5;
 }
 
+/* A row that owns an add affordance: the label area is the navigation target and
+   the + sits beside it, instead of nesting a button inside a button. */
+.configRowGroup { display: flex; align-items: center; }
+.configRowMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 56px;
+  padding: 0 16px;
+  border: 0;
+  border-bottom: 1px solid var(--studio-line);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.configRowMain:hover { background: var(--studio-panel-subtle); }
+.configRowMain small { max-width: 52%; margin-left: auto; color: var(--studio-muted); font-size: 11px; text-align: right; }
+.rowAdd {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  margin-right: 10px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--studio-muted);
+  font: inherit;
+  font-size: 16px;
+  cursor: pointer;
+}
+.rowAdd:hover { background: var(--studio-panel-subtle); color: var(--studio-ink); }
+.rowAdd:focus-visible { outline: 2px solid var(--studio-green); outline-offset: 2px; }
+
 .rowLabel { display: flex; align-items: center; gap: 12px; min-width: 0; flex-shrink: 0; }
 .rowLabel > svg { width: 20px; height: 20px; flex: 0 0 20px; color: var(--studio-muted); }
 .chevron { width: 16px; height: 16px; flex: 0 0 16px; color: var(--studio-muted); }

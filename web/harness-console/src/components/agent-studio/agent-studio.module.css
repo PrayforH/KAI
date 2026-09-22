@@ -7290,16 +7290,20 @@
   font: 500 9px/1.3 var(--codex-font-mono, ui-monospace, monospace);
 }
 
+/* This is a labelled action, not an icon: a fixed square box with nowrap text
+   painted the label outside the card. */
 .agentCardAction {
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 30px;
+  padding: 0 12px;
   border: 1px solid var(--studio-line);
-  border-radius: 50%;
+  border-radius: 999px;
   color: var(--studio-muted);
   background: var(--studio-panel-subtle);
-  font-size: 14px;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .agentCatalogEmpty {
@@ -8257,7 +8261,6 @@
 .catalogEdit { position:absolute; bottom:13px; left:20px; border:0; background:transparent; color:var(--studio-muted); font:inherit; font-size:12px; padding:5px 0; cursor:pointer; }
 .catalogEdit:hover { color:var(--studio-ink); }
 .agentCatalogFooter code { font-size:11px; }
-.agentCatalogFooter .agentCardAction { font-size:12px; white-space:nowrap; }
 /* Focused Agent layout follows Agenta's compact two-level chrome. */
 .studioShell.workbenchContent[data-agent-focused=true] {display:grid;grid-template-columns:228px minmax(0,1fr);gap:0;}
 .studioShell[data-agent-focused=true] .editorShell {min-width:0;overflow:hidden;border:0;border-radius:0;}

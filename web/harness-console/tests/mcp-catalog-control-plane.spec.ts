@@ -35,8 +35,12 @@ describe("MCP capability catalog", () => {
     // route redirects, and the agent's Tools group owns the entry.
     expect(navigation).not.toContain('href: "/studio/capabilities"');
     expect(page).toContain('redirect("/studio/skills")');
-    expect(workbench).toContain("管理 MCP 服务器");
-    expect(workbench).toContain("<McpCatalogControlPlane />");
+    // The panel row opens the control plane; the + opens it on the form, which
+    // is itself the drawer — no card in between.
+    expect(workbench).toContain("<McpCatalogControlPlane startInForm={mcpStartInForm} />");
+    expect(workbench).toContain("setMcpStartInForm(true); setMcpManagerOpen(true);");
+    expect(component).toContain("startInForm = false");
+    expect(component).toContain("useState(startInForm)");
   });
 
   it("supports governed registration, impact inspection, disable and deletion", () => {
