@@ -126,38 +126,11 @@ export function useTaskKnowledge(): TaskKnowledgeValue {
 /** Composer toolbar control: shows and edits the thread's knowledge bases. */
 const TYPE_LABELS: Record<string, string> = { rag: "文档检索", wiki: "Wiki", hybrid: "文档 + Wiki" };
 
-/**
- * The picker body: search, tick, bind. One implementation, because the composer's
- * add panel and the labelled context control are two entrances to the same choice.
- */
-export function KnowledgeBasePicker({ autoFocus = true }: { autoFocus?: boolean }) {
-  const { available, selected, loading, error, retry, toggle, clear } = useTaskKnowledge();
-  const [query, setQuery] = useState("");
-  const matches = available.filter((base) =>
-    `${base.displayName} ${base.reference}`.toLowerCase().includes(query.trim().toLowerCase()),
-  );
-  const count = selected.length;
-  return <>
-    <div className="task-knowledge-menu-head">知识库 · 已选 {count} 个</div>
-    <input autoFocus={autoFocus} className="task-knowledge-search" aria-label="搜索知识库" placeholder="搜索知识库…"
-      value={query} onChange={(event) => setQuery(event.target.value)}
-      onKeyDown={(event) => { if (event.key === "Enter") event.preventDefault(); }} />
-    {loading ? <p className="task-knowledge-empty" role="status">加载中…</p>
-      : error ? <div role="alert" className="task-knowledge-empty">{error}<button type="button" onClick={retry}>重试</button></div>
-      : matches.length ? <ul>{matches.map((base) => (
-        <li key={base.reference}><button type="button" className="task-knowledge-option" aria-pressed={selected.includes(base.reference)} onClick={() => toggle(base.reference)}>
-          <span className="task-knowledge-option-mark" aria-hidden="true">{selected.includes(base.reference) ? "✓" : ""}</span>
-          <span className="task-knowledge-option-copy"><strong>{base.displayName}</strong><small>{TYPE_LABELS[base.kbType] ?? base.kbType}</small></span>
-        </button></li>
-      ))}</ul> : <p className="task-knowledge-empty">{query ? "没有匹配的知识库" : "暂无可用知识库"}</p>}
-    <button type="button" className="task-knowledge-clear" disabled={!count} onClick={clear}>清除选择，使用智能体默认知识库</button>
-  </>;
-}
-
-/** Composer toolbar control: shows and edits the thread's knowledge bases. */
 export function TaskKnowledgeControl({ disabled, label }: { disabled: boolean; label?: string }) {
-  const { selected, available } = useTaskKnowledge();
+  const { available, selected, loading, error, retry, toggle, clear } =
+    useTaskKnowledge();
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const menuId = useId();
@@ -173,10 +146,11 @@ export function TaskKnowledgeControl({ disabled, label }: { disabled: boolean; l
     return () => document.removeEventListener("pointerdown", outside);
   }, [open]);
   useEffect(() => {
-    const show = () => { if (!disabled && !label) { setOpen(true); } };
+    const show = () => { if (!disabled && !label) { setQuery(""); setOpen(true); } };
     window.addEventListener("harness:select-knowledge", show);
     return () => window.removeEventListener("harness:select-knowledge", show);
   }, [disabled, label]);
+  const matches = available.filter((base) => `${base.displayName} ${base.reference}`.toLowerCase().includes(query.trim().toLowerCase()));
   // The control shows only the selected count; the names live in the tooltip
   // and the picker itself.
   const count = selected.length;
@@ -202,7 +176,7 @@ export function TaskKnowledgeControl({ disabled, label }: { disabled: boolean; l
             ? "选择本次任务使用的知识库，可多选"
             : `已选知识库：${names}`
         }
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => { setQuery(""); setOpen((current) => !current); }}
       >
         {label ? <>
           <svg className="task-knowledge-folder" viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 5h5l1.7 2h8.3v10h-15z" /></svg>
@@ -215,7 +189,18 @@ export function TaskKnowledgeControl({ disabled, label }: { disabled: boolean; l
       </button>
       {open && (
         <section id={menuId} role="dialog" aria-label="选择知识库" className="task-knowledge-menu">
-          <KnowledgeBasePicker />
+          <div className="task-knowledge-menu-head">知识库 · 已选 {count} 个</div>
+          <input autoFocus className="task-knowledge-search" aria-label="搜索知识库" placeholder="搜索知识库…" value={query} onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => { if (event.key === "Enter") event.preventDefault(); }} />
+          {loading ? <p className="task-knowledge-empty" role="status">加载中…</p>
+            : error ? <div role="alert" className="task-knowledge-empty">{error}<button type="button" onClick={retry}>重试</button></div>
+            : matches.length ? <ul>{matches.map((base) => (
+              <li key={base.reference}><button type="button" className="task-knowledge-option" aria-pressed={selected.includes(base.reference)} onClick={() => toggle(base.reference)}>
+                <span className="task-knowledge-option-mark" aria-hidden="true">{selected.includes(base.reference) ? "✓" : ""}</span>
+                <span className="task-knowledge-option-copy"><strong>{base.displayName}</strong><small>{TYPE_LABELS[base.kbType] ?? base.kbType}</small></span>
+              </button></li>
+            ))}</ul> : <p className="task-knowledge-empty">{query ? "没有匹配的知识库" : "暂无可用知识库"}</p>}
+          <button type="button" className="task-knowledge-clear" disabled={!count} onClick={clear}>清除选择，使用智能体默认知识库</button>
         </section>
       )}
     </div>
