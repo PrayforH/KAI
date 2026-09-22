@@ -791,3 +791,23 @@
 .configTrail { width: 16px; height: 16px; flex: 0 0 16px; color: var(--studio-muted); }
 .configRow, .configGroup > summary { min-height: 56px; gap: 12px; }
 .configGroup:not([open]) { padding-bottom: 0; }
+
+/* Binding rows inside a panel group: one checkbox per option, the same shape the
+   skills picker uses in the editor. */
+.configChoice,
+.configChoiceEnabled {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--studio-line);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.configChoiceEnabled { border-color: var(--studio-green); }
+.configChoice input, .configChoiceEnabled input { width: 15px; height: 15px; accent-color: var(--studio-green); }
+.configChoice small, .configChoiceEnabled small { color: var(--studio-muted); font-size: 11px; }
+.configChoice small:last-child, .configChoiceEnabled small:last-child { white-space: nowrap; }
+.groupEmpty { margin: 8px 0; color: var(--studio-muted); font-size: 11px; }

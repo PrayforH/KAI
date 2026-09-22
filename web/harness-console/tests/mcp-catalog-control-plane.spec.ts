@@ -166,7 +166,8 @@ describe("MCP capability catalog", () => {
     expect(component).toContain("自动检测");
     // One surface, and a narrower drawer for a shorter form.
     expect(styles).toMatch(/\.formSection\s*\{[^}]*border:\s*0;/s);
-    expect(styles).toMatch(/\.editorBackdrop \.editor\s*\{[^}]*width:\s*min\(460px/s);
+    // A third of the screen is enough for the fields that are left.
+    expect(styles).toMatch(/\.editorBackdrop \.editor\s*\{[^}]*width:\s*clamp\(320px, 33vw, 560px\)/s);
   });
 
   it("explains which agents need resync after the reviewed tool list changes", () => {

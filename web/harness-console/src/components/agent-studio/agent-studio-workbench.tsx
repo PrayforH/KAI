@@ -4106,7 +4106,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
         writable={canEdit}
         onChanges={setRecentChanges}
         buildChatRequest={buildChatRequest}
-        configuration={<AgentaConfiguration onCollapse={() => setPlaygroundMode("chat")} draft={draft} dirty={dirty} saving={saving} writable={canEdit} onEdit={openConfiguration} onSave={() => void saveDraft()} onPublish={() => void handleReleaseAction()} onCode={() => setCodeRequest(value => value + 1)} onBuildChat={() => setBuildChatRequest(value => value + 1)} onAddMcp={() => {setMcpStartInForm(true); setMcpManagerOpen(true);}} />}
+        configuration={<AgentaConfiguration onCollapse={() => setPlaygroundMode("chat")} draft={draft} dirty={dirty} saving={saving} writable={canEdit} onEdit={openConfiguration} onSave={() => void saveDraft()} onPublish={() => void handleReleaseAction()} onCode={() => setCodeRequest(value => value + 1)} onBuildChat={() => setBuildChatRequest(value => value + 1)} onAddMcp={() => {setMcpStartInForm(true); setMcpManagerOpen(true);}} mcpOptions={visibleMcpOptions.filter((item) => item.category !== "knowledge")} onToggleMcp={toggleMcp} />}
         testRequest={testRequest}
         open={viewMode === "editor" && Boolean(workspaceTarget)}
         mode={builderAssistantMode}

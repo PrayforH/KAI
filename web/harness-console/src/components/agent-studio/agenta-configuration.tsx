@@ -1,7 +1,7 @@
 "use client";
 import { ConfigurationIcon as Icon } from "./configuration-icon";
 import Link from "next/link";
-import type { StudioDraft, StudioSection } from "../../lib/agent-studio";
+import type { McpOption, StudioDraft, StudioSection } from "../../lib/agent-studio";
 import { skillCreatorHref } from "../../lib/skill-creator-launch";
 import styles from "./agenta-workspace.module.css";
 export function AgentaConfiguration({
@@ -13,6 +13,8 @@ export function AgentaConfiguration({
   onSave,
   onCode,
   onAddMcp,
+  mcpOptions,
+  onToggleMcp,
   onCollapse,
 }: {
   draft: StudioDraft;
@@ -25,11 +27,13 @@ export function AgentaConfiguration({
   onCode: () => void;
   onBuildChat: () => void;
   onAddMcp: () => void;
+  mcpOptions: McpOption[];
+  onToggleMcp: (id: string) => void;
   onCollapse?: () => void;
 }) {
   const toolSources = [
     { id: "builtin", icon: "tools" as const, label: "内置工具", count: draft.builtinTools.length, names: draft.builtinTools.join("、") },
-    { id: "mcp", icon: "mcp" as const, label: "MCP 服务", count: draft.mcpServers.length, names: draft.mcpServers.join("、") },
+    // MCP has its own group below; listing it here said the same thing twice.
     { id: "python", icon: "code" as const, label: "Python 算子", count: draft.pythonTools.length, names: draft.pythonTools.map((tool) => tool.name).join("、") },
   ];
   return (
@@ -117,15 +121,29 @@ export function AgentaConfiguration({
           <button className={styles.addRow} onClick={onAddMcp}>
             <Icon name="plus" /> 添加 MCP 服务器
           </button>
-          {draft.mcpServers.map((server) => (
-            <div key={server} className={styles.toolRow}>
-              <span className={styles.toolIcon}><Icon name="mcp" /></span>
-              <strong>{server}</strong>
-              <small>已绑定</small>
-            </div>
-          ))}
-          {!draft.mcpServers.length && (
-            <p className={styles.groupEmpty}>尚未绑定 MCP 服务器；在「工具」里勾选，或用上面的按钮注册新的。</p>
+          {mcpOptions.map((option) => {
+            const enabled = draft.mcpServers.includes(option.id);
+            return (
+              <label
+                key={option.id}
+                className={enabled ? styles.configChoiceEnabled : styles.configChoice}
+              >
+                <input
+                  type="checkbox"
+                  checked={enabled}
+                  disabled={!writable}
+                  onChange={() => onToggleMcp(option.id)}
+                />
+                <span>
+                  <strong>{option.label}</strong>
+                  <small>{option.description}</small>
+                </span>
+                <small>{enabled ? "已绑定" : "未绑定"}</small>
+              </label>
+            );
+          })}
+          {!mcpOptions.length && (
+            <p className={styles.groupEmpty}>平台尚未注册可用的 MCP 服务器，可用上面的按钮注册。</p>
           )}
         </details>
         <details className={styles.configGroup} open={draft.skills.length > 0}>

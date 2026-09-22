@@ -10,6 +10,10 @@ import { DEFAULT_STUDIO_DRAFT, type StudioDraft } from "../src/lib/agent-studio"
 let root: Root;
 let host: HTMLDivElement;
 
+const MCP_OPTIONS = [
+  { id: "knowledge-search", category: "tool" as const, label: "知识检索", description: "检索知识库", tools: [], network: "internal" as const, sendsUserData: false },
+];
+
 const draft: StudioDraft = {
   ...DEFAULT_STUDIO_DRAFT,
   id: "draft-panel",
@@ -45,6 +49,8 @@ function render(overrides: Partial<Parameters<typeof AgentaConfiguration>[0]> = 
         onCode={() => {}}
         onBuildChat={() => {}}
         onAddMcp={() => {}}
+        mcpOptions={MCP_OPTIONS}
+        onToggleMcp={() => {}}
         {...overrides}
       />,
     ),
@@ -60,7 +66,10 @@ it("summarises the tools by source instead of listing every tool", () => {
   // still discoverable through the row's title.
   expect(rows.filter((text) => text.startsWith("内置工具")).length).toBe(1);
   expect(rows.some((text) => text.includes("内置工具") && text.includes("5 项"))).toBe(true);
-  expect(rows.some((text) => text.includes("MCP 服务") && text.includes("1 项"))).toBe(true);
+  // MCP has its own group below; the tools group must not repeat it as a source
+  // row. (The group's own summary reads 已绑定, not 项.)
+  expect(rows.some((text) => text.startsWith("MCP 服务") && text.includes("项"))).toBe(false);
+  expect(rows.filter((text) => text.startsWith("内置工具") || text.startsWith("Python 算子"))).toHaveLength(2);
   expect(rows.some((text) => text.includes("Python 算子") && text.includes("1 项"))).toBe(true);
   expect(host.textContent).not.toContain("built-in");
   const title = [...host.querySelectorAll("button[title]")].map((node) => node.getAttribute("title"));
@@ -91,7 +100,10 @@ it("lists the bound MCP servers in a group, and + opens the registration drawer"
   expect(summary?.textContent).toContain("1 个已绑定");
   // Expanding shows what this agent bound, which is the panel's job; binding
   // itself happens in the Tools section and management on its own page.
-  expect(host.textContent).toContain("knowledge-search");
+  // Binding lives here now: one checkbox per platform option.
+  expect(host.textContent).toContain("知识检索");
+  const bound = [...host.querySelectorAll('input[type="checkbox"]')];
+  expect(bound.some((input) => (input as HTMLInputElement).checked)).toBe(true);
   const add = [...host.querySelectorAll("button")].find((button) =>
     (button.textContent ?? "").includes("添加 MCP 服务器"),
   );
