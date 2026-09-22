@@ -98,9 +98,9 @@ import {
 } from "./video-generation";
 
 import { createRandomId } from "../lib/random-id";
+import { ComposerAddControl } from "./composer-add-control";
 import { ComposerAssist, composerOptions } from "./composer-assist";
 import {
-  TaskKnowledgeControl,
   TaskKnowledgeSelection,
   TaskKnowledgeModeSwitch,
   useTaskKnowledge,
@@ -831,12 +831,7 @@ function HarnessComposer() {
         </div>
         <div className="composer-footer">
         <div className="composer-toolbar">
-          <Composer.AddAttachment>
-            <svg className="aui-composer-attach-icon" viewBox="0 0 20 20" aria-hidden="true">
-              <path d="M10 4.5v11M4.5 10h11" />
-            </svg>
-          </Composer.AddAttachment>
-          <TaskKnowledgeControl disabled={runLocked || showStop || videoGenerating} />
+          <ComposerAddControl disabled={runLocked || showStop || videoGenerating} />
           <TaskAgentSwitcher
             agents={agentSelection.agents}
             selected={agentSelection.selected}
