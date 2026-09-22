@@ -135,7 +135,32 @@ MCP 目录内容、只带 `/studio/skills` 的跳转（Next 的 RSC 跳转是 20
 测试：vitest 129 文件 / 815 passed；`pytest tests/unit` 1476 passed；
 新增 `tests/agenta-configuration.spec.tsx` 用 jsdom 渲染面板，把 #5 的行结构钉住（比截图更硬）。
 
-## 7. 仍未做
+## 7. 第四批：追加 4 项（同日）
+
+| 项 | 内容 |
+| --- | --- |
+| 版本 | `4818dc29`（item 1 + item 2/4 的 MCP 路径） |
+| 镜像 | 只换 web：`kai/axis-web:evolution-4818dc29`（api/worker 仍 `evolution-d6bada40`） |
+| 回滚点 | `backups/4818dc29/compose.json` |
+
+**item 1 卡片样式**：`.agentCardAction` 是固定 30×30 的**圆形图标盒**，里面却装着文字
+「查看工作区 →」，叠加 `white-space: nowrap` 就把标签画到卡片外面（用户图 1 的红框）。
+改成文字胶囊（inline-flex + padding + 999px 圆角），并删掉窄屏处重复的同一句声明。
+实测：宽 **30px（溢出）→ 94px 且完全在卡片内**，截图确认页脚左版本号/右入口对齐。
+
+**item 2 MCP 行 + 直达表单**：配置列表新增「MCP 服务器」行（显示已启用数量 + 自己的 `＋`）。
+关键是那个组件的表单**本身就是右侧抽屉**（fixed / 680px / z-70），我原先把它整个塞进一个 rail，
+于是变成「抽屉里再叠抽屉」，还得先过一层卡片才能点到字段——正是用户说的多一次点击。
+现在 `＋` 直接以 `startInForm` 打开它自己的抽屉，截图确认一次点击就到
+「注册 MCP · 01 基本信息 / 02 连接配置 / 03 鉴权」的全部字段；不带 `＋` 打开则看目录。
+同时删掉 Tools 区里重复的「管理 MCP 服务器」入口。
+
+**未做（下一步）**：item 3「文件与知识可勾选绑定自己有权限的知识库」，以及 item 4 剩下的那一半——
+`文件与知识` 行目前仍指向 `capabilities`（工具）分区，应新增 `knowledge` 分区，
+用 `studioClient.listKnowledgeBases()` 的勾选列表绑定 `draft.knowledgeReferences`，
+让每一行抽屉都直达自己的配置项。
+
+## 8. 仍未做
 
 - 状态字面量收敛成 StrEnum（评审 P1-4）、`run-status.ts` 标签的多处自建（P1-7）、
   `agent-builder-overlays.tsx` 重复的意图正则（P1-3）等；
