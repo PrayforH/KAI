@@ -1,10 +1,12 @@
 """Sandbox lifecycle contract."""
 
+import io
 import os
+import tarfile
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from enum import StrEnum
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Protocol
 from uuid import uuid4
 
@@ -198,6 +200,140 @@ def replace_collected_file(target: Path, content: bytes, *, mode: int | None = N
         os.replace(temporary, target)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+class WorkspaceArchiveUnavailableError(RuntimeError):
+    """The sandbox could not hand back a workspace archive.
+
+    Raised when the archive route itself is unusable inside the sandbox (no
+    ``tar``, or the command is refused), which is a property of the image rather
+    than of the workspace. It is deliberately separate from the size and safety
+    errors: those must fail the collection, while this one lets a provider take
+    the slower per-file route instead of failing a Run that already succeeded.
+    """
+
+
+def workspace_relative_target(root: str, relative: str) -> str:
+    """Resolve one workspace-relative path under a remote workspace root.
+
+    The tool gate authorizes workspace-relative names, so a remote file primitive
+    has to resolve exactly those and nothing else: an absolute path or an upward
+    segment would let a model-approved name land outside the Run workspace.
+    """
+
+    candidate = PurePosixPath(relative)
+    if candidate.is_absolute() or ".." in candidate.parts:
+        raise ValueError("sandbox file path must stay inside the workspace")
+    parts = tuple(part for part in candidate.parts if part not in {"", "."})
+    if not parts:
+        raise ValueError("sandbox file path must name a file")
+    return f"{root.rstrip('/')}/{'/'.join(parts)}"
+
+
+def workspace_listed_relative(root: str, remote_path: str, *, label: str) -> PurePosixPath:
+    """Check one platform-reported path is inside the workspace, and return it relative.
+
+    A listing only feeds the member and size guards, but a path outside the
+    workspace means the platform is reporting something this Run does not own, so
+    the answer is to refuse rather than to reason about it.
+    """
+
+    candidate = PurePosixPath(remote_path)
+    relative = (
+        candidate.relative_to(PurePosixPath(root))
+        if candidate.is_relative_to(PurePosixPath(root))
+        else None
+    )
+    if relative is None or ".." in relative.parts:
+        raise ValueError(f"{label} workspace path escaped local collection root")
+    return relative
+
+
+class SandboxFilePlaneProvider(Protocol):
+    """A backend that moves bytes without routing them through the command plane.
+
+    Optional on purpose: a backend whose transport only speaks commands simply
+    does not implement this, and its callers keep using the command proxy rather
+    than failing.
+    """
+
+    async def upload_files(
+        self, handle: SandboxHandle, entries: Sequence[tuple[str, bytes]]
+    ) -> None: ...
+
+    async def download_file(
+        self, handle: SandboxHandle, path: str, *, max_bytes: int
+    ) -> bytes: ...
+
+
+def workspace_archive_transfer_limit(*, max_bytes: int, max_members: int) -> int:
+    """Wire limit for one collected workspace archive.
+
+    The declared collection bounds count file content; an archive also carries a
+    header and padding per member, so a workspace that is exactly at the limit
+    still arrives as a slightly larger byte string.
+    """
+
+    return max_bytes + max_members * 1024 + 10_240
+
+
+def extract_workspace_archive(
+    content: bytes,
+    root: Path,
+    *,
+    max_bytes: int,
+    max_members: int,
+    label: str,
+) -> None:
+    """Unpack one collected workspace archive into the local control-plane mirror.
+
+    The archive was produced inside a remote sandbox, so every member is
+    untrusted: a member that is absolute, walks upwards, or is neither a
+    directory nor a regular file is rejected rather than resolved. The rule is
+    the same for every backend, and it is what keeps a workspace archive from
+    writing outside the Run workspace, so it lives here instead of once per
+    provider.
+    """
+
+    try:
+        archive = tarfile.open(fileobj=io.BytesIO(content), mode="r:*")
+    except tarfile.TarError:
+        raise ValueError(f"invalid {label} workspace archive") from None
+    total = 0
+    with archive:
+        members = archive.getmembers()
+        if len(members) > max_members:
+            raise ValueError(f"{label} workspace exceeds collection member limit")
+        for member in members:
+            relative = PurePosixPath(member.name)
+            if relative.is_absolute() or ".." in relative.parts:
+                raise ValueError(f"unsafe {label} workspace archive member")
+            parts = tuple(part for part in relative.parts if part not in {"", "."})
+            if not parts:
+                continue
+            target = root.joinpath(*parts)
+            if member.isdir():
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            if not member.isfile():
+                raise ValueError(f"unsafe {label} workspace archive member")
+            total += member.size
+            if total > max_bytes:
+                raise ValueError(f"{label} workspace exceeds collection size limit")
+            source = archive.extractfile(member)
+            if source is None:
+                raise ValueError(f"invalid {label} workspace archive")
+            data = source.read(max_bytes + 1)
+            if len(data) != member.size:
+                raise ValueError(f"invalid {label} workspace archive")
+            if target.is_symlink():
+                raise ValueError(f"unsafe {label} workspace archive member")
+            if target.exists() and not target.is_file():
+                raise ValueError(f"unsafe {label} workspace archive member")
+            # A remote archive may report mode 000. Keep the local control-plane
+            # mirror owner-readable so snapshotting cannot fail after a
+            # successful model response.
+            replace_collected_file(target, data, mode=(member.mode & 0o755) | 0o400)
 
 
 class SandboxProvider(Protocol):

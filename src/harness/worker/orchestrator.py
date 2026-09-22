@@ -64,6 +64,7 @@ from harness.runtime.base import (
     RuntimeEvent,
     RuntimeExecutionTimeoutError,
     RuntimeResultError,
+    SandboxFilePlane,
 )
 from harness.runtime.input_redaction import (
     INPUT_CONTENT_REDACTION,
@@ -81,6 +82,7 @@ from harness.runtime.subagent_governance import SubagentGovernanceError
 from harness.runtime.tools import ToolResolutionError
 from harness.sandbox.base import (
     SandboxCommandResult,
+    SandboxFilePlaneProvider,
     SandboxHandle,
     SandboxIsolation,
     SandboxProvider,
@@ -132,6 +134,32 @@ def _bind_sandbox_command_executor(
         )
 
     return execute
+
+
+def _bind_sandbox_file_plane(
+    sandbox: SandboxProvider,
+    handle: SandboxHandle,
+) -> SandboxFilePlane | None:
+    """Expose the backend's file plane, when it has one.
+
+    A command-only backend keeps the command proxy: the caller has to be able to
+    ask, so "no file plane" is a value rather than an error.
+    """
+
+    if getattr(sandbox, "upload_files", None) is None:
+        return None
+    if getattr(sandbox, "download_file", None) is None:
+        return None
+    plane = cast(SandboxFilePlaneProvider, sandbox)
+
+    class _FilePlane:
+        async def upload_files(self, entries: Sequence[tuple[str, bytes]]) -> None:
+            await plane.upload_files(handle, entries)
+
+        async def download_file(self, path: str, *, max_bytes: int) -> bytes:
+            return await plane.download_file(handle, path, max_bytes=max_bytes)
+
+    return _FilePlane()
 
 
 def read_runtime_artifact(
@@ -1338,6 +1366,14 @@ class RunOrchestrator:
                 runtime_transport_factory=handle.runtime_transport_factory,
                 sandbox_command_executor=(
                     _bind_sandbox_command_executor(active_sandbox, handle)
+                    if handle.deferred_tool_execution or handle.provider == "local"
+                    else None
+                ),
+                # The file plane rides the same condition as the command executor:
+                # a runtime that cannot run tools in the sandbox has no use for a
+                # way to move bytes into it either.
+                sandbox_file_plane=(
+                    _bind_sandbox_file_plane(active_sandbox, handle)
                     if handle.deferred_tool_execution or handle.provider == "local"
                     else None
                 ),

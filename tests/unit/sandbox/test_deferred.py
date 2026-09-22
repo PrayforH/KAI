@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import Mapping, Sequence
+from typing import Any
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -7,7 +8,10 @@ import pytest
 
 from harness.core.models import Run, RunStatus
 from harness.sandbox.base import SandboxCommandResult, SandboxHandle, SandboxIsolation
-from harness.sandbox.deferred import DeferredToolSandboxProvider
+from harness.sandbox.deferred import (
+    DeferredToolSandboxProvider,
+    FilePlaneUnsupportedError,
+)
 
 
 class RecordingSandbox:
@@ -305,4 +309,75 @@ async def test_sandbox_logs_are_empty_when_the_backend_has_no_log_plane(
     await provider.execute(handle, ("python3", "-c", "print('hi')"))
     assert await provider.sandbox_logs(handle) == ()
     assert await provider.sandbox_metrics(handle) is None
+    await provider.destroy(handle)
+
+
+class FilePlaneSandbox(RecordingSandbox):
+    """A backend that can move bytes without the command plane."""
+
+    def __init__(self, root: Path) -> None:
+        super().__init__(root)
+        self.uploaded: list[list[tuple[str, bytes]]] = []
+        self.read: list[str] = []
+
+    async def collect(self, handle: SandboxHandle) -> None:
+        # This backend's collection is counted, not asserted on: the case under
+        # test is whether the file plane made the workspace dirty.
+        del handle
+        self.collections += 1
+
+    async def upload_files(self, handle: SandboxHandle, entries: Sequence[Any]) -> None:
+        self.uploaded.append(list(entries))
+
+    async def download_file(self, handle: SandboxHandle, path: str, *, max_bytes: int) -> bytes:
+        self.read.append(path)
+        return b"remote"
+
+
+@pytest.mark.asyncio
+async def test_a_file_plane_write_marks_the_workspace_dirty(tmp_path: Path) -> None:
+    """A write through the file plane is what makes collect synchronize.
+
+    The shape heuristic exists because a command is opaque; a file-plane write is
+    not, so it is recorded where it cannot be missed.
+    """
+
+    backend = FilePlaneSandbox(tmp_path)
+    provider = DeferredToolSandboxProvider(backend, provider_name="fileplane")
+    handle = await provider.provision(run())
+    (handle.path / "restored.txt").write_text("session state")
+
+    await provider.upload_files(handle, [("outputs/report.md", b"report")])
+    await provider.collect(handle)
+
+    assert backend.uploaded == [[("outputs/report.md", b"report")]]
+    assert backend.collections == 1
+    await provider.destroy(handle)
+
+
+@pytest.mark.asyncio
+async def test_a_read_through_the_file_plane_does_not_synchronize(tmp_path: Path) -> None:
+    backend = FilePlaneSandbox(tmp_path)
+    provider = DeferredToolSandboxProvider(backend, provider_name="fileplane")
+    handle = await provider.provision(run())
+    (handle.path / "restored.txt").write_text("session state")
+
+    assert await provider.download_file(handle, "outputs/report.md", max_bytes=1024) == b"remote"
+    await provider.collect(handle)
+
+    assert backend.read == ["outputs/report.md"]
+    assert backend.collections == 0
+    await provider.destroy(handle)
+
+
+@pytest.mark.asyncio
+async def test_a_command_only_backend_refuses_the_file_plane(tmp_path: Path) -> None:
+    backend = RecordingSandbox(tmp_path)
+    provider = DeferredToolSandboxProvider(backend, provider_name="commands")
+    handle = await provider.provision(run())
+    (handle.path / "restored.txt").write_text("session state")
+
+    with pytest.raises(FilePlaneUnsupportedError, match="no file plane"):
+        await provider.upload_files(handle, [("outputs/report.md", b"report")])
+
     await provider.destroy(handle)

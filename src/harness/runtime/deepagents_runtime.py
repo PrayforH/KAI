@@ -275,6 +275,7 @@ class DeepagentsRuntime:
                 # this backend writes -- not a second, nested copy of it.
                 remote_workspace=context.remote_workspace,
                 timeout_seconds=float(plan.shell_timeout),
+                file_plane=context.sandbox_file_plane,
             ),
         )
         mapper = DeepagentsStreamMapper(model=config.model, provider=config.provider)

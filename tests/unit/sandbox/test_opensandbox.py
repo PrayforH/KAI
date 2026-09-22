@@ -18,6 +18,7 @@ from harness.sandbox.base import (
     SandboxCommandResult,
     SandboxEnforcement,
     SandboxIsolation,
+    WorkspaceArchiveUnavailableError,
     provider_meets_enforcement_floor,
     sandbox_enforcement,
 )
@@ -29,6 +30,7 @@ from harness.sandbox.opensandbox import (
     _stream_exit_code,
     build_opensandbox_provider,
 )
+from tests.unit.sandbox.archive_fixtures import workspace_tar
 
 
 def run() -> Run:
@@ -55,6 +57,9 @@ class FakeRemote:
         self.calls: list[dict[str, Any]] = []
         self.ensured_cli: tuple[str, str] | None = None
         self.killed = False
+        self.archive_calls: list[str] = []
+        self.archive_error: Exception | None = None
+        self.archive: bytes | None = None
 
     async def ensure_claude_cli(self, *, version: str, path: str) -> None:
         self.ensured_cli = (version, path)
@@ -83,6 +88,26 @@ class FakeRemote:
 
     async def download(self, remote_path: str) -> bytes:
         return self.remote_files[remote_path]
+
+    async def download_archive(self, remote_path: str, *, max_bytes: int) -> bytes:
+        self.archive_calls.append(remote_path)
+        if self.archive_error is not None:
+            raise self.archive_error
+        if self.archive is not None:
+            return self.archive
+        prefix = remote_path + "/"
+        return workspace_tar(
+            {
+                path[len(prefix) :]: content
+                for path, content in self.remote_files.items()
+                if path.startswith(prefix)
+            },
+            directories=[
+                entry[0][len(prefix) :]
+                for entry in await self.list_files(remote_path)
+                if entry[1]
+            ],
+        )
 
     async def run(
         self,
@@ -206,6 +231,21 @@ async def test_collect_rejects_unsafe_or_oversized_results(tmp_path: Path) -> No
     escaping_handle = await escaping.provision(run())
     with pytest.raises(ValueError, match="escaped local collection root"):
         await escaping.collect(escaping_handle)
+
+
+@pytest.mark.asyncio
+async def test_collect_falls_back_when_the_image_cannot_archive(tmp_path: Path) -> None:
+    client = FakeClient()
+    subject = provider(client, tmp_path)
+    handle = await subject.provision(run())
+    client.remote.archive_error = WorkspaceArchiveUnavailableError("tar: command not found")
+
+    await subject.collect(handle)
+
+    # The fallback is slower, not failing: collection runs after the answer is
+    # already durable, so a missing `tar` must not fail the Run.
+    assert client.remote.archive_calls == ["/workspace/run-a"]
+    assert (handle.path / "report.txt").read_bytes() == b"collected"
 
 
 @pytest.mark.asyncio

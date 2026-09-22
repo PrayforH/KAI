@@ -51,7 +51,7 @@ from deepagents.backends.protocol import (
 )
 from deepagents.backends.sandbox import BaseSandbox
 
-from harness.runtime.base import SandboxCommandExecutor
+from harness.runtime.base import SandboxCommandExecutor, SandboxFilePlane
 from harness.runtime.deepagents_paths import workspace_relative
 
 # DeepAgents' own default when a caller does not pass a per-call timeout.
@@ -132,6 +132,7 @@ class HarnessSandboxBackend(BaseSandbox):
         sandbox_id: str,
         remote_workspace: str | None = None,
         timeout_seconds: float = DEFAULT_EXECUTE_TIMEOUT_SECONDS,
+        file_plane: SandboxFilePlane | None = None,
     ) -> None:
         if timeout_seconds <= 0:
             raise ValueError("Sandbox backend timeout must be positive")
@@ -139,6 +140,7 @@ class HarnessSandboxBackend(BaseSandbox):
         self._sandbox_id = sandbox_id
         self._remote_workspace = remote_workspace
         self._timeout_seconds = timeout_seconds
+        self._file_plane = file_plane
         self._root: str | None = None
 
     @property
@@ -196,31 +198,48 @@ class HarnessSandboxBackend(BaseSandbox):
         return ExecuteResponse(output=result.stdout + result.stderr, exit_code=result.exit_code)
 
     async def aupload_files(self, files: list[tuple[str, bytes]]) -> list[FileUploadResponse]:
-        responses: list[FileUploadResponse] = []
-        for raw_path, payload in files:
+        responses: list[FileUploadResponse | None] = [None] * len(files)
+        resolved: list[tuple[int, str, bytes]] = []
+        for index, (raw_path, payload) in enumerate(files):
             try:
                 relative = await self._relative(raw_path)
             except ValueError:
-                responses.append(FileUploadResponse(path=raw_path, error="invalid_path"))
+                responses[index] = FileUploadResponse(path=raw_path, error="invalid_path")
                 continue
-            responses.append(
-                FileUploadResponse(path=raw_path, error=await self._upload(relative, payload))
-            )
-        return responses
+            resolved.append((index, relative, payload))
+        if self._file_plane is None:
+            for index, relative, payload in resolved:
+                responses[index] = FileUploadResponse(
+                    path=files[index][0], error=await self._upload(relative, payload)
+                )
+        else:
+            # One batched write for the whole call. The command plane pays a round
+            # trip and an encoded argument per file, and can only be asked for one
+            # file at a time.
+            error: str | None = None
+            try:
+                await self._file_plane.upload_files(
+                    [(relative, payload) for _, relative, payload in resolved]
+                )
+            except Exception as upload_error:  # noqa: BLE001 - reported, not raised
+                error = str(upload_error) or "upload_failed"
+            for index, _, _ in resolved:
+                responses[index] = FileUploadResponse(path=files[index][0], error=error)
+        return [response for response in responses if response is not None]
 
     async def adownload_files(self, paths: list[str]) -> list[FileDownloadResponse]:
-        responses: list[FileDownloadResponse] = []
-        for raw_path in paths:
+        responses: list[FileDownloadResponse | None] = [None] * len(paths)
+        for index, raw_path in enumerate(paths):
             try:
                 relative = await self._relative(raw_path)
             except ValueError:
-                responses.append(FileDownloadResponse(path=raw_path, error="invalid_path"))
+                responses[index] = FileDownloadResponse(path=raw_path, error="invalid_path")
                 continue
-            content, error = await self._download(relative)
-            responses.append(
-                FileDownloadResponse(path=raw_path, content=content, error=error)
+            content, error = await self._read(relative)
+            responses[index] = FileDownloadResponse(
+                path=raw_path, content=content, error=error
             )
-        return responses
+        return [response for response in responses if response is not None]
 
     async def _upload(self, relative: str, payload: bytes) -> str | None:
         chunks = [
@@ -244,6 +263,19 @@ class HarnessSandboxBackend(BaseSandbox):
             if result.exit_code != 0:
                 return result.stderr.strip() or "upload_failed"
         return None
+
+    async def _read(self, relative: str) -> tuple[bytes | None, str | None]:
+        """Read one file, preferring the file plane when the backend has one."""
+
+        if self._file_plane is None:
+            return await self._download(relative)
+        try:
+            content = await self._file_plane.download_file(
+                relative, max_bytes=_DOWNLOAD_MAX_BYTES
+            )
+        except Exception as error:  # noqa: BLE001 - reported, not raised
+            return None, str(error) or "download_failed"
+        return content, None
 
     async def _download(self, relative: str) -> tuple[bytes | None, str | None]:
         result = await self._executor(
