@@ -935,21 +935,6 @@ export function McpCatalogControlPlane({
                 </small>
               </label>
               <label>
-                <span>MCP 服务名</span>
-                <input
-                  required
-                  pattern={MCP_IDENTIFIER_INPUT_PATTERN}
-                  placeholder="company"
-                  value={draft.serverName ?? ""}
-                  onChange={(event) =>
-                    updateConnection({ serverName: event.target.value })
-                  }
-                />
-                <small>
-                  用于生成工具名：mcp__服务名__工具名；服务名可保留单下划线。
-                </small>
-              </label>
-              <label>
                 <span>显示名称</span>
                 <input
                   required
@@ -964,7 +949,7 @@ export function McpCatalogControlPlane({
                 <span>能力说明</span>
                 <textarea
                   required
-                  rows={3}
+                  rows={1}
                   placeholder="说明它能访问什么，以及适合在哪些任务中使用。"
                   value={draft.description}
                   onChange={(event) =>
@@ -997,6 +982,9 @@ export function McpCatalogControlPlane({
                   <small>已自动识别：{TRANSPORT_LABELS[discovery.transport]}</small>
                 )}
               </label>
+              <details className={styles.formAdvanced}>
+                <summary>高级设置（可选）</summary>
+                <p>默认值适用于大多数情况；仅在网关或治理要求下调整。</p>
               <div className={styles.transportReadout}>
                 <span>传输类型</span>
                 <strong>{discovery ? TRANSPORT_LABELS[discovery.transport] : "自动检测"}</strong>
@@ -1101,6 +1089,7 @@ export function McpCatalogControlPlane({
                   }
                 />
               </label>
+              </details>
               </section>
               <section className={styles.formSection}>
               <div className={styles.formSectionTitle}>

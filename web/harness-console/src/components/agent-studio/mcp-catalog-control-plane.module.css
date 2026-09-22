@@ -1401,3 +1401,25 @@
     padding: 28px 18px 56px;
   }
 }
+
+/* Progressive disclosure for the governance knobs: a registration only needs a
+   name, an address and an auth choice; the rest has defaults. */
+.formAdvanced {
+  grid-column: 1 / -1;
+  margin-top: 4px;
+  border: 1px solid var(--studio-line);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.formAdvanced > summary {
+  cursor: pointer;
+  color: var(--studio-ink-soft);
+  font-size: 12px;
+}
+
+.formAdvanced > p {
+  margin: 6px 0 10px;
+  color: var(--studio-muted);
+  font-size: 11px;
+}

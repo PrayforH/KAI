@@ -43,6 +43,17 @@ describe("MCP capability catalog", () => {
     expect(component).toContain("useState(startInForm)");
   });
 
+  it("asks only for what a registration needs, and folds the rest away", () => {
+    expect(component).toContain("<summary>高级设置（可选）</summary>");
+    expect(component).toContain("styles.formAdvanced");
+    // The governance knobs keep working, they are just out of the way by default.
+    const start = component.indexOf("styles.formAdvanced");
+    const advanced = component.slice(start, component.indexOf("</details>", start));
+    for (const field of ["传输类型", "风险级别", "网络范围", "执行位置"]) {
+      expect(advanced).toContain(field);
+    }
+  });
+
   it("supports governed registration, impact inspection, disable and deletion", () => {
     expect(component).toContain("studioClient.upsertMcp");
     expect(component).toContain('studioClient.catalogImpact("mcp", reference)');
@@ -124,7 +135,8 @@ describe("MCP capability catalog", () => {
     expect(component).toContain("studioClient.discoverMcp");
     expect(component).toContain("MCP_IDENTIFIER_PATTERN");
     expect(component).toContain("支持连字符和单下划线");
-    expect(component).toContain("服务名可保留单下划线");
+    expect(component).toContain("const serverName = draft.serverName?.trim() || reference;");
+    expect(component).not.toContain("<span>MCP 服务名</span>");
     expect(component).toContain("initialize 和 tools/list");
     expect(component).toContain("检测地址");
     expect(component).toContain("TRANSPORT_LABELS");
