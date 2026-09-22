@@ -362,7 +362,12 @@ function HarnessComposer() {
     ) {
       if (!conversationScope) approvalStore.settle(visibleApprovalId);
     }
-  }, [pendingApproval.details?.approval_id, pendingApproval.visible, runView?.pendingApprovalId]);
+  }, [
+    pendingApproval.details?.approval_id,
+    pendingApproval.visible,
+    runView?.pendingApprovalId,
+    conversationScope,
+  ]);
   const showStop = shouldShowComposerStop(
     threadRunning,
     stream.status,

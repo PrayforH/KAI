@@ -35,6 +35,15 @@
 }
 
 /* MCP and knowledge connections share one viewport-fixed authoring drawer. */
+/* Two things fought this drawer's placement: the workspace shell makes itself a
+   containing block for `position: fixed`, and a theme rule centres dialog
+   backdrops. The doubled class states the intent explicitly instead of relying
+   on load order, so the panel stays flush with the right edge of the viewport. */
+.editorBackdrop.editorBackdrop {
+  justify-items: end;
+  align-items: stretch;
+}
+
 .editorBackdrop {
   position: fixed;
   z-index: 70;

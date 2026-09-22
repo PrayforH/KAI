@@ -284,7 +284,7 @@ export function AgentPlaygroundThread({
   const activity = currentRun?.activity ?? undefined;
   const pending =
     currentRun?.approvals.filter((item) => item.status === "pending") ?? [];
-  const scope: ConversationScope = {
+  const scope: ConversationScope = useMemo(() => ({
     compactComposer: true,
     composerPlaceholder: "输入任务，或告诉我如何调整智能体…",
     activity,
@@ -329,7 +329,8 @@ export function AgentPlaygroundThread({
         </div>
       );
     },
-  };
+  }), [activity, busy, currentRun, messages, pending, afterLastMessage, onAssets, onReset, onConfigureKnowledge]);
+
   const selectedAgent = {
     name: draft?.name ?? draftId,
     displayName: agentName,
