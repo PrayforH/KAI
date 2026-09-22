@@ -20,9 +20,9 @@ describe("workspace navigation ordering", () => {
   });
 
   it("puts the knowledge base directly under 新建任务 in the task sidebar", () => {
-    // 自动化 sits directly above the 技能/MCP zone (插件) in the sidebar.
+    // 自动化 sits directly above the 技能 zone in the sidebar.
     expect(taskSidebar).toContain(
-      'visible={["knowledge", "agents", "automation", "capabilities"]}',
+      'visible={["knowledge", "agents", "automation", "skills"]}',
     );
     // 新建任务 stays its own primary action above the workspace navigation.
     expect(taskSidebar).toContain("task-sidebar-create");
@@ -31,10 +31,14 @@ describe("workspace navigation ordering", () => {
     );
   });
 
-  it("places 自动化 above the 技能/MCP entry in the canonical nav list", () => {
+  it("places 自动化 above the 技能 entry in the canonical nav list", () => {
     expect(navigation).toContain('{ id: "automation", href: "/studio/automation", label: "自动化任务" }');
     expect(navigation.indexOf('id: "automation"')).toBeLessThan(
-      navigation.indexOf('id: "capabilities"'),
+      navigation.indexOf('id: "skills"'),
     );
+    // MCP is an agent asset, so the nav list no longer offers it (the id stays
+    // in the WorkspaceId union for the legacy redirect route).
+    expect(navigation).not.toContain('id: "capabilities"');
+    expect(navigation).not.toContain('href: "/studio/capabilities"');
   });
 });

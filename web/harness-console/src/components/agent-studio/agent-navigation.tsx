@@ -62,7 +62,6 @@ export function AgentNavigation({
       </nav>
       <div className={styles.navFoot}>
         <Link href="/studio/skills">Skills 与 skill-creator ↗</Link>
-        <Link href="/studio/capabilities">模型与集成设置 ↗</Link>
       </div>
     </aside>
   );

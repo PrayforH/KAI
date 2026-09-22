@@ -22,7 +22,6 @@ export const workspaceItems: ReadonlyArray<{
   { id: "agents", href: "/studio/agents", label: "智能体" },
   { id: "files", href: "/studio/files", label: "我的文件" },
   { id: "automation", href: "/studio/automation", label: "自动化任务" },
-  { id: "capabilities", href: "/studio/capabilities", label: "插件" },
   { id: "knowledge", href: "/studio/knowledge", label: "知识库" },
   { id: "skills", href: "/studio/skills", label: "技能" },
 ];

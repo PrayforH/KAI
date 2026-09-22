@@ -229,11 +229,11 @@ describe("full-page agent workbench", () => {
     );
   });
 
-  it("keeps agents and capabilities in the simplified task sidebar", () => {
+  it("keeps agents and skills in the simplified task sidebar", () => {
     expect(taskSidebar).not.toContain("WorkspaceModeSwitcher");
     expect(studioSidebar).not.toContain("WorkspaceModeSwitcher");
-    expect(taskSidebar).toContain('visible={["knowledge", "agents", "automation", "capabilities"]}');
-    expect(taskSidebar).toContain('labelOverrides={{ capabilities: "插件" }}');
+    expect(taskSidebar).toContain('visible={["knowledge", "agents", "automation", "skills"]}');
+    expect(taskSidebar).not.toContain('capabilities');
     expect(taskSidebar).not.toContain('visible={["agents", "files"]}');
     expect(studioSidebar).toContain('visible={["tasks", "agents"]}');
     expect(studioSidebar).not.toContain('"capabilities", "knowledge", "spaces"]');
@@ -243,7 +243,6 @@ describe("full-page agent workbench", () => {
     for (const [href, label] of [
       ["/", "任务"],
       ["/studio/agents", "智能体"],
-      ["/studio/capabilities", "插件"],
       ["/studio/knowledge", "知识库"],
       ["/studio/skills", "技能"],
     ]) {

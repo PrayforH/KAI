@@ -3,16 +3,15 @@
 import { useRouter } from "next/navigation";
 import { StudioPageHeaderLinks } from "./studio-page-header";
 
-export type StudioSection = "skills" | "mcp";
+export type StudioSection = "skills";
 
 const items: Array<{ id: StudioSection; href: string; label: string }> = [
   { id: "skills", href: "/studio/skills", label: "技能" },
-  { id: "mcp", href: "/studio/capabilities", label: "MCP" },
 ];
 
 /**
- * 技能 / MCP switch. Both routes share one page header so the section tabs sit
- * in the same place as the automation page's tabs.
+ * The 技能 section header. It keeps the same tab strip placement as the
+ * automation page; MCP is configured from the agent that uses it, not here.
  */
 export function StudioSectionNavigation({ active }: { active: StudioSection }) {
   const router = useRouter();

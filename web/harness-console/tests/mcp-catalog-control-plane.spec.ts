@@ -24,12 +24,19 @@ const page = readFileSync(
   join(process.cwd(), "src/app/studio/capabilities/page.tsx"),
   "utf8",
 );
+const workbench = readFileSync(
+  join(process.cwd(), "src/components/agent-studio/agent-studio-workbench.tsx"),
+  "utf8",
+);
 
 describe("MCP capability catalog", () => {
-  it("has a discoverable Studio navigation entry and dedicated page", () => {
-    expect(navigation).toContain('href: "/studio/capabilities"');
-    expect(navigation).toContain('label: "插件"');
-    expect(page).toContain('<StudioCapabilityManager defaultTab="mcp"');
+  it("is reached from the agent that owns it, not from the workspace navigation", () => {
+    // MCP is an agent asset: the workspace nav no longer carries it, the old
+    // route redirects, and the agent's Tools group owns the entry.
+    expect(navigation).not.toContain('href: "/studio/capabilities"');
+    expect(page).toContain('redirect("/studio/skills")');
+    expect(workbench).toContain("管理 MCP 服务器");
+    expect(workbench).toContain("<McpCatalogControlPlane />");
   });
 
   it("supports governed registration, impact inspection, disable and deletion", () => {

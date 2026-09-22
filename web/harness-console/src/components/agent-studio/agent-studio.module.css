@@ -3467,6 +3467,25 @@
   font: 500 9px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+/* A group that owns a management surface says so where the group is listed,
+   instead of leaving the user to find it in a separate workspace. */
+.groupHeadingAction {
+  margin-left: 10px;
+  border: 1px solid var(--studio-line);
+  border-radius: 5px;
+  background: transparent;
+  padding: 3px 8px;
+  color: var(--studio-ink-soft);
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.groupHeadingAction:hover {
+  border-color: var(--studio-muted);
+  color: var(--studio-ink);
+}
+
 .toolExposureControl {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

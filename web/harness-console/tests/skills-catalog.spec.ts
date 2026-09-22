@@ -29,7 +29,7 @@ const sidebar = readFileSync(
 
 describe("Skills catalog page", () => {
   it("is a Studio route rendered through the unified manager", () => {
-    expect(page).toContain('<StudioCapabilityManager defaultTab="skills"');
+    expect(page).toContain("<StudioCapabilityManager />");
     expect(layout).toContain("<AuthProvider>");
     expect(component).toContain("<h1>技能</h1>");
   });
@@ -59,8 +59,8 @@ describe("Skills catalog page", () => {
     expect(navigation).toContain('href: "/studio/skills"');
     expect(navigation).toContain('label: "技能"');
     expect(sidebar).toContain('active={activeNav}');
-    expect(sidebar).toContain('visible={["knowledge", "agents", "automation", "capabilities"]}');
-    expect(sidebar).toContain('labelOverrides={{ capabilities: "插件" }}');
+    expect(sidebar).toContain('visible={["knowledge", "agents", "automation", "skills"]}');
+    expect(sidebar).not.toContain('capabilities');
   });
 
   it("supports search and a centered detail modal", () => {

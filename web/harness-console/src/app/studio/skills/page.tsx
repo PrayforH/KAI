@@ -3,9 +3,9 @@ import { StudioCapabilityManager } from "../../../components/agent-studio/studio
 
 export const metadata: Metadata = {
   title: "技能",
-  description: "领域 Skills 与 MCP 连接管理。",
+  description: "领域 Skills 的目录、导入与审查。",
 };
 
 export default function StudioSkillsPage() {
-  return <StudioCapabilityManager defaultTab="skills" />;
+  return <StudioCapabilityManager />;
 }

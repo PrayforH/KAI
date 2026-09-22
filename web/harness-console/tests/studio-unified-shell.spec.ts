@@ -41,8 +41,8 @@ describe("Studio unified shell", () => {
     expect(shell).toContain("usePathname");
     expect(shell).toContain('pathname.startsWith("/studio/skills")');
     expect(taskSidebar).toContain('active={activeNav}');
-    expect(taskSidebar).toContain('visible={["knowledge", "agents", "automation", "capabilities"]}');
-    expect(taskSidebar).toContain('labelOverrides={{ capabilities: "插件" }}');
+    expect(taskSidebar).toContain('visible={["knowledge", "agents", "automation", "skills"]}');
+    expect(taskSidebar).not.toContain('capabilities');
   });
 
   it("styles the unified shell with the monochrome console gate", () => {
@@ -58,10 +58,11 @@ describe("Studio unified shell", () => {
 
   it("shows Skill / MCP tabs only inside the capability workspace", () => {
     expect(manager).not.toContain("<StudioUnifiedShell");
-    expect(manager).toContain('defaultTab: "skills" | "mcp"');
+    expect(manager).not.toContain("defaultTab");
+    expect(manager).not.toContain("McpCatalogControlPlane");
     expect(manager).toContain("<StudioSectionNavigation");
     expect(sectionNavigation).toContain('href: "/studio/skills"');
-    expect(sectionNavigation).toContain('href: "/studio/capabilities"');
+    expect(sectionNavigation).not.toContain('/studio/capabilities');
     expect(sectionNavigation).not.toContain('href: "/studio/agents"');
     // The section switch now renders through the shared page header so its
     // tabs sit in the same place as the automation page's.

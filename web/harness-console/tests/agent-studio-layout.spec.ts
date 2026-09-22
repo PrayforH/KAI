@@ -307,7 +307,8 @@ describe("Agent Studio management page", () => {
     expect(styles).toContain(".contractHeader > .contractHeaderActions");
     expect(styles).toMatch(/\.contractHeader\s*>\s*\.contractHeaderActions\s*\{[^}]*display:\s*flex;/s);
     expect(styles).toMatch(/\.riskBadge\s*\{[^}]*min-height:\s*24px;[^}]*border-radius:\s*6px;/s);
-    expect(workbench.match(/m4\.5 4\.5 7 7m0-7-7 7/g)).toHaveLength(1);
+    // One close affordance per rail: the version drawer and the MCP rail.
+    expect(workbench.match(/m4\.5 4\.5 7 7m0-7-7 7/g)).toHaveLength(2);
   });
 
   it("keeps Studio focused and exposes the published Agent as a task action", () => {

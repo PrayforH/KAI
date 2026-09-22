@@ -498,8 +498,7 @@ export function TaskSidebar({
           <div className="task-sidebar-mode">
             <WorkspaceNavigation
               active={activeNav}
-              visible={["knowledge", "agents", "automation", "capabilities"]}
-              labelOverrides={{ capabilities: "插件" }}
+              visible={["knowledge", "agents", "automation", "skills"]}
             />
           </div>
           <div className="task-list-scroll">
