@@ -100,9 +100,9 @@ import {
 } from "./video-generation";
 
 import { createRandomId } from "../lib/random-id";
-import { ComposerAddControl } from "./composer-add-control";
 import { ComposerAssist, composerOptions } from "./composer-assist";
 import {
+  TaskKnowledgeControl,
   TaskKnowledgeSelection,
   TaskKnowledgeModeSwitch,
   useTaskKnowledge,
@@ -840,15 +840,12 @@ function HarnessComposer() {
         </div>
         <div className="composer-footer">
         <div className="composer-toolbar">
-          <ComposerAddControl
-            disabled={runLocked || showStop || videoGenerating}
-            hideKnowledge={Boolean(conversationScope?.compactComposer)}
-            knowledgeAction={conversationScope ? {
-              label: "配置智能体知识库",
-              onSelect: conversationScope.onConfigureKnowledge,
-            } : undefined}
-          />
-          {!conversationScope?.compactComposer && <>
+          <Composer.AddAttachment>
+            <svg className="aui-composer-attach-icon" viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M10 4.5v11M4.5 10h11" />
+            </svg>
+          </Composer.AddAttachment>
+          {!conversationScope?.compactComposer && <>{conversationScope ? <button type="button" className="aui-composer-attach" aria-label="配置智能体知识库" title="配置智能体知识库" onClick={conversationScope.onConfigureKnowledge}>@</button> : <TaskKnowledgeControl disabled={runLocked || showStop || videoGenerating} />}
           <TaskAgentSwitcher
             agents={agentSelection.agents}
             selected={agentSelection.selected}
