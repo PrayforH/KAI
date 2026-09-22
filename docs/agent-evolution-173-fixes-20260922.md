@@ -67,9 +67,41 @@ docker compose -f compose.json up -d --no-deps api worker web
 # 只回滚 web：把 compose.json 的 web image 改回 kai/axis-web:evolution-01f1f3cb 再 up -d --no-deps web
 ```
 
-## 5. 未完成（用户清单中的后四项，下一步）
+## 5. 第二批：评审 P0 与 #4（同日夜）
 
-- **#4** MCP 从主页「插件」移除、改为智能体私有资产配置；
+| 项 | 内容 |
+| --- | --- |
+| 版本 | `ef129d81`（评审 P0）、`e2ab001a`（#4 MCP） |
+| 镜像 | api/worker `kai/axis-api:evolution-e2ab001a`，web `kai/axis-web:evolution-e2ab001a` |
+| 回滚点 | `backups/e2ab001a/compose.json`（回到 `evolution-01f1f3cb` + web `-webfix`） |
+
+**评审 P0-1（写路径绕过校验）**：`evolution/service.py` 的 `_save` 是唯一写入路径，原先用
+`model_copy`（跳过全部 validator）。改为 `model_validate` 校验下一个状态，状态字面量之外的
+值不再落库、也不再等到读回时才以 500 暴露。
+
+**评审 P0-2（活性判据只判一半）**：`_active()` 同时判 revision 与「已停止/已过期」，
+而 `rollback`/`set_experience`/`observe` 各自手写了只判 revision 的副本——已取消或已过期的
+job 仍可被修改。三处改为共用 `_active`；`refresh` 保留「非 active 时优雅返回」，`cancel` 保留
+只判 revision（取消本身就是要做的状态迁移，且文档写明「重试即完成取消」）。
+新增测试 `test_workflow.py::test_stopped_job_rejects_mutation_and_the_write_path_validates`
+覆盖取消态、过期态与非法状态三条断言；`pytest tests/unit` 1475 passed。
+
+**#4 MCP 从「插件」改为智能体资产**：原先 MCP 是主页一个顶级工作区（`/studio/capabilities`
+的 `McpCatalogControlPlane` 负责注册、发现、凭据、目录），而智能体只能从结果里挑。现在：
+
+- 工作区导航去掉「插件」（`workspace-navigation.tsx`、`task-sidebar.tsx` 的 visible 列表），
+  `/studio/capabilities` 改为 `redirect("/studio/skills")`，老书签仍可用；
+- 「技能」区只剩一个 section，`StudioCapabilityManager` 与 section 导航去掉 MCP 一半；
+- **注册能力仍有着落**：智能体的「MCP 配置」组新增「管理 MCP 服务器」，在同一处以侧栏打开
+  原控制面（`McpCatalogControlPlane` 动态载入），与决定「本智能体可用哪些 MCP」的勾选列表相邻；
+- 智能体工作区页脚指向已下线页面的「模型与集成设置」链接删除。
+
+验收：镜像内静态包含「管理 MCP 服务器」标记；访问 `/studio/capabilities` 服务端不再返回
+MCP 目录内容、只带 `/studio/skills` 的跳转（Next 的 RSC 跳转是 200 + 客户端跳转，故状态码仍为
+200，判据看内容）；vitest 128 文件 / 811 passed。
+
+## 6. 未完成（用户清单中的后三项 + 评审 P1，下一步）
+
 - **#5** 参考 agenta 简化智能体配置下方「工具 / 高级设置」抽屉；
 - **#6** 抽屉等整体动效优化；
 - **#7** 智能体配置的 Skill 支持勾选（后端已有 `GET /v1/studio/skills/catalog` 与
