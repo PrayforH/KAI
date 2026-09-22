@@ -74,7 +74,7 @@ describe("MCP capability catalog", () => {
     expect(component).toContain("data-dismiss-on-outside");
   });
 
-  it("uses one centered authoring page for MCP and knowledge connections", () => {
+  it("authors a connection in the one right-hand drawer", () => {
     expect(component).toContain("styles.editorBackdrop");
     expect(component).toContain('aria-labelledby="catalog-editor-title"');
     expect(component).toContain('role="dialog"');
@@ -86,7 +86,11 @@ describe("MCP capability catalog", () => {
     expect(styles).toMatch(/\.editorBackdrop\s*\{[^}]*inset:\s*44px 0 0 var\(--app-sidebar-expanded-width\);/s);
     // The authoring page keeps the same measure as the catalog list (1160px)
     // rather than stretching across the window.
-    expect(styles).toMatch(/\.editorBackdrop \.editor\s*\{[^}]*width:\s*min\(1160px, 100%\);/s);
+    // One drawer, and no leftover page-context rule fighting its width: the
+    // block that kept the page's 1160px measure used to win by source order.
+    expect(styles).toMatch(/\.editorBackdrop\s*\{[^}]*justify-items:\s*end;/s);
+    expect(styles).toMatch(/\.editorBackdrop \.editor\s*\{[^}]*width:\s*clamp\(320px, 33vw, 560px\);/s);
+    expect(styles).not.toMatch(/\.editorBackdrop \.editor\s*\{[^}]*width:\s*min\(1160px/s);
   });
 
   it("fills each form row instead of leaving an empty column beside a field", () => {

@@ -1338,36 +1338,6 @@
   left: var(--app-sidebar-collapsed-width);
 }
 
-.editorBackdrop .editor {
-  /* Same column as the catalog list and the Skills page, so opening the form
-     keeps the page's measure instead of stretching edge to edge. */
-  width: min(1160px, 100%);
-  height: auto;
-  max-height: none;
-  margin: 0;
-  padding: 34px clamp(24px, 4vw, 48px) 80px;
-  border: 0;
-  border-radius: 0;
-  background: var(--paper);
-  box-shadow: none;
-}
-
-.editorBackdrop .editor > header {
-  position: static;
-  margin: 0 0 22px;
-  padding: 0 0 18px;
-  background: transparent;
-  backdrop-filter: none;
-}
-
-.editorBackdrop .formActions {
-  position: static;
-  margin: 8px 0 0;
-  padding: 16px 0 0;
-  background: transparent;
-  backdrop-filter: none;
-}
-
 @media (max-width: 760px) {
   .content {
     padding: 28px 18px 56px;
