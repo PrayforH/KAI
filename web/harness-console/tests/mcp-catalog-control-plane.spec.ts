@@ -20,10 +20,6 @@ const navigation = readFileSync(
   join(process.cwd(), "src/components/workspace-navigation.tsx"),
   "utf8",
 );
-const page = readFileSync(
-  join(process.cwd(), "src/app/studio/capabilities/page.tsx"),
-  "utf8",
-);
 const workbench = readFileSync(
   join(process.cwd(), "src/components/agent-studio/agent-studio-workbench.tsx"),
   "utf8",
@@ -34,13 +30,18 @@ describe("MCP capability catalog", () => {
     // MCP is an agent asset: the workspace nav no longer carries it, the old
     // route redirects, and the agent's Tools group owns the entry.
     expect(navigation).not.toContain('href: "/studio/capabilities"');
-    // Management keeps its own page; it is deliberately absent from the nav.
-    expect(page).toContain("<McpCatalogControlPlane />");
+    // Registration is a drawer opened from the agent; there is no management
+    // page and no nav entry for one.
+    expect(workbench).toContain("setMcpStartInForm(true); setMcpManagerOpen(true);");
     // The panel row opens the catalog in a drawer and the + opens the form,
     // which is itself a drawer. The catalog view is a page layout, so mounting
     // it bare painted into the workbench.
     expect(workbench).toContain("setMcpStartInForm(true); setMcpManagerOpen(true);");
-    expect(workbench).toContain("<McpCatalogControlPlane startInForm />");
+    expect(workbench).toContain("<McpCatalogControlPlane startInForm onClose={() => setMcpManagerOpen(false)} />");
+    // Dismissing the form closes the surface: falling back to the catalog page
+    // would paint a full page where the drawer was.
+    expect(component).toContain("const closeForm = () => {");
+    expect(component).toContain("onClose?.();");
     expect(component).toContain("startInForm = false");
     expect(component).toContain("useState(startInForm)");
   });

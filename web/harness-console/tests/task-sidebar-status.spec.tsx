@@ -148,7 +148,7 @@ it("preserves project expansion and show-more choices when workspace navigation 
     expect(container.querySelectorAll('.task-list-row')).toHaveLength(7);
     await act(async () => root.unmount());
     root = createRoot(container);
-    await act(async () => root.render(<TaskSidebar {...props} activeNav="capabilities" />));
+    await act(async () => root.render(<TaskSidebar {...props} activeNav="skills" />));
     expect(container.querySelector('[aria-label="收起项目 研究"]')).not.toBeNull();
     expect(container.querySelectorAll('.task-list-row')).toHaveLength(7);
   } finally { await act(async () => root.unmount()); container.remove(); }

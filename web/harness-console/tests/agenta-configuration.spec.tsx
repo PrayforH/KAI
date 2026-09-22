@@ -82,7 +82,7 @@ it("shows the draft's runtime on the advanced row and the code entry in the head
   expect(buttons.some((button) => button.text === "代码" && button.title === "查看这份配置的代码视图")).toBe(true);
 });
 
-it("lists the bound MCP servers in a group and links to their management page", () => {
+it("lists the bound MCP servers in a group, and + opens the registration drawer", () => {
   const onAddMcp = vi.fn();
   render({ onAddMcp });
   const summary = [...host.querySelectorAll("summary")].find((node) =>
@@ -97,6 +97,7 @@ it("lists the bound MCP servers in a group and links to their management page", 
   );
   add?.click();
   expect(onAddMcp).toHaveBeenCalledTimes(1);
-  const manage = host.querySelector('a[href="/studio/capabilities"]');
-  expect(manage?.textContent).toContain("管理 MCP 服务器");
+  // There is no management page: registering and binding both happen from here
+  // (the + opens the registration drawer; binding is the Tools section).
+  expect(host.querySelector('a[href="/studio/capabilities"]')).toBeNull();
 });

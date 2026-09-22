@@ -4087,7 +4087,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
       {notice && !importFeedback && !/^(正在读取控制面草稿|已从控制面(?:加载|切换)草稿|已保存到控制面|已通过对话更新)/.test(notice) && <div className={styles.importFeedback} role="status"><span>{notice}</span><button type="button" aria-label="关闭状态提示" onClick={() => setNotice("")}>×</button></div>}
       {importFeedback && <div className={styles.importFeedback} role={importFeedback.error ? "alert" : "status"} data-error={Boolean(importFeedback.error)}><span>{importFeedback.message}</span>{!importingBundle && <button type="button" aria-label="关闭导入提示" onClick={()=>setImportFeedback(null)}>×</button>}</div>}
       {mcpManagerOpen && mcpStartInForm && (
-        <McpCatalogControlPlane startInForm />
+        <McpCatalogControlPlane startInForm onClose={() => setMcpManagerOpen(false)} />
       )}
       {versionHistoryOpen && <button type="button" className={styles.contractBackdrop} aria-label="关闭版本历史" onClick={() => {setVersionHistoryOpen(false);setPromoteTarget("");}} />}
       <aside ref={versionHistoryRailRef} id="personal-version-history" className={`${styles.contractRail} ${styles.versionHistoryRail}`} aria-label="智能体版本历史" role="dialog" aria-modal="true" aria-hidden={!versionHistoryOpen} data-open={versionHistoryOpen}>

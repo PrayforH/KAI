@@ -6,7 +6,6 @@ export type WorkspaceId =
   | "agents"
   | "files"
   | "automation"
-  | "capabilities"
   | "knowledge"
   | "skills"
   | "spaces"
@@ -65,14 +64,6 @@ export function WorkspaceIcon({ workspace }: { workspace: WorkspaceId }) {
         <path d="M15.5 10a5.5 5.5 0 1 1-1.6-3.9" />
         <path d="M15.8 3.2v3.2h-3.2" />
         <path d="m10 7.6 1.6 2.3-1.6 2.3-1.6-2.3z" />
-      </svg>
-    );
-  }
-  if (workspace === "capabilities") {
-    return (
-      <svg viewBox="0 0 20 20" aria-hidden="true">
-        <rect x="7" y="7" width="6" height="6" rx="1.5" />
-        <path d="M9 3v4m2-4v4M9 13v4m2-4v4M3 9h4m-4 2h4m6-2h4m-4 2h4" />
       </svg>
     );
   }

@@ -65,8 +65,6 @@ export function StudioUnifiedShell({
       ? "automation"
       : pathname.startsWith("/studio/skills")
       ? "skills"
-      : pathname.startsWith("/studio/capabilities")
-        ? "capabilities"
         : pathname.startsWith("/studio/knowledge")
           ? "knowledge"
           : pathname.startsWith("/studio/usage")

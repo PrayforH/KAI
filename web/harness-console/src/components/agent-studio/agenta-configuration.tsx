@@ -127,9 +127,6 @@ export function AgentaConfiguration({
           {!draft.mcpServers.length && (
             <p className={styles.groupEmpty}>尚未绑定 MCP 服务器；在「工具」里勾选，或用上面的按钮注册新的。</p>
           )}
-          <Link className={styles.addRow} href="/studio/capabilities">
-            管理 MCP 服务器 ↗
-          </Link>
         </details>
         <details className={styles.configGroup} open={draft.skills.length > 0}>
           <summary>

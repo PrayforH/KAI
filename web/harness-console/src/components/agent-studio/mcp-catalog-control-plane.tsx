@@ -118,10 +118,13 @@ function derivedStatus(
 export function McpCatalogControlPlane({
   mode = "mcp",
   startInForm = false,
+  onClose,
 }: {
   mode?: "mcp" | "knowledge";
   /** Open the registration form straight away: the form is itself the drawer. */
   startInForm?: boolean;
+  /** Called when the form is dismissed, so the caller can unmount the surface. */
+  onClose?: () => void;
 }) {
   const knowledgeMode = mode === "knowledge";
   const category = knowledgeMode ? "knowledge" : "tool";
@@ -143,6 +146,13 @@ export function McpCatalogControlPlane({
   }>>([]);
   const [editingReference, setEditingReference] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(startInForm);
+  // When the caller owns the surface (the agent opens it to register a server),
+  // dismissing the form dismisses everything: falling back to the catalog page
+  // would paint a full page where the drawer was.
+  const closeForm = () => {
+    setShowForm(false);
+    onClose?.();
+  };
   const [pendingDisable, setPendingDisable] =
     useState<StudioCatalogImpact | null>(null);
   const [pendingDelete, setPendingDelete] = useState<{
@@ -187,7 +197,7 @@ export function McpCatalogControlPlane({
   }, [load]);
 
   const closeEditor = useCallback(() => {
-    if (busy !== "save" && busy !== "discover") setShowForm(false);
+    if (busy !== "save" && busy !== "discover") closeForm();
   }, [busy]);
 
   const closeSync = useCallback(() => setPendingSync(null), []);
@@ -1262,7 +1272,7 @@ export function McpCatalogControlPlane({
               </section>
               <div className={styles.formActions}>
                 <span>已审核 {draft.tools.length} 个工具；保存后可在「智能体 → 工具与 MCP」中绑定。</span>
-                <button type="button" onClick={() => setShowForm(false)}>取消</button>
+                <button type="button" onClick={closeForm}>取消</button>
                 <button type="submit" disabled={busy === "save"}>
                   {busy === "save" ? "正在保存…" : editingReference ? "保存更新" : "完成注册"}
                 </button>
