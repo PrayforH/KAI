@@ -5,6 +5,7 @@ export type StudioSection =
   | "orchestration"
   | "skills"
   | "capabilities"
+  | "knowledge"
   | "runtime"
   | "trial"
   | "evaluation";

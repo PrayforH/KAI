@@ -181,7 +181,7 @@ export function AgentaConfiguration({
         </details>
         <button
           className={styles.configRow}
-          onClick={() => onEdit("capabilities")}
+          onClick={() => onEdit("knowledge")}
         >
           <span className={styles.rowLabel}><strong>文件与知识</strong></span>
           <small>{draft.knowledgeReferences.length} 项知识引用</small>

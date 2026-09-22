@@ -71,6 +71,7 @@ import { AgentTemplateGallery } from "./agent-template-gallery";
 import { createAgentFromTemplate, type AgentTemplate } from "../../lib/agent-templates";
 import { type BuildChange } from "./agent-build-assets";
 import { AgentaConfiguration } from "./agenta-configuration";
+import { KnowledgeBasePicker, TaskKnowledgeProvider } from "../task-knowledge-context";
 import agentaStyles from "./agenta-workspace.module.css";
 
 const sectionLabels: Record<StudioSection, string> = {
@@ -79,6 +80,7 @@ const sectionLabels: Record<StudioSection, string> = {
   prompt: "System Prompt",
   orchestration: "协同编排",
   skills: "Skills",
+  knowledge: "文件与知识",
   capabilities: "Tools 与联网",
   runtime: "运行与权限",
   trial: "隔离试跑",
@@ -3296,6 +3298,28 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
               </section>
             )}
 
+            {activeSection === "knowledge" && (
+              <section className={styles.configPanel} aria-labelledby="knowledge-title">
+                <PanelHeading
+                  id="knowledge-title"
+                  kicker="上下文"
+                  title="文件与知识"
+                  description="勾选的知识库会绑定到这个智能体；未勾选时按平台默认检索。"
+                />
+                {/* Ticking a base edits the draft, exactly like the MCP cards: the change is
+                    local until 保存, and the panel count follows it. */}
+                <TaskKnowledgeProvider
+                  selected={draft.knowledgeReferences}
+                  onChange={(references) => updateDraft({ knowledgeReferences: references })}
+                  mode="rag"
+                  onModeChange={() => {}}
+                >
+                  <div className="task-knowledge-menu" data-inline="true">
+                    <KnowledgeBasePicker />
+                  </div>
+                </TaskKnowledgeProvider>
+              </section>
+            )}
             {activeSection === "capabilities" && (
               <section className={styles.configPanel} aria-labelledby="capabilities-title">
                 <div className={styles.skillPanelHeading}>
@@ -4098,7 +4122,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
       {editorOpened.current && <AgentBuilderAssistant
         workspaceTarget={workspaceTarget}
         userId={user.user_id}
-        onConfigureKnowledge={() => openConfiguration("capabilities")}
+        onConfigureKnowledge={() => openConfiguration("knowledge")}
         initialSessionId={initialSessionId}
         playgroundMode={playgroundMode}
         onExpandConfiguration={() => setPlaygroundMode("build")}

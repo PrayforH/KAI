@@ -2859,6 +2859,21 @@ body.codex-theme-v1:has(.console-shell) .task-sidebar-brand .task-sidebar-search
   background: transparent;
 }
 
+/* The same list, inline inside the builder's configuration panel: it is content
+   there, not a popover anchored to a trigger. */
+.task-knowledge-menu[data-inline="true"] {
+  position: static;
+  width: 100%;
+  max-width: 420px;
+  max-height: none;
+  margin: 10px 0 0;
+  padding: 10px;
+  border: 1px solid var(--codex-line, #303030);
+  border-radius: 10px;
+  background: var(--codex-inset, #171717);
+  box-shadow: none;
+}
+
 .task-knowledge-menu {
   position: absolute;
   z-index: 71;

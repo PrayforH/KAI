@@ -113,3 +113,22 @@ it("lists the bound MCP servers in a group, and + opens the registration drawer"
   // (the + opens the registration drawer; binding is the Tools section).
   expect(host.querySelector('a[href="/studio/capabilities"]')).toBeNull();
 });
+
+it("opens the knowledge section from the 文件与知识 row, with its reference count", () => {
+  const edited: string[] = [];
+  render({
+    draft: { ...draft, knowledgeReferences: ["cases", "policy"] },
+    onEdit: (section) => { edited.push(section); },
+  });
+
+  const row = [...host.querySelectorAll("button")].find((button) =>
+    (button.textContent ?? "").includes("文件与知识"),
+  );
+  expect(row, "the 文件与知识 row must exist").toBeDefined();
+  expect(row!.textContent).toContain("2 项知识引用");
+
+  act(() => row!.click());
+  // Knowledge binding has its own section now: it used to open the tools section,
+  // where there was no way to tick a base.
+  expect(edited).toEqual(["knowledge"]);
+});

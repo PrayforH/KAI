@@ -123,15 +123,31 @@ export function useTaskKnowledge(): TaskKnowledgeValue {
   return value;
 }
 
-/** Composer toolbar control: shows and edits the thread's knowledge bases. */
 const TYPE_LABELS: Record<string, string> = { rag: "文档检索", wiki: "Wiki", hybrid: "文档 + Wiki" };
 
 /**
- * The picker body: search, tick, bind. One implementation, because the composer's
- * add panel and the labelled context control are two entrances to the same choice.
+ * The list itself: search, tick, clear. Two surfaces bind different things — a thread
+ * and an agent draft — so the list takes them as props and owns no binding of its own.
  */
-export function KnowledgeBasePicker({ autoFocus = true }: { autoFocus?: boolean }) {
-  const { available, selected, loading, error, retry, toggle, clear } = useTaskKnowledge();
+export function KnowledgeBaseList({
+  available,
+  selected,
+  loading,
+  error,
+  onToggle,
+  onClear,
+  onRetry,
+  autoFocus = true,
+}: {
+  available: StudioKnowledgeBase[];
+  selected: readonly string[];
+  loading: boolean;
+  error: string;
+  onToggle: (reference: string) => void;
+  onClear: () => void;
+  onRetry: () => void;
+  autoFocus?: boolean;
+}) {
   const [query, setQuery] = useState("");
   const matches = available.filter((base) =>
     `${base.displayName} ${base.reference}`.toLowerCase().includes(query.trim().toLowerCase()),
@@ -143,16 +159,24 @@ export function KnowledgeBasePicker({ autoFocus = true }: { autoFocus?: boolean 
       value={query} onChange={(event) => setQuery(event.target.value)}
       onKeyDown={(event) => { if (event.key === "Enter") event.preventDefault(); }} />
     {loading ? <p className="task-knowledge-empty" role="status">加载中…</p>
-      : error ? <div role="alert" className="task-knowledge-empty">{error}<button type="button" onClick={retry}>重试</button></div>
+      : error ? <div role="alert" className="task-knowledge-empty">{error}<button type="button" onClick={onRetry}>重试</button></div>
       : matches.length ? <ul>{matches.map((base) => (
-        <li key={base.reference}><button type="button" className="task-knowledge-option" aria-pressed={selected.includes(base.reference)} onClick={() => toggle(base.reference)}>
+        <li key={base.reference}><button type="button" className="task-knowledge-option" aria-pressed={selected.includes(base.reference)} onClick={() => onToggle(base.reference)}>
           <span className="task-knowledge-option-mark" aria-hidden="true">{selected.includes(base.reference) ? "✓" : ""}</span>
           <span className="task-knowledge-option-copy"><strong>{base.displayName}</strong><small>{TYPE_LABELS[base.kbType] ?? base.kbType}</small></span>
         </button></li>
       ))}</ul> : <p className="task-knowledge-empty">{query ? "没有匹配的知识库" : "暂无可用知识库"}</p>}
-    <button type="button" className="task-knowledge-clear" disabled={!count} onClick={clear}>清除选择，使用智能体默认知识库</button>
+    <button type="button" className="task-knowledge-clear" disabled={!count} onClick={onClear}>清除选择，使用智能体默认知识库</button>
   </>;
 }
+
+/** The same list bound to the thread: what the composer's add panel shows. */
+export function KnowledgeBasePicker({ autoFocus = true }: { autoFocus?: boolean }) {
+  const { available, selected, loading, error, retry, toggle, clear } = useTaskKnowledge();
+  return <KnowledgeBaseList autoFocus={autoFocus} available={available} selected={selected}
+    loading={loading} error={error} onToggle={toggle} onClear={clear} onRetry={retry} />;
+}
+
 
 /** Composer toolbar control: shows and edits the thread's knowledge bases. */
 export function TaskKnowledgeControl({ disabled, label }: { disabled: boolean; label?: string }) {
