@@ -3810,6 +3810,52 @@
   font: 500 9px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+/* Platform skills are picked the same way an MCP server is: one checkbox row
+   per catalog entry, installed state visible at a glance. */
+.skillChoice,
+.skillChoiceEnabled {
+  position: relative;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid var(--studio-line);
+  border-radius: 8px;
+  background: var(--studio-panel);
+  cursor: pointer;
+}
+
+.skillChoiceEnabled {
+  border-color: var(--studio-green);
+}
+
+.skillChoice strong,
+.skillChoiceEnabled strong {
+  display: block;
+  font-size: 12px;
+}
+
+.skillChoice small,
+.skillChoiceEnabled small {
+  color: var(--studio-muted);
+  font-size: 11px;
+}
+
+.skillChoice input,
+.skillChoiceEnabled input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--studio-green);
+}
+
+.skillChoice:has(input:disabled),
+.skillChoiceEnabled:has(input:disabled) {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .mcpCard,
 .mcpCardEnabled {
   position: relative;

@@ -44,6 +44,7 @@ import {
   type StudioEvalGate,
   type StudioEvalRun,
   type StudioPreflightCheck,
+  type StudioPlatformSkillPackage,
   type StudioPreview,
   type StudioQualityGate,
   type StudioTaskDrivenRecommendation,
@@ -329,6 +330,11 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
   const [importingBundle, setImportingBundle] = useState(false);
   const [importFeedback, setImportFeedback] = useState<{message: string; error?: boolean} | null>(null);
   const [importingSkill, setImportingSkill] = useState(false);
+  // The platform catalog is what an agent picks from, so it is listed with the
+  // installed skills instead of only on the retired capability page.
+  const [platformSkills, setPlatformSkills] = useState<StudioPlatformSkillPackage[] | null>(null);
+  const [platformSkillError, setPlatformSkillError] = useState("");
+  const [installingPackage, setInstallingPackage] = useState("");
   const [creatingPreview, setCreatingPreview] = useState(false);
   const [previews, setPreviews] = useState<StudioPreview[]>([]);
   const [evalDatasets, setEvalDatasets] = useState<StudioEvalDataset[]>([]);
@@ -1519,6 +1525,54 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
     } finally {
       setImportingSkill(false);
       if (skillInputRef.current) skillInputRef.current.value = "";
+    }
+  }
+
+  useEffect(() => {
+    if (activeSection !== "skills" || platformSkills !== null) return;
+    let active = true;
+    void studioClient.listPlatformSkills()
+      .then((catalog) => { if (active) setPlatformSkills(catalog.packages); })
+      .catch((reason) => {
+        if (active) {
+          setPlatformSkillError(
+            reason instanceof Error ? reason.message : "平台技能目录读取失败",
+          );
+        }
+      });
+    return () => { active = false; };
+  }, [activeSection, platformSkills]);
+
+  async function togglePlatformSkill(pkg: StudioPlatformSkillPackage, enabled: boolean) {
+    if (installingPackage || saving || !canEdit) return;
+    if (!enabled) {
+      await uninstallSkill(pkg.skill.name);
+      return;
+    }
+    setInstallingPackage(pkg.packageId);
+    try {
+      const current = dirty || !draft.id ? await saveDraft() : draft;
+      if (!current?.id) return;
+      const installed = await studioClient.installPlatformSkill(
+        current.id,
+        current.revision,
+        pkg.packageId,
+        pkg.revision,
+      );
+      setDraft(apiDraftToStudioDraft(installed.draft));
+      setDrafts(await studioClient.listAccessibleDrafts());
+      setDirty(false);
+      setConflict(false);
+      setVersionConflict(false);
+      setActiveSkillName(installed.skillName);
+      setNotice(
+        `已安装 Skill：${installed.skillName}`
+        + (pkg.riskLevel === "review" ? " · 需审阅" : ""),
+      );
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Skill 安装失败");
+    } finally {
+      setInstallingPackage("");
     }
   }
 
@@ -3048,6 +3102,43 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                     </button>
                   ))}
                 </div>
+                <div className={styles.groupHeading}>
+                  <div>
+                    <h3>平台技能</h3>
+                    <p>勾选即安装到当前草稿，取消勾选即卸载。</p>
+                  </div>
+                  <span>
+                    {platformSkills ? `${platformSkills.length} 项可用` : ""}
+                  </span>
+                </div>
+                {platformSkillError && <p role="alert">{platformSkillError}</p>}
+                {platformSkills === null && !platformSkillError && (
+                  <p className={styles.skillEmpty}>正在读取平台技能目录…</p>
+                )}
+                {(platformSkills ?? []).map((pkg) => {
+                  const enabled = draft.skills.some(
+                    (candidate) => candidate.name === pkg.skill.name,
+                  );
+                  const busy = installingPackage === pkg.packageId;
+                  return (
+                    <label
+                      key={pkg.packageId}
+                      className={enabled ? styles.skillChoiceEnabled : styles.skillChoice}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={enabled}
+                        disabled={!canEdit || Boolean(installingPackage) || saving}
+                        onChange={(event) => void togglePlatformSkill(pkg, event.target.checked)}
+                      />
+                      <span>
+                        <strong>{pkg.displayName}</strong>
+                        <small>{busy ? "正在安装…" : pkg.summary}</small>
+                      </span>
+                      <small>{pkg.riskLevel === "review" ? "需审阅" : `${pkg.skill.fileCount} 个文件`}</small>
+                    </label>
+                  );
+                })}
                 <InfoStrip tone="neutral">
                   支持单个 SKILL.md 或 ZIP。声明式内容直接安装到当前草稿；脚本和依赖只进入不可变快照，实际执行与安装仍走 Sandbox 权限门。
                 </InfoStrip>

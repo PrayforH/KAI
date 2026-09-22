@@ -18,6 +18,13 @@ const styles = readFileSync(
   join(process.cwd(), "src/components/agent-studio/skills-catalog-page.module.css"),
   "utf8",
 );
+const workbench = readFileSync(
+  join(
+    process.cwd(),
+    "src/components/agent-studio/agent-studio-workbench.tsx",
+  ),
+  "utf8",
+);
 const navigation = readFileSync(
   join(process.cwd(), "src/components/workspace-navigation.tsx"),
   "utf8",
@@ -120,5 +127,16 @@ describe("Skills catalog page", () => {
     expect(component).toContain("加载更多");
     expect(styles).toContain(".loadMore");
     expect(styles).toContain(".loadMoreStatus");
+  });
+
+  it("lets an agent pick platform skills with checkboxes", () => {
+    // The catalog is loaded where the choice is made, and the checkbox writes
+    // through the same draft revision guard as every other skill install.
+    expect(workbench).toContain("studioClient.listPlatformSkills()");
+    expect(workbench).toContain("async function togglePlatformSkill(");
+    expect(workbench).toContain("await studioClient.installPlatformSkill(");
+    expect(workbench).toContain("await uninstallSkill(pkg.skill.name);");
+    expect(workbench).toContain("勾选即安装到当前草稿，取消勾选即卸载。");
+    expect(workbench).toContain("const enabled = draft.skills.some(");
   });
 });
