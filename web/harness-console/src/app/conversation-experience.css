@@ -502,7 +502,9 @@ body.codex-theme-v1 .execution-reasoning-icon svg {
 }
 body.codex-theme-v1 .execution-reasoning-label,
 body.codex-theme-v1 .execution-reasoning-separator { flex: 0 0 auto; white-space: nowrap; }
-body.codex-theme-v1 .execution-reasoning-preview { display: block; flex: 1 1 0%; min-width: 0; overflow: hidden; white-space: nowrap; color: var(--codex-faint); }
+body.codex-theme-v1 .execution-reasoning-preview { display: block; flex: 1 1 0%; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--codex-faint); }
+body.codex-theme-v1 .execution-reasoning-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+body.codex-theme-v1 .execution-reasoning-summary:focus-visible { outline: 1px solid var(--codex-muted); outline-offset: -1px; border-radius: 4px; }
 body.codex-theme-v1 .execution-reasoning[open] .execution-reasoning-separator { display: none; }
 body.codex-theme-v1 .execution-reasoning[open] .execution-reasoning-preview { display: none; }
 body.codex-theme-v1 .execution-reasoning-body { padding: 6px 0 6px 20px; overflow-wrap: anywhere; }

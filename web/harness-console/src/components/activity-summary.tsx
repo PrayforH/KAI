@@ -1,7 +1,7 @@
 "use client";
 
 import { TextMessagePartProvider } from "@assistant-ui/react";
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { RunActivity } from "../lib/activity-schema";
 import { useRunViewModel } from "../lib/activity-store";
 import { activeElapsedMs, elapsedAnchorFor, type ElapsedAnchor } from "../lib/run-elapsed";
@@ -202,14 +202,18 @@ function commentaryNodes(view: RunViewModel): CommentaryNode[] {
     .map((item) => item.sequence)
     .sort((left, right) => left - right);
   const grouped = new Map<string, CommentaryNode>();
+  let reasoningSegment = 0;
 
   for (const item of view.items) {
+    // Some providers omit/reuse item_id across tool rounds. A new step must
+    // never append its thinking into an earlier, already completed row.
+    if (isResponseBoundary(item.event_type) || item.event_type === "message.delta") reasoningSegment += 1;
     if (!item.summary) continue;
     if (item.event_type === "reasoning.summary.delta" || item.event_type === "reasoning.delta") {
       const itemId = typeof item.metadata.item_id === "string"
         ? item.metadata.item_id
         : "run";
-      const groupKey = `${item.event_type}:${itemId}`;
+      const groupKey = `${item.event_type}:${itemId}:${reasoningSegment}`;
       const existing = grouped.get(groupKey);
       grouped.set(groupKey, {
         id: existing?.id ?? item.id,
@@ -244,22 +248,19 @@ const ExecutionCommentary = memo(function ExecutionCommentary({
   commentary: CommentaryNode;
   active: boolean;
 }) {
-  const previewRef = useRef<HTMLSpanElement>(null);
   const [expanded, setExpanded] = useState(false);
-  const preview = useMemo(() => commentary.text.slice(-600).replaceAll("**", "").replace(/\s+/g, " ").trim(), [commentary.text]);
-  useLayoutEffect(() => {
-    const row = previewRef.current;
-    if (row && !expanded) row.scrollLeft = row.scrollWidth;
-  }, [preview, expanded]);
+  // The collapsed row is a status, not a token ticker. Completed rows show a
+  // bounded prefix; the full trace is only mounted on explicit expansion.
+  const preview = active ? "进行中" : commentary.text.slice(0, 160).replaceAll("**", "").replace(/\s+/g, " ").trim();
   if (commentary.source !== "progress") {
     return (
       <details className="execution-reasoning" open={expanded} onToggle={event => setExpanded(event.currentTarget.open)}
         data-commentary-source={commentary.source} data-active={active ? "true" : "false"}>
-        <summary className={active ? "execution-reasoning-summary execution-row-sweep" : "execution-reasoning-summary"}>
-          <span className="execution-reasoning-icon"><ThinkingIcon /></span><span className="execution-reasoning-label">思考</span><span className="execution-reasoning-separator" aria-hidden="true">·</span><span ref={previewRef} className="execution-reasoning-preview">{preview}</span><span className="execution-reasoning-chevron" aria-hidden="true" />
+        <summary className="execution-reasoning-summary">
+          <span className="execution-reasoning-icon"><ThinkingIcon /></span><span className="execution-reasoning-label">思考</span><span className="execution-reasoning-separator" aria-hidden="true">·</span><span className="execution-reasoning-preview">{preview}</span><span className="execution-reasoning-chevron" aria-hidden="true" />
         </summary>
         {expanded && <div className="execution-reasoning-body">
-          <TextMessagePartProvider text={commentary.text} isRunning={false}><MarkdownText /></TextMessagePartProvider>
+          <div className="execution-reasoning-text">{commentary.text}</div>
         </div>}
       </details>
     );

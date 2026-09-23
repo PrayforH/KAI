@@ -429,7 +429,8 @@ describe("execution ribbon", () => {
 
     expect(html).toContain('data-commentary-source="reasoning_summary"');
     expect(html).toContain('data-active="true"');
-    expect(html).toContain("先核对配置，再运行测试。");
+    expect(html).toContain("进行中");
+    expect(html).not.toContain("先核对配置，再运行测试。");
     expect(html).not.toContain("模型摘要");
   });
 
