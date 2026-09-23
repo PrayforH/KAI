@@ -257,7 +257,7 @@ const ExecutionCommentary = memo(function ExecutionCommentary({
       <details className="execution-reasoning" open={expanded} onToggle={event => setExpanded(event.currentTarget.open)}
         data-commentary-source={commentary.source} data-active={active ? "true" : "false"}>
         <summary className="execution-reasoning-summary">
-          <span className="execution-reasoning-icon"><ThinkingIcon /></span><span className="execution-reasoning-label">思考</span><span className="execution-reasoning-separator" aria-hidden="true">·</span><span className="execution-reasoning-preview">{preview}</span><span className="execution-reasoning-chevron" aria-hidden="true" />
+          <span className="execution-reasoning-icon"><ThinkingIcon /></span><span className="execution-reasoning-label execution-state-sweep" data-running={active}>思考</span><span className="execution-reasoning-separator" aria-hidden="true">·</span><span className="execution-reasoning-preview">{preview}</span><span className="execution-reasoning-chevron" aria-hidden="true" />
         </summary>
         {expanded && <div className="execution-reasoning-body">
           <div className="execution-reasoning-text">{commentary.text}</div>
@@ -647,7 +647,7 @@ function ActionRow({ action, active = false }: { action: ActionNode; active?: bo
       <span className="execution-action-icon"><ActionIcon kind={action.icon} /></span>
       <span className="execution-action-copy">
         <span className="execution-action-heading">
-          <strong>{action.label}</strong>
+          <strong className="execution-state-sweep" data-running={active}>{action.label}</strong>
           {action.detail && <small>{action.detail}</small>}
         </span>
       </span>
@@ -774,7 +774,7 @@ export function ActivitySummary({
       ? latestTimelineEntry.commentary.id
       : null;
   const activeActionId = thinkingActive && !responseStarted &&
-    latestTimelineEntry?.kind === "action" && !["failed", "waiting"].includes(latestTimelineEntry.action.status)
+    latestTimelineEntry?.kind === "action" && latestTimelineEntry.action.status === "running"
       ? latestTimelineEntry.action.id : null;
   const heading = activityHeading(view);
   const elapsedCopy = active
@@ -806,7 +806,7 @@ export function ActivitySummary({
         onClick={hasContent ? toggleDisclosure : undefined}
         aria-expanded={hasContent ? open : undefined}
       >
-        <span className={`execution-phase${thinkingActive && !responseStarted && (!open || !hasContent) ? " execution-text-sweep" : ""}`}>{heading}</span>
+        <span className="execution-phase execution-state-sweep" data-running={thinkingActive}>{heading}</span>
         <span className="execution-duration">· {elapsedCopy}</span>
         {hasContent && <span className="execution-chevron" aria-hidden="true" />}
       </Disclosure>

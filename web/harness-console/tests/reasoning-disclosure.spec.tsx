@@ -26,6 +26,7 @@ it("keeps streaming thought previews still and preserves the reader's position w
       await act(async () => root.render(<ActivitySummary activity={activity([item("thought", 1, text)])} />));
       expect(preview.textContent).toBe("进行中");
       expect(preview.scrollLeft).toBe(0);
+      expect(host.querySelector(".execution-reasoning-label")?.getAttribute("data-running")).toBe("true");
       expect(host.querySelector(".execution-reasoning-body")).toBeNull();
     }
     await act(async () => {
@@ -85,6 +86,8 @@ it("keeps one disclosure through four streamed file requests and results", async
         if (!row) { row = next; summary = next.querySelector("summary"); }
         expect(next).toBe(row);
         expect(next.querySelector("summary")).toBe(summary);
+        expect(next.querySelector("strong")?.getAttribute("data-running")).toBe(String(!completed));
+        expect(host.querySelector(".execution-phase")?.getAttribute("data-running")).toBe("true");
         expect(next.querySelector(".execution-row-sweep")).toBeNull();
         if (index === 1 && completed) row.open = true;
         if (index > 1) expect(row.open).toBe(true);
@@ -92,7 +95,27 @@ it("keeps one disclosure through four streamed file requests and results", async
     }
     expect(row?.textContent).toContain("读取了 4 个文件");
     expect(host.querySelectorAll(".execution-action-detail")).toHaveLength(4);
-    await act(async () => root.render(<ActivitySummary activity={{ ...activity(events), status: "succeeded" }} />));
+    await act(async () => root.render(<ActivitySummary activity={{ ...activity(events), status: "succeeded", items: [...events, item("done", 9, "", "run.succeeded")] }} />));
     expect(host.querySelector(".execution-action")).toBe(row);
+    expect(host.querySelector('[data-running="true"]')).toBeNull();
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+it("keeps the overall running indicator during answer output and stops it on exit", async () => {
+  const host = document.createElement("div"); document.body.appendChild(host);
+  const root = createRoot(host);
+  const view = activity([item("thought", 1, "正在核对")]);
+  try {
+    await act(async () => root.render(<ActivitySummary activity={view} responseStarted />));
+    const phase = host.querySelector(".execution-phase");
+    expect(phase?.getAttribute("data-running")).toBe("true");
+    expect(phase?.textContent).toBe("正在处理");
+    expect(host.querySelector('.execution-reasoning-label[data-running="true"]')).toBeNull();
+    for (const status of ["succeeded", "failed", "cancelled", "waiting_approval"] as const) {
+      const event = status === "waiting_approval" ? { ...item("approval", 2, "", "approval.requested"), metadata: { approval_id: "approval" } } : item(status, 2, "", `run.${status}`);
+      await act(async () => root.render(<ActivitySummary activity={{ ...view, status, items: [...view.items, event] }} responseStarted />));
+      expect(host.querySelector(".execution-phase")).toBe(phase);
+      expect(host.querySelector('[data-running="true"]')).toBeNull();
+    }
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
