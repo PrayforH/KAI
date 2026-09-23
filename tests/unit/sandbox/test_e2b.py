@@ -1183,3 +1183,33 @@ async def test_remote_session_sets_its_own_request_deadline() -> None:
     assert run["timeout"] == 0
 
     await session.wait()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('cache_fails', [False, True])
+async def test_prepare_skill_cache_and_fallback_preserve_inputs(tmp_path, cache_fails):
+    client = FakeClient()
+    provider = E2BSandboxProvider(client=client, local_root=tmp_path)
+    handle = await provider.provision(run())
+    staged = []
+
+    async def stage(entries, workspace):
+        staged.extend(entries)
+        if cache_fails:
+            raise RuntimeError('cache unavailable')
+
+    client.sandbox.stage_skill_files = stage
+    skill = handle.path / '.claude/skills/report/references/a.md'
+    skill.parent.mkdir(parents=True)
+    skill.write_text('reference')
+    (handle.path / 'inputs').mkdir()
+    (handle.path / 'inputs/a.txt').write_text('private input')
+    await provider.prepare(handle)
+    assert len(staged) == 1 and staged[0][0].endswith('/references/a.md')
+    paths = set(client.sandbox.uploads)
+    assert f'{handle.remote_workspace}/inputs/a.txt' in paths
+    skill_path = f'{handle.remote_workspace}/.claude/skills/report/references/a.md'
+    assert (skill_path in paths) == cache_fails
+    parent = skill_path.rsplit('/', 1)[0]
+    assert (parent in client.sandbox.folders) == cache_fails
+    await provider.destroy(handle)

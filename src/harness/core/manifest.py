@@ -15,6 +15,8 @@ from typing import Any, Literal, cast
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from harness.core.skill_file_cache import materialize_file
+
 
 class ManifestValidationError(ValueError):
     """Raised when an Agent Manifest cannot be safely published."""
@@ -550,19 +552,13 @@ def materialize_skill_snapshot_set(
             target = (target_root / file.path).resolve()
             if not target.is_relative_to(target_root):
                 raise ManifestValidationError(f"unsafe Skill snapshot path: {file.path}")
+            target.parent.mkdir(parents=True, exist_ok=True)
             try:
-                content = base64.b64decode(file.content_base64, validate=True)
+                materialize_file(file.content_base64, file.sha256, file.size_bytes, target)
             except ValueError as error:
                 raise ManifestValidationError(
-                    f"invalid base64 Skill snapshot: {skill.name}/{file.path}"
+                    f"corrupt Skill snapshot: {skill.name}/{file.path}"
                 ) from error
-            if (
-                len(content) != file.size_bytes
-                or hashlib.sha256(content).hexdigest() != file.sha256
-            ):
-                raise ManifestValidationError(f"corrupt Skill snapshot: {skill.name}/{file.path}")
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(content)
         names.append(skill.name)
     return tuple(names)
 

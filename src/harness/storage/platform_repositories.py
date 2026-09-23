@@ -34,6 +34,7 @@ from harness.storage.models import (
     UserMemoryRow,
     WorkspaceSnapshotRow,
 )
+from harness.storage.skill_blobs import SkillBlobStore
 
 
 async def _commit_add(session: Any, *, message: str) -> None:
@@ -45,8 +46,14 @@ async def _commit_add(session: Any, *, message: str) -> None:
 
 
 class PostgresAgentRegistry:
-    def __init__(self, sessions: SessionFactory) -> None:
+    def __init__(self, sessions: SessionFactory, skill_blobs: SkillBlobStore | None = None) -> None:
         self._sessions = sessions
+        self._skill_blobs = skill_blobs
+
+    async def _unpack(self, tenant_id: str, payload: dict[str, Any]) -> AgentVersion:
+        if self._skill_blobs:
+            payload = await self._skill_blobs.transform(tenant_id, payload, inline=True)
+        return AgentVersion.model_validate(payload)
 
     async def add(self, version: AgentVersion) -> None:
         async with self._sessions() as session:
@@ -66,7 +73,9 @@ class PostgresAgentRegistry:
                         if isinstance(version.snapshot.get("manifest"), dict)
                         else {}
                     ),
-                    payload=version.model_dump(mode="json"),
+                    payload=(await self._skill_blobs.transform(
+                        version.tenant_id, version.model_dump(mode="json"))
+                        if self._skill_blobs else version.model_dump(mode="json")),
                 )
             )
             await _commit_add(
@@ -81,7 +90,7 @@ class PostgresAgentRegistry:
             row = await session.get(AgentVersionRow, (tenant_id, owner_user_id, name, version))
             if row is None:
                 raise NotFoundError(f"agent version not found: {name}@{version}")
-            loaded = AgentVersion.model_validate(row.payload)
+            loaded = await self._unpack(tenant_id, row.payload)
             if loaded.agent_id is None and row.agent_id is not None:
                 # Legacy rows backfilled by migration 0023 carry the identity in
                 # the envelope column only.
@@ -101,7 +110,7 @@ class PostgresAgentRegistry:
             rows = (await session.execute(statement)).all()
             result: list[AgentVersion] = []
             for payload, envelope_agent_id in rows:
-                loaded = AgentVersion.model_validate(payload)
+                loaded = await self._unpack(tenant_id, payload)
                 if loaded.agent_id is None and envelope_agent_id is not None:
                     loaded = loaded.model_copy(update={"agent_id": envelope_agent_id})
                 result.append(loaded)

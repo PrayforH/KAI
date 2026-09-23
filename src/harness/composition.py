@@ -191,6 +191,7 @@ from harness.storage.reliability_repository import PostgresReliabilityRepository
 from harness.storage.repositories import PostgresEventRepository, PostgresRunRepository
 from harness.storage.sandbox_lease_repository import PostgresSandboxLeaseRepository
 from harness.storage.sharing_repository import PostgresTeamSpaceRepository
+from harness.storage.skill_blobs import SkillBlobStore
 from harness.storage.studio_repository import PostgresAgentDraftRepository
 from harness.storage.transcript_checkpoint import PostgresTranscriptCheckpointProvider
 from harness.storage.trigger_repository import PostgresAgentTriggerRepository
@@ -633,7 +634,15 @@ def build_production_container(
     engine, sessions = create_database(settings.database_url)
     redis = Redis.from_url(settings.redis_url)  # pyright: ignore[reportUnknownMemberType]
     redis_client = cast(AsyncRedisClient, redis)
-    registry = PostgresAgentRegistry(sessions)
+    store: ArtifactStore = MinioArtifactStore(
+        endpoint=settings.minio_endpoint,
+        access_key=access_key,
+        secret_key=secret_key,
+        bucket=settings.minio_bucket,
+        secure=settings.minio_secure,
+    )
+    skill_blobs = SkillBlobStore(store)
+    registry = PostgresAgentRegistry(sessions, skill_blobs)
     team_space_repository = PostgresTeamSpaceRepository(sessions)
     session_repository = PostgresSessionRepository(sessions)
     runs = PostgresRunRepository(sessions)
@@ -648,7 +657,7 @@ def build_production_container(
     snapshot_repository = PostgresWorkspaceSnapshotRepository(sessions)
     binding_repository = PostgresAguiThreadBindingRepository(sessions)
     raw_event_repository = PostgresEventRepository(sessions)
-    agent_drafts = PostgresAgentDraftRepository(sessions)
+    agent_drafts = PostgresAgentDraftRepository(sessions, skill_blobs)
     preview_repository = PostgresPreviewRepository(sessions)
     eval_dataset_repository = PostgresEvalDatasetRepository(sessions)
     eval_run_repository = PostgresEvalRunRepository(sessions)
@@ -700,13 +709,6 @@ def build_production_container(
     )
     bus = RedisEventBus(redis_client)
     cancellation_wakeup = RedisCancellationWakeup(redis_client)
-    store: ArtifactStore = MinioArtifactStore(
-        endpoint=settings.minio_endpoint,
-        access_key=access_key,
-        secret_key=secret_key,
-        bucket=settings.minio_bucket,
-        secure=settings.minio_secure,
-    )
     observability = build_observability(settings)
     reliability_metrics = ReliabilityMetrics()
     observed_event_repository = ObservedEventRepository(raw_event_repository, reliability_metrics)

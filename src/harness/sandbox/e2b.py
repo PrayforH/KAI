@@ -414,6 +414,11 @@ class SdkE2BRemoteSandbox:
         ):
             raise RuntimeError("E2B Claude CLI version verification failed")
 
+    async def stage_skill_files(self, entries: Sequence[tuple[str, bytes]], workspace: str) -> None:
+        from harness.sandbox.skill_cache import stage_cached_skill_files
+
+        await stage_cached_skill_files(self._sandbox, entries, workspace)
+
     async def create_folder(self, path: str) -> None:
         await self._sandbox.files.make_dir(path)
 
@@ -887,14 +892,35 @@ class E2BSandboxProvider:
                 path=self._cli_path,
             )
         await sandbox.create_folder(handle.remote_workspace)
+        from harness.sandbox.skill_cache import is_skill_path
+
+        stage_skills = getattr(sandbox, "stage_skill_files", None)
         entries: list[tuple[str, bytes]] = []
         for path in sorted(handle.path.rglob("*")):
             relative = path.relative_to(handle.path).as_posix()
             remote = f"{handle.remote_workspace}/{relative}"
             if path.is_dir():
+                if callable(stage_skills) and relative.startswith(
+                    (".claude/skills/", ".agents/skills/")
+                ):
+                    continue  # The cache copies create all Skill subdirectories locally.
                 await sandbox.create_folder(remote)
             elif path.is_file() and not path.is_symlink():
                 entries.append((remote, path.read_bytes()))
+        skill_entries = [(path, data) for path, data in entries
+                         if is_skill_path(path.removeprefix(handle.remote_workspace + "/"))]
+        if skill_entries and callable(stage_skills):
+            try:
+                await cast(
+                    Callable[[Sequence[tuple[str, bytes]], str], Awaitable[None]], stage_skills
+                )(skill_entries, handle.remote_workspace)
+            except Exception:  # noqa: BLE001 - cache failure falls back to a complete upload
+                logger.warning("Skill cache unavailable; uploading workspace Skill files")
+                for parent in sorted({path.rsplit("/", 1)[0] for path, _ in skill_entries}):
+                    await sandbox.create_folder(parent)
+            else:
+                skill_paths = {path for path, _ in skill_entries}
+                entries = [(path, data) for path, data in entries if path not in skill_paths]
         # One batched write per group instead of one request per file: staging a
         # workspace of a few hundred files is otherwise the slowest part of a Run.
         await sandbox.upload_many(entries)

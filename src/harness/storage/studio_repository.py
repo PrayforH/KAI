@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from harness.core.errors import ConflictError, NotFoundError
 from harness.storage.database import SessionFactory
 from harness.storage.models import AgentDraftRevisionRow, AgentDraftRow
+from harness.storage.skill_blobs import SkillBlobStore
 from harness.studio.catalog import RETIRED_PLATFORM_MCP_REFERENCES
 from harness.studio.models import AgentDraft, AgentDraftSummary, DraftRevisionSummary
 
@@ -39,13 +40,15 @@ def _strip_retired_mcp_references(draft: AgentDraft) -> AgentDraft:
     )
 
 
-def _load_draft(row: AgentDraftRow) -> AgentDraft:
+def _load_draft(row: AgentDraftRow, payload: dict[str, Any] | None = None) -> AgentDraft:
     if row.schema_version != AGENT_DRAFT_SCHEMA_VERSION:
         raise ValueError(
             "Unsupported Agent Draft schema version: "
             f"{row.schema_version}; expected={AGENT_DRAFT_SCHEMA_VERSION}"
         )
-    draft = _strip_retired_mcp_references(AgentDraft.model_validate(row.payload))
+    draft = _strip_retired_mcp_references(
+        AgentDraft.model_validate(payload if payload is not None else row.payload)
+    )
     if draft.agent_id is None and row.agent_id is not None:
         draft = draft.model_copy(update={"agent_id": row.agent_id})
     if draft.space_id is None and row.space_id is not None:
@@ -98,8 +101,21 @@ def _summary_fields(payload: dict[str, Any]) -> dict[str, Any]:
 class PostgresAgentDraftRepository:
     """Durable Draft storage with owner isolation and atomic revision CAS."""
 
-    def __init__(self, sessions: SessionFactory) -> None:
+    def __init__(self, sessions: SessionFactory, skill_blobs: SkillBlobStore | None = None) -> None:
         self._sessions = sessions
+        self._skill_blobs = skill_blobs
+
+    async def _pack(self, draft: AgentDraft) -> dict[str, Any]:
+        payload = _draft_payload(draft)
+        return (await self._skill_blobs.transform(draft.tenant_id, payload)
+                if self._skill_blobs else payload)
+
+    async def _unpack(self, tenant_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return (await self._skill_blobs.transform(tenant_id, payload, inline=True)
+                if self._skill_blobs else payload)
+
+    async def _load(self, row: AgentDraftRow) -> AgentDraft:
+        return _load_draft(row, await self._unpack(row.tenant_id, row.payload))
 
     async def _archive_current(
         self, session: AsyncSession, draft: AgentDraft, expected_revision: int,
@@ -118,7 +134,8 @@ class PostgresAgentDraftRepository:
             session.add(AgentDraftRevisionRow(
                 tenant_id=row.tenant_id, owner_user_id=row.owner_user_id,
                 draft_id=row.draft_id, revision=row.revision,
-                updated_at=row.updated_at, payload=dict(row.payload),
+                updated_at=row.updated_at, payload=(await self._skill_blobs.transform(
+                    row.tenant_id, row.payload) if self._skill_blobs else dict(row.payload)),
             ))
 
     async def list_revisions(
@@ -154,7 +171,7 @@ class PostgresAgentDraftRepository:
                                     (tenant_id, owner_user_id, draft_id, revision))
             if row is None:
                 raise NotFoundError("草稿修订未留存")
-            return AgentDraft.model_validate(row.payload)
+            return AgentDraft.model_validate(await self._unpack(tenant_id, row.payload))
 
     async def add(self, draft: AgentDraft) -> None:
         async with self._sessions() as session:
@@ -169,7 +186,7 @@ class PostgresAgentDraftRepository:
                     revision=draft.revision,
                     schema_version=AGENT_DRAFT_SCHEMA_VERSION,
                     updated_at=draft.updated_at,
-                    payload=_draft_payload(draft),
+                    payload=await self._pack(draft),
                 )
             )
             try:
@@ -183,7 +200,7 @@ class PostgresAgentDraftRepository:
             row = await session.get(AgentDraftRow, (tenant_id, owner_user_id, draft_id))
             if row is None:
                 raise NotFoundError(f"Agent draft not found: {draft_id}")
-            return _load_draft(row)
+            return await self._load(row)
 
     async def add_child(
         self, expected_revision: int, parent: AgentDraft, child: AgentDraft
@@ -203,7 +220,7 @@ class PostgresAgentDraftRepository:
                 .values(
                     revision=parent.revision,
                     updated_at=parent.updated_at,
-                    payload=_draft_payload(parent),
+                    payload=await self._pack(parent),
                 )
             )
             if not cast(CursorResult[Any], result).rowcount:
@@ -219,7 +236,7 @@ class PostgresAgentDraftRepository:
                     revision=child.revision,
                     schema_version=AGENT_DRAFT_SCHEMA_VERSION,
                     updated_at=child.updated_at,
-                    payload=_draft_payload(child),
+                    payload=await self._pack(child),
                 )
             )
             try:
@@ -239,7 +256,7 @@ class PostgresAgentDraftRepository:
         )
         async with self._sessions() as session:
             rows = (await session.scalars(statement)).all()
-            return [_load_draft(row) for row in rows]
+            return [await self._load(row) for row in rows]
 
     async def list_summaries(self, tenant_id: str, owner_user_id: str) -> list[AgentDraftSummary]:
         statement = (
@@ -291,7 +308,7 @@ class PostgresAgentDraftRepository:
         )
         async with self._sessions() as session:
             rows = (await session.scalars(statement)).all()
-            return [_load_draft(row) for row in rows]
+            return [await self._load(row) for row in rows]
 
     async def replace(self, expected_revision: int, draft: AgentDraft) -> None:
         if draft.revision != expected_revision + 1:
@@ -311,7 +328,7 @@ class PostgresAgentDraftRepository:
                 revision=draft.revision,
                 schema_version=AGENT_DRAFT_SCHEMA_VERSION,
                 updated_at=draft.updated_at,
-                payload=_draft_payload(draft),
+                payload=await self._pack(draft),
             )
         )
         async with self._sessions() as session:
