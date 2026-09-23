@@ -144,3 +144,50 @@ describe("activity store", () => {
     expect(store.getViewSnapshot()?.phase).toBe("completed");
   });
 });
+
+describe("durable history publish", () => {
+  it("merges live fragments by default and replaces the same run when asked", () => {
+    activityStore.clear();
+    const fragment = (id: string, sequence: number, item_id: string, summary: string) => ({
+      id,
+      event_type: "reasoning.delta",
+      kind: "analysis" as const,
+      status: "completed",
+      title: "思考",
+      summary,
+      timestamp: `2026-07-13T00:00:0${sequence}Z`,
+      sequence,
+      metadata: { item_id },
+    });
+    const live = runActivitySchema.parse({
+      run_id: "run-replace",
+      status: "succeeded",
+      started_at: "2026-07-13T00:00:00Z",
+      items: [
+        fragment("f1", 1, "block", "第一段"),
+        fragment("f2", 2, "block", "第二段"),
+      ],
+      metrics: {},
+    });
+    // The durable projection folded the block into one item kept at f1's id.
+    const durable = runActivitySchema.parse({
+      run_id: "run-replace",
+      status: "succeeded",
+      started_at: "2026-07-13T00:00:00Z",
+      items: [fragment("f1", 1, "block", "第一段第二段")],
+      metrics: {},
+    });
+
+    activityStore.publish(live);
+    activityStore.publish(durable);
+    const merged = activityStore.getViewSnapshot();
+    expect(merged?.items.map((item) => item.summary)).toEqual([
+      "第一段第二段",
+      "第二段",
+    ]);
+
+    activityStore.publish(durable, undefined, { replaceRun: true });
+    const replaced = activityStore.getViewSnapshot();
+    expect(replaced?.items.map((item) => item.summary)).toEqual(["第一段第二段"]);
+  });
+});

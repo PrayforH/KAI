@@ -5,14 +5,12 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
-import io
 import logging
 import os
 import re
 import shlex
 import shutil
 import ssl
-import tarfile
 import tempfile
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -46,6 +44,8 @@ from harness.sandbox.base import (
     SandboxCommandResult,
     SandboxHandle,
     SandboxIsolation,
+    extract_workspace_archive,
+    workspace_archive_transfer_limit,
 )
 from harness.sandbox.claude_cli import (
     banner_matches,
@@ -379,61 +379,6 @@ class SdkDaytonaClient:
         await self._sdk.delete(cast(SdkDaytonaRemoteSandbox, sandbox).sdk_sandbox)
 
 
-def _extract_daytona_workspace_archive(
-    content: bytes,
-    root: Path,
-    *,
-    max_bytes: int,
-    max_members: int,
-) -> None:
-    try:
-        archive = tarfile.open(fileobj=io.BytesIO(content), mode="r:*")
-    except tarfile.TarError:
-        raise ValueError("invalid Daytona workspace archive") from None
-    total = 0
-    with archive:
-        members = archive.getmembers()
-        if len(members) > max_members:
-            raise ValueError("Daytona workspace exceeds collection member limit")
-        for member in members:
-            relative = PurePosixPath(member.name)
-            if relative.is_absolute() or ".." in relative.parts:
-                raise ValueError("unsafe Daytona workspace archive member")
-            parts = tuple(part for part in relative.parts if part not in {"", "."})
-            if not parts:
-                continue
-            target = root.joinpath(*parts)
-            if member.isdir():
-                target.mkdir(parents=True, exist_ok=True)
-                continue
-            if not member.isfile():
-                raise ValueError("unsafe Daytona workspace archive member")
-            total += member.size
-            if total > max_bytes:
-                raise ValueError("Daytona workspace exceeds collection size limit")
-            source = archive.extractfile(member)
-            if source is None:
-                raise ValueError("invalid Daytona workspace archive")
-            data = source.read(max_bytes + 1)
-            if len(data) != member.size:
-                raise ValueError("invalid Daytona workspace archive")
-            target.parent.mkdir(parents=True, exist_ok=True)
-            if target.is_symlink():
-                raise ValueError("unsafe Daytona workspace archive member")
-            if target.exists():
-                if not target.is_file():
-                    raise ValueError("unsafe Daytona workspace archive member")
-                # Inputs are intentionally staged read-only. Collection replaces
-                # the local mirror with the remote copy, so make an existing
-                # worker-owned file writable before truncating it.
-                target.chmod(0o600)
-            target.write_bytes(data)
-            # A remote archive may report mode 000. Keep the local control-plane
-            # mirror owner-readable so snapshotting cannot fail after a
-            # successful model response.
-            target.chmod((member.mode & 0o755) | 0o400)
-
-
 SessionKey = tuple[str, str]
 
 
@@ -712,13 +657,17 @@ class DaytonaSandboxProvider:
             raise ValueError("Daytona workspace exceeds collection size limit")
         content = await sandbox.download_archive(
             handle.remote_workspace,
-            max_bytes=(self._max_collect_bytes + self._max_collect_members * 1024 + 10_240),
+            max_bytes=workspace_archive_transfer_limit(
+                max_bytes=self._max_collect_bytes,
+                max_members=self._max_collect_members,
+            ),
         )
-        _extract_daytona_workspace_archive(
+        extract_workspace_archive(
             content,
             handle.path,
             max_bytes=self._max_collect_bytes,
             max_members=self._max_collect_members,
+            label="Daytona",
         )
 
     async def execute(

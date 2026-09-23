@@ -319,7 +319,9 @@ export function useThreadHistoryPagination(
 
 function publishHistoryActivity(history: ThreadHistoryResponse, threadId: string) {
   const restoredActivity = latestHistoryRunActivity(history.messages);
-  if (restoredActivity) activityStore.publish(restoredActivity, threadId);
+  if (restoredActivity) {
+    activityStore.publish(restoredActivity, threadId, { replaceRun: true });
+  }
 }
 
 async function json<T>(url: string, timeoutMs?: number): Promise<T> {

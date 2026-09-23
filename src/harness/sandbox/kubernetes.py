@@ -27,7 +27,13 @@ from claude_agent_sdk import ClaudeAgentOptions
 
 from harness.core.models import Run
 from harness.runtime.daytona_transport import DaytonaClaudeTransport, RemoteClaudeSession
-from harness.sandbox.base import SandboxCommandResult, SandboxHandle, SandboxIsolation
+from harness.sandbox.base import (
+    SandboxCommandResult,
+    SandboxHandle,
+    SandboxIsolation,
+    extract_workspace_archive,
+    workspace_archive_transfer_limit,
+)
 from harness.sandbox.claude_cli import (
     banner_matches,
     version_pin,
@@ -582,44 +588,6 @@ def _workspace_archive(root: Path, *, max_bytes: int, max_members: int) -> bytes
     return buffer.getvalue()
 
 
-def _extract_workspace_archive(
-    content: bytes, root: Path, *, max_bytes: int, max_members: int
-) -> None:
-    try:
-        archive = tarfile.open(fileobj=io.BytesIO(content), mode="r:*")
-    except tarfile.TarError:
-        raise ValueError("invalid Kubernetes workspace archive") from None
-    total = 0
-    with archive:
-        members = archive.getmembers()
-        if len(members) > max_members:
-            raise ValueError("Kubernetes workspace exceeds collection member limit")
-        for member in members:
-            relative = PurePosixPath(member.name)
-            if relative.is_absolute() or ".." in relative.parts:
-                raise ValueError("unsafe Kubernetes workspace archive member")
-            parts = tuple(part for part in relative.parts if part not in {"", "."})
-            if not parts:
-                continue
-            target = root.joinpath(*parts)
-            if member.isdir():
-                target.mkdir(parents=True, exist_ok=True)
-                continue
-            if not member.isfile():
-                raise ValueError("unsafe Kubernetes workspace archive member")
-            total += member.size
-            if total > max_bytes:
-                raise ValueError("Kubernetes workspace exceeds collection size limit")
-            source = archive.extractfile(member)
-            if source is None:
-                raise ValueError("invalid Kubernetes workspace archive")
-            data = source.read(max_bytes + 1)
-            if len(data) != member.size:
-                raise ValueError("invalid Kubernetes workspace archive")
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(data)
-
-
 class KubernetesSandboxProvider:
     def __init__(
         self,
@@ -792,17 +760,17 @@ class KubernetesSandboxProvider:
         content = await self._client.download_archive(
             handle.sandbox_id,
             self._remote_workspace,
-            max_bytes=(
-                self._max_collect_bytes
-                + self._max_collect_members * 1024
-                + 10_240
+            max_bytes=workspace_archive_transfer_limit(
+                max_bytes=self._max_collect_bytes,
+                max_members=self._max_collect_members,
             ),
         )
-        _extract_workspace_archive(
+        extract_workspace_archive(
             content,
             handle.path,
             max_bytes=self._max_collect_bytes,
             max_members=self._max_collect_members,
+            label="Kubernetes",
         )
 
     async def destroy(self, handle: SandboxHandle) -> None:

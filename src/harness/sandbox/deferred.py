@@ -8,11 +8,13 @@ import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import cast
 
 from harness.core.models import Run
 from harness.sandbox.base import (
     SandboxCommandResult,
     SandboxEgress,
+    SandboxFilePlaneProvider,
     SandboxHandle,
     SandboxIsolation,
     SandboxProvider,
@@ -33,6 +35,10 @@ class _DeferredLease:
 
 class UnsupportedEgressError(RuntimeError):
     """Raised when a Run's egress requirement cannot be enforced by its backend."""
+
+
+class FilePlaneUnsupportedError(RuntimeError):
+    """Raised when a caller asks for the file plane of a command-only backend."""
 
 
 # Remote file tools run as `python3 -c <script> <operation> <payload>`; the
@@ -195,6 +201,35 @@ class DeferredToolSandboxProvider:
         lease = self._lease(handle)
         if lease.remote is not None and lease.workspace_may_be_dirty:
             await self._backend.collect(lease.remote)
+
+    async def upload_files(
+        self, handle: SandboxHandle, entries: Sequence[tuple[str, bytes]]
+    ) -> None:
+        """Write workspace-relative files through the backend's own file API.
+
+        A write through the file plane is what makes the workspace dirty, so the
+        lease is marked here exactly as it is for a command that may have written
+        something — collection no longer has to read that from a command's shape.
+        """
+
+        remote = await self._ensure_remote(handle)
+        plane = self._file_plane()
+        await plane.upload_files(remote, entries)
+        self._lease(handle).workspace_may_be_dirty = True
+
+    async def download_file(self, handle: SandboxHandle, path: str, *, max_bytes: int) -> bytes:
+        remote = await self._ensure_remote(handle)
+        return await self._file_plane().download_file(remote, path, max_bytes=max_bytes)
+
+    def _file_plane(self) -> SandboxFilePlaneProvider:
+        plane = getattr(self._backend, "upload_files", None), getattr(
+            self._backend, "download_file", None
+        )
+        if any(member is None for member in plane):
+            raise FilePlaneUnsupportedError(
+                f"{self._provider_name} has no file plane; use the command proxy"
+            )
+        return cast(SandboxFilePlaneProvider, self._backend)
 
     async def destroy(self, handle: SandboxHandle) -> None:
         lease = self._leases.pop(handle.sandbox_id, None)

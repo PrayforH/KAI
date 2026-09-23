@@ -11,8 +11,10 @@ import shutil
 import tempfile
 import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
+from contextlib import suppress
 from pathlib import Path, PurePosixPath
 from typing import Any, Protocol, cast
+from uuid import uuid4
 
 import httpx
 from claude_agent_sdk import ClaudeAgentOptions
@@ -29,6 +31,12 @@ from harness.sandbox.base import (
     SandboxHandle,
     SandboxIsolation,
     SandboxResourceUsage,
+    WorkspaceArchiveUnavailableError,
+    extract_workspace_archive,
+    replace_collected_file,
+    workspace_archive_transfer_limit,
+    workspace_listed_relative,
+    workspace_relative_target,
 )
 from harness.sandbox.claude_cli import (
     banner_matches,
@@ -101,6 +109,17 @@ _IDLE_POLICIES = frozenset({IDLE_DESTROY, IDLE_KEEP_WARM, IDLE_PAUSE})
 # The egress policy a sandbox was created with. Reuse requires an exact match,
 # so a Run can never inherit a wider policy than it declared.
 _EGRESS_KEY = "harness.egress"
+# One multipart write carries at most this many files and this many bytes. A
+# per-file request is what makes a workspace staging pass slow, and an unbounded
+# batch is what makes envd buffer a body it cannot stream.
+_UPLOAD_BATCH_FILES = 32
+_UPLOAD_BATCH_BYTES = 8 * 1024 * 1024
+_UPLOAD_BATCH_TIMEOUT_SECONDS = 600.0
+# Archiving a large workspace is I/O bound but not slow; the generous command
+# bound keeps a cold page cache or a busy host from tripping it, and the
+# transfer bound is what actually limits the download.
+_ARCHIVE_COMMAND_TIMEOUT_SECONDS = 300.0
+_ARCHIVE_TRANSFER_TIMEOUT_SECONDS = 900.0
 
 
 async def _platform_logs(
@@ -169,9 +188,13 @@ class E2BRemoteSandbox(Protocol):
 
     async def upload(self, remote_path: str, content: bytes) -> None: ...
 
+    async def upload_many(self, entries: Sequence[tuple[str, bytes]]) -> None: ...
+
     async def list_files(self, remote_path: str) -> list[tuple[str, bool, int | None]]: ...
 
     async def download(self, remote_path: str) -> bytes: ...
+
+    async def download_archive(self, remote_path: str, *, max_bytes: int) -> bytes: ...
 
     async def kill(self) -> None: ...
 
@@ -241,6 +264,10 @@ class _WritableFilesystem(Protocol):
     async def make_dir(self, path: str) -> object: ...
 
     async def write(self, path: str, data: bytes) -> object: ...
+
+    async def write_files(
+        self, files: list[dict[str, object]], *, request_timeout: float | None = None
+    ) -> object: ...
 
 
 class SdkE2BRemoteSession:
@@ -394,6 +421,39 @@ class SdkE2BRemoteSandbox:
         filesystem = cast(_WritableFilesystem, self._sandbox.files)
         await filesystem.write(remote_path, content)
 
+    async def upload_many(self, entries: Sequence[tuple[str, bytes]]) -> None:
+        """Write files in bounded multipart batches.
+
+        Bounded by bytes as well as by count: envd buffers a multipart body, so a
+        batch that is too large fails where two smaller ones succeed.
+        """
+
+        filesystem = cast(_WritableFilesystem, self._sandbox.files)
+        batch: list[tuple[str, bytes]] = []
+        batch_bytes = 0
+
+        async def flush() -> None:
+            nonlocal batch, batch_bytes
+            if not batch:
+                return
+            await filesystem.write_files(
+                [{"path": path, "data": content} for path, content in batch],
+                request_timeout=_UPLOAD_BATCH_TIMEOUT_SECONDS,
+            )
+            batch = []
+            batch_bytes = 0
+
+        for remote_path, content in entries:
+            if (
+                len(content) > _UPLOAD_BATCH_BYTES
+                or (batch and batch_bytes + len(content) > _UPLOAD_BATCH_BYTES)
+                or len(batch) >= _UPLOAD_BATCH_FILES
+            ):
+                await flush()
+            batch.append((remote_path, content))
+            batch_bytes += len(content)
+        await flush()
+
     async def list_files(self, remote_path: str) -> list[tuple[str, bool, int | None]]:
         entries = await self._sandbox.files.list(
             remote_path,
@@ -418,6 +478,40 @@ class SdkE2BRemoteSandbox:
                 request_timeout=_COLLECT_REQUEST_TIMEOUT_SECONDS,
             ),
         )
+
+    async def download_archive(self, remote_path: str, *, max_bytes: int) -> bytes:
+        """Return the workspace as one tar, or report that the route is unusable.
+
+        One archive replaces one request per file. A workspace with hundreds of
+        files is what makes the platform's data-plane proxy fall over, and it
+        falls over on the request count rather than on the bytes, so batching
+        small reads into one transfer is the whole point of this method.
+        """
+
+        archive_path = f"/tmp/harness-workspace-{uuid4().hex}.tar"
+        try:
+            packed = await self._sandbox.commands.run(
+                f"tar -C {shlex.quote(remote_path)} -cf {shlex.quote(archive_path)} .",
+                timeout=_ARCHIVE_COMMAND_TIMEOUT_SECONDS,
+            )
+            if packed.exit_code != 0:
+                raise WorkspaceArchiveUnavailableError(
+                    version_text(packed.stdout, packed.stderr)[-200:]
+                    or "the sandbox refused to archive the workspace"
+                )
+            content = bytes(
+                await self._sandbox.files.read(
+                    archive_path,
+                    format="bytes",
+                    request_timeout=_ARCHIVE_TRANSFER_TIMEOUT_SECONDS,
+                )
+            )
+            if len(content) > max_bytes:
+                raise ValueError("workspace archive exceeds collection size limit")
+            return content
+        finally:
+            with suppress(Exception):
+                await self._sandbox.commands.run(f"rm -f -- {shlex.quote(archive_path)}")
 
     async def kill(self) -> None:
         await self._sandbox.kill()
@@ -793,13 +887,17 @@ class E2BSandboxProvider:
                 path=self._cli_path,
             )
         await sandbox.create_folder(handle.remote_workspace)
+        entries: list[tuple[str, bytes]] = []
         for path in sorted(handle.path.rglob("*")):
             relative = path.relative_to(handle.path).as_posix()
             remote = f"{handle.remote_workspace}/{relative}"
             if path.is_dir():
                 await sandbox.create_folder(remote)
             elif path.is_file() and not path.is_symlink():
-                await sandbox.upload(remote, path.read_bytes())
+                entries.append((remote, path.read_bytes()))
+        # One batched write per group instead of one request per file: staging a
+        # workspace of a few hundred files is otherwise the slowest part of a Run.
+        await sandbox.upload_many(entries)
 
     async def execute(
         self,
@@ -846,17 +944,63 @@ class E2BSandboxProvider:
         assert handle.remote_workspace is not None
         entries = await sandbox.list_files(handle.remote_workspace)
         if len(entries) > self._max_collect_members:
-            raise ValueError("E2B workspace exceeds collection member limit")
+            raise ValueError(f"{self.provider_name} workspace exceeds collection member limit")
         declared_size = sum(size for _, is_dir, size in entries if not is_dir and size is not None)
         if declared_size > self._max_collect_bytes:
-            raise ValueError("E2B workspace exceeds collection size limit")
+            raise ValueError(f"{self.provider_name} workspace exceeds collection size limit")
+        # The archive carries the guard that matters, but a listing that reports a
+        # path outside the workspace means the platform is describing something
+        # this Run does not own, and collection refuses rather than reason about it.
+        for remote_path, _is_dir, _size in entries:
+            workspace_listed_relative(
+                handle.remote_workspace, remote_path, label=self.provider_name
+            )
+        try:
+            content = await sandbox.download_archive(
+                handle.remote_workspace,
+                max_bytes=workspace_archive_transfer_limit(
+                    max_bytes=self._max_collect_bytes,
+                    max_members=self._max_collect_members,
+                ),
+            )
+        except WorkspaceArchiveUnavailableError as error:
+            # The image has no usable `tar`. Fall back rather than fail the Run:
+            # collection happens after the answer is already durable, so raising
+            # here would turn a successful Run into a failed one.
+            logger.warning(
+                "%s workspace archive unavailable, collecting file by file: %s",
+                self.provider_name,
+                error,
+            )
+            await self._collect_file_by_file(handle, sandbox, entries)
+            return
+        extract_workspace_archive(
+            content,
+            handle.path,
+            max_bytes=self._max_collect_bytes,
+            max_members=self._max_collect_members,
+            label=self.provider_name,
+        )
+
+    async def _collect_file_by_file(
+        self,
+        handle: SandboxHandle,
+        sandbox: E2BRemoteSandbox,
+        entries: Sequence[tuple[str, bool, int | None]],
+    ) -> None:
+        """Collect one file per request, for images that cannot produce a tar.
+
+        Correct but request-heavy: a workspace with hundreds of files is what
+        makes the platform's data-plane proxy fall over, which is why this is the
+        fallback and not the default.
+        """
+
+        assert handle.remote_workspace is not None
         collected_size = 0
         for remote_path, is_dir, _size in entries:
-            relative = PurePosixPath(remote_path).relative_to(
-                PurePosixPath(handle.remote_workspace)
+            relative = workspace_listed_relative(
+                handle.remote_workspace, remote_path, label=self.provider_name
             )
-            if ".." in relative.parts:
-                raise ValueError("E2B workspace path escaped local collection root")
             local = handle.path.joinpath(*relative.parts)
             if is_dir:
                 local.mkdir(parents=True, exist_ok=True)
@@ -864,9 +1008,35 @@ class E2BSandboxProvider:
             content = await sandbox.download(remote_path)
             collected_size += len(content)
             if collected_size > self._max_collect_bytes:
-                raise ValueError("E2B workspace exceeds collection size limit")
+                raise ValueError(f"{self.provider_name} workspace exceeds collection size limit")
             local.parent.mkdir(parents=True, exist_ok=True)
-            local.write_bytes(content)
+            replace_collected_file(local, content)
+
+    async def upload_files(
+        self, handle: SandboxHandle, entries: Sequence[tuple[str, bytes]]
+    ) -> None:
+        """Write workspace-relative files through the platform's file API.
+
+        One batched request, byte-exact: the command plane would pay a round trip
+        and an encoded argument per file.
+        """
+
+        sandbox = self._sandboxes[handle.sandbox_id]
+        assert handle.remote_workspace is not None
+        await sandbox.upload_many(
+            [
+                (workspace_relative_target(handle.remote_workspace, relative), content)
+                for relative, content in entries
+            ]
+        )
+
+    async def download_file(self, handle: SandboxHandle, path: str, *, max_bytes: int) -> bytes:
+        sandbox = self._sandboxes[handle.sandbox_id]
+        assert handle.remote_workspace is not None
+        content = await sandbox.download(workspace_relative_target(handle.remote_workspace, path))
+        if len(content) > max_bytes:
+            raise ValueError(f"{self.provider_name} file exceeds the read limit")
+        return content
 
     async def _keep_alive(self, sandbox: E2BRemoteSandbox) -> None:
         """Extend the platform TTL while the Run is still using the sandbox.

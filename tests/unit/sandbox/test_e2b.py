@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -7,7 +8,12 @@ import pytest
 from claude_agent_sdk import ClaudeAgentOptions
 
 from harness.core.models import Run, RunStatus
-from harness.sandbox.base import SandboxEgress, SandboxIsolation, SandboxResourceUsage
+from harness.sandbox.base import (
+    SandboxEgress,
+    SandboxIsolation,
+    SandboxResourceUsage,
+    WorkspaceArchiveUnavailableError,
+)
 from harness.sandbox.e2b import (
     E2BSandboxProvider,
     SdkE2BClient,
@@ -15,6 +21,7 @@ from harness.sandbox.e2b import (
     SdkE2BRemoteSession,
     _parse_log_payload,
 )
+from tests.unit.sandbox.archive_fixtures import workspace_tar
 
 
 class FakeRemoteSession:
@@ -67,6 +74,11 @@ class FakeSandbox:
         self.paused = False
         self.pause_failure: Exception | None = None
         self.session = FakeRemoteSession()
+        self.upload_batches: list[list[tuple[str, bytes]]] = []
+        self.downloads: list[str] = []
+        self.archive_calls: list[str] = []
+        self.archive_error: Exception | None = None
+        self.archive: bytes | None = None
 
     async def ensure_claude_cli(self, *, version: str, path: str) -> None:
         self.ensured_cli = (version, path)
@@ -77,6 +89,12 @@ class FakeSandbox:
     async def upload(self, remote_path: str, content: bytes) -> None:
         self.uploads[remote_path] = content
 
+    async def upload_many(self, entries: Sequence[tuple[str, bytes]]) -> None:
+        batch = list(entries)
+        self.upload_batches.append(batch)
+        for remote_path, content in batch:
+            self.uploads[remote_path] = content
+
     async def list_files(self, remote_path: str) -> list[tuple[str, bool, int | None]]:
         return [
             (path, False, len(content))
@@ -85,7 +103,23 @@ class FakeSandbox:
         ]
 
     async def download(self, remote_path: str) -> bytes:
+        self.downloads.append(remote_path)
         return self.remote_files[remote_path]
+
+    async def download_archive(self, remote_path: str, *, max_bytes: int) -> bytes:
+        self.archive_calls.append(remote_path)
+        if self.archive_error is not None:
+            raise self.archive_error
+        if self.archive is not None:
+            return self.archive
+        prefix = remote_path + "/"
+        return workspace_tar(
+            {
+                path[len(prefix) :]: content
+                for path, content in self.remote_files.items()
+                if path.startswith(prefix)
+            }
+        )
 
     async def kill(self) -> None:
         self.killed = True
@@ -260,6 +294,106 @@ async def test_e2b_collection_limits_are_enforced(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="collection size"):
         await provider.collect(handle)
 
+    await provider.destroy(handle)
+
+
+@pytest.mark.asyncio
+async def test_e2b_collect_overwrites_read_only_staged_input(tmp_path: Path) -> None:
+    client = FakeClient()
+    provider = E2BSandboxProvider(client=client, local_root=tmp_path)
+    handle = await provider.provision(run())
+    staged_input = handle.path / "inputs" / "original" / "工作簿1.xlsx"
+    staged_input.parent.mkdir(parents=True)
+    staged_input.write_bytes(b"staged")
+    staged_input.chmod(0o444)
+    remote_path = "/home/user/harness/run-a/inputs/original/工作簿1.xlsx"
+    client.sandbox.remote_files[remote_path] = b"remote"
+
+    await provider.collect(handle)
+
+    assert staged_input.read_bytes() == b"remote"
+    assert staged_input.stat().st_mode & 0o400
+    await provider.destroy(handle)
+
+
+@pytest.mark.asyncio
+async def test_e2b_prepare_stages_every_file_in_one_batched_write(tmp_path: Path) -> None:
+    client = FakeClient()
+    provider = E2BSandboxProvider(client=client, local_root=tmp_path)  # pyright: ignore[reportArgumentType]
+    handle = await provider.provision(run())
+    (handle.path / "outputs").mkdir()
+    for name in ("a.txt", "b.txt", "c.txt"):
+        (handle.path / "outputs" / name).write_text(name)
+
+    await provider.prepare(handle)
+
+    assert len(client.sandbox.upload_batches) == 1
+    assert sorted(path for path, _ in client.sandbox.upload_batches[0]) == [
+        "/home/user/harness/run-a/outputs/a.txt",
+        "/home/user/harness/run-a/outputs/b.txt",
+        "/home/user/harness/run-a/outputs/c.txt",
+    ]
+    await provider.destroy(handle)
+
+
+@pytest.mark.asyncio
+async def test_e2b_collect_takes_one_archive_instead_of_one_request_per_file(
+    tmp_path: Path,
+) -> None:
+    client = FakeClient()
+    provider = E2BSandboxProvider(client=client, local_root=tmp_path)  # pyright: ignore[reportArgumentType]
+    handle = await provider.provision(run())
+    for index in range(40):
+        client.sandbox.remote_files[f"/home/user/harness/run-a/f{index:03d}.txt"] = (
+            f"file {index}\n".encode()
+        )
+
+    await provider.collect(handle)
+
+    # One archive, no per-file request: the request count is what the platform's
+    # data-plane proxy fails on for a workspace with hundreds of files.
+    assert len(client.sandbox.archive_calls) == 1
+    assert client.sandbox.downloads == []
+    assert len(list(handle.path.glob("f*.txt"))) == 40
+    assert (handle.path / "f039.txt").read_bytes() == b"file 39\n"
+    await provider.destroy(handle)
+
+
+@pytest.mark.asyncio
+async def test_e2b_collect_falls_back_when_the_image_cannot_archive(
+    tmp_path: Path,
+) -> None:
+    client = FakeClient()
+    provider = E2BSandboxProvider(client=client, local_root=tmp_path)  # pyright: ignore[reportArgumentType]
+    handle = await provider.provision(run())
+    client.sandbox.remote_files["/home/user/harness/run-a/report.md"] = b"report"
+    client.sandbox.archive_error = WorkspaceArchiveUnavailableError("tar: command not found")
+
+    await provider.collect(handle)
+
+    # The fallback is slower, not failing: collection runs after the answer is
+    # already durable, so a missing `tar` must not fail the Run.
+    assert client.sandbox.downloads == ["/home/user/harness/run-a/report.md"]
+    assert (handle.path / "report.md").read_bytes() == b"report"
+    await provider.destroy(handle)
+
+
+@pytest.mark.asyncio
+async def test_e2b_collect_rejects_an_archive_that_escapes_the_workspace(
+    tmp_path: Path,
+) -> None:
+    client = FakeClient()
+    provider = E2BSandboxProvider(client=client, local_root=tmp_path)  # pyright: ignore[reportArgumentType]
+    handle = await provider.provision(run())
+    client.sandbox.remote_files["/home/user/harness/run-a/ok.txt"] = b"ok"
+    client.sandbox.archive = workspace_tar({"../escaped.txt": b"escaped"})
+
+    with pytest.raises(ValueError, match="unsafe"):
+        await provider.collect(handle)
+
+    # A rejected archive is a rejection, never a quieter route to the same files.
+    assert client.sandbox.downloads == []
+    assert not (handle.path.parent / "escaped.txt").exists()
     await provider.destroy(handle)
 
 

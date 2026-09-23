@@ -18,6 +18,7 @@ from harness.sandbox.base import (
     SandboxCommandResult,
     SandboxEnforcement,
     SandboxIsolation,
+    WorkspaceArchiveUnavailableError,
     provider_meets_enforcement_floor,
     sandbox_enforcement,
 )
@@ -29,6 +30,7 @@ from harness.sandbox.opensandbox import (
     _stream_exit_code,
     build_opensandbox_provider,
 )
+from tests.unit.sandbox.archive_fixtures import workspace_tar
 
 
 def run() -> Run:
@@ -55,6 +57,9 @@ class FakeRemote:
         self.calls: list[dict[str, Any]] = []
         self.ensured_cli: tuple[str, str] | None = None
         self.killed = False
+        self.archive_calls: list[str] = []
+        self.archive_error: Exception | None = None
+        self.archive: bytes | None = None
 
     async def ensure_claude_cli(self, *, version: str, path: str) -> None:
         self.ensured_cli = (version, path)
@@ -71,17 +76,38 @@ class FakeRemote:
     async def list_files(self, remote_path: str) -> list[tuple[str, bool, int | None]]:
         if self.escape_path is not None:
             return [(self.escape_path, False, 3)]
-        return [
-            ("/workspace/run-a/nested", True, None),
-            (
-                "/workspace/run-a/report.txt",
-                False,
-                len(self.remote_files["/workspace/run-a/report.txt"]),
-            ),
+        entries: list[tuple[str, bool, int | None]] = [
+            ("/workspace/run-a/nested", True, None)
         ]
+        entries.extend(
+            (path, False, len(content))
+            for path, content in self.remote_files.items()
+            if path.startswith(remote_path + "/")
+        )
+        return entries
 
     async def download(self, remote_path: str) -> bytes:
         return self.remote_files[remote_path]
+
+    async def download_archive(self, remote_path: str, *, max_bytes: int) -> bytes:
+        self.archive_calls.append(remote_path)
+        if self.archive_error is not None:
+            raise self.archive_error
+        if self.archive is not None:
+            return self.archive
+        prefix = remote_path + "/"
+        return workspace_tar(
+            {
+                path[len(prefix) :]: content
+                for path, content in self.remote_files.items()
+                if path.startswith(prefix)
+            },
+            directories=[
+                entry[0][len(prefix) :]
+                for entry in await self.list_files(remote_path)
+                if entry[1]
+            ],
+        )
 
     async def run(
         self,
@@ -205,6 +231,39 @@ async def test_collect_rejects_unsafe_or_oversized_results(tmp_path: Path) -> No
     escaping_handle = await escaping.provision(run())
     with pytest.raises(ValueError, match="escaped local collection root"):
         await escaping.collect(escaping_handle)
+
+
+@pytest.mark.asyncio
+async def test_collect_falls_back_when_the_image_cannot_archive(tmp_path: Path) -> None:
+    client = FakeClient()
+    subject = provider(client, tmp_path)
+    handle = await subject.provision(run())
+    client.remote.archive_error = WorkspaceArchiveUnavailableError("tar: command not found")
+
+    await subject.collect(handle)
+
+    # The fallback is slower, not failing: collection runs after the answer is
+    # already durable, so a missing `tar` must not fail the Run.
+    assert client.remote.archive_calls == ["/workspace/run-a"]
+    assert (handle.path / "report.txt").read_bytes() == b"collected"
+
+
+@pytest.mark.asyncio
+async def test_collect_overwrites_read_only_staged_input(tmp_path: Path) -> None:
+    client = FakeClient()
+    subject = provider(client, tmp_path)
+    handle = await subject.provision(run())
+    staged_input = handle.path / "inputs" / "original" / "工作簿1.xlsx"
+    staged_input.parent.mkdir(parents=True)
+    staged_input.write_bytes(b"staged")
+    staged_input.chmod(0o444)
+    client.remote.remote_files["/workspace/run-a/inputs/original/工作簿1.xlsx"] = b"remote"
+
+    await subject.collect(handle)
+
+    assert staged_input.read_bytes() == b"remote"
+    assert staged_input.stat().st_mode & 0o400
+    await subject.destroy(handle)
 
 
 @pytest.mark.asyncio

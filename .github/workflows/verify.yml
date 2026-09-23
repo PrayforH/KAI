@@ -4,7 +4,7 @@ on:
   workflow_call:
   pull_request:
   push:
-    branches: [main]
+    branches: [develop, auto/agent-evolution]
 
 permissions:
   contents: read

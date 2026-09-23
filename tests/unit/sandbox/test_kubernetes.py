@@ -299,6 +299,24 @@ async def test_collection_rejects_symlink_and_size_escape(tmp_path: Path) -> Non
 
 
 @pytest.mark.asyncio
+async def test_collect_overwrites_read_only_staged_input(tmp_path: Path) -> None:
+    client = FakeClient()
+    sandbox = provider(client, tmp_path)
+    handle = await sandbox.provision(run())
+    staged_input = handle.path / "inputs" / "original" / "工作簿1.xlsx"
+    staged_input.parent.mkdir(parents=True)
+    staged_input.write_bytes(b"staged")
+    staged_input.chmod(0o444)
+    client.downloaded = client.archive({"inputs/original/工作簿1.xlsx": b"remote"})
+
+    await sandbox.collect(handle)
+
+    assert staged_input.read_bytes() == b"remote"
+    assert staged_input.stat().st_mode & 0o400
+    await sandbox.destroy(handle)
+
+
+@pytest.mark.asyncio
 async def test_ready_failure_cleans_up_and_never_returns_local(tmp_path: Path) -> None:
     client = FakeClient()
     client.fail_ready = True

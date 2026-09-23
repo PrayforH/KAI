@@ -229,3 +229,102 @@ async def test_glob_searches_from_the_real_root_and_reports_workspace_paths() ->
     # the whole Sandbox filesystem.
     assert executor.asked_for(f"{REMOTE_ROOT}/outputs")
     assert executor.pwd_calls == 0
+
+
+class _FilePlane:
+    """A file plane that records what it was asked to move."""
+
+    def __init__(self) -> None:
+        self.uploaded: list[list[tuple[str, bytes]]] = []
+        self.downloaded: list[tuple[str, int]] = []
+        self.files: dict[str, bytes] = {}
+
+    async def upload_files(self, entries: Any) -> None:
+        batch = list(entries)
+        self.uploaded.append(batch)
+        for path, content in batch:
+            self.files[path] = content
+
+    async def download_file(self, path: str, *, max_bytes: int) -> bytes:
+        self.downloaded.append((path, max_bytes))
+        return self.files[path]
+
+
+@pytest.mark.asyncio
+async def test_writes_go_through_the_file_plane_in_one_batch() -> None:
+    """A batch of files is one request, not one command per file.
+
+    The command proxy pays a round trip and a base64 argument per file; the file
+    plane takes the whole call at once and keeps the bytes as given.
+    """
+
+    executor = _Recorder()
+    plane = _FilePlane()
+    backend = HarnessSandboxBackend(
+        executor,  # type: ignore[arg-type]
+        sandbox_id="run-1",
+        remote_workspace=REMOTE_ROOT,
+        file_plane=plane,
+    )
+
+    responses = await backend.aupload_files(
+        [
+            ("outputs/a.bin", bytes(range(256))),
+            (f"{REMOTE_ROOT}/outputs/中文 名.txt", "内容\n".encode()),
+            ("../outside.txt", b"nope"),
+        ]
+    )
+
+    assert plane.uploaded == [
+        [
+            ("outputs/a.bin", bytes(range(256))),
+            ("outputs/中文 名.txt", "内容\n".encode()),
+        ]
+    ]
+    assert [response.error for response in responses] == [None, None, "invalid_path"]
+    # The command proxy is not used at all when a file plane is present.
+    assert not executor.asked_for("python3")
+
+
+@pytest.mark.asyncio
+async def test_reads_go_through_the_file_plane_when_the_backend_has_one() -> None:
+    executor = _Recorder()
+    plane = _FilePlane()
+    plane.files["outputs/report.md"] = b"report"
+    backend = HarnessSandboxBackend(
+        executor,  # type: ignore[arg-type]
+        sandbox_id="run-1",
+        remote_workspace=REMOTE_ROOT,
+        file_plane=plane,
+    )
+
+    responses = await backend.adownload_files(["outputs/report.md", "../outside.txt"])
+
+    assert responses[0].content == b"report"
+    assert responses[0].error is None
+    assert responses[1].error == "invalid_path"
+    assert plane.downloaded == [("outputs/report.md", 8 * 1024 * 1024)]
+
+
+@pytest.mark.asyncio
+async def test_a_file_plane_failure_is_reported_per_file() -> None:
+    """A failed batch is a per-file error, not an exception out of the tool."""
+
+    executor = _Recorder()
+    plane = _FilePlane()
+
+    async def explode(entries: Any) -> None:
+        del entries
+        raise RuntimeError("upload_failed")
+
+    plane.upload_files = explode  # type: ignore[method-assign]
+    backend = HarnessSandboxBackend(
+        executor,  # type: ignore[arg-type]
+        sandbox_id="run-1",
+        remote_workspace=REMOTE_ROOT,
+        file_plane=plane,
+    )
+
+    responses = await backend.aupload_files([("outputs/a.txt", b"a")])
+
+    assert responses[0].error == "upload_failed"

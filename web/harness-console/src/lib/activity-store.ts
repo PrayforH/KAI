@@ -28,10 +28,18 @@ export const activityStore = {
     viewSnapshot = undefined;
     for (const listener of listeners) listener();
   },
-  publish(activity: RunActivity, threadId?: string) {
+  publish(activity: RunActivity, threadId?: string, options?: { replaceRun?: boolean }) {
     if (!isActiveRuntimeThread(threadId)) return;
     snapshot = activity;
-    viewSnapshot = reduceRunViewModel(viewSnapshot, activity);
+    // The durable history projection compacts the live stream's per-token
+    // fragments into whole rows. Merging it by id keeps every fragment the
+    // projection folded away, and commentary grouping then concatenates the
+    // same text twice. A durable publish for the same Run replaces instead.
+    const previous =
+      options?.replaceRun && viewSnapshot?.runId === activity.run_id
+        ? undefined
+        : viewSnapshot;
+    viewSnapshot = reduceRunViewModel(previous, activity);
     for (const listener of listeners) listener();
   },
   patch(operations: readonly ActivityPatchOperation[], threadId?: string) {
