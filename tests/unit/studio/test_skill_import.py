@@ -134,3 +134,48 @@ def test_imports_a_single_markdown_skill_and_normalizes_name() -> None:
 
     assert imported.skill.name == "ppt-master"
     assert imported.warnings == ("Skill 名称已规范化为 ppt-master",)
+
+
+@pytest.mark.parametrize("entry", ["SKILL.md", "skill.md", "Skill.md"])
+def test_repository_zip_prefers_nested_skill_over_hidden_maintainer_skills(entry: str) -> None:
+    markdown = "---\nname: archify\ndescription: Draw diagrams.\n---\nUse assets/template.html.\n"
+    imported = import_skill(skill_zip({
+        f"archify-main/archify/{entry}": markdown,
+        "archify-main/archify/assets/template.html": "<html>template</html>",
+        "archify-main/archify/scripts/render.mjs": "// renderer",
+        "archify-main/.agents/skills/archify-review/SKILL.md": markdown,
+        "archify-main/.claude/skills/reviewer/SKILL.md": markdown,
+        "archify-main/README.md": "Repository readme, not part of the skill.",
+    }), filename="archify-main.zip")
+    assert imported.skill.name == "archify"
+    assert {file.path for file in imported.skill.files} == {
+        "assets/template.html", "scripts/render.mjs",
+    }
+
+
+def test_imports_skill_from_hidden_directory_when_it_is_the_only_candidate() -> None:
+    imported = import_skill(skill_zip({
+        "repo/.agents/skills/reviewer/SKILL.md":
+            "---\nname: reviewer\ndescription: Review changes.\n---\nCheck changes.\n",
+        "repo/.agents/skills/reviewer/references/checklist.md": "Check compatibility.",
+    }), filename="reviewer.zip")
+    assert imported.skill.name == "reviewer"
+    assert [file.path for file in imported.skill.files] == ["references/checklist.md"]
+
+
+@pytest.mark.parametrize("paths", [
+    ["repo/first/SKILL.md", "repo/second/SKILL.md"],
+    ["repo/.agents/skills/first/SKILL.md", "repo/.agents/skills/second/SKILL.md"],
+    ["repo/first/SKILL.md", "repo/first/skill.md"],
+])
+def test_multiple_skill_entries_report_candidates_instead_of_claiming_missing(paths) -> None:
+    markdown = "---\nname: example\ndescription: Example.\n---\nDo work.\n"
+    with pytest.raises(SkillImportError, match="多个技能入口") as error:
+        import_skill(skill_zip(dict.fromkeys(paths, markdown)), filename="repo.zip")
+    for path in paths:
+        assert path in str(error.value)
+
+
+def test_missing_skill_entry_explains_nested_directories_are_supported() -> None:
+    with pytest.raises(SkillImportError, match="未找到 SKILL.md（支持子目录）"):
+        import_skill(skill_zip({"repo/README.md": "No skill entry."}), filename="repo.zip")

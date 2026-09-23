@@ -130,11 +130,25 @@ def _archive_files(content: bytes) -> tuple[str, list[tuple[str, bytes]]]:
             payload = archive.read(item)
             _reject_secret(path.as_posix(), payload)
             members.append((path.as_posix(), payload))
-            if path.name == "SKILL.md":
+            if path.name.casefold() == "skill.md":
                 skill_paths.append(path.as_posix())
-        if len(skill_paths) != 1:
-            raise SkillImportError("Skill ZIP 必须且只能包含一个 SKILL.md")
-        return skill_paths[0], members
+        # Repository downloads can include maintainer skills under .agents/.claude
+        # alongside the distributable skill. Prefer visible skill directories;
+        # retain support for a package containing only a hidden-directory skill.
+        visible_paths = [name for name in skill_paths
+                         if not any(part.startswith(".")
+                                    for part in PurePosixPath(name).parts[:-1])]
+        candidates = visible_paths or skill_paths
+        if not candidates:
+            raise SkillImportError("Skill ZIP 中未找到 SKILL.md（支持子目录）")
+        if len(candidates) != 1:
+            locations = "、".join(name[:200] for name in candidates[:5])
+            if len(candidates) > 5:
+                locations += "…"
+            raise SkillImportError(
+                f"Skill ZIP 中找到多个技能入口：{locations}；请单独打包要导入的技能目录"
+            )
+        return candidates[0], members
 
 
 def import_skill(content: bytes, *, filename: str) -> ImportedSkill:

@@ -891,7 +891,10 @@ async def test_studio_bundle_import_creates_a_complete_editable_agent() -> None:
 
 
 @pytest.mark.asyncio
-async def test_studio_imports_a_skill_archive_without_executing_its_scripts() -> None:
+@pytest.mark.parametrize("repository_archive", [False, True])
+async def test_studio_imports_a_skill_archive_without_executing_its_scripts(
+    repository_archive: bool,
+) -> None:
     headers = {
         "Authorization": f"Bearer {SERVICE_TOKEN}",
         "X-Tenant-ID": "tenant-a",
@@ -900,14 +903,17 @@ async def test_studio_imports_a_skill_archive_without_executing_its_scripts() ->
     }
     archive = BytesIO()
     with ZipFile(archive, "w") as bundle:
+        prefix = "repo-main/" if repository_archive else ""
+        if repository_archive:
+            bundle.writestr("repo-main/.agents/skills/reviewer/SKILL.md", "Maintainer skill")
         bundle.writestr(
-            "ppt-master/SKILL.md",
+            prefix + "ppt-master/SKILL.md",
             (
                 "---\nname: ppt-master\ndescription: Build presentations.\n---\n\n"
                 "Generate and verify a presentation in the workspace.\n"
             ),
         )
-        bundle.writestr("ppt-master/scripts/render.py", "print('render')\n")
+        bundle.writestr(prefix + "ppt-master/scripts/render.py", "print('render')\n")
 
     async with AsyncClient(
         transport=ASGITransport(app=app()),
@@ -1042,7 +1048,10 @@ async def test_platform_skill_install_rejects_a_stale_package_revision() -> None
 
 
 @pytest.mark.asyncio
-async def test_studio_installs_large_skill_without_returning_every_file_content() -> None:
+@pytest.mark.parametrize("repository_archive", [False, True])
+async def test_studio_installs_large_skill_without_returning_every_file_content(
+    repository_archive: bool,
+) -> None:
     headers = {
         "Authorization": f"Bearer {SERVICE_TOKEN}",
         "X-Tenant-ID": "tenant-a",
@@ -1050,16 +1059,21 @@ async def test_studio_installs_large_skill_without_returning_every_file_content(
     }
     archive = BytesIO()
     with ZipFile(archive, "w") as bundle:
+        prefix = "repo-main/" if repository_archive else ""
+        if repository_archive:
+            bundle.writestr("repo-main/.agents/skills/reviewer/SKILL.md", "Maintainer skill")
         bundle.writestr(
-            "ppt-master/SKILL.md",
+            prefix + "ppt-master/SKILL.md",
             (
                 "---\nname: ppt-master\ndescription: Build presentations.\n---\n\n"
                 "Generate and verify a presentation in the workspace.\n"
             ),
         )
         for index in range(205):
-            bundle.writestr(f"ppt-master/references/item-{index:03d}.md", f"item {index}\n")
-        bundle.writestr("ppt-master/assets/preview.png", b"\x89PNG\r\n\x1a\npreview")
+            bundle.writestr(
+                prefix + f"ppt-master/references/item-{index:03d}.md", f"item {index}\n"
+            )
+        bundle.writestr(prefix + "ppt-master/assets/preview.png", b"\x89PNG\r\n\x1a\npreview")
 
     async with AsyncClient(
         transport=ASGITransport(app=app()),
