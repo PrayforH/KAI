@@ -2,7 +2,7 @@
 
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -17,6 +17,25 @@ SandboxCommandExecutor = Callable[
     [Sequence[str], Mapping[str, str] | None, float],
     Awaitable[SandboxCommandResult],
 ]
+
+
+@runtime_checkable
+class SandboxFilePlane(Protocol):
+    """Byte-faithful file access to the Run workspace, when the sandbox has one.
+
+    A command-only channel forces every file operation through the command plane,
+    where bytes travel as an encoded argument: that pays a round trip per file,
+    loses byte fidelity for the caller's own encoding, and makes the platform
+    guess from the command's shape whether the workspace changed. A backend that
+    can reach its file API directly exposes this instead, and callers prefer it
+    whenever it is present.
+
+    Paths are workspace-relative, the same spelling the tool gate authorizes.
+    """
+
+    async def upload_files(self, entries: Sequence[tuple[str, bytes]]) -> None: ...
+
+    async def download_file(self, path: str, *, max_bytes: int) -> bytes: ...
 
 
 class RuntimeExecutionTimeoutError(TimeoutError):
@@ -63,6 +82,7 @@ class RuntimeContext(BaseModel):
     sandbox_command_executor: SandboxCommandExecutor | None = Field(
         default=None, exclude=True, repr=False
     )
+    sandbox_file_plane: SandboxFilePlane | None = Field(default=None, exclude=True, repr=False)
     artifact_publisher: ArtifactPublisher | None = Field(default=None, exclude=True, repr=False)
     steering: SteeringInbox | None = Field(default=None, exclude=True, repr=False)
     resolved_policy: ResolvedPolicy | None = Field(default=None, exclude=True, repr=False)

@@ -29,10 +29,12 @@ from collections.abc import (
     Mapping,
     Sequence,
 )
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any, cast
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 import httpx
 from claude_agent_sdk import ClaudeAgentOptions
@@ -48,7 +50,12 @@ from harness.sandbox.base import (
     SandboxCommandResult,
     SandboxHandle,
     SandboxIsolation,
+    WorkspaceArchiveUnavailableError,
+    extract_workspace_archive,
     replace_collected_file,
+    workspace_archive_transfer_limit,
+    workspace_listed_relative,
+    workspace_relative_target,
 )
 from harness.sandbox.claude_cli import (
     banner_matches,
@@ -67,6 +74,12 @@ _SUPPORTED_SANDBOX_STATES = frozenset({"Running", "Pending"})
 _TERMINAL_SANDBOX_STATES = frozenset({"Terminated", "Failed"})
 _UPLOAD_BATCH_FILES = 32
 _UPLOAD_BATCH_BYTES = 8 * 1024 * 1024
+# Archiving a large workspace is I/O bound but not slow; the generous command
+# bound keeps a cold page cache or a busy host from tripping it, and the
+# transfer bound is what actually limits the download. Cleaning up the temporary
+# archive must never outlast the collection itself.
+_ARCHIVE_COMMAND_TIMEOUT_SECONDS = 300.0
+_ARCHIVE_CLEANUP_TIMEOUT_SECONDS = 60.0
 _OCTAL_MODE = re.compile(r"[0-7]{1,4}")
 
 
@@ -393,6 +406,38 @@ class OpenSandboxRemoteSandbox:
                 f"OpenSandbox failed to download {remote_path}: HTTP {response.status_code}"
             )
         return response.content
+
+    async def download_archive(self, remote_path: str, *, max_bytes: int) -> bytes:
+        """Return the workspace as one tar, or report that the route is unusable.
+
+        One archive replaces one request per file: this platform's own proxy is
+        what a per-file collection loop hammers, and the archive keeps a
+        workspace with hundreds of files down to two requests plus the listing.
+        """
+
+        archive_path = f"/tmp/harness-workspace-{uuid4().hex}.tar"
+        try:
+            packed = await self.run(
+                ["tar", "-C", remote_path, "-cf", archive_path, "."],
+                cwd="/",
+                timeout_seconds=_ARCHIVE_COMMAND_TIMEOUT_SECONDS,
+            )
+            if packed.exit_code != 0:
+                raise WorkspaceArchiveUnavailableError(
+                    version_text(packed.stdout, packed.stderr)[-200:]
+                    or "the sandbox refused to archive the workspace"
+                )
+            content = await self.download(archive_path)
+            if len(content) > max_bytes:
+                raise ValueError("workspace archive exceeds collection size limit")
+            return content
+        finally:
+            with suppress(Exception):
+                await self.run(
+                    ["rm", "-f", "--", archive_path],
+                    cwd="/",
+                    timeout_seconds=_ARCHIVE_CLEANUP_TIMEOUT_SECONDS,
+                )
 
     async def run(
         self,
@@ -734,13 +779,51 @@ class OpenSandboxSandboxProvider:
         declared_size = sum(size for _, is_dir, size in entries if not is_dir and size is not None)
         if declared_size > self._max_collect_bytes:
             raise ValueError("OpenSandbox workspace exceeds collection size limit")
+        # The archive carries the guard that matters, but a listing that reports a
+        # path outside the workspace means the platform is describing something
+        # this Run does not own, and collection refuses rather than reason about it.
+        for remote_path, _is_dir, _size in entries:
+            workspace_listed_relative(handle.remote_workspace, remote_path, label="OpenSandbox")
+        try:
+            content = await sandbox.download_archive(
+                handle.remote_workspace,
+                max_bytes=workspace_archive_transfer_limit(
+                    max_bytes=self._max_collect_bytes,
+                    max_members=self._max_collect_members,
+                ),
+            )
+        except WorkspaceArchiveUnavailableError as error:
+            # The image has no usable `tar`. Fall back rather than fail the Run:
+            # collection happens after the answer is already durable, so raising
+            # here would turn a successful Run into a failed one.
+            logger.warning(
+                "OpenSandbox workspace archive unavailable, collecting file by file: %s",
+                error,
+            )
+            await self._collect_file_by_file(handle, sandbox, entries)
+            return
+        extract_workspace_archive(
+            content,
+            handle.path,
+            max_bytes=self._max_collect_bytes,
+            max_members=self._max_collect_members,
+            label="OpenSandbox",
+        )
+
+    async def _collect_file_by_file(
+        self,
+        handle: SandboxHandle,
+        sandbox: OpenSandboxRemoteSandbox,
+        entries: Sequence[tuple[str, bool, int | None]],
+    ) -> None:
+        """Collect one file per request, for images that cannot produce a tar."""
+
+        assert handle.remote_workspace is not None
         collected_size = 0
-        remote_root = PurePosixPath(handle.remote_workspace)
         for remote_path, is_dir, _size in entries:
-            candidate = PurePosixPath(remote_path)
-            if not candidate.is_relative_to(remote_root):
-                raise ValueError("OpenSandbox workspace path escaped local collection root")
-            relative = candidate.relative_to(remote_root)
+            relative = workspace_listed_relative(
+                handle.remote_workspace, remote_path, label="OpenSandbox"
+            )
             local = handle.path.joinpath(*relative.parts)
             if is_dir:
                 local.mkdir(parents=True, exist_ok=True)
@@ -751,6 +834,32 @@ class OpenSandboxSandboxProvider:
                 raise ValueError("OpenSandbox workspace exceeds collection size limit")
             local.parent.mkdir(parents=True, exist_ok=True)
             replace_collected_file(local, content)
+
+    async def upload_files(
+        self, handle: SandboxHandle, entries: Sequence[tuple[str, bytes]]
+    ) -> None:
+        """Write workspace-relative files through execd's file plane.
+
+        One batched request, byte-exact: the command plane would pay a round trip
+        and an encoded argument per file.
+        """
+
+        sandbox = self._sandboxes[handle.sandbox_id]
+        assert handle.remote_workspace is not None
+        await sandbox.upload_many(
+            [
+                (workspace_relative_target(handle.remote_workspace, relative), content)
+                for relative, content in entries
+            ]
+        )
+
+    async def download_file(self, handle: SandboxHandle, path: str, *, max_bytes: int) -> bytes:
+        sandbox = self._sandboxes[handle.sandbox_id]
+        assert handle.remote_workspace is not None
+        content = await sandbox.download(workspace_relative_target(handle.remote_workspace, path))
+        if len(content) > max_bytes:
+            raise ValueError("OpenSandbox file exceeds the read limit")
+        return content
 
     async def destroy(self, handle: SandboxHandle) -> None:
         sandbox = self._sandboxes.pop(handle.sandbox_id, None)

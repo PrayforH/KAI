@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from typing import cast
 from urllib.parse import urlsplit
 
 from harness.core.models import Run
 from harness.sandbox.base import (
     SandboxCommandResult,
     SandboxEgress,
+    SandboxFilePlaneProvider,
     SandboxHandle,
     SandboxProvider,
 )
@@ -61,6 +63,22 @@ class EgressScopedSandbox:
 
     async def collect(self, handle: SandboxHandle) -> None:
         await self._backend.collect(handle)
+
+    async def upload_files(
+        self, handle: SandboxHandle, entries: Sequence[tuple[str, bytes]]
+    ) -> None:
+        """Forward the file plane the wrapper would otherwise mask.
+
+        A scoped wrapper stands in for the backend, so a capability it does not
+        forward becomes invisible to the caller that has to detect it.
+        """
+
+        await cast(SandboxFilePlaneProvider, self._backend).upload_files(handle, entries)
+
+    async def download_file(self, handle: SandboxHandle, path: str, *, max_bytes: int) -> bytes:
+        return await cast(SandboxFilePlaneProvider, self._backend).download_file(
+            handle, path, max_bytes=max_bytes
+        )
 
     async def destroy(self, handle: SandboxHandle) -> None:
         await self._backend.destroy(handle)
