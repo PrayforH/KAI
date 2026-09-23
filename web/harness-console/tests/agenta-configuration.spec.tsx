@@ -91,27 +91,25 @@ it("shows the draft's runtime on the advanced row and the code entry in the head
   expect(buttons.some((button) => button.text === "代码" && button.title === "查看这份配置的代码视图")).toBe(true);
 });
 
-it("lists the bound MCP servers in a group, and + opens the registration drawer", () => {
-  const onAddMcp = vi.fn();
-  render({ onAddMcp });
-  const summary = [...host.querySelectorAll("summary")].find((node) =>
-    (node.textContent ?? "").includes("MCP 服务器"),
-  );
-  expect(summary?.textContent).toContain("1 个已绑定");
-  // Expanding shows what this agent bound, which is the panel's job; binding
-  // itself happens in the Tools section and management on its own page.
-  // Binding lives here now: one checkbox per platform option.
+it("opens each resource directly with its own scope, without disclosure menus", () => {
+  const onEdit = vi.fn();
+  render({ onEdit });
+  const click = (label: string) => {
+    const row = [...host.querySelectorAll("button")].find(button => button.textContent?.startsWith(label));
+    expect(row).toBeDefined();
+    act(() => row!.click());
+  };
+  click("MCP 服务器");
+  expect(onEdit).toHaveBeenLastCalledWith("capabilities", "mcp");
+  click("内置工具");
+  expect(onEdit).toHaveBeenLastCalledWith("capabilities", "builtin");
+  click("Python 算子");
+  expect(onEdit).toHaveBeenLastCalledWith("capabilities", "python");
+  click("技能");
+  expect(onEdit).toHaveBeenLastCalledWith("skills", undefined);
+  expect(host.querySelector("details")).toBeNull();
+  expect(host.textContent).toContain("1 个已绑定");
   expect(host.textContent).toContain("知识检索");
-  const bound = [...host.querySelectorAll('input[type="checkbox"]')];
-  expect(bound.some((input) => (input as HTMLInputElement).checked)).toBe(true);
-  const add = [...host.querySelectorAll("button")].find((button) =>
-    (button.textContent ?? "").includes("添加 MCP 服务器"),
-  );
-  add?.click();
-  expect(onAddMcp).toHaveBeenCalledTimes(1);
-  // There is no management page: registering and binding both happen from here
-  // (the + opens the registration drawer; binding is the Tools section).
-  expect(host.querySelector('a[href="/studio/capabilities"]')).toBeNull();
 });
 
 it("opens the knowledge section from the 文件与知识 row, with its reference count", () => {

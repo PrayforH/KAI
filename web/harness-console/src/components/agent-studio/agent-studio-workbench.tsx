@@ -70,7 +70,7 @@ import styles from "./agent-studio.module.css";
 import { AgentTemplateGallery } from "./agent-template-gallery";
 import { createAgentFromTemplate, type AgentTemplate } from "../../lib/agent-templates";
 import { type BuildChange } from "./agent-build-assets";
-import { AgentaConfiguration } from "./agenta-configuration";
+import { AgentaConfiguration, type CapabilityFocus } from "./agenta-configuration";
 import { KnowledgeBasePicker, TaskKnowledgeProvider } from "../task-knowledge-context";
 import agentaStyles from "./agenta-workspace.module.css";
 
@@ -375,7 +375,9 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
   const [configEditorOpen, setConfigEditorOpen] = useState(false);
   const [testRequest, setTestRequest] = useState(0);
   const [builderAssistantOpen, setBuilderAssistantOpen] = useState(false);
-  const [showPythonTools, setShowPythonTools] = useState(false);
+  const [capabilityFocus, setCapabilityFocus] = useState<CapabilityFocus>("builtin");
+  const [skillDetailOpen, setSkillDetailOpen] = useState(false);
+  const [skillQuery, setSkillQuery] = useState("");
   const [builderAssistantMode, setBuilderAssistantMode] = useState<"create" | "run">("create");
   const [builderCreationSession, setBuilderCreationSession] = useState(0);
   const [tryRunSeed, setTryRunSeed] = useState<{
@@ -1198,14 +1200,18 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
     setBuilderAssistantOpen(true);
   }
 
-  function openConfiguration(section: StudioSection, label?: string) {
-    setActiveSection(section); setConfigEditorOpen(true);
-    window.setTimeout(() => {
-      const root = document.querySelector(`[data-config-editor="true"]`);
-      const target = label ? Array.from(root?.querySelectorAll<HTMLElement>("h3,h4,strong") ?? []).find(node => node.textContent?.includes(label)) : root?.querySelector(`#${section}-title`);
-      target?.scrollIntoView({ block: "start", behavior: "smooth" });
-    }, 0);
+  function openConfiguration(section: StudioSection, target?: string) {
+    setActiveSection(section);
+    setCapabilityFocus(target === "python" || target === "mcp" ? target : "builtin");
+    setSkillDetailOpen(false);
+    setSkillQuery("");
+    setConfigEditorOpen(true);
+    window.requestAnimationFrame(() => { configEditorRef.current?.scrollTo?.({ top: 0 }); });
   }
+
+  const configurationTitle = activeSection === "capabilities"
+    ? { builtin: "内置工具", python: "Python 算子", mcp: "MCP 服务器" }[capabilityFocus]
+    : activeSection === "skills" ? "技能" : sectionLabels[activeSection];
 
   // The catalog card owns the configuration entry: opening an agent normally
   // closes the full configuration editor, so the explicit "编辑" action selects
@@ -2631,8 +2637,8 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
 
         <div className={styles.buildWorkspaceMount} ref={setWorkspaceTarget} />
         {configEditorOpen && <button type="button" className={styles.configEditorBackdrop} aria-label="关闭完整配置" onClick={() => setConfigEditorOpen(false)} />}
-        <div className={styles.editorBody} ref={configEditorRef} role="dialog" aria-modal={configEditorOpen || undefined} aria-label={sectionLabels[activeSection]} hidden={!configEditorOpen}>
-          <header className={styles.configEditorHeading}><strong>{sectionLabels[activeSection]} · {draft.displayName}</strong><div><button type="button" disabled={!dirty || saving} onClick={() => void saveDraft()}>保存配置</button><button type="button" aria-label="收起完整配置" onClick={() => setConfigEditorOpen(false)}>×</button></div></header>
+        <div className={`${styles.editorBody} ${styles.configurationDrawer}`} data-section={activeSection} data-capability={capabilityFocus} ref={configEditorRef} role="dialog" aria-modal={configEditorOpen || undefined} aria-label={configurationTitle} hidden={!configEditorOpen}>
+          <header className={styles.configEditorHeading}><div><strong>{configurationTitle}</strong><small>{draft.displayName}</small></div><div><button type="button" disabled={!canEdit || !dirty || saving} onClick={() => void saveDraft()}>{saving ? "保存中…" : "保存配置"}</button><button type="button" aria-label="收起完整配置" onClick={() => setConfigEditorOpen(false)}>×</button></div></header>
           <nav className={styles.stageNav} aria-label="Agent 构建五阶段" hidden>
             {STUDIO_STAGES.map((stage) => {
               const state = stageState(stage.id);
@@ -3007,7 +3013,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
             {activeSection === "skills" && (
               <section
                 className={styles.configPanel}
-                data-compact-skill="true"
+                data-compact-skill={!skillDetailOpen}
                 data-has-skill={Boolean(skill)}
                 aria-labelledby="skills-title"
               >
@@ -3021,78 +3027,23 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                     if (file) void installSkill(file);
                   }}
                 />
-                <div className={styles.skillPanelHeading}>
-                  <PanelHeading
-                    id="skills-title"
-                    kicker="行为说明"
-                    title="Skills（可选）"
-                    description="仅在需要复用工作流、领域规则或脚本时绑定；普通 Agent 可以直接使用 System Prompt 与 Tools。"
-                  />
-                  <details className={`${styles.actionMenu} ${styles.skillActionsMenu}`} data-dismiss-on-outside>
-                    <summary aria-label="更多 Skill 操作" title="更多操作">
-                      <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" fill="currentColor"><circle cx="5" cy="10" r="1.2"/><circle cx="10" cy="10" r="1.2"/><circle cx="15" cy="10" r="1.2"/></svg>
-                    </summary>
-                    <div className={styles.actionMenuPopover}>
-                      <header className={styles.actionMenuHeader}>
-                        <strong>Skill 操作</strong>
-                        <small>创建、导入与管理</small>
-                      </header>
-                      <button
-                        type="button"
-                        className={styles.actionMenuItem}
-                        data-icon="↙"
-                        disabled={!canEdit || importingSkill || saving}
-                        onClick={(event) => {
-                          event.currentTarget.closest("details")?.removeAttribute("open");
-                          skillInputRef.current?.click();
-                        }}
-                      >
-                        <span><strong>{importingSkill ? "正在检查…" : "上传 Skill"}</strong><small>支持 SKILL.md 或 ZIP</small></span>
-                      </button>
-                      <Link
-                        className={styles.actionMenuItem}
-                        data-icon="+"
-                        href={skillCreatorHref("agent", {
-                          agentDraftId: draft.id,
-                          agentLabel: draft.displayName,
-                        })}
-                        aria-label="使用 Skill Creator 创建 Agent Skill"
-                      >
-                        <span><strong>对话创建</strong><small>打开 Skill Creator</small></span>
-                      </Link>
-                      <Link
-                        className={styles.actionMenuItem}
-                        data-icon="↗"
-                        href="/studio/skills"
-                        aria-label="查看技能目录"
-                      >
-                        <span><strong>技能目录</strong><small>浏览和管理已有 Skill</small></span>
-                      </Link>
-                      {skill && (
-                        <button
-                          type="button"
-                          className={`${styles.actionMenuItem} ${styles.actionMenuDanger}`}
-                          data-icon="×"
-                          disabled={!canEdit || importingSkill || saving}
-                          onClick={(event) => {
-                            event.currentTarget.closest("details")?.removeAttribute("open");
-                            void uninstallSkill(skill.name);
-                          }}
-                        >
-                          <span><strong>卸载当前 Skill</strong><small>从当前草稿移除绑定</small></span>
-                        </button>
-                      )}
-                    </div>
-                  </details>
+                <div className={styles.drawerActions}>
+                  {skillDetailOpen ? <button type="button" onClick={() => setSkillDetailOpen(false)}>← 返回技能列表</button> : <>
+                    <button type="button" disabled={!canEdit || importingSkill || saving} onClick={() => skillInputRef.current?.click()}>{importingSkill ? "正在检查…" : "上传 Skill"}</button>
+                    <Link href={skillCreatorHref("agent", { agentDraftId: draft.id, agentLabel: draft.displayName })}>对话创建 ↗</Link>
+                  </>}
+                  {skillDetailOpen && skill && <button type="button" disabled={!canEdit || importingSkill || saving} onClick={() => void uninstallSkill(skill.name)}>卸载当前 Skill</button>}
                 </div>
+                {!skillDetailOpen && <>
+                <input className={styles.drawerSearch} aria-label="搜索技能" placeholder="搜索技能…" value={skillQuery} onChange={event => setSkillQuery(event.target.value)} />
                 <div className={styles.skillList} role="listbox" aria-label="已安装 Skills">
-                  {draft.skills.map((candidate) => (
+                  {draft.skills.filter(candidate => `${candidate.name} ${candidate.description}`.toLowerCase().includes(skillQuery.trim().toLowerCase())).map((candidate) => (
                     <button
                       key={candidate.name}
                       type="button"
                       role="option"
                       aria-selected={candidate.name === skill?.name}
-                      onClick={() => setActiveSkillName(candidate.name)}
+                      onClick={() => { setActiveSkillName(candidate.name); setSkillDetailOpen(true); }}
                     >
                       <span className={styles.skillRowGlyph} aria-hidden="true">S</span>
                       <span className={styles.skillRowCopy}>
@@ -3118,7 +3069,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                 {platformSkills === null && !platformSkillError && (
                   <p className={styles.skillEmpty}>正在读取平台技能目录…</p>
                 )}
-                {(platformSkills ?? []).map((pkg) => {
+                {(platformSkills ?? []).filter(pkg => `${pkg.displayName} ${pkg.summary}`.toLowerCase().includes(skillQuery.trim().toLowerCase())).map((pkg) => {
                   const enabled = draft.skills.some(
                     (candidate) => candidate.name === pkg.skill.name,
                   );
@@ -3151,7 +3102,8 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                     <span>可上传 SKILL.md 或 ZIP；不安装 Skill 也可以继续配置和发布 Agent。</span>
                   </div>
                 )}
-                {skill && skillImportReport?.skillName === skill.name
+                </>}
+                {skillDetailOpen && skill && skillImportReport?.skillName === skill.name
                   && skillImportReport.findings.length > 0 && (
                     <details className={styles.skillImportFindings}>
                       <summary>
@@ -3168,7 +3120,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                       </ul>
                     </details>
                   )}
-                {skill && (
+                {skillDetailOpen && skill && (
                   <>
                 <div className={styles.skillHeader}>
                   <span className={styles.skillGlyph} aria-hidden="true">S</span>
@@ -3304,7 +3256,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                   id="knowledge-title"
                   kicker="上下文"
                   title="文件与知识"
-                  description="勾选的知识库会绑定到这个智能体；未勾选时按平台默认检索。"
+                  description="勾选要绑定的知识库，保存后应用于这个智能体。"
                 />
                 {/* Ticking a base edits the draft, exactly like the MCP cards: the change is
                     local until 保存, and the panel count follows it. */}
@@ -3315,34 +3267,18 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                   onModeChange={() => {}}
                 >
                   <div className="task-knowledge-menu" data-inline="true">
-                    <KnowledgeBasePicker />
+                    <KnowledgeBasePicker autoFocus={false} clearLabel="清除知识库绑定" />
                   </div>
                 </TaskKnowledgeProvider>
               </section>
             )}
             {activeSection === "capabilities" && (
-              <section className={styles.configPanel} aria-labelledby="capabilities-title">
-                <div className={styles.skillPanelHeading}>
-                <PanelHeading
-                  id="capabilities-title"
-                  kicker="可用能力"
-                  title="Tools 与知识库"
-                  description="选择智能体可使用的工具和知识库。"
-                />
-                  <details className={`${styles.actionMenu} ${styles.skillActionsMenu}`} data-dismiss-on-outside>
-                    <summary aria-label="Tools 与知识库的更多操作" title="更多">•••</summary>
-                    <div className={styles.actionMenuPopover}>
-                      <button type="button" className={styles.actionMenuItem} onClick={(event) => {
-                        event.currentTarget.closest("details")?.removeAttribute("open");
-                        setShowPythonTools((value) => !value);
-                      }}><span><strong>{showPythonTools ? "收起自定义算子" : "自定义算子"}</strong><small>{draft.pythonTools.length} 个 · 创建和管理 Python 算子</small></span></button>
-                    </div>
-                  </details>
-                </div>
+              <section className={styles.configPanel} aria-label={configurationTitle}>
+                {capabilityFocus === "builtin" && <>
                 <div className={styles.workerToolPicker} aria-label="公开联网工具">
                   <h3>公开联网</h3>
                   <WebCapabilityStatus />
-                  <p>由平台提供搜索和网页读取，无需配置 MCP。勾选并保存后可在此试跑；发布后应用于正式对话。同时受个人联网设置及搜索服务配置控制。</p>
+                  <p>勾选要启用的搜索和网页读取工具。</p>
                   {/* A tick the runtime cannot honour stays clearable: the tool is
                       unusable either way, and a disabled box would leave a saved
                       draft that can never publish and no way to remove the cause. */}
@@ -3360,7 +3296,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                       </label>
                     ))}
                   </div>
-                  {draft.runtime !== "claude-agent-sdk" && <p>内置联网当前支持 Claude SDK，其他运行时可使用 MCP。</p>}
+
                 </div>
 
 
@@ -3436,7 +3372,9 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                   </div>
                 </div>
 
-                {showPythonTools && <>
+                </>}
+                {capabilityFocus === "python" && <>
+
                 <div className={styles.groupHeading}>
                   <div>
                     <h3>自定义算子</h3>
@@ -3514,11 +3452,12 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                 </div>
 
                 </>}
-
+                {capabilityFocus === "mcp" && <>
+                  <button type="button" className={styles.drawerPrimaryAction} onClick={() => { setConfigEditorOpen(false); setMcpStartInForm(true); setMcpManagerOpen(true); }}>+ 注册 MCP 服务器</button>
                 <div className={styles.groupHeading}>
                   <div>
-                    <h3>MCP 配置</h3>
-                    <p>通过平台注册的逻辑 MCP，不接受任意 URL 或内联密钥。</p>
+                    <h3>可用服务器</h3>
+                    <p>直接勾选绑定；保存后应用于当前智能体。</p>
                   </div>
                   <span>
                     {visibleMcpOptions.filter((item) => draft.mcpServers.includes(item.id)).length} 项已启用
@@ -3537,11 +3476,11 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                       <span className={styles.mcpCopy}>
                         <span className={styles.mcpTitleLine}>
                           <strong>{mcp.label}</strong>
-                          <span>只读</span>
-                          <span className={styles.bindingBadge} data-binding="runtime">运行时引用 · 凭据托管</span>
+
+
                         </span>
                         <small>{mcp.description}</small>
-                        <code>{mcp.tools.join(" · ")}</code>
+                        <small>{mcp.tools.length} 个工具</small>
                       </span>
                       <span className={styles.switchVisual} aria-hidden="true"><i /></span>
                     </label>
@@ -3580,7 +3519,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                               <span>{mcp.tools.length} 个工具</span>
                             </span>
                             <small>{mcp.description}</small>
-                            <code>{mcp.tools.join(" · ")}</code>
+                            <small>{mcp.tools.length} 个工具</small>
                           </span>
                           <span className={styles.switchVisual} aria-hidden="true"><i /></span>
                         </label>
@@ -3588,6 +3527,8 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                     })}
                   </>
                 )}
+                  {!visibleMcpOptions.length && <p className={styles.skillEmpty}>暂无可用的 MCP 服务器。注册后可在这里绑定。</p>}
+                </>}
               </section>
             )}
 

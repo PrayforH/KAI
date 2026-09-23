@@ -166,3 +166,8 @@
 
 .conversationBody:has(> .workspaceFiles) {display:flex;}
 .conversationBody:has(> .workspaceFiles) > .preservedPanel {flex:1;min-width:0;}
+
+.configurationColumn { min-width: 0; min-height: 0; height: 100%; overflow: hidden; border-right: 1px solid var(--studio-line); }
+.configurationSlot { height: 100%; min-width: 0; min-height: 0; }
+.configurationSlot[hidden] { display: none !important; }
+@media(max-width:850px) { .agentaPlayground > .configurationColumn { height: 38dvh; min-height: 180px; max-height: 38dvh; } }

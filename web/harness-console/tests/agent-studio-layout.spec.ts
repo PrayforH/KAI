@@ -339,7 +339,8 @@ describe("Agent Studio management page", () => {
     expect(workbench).not.toContain(">代码</button>");
     expect(agentaConfiguration).toContain("onClick={onCode}");
     expect(agentaConfiguration).toContain("查看这份配置的代码视图");
-    expect(workbench.match(/className=\{styles\.actionMenuItem\}/g)).toHaveLength(12);
+    expect(workbench).toContain("className={styles.drawerActions}");
+    expect(workbench).not.toContain("更多 Skill 操作");
     expect(workbench).not.toContain("copilot-drawer");
     expect(workbench).not.toContain("CopilotDrawer");
     expect(workbench).toContain("<HeaderActionIcon name=\"release\"");

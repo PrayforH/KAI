@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import React, { act } from "react";
+import React, { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { studioClient, type DeepagentsProjectSource } from "../src/lib/studio-client";
@@ -10,7 +10,7 @@ import { AgentProjectCode } from "../src/components/agent-studio/agent-project-c
 
 vi.mock("../src/components/agent-studio/project-source-editor", () => ({ ProjectSourceEditor: ({ content, theme, wrap }: { content: string; theme: string; wrap: boolean }) => <pre data-theme={theme} data-wrap={wrap}>{content}</pre> }));
 vi.mock("../src/components/agent-studio/project-source-diff", () => ({ ProjectSourceDiff: ({change}: {change: {before?: {content: string}; after?: {content: string}}}) => <div data-testid="code-diff"><del>{change.before?.content}</del><ins>{change.after?.content}</ins></div> }));
-vi.mock("../src/components/agent-studio/project-file-tree", () => ({ ProjectFileTree: () => <div /> }));
+vi.mock("../src/components/agent-studio/project-file-tree", () => ({ ProjectFileTree: ({ paths, onSelect }: { paths: string[]; onSelect: (path: string) => void }) => <div>{paths.map(path => <button key={path} onClick={() => onSelect(path)}>{path}</button>)}</div> }));
 vi.mock("../src/lib/studio-client", () => ({ studioClient: { getDeepagentsProjectSource: vi.fn(), downloadDeepagentsProject: vi.fn() } }));
 const fixture: DeepagentsProjectSource = {
   revision: 4, digest: "abc", filename: "agent.zip", framework_version: "0.7.13",
@@ -44,6 +44,28 @@ describe("DeepAgents source workspace", () => {
     await act(async () => button("下载项目").click());
     expect(studioClient.downloadDeepagentsProject).toHaveBeenCalledWith("draft-a", 4);
     expect(host.querySelector("textarea")).toBeNull();
+  });
+  it("keeps the directory in the middle and expands the selected file in the right pane", async () => {
+    const directory = document.createElement("div"); document.body.append(directory);
+    function SplitView() {
+      const [expanded, setExpanded] = useState(false);
+      return <AgentProjectCode draftId="draft-a" revision={4} name="research-agent" dirty={false} onClose={() => {}} directoryTarget={directory} expanded={expanded} onExpandedChange={setExpanded} />;
+    }
+    try {
+      await act(async () => root.render(<SplitView />));
+      expect(directory.querySelector('[aria-label="DeepAgents 文件树"]')).not.toBeNull();
+      expect(host.querySelector("pre")).toBeNull();
+      expect(directory.querySelector('[aria-label="展开代码视图"]')).not.toBeNull();
+      const file = [...directory.querySelectorAll("button")].find(button => button.textContent === "tools/search.py")!;
+      await act(async () => file.click());
+      expect(host.querySelector("pre")?.textContent).toBe("search()");
+      expect(host.querySelector('[aria-label="DeepAgents 文件树"]')).toBeNull();
+      await act(async () => button("收起代码").click());
+      expect(host.querySelector("pre")).toBeNull();
+      await act(async () => (directory.querySelector('[aria-label="展开代码视图"]') as HTMLButtonElement).click());
+      expect(host.querySelector("pre")?.textContent).toBe("search()");
+      expect(studioClient.getDeepagentsProjectSource).toHaveBeenCalledTimes(1);
+    } finally { directory.remove(); }
   });
   it("follows interface theme without a selector or a stored override", async () => {
     localStorage.setItem("studio-code-theme", "dark");

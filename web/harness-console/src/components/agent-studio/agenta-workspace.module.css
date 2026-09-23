@@ -811,3 +811,17 @@
 .configChoice small, .configChoiceEnabled small { color: var(--studio-muted); font-size: 11px; }
 .configChoice small:last-child, .configChoiceEnabled small:last-child { white-space: nowrap; }
 .groupEmpty { margin: 8px 0; color: var(--studio-muted); font-size: 11px; }
+
+.configHeader .configViewSwitch { gap: 2px; padding: 3px; border-radius: 7px; background: var(--studio-panel-subtle); }
+.configViewSwitch button { border: 0; background: transparent; color: var(--studio-muted); }
+.configViewSwitch button[aria-pressed="true"] { background: var(--studio-paper); color: var(--studio-ink); box-shadow: 0 1px 3px #0000000d; }
+.configCards { display: flex; flex-direction: column; gap: 8px; padding: 12px; }
+.configCard { display: flex; align-items: center; gap: 10px; width: 100%; padding: 13px 12px; border: 1px solid var(--studio-line); border-radius: 8px; background: var(--studio-panel); color: var(--studio-ink); font: inherit; text-align: left; cursor: pointer; transition: background .15s, border-color .15s; }
+.configCard:hover { background: var(--studio-panel-subtle); border-color: var(--studio-line-strong); }
+.configCard:focus-visible { outline: 2px solid var(--studio-ink); outline-offset: 2px; }
+.configCardIcon { display: grid; place-items: center; flex: 0 0 30px; height: 30px; border-radius: 6px; background: var(--studio-panel-subtle); color: var(--studio-muted); }
+.configCardCopy { display: grid; gap: 5px; min-width: 0; flex: 1; }
+.configCardCopy > span { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+.configCardCopy strong { font-size: 12px; font-weight: 550; }
+.configCardCopy small { color: var(--studio-muted); font-size: 10px; white-space: nowrap; }
+.configCardCopy p { margin: 0; font-size: 11px; color: var(--studio-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

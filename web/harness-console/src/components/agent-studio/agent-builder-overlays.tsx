@@ -136,6 +136,8 @@ export function AgentBuilderAssistant({
   const [input, setInput] = useState("");
   const [inputSeed, setInputSeed] = useState<{key: number; text: string}>();
   const [codeView, setCodeView] = useState(false);
+  const [codeExpanded, setCodeExpanded] = useState(false);
+  const [codeDirectoryTarget, setCodeDirectoryTarget] = useState<HTMLDivElement | null>(null);
   const [lastComparison, setLastComparison] = useState<DeepagentsProjectComparison>();
   const [codeComparison, setCodeComparison] = useState<DeepagentsProjectComparison>();
   const [comparisonPending, setComparisonPending] = useState(false);
@@ -208,7 +210,7 @@ export function AgentBuilderAssistant({
     setEditing(false);
     setApplying(false);
     setProposal(null);
-    setCodeView(false); setLastComparison(undefined); setCodeComparison(undefined); setComparisonPending(false); setComparing(false); setLastChanges([]); setSelectedRunId(""); setAssetsOpen(false); setMobilePanel("build"); setConversationTab(mode === "create" ? "builder" : "chat"); historySelection.current++;
+    setCodeView(false); setCodeExpanded(false); setLastComparison(undefined); setCodeComparison(undefined); setComparisonPending(false); setComparing(false); setLastChanges([]); setSelectedRunId(""); setAssetsOpen(false); setMobilePanel("build"); setConversationTab(mode === "create" ? "builder" : "chat"); historySelection.current++;
     setLastTestPrompt("");
     setTestSessionId(""); setTestConversationEpoch(value => value + 1);
     setArchivedTurns([]); setCurrentFiles([]); setLastArtifactIds([]);
@@ -228,7 +230,7 @@ export function AgentBuilderAssistant({
 
   useEffect(() => { if (testRequest) { setConversationTab("chat");setCodeView(false);setMobilePanel("test"); window.setTimeout(() => workspaceTarget?.querySelector<HTMLTextAreaElement>('[aria-label="智能体效果测试"] [aria-label="消息输入"]')?.focus(), 0); } }, [testRequest, workspaceTarget]);
 
-  useEffect(() => { if (codeRequest) {setCodeComparison(undefined);setComparisonPending(false);setCodeView(true);setAssetsOpen(false);} }, [codeRequest]);
+  useEffect(() => { if (codeRequest) {setCodeComparison(undefined);setComparisonPending(false);setCodeView(true);setCodeExpanded(false);setAssetsOpen(false);} }, [codeRequest]);
   useEffect(() => { if (buildChatRequest) {setCodeView(false);setInputSeed({key: Date.now(), text: "请帮我调整智能体："});} }, [buildChatRequest]);
   useEffect(() => { if (playgroundMode === "chat") {setConversationTab("chat");setCodeView(false);} }, [playgroundMode]);
   useEffect(() => {
@@ -528,7 +530,7 @@ export function AgentBuilderAssistant({
         expectedRevision: proposal.baseRevision, changes: proposal.changes,
       });
       if (epoch !== epochRef.current || proposalRef.current !== proposal) return;
-      setCodeComparison(comparison); setComparisonPending(true); setCodeView(true);
+      setCodeComparison(comparison); setComparisonPending(true); setCodeView(true); setCodeExpanded(true);
     } catch (reason) {
       if (epoch === epochRef.current) setError(reason instanceof Error ? reason.message : "无法生成代码差异，请重试");
     } finally { if (epoch === epochRef.current) setComparing(false); }
@@ -536,7 +538,7 @@ export function AgentBuilderAssistant({
 
   function showLastComparison() {
     if (!lastComparison) return;
-    setCodeComparison(lastComparison); setComparisonPending(false); setCodeView(true);
+    setCodeComparison(lastComparison); setComparisonPending(false); setCodeView(true); setCodeExpanded(true);
   }
 
   async function applyEdit(rerun: boolean) {
@@ -755,12 +757,15 @@ export function AgentBuilderAssistant({
   }
   if (editing || creating || readingMaterials) transcript.push({id:"workspace-progress",role:"assistant",content:[{type:"text",text:buildReply || buildProgress || (readingMaterials ? "正在读取附件…" : "正在处理…")}],status:{type:"running"}});
   return createPortal(<div className={workspaceStyles.agentaPlayground} data-mode={playgroundMode}>
-    {playgroundMode === "build" && configuration}
+    {playgroundMode === "build" && <section className={workspaceStyles.configurationColumn} aria-label="智能体结构">
+      <div className={workspaceStyles.configurationSlot} hidden={codeView}>{configuration}</div>
+      <div className={workspaceStyles.configurationSlot} hidden={!codeView} ref={setCodeDirectoryTarget} />
+    </section>}
     <div className={workspaceStyles.conversationArea}>
       <div className={workspaceStyles.conversationBody}>
         {assetsOpen && <AgentWorkspaceFiles key={activeDraft.id} draft={activeDraft} baseline={fileBaseline.current} turns={visibleTurns} onClose={() => setAssetsOpen(false)} />}
-        {codeView && <AgentProjectCode key={activeDraft.id} draftId={draftReady ? activeDraft.id : ""} revision={activeDraft.revision} name={activeDraft.name || activeDraft.displayName} dirty={hasUnsavedChanges} comparison={codeComparison} comparisonPending={comparisonPending} onClose={() => setCodeView(false)} />}
-        <div className={workspaceStyles.preservedPanel} hidden={codeView}>
+        {codeView && <AgentProjectCode key={activeDraft.id} draftId={draftReady ? activeDraft.id : ""} revision={activeDraft.revision} name={activeDraft.name || activeDraft.displayName} dirty={hasUnsavedChanges} comparison={codeComparison} comparisonPending={comparisonPending} directoryTarget={playgroundMode === "build" ? codeDirectoryTarget : undefined} expanded={codeExpanded} onExpandedChange={setCodeExpanded} onClose={() => { setCodeView(false); setCodeExpanded(false); }} />}
+        <div className={workspaceStyles.preservedPanel} hidden={codeView && (playgroundMode === "chat" || codeExpanded)}>
           <AgentTestPanel navigation={<>{playgroundMode === "chat" && onExpandConfiguration && <button type="button" aria-label="展开配置栏" title="展开配置栏" aria-expanded="false" onClick={onExpandConfiguration}><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="2" /><path d="M8 4v12m3-9 3 3-3 3" /></svg></button>}<strong>对话</strong></>} draft={activeDraft} userId={userId} onConfigureKnowledge={onConfigureKnowledge} sessionRail={false} savedRuns={savedRuns} historyLoading={historyLoading} historyError={historyError} examples={[]} draftId={activeDraft.id} revision={activeDraft.revision} agentName={activeDraft.displayName} model={activeDraft.model} turns={visibleTurns} history={turns} sessionId={testSessionId} conversationEpoch={testConversationEpoch}
             messageOverride={transcript} inputSeed={inputSeed} afterLastMessage={reviewContent}
             onSelectSession={id => void selectSession(id)} busy={active || editing || applying || readingMaterials} ready={true} dirty={hasUnsavedChanges} error={error} selectedRunId={selectedRunId}

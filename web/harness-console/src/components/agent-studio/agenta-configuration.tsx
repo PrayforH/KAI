@@ -1,27 +1,17 @@
 "use client";
+
 import { ConfigurationIcon as Icon } from "./configuration-icon";
-import Link from "next/link";
 import type { McpOption, StudioDraft, StudioSection } from "../../lib/agent-studio";
-import { skillCreatorHref } from "../../lib/skill-creator-launch";
 import styles from "./agenta-workspace.module.css";
-export function AgentaConfiguration({
-  draft,
-  dirty,
-  saving,
-  writable,
-  onEdit,
-  onSave,
-  onCode,
-  onAddMcp,
-  mcpOptions,
-  onToggleMcp,
-  onCollapse,
-}: {
+
+export type CapabilityFocus = "builtin" | "python" | "mcp";
+
+export function AgentaConfiguration({ draft, dirty, saving, writable, onEdit, onSave, onCode, mcpOptions, onCollapse }: {
   draft: StudioDraft;
   dirty: boolean;
   saving: boolean;
   writable: boolean;
-  onEdit: (section: StudioSection) => void;
+  onEdit: (section: StudioSection, target?: string) => void;
   onSave: () => void;
   onPublish: () => void;
   onCode: () => void;
@@ -31,177 +21,34 @@ export function AgentaConfiguration({
   onToggleMcp: (id: string) => void;
   onCollapse?: () => void;
 }) {
-  const toolSources = [
-    { id: "builtin", icon: "tools" as const, label: "内置工具", count: draft.builtinTools.length, names: draft.builtinTools.join("、") },
-    // MCP has its own group below; listing it here said the same thing twice.
-    { id: "python", icon: "code" as const, label: "Python 算子", count: draft.pythonTools.length, names: draft.pythonTools.map((tool) => tool.name).join("、") },
-  ];
-  return (
-    <section className={styles.configuration} aria-label="智能体配置">
-      <header className={styles.configHeader}>
-        <strong>配置</strong>
-        <div>
-          <button disabled={!draft.id} onClick={onCode} title="查看这份配置的代码视图">
-            代码
-          </button>
-          <button disabled={!dirty || saving || !writable} onClick={onSave}>
-            {saving ? "保存中…" : "保存"}
-          </button>
-          {onCollapse && <button className={styles.configCollapse} aria-label="收起配置栏" title="收起配置栏" aria-expanded="true" onClick={onCollapse}><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="2" /><path d="M8 4v12m5-9-3 3 3 3" /></svg></button>}
-        </div>
-      </header>
-      <div className={styles.configScroll}>
-        <button className={styles.configRow} onClick={() => onEdit("identity")}>
-          <span className={styles.rowLabel}><Icon name="model" /><strong>模型</strong></span>
-          <small>
-            {draft.model || "选择模型"}
-          </small>
-          <Icon name="chevron" className={styles.chevron} />
-        </button>
-        <details className={styles.configGroup} open>
-          <summary>
-            <span className={styles.rowLabel}><Icon name="file" /><strong>指令</strong></span>
-            <small>1 个文件</small>
-            <Icon name="chevron" className={styles.chevron} />
-          </summary>
-          <button className={styles.fileRow} onClick={() => onEdit("prompt")}>
-            <span className={styles.fileIcon}><Icon name="file" /></span>
-            <span>
-              <strong>
-                AGENTS.md <small>指令</small>
-              </strong>
-              <p>
-                {draft.systemPrompt?.slice(0, 160) ||
-                  "定义智能体的职责、边界和输出要求"}
-              </p>
-            </span>
-            <Icon name="chevron" className={styles.chevron} />
-          </button>
-        </details>
-        <details className={styles.configGroup} open>
-          <summary>
-            <span className={styles.rowLabel}><Icon name="tools" /><strong>工具</strong></span>
-            <small>
-              {draft.builtinTools.length +
-                draft.mcpServers.length +
-                draft.pythonTools.length}{" "}
-              个工具
-            </small>
-            <Icon name="chevron" className={styles.chevron} />
-          </summary>
-          <button
-            className={styles.addRow}
-            onClick={() => onEdit("capabilities")}
-          >
-            <Icon name="plus" /> 添加工具与集成
-          </button>
-          {/* One row per source. Every per-tool row opened the same editor, so
-              enumerating them only lengthened the panel; the editor owns the
-              detail and the names stay on the row's title. */}
-          {toolSources.map((source) => (
-            <button
-              key={source.id}
-              className={styles.toolRow}
-              title={source.names || undefined}
-              onClick={() => onEdit("capabilities")}
-            >
-              <span className={styles.toolIcon}><Icon name={source.icon} /></span>
-              <strong>{source.label}</strong>
-              <small>{source.count ? `${source.count} 项` : "未启用"}</small>
-              <Icon name="chevron" className={styles.chevron} />
-            </button>
-          ))}
-        </details>
-        <details className={styles.configGroup} open={draft.mcpServers.length > 0}>
-          <summary>
-            <span className={styles.rowLabel}><Icon name="mcp" /><strong>MCP 服务器</strong></span>
-            <small>{draft.mcpServers.length ? `${draft.mcpServers.length} 个已绑定` : "无"}</small>
-            <Icon name="chevron" className={styles.chevron} />
-          </summary>
-          <button className={styles.addRow} onClick={onAddMcp}>
-            <Icon name="plus" /> 添加 MCP 服务器
-          </button>
-          {mcpOptions.map((option) => {
-            const enabled = draft.mcpServers.includes(option.id);
-            return (
-              <label
-                key={option.id}
-                className={enabled ? styles.configChoiceEnabled : styles.configChoice}
-              >
-                <input
-                  type="checkbox"
-                  checked={enabled}
-                  disabled={!writable}
-                  onChange={() => onToggleMcp(option.id)}
-                />
-                <span>
-                  <strong>{option.label}</strong>
-                  <small>{option.description}</small>
-                </span>
-                <small>{enabled ? "已绑定" : "未绑定"}</small>
-              </label>
-            );
-          })}
-          {!mcpOptions.length && (
-            <p className={styles.groupEmpty}>平台尚未注册可用的 MCP 服务器，可用上面的按钮注册。</p>
-          )}
-        </details>
-        <details className={styles.configGroup} open={draft.skills.length > 0}>
-          <summary>
-            <span className={styles.rowLabel}><Icon name="skill" /><strong>Skills</strong></span>
-            <small>{draft.skills.length || "无"}</small>
-            <Icon name="chevron" className={styles.chevron} />
-          </summary>
-          {draft.skills.map((skill) => (
-            <button
-              key={skill.name}
-              className={styles.fileRow}
-              onClick={() => onEdit("skills")}
-            >
-              <span className={styles.fileIcon}><Icon name="skill" /></span>
-              <span>
-                <strong>{skill.name}</strong>
-                <p>{skill.description}</p>
-              </span>
-              <Icon name="chevron" className={styles.chevron} />
-            </button>
-          ))}
-          <button className={styles.addRow} onClick={() => onEdit("skills")}>
-            <Icon name="plus" /> 添加、导入或编辑 Skill
-          </button>
-          <Link
-            className={styles.addRow}
-            href={skillCreatorHref("agent", {
-              agentDraftId: draft.id,
-              agentLabel: draft.displayName,
-            })}
-          >
-            使用 skill-creator 创建 ↗
-          </Link>
-        </details>
-        <button
-          className={styles.configRow}
-          onClick={() => onEdit("knowledge")}
-        >
-          <span className={styles.rowLabel}><strong>文件与知识</strong></span>
-          <small>{draft.knowledgeReferences.length} 项知识引用</small>
-          <Icon name="knowledgeOpen" className={styles.configTrail} />
-        </button>
-        <button
-          className={styles.configRow}
-          onClick={() => onEdit("orchestration")}
-        >
-          <span className={styles.rowLabel}><Icon name="agent" /><strong>Subagents</strong></span>
-          <small>{draft.subagents.length} 个协作角色</small>
-          <Icon name="chevron" className={styles.chevron} />
-        </button>
-        <button className={styles.configRow} onClick={() => onEdit("runtime")}>
-          <span className={styles.rowLabel}><Icon name="settings" /><strong>高级设置</strong></span>
-          <small>{draft.runtime || "运行时、权限与沙箱"}</small>
-          <Icon name="chevron" className={styles.chevron} />
-        </button>
-
+  const rows = [
+    { section: "identity", icon: "model", label: "模型与基本信息", count: "", description: draft.model || "选择模型" },
+    { section: "prompt", icon: "file", label: "指令", count: "AGENTS.md", description: draft.systemPrompt || "定义智能体的职责、边界和输出要求" },
+    { section: "capabilities", target: "builtin", icon: "tools", label: "内置工具", count: `${draft.builtinTools.length} 项`, description: draft.builtinTools.join("、") || "选择文件、终端与联网工具" },
+    { section: "capabilities", target: "mcp", icon: "mcp", label: "MCP 服务器", count: `${draft.mcpServers.length} 个已绑定`, description: draft.mcpServers.map(id => mcpOptions.find(option => option.id === id)?.label || id).join("、") || "连接外部服务与工具" },
+    { section: "knowledge", icon: "knowledge", label: "文件与知识", count: `${draft.knowledgeReferences.length} 项知识引用`, description: "选择智能体可检索的知识库" },
+    { section: "skills", icon: "skill", label: "技能", count: `${draft.skills.length} 项`, description: draft.skills.map(skill => skill.name).join("、") || "添加可复用的工作流与领域技能" },
+    { section: "capabilities", target: "python", icon: "code", label: "Python 算子", count: `${draft.pythonTools.length} 项`, description: draft.pythonTools.map(tool => tool.name).join("、") || "管理自定义 Python 工具" },
+    { section: "orchestration", icon: "agent", label: "Subagents", count: `${draft.subagents.length} 个协作角色`, description: "设置协作角色与分工" },
+    { section: "runtime", icon: "settings", label: "高级设置", count: "", description: draft.runtime || "运行时、权限与沙箱" },
+  ] as const;
+  return <section className={styles.configuration} aria-label="智能体配置">
+    <header className={styles.configHeader}>
+      <div className={styles.configViewSwitch} role="group" aria-label="配置与代码视图">
+        <button type="button" aria-pressed="true">配置</button>
+        <button type="button" aria-pressed="false" disabled={!draft.id} onClick={onCode} title="查看这份配置的代码视图">代码</button>
       </div>
-    </section>
-  );
+      <div>
+        <button type="button" disabled={!dirty || saving || !writable} onClick={onSave}>{saving ? "保存中…" : "保存"}</button>
+        {onCollapse && <button type="button" className={styles.configCollapse} aria-label="收起配置栏" title="收起配置栏" aria-expanded="true" onClick={onCollapse}><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="2" /><path d="M8 4v12m5-9-3 3 3 3" /></svg></button>}
+      </div>
+    </header>
+    <div className={`${styles.configScroll} ${styles.configCards}`}>
+      {rows.map(row => <button type="button" key={`${row.section}-${"target" in row ? row.target : ""}`} className={styles.configCard} title={row.description} onClick={() => onEdit(row.section, "target" in row ? row.target : undefined)}>
+        <span className={styles.configCardIcon}><Icon name={row.icon} /></span>
+        <span className={styles.configCardCopy}><span><strong>{row.label}</strong><small>{row.count}</small></span><p>{row.description}</p></span>
+        <Icon name="chevron" className={styles.chevron} />
+      </button>)}
+    </div>
+  </section>;
 }

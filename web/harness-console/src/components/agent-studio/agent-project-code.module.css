@@ -106,3 +106,16 @@
 .diffSummary { display: flex; align-items: center; gap: 12px; flex-shrink: 0; padding: 8px 16px; margin: 0; color: var(--source-muted); font-size: 11px; }
 .added { color: #00a240; font-variant-numeric: tabular-nums; }
 .deleted { color: #e02e2a; font-variant-numeric: tabular-nums; }
+
+.directoryWorkspace { border: 0; }
+.directoryHeader { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex: 0 0 54px; padding: 0 14px; border-bottom: 1px solid var(--source-line); }
+.directoryTabs { display: flex; gap: 2px; padding: 3px; border-radius: 7px; background: var(--source-raised); }
+.directoryTabs button { padding: 5px 10px; border: 0; border-radius: 5px; background: transparent; color: var(--source-muted); font: inherit; font-size: 12px; cursor: pointer; }
+.directoryTabs button[aria-pressed=true] { background: var(--source-bg); color: var(--source-ink); box-shadow: 0 1px 3px #0000000d; }
+.directoryHeader > button { display: grid; place-items: center; padding: 5px; border: 0; border-radius: 5px; background: transparent; color: var(--source-muted); cursor: pointer; }
+.directoryHeader > button:hover { background: var(--source-hover); }
+.directoryHint { margin: 0; padding: 12px 16px 0; font-size: 11px; line-height: 1.6; color: var(--source-muted); }
+.directoryWorkspace > .sidebar { flex: 1; width: 100%; height: auto; min-height: 0; border: 0; }
+.directoryWorkspace .treeHeading, .directoryWorkspace .sidebarFooter { display: flex; }
+.directoryWorkspace .tree { min-height: 80px; }
+.directoryWorkspace button:focus-visible { outline: 2px solid var(--source-muted); outline-offset: 2px; }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { studioClient, type DeepagentsProjectComparison, type DeepagentsProjectSource } from "../../lib/studio-client";
 import { createFileTreeIconResolver, getBuiltInSpriteSheet } from "@pierre/trees";
 import { ProjectFileTree } from "./project-file-tree";
@@ -38,10 +39,13 @@ function FileMark({ path }: { path: string }) {
   const icon = iconResolver.resolveIcon("file-tree-icon-file", path);
   return <svg className={styles.fileMark} data-type={sourceFileKind(path).type} viewBox="0 0 16 16" aria-hidden="true" dangerouslySetInnerHTML={{ __html: fileIcons.get(icon.name) ?? "" }} />;
 }
-export function AgentProjectCode({ draftId, revision, name, dirty, onClose, comparison, comparisonPending = false }: {
+export function AgentProjectCode({ draftId, revision, name, dirty, onClose, comparison, comparisonPending = false, directoryTarget, expanded = true, onExpandedChange }: {
   draftId: string; revision: number; name: string; dirty: boolean; onClose: () => void; comparison?: DeepagentsProjectComparison; comparisonPending?: boolean;
+  directoryTarget?: HTMLElement | null; expanded?: boolean; onExpandedChange?: (expanded: boolean) => void;
 }) {
   const theme = useCodeTheme();
+  const splitView = directoryTarget !== undefined;
+  function selectFile(path: string) { setSelected(path); if (splitView) onExpandedChange?.(true); }
   const [wrap, setWrap] = useState(false);
   const [mode, setMode] = useState<"files" | "changes">(comparison ? "changes" : "files");
   useEffect(() => { if (comparison) setMode("changes"); }, [comparison]);
@@ -89,19 +93,25 @@ export function AgentProjectCode({ draftId, revision, name, dirty, onClose, comp
     catch (reason) { setNotice(reason instanceof Error ? reason.message : "下载失败，请重试。"); }
     finally { setDownloading(false); }
   }
-  return <section className={styles.workspace} aria-label="DeepAgents 代码视图" data-tree={treeOpen} data-theme={theme}>
+  const directory = <aside className={styles.sidebar} aria-label="项目文件">
+          <label className={styles.search}><Icon name="search" /><input aria-label="筛选文件" placeholder="筛选文件…" value={filter} onChange={event => setFilter(event.target.value)} />{filter && <button type="button" aria-label="清除筛选" onClick={() => setFilter("")}>×</button>}</label>
+          <div className={styles.treeHeading}><span>项目文件</span><small>{visible.length}</small></div>
+          <nav className={styles.tree} aria-label="DeepAgents 文件树">{paths.length ? <ProjectFileTree key={mode} paths={paths} selected={selected} onSelect={selectFile} theme={theme} gitStatus={mode === "changes" ? changes.map(({path, status}) => ({path, status})) : undefined} /> : <p className={styles.noFiles}>没有匹配的文件</p>}</nav>
+          <div className={styles.sidebarFooter}><span>DeepAgents {project?.framework_version}</span><button type="button" onClick={() => {setMode("files"); selectFile("README.md");}}>运行说明 ↗</button></div>
+        </aside>;
+  const panel = <section className={styles.workspace} aria-label="DeepAgents 代码视图" data-tree={!splitView && treeOpen} data-theme={theme}>
     <header className={styles.toolbar}>
       <div className={styles.breadcrumb}><span title={name}>{name}</span><span aria-hidden="true">→</span><strong>DeepAgents</strong><small>{project?.framework_version}</small></div>
       <div className={styles.actions}>
         <button type="button" aria-label="刷新代码" title="刷新代码" disabled={loading || mode === "changes"} onClick={() => setRefresh(value => value + 1)}><Icon name="refresh" /></button>
         <button type="button" aria-label="下载项目" title="下载项目" aria-busy={downloading} disabled={!project || downloading || (mode === "changes" && (comparisonPending || revision !== project.revision))} onClick={() => void download()}><Icon name="download" /></button>
-        <button type="button" onClick={onClose} className={styles.returnButton}>返回配置</button>
+        <button type="button" onClick={splitView ? () => onExpandedChange?.(false) : onClose} className={styles.returnButton}>{splitView ? "收起代码" : "返回配置"}</button>
       </div>
     </header>
     {comparison && <nav className={styles.viewTabs} aria-label="代码内容"><button type="button" aria-pressed={mode === "files"} onClick={() => setMode("files")}>全部文件</button><button type="button" aria-pressed={mode === "changes"} onClick={() => setMode("changes")}>本次改动 · {changes.length}</button></nav>}
     <div className={styles.context}>
       <Icon name="code" /><span>{mode === "changes" && comparison ? `r${comparison.before.revision} → r${comparison.after.revision} · ${comparisonPending ? "待应用" : "已应用"} · ${changes.length} 个文件变化` : dirty ? `有未保存配置 · 当前展示已保存的 r${revision}` : `草稿 r${revision} · 生成的项目代码`}</span><small>只读</small>
-      <button type="button" aria-label="显示文件树" aria-pressed={treeOpen} title="显示 / 隐藏文件树" onClick={() => setTreeOpen(value => !value)}><Icon name="tree" /></button>
+      {!splitView && <button type="button" aria-label="显示文件树" aria-pressed={treeOpen} title="显示 / 隐藏文件树" onClick={() => setTreeOpen(value => !value)}><Icon name="tree" /></button>}
     </div>
     {loading ? <div className={styles.loading} role="status" aria-label="正在生成代码"><div /><div /><div /><span>正在生成项目代码…</span></div> : error ?
       <div className={styles.empty} role="alert"><Icon name="code" /><strong>暂时无法展示代码</strong><p>{error}</p><button type="button" onClick={() => setRefresh(value => value + 1)}>重试</button></div> :
@@ -118,13 +128,28 @@ export function AgentProjectCode({ draftId, revision, name, dirty, onClose, comp
           {mode === "changes" && change ? <ProjectSourceDiff change={change} theme={theme} wrap={wrap}/> : file?.content != null ? <ProjectSourceEditor path={file.path} content={file.content} theme={theme} wrap={wrap} /> : <div className={styles.empty}><p>{file?.unavailable ?? "从文件树中选择文件查看源代码。"}</p></div>}
           <footer className={styles.status}><span>{file?.content != null ? `${sourceFileKind(file.path).name} · UTF-8` : "项目资源"}</span><span>只读预览</span><span>{project?.files.length ?? 0} 个文件</span></footer>
         </main>
-        {treeOpen && <aside className={styles.sidebar} aria-label="项目文件">
-          <label className={styles.search}><Icon name="search" /><input aria-label="筛选文件" placeholder="筛选文件…" value={filter} onChange={event => setFilter(event.target.value)} />{filter && <button type="button" aria-label="清除筛选" onClick={() => setFilter("")}>×</button>}</label>
-          <div className={styles.treeHeading}><span>项目文件</span><small>{visible.length}</small></div>
-          <nav className={styles.tree} aria-label="DeepAgents 文件树">{paths.length ? <ProjectFileTree key={mode} paths={paths} selected={selected} onSelect={setSelected} theme={theme} gitStatus={mode === "changes" ? changes.map(({path, status}) => ({path, status})) : undefined} /> : <p className={styles.noFiles}>没有匹配的文件</p>}</nav>
-          <div className={styles.sidebarFooter}><span>DeepAgents {project?.framework_version}</span><button type="button" onClick={() => {setMode("files"); setSelected("README.md");}}>运行说明 ↗</button></div>
-        </aside>}
+        {!splitView && treeOpen && directory}
       </div>}
     <div className={styles.notice} role="status" aria-live="polite">{notice}</div>
   </section>;
+  return <>
+    {splitView && directoryTarget && createPortal(
+      <section className={`${styles.workspace} ${styles.directoryWorkspace}`} data-theme={theme} aria-label="代码目录">
+        <header className={styles.directoryHeader}>
+          <div className={styles.directoryTabs} role="group" aria-label="配置与代码视图">
+            <button type="button" aria-pressed="false" onClick={onClose}>配置</button>
+            <button type="button" aria-pressed="true">代码</button>
+          </div>
+          <button type="button" aria-label={expanded ? "收起代码视图" : "展开代码视图"} title={expanded ? "收起代码，返回对话" : "在右侧展开代码"} aria-expanded={expanded} disabled={loading || Boolean(error)} onClick={() => onExpandedChange?.(!expanded)}>
+            <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d={expanded ? "M8 3v5H3m9 9v-5h5M8 8 3 3m9 9 5 5" : "M3 8V3h5m9 9v5h-5M3 3l5 5m9 9-5-5"}/></svg>
+          </button>
+        </header>
+        <p className={styles.directoryHint}>{dirty ? `有未保存配置 · 展示 r${revision}` : `草稿 r${revision}`} · 点击文件在右侧查看</p>
+        {comparison && <nav className={styles.viewTabs} aria-label="目录内容"><button type="button" aria-pressed={mode === "files"} onClick={() => setMode("files")}>全部文件</button><button type="button" aria-pressed={mode === "changes"} onClick={() => setMode("changes")}>本次改动 · {changes.length}</button></nav>}
+        {loading ? <div className={styles.loading} role="status"><div/><div/><div/><span>正在读取文件目录…</span></div> : error ? <div className={styles.empty} role="alert"><p>{error}</p><button type="button" onClick={() => setRefresh(value => value + 1)}>重试</button></div> : directory}
+      </section>, directoryTarget
+    )}
+    {(!splitView || expanded) && panel}
+  </>;
+
 }

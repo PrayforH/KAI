@@ -138,6 +138,7 @@ export function KnowledgeBaseList({
   onClear,
   onRetry,
   autoFocus = true,
+  clearLabel = "清除选择，使用智能体默认知识库",
 }: {
   available: StudioKnowledgeBase[];
   selected: readonly string[];
@@ -147,6 +148,7 @@ export function KnowledgeBaseList({
   onClear: () => void;
   onRetry: () => void;
   autoFocus?: boolean;
+  clearLabel?: string;
 }) {
   const [query, setQuery] = useState("");
   const matches = available.filter((base) =>
@@ -166,14 +168,14 @@ export function KnowledgeBaseList({
           <span className="task-knowledge-option-copy"><strong>{base.displayName}</strong><small>{TYPE_LABELS[base.kbType] ?? base.kbType}</small></span>
         </button></li>
       ))}</ul> : <p className="task-knowledge-empty">{query ? "没有匹配的知识库" : "暂无可用知识库"}</p>}
-    <button type="button" className="task-knowledge-clear" disabled={!count} onClick={onClear}>清除选择，使用智能体默认知识库</button>
+    <button type="button" className="task-knowledge-clear" disabled={!count} onClick={onClear}>{clearLabel}</button>
   </>;
 }
 
 /** The same list bound to the thread: what the composer's add panel shows. */
-export function KnowledgeBasePicker({ autoFocus = true }: { autoFocus?: boolean }) {
+export function KnowledgeBasePicker({ autoFocus = true, clearLabel }: { autoFocus?: boolean; clearLabel?: string }) {
   const { available, selected, loading, error, retry, toggle, clear } = useTaskKnowledge();
-  return <KnowledgeBaseList autoFocus={autoFocus} available={available} selected={selected}
+  return <KnowledgeBaseList autoFocus={autoFocus} clearLabel={clearLabel} available={available} selected={selected}
     loading={loading} error={error} onToggle={toggle} onClear={clear} onRetry={retry} />;
 }
 

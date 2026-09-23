@@ -8317,3 +8317,31 @@
 .agentIdentityIcon { display: grid; place-items: center; width: 28px; height: 28px; flex: 0 0 28px; border-radius: 6px; color: var(--studio-ink-soft); background: var(--studio-panel-subtle); }
 .versionTrigger { display: inline-flex; align-items: center; gap: 5px; }
 .versionTrigger svg { width: 14px; height: 14px; }
+
+/* All Builder categories use the same viewport-aligned drawer and card rhythm. */
+.studioShell[data-agent-focused=true] .configurationDrawer:not([hidden]) { width: clamp(380px, 35vw, 580px); max-width: 100vw; padding: 0 20px 24px; box-shadow: -12px 0 40px #00000016; }
+.configurationDrawer .configEditorHeading { gap: 12px; min-height: 66px; }
+.configurationDrawer .configEditorHeading > div:first-child { display: grid; gap: 3px; min-width: 0; }
+.configurationDrawer .configEditorHeading small { color: var(--studio-muted); font-size: 11px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.configurationDrawer .configEditorHeading > div:last-child { display: flex; white-space: nowrap; }
+.configurationDrawer .panelViewport { min-width: 0; margin: 0; border: 0; }
+.configurationDrawer .configPanel { min-width: 0; padding: 0; }
+.configurationDrawer .formGrid { grid-template-columns: minmax(0, 1fr); }
+.configurationDrawer .workerToolPicker { margin: 0 0 20px; padding: 0; border: 0; background: transparent; }
+.configurationDrawer .compactToolGrid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.configurationDrawer .compactToolGrid > label, .configurationDrawer .skillChoice, .configurationDrawer .skillChoiceEnabled, .configurationDrawer .mcpCard, .configurationDrawer .mcpCardEnabled { margin: 0 0 8px; min-width: 0; border-radius: 8px; padding: 13px; border: 1px solid var(--studio-line); background: var(--studio-panel); }
+.configurationDrawer .compactToolGrid > label[data-enabled=true], .configurationDrawer .skillChoiceEnabled, .configurationDrawer .mcpCardEnabled { border-color: var(--studio-line-strong); background: var(--studio-panel-subtle); }
+.configurationDrawer .mcpCopy { min-width: 0; overflow-wrap: anywhere; }
+.configurationDrawer .mcpTitleLine { flex-wrap: wrap; }
+.configurationDrawer .workerToolPickerHeader { display: flex; flex-wrap: wrap; }
+.configurationDrawer .workerBoundaryNote { display: none; }
+.configurationDrawer .skillPanelHeading, .configurationDrawer .groupHeading { margin-top: 12px; }
+.configurationDrawer .drawerActions { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
+.drawerActions button, .drawerActions a, .drawerPrimaryAction { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 12px; border: 1px solid var(--studio-line); border-radius: 6px; background: var(--studio-panel); color: var(--studio-ink); text-decoration: none; font: inherit; font-size: 12px; cursor: pointer; }
+.drawerSearch { width: 100%; box-sizing: border-box; border: 1px solid var(--studio-line); border-radius: 7px; padding: 10px 12px; color: var(--studio-ink); background: var(--studio-panel); font: inherit; font-size: 12px; }
+.configurationDrawer :global(.task-knowledge-menu) { width: 100%; min-width: 0; padding: 0; border: 0; box-shadow: none; background: transparent; }
+.configurationDrawer :global(.task-knowledge-menu) ul { display: grid; gap: 8px; margin: 12px 0; padding: 0; max-height: none; }
+.configurationDrawer :global(.task-knowledge-option) { width: 100%; padding: 14px; border: 1px solid var(--studio-line); border-radius: 8px; background: var(--studio-panel); }
+.configurationDrawer :global(.task-knowledge-option[aria-pressed=true]) { background: var(--studio-panel-subtle); border-color: var(--studio-line-strong); }
+.configurationDrawer button:focus-visible, .configurationDrawer a:focus-visible { outline: 2px solid var(--studio-ink); outline-offset: 2px; }
+@media(max-width:600px) { .studioShell[data-agent-focused=true] .configurationDrawer:not([hidden]) { width: 100vw; padding-inline: 16px; } }
