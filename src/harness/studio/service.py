@@ -1043,7 +1043,8 @@ class AgentStudioService:
             {"name": skill.name, "instructions": skill.instructions}
             for skill in current.spec.skills
         ]
-        context.pop("pythonTools", None)
+        # Operator code is authoring content, not credentials; it is required to preserve
+        # existing operators when generating the complete replacement list.
         catalog_revision, catalog = await self._builder_catalog(tenant_id, user_id)
         runtime_features = next(
             (
@@ -1062,8 +1063,23 @@ class AgentStudioService:
             catalog.builtin_tools,
             runtime_features,
         )
+        knowledge_bases = await self._builder_knowledge_bases(tenant_id, user_id)
+        subagents = await self._builder_subagents(tenant_id, user_id, current)
         prompt = json.dumps({
             "assemblyCatalog": {
+                "runtimes": [item.model_dump(mode="json", by_alias=True)
+                             for item in catalog.runtime_capabilities],
+                "knowledgeBases": knowledge_bases,
+                "subagents": subagents,
+                "modelRoutes": [{"routeId": item.route_id, "label": item.label,
+                    "models": item.models, "capabilities": item.capabilities}
+                    for item in catalog.model_routes if item.enabled
+                    and item.model_type in {"chat", "vision"}],
+                "executionProfiles": [{"profileId": item.profile_id, "label": item.label,
+                    "description": item.description} for item in catalog.execution_profiles
+                    if item.enabled],
+                "policies": [{"policyId": item.policy_id, "label": item.label,
+                    "description": item.description} for item in catalog.policies if item.enabled],
                 "revision": catalog_revision,
                 "skills": [{"packageId": s.package_id, "revision": s.revision,
                     "label": s.label, "summary": s.summary, "risk": s.risk_level}
@@ -1075,7 +1091,7 @@ class AgentStudioService:
                     "tools": item.tools, "risk": item.risk,
                     "networkAccess": item.network_access,
                     "allowedExecutionProfileIds": item.allowed_execution_profile_ids}
-                    for item in catalog.mcp_servers],
+                    for item in catalog.mcp_servers if item.enabled],
             },
             "currentDraft": context,
             "conversation": [item.model_dump() for item in request.messages],
@@ -1116,9 +1132,15 @@ class AgentStudioService:
             raise ConflictError("模型未明确消息用途，请重试；未执行任何操作")
         if request.intent == "edit" and reply.action not in {"edit", "ask", "reply"}:
             raise ConflictError("修改模式不能发起试跑，请重新描述修改要求")
-        if reply.changes.install_skills or any(
-               set(getattr(reply.changes, field) or ()) - set(getattr(current.spec, field))
-               for field in ("builtin_tools", "mcp_servers")):
+        selects_catalog_resource = any(
+            getattr(reply.changes, field) is not None
+            for field in ("runtime", "model", "subagents", "execution_profile", "permission_policy")
+        )
+        adds_capability = any(
+            set(getattr(reply.changes, field) or ()) - set(getattr(current.spec, field))
+            for field in ("builtin_tools", "mcp_servers", "knowledge_references")
+        )
+        if selects_catalog_resource or reply.changes.install_skills or adds_capability:
             # Bind to the catalog the model actually saw, not a model-generated revision.
             reply = reply.model_copy(update={"changes": reply.changes.model_copy(
                 update={"capability_catalog_revision": catalog_revision}
@@ -1245,17 +1267,67 @@ class AgentStudioService:
             return record.revision, record.catalog
         return 1, await self.capabilities(tenant_id, user_id)
 
+    async def _builder_knowledge_bases(self, tenant_id: str, user_id: str) -> list[dict[str, str]]:
+        if self._knowledge is None:
+            return []
+        bases = await self._knowledge.list_bases(tenant_id, user_id, refresh_counts=False)
+        return [{"reference": item.reference, "label": item.display_name,
+                 "description": item.description} for item in bases]
+
+    async def _builder_subagents(
+        self, tenant_id: str, user_id: str, current: AgentDraft,
+    ) -> list[dict[str, str]]:
+        drafts = await self._repository.list_for_user(tenant_id, user_id)
+        visible = {f"{item.spec.name}@{item.spec.version}": item.spec.display_name
+                   for item in drafts if item.draft_id != current.draft_id
+                   and item.spec.name != current.spec.name}
+        if self._registry is not None:
+            for item in await self._registry.list_for_user(tenant_id, user_id):
+                if item.status is AgentVersionStatus.PUBLISHED and item.name != current.spec.name:
+                    visible[f"{item.name}@{item.version}"] = item.name
+        return [{"ref": ref, "label": label} for ref, label in sorted(visible.items())]
+
     async def _check_builder_assembly(
         self, tenant_id: str, user_id: str, current: AgentDraft, changes: BuilderChanges,
     ) -> None:
         revision, catalog = await self._builder_catalog(tenant_id, user_id)
+        selecting = any(getattr(changes, key) is not None for key in
+                        ("runtime", "model", "subagents", "execution_profile", "permission_policy"))
+        if selecting and changes.capability_catalog_revision != revision:
+            raise ConflictError("能力目录已更新，请基于最新目录重新生成配置建议")
+        if changes.runtime is not None and changes.runtime not in {
+            item.runtime for item in catalog.runtime_capabilities
+        }:
+            raise ConflictError("运行时不在当前可用目录中")
+        if changes.model is not None:
+            routes = {item.route_id: item for item in catalog.model_routes if item.enabled}
+            pairs = [(changes.model.route_id, changes.model.model)]
+            if changes.model.fallback_route_id:
+                pairs.append((changes.model.fallback_route_id, changes.model.fallback_model))
+            for route_id, model in pairs:
+                if route_id not in routes or model not in routes[route_id].models:
+                    raise ConflictError("模型不在当前可用目录中")
+        for field, visible in (
+            ("execution_profile", {item.profile_id for item in catalog.execution_profiles
+                                   if item.enabled}),
+            ("permission_policy", {item.policy_id for item in catalog.policies if item.enabled}),
+        ):
+            value = getattr(changes, field)
+            if value is not None and value not in visible:
+                raise ConflictError("配置不在当前可用目录中")
+        if changes.subagents is not None:
+            existing = {item.ref for item in current.spec.subagents}
+            visible = {item["ref"] for item in
+                       await self._builder_subagents(tenant_id, user_id, current)}
+            if {item.ref for item in changes.subagents} - existing - visible:
+                raise ConflictError("协作角色不在当前用户可见目录中")
         if changes.install_skills:
             if changes.capability_catalog_revision != revision:
                 raise ConflictError("能力目录已更新，请重新获取 Skill 推荐")
             for selected in changes.install_skills:
                 visible = next((s for s in catalog.skills if s.package_id == selected.package_id
                     and s.enabled and s.revision == selected.revision
-                    and current.spec.runtime in s.compatible_runtimes), None)
+                    and (changes.runtime or current.spec.runtime) in s.compatible_runtimes), None)
                 package = platform_skill_package(selected.package_id, selected.revision)
                 if visible is None or visible.content_hash != package.content_hash:
                     raise ConflictError("推荐 Skill 不在当前可用目录中")
@@ -1263,7 +1335,8 @@ class AgentStudioService:
             "builtin_tools": {item.name for item in catalog.builtin_tools},
             "mcp_servers": {item.reference for item in catalog.mcp_servers
                             if item.enabled},
-            "knowledge_references": set(),
+            "knowledge_references": {item["reference"] for item in
+                                     await self._builder_knowledge_bases(tenant_id, user_id)},
         }
         for field, visible in allowed.items():
             proposed = getattr(changes, field)

@@ -130,7 +130,7 @@ async def test_multi_turn_preview_apply_conflict_and_scope() -> None:
         )
         assert forbidden.status_code == 404
         for changes, status in [
-            ({"executionProfile": "local"}, 422),
+            ({"executionProfile": "local"}, 409),
             ({"systemPrompt": None}, 422),
             ({"builtinTools": ["NotARegisteredTool"]}, 409),
             ({"mcpServers": ["new-external-server"]}, 409),
@@ -556,3 +556,116 @@ async def test_eval_snapshot_stream_enforces_ownership_and_closes_on_completion(
             f"/v1/studio/eval-runs/{eval_id}/events", headers={**headers, "X-User-ID": "other"}
         )
         assert denied.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_builder_binds_visible_knowledge_and_web_with_apply_revalidation() -> None:
+    application = app()
+    model = AsyncMock()
+    application.dependency_overrides[get_model_configuration_service] = lambda: model
+    headers = {"Authorization": f"Bearer {SERVICE_TOKEN}",
+               "X-Tenant-ID": "tenant-a", "X-User-ID": "builder-a"}
+    async with AsyncClient(
+        transport=ASGITransport(app=application), base_url="http://test"
+    ) as client:
+        for owner, reference in (("builder-a", "visible-policy"), ("other", "private-policy")):
+            response = await client.post("/v1/studio/knowledge/bases",
+                headers={**headers, "X-User-ID": owner},
+                json={"reference": reference, "displayName": reference, "sourceReferences": []})
+            assert response.status_code == 201, response.text
+        draft = (await client.post("/v1/studio/drafts", headers=headers,
+                                  json=draft_request())).json()
+        path = f"/v1/studio/drafts/{draft['draftId']}"
+        tools = list(dict.fromkeys([*draft["spec"]["builtinTools"], "WebSearch", "WebFetch"]))
+        model.complete_text.return_value = json.dumps({"reply": "联网和知识库绑定待确认",
+            "changes": {"builtinTools": tools, "knowledgeReferences": ["visible-policy"]}})
+        proposal = await client.post(path + "/builder-conversation", headers=headers,
+            json={"expectedRevision": 1, "messages": [
+                {"role": "user", "content": "启用联网，绑定知识库"}]})
+        assert proposal.status_code == 200, proposal.text
+        context = json.loads(model.complete_text.call_args.kwargs["user_prompt"])
+        assert [item["reference"] for item in context["assemblyCatalog"]["knowledgeBases"]] == [
+            "visible-policy"]
+        changes = proposal.json()["changes"]
+        assert changes["capabilityCatalogRevision"] >= 1
+        assert (await client.get(path, headers=headers)).json()["revision"] == 1
+        denied = await client.post(path + "/builder-apply", headers=headers,
+            json={"expectedRevision": 1, "changes": {**changes,
+                                                    "knowledgeReferences": ["private-policy"]}})
+        assert denied.status_code == 409, denied.text
+        saved = await client.post(path + "/builder-apply", headers=headers,
+            json={"expectedRevision": 1, "changes": changes})
+        assert saved.status_code == 200, saved.text
+        assert saved.json()["spec"]["knowledgeReferences"] == ["visible-policy"]
+        assert {"WebSearch", "WebFetch"} <= set(saved.json()["spec"]["builtinTools"])
+        # Visibility is checked again at apply time, not only when proposing.
+        deleted = await client.delete("/v1/studio/knowledge/bases/visible-policy", headers=headers)
+        assert deleted.status_code in {200, 204}, deleted.text
+        fresh = (await client.post("/v1/studio/drafts", headers=headers,
+                                  json=draft_request("fresh-researcher"))).json()
+        denied = await client.post(f"/v1/studio/drafts/{fresh['draftId']}/builder-apply",
+            headers=headers, json={"expectedRevision": 1, "changes": changes})
+        assert denied.status_code == 409, denied.text
+
+
+@pytest.mark.asyncio
+async def test_builder_authors_operator_model_and_limits_without_running_code() -> None:
+    application = app()
+    model = AsyncMock()
+    application.dependency_overrides[get_model_configuration_service] = lambda: model
+    headers = {"Authorization": f"Bearer {SERVICE_TOKEN}",
+               "X-Tenant-ID": "tenant-a", "X-User-ID": "builder-a"}
+    async with AsyncClient(
+        transport=ASGITransport(app=application), base_url="http://test"
+    ) as client:
+        draft = (await client.post("/v1/studio/drafts", headers=headers,
+                                  json=draft_request())).json()
+        path = f"/v1/studio/drafts/{draft['draftId']}"
+        changes = {"model": draft["spec"]["model"],
+            "limits": {**draft["spec"]["limits"], "timeoutSeconds": 120},
+            "workspace": {**draft["spec"]["workspace"], "restoreSession": False},
+            "pythonTools": [{"name": "double", "description": "输入翻倍",
+                "inputSchema": {"type": "object", "properties": {"value": {"type": "number"}}},
+                "code": "def run(arguments):\n    return arguments['value'] * 2\n"}]}
+        model.complete_text.return_value = json.dumps({"reply": "配置待确认", "changes": changes})
+        response = await client.post(path + "/builder-conversation", headers=headers,
+            json={"expectedRevision": 1, "messages": [
+                {"role": "user", "content": "添加翻倍算子，超时两分钟"}]})
+        assert response.status_code == 200, response.text
+        proposal = response.json()["changes"]
+        assert proposal["capabilityCatalogRevision"] >= 1
+        assert (await client.get(path, headers=headers)).json()["spec"]["pythonTools"] == []
+        saved = await client.post(path + "/builder-apply", headers=headers,
+            json={"expectedRevision": 1, "changes": proposal})
+        assert saved.status_code == 200, saved.text
+        assert saved.json()["spec"]["pythonTools"][0]["name"] == "double"
+        assert saved.json()["spec"]["limits"]["timeoutSeconds"] == 120
+        assert saved.json()["spec"]["workspace"]["restoreSession"] is False
+        denied = await client.post(path + "/builder-apply", headers=headers,
+            json={"expectedRevision": 2, "changes": {"capabilityCatalogRevision":
+                proposal["capabilityCatalogRevision"],
+                "model": {"routeId": "not-visible", "model": "secret"}}})
+        assert denied.status_code == 409, denied.text
+        denied = await client.post(path + "/builder-apply", headers=headers,
+            json={"expectedRevision": 2, "changes": {"capabilityCatalogRevision":
+                proposal["capabilityCatalogRevision"], "subagents": [{"alias": "private", "ref":
+                "private-agent@0.1.0", "responsibility": "review"}]}})
+        assert denied.status_code == 409, denied.text
+
+
+def test_partial_builder_limits_preserve_unmentioned_values() -> None:
+    from harness.studio.builder_conversation import BuilderChanges, apply_builder_changes
+    from harness.studio.factory import create_draft_spec
+    from harness.studio.models import CreateAgentDraftRequest
+
+    request = CreateAgentDraftRequest.model_validate(draft_request())
+    spec = create_draft_spec(name=request.name, domain=request.domain,
+                             display_name=request.display_name, description=request.description,
+                             template=request.template)
+    spec = spec.model_copy(update={"limits": spec.limits.model_copy(update={"max_turns": 35})})
+    candidate = apply_builder_changes(spec, BuilderChanges.model_validate(
+        {"limits": {"timeoutSeconds": 120}, "workspace": {"restoreSession": False}}))
+    assert candidate.limits.max_turns == 35
+    assert candidate.limits.timeout_seconds == 120
+    assert candidate.workspace.archive_on_complete is True
+    assert candidate.workspace.restore_session is False

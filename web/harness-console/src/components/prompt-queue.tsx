@@ -23,14 +23,15 @@ export function PromptQueue({ items, paused, busy, canSteer, sendingIds, onChang
   }
   if (!items.length) return null;
   return <section className="composer-context-shelf prompt-queue" aria-label="待发送队列">
-    {(items.length > 1 || paused) && <header><strong>待发送 · {items.length}</strong><span>{paused ? "已暂停" : ""}</span>
-      <ConversationControl action={paused ? "resume" : "pause"} aria-label={paused ? "继续队列" : "暂停"} disabled={sendingIds.length > 0 || Boolean(editing)} onClick={() => onPause(!paused)} />
-    </header>}
     <ol>{items.map((item, index) => {
       const sending = sendingIds.includes(item.id);
-      return <li key={item.id}>
+      return <li key={item.id} tabIndex={0} title="Alt + ↑ / ↓ 调整队列顺序" onKeyDown={event => {
+        if (!event.altKey || sendingIds.length || editing) return;
+        const offset = event.key === "ArrowUp" ? -1 : event.key === "ArrowDown" ? 1 : 0;
+        if (offset && index + offset >= 0 && index + offset < items.length) { event.preventDefault(); move(index, offset); }
+      }}>
         {editing === item.id ? <div className="queue-editor">
-          <textarea aria-label={`编辑第 ${index + 1} 条消息`} autoFocus value={draft} rows={2}
+          <textarea aria-label={`编辑第 ${index + 1} 条消息`} autoFocus value={draft} rows={1}
             onChange={(event) => setDraft(event.target.value)}
             onCompositionStart={() => { composing.current = true; }}
             onCompositionEnd={() => { composing.current = false; }}
@@ -39,18 +40,17 @@ export function PromptQueue({ items, paused, busy, canSteer, sendingIds, onChang
               if (event.key === "Escape") { event.preventDefault(); setEditing(null); }
               if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); save(item); }
             }} />
-          <div><button type="button" onClick={() => setEditing(null)}>取消</button><button type="button" disabled={!draft.trim() && !item.attachments.length} onClick={() => save(item)}>保存</button></div>
+          <button type="button" aria-label="取消编辑" title="取消" onClick={() => setEditing(null)}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15" /></svg></button><button type="button" aria-label="保存编辑" title="保存" disabled={!draft.trim() && !item.attachments.length} onClick={() => save(item)}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 10 4 4 8-8" /></svg></button>
         </div> : <>
           <span className="queue-number" aria-hidden="true">↳</span>
           <span className="queue-copy" title={item.text}>{item.text || "附件消息"}{item.attachments.length > 0 && <small> · {item.attachments.length} 个附件</small>}</span>
-          {busy ? <button type="button" disabled={!canSteer || sending || item.attachments.length > 0} title={canSteer ? "将补充送入当前运行" : "等待运行支持实时引导"} onClick={() => onGuide(item)}>{sending ? "正在引导…" : "↪ 调整方向"}</button>
+          <div className="queue-actions">
+          {paused && index === 0 && <ConversationControl action="resume" aria-label="继续队列" disabled={sendingIds.length > 0 || Boolean(editing)} onClick={() => onPause(false)} />}
+          {busy ? <button type="button" disabled={!canSteer || sending || item.attachments.length > 0} title={canSteer ? "将补充送入当前运行" : "等待运行支持实时引导"} onClick={() => onGuide(item)} aria-label={sending ? "正在调整方向" : "调整方向"}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 16V9a4 4 0 0 1 4-4h8m-4-4 4 4-4 4" /></svg></button>
             : <ConversationControl action="send" aria-label="发送" disabled={sendingIds.length > 0} onClick={() => onSend(item)} />}
           <button type="button" aria-label={`删除第 ${index + 1} 条`} disabled={sending} onClick={() => onChange(items.filter((entry) => entry.id !== item.id))}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 5.5h13M7 5.5V3h6v2.5M5 5.5l1 11h8l1-11M8 8v6m4-6v6" /></svg></button>
-          <details className="queue-more"><summary aria-label={`更多第 ${index + 1} 条的操作`}>···</summary><div>
-            <button type="button" disabled={sending} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); onPause(true); setDraft(item.text); setEditing(item.id); }}>编辑</button>
-            <button type="button" aria-label={`上移第 ${index + 1} 条`} disabled={index === 0 || sendingIds.length > 0} onClick={() => move(index, -1)}>上移</button>
-            <button type="button" aria-label={`下移第 ${index + 1} 条`} disabled={index === items.length - 1 || sendingIds.length > 0} onClick={() => move(index, 1)}>下移</button>
-          </div></details>
+          <button type="button" aria-label={`编辑第 ${index + 1} 条`} title="编辑" disabled={sending} onClick={() => { onPause(true); setDraft(item.text); setEditing(item.id); }}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m12 4 4 4M4 12l9-9a2 2 0 0 1 3 3l-9 9-4 1 1-4Z" /></svg></button>
+          </div>
         </>}
       </li>;
     })}</ol>

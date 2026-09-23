@@ -666,6 +666,17 @@ export type StudioAgentBuilderPatch = {
 };
 
 export type StudioBuilderChanges = {
+  runtime?: StudioDraft["runtime"];
+  toolExposureMode?: StudioDraft["toolExposureMode"];
+  evaluationEnabled?: boolean;
+  evaluationCases?: ApiDraftSpec["evaluationCases"];
+  model?: {routeId: string; model: string; reasoningEffort?: string | null; fallbackRouteId?: string | null; fallbackModel?: string | null; requiredCapabilities?: string[]};
+  pythonTools?: StudioDraft["pythonTools"];
+  subagents?: StudioDraft["subagents"];
+  limits?: ApiDraftSpec["limits"];
+  workspace?: ApiDraftSpec["workspace"];
+  executionProfile?: string;
+  permissionPolicy?: string;
   installSkills?: {packageId: string; revision: number}[];
   displayName?: string;
   description?: string;

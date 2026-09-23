@@ -19,6 +19,7 @@ import { isTerminalRunStatus } from "../../lib/run-status";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   apiDraftToStudioDraft,
+  studioDraftToSpec,
   studioClient,
   type StudioTaskDrivenRecommendation,
   type StudioTryRun,
@@ -61,6 +62,9 @@ const editLabels: Record<string, string> = {
   taskContract: "任务与输出要求", builtinTools: "内置工具", mcpServers: "MCP",
   knowledgeReferences: "知识库", skillInstructions: "Skill 正文", removeSkills: "移除 Skill",
   roleResponsibilities: "协作角色职责", createSkills: "创建 Agent Skill", installSkills: "安装推荐 Skill", updateSkills: "更新 Agent Skill",
+  runtime: "运行时", toolExposureMode: "工具加载", evaluationEnabled: "效果评估", evaluationCases: "验收用例",
+  model: "模型", pythonTools: "Python 算子", subagents: "协作角色", limits: "运行限制",
+  workspace: "工作区", executionProfile: "执行环境", permissionPolicy: "权限策略",
   capabilityCatalogRevision: "装配目录修订",
 };
 
@@ -71,7 +75,7 @@ function beforeEdit(draft: StudioDraft, key: string): unknown {
   if (key === "skillInstructions") return draft.skills.map(({ name, instructions }) => ({ name, instructions }));
   if (key === "removeSkills") return draft.skills.map(({ name }) => name);
   if (key === "roleResponsibilities") return draft.subagents.map(({ alias, responsibility }) => ({ alias, responsibility }));
-  return draft[key as keyof StudioDraft];
+  return studioDraftToSpec(draft)[key as keyof ReturnType<typeof studioDraftToSpec>];
 }
 
 function showValue(value: unknown): string {

@@ -14,8 +14,17 @@ VISIBLE_EXECUTION_CONTRACT = """
 - Respect user-owned decisions and stage boundaries. When the user asks to choose, review, or
   supply information before the next step, present the requested options or questions and stop
   this turn. Do not select on their behalf or perform the dependent work before their reply.
-  Use a structured question tool only if it is actually available; otherwise ask in chat and
-  wait for the next user message. Do not claim an approval card or form exists when it does not.
+  Use a structured question tool only if actually available. Otherwise, when concrete user input
+  is needed, end the response with one fenced `harness-input` JSON block. The conversation UI
+  renders it as a card above the composer. Schema:
+  {"version":1,"title":"需要你补充","questions":[{"id":"direction","label":"选择方向",
+  "type":"single","options":["选项一","选项二"]}]}
+  Use 1–4 questions, unique ASCII IDs, types single/multi/text. Choice questions have 2–8 distinct
+  concise options; text questions omit options. All questions allow a free-text answer. No default
+  selection or automatic submission. Use the user's language. Put nothing after the closing fence.
+  Emit this block only for a real question awaiting a reply, never examples, progress or completed
+  work. It requests information only, not tool approval; existing tool approvals remain separate.
+  The user's selected/typed answers arrive as a normal next user message. Wait for that message.
 - Create or modify files when the user requests a file/export/download or the authorized task
   requires file changes. When delivering such a file, create and verify it inside the current
   workspace, then publish it using an available artifact tool or name its exact workspace-relative

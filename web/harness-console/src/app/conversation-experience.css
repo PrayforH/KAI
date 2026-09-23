@@ -103,11 +103,13 @@ body.codex-theme-v1 .composer-skill-context strong { font-size: 12px; font-weigh
 .composer-help-popover { padding: 12px; font-size: 12px; }
 body.codex-theme-v1 .composer-context-shelf { border-radius: 16px 16px 0 0; margin: 0 8px -12px; width: calc(100% - 16px); padding: 4px 12px 16px; box-shadow: none; }
 .prompt-queue ol { overflow: visible; }
-.prompt-queue li { min-height: 36px; border-top: 0; }
+.prompt-queue li { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; min-width: 0; min-height: 36px; border-top: 0; }
 .prompt-queue li + li { border-top: 1px solid var(--codex-line); }
 .prompt-queue header { padding: 5px 3px; font-size: 11px; }
 .queue-copy { font-size: 13px; }
 .queue-number { font-size: 17px; }
+.queue-actions { display: flex; flex-wrap: nowrap; gap: 2px; }
+.prompt-queue .queue-actions button { display: grid; place-items: center; width: 28px; height: 28px; padding: 5px; }
 .prompt-queue button { white-space: nowrap; }
 .prompt-queue button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; }
 .queue-more { position: relative; flex: 0 0 auto; }
@@ -155,8 +157,8 @@ body.codex-theme-v1 .product-loading .product-brand-mark { width: 64px; height: 
 @media (prefers-reduced-motion: reduce) { body.codex-theme-v1 .product-loading .product-brand-mark { animation: none; } }
 
 /* The composer remains the stable anchor while follow-ups are managed above it. */
-.queue-editor { display: grid; gap: 6px; width: 100%; padding-block: 6px; }
-.queue-editor textarea { width: 100%; min-height: 54px; max-height: 160px; resize: vertical; padding: 6px; border: 1px solid var(--codex-line); border-radius: 6px; background: transparent; color: var(--codex-ink); font: inherit; line-height: 1.5; }
+.queue-editor { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) 28px 28px; align-items: center; gap: 6px; width: 100%; padding-block: 4px; }
+.queue-editor textarea { width: 100%; height: 30px; min-height: 30px; max-height: 30px; resize: none; padding: 6px; border: 1px solid var(--codex-line); border-radius: 6px; background: transparent; color: var(--codex-ink); font: inherit; line-height: 1.5; }
 .queue-editor > div { display: flex; justify-content: flex-end; gap: 8px; }
 body.codex-theme-v1 .harness-composer-shell .composer-stop-secondary { display: grid; place-items: center; width: 28px; height: 28px; padding: 5px; flex: 0 0 28px; border: 0; border-radius: 50%; color: var(--codex-muted); background: transparent; cursor: pointer; }
 .composer-stop-secondary svg { width: 18px; height: 18px; }

@@ -1,4 +1,6 @@
 "use client";
+import { ConversationInputCard } from "./conversation-input-card";
+import { latestConversationInput } from "../lib/conversation-input";
 import { useConversationScope } from "../lib/conversation-scope";
 import { useAutoLoadEarlierMessages, useThreadHistoryPagination } from "../lib/task-history";
 import { startSteeringPolling } from "../lib/steering-poller";
@@ -318,6 +320,8 @@ function HarnessComposer() {
   const aui = useAui();
   const { routes, overrideRouteId } = useTaskModel();
   const threadRunning = useAuiState((state) => state.thread.isRunning);
+  const messages = useAuiState((state) => state.thread.messages);
+  const requestedInput = useMemo(() => latestConversationInput(messages), [messages]);
   const composerText = useAuiState((state) => state.composer.text);
   const composerAttachments = useAuiState((state) => state.composer.attachments);
   const stream = useRunStream();
@@ -675,6 +679,9 @@ function HarnessComposer() {
       aria-busy={runLocked}
     >
       {conversationScope?.composerAccessory}
+      {requestedInput && !conversationScope?.composerAccessory && <ConversationInputCard key={requestedInput.messageId} input={requestedInput.input} disabled={runLocked || busy || threadRunning} onSubmit={answer => {
+        threadRuntime.append({ role: "user", content: [{type: "text", text: answer}] });
+      }} />}
       {reuseNotice ? (
         <div className="composer-run-reuse-notice" role="status">
           <span>

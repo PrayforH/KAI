@@ -8,6 +8,7 @@ import { TextMessagePartProvider, useMessagePartText, useSmooth } from "@assista
 import remend from "remend";
 import remarkGfm from "remark-gfm";
 import { Children, memo, useMemo, useState, type ComponentPropsWithoutRef, type ReactElement, type ReactNode } from "react";
+import { conversationInputDisplay } from "../lib/conversation-input";
 import { normalizeMessageText } from "../lib/message-text";
 import { MermaidCodeHeader, MermaidDiagram } from "./mermaid-diagram";
 import { citationTarget, knowledgeUrlTransform, remarkWikiLinks } from "../lib/knowledge-links";
@@ -186,7 +187,7 @@ function markdownUrlTransform(url: string) {
 
 function MarkdownTextImpl() {
   const part = useMessagePartText();
-  const normalized = useMemo(() => ({ ...part, text: normalizeMessageText(part.text) }), [part]);
+  const normalized = useMemo(() => ({ ...part, text: conversationInputDisplay(normalizeMessageText(part.text), part.status.type === "running") }), [part]);
   const smooth = useSmooth(normalized, part.status.type === "running" ? STREAM_SMOOTHING : FINAL_SMOOTHING);
   const running = smooth.status.type === "running";
   const [expanded, setExpanded] = useState(false);

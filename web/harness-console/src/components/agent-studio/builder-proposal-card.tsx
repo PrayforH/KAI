@@ -19,6 +19,8 @@ function ValueEditor({ value, label, disabled, onChange }: {
   if (typeof value === "string") return <label className={styles.field}><span>{label}</span>
     <textarea aria-label={label} value={value} disabled={disabled} rows={value.includes("\n") || value.length > 80 ? 5 : 2} onChange={event => onChange(event.target.value)} />
   </label>;
+  if (typeof value === "boolean") return <label className={styles.field}><span>{label}</span><input type="checkbox" aria-label={label} checked={value} disabled={disabled} onChange={event => onChange(event.target.checked)} /></label>;
+  if (typeof value === "number") return <label className={styles.field}><span>{label}</span><input type="number" aria-label={label} value={value} disabled={disabled} onChange={event => { if (event.target.value && Number.isFinite(event.target.valueAsNumber)) onChange(event.target.valueAsNumber); }} /></label>;
   if (Array.isArray(value)) return <div className={styles.fields}>
     {value.map((item, index) => <div key={index} className={styles.listItem}>
       <ValueEditor value={item} label={`${label} ${index + 1}`} disabled={disabled} onChange={next => onChange(value.map((old, i) => i === index ? next : old))} />

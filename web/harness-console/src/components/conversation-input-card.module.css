@@ -1,0 +1,17 @@
+.card { margin: 0 0 10px; border: 1px solid var(--codex-line); border-radius: 12px; background: var(--codex-surface); color: var(--codex-ink); font-size: 13px; overflow: hidden; }
+.card header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; }
+.card header button { display: inline-flex; align-items: center; gap: 7px; min-width: 0; text-align: left; background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; }
+.card header svg { width: 16px; height: 16px; flex: 0 0 16px; stroke: currentColor; fill: none; stroke-width: 1.5; }
+.card header span { flex-shrink: 0; color: var(--codex-muted); font-size: 11px; }
+.body { display: grid; gap: 14px; padding: 2px 12px 12px; max-height: 280px; overflow: auto; }
+.body fieldset { min-width: 0; border: 0; padding: 0; margin: 0; }
+.body legend { padding: 0; margin-bottom: 8px; line-height: 1.5; }
+.options { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.options label { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--codex-line); border-radius: 6px; padding: 6px 8px; cursor: pointer; }
+.options label:has(input:checked) { border-color: var(--codex-ink); background: var(--codex-surface-raised); }
+.options input { width: 14px; height: 14px; min-height: 0; margin: 0; accent-color: var(--codex-ink); }
+.card .text { width: 100%; min-width: 0; height: 32px; min-height: 32px; border: 1px solid var(--codex-line); border-radius: 6px; padding: 6px 8px; background: transparent; color: inherit; font: inherit; }
+.card footer { display: flex; justify-content: flex-end; padding: 8px 12px; border-top: 1px solid var(--codex-line); }
+.card footer button { border: 0; border-radius: 6px; padding: 6px 12px; background: var(--codex-ink); color: var(--codex-surface); font: inherit; cursor: pointer; }
+.card button:disabled { opacity: .45; cursor: default; }
+.card p { padding: 0 12px; }

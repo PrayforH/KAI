@@ -21,21 +21,22 @@ function mount(sendingIds: string[] = []) {
 function click(label: string) { act(() => (host.querySelector(`[aria-label="${label}"]`) as HTMLButtonElement).click()); }
 it("edits in place without losing order or attachments, and cancel keeps original", () => {
   const { change } = mount();
-  act(() => ([...host.querySelectorAll("button")].find((b) => b.textContent === "编辑") as HTMLButtonElement).click());
+  click("编辑第 1 条");
   const input = host.querySelector("textarea")!;
   act(() => { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, "中文补充"); input.dispatchEvent(new Event("input", { bubbles: true })); });
-  act(() => ([...host.querySelectorAll("button")].find((b) => b.textContent === "保存") as HTMLButtonElement).click());
+  click("保存编辑");
   expect(change.mock.lastCall?.[0].map((item: QueuedPrompt) => [item.id, item.text])).toEqual([["a", "中文补充"], ["b", "second"]]);
-  act(() => ([...host.querySelectorAll("button")].find((b) => b.textContent === "编辑") as HTMLButtonElement).click());
-  act(() => ([...host.querySelectorAll("button")].find((b) => b.textContent === "取消") as HTMLButtonElement).click());
+  click("编辑第 1 条");
+  click("取消编辑");
   expect(host.querySelector("textarea")).toBeNull(); expect(change).toHaveBeenCalledTimes(1);
 });
 it("reorders and deletes the intended queued message by identity", () => {
-  const { change } = mount(); click("上移第 2 条");
+  const { change } = mount(); act(() => host.querySelectorAll("li")[1].dispatchEvent(new KeyboardEvent("keydown", {key: "ArrowUp", altKey: true, bubbles: true})));
   expect(change.mock.lastCall?.[0].map((item: QueuedPrompt) => item.id)).toEqual(["b", "a"]);
   click("删除第 1 条"); expect(change.mock.lastCall?.[0].map((item: QueuedPrompt) => item.id)).toEqual(["a"]);
 });
 it("prevents mutation of a message while its guidance acknowledgement is pending", () => {
-  const { change } = mount(["a"]); click("删除第 1 条"); click("下移第 1 条");
+  const { change } = mount(["a"]); click("删除第 1 条"); click("编辑第 1 条");
+  act(() => host.querySelector("li")!.dispatchEvent(new KeyboardEvent("keydown", {key: "ArrowDown", altKey: true, bubbles: true})));
   expect(change).not.toHaveBeenCalled();
 });
