@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import React, { act, useState } from "react";
+import React, { act, useEffect, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { studioClient, type DeepagentsProjectSource } from "../src/lib/studio-client";
@@ -10,7 +10,12 @@ import { AgentProjectCode } from "../src/components/agent-studio/agent-project-c
 
 vi.mock("../src/components/agent-studio/project-source-editor", () => ({ ProjectSourceEditor: ({ content, theme, wrap }: { content: string; theme: string; wrap: boolean }) => <pre data-theme={theme} data-wrap={wrap}>{content}</pre> }));
 vi.mock("../src/components/agent-studio/project-source-diff", () => ({ ProjectSourceDiff: ({change}: {change: {before?: {content: string}; after?: {content: string}}}) => <div data-testid="code-diff"><del>{change.before?.content}</del><ins>{change.after?.content}</ins></div> }));
-vi.mock("../src/components/agent-studio/project-file-tree", () => ({ ProjectFileTree: ({ paths, onSelect }: { paths: string[]; onSelect: (path: string) => void }) => <div>{paths.map(path => <button key={path} onClick={() => onSelect(path)}>{path}</button>)}</div> }));
+vi.mock("../src/components/agent-studio/project-file-tree", () => ({ ProjectFileTree: ({ paths, selected, onSelect }: { paths: string[]; selected: string; onSelect: (path: string) => void }) => {
+  const selectRef = useRef(onSelect); selectRef.current = onSelect;
+  // Pierre reports programmatic selection too, including its initial selection.
+  useEffect(() => { if (selected) selectRef.current(selected); }, [selected]);
+  return <div>{paths.map(path => <button key={path} onClick={() => onSelect(path)}>{path}</button>)}</div>;
+} }));
 vi.mock("../src/lib/studio-client", () => ({ studioClient: { getDeepagentsProjectSource: vi.fn(), downloadDeepagentsProject: vi.fn() } }));
 const fixture: DeepagentsProjectSource = {
   revision: 4, digest: "abc", filename: "agent.zip", framework_version: "0.7.13",

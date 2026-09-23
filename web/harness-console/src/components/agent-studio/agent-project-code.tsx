@@ -96,7 +96,7 @@ export function AgentProjectCode({ draftId, revision, name, dirty, onClose, comp
   const directory = <aside className={styles.sidebar} aria-label="项目文件">
           <label className={styles.search}><Icon name="search" /><input aria-label="筛选文件" placeholder="筛选文件…" value={filter} onChange={event => setFilter(event.target.value)} />{filter && <button type="button" aria-label="清除筛选" onClick={() => setFilter("")}>×</button>}</label>
           <div className={styles.treeHeading}><span>项目文件</span><small>{visible.length}</small></div>
-          <nav className={styles.tree} aria-label="DeepAgents 文件树">{paths.length ? <ProjectFileTree key={mode} paths={paths} selected={selected} onSelect={selectFile} theme={theme} gitStatus={mode === "changes" ? changes.map(({path, status}) => ({path, status})) : undefined} /> : <p className={styles.noFiles}>没有匹配的文件</p>}</nav>
+          <nav className={styles.tree} aria-label="DeepAgents 文件树">{paths.length ? <ProjectFileTree key={mode} paths={paths} selected={splitView && !expanded ? "" : selected} onSelect={selectFile} theme={theme} gitStatus={mode === "changes" ? changes.map(({path, status}) => ({path, status})) : undefined} /> : <p className={styles.noFiles}>没有匹配的文件</p>}</nav>
           <div className={styles.sidebarFooter}><span>DeepAgents {project?.framework_version}</span><button type="button" onClick={() => {setMode("files"); selectFile("README.md");}}>运行说明 ↗</button></div>
         </aside>;
   const panel = <section className={styles.workspace} aria-label="DeepAgents 代码视图" data-tree={!splitView && treeOpen} data-theme={theme}>
