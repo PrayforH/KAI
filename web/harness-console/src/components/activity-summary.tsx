@@ -338,7 +338,7 @@ function processAction(processes: readonly ProcessNode[]): ActionNode {
         ? active ? "正在生成回复" : "已生成回复"
         : active ? "正在整理本轮结果" : "已完成本轮处理";
   return {
-    id: processes.map((item) => item.id).join("-"),
+    id: `process:${processes[0]?.id}`,
     label,
     detail: detailParts.join(" · "),
     icon: category === "setup" ? "system" : category === "model" ? "model" : "result",
@@ -442,7 +442,7 @@ function toolResultLabel(tool: RunToolNode) {
 
 function toolAction(tools: readonly RunToolNode[]): ActionNode {
   return {
-    id: tools.map((tool) => tool.id).join("-"),
+    id: `tools:${tools[0]?.id}`,
     label: toolGroupLabel(tools),
     detail: tools.length === 1 ? tools[0].resultSummary : undefined,
     resultPreview: tools.length === 1 ? tools[0].resultPreview : undefined,
@@ -468,7 +468,7 @@ function taskAction(tasks: readonly RunTaskNode[]): ActionNode {
     .map((task) => task.alias ?? task.title)
     .filter((value, index, values) => values.indexOf(value) === index);
   return {
-    id: tasks.map((task) => task.id).join("-"),
+    id: `tasks:${tasks[0]?.id}`,
     label:
       tasks.length === 1
         ? `${tasks[0].status === "running" ? "正在运行" : "运行了"}子任务 ${aliases[0]}`
@@ -689,21 +689,20 @@ function ActionRow({ action, active = false }: { action: ActionNode; active?: bo
     </div>
   );
 
-  if (!hasResult) {
-    return (
-      <div className={`execution-action action-${action.status}`}>
-        <span className={`execution-action-static${active ? " execution-row-sweep" : ""}`}>{heading}</span>
-      </div>
-    );
-  }
-
+  // A tool request, its result and subsequent grouped reads share one DOM node.
+  // Replacing div with details (or changing the group key) restarts disclosure.
   return (
-    <details className={`execution-action action-${action.status}`}>
-      <summary className={`execution-action-summary${active ? " execution-row-sweep" : ""}`}>
+    <details className={`execution-action action-${action.status}`} data-active={active}>
+      <summary
+        className="execution-action-summary"
+        aria-disabled={!hasResult || undefined}
+        tabIndex={hasResult ? 0 : -1}
+        onClick={hasResult ? undefined : (event) => event.preventDefault()}
+      >
         {heading}
-        <span className="execution-action-chevron" aria-hidden="true" />
+        {hasResult && <span className="execution-action-chevron" aria-hidden="true" />}
       </summary>
-      {result}
+      {hasResult && result}
     </details>
   );
 }

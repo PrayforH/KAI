@@ -56,6 +56,11 @@ vi.mock("@assistant-ui/react-ui", async (importOriginal) => {
   };
 });
 
+vi.mock("../src/components/conversation-thread", async () => {
+  const { Thread } = await import("@assistant-ui/react-ui");
+  return { ConversationThread: Thread };
+});
+
 import {
   AgentThread,
   incompleteRunGuidance,

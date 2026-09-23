@@ -41,10 +41,10 @@ import {
   AssistantMessage,
   BranchPicker,
   Composer,
-  Thread,
   ThreadWelcome,
   UserMessage,
 } from "@assistant-ui/react-ui";
+import { ConversationThread } from "./conversation-thread";
 import { ConversationIndex } from "./conversation-index";
 import { PromptQueue } from "./prompt-queue";
 import { useFollowUpPreference } from "../lib/interface-preferences";
@@ -1846,7 +1846,7 @@ export function AgentThread({
                 <span className="history-load-earlier-status">正在加载更早的消息…</span>
               </div>
             ) : null}
-            <Thread
+            <ConversationThread threadId={threadId}
             assistantMessage={{
               allowCopy: false,
               allowReload: false,

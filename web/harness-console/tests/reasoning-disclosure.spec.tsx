@@ -65,3 +65,34 @@ it("separates unlabelled thinking across tool steps and stops the previous thoug
     expect(host.querySelector('.execution-reasoning[data-active="true"]')).toBeNull();
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
+
+it("keeps one disclosure through four streamed file requests and results", async () => {
+  const host = document.createElement("div"); document.body.appendChild(host);
+  const root = createRoot(host);
+  const events: ReturnType<typeof item>[] = [];
+  let row: HTMLDetailsElement | null = null;
+  let summary: Element | null = null;
+  try {
+    for (let index = 1; index <= 4; index++) {
+      for (const completed of [false, true]) {
+        events.push({
+          ...item(`${index}-${completed}`, events.length + 1, completed ? "已读取" : "", completed ? "tool.result" : "tool.request"),
+          kind: "tool", status: completed ? "succeeded" : "running",
+          metadata: { tool_call_id: `read-${index}`, name: "Read", arguments: { file_path: `inputs/${index}.pdf` }, result_preview: completed ? `文件 ${index} 内容` : undefined },
+        });
+        await act(async () => root.render(<ActivitySummary activity={activity(events)} />));
+        const next = host.querySelector(".execution-action") as HTMLDetailsElement;
+        if (!row) { row = next; summary = next.querySelector("summary"); }
+        expect(next).toBe(row);
+        expect(next.querySelector("summary")).toBe(summary);
+        expect(next.querySelector(".execution-row-sweep")).toBeNull();
+        if (index === 1 && completed) row.open = true;
+        if (index > 1) expect(row.open).toBe(true);
+      }
+    }
+    expect(row?.textContent).toContain("读取了 4 个文件");
+    expect(host.querySelectorAll(".execution-action-detail")).toHaveLength(4);
+    await act(async () => root.render(<ActivitySummary activity={{ ...activity(events), status: "succeeded" }} />));
+    expect(host.querySelector(".execution-action")).toBe(row);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
