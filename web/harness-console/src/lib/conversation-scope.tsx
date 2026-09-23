@@ -9,6 +9,7 @@ import type { PendingApprovalSnapshot } from "./approval-store";
 export interface ConversationScope {
   compactComposer?: boolean;
   composerPlaceholder?: string;
+  composerAccessory?: ReactNode;
   activity?: RunActivity;
   view?: RunViewModel;
   stream: RunStreamSnapshot;

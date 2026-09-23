@@ -674,6 +674,7 @@ function HarnessComposer() {
       data-run-locked={runLocked ? "true" : "false"}
       aria-busy={runLocked}
     >
+      {conversationScope?.composerAccessory}
       {reuseNotice ? (
         <div className="composer-run-reuse-notice" role="status">
           <span>

@@ -126,6 +126,7 @@ export function AgentPlaygroundThread({
   turns,
   messageOverride,
   afterLastMessage,
+  composerAccessory,
   draft,
   agentName,
   model,
@@ -150,6 +151,7 @@ export function AgentPlaygroundThread({
   turns: PreviewTurn[];
   messageOverride?: ThreadMessageLike[];
   afterLastMessage?: ReactNode;
+  composerAccessory?: ReactNode;
   draft?: StudioDraft;
   agentName: string;
   model: string;
@@ -286,6 +288,7 @@ export function AgentPlaygroundThread({
     currentRun?.approvals.filter((item) => item.status === "pending") ?? [];
   const scope: ConversationScope = useMemo(() => ({
     compactComposer: true,
+    composerAccessory,
     composerPlaceholder: "输入任务，或告诉我如何调整智能体…",
     activity,
     view: activity ? reduceRunViewModel(undefined, activity) : undefined,
@@ -329,7 +332,7 @@ export function AgentPlaygroundThread({
         </div>
       );
     },
-  }), [activity, busy, currentRun, messages, pending, afterLastMessage, onAssets, onReset, onConfigureKnowledge]);
+  }), [activity, busy, currentRun, messages, pending, afterLastMessage, composerAccessory, onAssets, onReset, onConfigureKnowledge]);
 
   const selectedAgent = {
     name: draft?.name ?? draftId,

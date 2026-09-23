@@ -4060,6 +4060,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
         initialSessionId={initialSessionId}
         playgroundMode={playgroundMode}
         onExpandConfiguration={() => setPlaygroundMode("build")}
+        onCollapseConfiguration={() => setPlaygroundMode("chat")}
         codeRequest={codeRequest}
         writable={canEdit}
         onChanges={setRecentChanges}

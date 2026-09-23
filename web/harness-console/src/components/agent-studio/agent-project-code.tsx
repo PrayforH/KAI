@@ -106,7 +106,7 @@ export function AgentProjectCode({ draftId, revision, name, dirty, onClose, comp
       <div className={styles.actions}>
         <button type="button" aria-label="刷新代码" title="刷新代码" disabled={loading || mode === "changes"} onClick={() => setRefresh(value => value + 1)}><Icon name="refresh" /></button>
         <button type="button" aria-label="下载项目" title="下载项目" aria-busy={downloading} disabled={!project || downloading || (mode === "changes" && (comparisonPending || revision !== project.revision))} onClick={() => void download()}><Icon name="download" /></button>
-        <button type="button" onClick={splitView ? () => onExpandedChange?.(false) : onClose} className={styles.returnButton}>{splitView ? "收起代码" : "返回配置"}</button>
+        {!splitView && <button type="button" onClick={onClose} className={styles.returnButton}>返回配置</button>}
       </div>
     </header>
     {comparison && <nav className={styles.viewTabs} aria-label="代码内容"><button type="button" aria-pressed={mode === "files"} onClick={() => setMode("files")}>全部文件</button><button type="button" aria-pressed={mode === "changes"} onClick={() => setMode("changes")}>本次改动 · {changes.length}</button></nav>}

@@ -16,6 +16,7 @@ export function AgentTestPanel({
   navigation,
   messageOverride,
   afterLastMessage,
+  composerAccessory,
   inputSeed,
   sessionRail = false,
   savedRuns = [],
@@ -51,6 +52,7 @@ export function AgentTestPanel({
   navigation?: ReactNode;
   messageOverride?: ThreadMessageLike[];
   afterLastMessage?: ReactNode;
+  composerAccessory?: ReactNode;
   inputSeed?: {key: number; text: string};
   sessionRail?: boolean;
   savedRuns?: StudioTryRunSummary[];
@@ -286,6 +288,7 @@ export function AgentTestPanel({
           turns={turns}
           messageOverride={messageOverride}
           afterLastMessage={afterLastMessage}
+          composerAccessory={composerAccessory}
           draft={draft}
           agentName={agentName}
           model={model}

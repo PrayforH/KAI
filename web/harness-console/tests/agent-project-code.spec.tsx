@@ -80,7 +80,8 @@ describe("DeepAgents source workspace", () => {
       await act(async () => file.click());
       expect(host.querySelector("pre")?.textContent).toBe("search()");
       expect(host.querySelector('[aria-label="DeepAgents 文件树"]')).toBeNull();
-      await act(async () => button("收起代码").click());
+      expect([...host.querySelectorAll("button")].some(button => button.textContent === "收起代码")).toBe(false);
+      await act(async () => (directory.querySelector('[aria-label="收起代码视图"]') as HTMLButtonElement).click());
       expect(host.querySelector("pre")).toBeNull();
       await act(async () => (directory.querySelector('[aria-label="展开代码视图"]') as HTMLButtonElement).click());
       expect(host.querySelector("pre")?.textContent).toBe("search()");

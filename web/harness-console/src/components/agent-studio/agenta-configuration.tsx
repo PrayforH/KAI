@@ -46,7 +46,8 @@ export function AgentaConfiguration({ draft, dirty, saving, writable, onEdit, on
     <div className={`${styles.configScroll} ${styles.configCards}`}>
       {rows.map(row => <button type="button" key={`${row.section}-${"target" in row ? row.target : ""}`} className={styles.configCard} title={row.description} onClick={() => onEdit(row.section, "target" in row ? row.target : undefined)}>
         <span className={styles.configCardIcon}><Icon name={row.icon} /></span>
-        <span className={styles.configCardCopy}><span><strong>{row.label}</strong><small>{row.count}</small></span><p>{row.description}</p></span>
+        <span className={styles.configCardCopy}><strong>{row.label}</strong><p>{row.description}</p></span>
+        <small className={styles.configCardCount}>{row.count}</small>
         <Icon name="chevron" className={styles.chevron} />
       </button>)}
     </div>

@@ -68,7 +68,7 @@ beforeEach(() => {
     const [creationSession, setCreationSession] = useState(0);
     toggleOpen = openChange; setDirty = dirtyChange;
     newDraft = () => { setMode("create"); setCreationSession((value) => value + 1); };
-    return <><div ref={setTarget} /><AgentBuilderAssistant playgroundMode={playgroundMode} workspaceTarget={embedded ? target : undefined} open={open} mode={mode} creationSession={creationSession} draft={draft} initialPrompt=""
+    return <><div ref={setTarget} /><AgentBuilderAssistant playgroundMode={playgroundMode} onCollapseConfiguration={() => setPlaygroundMode("chat")} onExpandConfiguration={() => setPlaygroundMode("build")} workspaceTarget={embedded ? target : undefined} open={open} mode={mode} creationSession={creationSession} draft={draft} initialPrompt=""
       recommendation={null} knowledgeMcpReferences={[]} hasUnsavedChanges={dirty}
       onClose={() => openChange(false)} onCreated={(flow) => { setDraft(flow.draft); setMode("run"); }} prepareDraft={async () => draft}
       onUpdated={(next) => { updated(next); setDraft(next); }} /></>;
@@ -77,7 +77,7 @@ beforeEach(() => {
 });
 afterEach(() => { vi.unstubAllGlobals(); act(() => root.unmount()); host.remove(); vi.restoreAllMocks(); updated.mockReset(); });
 async function click(text: string) {
-  await act(async () => { [...host.querySelectorAll("button")].find((button) => (button.textContent === text || button.getAttribute("aria-label") === text))!.click(); });
+  await act(async () => { [...host.querySelectorAll<HTMLButtonElement | HTMLInputElement>("button, input[type=checkbox]")].find((button) => (button.textContent === text || button.getAttribute("aria-label") === text))!.click(); });
 }
 // Starting a conversation and switching between them share one menu, so the
 // new-conversation row lives behind the session summary.
@@ -331,9 +331,11 @@ it("preserves attachments and text after failed unified sends, and supplies file
   expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toMatchObject({inputArtifactIds:["input_artifact_example"]});
 });
 
-it("opens a right file rail while preserving the configuration and conversation", async()=>{
+it("collapses configuration when opening files and preserves the conversation", async()=>{
   await act(async()=>enableWorkspace());
   await click("查看对话文件");
+  expect(host.querySelector('[aria-label="智能体结构"]')).toBeNull();
+  expect(host.querySelector('[aria-label="展开配置栏"]')).not.toBeNull();
   expect(host.querySelector(".workbench-rail")).not.toBeNull();
   expect(host.querySelector('[aria-label="文件目录"]')).toBeNull();
   expect(host.querySelector('[aria-label="消息输入"]')).not.toBeNull();
@@ -516,4 +518,50 @@ it("keeps streamed builder text in one message and separates processing status",
   await act(async () => finish!({baseRevision: 1, reply: "建议输出表格", changes: {}, changedFields: []}));
   expect(host.querySelector('.harness-assistant-message')).toBe(answer);
   expect(host.textContent).not.toContain("正在检查配置…");
+});
+
+
+it("reviews selected and edited configuration changes above the common composer", async () => {
+  vi.mocked(studioClient.converseBuilder).mockResolvedValue({baseRevision: 1, reply: "建议修改名称和提示词", changedFields: ["displayName", "systemPrompt"], changes: {displayName: "新名称", systemPrompt: "原建议", capabilityCatalogRevision: 7}});
+  await act(async () => enableWorkspace());
+  await sendTest("修改名称和系统提示词");
+  const card = host.querySelector('[aria-label="待确认的配置修改"]')!;
+  expect(card.closest(".harness-composer-shell")).not.toBeNull();
+  expect(host.querySelectorAll('[aria-label="待确认的配置修改"]')).toHaveLength(1);
+  await click("选择显示名称");
+  await click("编辑系统提示词");
+  await act(async () => {
+    const input = card.querySelector('textarea[aria-label="系统提示词"]')!;
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, "由用户修改的提示词");
+    input.dispatchEvent(new Event("input", {bubbles: true}));
+  });
+  await click("应用修改");
+  const expected = {expectedRevision: 1, changes: {systemPrompt: "由用户修改的提示词", capabilityCatalogRevision: 7}};
+  expect(studioClient.previewBuilderProjectDiff).toHaveBeenCalledWith("draft-multi", expected);
+  expect(studioClient.applyBuilderEdit).toHaveBeenCalledWith("draft-multi", expected);
+});
+
+it("blocks empty selections and retains review choices after an apply failure", async () => {
+  await act(async () => enableWorkspace());
+  await sendTest("修改系统提示词");
+  await click("选择系统提示词");
+  await click("应用修改");
+  expect(studioClient.applyBuilderEdit).not.toHaveBeenCalled();
+  await click("选择系统提示词");
+  vi.mocked(studioClient.applyBuilderEdit).mockRejectedValueOnce(new Error("服务暂时不可用"));
+  await click("应用修改");
+  expect(host.querySelector<HTMLInputElement>('[aria-label="选择系统提示词"]')?.checked).toBe(true);
+  expect(host.textContent).toContain("服务暂时不可用");
+  await click("应用修改");
+  expect(studioClient.applyBuilderEdit).toHaveBeenCalledTimes(2);
+  expect(host.querySelector('[aria-label="待确认的配置修改"]')).toBeNull();
+});
+
+it("passes user-reviewed changes into the next Builder request and resets selection for a fresh proposal", async () => {
+  await act(async () => enableWorkspace());
+  await sendTest("修改系统提示词");
+  await click("选择系统提示词");
+  await sendTest("同时修改名称");
+  expect(JSON.parse(vi.mocked(studioClient.converseBuilder).mock.lastCall![1].runContext).pendingProposal.changes).toEqual({});
+  expect(host.querySelector<HTMLInputElement>('[aria-label="选择系统提示词"]')?.checked).toBe(true);
 });
