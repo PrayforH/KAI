@@ -21,7 +21,7 @@
 - Ruff、改动模块 Pyright（0 errors）、git diff 检查通过。
 - 独立 Python 3.12 环境仅安装导出工程声明的依赖与构建工具；editable 安装、wheel 安装、`uv pip check` 通过。
 - 验证真实框架的 MCP 工具发现与调用、Python Schema、只读写入限制、Bash 审批恢复、子智能体委派、根 `.env` 与子智能体模型、wheel 脱离源码加载提示词/二进制/隐藏资源、重复技能物化不修改文件时间。
-- 导出工程自带的 pytest（2 项）及 Ruff 通过；wheel 与 sdist 构建成功。Docker 模板在本地实际构建成功。
+- 导出工程自带的 pytest（2 项）及 Ruff 通过；wheel 与 sdist 构建成功。Docker 模板在本地实际构建成功；额外的容器启动检查因本机 Docker 磁盘空间不足（ENOSPC）未完成，未将其计为通过。原生 LangGraph 启动及线上 API 验收已通过。
 - 174 线上下载的 ZIP 再次构建 wheel/sdist，安装 wheel 后运行自带 pytest（2 项）、Ruff 和 `uv pip check` 均通过。
 - `python -m sapling_deep_agents.run.app` 实际启动 LangGraph，`/ok`、创建 assistant、读取 `/assistants/{id}/schemas` 均成功。模型使用占位凭据，框架执行测试使用测试模型，没有调用外部付费模型。
 
