@@ -63,3 +63,17 @@ def test_daytona_cleanup_intervals_must_be_positive() -> None:
         Settings(daytona_warm_pool_max_sessions=0)
     with pytest.raises(ValueError):
         Settings(e2b_timeout_seconds=0)
+
+
+def test_attachment_limits_are_configurable_and_positive(monkeypatch: pytest.MonkeyPatch) -> None:
+    from harness.api.dependencies import build_memory_container
+
+    monkeypatch.setenv("HARNESS_INPUT_ARTIFACT_MAX_FILE_BYTES", "1234")
+    monkeypatch.setenv("HARNESS_INPUT_ARTIFACT_MAX_FILES_PER_RUN", "3")
+    monkeypatch.setenv("HARNESS_INPUT_ARTIFACT_MAX_TOTAL_BYTES", "3456")
+    service = build_memory_container().input_artifacts
+    assert service.max_file_bytes == 1234
+    assert service.max_files_per_run == 3
+    assert service.max_total_bytes == 3456
+    with pytest.raises(ValueError):
+        Settings(input_artifact_max_file_bytes=0)

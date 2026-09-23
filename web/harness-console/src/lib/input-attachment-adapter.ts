@@ -18,6 +18,12 @@ type ServerBackedPendingAttachment = PendingAttachment & {
   harnessInputArtifactId?: string;
 };
 
+interface UploadLimits {
+  max_file_bytes: number;
+  max_files: number;
+  max_total_bytes: number;
+}
+
 export function inputArtifactIdFromAttachment(value: unknown): string | null {
   if (!value || typeof value !== "object") return null;
   const attachment = value as {
@@ -93,6 +99,8 @@ export function uploadInputFile(
     const abort = () => xhr.abort();
     const cleanup = () => signal.removeEventListener("abort", abort);
     xhr.open("POST", "/api/input-artifacts");
+    const file = form.get("file");
+    if (file instanceof Blob) xhr.setRequestHeader("x-upload-size", String(file.size));
     xhr.timeout = 10 * 60 * 1000;
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable) onProgress(event.loaded / event.total * 100);
@@ -119,6 +127,27 @@ export function createInputAttachmentAdapter(
   fetcher?: typeof fetch,
 ): AttachmentAdapter {
   const uploads = new Map<string, AbortController>();
+  const reservedSizes = new Map<string, number>();
+  let limitsRequest: Promise<UploadLimits> | undefined;
+  let limitsExpireAt = 0;
+  const getLimits = () => {
+    if (!limitsRequest || Date.now() >= limitsExpireAt) {
+      limitsExpireAt = Date.now() + 60_000;
+      limitsRequest = (async () => {
+        const response = requireAuthenticatedResponse(await (fetcher ?? fetch)(
+          "/api/input-artifacts/limits", { cache: "no-store", signal: AbortSignal.timeout(15_000) },
+        ));
+        const payload = await response.json();
+        if (!response.ok) throw new Error(errorMessage(payload, "暂时无法获取附件上传限制，请重试。"));
+        if (![payload?.max_file_bytes, payload?.max_files, payload?.max_total_bytes]
+          .every((value) => Number.isSafeInteger(value) && value > 0)) {
+          throw new Error("暂时无法获取附件上传限制，请刷新后重试。");
+        }
+        return payload as UploadLimits;
+      })().catch((error: unknown) => { limitsRequest = undefined; throw error; });
+    }
+    return limitsRequest;
+  };
   return {
     accept: "*",
     async *add({ file }): AsyncGenerator<PendingAttachment, void> {
@@ -137,11 +166,27 @@ export function createInputAttachmentAdapter(
         status: { type: "running", reason: "uploading", progress: 0 },
       };
       try {
+        const limits = await getLimits();
+        if (controller.signal.aborted) return;
+        if (file.size > limits.max_file_bytes) {
+          throw new Error(`文件大小 ${(file.size / (1024 * 1024)).toFixed(2)} MB，超过单文件 ${limits.max_file_bytes / (1024 * 1024)} MB 上限。`);
+        }
+        if (reservedSizes.size >= limits.max_files) {
+          throw new Error(`每条消息最多添加 ${limits.max_files} 个附件。`);
+        }
+        const total = [...reservedSizes.values()].reduce((sum, size) => sum + size, 0) + file.size;
+        if (total > limits.max_total_bytes) {
+          throw new Error(`每条消息附件合计不能超过 ${limits.max_total_bytes / (1024 * 1024)} MB。`);
+        }
+        reservedSizes.set(attachmentId, file.size);
         const form = new FormData();
         form.append("file", file);
         const response = requireAuthenticatedResponse(
           await (fetcher || typeof XMLHttpRequest === "undefined"
-            ? (fetcher ?? fetch)("/api/input-artifacts", { method: "POST", body: form, signal: controller.signal })
+            ? (fetcher ?? fetch)("/api/input-artifacts", {
+                method: "POST", body: form, signal: controller.signal,
+                headers: { "x-upload-size": String(file.size) },
+              })
             : uploadInputFile(form, controller.signal, percent => uploadFeedbackStore.progress(key, percent))),
         );
         const payload: unknown = await response.json().catch(() => null);
@@ -162,6 +207,7 @@ export function createInputAttachmentAdapter(
         };
         yield ready;
       } catch (error) {
+        reservedSizes.delete(attachmentId);
         if (controller.signal.aborted) return;
         const message = error instanceof Error ? error.message : String(error);
         if (!controller.signal.aborted) uploadFeedbackStore.fail(key, message);
@@ -194,11 +240,13 @@ export function createInputAttachmentAdapter(
         ],
       };
       uploadFeedbackStore.dismiss(uploadKey(attachment.file));
+      reservedSizes.delete(attachment.id);
       return complete;
     },
     async remove(attachment) {
       uploads.get(attachment.id)?.abort();
       uploads.delete(attachment.id);
+      reservedSizes.delete(attachment.id);
       const file = "file" in attachment ? attachment.file : undefined;
       if (file) {
         uploadFeedbackStore.dismiss(uploadKey(file));

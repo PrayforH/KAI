@@ -124,3 +124,42 @@ async def test_thread_file_catalog_api_is_user_scoped() -> None:
     assert response.status_code == 200
     assert response.json()[0]["name"] == "notes.txt"
     assert cross_user.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_upload_limits_match_enforced_limit_and_require_permission() -> None:
+    container = build_memory_container()
+    container.input_artifacts.max_file_bytes = 1234
+    app = create_app(container)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/v1/input-artifacts/limits", headers=HEADERS)
+        assert response.status_code == 200
+        assert response.json() == {
+            "max_file_bytes": 1234, "max_files": 10, "max_total_bytes": 100 * 1024 * 1024
+        }
+        response = await client.get("/v1/input-artifacts/limits")
+        assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_three_large_pdf_attachments_fit_default_upload_and_run_limits() -> None:
+    import asyncio
+
+    container = build_memory_container()
+    app = create_app(container)
+    # Sizes of the reported three-file batch; the last exceeds the old 25 MiB cap.
+    sizes = (21_539_928, 21_011_375, 26_603_594)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        async def upload(index: int, size: int):
+            content = b"%PDF-1.7\n" + b" " * (size - 9)
+            return await client.post(
+                "/v1/input-artifacts",
+                files={"file": (f"qa-{index}.pdf", content, "application/pdf")},
+                headers=HEADERS,
+            )
+
+        responses = await asyncio.gather(*(upload(i, size) for i, size in enumerate(sizes)))
+    assert [response.status_code for response in responses] == [201, 201, 201]
+    assert [response.json()["size_bytes"] for response in responses] == list(sizes)
+    assert container.input_artifacts.max_file_bytes == 50 * 1024 * 1024
+    assert sum(sizes) < container.input_artifacts.max_total_bytes == 100 * 1024 * 1024

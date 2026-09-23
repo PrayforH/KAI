@@ -1,11 +1,18 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { PendingAttachment } from "@assistant-ui/react";
 import {
-  createInputAttachmentAdapter,
+  createInputAttachmentAdapter as createAdapter,
   inputAttachmentType,
   inputArtifactIdFromAttachment,
 } from "../src/lib/input-attachment-adapter";
 import { uploadFeedbackStore, uploadKey } from "../src/lib/upload-feedback-store";
+
+const defaultLimits = { max_file_bytes: 50 * 1024 * 1024, max_files: 10, max_total_bytes: 100 * 1024 * 1024 };
+function createInputAttachmentAdapter(fetcher?: typeof fetch) {
+  return createAdapter(async (url, init) => String(url).endsWith("/limits")
+    ? Response.json(defaultLimits)
+    : (fetcher ?? fetch)(url, init));
+}
 
 describe("Harness input attachment adapter", () => {
   beforeEach(() => uploadFeedbackStore.clear());
@@ -132,5 +139,44 @@ describe("Harness input attachment adapter", () => {
 
     expect(states.map((state) => state.type)).toEqual(["image", "image"]);
     expect((await adapter.send(states[1]!)).type).toBe("image");
+  });
+});
+
+describe("attachment preflight", () => {
+  it("rejects a file against the server's configured limit before sending bytes", async () => {
+    const calls: string[] = [];
+    const adapter = createAdapter(async (url) => {
+      calls.push(String(url));
+      return Response.json({ max_file_bytes: 8, max_files: 10, max_total_bytes: 100 });
+    });
+    const addition = adapter.add({ file: new File(["123456789"], "too-large.pdf") }) as AsyncGenerator<PendingAttachment>;
+    await addition.next();
+    await expect(addition.next()).rejects.toThrow("超过单文件");
+    expect(calls).toEqual(["/api/input-artifacts/limits"]);
+  });
+
+  it.each([
+    [{ max_file_bytes: 10, max_files: 2, max_total_bytes: 100 }, "最多添加 2"],
+    [{ max_file_bytes: 10, max_files: 10, max_total_bytes: 12 }, "合计不能超过"],
+  ])("checks the whole concurrently added batch and frees capacity on removal", async (limits, error) => {
+    let limitReads = 0; let uploads = 0;
+    const adapter = createAdapter(async (url, init) => {
+      if (String(url).endsWith("/limits")) { limitReads++; return Response.json(limits); }
+      uploads++;
+      const file = (init?.body as FormData).get("file") as File;
+      return Response.json({ input_artifact_id: `input_artifact_${uploads}`, name: file.name, media_type: "application/pdf", status: "ready", size_bytes: file.size });
+    });
+    const additions = [1, 2, 3].map(i => adapter.add({ file: new File(["123456"], `file-${i}.pdf`) }) as AsyncGenerator<PendingAttachment>);
+    await Promise.all(additions.map(item => item.next()));
+    const results = await Promise.allSettled(additions.map(item => item.next()));
+    expect(results.filter(result => result.status === "fulfilled")).toHaveLength(2);
+    expect(results.find(result => result.status === "rejected")).toMatchObject({ reason: { message: expect.stringContaining(error) } });
+    expect(limitReads).toBe(1); expect(uploads).toBe(2);
+    const first = results[0] as PromiseFulfilledResult<IteratorResult<PendingAttachment>>;
+    await adapter.remove(first.value.value!);
+    const replacement = adapter.add({ file: new File(["123456"], "replacement.pdf") }) as AsyncGenerator<PendingAttachment>;
+    await replacement.next();
+    expect((await replacement.next()).value?.status.type).toBe("requires-action");
+    expect(uploads).toBe(3);
   });
 });

@@ -213,6 +213,7 @@ async function forward(
   config: HarnessServerConfig,
   fetcher: typeof fetch,
   spanName: string,
+  streamUpload = false,
 ) {
   const parent = propagation.extract(
     context.active(),
@@ -232,25 +233,58 @@ async function forward(
       },
       async (span) => {
         try {
-          const body = await requestBody(request);
-          let upstream = await fetcher(url, {
-            method: request.method,
-            headers: upstreamHeaders(request, config),
-            body,
-            cache: "no-store",
-            signal: request.signal,
-          });
           let refreshed;
-          if (upstream.status === 401) {
-            refreshed = await refreshSession(request, config, fetcher);
-            if (refreshed) {
-              upstream = await fetcher(url, {
-                method: request.method,
-                headers: upstreamHeaders(request, config, refreshed.access_token),
-                body,
-                cache: "no-store",
-                signal: request.signal,
+          let upstream: Response;
+          if (streamUpload) {
+            // Authenticate before reading the body. Concurrent slow uploads must
+            // not each refresh the same single-use token after buffering a file.
+            const authorize = (token?: string) => {
+              const headers = upstreamHeaders(request, config, token);
+              headers.delete("content-type");
+              return fetcher(`${config.apiUrl}/v1/input-artifacts/limits`, {
+                headers, cache: "no-store", signal: request.signal,
               });
+            };
+            upstream = await authorize();
+            if (upstream.status === 401) {
+              refreshed = await refreshSession(request, config, fetcher);
+              if (refreshed) upstream = await authorize(refreshed.access_token);
+            }
+            if (upstream.ok) {
+              const limits = await upstream.json() as { max_file_bytes: number };
+              if (!Number.isSafeInteger(limits.max_file_bytes) || limits.max_file_bytes <= 0) {
+                throw new Error("Invalid input artifact limits");
+              }
+              const declaredSize = Number(request.headers.get("x-upload-size"));
+              if (declaredSize > limits.max_file_bytes) {
+                upstream = Response.json({ error: {
+                  code: "input_artifact_too_large",
+                  message: `单个附件不能超过 ${limits.max_file_bytes / (1024 * 1024)} MB，请压缩或拆分后上传。`,
+                } }, { status: 413 });
+              } else {
+                // No clone/tee or arrayBuffer: forward with backpressure, so
+                // receiving and forwarding overlap without retaining the PDF.
+                // The API still enforces the real size, regardless of this hint.
+                const init: RequestInit & { duplex: "half" } = {
+                  method: request.method,
+                  headers: upstreamHeaders(request, config, refreshed?.access_token),
+                  body: request.body,
+                  duplex: "half", cache: "no-store", signal: request.signal,
+                };
+                upstream = await fetcher(url, init);
+              }
+            }
+          } else {
+            const body = await requestBody(request);
+            const send = (token?: string) => fetcher(url, {
+              method: request.method,
+              headers: upstreamHeaders(request, config, token),
+              body, cache: "no-store", signal: request.signal,
+            });
+            upstream = await send();
+            if (upstream.status === 401) {
+              refreshed = await refreshSession(request, config, fetcher);
+              if (refreshed) upstream = await send(refreshed.access_token);
             }
           }
           const headers = responseHeaders(upstream);
@@ -325,13 +359,15 @@ export async function proxyInputArtifactRequest(
   request: Request,
   config: HarnessServerConfig,
   fetcher: typeof fetch = fetch,
+  path = "",
 ) {
   return forward(
     request,
-    `${config.apiUrl}/v1/input-artifacts`,
+    `${config.apiUrl}/v1/input-artifacts${path}`,
     config,
     fetcher,
     "harness.web.input_artifact",
+    request.method === "POST",
   );
 }
 

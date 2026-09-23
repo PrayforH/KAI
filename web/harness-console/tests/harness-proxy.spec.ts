@@ -258,6 +258,7 @@ describe("Harness same-origin proxies", () => {
   it("forwards multipart bytes without exposing internal identity in the response", async () => {
     let upstreamInit: RequestInit | undefined;
     const fetcher: typeof fetch = async (_input, init) => {
+      if (String(_input).endsWith("/limits")) return Response.json({ max_file_bytes: 25 * 1024 * 1024 });
       upstreamInit = init;
       return Response.json(
         { input_artifact_id: "input_artifact_1" },

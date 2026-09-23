@@ -11,6 +11,7 @@ class UploadRequest {
   onabort: () => void = () => {};
   open = vi.fn();
   send = vi.fn();
+  setRequestHeader = vi.fn();
   getResponseHeader = () => null;
   abort = () => this.onabort();
   constructor() { UploadRequest.latest = this; }
@@ -20,9 +21,11 @@ it("reports measured upload bytes and waits for the server before returning read
   vi.stubGlobal("XMLHttpRequest", UploadRequest);
   const progress = vi.fn(); const controller = new AbortController();
   const form = new FormData();
+  form.append("file", new Blob(["sample"]), "sample.pdf");
   const request = uploadInputFile(form, controller.signal, progress);
   const xhr = UploadRequest.latest;
   expect(xhr.open).toHaveBeenCalledWith("POST", "/api/input-artifacts");
+  expect(xhr.setRequestHeader).toHaveBeenCalledWith("x-upload-size", "6");
   xhr.upload.onprogress?.({lengthComputable: true, loaded: 42, total: 100});
   expect(progress).toHaveBeenLastCalledWith(42);
   xhr.upload.onprogress?.({lengthComputable: false, loaded: 80, total: 0});

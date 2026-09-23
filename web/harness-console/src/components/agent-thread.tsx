@@ -815,7 +815,11 @@ function HarnessComposer() {
             const files = Array.from(event.clipboardData.files);
             if (!files.length) return;
             event.preventDefault();
-            for (const file of files) void threadRuntime.composer.addAttachment(file).catch(() => setInputError("附件添加失败，请重试。"));
+            setInputError("");
+            for (const file of files) void threadRuntime.composer.addAttachment(file).catch((error: unknown) => {
+              const reason = error instanceof Error ? error.message : "附件添加失败，请重试。";
+              setInputError((previous) => [previous, `${file.name}：${reason}`].filter(Boolean).join("\n"));
+            });
           }}
           onKeyDown={(event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
             if (event.nativeEvent.isComposing || composingRef.current) return;

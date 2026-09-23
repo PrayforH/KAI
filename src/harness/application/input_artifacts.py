@@ -53,7 +53,7 @@ class InputArtifactService:
         store: ArtifactStore,
         id_generator: IdGenerator,
         clock: Clock,
-        max_file_bytes: int = 25 * 1024 * 1024,
+        max_file_bytes: int = 50 * 1024 * 1024,
         max_files_per_run: int = 10,
         max_total_bytes: int = 100 * 1024 * 1024,
         processor: InputProcessor | None = None,

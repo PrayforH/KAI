@@ -17,6 +17,20 @@ from harness.core.models import InputArtifact, ThreadFile
 router = APIRouter(tags=["input-artifacts"])
 
 
+@router.get("/input-artifacts/limits")
+async def input_artifact_limits(
+    identity: Annotated[Identity, Depends(require_identity)],
+    container: Annotated[ApiContainer, Depends(get_container)],
+) -> dict[str, int]:
+    """Authorize uploads before the BFF starts consuming a large multipart body."""
+    ensure_permission(identity, "tasks:write")
+    return {
+        "max_file_bytes": container.input_artifacts.max_file_bytes,
+        "max_files": container.input_artifacts.max_files_per_run,
+        "max_total_bytes": container.input_artifacts.max_total_bytes,
+    }
+
+
 @router.get("/threads/{session_id}/files", response_model=list[ThreadFile])
 async def list_thread_files(
     session_id: str,
@@ -50,7 +64,7 @@ async def upload_input_artifact(
             status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail={
                 "code": "input_artifact_too_large",
-                "message": f"input artifact exceeds maximum size of {maximum} bytes",
+                "message": f"单个附件不能超过 {maximum / (1024 * 1024):g} MB，请压缩或拆分后上传。",
             },
         )
     return await container.input_artifacts.upload(
