@@ -1117,10 +1117,10 @@ function ArtifactSummaryRow({ artifacts }: { artifacts: ArtifactDetails[] }) {
   if (artifacts.length === 0) return null;
   const groups = groupWorkspaceFiles(artifacts.map(file => ({ ...file, name: file.name ?? "未命名文件", media_type: file.media_type ?? "" })));
   const deliverables = [...(groups.find(group => group.name === "最终产出")?.folders.values() ?? [])].flat();
-  const intermediate = artifacts.length - deliverables.length;
+  if (deliverables.length === 0) return null;
   const thumbs = deliverables.slice(0, ARTIFACT_THUMBNAIL_COUNT);
   const extra = deliverables.length - thumbs.length;
-  const countLabel = [deliverables.length ? `${deliverables.length} 项产出` : "", intermediate ? `${intermediate} 个辅助文件` : ""].filter(Boolean).join(" · ");
+  const countLabel = `${deliverables.length} 项产出`;
   const label = `查看本任务的 ${countLabel}`;
   return (
     <button
