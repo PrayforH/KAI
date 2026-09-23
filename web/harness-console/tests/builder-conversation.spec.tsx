@@ -565,3 +565,24 @@ it("passes user-reviewed changes into the next Builder request and resets select
   expect(JSON.parse(vi.mocked(studioClient.converseBuilder).mock.lastCall![1].runContext).pendingProposal.changes).toEqual({});
   expect(host.querySelector<HTMLInputElement>('[aria-label="选择系统提示词"]')?.checked).toBe(true);
 });
+
+it("shows one primary composer action as an active run gains or loses follow-up text", async () => {
+  let finish!: (reply: Awaited<ReturnType<typeof studioClient.converseBuilder>>) => void;
+  vi.mocked(studioClient.converseBuilder).mockImplementation(async () => new Promise(resolve => { finish = resolve; }));
+  await act(async () => enableWorkspace());
+  await send("启用联网");
+  const footer = () => host.querySelector(".composer-footer")!;
+  expect(footer().querySelectorAll('[aria-label="停止运行"]')).toHaveLength(1);
+  const input = host.querySelector<HTMLTextAreaElement>('[aria-label="消息输入"]')!;
+  const setText = async (text: string) => act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, text);
+    input.dispatchEvent(new Event("input", {bubbles: true}));
+  });
+  await setText("再补充一句");
+  expect(footer().querySelector('[aria-label="停止运行"]')).toBeNull();
+  expect(footer().querySelectorAll('[aria-label="加入队列"]')).toHaveLength(1);
+  await setText("");
+  expect(footer().querySelectorAll('[aria-label="停止运行"]')).toHaveLength(1);
+  expect(footer().querySelector('[aria-label="加入队列"]')).toBeNull();
+  await act(async () => finish({baseRevision: 1, reply: "无需修改", changedFields: [], changes: {}}));
+});

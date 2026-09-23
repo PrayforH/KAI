@@ -864,7 +864,6 @@ function HarnessComposer() {
           />
           {!conversationScope && <TaskKnowledgeModeSwitch disabled={runLocked || showStop || videoGenerating} />}
           <TaskModelControl disabled={Boolean(conversationScope) || runLocked || showStop || videoGenerating} /></>}
-          {showStop && Boolean(composerText.trim() || composerAttachments.length) && <ConversationControl action="stop" aria-label="停止运行" onClick={() => void stopRun()} />}
         </div>
         {showStop && !composerText.trim() && !composerAttachments.length ? (
           <ConversationControl action="stop" aria-label="停止运行" onClick={() => void stopRun()} />

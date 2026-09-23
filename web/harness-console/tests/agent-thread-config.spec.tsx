@@ -158,7 +158,7 @@ it("switches the composer action to stop for an active run", () => {
     '<ConversationControl action="stop" aria-label="停止运行"',
   );
   expect(agentThreadSource).toContain('aria-label="停止运行"');
-  expect(agentThreadSource).toContain("showStop && Boolean(composerText.trim() || composerAttachments.length)");
+  expect(agentThreadSource.match(/action="stop" aria-label="停止运行"/g)).toHaveLength(1);
   expect(agentThreadSource).toContain("aui.thread().cancelRun()");
   expect(agentThreadSource).toContain('<ConversationControl action="send"');
   expect(agentThreadSource).not.toContain("<Composer.Action");
