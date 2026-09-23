@@ -29,7 +29,7 @@ async function fill(placeholder: string, value: string) {
   await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value); input.dispatchEvent(new Event("input", { bubbles: true })); });
 }
 
-it("keeps the catalog outside the embedded surface and reports connection errors inside the form", async () => {
+it("keeps the catalog outside the embedded surface and reports connection errors in shared feedback", async () => {
   expect(host.textContent).toBe("");
   expect(document.querySelector('input[aria-label="搜索能力"]')).toBeNull();
   const advanced = dialog().querySelector("details")!;
@@ -39,7 +39,7 @@ it("keeps the catalog outside the embedded surface and reports connection errors
   await fill("企业搜索", "企业搜索"); await fill("https://mcp.example.com/mcp", "https://mcp.example.com/mcp");
   vi.mocked(studioClient.discoverMcp).mockRejectedValue(new Error("连接失败，请检查地址"));
   await act(async () => button("检测地址").click());
-  expect(dialog().querySelector('[role="alert"]')?.textContent).toContain("连接失败，请检查地址");
+  expect(document.querySelector('[aria-label="操作提示"] [role="alert"]')?.textContent).toContain("连接失败，请检查地址");
   expect(studioClient.discoverMcp).toHaveBeenCalledWith(expect.objectContaining({ reference: expect.stringMatching(/^mcp-[a-z0-9]{8}$/), endpointUrl: "https://mcp.example.com/mcp" }));
 });
 

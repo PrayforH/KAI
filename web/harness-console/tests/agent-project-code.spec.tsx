@@ -161,6 +161,9 @@ describe("DeepAgents source workspace", () => {
 
 it("opens file search within the directory toolbar and clears its filter on close", async () => {
   await render();
+  expect(button("显示文件树").getAttribute("aria-pressed")).toBe("false");
+  expect(host.querySelector('[aria-label="DeepAgents 文件树"]')).toBeNull();
+  await act(async () => button("显示文件树").click());
   expect(host.querySelector('[aria-label="筛选文件"]')).toBeNull();
   expect(button("全部代码").textContent).toBe("");
   expect(button("本次改动").textContent).toBe("");
@@ -181,5 +184,7 @@ it("opens the packaged DeepAgents assembly by default while retaining legacy ent
   vi.mocked(studioClient.getDeepagentsProjectSource).mockResolvedValue({...fixture, files: [...fixture.files, {path, size: 10, content: "build_agent()", unavailable: null}]});
   await render();
   expect(host.querySelector("pre")?.textContent).toBe("build_agent()");
+  expect(host.querySelector('[aria-label="DeepAgents 文件树"]')).toBeNull();
+  await act(async () => button("显示文件树").click());
   expect(host.querySelector('[aria-label="DeepAgents 文件树"]')?.textContent).toContain("agent.py");
 });

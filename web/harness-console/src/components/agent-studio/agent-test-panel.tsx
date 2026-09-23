@@ -1,4 +1,5 @@
 "use client";
+import { FeedbackToast } from "../feedback-toast";
 import {
   useState,
   type ReactNode,
@@ -27,6 +28,8 @@ export function AgentTestPanel({
   sessionId = "",
   conversationEpoch = 0,
   onSelectSession,
+  earlierTurns = false,
+  onEarlierTurns,
   incomingFiles,
   onIncomingFilesUsed,
   turns,
@@ -63,6 +66,8 @@ export function AgentTestPanel({
   sessionId?: string;
   conversationEpoch?: number;
   onSelectSession?: (id: string) => void;
+  earlierTurns?: boolean;
+  onEarlierTurns?: () => void;
   incomingFiles?: {
     draftId: string;
     files: { id: string; name: string }[];
@@ -89,6 +94,7 @@ export function AgentTestPanel({
   onConfigureKnowledge?: () => void;
 }) {
   const [search, setSearch] = useState("");
+  const [sessionLimit, setSessionLimit] = useState(10);
   const [seed, setSeed] = useState<{ key: number; text: string }>();
   const summaries = [
     ...savedRuns.map((item) => ({
@@ -156,7 +162,7 @@ export function AgentTestPanel({
               ))}
             <p>最近 100 个会话，最多 200 次运行</p>
             {historyLoading && <p role="status">读取会话中…</p>}
-            {historyError && <p role="alert">{historyError}</p>}
+
             {!sessions.length && !historyLoading && !historyError && (
               <p>尚无会话。开始试运行后，会话会保存在这里。</p>
             )}
@@ -201,8 +207,9 @@ export function AgentTestPanel({
                   {sessions.length > 0 && (
                     <div className={styles.popoverSection}>
                       <p className={styles.popoverSectionTitle}>历史会话</p>
+                      <input type="search" aria-label="搜索历史会话" placeholder="搜索会话…" value={search} onChange={event => {setSearch(event.target.value);setSessionLimit(10);}} />
                       <div className={styles.sessionList}>
-                        {sessions.map((item, index) => (
+                        {sessions.filter(item => item.prompt.toLowerCase().includes(search.toLowerCase())).slice(0, sessionLimit).map((item, index) => (
                           <button
                             key={item.id}
                             type="button"
@@ -222,6 +229,7 @@ export function AgentTestPanel({
                           </button>
                         ))}
                       </div>
+                      {sessions.filter(item => item.prompt.toLowerCase().includes(search.toLowerCase())).length > sessionLimit && <button type="button" onClick={() => setSessionLimit(value => value + 10)}>更多历史会话</button>}
                     </div>
                   )}
                   {!!examples.length && (
@@ -256,7 +264,7 @@ export function AgentTestPanel({
                     {turns.length ? ` · 当前对话 ${turns.length} 轮` : ""}
                     {historyLoading ? " · 读取会话中…" : ""}
                   </small>
-                  {historyError && <small role="alert">{historyError}</small>}
+
                 </div>
               </details>
             ) : (
@@ -269,20 +277,9 @@ export function AgentTestPanel({
             )}
           </div>
         </header>
-        {(!ready || dirty || (last && last.draftRevision !== revision)) && (
-          <div className={styles.revisionNote} role="status">
-            {!ready
-              ? "先创建智能体，再开始对话"
-              : dirty
-                ? "发送前会保存配置修改"
-                : `配置已更新至 r${revision} · 下一次测试将开启新会话`}
-          </div>
-        )}
-        {!sessionRail && historyError && (
-          <p className={styles.revisionNote} role="alert">
-            {historyError}
-          </p>
-        )}
+        <FeedbackToast message={!ready ? "先创建智能体，再开始对话" : dirty ? "发送前会保存配置修改" : last && last.draftRevision !== revision ? `配置已更新至 r${revision} · 下一次测试将开启新会话` : ""} />
+        <FeedbackToast message={historyError} tone="error" />
+        {earlierTurns && <button type="button" className={styles.earlierTurns} disabled={locked} onClick={onEarlierTurns}>{historyLoading ? "正在读取…" : "查看更早的消息"}</button>}
         <AgentPlaygroundThread
           key={`${draftId}:${conversationEpoch}`}
           turns={turns}

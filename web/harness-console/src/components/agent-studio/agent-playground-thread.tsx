@@ -1,4 +1,5 @@
 "use client";
+import { FeedbackToast } from "../feedback-toast";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   AssistantRuntimeProvider,
@@ -344,11 +345,7 @@ export function AgentPlaygroundThread({
   };
   return (
     <div className={styles.sharedThread} data-playground-conversation>
-      {(error || localError) && (
-        <p className={styles.testError} role="alert">
-          {error || localError}
-        </p>
-      )}
+      <FeedbackToast message={error || localError} tone="error" />
       <ConversationScopeProvider value={scope}>
         <TaskKnowledgeProvider
           selected={draft?.knowledgeReferences ?? []}

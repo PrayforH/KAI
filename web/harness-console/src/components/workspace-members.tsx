@@ -1,4 +1,5 @@
 "use client";
+import { FeedbackToast } from "./feedback-toast";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AuthUser, Membership } from "../lib/auth-session";
@@ -134,8 +135,8 @@ export function WorkspaceMembers({
         </div>
         <button type="button" onClick={() => void load()}>刷新</button>
       </header>
-      {notice && <p className={styles.notice} role="status">{notice}</p>}
-      {error && <p className={styles.error} role="alert">{error}</p>}
+      <FeedbackToast message={notice} onDismiss={() => setNotice("")} />
+      <FeedbackToast message={error} tone="error" onDismiss={() => setError("")} />
       <div className={styles.list}>
         {members.map((member) => {
           const role = drafts[member.user.user_id] ?? member.membership.role;

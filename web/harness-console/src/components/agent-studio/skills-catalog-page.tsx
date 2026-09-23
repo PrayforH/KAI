@@ -1,4 +1,5 @@
 "use client";
+import { FeedbackToast } from "../feedback-toast";
 
 import { useInternalAgentsPreference } from "../../lib/interface-preferences";
 import { isAgentVisible } from "../../lib/agent-visibility";
@@ -319,8 +320,8 @@ export function SkillsCatalogPage() {
           />
         </div>
 
-        {notice && <p className={styles.notice} role="status">{notice}</p>}
-        {error && <p className={styles.error} role="alert">{error}</p>}
+        <FeedbackToast message={notice} onDismiss={() => setNotice("")} />
+        <FeedbackToast message={error} tone="error" onDismiss={() => setError("")} />
 
         <section className={styles.catalog} aria-label="技能目录">
           <header className={styles.catalogHeader}>

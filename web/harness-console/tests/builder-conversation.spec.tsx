@@ -200,16 +200,16 @@ it("automatically runs a resolved task then reruns that task instead of the user
 it("does not run when clarification fails, a task is missing, or an unapplied proposal exists", async () => {
   vi.mocked(studioClient.converseBuilder).mockRejectedValueOnce(new Error("识别失败"));
   await send("不太对");
-  expect(host.textContent).toContain("识别失败");
+  expect(document.querySelector('[aria-label="操作提示"]')?.textContent).toContain("识别失败");
   vi.mocked(studioClient.converseBuilder).mockResolvedValueOnce({ baseRevision: 1,
     action: "rerun", reply: "再试一次", changes: {}, changedFields: [] });
   await send("再试一次");
-  expect(host.textContent).toContain("还没有可执行的测试任务");
+  expect(document.querySelector('[aria-label="操作提示"]')?.textContent).toContain("还没有可执行的测试任务");
   await send("修改默认输出为表格");
   vi.mocked(studioClient.converseBuilder).mockResolvedValueOnce({ baseRevision: 1,
     action: "run", task: "测试材料", reply: "开始测试", changes: {}, changedFields: [] });
   await send("测试材料");
-  expect(host.textContent).toContain("请先应用或放弃当前修改建议");
+  expect(document.querySelector('[aria-label="操作提示"]')?.textContent).toContain("请先应用或放弃当前修改建议");
   expect(host.textContent).toContain("修改预览");
   expect(studioClient.createTryRun).not.toHaveBeenCalled();
 });
@@ -551,7 +551,7 @@ it("blocks empty selections and retains review choices after an apply failure", 
   vi.mocked(studioClient.applyBuilderEdit).mockRejectedValueOnce(new Error("服务暂时不可用"));
   await click("应用修改");
   expect(host.querySelector<HTMLInputElement>('[aria-label="选择系统提示词"]')?.checked).toBe(true);
-  expect(host.textContent).toContain("服务暂时不可用");
+  expect(document.querySelector('[aria-label="操作提示"]')?.textContent).toContain("服务暂时不可用");
   await click("应用修改");
   expect(studioClient.applyBuilderEdit).toHaveBeenCalledTimes(2);
   expect(host.querySelector('[aria-label="待确认的配置修改"]')).toBeNull();
@@ -585,4 +585,32 @@ it("shows one primary composer action as an active run gains or loses follow-up 
   expect(footer().querySelectorAll('[aria-label="停止运行"]')).toHaveLength(1);
   expect(footer().querySelector('[aria-label="加入队列"]')).toBeNull();
   await act(async () => finish({baseRevision: 1, reply: "无需修改", changedFields: [], changes: {}}));
+});
+
+it("loads six recent persisted turns, fetches older turns on demand and reuses cached results", async () => {
+  const saved = Array.from({length: 14}, (_, i) => {
+    const n = i + 1;
+    return {draftRevision:1, run:{...run.run,run_id:`paged-${n}`,session_id:"paged-session",input:{prompt:`历史第 ${n} 轮`},created_at:`2026-09-21T${String(n).padStart(2,"0")}:00:00Z`}};
+  });
+  vi.mocked(studioClient.listTryRuns).mockResolvedValue(saved.reverse());
+  await act(async () => newDraft());
+  vi.spyOn(studioClient,"createDraftFromTask").mockResolvedValue({draft:api(initial),recommendation:null} as never);
+  await send("创建一个智能体");
+  await act(async () => {enableWorkspace();switchMode("chat");});
+  vi.mocked(studioClient.getTryRun).mockImplementation(async (_id, revision, id) => ({...run,draftRevision:revision,run:{...run.run,run_id:id,session_id:"paged-session"},finalText:`回答 ${id}`}));
+  await act(async () => (host.querySelector('[aria-label="会话：新建或切换"]') as HTMLElement).click());
+  await act(async () => [...host.querySelectorAll<HTMLButtonElement>("button")].find(b => /对话 1/.test(b.textContent ?? ""))!.click());
+  expect(studioClient.getTryRun).toHaveBeenCalledTimes(6);
+  expect(host.querySelectorAll('[data-test-run]')).toHaveLength(6);
+  expect(host.textContent).toContain("回答 paged-9");
+  expect(host.textContent).not.toContain("回答 paged-8");
+  await click("查看更早的消息");
+  expect(studioClient.getTryRun).toHaveBeenCalledTimes(12);
+  expect(host.querySelectorAll('[data-test-run]')).toHaveLength(12);
+  await click("查看更早的消息");
+  expect(studioClient.getTryRun).toHaveBeenCalledTimes(14);
+  expect(host.querySelectorAll('[data-test-run]')).toHaveLength(14);
+  expect([...host.querySelectorAll("button")].some(b => b.textContent === "查看更早的消息")).toBe(false);
+  await sendTest("继续当前会话");
+  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toMatchObject({continueFromRunId:"paged-14"});
 });

@@ -1,4 +1,5 @@
 "use client";
+import { FeedbackToast } from "../feedback-toast";
 
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../auth-provider";
@@ -124,8 +125,8 @@ export function QuotaControlPlane() {
           <div className={styles.manageIntro}><p>Admission policy</p><h2>租户默认限额</h2><span>Agent 或环境级策略可在后续版本覆盖得更严格；任何层级都不能绕过租户总量。</span></div>
           <form className={styles.form} onSubmit={save}>
             {RESOURCES.map((resource) => <label key={resource.id}><span>{resource.label}<small>{resource.id}</small></span><input type="number" min={1} step={1} disabled={!canEdit || saving} value={draftLimits[resource.id] ?? ""} onChange={(event) => setDraftLimits((current) => ({ ...current, [resource.id]: Number(event.target.value) }))} /></label>)}
-            {notice && <p className={styles.notice} role="status">{notice}</p>}
-            {error && <p className={styles.error} role="alert">{error}</p>}
+            <FeedbackToast message={notice} onDismiss={() => setNotice("")} />
+            <FeedbackToast message={error} tone="error" onDismiss={() => setError("")} />
             <div className={styles.actions}><span>{canEdit ? "保存采用 revision compare-and-set，避免覆盖他人修改。" : "当前角色可查看，但不能修改配额。"}</span><button type="submit" disabled={!canEdit || saving}>{saving ? "正在保存…" : "保存限额"}</button></div>
           </form>
         </section>

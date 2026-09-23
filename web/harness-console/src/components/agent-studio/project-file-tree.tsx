@@ -27,22 +27,25 @@ const treeCSS = `
 [data-item-type='file'] { color: var(--source-muted); }
 [data-item-type='file'][data-item-selected] { color: var(--source-ink); }
 `;
-export function ProjectFileTree({ paths, selected, onSelect, theme, gitStatus }: {
-  paths: string[]; selected: string; onSelect: (path: string) => void; theme: "dark" | "light"; gitStatus?: GitStatusEntry[];
+export function ProjectFileTree({ paths, selected, onSelect, theme, gitStatus, expandAll = false }: {
+  paths: string[]; selected: string; onSelect: (path: string) => void; theme: "dark" | "light"; gitStatus?: GitStatusEntry[]; expandAll?: boolean;
 }) {
+  const syncingSelection = useRef(false);
   const selectRef = useRef(onSelect); selectRef.current = onSelect;
   const pathsRef = useRef(paths); pathsRef.current = paths;
-  const { model } = useFileTree({ paths, gitStatus, initialExpansion: "open", flattenEmptyDirectories: true,
+  const { model } = useFileTree({ paths, gitStatus, initialExpansion: expandAll ? "open" : "closed", flattenEmptyDirectories: true,
     icons: { set: "complete", colored: true }, itemHeight: 29, stickyFolders: true, unsafeCSS: treeCSS,
-    onSelectionChange: values => { const path = values[values.length - 1]; if (path && pathsRef.current.includes(path)) selectRef.current(path); },
+    onSelectionChange: values => { const path = values[values.length - 1]; if (!syncingSelection.current && path && pathsRef.current.includes(path)) selectRef.current(path); },
   });
   useEffect(() => { model.setGitStatus(gitStatus); }, [model, gitStatus]);
   useEffect(() => { model.resetPaths(paths); }, [model, paths]);
   useEffect(() => {
+    syncingSelection.current = true;
     for (const path of model.getSelectedPaths()) if (path !== selected) model.getItem(path)?.deselect();
     const item = model.getItem(selected);
     if (item && !item.isSelected()) item.select();
-    if (item) model.scrollToPath(selected, { focus: false });
+    syncingSelection.current = false;
+    // Do not reveal ancestors on mount: directories start collapsed.
   }, [model, selected, paths]);
   return <FileTree model={model} style={{ ...themes[theme], height: "100%", colorScheme: theme } as CSSProperties} />;
 }

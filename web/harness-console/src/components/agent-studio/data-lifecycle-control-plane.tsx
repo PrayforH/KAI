@@ -1,4 +1,5 @@
 "use client";
+import { FeedbackToast } from "../feedback-toast";
 
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { useAuth } from "../auth-provider";
@@ -155,7 +156,7 @@ export function DataLifecycleControlPlane({ embedded = false }: { embedded?: boo
 
     <section className={styles.content}>
       <header className={styles.header}><div><p>Data lifecycle ledger</p><h1>控制数据留下多久，以及如何离开</h1><span>覆盖 PostgreSQL、对象存储、SDK 会话、长期记忆与 Langfuse；审计和部署证据不会随业务数据一起消失。</span></div><div className={styles.headerActions}><button disabled={busy} onClick={() => void run("export", { kind: "user", subjectId: user.user_id })}>导出我的数据</button><button className={styles.danger} disabled={busy} onClick={() => void run("delete", { kind: "user", subjectId: user.user_id })}>删除我的数据</button></div></header>
-      {notice && <p className={styles.notice} role="status">{notice}</p>}
+      <FeedbackToast message={notice} onDismiss={() => setNotice("")} />
       {error && <p className={styles.error} role="alert">{error}<button onClick={() => void load()}>重试</button></p>}
 
       {canAdmin && policyDraft && <section className={styles.policy}>

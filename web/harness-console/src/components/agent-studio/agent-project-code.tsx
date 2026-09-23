@@ -1,4 +1,5 @@
 "use client";
+import { FeedbackToast } from "../feedback-toast";
 
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
@@ -61,7 +62,7 @@ export function AgentProjectCode({ draftId, revision, name, dirty, onClose, comp
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
   const [notice, setNotice] = useState("");
-  const [treeOpen, setTreeOpen] = useState(true);
+  const [treeOpen, setTreeOpen] = useState(false);
   useEffect(() => {
     if (mode === "changes" && comparison) { setLoading(false); setError(""); return; }
     const controller = new AbortController();
@@ -110,7 +111,7 @@ export function AgentProjectCode({ draftId, revision, name, dirty, onClose, comp
             <button type="button" aria-label="搜索文件" title="搜索文件" aria-expanded={searchOpen} aria-pressed={searchOpen} onClick={() => {setSearchOpen(value => !value); setFilter("");}}><Icon name="search" /></button>
             {searchOpen ? <label className={styles.search}><input autoFocus aria-label="筛选文件" placeholder="筛选文件…" value={filter} onChange={event => setFilter(event.target.value)} onKeyDown={event => {if (event.key === "Escape") {setFilter(""); setSearchOpen(false);}}} />{filter && <button type="button" aria-label="清除筛选" onClick={() => setFilter("")}>×</button>}</label> : <span className={styles.directoryRevision} title={contextLabel}>{dirty ? "未保存 · " : ""}r{revision}</span>}
           </div>
-          <nav className={styles.tree} aria-label="DeepAgents 文件树">{paths.length ? <ProjectFileTree key={mode} paths={paths} selected={splitView && !expanded ? "" : selected} onSelect={selectFile} theme={theme} gitStatus={mode === "changes" ? changes.map(({path, status}) => ({path, status})) : undefined} /> : <p className={styles.noFiles}>没有匹配的文件</p>}</nav>
+          <nav className={styles.tree} aria-label="DeepAgents 文件树">{paths.length ? <ProjectFileTree key={`${mode}:${Boolean(filter.trim())}`} expandAll={Boolean(filter.trim())} paths={paths} selected={splitView && !expanded ? "" : selected} onSelect={selectFile} theme={theme} gitStatus={mode === "changes" ? changes.map(({path, status}) => ({path, status})) : undefined} /> : <p className={styles.noFiles}>没有匹配的文件</p>}</nav>
           <div className={styles.sidebarFooter}><span>DeepAgents {project?.framework_version}</span><button type="button" onClick={() => {setMode("files"); selectFile("README.md");}}>运行说明 ↗</button></div>
         </aside>;
   const panel = <section className={styles.workspace} aria-label="DeepAgents 代码视图" data-tree={!splitView && treeOpen} data-theme={theme}>
@@ -141,7 +142,7 @@ export function AgentProjectCode({ draftId, revision, name, dirty, onClose, comp
         </main>
         {!splitView && treeOpen && directory}
       </div>}
-    <div className={styles.notice} role="status" aria-live="polite">{notice}</div>
+    <FeedbackToast message={notice} tone={/失败/.test(notice) ? "error" : "info"} onDismiss={() => setNotice("")} />
   </section>;
   return <>
     {splitView && directoryTarget && createPortal(

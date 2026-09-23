@@ -1,4 +1,5 @@
 "use client";
+import { FeedbackToast } from "../feedback-toast";
 import { isAgentConfigurationRequest } from "../../lib/agent-conversation-intent";
 import type { ThreadMessageLike, CompleteAttachment } from "@assistant-ui/react";
 import { previewThreadMessages } from "./agent-playground-thread";
@@ -137,6 +138,7 @@ export function AgentBuilderAssistant({
   const [conversationTab, setConversationTab] = useState<"chat" | "builder">(mode === "create" ? "builder" : "chat");
   const [savedRuns, setSavedRuns] = useState<StudioTryRunSummary[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [visibleTurnLimit, setVisibleTurnLimit] = useState(6);
   const [historyError, setHistoryError] = useState("");
   const historySelection = useRef(0);
   const restoredSessionKey = useRef("");
@@ -226,7 +228,7 @@ export function AgentBuilderAssistant({
     setProposal(null);
     setCodeView(false); setCodeExpanded(false); setLastComparison(undefined); setCodeComparison(undefined); setComparisonPending(false); setComparing(false); setLastChanges([]); setSelectedRunId(""); setAssetsOpen(false); setMobilePanel("build"); setConversationTab(mode === "create" ? "builder" : "chat"); historySelection.current++;
     setLastTestPrompt("");
-    setTestSessionId(""); setTestConversationEpoch(value => value + 1);
+    setTestSessionId(""); setVisibleTurnLimit(6); setTestConversationEpoch(value => value + 1);
     setArchivedTurns([]); setCurrentFiles([]); setLastArtifactIds([]);
     setInput(initialPrompt);
     setMessages(initialMessages(mode, draft));
@@ -256,11 +258,14 @@ export function AgentBuilderAssistant({
     return () => {current = false;};
   }, [activeDraft.id, draftReady]);
 
-  async function selectSession(id: string) {
+  async function selectSession(id: string, older = false) {
     if (active || historyLoading) return;
     const selection = ++historySelection.current;
     const epoch = epochRef.current;
-    const missing = savedRuns.filter(item => item.run.session_id === id && !archivedTurns.some(turn => turn.result.run.run_id === item.run.run_id) && item.run.run_id !== result?.run.run_id);
+    const limit = older ? visibleTurnLimit + 6 : 6;
+    const recent = savedRuns.filter(item => item.run.session_id === id)
+      .sort((a,b) => b.run.created_at.localeCompare(a.run.created_at)).slice(0, limit);
+    const missing = recent.filter(item => !archivedTurns.some(turn => turn.result.run.run_id === item.run.run_id) && item.run.run_id !== result?.run.run_id);
     setError("");
     if (missing.length) {
       setHistoryLoading(true);
@@ -271,14 +276,19 @@ export function AgentBuilderAssistant({
         const all: PreviewTurn[] = [...archivedTurns, ...(result ? [{prompt: lastTestPrompt, result, files: currentFiles, artifactIds: lastArtifactIds}] : []), ...restored];
         const selected = all.filter(turn => turn.result.run.session_id === id).sort((a,b) => (savedRuns.find(item => item.run.run_id === a.result.run.run_id)?.run.created_at || "").localeCompare(savedRuns.find(item => item.run.run_id === b.result.run.run_id)?.run.created_at || ""));
         const latest = selected.at(-1)!;
-        setArchivedTurns([...new Map(all.filter(turn => turn.result.run.run_id !== latest.result.run.run_id).map(turn => [turn.result.run.run_id, turn])).values()]);
+        const unique = [...new Map(all.filter(turn => turn.result.run.run_id !== latest.result.run.run_id).map(turn => [turn.result.run.run_id, turn])).values()];
+        // Keep the requested conversation plus a small cache of other sessions.
+        setArchivedTurns([...unique.filter(turn => turn.result.run.session_id !== id).slice(-18), ...selected.slice(0,-1)]);
         setResult(latest.result);setLastTestPrompt(latest.prompt);setCurrentFiles(latest.files || []);setLastArtifactIds(latest.artifactIds || []);
       } catch (reason) {if (epoch === epochRef.current) setError(reason instanceof Error ? reason.message : "会话恢复失败");return;}
       finally {if (epoch === epochRef.current) setHistoryLoading(false);}
     }
     if (epoch !== epochRef.current || selection !== historySelection.current) return;
-    setMessages([]);setInputSeed(undefined);setProposal(null);
-    setTestSessionId(id);setTestConversationEpoch(value => value + 1);setSelectedRunId("");setConversationTab("chat");setCodeView(false);
+    setVisibleTurnLimit(limit);
+    if (!older) {
+      setMessages([]);setInputSeed(undefined);setProposal(null);
+      setTestSessionId(id);setTestConversationEpoch(value => value + 1);setSelectedRunId("");setConversationTab("chat");setCodeView(false);
+    }
   }
 
   useEffect(() => {
@@ -389,6 +399,7 @@ export function AgentBuilderAssistant({
       setLastTestPrompt(value.trim());
       setCurrentFiles(names); setLastArtifactIds(artifactIds);
       setResult(started);
+      setSavedRuns(current => [{draftRevision: started.draftRevision, run: {...started.run, input: {prompt: value.trim(), input_artifact_ids: artifactIds}, created_at: new Date().toISOString()}}, ...current.filter(item => item.run.run_id !== started.run.run_id)].slice(0, 200));
       setTestSessionId(started.run.session_id);
       setCodeView(false);setMobilePanel("test");setConversationTab("chat");
       setSelectedRunId("");
@@ -701,7 +712,7 @@ export function AgentBuilderAssistant({
       {workspaceTarget && lastComparison && <button type="button" className={styles.runLink} onClick={showLastComparison} aria-label="查看本次代码差异"><span>已更新 · r{lastComparison.before.revision} → r{lastComparison.after.revision}</span><small>查看代码差异 ↗</small></button>}
       {((editing && !buildProgress) || applying) && <p className={styles.editStatus} role="status">{editing ? intent === "auto" ? "正在结合上下文理解要求…" : "正在生成修改建议；创建 Skill 时将由 Worker 执行 skill-creator 校验与打包…" : "正在保存修改…"}</p>}
       {reviewContent}
-      {error && <p className={styles.error} role="alert">{error}</p>}
+      <FeedbackToast message={error} tone="error" onDismiss={() => setError("")} />
       {reconnecting && !error && <p className={styles.error} role="status">实时连接中断，正在自动恢复…</p>}
     </div>
 
@@ -747,7 +758,9 @@ export function AgentBuilderAssistant({
     </footer>
   </aside>;
   if (!workspaceTarget) return builder;
-  const visibleTurns = turns.filter(turn => turn.result.run.session_id === testSessionId || messages.some(message => message.runId === turn.result.run.run_id));
+  const conversationTurns = turns.filter(turn => turn.result.run.session_id === testSessionId || messages.some(message => message.runId === turn.result.run.run_id));
+  const visibleTurns = messages.length ? conversationTurns : conversationTurns.slice(-visibleTurnLimit);
+  const hasEarlierTurns = Math.max(conversationTurns.length, savedRuns.filter(item => item.run.session_id === testSessionId).length) > visibleTurns.length;
   const projected = previewThreadMessages(visibleTurns);
   const referencedRuns = new Set(messages.flatMap(message => message.runId ? [message.runId] : []));
   const transcript: ThreadMessageLike[] = previewThreadMessages(visibleTurns.filter(turn => !referencedRuns.has(turn.result.run.run_id)));
@@ -771,12 +784,12 @@ export function AgentBuilderAssistant({
         {assetsOpen && <AgentWorkspaceFiles key={activeDraft.id} draft={activeDraft} baseline={fileBaseline.current} turns={visibleTurns} onClose={() => setAssetsOpen(false)} />}
         {codeView && <AgentProjectCode key={activeDraft.id} draftId={draftReady ? activeDraft.id : ""} revision={activeDraft.revision} name={activeDraft.name || activeDraft.displayName} dirty={hasUnsavedChanges} comparison={codeComparison} comparisonPending={comparisonPending} directoryTarget={playgroundMode === "build" ? codeDirectoryTarget : undefined} expanded={codeExpanded} onExpandedChange={setCodeExpanded} onClose={() => { setCodeView(false); setCodeExpanded(false); }} />}
         <div className={workspaceStyles.preservedPanel} hidden={(codeView && (playgroundMode === "chat" || codeExpanded))}>
-          <AgentTestPanel navigation={<>{playgroundMode === "chat" && onExpandConfiguration && <button type="button" aria-label="展开配置栏" title="展开配置栏" aria-expanded="false" onClick={() => {setAssetsOpen(false); onExpandConfiguration?.();}}><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="2" /><path d="M8 4v12m3-9 3 3-3 3" /></svg></button>}<strong>对话</strong></>} draft={activeDraft} userId={userId} onConfigureKnowledge={onConfigureKnowledge} sessionRail={false} savedRuns={savedRuns} historyLoading={historyLoading} historyError={historyError} examples={[]} draftId={activeDraft.id} revision={activeDraft.revision} agentName={activeDraft.displayName} model={activeDraft.model} turns={visibleTurns} history={turns} sessionId={testSessionId} conversationEpoch={testConversationEpoch}
+          <AgentTestPanel navigation={<>{playgroundMode === "chat" && onExpandConfiguration && <button type="button" aria-label="展开配置栏" title="展开配置栏" aria-expanded="false" onClick={() => {setAssetsOpen(false); onExpandConfiguration?.();}}><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="2" /><path d="M8 4v12m3-9 3 3-3 3" /></svg></button>}<strong>对话</strong></>} draft={activeDraft} userId={userId} onConfigureKnowledge={onConfigureKnowledge} sessionRail={false} savedRuns={savedRuns} earlierTurns={hasEarlierTurns} onEarlierTurns={() => void selectSession(testSessionId, true)} historyLoading={historyLoading} historyError={historyError} examples={[]} draftId={activeDraft.id} revision={activeDraft.revision} agentName={activeDraft.displayName} model={activeDraft.model} turns={visibleTurns} history={turns} sessionId={testSessionId} conversationEpoch={testConversationEpoch}
             messageOverride={transcript} inputSeed={inputSeed} composerAccessory={proposalCard} afterLastMessage={<>{(editing || creating || readingMaterials) && <div className={workspaceStyles.builderProgress} role="status">{buildProgress || (readingMaterials ? "正在读取附件…" : "正在生成…")}</div>}{reviewContent}</>}
             onSelectSession={id => void selectSession(id)} busy={active || editing || applying || readingMaterials} ready={true} dirty={hasUnsavedChanges} error={error} selectedRunId={selectedRunId}
             onSend={sendUnified}
             onRerun={(value,ids,names) => proposal ? Promise.resolve(false) : startRun(value, undefined, false, ids, names)}
-            onReset={() => {if (result) setArchivedTurns(current => [...current,{prompt:lastTestPrompt,result,files:currentFiles,artifactIds:lastArtifactIds}]);setResult(null);setTestSessionId("");setTestConversationEpoch(value => value + 1);setLastTestPrompt("");setCurrentFiles([]);setLastArtifactIds([]);setSelectedRunId("");setError("");setMessages([]);setProposal(null);setInputSeed(undefined);}}
+            onReset={() => {if (result) setArchivedTurns(current => [...current,{prompt:lastTestPrompt,result,files:currentFiles,artifactIds:lastArtifactIds}]);setResult(null);setTestSessionId("");setVisibleTurnLimit(6);setTestConversationEpoch(value => value + 1);setLastTestPrompt("");setCurrentFiles([]);setLastArtifactIds([]);setSelectedRunId("");setError("");setMessages([]);setProposal(null);setInputSeed(undefined);}}
             onCancel={cancelRun} assetsOpen={assetsOpen} onAssets={() => {setCodeView(false); if (!assetsOpen) onCollapseConfiguration?.(); setAssetsOpen(current => !current);}} />
         </div>
       </div>

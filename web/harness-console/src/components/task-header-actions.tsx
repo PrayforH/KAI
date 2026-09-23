@@ -1,4 +1,5 @@
 "use client";
+import { FeedbackToast } from "./feedback-toast";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -373,7 +374,7 @@ export function TaskHeaderActions({
       >
         <DotsIcon />
       </button>
-      {error && <div className="task-header-menu-error" role="alert">{error}</div>}
+      <FeedbackToast message={error} tone="error" onDismiss={() => setError("")} />
       {open && (
         <div className="task-header-menu" role="menu" aria-label="更多任务操作">
           <button type="button" role="menuitem" disabled={busy} onClick={togglePinned}>

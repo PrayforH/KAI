@@ -186,3 +186,6 @@
 .conversationBody:has(> .workspaceFiles) :global(.aui-thread-viewport),
 .conversationBody:has(> .workspaceFiles) :global(.aui-thread-viewport-footer) { padding-inline:16px; }
 .conversationBody:has(> .workspaceFiles) :global(.user-task-intro h1) { font-size:24px; line-height:1.35; letter-spacing:-.02em; }
+
+.earlierTurns { align-self:center; margin:8px auto; padding:5px 12px; border:1px solid var(--studio-line, var(--codex-line)); border-radius:8px; background:transparent; color:var(--codex-muted); font:inherit; font-size:12px; cursor:pointer; }
+.earlierTurns:disabled { opacity:.6; cursor:wait; }

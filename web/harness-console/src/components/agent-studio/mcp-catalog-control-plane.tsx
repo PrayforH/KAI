@@ -1,4 +1,5 @@
 "use client";
+import { FeedbackToast } from "../feedback-toast";
 
 import {
   type FormEvent,
@@ -697,8 +698,8 @@ export function McpCatalogControlPlane({
               <button type="button" aria-label="关闭 MCP 注册" onClick={closeEditor}>×</button>
             </header>
             <form onSubmit={save}>
-              {error && <p className={styles.error} role="alert">{error}</p>}
-              {notice && <p className={styles.notice} role="status">{notice}</p>}
+              <FeedbackToast message={error} tone="error" onDismiss={() => setError("")} />
+              <FeedbackToast message={notice} onDismiss={() => setNotice("")} />
               <section className={styles.formSection}>
               <label>
                 <span>显示名称</span>
@@ -1102,8 +1103,8 @@ export function McpCatalogControlPlane({
             <span>Viewer 只能查看；Owner、Admin 和 Member 可管理自己的连接。</span>
           </div>
         )}
-        {notice && <p className={styles.notice} role="status">{notice}</p>}
-        {error && <p className={styles.error} role="alert">{error}</p>}
+        <FeedbackToast message={notice} onDismiss={() => setNotice("")} />
+        <FeedbackToast message={error} tone="error" onDismiss={() => setError("")} />
         {pendingSync && (
           <div className={styles.dialogBackdrop}>
             <section

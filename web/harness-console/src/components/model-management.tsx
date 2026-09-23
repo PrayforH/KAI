@@ -1,4 +1,5 @@
 "use client";
+import { FeedbackToast } from "./feedback-toast";
 
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { useAuth } from "./auth-provider";
@@ -436,7 +437,7 @@ function ModelDialog({
               <label>鉴权方式<select value={authScheme} onChange={(event) => setAuthScheme(event.target.value as ManagedModel["authScheme"])}><option value="bearer">Bearer Token</option><option value="x-api-key">x-api-key</option>{type === "video_generation" && <option value="none">无需鉴权（仅限受控内网）</option>}</select></label>
             </div>
           </details>
-          {error && <p className={`${styles.message} ${styles.error}`} role="alert">{error}</p>}
+          <FeedbackToast message={error} tone="error" onDismiss={() => setError("")} />
           <footer><button type="button" onClick={onClose}>取消</button><button type="submit" className={styles.save} disabled={pending}>{pending ? "正在保存…" : "保存模型"}</button></footer>
         </form>
       </div>

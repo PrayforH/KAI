@@ -7094,7 +7094,7 @@
 .agentCatalogCard {
   position: relative;
   min-width: 0;
-  min-height: 236px;
+  min-height: 0;
   overflow: visible;
   border: 1px solid var(--studio-line);
   border-radius: 14px;
@@ -7107,10 +7107,10 @@
   width: 100%;
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr);
-  grid-template-rows: auto auto 1fr auto;
+  grid-template-rows: repeat(4, auto);
   align-items: start;
   gap: 12px 14px;
-  min-height: 236px;
+  min-height: 0;
   padding: 20px;
   border: 0;
   border-radius: inherit;
@@ -8254,10 +8254,10 @@
 .catalogFilters button[aria-pressed="true"] { background:var(--codex-surface-raised); color:var(--studio-ink); }
 .catalogFilters button:focus-visible,.catalogEdit:focus-visible { outline:2px solid var(--studio-green); outline-offset:3px; }
 .catalogFilters>span { margin-left:auto; color:var(--studio-muted); font-size:12px; }
-.agentCatalogList { margin-top:22px; gap:16px; }
+.agentCatalogList { margin-top:22px; gap:16px; align-items:start; }
 .agentCatalogCard { border-radius:10px; box-shadow:none; }
 .agentCatalogCard:hover { transform:none; }
-.agentCatalogOpen { min-height:220px; padding-bottom:48px; }
+.agentCatalogOpen { min-height:0; padding:20px; }
 .catalogEdit { position:absolute; bottom:13px; left:20px; border:0; background:transparent; color:var(--studio-muted); font:inherit; font-size:12px; padding:5px 0; cursor:pointer; }
 .catalogEdit:hover { color:var(--studio-ink); }
 .agentCatalogFooter code { font-size:11px; }

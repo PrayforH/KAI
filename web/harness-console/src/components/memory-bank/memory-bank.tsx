@@ -1,4 +1,5 @@
 "use client";
+import { FeedbackToast } from "../feedback-toast";
 import { useInternalAgentsPreference } from "../../lib/interface-preferences";
 
 import Link from "next/link";
@@ -159,7 +160,7 @@ export function MemoryBank({ embedded = false }: { embedded?: boolean }) {
         {!agentChoices.length && <option value="">暂无可用智能体</option>}
         {agentChoices.map((choice) => <option key={choice.key} value={choice.key}>{choice.label}</option>)}
       </select><small>选择智能体，查看其记忆与保存策略。</small></div></header>
-      {error && <p className={styles.alert} role="alert">{error}</p>}{notice && <p className={`${styles.alert} ${styles.notice}`} role="status">{notice}</p>}
+      <FeedbackToast message={error} tone="error" onDismiss={() => setError("")} /><FeedbackToast message={notice} onDismiss={() => setNotice("")} />
       <section className={styles.overview} aria-label="记忆概况"><div className={styles.stat}><span>正在使用</span><strong>{counts.active}</strong></div><div className={styles.stat} data-kind="pending"><span>等待确认</span><strong>{counts.pending}</strong></div><div className={styles.stat}><span>涉及智能体</span><strong>{counts.agents}</strong></div></section>
       <section className={styles.policy} aria-label="验证记忆召回">
         <h2>查找相关记忆</h2>

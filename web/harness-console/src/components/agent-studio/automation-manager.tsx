@@ -1,4 +1,5 @@
 "use client";
+import { FeedbackToast } from "../feedback-toast";
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -225,12 +226,9 @@ export function AutomationManager() {
   const [expandedRecords, setExpandedRecords] = useState<Set<string>>(new Set());
   const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
   const taskRefs = useRef<Map<string, HTMLLIElement>>(new Map());
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showToast = useCallback((message: string) => {
     setToast(message);
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 4000);
   }, []);
 
   const loadTasks = useCallback(async () => {
@@ -451,7 +449,7 @@ export function AutomationManager() {
         )}
       </header>
 
-      {error && <p className={styles.error}>{error}</p>}
+      <FeedbackToast message={error} tone="error" />
 
       {tab === "tasks" && (
         <section className={styles.section}>
@@ -797,7 +795,7 @@ export function AutomationManager() {
         </div>
       )}
 
-      {toast && <div className={styles.toast} role="status">{toast}</div>}
+      <FeedbackToast message={toast} tone={/失败/.test(toast ?? "") ? "error" : "info"} onDismiss={() => setToast(null)} />
     </div>
   );
 }

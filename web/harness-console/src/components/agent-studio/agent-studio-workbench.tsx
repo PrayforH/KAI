@@ -1,4 +1,5 @@
 "use client";
+import { FeedbackToast } from "../feedback-toast";
 import { ConfigurationIcon } from "./configuration-icon";
 import { AgentVersionHistory } from "./agent-version-history";
 import { PanelResizeHandle } from "../panel-resize-handle";
@@ -4039,8 +4040,8 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
       </section></>
       )}
 
-      {notice && !importFeedback && !/^(正在读取控制面草稿|已从控制面(?:加载|切换)草稿|已保存到控制面|已通过对话更新)/.test(notice) && <div className={styles.importFeedback} role="status"><span>{notice}</span><button type="button" aria-label="关闭状态提示" onClick={() => setNotice("")}>×</button></div>}
-      {importFeedback && <div className={styles.importFeedback} role={importFeedback.error ? "alert" : "status"} data-error={Boolean(importFeedback.error)}><span>{importFeedback.message}</span>{!importingBundle && <button type="button" aria-label="关闭导入提示" onClick={()=>setImportFeedback(null)}>×</button>}</div>}
+      <FeedbackToast message={!importFeedback && !/^(正在读取控制面草稿|已从控制面(?:加载|切换)草稿|已保存到控制面|已通过对话更新)/.test(notice) ? notice : ""} tone={/失败|错误|冲突|无法/.test(notice) ? "error" : "info"} onDismiss={() => setNotice("")} />
+      <FeedbackToast message={importFeedback?.message} tone={importFeedback?.error ? "error" : "info"} duration={importingBundle ? 0 : undefined} onDismiss={() => setImportFeedback(null)} />
       {mcpManagerOpen && mcpStartInForm && (
         <McpCatalogControlPlane startInForm onClose={() => setMcpManagerOpen(false)} onRegistered={() => {
           void studioClient.capabilities().then(setCapabilities).catch(() => setNotice("MCP 已注册，刷新页面后可绑定"));
