@@ -3374,11 +3374,12 @@ async def test_deepagents_exports_published_child_instead_of_edited_draft() -> N
                                     headers=headers)
     assert exported.status_code == 200, exported.text
     with ZipFile(BytesIO(exported.content)) as archive:
-        child_source = archive.read("subagents/reviewer/agent.py").decode()
+        child_root = "src/sapling_deep_agents/agents/subagents/reviewer/"
+        child_source = archive.read(child_root + "prompts/system.md").decode()
         assert "IMMUTABLE_PUBLISHED_CHILD" in child_source
         assert "EDITED_UNPUBLISHED_CHILD" not in child_source
-        assert "subagents/reviewer/tools/operators/child_echo.py" in archive.namelist()
-        assert "subagents/reviewer/skills/frozen-child/SKILL.md" in archive.namelist()
+        assert child_root + "tools/operators/child_echo.py" in archive.namelist()
+        assert child_root + "skills/frozen-child/SKILL.md" in archive.namelist()
 
 
 @pytest.mark.asyncio

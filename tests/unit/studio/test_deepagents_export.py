@@ -90,23 +90,24 @@ def test_export_pins_runtime_and_carries_default_assets() -> None:
         ".env.example",
         ".gitignore",
         "agent-studio.json",
-        "agent.py",
+        "src/sapling_deep_agents/agents/agent.py",
         "langgraph.json",
-        "tools/__init__.py",
-        "subagents/__init__.py",
+        "src/sapling_deep_agents/tools/__init__.py",
+        "src/sapling_deep_agents/agents/subagents/__init__.py",
     } <= names
-    assert "mcp_servers.py" not in names
+    assert "src/sapling_deep_agents/middleware/mcp_servers.py" not in names
 
     pyproject = _read(exported.content, "pyproject.toml")
     assert f'"deepagents=={DEEPAGENTS_PINNED_VERSION}"' in pyproject
     assert '"python-dotenv>=1.0,<2.0"' in pyproject
 
-    agent_py = _read(exported.content, "agent.py")
+    agent_py = _read(exported.content, "src/sapling_deep_agents/agents/agent.py")
     assert "TodoListMiddleware()" in agent_py
     assert "FilesystemMiddleware(backend=BACKEND, tools=_FILESYSTEM_TOOLS," in agent_py
     # .env loading must run before MODEL / MCP credential resolution.
-    assert "load_dotenv(Path(__file__).resolve().parent / \".env\")" in agent_py
-    assert agent_py.index("load_dotenv(") < agent_py.index("MODEL = ")
+    settings = _read(exported.content, "src/sapling_deep_agents/config/settings.py")
+    assert 'load_dotenv(PROJECT_ROOT / ".env")' in settings
+    assert settings.index("load_dotenv(") < settings.index("MODEL = ")
     # Only answer blocks reach stdout; reasoning blocks must not leak.
     # No bespoke CLI: langgraph.json is the entry point.
     assert "main.py" not in names
@@ -128,7 +129,7 @@ def test_export_pins_runtime_and_carries_default_assets() -> None:
         "graphs": {"invoice-reviewer": "./agent.py:agent"},
         "env": ".env",
     }
-    assert 'def agent():' in agent_py
+    assert "def agent():" in agent_py
     assert "def build_agent(model=None):" in agent_py
     # LangGraph API owns persistence; a self-managed saver breaks `langgraph dev`.
     assert "checkpointer=" not in agent_py
@@ -144,7 +145,11 @@ def test_export_pins_runtime_and_carries_default_assets() -> None:
     gitignore = _read(exported.content, ".gitignore")
     assert ".idea/" in gitignore and ".langgraph_api/" in gitignore
     assert extensions["filesystemTools"] == [
-        "ls", "read_file", "glob", "grep", "write_file",
+        "ls",
+        "read_file",
+        "glob",
+        "grep",
+        "write_file",
     ]
     assert extensions["droppedSemantics"]["平台记忆"]
     assert "知识库" not in extensions["droppedSemantics"]
@@ -197,14 +202,15 @@ def test_export_maps_bash_branch_permissions_and_subagents() -> None:
     )
 
     exported = export_deepagents_project(
-        source, subagent_drafts={
+        source,
+        subagent_drafts={
             "helper-agent@1.0.0": make_draft(
                 name="helper-agent", version="1.0.0", system_prompt="真实固定子智能体提示词"
             )
-        }
+        },
     )
 
-    agent_py = _read(exported.content, "agent.py")
+    agent_py = _read(exported.content, "src/sapling_deep_agents/agents/agent.py")
     # LangGraph API owns persistence: a self-managed saver makes `langgraph dev`
     # refuse the graph, so none may be emitted. The comment may mention the word.
     assert "checkpointer=" not in agent_py
@@ -218,20 +224,28 @@ def test_export_maps_bash_branch_permissions_and_subagents() -> None:
     # Read-only + Bash -> an approval gate; the platform checkpointer resumes it.
     assert 'interrupt_on={"execute": True, "write_file": True, "edit_file": True},' in agent_py
 
-    subagent_py = _read(exported.content, "subagents/fact_researcher/agent.py")
-    assert "真实固定子智能体提示词" in subagent_py
+    subagent_py = _read(
+        exported.content, "src/sapling_deep_agents/agents/subagents/fact_researcher/agents/agent.py"
+    )
+    assert "真实固定子智能体提示词" in _read(
+        exported.content,
+        "src/sapling_deep_agents/agents/subagents/fact_researcher/prompts/system.md",
+    )
     assert "NoSubagentsMiddleware" in subagent_py
 
-    skill_md = _read(exported.content, "skills/invoice-reviewer-core/SKILL.md")
+    skill_md = _read(
+        exported.content, "src/sapling_deep_agents/skills/invoice-reviewer-core/SKILL.md"
+    )
     assert "name: invoice-reviewer-core" in skill_md
     with ZipFile(BytesIO(exported.content)) as bundle:
-        assert bundle.read(
-            "skills/invoice-reviewer-core/assets/template.png"
-        ) == b"\x89PNG"
+        assert (
+            bundle.read("src/sapling_deep_agents/skills/invoice-reviewer-core/assets/template.png")
+            == b"\x89PNG"
+        )
 
-    tool_py = _read(exported.content, "tools/normalize_score.py")
+    tool_py = _read(exported.content, "src/sapling_deep_agents/tools/normalize_score.py")
     assert "def run(arguments):" in _read(
-        exported.content, "tools/operators/normalize_score.py"
+        exported.content, "src/sapling_deep_agents/tools/operators/normalize_score.py"
     )
     assert '"value"' in tool_py
 
@@ -251,13 +265,17 @@ def test_export_declares_dropped_knowledge_and_mcp_env_placeholders() -> None:
         mcp_capabilities={"tavily-readonly": TAVILY},
     )
 
-    assert "mcp_servers.py" in _names(exported.content)
-    mcp_py = _read(exported.content, "mcp_servers.py")
+    assert "src/sapling_deep_agents/middleware/mcp_servers.py" in _names(exported.content)
+    mcp_py = _read(exported.content, "src/sapling_deep_agents/middleware/mcp_servers.py")
     assert "MultiServerMCPClient" in mcp_py
     # The connector module must never shadow the third-party mcp SDK.
     assert '"mcp"' not in _read(exported.content, "pyproject.toml")
-    assert "from mcp_servers import McpToolsMiddleware" in _read(exported.content, "agent.py")
-    assert "McpToolsMiddleware()," in _read(exported.content, "agent.py")
+    assert "from sapling_deep_agents.middleware.mcp_servers import McpToolsMiddleware" in _read(
+        exported.content, "src/sapling_deep_agents/agents/agent.py"
+    )
+    assert "McpToolsMiddleware()," in _read(
+        exported.content, "src/sapling_deep_agents/agents/agent.py"
+    )
     assert "class McpToolsMiddleware(AgentMiddleware)" in mcp_py
     # Endpoint is exported; the query credential is an env placeholder.
     assert "https://mcp.tavily.com/mcp/?tavilyApiKey=$__ENV__TAVILY_API_KEY__" in mcp_py
@@ -293,9 +311,9 @@ def test_export_uses_route_api_format_for_provider_and_declares_managed_credenti
 
     exported = export_deepagents_project(source, model_route=route)
 
-    agent_py = _read(exported.content, "agent.py")
-    assert f"'anthropic:{source.spec.model.model}'" in agent_py
-    assert "'openai:" not in agent_py
+    settings = _read(exported.content, "src/sapling_deep_agents/config/settings.py")
+    assert f"'anthropic:{source.spec.model.model}'" in settings
+    assert "'openai:" not in settings
 
     env_example = _read(exported.content, ".env.example")
     # Only the active provider's credential is presented as required.
@@ -340,12 +358,14 @@ def test_export_is_deterministic() -> None:
     )
 
     first = export_deepagents_project(
-        source, mcp_capabilities={"tavily-readonly": TAVILY},
-        subagent_drafts={"helper-agent@1.0.0": make_draft(name="helper-agent", version="1.0.0")}
+        source,
+        mcp_capabilities={"tavily-readonly": TAVILY},
+        subagent_drafts={"helper-agent@1.0.0": make_draft(name="helper-agent", version="1.0.0")},
     )
     second = export_deepagents_project(
-        source, mcp_capabilities={"tavily-readonly": TAVILY},
-        subagent_drafts={"helper-agent@1.0.0": make_draft(name="helper-agent", version="1.0.0")}
+        source,
+        mcp_capabilities={"tavily-readonly": TAVILY},
+        subagent_drafts={"helper-agent@1.0.0": make_draft(name="helper-agent", version="1.0.0")},
     )
 
     assert first.content == second.content
@@ -362,7 +382,9 @@ def test_export_resolves_skill_references_like_the_compiler() -> None:
 
     exported = export_deepagents_project(source, skills=resolved)
 
-    assert any(name.startswith("skills/") for name in _names(exported.content))
+    assert any(
+        name.startswith("src/sapling_deep_agents/skills/") for name in _names(exported.content)
+    )
 
 
 def test_export_refuses_unresolved_fixed_children() -> None:
@@ -370,9 +392,15 @@ def test_export_refuses_unresolved_fixed_children() -> None:
 
     from harness.core.errors import ConflictError
 
-    source = make_draft(subagents=(DraftSubagent(
-        alias="reviewer", ref="missing@1.0.0", responsibility="Review evidence",
-    ),))
+    source = make_draft(
+        subagents=(
+            DraftSubagent(
+                alias="reviewer",
+                ref="missing@1.0.0",
+                responsibility="Review evidence",
+            ),
+        )
+    )
     with pytest.raises(ConflictError, match="固定版本子智能体"):
         export_deepagents_project(source)
 
@@ -383,4 +411,40 @@ def test_export_refuses_uninstallable_project_version() -> None:
     from harness.core.errors import ConflictError
 
     with pytest.raises(ConflictError, match="版本号"):
-        export_deepagents_project(make_draft(version='invalid-version'))
+        export_deepagents_project(make_draft(version="invalid-version"))
+
+
+def test_export_scaffold_is_installable_and_contains_no_duplicate_entries() -> None:
+    import tomllib
+
+    exported = export_deepagents_project(make_draft())
+    with ZipFile(BytesIO(exported.content)) as archive:
+        names = archive.namelist()
+        assert len(names) == len(set(names))
+        assert {
+            "agent.py",
+            "MANIFEST.in",
+            "docker/Dockerfile",
+            "docker/compose.yaml",
+            ".dockerignore",
+            ".gitlab-ci.yml",
+            ".pre-commit-config.yaml",
+            "AGENTS.md",
+            "pyrightconfig.json",
+            "test/test_project.py",
+            "src/sapling_deep_agents/controller/agent.py",
+            "src/sapling_deep_agents/run/app.py",
+            "src/sapling_deep_agents/services/assets.py",
+            "src/sapling_deep_agents/prompts/system.md",
+        } <= set(names)
+        project = tomllib.loads(archive.read("pyproject.toml").decode())
+        assert project["tool"]["setuptools"]["packages"]["find"]["where"] == ["src"]
+        assert "py-modules" not in project["tool"]["setuptools"]
+        assert archive.read("src/sapling_deep_agents/prompts/system.md").decode() == (
+            make_draft().spec.system_prompt
+        )
+        # The root shim must import the installed package, not mutate sys.path.
+        assert (
+            "from sapling_deep_agents.controller.agent import" in archive.read("agent.py").decode()
+        )
+        assert "uv.lock" not in names  # Resolve on the target package index, never fake a lock.
