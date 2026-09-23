@@ -22,6 +22,7 @@ from harness.api.event_streaming import wait_for_run_event
 from harness.core.errors import ConflictError
 from harness.core.events import RunEvent
 from harness.core.models import Artifact, Run
+from harness.studio.authoring_stream import Progress
 from harness.studio.compiler import AgentDraftCompiler
 from harness.studio.models import (
     AgentDraft,
@@ -76,6 +77,7 @@ _CREATOR_SYSTEM_PROMPT = """## Mission
 在 skill-creator 目录以 python -m scripts.package_skill 调用，传入目标目录和输出目录的绝对路径。
 不要复制、重写或替换上游的校验脚本与打包脚本。
 将生成的 <archive> 与单独的 <evals> 用 publish_artifact 工具发布，才算完成交付。
+发布时显式指定 name：技能包为 <archive>，测试用例为 <evals>；文件路径和展示名称是两个参数。
 
 ## Safety boundaries
 遵守平台权限与沙箱边界，不读取凭据。
@@ -207,7 +209,8 @@ class WorkerSkillCreator:
         self.timeout = timeout
 
     async def respond(
-        self, tenant_id: str, request: SkillConversationRequest, *, name: str
+        self, tenant_id: str, request: SkillConversationRequest, *, name: str,
+        on_progress: Progress | None = None,
     ) -> SkillConversationReply:
         self.authorize()
         container = self.container
@@ -269,7 +272,7 @@ class WorkerSkillCreator:
             else None
         )
         try:
-            run = await self._await_run(tenant_id, run_id)
+            run = await self._await_run(tenant_id, run_id, on_progress=on_progress)
             if run.status.value != "succeeded":
                 raise ConflictError(
                     f"Skill Creator 运行{run.status.value}，草稿未修改；运行 {run_id}"
@@ -298,7 +301,9 @@ class WorkerSkillCreator:
                 raise ConflictError(f"未验证到 skill-creator 加载与官方打包调用；运行 {run_id}")
             _, content = await container.artifacts.download(tenant_id, archive.artifact_id)
             imported = import_skill(content, filename=archive.name)
-            evaluation_text = await self._published_evaluation(tenant_id, artifacts, run_id=run_id)
+            evaluation_text = await self._published_evaluation(
+                tenant_id, artifacts, run_id=run_id, name=name
+            )
             skill = imported.skill.model_copy(
                 update={
                     "files": tuple(
@@ -373,7 +378,9 @@ class WorkerSkillCreator:
     async def _events(self, tenant_id: str, run_id: str) -> Sequence[RunEvent]:
         return await self.container.observed_events.list_after(tenant_id, run_id, 0)
 
-    async def _await_run(self, tenant_id: str, run_id: str) -> Run:
+    async def _await_run(
+        self, tenant_id: str, run_id: str, *, on_progress: Progress | None = None
+    ) -> Run:
         """Wait for the authoring run to reach a terminal state.
 
         Waiting on the container's event wakeup keeps a long authoring run off the
@@ -381,29 +388,67 @@ class WorkerSkillCreator:
         a lost signal only costs one poll interval.
         """
 
+        sequence = 0
+        last_stage = ""
         async with asyncio.timeout(self.timeout):
+            if on_progress:
+                await on_progress({"type": "progress", "text": "正在启动 Skill Creator…",
+                                   "runId": run_id})
             while True:
                 run = await self.container.runs.get(tenant_id, run_id)
                 if run.status.is_terminal:
+                    if on_progress and run.status.value == "succeeded":
+                        await on_progress({"type": "progress",
+                                           "text": "正在校验技能包与测试用例…", "runId": run_id})
                     return run
                 if run.status.value == "waiting_approval":
                     raise ConflictError(f"Skill Creator 需要运行审批，本轮未应用；运行 {run_id}")
+                events = await self.container.observed_events.list_after(
+                    tenant_id, run_id, sequence
+                )
+                stage = last_stage
+                for event in events:
+                    sequence = max(sequence, event.sequence)
+                    if event.type == "tool.request":
+                        tool = str(event.payload.get("name", ""))
+                        command = str(_tool_arguments(event.payload).get("command", ""))
+                        if tool.endswith("publish_artifact"):
+                            stage = "正在发布技能包与测试用例…"
+                        elif tool == "Bash" and "scripts.package_skill" in command:
+                            stage = "正在打包技能…"
+                        elif tool == "Bash":
+                            stage = "正在执行技能生成与校验…"
+                        elif tool in {"Write", "Edit"}:
+                            stage = "正在编写技能文件与测试用例…"
+                        elif tool in {"Skill", "Read", "Glob", "Grep"}:
+                            stage = "正在读取技能规范与工作文件…"
+                if on_progress and stage != last_stage:
+                    await on_progress({"type": "progress", "text": stage, "runId": run_id})
+                last_stage = stage
                 await wait_for_run_event(
                     self.container.event_wakeup,
                     tenant_id,
                     run_id,
-                    0,
+                    sequence,
                     fallback_poll_seconds=_STATUS_POLL_SECONDS,
                 )
 
     async def _published_evaluation(
-        self, tenant_id: str, artifacts: Iterable[Artifact], *, run_id: str
+        self, tenant_id: str, artifacts: Iterable[Artifact], *, run_id: str, name: str
     ) -> str:
         """The reviewed evaluation plan the run published, or a conflict."""
 
-        artifact = next((a for a in artifacts if a.name == EVALUATION_ARTIFACT_NAME), None)
-        if artifact is None:
+        # Publishers may qualify the display name with the skill name. Accept only
+        # these two contract names, never an arbitrary JSON file from the run.
+        candidates = [a for a in artifacts
+                      if a.name in {EVALUATION_ARTIFACT_NAME, f"{name}-evals.json"}]
+        if not candidates:
             raise ConflictError(f"Skill Creator 未发布测试用例，草稿未修改；运行 {run_id}")
+        if len(candidates) != 1:
+            raise ConflictError(
+                f"Skill Creator 发布了多个测试用例文件，无法确定版本；运行 {run_id}"
+            )
+        artifact = candidates[0]
         _, payload = await self.container.artifacts.download(tenant_id, artifact.artifact_id)
         try:
             if len(payload) > _MAX_EVALUATION_BYTES:

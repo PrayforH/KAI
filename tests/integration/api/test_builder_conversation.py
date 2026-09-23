@@ -357,9 +357,12 @@ async def test_skill_creator_and_catalog_assembly_share_review_and_atomic_apply(
         with patch(
             "harness.studio.worker_skill_creator.WorkerSkillCreator.respond", new_callable=AsyncMock
         ) as creator:
-            creator.return_value = SkillConversationReply(
-                status="ready", reply="待审阅", skill=generated
-            )
+            async def create_skill(*args, **kwargs):
+                if kwargs.get("on_progress"):
+                    await kwargs["on_progress"]({"type": "progress", "text": "正在打包技能…"})
+                return SkillConversationReply(status="ready", reply="待审阅", skill=generated)
+
+            creator.side_effect = create_skill
             preview = await client.post(
                 path + "/builder-conversation",
                 headers={**headers, **({"Accept": "text/event-stream"} if streaming else {})},
@@ -374,8 +377,11 @@ async def test_skill_creator_and_catalog_assembly_share_review_and_atomic_apply(
                 if line.startswith("data: ")
             ]
             assert emitted[-1]["type"] == "result", emitted
+            assert any(e.get("text") == "正在打包技能…" for e in emitted)
+            assert "请审阅" in emitted[-1]["result"]["reply"]
             plan = emitted[-1]["result"]["changes"]
         else:
+            assert "请审阅" in preview.json()["reply"]
             plan = preview.json()["changes"]
         assert plan["createSkills"][0]["files"][0]["path"] == "assets/template.md"
         assert (await client.get(path, headers=headers)).json()["revision"] == 1

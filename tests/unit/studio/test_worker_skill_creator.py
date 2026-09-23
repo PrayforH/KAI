@@ -189,3 +189,88 @@ async def test_packaging_is_judged_on_the_command_not_on_any_mention() -> None:
 
     with pytest.raises(ConflictError, match="未验证"):
         await arranged.creator.respond("tenant-a", arranged.request, name="sample-skill")
+
+
+@pytest.mark.asyncio
+async def test_creator_accepts_skill_qualified_evaluation_name() -> None:
+    arranged = await arrange_creator(calls=(SKILL_LOADED, PACKAGED))
+    arranged.artifacts.list_for_run.return_value[1].name = "sample-skill-evals.json"
+    result = await arranged.creator.respond("tenant-a", arranged.request, name="sample-skill")
+    assert result.status == "ready"
+    assert result.skill is not None
+    assert any(f.path == "evals/evals.json" for f in result.skill.files)
+    assert "sample-skill-evals.json" in result.artifact_names
+    draft = await arranged.container.studio.get("tenant-a", "user-a", arranged.draft.draft_id)
+    assert draft.revision == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("names, message", [
+    (["unrelated.json"], "未发布测试用例"),
+    (["other-skill-evals.json"], "未发布测试用例"),
+    (["evals.json", "sample-skill-evals.json"], "多个测试用例"),
+    (["evals.json", "evals.json"], "多个测试用例"),
+])
+async def test_evaluation_selection_rejects_unrelated_or_ambiguous_files(names, message) -> None:
+    arranged = await arrange_creator(calls=(SKILL_LOADED, PACKAGED))
+    artifacts = [SimpleNamespace(name=name, artifact_id=f"a{i}") for i, name in enumerate(names)]
+    with pytest.raises(ConflictError, match=message):
+        await arranged.creator._published_evaluation(
+            "tenant-a", artifacts, run_id="creator-run", name="sample-skill"
+        )
+    arranged.artifacts.download.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("payload", [
+    b'{"evals":[{"prompt":"one only"}]}',
+    b'{"evals":[{"prompt":"ok"},{"prompt":"  "}]}',
+    b'{"report":"not evaluations"}', b'not-json', b'\xff', b' ' * (1024 * 1024 + 1),
+])
+async def test_qualified_evaluation_still_requires_valid_test_cases(payload) -> None:
+    arranged = await arrange_creator(calls=(SKILL_LOADED, PACKAGED))
+    arranged.artifacts.download.side_effect = [(None, payload)]
+    with pytest.raises(ConflictError, match="测试用例无效"):
+        await arranged.creator._published_evaluation(
+            "tenant-a", [SimpleNamespace(name="sample-skill-evals.json", artifact_id="a2")],
+            run_id="creator-run", name="sample-skill"
+        )
+
+
+@pytest.mark.asyncio
+async def test_creator_reports_real_stages_and_advances_event_cursor(monkeypatch) -> None:
+    arranged = await arrange_creator(calls=())
+    arranged.runs.get.side_effect = [
+        SimpleNamespace(status=RunStatus.RUNNING),
+        SimpleNamespace(status=RunStatus.RUNNING),
+        SimpleNamespace(status=RunStatus.SUCCEEDED),
+    ]
+    arranged.container.observed_events.list_after.side_effect = [
+        [SimpleNamespace(sequence=13, type="tool.request", payload=PACKAGED)],
+        [SimpleNamespace(sequence=21, type="tool.request", payload=creator_call(
+            "mcp__harness-artifacts__publish_artifact", {"path": "private/path"}, "t3"
+        ))],
+    ]
+    wait = AsyncMock()
+    monkeypatch.setattr("harness.studio.worker_skill_creator.wait_for_run_event", wait)
+    progress = AsyncMock()
+    await arranged.creator._await_run("tenant-a", "creator-run", on_progress=progress)
+    assert [call.args[3] for call in wait.await_args_list] == [13, 21]
+    reads = arranged.container.observed_events.list_after.await_args_list
+    assert [call.args[2] for call in reads] == [0, 13]
+    assert [call.args[0]["text"] for call in progress.await_args_list] == [
+        "正在启动 Skill Creator…", "正在打包技能…",
+        "正在发布技能包与测试用例…", "正在校验技能包与测试用例…",
+    ]
+    assert "private/path" not in str(progress.await_args_list)
+
+
+@pytest.mark.asyncio
+async def test_creator_timeout_cancels_run_without_changing_draft(monkeypatch) -> None:
+    arranged = await arrange_creator(calls=())
+    monkeypatch.setattr(arranged.creator, "_await_run", AsyncMock(side_effect=TimeoutError))
+    with pytest.raises(ConflictError, match="超时，草稿未修改"):
+        await arranged.creator.respond("tenant-a", arranged.request, name="sample-skill")
+    arranged.runs.cancel.assert_awaited_once_with("tenant-a", "creator-run")
+    draft = await arranged.container.studio.get("tenant-a", "user-a", arranged.draft.draft_id)
+    assert draft.revision == 1

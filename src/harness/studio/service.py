@@ -1176,7 +1176,12 @@ class AgentStudioService:
                     )),),
                 )
                 try:
-                    result = await creator.respond(tenant_id, creator_request, name=item.name)
+                    if on_progress:
+                        await on_progress({"type": "builder.reply", "text":
+                            f"正在生成 {item.name} 技能和测试用例，完成后可审阅并应用到草稿。"})
+                    result = await creator.respond(
+                        tenant_id, creator_request, name=item.name, on_progress=on_progress
+                    )
                 except (SkillConversationUnavailableError, SkillConversationUpstreamError) as error:
                     raise ConflictError(str(error)) from None
                 if result.status != "ready" or result.skill is None:
@@ -1200,6 +1205,12 @@ class AgentStudioService:
             reply = reply.model_copy(update={"changes": reply.changes.model_copy(
                 update={key: tuple(value) for key, value in generated.items() if value}
             )})
+        if creator_runs:
+            reply = reply.model_copy(update={
+                "reply": "已生成技能与测试用例，请审阅变更后应用到草稿。"
+            })
+            if on_progress:
+                await on_progress({"type": "progress", "text": "正在检查修改范围和配置一致性…"})
         await self._check_builder_assembly(tenant_id, user_id, current, reply.changes)
         candidate = self._builder_spec(current, reply.changes)
         await self._check_builder_candidate(tenant_id, user_id, current, candidate)
