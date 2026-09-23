@@ -331,12 +331,14 @@ it("preserves attachments and text after failed unified sends, and supplies file
   expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toMatchObject({inputArtifactIds:["input_artifact_example"]});
 });
 
-it("opens conversation files without restoring an asset-management panel", async()=>{
+it("opens a middle file directory while preserving the conversation", async()=>{
   await act(async()=>enableWorkspace());
   await click("查看对话文件");
-  expect(host.querySelector('[aria-label="任务工作区"]')).not.toBeNull();
+  expect(host.querySelector('[aria-label="文件目录"]')).not.toBeNull();
+  expect(host.querySelector('[aria-label="消息输入"]')).not.toBeNull();
   expect(host.querySelector('[aria-label="智能体资产"]')).toBeNull();
-  await click("收起任务上下文");
+  await click("配置");
+  expect(host.querySelector('[aria-label="文件目录"]')).toBeNull();
 });
 
 it("captures project comparison before apply without replacing the conversation", async () => {

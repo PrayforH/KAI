@@ -37,7 +37,7 @@ describe("MCP capability catalog", () => {
     // which is itself a drawer. The catalog view is a page layout, so mounting
     // it bare painted into the workbench.
     expect(workbench).toContain("setMcpStartInForm(true); setMcpManagerOpen(true);");
-    expect(workbench).toContain("<McpCatalogControlPlane startInForm onClose={() => setMcpManagerOpen(false)} />");
+    expect(workbench).toContain("<McpCatalogControlPlane startInForm onClose={() => setMcpManagerOpen(false)}");
     // Dismissing the form closes the surface: falling back to the catalog page
     // would paint a full page where the drawer was.
     expect(component).toContain("const closeForm = () => {");
@@ -146,7 +146,7 @@ describe("MCP capability catalog", () => {
     expect(component).toContain("支持连字符和单下划线");
     expect(component).toContain("const serverName = draft.serverName?.trim() || reference;");
     expect(component).not.toContain("<span>MCP 服务名</span>");
-    expect(component).toContain("initialize 和 tools/list");
+    expect(component).toContain("连接成功后选择需要开放的工具");
     expect(component).toContain("检测地址");
     expect(component).toContain("TRANSPORT_LABELS");
     expect(component).toContain("已自动识别");

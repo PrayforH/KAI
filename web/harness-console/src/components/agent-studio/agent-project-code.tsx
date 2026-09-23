@@ -9,6 +9,7 @@ import { projectSourceChanges } from "../../lib/project-source-changes";
 import { ProjectSourceDiff } from "./project-source-diff";
 import { ProjectSourceEditor } from "./project-source-editor";
 import { useCodeTheme } from "./project-code-theme";
+import { PanelExpandIcon } from "./builder-panel-icons";
 import styles from "./agent-project-code.module.css";
 
 type IconName = "back" | "next" | "search" | "copy" | "download" | "refresh" | "tree" | "code";
@@ -141,7 +142,7 @@ export function AgentProjectCode({ draftId, revision, name, dirty, onClose, comp
             <button type="button" aria-pressed="true">代码</button>
           </div>
           <button type="button" aria-label={expanded ? "收起代码视图" : "展开代码视图"} title={expanded ? "收起代码，返回对话" : "在右侧展开代码"} aria-expanded={expanded} disabled={loading || Boolean(error)} onClick={() => onExpandedChange?.(!expanded)}>
-            <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d={expanded ? "M8 3v5H3m9 9v-5h5M8 8 3 3m9 9 5 5" : "M3 8V3h5m9 9v5h-5M3 3l5 5m9 9-5-5"}/></svg>
+            <PanelExpandIcon expanded={expanded} />
           </button>
         </header>
         <p className={styles.directoryHint}>{dirty ? `有未保存配置 · 展示 r${revision}` : `草稿 r${revision}`} · 点击文件在右侧查看</p>

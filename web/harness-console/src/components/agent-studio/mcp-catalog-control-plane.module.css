@@ -1412,3 +1412,40 @@
   padding: 10px 0;
   box-shadow: none;
 }
+
+/* A registration is a drawer, including when opened from a Builder portal. */
+.editorBackdrop.editorBackdrop { inset: 0; z-index: 120; display: flex; align-items: stretch; justify-content: flex-end; padding: 0; overflow: hidden; background: #0005; backdrop-filter: none; }
+:global(.console-shell.studio-unified:has(> .task-sidebar.is-collapsed)) .editorBackdrop.editorBackdrop { left: 0; }
+.editorBackdrop .editor { display: flex; flex-direction: column; width: clamp(380px, 35vw, 580px); max-width: 100vw; height: 100dvh; max-height: 100dvh; padding: 0; margin: 0; overflow: hidden; background: var(--paper); box-sizing: border-box; box-shadow: -12px 0 40px #0003; }
+.editorBackdrop .editor > header { position: static; display: flex; align-items: center; justify-content: space-between; flex: 0 0 48px; min-height: 48px; box-sizing: border-box; margin: 0; padding: 0 20px; background: var(--paper); backdrop-filter: none; }
+.editorBackdrop .editor > header h2 { margin: 0; font: 600 13px/1.4 var(--codex-font-ui, sans-serif); }
+.editorBackdrop .editor > header button { width: 28px; height: 28px; min-height: 0; padding: 0; border: 0; background: transparent; color: var(--muted); font-size: 20px; }
+.editorBackdrop .editor form { display: flex; flex-direction: column; gap: 16px; min-height: 0; margin: 0; padding: 20px; overflow: auto; border: 0; }
+.editorBackdrop .formSection { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; padding: 0; }
+.editorBackdrop .formSection:empty { display: none; }
+.editorBackdrop .editor label { gap: 7px; }
+.editorBackdrop .editor label > span { font-size: 12px; color: var(--ink); }
+.editorBackdrop .editor label > small { font-size: 11px; line-height: 1.5; }
+.editorBackdrop .editor input:not([type=checkbox]), .editorBackdrop .editor textarea, .editorBackdrop .editor select { box-sizing: border-box; width: 100%; min-height: 36px; padding: 8px 10px; font: 12px/1.5 var(--codex-font-ui, sans-serif); border-radius: 6px; }
+.editorBackdrop .formAdvanced { margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 6px; }
+.editorBackdrop .formAdvanced > summary { color: var(--muted); font-size: 12px; }
+.editorBackdrop .formAdvanced[open] { display: grid; gap: 14px; }
+.editorBackdrop .formAdvanced > p { margin: 0; color: var(--muted); font-size: 11px; }
+.editorBackdrop .checks { display: grid; gap: 12px; padding: 0; }
+.editorBackdrop .checks label { display: flex; align-items: flex-start; gap: 9px; }
+.editorBackdrop .checks input { flex: 0 0 14px; width: 14px; height: 14px; min-height: 0; margin: 2px 0 0; }
+.editorBackdrop .checks label > span { font-size: 11px; line-height: 1.5; }
+.editorBackdrop .discoveryAction { display: flex; align-items: center; gap: 12px; margin: 0; padding: 12px; border-radius: 6px; }
+.editorBackdrop .discoveryAction > div { min-width: 0; flex: 1; }
+.editorBackdrop .discoveryAction strong { font-size: 12px; }
+.editorBackdrop .discoveryAction span { font-size: 11px; line-height: 1.5; }
+.editorBackdrop .discoveryAction button { flex-shrink: 0; padding: 7px 10px; font-size: 12px; }
+.editorBackdrop .formActions { position: sticky; bottom: -20px; flex-wrap: wrap; min-height: 54px; margin: auto -20px -20px; padding: 12px 20px; background: var(--paper); }
+.editorBackdrop .formActions > span { font-size: 11px; }
+.editorBackdrop .formActions button { font-size: 12px; }
+.editorBackdrop .formActions button:last-child { color: var(--codex-on-accent, #181818); }
+.editorBackdrop .error, .editorBackdrop .notice { flex-shrink: 0; margin: 0; padding: 10px 12px; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.editorBackdrop .customHeaderRow { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 28px; }
+.editorBackdrop .toolPicker > header { display: flex; flex-wrap: wrap; gap: 8px; }
+.editorBackdrop .toolPicker > header > div { flex-basis: 100%; }
+.editorBackdrop .toolPicker > header input { flex: 1; min-width: 100px; }

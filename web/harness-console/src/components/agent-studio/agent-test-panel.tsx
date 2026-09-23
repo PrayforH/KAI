@@ -10,6 +10,7 @@ import type { StudioDraft } from "../../lib/agent-studio";
 import type { StudioTryRunSummary } from "../../lib/studio-client";
 import type { PreviewTurn } from "./agent-preview";
 import { AgentPlaygroundThread } from "./agent-playground-thread";
+import { BuilderFilesIcon, BuilderConversationsIcon } from "./builder-panel-icons";
 import styles from "./build-workspace.module.css";
 export function AgentTestPanel({
   navigation,
@@ -43,6 +44,7 @@ export function AgentTestPanel({
   onReset,
   onCancel,
   onAssets,
+  assetsOpen = false,
   onConfigureKnowledge = onAssets,
   userId = "playground",
 }: {
@@ -81,6 +83,7 @@ export function AgentTestPanel({
   onReset: () => void;
   onCancel: () => Promise<void>;
   onAssets: () => void;
+  assetsOpen?: boolean;
   onConfigureKnowledge?: () => void;
 }) {
   const [search, setSearch] = useState("");
@@ -162,7 +165,7 @@ export function AgentTestPanel({
         <header className={styles.conversationHeader}>
           {navigation}
           <div className={styles.conversationControls}>
-            <button type="button" aria-label="查看对话文件" title="文件" onClick={onAssets}><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M3 5h5l2 2h7v9H3z" /></svg></button>
+            <button type="button" aria-label="查看对话文件" title="文件" aria-pressed={assetsOpen} onClick={onAssets}><BuilderFilesIcon /></button>
             {!sessionRail && onSelectSession ? (
               <details
                 className={styles.conversationMenu}
@@ -173,8 +176,7 @@ export function AgentTestPanel({
                   aria-label="会话：新建或切换"
                   title={turns[0]?.prompt || "新对话"}
                 >
-                  <span>{turns[0]?.prompt || "新对话"}</span>
-                  <span aria-hidden="true">⌄</span>
+                  <BuilderConversationsIcon />
                 </summary>
                 <div className={styles.conversationPopover}>
                   {/* Starting a conversation and switching between them are the

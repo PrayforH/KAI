@@ -8375,3 +8375,15 @@
 .configurationDrawer :global(.task-knowledge-option[aria-pressed=true]) { background: var(--studio-panel-subtle); border-color: var(--studio-line-strong); }
 .configurationDrawer button:focus-visible, .configurationDrawer a:focus-visible { outline: 2px solid var(--studio-ink); outline-offset: 2px; }
 @media(max-width:600px) { .studioShell[data-agent-focused=true] .configurationDrawer:not([hidden]) { width: 100vw; padding-inline: 16px; } }
+
+.studioShell[data-agent-focused=true] .editorHeader { box-sizing: border-box; height: 48px; min-height: 48px; flex: 0 0 48px; padding: 0 14px; align-items: center; }
+.studioShell[data-agent-focused=true] .titleBlock { align-items: center; min-width: 0; gap: 12px; }
+.studioShell[data-agent-focused=true] .titleLine, .studioShell[data-agent-focused=true] .eyebrow { display: flex; align-items: center; min-height: 30px; margin: 0; gap: 8px; }
+.studioShell[data-agent-focused=true] .titleLine h1 { margin: 0; line-height: 20px; }
+.studioShell[data-agent-focused=true] .agentIdentityIcon { box-sizing: border-box; width: 30px; height: 30px; margin: 0; }
+.studioShell[data-agent-focused=true] .versionTrigger { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 7px; box-sizing: border-box; }
+.studioShell[data-agent-focused=true] .syncState { display: inline-flex; align-items: center; gap: 6px; line-height: 20px; }
+.studioShell[data-agent-focused=true] .headerActions .publishButton, .studioShell[data-agent-focused=true] .headerActions .iconActionButton { box-sizing: border-box; height: 30px; min-height: 30px; }
+.configurationDrawer .configEditorHeading { box-sizing: border-box; height: 48px; min-height: 48px; padding-block: 0; }
+.configurationDrawer .configEditorHeading > div:first-child small { display: none; }
+@media(max-width:600px) { .studioShell[data-agent-focused=true] .editorHeader { height: auto; min-height: 48px; padding-block: 8px; } }

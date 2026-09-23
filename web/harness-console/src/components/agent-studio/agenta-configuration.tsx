@@ -25,11 +25,11 @@ export function AgentaConfiguration({ draft, dirty, saving, writable, onEdit, on
     { section: "identity", icon: "model", label: "模型与基本信息", count: "", description: draft.model || "选择模型" },
     { section: "prompt", icon: "file", label: "指令", count: "AGENTS.md", description: draft.systemPrompt || "定义智能体的职责、边界和输出要求" },
     { section: "capabilities", target: "builtin", icon: "tools", label: "内置工具", count: `${draft.builtinTools.length} 项`, description: draft.builtinTools.join("、") || "选择文件、终端与联网工具" },
-    { section: "capabilities", target: "mcp", icon: "mcp", label: "MCP 服务器", count: `${draft.mcpServers.length} 个已绑定`, description: draft.mcpServers.map(id => mcpOptions.find(option => option.id === id)?.label || id).join("、") || "连接外部服务与工具" },
-    { section: "knowledge", icon: "knowledge", label: "文件与知识", count: `${draft.knowledgeReferences.length} 项知识引用`, description: "选择智能体可检索的知识库" },
+    { section: "capabilities", target: "mcp", icon: "mcp", label: "MCP 服务器", count: `${draft.mcpServers.length} 个`, description: draft.mcpServers.map(id => mcpOptions.find(option => option.id === id)?.label || id).join("、") || "连接外部服务与工具" },
+    { section: "knowledge", icon: "knowledge", label: "文件与知识", count: `${draft.knowledgeReferences.length} 个`, description: "选择智能体可检索的知识库" },
     { section: "skills", icon: "skill", label: "技能", count: `${draft.skills.length} 项`, description: draft.skills.map(skill => skill.name).join("、") || "添加可复用的工作流与领域技能" },
     { section: "capabilities", target: "python", icon: "code", label: "Python 算子", count: `${draft.pythonTools.length} 项`, description: draft.pythonTools.map(tool => tool.name).join("、") || "管理自定义 Python 工具" },
-    { section: "orchestration", icon: "agent", label: "Subagents", count: `${draft.subagents.length} 个协作角色`, description: "设置协作角色与分工" },
+    { section: "orchestration", icon: "agent", label: "Subagents", count: `${draft.subagents.length} 个`, description: "设置协作角色与分工" },
     { section: "runtime", icon: "settings", label: "高级设置", count: "", description: draft.runtime || "运行时、权限与沙箱" },
   ] as const;
   return <section className={styles.configuration} aria-label="智能体配置">

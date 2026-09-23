@@ -143,6 +143,7 @@ export function AgentBuilderAssistant({
   const [comparisonPending, setComparisonPending] = useState(false);
   const [comparing, setComparing] = useState(false);
   const [assetsOpen, setAssetsOpen] = useState(false);
+  const [assetsExpanded, setAssetsExpanded] = useState(false);
   const [assetTab, setAssetTab] = useState<"config" | "files" | "changes">("config");
   const [mobilePanel, setMobilePanel] = useState<"build" | "test">("build");
   const [selectedRunId, setSelectedRunId] = useState("");
@@ -210,7 +211,7 @@ export function AgentBuilderAssistant({
     setEditing(false);
     setApplying(false);
     setProposal(null);
-    setCodeView(false); setCodeExpanded(false); setLastComparison(undefined); setCodeComparison(undefined); setComparisonPending(false); setComparing(false); setLastChanges([]); setSelectedRunId(""); setAssetsOpen(false); setMobilePanel("build"); setConversationTab(mode === "create" ? "builder" : "chat"); historySelection.current++;
+    setCodeView(false); setCodeExpanded(false); setLastComparison(undefined); setCodeComparison(undefined); setComparisonPending(false); setComparing(false); setLastChanges([]); setSelectedRunId(""); setAssetsOpen(false); setAssetsExpanded(false); setMobilePanel("build"); setConversationTab(mode === "create" ? "builder" : "chat"); historySelection.current++;
     setLastTestPrompt("");
     setTestSessionId(""); setTestConversationEpoch(value => value + 1);
     setArchivedTurns([]); setCurrentFiles([]); setLastArtifactIds([]);
@@ -758,21 +759,21 @@ export function AgentBuilderAssistant({
   if (editing || creating || readingMaterials) transcript.push({id:"workspace-progress",role:"assistant",content:[{type:"text",text:buildReply || buildProgress || (readingMaterials ? "正在读取附件…" : "正在处理…")}],status:{type:"running"}});
   return createPortal(<div className={workspaceStyles.agentaPlayground} data-mode={playgroundMode}>
     {playgroundMode === "build" && <section className={workspaceStyles.configurationColumn} aria-label="智能体结构">
-      <div className={workspaceStyles.configurationSlot} hidden={codeView}>{configuration}</div>
-      <div className={workspaceStyles.configurationSlot} hidden={!codeView} ref={setCodeDirectoryTarget} />
+      <div className={workspaceStyles.configurationSlot} hidden={codeView || assetsOpen}>{configuration}</div>
+      <div className={workspaceStyles.configurationSlot} hidden={!codeView && !assetsOpen} ref={setCodeDirectoryTarget} />
     </section>}
     <div className={workspaceStyles.conversationArea}>
       <div className={workspaceStyles.conversationBody}>
-        {assetsOpen && <AgentWorkspaceFiles key={activeDraft.id} draft={activeDraft} baseline={fileBaseline.current} turns={visibleTurns} onClose={() => setAssetsOpen(false)} />}
+        {assetsOpen && <AgentWorkspaceFiles key={activeDraft.id} draft={activeDraft} baseline={fileBaseline.current} turns={visibleTurns} directoryTarget={playgroundMode === "build" ? codeDirectoryTarget : undefined} expanded={assetsExpanded} onExpandedChange={setAssetsExpanded} onClose={() => { setAssetsOpen(false); setAssetsExpanded(false); }} />}
         {codeView && <AgentProjectCode key={activeDraft.id} draftId={draftReady ? activeDraft.id : ""} revision={activeDraft.revision} name={activeDraft.name || activeDraft.displayName} dirty={hasUnsavedChanges} comparison={codeComparison} comparisonPending={comparisonPending} directoryTarget={playgroundMode === "build" ? codeDirectoryTarget : undefined} expanded={codeExpanded} onExpandedChange={setCodeExpanded} onClose={() => { setCodeView(false); setCodeExpanded(false); }} />}
-        <div className={workspaceStyles.preservedPanel} hidden={codeView && (playgroundMode === "chat" || codeExpanded)}>
+        <div className={workspaceStyles.preservedPanel} hidden={(codeView && (playgroundMode === "chat" || codeExpanded)) || (assetsOpen && (playgroundMode === "chat" || assetsExpanded))}>
           <AgentTestPanel navigation={<>{playgroundMode === "chat" && onExpandConfiguration && <button type="button" aria-label="展开配置栏" title="展开配置栏" aria-expanded="false" onClick={onExpandConfiguration}><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="2" /><path d="M8 4v12m3-9 3 3-3 3" /></svg></button>}<strong>对话</strong></>} draft={activeDraft} userId={userId} onConfigureKnowledge={onConfigureKnowledge} sessionRail={false} savedRuns={savedRuns} historyLoading={historyLoading} historyError={historyError} examples={[]} draftId={activeDraft.id} revision={activeDraft.revision} agentName={activeDraft.displayName} model={activeDraft.model} turns={visibleTurns} history={turns} sessionId={testSessionId} conversationEpoch={testConversationEpoch}
             messageOverride={transcript} inputSeed={inputSeed} afterLastMessage={reviewContent}
             onSelectSession={id => void selectSession(id)} busy={active || editing || applying || readingMaterials} ready={true} dirty={hasUnsavedChanges} error={error} selectedRunId={selectedRunId}
             onSend={sendUnified}
             onRerun={(value,ids,names) => proposal ? Promise.resolve(false) : startRun(value, undefined, false, ids, names)}
             onReset={() => {if (result) setArchivedTurns(current => [...current,{prompt:lastTestPrompt,result,files:currentFiles,artifactIds:lastArtifactIds}]);setResult(null);setTestSessionId("");setTestConversationEpoch(value => value + 1);setLastTestPrompt("");setCurrentFiles([]);setLastArtifactIds([]);setSelectedRunId("");setError("");setMessages([]);setProposal(null);setInputSeed(undefined);}}
-            onCancel={cancelRun} onAssets={() => {setCodeView(false);setAssetsOpen(current => !current);}} />
+            onCancel={cancelRun} assetsOpen={assetsOpen} onAssets={() => {setCodeView(false);setAssetsExpanded(false);setAssetsOpen(current => !current);if (playgroundMode === "chat") onExpandConfiguration?.();}} />
         </div>
       </div>
     </div>

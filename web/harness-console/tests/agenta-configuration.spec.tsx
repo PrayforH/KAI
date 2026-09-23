@@ -108,7 +108,7 @@ it("opens each resource directly with its own scope, without disclosure menus", 
   click("技能");
   expect(onEdit).toHaveBeenLastCalledWith("skills", undefined);
   expect(host.querySelector("details")).toBeNull();
-  expect(host.textContent).toContain("1 个已绑定");
+  expect(host.textContent).toContain("1 个");
   expect(host.textContent).toContain("知识检索");
 });
 
@@ -123,7 +123,7 @@ it("opens the knowledge section from the 文件与知识 row, with its reference
     (button.textContent ?? "").includes("文件与知识"),
   );
   expect(row, "the 文件与知识 row must exist").toBeDefined();
-  expect(row!.textContent).toContain("2 项知识引用");
+  expect(row!.textContent).toContain("2 个");
 
   act(() => row!.click());
   // Knowledge binding has its own section now: it used to open the tools section,

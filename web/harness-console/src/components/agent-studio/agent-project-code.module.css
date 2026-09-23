@@ -119,3 +119,18 @@
 .directoryWorkspace .treeHeading, .directoryWorkspace .sidebarFooter { display: flex; }
 .directoryWorkspace .tree { min-height: 80px; }
 .directoryWorkspace button:focus-visible { outline: 2px solid var(--source-muted); outline-offset: 2px; }
+
+/* Shared 48 / 32 / 44 / 30 rails align navigation, context, tools and footers. */
+.toolbar, .directoryHeader { box-sizing: border-box; height: 48px; min-height: 48px; flex: 0 0 48px; padding: 0 14px; }
+.directoryTabs { height: 32px; box-sizing: border-box; align-items: center; }
+.directoryTabs button { height: 26px; padding: 0 10px; }
+.directoryHeader > button { width: 30px; height: 30px; }
+.context, .directoryHint { box-sizing: border-box; height: 32px; min-height: 32px; flex: 0 0 32px; margin: 0; padding: 0 14px; border: 0; border-bottom: 1px solid var(--source-line); border-radius: 0; display: flex; align-items: center; background: transparent; font-size: 11px; }
+.context > span, .directoryHint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fileHeader { box-sizing: border-box; height: 44px; flex: 0 0 44px; padding-inline: 14px; }
+.directoryWorkspace > .sidebar { padding-top: 0; }
+.directoryWorkspace .search { box-sizing: border-box; height: 32px; flex: 0 0 32px; margin: 6px 12px; border-radius: 6px; font-size: 12px; }
+.directoryWorkspace .treeHeading { display: none; }
+.status, .directoryWorkspace .sidebarFooter { box-sizing: border-box; height: 30px; min-height: 30px; flex: 0 0 30px; padding: 0 14px; }
+.filePreviewBody { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; overflow: auto; }
+.actions > a { color: var(--source-muted); text-decoration: none; font-size: 12px; padding: 6px 8px; }

@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import { useAuth } from "../auth-provider";
 import { SecretInput } from "../secret-input";
 import { useDialogFocus } from "../../lib/use-dialog-focus";
@@ -39,6 +40,8 @@ const MANAGED_AUTH_HEADER_NAMES = new Set([
   "apikey",
 ]);
 const EDITABLE_PLATFORM_MCP_REFERENCES = new Set<string>();
+
+function newMcpReference() { return `mcp-${crypto.randomUUID().slice(0, 8)}`; }
 
 const EMPTY_MCP: McpCapability = {
   reference: "",
@@ -119,12 +122,14 @@ export function McpCatalogControlPlane({
   mode = "mcp",
   startInForm = false,
   onClose,
+  onRegistered,
 }: {
   mode?: "mcp" | "knowledge";
   /** Open the registration form straight away: the form is itself the drawer. */
   startInForm?: boolean;
   /** Called when the form is dismissed, so the caller can unmount the surface. */
   onClose?: () => void;
+  onRegistered?: (reference: string) => void;
 }) {
   const knowledgeMode = mode === "knowledge";
   const category = knowledgeMode ? "knowledge" : "tool";
@@ -134,7 +139,7 @@ export function McpCatalogControlPlane({
   const [record, setRecord] = useState<StudioCapabilityCatalogRecord | null>(
     null,
   );
-  const [draft, setDraft] = useState<McpCapability>(EMPTY_MCP);
+  const [draft, setDraft] = useState<McpCapability>(() => ({...EMPTY_MCP, reference: newMcpReference(), category, readOnly: knowledgeMode, networkAccess: knowledgeMode ? "internal" : "external"}));
   const [allowedProfileIds, setAllowedProfileIds] = useState<string[]>([]);
   const [discovery, setDiscovery] =
     useState<StudioMcpDiscoveryResult | null>(null);
@@ -181,6 +186,7 @@ export function McpCatalogControlPlane({
         studioClient.listMcpCredentials(),
       ]);
       setRecord(next);
+      if (startInForm) setAllowedProfileIds(next.catalog.executionProfiles.filter(profile => profile.enabled && profile.sandboxProvider === "local" && profile.networkAccess.includes(knowledgeMode ? "internal" : "external")).map(profile => profile.profileId));
       setCredentialStatuses(
         Object.fromEntries(credentials.map((item) => [item.reference, item])),
       );
@@ -190,7 +196,7 @@ export function McpCatalogControlPlane({
         caught instanceof Error ? caught.message : "能力目录暂时不可用。",
       );
     }
-  }, []);
+  }, [startInForm, knowledgeMode]);
 
   useEffect(() => {
     void load();
@@ -279,6 +285,7 @@ export function McpCatalogControlPlane({
     const networkAccess = knowledgeMode ? "internal" : "external";
     setDraft({
       ...EMPTY_MCP,
+      reference: newMcpReference(),
       category,
       networkAccess,
       readOnly: knowledgeMode,
@@ -355,11 +362,10 @@ export function McpCatalogControlPlane({
     }
     if (
       !draft.label.trim() ||
-      !draft.description.trim() ||
       !draft.endpointUrl?.trim() ||
       draft.tools.length === 0
     ) {
-      setError("名称、说明、MCP 地址和至少一个已检测工具不能为空。");
+      setError("名称、MCP 地址和至少一个已检测工具不能为空。");
       return;
     }
     const hasStoredCredential = Boolean(credentialStatuses[reference]?.configured);
@@ -394,7 +400,7 @@ export function McpCatalogControlPlane({
           reference,
           serverName,
           label: draft.label.trim(),
-          description: draft.description.trim(),
+          description: draft.description.trim() || draft.label.trim(),
           endpointUrl: draft.endpointUrl.trim(),
           customHeaders,
           tools: draft.tools,
@@ -420,6 +426,7 @@ export function McpCatalogControlPlane({
         }));
       }
       setCredentialValue("");
+      if (startInForm) { onRegistered?.(reference); closeForm(); return; }
       setShowForm(false);
       setEditingReference(null);
       const previousTools = new Set(previous?.tools ?? []);
@@ -670,6 +677,400 @@ export function McpCatalogControlPlane({
     }
   }
 
+  const editor = showForm && canManage && (
+          <div className={styles.editorBackdrop}>
+          <section
+            aria-labelledby="catalog-editor-title"
+            aria-modal="true"
+            className={styles.editor}
+            ref={editorDialogRef}
+            role="dialog"
+          >
+            <header>
+              <div>
+                <h2 id="catalog-editor-title">{editingReference ? (knowledgeMode ? "编辑知识库连接" : "编辑 MCP") : (knowledgeMode ? "连接外部知识库" : "注册 MCP")}</h2>
+              </div>
+              <button type="button" aria-label="关闭 MCP 注册" onClick={closeEditor}>×</button>
+            </header>
+            <form onSubmit={save}>
+              {error && <p className={styles.error} role="alert">{error}</p>}
+              {notice && <p className={styles.notice} role="status">{notice}</p>}
+              <section className={styles.formSection}>
+              <label>
+                <span>显示名称</span>
+                <input
+                  required
+                  placeholder="企业搜索"
+                  value={draft.label}
+                  onChange={(event) =>
+                    setDraft((current) => ({ ...current, label: event.target.value }))
+                  }
+                />
+              </label>
+              </section>
+              <section className={styles.formSection}>
+              <label className={styles.endpointField}>
+                <span>{knowledgeMode ? "知识服务 MCP 地址" : "MCP 地址"}</span>
+                <input
+                  required
+                  type="url"
+                  placeholder="https://mcp.example.com/mcp"
+                  value={draft.endpointUrl ?? ""}
+                  onChange={(event) =>
+                    updateConnection({ endpointUrl: event.target.value })
+                  }
+                />
+
+                {discovery && (
+                  <small>已自动识别：{TRANSPORT_LABELS[discovery.transport]}</small>
+                )}
+              </label>
+
+              </section>
+              <section className={styles.formSection}>
+              <label>
+                <span>鉴权方式</span>
+                <select
+                  value={draft.authMode}
+                  onChange={(event) => {
+                    const authMode = event.target.value as McpCapability["authMode"];
+                    updateConnection({
+                      authMode,
+                      authName:
+                        authMode === "header"
+                          ? "X-API-Key"
+                          : authMode === "query"
+                            ? "apiKey"
+                            : null,
+                    });
+                  }}
+                >
+                  <option value="none">无需鉴权</option>
+                  <option value="bearer">Bearer Token</option>
+                  <option value="header">自定义 Header</option>
+                  <option value="query">Query 参数</option>
+                </select>
+              </label>
+              {draft.authMode !== "none" && (
+                <label>
+                  <span>认证凭据</span>
+                  <SecretInput
+                    required={!credentialStatuses[draft.reference.trim()]?.configured}
+                    autoComplete="new-password"
+                    placeholder={
+                      credentialStatuses[draft.reference.trim()]?.configured
+                        ? "已配置；留空则不更新"
+                        : "填写 Token 或 API Key"
+                    }
+                    value={credentialValue}
+                    onChange={(event) => setCredentialValue(event.target.value)}
+                    revealLabel="认证凭据"
+                  />
+                  <small>
+                    {credentialStatuses[draft.reference.trim()]?.configured
+                      ? "凭据已加密保存；为安全起见不会回显原值。"
+                      : "保存前仅用于连接检测，保存后加密托管。"}
+                  </small>
+                </label>
+              )}
+              {(draft.authMode === "header" || draft.authMode === "query") && (
+                <label>
+                  <span>{draft.authMode === "header" ? "Header 名称" : "参数名称"}</span>
+                  <input
+                    required
+                    placeholder={draft.authMode === "header" ? "X-API-Key" : "apiKey"}
+                    value={draft.authName ?? ""}
+                    onChange={(event) =>
+                      updateConnection({ authName: event.target.value })
+                    }
+                  />
+                </label>
+              )}
+
+              </section>
+              <section className={styles.formSection}>
+              <details className={styles.formAdvanced}>
+                <summary>高级设置（可选）</summary>
+                <p>默认值适用于大多数情况；仅在网关或治理要求下调整。</p>
+              <label>
+                <span>引用标识</span>
+                <input
+                  required
+                  pattern={MCP_IDENTIFIER_INPUT_PATTERN}
+                  disabled={Boolean(editingReference)}
+                  placeholder="company-search"
+                  value={draft.reference}
+                  onChange={(event) =>
+                    updateConnection({
+                      reference: event.target.value,
+                      serverName:
+                        draft.serverName === draft.reference || !draft.serverName
+                          ? event.target.value
+                          : draft.serverName,
+                    })
+                  }
+                />
+                <small>
+                  智能体通过这个稳定标识绑定能力，创建后不可修改；支持连字符和单下划线。
+                </small>
+              </label>
+              <label className={styles.wide}>
+                <span>能力说明</span>
+                <textarea
+                  rows={2}
+                  placeholder="说明它能访问什么，以及适合在哪些任务中使用。"
+                  value={draft.description}
+                  onChange={(event) =>
+                    setDraft((current) => ({ ...current, description: event.target.value }))
+                  }
+                />
+              </label>
+              {draft.authMode !== "none" && (
+                <label>
+                  <span>凭据映射键</span>
+                  <input
+                    required
+                    pattern="[a-z][a-z0-9_]*"
+                    value={draft.authKey}
+                    onChange={(event) =>
+                      updateConnection({ authKey: event.target.value })
+                    }
+                  />
+                  <small>对应服务端引用 JSON 中的键。</small>
+                </label>
+              )}
+              <div className={styles.transportReadout}>
+                <span>传输类型</span>
+                <strong>{discovery ? TRANSPORT_LABELS[discovery.transport] : "自动检测"}</strong>
+                <small>检测连接时自动识别 SSE 或 Streamable HTTP，避免手工选错。</small>
+              </div>
+              <section className={styles.customHeaders}>
+                <header>
+                  <div>
+                    <strong>自定义请求头（可选）</strong>
+                    <span>用于网关路由和链路标记；密钥、Token、Cookie 必须走下方受管鉴权。</span>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={customHeaderRows.length >= 20}
+                    onClick={() =>
+                      setCustomHeaderRows((current) => [...current, { key: "", value: "" }])
+                    }
+                  >
+                    添加请求头
+                  </button>
+                </header>
+                {customHeaderRows.length > 0 && (
+                  <div>
+                    {customHeaderRows.map((item, index) => (
+                      <div className={styles.customHeaderRow} key={index}>
+                        <input
+                          aria-label={`请求头 ${index + 1} 名称`}
+                          placeholder="X-Tenant-ID"
+                          value={item.key}
+                          onChange={(event) =>
+                            setCustomHeaderRows((current) => current.map((row, rowIndex) =>
+                              rowIndex === index ? { ...row, key: event.target.value } : row
+                            ))
+                          }
+                        />
+                        <input
+                          aria-label={`请求头 ${index + 1} 值`}
+                          placeholder="公开路由值（不要填写密钥）"
+                          value={item.value}
+                          onChange={(event) =>
+                            setCustomHeaderRows((current) => current.map((row, rowIndex) =>
+                              rowIndex === index ? { ...row, value: event.target.value } : row
+                            ))
+                          }
+                        />
+                        <button
+                          aria-label={`删除请求头 ${index + 1}`}
+                          type="button"
+                          onClick={() =>
+                            setCustomHeaderRows((current) =>
+                              current.filter((_, rowIndex) => rowIndex !== index)
+                            )
+                          }
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+              <label>
+                <span>风险级别</span>
+                <select
+                  value={draft.risk}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      risk: event.target.value as McpCapability["risk"],
+                    }))
+                  }
+                >
+                  <option value="low">低风险</option>
+                  <option value="medium">中风险</option>
+                  <option value="high">高风险</option>
+                </select>
+              </label>
+              <label>
+                <span>网络范围</span>
+                <select
+                  value={draft.networkAccess}
+                  onChange={(event) =>
+                    updateConnection({
+                      networkAccess: event.target.value as McpCapability["networkAccess"],
+                    })
+                  }
+                >
+                  <option value="internal">内部网络</option>
+                  <option value="external">外部网络</option>
+                </select>
+              </label>
+              <label>
+                <span>执行位置</span>
+                <input
+                  required
+                  value={draft.executionLocation}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      executionLocation: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <div className={styles.checks}>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={draft.readOnly}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        readOnly: event.target.checked,
+                      }))
+                    }
+                  />
+                  <span>只读能力（允许 Worker 懒加载直连）</span>
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={draft.sendsUserData}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        sendsUserData: event.target.checked,
+                      }))
+                    }
+                  />
+                  <span>调用会向外部服务发送用户数据</span>
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={draft.preflightRequired}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        preflightRequired: event.target.checked,
+                      }))
+                    }
+                  />
+                  <span>运行前必须通过预检</span>
+                </label>
+              </div>
+              </details>
+              <div className={styles.discoveryAction}>
+                <div>
+                  <strong>检测连接并识别工具</strong>
+                  <span>连接成功后选择需要开放的工具。</span>
+                </div>
+                <button
+                  type="button"
+                  disabled={busy === "discover" || busy === "save" || !draft.endpointUrl?.trim() || !draft.label.trim()}
+                  onClick={() => void discover()}
+                >
+                  {busy === "discover" ? "正在检测…" : discovery ? "重新检测" : "检测地址"}
+                </button>
+              </div>
+              {discovery && (
+                <section className={styles.toolPicker}>
+                  <header>
+                    <div>
+                      <strong>{discovery.tools.length} 个工具可用</strong>
+                      <span>已选择 {draft.tools.length} 个，保存后只有所选工具可被智能体调用。</span>
+                    </div>
+                    <input
+                      type="search"
+                      placeholder="搜索工具"
+                      value={toolQuery}
+                      onChange={(event) => setToolQuery(event.target.value)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setDraft((current) => ({
+                          ...current,
+                          tools: discovery.tools.map((tool) => tool.canonicalName),
+                        }))
+                      }
+                    >
+                      全选
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setDraft((current) => ({ ...current, tools: [] }))
+                      }
+                    >
+                      清空
+                    </button>
+                  </header>
+                  <div>
+                    {discovery.tools
+                      .filter((tool) =>
+                        `${tool.name} ${tool.title ?? ""} ${tool.description}`
+                          .toLowerCase()
+                          .includes(toolQuery.trim().toLowerCase()),
+                      )
+                      .map((tool) => (
+                        <label key={tool.canonicalName}>
+                          <input
+                            type="checkbox"
+                            checked={draft.tools.includes(tool.canonicalName)}
+                            onChange={() => toggleTool(tool.canonicalName)}
+                          />
+                          <span>
+                            <strong>{tool.title ?? tool.name}</strong>
+                            <code>{tool.name}</code>
+                            <small>{tool.description || "服务端未提供工具说明"}</small>
+                          </span>
+                        </label>
+                      ))}
+                  </div>
+                </section>
+              )}
+
+              </section>
+              <div className={styles.formActions}>
+                <span>{draft.tools.length ? `已选择 ${draft.tools.length} 个工具` : "请先检测连接"}</span>
+                <button type="button" onClick={closeForm}>取消</button>
+                <button type="submit" disabled={Boolean(busy) || !record || !discovery || !draft.tools.length}>
+                  {busy === "save" ? "正在保存…" : editingReference ? "保存更新" : "完成注册"}
+                </button>
+              </div>
+            </form>
+          </section>
+          </div>
+  );
+
+  if (startInForm) return typeof document === "undefined" ? null : createPortal(<div className={styles.resourceRoot}>{editor}</div>, document.body);
+
   return (
     <div className={styles.resourceRoot}>
       <section className={styles.content}>
@@ -890,397 +1291,7 @@ export function McpCatalogControlPlane({
           )}
         </section>
 
-        {showForm && canManage && (
-          <div className={styles.editorBackdrop}>
-          <section
-            aria-labelledby="catalog-editor-title"
-            aria-modal="true"
-            className={styles.editor}
-            ref={editorDialogRef}
-            role="dialog"
-          >
-            <header>
-              <div>
-                <p>Catalog entry</p>
-                <h2 id="catalog-editor-title">{editingReference ? (knowledgeMode ? "编辑知识库连接" : "编辑 MCP") : (knowledgeMode ? "连接外部知识库" : "注册 MCP")}</h2>
-              </div>
-              <button type="button" onClick={closeEditor}>关闭</button>
-            </header>
-            <form onSubmit={save}>
-              <section className={styles.formSection}>
-              <label>
-                <span>引用标识</span>
-                <input
-                  required
-                  pattern={MCP_IDENTIFIER_INPUT_PATTERN}
-                  disabled={Boolean(editingReference)}
-                  placeholder="company-search"
-                  value={draft.reference}
-                  onChange={(event) =>
-                    updateConnection({
-                      reference: event.target.value,
-                      serverName:
-                        draft.serverName === draft.reference || !draft.serverName
-                          ? event.target.value
-                          : draft.serverName,
-                    })
-                  }
-                />
-                <small>
-                  智能体通过这个稳定标识绑定能力，创建后不可修改；支持连字符和单下划线。
-                </small>
-              </label>
-              <label>
-                <span>显示名称</span>
-                <input
-                  required
-                  placeholder="企业搜索"
-                  value={draft.label}
-                  onChange={(event) =>
-                    setDraft((current) => ({ ...current, label: event.target.value }))
-                  }
-                />
-              </label>
-              <label className={styles.wide}>
-                <span>能力说明</span>
-                <textarea
-                  required
-                  rows={1}
-                  placeholder="说明它能访问什么，以及适合在哪些任务中使用。"
-                  value={draft.description}
-                  onChange={(event) =>
-                    setDraft((current) => ({ ...current, description: event.target.value }))
-                  }
-                />
-              </label>
-              </section>
-              <section className={styles.formSection}>
-              <label className={styles.endpointField}>
-                <span>{knowledgeMode ? "知识服务 MCP 地址" : "MCP 地址"}</span>
-                <input
-                  required
-                  type="url"
-                  placeholder="https://mcp.example.com/mcp"
-                  value={draft.endpointUrl ?? ""}
-                  onChange={(event) =>
-                    updateConnection({ endpointUrl: event.target.value })
-                  }
-                />
-                <small>不能包含密钥、查询参数或 URL 内嵌账号。</small>
-                {discovery && (
-                  <small>已自动识别：{TRANSPORT_LABELS[discovery.transport]}</small>
-                )}
-              </label>
-              <details className={styles.formAdvanced}>
-                <summary>高级设置（可选）</summary>
-                <p>默认值适用于大多数情况；仅在网关或治理要求下调整。</p>
-              <div className={styles.transportReadout}>
-                <span>传输类型</span>
-                <strong>{discovery ? TRANSPORT_LABELS[discovery.transport] : "自动检测"}</strong>
-                <small>检测连接时自动识别 SSE 或 Streamable HTTP，避免手工选错。</small>
-              </div>
-              <section className={styles.customHeaders}>
-                <header>
-                  <div>
-                    <strong>自定义请求头（可选）</strong>
-                    <span>用于网关路由和链路标记；密钥、Token、Cookie 必须走下方受管鉴权。</span>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={customHeaderRows.length >= 20}
-                    onClick={() =>
-                      setCustomHeaderRows((current) => [...current, { key: "", value: "" }])
-                    }
-                  >
-                    添加请求头
-                  </button>
-                </header>
-                {customHeaderRows.length > 0 && (
-                  <div>
-                    {customHeaderRows.map((item, index) => (
-                      <div className={styles.customHeaderRow} key={index}>
-                        <input
-                          aria-label={`请求头 ${index + 1} 名称`}
-                          placeholder="X-Tenant-ID"
-                          value={item.key}
-                          onChange={(event) =>
-                            setCustomHeaderRows((current) => current.map((row, rowIndex) =>
-                              rowIndex === index ? { ...row, key: event.target.value } : row
-                            ))
-                          }
-                        />
-                        <input
-                          aria-label={`请求头 ${index + 1} 值`}
-                          placeholder="公开路由值（不要填写密钥）"
-                          value={item.value}
-                          onChange={(event) =>
-                            setCustomHeaderRows((current) => current.map((row, rowIndex) =>
-                              rowIndex === index ? { ...row, value: event.target.value } : row
-                            ))
-                          }
-                        />
-                        <button
-                          aria-label={`删除请求头 ${index + 1}`}
-                          type="button"
-                          onClick={() =>
-                            setCustomHeaderRows((current) =>
-                              current.filter((_, rowIndex) => rowIndex !== index)
-                            )
-                          }
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </section>
-              <label>
-                <span>风险级别</span>
-                <select
-                  value={draft.risk}
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      risk: event.target.value as McpCapability["risk"],
-                    }))
-                  }
-                >
-                  <option value="low">低风险</option>
-                  <option value="medium">中风险</option>
-                  <option value="high">高风险</option>
-                </select>
-              </label>
-              <label>
-                <span>网络范围</span>
-                <select
-                  value={draft.networkAccess}
-                  onChange={(event) =>
-                    updateConnection({
-                      networkAccess: event.target.value as McpCapability["networkAccess"],
-                    })
-                  }
-                >
-                  <option value="internal">内部网络</option>
-                  <option value="external">外部网络</option>
-                </select>
-              </label>
-              <label>
-                <span>执行位置</span>
-                <input
-                  required
-                  value={draft.executionLocation}
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      executionLocation: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-              </details>
-              </section>
-              <section className={styles.formSection}>
-              <label>
-                <span>鉴权方式</span>
-                <select
-                  value={draft.authMode}
-                  onChange={(event) => {
-                    const authMode = event.target.value as McpCapability["authMode"];
-                    updateConnection({
-                      authMode,
-                      authName:
-                        authMode === "header"
-                          ? "X-API-Key"
-                          : authMode === "query"
-                            ? "apiKey"
-                            : null,
-                    });
-                  }}
-                >
-                  <option value="none">无需鉴权</option>
-                  <option value="bearer">Bearer Token</option>
-                  <option value="header">自定义 Header</option>
-                  <option value="query">Query 参数</option>
-                </select>
-              </label>
-              {draft.authMode !== "none" && (
-                <label>
-                  <span>认证凭据</span>
-                  <SecretInput
-                    required={!credentialStatuses[draft.reference.trim()]?.configured}
-                    autoComplete="new-password"
-                    placeholder={
-                      credentialStatuses[draft.reference.trim()]?.configured
-                        ? "已配置；留空则不更新"
-                        : "填写 Token 或 API Key"
-                    }
-                    value={credentialValue}
-                    onChange={(event) => setCredentialValue(event.target.value)}
-                    revealLabel="认证凭据"
-                  />
-                  <small>
-                    {credentialStatuses[draft.reference.trim()]?.configured
-                      ? "凭据已加密保存；为安全起见不会回显原值。"
-                      : "保存前仅用于连接检测，保存后加密托管。"}
-                  </small>
-                </label>
-              )}
-              {(draft.authMode === "header" || draft.authMode === "query") && (
-                <label>
-                  <span>{draft.authMode === "header" ? "Header 名称" : "参数名称"}</span>
-                  <input
-                    required
-                    placeholder={draft.authMode === "header" ? "X-API-Key" : "apiKey"}
-                    value={draft.authName ?? ""}
-                    onChange={(event) =>
-                      updateConnection({ authName: event.target.value })
-                    }
-                  />
-                </label>
-              )}
-              {draft.authMode !== "none" && (
-                <label>
-                  <span>凭据映射键</span>
-                  <input
-                    required
-                    pattern="[a-z][a-z0-9_]*"
-                    value={draft.authKey}
-                    onChange={(event) =>
-                      updateConnection({ authKey: event.target.value })
-                    }
-                  />
-                  <small>对应服务端引用 JSON 中的键。</small>
-                </label>
-              )}
-              </section>
-              <section className={styles.formSection}>
-              
-              </section>
-              <section className={styles.formSection}>
-              <div className={styles.discoveryAction}>
-                <div>
-                  <strong>检测连接并识别工具</strong>
-                  <span>服务端执行 initialize 和 tools/list，不会调用任何业务工具。</span>
-                </div>
-                <button
-                  type="button"
-                  disabled={busy === "discover"}
-                  onClick={() => void discover()}
-                >
-                  {busy === "discover" ? "正在检测…" : discovery ? "重新检测" : "检测地址"}
-                </button>
-              </div>
-              {discovery && (
-                <section className={styles.toolPicker}>
-                  <header>
-                    <div>
-                      <strong>{discovery.tools.length} 个工具可用</strong>
-                      <span>已选择 {draft.tools.length} 个，保存后只有所选工具可被智能体调用。</span>
-                    </div>
-                    <input
-                      type="search"
-                      placeholder="搜索工具"
-                      value={toolQuery}
-                      onChange={(event) => setToolQuery(event.target.value)}
-                    />
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setDraft((current) => ({
-                          ...current,
-                          tools: discovery.tools.map((tool) => tool.canonicalName),
-                        }))
-                      }
-                    >
-                      全选
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setDraft((current) => ({ ...current, tools: [] }))
-                      }
-                    >
-                      清空
-                    </button>
-                  </header>
-                  <div>
-                    {discovery.tools
-                      .filter((tool) =>
-                        `${tool.name} ${tool.title ?? ""} ${tool.description}`
-                          .toLowerCase()
-                          .includes(toolQuery.trim().toLowerCase()),
-                      )
-                      .map((tool) => (
-                        <label key={tool.canonicalName}>
-                          <input
-                            type="checkbox"
-                            checked={draft.tools.includes(tool.canonicalName)}
-                            onChange={() => toggleTool(tool.canonicalName)}
-                          />
-                          <span>
-                            <strong>{tool.title ?? tool.name}</strong>
-                            <code>{tool.name}</code>
-                            <small>{tool.description || "服务端未提供工具说明"}</small>
-                          </span>
-                        </label>
-                      ))}
-                  </div>
-                </section>
-              )}
-              <div className={styles.checks}>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={draft.readOnly}
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        readOnly: event.target.checked,
-                      }))
-                    }
-                  />
-                  <span>只读能力（允许 Worker 懒加载直连）</span>
-                </label>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={draft.sendsUserData}
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        sendsUserData: event.target.checked,
-                      }))
-                    }
-                  />
-                  <span>调用会向外部服务发送用户数据</span>
-                </label>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={draft.preflightRequired}
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        preflightRequired: event.target.checked,
-                      }))
-                    }
-                  />
-                  <span>运行前必须通过预检</span>
-                </label>
-              </div>
-              </section>
-              <div className={styles.formActions}>
-                <span>已审核 {draft.tools.length} 个工具；保存后可在「智能体 → 工具与 MCP」中绑定。</span>
-                <button type="button" onClick={closeForm}>取消</button>
-                <button type="submit" disabled={busy === "save"}>
-                  {busy === "save" ? "正在保存…" : editingReference ? "保存更新" : "完成注册"}
-                </button>
-              </div>
-            </form>
-          </section>
-          </div>
-        )}
+        {editor}
       </section>
 
       {selectedDetail && (
