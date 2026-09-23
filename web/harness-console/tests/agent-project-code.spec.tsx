@@ -107,7 +107,7 @@ describe("DeepAgents source workspace", () => {
     expect(host.querySelector("ins")?.textContent).toBe("print('updated')");
     expect(button("下载项目").disabled).toBe(true);
     expect(studioClient.getDeepagentsProjectSource).not.toHaveBeenCalled();
-    await act(async () => button("全部文件").click());
+    await act(async () => button("全部代码").click());
     expect(host.querySelector("pre")?.textContent).toBe("print('hello')");
     expect(studioClient.getDeepagentsProjectSource).toHaveBeenCalled();
   });
@@ -133,4 +133,30 @@ describe("DeepAgents source workspace", () => {
     expect(frame).toContain("background: var(--source-bg)");
     expect(module).toMatch(/\.sourceFrame\[data-theme="light"\] \{[^}]*--source-bg: #ffffff/);
   });
+});
+
+
+it("opens file search within the directory toolbar and clears its filter on close", async () => {
+  await render();
+  expect(host.querySelector('[aria-label="筛选文件"]')).toBeNull();
+  expect(button("全部代码").textContent).toBe("");
+  expect(button("本次改动").textContent).toBe("");
+  await act(async () => button("搜索文件").click());
+  const input = host.querySelector<HTMLInputElement>('[aria-label="筛选文件"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "search.py");
+    input.dispatchEvent(new Event("input", {bubbles: true}));
+  });
+  expect(host.querySelector('[aria-label="DeepAgents 文件树"]')?.textContent).toBe("tools/search.py");
+  await act(async () => button("搜索文件").click());
+  expect(host.querySelector('[aria-label="筛选文件"]')).toBeNull();
+  expect(host.querySelector('[aria-label="DeepAgents 文件树"]')?.textContent).toContain("README.md");
+});
+
+it("opens the packaged DeepAgents assembly by default while retaining legacy entry points", async () => {
+  const path = "src/sapling_deep_agents/agents/agent.py";
+  vi.mocked(studioClient.getDeepagentsProjectSource).mockResolvedValue({...fixture, files: [...fixture.files, {path, size: 10, content: "build_agent()", unavailable: null}]});
+  await render();
+  expect(host.querySelector("pre")?.textContent).toBe("build_agent()");
+  expect(host.querySelector('[aria-label="DeepAgents 文件树"]')?.textContent).toContain("agent.py");
 });
