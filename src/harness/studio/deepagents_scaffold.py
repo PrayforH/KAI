@@ -46,7 +46,6 @@ class NoSubagentsMiddleware(AgentMiddleware):
 '''
 
 _RUN = '''"""Start the local LangGraph dev server from the exported project root."""
-from pathlib import Path
 import subprocess
 import sys
 
@@ -56,10 +55,9 @@ def main() -> None:
     config = PROJECT_ROOT / "langgraph.json"
     if not config.is_file():
         raise SystemExit("Run from the exported project root or set DEEPAGENTS_PROJECT_ROOT.")
-    name = "langgraph.exe" if sys.platform == "win32" else "langgraph"
-    executable = Path(sys.executable).parent / name
     raise SystemExit(subprocess.call(
-        [str(executable), "dev", "--config", str(config), *sys.argv[1:]], cwd=PROJECT_ROOT,
+        [sys.executable, "-m", "langgraph_cli", "dev",
+         "--config", str(config), *sys.argv[1:]], cwd=PROJECT_ROOT,
     ))
 
 
