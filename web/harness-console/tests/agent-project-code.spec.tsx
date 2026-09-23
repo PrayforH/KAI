@@ -38,25 +38,18 @@ afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi
 const button = (label: string) => Array.from(host.querySelectorAll("button")).find(item => item.getAttribute("aria-label") === label || item.textContent === label)!;
 async function render(revision = 4) { await act(async () => root.render(<AgentProjectCode draftId="draft-a" revision={revision} name="research-agent" dirty={true} onClose={() => {}} />)); }
 describe("DeepAgents source workspace", () => {
-  it("uses the same directory and preview expansion for agent files", async () => {
-    const directory = document.createElement("div"); document.body.append(directory);
+  it("keeps agent files in the right rail and follows the interface theme", async () => {
     const draft = { ...DEFAULT_STUDIO_DRAFT, id: "draft-files", revision: 3, systemPrompt: "meeting instructions" };
-    function FilesView() {
-      const [expanded, setExpanded] = useState(false);
-      return <AgentWorkspaceFiles draft={draft} baseline={draft} turns={[]} onClose={() => {}} directoryTarget={directory} expanded={expanded} onExpandedChange={setExpanded} />;
-    }
-    try {
-      await act(async () => root.render(<FilesView />));
-      expect(directory.querySelector('[aria-label="智能体文件树"]')).not.toBeNull();
-      expect(host.querySelector("pre")).toBeNull();
-      await act(async () => [...directory.querySelectorAll("button")].find(item => item.textContent === "AGENTS.md")!.click());
-      expect(host.querySelector("pre")?.textContent).toBe("meeting instructions");
-      expect(host.querySelector("pre")?.dataset.theme).toBe("dark");
-      await act(async () => button("收起文件").click());
-      expect(host.querySelector("pre")).toBeNull();
-      await act(async () => (directory.querySelector('[aria-label="展开文件预览"]') as HTMLButtonElement).click());
-      expect(host.querySelector("pre")?.textContent).toBe("meeting instructions");
-    } finally { directory.remove(); }
+    await act(async () => root.render(<AgentWorkspaceFiles draft={draft} baseline={draft} turns={[]} onClose={() => {}} />));
+    expect(host.querySelector(".workbench-rail")).not.toBeNull();
+    expect(host.querySelector('[aria-label="文件目录"]')).toBeNull();
+    await act(async () => host.querySelector<HTMLButtonElement>('.workbench-rail-file')!.click());
+    expect(host.querySelector("pre")?.textContent).toBe("meeting instructions");
+    expect(host.querySelector("pre")?.dataset.theme).toBe("dark");
+    await act(async () => button("扩展占满对话区").click());
+    expect(button("还原对话区").getAttribute("aria-pressed")).toBe("true");
+    await act(async () => button("还原对话区").click());
+    expect(host.querySelector("pre")?.textContent).toBe("meeting instructions");
   });
   it("navigates actual files, copies selected code and downloads the displayed revision", async () => {
     const clipboard = { writeText: vi.fn().mockResolvedValue(undefined) };

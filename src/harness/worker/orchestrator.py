@@ -1367,7 +1367,8 @@ class RunOrchestrator:
                 runtime_transport_factory=handle.runtime_transport_factory,
                 sandbox_command_executor=(
                     _bind_sandbox_command_executor(active_sandbox, handle)
-                    if handle.deferred_tool_execution or handle.provider == "local"
+                    if (handle.deferred_tool_execution or handle.provider == "local"
+                        or handle.isolation_level is SandboxIsolation.CONTAINER)
                     else None
                 ),
                 # The file plane rides the same condition as the command executor:
@@ -1375,7 +1376,8 @@ class RunOrchestrator:
                 # way to move bytes into it either.
                 sandbox_file_plane=(
                     _bind_sandbox_file_plane(active_sandbox, handle)
-                    if handle.deferred_tool_execution or handle.provider == "local"
+                    if (handle.deferred_tool_execution or handle.provider == "local"
+                        or handle.isolation_level is SandboxIsolation.CONTAINER)
                     else None
                 ),
                 artifact_publisher=artifact_publisher,

@@ -143,7 +143,6 @@ export function AgentBuilderAssistant({
   const [comparisonPending, setComparisonPending] = useState(false);
   const [comparing, setComparing] = useState(false);
   const [assetsOpen, setAssetsOpen] = useState(false);
-  const [assetsExpanded, setAssetsExpanded] = useState(false);
   const [assetTab, setAssetTab] = useState<"config" | "files" | "changes">("config");
   const [mobilePanel, setMobilePanel] = useState<"build" | "test">("build");
   const [selectedRunId, setSelectedRunId] = useState("");
@@ -185,6 +184,7 @@ export function AgentBuilderAssistant({
   const transcriptRef = useRef<HTMLDivElement>(null);
   const [buildProgress, setBuildProgress] = useState("");
   const [buildReply, setBuildReply] = useState("");
+  const [buildMessageId, setBuildMessageId] = useState("workspace-progress");
   const buildStreamAbortRef = useRef<AbortController | null>(null);
   const runStreamAbortRef = useRef<AbortController | null>(null);
 
@@ -211,7 +211,7 @@ export function AgentBuilderAssistant({
     setEditing(false);
     setApplying(false);
     setProposal(null);
-    setCodeView(false); setCodeExpanded(false); setLastComparison(undefined); setCodeComparison(undefined); setComparisonPending(false); setComparing(false); setLastChanges([]); setSelectedRunId(""); setAssetsOpen(false); setAssetsExpanded(false); setMobilePanel("build"); setConversationTab(mode === "create" ? "builder" : "chat"); historySelection.current++;
+    setCodeView(false); setCodeExpanded(false); setLastComparison(undefined); setCodeComparison(undefined); setComparisonPending(false); setComparing(false); setLastChanges([]); setSelectedRunId(""); setAssetsOpen(false); setMobilePanel("build"); setConversationTab(mode === "create" ? "builder" : "chat"); historySelection.current++;
     setLastTestPrompt("");
     setTestSessionId(""); setTestConversationEpoch(value => value + 1);
     setArchivedTurns([]); setCurrentFiles([]); setLastArtifactIds([]);
@@ -462,6 +462,8 @@ export function AgentBuilderAssistant({
 
   async function converse(value: string, materialContext = "", inputFiles = attachments) {
     const epoch = epochRef.current;
+    const replyId = createRandomId();
+    setBuildMessageId(replyId);
     setEditing(true);
     setBuildProgress(""); setBuildReply("");
     const controller = new AbortController();
@@ -494,7 +496,7 @@ export function AgentBuilderAssistant({
       }, controller.signal);
       if (epoch !== epochRef.current) return;
       const action = reply.action ?? "edit";
-      if (action !== "run" && action !== "rerun") setMessages((current) => [...current, { id: createRandomId(), role: "assistant", text: reply.reply,
+      if (action !== "run" && action !== "rerun") setMessages((current) => [...current, { id: replyId, role: "assistant", text: reply.reply,
         files: reply.creatorRuns?.flatMap(run => run.artifactNames),
         artifactIds: reply.creatorRuns?.flatMap(run => run.artifactIds),
       }]);
@@ -756,24 +758,24 @@ export function AgentBuilderAssistant({
       ...(message.role === "user" ? {attachments: (message.artifactIds ?? []).map((id, index) => ({id,name:message.files?.[index] || `附件 ${index + 1}`,type:/\.(png|jpe?g|gif|webp|avif)$/i.test(message.files?.[index] || "") ? "image" : "document",content:[{type:"file",data:id,mimeType:"application/octet-stream"}],status:{type:"complete"}} as CompleteAttachment))} : {}),
     });
   }
-  if (editing || creating || readingMaterials) transcript.push({id:"workspace-progress",role:"assistant",content:[{type:"text",text:buildReply || buildProgress || (readingMaterials ? "正在读取附件…" : "正在处理…")}],status:{type:"running"}});
+  if (editing || creating || readingMaterials) transcript.push({id:buildMessageId,role:"assistant",content:buildReply ? [{type:"text",text:buildReply}] : [],status:{type:"running"}});
   return createPortal(<div className={workspaceStyles.agentaPlayground} data-mode={playgroundMode}>
     {playgroundMode === "build" && <section className={workspaceStyles.configurationColumn} aria-label="智能体结构">
-      <div className={workspaceStyles.configurationSlot} hidden={codeView || assetsOpen}>{configuration}</div>
-      <div className={workspaceStyles.configurationSlot} hidden={!codeView && !assetsOpen} ref={setCodeDirectoryTarget} />
+      <div className={workspaceStyles.configurationSlot} hidden={codeView}>{configuration}</div>
+      <div className={workspaceStyles.configurationSlot} hidden={!codeView} ref={setCodeDirectoryTarget} />
     </section>}
     <div className={workspaceStyles.conversationArea}>
       <div className={workspaceStyles.conversationBody}>
-        {assetsOpen && <AgentWorkspaceFiles key={activeDraft.id} draft={activeDraft} baseline={fileBaseline.current} turns={visibleTurns} directoryTarget={playgroundMode === "build" ? codeDirectoryTarget : undefined} expanded={assetsExpanded} onExpandedChange={setAssetsExpanded} onClose={() => { setAssetsOpen(false); setAssetsExpanded(false); }} />}
+        {assetsOpen && <AgentWorkspaceFiles key={activeDraft.id} draft={activeDraft} baseline={fileBaseline.current} turns={visibleTurns} onClose={() => setAssetsOpen(false)} />}
         {codeView && <AgentProjectCode key={activeDraft.id} draftId={draftReady ? activeDraft.id : ""} revision={activeDraft.revision} name={activeDraft.name || activeDraft.displayName} dirty={hasUnsavedChanges} comparison={codeComparison} comparisonPending={comparisonPending} directoryTarget={playgroundMode === "build" ? codeDirectoryTarget : undefined} expanded={codeExpanded} onExpandedChange={setCodeExpanded} onClose={() => { setCodeView(false); setCodeExpanded(false); }} />}
-        <div className={workspaceStyles.preservedPanel} hidden={(codeView && (playgroundMode === "chat" || codeExpanded)) || (assetsOpen && (playgroundMode === "chat" || assetsExpanded))}>
+        <div className={workspaceStyles.preservedPanel} hidden={(codeView && (playgroundMode === "chat" || codeExpanded))}>
           <AgentTestPanel navigation={<>{playgroundMode === "chat" && onExpandConfiguration && <button type="button" aria-label="展开配置栏" title="展开配置栏" aria-expanded="false" onClick={onExpandConfiguration}><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="2" /><path d="M8 4v12m3-9 3 3-3 3" /></svg></button>}<strong>对话</strong></>} draft={activeDraft} userId={userId} onConfigureKnowledge={onConfigureKnowledge} sessionRail={false} savedRuns={savedRuns} historyLoading={historyLoading} historyError={historyError} examples={[]} draftId={activeDraft.id} revision={activeDraft.revision} agentName={activeDraft.displayName} model={activeDraft.model} turns={visibleTurns} history={turns} sessionId={testSessionId} conversationEpoch={testConversationEpoch}
-            messageOverride={transcript} inputSeed={inputSeed} afterLastMessage={reviewContent}
+            messageOverride={transcript} inputSeed={inputSeed} afterLastMessage={<>{(editing || creating || readingMaterials) && <div className={workspaceStyles.builderProgress} role="status">{buildProgress || (readingMaterials ? "正在读取附件…" : "正在生成…")}</div>}{reviewContent}</>}
             onSelectSession={id => void selectSession(id)} busy={active || editing || applying || readingMaterials} ready={true} dirty={hasUnsavedChanges} error={error} selectedRunId={selectedRunId}
             onSend={sendUnified}
             onRerun={(value,ids,names) => proposal ? Promise.resolve(false) : startRun(value, undefined, false, ids, names)}
             onReset={() => {if (result) setArchivedTurns(current => [...current,{prompt:lastTestPrompt,result,files:currentFiles,artifactIds:lastArtifactIds}]);setResult(null);setTestSessionId("");setTestConversationEpoch(value => value + 1);setLastTestPrompt("");setCurrentFiles([]);setLastArtifactIds([]);setSelectedRunId("");setError("");setMessages([]);setProposal(null);setInputSeed(undefined);}}
-            onCancel={cancelRun} assetsOpen={assetsOpen} onAssets={() => {setCodeView(false);setAssetsExpanded(false);setAssetsOpen(current => !current);if (playgroundMode === "chat") onExpandConfiguration?.();}} />
+            onCancel={cancelRun} assetsOpen={assetsOpen} onAssets={() => {setCodeView(false);setAssetsOpen(current => !current);}} />
         </div>
       </div>
     </div>

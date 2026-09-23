@@ -2912,17 +2912,16 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
             )}
 
             {activeSection === "orchestration" && !draft.parentDraftId && (
-              <section className={styles.configPanel} aria-labelledby="collaboration-title">
+              <section className={`${styles.configPanel} ${styles.collaborationPanel}`} aria-labelledby="collaboration-title">
                 <div className={styles.groupHeading}>
                   <div>
                     <h3 id="collaboration-title">协作角色</h3>
-                    <p>主智能体负责委派与汇总。内部子智能体在这里管理，不占独立入口。</p>
                   </div>
                   <button type="button" className={styles.addSubagentButton}
                     disabled={!canEdit || saving || subagentBusy || Boolean(draft.spaceId)}
                     title={draft.spaceId ? "协作空间可引用已有智能体" : undefined}
                     onClick={() => setSubagentFormOpen((value) => !value)}>
-                    {subagentFormOpen ? "收起" : "＋ 新建子智能体"}
+                    {subagentFormOpen ? "收起" : "＋ 新建"}
                   </button>
                 </div>
                 {subagentFormOpen && <div className={styles.subagentCreateForm}>
@@ -2938,7 +2937,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                   <button type="button" className={styles.addSubagentButton}
                     disabled={!canEdit || subagentBusy || !subagentName.trim() || subagentResponsibility.trim().length < 2}
                     onClick={() => void createInternalSubagent()}>
-                    {subagentBusy ? "创建中…" : "创建并绑定"}
+                    {subagentBusy ? "创建中…" : "创建"}
                   </button>
                 </div>}
                 <div className={styles.subagentBindRow}>
@@ -2950,10 +2949,10 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                     </option>)}
                   </select>
                   <button type="button" disabled={!canEdit || !bindSubagentRef || subagentBusy}
-                    onClick={addSubagent}>引用已有</button>
+                    onClick={addSubagent}>添加</button>
                 </div>
                 {!draft.subagents.length && <p className={styles.collaborationEmpty}>
-                  暂无协作角色。简单任务可以由当前智能体独立完成。
+                  暂无协作角色
                 </p>}
                 <div className={styles.subagentEditors}>
                   {draft.subagents.map((subagent, index) => {

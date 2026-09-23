@@ -144,7 +144,9 @@ export function WorkbenchRail({
   observabilityHref,
   runPhase,
   workspace,
+  expandIcon,
 }: {
+  expandIcon?: ReactNode;
   workspace?: { files: RailFile[]; loading: boolean; error: string; onRefresh?: () => void; renderPreview: (file: RailFile) => ReactNode; note?: string };
   open: boolean;
   onClose: () => void;
@@ -339,7 +341,7 @@ export function WorkbenchRail({
               aria-pressed={expanded}
               onClick={onToggleExpanded}
             >
-              <ExpandIcon />
+              {expandIcon ?? <ExpandIcon />}
             </button>
             <button
               type="button"

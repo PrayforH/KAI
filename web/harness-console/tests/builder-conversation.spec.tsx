@@ -331,14 +331,15 @@ it("preserves attachments and text after failed unified sends, and supplies file
   expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toMatchObject({inputArtifactIds:["input_artifact_example"]});
 });
 
-it("opens a middle file directory while preserving the conversation", async()=>{
+it("opens a right file rail while preserving the configuration and conversation", async()=>{
   await act(async()=>enableWorkspace());
   await click("查看对话文件");
-  expect(host.querySelector('[aria-label="文件目录"]')).not.toBeNull();
+  expect(host.querySelector(".workbench-rail")).not.toBeNull();
+  expect(host.querySelector('[aria-label="文件目录"]')).toBeNull();
   expect(host.querySelector('[aria-label="消息输入"]')).not.toBeNull();
   expect(host.querySelector('[aria-label="智能体资产"]')).toBeNull();
-  await click("配置");
-  expect(host.querySelector('[aria-label="文件目录"]')).toBeNull();
+  await click("收起任务上下文");
+  expect(host.querySelector(".workbench-rail")).toBeNull();
 });
 
 it("captures project comparison before apply without replacing the conversation", async () => {
@@ -492,4 +493,27 @@ it("replaces builder progress with one answer without retaining a false branch",
   expect(host.querySelectorAll('.harness-assistant-message')).toHaveLength(1);
   expect(studioClient.converseBuilder).toHaveBeenCalledTimes(1);
   expect(studioClient.createTryRun).not.toHaveBeenCalled();
+});
+
+it("keeps streamed builder text in one message and separates processing status", async () => {
+  let emit: NonNullable<Parameters<typeof studioClient.converseBuilder>[2]>;
+  let finish: (reply: Awaited<ReturnType<typeof studioClient.converseBuilder>>) => void;
+  vi.mocked(studioClient.converseBuilder).mockImplementation(async (_id, _body, progress) => {
+    emit = progress!;
+    return new Promise(resolve => { finish = resolve; });
+  });
+  await act(async () => enableWorkspace());
+  await send("请修改系统提示词，输出改成表格");
+  await act(async () => emit!({type: "progress", text: "正在检查配置…"}));
+  expect(host.querySelector('[role="status"]')?.textContent).toContain("正在检查配置");
+  expect(host.querySelector('.assistant-answer')?.textContent ?? "").not.toContain("正在检查配置");
+  await act(async () => emit!({type: "builder.reply", text: "建议输出"}));
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 100)); });
+  const answer = host.querySelector('.harness-assistant-message');
+  expect(answer?.textContent).toContain("建议输出");
+  await act(async () => emit!({type: "builder.reply", text: "建议输出表格"}));
+  expect(host.querySelector('.harness-assistant-message')).toBe(answer);
+  await act(async () => finish!({baseRevision: 1, reply: "建议输出表格", changes: {}, changedFields: []}));
+  expect(host.querySelector('.harness-assistant-message')).toBe(answer);
+  expect(host.textContent).not.toContain("正在检查配置…");
 });

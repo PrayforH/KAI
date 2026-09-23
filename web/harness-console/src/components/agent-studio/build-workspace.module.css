@@ -178,3 +178,7 @@
 .conversationControls > button, .conversationMenu > summary { box-sizing: border-box; width: 30px; height: 30px; padding: 6px; }
 .conversationControls svg { display: block; width: 18px; height: 18px; flex-shrink: 0; }
 .conversationControls > button[aria-pressed=true] { color: var(--studio-ink); background: var(--studio-panel-subtle); }
+
+.builderProgress { color:var(--studio-muted); font-size:12px; line-height:1.5; padding:6px 0 12px; display:flex; align-items:center; gap:8px; }
+.builderProgress::before { content:""; width:5px; height:5px; flex:none; border-radius:50%; background:currentColor; }
+.workspaceFiles :global(.rail-bar) { min-height:48px; height:48px; box-sizing:border-box; }

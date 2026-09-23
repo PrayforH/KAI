@@ -95,7 +95,10 @@ async def create_knowledge_base(
     actor: Annotated[StudioActor, Depends(require_studio_writer)],
     service: Annotated[KnowledgeService, Depends(get_knowledge_service)],
 ) -> KnowledgeBase:
-    return await service.create_base(actor.tenant_id, actor.user_id, body)
+    try:
+        return await service.create_base(actor.tenant_id, actor.user_id, body)
+    except KnowledgeEngineError as error:
+        raise await _translate_engine_error(error) from error
 
 
 @router.get("/bases/{reference}", response_model=KnowledgeBase)

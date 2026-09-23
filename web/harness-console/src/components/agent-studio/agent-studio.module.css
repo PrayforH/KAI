@@ -8387,3 +8387,32 @@
 .configurationDrawer .configEditorHeading { box-sizing: border-box; height: 48px; min-height: 48px; padding-block: 0; }
 .configurationDrawer .configEditorHeading > div:first-child small { display: none; }
 @media(max-width:600px) { .studioShell[data-agent-focused=true] .editorHeader { height: auto; min-height: 48px; padding-block: 8px; } }
+
+/* Keep the prompt useful on first open, without requiring focus mode. */
+.configPanel .promptWorkspace:not([data-focus="true"]) {
+  min-height: min(720px, calc(100dvh - 220px));
+}
+.configPanel .promptWorkspace:not([data-focus="true"]) .codeEditor {
+  min-height: max(360px, calc(100dvh - 360px));
+}
+.collaborationPanel :is(.addSubagentButton, .subagentBindRow > button, .roleActions > button, .internalNotice > button) {
+  min-height: 32px;
+  padding: 6px 12px;
+  border: 1px solid var(--studio-line);
+  border-radius: 6px;
+  background: var(--studio-panel);
+  color: var(--studio-ink);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  box-shadow: none;
+  white-space: nowrap;
+}
+.collaborationPanel :is(.addSubagentButton, .subagentBindRow > button, .roleActions > button, .internalNotice > button):disabled {
+  opacity: .45;
+  cursor: default;
+}
+.collaborationPanel .subagentBindRow { flex-wrap: nowrap; gap: 8px; margin-block: 12px; }
+.collaborationPanel .subagentBindRow select { min-width: 0; height: 34px; }
+.collaborationPanel .collaborationEmpty { font-size: 12px; padding-block: 12px; }
