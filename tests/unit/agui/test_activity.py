@@ -27,6 +27,16 @@ def event(
     )
 
 
+def test_publication_limit_is_an_observable_notice_not_a_run_failure() -> None:
+    projected = activity_projection(event("artifact.publication_limited", {"skipped_count": 3}))
+    dumped = projected[0].model_dump(by_alias=True)
+    item = next(patch["value"] for patch in dumped["patch"] if patch["path"] == "/items/-")
+    assert item["title"] == "部分文件未发布"
+    assert item["status"] == "succeeded"
+    assert "3 个文件" in item["summary"]
+    assert not any(patch["path"] == "/status" for patch in dumped["patch"])
+
+
 def test_run_queued_creates_one_stable_activity_snapshot() -> None:
     projected = activity_projection(event("run.queued"))
 

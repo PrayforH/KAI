@@ -1120,3 +1120,4 @@ html[data-color-mode="light"] .nested-menu-panel { background: #fff; border-colo
 .rail-file-group > summary > small {color:var(--codex-faint);font-size:11px;}
 
 .rail-file-group .rail-file-group { margin-left: 10px; }
+.execution-publication-notice { margin: 6px 0; color: var(--codex-muted); font-size: 12px; line-height: 1.6; }

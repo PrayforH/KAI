@@ -782,6 +782,7 @@ export function ActivitySummary({
     ? `已持续 ${elapsed < 1_000 ? "0s" : durationLabel(elapsed)}`
     : `持续了 ${durationLabel(elapsed)}`;
   const failure = view.phase === "failed" ? failureDetails(view) : null;
+  const publicationNotice = view.items.findLast(item => item.event_type === "artifact.publication_limited");
   const hasContent = timeline.length > 0 || Boolean(failure);
   const Disclosure = hasContent ? "button" : "div";
   const runDetails = useRunDetails();
@@ -810,6 +811,7 @@ export function ActivitySummary({
         <span className="execution-duration">· {elapsedCopy}</span>
         {hasContent && <span className="execution-chevron" aria-hidden="true" />}
       </Disclosure>
+      {publicationNotice?.summary && <p className="execution-publication-notice" role="status">{publicationNotice.summary}</p>}
       {runDetails ? (
         <button
           type="button"

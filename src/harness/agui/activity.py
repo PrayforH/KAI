@@ -543,6 +543,18 @@ def _activity_item(event: RunEvent) -> dict[str, Any] | None:
                 last_tool_name=payload.get("last_tool_name"),
             ),
         )
+    if event.type == "artifact.publication_limited":
+        return _item(
+            event,
+            kind="artifact",
+            status="succeeded",
+            title="部分文件未发布",
+            summary=(
+                f"{payload.get('skipped_count', 0)} 个文件超出本轮自动发布额度，"
+                "未加入下载列表；工作区文件未删除。"
+            ),
+            metadata=_metadata(skipped_count=payload.get("skipped_count")),
+        )
     if event.type == "artifact.ready":
         return _item(
             event,

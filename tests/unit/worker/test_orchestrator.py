@@ -549,6 +549,7 @@ async def arrange(
     context_service: ContextService | None = None,
     sandbox_leases: SandboxLeaseService | None = None,
     sandbox_resolver: SandboxResolver | None = None,
+    output_artifact_max_bytes: int = 50 * 1024 * 1024,
 ):
     sessions = InMemorySessionRepository()
     runs = InMemoryRunRepository()
@@ -610,8 +611,75 @@ async def arrange(
         context_service=context_service,
         sandbox_leases=sandbox_leases,
         sandbox_resolver=sandbox_resolver,
+        output_artifact_max_bytes=output_artifact_max_bytes,
     )
     return orchestrator, runtime, runs, event_repository
+
+
+class ManyPreviousOutputsSandbox(LocalSandboxProvider):
+    async def prepare(self, handle: SandboxHandle) -> None:
+        output = handle.path / "outputs/images"
+        output.mkdir(parents=True, exist_ok=True)
+        for index in range(120):
+            (output / f"page-{index}.png").write_bytes(b"x" * 100)
+        await super().prepare(handle)
+
+
+class BoundedPublicationRuntime(FakeRuntime):
+    def __init__(self, *, images: int = 0) -> None:
+        super().__init__()
+        self.images = images
+        self.workspace: Path | None = None
+
+    async def execute(self, context: RuntimeContext) -> AsyncIterator[RuntimeEvent]:
+        self.workspace = context.workspace
+        output = context.workspace / "outputs"
+        output.mkdir(parents=True, exist_ok=True)
+        (output / "report.md").write_text("done")
+        for index in range(self.images):
+            (output / f"page-{index}.png").write_bytes(b"x" * 100)
+        yield RuntimeEvent(type="message.start")
+        yield RuntimeEvent(type="message.delta", payload={"text": "结果：`outputs/report.md`"})
+        yield RuntimeEvent(type="message.completed")
+
+
+@pytest.mark.asyncio
+async def test_old_outputs_do_not_consume_next_turn_publication_limits(tmp_path: Path) -> None:
+    orchestrator, _, _, events = await arrange(
+        tmp_path,
+        runtime_override=BoundedPublicationRuntime(),
+        sandbox_override=ManyPreviousOutputsSandbox(root=tmp_path),
+        enable_artifacts=True,
+        output_artifact_max_bytes=16,
+    )
+    completed = await orchestrator.execute("tenant-a", "run-1")
+    recorded = await events.list_after("tenant-a", "run-1", 0)
+    assert completed.status is RunStatus.SUCCEEDED
+    assert [event.payload["name"] for event in recorded if event.type == "artifact.ready"] == [
+        "report.md"
+    ]
+    assert not any(event.type == "artifact.publication_limited" for event in recorded)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("limit", "skipped"), [(104, 100), (100_000, 2)])
+async def test_excess_outputs_warn_without_failing_and_prioritize_final_document(
+    tmp_path: Path, limit: int, skipped: int
+) -> None:
+    runtime = BoundedPublicationRuntime(images=101)
+    orchestrator, _, _, events = await arrange(
+        tmp_path, runtime_override=runtime, enable_artifacts=True,
+        output_artifact_max_bytes=limit,
+    )
+    completed = await orchestrator.execute("tenant-a", "run-1")
+    recorded = await events.list_after("tenant-a", "run-1", 0)
+    assert completed.status is RunStatus.SUCCEEDED
+    published = [event for event in recorded if event.type == "artifact.ready"]
+    assert published[0].payload["name"] == "report.md"
+    assert sum(event.payload["size_bytes"] for event in published) <= limit
+    notice = next(event for event in recorded if event.type == "artifact.publication_limited")
+    assert notice.payload["skipped_count"] == skipped
+    assert recorded[-1].type == "run.succeeded"
 
 
 def context_checkpoints(*, fail: bool = False) -> ContextCheckpointService:

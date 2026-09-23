@@ -162,10 +162,8 @@ def _bind_sandbox_file_plane(
     return _FilePlane()
 
 
-def read_runtime_artifact(
-    workspace: Path, relative_path: str, *, max_bytes: int
-) -> tuple[Path, bytes]:
-    """Validate and bounded-read an untrusted runtime artifact."""
+def runtime_artifact_path(workspace: Path, relative_path: str) -> Path:
+    """Validate the file boundary independently of publication budgets."""
     candidate = workspace / relative_path
     try:
         artifact_path = candidate.resolve(strict=True)
@@ -175,6 +173,20 @@ def read_runtime_artifact(
         raise ValueError("runtime artifact path escaped the workspace")
     if candidate.is_symlink() or not artifact_path.is_file():
         raise ValueError("runtime artifact must be a regular file")
+    return artifact_path
+
+
+def runtime_artifact_fingerprint(workspace: Path, relative_path: str) -> str:
+    path = runtime_artifact_path(workspace, relative_path)
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def read_runtime_artifact(
+    workspace: Path, relative_path: str, *, max_bytes: int
+) -> tuple[Path, bytes]:
+    """Validate and bounded-read an untrusted runtime artifact."""
+    artifact_path = runtime_artifact_path(workspace, relative_path)
     if artifact_path.stat().st_size > max_bytes:
         raise ValueError("runtime artifact exceeds the output size limit")
     with artifact_path.open("rb") as stream:
@@ -463,20 +475,14 @@ class RunOrchestrator:
         output_root = workspace / "outputs"
         fingerprints: dict[str, str] = {}
         if output_root.is_dir():
-            remaining = self._output_artifact_max_bytes
             for path in sorted(output_root.rglob("*")):
                 if not (path.is_symlink() or path.is_file()):
                     continue
-                if len(fingerprints) >= 100:
-                    raise ValueError("workspace outputs exceed the artifact count limit")
                 relative = path.relative_to(workspace).as_posix()
-                _, content = read_runtime_artifact(
-                    workspace,
-                    relative,
-                    max_bytes=remaining,
-                )
-                remaining -= len(content)
-                fingerprints[relative] = hashlib.sha256(content).hexdigest()
+                # Existing files are attribution state, not new publications.
+                # Stream hashes so large/long-lived workspaces cannot exhaust
+                # the per-turn publication budget before the model even starts.
+                fingerprints[relative] = runtime_artifact_fingerprint(workspace, relative)
 
         # Final prose may explicitly link a deliverable outside outputs/.
         # Snapshot existing files too, so mentioning an unchanged file from a
@@ -528,8 +534,6 @@ class RunOrchestrator:
                     candidates[path.relative_to(workspace).as_posix()] = "workspace-output"
         for relative in final_artifact_paths(workspace, final_response):
             candidates[relative] = "final-response"
-        if len(candidates) > 100:
-            raise ValueError("workspace artifacts exceed the artifact count limit")
         prior_events = await self._events.list_after(tenant_id, run.run_id, 0)
         published_paths = {
             str(event.payload["source_path"])
@@ -537,16 +541,28 @@ class RunOrchestrator:
             if event.type == "artifact.ready" and isinstance(event.payload.get("source_path"), str)
         }
         remaining = self._output_artifact_max_bytes
-        for relative, source in sorted(candidates.items()):
+        published_count = 0
+        skipped_count = 0
+        # Declared deliverables win over automatically collected scratch files.
+        ordered = sorted(
+            candidates.items(), key=lambda item: (item[1] != "final-response", item[0])
+        )
+        for relative, source in ordered:
             if relative in published_paths:
+                continue
+            resolved = runtime_artifact_path(workspace, relative)
+            if relative in baseline and baseline[relative] == runtime_artifact_fingerprint(
+                workspace, relative
+            ):
+                continue
+            if published_count >= 100 or resolved.stat().st_size > remaining:
+                skipped_count += 1
                 continue
             resolved, content = read_runtime_artifact(
                 workspace,
                 relative,
                 max_bytes=remaining,
             )
-            if baseline.get(relative) == hashlib.sha256(content).hexdigest():
-                continue
             remaining -= len(content)
             artifact = await self._artifacts.upload(
                 tenant_id=tenant_id,
@@ -566,6 +582,19 @@ class RunOrchestrator:
                 session_id=run.session_id,
                 event_type="artifact.ready",
                 payload=payload,
+            )
+            published_count += 1
+        if skipped_count:
+            await self._events.append(
+                tenant_id=tenant_id,
+                run_id=run.run_id,
+                session_id=run.session_id,
+                event_type="artifact.publication_limited",
+                payload={
+                    "skipped_count": skipped_count,
+                    "max_bytes": self._output_artifact_max_bytes,
+                    "max_count": 100,
+                },
             )
 
     async def _recover_failed_workspace(
