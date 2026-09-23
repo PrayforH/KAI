@@ -646,11 +646,10 @@ describe("Agent Studio management page", () => {
     expect(workbench).toContain("高级运行设置");
     expect(workbench).toContain("执行档位、权限、资源上限、会话恢复与治理");
     expect(styles).toContain(".advancedRuntimeSettings[open]");
-    expect(workbench).toContain("调用范围遵循已发布的权限设置");
+    expect(workbench).not.toContain("<WebCapabilityStatus");
     expect(workbench).not.toContain('type="checkbox" checked={sandbox');
     // The platform no longer ships a built-in MCP; catalogs expose user MCPs.
     expect(studioConfig).toContain("export const MCP_OPTIONS: McpOption[] = [];");
-    expect(workbench).toContain("仅展示可配置工具");
     expect(workbench).toContain('new Set(["Task"])');
     expect(builderOverlays).not.toContain("mcpServers.filter");
     expect(workbench).toContain("独立工作负载身份");

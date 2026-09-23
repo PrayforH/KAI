@@ -2,7 +2,6 @@
 import { ConfigurationIcon } from "./configuration-icon";
 import { AgentVersionHistory } from "./agent-version-history";
 import { PanelResizeHandle } from "../panel-resize-handle";
-import { WebCapabilityStatus } from "../web-configuration";
 import { isAgentVisible } from "../../lib/agent-visibility";
 import { useInternalAgentsPreference } from "../../lib/interface-preferences";
 
@@ -3087,7 +3086,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                       />
                       <span>
                         <strong>{pkg.displayName}</strong>
-                        <small>{busy ? "正在安装…" : pkg.summary}</small>
+                        <small title={pkg.summary}>{busy ? "正在安装…" : pkg.summary}</small>
                       </span>
                       <small>{pkg.riskLevel === "review" ? "需审阅" : `${pkg.skill.fileCount} 个文件`}</small>
                     </label>
@@ -3275,14 +3274,12 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
             {activeSection === "capabilities" && (
               <section className={styles.configPanel} aria-label={configurationTitle}>
                 {capabilityFocus === "builtin" && <>
-                <div className={styles.workerToolPicker} aria-label="公开联网工具">
+                <div className={styles.builderToolGroup} aria-label="公开联网工具">
                   <h3>公开联网</h3>
-                  <WebCapabilityStatus />
-                  <p>勾选要启用的搜索和网页读取工具。</p>
                   {/* A tick the runtime cannot honour stays clearable: the tool is
                       unusable either way, and a disabled box would leave a saved
                       draft that can never publish and no way to remove the cause. */}
-                  <div className={styles.compactToolGrid}>
+                  <div className={styles.builderToolList}>
                     {options.tools.filter((tool) => ["WebSearch", "WebFetch"].includes(tool.id)).map((tool) => (
                       <label key={tool.id} data-enabled={draft.builtinTools.includes(tool.id)}>
                         <input type="checkbox" aria-label={`${tool.id} · ${tool.label}`} checked={draft.builtinTools.includes(tool.id)}
@@ -3291,8 +3288,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                           onChange={(event) => updateDraft({builtinTools: event.target.checked
                             ? Array.from(new Set([...draft.builtinTools, tool.id]))
                             : draft.builtinTools.filter((name) => name !== tool.id)})} />
-                        <span className={styles.toolCheck} aria-hidden="true">{draft.builtinTools.includes(tool.id) ? "✓" : ""}</span>
-                        <strong>{tool.id} · {tool.label}</strong>
+                        <strong>{tool.label}</strong><small>{tool.id}</small>
                       </label>
                     ))}
                   </div>
@@ -3300,10 +3296,10 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                 </div>
 
 
-                <div className={styles.workerToolPicker}>
-                  <div className={styles.workerToolPickerHeader}>
+                <div className={styles.builderToolGroup}>
+                  <div className={styles.builderToolHeader}>
                     <label>
-                      <span>可用工具</span>
+                      <span>文件与命令</span>
                       <select
                         aria-label="工具范围"
                         value={workerToolPreset}
@@ -3334,14 +3330,9 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                         )}
                       </select>
                     </label>
-                    <p>控制这个智能体可调用的工具范围。</p>
                     <span>{enabledWorkerToolIds.length}/{workerToolOptions.length}</span>
                   </div>
-                  <div className={styles.workerBoundaryNote}>
-                    <i aria-hidden="true" />
-                    仅展示可配置工具，调用范围遵循已发布的权限设置。
-                  </div>
-                  <div className={styles.compactToolGrid}>
+                  <div className={styles.builderToolList}>
                   {workerToolOptions.map((tool) => {
                     const enabled = draft.builtinTools.includes(tool.id);
                     return (
@@ -3349,6 +3340,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                         <input
                           type="checkbox"
                           checked={enabled}
+                          disabled={!canEdit}
                           onChange={() => {
                             updateDraft({
                               builtinTools: enabled
@@ -3361,7 +3353,6 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                             });
                           }}
                         />
-                        <span className={styles.toolCheck} aria-hidden="true">{enabled ? "✓" : ""}</span>
                         <strong>{tool.label}</strong>
                         {tool.risk !== "low" && (
                           <i data-risk={tool.risk} title={`${riskLabel(tool.risk)}风险 · ${tool.approval}`} />

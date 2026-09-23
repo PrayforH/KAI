@@ -8325,12 +8325,39 @@
 .configurationDrawer .configEditorHeading small { color: var(--studio-muted); font-size: 11px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .configurationDrawer .configEditorHeading > div:last-child { display: flex; white-space: nowrap; }
 .configurationDrawer .panelViewport { min-width: 0; margin: 0; border: 0; }
-.configurationDrawer .configPanel { min-width: 0; padding: 0; }
+.configurationDrawer .configPanel { min-width: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }
 .configurationDrawer .formGrid { grid-template-columns: minmax(0, 1fr); }
-.configurationDrawer .workerToolPicker { margin: 0 0 20px; padding: 0; border: 0; background: transparent; }
-.configurationDrawer .compactToolGrid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
-.configurationDrawer .compactToolGrid > label, .configurationDrawer .skillChoice, .configurationDrawer .skillChoiceEnabled, .configurationDrawer .mcpCard, .configurationDrawer .mcpCardEnabled { margin: 0 0 8px; min-width: 0; border-radius: 8px; padding: 13px; border: 1px solid var(--studio-line); background: var(--studio-panel); }
-.configurationDrawer .compactToolGrid > label[data-enabled=true], .configurationDrawer .skillChoiceEnabled, .configurationDrawer .mcpCardEnabled { border-color: var(--studio-line-strong); background: var(--studio-panel-subtle); }
+.configurationDrawer .skillChoice, .configurationDrawer .skillChoiceEnabled, .configurationDrawer .mcpCard, .configurationDrawer .mcpCardEnabled { margin: 0 0 6px; min-width: 0; min-height: 64px; border-radius: 6px; padding: 12px; border: 1px solid var(--studio-line); background: transparent; }
+.configurationDrawer .skillChoiceEnabled, .configurationDrawer .mcpCardEnabled { border-color: var(--studio-line-strong); background: var(--studio-panel-subtle); }
+.configurationDrawer .skillChoice > span, .configurationDrawer .skillChoiceEnabled > span { display: grid; min-width: 0; gap: 5px; }
+.configurationDrawer .skillChoice strong, .configurationDrawer .skillChoiceEnabled strong { font-size: 12px; font-weight: 550; }
+.configurationDrawer .skillChoice > span > small, .configurationDrawer .skillChoiceEnabled > span > small { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 11px; line-height: 1.5; }
+.configurationDrawer .skillChoice > small, .configurationDrawer .skillChoiceEnabled > small { font-size: 10px; white-space: nowrap; align-self: start; }
+.configurationDrawer .panelHeading h2 { font-size: 15px; }
+.configurationDrawer .groupHeading { margin: 18px 0 10px; align-items: baseline; }
+.configurationDrawer .groupHeading h3 { margin: 0; font-size: 12px; font-weight: 600; }
+.configurationDrawer .groupHeading p { margin: 5px 0 0; font-size: 11px; line-height: 1.5; }
+.configurationDrawer .groupHeading > span { font-size: 10px; white-space: nowrap; }
+.builderToolGroup { margin: 0; padding: 0; }
+.builderToolGroup + .builderToolGroup { margin-top: 24px; }
+.builderToolGroup > h3 { margin: 0 0 10px; color: var(--studio-ink); font-size: 12px; font-weight: 600; line-height: 20px; }
+.builderToolHeader { display: flex; align-items: baseline; gap: 12px; margin-bottom: 10px; }
+.builderToolHeader > label { display: grid; flex: 1; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; color: var(--studio-ink); font-size: 12px; font-weight: 600; }
+.builderToolHeader select { max-width: 170px; min-height: 30px; padding: 4px 8px; border: 1px solid var(--studio-line); border-radius: 5px; background: var(--studio-paper); color: var(--studio-ink-soft); font: inherit; font-size: 11px; font-weight: 400; }
+.builderToolHeader > span { color: var(--studio-muted); font-size: 11px; }
+.builderToolList { display: grid; border: 1px solid var(--studio-line); border-radius: 6px; overflow: hidden; }
+.builderToolList > label { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 10px 12px; cursor: pointer; color: var(--studio-ink-soft); box-sizing: border-box; }
+.builderToolList > label + label { border-top: 1px solid var(--studio-line); }
+.builderToolList > label:hover { background: var(--studio-panel-subtle); }
+.builderToolList > label:has(input:disabled) { cursor: default; opacity: .55; }
+.builderToolList strong { flex: 1; font-size: 12px; font-weight: 450; line-height: 20px; }
+.builderToolList small { color: var(--studio-muted); font: 10px/1.4 var(--codex-font-mono, monospace); }
+.builderToolList input { appearance: none; flex: 0 0 15px; width: 15px; height: 15px; margin: 0; border: 1px solid var(--studio-line-strong); border-radius: 4px; background: transparent; display: grid; place-content: center; cursor: inherit; }
+.builderToolList input:checked { background: var(--studio-ink); border-color: var(--studio-ink); }
+.builderToolList input:checked::after { content: ""; width: 7px; height: 4px; border: solid var(--studio-paper); border-width: 0 0 1.5px 1.5px; transform: translateY(-1px) rotate(-45deg); }
+.builderToolList input:focus-visible { outline: 2px solid var(--studio-ink); outline-offset: 3px; }
+.builderToolList i { width: 4px; height: 4px; border-radius: 50%; background: var(--studio-amber); }
+.builderToolList i[data-risk=high] { background: var(--studio-red); }
 .configurationDrawer .mcpCopy { min-width: 0; overflow-wrap: anywhere; }
 .configurationDrawer .mcpTitleLine { flex-wrap: wrap; }
 .configurationDrawer .workerToolPickerHeader { display: flex; flex-wrap: wrap; }
