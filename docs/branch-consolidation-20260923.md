@@ -55,10 +55,21 @@ git fetch /path/to/all-refs.bundle refs/heads/OLD:refs/heads/recovered/OLD
 
 ## 验证
 
-- develop：沙箱、DeepAgents backend/runtime、worker 相关单元测试 288 项通过。
-- develop：侧边栏、任务项目、标题菜单、工作台前端测试 73 项通过（4 个测试文件）。
-- 合入的测试有一处 Python import 排序问题，已修正。
-- evolution 合并后的验证结果在最终整合记录中补充。
+- develop：相关后端测试 288 项通过；全量单元测试共 1465 项通过。
+  首轮 1449 项通过，另外 16 项受本机 SOCKS 代理缺少 socksio 影响；去除测试进程代理变量后，16 项复跑全部通过。
+- develop：侧边栏、任务项目、标题菜单、工作台以及消息历史相关前端测试 103 项通过（7 个测试文件）。
+- evolution：合并后全量后端单元测试 1490 项通过；相关前端测试 136 项通过（11 个测试文件）。
+- evolution 合并冲突仅涉及 `test_e2b.py` 的 import，两边测试及归档/独立超时能力均保留。
+- 两条分支的改动 Python 文件 Ruff 检查通过；修正了合入测试的一处 import 排序问题。
+- 本次不含重新构建镜像、生产环境端到端测试或完整 CI 数据库集成测试。
+
+## 清理范围
+
+21 条旧本地分支、18 条旧远程分支；关闭对应的 14 个旧依赖升级 PR。
+17 个仍有独有提交的分支头由 `archive/2026-09-23/{local,remote}/...` 标签保存并推送。
+两条长期分支之外的工作目录保留在原提交的 detached HEAD；失效的 worktree 注册记录清理掉。
+原主目录仍保留未提交工作；后续开发应打开 `develop` 或 `auto/agent-evolution` 的工作目录，
+不要在已归档的 detached HEAD 上继续提交而不建立新分支。
 
 ## 清理前引用清单
 
