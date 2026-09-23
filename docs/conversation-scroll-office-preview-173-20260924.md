@@ -28,3 +28,7 @@
 ## 部署
 
 本次只更新 173 的 Web，保留 API/Worker `evolution-builder-a5f86edb`。Web 目标 `kai/axis-web:evolution-builder-57c33b25`；compose 与原 WEB_SOURCE_REVISION 留有备份，可单独回滚 Web。
+
+线上复核：Web 健康、HTTP 200、WEB_SOURCE_REVISION 为 57c33b2585b38e2a0a8cdc7ea6823f3af5c8ab1c；在已登录 Chrome 中打开实际 17 页 PPTX 产出，侧栏成功排版，后续页面内容可见。
+
+WorkBuddy：保留用户原测试草稿与排除项，追加本次核心回归范围，已用 UI 标注 Free now / 0.00x 的 Deepseek-V4.1-Flash 启动。确认出现运行中停止按钮，已开始 173 HTTP 连通性检查；其测试报告目标为当前项目 `test-artifacts/173-core-regression/`，此时尚未完成完整测试。
