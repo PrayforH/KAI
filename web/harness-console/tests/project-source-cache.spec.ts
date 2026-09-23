@@ -1,0 +1,35 @@
+import {afterEach,beforeEach,it,expect,vi} from "vitest";
+import {studioClient} from "../src/lib/studio-client";
+import {invalidateClientReads} from "../src/lib/client-read-cache";
+const file={path:"agent.py",content:"print('hello')",size:14,digest:"hash",unavailable:null,deferred:false};
+const source={revision:4,filename:"agent.zip",digest:"archive",framework_version:"0.7.13",files:[file]};
+beforeEach(()=>invalidateClientReads());
+afterEach(()=>{invalidateClientReads();vi.unstubAllGlobals();});
+it("shares directory reads without aborting another viewer, reuses a revision and invalidates on refresh or auth change",async()=>{
+ let resolve!: (response:Response)=>void;
+ const fetcher=vi.fn().mockImplementationOnce(()=>new Promise<Response>(r=>{resolve=r;})).mockImplementation(async()=>Response.json(source));vi.stubGlobal("fetch",fetcher);
+ const controller=new AbortController();
+ const first=studioClient.getDeepagentsProjectSource("draft-cache",4,controller.signal);
+ const rejected=expect(first).rejects.toMatchObject({name:"AbortError"});
+ const second=studioClient.getDeepagentsProjectSource("draft-cache",4);
+ controller.abort();resolve(Response.json(source));
+ await rejected;expect(await second).toEqual(source);
+ expect(fetcher).toHaveBeenCalledTimes(1);
+ expect(fetcher.mock.calls[0][0]).toContain("metadataOnly=true");
+ await studioClient.getDeepagentsProjectSource("draft-cache",4);expect(fetcher).toHaveBeenCalledTimes(1);
+ await studioClient.getDeepagentsProjectSource("draft-cache",5);expect(fetcher).toHaveBeenCalledTimes(2);
+ studioClient.refreshDeepagentsProject("draft-cache");
+ await studioClient.getDeepagentsProjectSource("draft-cache",4);expect(fetcher).toHaveBeenCalledTimes(3);
+ invalidateClientReads();
+ await studioClient.getDeepagentsProjectSource("draft-cache",4);expect(fetcher).toHaveBeenCalledTimes(4);
+});
+it("loads only a requested file, retries errors and does not retain large assets",async()=>{
+ const fetcher=vi.fn().mockResolvedValueOnce(Response.json({detail:"temporary"},{status:500})).mockImplementation(async()=>Response.json(source));vi.stubGlobal("fetch",fetcher);
+ await expect(studioClient.getDeepagentsProjectFile("draft-cache",4,"agent.py")).rejects.toThrow();
+ expect(await studioClient.getDeepagentsProjectFile("draft-cache",4,"agent.py")).toEqual(file);
+ await studioClient.getDeepagentsProjectFile("draft-cache",4,"agent.py");expect(fetcher).toHaveBeenCalledTimes(2);
+ expect(fetcher.mock.calls[1][0]).toContain("&path=agent.py");
+ studioClient.refreshDeepagentsProject("draft-cache");
+ fetcher.mockImplementation(async()=>Response.json({...source,files:[{...file,size:600_000}]}));
+ await studioClient.getDeepagentsProjectFile("draft-cache",4,"agent.py");await studioClient.getDeepagentsProjectFile("draft-cache",4,"agent.py");expect(fetcher).toHaveBeenCalledTimes(4);
+});

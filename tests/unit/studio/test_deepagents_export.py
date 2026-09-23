@@ -10,6 +10,7 @@ from harness.studio.compiler import AgentDraftCompiler
 from harness.studio.deepagents_export import (
     DEEPAGENTS_PINNED_VERSION,
     export_deepagents_project,
+    project_source,
 )
 from harness.studio.factory import create_draft_spec
 from harness.studio.models import (
@@ -448,3 +449,18 @@ def test_export_scaffold_is_installable_and_contains_no_duplicate_entries() -> N
             "from sapling_deep_agents.controller.agent import" in archive.read("agent.py").decode()
         )
         assert "uv.lock" not in names  # Resolve on the target package index, never fake a lock.
+
+
+def test_lazy_source_index_preserves_file_identity_and_only_reads_selected_text() -> None:
+    archive = export_deepagents_project(make_draft())
+    full = project_source(archive, 1)
+    index = project_source(archive, 1, metadata_only=True)
+    assert [(f.path, f.size, f.digest) for f in index.files] == [
+        (f.path, f.size, f.digest) for f in full.files
+    ]
+    assert all(f.content is None for f in index.files)
+    selected = next(f for f in full.files if f.path.endswith("agents/agent.py"))
+    lazy = project_source(archive, 1, path=selected.path)
+    assert lazy.files == (selected,)
+    assert not lazy.files[0].deferred
+    assert not project_source(archive, 1, path="../../etc/passwd").files

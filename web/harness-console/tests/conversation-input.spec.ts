@@ -31,3 +31,24 @@ describe("model-driven input display protocol", () => {
     expect(conversationInputDisplay(partial)).toBe(partial);
   });
 });
+
+it("recognizes the screenshot's unfenced form and generic JSON fences without exposing protocol text", () => {
+  const data = {version:1,title:"需要你补充",questions:[{id:"claim",label:"要核实的具体主张/数据点（贴原句或描述即可）",type:"text"},{id:"material",label:"你能提供的材料来源",type:"single",options:["我直接粘贴原文", "我提供原文链接", "我把文件放进 inputs/ 目录", "请先列可能的来源"]}]};
+  for (const text of [`知识库检索为空。请补充：\n${JSON.stringify(data)}`, `请补充\n\`\`\`json\n${JSON.stringify(data)}\n\`\`\``]) {
+    expect(parseConversationInput(text)?.questions).toHaveLength(2);
+    expect(conversationInputDisplay(text)).not.toContain('"version"');
+    expect(latestConversationInput([{id:"screenshot",role:"assistant",status:{type:"complete"},content:[{type:"text",text}]}])?.input.title).toBe("需要你补充");
+  }
+});
+it("handles quoted braces, refuses ambiguous or non-protocol JSON and suppresses only recognized partial forms", () => {
+  const data={...payload,title:'解释 {x} 和 "引号"'};
+  expect(parseConversationInput(JSON.stringify(data))?.title).toBe(data.title);
+  expect(parseConversationInput(JSON.stringify(payload)+'\n'+JSON.stringify(payload))).toBeNull();
+  expect(parseConversationInput('```python\n'+JSON.stringify(payload)+'\n```')).toBeNull();
+  for(const data of [{version:1,title:"普通 JSON",items:[]},{...payload,execute:"command"},{...payload,version:2}]) {
+    const text=JSON.stringify(data); expect(parseConversationInput(text)).toBeNull();expect(conversationInputDisplay(text)).toBe(text);
+  }
+  const partial='请补充\n{"version":1,"title":"需要你补充","questions":[{"id":"x"';
+  expect(conversationInputDisplay(partial,true)).toBe('请补充');
+  expect(parseConversationInput(partial)).toBeNull();
+});

@@ -1,5 +1,5 @@
 import { agentDisplayName } from "./agent-display-name";
-import { readClientResource, mutateClientResource, rememberClientRead, forgetClientRead, peekClientRead } from "./client-read-cache";
+import { readClientResource, mutateClientResource, rememberClientRead, forgetClientRead, peekClientRead, forgetClientReadPrefix, waitForClientRead } from "./client-read-cache";
 import { TEAM_COLLABORATION_ENABLED } from "./agent-visibility";
 import type { RunActivity } from "./activity-schema";
 import { requireAuthenticatedResponse } from "./client-auth";
@@ -20,7 +20,7 @@ export type StudioRole = "owner" | "admin" | "member" | "viewer";
 
 export type { StudioRunStatus };
 
-export type ProjectSourceFile = { path: string; size: number; digest?: string; content: string | null; unavailable: string | null };
+export type ProjectSourceFile = { deferred?: boolean; path: string; size: number; digest?: string; content: string | null; unavailable: string | null };
 export type DeepagentsProjectSource = {
   revision: number; filename: string; digest: string; framework_version: string;
   files: ProjectSourceFile[];
@@ -2596,13 +2596,30 @@ export const studioClient = {
     anchor.click();
     URL.revokeObjectURL(url);
   },
-  async getDeepagentsProjectSource(draftId: string, revision: number, signal?: AbortSignal): Promise<DeepagentsProjectSource> {
-    const response = requireAuthenticatedResponse(await fetch(
-      `/api/studio/drafts/${encodeURIComponent(draftId)}/deepagents-project/files?expectedRevision=${revision}`,
-      { cache: "no-store", signal },
-    ));
-    if (!response.ok) throw await errorFrom(response);
-    return response.json();
+  getDeepagentsProjectSource(draftId: string, revision: number, signal?: AbortSignal): Promise<DeepagentsProjectSource> {
+    const key = `/api/studio/drafts/${encodeURIComponent(draftId)}/deepagents-project/files?expectedRevision=${revision}&metadataOnly=true`;
+    return waitForClientRead(readClientResource(key, async () => {
+      const response = requireAuthenticatedResponse(await fetch(key, {cache: "no-store"}));
+      if (!response.ok) throw await errorFrom(response);
+      return response.json();
+    }, 120_000), signal);
+  },
+  async getDeepagentsProjectFile(draftId: string, revision: number, path: string, signal?: AbortSignal): Promise<ProjectSourceFile> {
+    const key = `/api/studio/drafts/${encodeURIComponent(draftId)}/deepagents-project/files?expectedRevision=${revision}&path=${encodeURIComponent(path)}`;
+    const file = await waitForClientRead(readClientResource<ProjectSourceFile>(key, async () => {
+      const response = requireAuthenticatedResponse(await fetch(key, {cache: "no-store"}));
+      if (!response.ok) throw await errorFrom(response);
+      const source: DeepagentsProjectSource = await response.json();
+      const file = source.files.find(item => item.path === path);
+      if (!file) throw new Error("项目文件不存在");
+      return file;
+    }, 120_000), signal);
+    // Keep large assets out of the in-memory cache after this preview closes.
+    if (file.size > 512 * 1024) forgetClientRead(key);
+    return file;
+  },
+  refreshDeepagentsProject(draftId: string) {
+    forgetClientReadPrefix(`/api/studio/drafts/${encodeURIComponent(draftId)}/deepagents-project/files?`);
   },
   async downloadDeepagentsProject(draftId: string, revision?: number): Promise<void> {
     const response = requireAuthenticatedResponse(

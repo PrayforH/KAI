@@ -152,6 +152,25 @@ async def test_service_identity_can_build_and_publish_existing_bundle() -> None:
             f"/v1/studio/drafts/{draft_id}/deepagents-project/files",
             headers=headers, params={"expectedRevision": 1},
         )
+        metadata = await client.get(
+            f"/v1/studio/drafts/{draft_id}/deepagents-project/files",
+            headers=headers, params={"expectedRevision": 1, "metadataOnly": True},
+        )
+        selected_path = source.json()["files"][0]["path"]
+        selected = await client.get(
+            f"/v1/studio/drafts/{draft_id}/deepagents-project/files",
+            headers=headers, params={"expectedRevision": 1, "path": selected_path},
+        )
+        missing_file = await client.get(
+            f"/v1/studio/drafts/{draft_id}/deepagents-project/files",
+            headers=headers, params={"expectedRevision": 1, "path": "../../etc/passwd"},
+        )
+        assert metadata.status_code == selected.status_code == 200
+        assert len(metadata.json()["files"]) == len(source.json()["files"])
+        assert all(file["content"] is None for file in metadata.json()["files"])
+        assert any(file["deferred"] for file in metadata.json()["files"])
+        assert selected.json()["files"] == [source.json()["files"][0]]
+        assert missing_file.status_code == 404
         denied_source = await client.get(
             f"/v1/studio/drafts/{draft_id}/deepagents-project/files",
             headers=headers | {"X-User-ID": "someone-else"}, params={"expectedRevision": 1},

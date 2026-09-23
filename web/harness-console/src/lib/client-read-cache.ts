@@ -25,6 +25,24 @@ export function forgetClientRead(key: string) {
   pending.delete(key);
 }
 
+export function forgetClientReadPrefix(prefix: string) {
+  for (const key of new Set([...snapshots.keys(), ...pending.keys()])) {
+    if (key.startsWith(prefix)) forgetClientRead(key);
+  }
+}
+
+/** Cancel this caller's wait without cancelling a shared read used by another view. */
+export function waitForClientRead<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return promise;
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+    if (signal.aborted) abort();
+    else signal.addEventListener("abort", abort, {once: true});
+    promise.then(value => {if (!signal.aborted) resolve(value);}, reject)
+      .finally(() => signal.removeEventListener("abort", abort));
+  });
+}
+
 export function peekClientRead<T>(key: string): T | undefined {
   return snapshots.get(key)?.value as T | undefined;
 }

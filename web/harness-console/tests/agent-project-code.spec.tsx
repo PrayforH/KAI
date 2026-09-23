@@ -18,7 +18,7 @@ vi.mock("../src/components/agent-studio/project-file-tree", () => ({ ProjectFile
   useEffect(() => { if (selected) selectRef.current(selected); }, [selected]);
   return <div>{paths.map(path => <button key={path} onClick={() => onSelect(path)}>{path}</button>)}</div>;
 } }));
-vi.mock("../src/lib/studio-client", () => ({ studioClient: { getDeepagentsProjectSource: vi.fn(), downloadDeepagentsProject: vi.fn() } }));
+vi.mock("../src/lib/studio-client", () => ({ studioClient: { getDeepagentsProjectSource: vi.fn(), getDeepagentsProjectFile: vi.fn(), refreshDeepagentsProject: vi.fn(), downloadDeepagentsProject: vi.fn() } }));
 const fixture: DeepagentsProjectSource = {
   revision: 4, digest: "abc", filename: "agent.zip", framework_version: "0.7.13",
   files: [{ path: "agent.py", size: 10, content: "print('hello')", unavailable: null },
@@ -187,4 +187,23 @@ it("opens the packaged DeepAgents assembly by default while retaining legacy ent
   expect(host.querySelector('[aria-label="DeepAgents 文件树"]')).toBeNull();
   await act(async () => button("显示文件树").click());
   expect(host.querySelector('[aria-label="DeepAgents 文件树"]')?.textContent).toContain("agent.py");
+});
+
+it("loads only metadata until a file is opened and ignores late responses from the previous selection", async () => {
+  vi.mocked(studioClient.getDeepagentsProjectSource).mockResolvedValue({...fixture,files:fixture.files.map(file => ({...file,content:null,deferred:true}))});
+  const directory=document.createElement('div');document.body.append(directory);
+  let resolveFirst!: (file: typeof fixture.files[number]) => void;
+  vi.mocked(studioClient.getDeepagentsProjectFile).mockImplementation(async (_draft,_rev,path) => path==='agent.py' ? new Promise(resolve => {resolveFirst=resolve;}) : fixture.files.find(file=>file.path===path)!);
+  function Split() {const [expanded,setExpanded]=useState(false);return <AgentProjectCode draftId="draft-lazy" revision={4} name="test" dirty={false} directoryTarget={directory} expanded={expanded} onExpandedChange={setExpanded} onClose={()=>{}}/>;}
+  try {
+    await act(async()=>root.render(<Split/>));
+    expect(studioClient.getDeepagentsProjectFile).not.toHaveBeenCalled();
+    await act(async()=>[...directory.querySelectorAll('button')].find(b=>b.textContent==='agent.py')!.click());
+    expect(host.textContent).toContain('正在读取文件');
+    await act(async()=>[...directory.querySelectorAll('button')].find(b=>b.textContent==='tools/search.py')!.click());
+    expect(host.querySelector('pre')?.textContent).toBe('search()');
+    await act(async()=>resolveFirst(fixture.files[0]));
+    expect(host.querySelector('pre')?.textContent).toBe('search()');
+    expect(studioClient.getDeepagentsProjectFile).toHaveBeenCalledTimes(2);
+  } finally {directory.remove();}
 });

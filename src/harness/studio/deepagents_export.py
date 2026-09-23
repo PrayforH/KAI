@@ -113,6 +113,7 @@ class ProjectSourceFile(StudioModel):
     digest: str
     content: str | None
     unavailable: str | None = None
+    deferred: bool = False
 
 
 class DeepagentsProjectSource(StudioModel):
@@ -132,13 +133,16 @@ class DeepagentsProjectComparison(StudioModel):
     after: DeepagentsProjectSource
 
 
-def project_source(archive: DeepagentsProjectArchive, revision: int) -> DeepagentsProjectSource:
+def project_source(
+    archive: DeepagentsProjectArchive, revision: int, *,
+    metadata_only: bool = False, path: str | None = None,
+) -> DeepagentsProjectSource:
     """Read the exact export as bounded text previews; binary assets stay in the ZIP."""
     files: list[ProjectSourceFile] = []
     remaining = PROJECT_SOURCE_TOTAL_LIMIT
     with ZipFile(io.BytesIO(archive.content)) as zipped:
         for entry in zipped.infolist():
-            if entry.is_dir():
+            if entry.is_dir() or (path is not None and entry.filename != path):
                 continue
             with zipped.open(entry) as stream:
                 hasher = hashlib.sha256()
@@ -149,7 +153,7 @@ def project_source(archive: DeepagentsProjectArchive, revision: int) -> Deepagen
             unavailable = None
             if entry.file_size > min(PROJECT_SOURCE_FILE_LIMIT, remaining):
                 unavailable = "文件超出预览大小限制，请下载项目查看。"
-            else:
+            elif not metadata_only:
                 raw = zipped.read(entry)
                 try:
                     content = raw.decode("utf-8")
@@ -161,7 +165,7 @@ def project_source(archive: DeepagentsProjectArchive, revision: int) -> Deepagen
                     unavailable = "二进制文件，请下载项目查看。"
             files.append(ProjectSourceFile(
                 path=entry.filename, size=entry.file_size, digest=digest, content=content,
-                unavailable=unavailable,
+                unavailable=unavailable, deferred=metadata_only and unavailable is None,
             ))
     return DeepagentsProjectSource(
         revision=revision, filename=archive.filename,

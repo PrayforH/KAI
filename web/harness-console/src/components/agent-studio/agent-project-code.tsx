@@ -3,7 +3,7 @@ import { FeedbackToast } from "../feedback-toast";
 
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { studioClient, type DeepagentsProjectComparison, type DeepagentsProjectSource } from "../../lib/studio-client";
+import { studioClient, type DeepagentsProjectComparison, type DeepagentsProjectSource, type ProjectSourceFile } from "../../lib/studio-client";
 import { createFileTreeIconResolver, getBuiltInSpriteSheet } from "@pierre/trees";
 import { ProjectFileTree } from "./project-file-tree";
 import { projectSourceChanges } from "../../lib/project-source-changes";
@@ -63,6 +63,8 @@ export function AgentProjectCode({ draftId, revision, name, dirty, onClose, comp
   const [downloading, setDownloading] = useState(false);
   const [notice, setNotice] = useState("");
   const [treeOpen, setTreeOpen] = useState(false);
+  const [fileResult, setFileResult] = useState<{key: string; file?: ProjectSourceFile; error?: string} | null>(null);
+  const [fileRetry, setFileRetry] = useState(0);
   useEffect(() => {
     if (mode === "changes" && comparison) { setLoading(false); setError(""); return; }
     const controller = new AbortController();
@@ -84,7 +86,20 @@ export function AgentProjectCode({ draftId, revision, name, dirty, onClose, comp
   const change = changes.find(item => item.path === selected);
   const visible = useMemo(() => files.filter(file => file.path.toLowerCase().includes(filter.trim().toLowerCase())), [files, filter]);
   const paths = useMemo(() => visible.map(file => file.path), [visible]);
-  const file = files.find(item => item.path === selected);
+  const entry = files.find(item => item.path === selected);
+  const fileKey = JSON.stringify([draftId, revision, selected, entry?.digest, refresh, fileRetry]);
+  const currentFile = entry?.deferred && fileResult?.key === fileKey ? fileResult : null;
+  const file = entry?.deferred ? currentFile?.file ?? entry : entry;
+  useEffect(() => {
+    if (!entry?.deferred || (splitView && !expanded)) return;
+    const controller = new AbortController();
+    void studioClient.getDeepagentsProjectFile(draftId, revision, entry.path, controller.signal).then(file => {
+      if (!controller.signal.aborted) setFileResult({key: fileKey, file});
+    }).catch(reason => {
+      if (!controller.signal.aborted) setFileResult({key: fileKey, error: reason instanceof Error ? reason.message : "文件读取失败"});
+    });
+    return () => controller.abort();
+  }, [draftId, revision, entry, splitView, expanded, fileKey]);
   const index = visible.findIndex(item => item.path === selected);
   const lines = file?.content === undefined || file?.content === null ? 0 : file.content.split("\n").length;
   async function copy() {
@@ -120,13 +135,13 @@ export function AgentProjectCode({ draftId, revision, name, dirty, onClose, comp
       <div className={styles.actions}>
         {!splitView && !treeOpen && modeControls}
         {!splitView && <button type="button" aria-label="显示文件树" aria-pressed={treeOpen} title="显示 / 隐藏文件树" onClick={() => setTreeOpen(value => !value)}><Icon name="tree" /></button>}
-        <button type="button" aria-label="刷新代码" title="刷新代码" disabled={loading || mode === "changes"} onClick={() => setRefresh(value => value + 1)}><Icon name="refresh" /></button>
+        <button type="button" aria-label="刷新代码" title="刷新代码" disabled={loading || mode === "changes"} onClick={() => {studioClient.refreshDeepagentsProject(draftId); setRefresh(value => value + 1);}}><Icon name="refresh" /></button>
         <button type="button" aria-label="下载项目" title="下载项目" aria-busy={downloading} disabled={!project || downloading || (mode === "changes" && (comparisonPending || revision !== project.revision))} onClick={() => void download()}><Icon name="download" /></button>
         {!splitView && <button type="button" onClick={onClose} className={styles.returnButton}>返回配置</button>}
       </div>
     </header>
-    {loading ? <div className={styles.loading} role="status" aria-label="正在生成代码"><div /><div /><div /><span>正在生成项目代码…</span></div> : error ?
-      <div className={styles.empty} role="alert"><Icon name="code" /><strong>暂时无法展示代码</strong><p>{error}</p><button type="button" onClick={() => setRefresh(value => value + 1)}>重试</button></div> :
+    {loading ? <div className={styles.loading} role="status" aria-label="正在读取代码"><div /><div /><div /><span>正在读取项目目录…</span></div> : error ?
+      <div className={styles.empty} role="alert"><Icon name="code" /><strong>暂时无法展示代码</strong><p>{error}</p><button type="button" onClick={() => {studioClient.refreshDeepagentsProject(draftId); setRefresh(value => value + 1);}}>重试</button></div> :
       <div className={styles.body}>
         <main className={styles.source}>
           <header className={styles.fileHeader}>
@@ -137,7 +152,7 @@ export function AgentProjectCode({ draftId, revision, name, dirty, onClose, comp
             <button type="button" aria-label="上一个文件" title="上一个文件" disabled={index <= 0} onClick={() => setSelected(visible[index - 1].path)}><Icon name="back" /></button>
             <button type="button" aria-label="下一个文件" title="下一个文件" disabled={!visible.length || index >= visible.length - 1} onClick={() => setSelected(visible[index + 1].path)}><Icon name="next" /></button>
           </header>
-          {mode === "changes" && change ? <ProjectSourceDiff change={change} theme={theme} wrap={wrap} compact/> : file?.content != null ? <ProjectSourceEditor path={file.path} content={file.content} theme={theme} wrap={wrap} /> : <div className={styles.empty}><p>{file?.unavailable ?? "从文件树中选择文件查看源代码。"}</p></div>}
+          {mode === "changes" && change ? <ProjectSourceDiff change={change} theme={theme} wrap={wrap} compact/> : entry?.deferred && !currentFile ? <div className={styles.loading} role="status">正在读取文件…</div> : currentFile?.error ? <div className={styles.empty} role="alert"><p>{currentFile.error}</p><button type="button" onClick={() => setFileRetry(value => value + 1)}>重试文件</button></div> : file?.content != null ? <ProjectSourceEditor path={file.path} content={file.content} theme={theme} wrap={wrap} /> : <div className={styles.empty}><p>{file?.unavailable ?? "从文件树中选择文件查看源代码。"}</p></div>}
           <footer className={styles.status}><span>{file?.content != null ? `${sourceFileKind(file.path).name} · UTF-8` : "项目资源"}</span><span title={contextLabel}>{contextLabel} · 只读</span><span>{project?.files.length ?? 0} 个文件</span></footer>
         </main>
         {!splitView && treeOpen && directory}
@@ -156,7 +171,7 @@ export function AgentProjectCode({ draftId, revision, name, dirty, onClose, comp
             <PanelExpandIcon expanded={expanded} />
           </button>
         </header>
-        {loading ? <div className={styles.loading} role="status"><div/><div/><div/><span>正在读取文件目录…</span></div> : error ? <div className={styles.empty} role="alert"><p>{error}</p><button type="button" onClick={() => setRefresh(value => value + 1)}>重试</button></div> : directory}
+        {loading ? <div className={styles.loading} role="status"><div/><div/><div/><span>正在读取文件目录…</span></div> : error ? <div className={styles.empty} role="alert"><p>{error}</p><button type="button" onClick={() => {studioClient.refreshDeepagentsProject(draftId); setRefresh(value => value + 1);}}>重试</button></div> : directory}
       </section>, directoryTarget
     )}
     {(!splitView || expanded) && panel}

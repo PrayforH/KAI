@@ -2519,12 +2519,17 @@ async def read_deepagents_project(
     actor: Annotated[StudioActor, Depends(require_studio_reader)],
     service: Annotated[AgentStudioService, Depends(get_studio_service)],
     expected_revision: Annotated[int, Query(alias="expectedRevision", ge=1)],
+    metadata_only: Annotated[bool, Query(alias="metadataOnly")] = False,
+    path: Annotated[str | None, Query(min_length=1, max_length=1024)] = None,
 ) -> DeepagentsProjectSource:
     try:
         exported = await service.deepagents_project(
             actor.tenant_id, actor.user_id, draft_id, expected_revision=expected_revision,
         )
-        return project_source(exported, expected_revision)
+        source = project_source(exported, expected_revision, metadata_only=metadata_only, path=path)
+        if path is not None and not source.files:
+            raise NotFoundError("项目文件不存在")
+        return source
     except (ConflictError, NotFoundError) as error:
         raise _translate_domain_error(error) from error
 
