@@ -10,9 +10,9 @@ describe("model-driven input display protocol", () => {
     expect(formatConversationAnswers(input, {scope: {selected: ["UI", "接口", "injected"], text: ""}, note: {selected: [], text: "保留布局"}})).toBe("确认范围\n\n选择内容\nUI；接口\n\n补充要求\n保留布局");
     expect(formatConversationAnswers(input, {scope: {selected: [], text: "只修改文案"}, note: {selected: [], text: "保留布局"}})).toContain("只修改文案");
   });
-  it("rejects malformed, duplicate, oversized and non-final example blocks", () => {
+  it("rejects malformed, duplicate and oversized blocks", () => {
     for (const data of [null, {}, {...payload, version: 2}, {...payload, questions: Array(5).fill(payload.questions[0])}, {...payload, questions: [payload.questions[0], payload.questions[0]]}, {...payload, questions: [{...payload.questions[0], options: ["same", "same"]}]}, {...payload, title: "x".repeat(161)}, {...payload, questions: [{...payload.questions[0], type: "execute"}]}]) expect(parseConversationInput(fence(data))).toBeNull();
-    expect(parseConversationInput(fence(payload) + "\nexample only")).toBeNull();
+    expect(parseConversationInput(fence(payload) + "\n选好后我再继续。")?.title).toBe("确认范围");
     expect(parseConversationInput(fence(payload) + "\n" + fence(payload))).toBeNull();
   });
   it("does not re-offer older, answered or unfinished assistant requests", () => {

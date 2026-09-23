@@ -7,8 +7,9 @@ function shortText(value: unknown, maximum: number): value is string {
 }
 export function parseConversationInput(text: string): ConversationInput | null {
   const matches = [...text.matchAll(fence)];
-  // Only a single final block is actionable; examples embedded in longer answers aren't.
-  if (matches.length !== 1 || text.slice(matches[0].index! + matches[0][0].length).trim()) return null;
+  // The reserved marker is explicit. Tolerate explanatory prose after it; models
+  // often append a sentence even when asked to put the card last.
+  if (matches.length !== 1) return null;
   if (matches[0][1].length > 16_000) return null;
   try {
     const data = JSON.parse(matches[0][1]);
