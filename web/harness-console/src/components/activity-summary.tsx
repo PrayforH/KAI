@@ -742,23 +742,6 @@ export function ActivitySummary({
     view.phase === "running" ||
     view.phase === "waiting_approval";
   const thinkingActive = view.phase === "running";
-  const phaseAnchor = useRef<{ runId: string; phase: RunPhase }>({
-    runId: view.runId,
-    phase: view.phase,
-  });
-  if (phaseAnchor.current.runId !== view.runId) {
-    phaseAnchor.current = { runId: view.runId, phase: view.phase };
-  }
-  const justFinished =
-    ["queued", "running", "waiting_approval"].includes(phaseAnchor.current.phase) &&
-    ["completed", "rejected", "cancelled"].includes(view.phase);
-  useEffect(() => {
-    if (justFinished) {
-      rememberDisclosure(view.runId, false);
-      setManualDisclosure({ runId: view.runId, open: false });
-    }
-    phaseAnchor.current = { runId: view.runId, phase: view.phase };
-  }, [justFinished, view.phase, view.runId]);
   const elapsedAnchor = useRef<ElapsedAnchor | null>(null);
   const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
@@ -775,12 +758,10 @@ export function ActivitySummary({
     const timer = window.setInterval(tick, 1_000);
     return () => window.clearInterval(timer);
   }, [active, view.runId, view.elapsedMs]);
-  // Show the observable process while work is active, then fold successful or
-  // cancelled work as soon as the Run reaches a terminal state. A user can
-  // still reopen the finished transcript afterwards; failures stay open so
-  // their diagnostic is not hidden.
+  // Automatic disclosure follows the run phase. Explicit user choices survive
+  // completion and history hydration; failures default open for diagnostics.
   const defaultOpen = active || view.phase === "failed";
-  const open = justFinished ? false : manuallyOpen ?? defaultOpen;
+  const open = manuallyOpen ?? defaultOpen;
   const elapsed = elapsedAnchor.current
     ? activeElapsedMs(view, now, elapsedAnchor.current)
     : view.elapsedMs;

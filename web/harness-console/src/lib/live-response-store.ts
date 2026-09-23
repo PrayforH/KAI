@@ -237,7 +237,9 @@ export const liveResponseStore = {
     if (!isActiveRuntimeThread(threadId)) return;
     flushPendingDelta(disposition !== "activity");
     if (activeMessageId !== messageId && snapshot.messageId !== messageId) return;
-    publish({ ...snapshot, status: "complete" });
+    // A provider text block can end before its tools even start. Only the run
+    // terminal event releases this turn's text ownership to durable history.
+    // Marking a block complete let hidden progress reappear in the native slot.
   },
   completeRun(threadId?: string) {
     if (!isActiveRuntimeThread(threadId)) return;

@@ -49,6 +49,7 @@ import { ConversationIndex } from "./conversation-index";
 import { PromptQueue } from "./prompt-queue";
 import { useFollowUpPreference } from "../lib/interface-preferences";
 import { ConversationInput } from "./conversation-input";
+import { groupWorkspaceFiles } from "../lib/workspace-file-groups";
 import { ActivitySummary } from "./activity-summary";
 import { TaskAgentSwitcher } from "./task-agent-switcher";
 import { ApprovalCard, type ApprovalDetails } from "./approval-card";
@@ -1114,9 +1115,13 @@ function ArtifactSummaryRow({ artifacts }: { artifacts: ArtifactDetails[] }) {
   const conversationScope = useConversationScope();
   const [failed, setFailed] = useState<readonly string[]>([]);
   if (artifacts.length === 0) return null;
-  const thumbs = artifacts.slice(0, ARTIFACT_THUMBNAIL_COUNT);
-  const extra = artifacts.length - thumbs.length;
-  const label = `查看本任务的 ${artifacts.length} 项产出`;
+  const groups = groupWorkspaceFiles(artifacts.map(file => ({ ...file, name: file.name ?? "未命名文件", media_type: file.media_type ?? "" })));
+  const deliverables = [...(groups.find(group => group.name === "最终产出")?.folders.values() ?? [])].flat();
+  const intermediate = artifacts.length - deliverables.length;
+  const thumbs = deliverables.slice(0, ARTIFACT_THUMBNAIL_COUNT);
+  const extra = deliverables.length - thumbs.length;
+  const countLabel = [deliverables.length ? `${deliverables.length} 项产出` : "", intermediate ? `${intermediate} 个辅助文件` : ""].filter(Boolean).join(" · ");
+  const label = `查看本任务的 ${countLabel}`;
   return (
     <button
       type="button"
@@ -1143,7 +1148,7 @@ function ArtifactSummaryRow({ artifacts }: { artifacts: ArtifactDetails[] }) {
         ))}
         {extra > 0 ? <span className="artifact-thumb artifact-thumb-more">+{extra}</span> : null}
       </span>
-      <span className="artifact-summary-count">{artifacts.length} 项产出</span>
+      <span className="artifact-summary-count">{countLabel}</span>
     </button>
   );
 }
@@ -1406,8 +1411,9 @@ export function shouldSuppressNativeAssistantText(
   ownsLive: boolean,
   live: Pick<LiveResponseSnapshot, "status" | "visible" | "text">,
 ) {
-  // A hidden/empty terminal stream must not suppress the durable answer.
-  return ownsLive && (live.status === "streaming" || (live.visible && Boolean(live.text.trim())));
+  // Retain ownership of hidden progress until the durable history hand-off.
+  // Only an empty stream can fall back to native text without duplicating prose.
+  return ownsLive && (live.status === "streaming" || Boolean(live.text.trim()));
 }
 
 export function messageOwnsRun(messageId: string, runId: string) {
@@ -1446,8 +1452,8 @@ function HarnessAssistantMessage() {
   // this only on visible text lets assistant-ui paint the same preface once.
   const ownsLive = ownsLiveResponse(isLast, messageId, live.messageId);
   const directStream = shouldSuppressNativeAssistantText(ownsLive, live);
-  const copyText = ownsLive && live.visible && live.text.trim()
-    ? normalizeMessageText(live.text)
+  const copyText = directStream
+    ? normalizeMessageText(live.visible ? live.text : "")
     : normalizeMessageText(
         content
           .flatMap((part, index) => (
@@ -1511,10 +1517,11 @@ function HarnessAssistantMessage() {
         </div>
       ) : null}
       {!hasVideoGeneration ? (
+        <>
+        <div className="artifact-summary-line">
+          <ArtifactSummaryRow artifacts={turnArtifacts} />
+        </div>
         <div className="assistant-message-controls">
-          <div className="artifact-summary-line">
-            <ArtifactSummaryRow artifacts={turnArtifacts} />
-          </div>
           <HarnessBranchPicker />
           <AssistantActionBar.Root
             className="assistant-feedback-actions"
@@ -1529,6 +1536,7 @@ function HarnessAssistantMessage() {
             <TurnCompletion />
           </AssistantActionBar.Root>
         </div>
+        </>
       ) : null}
       {conversationScope?.afterMessage(messageId)}
     </AssistantMessage.Root>

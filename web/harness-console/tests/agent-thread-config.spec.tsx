@@ -370,9 +370,9 @@ it("attaches a resumed run to the latest optimistic assistant turn", () => {
   expect(turnOwnsRun("__optimistic__42", "run_2", true, "run_3")).toBe(false);
 });
 
- it("restores native history text when a terminal stream has no visible answer", () => {
+ it("retains ownership of hidden progress and only falls back for an empty terminal stream", () => {
   for (const status of ["complete", "error"] as const) {
-    expect(shouldSuppressNativeAssistantText(true, { status, visible: false, text: "tool preface" })).toBe(false);
+    expect(shouldSuppressNativeAssistantText(true, { status, visible: false, text: "tool preface" })).toBe(true);
     expect(shouldSuppressNativeAssistantText(true, { status, visible: true, text: "  " })).toBe(false);
   }
 });

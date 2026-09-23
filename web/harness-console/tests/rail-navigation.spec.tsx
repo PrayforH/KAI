@@ -241,9 +241,28 @@ it("uses supplied agent files and their change previews without fetching another
   await act(async () => root!.render(<WorkbenchRail open onClose={vi.fn()} expanded={false} onToggleExpanded={vi.fn()} threadId="draft-a" observabilityHref={null} runPhase={null}
     workspace={{files:[{artifact_id:"source:agent.py",name:"agent.py",media_type:"text/plain",change:"已修改"}],loading:false,error:"",onRefresh:refresh,renderPreview: file => <pre>{file.name} 的差异</pre>}} />));
   expect(fetchMock).not.toHaveBeenCalled();
+  const group = host.querySelector("details")!;
+  await act(async () => { group.open = true; group.dispatchEvent(new Event("toggle")); });
   expect(host.querySelector('[data-change="已修改"]')).not.toBeNull();
   await click(rowFor("agent.py"));
   expect(host.textContent).toContain("agent.py 的差异");
   expect(button("版本历史")).toBeNull();
   await click(button("刷新文件"));expect(refresh).toHaveBeenCalledOnce();
+});
+
+it("renders the deliverable first and mounts PDF conversion pages only after opening their folder", async () => {
+  vi.stubGlobal("fetch", vi.fn());
+  host = document.createElement("div"); document.body.appendChild(host); root = createRoot(host);
+  const files = [
+    { artifact_id: 'final', name: 'report.md', media_type: 'text/markdown' },
+    ...Array.from({ length: 70 }, (_, i) => ({ artifact_id: `page-${i}`, name: `images_cv3/p${i}.png`, media_type: 'image/png' })),
+  ];
+  await act(async () => root!.render(<WorkbenchRail open onClose={vi.fn()} expanded={false} onToggleExpanded={vi.fn()} threadId="pdf-task" observabilityHref={null} runPhase={null} workspace={{ files, loading: false, error: '', renderPreview: file => <pre>{file.name}</pre> }} />));
+  expect(host.querySelectorAll('.rail-file-row')).toHaveLength(1);
+  const middle = [...host.querySelectorAll('details')].find(item => item.textContent?.includes('中间文件'))!;
+  await act(async () => { middle.open = true; middle.dispatchEvent(new Event('toggle')); });
+  expect(host.querySelectorAll('.rail-file-row')).toHaveLength(1);
+  const folder = middle.querySelector('details')!;
+  await act(async () => { folder.open = true; folder.dispatchEvent(new Event('toggle')); });
+  expect(host.querySelectorAll('.rail-file-row')).toHaveLength(71);
 });

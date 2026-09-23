@@ -30,3 +30,22 @@ it("renders a fresh timer, preserves it across remounts, and resets for the next
     expect(duration()).toContain("已持续 1s");
   } finally { await act(async () => root.unmount()); container.remove(); vi.useRealTimers(); }
 });
+
+it("keeps a user's expanded process open through completion and history remount", async () => {
+  const runId = "manual-disclosure-regression";
+  const item = { id: "tool-one", event_type: "tool.request", kind: "tool", status: "running", title: "读取文件", sequence: 1, timestamp: "2026-09-07T00:00:01Z", metadata: { tool_call_id: "read", name: "Read" } };
+  const activity = runActivitySchema.parse({ run_id: runId, status: "running", started_at: "2026-09-07T00:00:00Z", items: [item] });
+  const host = document.createElement("div"); document.body.appendChild(host); const root = createRoot(host);
+  try {
+    await act(async () => root.render(<ActivitySummary activity={activity} />));
+    const toggle = () => (host.querySelector('.execution-disclosure') as HTMLButtonElement).click();
+    await act(async () => toggle()); // User closes, then explicitly opens it.
+    await act(async () => toggle());
+    const completed = runActivitySchema.parse({ ...activity, status: "succeeded", items: [...activity.items, { ...item, id: "done", event_type: "run.succeeded", status: "completed", sequence: 2 }] });
+    await act(async () => root.render(<ActivitySummary activity={completed} />));
+    expect(host.querySelector('.execution-disclosure')?.getAttribute('aria-expanded')).toBe('true');
+    await act(async () => root.render(null));
+    await act(async () => root.render(<ActivitySummary activity={completed} />));
+    expect(host.querySelector('.execution-disclosure')?.getAttribute('aria-expanded')).toBe('true');
+  } finally { await act(async () => root.unmount()); host.remove(); window.localStorage.removeItem?.(`agent-studio:run-disclosure:v1:${runId}`); }
+});

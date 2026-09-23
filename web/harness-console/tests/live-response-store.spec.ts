@@ -37,7 +37,7 @@ describe("liveResponseStore", () => {
 
     expect(liveResponseStore.getSnapshot()).toMatchObject({
       text: "最终回答",
-      status: "complete",
+      status: "streaming",
       visible: false,
     });
 
@@ -182,14 +182,14 @@ describe("liveResponseStore", () => {
     liveResponseStore.completeMessage("message-smooth");
     expect(liveResponseStore.getSnapshot()).toMatchObject({
       text: `${"平".repeat(80)}${"滑".repeat(80)}完成`,
-      status: "complete",
+      status: "streaming",
       visible: true,
     });
 
     const notification = vi.fn();
     const unsubscribe = liveResponseStore.subscribe(notification);
     liveResponseStore.completeRun();
-    expect(notification).not.toHaveBeenCalled();
+    expect(notification).toHaveBeenCalledOnce();
     expect(liveResponseStore.getSnapshot()).toMatchObject({
       text: `${"平".repeat(80)}${"滑".repeat(80)}完成`,
       status: "complete",
@@ -262,4 +262,19 @@ describe("response visibility deadline", () => {
     vi.advanceTimersByTime(100);
     expect(liveResponseStore.getSnapshot()).toMatchObject({ runId: "second", text: "新回复", visible: true });
   });
+});
+
+it("does not release text ownership between a PDF progress block and subsequent tools", () => {
+  liveResponseStore.clear();
+  liveResponseStore.startRun("run-pdf-progress");
+  liveResponseStore.startMessage("assistant-run-pdf-progress");
+  liveResponseStore.append("assistant-run-pdf-progress", "正在读取扫描 PDF。".repeat(30));
+  liveResponseStore.completeMessage("assistant-run-pdf-progress");
+  expect(liveResponseStore.getSnapshot()).toMatchObject({ visible: true, status: "streaming" });
+  liveResponseStore.hideForTool();
+  expect(liveResponseStore.getSnapshot()).toMatchObject({ visible: false, status: "streaming" });
+  liveResponseStore.append("assistant-run-pdf-progress", "最终整理结果。");
+  liveResponseStore.completeRun();
+  expect(liveResponseStore.getSnapshot()).toMatchObject({ visible: true, status: "complete", text: "最终整理结果。" });
+  liveResponseStore.clear();
 });

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
+import { groupWorkspaceFiles } from "../lib/workspace-file-groups";
 import { requireAuthenticatedResponse } from "../lib/client-auth";
 import { PanelResizeHandle } from "./panel-resize-handle";
 import { SidebarPanelIcon } from "./panel-icons";
@@ -161,7 +162,7 @@ export function WorkbenchRail({
   runPhase: string | null;
 }) {
   const [query, setQuery] = useState("");
-  const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
+  const [expandedGroups, setExpandedGroups] = useState<string[]>(["最终产出"]);
   const [searchOpen, setSearchOpen] = useState(false);
   const [listVisible, setListVisible] = useState(true);
   const [loadedError, setFileError] = useState("");
@@ -196,7 +197,7 @@ export function WorkbenchRail({
   // A task switch shows that task's files, never the previous selection.
   useEffect(() => {
     setTrail({ items: [null], index: 0 });
-    setExpandedGroups([]);
+    setExpandedGroups(["最终产出"]);
   }, [threadId]);
 
   useEffect(() => {
@@ -234,11 +235,16 @@ export function WorkbenchRail({
   const refreshFiles = () => workspace ? workspace.onRefresh?.() : setRefresh(value => value + 1);
   const selectedFile = files.find(file => file.artifact_id === selected?.artifact_id);
   const matchingFiles = files.filter(file => file.name.toLowerCase().includes(query.trim().toLowerCase()));
-  const fileGroups = new Map<string, RailFile[]>();
-  for (const file of files) {
-    const group = file.group ?? "";
-    const entries = fileGroups.get(group);
-    if (entries) entries.push(file); else fileGroups.set(group, [file]);
+  const fileGroups = groupWorkspaceFiles(files);
+  function groupDisclosure(key: string, label: string, count: number, content: () => ReactNode) {
+    const opened = expandedGroups.includes(key);
+    return <details className="rail-file-group" key={key} open={opened} onToggle={event => {
+      const next = event.currentTarget.open;
+      setExpandedGroups(current => next ? current.includes(key) ? current : [...current, key] : current.filter(value => value !== key));
+    }}>
+      <summary><span>{label}</span><small>{count}</small></summary>
+      {opened && content()}
+    </details>;
   }
   function renderFile(file: RailFile) {
     const kind = previewKindFor(file.media_type ?? "", file.name ?? "");
@@ -260,7 +266,7 @@ export function WorkbenchRail({
           title={previewable ? `在侧栏预览 ${file.name}` : `查看 ${file.name}`}
         >
           <span className="rail-file-icon" data-kind={kind}>{railFileIcon(kind)}</span>
-          <span className="workbench-rail-file-name">{file.name}</span>
+          <span className="workbench-rail-file-name">{query.trim() ? file.name : file.name.split("/").at(-1)}</span>
           <span className="workbench-rail-file-size" data-change={file.change}>{file.change || formatFileSize(file.size_bytes)}</span>
         </button>
         {(!workspace || file.downloadHref) && <a className="rail-download" href={file.downloadHref ?? `/api/harness/artifacts/${encodeURIComponent(file.artifact_id)}?thread_id=${encodeURIComponent(threadId)}`} download={file.name} title={`下载 ${file.name}`} aria-label={`下载 ${file.name}`}>↓</a>}
@@ -295,15 +301,13 @@ export function WorkbenchRail({
       ) : (
         <div className="workbench-rail-files">
           {!matchingFiles.length && <p>没有匹配的文件</p>}
-          {query.trim() ? matchingFiles.map(renderFile) : [...fileGroups].map(([group, entries]) => group ? (
-            <details className="rail-file-group" key={group} open={expandedGroups.includes(group)} onToggle={event => {
-              const open = event.currentTarget.open;
-              setExpandedGroups(current => open ? current.includes(group) ? current : [...current, group] : current.filter(value => value !== group));
-            }}>
-              <summary><span>{group}</span><small>{entries.length} 个文件</small></summary>
-              {expandedGroups.includes(group) && entries.map(renderFile)}
-            </details>
-          ) : entries.map(renderFile))}
+          {query.trim() ? matchingFiles.map(renderFile) : fileGroups.map(group => groupDisclosure(
+            group.name, group.name, [...group.folders.values()].reduce((sum, entries) => sum + entries.length, 0),
+            () => [...group.folders].map(([folder, entries]) => folder
+              ? groupDisclosure(`${group.name}/${folder}`, folder, entries.length, () => entries.map(renderFile))
+              : entries.map(renderFile)),
+          ))}
+
         </div>
       )}
     </>

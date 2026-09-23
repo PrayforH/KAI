@@ -333,7 +333,9 @@ export class HarnessHttpAgent extends HttpAgent {
         if (params.event.activityType === "harness.run.v1") {
           const parsed = runActivitySchema.safeParse(params.event.content);
           if (parsed.success) {
-            activityStore.publish(parsed.data, runtimeThreadId);
+            activityStore.publish(parsed.data, runtimeThreadId, {
+              replaceRun: params.event.replace === true,
+            });
             syncProcessResponse(runtimeThreadId);
           }
         }

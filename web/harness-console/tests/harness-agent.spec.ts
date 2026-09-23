@@ -602,6 +602,30 @@ it.each(["tool.request", "approval.requested", "subagent.started"])("hands visib
   activityStore.clear(); liveResponseStore.clear();
 });
 
+it("replaces compacted process snapshots without retaining old text fragments", async () => {
+  activityStore.clear(); liveResponseStore.clear();
+  const entry = (id: string, summary: string, sequence: number) => ({
+    id, summary, sequence, event_type: "message.delta", title: "过程", kind: "run",
+    status: "running", timestamp: "2026-09-16T00:00:00Z", metadata: {},
+  });
+  const events = [
+    { type: "RUN_STARTED", threadId: "thread-compact", runId: "compact" },
+    ...[[entry("fragment", "已读取", 1)], [entry("folded", "已读取资料，开始核验。", 2)]].map(items => ({
+      type: "ACTIVITY_SNAPSHOT", messageId: "activity-compact", activityType: "harness.run.v1", replace: true,
+      content: { run_id: "compact", status: "running", started_at: "2026-09-16T00:00:00Z", items, metrics: {} },
+    })),
+    { type: "RUN_FINISHED", threadId: "thread-compact", runId: "compact" },
+  ];
+  const agent = new HarnessHttpAgent({ url: "http://harness/v1/agui", fetch: async () => new Response(
+    events.map(event => `data: ${JSON.stringify(event)}\n\n`).join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  ) });
+  try {
+    await agent.runAgent({ runId: "compact" });
+    expect(activityStore.getSnapshot()?.items.map(item => item.id)).toEqual(["folded"]);
+  } finally { activityStore.clear(); liveResponseStore.clear(); }
+});
+
 it("keeps a streamed answer visible when thinking interrupts it", async () => {
   liveResponseStore.clear(); activityStore.clear();
   const answer = "答案是 42，因为上游口径按 2026 年新规调整。".repeat(10);
