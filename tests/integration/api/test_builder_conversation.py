@@ -55,8 +55,9 @@ async def test_multi_turn_preview_apply_conflict_and_scope() -> None:
         assert (await client.get(path, headers=headers)).json() == draft
         old_files = {f["path"]: f for f in comparison["before"]["files"]}
         new_files = {f["path"]: f for f in comparison["after"]["files"]}
-        assert old_files["agent.py"]["digest"] != new_files["agent.py"]["digest"]
-        assert "输出表格" in new_files["agent.py"]["content"]
+        prompt_path = "src/sapling_deep_agents/prompts/system.md"
+        assert old_files[prompt_path]["digest"] != new_files[prompt_path]["digest"]
+        assert "输出表格" in new_files["src/sapling_deep_agents/prompts/system.md"]["content"]
         forbidden_diff = await client.post(
             path + "/builder-project-diff",
             headers={**headers, "X-User-ID": "other"},
