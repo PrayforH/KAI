@@ -1017,7 +1017,7 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-prev
    rule that flattens every button in the message controls. */
 body.codex-theme-v1 .harness-assistant-message > .artifact-summary-line { order: 2; margin-top: 8px; opacity: 1; }
 body.codex-theme-v1 .harness-assistant-message > .artifact-summary-line:empty { display: none; }
-body.codex-theme-v1 .harness-assistant-message .artifact-summary-line { flex: 1 0 100%; display: flex; }
+body.codex-theme-v1 .harness-assistant-message .artifact-summary-line { flex: 0 0 auto; display: flex; align-items: center; }
 body.codex-theme-v1 .harness-assistant-message .artifact-summary-row {
   width: fit-content;
   margin: 2px 0 6px;

@@ -37,6 +37,8 @@ export function groupWorkspaceFiles<T extends WorkspaceFileLike>(files: readonly
   return order.flatMap(name => {
     const folders = groups.get(name);
     if (!folders) return [];
-    return [{ name, folders: new Map([...folders].sort(([a], [b]) => a.localeCompare(b, "zh-CN"))) }];
+    return [{ name, folders: new Map([...folders]
+      .sort(([a], [b]) => a.localeCompare(b, "zh-CN", { numeric: true }))
+      .map(([folder, entries]) => [folder, entries.sort((a, b) => a.name.localeCompare(b.name, "zh-CN", { numeric: true }))])) }];
   });
 }

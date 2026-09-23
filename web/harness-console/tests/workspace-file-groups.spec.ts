@@ -6,9 +6,14 @@ it("separates scanned PDF pages and skills without treating delivered pictures a
   const groups = groupWorkspaceFiles(files);
   expect(groups.map(group => group.name)).toEqual(['最终产出','输入文件','中间文件','技能资源','智能体配置']);
   expect([...groups[0].folders.values()].flat().map(item => item.name)).toEqual(['简历整理.md','charts/revenue.png']);
-  expect([...groups[2].folders.keys()]).toEqual(['images_cv12','images_cv3']);
+  expect([...groups[2].folders.keys()]).toEqual(['images_cv3','images_cv12']);
   expect([...groups.flatMap(group => [...group.folders.values()].flat())]).toHaveLength(files.length);
   expect(files[0].name).toBe('images_cv12/p01.png');
+});
+it("sorts pages naturally without changing the original artifact order", () => {
+  const files = [file('pdf_pages/p10.png'), file('pdf_pages/p2.png'), file('pdf_pages/p1.png')];
+  expect([...groupWorkspaceFiles(files)[0].folders.values()][0].map(item => item.name)).toEqual(['pdf_pages/p1.png', 'pdf_pages/p2.png', 'pdf_pages/p10.png']);
+  expect(files[0].name).toBe('pdf_pages/p10.png');
 });
 it("classifies Builder artifacts using the same paths as the main conversation", () => {
   const groups = groupWorkspaceFiles([file('对话文件/pdf_pages/p01.png'), file('对话文件/report.html')]);
