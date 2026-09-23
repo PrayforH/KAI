@@ -570,3 +570,26 @@ def test_a_profile_selects_its_own_backend() -> None:
         _sandbox_for_provider(
             settings.model_copy(update={"opensandbox_api_url": ""}), "opensandbox"
         )
+
+
+def test_snapshotted_bundle_python_uses_deferred_sandbox_but_imports_do_not() -> None:
+    reference = "bundle:tools/report.py:TOOLS"
+    manifest = manifest_with_tools({"python": reference}, {"builtin": "Bash"})
+    pinned = frozenset({(manifest.metadata.name, manifest.metadata.version, reference)})
+    assert not _manifests_require_remote_cli(
+        (manifest,), read_only_mcp_references=frozenset(), sandboxed_python_tools=pinned,
+    )
+    assert _manifests_require_remote_cli(
+        (manifest_with_tools({"python": "custom.module:TOOLS"}),),
+        read_only_mcp_references=frozenset(), sandboxed_python_tools=pinned,
+    )
+    other = manifest.model_copy(update={
+        "metadata": manifest.metadata.model_copy(update={"name": "other-child"}),
+    })
+    assert _manifests_require_remote_cli(
+        (other,), read_only_mcp_references=frozenset(), sandboxed_python_tools=pinned,
+    )
+    assert _manifests_require_remote_cli(
+        (manifest, manifest_with_tools({"mcp": "company-write"})),
+        read_only_mcp_references=frozenset(), sandboxed_python_tools=pinned,
+    )

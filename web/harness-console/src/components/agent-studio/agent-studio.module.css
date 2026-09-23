@@ -8416,3 +8416,8 @@
 .collaborationPanel .subagentBindRow { flex-wrap: nowrap; gap: 8px; margin-block: 12px; }
 .collaborationPanel .subagentBindRow select { min-width: 0; height: 34px; }
 .collaborationPanel .collaborationEmpty { font-size: 12px; padding-block: 12px; }
+
+.collaborationPanel .subagentBindRow select {
+  padding:0 10px; border:1px solid var(--studio-line); border-radius:6px;
+  background:var(--studio-panel); color:var(--studio-ink); font-family:inherit; font-size:12px;
+}

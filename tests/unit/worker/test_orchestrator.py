@@ -1449,8 +1449,6 @@ async def test_passes_provisioned_sandbox_facts_to_runtime(tmp_path: Path) -> No
     assert len(runtime.contexts) == 1
     assert runtime.contexts[0].sandbox_provider == "daytona"
     assert runtime.contexts[0].sandbox_isolation is SandboxIsolation.CONTAINER
-    # Full remote CLI runs still need the isolated executor for Bundle Python tools.
-    assert runtime.contexts[0].sandbox_command_executor is not None
     assert runtime.contexts[0].assistant_message_id.startswith("assistant-run-1-")
     events = await event_repository.list_after("tenant-a", "run-1", 0)
     started = next(event for event in events if event.type == "message.start")

@@ -182,3 +182,7 @@
 .builderProgress { color:var(--studio-muted); font-size:12px; line-height:1.5; padding:6px 0 12px; display:flex; align-items:center; gap:8px; }
 .builderProgress::before { content:""; width:5px; height:5px; flex:none; border-radius:50%; background:currentColor; }
 .workspaceFiles :global(.rail-bar) { min-height:48px; height:48px; box-sizing:border-box; }
+
+.conversationBody:has(> .workspaceFiles) :global(.aui-thread-viewport),
+.conversationBody:has(> .workspaceFiles) :global(.aui-thread-viewport-footer) { padding-inline:16px; }
+.conversationBody:has(> .workspaceFiles) :global(.user-task-intro h1) { font-size:24px; line-height:1.35; letter-spacing:-.02em; }

@@ -535,12 +535,15 @@ def _manifests_require_remote_cli(
     manifests: tuple[AgentManifest, ...],
     *,
     read_only_mcp_references: frozenset[str],
+    sandboxed_python_tools: frozenset[tuple[str, str, str]] = frozenset(),
 ) -> bool:
-    """Keep executable Python and non-read-only external MCP away from the Worker."""
+    """Bundle overrides run their Python in the sandbox; imports do not."""
 
     for manifest in manifests:
         for tool in manifest.spec.tools:
-            if tool.python_entry is not None:
+            if tool.python_entry is not None and (
+                manifest.metadata.name, manifest.metadata.version, tool.python_entry
+            ) not in sandboxed_python_tools:
                 return True
             if tool.mcp is not None and tool.mcp not in read_only_mcp_references:
                 return True
@@ -1373,10 +1376,11 @@ def build_production_container(
                 agent_version=session.agent_version,
                 allow_validated_graph=session.environment == "preview",
             )
-            manifests = tuple(
-                AgentManifestSnapshot.model_validate(version.snapshot).manifest
+            snapshots = tuple(
+                AgentManifestSnapshot.model_validate(version.snapshot)
                 for version in (root, *children.values())
             )
+            manifests = tuple(snapshot.manifest for snapshot in snapshots)
             if (
                 settings.sandbox_egress_enforcement == "enforced"
                 or pinned_egress_enforcement
@@ -1406,6 +1410,11 @@ def build_production_container(
             if _manifests_require_remote_cli(
                 manifests,
                 read_only_mcp_references=read_only_mcp_references,
+                sandboxed_python_tools=frozenset(
+                    (snapshot.manifest.metadata.name,
+                     snapshot.manifest.metadata.version, tool.reference)
+                    for snapshot in snapshots for tool in snapshot.python_tool_snapshots
+                ),
             ):
                 return scoped(run_backend)
             return scoped(run_sandbox)
