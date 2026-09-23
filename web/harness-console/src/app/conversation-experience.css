@@ -1114,3 +1114,14 @@ html[data-color-mode="light"] .nested-menu-panel { background: #fff; border-colo
 
 .rail-file-group .rail-file-group { margin-left: 10px; }
 .execution-publication-notice { margin: 6px 0; color: var(--codex-muted); font-size: 12px; line-height: 1.6; }
+
+/* Office previews share the rail's width; document styles stay inside a frame. */
+.rail-office-document { display:flex; flex-direction:column; height:100%; min-height:360px; }
+.rail-office-frame { flex:1; width:100%; min-height:360px; border:0; background:#e5e7eb; }
+.rail-office-sheet { display:flex; flex-direction:column; height:100%; min-height:0; }
+.rail-office-tabs { display:flex; flex:none; gap:4px; padding:8px; overflow-x:auto; border-bottom:1px solid var(--codex-border); }
+.rail-office-tabs button { flex:none; border:0; border-radius:6px; padding:6px 12px; color:var(--codex-muted); background:transparent; font:inherit; cursor:pointer; }
+.rail-office-tabs button[aria-selected="true"] { color:var(--codex-text); background:var(--codex-surface-raised, #8882); }
+.rail-office-sheet .rail-preview-table-wrap { flex:1; min-height:0; overflow:auto; }
+.rail-office-sheet .rail-preview-table td { min-width:96px; max-width:360px; white-space:pre-wrap; overflow-wrap:anywhere; }
+.rail-office-sheet-count { flex:none; margin:0; padding:8px 12px; font-size:11px; color:var(--codex-muted); }

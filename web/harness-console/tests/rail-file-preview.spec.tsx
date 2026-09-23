@@ -37,6 +37,9 @@ it("routes each file type to the right preview", () => {
   expect(previewKindFor("text/x-python", "build_flow.py")).toBe("code");
   expect(previewKindFor("image/png", "chart.png")).toBe("image");
   expect(previewKindFor("application/pdf", "deck.pdf")).toBe("pdf");
+  expect(previewKindFor("application/octet-stream", "表格.xlsx")).toBe("xlsx");
+  expect(previewKindFor("application/octet-stream", "文档.docx")).toBe("docx");
+  expect(previewKindFor("application/octet-stream", "演示.pptx")).toBe("pptx");
   expect(previewKindFor("text/html", "flow.html")).toBe("html");
   expect(previewKindFor("application/octet-stream", "flow.htm")).toBe("html");
   expect(previewKindFor("application/zip", "bundle.zip")).toBe("none");

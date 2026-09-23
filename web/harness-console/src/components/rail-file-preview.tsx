@@ -1,5 +1,7 @@
 "use client";
 
+import { OfficeFilePreview } from "./office-file-preview";
+import { officeKindFor, type OfficeKind } from "../lib/office-preview";
 import { useEffect, useMemo, useState } from "react";
 import { requireAuthenticatedResponse } from "../lib/client-auth";
 import { ProjectSourceEditor } from "./agent-studio/project-source-editor";
@@ -19,13 +21,15 @@ export interface PreviewTarget {
 const TEXT_PREVIEW_LIMIT_BYTES = 2 * 1024 * 1024;
 const CSV_PREVIEW_ROWS = 200;
 /** Kinds the browser renders on its own, so the rail never downloads the bytes. */
-const FRAMED_KINDS = new Set<PreviewKind>(["image", "pdf", "html", "none"]);
+const FRAMED_KINDS = new Set<PreviewKind>(["image", "pdf", "html", "none", "xlsx", "docx", "pptx", "legacy-office"]);
 
-export type PreviewKind = "markdown" | "csv" | "json" | "code" | "html" | "image" | "pdf" | "none";
+export type PreviewKind = OfficeKind | "markdown" | "csv" | "json" | "code" | "html" | "image" | "pdf" | "none";
 
 export function previewKindFor(mediaType: string, name: string): PreviewKind {
   const type = (mediaType || "").toLowerCase();
   const extension = name.toLowerCase().split(".").pop() ?? "";
+  const office = officeKindFor(type, name);
+  if (office) return office;
   if (type.startsWith("image/")) return "image";
   if (type === "application/pdf" || extension === "pdf") return "pdf";
   if (type === "text/html" || ["html", "htm"].includes(extension)) return "html";
@@ -177,7 +181,9 @@ export function RailFilePreview({ target }: { target: PreviewTarget }) {
         </div>
       </header>
       <div className="rail-preview-body">
-        {kind === "image" ? (
+        {["xlsx", "docx", "pptx", "legacy-office"].includes(kind) ? (
+          <OfficeFilePreview key={url} url={url} kind={kind as OfficeKind} name={target.name} size={target.size_bytes} />
+        ) : kind === "image" ? (
           <img className="rail-preview-image" src={url} alt={target.name} />
         ) : kind === "pdf" ? (
           <iframe className="rail-preview-pdf" src={url} title={target.name} />
