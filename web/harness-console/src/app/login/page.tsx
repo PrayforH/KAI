@@ -148,7 +148,9 @@ export default function LoginPage() {
               )}
               {hasSso && <div className="login-divider"><span>或使用邮箱</span></div>}
 
-              <form onSubmit={submit}>
+              {/* method=post so a not-yet-hydrated or JS-disabled submit cannot
+                  degrade to GET and put the password in the URL. */}
+              <form method="post" onSubmit={submit}>
                 {mode === "register" && (
                   <label>姓名<input name="display_name" autoComplete="name" required placeholder="你希望显示的名称" /></label>
                 )}
