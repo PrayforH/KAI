@@ -2317,6 +2317,14 @@ export const studioClient = {
       forgetStudioDraft(draftId);
       return version;
     }),
+  listDraftRevisions: (draftId: string, beforeRevision?: number, signal?: AbortSignal) =>
+    request<{revision: number; updatedAt: string}[]>(`drafts/${encodeURIComponent(draftId)}/revisions${beforeRevision ? `?beforeRevision=${beforeRevision}` : ""}`, {signal}),
+  getDraftRevisionFiles: (draftId: string, revision: number, signal?: AbortSignal) =>
+    request<DeepagentsProjectSource>(`drafts/${encodeURIComponent(draftId)}/revisions/${revision}/files`, {signal}),
+  getPersonalAgentVersionFiles: (agentId: string, version: string, signal?: AbortSignal) =>
+    agentRequest<DeepagentsProjectSource>(`${encodeURIComponent(agentId)}/versions/${encodeURIComponent(version)}/files`, {signal}),
+  getDraftVersionFiles: (draftId: string, revision: number, signal?: AbortSignal) =>
+    request<DeepagentsProjectSource>(`drafts/${encodeURIComponent(draftId)}/version-files?expectedRevision=${revision}`, {signal}),
   listPersonalAgentVersions: (agentId: string) =>
     agentRequest<PersonalAgentVersion[]>(`${encodeURIComponent(agentId)}/versions`),
   promotePersonalAgentVersion: (agentId: string, version: string) =>

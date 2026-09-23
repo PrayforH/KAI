@@ -51,6 +51,29 @@ describe("DeepAgents source workspace", () => {
     await act(async () => button("还原对话区").click());
     expect(host.querySelector("pre")?.textContent).toBe("meeting instructions");
   });
+  it("collapses skill attachments, preserves preview and searches inside closed groups", async () => {
+    const draft = {...DEFAULT_STUDIO_DRAFT, id:"draft-grouped", skills:[{name:"archify",description:"Diagrams",instructions:"Draw diagrams",files:[{path:"assets/template.html",content:"<html>report</html>"},{path:"scripts/render.mjs",content:"render()"}]}]};
+    await act(async () => root.render(<AgentWorkspaceFiles draft={draft} baseline={draft} turns={[]} onClose={() => {}}/>));
+    const group = host.querySelector<HTMLDetailsElement>(".rail-file-group")!;
+    expect(group.open).toBe(false);
+    expect(group.textContent).toContain("技能 · archify");
+    expect(group.textContent).toContain("3 个文件");
+    expect(host.querySelectorAll(".workbench-rail-file")).toHaveLength(1);
+    await act(async () => {group.open=true;group.dispatchEvent(new Event("toggle"));});
+    expect(host.querySelectorAll(".workbench-rail-file")).toHaveLength(4);
+    await act(async () => [...host.querySelectorAll<HTMLButtonElement>(".workbench-rail-file")].find(b=>b.textContent?.includes("template.html"))!.click());
+    expect(host.querySelector("pre")?.textContent).toBe("<html>report</html>");
+    await act(async () => button("文件列表").click());
+    await act(async () => {group.open=false;group.dispatchEvent(new Event("toggle"));});
+    await act(async () => button("搜索任务文件").click());
+    const search = host.querySelector<HTMLInputElement>('input[type="search"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value")!.set!.call(search,"render.mjs");
+      search.dispatchEvent(new Event("input",{bubbles:true}));
+    });
+    expect(host.querySelectorAll(".workbench-rail-file")).toHaveLength(1);
+    expect(host.querySelector(".workbench-rail-file")?.textContent).toContain("render.mjs");
+  });
   it("navigates actual files, copies selected code and downloads the displayed revision", async () => {
     const clipboard = { writeText: vi.fn().mockResolvedValue(undefined) };
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: clipboard });

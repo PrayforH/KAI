@@ -14,8 +14,11 @@ from harness.api.dependencies import (
     require_identity,
 )
 from harness.api.schemas import AgentCatalogItem, PublishAgentRequest
+from harness.core.manifest import AgentManifestSnapshot
 from harness.core.models import AgentVersion
 from harness.sharing.models import WorkspaceAgent, WorkspaceAgentStatus
+from harness.studio.deepagents_export import DeepagentsProjectSource
+from harness.studio.version_source import version_source
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
@@ -153,6 +156,31 @@ async def list_personal_agent_versions(
         )
         for version in versions
     ]
+
+
+@router.get("/{agent_id}/versions/{version}/files", response_model=DeepagentsProjectSource)
+async def read_personal_version_files(
+    agent_id: str,
+    version: str,
+    identity: Annotated[Identity, Depends(require_identity)],
+    container: Annotated[ApiContainer, Depends(get_container)],
+) -> DeepagentsProjectSource:
+    ensure_permission(identity, "tasks:read")
+    _, releases = await container.team_spaces.list_personal_releases(
+        identity.tenant_id, identity.user_id, agent_id
+    )
+    selected = next((item for item in releases if item.version == version), None)
+    if selected is None:
+        raise HTTPException(status_code=404, detail="发布版本不存在")
+    try:
+        snapshot = AgentManifestSnapshot.model_validate(selected.snapshot)
+        if snapshot.content_hash != selected.manifest_hash:
+            raise ValueError("snapshot hash mismatch")
+        return version_source(snapshot)
+    except ValueError:
+        raise HTTPException(
+            status_code=409, detail="此发布版本的文件快照不完整，无法比较"
+        ) from None
 
 
 @router.post(

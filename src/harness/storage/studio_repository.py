@@ -4,12 +4,13 @@ from typing import Any, cast
 
 from sqlalchemy import CursorResult, delete, select, update
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from harness.core.errors import ConflictError, NotFoundError
 from harness.storage.database import SessionFactory
-from harness.storage.models import AgentDraftRow
+from harness.storage.models import AgentDraftRevisionRow, AgentDraftRow
 from harness.studio.catalog import RETIRED_PLATFORM_MCP_REFERENCES
-from harness.studio.models import AgentDraft, AgentDraftSummary
+from harness.studio.models import AgentDraft, AgentDraftSummary, DraftRevisionSummary
 
 AGENT_DRAFT_SCHEMA_VERSION = 1
 
@@ -100,6 +101,61 @@ class PostgresAgentDraftRepository:
     def __init__(self, sessions: SessionFactory) -> None:
         self._sessions = sessions
 
+    async def _archive_current(
+        self, session: AsyncSession, draft: AgentDraft, expected_revision: int,
+    ) -> None:
+        row = await session.scalar(select(AgentDraftRow).where(
+            AgentDraftRow.tenant_id == draft.tenant_id,
+            AgentDraftRow.owner_user_id == draft.created_by,
+            AgentDraftRow.draft_id == draft.draft_id,
+        ).with_for_update())
+        if row is None:
+            raise NotFoundError(f"Agent draft not found: {draft.draft_id}")
+        if row.revision != expected_revision:
+            raise ConflictError("Agent draft revision changed")
+        key = (row.tenant_id, row.owner_user_id, row.draft_id, row.revision)
+        if await session.get(AgentDraftRevisionRow, key) is None:
+            session.add(AgentDraftRevisionRow(
+                tenant_id=row.tenant_id, owner_user_id=row.owner_user_id,
+                draft_id=row.draft_id, revision=row.revision,
+                updated_at=row.updated_at, payload=dict(row.payload),
+            ))
+
+    async def list_revisions(
+        self, tenant_id: str, owner_user_id: str, draft_id: str,
+        *, before_revision: int | None = None, limit: int = 50,
+    ) -> list[DraftRevisionSummary]:
+        current = await self.get(tenant_id, owner_user_id, draft_id)
+        statement = select(AgentDraftRevisionRow.revision, AgentDraftRevisionRow.updated_at).where(
+            AgentDraftRevisionRow.tenant_id == tenant_id,
+            AgentDraftRevisionRow.owner_user_id == owner_user_id,
+            AgentDraftRevisionRow.draft_id == draft_id,
+            AgentDraftRevisionRow.revision < current.revision,
+        )
+        if before_revision is not None:
+            statement = statement.where(AgentDraftRevisionRow.revision < before_revision)
+        async with self._sessions() as session:
+            rows = (await session.execute(statement.order_by(
+                AgentDraftRevisionRow.revision.desc()).limit(limit))).all()
+        values = [DraftRevisionSummary(revision=r[0], updatedAt=r[1]) for r in rows]
+        if before_revision is None or current.revision < before_revision:
+            values.insert(0, DraftRevisionSummary(
+                revision=current.revision, updatedAt=current.updated_at))
+        return values[:limit]
+
+    async def get_revision(
+        self, tenant_id: str, owner_user_id: str, draft_id: str, revision: int,
+    ) -> AgentDraft:
+        current = await self.get(tenant_id, owner_user_id, draft_id)
+        if current.revision == revision:
+            return current
+        async with self._sessions() as session:
+            row = await session.get(AgentDraftRevisionRow,
+                                    (tenant_id, owner_user_id, draft_id, revision))
+            if row is None:
+                raise NotFoundError("草稿修订未留存")
+            return AgentDraft.model_validate(row.payload)
+
     async def add(self, draft: AgentDraft) -> None:
         async with self._sessions() as session:
             session.add(
@@ -135,6 +191,7 @@ class PostgresAgentDraftRepository:
         if parent.revision != expected_revision + 1:
             raise ConflictError("Agent draft replacement must increment revision once")
         async with self._sessions() as session:
+            await self._archive_current(session, parent, expected_revision)
             result = await session.execute(
                 update(AgentDraftRow)
                 .where(
@@ -258,6 +315,7 @@ class PostgresAgentDraftRepository:
             )
         )
         async with self._sessions() as session:
+            await self._archive_current(session, draft, expected_revision)
             result = await session.execute(statement)
             if cast(CursorResult[Any], result).rowcount:
                 await session.commit()
@@ -293,6 +351,11 @@ class PostgresAgentDraftRepository:
         async with self._sessions() as session:
             result = await session.execute(statement)
             if cast(CursorResult[Any], result).rowcount:
+                await session.execute(delete(AgentDraftRevisionRow).where(
+                    AgentDraftRevisionRow.tenant_id == tenant_id,
+                    AgentDraftRevisionRow.owner_user_id == owner_user_id,
+                    AgentDraftRevisionRow.draft_id == draft_id,
+                ))
                 await session.commit()
                 return
             actual_revision = await session.scalar(
@@ -364,6 +427,11 @@ class PostgresAgentDraftRepository:
                         payload=payload,
                     )
                 )
+                await session.execute(update(AgentDraftRevisionRow).where(
+                    AgentDraftRevisionRow.tenant_id == tenant_id,
+                    AgentDraftRevisionRow.owner_user_id == from_user_id,
+                    AgentDraftRevisionRow.draft_id == row.draft_id,
+                ).values(owner_user_id=to_user_id))
                 await session.delete(row)
             await session.commit()
             return len(rows)

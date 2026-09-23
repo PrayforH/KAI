@@ -35,10 +35,10 @@ export function AgentWorkspaceFiles({draft, baseline, turns, onClose}: {
   const changes = useMemo(() => projectSourceChanges(comparison),[comparison]);
   const files: RailFile[] = [...source.files, ...changes.filter(change => change.status === "deleted").map(change => change.before!)].map(file => {
     const change = changes.find(change => change.path === file.path);
-    return {artifact_id:`source:${file.path}`,name:file.path,media_type:"text/plain",size_bytes:file.size,change:change ? ({added:"已新增",modified:"已修改",deleted:"已删除"} as const)[change.status] : undefined};
+    return {artifact_id:`source:${file.path}`,name:file.path,media_type:"text/plain",size_bytes:file.size,group:file.path.startsWith("skills/") ? `技能 · ${file.path.split("/")[1]}` : undefined,change:change ? ({added:"已新增",modified:"已修改",deleted:"已删除"} as const)[change.status] : undefined};
   });
   const artifacts = [...new Map(turns.flatMap(turn => turn.result.artifacts.filter(file => file.status === "ready")).map(file => [file.artifact_id,file])).values()];
-  files.push(...artifacts.map(file => ({artifact_id:file.artifact_id,name:`对话文件/${file.name}`,media_type:file.media_type,downloadHref:studioClient.tryRunArtifactHref(file.artifact_id)})));
+  files.unshift(...artifacts.map(file => ({artifact_id:file.artifact_id,name:`对话文件/${file.name}`,media_type:file.media_type,downloadHref:studioClient.tryRunArtifactHref(file.artifact_id)})));
   function preview(file: RailFile) {
     if (!file.artifact_id.startsWith("source:")) return <RailFilePreview target={file} />;
     const change = changes.find(change => change.path === file.name);
@@ -47,6 +47,6 @@ export function AgentWorkspaceFiles({draft, baseline, turns, onClose}: {
   }
   return <div className={styles.workspaceFiles} data-expanded={expanded}>
     <WorkbenchRail open onClose={onClose} expanded={expanded} onToggleExpanded={() => setExpanded(value => !value)} threadId={draft.id} observabilityHref={null} runPhase={null}
-      expandIcon={<PanelExpandIcon expanded={expanded} />} workspace={{files,loading:false,error:"",renderPreview:preview,note:`内部文件 · 相对本次打开时 r${baseline.revision}${draft.revision !== baseline.revision ? ` → r${draft.revision}` : ""}`}} />
+      expandIcon={<PanelExpandIcon expanded={expanded} />} workspace={{files,loading:false,error:"",renderPreview:preview,note:undefined}} />
   </div>;
 }

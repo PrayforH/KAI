@@ -130,6 +130,7 @@ from harness.studio.models import (
     CreateAgentDraftRequest,
     CreatedInternalSubagent,
     CreateInternalSubagentRequest,
+    DraftRevisionSummary,
     DraftValidationResult,
     ImportedAgentBundle,
     ImportedSkill,
@@ -183,6 +184,7 @@ from harness.studio.try_run import (
     build_codex_loop,
     final_text,
 )
+from harness.studio.version_source import draft_version_source, version_source
 from harness.studio.web_configuration import (
     ConfigureWebRequest,
     WebConfiguration,
@@ -2455,6 +2457,60 @@ async def download_nexau_bundle(
             "X-Agent-Export-Format": "nexau",
         },
     )
+
+
+@router.get("/drafts/{draft_id}/revisions", response_model=list[DraftRevisionSummary])
+async def list_draft_revisions(
+    draft_id: str,
+    actor: Annotated[StudioActor, Depends(require_studio_reader)],
+    service: Annotated[AgentStudioService, Depends(get_studio_service)],
+    before_revision: Annotated[int | None, Query(alias="beforeRevision", ge=1)] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+) -> list[DraftRevisionSummary]:
+    try:
+        return await service.list_revisions(
+            actor.tenant_id, actor.user_id, draft_id, before_revision=before_revision, limit=limit,
+        )
+    except (ConflictError, NotFoundError) as error:
+        raise _translate_domain_error(error) from error
+
+
+@router.get("/drafts/{draft_id}/revisions/{revision}/files")
+async def read_draft_revision_files(
+    draft_id: str,
+    revision: int,
+    actor: Annotated[StudioActor, Depends(require_studio_reader)],
+    service: Annotated[AgentStudioService, Depends(get_studio_service)],
+) -> DeepagentsProjectSource:
+    try:
+        draft = await service.get_revision(actor.tenant_id, actor.user_id, draft_id, revision)
+        return draft_version_source(draft)
+    except (ConflictError, NotFoundError) as error:
+        raise _translate_domain_error(error) from error
+
+
+@router.get("/drafts/{draft_id}/version-files")
+async def read_draft_version_files(
+    draft_id: str,
+    actor: Annotated[StudioActor, Depends(require_studio_reader)],
+    service: Annotated[AgentStudioService, Depends(get_studio_service)],
+    expected_revision: Annotated[int, Query(alias="expectedRevision", ge=1)],
+) -> DeepagentsProjectSource:
+    try:
+        draft = await service.get(actor.tenant_id, actor.user_id, draft_id)
+        if draft.revision != expected_revision:
+            raise ConflictError("草稿已更新，请刷新版本历史")
+        compiled = await service.compile_frozen(
+            actor.tenant_id, actor.user_id, draft_id, draft.spec
+        )
+        latest = await service.get(actor.tenant_id, actor.user_id, draft_id)
+        if latest.revision != expected_revision:
+            raise ConflictError("草稿已更新，请刷新版本历史")
+        return version_source(compiled.report.snapshot, revision=draft.revision)
+    except (ConflictError, NotFoundError) as error:
+        raise _translate_domain_error(error) from error
+    except DraftCompilationError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
 
 @router.get("/drafts/{draft_id}/deepagents-project/files")

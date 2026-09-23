@@ -6,7 +6,7 @@ import asyncio
 from typing import Protocol
 
 from harness.core.errors import ConflictError, NotFoundError
-from harness.studio.models import AgentDraft, AgentDraftSummary
+from harness.studio.models import AgentDraft, AgentDraftSummary, DraftRevisionSummary
 
 
 class AgentDraftRepository(Protocol):
@@ -17,6 +17,15 @@ class AgentDraftRepository(Protocol):
     async def add(self, draft: AgentDraft) -> None: ...
 
     async def get(self, tenant_id: str, owner_user_id: str, draft_id: str) -> AgentDraft: ...
+
+    async def list_revisions(
+        self, tenant_id: str, owner_user_id: str, draft_id: str,
+        *, before_revision: int | None = None, limit: int = 50,
+    ) -> list[DraftRevisionSummary]: ...
+
+    async def get_revision(
+        self, tenant_id: str, owner_user_id: str, draft_id: str, revision: int,
+    ) -> AgentDraft: ...
 
     async def list_for_user(self, tenant_id: str, owner_user_id: str) -> list[AgentDraft]: ...
 
@@ -56,6 +65,7 @@ class InMemoryAgentDraftRepository:
 
     def __init__(self) -> None:
         self._items: dict[tuple[str, str, str], AgentDraft] = {}
+        self._history: dict[tuple[str, str, str, int], AgentDraft] = {}
         self._lock = asyncio.Lock()
 
     async def add(self, draft: AgentDraft) -> None:
@@ -82,8 +92,31 @@ class InMemoryAgentDraftRepository:
                 raise ConflictError("父智能体已更新，请刷新后重试")
             if parent.revision != expected_revision + 1 or child_key in self._items:
                 raise ConflictError("子智能体创建冲突，请刷新后重试")
+            self._history[(*parent_key, current.revision)] = current
             self._items[parent_key] = parent
             self._items[child_key] = child
+
+    async def list_revisions(
+        self, tenant_id: str, owner_user_id: str, draft_id: str,
+        *, before_revision: int | None = None, limit: int = 50,
+    ) -> list[DraftRevisionSummary]:
+        current = await self.get(tenant_id, owner_user_id, draft_id)
+        snapshots = [v for k, v in self._history.items()
+                     if k[:3] == (tenant_id, owner_user_id, draft_id)] + [current]
+        return [DraftRevisionSummary(revision=d.revision, updatedAt=d.updated_at)
+                for d in sorted(snapshots, key=lambda d: d.revision, reverse=True)
+                if before_revision is None or d.revision < before_revision][:limit]
+
+    async def get_revision(
+        self, tenant_id: str, owner_user_id: str, draft_id: str, revision: int,
+    ) -> AgentDraft:
+        current = await self.get(tenant_id, owner_user_id, draft_id)
+        if current.revision == revision:
+            return current
+        result = self._history.get((tenant_id, owner_user_id, draft_id, revision))
+        if result is None:
+            raise NotFoundError("草稿修订未留存")
+        return result
 
     async def list_for_user(self, tenant_id: str, owner_user_id: str) -> list[AgentDraft]:
         return sorted(
@@ -126,6 +159,7 @@ class InMemoryAgentDraftRepository:
                 )
             if draft.revision != expected_revision + 1:
                 raise ConflictError("Agent draft replacement must increment revision once")
+            self._history[(*key, current.revision)] = current
             self._items[key] = draft
 
     async def delete(
@@ -146,6 +180,7 @@ class InMemoryAgentDraftRepository:
                     f"expected={expected_revision} actual={current.revision}"
                 )
             del self._items[key]
+            self._history = {k: v for k, v in self._history.items() if k[:3] != key}
 
     async def get_by_agent(self, tenant_id: str, agent_id: str) -> AgentDraft | None:
         for draft in self._items.values():
@@ -175,6 +210,11 @@ class InMemoryAgentDraftRepository:
         ]
         async with self._lock:
             for key in moved_keys:
+                for history_key in list(self._history):
+                    if history_key[:3] == key:
+                        self._history[(tenant_id, to_user_id, key[2], history_key[3])] = (
+                            self._history.pop(history_key)
+                        )
                 draft = self._items.pop(key)
                 self._items[(tenant_id, to_user_id, key[2])] = draft.model_copy(
                     update={

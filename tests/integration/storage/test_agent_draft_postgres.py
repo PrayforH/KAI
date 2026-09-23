@@ -77,3 +77,11 @@ async def test_postgres_agent_draft_rejects_unknown_payload_schema(
 
     with pytest.raises(ValueError, match="Unsupported Agent Draft schema version"):
         await repository.get(original.tenant_id, original.created_by, original.draft_id)
+
+
+@pytest.mark.asyncio
+async def test_postgres_revision_history(database: DatabaseFixture) -> None:
+    from tests.contracts.agent_draft_repository import exercise_revision_history
+
+    _, sessions = database
+    await exercise_revision_history(PostgresAgentDraftRepository(sessions))

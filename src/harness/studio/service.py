@@ -75,6 +75,7 @@ from harness.studio.models import (
     CreateAgentDraftRequest,
     CreatedInternalSubagent,
     CreateInternalSubagentRequest,
+    DraftRevisionSummary,
     DraftSkill,
     DraftSkillFile,
     DraftSubagent,
@@ -704,6 +705,23 @@ class AgentStudioService:
 
     async def get(self, tenant_id: str, owner_user_id: str, draft_id: str) -> AgentDraft:
         return await self._load_draft(tenant_id, owner_user_id, draft_id)
+
+    async def list_revisions(
+        self, tenant_id: str, user_id: str, draft_id: str,
+        *, before_revision: int | None = None, limit: int = 50,
+    ) -> list[DraftRevisionSummary]:
+        current = await self.get(tenant_id, user_id, draft_id)
+        return await self._repository.list_revisions(
+            tenant_id, current.created_by, draft_id, before_revision=before_revision, limit=limit,
+        )
+
+    async def get_revision(
+        self, tenant_id: str, user_id: str, draft_id: str, revision: int,
+    ) -> AgentDraft:
+        current = await self.get(tenant_id, user_id, draft_id)
+        return await self._repository.get_revision(
+            tenant_id, current.created_by, draft_id, revision,
+        )
 
     async def list_workspace_drafts(
         self, tenant_id: str, user_id: str, space_id: str

@@ -3502,3 +3502,73 @@ async def test_playground_history_restores_turns_and_excludes_other_scopes() -> 
         for override in ({"X-User-ID": "other"}, {"X-Tenant-ID": "other"}):
             denied = await client.get(url, headers={**headers, **override})
             assert denied.status_code == 404, denied.text
+
+
+@pytest.mark.asyncio
+async def test_version_files_compare_immutable_publications_and_saved_draft() -> None:
+    headers = {"Authorization": f"Bearer {SERVICE_TOKEN}",
+               "X-Tenant-ID": "tenant-a", "X-User-ID": "builder-a"}
+    async with AsyncClient(transport=ASGITransport(app=app()), base_url="http://test") as client:
+        response = await client.post("/v1/studio/drafts", headers=headers,
+                                     json=draft_request("version-diff-agent"))
+        response.raise_for_status()
+        draft = response.json()
+        path = f"/v1/studio/drafts/{draft['draftId']}"
+        history = await client.get(path + "/revisions", headers=headers)
+        assert [item["revision"] for item in history.json()] == [1]
+        original_revision = await client.get(path + "/revisions/1/files", headers=headers)
+        assert original_revision.status_code == 200, original_revision.text
+        initial = await client.get(path + "/version-files?expectedRevision=1", headers=headers)
+        assert initial.status_code == 200, initial.text
+        published = await client.post(path + "/publish", headers=headers,
+                                      json={"expectedRevision": 1})
+        assert published.status_code == 200, published.text
+        versions = f"/v1/agents/{draft['agentId']}/versions"
+        older_path = versions + "/0.1.0/files"
+        older = await client.get(older_path, headers=headers)
+        assert older.status_code == 200, older.text
+        assert older.json()["files"] == initial.json()["files"]
+        current = await client.get(path, headers=headers)
+        spec = current.json()["spec"]
+        spec["systemPrompt"] += "\nAlways include a concise summary.\n"
+        spec["version"] = "0.2.0"
+        saved = await client.put(path, headers={**headers, "If-Match": current.headers["etag"]},
+                                json={"expectedRevision": current.json()["revision"], "spec": spec})
+        assert saved.status_code == 200, saved.text
+        revision = saved.json()["revision"]
+        source = await client.get(path + f"/version-files?expectedRevision={revision}",
+                                  headers=headers)
+        assert source.status_code == 200, source.text
+        prompt = next(f for f in source.json()["files"] if f["path"] == "AGENTS.md")
+        assert "Always include a concise summary." in prompt["content"]
+        stale = await client.get(path + "/version-files?expectedRevision=1", headers=headers)
+        assert stale.status_code == 409
+        denied = await client.get(older_path, headers={**headers, "X-User-ID": "other"})
+        assert denied.status_code == 404
+        denied = await client.get(path + f"/version-files?expectedRevision={revision}",
+                                  headers={**headers, "X-User-ID": "other"})
+        assert denied.status_code == 404
+        missing = await client.get(versions + "/9.9.9/files", headers=headers)
+        assert missing.status_code == 404
+        second = await client.post(path + "/publish", headers=headers,
+                                   json={"expectedRevision": revision})
+        assert second.status_code == 200, second.text
+        newer = await client.get(versions + "/0.2.0/files", headers=headers)
+        assert newer.status_code == 200, newer.text
+        assert newer.json()["files"] == source.json()["files"]
+        assert (await client.get(older_path, headers=headers)).json() == older.json()
+        original_again = await client.get(path + "/revisions/1/files", headers=headers)
+        assert original_again.json() == original_revision.json()
+        history = await client.get(path + "/revisions", headers=headers)
+        assert [item["revision"] for item in history.json()] == [4, 3, 2, 1]
+        page = await client.get(path + "/revisions?beforeRevision=3&limit=1", headers=headers)
+        assert [item["revision"] for item in page.json()] == [2]
+        saved_revision = await client.get(path + "/revisions/3/files", headers=headers)
+        assert saved_revision.status_code == 200
+        assert "Always include a concise summary." in next(
+            f["content"] for f in saved_revision.json()["files"] if f["path"] == "AGENTS.md")
+        for suffix in ["/revisions", "/revisions/1/files"]:
+            denied = await client.get(path + suffix, headers={**headers, "X-User-ID": "other"})
+            assert denied.status_code == 404
+        missing = await client.get(path + "/revisions/99/files", headers=headers)
+        assert missing.status_code == 404

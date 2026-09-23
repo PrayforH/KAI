@@ -546,6 +546,11 @@ class ImportedAgentBundle(StudioModel):
     warnings: tuple[str, ...] = ()
 
 
+class DraftRevisionSummary(StudioModel):
+    revision: int
+    updated_at: datetime = Field(alias="updatedAt")
+
+
 class AgentDraftSummary(StudioModel):
     parent_draft_id: str | None = Field(default=None, alias="parentDraftId")
     draft_id: str = Field(alias="draftId")

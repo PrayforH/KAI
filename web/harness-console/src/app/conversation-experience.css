@@ -1105,3 +1105,13 @@ body.codex-theme-v1:has(.console-shell) .task-project-toolbar + .task-list { pad
 .nested-menu button:disabled { color: var(--codex-faint); cursor: not-allowed; }
 .account-theme { display: block; padding: 4px 0; }
 html[data-color-mode="light"] .nested-menu-panel { background: #fff; border-color: #ddd; }
+
+.rail-file-group {margin-top:6px;}
+.rail-file-group > summary {display:flex;align-items:center;gap:8px;padding:9px 8px;cursor:pointer;font-size:12px;color:var(--codex-ink);border-radius:6px;list-style:none;}
+.rail-file-group > summary::-webkit-details-marker {display:none;}
+.rail-file-group > summary::before {content:"";width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg);transition:transform 120ms;}
+.rail-file-group[open] > summary::before {transform:rotate(45deg);}
+.rail-file-group > summary:hover {background:var(--codex-surface-hover,rgba(128,128,128,.08));}
+.rail-file-group > summary:focus-visible {outline:2px solid var(--codex-ink);outline-offset:-2px;}
+.rail-file-group > summary > span {flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.rail-file-group > summary > small {color:var(--codex-faint);font-size:11px;}

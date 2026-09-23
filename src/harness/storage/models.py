@@ -295,6 +295,16 @@ class AgentDraftRow(Base):
     payload: Mapped[dict[str, Any]] = mapped_column(JSON)
 
 
+class AgentDraftRevisionRow(Base):
+    __tablename__ = "agent_draft_revisions"
+    tenant_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    owner_user_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    draft_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    revision: Mapped[int] = mapped_column(Integer, primary_key=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
 class CapabilityCatalogRow(Base):
     __tablename__ = "capability_catalogs"
     __table_args__ = (

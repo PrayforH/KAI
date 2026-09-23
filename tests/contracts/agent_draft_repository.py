@@ -148,3 +148,49 @@ async def exercise_concurrent_replace(repository: AgentDraftRepository) -> None:
     assert len(conflicts) == 1
     stored = await repository.get("tenant-a", "builder-a", original.draft_id)
     assert stored in (first, second)
+
+
+async def exercise_revision_history(repository: AgentDraftRepository) -> None:
+    original = draft(draft_id="draft-history")
+    await repository.add(original)
+    changed = original.model_copy(update={
+        "revision": 2,
+        "spec": original.spec.model_copy(update={"description": "Updated description"}),
+        "updated_at": NOW + timedelta(seconds=1),
+    })
+    await repository.replace(1, changed)
+    assert await repository.get_revision("tenant-a", "builder-a", original.draft_id, 1) == original
+    assert await repository.get_revision("tenant-a", "builder-a", original.draft_id, 2) == changed
+    assert [r.revision for r in await repository.list_revisions(
+        "tenant-a", "builder-a", original.draft_id)] == [2, 1]
+    assert [r.revision for r in await repository.list_revisions(
+        "tenant-a", "builder-a", original.draft_id, before_revision=2, limit=1)] == [1]
+    try:
+        await repository.replace(1, changed)
+    except ConflictError:
+        pass
+    else:
+        raise AssertionError("stale save must fail")
+    assert await repository.get_revision("tenant-a", "builder-a", original.draft_id, 1) == original
+    for tenant, owner in [("tenant-b", "builder-a"), ("tenant-a", "other")]:
+        try:
+            await repository.get_revision(tenant, owner, original.draft_id, 1)
+        except NotFoundError:
+            pass
+        else:
+            raise AssertionError("history must be owner isolated")
+    await repository.move_owner("tenant-a", "builder-a", "new-owner", original.spec.name)
+    assert await repository.get_revision("tenant-a", "new-owner", original.draft_id, 1) == original
+    try:
+        await repository.list_revisions("tenant-a", "builder-a", original.draft_id)
+    except NotFoundError:
+        pass
+    else:
+        raise AssertionError("old owner cannot read transferred history")
+    await repository.delete("tenant-a", "new-owner", original.draft_id, 2)
+    try:
+        await repository.get_revision("tenant-a", "new-owner", original.draft_id, 1)
+    except NotFoundError:
+        pass
+    else:
+        raise AssertionError("deleted draft history cannot be read")

@@ -4051,7 +4051,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
       <aside ref={versionHistoryRailRef} id="personal-version-history" className={`${styles.contractRail} ${styles.versionHistoryRail}`} aria-label="智能体版本历史" role="dialog" aria-modal="true" aria-hidden={!versionHistoryOpen} data-open={versionHistoryOpen}>
         {versionHistoryOpen && <PanelResizeHandle panel="history" />}
         <div className={styles.contractHeader}><div><span>VERSIONS</span><strong>版本历史</strong></div><div className={styles.contractHeaderActions}><span className={styles.riskBadge}>{personalVersions.length} 个版本</span><button type="button" ref={versionHistoryCloseRef} aria-label="关闭版本历史" onClick={() => {setVersionHistoryOpen(false);setPromoteTarget("");}}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 4.5 7 7m0-7-7 7" /></svg></button></div></div>
-        {versionHistoryContent}
+        {versionHistoryOpen && versionHistoryContent}
       </aside>
       {editorOpened.current && <AgentBuilderAssistant
         workspaceTarget={workspaceTarget}

@@ -86,6 +86,7 @@ export interface RailFile {
   thread_id?: string;
   change?: "已修改" | "已新增" | "已删除";
   downloadHref?: string;
+  group?: string;
 }
 
 /** Grok-style row glyph: one small icon carries the file type. */
@@ -160,6 +161,7 @@ export function WorkbenchRail({
   runPhase: string | null;
 }) {
   const [query, setQuery] = useState("");
+  const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
   const [searchOpen, setSearchOpen] = useState(false);
   const [listVisible, setListVisible] = useState(true);
   const [loadedError, setFileError] = useState("");
@@ -194,6 +196,7 @@ export function WorkbenchRail({
   // A task switch shows that task's files, never the previous selection.
   useEffect(() => {
     setTrail({ items: [null], index: 0 });
+    setExpandedGroups([]);
   }, [threadId]);
 
   useEffect(() => {
@@ -230,6 +233,41 @@ export function WorkbenchRail({
 
   const refreshFiles = () => workspace ? workspace.onRefresh?.() : setRefresh(value => value + 1);
   const selectedFile = files.find(file => file.artifact_id === selected?.artifact_id);
+  const matchingFiles = files.filter(file => file.name.toLowerCase().includes(query.trim().toLowerCase()));
+  const fileGroups = new Map<string, RailFile[]>();
+  for (const file of files) {
+    const group = file.group ?? "";
+    const entries = fileGroups.get(group);
+    if (entries) entries.push(file); else fileGroups.set(group, [file]);
+  }
+  function renderFile(file: RailFile) {
+    const kind = previewKindFor(file.media_type ?? "", file.name ?? "");
+    const previewable = kind !== "none";
+    const target: PreviewTarget = {
+      artifact_id: file.artifact_id,
+      name: file.name,
+      media_type: file.media_type,
+      size_bytes: file.size_bytes,
+      thread_id: file.thread_id ?? threadId,
+    };
+    return (
+      <div className="rail-file-row" key={file.artifact_id}>
+        <button
+          type="button"
+          className="workbench-rail-file"
+          aria-pressed={selected?.artifact_id === file.artifact_id}
+          onClick={() => show(target)}
+          title={previewable ? `在侧栏预览 ${file.name}` : `查看 ${file.name}`}
+        >
+          <span className="rail-file-icon" data-kind={kind}>{railFileIcon(kind)}</span>
+          <span className="workbench-rail-file-name">{file.name}</span>
+          <span className="workbench-rail-file-size" data-change={file.change}>{file.change || formatFileSize(file.size_bytes)}</span>
+        </button>
+        {(!workspace || file.downloadHref) && <a className="rail-download" href={file.downloadHref ?? `/api/harness/artifacts/${encodeURIComponent(file.artifact_id)}?thread_id=${encodeURIComponent(threadId)}`} download={file.name} title={`下载 ${file.name}`} aria-label={`下载 ${file.name}`}>↓</a>}
+      </div>
+    );
+
+  }
   const fileList = (
     <>
       {workspace?.note && <p className="workbench-rail-files-empty">{workspace.note}</p>}
@@ -256,34 +294,16 @@ export function WorkbenchRail({
         <span className="workbench-rail-files-empty">生成的文档、图片与其他成果会保存在这里。</span>
       ) : (
         <div className="workbench-rail-files">
-          {!files.some((file) => file.name.toLowerCase().includes(query.toLowerCase())) && <p>没有匹配的文件</p>}
-          {files.filter((file) => file.name.toLowerCase().includes(query.toLowerCase())).map((file) => {
-            const kind = previewKindFor(file.media_type ?? "", file.name ?? "");
-            const previewable = kind !== "none";
-            const target: PreviewTarget = {
-              artifact_id: file.artifact_id,
-              name: file.name,
-              media_type: file.media_type,
-              size_bytes: file.size_bytes,
-              thread_id: file.thread_id ?? threadId,
-            };
-            return (
-              <div className="rail-file-row" key={file.artifact_id}>
-                <button
-                  type="button"
-                  className="workbench-rail-file"
-                  aria-pressed={selected?.artifact_id === file.artifact_id}
-                  onClick={() => show(target)}
-                  title={previewable ? `在侧栏预览 ${file.name}` : `查看 ${file.name}`}
-                >
-                  <span className="rail-file-icon" data-kind={kind}>{railFileIcon(kind)}</span>
-                  <span className="workbench-rail-file-name">{file.name}</span>
-                  <span className="workbench-rail-file-size" data-change={file.change}>{file.change || formatFileSize(file.size_bytes)}</span>
-                </button>
-                {(!workspace || file.downloadHref) && <a className="rail-download" href={file.downloadHref ?? `/api/harness/artifacts/${encodeURIComponent(file.artifact_id)}?thread_id=${encodeURIComponent(threadId)}`} download={file.name} title={`下载 ${file.name}`} aria-label={`下载 ${file.name}`}>↓</a>}
-              </div>
-            );
-          })}
+          {!matchingFiles.length && <p>没有匹配的文件</p>}
+          {query.trim() ? matchingFiles.map(renderFile) : [...fileGroups].map(([group, entries]) => group ? (
+            <details className="rail-file-group" key={group} open={expandedGroups.includes(group)} onToggle={event => {
+              const open = event.currentTarget.open;
+              setExpandedGroups(current => open ? current.includes(group) ? current : [...current, group] : current.filter(value => value !== group));
+            }}>
+              <summary><span>{group}</span><small>{entries.length} 个文件</small></summary>
+              {expandedGroups.includes(group) && entries.map(renderFile)}
+            </details>
+          ) : entries.map(renderFile))}
         </div>
       )}
     </>
