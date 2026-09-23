@@ -10,15 +10,18 @@ vi.mock("../src/lib/studio-client", () => ({ studioClient: { catalog: vi.fn(), l
 let root: Root; let host: HTMLDivElement;
 const record = { revision: 3, catalog: { mcpServers: [], executionProfiles: [{ profileId: "local", enabled: true, sandboxProvider: "local", networkAccess: ["external"] }] } };
 const close = vi.fn(); const registered = vi.fn();
+const browserCrypto = globalThis.crypto;
 beforeEach(async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   vi.resetAllMocks();
+  // Match HTTP 173: randomUUID is absent outside a secure browser context.
+  vi.stubGlobal("crypto", { getRandomValues: browserCrypto.getRandomValues.bind(browserCrypto) });
   vi.mocked(studioClient.catalog).mockResolvedValue(record as never);
   vi.mocked(studioClient.listMcpCredentials).mockResolvedValue([]);
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   await act(async () => root.render(<McpCatalogControlPlane startInForm onClose={close} onRegistered={registered} />));
 });
-afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
+afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.unstubAllGlobals(); });
 const dialog = () => document.querySelector('[role="dialog"]')!;
 const button = (label: string) => [...dialog().querySelectorAll("button")].find(item => item.textContent === label)!;
 async function fill(placeholder: string, value: string) {

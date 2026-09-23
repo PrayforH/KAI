@@ -41,7 +41,11 @@ const MANAGED_AUTH_HEADER_NAMES = new Set([
 ]);
 const EDITABLE_PLATFORM_MCP_REFERENCES = new Set<string>();
 
-function newMcpReference() { return `mcp-${crypto.randomUUID().slice(0, 8)}`; }
+function newMcpReference() {
+  // getRandomValues is available on the HTTP validation environment too.
+  const bytes = crypto.getRandomValues(new Uint8Array(4));
+  return `mcp-${Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("")}`;
+}
 
 const EMPTY_MCP: McpCapability = {
   reference: "",
