@@ -74,3 +74,20 @@ describe("project and task sections share one column", () => {
     expect(css).toMatch(/\.task-list-item,\s*[\s\S]*?\.task-list-item\.is-active\s*\{[^}]*padding:\s*4px 6px 4px 34px;/);
   });
 });
+
+describe("sidebar rows match the sidebar children", () => {
+  const appStyles = readFileSync(join(process.cwd(), "src/app/styles.css"), "utf8");
+
+  it("keeps the account block in the last row so it stays at the bottom", () => {
+    // brand · 新建任务 · nav · the scrolling 项目/任务 column · account
+    expect(appStyles).toMatch(
+      /\.task-sidebar\s*\{[^}]*grid-template-rows:\s*auto auto auto minmax\(0,\s*1fr\) auto;/,
+    );
+    expect(appStyles).not.toMatch(
+      /\.task-sidebar\s*\{[^}]*grid-template-rows:\s*auto auto auto auto minmax\(0,\s*1fr\) auto;/,
+    );
+    // The list region and the account block are both direct children of it.
+    expect(sidebar).toContain('className="task-list-scroll"');
+    expect(sidebar).toContain('className="task-sidebar-account"');
+  });
+});
