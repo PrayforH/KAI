@@ -22,7 +22,7 @@
 
 ## 浏览器首字计时边界（追加）
 
-同线程 `run_8d3222b2b7524a9a81924fca7ad6ddbb` 用新 Run ID 绑定 DOM 观察：`run.queued` 后服务端首 `message.delta` 约 3.08 s，`run.succeeded` 约 4.32 s，`history.snapshot` 约 5.42 s；浏览器 `.assistant-answer` 首次非空约 5.66 s，终态正文稳定 `OK`。该单次样本的终态交接有约 1.1 s 长尾，但不是 p95。另两次探针误把上一轮答案/被重建的 assistant 行当作新首字，判无效，不入统计。短文本候选窗口（180ms）、history GET/导入、Markdown defer/平滑可能叠加；目前没有可归因的分段浏览器标记。一次关闭 live/durable 二次平滑的本地实验通过测试，但只能解释几十毫秒且未证明 1.1 s 收益，已撤回，未部署。
+同线程 `run_8d3222b2b7524a9a81924fca7ad6ddbb` 用新 Run ID 绑定 DOM 观察：`run.queued` 后服务端首 `message.delta` 约 3.08 s，`run.succeeded` 约 4.32 s，`history.snapshot` 约 5.42 s；浏览器 `.assistant-answer` 首次非空约 5.66 s，终态正文稳定 `OK`。该单次样本的终态交接有约 1.1 s 长尾，但不是 p95。另两次探针误把上一轮答案/被重建的 assistant 行当作新首字，判无效，不入统计。该长尾与首次终态 `/history` 回退路径有关：当没有 `history.snapshot` 时，`src/harness/agui/routes.py` 在折叠 RunEvent 后同步等待 `EventService.append` 写回 snapshot。`run_8d3222...` 的 snapshot 比 `run.succeeded` 晚约 1.10 s，DOM 正文更晚约 0.24 s；这是时间相关而非单独阶段的因果证明。不能简单改为请求内 fire-and-forget/FastAPI BackgroundTasks：进程退出会丢写入，并发 GET 可重复写 snapshot。若要移出关键路径，应先设计幂等的持久投影/可恢复任务，并补并发和重启测试；本轮未修改该路径。一次关闭 live/durable 二次平滑的本地实验通过测试，但只能解释几十毫秒且未证明 1.1 s 收益，已撤回，未部署。
 
 ## 限制与后续
 
