@@ -1214,17 +1214,6 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
     ? { builtin: "内置工具", python: "Python 算子", mcp: "MCP 服务器" }[capabilityFocus]
     : activeSection === "skills" ? "技能" : sectionLabels[activeSection];
 
-  // The catalog card owns the configuration entry: opening an agent normally
-  // closes the full configuration editor, so the explicit "编辑" action selects
-  // the draft and opens that editor in one step.
-  async function openFullConfiguration(draftId: string) {
-    if (draftId !== draft.id && !await selectDraft(draftId)) return;
-    setBuilderAssistantMode("run");
-    setReturnParentId(null);
-    setViewMode("editor");
-    openConfiguration("identity");
-  }
-
   async function openTryRun() {
     setTestRequest(current => current + 1);
     const current = dirty ? await saveDraft() : draft;
@@ -2202,33 +2191,12 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                     <span>{agent.skillCount ? `${agent.skillCount} 个 Skill` : "无需 Skill"}</span>
                     <span>{agent.networkToolsEnabled ? "含联网工具" : "仅内部能力"}</span>
                   </div>
-                  <div className={styles.agentCatalogFooter}>
-                    <code>v{agent.version}</code>
-                    <span className={styles.agentCardAction} aria-hidden="true">
-                      查看工作区 →
-                    </span>
-                  </div>
                 </button>
                 <details className={`${styles.actionMenu} ${styles.agentCatalogMenu}`} data-dismiss-on-outside>
                   <summary aria-label={`${agent.displayName}的更多操作`} title="更多操作">
                     <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" fill="currentColor"><circle cx="5" cy="10" r="1.2"/><circle cx="10" cy="10" r="1.2"/><circle cx="15" cy="10" r="1.2"/></svg>
                   </summary>
                   <div className={styles.actionMenuPopover}>
-                    <button
-                      type="button"
-                      className={styles.actionMenuItem}
-                      data-icon="✎"
-                      disabled={saving || Boolean(switchingDraftId)}
-                      onClick={(event) => {
-                        event.currentTarget.closest("details")?.removeAttribute("open");
-                        void openFullConfiguration(agent.draftId);
-                      }}
-                    >
-                      <span>
-                        <strong>编辑</strong>
-                        <small>进入完整配置</small>
-                      </span>
-                    </button>
                     <button
                       type="button"
                       className={`${styles.actionMenuItem} ${styles.actionMenuDanger}`}

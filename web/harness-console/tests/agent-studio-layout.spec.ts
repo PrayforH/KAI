@@ -310,12 +310,10 @@ describe("Agent Studio management page", () => {
     expect(workbench.match(/m4\.5 4\.5 7 7m0-7-7 7/g)).toHaveLength(1);
   });
 
-  it("labels the catalog card action instead of boxing it into an icon", () => {
-    // The action carries the text 查看工作区; a fixed 30px square (plus nowrap)
-    // painted the label outside the card.
-    expect(styles).toMatch(/\.agentCardAction\s*\{[^}]*display:\s*inline-flex;/s);
-    expect(styles).not.toMatch(/\.agentCardAction\s*\{[^}]*width:\s*30px;/s);
-    expect(styles).toMatch(/\.agentCardAction\s*\{[^}]*white-space:\s*nowrap;/s);
+  it("keeps catalog cards compact without a version and action footer", () => {
+    expect(workbench).not.toContain("styles.agentCatalogFooter");
+    expect(workbench).not.toContain("查看工作区 →");
+    expect(styles).toContain("grid-template-rows: 44px minmax(0, 1fr) auto;");
   });
 
   it("keeps Studio focused and exposes the published Agent as a task action", () => {
@@ -352,20 +350,13 @@ describe("Agent Studio management page", () => {
     expect(workbench).toContain("data-dismiss-on-outside");
   });
 
-  it("enters the full configuration from the agent card menu, not from a header menu", () => {
-    // The card's overflow menu owns the configuration entry: one 编辑 item that
-    // opens the full configuration, next to the destructive action.
+  it("keeps only deletion in the agent card menu", () => {
     const cardMenuStart = workbench.indexOf("styles.agentCatalogMenu");
     expect(cardMenuStart).toBeGreaterThan(-1);
     const cardMenu = workbench.slice(cardMenuStart, workbench.indexOf("</details>", cardMenuStart));
-    expect(cardMenu).toContain("<strong>编辑</strong>");
-    expect(cardMenu).toContain("进入完整配置");
-    expect(cardMenu).toContain("void openFullConfiguration(agent.draftId)");
+    expect(cardMenu).not.toContain("<strong>编辑</strong>");
     expect(cardMenu).toContain("删除智能体");
-    // Selecting a draft closes the full configuration editor, so the entry must
-    // reopen it explicitly instead of only entering the editor shell.
-    expect(workbench).toContain("async function openFullConfiguration(draftId: string)");
-    expect(workbench).toContain('openConfiguration("identity")');
+    expect(workbench).not.toContain("async function openFullConfiguration(draftId: string)");
     // No per-section entry list, and no separate header configuration menu.
     expect(workbench).not.toContain("编辑智能体配置");
     expect(workbench).not.toContain("完整配置 · 分区定位");
@@ -458,7 +449,7 @@ describe("Agent Studio management page", () => {
     expect(workbench).toContain("setSwitchingDraftId(draftId)");
     expect(workbench).toContain("draftSwitchingRef.current = false");
     expect(workbench).toContain("disabled={saving || Boolean(switchingDraftId)}");
-    expect(workbench).toContain("查看工作区 →");
+    expect(workbench).toContain("aria-label={`打开${agent.displayName}`}");
     expect(workbench).toContain("版本历史");
   });
 
