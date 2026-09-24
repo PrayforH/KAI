@@ -49,5 +49,5 @@ Langfuse 三条新版样本中 `harness.mcp.resolve` 为 11–14 ms（旧版五�
 
 1. 对 SDK `connect` 的 1.4 s 研究安全复用或预热边界：Run 级 hooks、cwd、权限、MCP 凭据和 session store 不能跨 Run 泄漏；先做 SDK 能力验证与 fencing/会话所有权设计，不直接建全局进程池。
 2. 对冷资产 staging 1.2 s 长尾做版本级只读缓存/完整性校验实验，禁止把可变 Run workspace 直接挂到共享 cache。
-3. 补浏览器首字 Performance，当前 p95 是 API SSE 首文本，不包含 Next/React。
-4. 多样本交错 A/B、工具/附件/多角色回归和失败注入，之后再判断是否合入 develop。
+3. 补浏览器首字 Performance。当前 p95 是 API SSE 首文本，不包含 Next/React。IAB 打开 174:3301 并读取了控制台，但“新建任务”定位器和坐标点按均未产生可验证的新会话，因此**浏览器端验收未完成**；未在已有用户任务中发性能探针，也未把 API 首字误报为 DOM 首字。
+4. 多样本交错 A/B、工具/附件/多角色回归和失败注入，之后再判断是否合入 develop。真实 `Skill` 调用已被 `production-orchestrator` 策略阻断，尚需一个授权 fixture 才能验证 Skill 内容加载。
