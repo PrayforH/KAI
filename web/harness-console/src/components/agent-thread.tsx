@@ -1264,26 +1264,20 @@ function HarnessAssistantText(part: TextMessagePartProps) {
   const live = useLiveResponse();
   const isLast = useAuiState((state) => state.message.isLast);
   const messageId = useAuiState((state) => state.message.id);
+  const status = useAuiState((state) => state.message.status);
   const parts = useAuiState((state) => state.message.content);
   const partIndex =
     aui.part.source === "message" && aui.part.query.type === "index"
       ? aui.part.query.index
       : -1;
-  const liveSuppressed = shouldSuppressNativeAssistantText(
-    ownsLiveResponse(isLast, messageId, live.messageId),
-    live,
-  );
-  const intermediate = isIntermediateAssistantTextPart(parts, partIndex);
-  if (liveSuppressed || intermediate) {
-    return (
-      <span
-        hidden
-        data-debug-text-index={partIndex}
-        data-debug-text-live-suppressed={liveSuppressed ? "true" : "false"}
-        data-debug-text-intermediate={intermediate ? "true" : "false"}
-        data-debug-text-parts={parts.map((item) => item.type === "tool-call" ? item.toolName : item.type).join(",")}
-      />
-    );
+  if (
+    status?.type === "complete" ||
+    shouldSuppressNativeAssistantText(
+      ownsLiveResponse(isLast, messageId, live.messageId),
+      live,
+    ) || isIntermediateAssistantTextPart(parts, partIndex)
+  ) {
+    return null;
   }
   return (
     <div
@@ -1292,6 +1286,17 @@ function HarnessAssistantText(part: TextMessagePartProps) {
       aria-busy={part.status.type === "running"}
     >
       <MarkdownText />
+    </div>
+  );
+}
+
+export function DurableAssistantResponse({ text, directStream, complete }: { text: string; directStream: boolean; complete: boolean }) {
+  if (!complete || directStream || !text) return null;
+  return (
+    <div className="assistant-answer" data-streaming="false" aria-busy={false}>
+      <TextMessagePartProvider text={text} isRunning={false}>
+        <MarkdownText />
+      </TextMessagePartProvider>
     </div>
   );
 }
@@ -1454,7 +1459,7 @@ export function turnOwnsRun(
   );
 }
 
-function HarnessAssistantMessage() {
+export function HarnessAssistantMessage() {
   const conversationScope = useConversationScope();
   const live = useLiveResponse();
   const isLast = useAuiState((state) => state.message.isLast);
@@ -1463,7 +1468,6 @@ function HarnessAssistantMessage() {
   const runView = useRunViewModel();
   const showIncompleteRecovery = shouldOfferIncompleteRetry(messageStatus);
   const content = useAuiState((state) => state.message.content);
-  const parts = useAuiState((state) => state.message.parts);
   const hasVideoGeneration = content.some(
     (part) => part.type === "data" && part.name === VIDEO_GENERATION_PART_NAME,
   );
@@ -1504,17 +1508,13 @@ function HarnessAssistantMessage() {
       data-test-run={conversationScope && messageId.startsWith("assistant-") ? messageId.replace(/^assistant-/, "") : undefined}
       data-turn-answer={copyText.replace(/\s+/g, " ").slice(0, 360)}
       data-direct-stream={directStream ? "true" : "false"}
-      data-debug-content-parts={content.map((part) => part.type).join(",")}
-      data-debug-render-parts={parts.map((part) => part.type).join(",")}
-      data-debug-live-owner={live.messageId ?? ""}
-      data-debug-live-status={live.status}
-      data-debug-live-visible={live.visible ? "true" : "false"}
     >
       <TurnActivity
         hasDurableProjection={hasRunActivityToolCall(content)}
         messageId={messageId}
       />
       <LiveAssistantResponse live={live} ownsMessage={ownsLive} />
+      <DurableAssistantResponse text={copyText} directStream={directStream} complete={messageStatus?.type === "complete"} />
       <AssistantMessage.Content
         components={{
           Text: HarnessAssistantText,
