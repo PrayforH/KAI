@@ -92,6 +92,7 @@ import {
   type RunStreamStatus,
   useRunStream,
 } from "../lib/run-stream-store";
+import { AUTHORING_PROGRESS_PART_NAME, AuthoringProgressPart } from "./authoring-progress";
 import { normalizeMessageText } from "../lib/message-text";
 import { inputArtifactIdFromAttachment } from "../lib/input-attachment-adapter";
 import type { TaskAgent } from "../lib/task-agent-catalog";
@@ -1507,6 +1508,7 @@ function HarnessAssistantMessage() {
           data: {
             by_name: {
               [VIDEO_GENERATION_PART_NAME]: VideoGenerationMessagePart,
+              [AUTHORING_PROGRESS_PART_NAME]: AuthoringProgressPart,
             },
           },
         }}

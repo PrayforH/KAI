@@ -1,4 +1,5 @@
 "use client";
+import { AUTHORING_PROGRESS_PART_NAME, type AuthoringProgress } from "../authoring-progress";
 import { FeedbackToast } from "../feedback-toast";
 import { isAgentConfigurationRequest } from "../../lib/agent-conversation-intent";
 import type { ThreadMessageLike, CompleteAttachment } from "@assistant-ui/react";
@@ -55,6 +56,7 @@ type ConversationMessage = {
   files?: string[];
   artifactIds?: string[];
   materialContext?: string;
+  progress?: AuthoringProgress;
   tone?: "success" | "danger" | "muted";
 };
 
@@ -200,6 +202,7 @@ export function AgentBuilderAssistant({
   const [buildProgress, setBuildProgress] = useState("");
   const [buildReply, setBuildReply] = useState("");
   const [buildMessageId, setBuildMessageId] = useState("workspace-progress");
+  const [buildStartedAt, setBuildStartedAt] = useState(() => new Date().toISOString());
   const buildStreamAbortRef = useRef<AbortController | null>(null);
   const runStreamAbortRef = useRef<AbortController | null>(null);
 
@@ -417,6 +420,9 @@ export function AgentBuilderAssistant({
   }
 
   async function createDraft(value: string, materialContext = "") {
+    const replyId = createRandomId();
+    const startedAt = new Date().toISOString();
+    setBuildMessageId(replyId); setBuildStartedAt(startedAt);
     const epoch = epochRef.current;
     const controller = new AbortController();
     buildStreamAbortRef.current?.abort(); buildStreamAbortRef.current = controller;
@@ -433,8 +439,9 @@ export function AgentBuilderAssistant({
       sessionKeyRef.current = `run:${nextDraft.id}`;
       setRecommendation(created.recommendation); setSelectedSkills([]);
       setMessages((current) => [...current, {
-        id: createRandomId(),
+        id: replyId,
         role: "assistant",
+        progress: {id: replyId, startedAt, completedAt: new Date().toISOString()},
         tone: "success",
         text: `${created.recommendation?.generatedByModel ? "已由模型生成" : "已创建"}“${nextDraft.displayName}”草稿。可以继续告诉我修改要求，或继续输入实际问题测试效果。${attachments.length ? "已将附件作为构建参考材料。" : ""}`,
       }]);
@@ -487,7 +494,8 @@ export function AgentBuilderAssistant({
   async function converse(value: string, materialContext = "", inputFiles = attachments) {
     const epoch = epochRef.current;
     const replyId = createRandomId();
-    setBuildMessageId(replyId);
+    const startedAt = new Date().toISOString();
+    setBuildMessageId(replyId); setBuildStartedAt(startedAt);
     setEditing(true);
     setBuildProgress(""); setBuildReply("");
     const controller = new AbortController();
@@ -521,6 +529,7 @@ export function AgentBuilderAssistant({
       if (epoch !== epochRef.current) return;
       const action = reply.action ?? "edit";
       if (action !== "run" && action !== "rerun") setMessages((current) => [...current, { id: replyId, role: "assistant", text: reply.reply,
+        progress: {id: replyId, startedAt, completedAt: new Date().toISOString()},
         files: reply.creatorRuns?.flatMap(run => run.artifactNames),
         artifactIds: reply.creatorRuns?.flatMap(run => run.artifactIds),
       }]);
@@ -575,16 +584,9 @@ export function AgentBuilderAssistant({
     setApplying(true);
     setError("");
     try {
-      let comparison: DeepagentsProjectComparison | undefined;
-      let comparisonError = "";
-      try {
-        comparison = await studioClient.previewBuilderProjectDiff(activeDraft.id, {
-          expectedRevision: proposal.baseRevision, changes: reviewedChanges,
-        });
-      } catch (reason) {
-        comparisonError = reason instanceof Error ? reason.message : "无法生成项目代码差异";
-      }
-      if (epoch !== epochRef.current) return;
+      // Export is deliberately on demand: saving a small configuration change
+      // must not wait for two full project/Skill exports.
+      const comparison = comparisonPending ? codeComparison : undefined;
       const saved = apiDraftToStudioDraft(await studioClient.applyBuilderEdit(activeDraft.id, {
         expectedRevision: proposal.baseRevision, changes: reviewedChanges,
       }));
@@ -602,7 +604,7 @@ export function AgentBuilderAssistant({
       const text = localConflict
         ? "修改已保存，但主区域出现了新的未保存编辑，已保留本地内容；请重新加载或处理保存冲突后继续。"
         : `已更新“${saved.displayName}”草稿（修订 ${saved.revision}），未发布。${result && !terminal ? "当前试跑仍使用原配置；结束后可用新配置重新试跑。" : "可以继续提出修改要求。"}`;
-      setMessages((current) => [...current, { id: createRandomId(), role: "assistant", tone: "success", text: text + (comparisonError ? ` 代码差异未生成：${comparisonError}。可在版本历史中查看配置改动。` : "") }]);
+      setMessages((current) => [...current, { id: createRandomId(), role: "assistant", tone: "success", text }]);
       if (rerun && !localConflict && lastTestPrompt) {
         const test = proposal.testTurn;
         await startRun(test?.prompt ?? lastTestPrompt, saved, false, test?.artifactIds ?? lastArtifactIds, test?.files ?? currentFiles);
@@ -634,9 +636,14 @@ export function AgentBuilderAssistant({
     const files = ids.map((id, index) => ({id, name: names[index] || `附件 ${index + 1}`}));
     let accepted = false;
     try {
+      if (ids.length) {
+        setBuildMessageId(createRandomId()); setBuildStartedAt(new Date().toISOString());
+        setBuildReply(""); setBuildProgress("");
+      }
       setReadingMaterials(Boolean(ids.length));
       const materialContext = ids.length && (!draftReady || authoring) ? (await studioClient.readBuilderMaterials(ids, activeDraft.modelRoute)).context : "";
       if (epoch !== epochRef.current) return false;
+      setReadingMaterials(false);
       setMessages(current => [...current, {id:messageId, role:"user",text:value, artifactIds:ids,files:names,materialContext}]);
       accepted = Boolean(!draftReady ? await createDraft(value, materialContext) : authoring ? await converse(value, materialContext, files) : await startRun(value, undefined, true, ids, names));
       return accepted;
@@ -769,11 +776,17 @@ export function AgentBuilderAssistant({
       const answer = projected.find(item => item.id === `assistant-${message.runId}`);
       if (answer) transcript.push(answer);
     } else transcript.push({
-      id: message.id, role: message.role, content: [{type:"text",text:message.text}],
+      id: message.id, role: message.role, content: [
+        ...(message.progress ? [{type:"data" as const, name:AUTHORING_PROGRESS_PART_NAME, data:message.progress}] : []),
+        {type:"text",text:message.text},
+      ],
       ...(message.role === "user" ? {attachments: (message.artifactIds ?? []).map((id, index) => ({id,name:message.files?.[index] || `附件 ${index + 1}`,type:/\.(png|jpe?g|gif|webp|avif)$/i.test(message.files?.[index] || "") ? "image" : "document",content:[{type:"file",data:id,mimeType:"application/octet-stream"}],status:{type:"complete"}} as CompleteAttachment))} : {}),
     });
   }
-  if (editing || creating || readingMaterials) transcript.push({id:buildMessageId,role:"assistant",content:buildReply ? [{type:"text",text:buildReply}] : [],status:{type:"running"}});
+  if (editing || creating || readingMaterials) transcript.push({id:buildMessageId,role:"assistant",content:[
+    {type:"data", name:AUTHORING_PROGRESS_PART_NAME, data:{id:buildMessageId, startedAt:buildStartedAt, summary:buildProgress || (readingMaterials ? "正在读取附件…" : "正在生成…"), responseStarted:Boolean(buildReply)}},
+    ...(buildReply ? [{type:"text" as const,text:buildReply}] : []),
+  ],status:{type:"running"}});
   return createPortal(<div className={workspaceStyles.agentaPlayground} data-mode={playgroundMode}>
     {playgroundMode === "build" && <section className={workspaceStyles.configurationColumn} aria-label="智能体结构">
       <div className={workspaceStyles.configurationSlot} hidden={codeView}>{configuration}</div>
@@ -785,7 +798,7 @@ export function AgentBuilderAssistant({
         {codeView && <AgentProjectCode key={activeDraft.id} draftId={draftReady ? activeDraft.id : ""} revision={activeDraft.revision} name={activeDraft.name || activeDraft.displayName} dirty={hasUnsavedChanges} comparison={codeComparison} comparisonPending={comparisonPending} directoryTarget={playgroundMode === "build" ? codeDirectoryTarget : undefined} expanded={codeExpanded} onExpandedChange={setCodeExpanded} onClose={() => { setCodeView(false); setCodeExpanded(false); }} />}
         <div className={workspaceStyles.preservedPanel} hidden={(codeView && (playgroundMode === "chat" || codeExpanded))}>
           <AgentTestPanel navigation={<>{playgroundMode === "chat" && onExpandConfiguration && <button type="button" aria-label="展开配置栏" title="展开配置栏" aria-expanded="false" onClick={() => {setAssetsOpen(false); onExpandConfiguration?.();}}><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="2" /><path d="M8 4v12m3-9 3 3-3 3" /></svg></button>}<strong>对话</strong></>} draft={activeDraft} userId={userId} onConfigureKnowledge={onConfigureKnowledge} sessionRail={false} savedRuns={savedRuns} earlierTurns={hasEarlierTurns} onEarlierTurns={() => void selectSession(testSessionId, true)} historyLoading={historyLoading} historyError={historyError} examples={[]} draftId={activeDraft.id} revision={activeDraft.revision} agentName={activeDraft.displayName} model={activeDraft.model} turns={visibleTurns} history={turns} sessionId={testSessionId} conversationEpoch={testConversationEpoch}
-            messageOverride={transcript} inputSeed={inputSeed} composerAccessory={proposalCard} afterLastMessage={<>{(editing || creating || readingMaterials) && <div className={workspaceStyles.builderProgress} role="status">{buildProgress || (readingMaterials ? "正在读取附件…" : "正在生成…")}</div>}{reviewContent}</>}
+            messageOverride={transcript} inputSeed={inputSeed} composerAccessory={proposalCard} afterLastMessage={reviewContent}
             onSelectSession={id => void selectSession(id)} busy={active || editing || applying || readingMaterials} ready={true} dirty={hasUnsavedChanges} error={error} selectedRunId={selectedRunId}
             onSend={sendUnified}
             onRerun={(value,ids,names) => proposal ? Promise.resolve(false) : startRun(value, undefined, false, ids, names)}

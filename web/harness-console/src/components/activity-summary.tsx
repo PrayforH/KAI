@@ -710,9 +710,13 @@ function ActionRow({ action, active = false }: { action: ActionNode; active?: bo
 export function ActivitySummary({
   activity,
   responseStarted = false,
+  detailsAvailable = true,
+  progressText,
 }: {
   activity: RunActivity;
   responseStarted?: boolean;
+  detailsAvailable?: boolean;
+  progressText?: string;
 }) {
   const detailed = useDetailedProcess();
   const observed = useRunViewModel();
@@ -811,7 +815,8 @@ export function ActivitySummary({
         {hasContent && <span className="execution-chevron" aria-hidden="true" />}
       </Disclosure>
       {publicationNotice?.summary && <p className="execution-publication-notice" role="status">{publicationNotice.summary}</p>}
-      {runDetails ? (
+      {active && progressText && <p className="execution-publication-notice" role="status">{progressText}</p>}
+      {runDetails && detailsAvailable ? (
         <button
           type="button"
           className="execution-details-trigger"

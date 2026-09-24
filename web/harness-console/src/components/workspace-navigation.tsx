@@ -142,6 +142,7 @@ export function WorkspaceNavigation({
       <Link
         className={current ? styles.navigationActive : styles.navigationLink}
         href={workspace.href}
+        prefetch={false}
         aria-current={current ? "page" : undefined}
         title={collapsed ? label : undefined}
         key={workspace.id}

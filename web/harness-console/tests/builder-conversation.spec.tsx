@@ -344,17 +344,30 @@ it("collapses configuration when opening files and preserves the conversation", 
   expect(host.querySelector(".workbench-rail")).toBeNull();
 });
 
-it("captures project comparison before apply without replacing the conversation", async () => {
-  const source = { revision: 1, filename: "agent.zip", digest: "a", framework_version: "0.7.13", files: [] };
-  vi.mocked(studioClient.previewBuilderProjectDiff).mockResolvedValue({before: source, after: {...source, revision: 2}});
+it("saves configuration without waiting for a full project export", async () => {
+  vi.mocked(studioClient.previewBuilderProjectDiff).mockImplementation(() => new Promise(() => {}));
   act(() => enableWorkspace());
   await send("修改系统提示词，输出改成表格");
   await click("应用修改");
-  expect(studioClient.previewBuilderProjectDiff).toHaveBeenCalledWith("draft-multi", {expectedRevision: 1, changes: {systemPrompt: "输出表格"}});
-  expect(vi.mocked(studioClient.previewBuilderProjectDiff).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(studioClient.applyBuilderEdit).mock.invocationCallOrder[0]);
+  expect(studioClient.previewBuilderProjectDiff).not.toHaveBeenCalled();
+  expect(studioClient.applyBuilderEdit).toHaveBeenCalledWith("draft-multi", {expectedRevision: 1, changes: {systemPrompt: "输出表格"}});
   expect(host.querySelector('[aria-label="测试代码差异"]')).toBeNull();
   expect(host.querySelector('[aria-label="消息输入"]')).not.toBeNull();
   expect(updated.mock.lastCall?.[0].revision).toBe(2);
+});
+
+it("exports only on explicit preview and reuses that comparison when applying", async () => {
+  const source = { revision: 1, filename: "agent.zip", digest: "a", framework_version: "0.7.13", files: [] };
+  vi.mocked(studioClient.previewBuilderProjectDiff).mockResolvedValue({before: source, after: {...source, revision: 2}});
+  await act(async () => enableWorkspace());
+  await send("修改系统提示词，输出改成表格");
+  await click("查看代码差异 ↗");
+  expect(studioClient.previewBuilderProjectDiff).toHaveBeenCalledTimes(1);
+  expect(host.querySelector('[aria-label="测试代码差异"]')?.textContent).toContain("待应用");
+  await click("应用修改");
+  expect(studioClient.previewBuilderProjectDiff).toHaveBeenCalledTimes(1);
+  expect(studioClient.applyBuilderEdit).toHaveBeenCalledTimes(1);
+  expect(host.querySelector('[aria-label="测试代码差异"]')?.textContent).toContain("已应用");
 });
 
 it("creates from the actual brief and reviews recommended Skills before installation", async () => {
@@ -513,11 +526,17 @@ it("keeps streamed builder text in one message and separates processing status",
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 100)); });
   const answer = host.querySelector('.harness-assistant-message');
   expect(answer?.textContent).toContain("建议输出");
+  expect(answer?.querySelector(".execution-ribbon.phase-running")).not.toBeNull();
+  expect(answer?.querySelector('.execution-state-sweep[data-running="true"]')).not.toBeNull();
+  expect(answer?.textContent?.indexOf("正在检查配置")).toBeLessThan(answer?.textContent?.indexOf("建议输出") ?? 0);
   await act(async () => emit!({type: "builder.reply", text: "建议输出表格"}));
   expect(host.querySelector('.harness-assistant-message')).toBe(answer);
   await act(async () => finish!({baseRevision: 1, reply: "建议输出表格", changes: {}, changedFields: []}));
   expect(host.querySelector('.harness-assistant-message')).toBe(answer);
   expect(host.textContent).not.toContain("正在检查配置…");
+  expect(answer?.querySelector(".execution-ribbon.phase-completed")).not.toBeNull();
+  expect(answer?.querySelector(".execution-details-trigger")).toBeNull();
+  expect(answer?.querySelector('[data-running="true"]')).toBeNull();
 });
 
 
@@ -537,7 +556,7 @@ it("reviews selected and edited configuration changes above the common composer"
   });
   await click("应用修改");
   const expected = {expectedRevision: 1, changes: {systemPrompt: "由用户修改的提示词", capabilityCatalogRevision: 7}};
-  expect(studioClient.previewBuilderProjectDiff).toHaveBeenCalledWith("draft-multi", expected);
+  expect(studioClient.previewBuilderProjectDiff).not.toHaveBeenCalled();
   expect(studioClient.applyBuilderEdit).toHaveBeenCalledWith("draft-multi", expected);
 });
 
