@@ -31,3 +31,8 @@
 @keyframes appear { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
 @media (max-width: 620px) { .viewport { right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); } }
+
+/* Keep persistent errors above the composer's send/retry control row. */
+:global(body:has(.harness-composer-shell)) .viewport {
+  bottom: max(88px, calc(env(safe-area-inset-bottom) + 72px));
+}
