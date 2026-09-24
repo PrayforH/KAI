@@ -49,5 +49,5 @@ Langfuse 三条新版样本中 `harness.mcp.resolve` 为 11–14 ms（旧版五�
 
 1. 对 SDK `connect` 的 1.4 s 研究安全复用或预热边界：Run 级 hooks、cwd、权限、MCP 凭据和 session store 不能跨 Run 泄漏；先做 SDK 能力验证与 fencing/会话所有权设计，不直接建全局进程池。
 2. 对冷资产 staging 1.2 s 长尾做版本级只读缓存/完整性校验实验，禁止把可变 Run workspace 直接挂到共享 cache。
-3. 补浏览器首字 Performance。当前 p95 是 API SSE 首文本，不包含 Next/React。IAB 打开 174:3301 并读取了控制台，但“新建任务”定位器和坐标点按均未产生可验证的新会话，因此**浏览器端验收未完成**；未在已有用户任务中发性能探针，也未把 API 首字误报为 DOM 首字。
+3. 浏览器首字仅完成**两轮探索样本**，尚无浏览器 p95。174:3301 验证账号新建独立线程 `8435675b-9e4d-4e6e-a841-fe51ceb6fb73`；IAB 的 Playwright/CUA 点击新建和发送按钮曾超时或不生效，最后用页面按钮的 DOM `click()` 成功发送。MutationObserver 记录 `.live-assistant-response` 首次非空分别约 **3,157 ms**、**3,257 ms**。两轮终态 DOM 的回答正文都暂时消失，只剩“复制回答”；第一轮 `run_c4c03ad07a6e482dba2adb3814fc0e09` 的 RunEvent `message.delta` 和该用户的 `/history` 均为 `OK`，刷新后正文恢复。第二轮 `run_b79f333c48e84d0380dfcd1cb41d79ba` 同样观察到短暂 live 正文后终态空白。此为前端 live→durable handoff 的疑似竞态，**不能把 live 首字当成稳定可见的终态答案**；该 Web 镜像未在本轮部署中修改，根因仍需捕获完成瞬间的 history payload/导入结果。现有 p95 均为 API SSE，不包含 Next/React。
 4. 多样本交错 A/B、工具/附件/多角色回归和失败注入，之后再判断是否合入 develop。真实 `Skill` 调用已被 `production-orchestrator` 策略阻断，尚需一个授权 fixture 才能验证 Skill 内容加载。
