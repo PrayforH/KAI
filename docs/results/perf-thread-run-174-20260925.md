@@ -47,7 +47,7 @@ Langfuse 三条新版样本中 `harness.mcp.resolve` 为 11–14 ms（旧版五�
 
 ## Web 交接灰度：未通过，已回滚
 
-`e9367d0f` 针对旧 `/history` 在途请求增加代际失效，单测 44 项、TypeScript 检查与 Next 生产构建通过；Web 镜像 `perf-web-20260925-e9367d0f` 只在 174:3301 灰度，API/Worker 不变。但同一验证账号线程第三轮 `run_2e485baa0061467fb75928543bf01e3b` 仍在终态出现空白回答，数据库 `message.delta` 为 `OK`；说明所修竞态不是充分根因。Web 已精确回滚到灰度前实际镜像 `develop-20260922-d69cb0d2`（不是 overlay 原先写的 `d9eec75b`），25 个环境变量保留、首页 200/容器健康。分支用 `b20b996e` revert 此补丁，不把它算作已完成优化。需在前端捕获导入瞬间的 assistant-ui message content/ID 与历史 response 后再设计新修复。
+第二版 `b6491dd0` 将代际约束扩展到 `loadSnapshot` 的 `onLoaded` 导入回调，旧请求迟到覆盖新回答的测试先红后绿，44 项定向测试、TypeScript 与生产构建通过。但 174:3301 第四轮真实 Run `run_77c23c7f63dd44a8932fe128a142408e` 仍在终态显示空白，故再次判定**现场未修复**；Web 回滚到原镜像 `develop-20260922-d69cb0d2`，分支以 `3e4393da` revert。单测证明乱序防护的机制有效，不等于它是本次空白的充分根因；后续必须捕获运行时实际消息内容、ID、live ownership 与导入时序，再实施第三版。
 
 ## 剩余工作
 
