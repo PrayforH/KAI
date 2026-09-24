@@ -1,0 +1,309 @@
+{
+  "summary": {
+    "label": "fixture-sweep-scroll",
+    "startedAt": "2026-09-24T03:58:16.634Z",
+    "finishedAt": "2026-09-24T03:58:35.551Z",
+    "total": 2,
+    "passed": 2,
+    "failed": 0,
+    "blocked": 0,
+    "partial": 0
+  },
+  "results": [
+    {
+      "id": "F1",
+      "title": "隔离 fixture：运行/失败/等待审批/取消 的扫光契约",
+      "status": "pass",
+      "detail": "样式表=2 份；running（应当扫光=true）→ 符合：phase:running=true,play=running,clip=text | thinking:running=true,play=running,clip=text | action:running=true,play=running,clip=text；failed（应当扫光=false）→ 符合：phase:running=false,play=paused,clip=border-box | thinking:running=false,play=paused,clip=border-box | action:running=false,play=paused,clip=border-box；waiting_approval（应当扫光=false）→ 符合：phase:running=false,play=paused,clip=border-box | thinking:running=false,play=paused,clip=border-box | action:running=false,play=paused,clip=border-box；cancelled（应当扫光=false）→ 符合：phase:running=false,play=paused,clip=border-box | thinking:running=false,play=paused,clip=border-box | action:running=false,play=paused,clip=border-box",
+      "evidence": {
+        "perPhase": [
+          {
+            "phase": "running",
+            "shouldRun": true,
+            "ok": true,
+            "sweeps": [
+              "phase:running=true,play=running,clip=text",
+              "thinking:running=true,play=running,clip=text",
+              "action:running=true,play=running,clip=text"
+            ]
+          },
+          {
+            "phase": "failed",
+            "shouldRun": false,
+            "ok": true,
+            "sweeps": [
+              "phase:running=false,play=paused,clip=border-box",
+              "thinking:running=false,play=paused,clip=border-box",
+              "action:running=false,play=paused,clip=border-box"
+            ]
+          },
+          {
+            "phase": "waiting_approval",
+            "shouldRun": false,
+            "ok": true,
+            "sweeps": [
+              "phase:running=false,play=paused,clip=border-box",
+              "thinking:running=false,play=paused,clip=border-box",
+              "action:running=false,play=paused,clip=border-box"
+            ]
+          },
+          {
+            "phase": "cancelled",
+            "shouldRun": false,
+            "ok": true,
+            "sweeps": [
+              "phase:running=false,play=paused,clip=border-box",
+              "thinking:running=false,play=paused,clip=border-box",
+              "action:running=false,play=paused,clip=border-box"
+            ]
+          }
+        ],
+        "note": "fixture：真实样式表 + 组件标记契约，非线上真实触发"
+      },
+      "severity": "P1",
+      "complexity": "A"
+    },
+    {
+      "id": "F2",
+      "title": "隔离 fixture：嵌套滚动不影响外层跟随（真实 attachConversationScroll）",
+      "status": "pass",
+      "detail": "起点 {\"top\":690,\"sh\":970,\"ch\":280,\"atBottom\":true}；外层上翻后 top=0/底=690，内容继续增长到 1418 时 top 位移 0px（暂停跟随=true）；resume() 后 atBottom=true；嵌套区可滚动范围 796px，在其内上翻 200×2 后外层仍贴底=true（top=1138/1138），内容增长到 1754 后仍贴底=true → 外层跟随未被破坏=true；嵌套区自身 scrollTop 500 → 100（上翻确实被嵌套区消费掉了）；【观察，非判据】继续上翻越过嵌套区末端后外层 top=274、atBottom=false（此时滚动链把外层带动，属浏览器滚动链行为）",
+      "evidence": {
+        "sweep": {
+          "cssLoaded": [
+            "http://127.0.0.1:3413/codex-theme.css",
+            "http://127.0.0.1:3413/conversation-experience.css"
+          ],
+          "phases": [
+            {
+              "phase": "running",
+              "heading": "正在处理",
+              "sweeps": [
+                {
+                  "role": "phase",
+                  "running": "true",
+                  "playState": "running",
+                  "animation": "execution-text-sweep",
+                  "clip": "text",
+                  "fillColor": "rgba(0, 0, 0, 0)"
+                },
+                {
+                  "role": "thinking",
+                  "running": "true",
+                  "playState": "running",
+                  "animation": "execution-text-sweep",
+                  "clip": "text",
+                  "fillColor": "rgba(0, 0, 0, 0)"
+                },
+                {
+                  "role": "action",
+                  "running": "true",
+                  "playState": "running",
+                  "animation": "execution-text-sweep",
+                  "clip": "text",
+                  "fillColor": "rgba(0, 0, 0, 0)"
+                }
+              ]
+            },
+            {
+              "phase": "failed",
+              "heading": "处理失败",
+              "sweeps": [
+                {
+                  "role": "phase",
+                  "running": "false",
+                  "playState": "paused",
+                  "animation": "execution-text-sweep",
+                  "clip": "border-box",
+                  "fillColor": "rgb(250, 66, 62)"
+                },
+                {
+                  "role": "thinking",
+                  "running": "false",
+                  "playState": "paused",
+                  "animation": "execution-text-sweep",
+                  "clip": "border-box",
+                  "fillColor": "rgb(214, 214, 214)"
+                },
+                {
+                  "role": "action",
+                  "running": "false",
+                  "playState": "paused",
+                  "animation": "execution-text-sweep",
+                  "clip": "border-box",
+                  "fillColor": "rgb(161, 161, 161)"
+                }
+              ]
+            },
+            {
+              "phase": "waiting_approval",
+              "heading": "等待审批",
+              "sweeps": [
+                {
+                  "role": "phase",
+                  "running": "false",
+                  "playState": "paused",
+                  "animation": "execution-text-sweep",
+                  "clip": "border-box",
+                  "fillColor": "rgb(230, 170, 74)"
+                },
+                {
+                  "role": "thinking",
+                  "running": "false",
+                  "playState": "paused",
+                  "animation": "execution-text-sweep",
+                  "clip": "border-box",
+                  "fillColor": "rgb(214, 214, 214)"
+                },
+                {
+                  "role": "action",
+                  "running": "false",
+                  "playState": "paused",
+                  "animation": "execution-text-sweep",
+                  "clip": "border-box",
+                  "fillColor": "rgb(161, 161, 161)"
+                }
+              ]
+            },
+            {
+              "phase": "cancelled",
+              "heading": "已停止",
+              "sweeps": [
+                {
+                  "role": "phase",
+                  "running": "false",
+                  "playState": "paused",
+                  "animation": "execution-text-sweep",
+                  "clip": "border-box",
+                  "fillColor": "rgb(161, 161, 161)"
+                },
+                {
+                  "role": "thinking",
+                  "running": "false",
+                  "playState": "paused",
+                  "animation": "execution-text-sweep",
+                  "clip": "border-box",
+                  "fillColor": "rgb(214, 214, 214)"
+                },
+                {
+                  "role": "action",
+                  "running": "false",
+                  "playState": "paused",
+                  "animation": "execution-text-sweep",
+                  "clip": "border-box",
+                  "fillColor": "rgb(161, 161, 161)"
+                }
+              ]
+            }
+          ]
+        },
+        "perPhase": [
+          {
+            "phase": "running",
+            "shouldRun": true,
+            "ok": true,
+            "sweeps": [
+              "phase:running=true,play=running,clip=text",
+              "thinking:running=true,play=running,clip=text",
+              "action:running=true,play=running,clip=text"
+            ]
+          },
+          {
+            "phase": "failed",
+            "shouldRun": false,
+            "ok": true,
+            "sweeps": [
+              "phase:running=false,play=paused,clip=border-box",
+              "thinking:running=false,play=paused,clip=border-box",
+              "action:running=false,play=paused,clip=border-box"
+            ]
+          },
+          {
+            "phase": "waiting_approval",
+            "shouldRun": false,
+            "ok": true,
+            "sweeps": [
+              "phase:running=false,play=paused,clip=border-box",
+              "thinking:running=false,play=paused,clip=border-box",
+              "action:running=false,play=paused,clip=border-box"
+            ]
+          },
+          {
+            "phase": "cancelled",
+            "shouldRun": false,
+            "ok": true,
+            "sweeps": [
+              "phase:running=false,play=paused,clip=border-box",
+              "thinking:running=false,play=paused,clip=border-box",
+              "action:running=false,play=paused,clip=border-box"
+            ]
+          }
+        ],
+        "scrollStart": {
+          "top": 690,
+          "sh": 970,
+          "ch": 280,
+          "atBottom": true
+        },
+        "outerScrollUp": {
+          "afterUp": {
+            "top": 0,
+            "sh": 970,
+            "ch": 280,
+            "atBottom": false
+          },
+          "laterUp": {
+            "top": 0,
+            "sh": 1418,
+            "ch": 280,
+            "atBottom": false
+          },
+          "drift": 0
+        },
+        "afterResume": {
+          "top": 1138,
+          "sh": 1418,
+          "ch": 280,
+          "atBottom": true
+        },
+        "nestedBox": {
+          "x": 17,
+          "y": 719,
+          "width": 1246,
+          "height": 122
+        },
+        "nestedRange": {
+          "sh": 916,
+          "ch": 120,
+          "range": 796,
+          "top": 0
+        },
+        "nestedAfterDown": 500,
+        "nestedAfterUp": 100,
+        "nestedInRange": {
+          "afterNestedInRange": {
+            "top": 1138,
+            "sh": 1418,
+            "ch": 280,
+            "atBottom": true
+          },
+          "laterNestedInRange": {
+            "top": 1474,
+            "sh": 1754,
+            "ch": 280,
+            "atBottom": true
+          },
+          "wheelUsed": 200
+        },
+        "nestedChained": {
+          "top": 274,
+          "sh": 1754,
+          "ch": 280,
+          "atBottom": false
+        }
+      },
+      "severity": "P2",
+      "complexity": "A"
+    }
+  ]
+}

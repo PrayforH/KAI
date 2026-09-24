@@ -1,0 +1,150 @@
+{
+  "summary": {
+    "label": "cluster1-attachment-recovery",
+    "startedAt": "2026-09-24T03:53:44.938Z",
+    "finishedAt": "2026-09-24T03:55:01.691Z",
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
+    "blocked": 0,
+    "partial": 0
+  },
+  "results": [
+    {
+      "id": "C1-10",
+      "title": "附件失败恢复（浏览器故障注入，一次性 500）",
+      "status": "pass",
+      "detail": "注入：[{\"url\":\"/api/input-artifacts\",\"method\":\"POST\",\"action\":\"abort with 500\"}]（仅本测试页、仅第一次 POST）；失败后文字保留=true（输入 27 字 → 27 字），附件卡片 1 个（.composer-file-card）[\"qa-kb-doc.mdDocument移除附件上传失败上传失败：QA 注入的一次性上传失败\"]，进度条 0，提示=[\"上传失败上传失败：QA 注入的一次性上传失败\"]；未就绪时点发送：是否新建运行=false（发送按钮 label=发送消息，disabled=false）；重试方式=重新附加同一文件，重试后提示=[\"附件 qa-kb-doc.md 上传失败，请移除后重新添加；输入内容已保留。\"]；上传 POST 2 次、成功 1 次（成功码 [201]，仅统计 exact POST [\"/api/input-artifacts\"]；无重复=true）；最终发送后新建运行数=1（应为 1）；重试控件=[]",
+      "evidence": {
+        "calls": [
+          {
+            "phase": "request",
+            "method": "GET",
+            "url": "/api/input-artifacts/limits",
+            "injected": false
+          },
+          {
+            "phase": "request",
+            "method": "POST",
+            "url": "/api/input-artifacts",
+            "injected": false
+          },
+          {
+            "phase": "response",
+            "method": "GET",
+            "status": 200,
+            "path": "/api/input-artifacts/limits",
+            "isUploadPost": false,
+            "body": "{\"max_file_bytes\":52428800,\"max_files\":10,\"max_total_bytes\":104857600}"
+          },
+          {
+            "phase": "response",
+            "method": "POST",
+            "status": 500,
+            "path": "/api/input-artifacts",
+            "isUploadPost": true,
+            "body": "{\"error\":{\"code\":\"qa_injected_failure\",\"message\":\"QA 注入的一次性上传失败\"}}"
+          },
+          {
+            "phase": "request",
+            "method": "POST",
+            "url": "/api/input-artifacts",
+            "injected": false
+          },
+          {
+            "phase": "response",
+            "method": "POST",
+            "status": 201,
+            "path": "/api/input-artifacts",
+            "isUploadPost": true,
+            "body": "{\"input_artifact_id\":\"input_artifact_730ddd75d7c448d2b043d449019149d3\",\"tenant_id\":\"local\",\"user_id\":\"user_cfc668c896d54"
+          }
+        ],
+        "injected": [
+          {
+            "url": "/api/input-artifacts",
+            "method": "POST",
+            "action": "abort with 500"
+          }
+        ],
+        "notes": [],
+        "afterInjectedFailure": {
+          "text": "QA 附件失败恢复：这段文字在附件上传失败后必须保留。",
+          "textLen": 27,
+          "sendDisabled": false,
+          "sendLabel": "发送消息",
+          "ribbons": 0,
+          "attachmentCount": 1,
+          "attachments": [
+            "qa-kb-doc.mdDocument移除附件上传失败上传失败：QA 注入的一次性上传失败"
+          ],
+          "errors": [
+            "上传失败上传失败：QA 注入的一次性上传失败"
+          ],
+          "retryControls": [],
+          "progressbars": 0
+        },
+        "afterSendAttempt": {
+          "text": "QA 附件失败恢复：这段文字在附件上传失败后必须保留。",
+          "textLen": 27,
+          "sendDisabled": false,
+          "sendLabel": "发送消息",
+          "ribbons": 0,
+          "attachmentCount": 1,
+          "attachments": [
+            "qa-kb-doc.mdDocument移除附件上传失败上传失败：QA 注入的一次性上传失败"
+          ],
+          "errors": [
+            "附件 qa-kb-doc.md 上传失败，请移除后重新添加；输入内容已保留。",
+            "上传失败上传失败：QA 注入的一次性上传失败"
+          ],
+          "retryControls": [],
+          "progressbars": 0
+        },
+        "sendWhileUnreadyCreatedRun": false,
+        "retriedVia": "重新附加同一文件",
+        "afterRetry": {
+          "text": "QA 附件失败恢复：这段文字在附件上传失败后必须保留。",
+          "textLen": 27,
+          "sendDisabled": false,
+          "sendLabel": "发送消息",
+          "ribbons": 0,
+          "attachmentCount": 1,
+          "attachments": [
+            "qa-kb-doc.mdDocument移除附件✓"
+          ],
+          "errors": [
+            "附件 qa-kb-doc.md 上传失败，请移除后重新添加；输入内容已保留。"
+          ],
+          "retryControls": [],
+          "progressbars": 0
+        },
+        "uploadCounts": {
+          "posts": 2,
+          "successes": 1,
+          "successStatuses": [
+            201
+          ],
+          "countedPaths": [
+            "/api/input-artifacts"
+          ]
+        },
+        "afterSend": {
+          "text": "",
+          "textLen": 0,
+          "sendDisabled": null,
+          "sendLabel": null,
+          "ribbons": 1,
+          "attachmentCount": 0,
+          "attachments": [],
+          "errors": [],
+          "retryControls": [],
+          "progressbars": 0
+        },
+        "runsCreated": 1
+      },
+      "severity": "P1",
+      "complexity": "B"
+    }
+  ]
+}

@@ -1,0 +1,132 @@
+{
+  "summary": {
+    "label": "cluster3-codefile",
+    "startedAt": "2026-09-24T03:47:15.231Z",
+    "finishedAt": "2026-09-24T03:48:39.852Z",
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
+    "blocked": 0,
+    "partial": 0
+  },
+  "results": [
+    {
+      "id": "C3-7",
+      "title": "代码目录里真正打开文件（文件名 / 内容 / 对话宽度）",
+      "status": "pass",
+      "detail": "进入代码视图：页签存在=true（禁用=false）；文件树元素 16 个（目录 0、展开前文件 13、展开后 13）；树内文件：.docker.docker……ignoreignore、.env..env.……exampleexample、..……gitignoregitignore、.gitlab-ci..gitlab-ci.……ymlyml、.pre-commit-config..pre-commit-config.……yamlyaml、agent-studio.agent-studio.……jsonjson、agent.agent.……pypy、AGENTS.AGENTS.……mdmd、langgraph.langgraph.……jsonjson、MANIFEST.MANIFEST.……inin、pyproject.pyproject.……tomltoml、pyrightconfig.pyrightconfig.……jsonjson、README.README.……mdmd；目录展开={\"filesBefore\":13,\"filesAfter\":15}（docdoc……kerker）；点开「AGENTS.md」→ 编辑器 aria=「AGENTS.md 源代码」，头部标题=AGENTS.md，行数/大小=「8 行」，复制按钮可用=true，正文长度 839（含我写入的 QA 写入标记=false；shadow 宿主 1 个、canvas 0 个；内容片段「 12345678# Exported project maintenance Install with `python -m pip install -e '.[dev]'`, 」）；AGENTS.md 也点开并校验=true；代码视图是整面模式：进入后对话区宽度 0px（元素不渲染），点返回配置后恢复为 1136px（改动前 1136px），横向溢出=false",
+      "evidence": {
+        "beforeSwitch": {
+          "conversation": 1136,
+          "codePane": null,
+          "window": 1800,
+          "overflowX": false
+        },
+        "codeTabFound": true,
+        "codeTabDisabled": false,
+        "afterEnteringCodeView": {
+          "conversation": 0,
+          "codePane": 399,
+          "window": 1800,
+          "overflowX": false
+        },
+        "tree": {
+          "items": 16,
+          "dirs": 0,
+          "filesBeforeExpand": 13,
+          "texts": [
+            "docdoc……kerker",
+            "srcsrc… / sapling_deep_agentssapling_deep_agents…",
+            "…testtest",
+            ".docker.docker……ignoreignore",
+            ".env..env.……exampleexample",
+            "..……gitignoregitignore",
+            ".gitlab-ci..gitlab-ci.……ymlyml",
+            ".pre-commit-config..pre-commit-config.……yamlyaml",
+            "agent-studio.agent-studio.……jsonjson",
+            "agent.agent.……pypy",
+            "AGENTS.AGENTS.……mdmd",
+            "langgraph.langgraph.……jsonjson",
+            "MANIFEST.MANIFEST.……inin",
+            "pyproject.pyproject.……tomltoml",
+            "pyrightconfig.pyrightconfig.……jsonjson",
+            "README.README.……mdmd"
+          ],
+          "filesAfterExpand": 13,
+          "fileNames": [
+            ".docker.docker……ignoreignore",
+            ".env..env.……exampleexample",
+            "..……gitignoregitignore",
+            ".gitlab-ci..gitlab-ci.……ymlyml",
+            ".pre-commit-config..pre-commit-config.……yamlyaml",
+            "agent-studio.agent-studio.……jsonjson",
+            "agent.agent.……pypy",
+            "AGENTS.AGENTS.……mdmd",
+            "langgraph.langgraph.……jsonjson",
+            "MANIFEST.MANIFEST.……inin",
+            "pyproject.pyproject.……tomltoml",
+            "pyrightconfig.pyrightconfig.……jsonjson",
+            "README.README.……mdmd"
+          ],
+          "dirName": "docdoc……kerker",
+          "dirExpand": {
+            "filesBefore": 13,
+            "filesAfter": 15
+          }
+        },
+        "editorText": {
+          "len": 839,
+          "shadowHosts": 1,
+          "sample": " 12345678# Exported project maintenance Install with `python -m pip install -e '.[dev]'`, then run `python -m pytest`.The LangGraph factory must stay synchronous; LangGraph manages its checkpointer.Edit prompts under `sr",
+          "hasQaMarker": false,
+          "canvas": 0
+        },
+        "openedAGENTS": {
+          "frameAria": "AGENTS.md 源代码",
+          "headerName": "AGENTS.md",
+          "headerTitle": "AGENTS.md",
+          "headerMeta": "8 行",
+          "copyEnabled": true,
+          "contentLen": 839,
+          "contentSample": "",
+          "hasQaMarker": false,
+          "loading": false,
+          "error": "",
+          "shadowHosts": 1,
+          "canvas": 0,
+          "sample": " 12345678# Exported project maintenance Install with `python -m pip install -e '.[dev]'`, then run `python -m pytest`.The LangGraph factory must stay synchronous; LangGraph manages its checkpointer.Edit prompts under `sr"
+        },
+        "opened": {
+          "frameAria": "AGENTS.md 源代码",
+          "headerName": "AGENTS.md",
+          "headerTitle": "AGENTS.md",
+          "headerMeta": "8 行",
+          "copyEnabled": true,
+          "contentLen": 839,
+          "contentSample": "",
+          "hasQaMarker": false,
+          "loading": false,
+          "error": "",
+          "shadowHosts": 1,
+          "canvas": 0,
+          "sample": " 12345678# Exported project maintenance Install with `python -m pip install -e '.[dev]'`, then run `python -m pytest`.The LangGraph factory must stay synchronous; LangGraph manages its checkpointer.Edit prompts under `sr"
+        },
+        "afterOpen": {
+          "conversation": 1136,
+          "codePane": null,
+          "window": 1800,
+          "overflowX": false
+        },
+        "backFound": true,
+        "afterReturn": {
+          "conversation": 1136,
+          "codePane": null,
+          "window": 1800,
+          "overflowX": false
+        }
+      },
+      "severity": "P1",
+      "complexity": "B"
+    }
+  ]
+}

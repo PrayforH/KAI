@@ -1,0 +1,49 @@
+{
+  "version": "748420ec",
+  "kind": "live-model-api",
+  "checks": [
+    {
+      "action": "create-network-enabled",
+      "tools": [
+        "Read",
+        "Glob",
+        "Grep",
+        "Write",
+        "Edit",
+        "Bash",
+        "WebSearch",
+        "WebFetch"
+      ],
+      "pass": true
+    },
+    {
+      "action": "disable",
+      "revision": 2,
+      "tools": [
+        "Read",
+        "Glob",
+        "Grep",
+        "Write",
+        "Edit",
+        "Bash"
+      ],
+      "pass": true
+    },
+    {
+      "action": "enable",
+      "revision": 3,
+      "tools": [
+        "Read",
+        "Glob",
+        "Grep",
+        "Write",
+        "Edit",
+        "Bash",
+        "WebSearch",
+        "WebFetch"
+      ],
+      "pass": true
+    }
+  ],
+  "draftId": "draft_0d5b891593e04261be9237a3e253fbb0"
+}

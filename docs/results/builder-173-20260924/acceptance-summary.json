@@ -1,0 +1,60 @@
+{
+  "summary": {
+    "scope": "本轮定向浏览器补测，含隔离 fixture；不代表全项目端到端全通过",
+    "total": 10,
+    "passed": 9,
+    "failed": 1
+  },
+  "results": [
+    {
+      "id": "C3-5a",
+      "status": "pass",
+      "source": "result-cluster3-versiondiff2.json"
+    },
+    {
+      "id": "C3-5c",
+      "status": "pass",
+      "source": "result-cluster3-versiondiff4.json"
+    },
+    {
+      "id": "C3-5b",
+      "status": "pass",
+      "source": "result-cluster3-versiondiff4.json"
+    },
+    {
+      "id": "C3-7",
+      "status": "pass",
+      "source": "result-cluster3-codefile.json"
+    },
+    {
+      "id": "C1-10",
+      "status": "pass",
+      "source": "result-cluster1-attachment-recovery.json"
+    },
+    {
+      "id": "F1",
+      "status": "pass",
+      "source": "result-fixture-sweep-scroll.json"
+    },
+    {
+      "id": "F2",
+      "status": "pass",
+      "source": "result-fixture-sweep-scroll.json"
+    },
+    {
+      "id": "C3-9",
+      "status": "pass",
+      "source": "result-cluster3-builder-materials.json"
+    },
+    {
+      "id": "C3-10",
+      "status": "pass",
+      "source": "result-cluster3-builder-materials.json"
+    },
+    {
+      "id": "C3-8",
+      "status": "fail",
+      "source": "result-cluster3-inputcard.json"
+    }
+  ]
+}

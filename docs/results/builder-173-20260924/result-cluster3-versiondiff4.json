@@ -1,0 +1,149 @@
+{
+  "summary": {
+    "label": "cluster3-versiondiff4",
+    "startedAt": "2026-09-24T03:40:29.556Z",
+    "finishedAt": "2026-09-24T03:41:11.589Z",
+    "total": 2,
+    "passed": 2,
+    "failed": 0,
+    "blocked": 0,
+    "partial": 0
+  },
+  "results": [
+    {
+      "id": "C3-5c",
+      "title": "QA 草稿 rN / rN-1 差异",
+      "status": "pass",
+      "detail": "草稿修订=6（入口 版本历史 · v0.1.1，保存标记 ·已保存 r6）；比较「草稿 r5 → 已保存草稿 r6」基准=r:5；统计=[{\"status\":\"added\",\"text\":\"新增 0\"},{\"status\":\"modified\",\"text\":\"修改 2\"},{\"status\":\"deleted\",\"text\":\"删除 0\"}]；改动文件=[\"AGENTS.md\",\"draft.json\"]；差异片段「」",
+      "evidence": {
+        "diff": {
+          "heading": "已保存草稿 r6",
+          "compareLabel": "草稿 r5 → 已保存草稿 r6",
+          "baseValue": "r:5",
+          "baseOptions": [
+            "r:5",
+            "r:4",
+            "r:3",
+            "r:2",
+            "r:1",
+            "0.1.0"
+          ],
+          "stats": [
+            {
+              "status": "added",
+              "text": "新增 0"
+            },
+            {
+              "status": "modified",
+              "text": "修改 2"
+            },
+            {
+              "status": "deleted",
+              "text": "删除 0"
+            }
+          ],
+          "hasStats": true,
+          "files": [
+            "AGENTS.md",
+            "draft.json"
+          ],
+          "activeFile": "AGENTS.md",
+          "diffSample": "",
+          "error": "",
+          "identical": false,
+          "nav": [
+            "草稿 r6与上一修订比较",
+            "草稿 r52026/9/24 07:23:36",
+            "草稿 r42026/9/24 07:16:57",
+            "草稿 r32026/9/24 06:58:52",
+            "草稿 r22026/9/24 06:57:33",
+            "草稿 r12026/9/24 06:56:56",
+            "0.1.0当前2026/9/24 07:23:36"
+          ]
+        },
+        "nav": [
+          "草稿 r6与上一修订比较",
+          "草稿 r52026/9/24 07:23:36",
+          "草稿 r42026/9/24 07:16:57",
+          "草稿 r32026/9/24 06:58:52",
+          "草稿 r22026/9/24 06:57:33",
+          "草稿 r12026/9/24 06:56:56",
+          "0.1.0当前2026/9/24 07:23:36"
+        ],
+        "baseValues": [
+          "r:5",
+          "r:4",
+          "r:3",
+          "r:2",
+          "r:1",
+          "0.1.0"
+        ]
+      },
+      "severity": "P1",
+      "complexity": "B"
+    },
+    {
+      "id": "C3-5b",
+      "title": "发布版本对草稿差异",
+      "status": "pass",
+      "detail": "选中发布版本 0.1.0，比较「已保存草稿 r6 → 0.1.0」基准=draft；统计=[{\"status\":\"added\",\"text\":\"新增 0\"},{\"status\":\"modified\",\"text\":\"修改 1\"},{\"status\":\"deleted\",\"text\":\"删除 0\"}]；改动文件=[\"AGENTS.md\"]；差异片段「」",
+      "evidence": {
+        "diff": {
+          "heading": "0.1.0",
+          "compareLabel": "已保存草稿 r6 → 0.1.0",
+          "baseValue": "draft",
+          "baseOptions": [
+            "",
+            "draft"
+          ],
+          "stats": [
+            {
+              "status": "added",
+              "text": "新增 0"
+            },
+            {
+              "status": "modified",
+              "text": "修改 1"
+            },
+            {
+              "status": "deleted",
+              "text": "删除 0"
+            }
+          ],
+          "hasStats": true,
+          "files": [
+            "AGENTS.md"
+          ],
+          "activeFile": "AGENTS.md",
+          "diffSample": "",
+          "error": "",
+          "identical": false,
+          "nav": [
+            "草稿 r6与上一修订比较",
+            "草稿 r52026/9/24 07:23:36",
+            "草稿 r42026/9/24 07:16:57",
+            "草稿 r32026/9/24 06:58:52",
+            "草稿 r22026/9/24 06:57:33",
+            "草稿 r12026/9/24 06:56:56",
+            "0.1.0当前2026/9/24 07:23:36"
+          ]
+        },
+        "nav": [
+          "草稿 r6与上一修订比较",
+          "草稿 r52026/9/24 07:23:36",
+          "草稿 r42026/9/24 07:16:57",
+          "草稿 r32026/9/24 06:58:52",
+          "草稿 r22026/9/24 06:57:33",
+          "草稿 r12026/9/24 06:56:56",
+          "0.1.0当前2026/9/24 07:23:36"
+        ],
+        "baseValues": [
+          "",
+          "draft"
+        ]
+      },
+      "severity": "P1",
+      "complexity": "B"
+    }
+  ]
+}

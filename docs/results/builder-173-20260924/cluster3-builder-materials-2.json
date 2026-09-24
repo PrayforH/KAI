@@ -1,0 +1,293 @@
+{
+  "calls": [
+    {
+      "kind": "req",
+      "method": "GET",
+      "path": "/api/auth/session"
+    },
+    {
+      "kind": "res",
+      "method": "GET",
+      "status": 200,
+      "path": "/api/auth/session"
+    },
+    {
+      "kind": "req",
+      "method": "GET",
+      "path": "/api/agui/threads"
+    },
+    {
+      "kind": "req",
+      "method": "GET",
+      "path": "/api/studio/projects"
+    },
+    {
+      "kind": "req",
+      "method": "GET",
+      "path": "/api/harness/runtime-config"
+    },
+    {
+      "kind": "req",
+      "method": "GET",
+      "path": "/api/harness/agents"
+    },
+    {
+      "kind": "req",
+      "method": "GET",
+      "path": "/api/studio/drafts"
+    },
+    {
+      "kind": "res",
+      "method": "GET",
+      "status": 200,
+      "path": "/api/harness/runtime-config"
+    },
+    {
+      "kind": "req",
+      "method": "GET",
+      "path": "/api/studio/capabilities"
+    },
+    {
+      "kind": "res",
+      "method": "GET",
+      "status": 200,
+      "path": "/api/studio/projects"
+    },
+    {
+      "kind": "res",
+      "method": "GET",
+      "status": 200,
+      "path": "/api/studio/capabilities"
+    },
+    {
+      "kind": "res",
+      "method": "GET",
+      "status": 200,
+      "path": "/api/agui/threads"
+    },
+    {
+      "kind": "res",
+      "method": "GET",
+      "status": 200,
+      "path": "/api/studio/drafts"
+    },
+    {
+      "kind": "res",
+      "method": "GET",
+      "status": 200,
+      "path": "/api/harness/agents"
+    },
+    {
+      "kind": "req",
+      "method": "GET",
+      "path": "/api/studio/drafts/draft_0d5b891593e04261be9237a3e253fbb0"
+    },
+    {
+      "kind": "res",
+      "method": "GET",
+      "status": 200,
+      "path": "/api/studio/drafts/draft_0d5b891593e04261be9237a3e253fbb0"
+    },
+    {
+      "kind": "req",
+      "method": "GET",
+      "path": "/api/studio/drafts/draft_0d5b891593e04261be9237a3e253fbb0/try-runs"
+    },
+    {
+      "kind": "req",
+      "method": "GET",
+      "path": "/api/studio/agents/research-assistant-2/environments"
+    },
+    {
+      "kind": "req",
+      "method": "GET",
+      "path": "/api/studio/agents/research-assistant-2/deployments"
+    },
+    {
+      "kind": "req",
+      "method": "GET",
+      "path": "/api/studio/agents/research-assistant-2/deployment-snapshots"
+    },
+    {
+      "kind": "req",
+      "method": "GET",
+      "path": "/api/studio/knowledge/bases"
+    },
+    {
+      "kind": "res",
+      "method": "GET",
+      "status": 200,
+      "path": "/api/studio/agents/research-assistant-2/deployments"
+    },
+    {
+      "kind": "res",
+      "method": "GET",
+      "status": 200,
+      "path": "/api/studio/agents/research-assistant-2/deployment-snapshots"
+    },
+    {
+      "kind": "res",
+      "method": "GET",
+      "status": 200,
+      "path": "/api/studio/agents/research-assistant-2/environments"
+    },
+    {
+      "kind": "res",
+      "method": "GET",
+      "status": 200,
+      "path": "/api/studio/drafts/draft_0d5b891593e04261be9237a3e253fbb0/try-runs"
+    },
+    {
+      "kind": "res",
+      "method": "GET",
+      "status": 200,
+      "path": "/api/studio/knowledge/bases"
+    },
+    {
+      "kind": "req",
+      "method": "GET",
+      "path": "/api/input-artifacts/limits"
+    },
+    {
+      "kind": "res",
+      "method": "GET",
+      "status": 200,
+      "path": "/api/input-artifacts/limits"
+    },
+    {
+      "kind": "req",
+      "method": "POST",
+      "path": "/api/input-artifacts"
+    },
+    {
+      "kind": "res",
+      "method": "POST",
+      "status": 201,
+      "path": "/api/input-artifacts"
+    },
+    {
+      "kind": "req",
+      "method": "POST",
+      "path": "/api/studio/builder-materials"
+    },
+    {
+      "kind": "res",
+      "method": "POST",
+      "status": 500,
+      "path": "/api/studio/builder-materials"
+    },
+    {
+      "kind": "req",
+      "method": "GET",
+      "path": "/api/agui/threads"
+    },
+    {
+      "kind": "res",
+      "method": "GET",
+      "status": 200,
+      "path": "/api/agui/threads"
+    },
+    {
+      "kind": "req",
+      "method": "POST",
+      "path": "/api/studio/builder-materials"
+    },
+    {
+      "kind": "res",
+      "method": "POST",
+      "status": 200,
+      "path": "/api/studio/builder-materials"
+    },
+    {
+      "kind": "req",
+      "method": "POST",
+      "path": "/api/studio/drafts/draft_0d5b891593e04261be9237a3e253fbb0/builder-conversation"
+    },
+    {
+      "kind": "res",
+      "method": "POST",
+      "status": 200,
+      "path": "/api/studio/drafts/draft_0d5b891593e04261be9237a3e253fbb0/builder-conversation"
+    }
+  ],
+  "injected": [
+    {
+      "path": "/api/studio/builder-materials",
+      "method": "POST",
+      "action": "500（一次性）",
+      "hit": 1
+    }
+  ],
+  "target": {
+    "draftId": "draft_0d5b891593e04261be9237a3e253fbb0",
+    "displayName": "QA 联网恢复验证 114420",
+    "tools": 8,
+    "net": true
+  },
+  "openedUrl": "http://172.20.109.173:3302/studio/agents/research-assistant-2?draft=draft_0d5b891593e04261be9237a3e253fbb0",
+  "afterUpload": {
+    "text": "根据附件修改系统提示词中的输出格式。",
+    "textLen": 18,
+    "cardCount": 1,
+    "cards": [
+      "qa-kb-doc.mdDocument移除附件✓"
+    ],
+    "alerts": [],
+    "lastAnswer": "",
+    "applyButtons": 0,
+    "dirty": "·已保存 r3"
+  },
+  "uploadsAfterFirst": [
+    201
+  ],
+  "afterInjectedSend": {
+    "text": "根据附件修改系统提示词中的输出格式。",
+    "textLen": 18,
+    "cardCount": 1,
+    "cards": [
+      "qa-kb-doc.mdDocument移除附件"
+    ],
+    "alerts": [
+      "QA 注入的一次性材料失败×"
+    ],
+    "lastAnswer": "",
+    "applyButtons": 0,
+    "dirty": "·已保存 r3"
+  },
+  "occlusion": {
+    "found": true,
+    "covered": false,
+    "coveringTag": "button",
+    "coveringClass": "conversation-control_control__OaHzv ",
+    "coveringText": "",
+    "closeControls": [
+      "关闭提示"
+    ]
+  },
+  "retryClicked": true,
+  "afterRetry": {
+    "text": "",
+    "textLen": 0,
+    "cardCount": 0,
+    "cards": [],
+    "alerts": [],
+    "lastAnswer": "正在读取附件…",
+    "applyButtons": 0,
+    "dirty": "·已保存 r3"
+  },
+  "totals": {
+    "uploadPosts2xx": [
+      "/api/input-artifacts 201"
+    ],
+    "materialCalls": [
+      "req  /api/studio/builder-materials",
+      "res 500 /api/studio/builder-materials",
+      "req  /api/studio/builder-materials",
+      "res 200 /api/studio/builder-materials"
+    ],
+    "roundCalls": [
+      "200 /api/studio/drafts/draft_0d5b891593e04261be9237a3e253fbb0/builder-conversation"
+    ],
+    "roundsOk": 1
+  }
+}
