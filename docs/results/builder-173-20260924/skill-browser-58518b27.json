@@ -1,0 +1,95 @@
+{
+  "release": "58518b27",
+  "source": "Zcode browser verification",
+  "modelIntent": {
+    "requestIntent": "auto",
+    "response": {
+      "action": "edit",
+      "changes": "{\"removeSkills\":[\"algorithmic-art\"]}"
+    },
+    "before": {
+      "revision": 8,
+      "skills": [
+        "algorithmic-art"
+      ]
+    },
+    "beforeApply": {
+      "revision": 8,
+      "skills": [
+        "algorithmic-art"
+      ]
+    },
+    "afterApply": {
+      "revision": 9,
+      "skills": []
+    }
+  },
+  "negation": {
+    "response": {
+      "action": "reply",
+      "changes": "{}"
+    },
+    "before": {
+      "revision": 10,
+      "skills": [
+        "algorithmic-art"
+      ]
+    },
+    "after": {
+      "revision": 10,
+      "skills": [
+        "algorithmic-art"
+      ]
+    }
+  },
+  "memberInstall": {
+    "role": "member",
+    "before": {
+      "status": 200,
+      "revision": 1,
+      "skills": []
+    },
+    "after": {
+      "status": 200,
+      "revision": 2,
+      "skills": [
+        "algorithmic-art"
+      ]
+    },
+    "requests": [
+      "POST http://172.20.109.173:3302/api/studio/drafts/{draft}/skills/catalog/algorithmic-art/install 200"
+    ],
+    "afterReload": {
+      "checked": [
+        "生成式艺术Creating algorithmic "
+      ]
+    },
+    "errors": {
+      "error": {}
+    },
+    "failedRequests": []
+  },
+  "memberUninstall": {
+    "role": "member",
+    "before": {
+      "revision": 2,
+      "skills": [
+        "algorithmic-art"
+      ]
+    },
+    "dialogSeen": true,
+    "confirmButtonCount": 1,
+    "confirmed": true,
+    "after": {
+      "revision": 3,
+      "skills": []
+    },
+    "writes": [
+      "PUT /api/studio/drafts/{draft} 200"
+    ],
+    "failed": [],
+    "pageErrors": [],
+    "removed": true,
+    "onlyRemoved": true
+  }
+}

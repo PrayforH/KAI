@@ -1,0 +1,59 @@
+{
+  "release": "58518b27",
+  "environment": "173:3302",
+  "verification": "server-side real model previews; no business draft apply",
+  "cases": [
+    {
+      "draft": "draft_9e9a7e44a7234c4eb6c3ad3005493c46",
+      "revision": 15,
+      "skills": [
+        "html-report-generation",
+        "archify"
+      ]
+    },
+    {
+      "request": "不启用archify这个技能吧",
+      "seconds": 3.82,
+      "action": "edit",
+      "changes": {
+        "removeSkills": [
+          "archify"
+        ]
+      },
+      "reply": "将按你的要求从当前草稿中移除已绑定的 archify 技能（仅解除本智能体的绑定，不删除技能库资源，也不影响 html-report-generation）。以下为待审阅的修改预览，确认后应用。",
+      "task": ""
+    },
+    {
+      "request": "把 archify 从这个智能体删除，保留其他技能",
+      "seconds": 7.63,
+      "action": "edit",
+      "changes": {
+        "removeSkills": [
+          "archify"
+        ]
+      },
+      "reply": "将移除当前草稿绑定的 archify 技能，保留 html-report-generation 及其他配置不变。",
+      "task": ""
+    },
+    {
+      "request": "不要删除 archify，只告诉我怎么停用",
+      "seconds": 3.97,
+      "action": "ask",
+      "changes": {},
+      "reply": "archify 目前绑定在这个智能体上，但 Skill 没有启用/停用开关，只能整体解绑（移除绑定，不影响技能库源资源）。如果你只是想这次任务不用它，可以在任务里说明；如果确实要从此智能体移除，请确认，我再给出移除预览。",
+      "task": ""
+    },
+    {
+      "request": "本次测试不使用 archify，请只回复测试成功，不修改智能体配置",
+      "seconds": 4.03,
+      "action": "reply",
+      "changes": {},
+      "reply": "明白，本次测试不使用 archify，也不修改智能体配置。",
+      "task": ""
+    },
+    {
+      "draftUnchanged": true,
+      "revision": 15
+    }
+  ]
+}
