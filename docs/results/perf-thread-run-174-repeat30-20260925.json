@@ -1,0 +1,388 @@
+{
+  "configuration": {
+    "api_url": "http://172.20.109.174:8800",
+    "agent": "lead-agent@1.0.3+platform.c95a6965",
+    "runs": 30,
+    "warmups": 2,
+    "reuse_thread": true,
+    "prompt": "你好，请只回复 OK",
+    "tenant_id": "local",
+    "user_id": "user_44229d56651b44a8b91f47dc446dc275",
+    "published_agents": false,
+    "required_text": null
+  },
+  "samples": [
+    {
+      "run": 1,
+      "harness_run_id": "run_5d9a8be27f134a82901c72c986dac699",
+      "response_headers_ms": 59.13991597481072,
+      "first_event_ms": 59.46683301590383,
+      "run_started_ms": 59.46683301590383,
+      "first_text_ms": 2962.1143749682233,
+      "total_ms": 3814.53741597943,
+      "event_count": 27,
+      "text_characters": 2
+    },
+    {
+      "run": 2,
+      "harness_run_id": "run_022776a661de4b93a81c6fb5988aaf88",
+      "response_headers_ms": 51.152875064872205,
+      "first_event_ms": 51.23179208021611,
+      "run_started_ms": 51.23179208021611,
+      "first_text_ms": 2614.604708040133,
+      "total_ms": 3475.7735420716926,
+      "event_count": 27,
+      "text_characters": 2
+    },
+    {
+      "run": 3,
+      "harness_run_id": "run_b9f9c55447ac4852a3368b44bb85e07f",
+      "response_headers_ms": 47.78420890215784,
+      "first_event_ms": 48.0584999313578,
+      "run_started_ms": 48.0584999313578,
+      "first_text_ms": 3491.8598749209195,
+      "total_ms": 4390.622083912604,
+      "event_count": 27,
+      "text_characters": 2
+    },
+    {
+      "run": 4,
+      "harness_run_id": "run_16417e7147d648b7acafe0ae312aa189",
+      "response_headers_ms": 47.43258294183761,
+      "first_event_ms": 48.09845797717571,
+      "run_started_ms": 48.09845797717571,
+      "first_text_ms": 2804.241874953732,
+      "total_ms": 3717.66583295539,
+      "event_count": 27,
+      "text_characters": 2
+    },
+    {
+      "run": 5,
+      "harness_run_id": "run_cada530298ec443bb08be07961318a78",
+      "response_headers_ms": 46.64162499830127,
+      "first_event_ms": 46.81158298626542,
+      "run_started_ms": 46.81158298626542,
+      "first_text_ms": 3369.071290944703,
+      "total_ms": 4307.00287502259,
+      "event_count": 27,
+      "text_characters": 2
+    },
+    {
+      "run": 6,
+      "harness_run_id": "run_13dabef397334768915f12044b43e514",
+      "response_headers_ms": 68.5071669286117,
+      "first_event_ms": 68.79370904061943,
+      "run_started_ms": 68.79370904061943,
+      "first_text_ms": 2583.922958932817,
+      "total_ms": 3440.198166994378,
+      "event_count": 27,
+      "text_characters": 2
+    },
+    {
+      "run": 7,
+      "harness_run_id": "run_24cce5406bfa47efb94dc1205e87b179",
+      "response_headers_ms": 70.3402089420706,
+      "first_event_ms": 70.7516249967739,
+      "run_started_ms": 70.7516249967739,
+      "first_text_ms": 2866.1707919090986,
+      "total_ms": 3791.392458952032,
+      "event_count": 27,
+      "text_characters": 2
+    },
+    {
+      "run": 8,
+      "harness_run_id": "run_a4fa9ce470e244a18f5453dab263a734",
+      "response_headers_ms": 154.30049994029105,
+      "first_event_ms": 154.4600409688428,
+      "run_started_ms": 154.4600409688428,
+      "first_text_ms": 3076.278500026092,
+      "total_ms": 4200.980499968864,
+      "event_count": 27,
+      "text_characters": 2
+    },
+    {
+      "run": 9,
+      "harness_run_id": "run_9a2aecac144f466ba7ec4c61a13696c2",
+      "response_headers_ms": 77.08825008012354,
+      "first_event_ms": 77.61645806021988,
+      "run_started_ms": 77.61645806021988,
+      "first_text_ms": 2463.739125058055,
+      "total_ms": 3374.441000050865,
+      "event_count": 27,
+      "text_characters": 2
+    },
+    {
+      "run": 10,
+      "harness_run_id": "run_2a3a45958f9042a0ab54840dc53b615c",
+      "response_headers_ms": 80.80329094082117,
+      "first_event_ms": 89.79095797985792,
+      "run_started_ms": 89.79095797985792,
+      "first_text_ms": 2905.0391248892993,
+      "total_ms": 3815.029749996029,
+      "event_count": 27,
+      "text_characters": 2
+    },
+    {
+      "run": 11,
+      "harness_run_id": "run_53e10ecce3214f77bcbb5857769d33f3",
+      "response_headers_ms": 71.5517500648275,
+      "first_event_ms": 75.4892920376733,
+      "run_started_ms": 75.4892920376733,
+      "first_text_ms": 3093.1042920565233,
+      "total_ms": 3904.309374978766,
+      "event_count": 27,
+      "text_characters": 2
+    },
+    {
+      "run": 12,
+      "harness_run_id": "run_e19f34adb58245e490e7841045430bc6",
+      "response_headers_ms": 53.93362499307841,
+      "first_event_ms": 54.211625014431775,
+      "run_started_ms": 54.211625014431775,
+      "first_text_ms": 2543.1735410820693,
+      "total_ms": 3434.913165983744,
+      "event_count": 27,
+      "text_characters": 2
+    },
+    {
+      "run": 13,
+      "harness_run_id": "run_6effca426e3a42e2a667deeffa6dcc8d",
+      "response_headers_ms": 65.04808296449482,
+      "first_event_ms": 65.78124989755452,
+      "run_started_ms": 65.78124989755452,
+      "first_text_ms": 2668.418249930255,
+      "total_ms": 3423.6401659436524,
+      "event_count": 27,
+      "text_characters": 2
+    },
+    {
+      "run": 14,
+      "harness_run_id": "run_9fcfbf6ecadf46148969568ff977b888",
+      "response_headers_ms": 64.50333399698138,
+      "first_event_ms": 64.78137499652803,
+      "run_started_ms": 64.78137499652803,
+      "first_text_ms": 3124.385292059742,
+      "total_ms": 4027.625084039755,
+      "event_count": 27,
+      "text_characters": 2
+    },
+    {
+      "run": 15,
+      "harness_run_id": "run_2a5796d105754216bf28143f653473bb",
+      "response_headers_ms": 66.31833396386355,
+      "first_event_ms": 66.62779196631163,
+      "run_started_ms": 66.62779196631163,
+      "first_text_ms": 2386.000166996382,
+      "total_ms": 3332.0244590286165,
+      "event_count": 27,
+      "text_characters": 2
+    },
+    {
+      "run": 16,
+      "harness_run_id": "run_5b8d5e7793494dc29611ba84963b50ed",
+      "response_headers_ms": 49.61595789063722,
+      "first_event_ms": 49.92799996398389,
+      "run_started_ms": 49.92799996398389,
+      "first_text_ms": 3299.451374914497,
+      "total_ms": 4198.765457957052,
+      "event_count": 27,
+      "text_characters": 2
+    },
+    {
+      "run": 17,
+      "harness_run_id": "run_13bc58766a6f4c3b9b7f5d1787428474",
+      "response_headers_ms": 68.22075007949024,
+      "first_event_ms": 68.64729197695851,
+      "run_started_ms": 68.64729197695851,
+      "first_text_ms": 2797.8533339919522,
+      "total_ms": 3798.178125056438,
+      "event_count": 27,
+      "text_characters": 2
+    },
+    {
+      "run": 18,
+      "harness_run_id": "run_455043c173e847c0b9640006515c030b",
+      "response_headers_ms": 70.2267080778256,
+      "first_event_ms": 70.51116600632668,
+      "run_started_ms": 70.51116600632668,
+      "first_text_ms": 3285.5293330503628,
+      "total_ms": 4168.081625015475,
+      "event_count": 27,
+      "text_characters": 2
+    },
+    {
+      "run": 19,
+      "harness_run_id": "run_dd099b9b6c9b4d1fa2d1e0fed94db94e",
+      "response_headers_ms": 50.2696669427678,
+      "first_event_ms": 50.572833977639675,
+      "run_started_ms": 50.572833977639675,
+      "first_text_ms": 2674.116374924779,
+      "total_ms": 3856.6864589229226,
+      "event_count": 27,
+      "text_characters": 2
+    },
+    {
+      "run": 20,
+      "harness_run_id": "run_18ead0ab166948cca81d1c2aa389300d",
+      "response_headers_ms": 53.351375041529536,
+      "first_event_ms": 53.63625008612871,
+      "run_started_ms": 53.63625008612871,
+      "first_text_ms": 3292.9500830359757,
+      "total_ms": 4494.067542022094,
+      "event_count": 27,
+      "text_characters": 2
+    },
+    {
+      "run": 21,
+      "harness_run_id": "run_a73468678487426f904cc8111a1093b4",
+      "response_headers_ms": 68.9467079937458,
+      "first_event_ms": 69.20741708017886,
+      "run_started_ms": 69.20741708017886,
+      "first_text_ms": 2992.0806670561433,
+      "total_ms": 4169.1065420163795,
+      "event_count": 27,
+      "text_characters": 2
+    },
+    {
+      "run": 22,
+      "harness_run_id": "run_49705e1492fb4f82b6ec693308b2f2f8",
+      "response_headers_ms": 75.05695801228285,
+      "first_event_ms": 75.86220803204924,
+      "run_started_ms": 75.86220803204924,
+      "first_text_ms": 2945.408165920526,
+      "total_ms": 4105.303957941942,
+      "event_count": 27,
+      "text_characters": 2
+    },
+    {
+      "run": 23,
+      "harness_run_id": "run_0508803d2711460dbbad414fbe998793",
+      "response_headers_ms": 72.59850006084889,
+      "first_event_ms": 72.83687510062009,
+      "run_started_ms": 72.83687510062009,
+      "first_text_ms": 2719.2822080105543,
+      "total_ms": 3880.2930420497432,
+      "event_count": 27,
+      "text_characters": 2
+    },
+    {
+      "run": 24,
+      "harness_run_id": "run_c36a693aba594588abdec861895073e2",
+      "response_headers_ms": 49.2387079866603,
+      "first_event_ms": 50.54808303248137,
+      "run_started_ms": 50.54808303248137,
+      "first_text_ms": 3395.264207967557,
+      "total_ms": 4587.913166033104,
+      "event_count": 27,
+      "text_characters": 2
+    },
+    {
+      "run": 25,
+      "harness_run_id": "run_1d862b2b755c48c9b378dca31a0afdf3",
+      "response_headers_ms": 64.47608303278685,
+      "first_event_ms": 64.65475005097687,
+      "run_started_ms": 64.65475005097687,
+      "first_text_ms": 3047.1476670354605,
+      "total_ms": 4206.605333019979,
+      "event_count": 27,
+      "text_characters": 2
+    },
+    {
+      "run": 26,
+      "harness_run_id": "run_3829e3d3e2274be98db7d09f6cdef4f4",
+      "response_headers_ms": 66.71991699840873,
+      "first_event_ms": 67.08208401687443,
+      "run_started_ms": 67.08208401687443,
+      "first_text_ms": 3120.883874944411,
+      "total_ms": 4289.704624912702,
+      "event_count": 27,
+      "text_characters": 2
+    },
+    {
+      "run": 27,
+      "harness_run_id": "run_fa3e22aa1571425d8ebee497d81fcaf9",
+      "response_headers_ms": 57.65324993990362,
+      "first_event_ms": 57.81024997122586,
+      "run_started_ms": 57.81024997122586,
+      "first_text_ms": 3066.235375008546,
+      "total_ms": 4259.161541936919,
+      "event_count": 27,
+      "text_characters": 2
+    },
+    {
+      "run": 28,
+      "harness_run_id": "run_a8847bff76e1454eb3247ca9896aef78",
+      "response_headers_ms": 119.72429195884615,
+      "first_event_ms": 119.8712500045076,
+      "run_started_ms": 119.8712500045076,
+      "first_text_ms": 3182.2001669788733,
+      "total_ms": 4358.297207974829,
+      "event_count": 27,
+      "text_characters": 2
+    },
+    {
+      "run": 29,
+      "harness_run_id": "run_0c856508d04b423aaa576aff0edfa962",
+      "response_headers_ms": 58.614624897018075,
+      "first_event_ms": 58.86720889247954,
+      "run_started_ms": 58.86720889247954,
+      "first_text_ms": 2830.1205839961767,
+      "total_ms": 3991.3650839589536,
+      "event_count": 27,
+      "text_characters": 2
+    },
+    {
+      "run": 30,
+      "harness_run_id": "run_131b686e0a6b4b5089dc5c772edd574b",
+      "response_headers_ms": 52.112041041255,
+      "first_event_ms": 53.09100006707013,
+      "run_started_ms": 53.09100006707013,
+      "first_text_ms": 2999.6241660555825,
+      "total_ms": 4184.46383299306,
+      "event_count": 27,
+      "text_characters": 2
+    }
+  ],
+  "summary": {
+    "response_headers_ms": {
+      "min": 46.64162499830127,
+      "p50": 64.50333399698138,
+      "p95": 119.72429195884615,
+      "p99": 154.30049994029105,
+      "max": 154.30049994029105,
+      "mean": 66.71237635503833
+    },
+    "first_event_ms": {
+      "min": 46.81158298626542,
+      "p50": 64.78137499652803,
+      "p95": 119.8712500045076,
+      "p99": 154.4600409688428,
+      "max": 154.4600409688428,
+      "mean": 67.50326530697446
+    },
+    "run_started_ms": {
+      "min": 46.81158298626542,
+      "p50": 64.78137499652803,
+      "p95": 119.8712500045076,
+      "p99": 154.4600409688428,
+      "max": 154.4600409688428,
+      "mean": 67.50326530697446
+    },
+    "first_text_ms": {
+      "min": 2386.000166996382,
+      "p50": 2962.1143749682233,
+      "p95": 3395.264207967557,
+      "p99": 3491.8598749209195,
+      "max": 3491.8598749209195,
+      "mean": 2953.3423916553147
+    },
+    "total_ms": {
+      "min": 3332.0244590286165,
+      "p50": 3991.3650839589536,
+      "p95": 4494.067542022094,
+      "p99": 4587.913166033104,
+      "max": 4587.913166033104,
+      "mean": 3966.604980589667
+    }
+  }
+}

@@ -41,6 +41,10 @@ A/B：同一 `lead-agent@1.0.3+platform.c95a6965`、同一提示词 `你好，�
 
 Langfuse 三条新版样本中 `harness.mcp.resolve` 为 11–14 ms（旧版五条为 211–311 ms），与移除重复 materialization 的机制一致；`harness.sdk.connect` 仍为约 1.4–1.6 s。客户端首字 p95 改善约 0.87 s，但含模型和资产冷暖波动，不能全部归因于代码变更；需更多交错样本才能量化稳定收益。该灰度没有更改 Run/Thread/Artifact/审批语义。
 
+## 稳态复测（同版 30 次）
+
+`b12e5550` 部署后再次按相同 Agent、提示词、用户、API 直连口径连续运行 2 次 warmup＋30 次正式 Run，原始数据见 [复测 JSON](perf-thread-run-174-repeat30-20260925.json)。首文本 p50 **2,962 ms**、p95 **3,395 ms**；Run 总耗时 p50 **3,991 ms**、p95 **4,494 ms**。30/30 有 `agent.assets.staged` 和 `run.succeeded`；17 次精确 `context.window.observed`、13 次 `context.window.unavailable`，后者原因全部是控制请求 `control_timeout`，没有本轮优化引入的合成 unavailable。该组仅为优化版重复性检查，不是与旧版随机交错的因果实验。
+
 ## 剩余工作
 
 1. 对 SDK `connect` 的 1.4 s 研究安全复用或预热边界：Run 级 hooks、cwd、权限、MCP 凭据和 session store 不能跨 Run 泄漏；先做 SDK 能力验证与 fencing/会话所有权设计，不直接建全局进程池。
