@@ -39,5 +39,7 @@
 - 登录页实际加载成功，页面 title 为 `KAI WORKBENCH`。
 - computed motion tokens：control `.16s`、content `.22s`、panel `.28s`。
 - 实际 stylesheet 可读取 `codex-surface-in` 与 `codex-motion-state` 规则。
-- 登录后任务 rail、Studio 抽屉、MCP/技能抽屉、activity 运行态未执行：当前会话没有工作区账号凭据，不能把 SSH root 密码当作 Web 登录凭据。
-- 浏览器级 `prefers-reduced-motion` 切换未执行；代码级 reduced-motion 规则已由定向测试与生产构建验证。后续有 Web 账号时应补做普通/reduced-motion 录制。
+- 已使用授权的工作区账号完成登录，进入任务工作台；任务列表、项目、知识库/智能体/自动化任务/技能导航均正常渲染。
+- 打开账户菜单后，线上 computed style 确认 `codex-surface-in`、`0.22s`、token `--codex-motion-content: .22s`，证明 popover 入场规则在 3302 实际生效。
+- 已保存浏览器验收截图：`/Users/xiaokai/.zcode/cli/artifacts/sess_e91702fa-5ece-4d50-9acb-4111556f17cf/call_HTBlkUE4oPApWHWTParMEHVe-tool-result-bfbcfe3c-6dfd-4b02-a841-33226b2ac3e3.png`。
+- 浏览器运行时未提供系统级 `prefers-reduced-motion` 切换能力，因此未把页面注入样式当作系统级验收；reduced-motion 仍以代码级规则、定向测试和生产构建为依据。
