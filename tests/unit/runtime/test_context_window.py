@@ -84,18 +84,11 @@ async def test_default_query_observes_resumed_context_after_result_without_conte
     ]
 
     assert observed[0] == "provider-message"
-    assert [item.phase for item in observed if isinstance(item, ContextWindowObservation)] == [
-        "after"
-    ]
-    event = cast(ContextWindowObservation, observed[1]).event()
-    assert event.type == "context.window.observed"
-    assert event.payload["total_tokens"] == 120
-    assert event.payload["auto_compact_threshold"] == 175_000
-    assert event.payload["categories"] == [
-        {"name": "System prompt", "tokens": 40},
-        {"name": "Messages", "tokens": 80},
-    ]
-    assert "private" not in repr(event)
+    assert not [item for item in observed if isinstance(item, ContextWindowObservation)]
+    unavailable = cast(ContextWindowUnavailable, observed[1])
+    assert unavailable.phase == "after"
+    assert unavailable.reason == "control_unavailable"
+    assert unavailable.event().type == "context.window.unavailable"
     assert isinstance(observed[2], claude_runtime.ResultMessage)
 
 
@@ -153,8 +146,9 @@ async def test_client_query_uses_remote_transport_for_context_control(
 
     assert captured == [remote_transport]
     assert observed[0] == "remote-provider-message"
-    assert isinstance(observed[1], ContextWindowObservation)
-    assert observed[1].total_tokens == 160
+    assert isinstance(observed[1], ContextWindowUnavailable)
+    assert observed[1].phase == "after"
+    assert observed[1].reason == "control_unavailable"
     assert isinstance(observed[2], claude_runtime.ResultMessage)
 
 

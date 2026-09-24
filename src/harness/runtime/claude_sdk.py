@@ -354,7 +354,7 @@ async def _client_query(
                 # sessions the optional control request runs only after the provider
                 # result, so it cannot add latency to first text.
                 observe_resumed_context = attempt_options.resume is not None
-                terminal_result: ResultMessage | None = None
+                terminal_result_seen = False
                 await client.query(prompt)
                 async for message in _steerable_response(client, steering):
                     received_message = True
@@ -367,20 +367,24 @@ async def _client_query(
                         and not message.is_error
                         and message.stop_reason == "end_turn"
                     ):
-                        # The Worker treats this result as the protocol boundary and
-                        # closes the runtime iterator immediately. Hold it briefly so
-                        # the optional control outcome becomes durable first.
-                        terminal_result = message
-                        continue
+                        # The Worker treats a successful end_turn as the protocol
+                        # boundary. An optional context-control RPC must not delay
+                        # terminal delivery; the runtime mapper emits an explicit
+                        # capability outcome for this path.
+                        terminal_result_seen = True
+                        yield ContextWindowUnavailable(
+                            phase="after",
+                            reason="control_unavailable",
+                        )
                     yield message
-                if observe_resumed_context:
+                if observe_resumed_context and not terminal_result_seen:
+                    # Streams without a terminal result still get the best-effort
+                    # control observation before the transport closes.
                     yield await _observe_context_window(
                         client,
                         "after",
                         timeout_seconds=context_usage_timeout_seconds,
                     )
-                if terminal_result is not None:
-                    yield terminal_result
             return
         except ProcessError as error:
             can_retry = (
