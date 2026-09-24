@@ -47,7 +47,9 @@ Langfuse 三条新版样本中 `harness.mcp.resolve` 为 11–14 ms（旧版五�
 
 ## Web 交接灰度：未通过，已回滚
 
-第二版 `b6491dd0` 将代际约束扩展到 `loadSnapshot` 的 `onLoaded` 导入回调，旧请求迟到覆盖新回答的测试先红后绿，44 项定向测试、TypeScript 与生产构建通过。但 174:3301 第四轮真实 Run `run_77c23c7f63dd44a8932fe128a142408e` 仍在终态显示空白，故再次判定**现场未修复**；Web 回滚到原镜像 `develop-20260922-d69cb0d2`，分支以 `3e4393da` revert。单测证明乱序防护的机制有效，不等于它是本次空白的充分根因；后续必须捕获运行时实际消息内容、ID、live ownership 与导入时序，再实施第三版。
+`e9367d0f` 只防旧请求覆写缓存，第三轮 `run_2e485baa0061467fb75928543bf01e3b` 仍终态空白，已回滚（`b20b996e`）。`b6491dd0` 进一步防旧回调再次 `thread.import()`，旧请求迟到测试先红后绿，但第四轮 `run_77c23c7f63dd44a8932fe128a142408e` 仍空白，也已回滚（`3e4393da`）。两次 Web 都只在 174:3301 灰度，最终恢复灰度前实际镜像 `develop-20260922-d69cb0d2`，25 个环境变量、首页 200 和健康状态核对通过；API/Worker 优化保持运行。
+
+第五轮原版 Web 诊断 Run `run_7b39497e7ba94bd28516fae2371bec0b` 的 DOM 轨迹进一步收窄问题：末条 `.harness-assistant-message` 在终态 `data-turn-answer="OK"`、`data-direct-stream="false"`，但 `.assistant-answer` 未挂载，复制回答按钮仍在；刷新后 `OK` 出现。RunEvent 只有 reasoning 与最终 `message.delta`，**没有工具调用**，因此不能归因于“最终文本后还有普通工具 part 被当作中间文本”。旧历史请求竞态和工具 part 解释都不是已证实根因；需用组件级真实 content/part provider 状态复现后再改。
 
 ## 剩余工作
 
