@@ -414,8 +414,8 @@ async def test_resumed_runtime_emits_unavailable_when_stream_has_no_window_outco
     remote_types = [event.type for event in remote_events]
 
     assert captured_transport == [transport]
-    assert remote_types.count("context.window.unavailable") == 1
-    assert remote_types.index("context.window.unavailable") < remote_types.index("runtime.result")
+    assert "context.window.unavailable" not in remote_types
+    assert remote_types.index("context.window.observed") < remote_types.index("runtime.result")
 
 
 @pytest.mark.asyncio
