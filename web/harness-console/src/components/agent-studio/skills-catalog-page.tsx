@@ -19,6 +19,7 @@ import {
   type SkillInstallScope,
 } from "../../lib/skill-creator-launch";
 import styles from "./skills-catalog-page.module.css";
+import { matchesSkillQuery } from "../../lib/skill-catalog-search";
 
 interface CatalogSkill {
   key: string;
@@ -184,15 +185,9 @@ export function SkillsCatalogPage() {
   });
 
   const visibleSkills = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
     return skills.filter((skill) =>
       (scopeFilter === "all" || skill.scope === scopeFilter) &&
-      (!normalized ||
-      [skill.name, skill.displayName, skill.description, ...(skill.package?.tags ?? [])]
-        .concat(skill.agents.map((agent) => agent.label))
-        .join(" ")
-        .toLowerCase()
-        .includes(normalized)),
+      matchesSkillQuery(skill, query),
     );
   }, [skills, query, scopeFilter]);
 

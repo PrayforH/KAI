@@ -1169,21 +1169,7 @@ function HarnessToolPart(part: ToolCallMessagePartProps) {
   const args = objectValue(part.args);
   const runView = useRunViewModel();
   if (part.toolName === "harness_run_activity") {
-    const parsed = runActivitySchema.safeParse(args.activity);
-    if (
-      !parsed.success ||
-      shouldKeepActivityInLatestSlot(
-        parsed.data.run_id,
-        runView?.runId,
-      )
-    ) {
-      return null;
-    }
-    return (
-      <div className="turn-activity-summary">
-        <ActivitySummary activity={parsed.data} responseStarted />
-      </div>
-    );
+    return null;
   }
   if (part.toolName === "Task" || part.toolName === "Agent") {
     return <SubagentCard status={status} parameters={args} result={part.result} />;
@@ -1321,6 +1307,14 @@ function TurnActivity({
   const activity = useRunActivity();
   const runView = useRunViewModel();
   const isLast = useAuiState((state) => state.message.isLast);
+  const content = useAuiState((state) => state.message.content);
+  const durablePart = hasDurableProjection
+    ? content.find((part) => part.type === "tool-call" && part.toolName === "harness_run_activity")
+    : undefined;
+  const parsed = durablePart?.type === "tool-call"
+    ? runActivitySchema.safeParse(durablePart.args.activity)
+    : null;
+  const durableActivity = parsed?.success ? parsed.data : undefined;
   const ownedActivity = activity && turnOwnsRun(
     messageId,
     activity.run_id,
@@ -1349,15 +1343,10 @@ function TurnActivity({
   // Reloaded history already contains a per-turn tool projection. Live
   // assistant-ui messages do not, so retain the last snapshot on the turn
   // when a newer user message makes it stop being the latest message.
-  const displayed = selectTurnActivity(
-    ownedActivity,
-    capturedActivity,
-    isLast,
-    hasDurableProjection,
-  );
+  const displayed = selectActivityForTurn(durableActivity, ownedActivity, capturedActivity, isLast, hasDurableProjection);
   if (
     !displayed ||
-    !turnOwnsRun(messageId, displayed.run_id, isLast, runView?.runId)
+    (!durableActivity && !turnOwnsRun(messageId, displayed.run_id, isLast, runView?.runId))
   ) return null;
 
   return (
@@ -1371,6 +1360,16 @@ function TurnActivity({
       />
     </div>
   );
+}
+
+export function selectActivityForTurn(
+  durable: RunActivity | undefined,
+  current: RunActivity | undefined,
+  captured: RunActivity | undefined,
+  isLast: boolean,
+  hasDurableProjection: boolean,
+) {
+  return durable ?? selectTurnActivity(current, captured, isLast, hasDurableProjection);
 }
 
 export function selectTurnActivity(
