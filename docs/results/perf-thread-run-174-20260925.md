@@ -45,6 +45,10 @@ Langfuse 三条新版样本中 `harness.mcp.resolve` 为 11–14 ms（旧版五�
 
 `b12e5550` 部署后再次按相同 Agent、提示词、用户、API 直连口径连续运行 2 次 warmup＋30 次正式 Run，原始数据见 [复测 JSON](perf-thread-run-174-repeat30-20260925.json)。首文本 p50 **2,962 ms**、p95 **3,395 ms**；Run 总耗时 p50 **3,991 ms**、p95 **4,494 ms**。30/30 有 `agent.assets.staged` 和 `run.succeeded`；17 次精确 `context.window.observed`、13 次 `context.window.unavailable`，后者原因全部是控制请求 `control_timeout`，没有本轮优化引入的合成 unavailable。该组仅为优化版重复性检查，不是与旧版随机交错的因果实验。
 
+## Web 交接灰度：未通过，已回滚
+
+`e9367d0f` 针对旧 `/history` 在途请求增加代际失效，单测 44 项、TypeScript 检查与 Next 生产构建通过；Web 镜像 `perf-web-20260925-e9367d0f` 只在 174:3301 灰度，API/Worker 不变。但同一验证账号线程第三轮 `run_2e485baa0061467fb75928543bf01e3b` 仍在终态出现空白回答，数据库 `message.delta` 为 `OK`；说明所修竞态不是充分根因。Web 已精确回滚到灰度前实际镜像 `develop-20260922-d69cb0d2`（不是 overlay 原先写的 `d9eec75b`），25 个环境变量保留、首页 200/容器健康。分支用 `b20b996e` revert 此补丁，不把它算作已完成优化。需在前端捕获导入瞬间的 assistant-ui message content/ID 与历史 response 后再设计新修复。
+
 ## 剩余工作
 
 1. 对 SDK `connect` 的 1.4 s 研究安全复用或预热边界：Run 级 hooks、cwd、权限、MCP 凭据和 session store 不能跨 Run 泄漏；先做 SDK 能力验证与 fencing/会话所有权设计，不直接建全局进程池。
