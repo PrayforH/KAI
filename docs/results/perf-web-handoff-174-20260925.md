@@ -1,0 +1,23 @@
+# 174 Web 终态答案交接修复验收
+
+日期：2026-09-25。分支 `perf/thread-run-latency-174`。后端仍为 `perf-20260925-b12e5550`（API＋3 Worker），3301 Web 灰度 `perf-web-20260925-12fefe79`，3501 未动。发布前后均核对非终态 Run 为 0、Web 25 个环境变量继承、容器 healthy、首页 200。174 overlay 备份 `/data/agent-studio/docker-compose/compose.deepagents-174.yaml.bak-perf-web-12fefe79` 可恢复到诊断镜像；更早原版 Web 镜像为 `develop-20260922-d69cb0d2`。
+
+## 根因证据
+
+同一验证账号独立线程 `8435675b-9e4d-4e6e-a841-fe51ceb6fb73`，第六轮 `run_cfc7f322032a45eb943227ff30814171` 和第七轮 `run_f2e0702d6ad94e219363c8067d026872` 在原行为下复现：终态 `message.content` 与 `message.parts` 均含 `text,tool-call`，父级 `data-turn-answer="OK"`、`data-direct-stream=false`，但 `.assistant-answer` 不存在；第七轮 Text 子组件连诊断性 `return null` 标记都没有挂载。live 阶段抑制正确；终态不是旧 history 清空，也不是工具前文本规则触发，而是把最终正文寄托于 assistant-ui 的 Text part 子组件时，该子组件在现场没有挂载。刷新后历史恢复正文。
+
+## 修复
+
+提交 `12fefe79`：运行中的 Builder/原生消息继续使用原有 `HarnessAssistantText`；完成后的 durable 正文改由 `HarnessAssistantMessage` 父级从与“复制回答”一致的 `copyText` 渲染，live 所有权仍由 `LiveAssistantResponse` 接管，完成时禁止重复文本节点。`TextMessagePartProvider`＋`MarkdownText` 继续处理格式与引用；Reasoning/工具/Artifact/视频 part 仍留在 `AssistantMessage.Content`。`83243b94` 增加真实 assistant-ui runtime 的工具前说明→Read→最终文本→活动投影回归，断言仅最终正文出现一次。
+
+本地：Web 全量 921 passed、1 skipped，`npx tsc --noEmit` 与 `npm run build` 通过。Builder 专项 37 项通过；真实 runtime 组件测试验证短 `OK` 和工具边界。
+
+## 174 浏览器灰度
+
+同一线程第八轮 `run_f037203d28454f0a802f42f65f3606f9`、第九轮 `run_67cedcc086ba4737b68928c1f9da32cd`：完成后不刷新，`data-turn-answer=OK`、`data-direct-stream=false`、恰好一个 `.assistant-answer` 且文本 `OK`；Run 显示完成。第十轮 `run_c903d4e975ba48f4b55fd7f6827f9bc6`：多行 Markdown 回答以 `<strong>甲</strong>` 和列表项 `乙` 正确渲染，不刷新亦保持正文。未观察到此前的完成后空白；三轮是功能灰度，不是浏览器 p95 统计。
+
+## 限制与后续
+
+- 第八轮 DOM 轨迹中 `data-turn-answer=OK` 后 live 文本节点短时空白，直到完成交接才出现 durable `OK`；不能把浏览器 live 首字体验宣称为彻底优化完成。API SSE p95 数据仍以 `perf-thread-run-174-20260925.md` 为准。
+- 真实 `Skill` 加载被 `production-orchestrator` 策略拒绝；需授权 fixture 才可验收 Skill 工具结果。
+- 未进行跨 Run ClaudeSDKClient 复用；`harness.sdk.connect` 约 1.4 秒仍是首字前大头。需要独立安全设计，不能共享 Run 级 cwd/hooks/凭据。
