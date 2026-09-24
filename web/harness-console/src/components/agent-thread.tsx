@@ -1455,6 +1455,7 @@ function HarnessAssistantMessage() {
   const runView = useRunViewModel();
   const showIncompleteRecovery = shouldOfferIncompleteRetry(messageStatus);
   const content = useAuiState((state) => state.message.content);
+  const parts = useAuiState((state) => state.message.parts);
   const hasVideoGeneration = content.some(
     (part) => part.type === "data" && part.name === VIDEO_GENERATION_PART_NAME,
   );
@@ -1495,6 +1496,11 @@ function HarnessAssistantMessage() {
       data-test-run={conversationScope && messageId.startsWith("assistant-") ? messageId.replace(/^assistant-/, "") : undefined}
       data-turn-answer={copyText.replace(/\s+/g, " ").slice(0, 360)}
       data-direct-stream={directStream ? "true" : "false"}
+      data-debug-content-parts={content.map((part) => part.type).join(",")}
+      data-debug-render-parts={parts.map((part) => part.type).join(",")}
+      data-debug-live-owner={live.messageId ?? ""}
+      data-debug-live-status={live.status}
+      data-debug-live-visible={live.visible ? "true" : "false"}
     >
       <TurnActivity
         hasDurableProjection={hasRunActivityToolCall(content)}
