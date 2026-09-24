@@ -20,6 +20,10 @@
 
 提交 `83243b94` 后 Web 全量 **921 passed、1 skipped**；174 同线程第九轮 `run_67cedcc086ba4737b68928c1f9da32cd` 不刷新仍恰好一个 `OK` 正文；第十轮 `run_c903d4e975ba48f4b55fd7f6827f9bc6` 的 Markdown `<strong>甲</strong>` 与列表 `乙` 正常；随后两轮 `run_8432d9be07ae436ca17415a4c9cc75eb`、`run_2f53273077bd4cd790b94b6b654b21b9` 均终态 `OK`，无重复回答。浏览器计时探针两次分别误读上一轮文本和 assistant-ui 重建后的行，**均不纳入首字 p95**。本报告只验收终态正文稳定，不宣称浏览器首字 p95 已达标。
 
+## 浏览器首字计时边界（追加）
+
+同线程 `run_8d3222b2b7524a9a81924fca7ad6ddbb` 用新 Run ID 绑定 DOM 观察：`run.queued` 后服务端首 `message.delta` 约 3.08 s，`run.succeeded` 约 4.32 s，`history.snapshot` 约 5.42 s；浏览器 `.assistant-answer` 首次非空约 5.66 s，终态正文稳定 `OK`。该单次样本的终态交接有约 1.1 s 长尾，但不是 p95。另两次探针误把上一轮答案/被重建的 assistant 行当作新首字，判无效，不入统计。短文本候选窗口（180ms）、history GET/导入、Markdown defer/平滑可能叠加；目前没有可归因的分段浏览器标记。一次关闭 live/durable 二次平滑的本地实验通过测试，但只能解释几十毫秒且未证明 1.1 s 收益，已撤回，未部署。
+
 ## 限制与后续
 
 - 第八轮 DOM 轨迹中 `data-turn-answer=OK` 后 live 文本节点短时空白，直到完成交接才出现 durable `OK`；不能把浏览器 live 首字体验宣称为彻底优化完成。API SSE p95 数据仍以 `perf-thread-run-174-20260925.md` 为准。
