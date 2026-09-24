@@ -66,6 +66,7 @@ const activeStatuses = new Set([
 ]);
 
 const threadHistoryRequests = new Map<string, Promise<ThreadHistoryResponse | null>>();
+const threadHistoryGenerations = new Map<string, number>();
 const threadHistorySnapshots = new Map<
   string,
   { receivedAt: number; history: ThreadHistoryResponse | null }
@@ -137,6 +138,7 @@ async function loadThreadHistory(
   }
 
   function createRequest(): Promise<ThreadHistoryResponse | null> {
+    const generation = threadHistoryGenerations.get(threadId) ?? 0;
     return fetch(historyUrl(threadId, before), { cache: "no-store" })
       .then(requireAuthenticatedResponse)
       .then(async (response) => {
@@ -147,11 +149,13 @@ async function loadThreadHistory(
         return response.json() as Promise<ThreadHistoryResponse>;
       })
       .then((history) => {
-        if (!history || !activeStatuses.has(history.status)) {
-          cacheThreadHistory(threadId, history);
-        }
-        if (isLatestPage) {
-          seedAccumulatedHistory(threadId, history);
+        if (generation === (threadHistoryGenerations.get(threadId) ?? 0)) {
+          if (!history || !activeStatuses.has(history.status)) {
+            cacheThreadHistory(threadId, history);
+          }
+          if (isLatestPage) {
+            seedAccumulatedHistory(threadId, history);
+          }
         }
         return history;
       })
@@ -191,6 +195,8 @@ export function prefetchThreadHistory(threadId: string): Promise<void> {
 }
 
 export function invalidateThreadHistory(threadId: string): void {
+  threadHistoryGenerations.set(threadId, (threadHistoryGenerations.get(threadId) ?? 0) + 1);
+  threadHistoryRequests.delete(threadId);
   threadHistorySnapshots.delete(threadId);
   resetAccumulatedHistory(threadId);
 }

@@ -151,6 +151,36 @@ describe("thread history activity restoration", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("ignores an in-flight pre-terminal response after history invalidation", async () => {
+    let resolveOld: ((response: Response) => void) | undefined;
+    let resolveLatest: ((response: Response) => void) | undefined;
+    const fetchMock = vi.fn()
+      .mockImplementationOnce(() => new Promise<Response>((resolve) => { resolveOld = resolve; }))
+      .mockImplementationOnce(() => new Promise<Response>((resolve) => { resolveLatest = resolve; }));
+    vi.stubGlobal("fetch", fetchMock);
+    const adapter = createThreadHistoryAdapter("thread-stale-terminal");
+
+    const oldRequest = prefetchThreadHistory("thread-stale-terminal");
+    invalidateThreadHistory("thread-stale-terminal");
+    const currentRequest = adapter.loadSnapshot();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    resolveLatest?.(historyResponse("succeeded", "最终回答"));
+    const current = await currentRequest;
+    expect(current.messages.at(-1)?.message.content).toEqual([
+      { type: "text", text: "最终回答" },
+    ]);
+
+    resolveOld?.(historyResponse("running", ""));
+    await oldRequest;
+    const cached = await adapter.load();
+    expect(cached.messages.at(-1)?.message.content).toEqual([
+      { type: "text", text: "最终回答" },
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    adapter.dispose();
+  });
+
   it("times out a stalled task-list request and allows the next refresh to recover", async () => {
     vi.useFakeTimers();
     const fetchMock = vi.fn((_input: RequestInfo | URL, init?: RequestInit) =>
