@@ -457,6 +457,7 @@ class AgentStudioService:
                 i.message for i in validation.issues if i.severity == ValidationSeverity.ERROR))
         recommendation = recommendation.model_copy(update={
             "generated_by_model": True, "recommended_skills": suggested,
+            "builtin_tools": draft.spec.builtin_tools,
             "capability_catalog_revision": catalog_revision, "validation": validation,
             "reasons": ("已调用所选模型生成职责、执行流程与任务契约。",
                         "Skill 仅作推荐，选择后通过差异审阅安装。") + recommendation.reasons,

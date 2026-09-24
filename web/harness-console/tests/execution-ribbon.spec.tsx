@@ -729,7 +729,7 @@ describe("execution ribbon", () => {
     expect(html).toContain("grid image ready");
     expect(html).toContain('<pre class="execution-action-result"');
     expect(html).toContain("<code>inputs/original/sample.jpg</code>");
-    expect(html).toContain('<details class="execution-action action-completed">');
+    expect(html).toContain('<details class="execution-action action-completed" data-active="false">');
     expect(html).not.toContain(
       '<details class="execution-action action-completed" open',
     );

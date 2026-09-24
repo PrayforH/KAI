@@ -75,3 +75,44 @@ async def test_model_initial_draft_recommends_then_reviews_pinned_skills() -> No
             "/v1/studio/drafts/from-task", headers=headers, json={"task": "创建另一个研究助手"}
         )
         assert invalid.status_code == 409
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tools", [["Read", "WebSearch", "WebFetch"], ["Read"]])
+async def test_initial_draft_persists_model_selected_tools(tools: list[str]) -> None:
+    application = app()
+    model = AsyncMock()
+    response = {**json.loads(INITIAL_AGENT_RESPONSE), "builtinTools": tools}
+    model.complete_text.return_value = json.dumps(response)
+    application.dependency_overrides[get_model_configuration_service] = lambda: model
+    headers = {
+        "Authorization": f"Bearer {SERVICE_TOKEN}",
+        "X-Tenant-ID": "tenant-a",
+        "X-User-ID": "builder-a",
+    }
+    async with AsyncClient(
+        transport=ASGITransport(app=application), base_url="http://test"
+    ) as client:
+        result = await client.post(
+            "/v1/studio/drafts/from-task",
+            headers=headers,
+            json={
+                "task": "创建研究助手，开启联网检索"
+                if "WebSearch" in tools
+                else "创建助手，仅离线读取材料"
+            },
+        )
+        assert result.status_code == 201, result.text
+        data = result.json()
+        assert data["draft"]["spec"]["builtinTools"] == tools
+        assert data["recommendation"]["builtinTools"] == tools
+        sent = json.loads(model.complete_text.call_args.kwargs["user_prompt"])
+        assert "WebSearch" in {t["name"] for t in sent["availableTools"]}
+        saved = await client.get("/v1/studio/drafts/" + data["draft"]["draftId"], headers=headers)
+        assert saved.json()["spec"]["builtinTools"] == tools
+        response["builtinTools"] = ["invented-network-tool"]
+        model.complete_text.return_value = json.dumps(response)
+        invalid = await client.post(
+            "/v1/studio/drafts/from-task", headers=headers, json={"task": "创建另一个助手"}
+        )
+        assert invalid.status_code == 409

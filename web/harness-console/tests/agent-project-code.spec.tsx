@@ -43,6 +43,8 @@ describe("DeepAgents source workspace", () => {
     await act(async () => root.render(<AgentWorkspaceFiles draft={draft} baseline={draft} turns={[]} onClose={() => {}} />));
     expect(host.querySelector(".workbench-rail")).not.toBeNull();
     expect(host.querySelector('[aria-label="文件目录"]')).toBeNull();
+    const config = [...host.querySelectorAll<HTMLDetailsElement>(".rail-file-group")].find(group => group.textContent?.includes("智能体配置"))!;
+    await act(async () => { config.open = true; config.dispatchEvent(new Event("toggle")); });
     await act(async () => host.querySelector<HTMLButtonElement>('.workbench-rail-file')!.click());
     expect(host.querySelector("pre")?.textContent).toBe("meeting instructions");
     expect(host.querySelector("pre")?.dataset.theme).toBe("dark");
@@ -56,11 +58,14 @@ describe("DeepAgents source workspace", () => {
     await act(async () => root.render(<AgentWorkspaceFiles draft={draft} baseline={draft} turns={[]} onClose={() => {}}/>));
     const group = host.querySelector<HTMLDetailsElement>(".rail-file-group")!;
     expect(group.open).toBe(false);
-    expect(group.textContent).toContain("技能 · archify");
-    expect(group.textContent).toContain("3 个文件");
-    expect(host.querySelectorAll(".workbench-rail-file")).toHaveLength(1);
+    expect(group.textContent).toContain("技能资源");
+    expect(group.textContent).toContain("3");
+    expect(host.querySelectorAll(".workbench-rail-file")).toHaveLength(0);
     await act(async () => {group.open=true;group.dispatchEvent(new Event("toggle"));});
-    expect(host.querySelectorAll(".workbench-rail-file")).toHaveLength(4);
+    for (const folder of host.querySelectorAll<HTMLDetailsElement>(".rail-file-group .rail-file-group")) {
+      await act(async () => { folder.open = true; folder.dispatchEvent(new Event("toggle")); });
+    }
+    expect(host.querySelectorAll(".workbench-rail-file")).toHaveLength(3);
     await act(async () => [...host.querySelectorAll<HTMLButtonElement>(".workbench-rail-file")].find(b=>b.textContent?.includes("template.html"))!.click());
     expect(host.querySelector("pre")?.textContent).toBe("<html>report</html>");
     await act(async () => button("文件列表").click());

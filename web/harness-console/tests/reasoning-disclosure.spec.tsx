@@ -3,10 +3,10 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it } from "vitest";
 import { ActivitySummary } from "../src/components/activity-summary";
-import { runActivitySchema } from "../src/lib/activity-schema";
+import { runActivitySchema, type RunActivity } from "../src/lib/activity-schema";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
-const item = (id: string, sequence: number, summary: string, event_type = "reasoning.delta") => ({
+const item = (id: string, sequence: number, summary: string, event_type = "reasoning.delta"): RunActivity["items"][number] => ({
   id, sequence, summary, event_type, kind: "analysis", status: "running", title: "思考",
   timestamp: "2026-09-24T00:00:00Z", metadata: {},
 });
@@ -49,7 +49,7 @@ it("separates unlabelled thinking across tool steps and stops the previous thoug
   const host = document.createElement("div"); document.body.appendChild(host);
   const root = createRoot(host);
   const before = item("before-tool", 1, "先读取资料。");
-  const tool = { ...item("tool", 2, "", "tool.request"), kind: "tool", metadata: { tool_call_id: "read", name: "Read" } };
+  const tool = { ...item("tool", 2, "", "tool.request"), kind: "tool" as const, metadata: { tool_call_id: "read", name: "Read" } };
   try {
     await act(async () => root.render(<ActivitySummary activity={activity([before, tool])} />));
     expect(host.querySelector(".execution-reasoning")?.getAttribute("data-active")).toBe("false");

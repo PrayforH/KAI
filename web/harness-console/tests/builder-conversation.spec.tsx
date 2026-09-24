@@ -308,7 +308,7 @@ it("uses one composer to edit and run without losing task context", async () => 
 
 it("preserves attachments and text after failed unified sends, and supplies files to both edit and run", async () => {
   act(() => enableWorkspace());
-  vi.spyOn(globalThis,"fetch").mockImplementation(async()=>new Response(JSON.stringify({input_artifact_id:"input_artifact_example",name:"材料.txt",media_type:"text/plain",status:"ready",size_bytes:8}),{status:200}));
+  vi.spyOn(globalThis,"fetch").mockImplementation(async(url)=>String(url).endsWith("/limits") ? Response.json({max_file_bytes:52428800,max_files:10,max_total_bytes:104857600}) : new Response(JSON.stringify({input_artifact_id:"input_artifact_example",name:"材料.txt",media_type:"text/plain",status:"ready",size_bytes:8}),{status:200}));
   async function attach() {
     await act(async()=>{
       const event = new Event("paste",{bubbles:true,cancelable:true});

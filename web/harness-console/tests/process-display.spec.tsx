@@ -78,22 +78,23 @@ it("does not expose arbitrary thinking metadata as provider content", () => {
   expect(host.textContent).not.toContain("原始内部字段");
   expect(host.querySelector(".execution-reasoning")).toBeNull();
 });
-it("sweeps the last tool while the model continues and stops for response, approval or completion", () => {
+it("sweeps only a running tool and keeps the run indicator until a terminal or approval event", () => {
   const running = runActivitySchema.parse({ ...completed, run_id: "tool-tail-dsh", status: "running", items: [
     item("run.running", 1, "开始"),
-    { ...item("tool.request", 2, "读取"), kind: "tool", metadata: { tool_call_id: "t1", name: "Read", arguments: { file_path: "notes.txt" } } },
-    { ...item("tool.result", 3, "已读取"), metadata: { tool_call_id: "t1" } },
+    { ...item("tool.request", 2, "读取"), status: "running", kind: "tool", metadata: { tool_call_id: "t1", name: "Read", arguments: { file_path: "notes.txt" } } },
   ] });
   render(running);
-  expect(host.querySelectorAll(".execution-row-sweep")).toHaveLength(1);
-  expect(host.querySelector(".execution-row-sweep")?.textContent).toContain("notes.txt");
-  expect(host.textContent).not.toContain("正在输出回复");
-  render(running, true);
-  expect(host.querySelectorAll(".execution-row-sweep")).toHaveLength(0);
-  render(runActivitySchema.parse({ ...running, items: [...running.items, { ...item("approval.requested", 4, "审批"), metadata: { approval_id: "a1" } }] }));
-  expect(host.querySelectorAll(".execution-row-sweep")).toHaveLength(0);
-  render({ ...thought, run_id: "completed-dsh" }); expand();
-  expect(host.querySelectorAll(".execution-row-sweep")).toHaveLength(0);
+  expect(host.querySelector('.execution-action strong[data-running="true"]')?.textContent).toContain("notes.txt");
+  const result = { ...running, items: [...running.items, { ...item("tool.result", 3, "已读取"), metadata: {tool_call_id: "t1"} }] };
+  render(result);
+  expect(host.querySelector('.execution-action strong[data-running="true"]')).toBeNull();
+  expect(host.querySelector('.execution-phase[data-running="true"]')).not.toBeNull();
+  render(result, true);
+  expect(host.querySelector('.execution-phase[data-running="true"]')).not.toBeNull();
+  for (const event of ["approval.requested", "run.failed", "run.cancelled", "run.succeeded"]) {
+    render(runActivitySchema.parse({ ...result, items: [...result.items, { ...item(event, 4, "结束"), metadata: { approval_id: "a1" } }] }));
+    expect(host.querySelector('[data-running="true"]')).toBeNull();
+  }
 });
 it("does not force thought rows open when another tab changes detail settings", () => {
   render(thought); expand();
@@ -104,18 +105,18 @@ it("does not force thought rows open when another tab changes detail settings", 
   expect(host.querySelector<HTMLDetailsElement>(".execution-reasoning")!.open).toBe(false);
 });
 
-it("appends a single-line tail without replacing the row or changing manual expansion", () => {
+it("keeps a still status label without replacing the row or changing manual expansion", () => {
   const running = { ...thought, run_id: "tail-row", status: "running", items: thought.items.slice(0, 2) };
   render(running);
   const reasoning = host.querySelector<HTMLDetailsElement>(".execution-reasoning")!;
   const preview = reasoning.querySelector<HTMLElement>(".execution-reasoning-preview")!;
-  expect(reasoning.querySelector("summary")!.textContent).toBe("思考·先核对输入。 再确认结论。");
+  expect(reasoning.querySelector("summary")!.textContent).toBe("思考·进行中");
   Object.defineProperty(preview, "scrollWidth", { value: 1200 });
   const continued = { ...running, items: [...running.items,
     { ...item("reasoning.delta", 3, "思考", " 持续打印。"), metadata: { item_id: "thought-1" } }] };
   render(continued);
   expect(host.querySelector(".execution-reasoning")).toBe(reasoning);
-  expect(preview.scrollLeft).toBe(1200);
+  expect(preview.scrollLeft).toBe(0);
   expect(reasoning.open).toBe(false);
   act(() => { reasoning.open = true; reasoning.dispatchEvent(new Event("toggle")); });
   render({ ...continued, items: [...continued.items,
@@ -155,9 +156,9 @@ it("does not parse hidden Markdown and bounds the preview while retaining expand
   const row = host.querySelector<HTMLDetailsElement>(".execution-reasoning")!;
   expect(row.querySelector(".execution-reasoning-body")).toBeNull();
   expect(row.querySelector(".execution-reasoning-preview")!.textContent!.length).toBeLessThanOrEqual(600);
-  expect(row.textContent).toContain("这是最新片段。");
+  expect(row.querySelector(".execution-reasoning-preview")?.textContent).toBe("进行中");
   act(() => { row.open = true; row.dispatchEvent(new Event("toggle")); });
-  expect(row.querySelector(".execution-reasoning-body")?.textContent).toContain("这是完整思考的开头。");
+  expect(row.querySelector(".execution-reasoning-body")?.textContent).toBe(text);
   act(() => { row.open = false; row.dispatchEvent(new Event("toggle")); });
   expect(row.querySelector(".execution-reasoning-body")).toBeNull();
 });

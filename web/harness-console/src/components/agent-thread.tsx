@@ -1,4 +1,5 @@
 "use client";
+import { sendComposerWithRecovery } from "../lib/composer-send";
 import { ConversationInputCard } from "./conversation-input-card";
 import { latestConversationInput } from "../lib/conversation-input";
 import { useConversationScope } from "../lib/conversation-scope";
@@ -603,14 +604,23 @@ function HarnessComposer() {
       setSteeringNotice("已请求停止，待发送内容已暂停。");
     } catch (error) { setInputError(error instanceof Error ? error.message : "停止请求未成功，请重试。"); }
   }
-  function submitComposer(alternate = false) {
+  const composerSendLock = useRef(false);
+  async function submitComposer(alternate = false) {
     if (command(composerText.trim())) return;
     if (videoRoute) { void generateVideo(); return; }
     if (busy || queue.length) {
       const steer = alternate ? followUpBehavior !== "steer" : followUpBehavior === "steer";
       void enqueue(busy && steer); return;
     }
-    aui.composer().send();
+    if (composerSendLock.current) return;
+    composerSendLock.current = true;
+    setInputError("");
+    try {
+      const error = await sendComposerWithRecovery(threadRuntime.composer);
+      if (error) setInputError(error);
+    } catch (error) {
+      setInputError(error instanceof Error ? error.message : "发送失败，请重试。");
+    } finally { composerSendLock.current = false; }
   }
 
   async function generateVideo() {
