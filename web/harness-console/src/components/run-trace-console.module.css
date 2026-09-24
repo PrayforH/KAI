@@ -1,0 +1,434 @@
+/* Trace console: session-level 调用轨迹 view (timeline + event list + detail). */
+
+.console {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 16px 6px;
+}
+
+.chips {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: var(--muted-ink);
+  font-size: 12.5px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.chip strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ink);
+  font-size: 13.5px;
+}
+
+.chip strong::after {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--rail) 26%, transparent);
+}
+
+.loading {
+  color: var(--muted-ink);
+}
+
+.error {
+  color: var(--danger);
+}
+
+.toolbarActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.search {
+  width: 200px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12.5px;
+  outline: none;
+}
+
+.search:focus {
+  border-color: color-mix(in srgb, var(--rail) 55%, var(--line));
+}
+
+.iconButton {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted-ink);
+  cursor: pointer;
+}
+
+.iconButton:hover {
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+
+.iconButton:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.iconButton svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 16px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.lane {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.laneLabel {
+  color: var(--muted-ink);
+  font-size: 11.5px;
+  text-align: right;
+}
+
+.laneTrack {
+  position: relative;
+  height: 14px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--line) 32%, transparent);
+}
+
+.block {
+  position: absolute;
+  top: 2px;
+  height: 10px;
+  border-radius: 3px;
+  border: 0;
+  padding: 0;
+  min-width: 4px;
+  cursor: pointer;
+  background: var(--rail);
+  opacity: 0.85;
+}
+
+.block.is-ok {
+  background: var(--rail);
+}
+
+.block.is-running {
+  background: var(--signal);
+  animation: trace-pulse 1.2s ease-in-out infinite;
+}
+
+.block.is-failed {
+  background: var(--danger);
+}
+
+.block.is-cancelled {
+  background: var(--muted-ink);
+}
+
+.block.is-selected {
+  outline: 2px solid color-mix(in srgb, var(--rail) 65%, transparent);
+  outline-offset: 1px;
+  opacity: 1;
+}
+
+/* The input lane reads better in the signal tone, matching the reference UI. */
+.lane:nth-child(1) .block {
+  background: var(--signal);
+}
+
+@keyframes trace-pulse {
+  0%, 100% { opacity: 0.9; }
+  50% { opacity: 0.45; }
+}
+
+.body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.list {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 4px 0 12px;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 16px 7px 12px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.row:hover {
+  background: color-mix(in srgb, var(--line) 26%, transparent);
+}
+
+.row.is-selected {
+  background: color-mix(in srgb, var(--rail) 12%, transparent);
+}
+
+.dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--line-strong);
+}
+
+.dot.is-ok {
+  background: var(--line-strong);
+}
+
+.dot.is-running {
+  background: var(--signal);
+}
+
+.dot.is-failed {
+  background: var(--danger);
+}
+
+.dot.is-cancelled {
+  background: var(--muted-ink);
+}
+
+.badge {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-size: 11px;
+  color: var(--on-accent, #fff);
+  background: var(--rail);
+}
+
+.badge.lane-input {
+  background: var(--signal);
+}
+
+.badge.lane-model {
+  background: color-mix(in srgb, var(--rail) 78%, #000 6%);
+}
+
+.badge.lane-tool {
+  background: #b0642a;
+}
+
+.rowMain {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+
+.rowLabel {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+
+.rowDetail {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--muted-ink);
+  font-size: 12px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+.rowMeta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  color: var(--muted-ink);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.rowDuration {
+  color: var(--ink);
+}
+
+.empty {
+  padding: 48px 16px;
+  text-align: center;
+  color: var(--muted-ink);
+}
+
+.empty strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--ink);
+}
+
+.detail {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 44%;
+  min-width: 0;
+  border-left: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.detailHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px 10px;
+}
+
+.detailContext {
+  flex: 1;
+  color: var(--muted-ink);
+  font-size: 12.5px;
+}
+
+.detailTabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.detailTabs button {
+  padding: 7px 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted-ink);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.detailTabs button.is-active {
+  color: var(--ink);
+  border-bottom-color: var(--rail);
+  font-weight: 600;
+}
+
+.detailBody {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 14px 16px;
+}
+
+.overview p {
+  margin: 0 0 10px;
+}
+
+.overviewTitle {
+  font-weight: 600;
+  font-size: 13.5px;
+}
+
+.overview dl,
+.timing {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+
+.overview dl div,
+.timing div {
+  display: flex;
+  gap: 10px;
+}
+
+.overview dt,
+.timing dt {
+  flex: 0 0 48px;
+  color: var(--muted-ink);
+}
+
+.overview dd,
+.timing dd {
+  margin: 0;
+  word-break: break-all;
+  font-variant-numeric: tabular-nums;
+}
+
+.code {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-subtle, color-mix(in srgb, var(--line) 18%, transparent));
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11.8px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.footnote {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 16px;
+  border-top: 1px solid var(--line);
+  color: var(--faint-ink);
+  font-size: 11.5px;
+}
+
+@media (max-width: 900px) {
+  .detail {
+    flex-basis: 60%;
+  }
+}

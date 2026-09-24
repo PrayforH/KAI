@@ -39,7 +39,7 @@ const threadHistoryCacheMax = 8;
 const THREAD_HISTORY_PAGE_RUNS = 10;
 const threadHistoryAccumulatedMax = 8;
 
-interface ThreadHistoryResponse {
+export interface ThreadHistoryResponse {
   thread_id: string;
   status: string;
   run_id?: string | null;
@@ -188,6 +188,39 @@ async function loadThreadHistory(
 
 export function prefetchThreadHistory(threadId: string): Promise<void> {
   return loadThreadHistory(threadId).then(() => undefined);
+}
+
+/**
+ * Full history for the trace console: page through every visible run with the
+ * server's max page size instead of the conversation's 10-run page. Returns
+ * plain messages (not imported into the chat runtime).
+ */
+export const TRACE_HISTORY_PAGE_RUNS = 100;
+export const TRACE_HISTORY_MAX_PAGES = 20;
+
+export async function loadFullThreadHistory(
+  threadId: string,
+): Promise<ThreadHistoryResponse["messages"]> {
+  const messages: ThreadHistoryResponse["messages"] = [];
+  let before: string | undefined;
+  for (let page = 0; page < TRACE_HISTORY_MAX_PAGES; page += 1) {
+    const query = new URLSearchParams({ limit: String(TRACE_HISTORY_PAGE_RUNS) });
+    if (before) query.set("before", before);
+    const response = requireAuthenticatedResponse(
+      await fetch(
+        `/api/agui/threads/${encodeURIComponent(threadId)}/history?${query.toString()}`,
+        { cache: "no-store" },
+      ),
+    );
+    if (!response.ok) {
+      throw new Error((await response.text()) || `HTTP ${response.status}`);
+    }
+    const history = (await response.json()) as ThreadHistoryResponse;
+    messages.push(...history.messages);
+    if (!history.has_more || !history.next_cursor) break;
+    before = history.next_cursor;
+  }
+  return messages;
 }
 
 export function invalidateThreadHistory(threadId: string): void {

@@ -280,6 +280,7 @@ export function TaskHeaderActions({
   task,
   projects = [],
   observabilityHref,
+  onOpenTrace,
   onRenamed,
   onArchived,
   onProjectChanged,
@@ -289,6 +290,8 @@ export function TaskHeaderActions({
   projects?: readonly ApiProject[];
   /** Trace for the run currently shown in this task. */
   observabilityHref?: string | null;
+  /** Open the in-app session trace view; falls back to the external link. */
+  onOpenTrace?: () => void;
   onRenamed?: (title: string) => void;
   onArchived?: () => void;
   onProjectChanged?: (projectId: string | null) => void;
@@ -388,7 +391,19 @@ export function TaskHeaderActions({
       <FeedbackToast message={error} tone="error" onDismiss={() => setError("")} />
       {open && (
         <div className="task-header-menu" role="menu" aria-label="更多任务操作">
-          {observabilityHref ? (
+          {onOpenTrace ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                close();
+                onOpenTrace();
+              }}
+            >
+              <TraceIcon />
+              <span>调用轨迹</span>
+            </button>
+          ) : observabilityHref ? (
             <a
               role="menuitem"
               href={observabilityHref}

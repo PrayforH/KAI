@@ -1,0 +1,398 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  buildSessionTrace,
+  extractSessionRuns,
+  formatClock,
+  formatDuration,
+  searchTraceNodes,
+  timelinePosition,
+  type SessionTrace,
+  type TraceNode,
+} from "../lib/session-trace";
+import type { RunActivity } from "../lib/activity-schema";
+import {
+  loadFullThreadHistory,
+  type ThreadHistoryResponse,
+} from "../lib/task-history";
+import styles from "./run-trace-console.module.css";
+
+type DetailTab = "overview" | "arguments" | "output" | "timing";
+
+const TAB_LABELS: ReadonlyArray<readonly [DetailTab, string]> = [
+  ["overview", "概述"],
+  ["arguments", "参数"],
+  ["output", "结果"],
+  ["timing", "计时"],
+];
+
+function nodeTabs(node: TraceNode): ReadonlyArray<readonly [DetailTab, string]> {
+  if (node.lane === "input" || !node.argumentsText) {
+    return TAB_LABELS.filter(([tab]) => tab !== "arguments");
+  }
+  return TAB_LABELS;
+}
+
+function DownloadIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M10 3.5v8m0 0 3.2-3.2M10 11.5 6.8 8.3M4 14.5v1a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-1" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="m5.5 5.5 9 9m0-9-9 9" />
+    </svg>
+  );
+}
+
+function statusClass(
+  stylesMap: Record<string, string>,
+  status: string,
+  running: boolean,
+): string {
+  if (running) return stylesMap["is-running"];
+  if (["failed", "rejected", "timed_out", "error"].includes(status)) {
+    return stylesMap["is-failed"];
+  }
+  if (["cancelled", "cancelling"].includes(status)) return stylesMap["is-cancelled"];
+  return stylesMap["is-ok"];
+}
+
+function downloadSessionLog(trace: SessionTrace, threadId: string) {
+  const payload = {
+    thread_id: threadId,
+    exported_at: new Date().toISOString(),
+    summary: trace.summary,
+    window: trace.window,
+    runs: trace.runs.map((run) => ({
+      run_id: run.runId,
+      turn: run.turn,
+      prompt: run.prompt,
+      activity: run.activity,
+    })),
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `session-${threadId || "trace"}-log.json`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+export function RunTraceConsole({
+  threadId,
+  liveActivity,
+}: {
+  threadId: string;
+  liveActivity?: RunActivity | null;
+}) {
+  const [history, setHistory] = useState<ThreadHistoryResponse["messages"] | null>(
+    null,
+  );
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [reloadNonce, setReloadNonce] = useState(0);
+  const [query, setQuery] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<DetailTab>("overview");
+  const listRef = useRef<HTMLOListElement>(null);
+  const scrolledForSelection = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!threadId) {
+      setHistory(null);
+      setError("");
+      return;
+    }
+    let active = true;
+    setLoading(true);
+    setError("");
+    loadFullThreadHistory(threadId)
+      .then((messages) => {
+        if (active) setHistory(messages);
+      })
+      .catch((cause: unknown) => {
+        if (active) {
+          setError(cause instanceof Error ? cause.message : String(cause));
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [threadId, reloadNonce]);
+
+  const trace = useMemo(
+    () =>
+      buildSessionTrace(
+        history ? extractSessionRuns(history) : [],
+        liveActivity ?? undefined,
+      ),
+    [history, liveActivity],
+  );
+  const visibleNodes = useMemo(
+    () => searchTraceNodes(trace.nodes, query),
+    [trace.nodes, query],
+  );
+  const selected = useMemo(
+    () => trace.nodes.find((node) => node.id === selectedId) ?? null,
+    [trace.nodes, selectedId],
+  );
+
+  const selectNode = useCallback((node: TraceNode) => {
+    setSelectedId(node.id);
+    setActiveTab("overview");
+    scrolledForSelection.current = null;
+  }, []);
+
+  // Clicking a timeline segment selects the node; the list scrolls once so the
+  // row is visible without fighting later re-renders.
+  useEffect(() => {
+    if (!selected || scrolledForSelection.current === selected.id) return;
+    const row = listRef.current?.querySelector(
+      `[data-node-id="${CSS.escape(selected.id)}"]`,
+    );
+    row?.scrollIntoView({ block: "nearest" });
+    scrolledForSelection.current = selected.id;
+  }, [selected]);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    if (!trace.nodes.some((node) => node.id === selectedId)) setSelectedId(null);
+  }, [trace.nodes, selectedId]);
+
+  const lanes: ReadonlyArray<readonly [string, TraceNode["lane"]]> = [
+    ["输入", "input"],
+    ["模型", "model"],
+    ["工具", "tool"],
+  ];
+
+  return (
+    <div className={styles.console} aria-label="调用轨迹">
+      <div className={styles.toolbar}>
+        <div className={styles.chips} aria-label="轨迹摘要">
+          <span className={styles.chip}>
+            <strong>{formatDuration(trace.summary.durationMs)}</strong>时长
+          </span>
+          <span className={styles.chip}>
+            <strong>{trace.summary.turns}</strong>轮次
+          </span>
+          <span className={styles.chip}>
+            <strong>{trace.summary.toolCalls}</strong>调用
+          </span>
+          {loading && <span className={styles.loading}>加载中…</span>}
+          {error && (
+            <span className={styles.error} role="alert">加载失败：{error}</span>
+          )}
+        </div>
+        <div className={styles.toolbarActions}>
+          <input
+            className={styles.search}
+            type="search"
+            placeholder="搜索"
+            aria-label="搜索轨迹"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <button
+            type="button"
+            className={styles.iconButton}
+            aria-label="刷新轨迹"
+            title="刷新轨迹"
+            onClick={() => setReloadNonce((value) => value + 1)}
+          >
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M15.5 10a5.5 5.5 0 1 1-1.6-3.9M15.5 3.5v3h-3" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className={styles.iconButton}
+            aria-label="下载 Session 日志"
+            title="下载 Session 日志"
+            disabled={!trace.nodes.length}
+            onClick={() => downloadSessionLog(trace, threadId)}
+          >
+            <DownloadIcon />
+          </button>
+        </div>
+      </div>
+
+      <div className={styles.timeline} aria-hidden={trace.window.totalMs <= 0}>
+        {trace.window.totalMs > 0 &&
+          lanes.map(([label, lane]) => (
+            <div className={styles.lane} key={lane}>
+              <span className={styles.laneLabel}>{label}</span>
+              <div className={styles.laneTrack}>
+                {visibleNodes
+                  .filter((node) => node.lane === lane)
+                  .map((node) => {
+                    const position = timelinePosition(node, trace.window);
+                    return (
+                      <button
+                        key={node.id}
+                        type="button"
+                        className={`${styles.block} ${statusClass(styles, node.status, node.running)}${selectedId === node.id ? ` ${styles["is-selected"]}` : ""}`}
+                        style={{
+                          left: `${position.left}%`,
+                          width: `${position.width}%`,
+                        }}
+                        title={`${formatClock(node.startMs)} · ${node.label}`}
+                        aria-label={`${node.badge} ${node.label}`}
+                        onClick={() => selectNode(node)}
+                      />
+                    );
+                  })}
+              </div>
+            </div>
+          ))}
+      </div>
+
+      <div className={styles.body}>
+        <ol className={styles.list} ref={listRef} aria-label="轨迹事件">
+          {visibleNodes.map((node) => (
+            <li key={node.id} data-node-id={node.id}>
+              <button
+                type="button"
+                className={`${styles.row}${selectedId === node.id ? ` ${styles["is-selected"]}` : ""}`}
+                onClick={() => selectNode(node)}
+              >
+                <span
+                  className={`${styles.dot} ${statusClass(styles, node.status, node.running)}`}
+                  aria-hidden="true"
+                />
+                <span className={`${styles.badge} ${styles[`lane-${node.lane}`]}`}>
+                  {node.badge}
+                </span>
+                <span className={styles.rowMain}>
+                  <span className={styles.rowLabel}>{node.label}</span>
+                  {node.detail && (
+                    <span className={styles.rowDetail}>{node.detail}</span>
+                  )}
+                </span>
+                <span className={styles.rowMeta}>
+                  {node.endMs > node.startMs && (
+                    <span className={styles.rowDuration}>
+                      {formatDuration(node.endMs - node.startMs)}
+                    </span>
+                  )}
+                  <span className={styles.rowClock}>{formatClock(node.startMs)}</span>
+                </span>
+              </button>
+            </li>
+          ))}
+          {!loading && !visibleNodes.length && (
+            <li className={styles.empty}>
+              <strong>{query ? "没有匹配的轨迹事件" : "还没有可展示的轨迹"}</strong>
+              <p>
+                {query
+                  ? "换个关键词试试"
+                  : "任务运行后，这里会按轮次展示输入、模型与工具调用。"}
+              </p>
+            </li>
+          )}
+        </ol>
+
+        {selected && (
+          <aside className={styles.detail} aria-label="轨迹详情">
+            <header className={styles.detailHeader}>
+              <span className={styles.badge}>{selected.badge}</span>
+              <span className={styles.detailContext}>
+                第 {selected.turn} 轮 · 步骤 {selected.step}
+              </span>
+              <button
+                type="button"
+                className={styles.iconButton}
+                aria-label="关闭详情"
+                onClick={() => setSelectedId(null)}
+              >
+                <CloseIcon />
+              </button>
+            </header>
+            <div className={styles.detailTabs} role="tablist">
+              {nodeTabs(selected).map(([tab, label]) => (
+                <button
+                  key={tab}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === tab}
+                  className={activeTab === tab ? styles["is-active"] : undefined}
+                  onClick={() => setActiveTab(tab)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className={styles.detailBody} role="tabpanel">
+              {activeTab === "overview" && (
+                <div className={styles.overview}>
+                  <p className={styles.overviewTitle}>{selected.label}</p>
+                  {selected.summary && <p>{selected.summary}</p>}
+                  <dl>
+                    <div>
+                      <dt>状态</dt>
+                      <dd>{selected.running ? "运行中" : selected.status}</dd>
+                    </div>
+                    {selected.artifact && (
+                      <div>
+                        <dt>产物</dt>
+                        <dd>
+                          <a
+                            href="#"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              window.dispatchEvent(
+                                new CustomEvent("harness:preview-artifact", {
+                                  detail: { artifact_id: selected.artifact?.id },
+                                }),
+                              );
+                            }}
+                          >
+                            {selected.artifact.name}
+                          </a>
+                        </dd>
+                      </div>
+                    )}
+                  </dl>
+                </div>
+              )}
+              {activeTab === "arguments" && (
+                <pre className={styles.code}>{selected.argumentsText}</pre>
+              )}
+              {activeTab === "output" && (
+                <pre className={styles.code}>
+                  {selected.output ?? selected.detail ?? "（无输出）"}
+                </pre>
+              )}
+              {activeTab === "timing" && (
+                <dl className={styles.timing}>
+                  <div><dt>开始</dt><dd>{formatClock(selected.startMs)}</dd></div>
+                  <div><dt>结束</dt><dd>{formatClock(selected.endMs)}</dd></div>
+                  <div>
+                    <dt>耗时</dt>
+                    <dd>{formatDuration(selected.endMs - selected.startMs)}</dd>
+                  </div>
+                  <div><dt>轮次</dt><dd>第 {selected.turn} 轮</dd></div>
+                </dl>
+              )}
+            </div>
+          </aside>
+        )}
+      </div>
+
+      <p className={styles.footnote}>
+        轨迹来自本会话各轮次的服务端运行事件；模型级 Span 见开发者抽屉的外部 Trace 链接。
+      </p>
+    </div>
+  );
+}
