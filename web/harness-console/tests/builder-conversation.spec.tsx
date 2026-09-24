@@ -532,7 +532,8 @@ it("keeps streamed builder text in one message and separates processing status",
   const answer = host.querySelector('.harness-assistant-message');
   expect(answer?.textContent).toContain("建议输出");
   expect(answer?.querySelector(".execution-ribbon.phase-running")).not.toBeNull();
-  expect(answer?.querySelector('.execution-state-sweep[data-running="true"]')).not.toBeNull();
+  expect(answer?.querySelector(".execution-phase")?.textContent).toContain("正在处理");
+  expect(answer?.querySelector('.execution-phase[data-running]')).toBeNull();
   expect(answer?.textContent?.indexOf("正在检查配置")).toBeLessThan(answer?.textContent?.indexOf("建议输出") ?? 0);
   await act(async () => emit!({type: "builder.reply", text: "建议输出表格"}));
   expect(host.querySelector('.harness-assistant-message')).toBe(answer);

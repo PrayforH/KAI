@@ -474,24 +474,20 @@ body.codex-theme-v1 .task-version-switcher .task-agent-switcher-branch svg {
 /* Keep the disclosure truly collapsed even when the theme sets display:block. */
 body.codex-theme-v1 .execution-tree[hidden] { display: none; }
 /* Keep the animation attached to stable labels; successive tool events resume it. */
-body.codex-theme-v1 .execution-ribbon .execution-state-sweep {
-  animation: execution-text-sweep 2.4s linear infinite paused;
-}
-body.codex-theme-v1 .execution-ribbon .execution-state-sweep[data-running="true"] {
+body.codex-theme-v1 .execution-action .execution-state-sweep[data-running="true"] {
   color: transparent;
-  background-image: linear-gradient(100deg, var(--codex-muted) 35%, var(--codex-ink) 48%, var(--codex-muted) 61%);
-  background-size: 260% 100%;
+  background-image: linear-gradient(100deg, var(--codex-muted) 18%, var(--codex-ink) 48%, var(--codex-muted) 78%);
+  background-size: 180% 100%;
   background-clip: text;
   -webkit-background-clip: text;
-  animation-play-state: running;
+  animation: execution-text-sweep 1.8s linear infinite;
 }
 @keyframes execution-text-sweep {
   from { background-position: 100% 0; }
   to { background-position: 0% 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-  body.codex-theme-v1 .execution-ribbon .execution-state-sweep { animation: none; }
-  body.codex-theme-v1 .execution-ribbon .execution-state-sweep[data-running="true"] { background: none; color: var(--codex-muted); }
+  body.codex-theme-v1 .execution-action .execution-state-sweep[data-running="true"] { animation: none; background: none; color: var(--codex-muted); }
 }
 
 body.codex-theme-v1 div.execution-disclosure { cursor: default; }
@@ -1112,7 +1108,18 @@ body.codex-theme-v1:has(.console-shell) .task-project-toolbar + .task-list { pad
 .nested-menu-panel button:hover:not(:disabled) { background: var(--codex-surface-hover); color: var(--codex-ink); }
 .nested-menu button:focus-visible { outline: 2px solid var(--codex-muted); outline-offset: -2px; }
 .nested-menu button:disabled { color: var(--codex-faint); cursor: not-allowed; }
-.account-theme { display: block; padding: 4px 0; }
+html body.codex-theme-v1 .account-theme { padding: 4px 0; }
+html body.codex-theme-v1 .account-theme .nested-menu-trigger {
+  min-height: 36px;
+  padding: 0 10px;
+  gap: 9px;
+}
+html body.codex-theme-v1 .account-theme .nested-menu-trigger > svg:first-child {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
+  stroke-width: 1.65;
+}
 html[data-color-mode="light"] .nested-menu-panel { background: #fff; border-color: #ddd; }
 
 .rail-file-group {margin-top:6px;}
