@@ -156,6 +156,10 @@ async def test_dataset_projection_and_langfuse_payload_are_metadata_only() -> No
 
     def handler(request: httpx.Request) -> httpx.Response:
         captured.append(request)
+        if request.url.path == "/api/public/scores":
+            payload = json.loads(request.content)
+            if sum(key in payload for key in ("traceId", "sessionId", "datasetRunId")) != 1:
+                return httpx.Response(400, json={"message": "Provide exactly one score target"})
         return httpx.Response(200, json={"id": "ok"})
 
     exporter = LangfuseQualityExporter(
@@ -168,7 +172,9 @@ async def test_dataset_projection_and_langfuse_payload_are_metadata_only() -> No
     await exporter.export_dataset(projection)
     score_payload = json.loads(captured[0].content)
     dataset_payload = json.loads(captured[1].content)
-    assert set(score_payload) == {"id", "traceId", "sessionId", "name", "value", "dataType"}
+    assert set(score_payload) == {"id", "traceId", "name", "value", "dataType"}
+    assert score_payload["traceId"] == score.trace_id
+    assert score.session_id == session.session_id
     assert set(dataset_payload["metadata"]) == {"agentName", "caseCount", "contentHash"}
     assert "prompt" not in repr(score_payload).lower()
     assert "prompt" not in repr(dataset_payload).lower()

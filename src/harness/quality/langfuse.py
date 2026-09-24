@@ -58,8 +58,9 @@ class LangfuseQualityExporter:
             return
         payload = {
             "id": score.score_id,
+            # Run scores target their trace. Langfuse rejects requests that also
+            # target a session; the trace already carries the session relation.
             "traceId": score.trace_id,
-            "sessionId": score.session_id,
             "name": score.name,
             "value": score.value,
             "dataType": "NUMERIC",
