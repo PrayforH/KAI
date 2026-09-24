@@ -94,6 +94,24 @@ describe("task header actions", () => {
     ]);
   });
 
+  it("opens the current run trace from the header menu and disables it before a run exists", () => {
+    const href = "/api/harness/observability?run_id=run-1&trace_id=0123456789abcdef0123456789abcdef";
+    render(<TaskHeaderActions task={task()} observabilityHref={href} />);
+    act(() => container.querySelector<HTMLButtonElement>(".task-header-more")?.click());
+    const link = container.querySelector<HTMLAnchorElement>('.task-header-menu a[role="menuitem"]');
+    expect(link?.textContent).toBe("调用轨迹");
+    expect(link?.getAttribute("href")).toBe(href);
+    expect(link?.getAttribute("target")).toBe("_blank");
+    act(() => link?.click());
+    expect(container.querySelector(".task-header-menu")).toBeNull();
+
+    act(() => root?.render(<TaskHeaderActions task={task()} observabilityHref={null} />));
+    act(() => container.querySelector<HTMLButtonElement>(".task-header-more")?.click());
+    expect(container.querySelector('.task-header-menu [aria-disabled="true"]')?.textContent)
+      .toBe("调用轨迹");
+    expect(container.querySelector('.task-header-menu a[role="menuitem"]')).toBeNull();
+  });
+
   it("offers unpin for a pinned task and pins through the thread PATCH", async () => {
     render(<TaskHeaderActions task={task({ pinned_at: "2026-09-18T01:00:00Z" })} />);
     act(() => {

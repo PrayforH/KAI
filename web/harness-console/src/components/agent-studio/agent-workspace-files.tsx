@@ -46,7 +46,7 @@ export function AgentWorkspaceFiles({draft, baseline, turns, onClose}: {
     return <div className={styles.fileSource}><header><strong>{file.name}</strong>{file.change && <span>{file.change}</span>}</header>{change ? <ProjectSourceDiff change={change} theme={theme} wrap /> : entry?.content != null ? <ProjectSourceEditor path={file.name} content={entry.content} theme={theme} wrap /> : <p>{entry?.unavailable}</p>}</div>;
   }
   return <div className={styles.workspaceFiles} data-expanded={expanded}>
-    <WorkbenchRail open onClose={onClose} expanded={expanded} onToggleExpanded={() => setExpanded(value => !value)} threadId={draft.id} observabilityHref={null} runPhase={null}
+    <WorkbenchRail open onClose={onClose} expanded={expanded} onToggleExpanded={() => setExpanded(value => !value)} threadId={draft.id} runPhase={null}
       expandIcon={<PanelExpandIcon expanded={expanded} />} workspace={{files,loading:false,error:"",renderPreview:preview,note:undefined}} />
   </div>;
 }

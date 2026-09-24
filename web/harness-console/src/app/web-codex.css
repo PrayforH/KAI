@@ -1110,7 +1110,9 @@ body.codex-theme-v1:has(.console-shell) .console-header {
   flex: 0 0 auto;
 }
 
-.task-header-more svg {
+/* Codex's compact horizontal ellipsis uses three solid dots. Keep this more
+   specific than the shared outline rule for header icons below. */
+.header-icon-button.task-header-more svg {
   fill: currentColor;
   stroke: none;
 }
@@ -1130,7 +1132,9 @@ body.codex-theme-v1:has(.console-shell) .console-header {
   box-shadow: 0 24px 80px rgb(0 0 0 / 46%);
 }
 
-.task-header-menu button {
+.task-header-menu button,
+.task-header-menu a,
+.task-header-menu .task-header-menu-unavailable {
   width: 100%;
   min-height: 32px;
   padding: 0 9px;
@@ -1141,22 +1145,29 @@ body.codex-theme-v1:has(.console-shell) .console-header {
   border-radius: 7px;
   color: var(--codex-ink-soft);
   background: transparent;
-  cursor: pointer;
   font-size: 12.5px;
   text-align: left;
+  text-decoration: none;
 }
 
-.task-header-menu button:hover:not(:disabled) {
+.task-header-menu button,
+.task-header-menu a { cursor: pointer; }
+
+.task-header-menu button:hover:not(:disabled),
+.task-header-menu a:hover {
   color: var(--codex-ink);
   background: var(--codex-surface-hover);
 }
 
-.task-header-menu button:disabled {
+.task-header-menu button:disabled,
+.task-header-menu .task-header-menu-unavailable {
   color: var(--codex-faint);
   cursor: not-allowed;
 }
 
-.task-header-menu button svg {
+.task-header-menu button svg,
+.task-header-menu a svg,
+.task-header-menu .task-header-menu-unavailable svg {
   width: 15px;
   height: 15px;
   flex: 0 0 15px;
@@ -2326,16 +2337,19 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-deta
   border-top: 1px solid #ebebed;
 }
 
-html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-header-menu button {
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-header-menu button,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-header-menu a {
   color: #3d3d42;
 }
 
-html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-header-menu button:hover:not(:disabled) {
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-header-menu button:hover:not(:disabled),
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-header-menu a:hover {
   color: #171719;
   background: #f0f0f1;
 }
 
-html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-header-menu button:disabled {
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-header-menu button:disabled,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-header-menu .task-header-menu-unavailable {
   color: #b0b0b5;
 }
 

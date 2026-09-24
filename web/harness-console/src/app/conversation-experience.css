@@ -832,7 +832,7 @@ html[data-color-mode="light"] .rail-file-icon[data-kind="doc"] { color: #1f5f9e;
   border-bottom: 1px solid var(--codex-line);
 }
 .rail-bar-views { display: flex; align-items: center; gap: 2px; }
-/* The view the drawer is showing, and the icon that always leaves for Langfuse. */
+/* Mark the drawer's active view. */
 .rail-bar-views .rail-bar-button[aria-current] { color: var(--codex-ink); background: var(--codex-surface-active, #232323); }
 .rail-bar-button.is-disabled { color: var(--codex-faint, #4a4a4a); cursor: default; }
 a.rail-bar-button { text-decoration: none; }

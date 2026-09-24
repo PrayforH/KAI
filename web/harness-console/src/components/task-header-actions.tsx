@@ -63,6 +63,14 @@ function DotsIcon() {
   );
 }
 
+function TraceIcon() {
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M2.8 12.6h2.6l2-5.4 2.6 8 2.2-5.4 1.4 2.8h3.6" />
+    </svg>
+  );
+}
+
 function PinIcon() {
   return (
     <svg viewBox="0 0 20 20" aria-hidden="true">
@@ -271,6 +279,7 @@ function RenameTaskDialog({
 export function TaskHeaderActions({
   task,
   projects = [],
+  observabilityHref,
   onRenamed,
   onArchived,
   onProjectChanged,
@@ -278,6 +287,8 @@ export function TaskHeaderActions({
   task: TaskSummary;
   /** Projects the task can be moved into; empty hides the project actions. */
   projects?: readonly ApiProject[];
+  /** Trace for the run currently shown in this task. */
+  observabilityHref?: string | null;
   onRenamed?: (title: string) => void;
   onArchived?: () => void;
   onProjectChanged?: (projectId: string | null) => void;
@@ -377,6 +388,23 @@ export function TaskHeaderActions({
       <FeedbackToast message={error} tone="error" onDismiss={() => setError("")} />
       {open && (
         <div className="task-header-menu" role="menu" aria-label="更多任务操作">
+          {observabilityHref ? (
+            <a
+              role="menuitem"
+              href={observabilityHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={close}
+            >
+              <TraceIcon />
+              <span>调用轨迹</span>
+            </a>
+          ) : (
+            <span className="task-header-menu-unavailable" aria-disabled="true">
+              <TraceIcon />
+              <span>调用轨迹</span>
+            </span>
+          )}
           <button type="button" role="menuitem" disabled={busy} onClick={togglePinned}>
             <PinIcon />
             <span>{pinned ? "取消置顶任务" : "置顶任务"}</span>

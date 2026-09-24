@@ -196,6 +196,7 @@ function TaskContextBar({
   taskTitle,
   task,
   switcher,
+  observabilityHref,
   onRenamed,
   onArchived,
   projects = [],
@@ -205,6 +206,7 @@ function TaskContextBar({
   task: TaskSummary | null;
   /** Version switcher for switchable agents, folded into the folder popover. */
   switcher?: ReactNode;
+  observabilityHref?: string | null;
   onRenamed: (title: string) => void;
   onArchived: () => void;
   projects?: readonly ApiProject[];
@@ -226,6 +228,7 @@ function TaskContextBar({
         <TaskHeaderActions
           task={task}
           projects={projects}
+          observabilityHref={observabilityHref}
           onRenamed={onRenamed}
           onArchived={onArchived}
           onProjectChanged={() => onProjectChanged?.()}
@@ -712,6 +715,7 @@ function AuthenticatedHome() {
               <TaskContextBar
                 taskTitle={currentTaskTitle}
                 task={currentTask}
+                observabilityHref={observabilityHref}
                 projects={projects}
                 onProjectChanged={() => {
                   // The task moved between sections: reload both the list and
@@ -808,7 +812,6 @@ function AuthenticatedHome() {
           onClose={() => setTaskRailOpen(false)}
           expanded={railExpanded}
           onToggleExpanded={() => setRailExpanded((current) => !current)}
-          observabilityHref={observabilityHref}
           runPhase={runView?.phase ?? null}
           threadId={threadId}
         />

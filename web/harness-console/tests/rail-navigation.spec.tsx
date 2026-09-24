@@ -23,7 +23,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function render(onClose = vi.fn(), onToggleExpanded = vi.fn(), observabilityHref: string | null = null) {
+async function render(onClose = vi.fn(), onToggleExpanded = vi.fn()) {
   vi.stubGlobal("fetch", vi.fn(async () => Response.json(files)));
   host = document.createElement("div");
   document.body.appendChild(host);
@@ -35,7 +35,6 @@ async function render(onClose = vi.fn(), onToggleExpanded = vi.fn(), observabili
         onClose={onClose}
         expanded={false}
         onToggleExpanded={onToggleExpanded}
-        observabilityHref={observabilityHref}
         runPhase="completed"
         threadId="task-a"
       />,
@@ -203,7 +202,7 @@ it("opens the search field and closes the drawer with the panel mark", async () 
   await click(button("收起任务上下文"));
   expect(onClose).toHaveBeenCalledTimes(1);
 
-  // The view tabs are gone: the header carries the file and observability icons.
+  // The drawer header now only controls files and their preview.
   expect(host!.querySelector(".rail-tabs")).toBeNull();
   expect(host!.querySelector(".workbench-rail-task")).toBeNull();
 });
@@ -219,26 +218,17 @@ it("returns to the file list from the header icon", async () => {
   expect(button("文件列表")?.getAttribute("aria-current")).toBe("page");
 });
 
-it("links the current run into Langfuse, and says so before a run exists", async () => {
-  await render(vi.fn(), vi.fn(), "/api/harness/observability?run_id=run_1&trace_id=");
-  const link = host!.querySelector('a[href^="/api/harness/observability"]');
-  expect(link?.getAttribute("href")).toBe("/api/harness/observability?run_id=run_1&trace_id=");
-  expect(link?.getAttribute("target")).toBe("_blank");
-  expect(link?.getAttribute("aria-label")).toContain("Langfuse");
-
-  // Without a run there is nothing to open, so the icon states that instead.
-  await act(async () => root!.unmount());
-  host!.remove();
+it("keeps the file drawer focused on file controls", async () => {
   await render();
   expect(host!.querySelector('a[href^="/api/harness/observability"]')).toBeNull();
-  expect(host!.querySelector('.rail-bar-button.is-disabled[aria-label*="Trace"]')).not.toBeNull();
+  expect(host!.querySelector('[aria-label*="Trace"]')).toBeNull();
 });
 
 it("uses supplied agent files and their change previews without fetching another task", async () => {
   const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
   host = document.createElement("div"); document.body.appendChild(host); root = createRoot(host);
   const refresh = vi.fn();
-  await act(async () => root!.render(<WorkbenchRail open onClose={vi.fn()} expanded={false} onToggleExpanded={vi.fn()} threadId="draft-a" observabilityHref={null} runPhase={null}
+  await act(async () => root!.render(<WorkbenchRail open onClose={vi.fn()} expanded={false} onToggleExpanded={vi.fn()} threadId="draft-a" runPhase={null}
     workspace={{files:[{artifact_id:"source:agent.py",name:"agent.py",media_type:"text/plain",change:"已修改"}],loading:false,error:"",onRefresh:refresh,renderPreview: file => <pre>{file.name} 的差异</pre>}} />));
   expect(fetchMock).not.toHaveBeenCalled();
   const group = host.querySelector("details")!;
@@ -257,7 +247,7 @@ it("renders the deliverable first and mounts PDF conversion pages only after ope
     { artifact_id: 'final', name: 'report.md', media_type: 'text/markdown' },
     ...Array.from({ length: 70 }, (_, i) => ({ artifact_id: `page-${i}`, name: `images_cv3/p${i}.png`, media_type: 'image/png' })),
   ];
-  await act(async () => root!.render(<WorkbenchRail open onClose={vi.fn()} expanded={false} onToggleExpanded={vi.fn()} threadId="pdf-task" observabilityHref={null} runPhase={null} workspace={{ files, loading: false, error: '', renderPreview: file => <pre>{file.name}</pre> }} />));
+  await act(async () => root!.render(<WorkbenchRail open onClose={vi.fn()} expanded={false} onToggleExpanded={vi.fn()} threadId="pdf-task" runPhase={null} workspace={{ files, loading: false, error: '', renderPreview: file => <pre>{file.name}</pre> }} />));
   expect(host.querySelectorAll('.rail-file-row')).toHaveLength(1);
   const middle = [...host.querySelectorAll('details')].find(item => item.textContent?.includes('中间文件'))!;
   await act(async () => { middle.open = true; middle.dispatchEvent(new Event('toggle')); });

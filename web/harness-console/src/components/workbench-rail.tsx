@@ -48,16 +48,6 @@ function FolderIcon() {
   );
 }
 
-/** Observability: one run's trace, drawn as a scope sweep. */
-function TraceIcon() {
-  return (
-    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"
-      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M2.8 12.6h2.6l2-5.4 2.6 8 2.2-5.4 1.4 2.8h3.6" />
-    </svg>
-  );
-}
-
 function ExpandIcon() {
   return (
     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"
@@ -143,7 +133,6 @@ export function WorkbenchRail({
   onToggleExpanded,
   threadId,
   previewRequest,
-  observabilityHref,
   runPhase,
   workspace,
   expandIcon,
@@ -156,8 +145,6 @@ export function WorkbenchRail({
   onToggleExpanded: () => void;
   threadId: string;
   previewRequest?: (PreviewTarget & { nonce: number }) | null;
-  /** Langfuse trace for the current run, or null while no run exists. */
-  observabilityHref: string | null;
   /** A phase change means the run may have written new artifacts. */
   runPhase: string | null;
 }) {
@@ -335,26 +322,6 @@ export function WorkbenchRail({
             >
               <FolderIcon />
             </button>
-            {!workspace && (observabilityHref ? (
-              <a
-                className="rail-bar-button"
-                aria-label="在 Langfuse 查看本次运行的 Trace"
-                title="在 Langfuse 查看本次运行的 Trace"
-                href={observabilityHref}
-                target="_blank"
-                rel="noreferrer"
-              >
-                <TraceIcon />
-              </a>
-            ) : (
-              <span
-                className="rail-bar-button is-disabled"
-                aria-label="本次运行的 Trace 尚未生成"
-                title="运行开始后可查看观测"
-              >
-                <TraceIcon />
-              </span>
-            ))}
           </div>
           <div className="rail-bar-actions">
             <button
