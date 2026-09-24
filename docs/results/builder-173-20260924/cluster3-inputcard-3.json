@@ -1,0 +1,36 @@
+{
+  "responses": [
+    {
+      "status": 200,
+      "at": 1790223558290,
+      "keys": null,
+      "reply": null
+    }
+  ],
+  "target": "QA 联网恢复验证 114420",
+  "card": null,
+  "settled": {
+    "input": null,
+    "assistant": "好的，先不修改。请告诉我：这份报告的受众是谁？期望的输出形式是什么（例如摘要、结构化报告、工作区文件等）？复制回答",
+    "assistantCount": 1,
+    "stop": false,
+    "sendLabel": "发送消息",
+    "toastCoversSend": false,
+    "covering": null
+  },
+  "lastConv": {
+    "status": 200,
+    "at": 1790223558290,
+    "keys": null,
+    "reply": null
+  },
+  "toastAfter": {
+    "input": null,
+    "assistant": "好的，先不修改。请告诉我：这份报告的受众是谁？期望的输出形式是什么（例如摘要、结构化报告、工作区文件等）？复制回答",
+    "assistantCount": 1,
+    "stop": false,
+    "sendLabel": "发送消息",
+    "toastCoversSend": false,
+    "covering": null
+  }
+}

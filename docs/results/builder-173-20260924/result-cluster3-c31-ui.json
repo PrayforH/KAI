@@ -1,0 +1,103 @@
+{
+  "summary": {
+    "label": "cluster3-c31-ui",
+    "startedAt": "2026-09-24T04:21:58.641Z",
+    "finishedAt": "2026-09-24T04:22:18.601Z",
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
+    "blocked": 0,
+    "partial": 0
+  },
+  "results": [
+    {
+      "id": "C3-1-ui",
+      "title": "内置工具勾选状态与 spec.builtinTools 一致（联网）",
+      "status": "pass",
+      "detail": "草稿=draft_0d5b891593e04261be9237a3e253fbb0（r3）；内置工具卡片=「内置工具Read、Glob、Grep、Write、Edit、Bash、WebSearch、WebFetch8 项」；抽屉 aria=内置工具；界面勾选中的工具=[\"搜索公开网页WebSearch\",\"读取公开网页WebFetch\",\"读取文件\",\"查找文件\",\"搜索文件内容\",\"创建文件\",\"编辑文件\",\"运行命令\"]；API spec.builtinTools=[\"Read\",\"Glob\",\"Grep\",\"Write\",\"Edit\",\"Bash\",\"WebSearch\",\"WebFetch\"]；对照=[{\"name\":\"WebSearch\",\"uiChecked\":true,\"inSpec\":true},{\"name\":\"WebFetch\",\"uiChecked\":true,\"inSpec\":true}]（一致=true）",
+      "evidence": {
+        "url": "http://172.20.109.173:3302/studio/agents/research-assistant-2?draft=draft_0d5b891593e04261be9237a3e253fbb0",
+        "cardFound": true,
+        "cardText": "内置工具Read、Glob、Grep、Write、Edit、Bash、WebSearch、WebFetch8 项",
+        "drawer": {
+          "drawerAria": "内置工具",
+          "boxes": [
+            {
+              "name": "搜索公开网页WebSearch",
+              "checked": true,
+              "disabled": false
+            },
+            {
+              "name": "读取公开网页WebFetch",
+              "checked": true,
+              "disabled": false
+            },
+            {
+              "name": "读取文件",
+              "checked": true,
+              "disabled": false
+            },
+            {
+              "name": "查找文件",
+              "checked": true,
+              "disabled": false
+            },
+            {
+              "name": "搜索文件内容",
+              "checked": true,
+              "disabled": false
+            },
+            {
+              "name": "创建文件",
+              "checked": true,
+              "disabled": false
+            },
+            {
+              "name": "编辑文件",
+              "checked": true,
+              "disabled": false
+            },
+            {
+              "name": "运行命令",
+              "checked": true,
+              "disabled": false
+            }
+          ],
+          "switches": [],
+          "hasWebSearch": true,
+          "hasWebFetch": true,
+          "textSample": "内置工具QA 联网恢复验证 114420保存配置×01目标与契约边界、路由与输出契约已完成02能力行动、事实与委托装配已完成03行为Prompt、Skills 与运行语义已完成04试跑预检与隔离试跑待完成05发布版本、门禁与晋级待完成公开联网搜索公开网页WebSearch读取公开网页WebFetch文件与命令标准工具只读工具6/6读取文件查找文件搜索文件内容创建文件编辑文件运行命令"
+        },
+        "screenshot": "screenshots/01-77-c31-builtin-tools.png",
+        "api": {
+          "status": 200,
+          "revision": 3,
+          "builtinTools": [
+            "Read",
+            "Glob",
+            "Grep",
+            "Write",
+            "Edit",
+            "Bash",
+            "WebSearch",
+            "WebFetch"
+          ]
+        },
+        "compare": [
+          {
+            "name": "WebSearch",
+            "uiChecked": true,
+            "inSpec": true
+          },
+          {
+            "name": "WebFetch",
+            "uiChecked": true,
+            "inSpec": true
+          }
+        ]
+      },
+      "severity": "P1",
+      "complexity": "A"
+    }
+  ]
+}
