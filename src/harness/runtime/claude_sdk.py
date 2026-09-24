@@ -684,15 +684,13 @@ class ClaudeSdkRuntime:
             name: AgentManifestSnapshot.model_validate(version.snapshot)
             for name, version in self._subagent_versions.items()
         }
-        materialized_skill_names = (
+        if not context.agent_assets_staged and (
+            self._snapshot.skill_snapshots
+            or any(snapshot.skill_snapshots for snapshot in subagent_snapshots.values())
+        ):
             materialize_skill_snapshot_set(
                 (self._snapshot, *subagent_snapshots.values()), context.workspace
             )
-            if self._snapshot.skill_snapshots
-            or any(snapshot.skill_snapshots for snapshot in subagent_snapshots.values())
-            else tuple(Path(skill).name for skill in manifest.spec.skills)
-        )
-        del materialized_skill_names
         # The workspace contains every immutable child Skill, but the Lead
         # advertises only its own names. Each AgentDefinition below receives
         # the Skills pinned to that child version.

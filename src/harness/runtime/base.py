@@ -70,6 +70,7 @@ class RuntimeContext(BaseModel):
     run: Run
     session: Session
     workspace: Path
+    agent_assets_staged: bool = False
     sandbox_provider: str = "local"
     sandbox_isolation: SandboxIsolation = SandboxIsolation.WORKSPACE
     sandbox_enforcement: SandboxEnforcement = SandboxEnforcement.NONE

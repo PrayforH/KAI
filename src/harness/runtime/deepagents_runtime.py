@@ -407,9 +407,7 @@ class DeepagentsRuntime:
     ) -> CompiledStateGraph[Any, Any, Any, Any]:
         config = self._config
         snapshot = config.snapshot
-        if snapshot.skill_snapshots:
-            # Materializing is what makes a Skill readable; the returned names
-            # are the Claude runtime's concern, not this one's.
+        if snapshot.skill_snapshots and not context.agent_assets_staged:
             materialize_skill_snapshot_set((snapshot,), context.workspace)
         middleware: list[AgentMiddleware] = [
             TodoListMiddleware(),
