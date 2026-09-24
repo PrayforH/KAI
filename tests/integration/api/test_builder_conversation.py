@@ -675,3 +675,108 @@ def test_partial_builder_limits_preserve_unmentioned_values() -> None:
     assert candidate.limits.timeout_seconds == 120
     assert candidate.workspace.archive_on_complete is True
     assert candidate.workspace.restore_session is False
+
+
+@pytest.mark.asyncio
+async def test_model_repairs_skill_disable_schema_once_and_only_previews() -> None:
+    application = app()
+    model = AsyncMock()
+    application.dependency_overrides[get_model_configuration_service] = lambda: model
+    headers = {
+        "Authorization": f"Bearer {SERVICE_TOKEN}",
+        "X-Tenant-ID": "tenant-a",
+        "X-User-ID": "builder-a",
+    }
+    async with AsyncClient(
+        transport=ASGITransport(app=application), base_url="http://test"
+    ) as client:
+        draft = (
+            await client.post("/v1/studio/drafts", headers=headers, json=draft_request())
+        ).json()
+        path = f"/v1/studio/drafts/{draft['draftId']}"
+        spec = draft["spec"]
+        spec["skills"] = [
+            {
+                "name": name,
+                "description": "Test skill",
+                "instructions": "Use the provided material.",
+            }
+            for name in ("archify", "keep-me")
+        ]
+        saved = await client.put(path, headers=headers, json={"expectedRevision": 1, "spec": spec})
+        assert saved.status_code == 200, saved.text
+        model.complete_text.side_effect = [
+            json.dumps(
+                {
+                    "action": "edit",
+                    "reply": "停用技能",
+                    "changes": {"skills": [{"name": "archify", "enabled": False}]},
+                }
+            ),
+            json.dumps(
+                {
+                    "action": "edit",
+                    "reply": "从草稿移除 archify 绑定，等待应用",
+                    "changes": {"removeSkills": ["archify"]},
+                }
+            ),
+        ]
+        response = await client.post(
+            path + "/builder-conversation",
+            headers=headers,
+            json={
+                "expectedRevision": 2,
+                "intent": "auto",
+                "messages": [{"role": "user", "content": "不启用archify这个技能吧"}],
+            },
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["changes"] == {"removeSkills": ["archify"]}
+        assert model.complete_text.await_count == 2
+        repair = json.loads(model.complete_text.call_args.kwargs["user_prompt"])
+        assert repair["originalRequest"]["conversation"][-1]["content"] == "不启用archify这个技能吧"
+        assert repair["validationIssues"][0]["type"] == "extra_forbidden"
+        assert "responseSchema" in repair
+        assert (await client.get(path, headers=headers)).json() == saved.json()
+        applied = await client.post(
+            path + "/builder-apply",
+            headers=headers,
+            json={"expectedRevision": 2, "changes": response.json()["changes"]},
+        )
+        assert applied.status_code == 200, applied.text
+        assert [s["name"] for s in applied.json()["spec"]["skills"]] == ["keep-me"]
+        assert applied.json()["spec"]["systemPrompt"] == spec["systemPrompt"]
+        assert applied.json()["spec"]["model"] == spec["model"]
+
+
+@pytest.mark.asyncio
+async def test_model_format_repair_is_bounded_and_does_not_write_draft() -> None:
+    application = app()
+    model = AsyncMock()
+    model.complete_text.return_value = "invalid json"
+    application.dependency_overrides[get_model_configuration_service] = lambda: model
+    headers = {
+        "Authorization": f"Bearer {SERVICE_TOKEN}",
+        "X-Tenant-ID": "tenant-a",
+        "X-User-ID": "builder-a",
+    }
+    async with AsyncClient(
+        transport=ASGITransport(app=application), base_url="http://test"
+    ) as client:
+        draft = (
+            await client.post("/v1/studio/drafts", headers=headers, json=draft_request())
+        ).json()
+        path = f"/v1/studio/drafts/{draft['draftId']}"
+        response = await client.post(
+            path + "/builder-conversation",
+            headers=headers,
+            json={
+                "expectedRevision": 1,
+                "intent": "auto",
+                "messages": [{"role": "user", "content": "不要删技能"}],
+            },
+        )
+        assert response.status_code == 409, response.text
+        assert "已自动重试一次" in response.text
+        assert model.complete_text.await_count == 2
+        assert (await client.get(path, headers=headers)).json() == draft

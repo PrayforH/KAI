@@ -3591,3 +3591,90 @@ async def test_version_files_compare_immutable_publications_and_saved_draft() ->
             assert denied.status_code == 404
         missing = await client.get(path + "/revisions/99/files", headers=headers)
         assert missing.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_member_installs_existing_skill_without_catalog_management_permission() -> None:
+    application = app()
+    async with AsyncClient(
+        transport=ASGITransport(app=application), base_url="http://test"
+    ) as client:
+        await register(client, "skill-owner@example.com")
+        member = await register(client, "skill-member@example.com")
+        other = await register(client, "skill-other@example.com")
+        headers = {"Authorization": f"Bearer {member['access_token']}"}
+        other_headers = {"Authorization": f"Bearer {other['access_token']}"}
+        assert member["membership"]["role"] == "member"
+        catalog = (await client.get("/v1/studio/skills/catalog", headers=headers)).json()
+        package = next(p for p in catalog["packages"] if p["packageId"] == "algorithmic-art")
+        draft = (
+            await client.post("/v1/studio/drafts", headers=headers, json=draft_request())
+        ).json()
+        path = f"/v1/studio/drafts/{draft['draftId']}"
+        install_path = path + f"/skills/catalog/{package['packageId']}/install"
+        body = {"expectedRevision": 1, "packageRevision": package["revision"]}
+        denied = await client.post(install_path, headers=other_headers, json=body)
+        assert denied.status_code == 404, denied.text
+        stale_package = await client.post(
+            install_path,
+            headers=headers,
+            json={**body, "packageRevision": package["revision"] + 100},
+        )
+        assert stale_package.status_code == 409
+        installed = await client.post(install_path, headers=headers, json=body)
+        assert installed.status_code == 200, installed.text
+        assert installed.json()["draft"]["revision"] == 2
+        assert (await client.post(install_path, headers=headers, json=body)).status_code == 409
+        live_catalog = (await client.get("/v1/studio/catalog", headers=headers)).json()
+        forbidden = await client.put(
+            "/v1/studio/catalog",
+            headers=headers,
+            json={"expectedRevision": live_catalog["revision"], "catalog": live_catalog["catalog"]},
+        )
+        assert forbidden.status_code == 403
+        changes = {"removeSkills": [package["skill"]["name"]]}
+        removed = await client.post(
+            path + "/builder-apply",
+            headers=headers,
+            json={"expectedRevision": 2, "changes": changes},
+        )
+        assert removed.status_code == 200, removed.text
+        assert removed.json()["spec"]["skills"] == []
+        changes = {
+            "installSkills": [{"packageId": package["packageId"], "revision": package["revision"]}],
+            "capabilityCatalogRevision": live_catalog["revision"],
+        }
+        from harness.studio.api import get_model_configuration_service
+
+        model = AsyncMock()
+        model.complete_text.return_value = json.dumps(
+            {"action": "edit", "reply": "安装技能", "changes": changes}
+        )
+        application.dependency_overrides[get_model_configuration_service] = lambda: model
+        for stream in (False, True):
+            preview = await client.post(
+                path + "/builder-conversation",
+                headers={**headers, **({"Accept": "text/event-stream"} if stream else {})},
+                json={
+                    "expectedRevision": 3,
+                    "intent": "auto",
+                    "messages": [{"role": "user", "content": "安装生成式艺术技能"}],
+                },
+            )
+            assert preview.status_code == 200, preview.text
+            assert "permission_denied" not in preview.text
+            assert '"installSkills"' in preview.text
+        assert (await client.get(path, headers=headers)).json()["revision"] == 3
+        diff = await client.post(
+            path + "/builder-project-diff",
+            headers=headers,
+            json={"expectedRevision": 3, "changes": changes},
+        )
+        assert diff.status_code == 200, diff.text
+        applied = await client.post(
+            path + "/builder-apply",
+            headers=headers,
+            json={"expectedRevision": 3, "changes": changes},
+        )
+        assert applied.status_code == 200, applied.text
+        assert applied.json()["spec"]["skills"][0]["name"] == package["skill"]["name"]

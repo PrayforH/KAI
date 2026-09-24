@@ -1424,9 +1424,8 @@ async def install_platform_skill_package(
     draft_id: str,
     package_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9-]*$")],
     body: InstallPlatformSkillRequest,
-    # Mounting a reviewed platform Skill snapshot is a governance decision,
-    # not a plain draft edit: it bypasses the catalog reference lifecycle.
-    actor: Annotated[StudioActor, Depends(require_studio_catalog_admin)],
+    # Installing an existing snapshot edits the owned draft, not the catalog.
+    actor: Annotated[StudioActor, Depends(require_studio_writer)],
     service: Annotated[AgentStudioService, Depends(get_studio_service)],
 ) -> InstalledSkill:
     try:
@@ -1907,8 +1906,6 @@ async def converse_agent_builder(
                     lambda: _authorize_studio_actor(identity, "studio:preview")),
                 on_progress=emit,
             )
-            if reply.changes.install_skills:
-                _authorize_studio_actor(identity, "studio:catalog:write")
             return reply.model_dump(mode="json", by_alias=True, exclude_unset=True)
         return authoring_stream(operation)
     try:
@@ -1918,8 +1915,6 @@ async def converse_agent_builder(
             WorkerSkillCreator(container, draft, actor.user_id,
                                lambda: _authorize_studio_actor(identity, "studio:preview")),
         )
-        if result.changes.install_skills:
-            _authorize_studio_actor(identity, "studio:catalog:write")
         return result
     except (ConflictError, NotFoundError, PermissionDeniedError) as error:
         raise _translate_domain_error(error) from error
@@ -1931,11 +1926,8 @@ async def preview_builder_project_diff(
     body: BuilderApplyRequest,
     actor: Annotated[StudioActor, Depends(require_studio_writer)],
     service: Annotated[AgentStudioService, Depends(get_studio_service)],
-    identity: Annotated[Identity, Depends(require_identity)],
 ) -> DeepagentsProjectComparison:
     try:
-        if body.changes.install_skills:
-            _authorize_studio_actor(identity, "studio:catalog:write")
         return await service.compare_builder_project(actor.tenant_id, actor.user_id, draft_id, body)
     except (ConflictError, NotFoundError) as error:
         raise _translate_domain_error(error) from error
@@ -1947,11 +1939,8 @@ async def apply_agent_builder_edit(
     body: BuilderApplyRequest,
     actor: Annotated[StudioActor, Depends(require_studio_writer)],
     service: Annotated[AgentStudioService, Depends(get_studio_service)],
-    identity: Annotated[Identity, Depends(require_identity)],
 ) -> AgentDraft:
     try:
-        if body.changes.install_skills:
-            _authorize_studio_actor(identity, "studio:catalog:write")
         return await service.apply_builder_edit(actor.tenant_id, actor.user_id, draft_id, body)
     except (ConflictError, NotFoundError) as error:
         raise _translate_domain_error(error) from error

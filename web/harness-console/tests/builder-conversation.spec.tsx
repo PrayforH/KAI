@@ -277,6 +277,9 @@ it("reruns the latest example when applying a configuration change", async () =>
   expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({});
 });
 
+function modelRuns(task: string) {
+  vi.mocked(studioClient.converseBuilder).mockResolvedValueOnce({baseRevision:1, action:"run", task, reply:"开始处理", changedFields:[], changes:{}});
+}
 async function sendTest(value: string) {
   await act(async () => {
     const input = host.querySelector('[aria-label="智能体效果测试"] [aria-label="消息输入"]')!;
@@ -290,19 +293,19 @@ it("uses one composer to edit and run without losing task context", async () => 
   expect(host.querySelectorAll("textarea")).toHaveLength(1);
   expect(host.querySelector('[aria-label="智能体资产"]')).toBeNull();
   expect(host.querySelector('[aria-label="智能体构建助手"]')).toBeNull();
-  await sendTest("业务原始问题"); await sendTest("继续追问");
+  modelRuns("业务原始问题"); await sendTest("业务原始问题"); modelRuns("继续追问"); await sendTest("继续追问");
   expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({continueFromRunId:"run-1"});
   await sendTest("修改系统提示词，输出改成表格");
   expect(JSON.parse(vi.mocked(studioClient.converseBuilder).mock.lastCall![1].runContext).task).toBe("继续追问");
   expect(host.querySelector('[aria-label="待确认的配置修改"]')).not.toBeNull();
   await click("应用修改");
   expect(updated.mock.lastCall?.[0].revision).toBe(2);
-  await sendTest("新配置测试");
+  modelRuns("新配置测试"); await sendTest("新配置测试");
   expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[1]).toBe(2);
   expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({});
   expect(host.textContent).toContain("业务原始问题");
   expect(host.querySelectorAll("textarea")).toHaveLength(1);
-  await startNewConversation(); await sendTest("独立案例");
+  await startNewConversation(); modelRuns("独立案例"); await sendTest("独立案例");
   expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({});
 });
 
@@ -325,9 +328,9 @@ it("preserves attachments and text after failed unified sends, and supplies file
   expect(vi.mocked(studioClient.converseBuilder).mock.lastCall?.[1].messages.at(-1)?.content).toContain("参考材料正文");
   await click("放弃建议"); await attach();
   vi.mocked(studioClient.createTryRun).mockRejectedValueOnce(new Error("临时中断"));
-  await sendTest("分析附件");
+  modelRuns("分析附件"); await sendTest("分析附件");
   expect(host.querySelector('.harness-composer-shell .composer-file-card')?.textContent).toContain("材料.txt");
-  await sendTest("分析附件");
+  modelRuns("分析附件"); await sendTest("分析附件");
   expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toMatchObject({inputArtifactIds:["input_artifact_example"]});
 });
 
@@ -415,7 +418,7 @@ it("renders model deltas before the completed proposal and keeps changes reviewa
 
 it("starts an empty test conversation and can resume a chosen history with its latest turn", async () => {
   act(() => enableWorkspace());
-  await sendTest("第一组问题"); await sendTest("第一组追问");
+  modelRuns("第一组问题"); await sendTest("第一组问题"); modelRuns("第一组追问"); await sendTest("第一组追问");
   const panel = () => host.querySelector('[aria-label="智能体效果测试"]')!;
   expect(panel().querySelectorAll("[data-test-run]")).toHaveLength(2);
   expect(panel().textContent).toContain("当前对话 2 轮");
@@ -428,7 +431,7 @@ it("starts an empty test conversation and can resume a chosen history with its l
   expect(panel().querySelectorAll("[data-test-run]")).toHaveLength(0);
   expect(panel().querySelector("textarea")!.value).toBe("");
   expect(panel().textContent).toContain("帮你做些什么？");
-  await sendTest("第二组独立问题");
+  modelRuns("第二组独立问题"); await sendTest("第二组独立问题");
   expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({});
   expect(panel().querySelectorAll("[data-test-run]")).toHaveLength(1);
   await act(async () => {
@@ -440,7 +443,7 @@ it("starts an empty test conversation and can resume a chosen history with its l
     row!.click();
   });
   expect(panel().querySelectorAll("[data-test-run]")).toHaveLength(2);
-  await sendTest("回到第一组继续追问");
+  modelRuns("回到第一组继续追问"); await sendTest("回到第一组继续追问");
   expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({continueFromRunId:"run-2"});
   expect(panel().querySelectorAll("[data-test-run]")).toHaveLength(3);
 });
@@ -475,7 +478,7 @@ it("restores persisted turns in chronological order and continues the latest rev
   await act(async()=>{sessionRow!.click();});
   const prompts=[...host.querySelectorAll('[data-test-run]')].map(item=>item.textContent);
   expect(prompts[0]).toContain("回答 saved-1");expect(prompts[1]).toContain("回答 saved-2");
-  await sendTest("第三轮");
+  modelRuns("第三轮"); await sendTest("第三轮");
   expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toMatchObject({continueFromRunId:"saved-2"});
 });
 
@@ -487,13 +490,13 @@ it("runs an explicit trial request directly while preserving the shared message"
   expect(host.querySelectorAll("textarea")).toHaveLength(1);
 });
 
-it("sends a greeting to the current agent instead of the builder", async () => {
+it("lets the model answer a greeting without starting a trial", async () => {
   await act(async () => enableWorkspace());
+  vi.mocked(studioClient.converseBuilder).mockResolvedValueOnce({baseRevision:1,action:"reply",reply:"你好，需要调整什么？",changedFields:[],changes:{}});
   await send("你好");
-  expect(studioClient.converseBuilder).not.toHaveBeenCalled();
-  expect(studioClient.readBuilderMaterials).not.toHaveBeenCalled();
-  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.slice(0,3)).toEqual(["draft-multi",1,"你好"]);
-  expect(host.querySelector('[data-test-run="run-1"]')).not.toBeNull();
+  expect(vi.mocked(studioClient.converseBuilder).mock.lastCall?.[1].intent).toBe("auto");
+  expect(studioClient.createTryRun).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("你好，需要调整什么？");
 });
 
 it("replaces builder progress with one answer without retaining a false branch", async () => {
@@ -630,6 +633,27 @@ it("loads six recent persisted turns, fetches older turns on demand and reuses c
   expect(studioClient.getTryRun).toHaveBeenCalledTimes(14);
   expect(host.querySelectorAll('[data-test-run]')).toHaveLength(14);
   expect([...host.querySelectorAll("button")].some(b => b.textContent === "查看更早的消息")).toBe(false);
-  await sendTest("继续当前会话");
+  modelRuns("继续当前会话"); await sendTest("继续当前会话");
   expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toMatchObject({continueFromRunId:"paged-14"});
+});
+
+it("routes conversational skill removal through the model and keeps it reviewable", async () => {
+  await act(async () => enableWorkspace());
+  vi.mocked(studioClient.converseBuilder).mockResolvedValueOnce({baseRevision:1,action:"edit",reply:"从此草稿移除 archify",changedFields:["skills"],changes:{removeSkills:["archify"]}});
+  await send("archify 先别用了");
+  expect(vi.mocked(studioClient.converseBuilder).mock.lastCall?.[1].intent).toBe("auto");
+  expect(host.querySelector('[aria-label="待确认的配置修改"]')).not.toBeNull();
+  expect(studioClient.applyBuilderEdit).not.toHaveBeenCalled();
+  expect(studioClient.createTryRun).not.toHaveBeenCalled();
+});
+it("clears a pending edit only when the model explicitly replaces it with an empty edit", async () => {
+  await act(async () => enableWorkspace());
+  await send("输出改成表格");
+  vi.mocked(studioClient.converseBuilder).mockResolvedValueOnce({baseRevision:1,action:"reply",reply:"需要保留吗？",changedFields:[],changes:{}});
+  await send("先解释一下");
+  expect(host.querySelector('[aria-label="待确认的配置修改"]')).not.toBeNull();
+  vi.mocked(studioClient.converseBuilder).mockResolvedValueOnce({baseRevision:1,action:"edit",reply:"已取消待应用建议",changedFields:[],changes:{}});
+  await send("刚才那个不要改了");
+  expect(host.querySelector('[aria-label="待确认的配置修改"]')).toBeNull();
+  expect(studioClient.applyBuilderEdit).not.toHaveBeenCalled();
 });

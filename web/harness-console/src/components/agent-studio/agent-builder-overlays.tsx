@@ -1,7 +1,6 @@
 "use client";
 import { AUTHORING_PROGRESS_PART_NAME, type AuthoringProgress } from "../authoring-progress";
 import { FeedbackToast } from "../feedback-toast";
-import { isAgentConfigurationRequest } from "../../lib/agent-conversation-intent";
 import type { ThreadMessageLike, CompleteAttachment } from "@assistant-ui/react";
 import { previewThreadMessages } from "./agent-playground-thread";
 import { BuilderProposalCard } from "./builder-proposal-card";
@@ -466,7 +465,6 @@ export function AgentBuilderAssistant({
     const sendAsTest = intent === "run";
     if (sendAsTest && proposal) { setError("请先应用或放弃当前修改建议，再开始试跑。"); return; }
     const explicitRun = /^(?:\/run(?:\s|$)|试跑(?:智能体)?\s*[:：])/i.test(value.trim());
-    const authoring = !explicitRun && writable && (Boolean(proposal) || isAgentConfigurationRequest(value));
     if (explicitRun && proposal) {setError("请先应用或放弃当前修改建议，再开始试跑。");return false;}
     submitLock.current = true;
     const epoch = epochRef.current;
@@ -512,7 +510,7 @@ export function AgentBuilderAssistant({
       const reply = await studioClient.converseBuilder(saved.id, {
         expectedRevision: saved.revision,
         messages: history,
-        intent: workspaceTarget ? "edit" : intent === "auto" ? "auto" : "edit",
+        intent: workspaceTarget || intent === "auto" ? "auto" : "edit",
         runContext: JSON.stringify({
           runId: contextTurn?.result.run.run_id,
           draftRevision: contextTurn?.result.draftRevision, status: contextTurn?.result.run.status,
@@ -522,9 +520,9 @@ export function AgentBuilderAssistant({
           pendingProposal: proposal ? { baseRevision: proposal.baseRevision, changes: reviewedChanges } : null,
         }).slice(0, 12_000),
       }, event => {
-        if (epoch !== epochRef.current || !event.text) return;
-        if (event.type === "builder.reply") setBuildReply(event.text);
-        else if (event.type === "progress") setBuildProgress(event.text);
+        if (epoch !== epochRef.current) return;
+        if (event.type === "builder.reply") setBuildReply(event.text ?? "");
+        else if (event.type === "progress" && event.text) setBuildProgress(event.text);
       }, controller.signal);
       if (epoch !== epochRef.current) return;
       const action = reply.action ?? "edit";
@@ -534,7 +532,8 @@ export function AgentBuilderAssistant({
         artifactIds: reply.creatorRuns?.flatMap(run => run.artifactIds),
       }]);
       if (action === "edit") {
-        if (reply.changedFields.length) { setProposal({ ...reply, before: saved, testTurn: contextTurn ?? undefined }); if (comparisonPending) {setCodeComparison(undefined); setCodeView(false);} }
+        if (!reply.changedFields.length) setProposal(null);
+        else { setProposal({ ...reply, before: saved, testTurn: contextTurn ?? undefined }); if (comparisonPending) {setCodeComparison(undefined); setCodeView(false);} }
       } else if (action === "run" || action === "rerun") {
         if (active || proposal || latestRef.current.hasUnsavedChanges) {
           setError(active ? "当前试跑尚未结束，请结束后再试。" : proposal
@@ -627,7 +626,7 @@ export function AgentBuilderAssistant({
   async function sendUnified(value: string, ids: string[], names: string[]): Promise<boolean> {
     if (submitLock.current || active || editing || applying || historyLoading) return false;
     const explicitRun = /^(?:\/run(?:\s|$)|试跑(?:智能体)?\s*[:：])/i.test(value.trim());
-    const authoring = !explicitRun && writable && (Boolean(proposal) || isAgentConfigurationRequest(value));
+    const authoring = !explicitRun && writable;
     if (explicitRun && proposal) {setError("请先应用或放弃当前修改建议，再开始试跑。");return false;}
     submitLock.current = true;
     const epoch = epochRef.current;

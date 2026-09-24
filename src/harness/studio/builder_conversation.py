@@ -6,7 +6,7 @@ import json
 import re
 from typing import Literal, cast
 
-from pydantic import Field, model_validator
+from pydantic import Field, ValidationError, model_validator
 
 from harness.core.errors import ConflictError
 from harness.core.manifest import ToolExposureMode
@@ -263,6 +263,13 @@ changes.installSkills:[{"packageId":"目录中的标识","revision":目录中的
 不要在 changes 中直接生成 createSkills/updateSkills。
 创建前确认名称未占用，更新必须使用已有名称；Skill 只安装到当前 Agent 草稿，不写个人或平台目录。
 已有 Skill 只改正文时仍可用 skillInstructions。同一 Skill 不得同时出现在多个动作中。
+Skill 没有 enabled 开关；不要生成 skills、disabledSkills 或 enabled 等不存在的变更字段。
+用户希望此智能体不再启用某技能时，结合当前绑定和上下文判断，使用 removeSkills 中的精确名称
+提出移除当前草稿绑定的建议，不删除技能库源资源，不调用 Skill Creator，也不要清空其他技能。
+若只要求本次任务不用技能，应作为本次 task 的限制，不修改草稿；否定停用、询问如何停用也不是授权移除。
+技能不在当前绑定中时说明现状；若它仅在 pendingProposal 中，应根据最新要求重新给出待审阅建议，
+不得把不存在的绑定放入 removeSkills。
+撤回待应用建议时返回 action=edit 和完整的修订后 changes；若全部撤回，changes 为 {}。
 runtime（来自 assemblyCatalog.runtimes，切换时必须检查模型、工具与技能兼容性）、
 toolExposureMode（eager/deferred）、evaluationEnabled、evaluationCases（完整验收用例清单）。
 workspace.archiveOnComplete 必须保留 true。未要求修改的完整结构属性必须保留。
@@ -287,7 +294,7 @@ BUILDER_AUTO_SYSTEM_PROMPT = (
 - edit：用户明确希望改变智能体以后的行为或配置，按原有字段规则提供修改预览。
 - run：用户提供新的业务测试任务，或明确只调整本次测试结果。
 task 必须是结合前文补齐的完整业务任务，不能是构建/修改指令。
-后续运行是新的隔离运行，不继承旧运行文件；缺少原始材料时 ask，不能编造材料。
+run 会延续当前会话可用的工作区和附件；没有历史或附件时不能编造材料，必要时 ask。
 - rerun：用户明确要求使用当前已保存配置重新执行上次任务。
 task 留空，由客户端复用原任务；没有历史任务则 ask。
 - ask：既可能修改智能体配置，又可能仅改本次输出，且上下文无法区分
@@ -304,7 +311,15 @@ edit 以外 changes 必须为 {}。
 )
 
 
-def parse_builder_reply(text: str) -> BuilderModelReply:
+class BuilderReplyFormatError(ConflictError):
+    """Invalid model protocol; details contain paths/types, never draft contents."""
+
+    def __init__(self, issues: list[dict[str, object]]) -> None:
+        super().__init__("模型返回的修改建议格式无效，草稿未更改")
+        self.issues = issues
+
+
+def parse_builder_reply(text: str, *, require_action: bool = False) -> BuilderModelReply:
     text = text.strip()
     if text.startswith("```") and text.endswith("```"):
         text = "\n".join(text.splitlines()[1:-1])
@@ -321,9 +336,17 @@ def parse_builder_reply(text: str) -> BuilderModelReply:
                     if "skillRequests" in payload:
                         raise ValueError("duplicate Skill requests")
                     payload["skillRequests"] = edits.pop("skillRequests")
-        return BuilderModelReply.model_validate(data)
+        result = BuilderModelReply.model_validate(data)
+        if require_action and "action" not in result.model_fields_set:
+            raise BuilderReplyFormatError([{"path": ["action"], "type": "missing"}])
+        return result
+    except ValidationError as error:
+        raise BuilderReplyFormatError([
+            {"path": list(item["loc"]), "type": item["type"]}
+            for item in error.errors(include_input=False, include_url=False)[:12]
+        ]) from None
     except (ValueError, TypeError):
-        raise ConflictError("模型未返回有效的修改建议，草稿未更改；请补充要求后重试") from None
+        raise BuilderReplyFormatError([{"path": [], "type": "invalid_json_or_shape"}]) from None
 
 
 def partial_builder_reply(text: str) -> str:
