@@ -55,6 +55,13 @@ Langfuse 三条新版样本中 `harness.mcp.resolve` 为 11–14 ms（旧版五�
 
 第五轮原版 Web 诊断 Run `run_7b39497e7ba94bd28516fae2371bec0b` 的 DOM 轨迹进一步收窄问题：末条 `.harness-assistant-message` 在终态 `data-turn-answer="OK"`、`data-direct-stream="false"`，但 `.assistant-answer` 未挂载，复制回答按钮仍在；刷新后 `OK` 出现。RunEvent 只有 reasoning 与最终 `message.delta`，**没有工具调用**，因此不能归因于“最终文本后还有普通工具 part 被当作中间文本”。旧历史请求竞态和工具 part 解释都不是已证实根因；需用组件级真实 content/part provider 状态复现后再改。
 
+## 最终门禁与当前部署（2026-09-25）
+
+- 分支 `perf/thread-run-latency-174`，主工作区未动；Python `tests/unit`＋运行时/trace 集成 **1570 passed**，2 条既有 Pydantic 序列化 warning；Web 全量 **918 passed、1 skipped**。后端改动的 ruff、`git diff --check` 和独立 Web 构建/TypeScript 门禁通过。
+- 174 运行镜像：API＋3 Worker `perf-20260925-b12e5550`，均 healthy；3301 Web 精确恢复 `develop-20260922-d69cb0d2`，3501 未动；`axis-worker-for-173` 未动。非终态 Run 0。镜像与 overlay 对账一致。
+- 后端 asset 去重在 174 留作灰度：同 thread 30 次首文本 p95 3,395 ms，新 thread 30 次 p95 2,969 ms，均 30/30 成功。顺序 A/B 不是因果证明，不宣称已达 1 秒。
+- 两次 Web 修复虽通过单测，却未解决实际终态空白，代码与镜像均回滚，不纳入本轮收益；第五轮 DOM 证据显示父消息已有 `OK`、`data-direct-stream=false`，但 Text 子节点未挂载，且 Run 无工具调用。此缺陷未修复，不应把浏览器首字或稳定终态视为通过。
+
 ## 剩余工作
 
 1. 对 SDK `connect` 的 1.4 s 研究安全复用或预热边界：Run 级 hooks、cwd、权限、MCP 凭据和 session store 不能跨 Run 泄漏；先做 SDK 能力验证与 fencing/会话所有权设计，不直接建全局进程池。
