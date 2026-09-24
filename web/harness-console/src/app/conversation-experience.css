@@ -474,7 +474,8 @@ body.codex-theme-v1 .task-version-switcher .task-agent-switcher-branch svg {
 /* Keep the disclosure truly collapsed even when the theme sets display:block. */
 body.codex-theme-v1 .execution-tree[hidden] { display: none; }
 /* Keep the animation attached to stable labels; successive tool events resume it. */
-body.codex-theme-v1 .execution-action .execution-state-sweep[data-running="true"] {
+body.codex-theme-v1 .execution-action .execution-state-sweep[data-running="true"],
+body.codex-theme-v1 .execution-reasoning .execution-state-sweep[data-running="true"] {
   color: transparent;
   background-image: linear-gradient(100deg, var(--codex-muted) 18%, var(--codex-ink) 48%, var(--codex-muted) 78%);
   background-size: 180% 100%;
@@ -487,7 +488,8 @@ body.codex-theme-v1 .execution-action .execution-state-sweep[data-running="true"
   to { background-position: 0% 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-  body.codex-theme-v1 .execution-action .execution-state-sweep[data-running="true"] { animation: none; background: none; color: var(--codex-muted); }
+  body.codex-theme-v1 .execution-action .execution-state-sweep[data-running="true"],
+  body.codex-theme-v1 .execution-reasoning .execution-state-sweep[data-running="true"] { animation: none; background: none; color: var(--codex-muted); }
 }
 
 body.codex-theme-v1 div.execution-disclosure { cursor: default; }
