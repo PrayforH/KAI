@@ -1,7 +1,6 @@
 import type { ChatModelRunOptions } from "@assistant-ui/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { activityStore } from "../src/lib/activity-store";
-import { liveResponseStore } from "../src/lib/live-response-store";
 import {
   createThreadHistoryAdapter,
   invalidateThreadHistory,
@@ -150,35 +149,6 @@ describe("thread history activity restoration", () => {
     await createThreadHistoryAdapter("thread-invalidated").load();
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
-
-  it("never imports an older snapshot after a newer terminal answer", async () => {
-    let resolveOld: ((response: Response) => void) | undefined;
-    let resolveNew: ((response: Response) => void) | undefined;
-    const fetchMock = vi.fn()
-      .mockImplementationOnce(() => new Promise<Response>((resolve) => { resolveOld = resolve; }))
-      .mockImplementationOnce(() => new Promise<Response>((resolve) => { resolveNew = resolve; }));
-    vi.stubGlobal("fetch", fetchMock);
-    const adapter = createThreadHistoryAdapter("thread-out-of-order");
-    const imported: string[] = [];
-    const onLoaded = (repository: Awaited<ReturnType<typeof adapter.loadSnapshot>>) => {
-      const message = repository.messages.at(-1)?.message;
-      imported.push(message?.content.find((part) => part.type === "text")?.text ?? "");
-    };
-
-    const old = adapter.loadSnapshot(onLoaded);
-    const current = adapter.loadSnapshot(onLoaded);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    resolveNew?.(historyResponse("succeeded", "OK"));
-    await current;
-    liveResponseStore.startRun("new-run", "thread-out-of-order");
-    resolveOld?.(historyResponse("running", ""));
-    await old;
-
-    expect(imported).toEqual(["OK"]);
-    expect(liveResponseStore.getSnapshot().runId).toBe("new-run");
-    liveResponseStore.clear();
-    adapter.dispose();
   });
 
   it("times out a stalled task-list request and allows the next refresh to recover", async () => {

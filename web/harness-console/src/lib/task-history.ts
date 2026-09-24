@@ -66,7 +66,6 @@ const activeStatuses = new Set([
 ]);
 
 const threadHistoryRequests = new Map<string, Promise<ThreadHistoryResponse | null>>();
-const threadHistoryGenerations = new Map<string, number>();
 const threadHistorySnapshots = new Map<
   string,
   { receivedAt: number; history: ThreadHistoryResponse | null }
@@ -138,7 +137,6 @@ async function loadThreadHistory(
   }
 
   function createRequest(): Promise<ThreadHistoryResponse | null> {
-    const generation = threadHistoryGenerations.get(threadId) ?? 0;
     return fetch(historyUrl(threadId, before), { cache: "no-store" })
       .then(requireAuthenticatedResponse)
       .then(async (response) => {
@@ -149,13 +147,11 @@ async function loadThreadHistory(
         return response.json() as Promise<ThreadHistoryResponse>;
       })
       .then((history) => {
-        if (generation === (threadHistoryGenerations.get(threadId) ?? 0)) {
-          if (!history || !activeStatuses.has(history.status)) {
-            cacheThreadHistory(threadId, history);
-          }
-          if (isLatestPage) {
-            seedAccumulatedHistory(threadId, history);
-          }
+        if (!history || !activeStatuses.has(history.status)) {
+          cacheThreadHistory(threadId, history);
+        }
+        if (isLatestPage) {
+          seedAccumulatedHistory(threadId, history);
         }
         return history;
       })
@@ -195,8 +191,6 @@ export function prefetchThreadHistory(threadId: string): Promise<void> {
 }
 
 export function invalidateThreadHistory(threadId: string): void {
-  threadHistoryGenerations.set(threadId, (threadHistoryGenerations.get(threadId) ?? 0) + 1);
-  threadHistoryRequests.delete(threadId);
   threadHistorySnapshots.delete(threadId);
   resetAccumulatedHistory(threadId);
 }
@@ -480,18 +474,15 @@ export function createThreadHistoryAdapter(
         return repository;
       }
       invalidateThreadHistory(threadId);
-      const generation = threadHistoryGenerations.get(threadId);
       const history = await loadThreadHistory(threadId).catch((error) => {
         if (disposal.signal.aborted) return null;
         throw error;
       });
       const converted = history ? fromAgUiMessages(history.messages, { showThinking: true }) : [];
       const repository = ExportedMessageRepository.fromArray(converted);
-      if (generation === threadHistoryGenerations.get(threadId) && !disposal.signal.aborted) {
-        // An older fetch cannot replace a newer terminal import or clear its live response.
-        onLoaded?.(repository);
-        if (history) publishHistoryActivity(history, threadId);
-      }
+      // Import terminal text before publishing the phase that stops recovery polling.
+      onLoaded?.(repository);
+      if (history) publishHistoryActivity(history, threadId);
       return repository;
     },
     async load() {
