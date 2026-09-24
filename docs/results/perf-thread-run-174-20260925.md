@@ -28,10 +28,10 @@ Langfuse Worker trace 实际存在。根 trace 名 `agent-run`，`harness.worker
 
 测试：`tests/unit/runtime/test_staged_agent_assets.py` 确认已 staged 的 Skill 树不被重建、未 staged 仍正确 materialize；广泛 runtime/worker/integration 回归 **491 passed**，ruff 通过。174 真实 Run `run_3abf9d729ed34e50a18c1be861acbd6d` 仍有 `agent.assets.staged`、精确 `context.window.observed` 和 `run.succeeded`。
 
-A/B：同一 `lead-agent@1.0.3+platform.c95a6965`、同一提示词 `你好，请只回复 OK`、同一用户、174:8800 直连 API；每组 2 次 warmup＋20 次正式 Run，按时间顺序执行，不是随机交错对照。原始 JSON 在独立分支未跟踪的 `dist/harbor-build/`：
+A/B：同一 `lead-agent@1.0.3+platform.c95a6965`、同一提示词 `你好，请只回复 OK`、同一用户、174:8800 直连 API；每组 2 次 warmup＋20 次正式 Run，按时间顺序执行，不是随机交错对照。旧版基线为回滚后的 `develop-20260924-d9eec75b`（与 `753932e2` 仅相差只读诊断 span），新版为 `b12e5550`。原始样本和 Run ID 已保存：
 
-- 旧版 `753932e2`：`perf-20260925-753932e2/p95-baseline-174.json`。
-- 新版 `b12e5550`：`perf-20260925-b12e5550/p95-warm-174.json`。
+- [旧版基线 JSON](perf-thread-run-174-baseline-20260925.json)。
+- [新版优化 JSON](perf-thread-run-174-optimized-20260925.json)。
 
 | 指标 | 旧版 p50 | 旧版 p95 | 新版 p50 | 新版 p95 |
 |---|---:|---:|---:|---:|
