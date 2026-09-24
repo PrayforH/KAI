@@ -1,0 +1,134 @@
+{
+  "deployment": "a84fbb54",
+  "environment": "173:3302",
+  "modelRoute": "deepseek-v4-flash",
+  "model": "deepseek-flash",
+  "cases": [
+    {
+      "case": "ordinary",
+      "runId": "run_95b389e49d434e08a6303f6a209181da",
+      "status": "succeeded",
+      "error": null,
+      "totalSeconds": 3.54,
+      "toolNames": [],
+      "proposal": null,
+      "discarded": false,
+      "draftUnchanged": true
+    },
+    {
+      "case": "enable-web",
+      "runId": "run_5cf9a8db88e8471889df19fb07877db0",
+      "status": "succeeded",
+      "error": null,
+      "totalSeconds": 9.93,
+      "toolNames": [
+        "mcp__harness-builder__read_configuration",
+        "mcp__harness-builder__propose_configuration"
+      ],
+      "proposal": {
+        "reply": "在保留现有内置工具（Read、Glob、Grep、Write、Bash）的前提下，新增平台联网搜索 WebSearch 与公开网页读取 WebFetch。运行时 claude-agent-sdk 具备 web 能力，无需配置 MCP。",
+        "changes": {
+          "builtinTools": [
+            "Read",
+            "Glob",
+            "Grep",
+            "Write",
+            "Bash",
+            "WebSearch",
+            "WebFetch"
+          ],
+          "capabilityCatalogRevision": 83
+        },
+        "action": "edit",
+        "task": "",
+        "creatorRuns": [],
+        "baseRevision": 4,
+        "changedFields": [
+          "builtinTools"
+        ]
+      },
+      "discarded": false,
+      "draftUnchanged": true
+    },
+    {
+      "case": "remove-skill",
+      "runId": "run_1b0fbaa8eeed41dc92b9058966376c2d",
+      "status": "succeeded",
+      "error": null,
+      "totalSeconds": 6.99,
+      "toolNames": [
+        "mcp__harness-builder__read_configuration",
+        "mcp__harness-builder__propose_configuration"
+      ],
+      "proposal": {
+        "reply": "按用户要求从智能体技能绑定中移除 archify，保留 qa-preserve 及其余配置不变。",
+        "changes": {
+          "removeSkills": [
+            "archify"
+          ]
+        },
+        "action": "edit",
+        "task": "",
+        "creatorRuns": [],
+        "baseRevision": 5,
+        "changedFields": [
+          "skills"
+        ]
+      },
+      "discarded": false,
+      "draftUnchanged": true
+    },
+    {
+      "case": "cancel-proposal",
+      "runId": "run_3d392f71062e47f4b383fac42041d0c3",
+      "status": "succeeded",
+      "error": null,
+      "totalSeconds": 6.57,
+      "toolNames": [
+        "mcp__harness-builder__discard_configuration_proposal"
+      ],
+      "proposal": null,
+      "discarded": true,
+      "draftUnchanged": true
+    },
+    {
+      "case": "one-turn-only",
+      "runId": "run_4000d641d5184cc8a2e287e9fe042f47",
+      "status": "succeeded",
+      "error": null,
+      "totalSeconds": 3.43,
+      "toolNames": [],
+      "proposal": null,
+      "discarded": false,
+      "draftUnchanged": true
+    },
+    {
+      "case": "deepagents-remove-skill",
+      "runId": "run_9353881edb5940da8e34d276a0e1999a",
+      "status": "succeeded",
+      "error": null,
+      "totalSeconds": 9.32,
+      "toolNames": [
+        "mcp__harness-builder__read_configuration",
+        "mcp__harness-builder__propose_configuration"
+      ],
+      "proposal": {
+        "reply": "从技能列表中移除 archify，保留 qa-preserve 及模型、工具、权限策略、评估用例等其他配置不变。",
+        "changes": {
+          "removeSkills": [
+            "archify"
+          ]
+        },
+        "action": "edit",
+        "task": "",
+        "creatorRuns": [],
+        "baseRevision": 2,
+        "changedFields": [
+          "skills"
+        ]
+      },
+      "discarded": false,
+      "draftUnchanged": true
+    }
+  ]
+}
