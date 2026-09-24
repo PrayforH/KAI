@@ -20,8 +20,9 @@ describe("global motion system", () => {
     expect(codexTheme).toContain("@keyframes codex-surface-in");
     expect(codexTheme).toContain(".codex-motion-state");
     expect(conversation).toContain(".activity-row");
-    expect(conversation).toContain("@keyframes codex-complete-in");
+    expect(codexTheme).toContain("@keyframes codex-state-in");
     expect(conversation).toContain(".workbench-rail-panel");
+    expect(conversation).not.toMatch(/\.tool-card,\s*body\.codex-theme-v1 \.agent-card\s*\{\s*animation:/);
   });
 
   it("keeps reduced motion immediate while retaining semantic state", () => {

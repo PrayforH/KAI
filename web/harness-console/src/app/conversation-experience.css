@@ -91,20 +91,8 @@ body.codex-theme-v1 .workbench-rail-panel {
   animation: codex-state-in var(--codex-motion-content) var(--codex-motion-ease-out) both;
 }
 
-body.codex-theme-v1 .activity-row,
-body.codex-theme-v1 .tool-card,
-body.codex-theme-v1 .agent-card {
+body.codex-theme-v1 .activity-row {
   animation: codex-state-in var(--codex-motion-content) var(--codex-motion-ease-out) both;
-}
-
-body.codex-theme-v1 .activity-row[data-status="succeeded"],
-body.codex-theme-v1 .activity-row[data-status="completed"] {
-  animation: codex-complete-in var(--codex-motion-content) var(--codex-motion-ease-out) both;
-}
-
-@keyframes codex-complete-in {
-  from { opacity: .72; transform: translateY(2px); }
-  to { opacity: 1; transform: translateY(0); }
 }
 @media (max-width: 1099px) { body.codex-theme-v1 .workbench-rail { width: min(340px, 90vw); } }
 /* Below the column breakpoint the drawer floats, so expanding takes the screen. */

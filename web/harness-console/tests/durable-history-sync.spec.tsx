@@ -50,6 +50,19 @@ it("hands rendering back to durable history instead of leaving a hidden stream i
   liveResponseStore.completeRun("sync-thread");
   await render(1);
   expect(state.import).toHaveBeenCalledWith(repository);
+  await act(async () => { await vi.advanceTimersByTimeAsync(20); });
+  expect(liveResponseStore.getSnapshot().status).toBe("idle");
+});
+
+it("keeps the live answer through the history import frame", async () => {
+  liveResponseStore.startRun("run", "sync-thread");
+  liveResponseStore.startMessage("assistant-run", "sync-thread");
+  liveResponseStore.append("assistant-run", "Visible answer", "sync-thread");
+  liveResponseStore.completeRun("sync-thread");
+  await render(1);
+  expect(state.import).toHaveBeenCalledWith(repository);
+  expect(liveResponseStore.getSnapshot().status).toBe("complete");
+  await act(async () => { await vi.advanceTimersByTimeAsync(20); });
   expect(liveResponseStore.getSnapshot().status).toBe("idle");
 });
 
