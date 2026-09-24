@@ -463,11 +463,16 @@ export async function setTaskArchived(
 
 export function createThreadHistoryAdapter(
   threadId: string,
-  options: { onActiveRun?: (serverRunId: string) => void } = {},
+  options: { onActiveRun?: (serverRunId: string) => void; isLocalOnly?: () => boolean } = {},
 ): ThreadHistoryAdapter & { dispose(): void; loadSnapshot(onLoaded?: (repository: ReturnType<typeof ExportedMessageRepository.fromArray>) => void): Promise<ReturnType<typeof ExportedMessageRepository.fromArray>> } {
   const disposal = new AbortController();
   return {
     async loadSnapshot(onLoaded) {
+      if (options.isLocalOnly?.()) {
+        const repository = ExportedMessageRepository.fromArray([]);
+        onLoaded?.(repository);
+        return repository;
+      }
       invalidateThreadHistory(threadId);
       const history = await loadThreadHistory(threadId).catch((error) => {
         if (disposal.signal.aborted) return null;
@@ -481,6 +486,7 @@ export function createThreadHistoryAdapter(
       return repository;
     },
     async load() {
+      if (options.isLocalOnly?.()) return ExportedMessageRepository.fromArray([]);
       // Deliberately not bound to the disposal signal: the shell remounts when
       // the agent binding re-resolves, and an abort here would be cached by the
       // runtime core, leaving the delivered conversation permanently empty.

@@ -34,6 +34,7 @@ import { TaskModelProvider } from "./task-model-context";
 
 export function AssistantRuntimeShell({
   threadId,
+  localOnly = false,
   agentName,
   agentVersion,
   agentOwnerUserId,
@@ -45,6 +46,7 @@ export function AssistantRuntimeShell({
   children,
 }: {
   threadId: string;
+  localOnly?: boolean;
   agentName: string;
   agentVersion: string;
   agentOwnerUserId?: string;
@@ -55,6 +57,8 @@ export function AssistantRuntimeShell({
   onModelRouteOverrideChange: (routeId: string | null) => void;
   children: ReactNode;
 }) {
+  const localOnlyRef = useRef(localOnly);
+  localOnlyRef.current = localOnly;
   const runView = useRunViewModel();
   const [historyRevision, setHistoryRevision] = useState(0);
   const [historyReady, setHistoryReady] = useState(false);
@@ -66,9 +70,15 @@ export function AssistantRuntimeShell({
     (route) => route.id === modelRouteOverride && route.modelType !== "video_generation",
   )?.id ?? null;
   const refreshDurableHistory = useCallback(() => {
+    localOnlyRef.current = false;
     invalidateThreadHistory(threadId);
     setHistoryRevision((current) => current + 1);
   }, [threadId]);
+  const previousLocalOnly = useRef(localOnly);
+  useEffect(() => {
+    if (previousLocalOnly.current && !localOnly) refreshDurableHistory();
+    previousLocalOnly.current = localOnly;
+  }, [localOnly, refreshDurableHistory]);
   const agent = useMemo(() => {
     const query = new URLSearchParams({
       agent_name: agentName,
@@ -106,6 +116,7 @@ export function AssistantRuntimeShell({
   const history = useMemo(
     () =>
       createThreadHistoryAdapter(threadId, {
+        isLocalOnly: () => localOnlyRef.current,
         onActiveRun: (serverRunId) =>
           agentRef.current.adoptActiveRun(threadId, serverRunId),
       }),

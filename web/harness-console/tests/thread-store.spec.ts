@@ -5,6 +5,8 @@ import {
   createNewThread,
   loadOrCreateThread,
   loadThreadAgent,
+  isLocalThread,
+  markThreadPersisted,
 } from "../src/lib/thread-store";
 
 function memoryStorage(initial?: string) {
@@ -40,6 +42,16 @@ describe("thread store", () => {
     );
     expect(loadThreadAgent(secondUser, firstThread)).toBeNull();
     expect(loadThreadAgent(firstUser, firstThread)?.ownerUserId).toBe("user-1");
+  });
+
+  it("marks only new local threads and clears the marker after server creation", () => {
+    const storage = memoryStorage("old-thread");
+    expect(isLocalThread(storage, "old-thread")).toBe(false);
+    const id = createNewThread(storage, () => "local-thread");
+    expect(isLocalThread(storage, id)).toBe(true);
+    expect(isLocalThread(storage, loadOrCreateThread(storage))).toBe(true);
+    markThreadPersisted(storage, id);
+    expect(isLocalThread(storage, id)).toBe(false);
   });
 
   it("restores the existing thread after refresh", () => {

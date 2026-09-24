@@ -37,6 +37,23 @@ describe("thread history activity restoration", () => {
     );
   }
 
+  it("skips history for a local-only thread and loads it after the first run", async () => {
+    const fetcher = vi.fn().mockResolvedValue(historyResponse("succeeded", "已完成"));
+    vi.stubGlobal("fetch", fetcher);
+    let localOnly = true;
+    const adapter = createThreadHistoryAdapter("new-local-history", { isLocalOnly: () => localOnly });
+    await adapter.load();
+    const imported = vi.fn();
+    await adapter.loadSnapshot(imported);
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(imported).toHaveBeenCalledOnce();
+    localOnly = false;
+    const repository = await adapter.loadSnapshot();
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(repository.messages).toHaveLength(2);
+    adapter.dispose();
+  });
+
   it("publishes the durable run activity when a completed task reloads", async () => {
     const activity = {
       run_id: "run-history",

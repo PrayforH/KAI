@@ -1,6 +1,7 @@
 import { createRandomId } from "./random-id";
 
 const THREAD_STORAGE_KEY = "harness-console-thread";
+const LOCAL_THREAD_PREFIX = "harness-console-local-thread:";
 const THREAD_AGENT_STORAGE_PREFIX = "harness-console-thread-agent:";
 
 export interface ThreadStorage {
@@ -53,6 +54,7 @@ export function createNewThread(
   createId: IdFactory = createRandomId,
 ): string {
   const threadId = createId();
+  storage.setItem(`${LOCAL_THREAD_PREFIX}${threadId}`, "true");
   storage.setItem(THREAD_STORAGE_KEY, threadId);
   return threadId;
 }
@@ -114,4 +116,14 @@ export function loadThreadAgent(
   } catch {
     return null;
   }
+}
+
+// A locally allocated UUID has no server binding until its first run starts.
+// Absence from a task-list page alone is not evidence that history is empty.
+export function isLocalThread(storage: ThreadStorage, threadId: string): boolean {
+  return storage.getItem(`${LOCAL_THREAD_PREFIX}${threadId}`) === "true";
+}
+
+export function markThreadPersisted(storage: ThreadStorage, threadId: string): void {
+  storage.removeItem(`${LOCAL_THREAD_PREFIX}${threadId}`);
 }

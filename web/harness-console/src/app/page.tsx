@@ -37,6 +37,8 @@ import {
   createUserScopedStorage,
   createNewThread,
   loadOrCreateThread,
+  isLocalThread,
+  markThreadPersisted,
   loadThreadAgent,
   selectThread,
 } from "../lib/thread-store";
@@ -272,6 +274,7 @@ function AuthenticatedHome() {
   }, []);
   const [compactTaskSidebar, setCompactTaskSidebar] = useState(false);
   const taskSelectionRevision = useRef(0);
+  const [localThreadId, setLocalThreadId] = useState<string | null>(null);
   const [currentTaskTitle, setCurrentTaskTitle] = useState("新任务");
   const [currentTask, setCurrentTask] = useState<TaskSummary | null>(null);
   const [currentThreadState, setCurrentThreadState] =
@@ -321,6 +324,7 @@ function AuthenticatedHome() {
       initialSearch.get("version") &&
       (initialSearch.get("space") || initialSearch.get("owner")),
     );
+    setLocalThreadId(isLocalThread(storage, initialThreadId) ? initialThreadId : null);
     setThreadId(initialThreadId);
     // The concrete thread-to-Agent binding is already durable in this
     // browser. Restore it immediately so returning from Studio can mount the
@@ -392,12 +396,14 @@ function AuthenticatedHome() {
           setActiveSkillLaunch(null);
         }
         if (requestedAgent || requestedSkillLaunch) {
+          setLocalThreadId(currentThreadId);
           setThreadId(currentThreadId);
           window.history.replaceState({}, "", "/");
         }
         const currentTask = taskHistory.tasks.find(
           (task) => task.thread_id === currentThreadId,
         );
+        if (currentTask) { markThreadPersisted(storage, currentThreadId); setLocalThreadId(null); }
         setCurrentTaskTitle(currentTask?.title ?? "新任务");
         setCurrentThreadState(
           currentTask ? "durable" : taskHistory.available ? "empty" : "unknown",
@@ -498,9 +504,11 @@ function AuthenticatedHome() {
 
   useEffect(() => {
     if (runStream.threadId === threadId && runStream.runId) {
+      markThreadPersisted(createUserScopedStorage(window.localStorage, user.user_id), threadId);
+      setLocalThreadId(null);
       setCurrentThreadState("durable");
     }
-  }, [runStream.runId, runStream.threadId, threadId]);
+  }, [runStream.runId, runStream.threadId, threadId, user.user_id]);
 
   function taskStorage() {
     return createUserScopedStorage(window.localStorage, user.user_id);
@@ -524,6 +532,7 @@ function AuthenticatedHome() {
     window.history.replaceState(window.history.state, "", `/?thread=${encodeURIComponent(nextThreadId)}`);
     bindThreadAgent(storage, nextThreadId, nextAgent);
     setSelectedAgent(nextAgent);
+    setLocalThreadId(nextThreadId);
     setThreadId(nextThreadId);
     setCurrentTaskTitle("新任务");
     setCurrentTask(null);
@@ -623,6 +632,8 @@ function AuthenticatedHome() {
     setCurrentTaskTitle(task.title);
     setCurrentTask(task);
     setActiveSkillLaunch(null);
+    markThreadPersisted(storage, task.thread_id);
+    setLocalThreadId(null);
     setThreadId(selectThread(storage, task.thread_id));
     closeCompactTaskSidebar();
   }
@@ -740,6 +751,7 @@ function AuthenticatedHome() {
                 <AssistantRuntimeShell
                   key={`${threadId}:${runtimeAgentKey(selectedAgent)}`}
                   threadId={threadId}
+                  localOnly={localThreadId === threadId}
                   agentName={selectedAgent.name}
                   agentVersion={selectedAgent.version}
                   agentOwnerUserId={selectedAgent.ownerUserId}
