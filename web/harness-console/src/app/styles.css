@@ -3606,6 +3606,15 @@ body,
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
+
+  .codex-motion-state,
+  body.codex-theme-v1 .workbench-rail-panel,
+  body.codex-theme-v1 .activity-row,
+  body.codex-theme-v1 .tool-card,
+  body.codex-theme-v1 .agent-card {
+    animation: none !important;
+    transform: none !important;
+  }
 }
 
 /* assistant-ui full-page agent workspace */
