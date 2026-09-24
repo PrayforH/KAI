@@ -45,6 +45,10 @@ Langfuse 三条新版样本中 `harness.mcp.resolve` 为 11–14 ms（旧版五�
 
 `b12e5550` 部署后再次按相同 Agent、提示词、用户、API 直连口径连续运行 2 次 warmup＋30 次正式 Run，原始数据见 [复测 JSON](perf-thread-run-174-repeat30-20260925.json)。首文本 p50 **2,962 ms**、p95 **3,395 ms**；Run 总耗时 p50 **3,991 ms**、p95 **4,494 ms**。30/30 有 `agent.assets.staged` 和 `run.succeeded`；17 次精确 `context.window.observed`、13 次 `context.window.unavailable`，后者原因全部是控制请求 `control_timeout`，没有本轮优化引入的合成 unavailable。该组仅为优化版重复性检查，不是与旧版随机交错的因果实验。
 
+## 新 Thread 复测（优化版 30 次）
+
+同一 `b12e5550` 镜像、相同 Agent/提示词/用户，每次新建 thread，2 次 warmup＋30 次正式 Run，原始样本见 [新 Thread JSON](perf-thread-run-174-new-thread30-20260925.json)。API SSE 首文本 p50 **2,688 ms**、p95 **2,969 ms**；总耗时 p50 **2,809 ms**、p95 **3,162 ms**。30/30 staged 且成功；新 Session 不触发 resumed context window 后测，故 observed/unavailable 均为 0。与同 thread warm 30 次（首文本 p95 3,395 ms、总耗时 p95 4,494 ms）分列，不能把新 thread 的较快结果误读成跨轮复用收益。
+
 ## Web 交接灰度：未通过，已回滚
 
 `e9367d0f` 只防旧请求覆写缓存，第三轮 `run_2e485baa0061467fb75928543bf01e3b` 仍终态空白，已回滚（`b20b996e`）。`b6491dd0` 进一步防旧回调再次 `thread.import()`，旧请求迟到测试先红后绿，但第四轮 `run_77c23c7f63dd44a8932fe128a142408e` 仍空白，也已回滚（`3e4393da`）。两次 Web 都只在 174:3301 灰度，最终恢复灰度前实际镜像 `develop-20260922-d69cb0d2`，25 个环境变量、首页 200 和健康状态核对通过；API/Worker 优化保持运行。
