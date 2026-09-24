@@ -195,6 +195,57 @@ describe("buildSessionTrace", () => {
     const trace = buildSessionTrace(runs, live);
     expect(trace.summary.turns).toBe(2);
   });
+
+  it("pairs subagent milestones into one span and ignores progress frames", () => {
+    const runs = extractSessionRuns([
+      historyMessage({ id: "user-run-s", role: "user", content: "委派子任务" }),
+      historyMessage({
+        id: "assistant-run-s",
+        role: "assistant",
+        content: "",
+        toolCalls: [activityToolCall("run-s", runActivity("run-s", [
+          {
+            id: "sa-start",
+            event_type: "subagent.started",
+            kind: "subagent",
+            status: "running",
+            title: "检索子任务",
+            summary: null,
+            timestamp: at(100),
+            sequence: 1,
+            metadata: { task_id: "t-1" },
+          },
+          {
+            id: "sa-progress-1",
+            event_type: "subagent.progress",
+            kind: "subagent",
+            status: "running",
+            title: "检索子任务",
+            summary: "进行中",
+            timestamp: at(200),
+            sequence: 2,
+            metadata: { task_id: "t-1" },
+          },
+          {
+            id: "sa-done",
+            event_type: "subagent.completed",
+            kind: "subagent",
+            status: "succeeded",
+            title: "检索子任务",
+            summary: "完成",
+            timestamp: at(900),
+            sequence: 3,
+            metadata: { task_id: "t-1" },
+          },
+        ]))],
+      }),
+    ]);
+    const trace = buildSessionTrace(runs);
+    const subagents = trace.nodes.filter((node) => node.badge === "子任务");
+    expect(subagents).toHaveLength(1);
+    expect(subagents[0].endMs - subagents[0].startMs).toBe(800);
+    expect(subagents[0].status).toBe("succeeded");
+  });
 });
 
 describe("searchTraceNodes", () => {

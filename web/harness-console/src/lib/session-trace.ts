@@ -195,6 +195,14 @@ export function formatClock(ms: number): string {
 
 const TERMINAL_STATUSES = new Set(["succeeded", "completed", "passed"]);
 const RUNNING_STATUSES = new Set(["running", "queued", "provisioning", "waiting"]);
+// High-frequency subagent progress frames must not become tool-lane nodes;
+// only the milestones carry real start/end information.
+const SUBAGENT_MILESTONES = new Set([
+  "subagent.started",
+  "subagent.completed",
+  "subagent.failed",
+  "subagent.cancelled",
+]);
 
 function isRunningStatus(status: string): boolean {
   return RUNNING_STATUSES.has(status);
@@ -216,6 +224,7 @@ function buildTraceNodes(runs: readonly SessionTraceRun[]): TraceNode[] {
     const startedMs = safeMs(activity.started_at);
     const spans = new Map<string, MessageSpan>();
     const results = new Map<string, ActivityItem>();
+    const subagentTerminals = new Map<string, ActivityItem>();
 
     for (const item of activity.items) {
       const toolCallId = item.metadata.tool_call_id;
@@ -224,6 +233,14 @@ function buildTraceNodes(runs: readonly SessionTraceRun[]): TraceNode[] {
         (item.event_type === "tool.result" || item.event_type === "tool.allowed")
       ) {
         results.set(toolCallId, item);
+      }
+      const taskId = item.metadata.task_id;
+      if (
+        item.kind === "subagent" &&
+        typeof taskId === "string" &&
+        ["subagent.completed", "subagent.failed", "subagent.cancelled"].includes(item.event_type)
+      ) {
+        subagentTerminals.set(taskId, item);
       }
     }
 
@@ -316,20 +333,26 @@ function buildTraceNodes(runs: readonly SessionTraceRun[]): TraceNode[] {
       }
 
       if (item.kind === "subagent") {
+        if (item.event_type !== "subagent.started") continue;
+        const taskId = typeof item.metadata.task_id === "string"
+          ? item.metadata.task_id
+          : item.id;
+        const terminal = subagentTerminals.get(taskId);
+        const endMs = terminal ? safeMs(terminal.timestamp) : Number.NaN;
         nodes.push({
-          id: `subagent-${run.runId}-${item.id}`,
+          id: `subagent-${run.runId}-${taskId}`,
           runId: run.runId,
           turn: run.turn,
           step: nodes.filter((node) => node.runId === run.runId).length + 1,
           lane: "tool",
           badge: "子任务",
           label: item.title || "子任务",
-          detail: preview(item.summary ?? "", 120),
-          status: item.status,
+          detail: preview(item.summary ?? terminal?.summary ?? "", 120),
+          status: terminal?.status ?? item.status,
           startMs: timestampMs,
-          endMs: timestampMs,
+          endMs: Number.isFinite(endMs) ? endMs : timestampMs,
           summary: item.summary ?? undefined,
-          running: isRunningStatus(item.status),
+          running: !terminal,
         });
         continue;
       }
