@@ -16,6 +16,10 @@
 
 同一线程第八轮 `run_f037203d28454f0a802f42f65f3606f9`、第九轮 `run_67cedcc086ba4737b68928c1f9da32cd`：完成后不刷新，`data-turn-answer=OK`、`data-direct-stream=false`、恰好一个 `.assistant-answer` 且文本 `OK`；Run 显示完成。第十轮 `run_c903d4e975ba48f4b55fd7f6827f9bc6`：多行 Markdown 回答以 `<strong>甲</strong>` 和列表项 `乙` 正确渲染，不刷新亦保持正文。未观察到此前的完成后空白；三轮是功能灰度，不是浏览器 p95 统计。
 
+## 追加终态验收与首字口径
+
+提交 `83243b94` 后 Web 全量 **921 passed、1 skipped**；174 同线程第九轮 `run_67cedcc086ba4737b68928c1f9da32cd` 不刷新仍恰好一个 `OK` 正文；第十轮 `run_c903d4e975ba48f4b55fd7f6827f9bc6` 的 Markdown `<strong>甲</strong>` 与列表 `乙` 正常；随后两轮 `run_8432d9be07ae436ca17415a4c9cc75eb`、`run_2f53273077bd4cd790b94b6b654b21b9` 均终态 `OK`，无重复回答。浏览器计时探针两次分别误读上一轮文本和 assistant-ui 重建后的行，**均不纳入首字 p95**。本报告只验收终态正文稳定，不宣称浏览器首字 p95 已达标。
+
 ## 限制与后续
 
 - 第八轮 DOM 轨迹中 `data-turn-answer=OK` 后 live 文本节点短时空白，直到完成交接才出现 durable `OK`；不能把浏览器 live 首字体验宣称为彻底优化完成。API SSE p95 数据仍以 `perf-thread-run-174-20260925.md` 为准。
