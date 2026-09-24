@@ -53,3 +53,29 @@ it("keeps a completed short answer visible after live ownership clears", async (
   expect(assistant?.querySelectorAll(".assistant-answer")).toHaveLength(1);
   expect(assistant?.querySelector(".assistant-answer")?.textContent).toBe("OK");
 });
+
+it("keeps only the final text when durable activity follows an operational tool", async () => {
+  host = document.createElement("div");
+  document.body.appendChild(host);
+  root = createRoot(host);
+  await act(async () => root.render(<Fixture />));
+
+  await act(async () => thread!.import(ExportedMessageRepository.fromArray([
+    {
+      id: "assistant-run-tools",
+      role: "assistant",
+      content: [
+        { type: "text", text: "正在检查配置" },
+        { type: "tool-call", toolCallId: "read-1", toolName: "Read", args: {}, result: "ok" },
+        { type: "text", text: "## 最终结果\n\n已完成" },
+        { type: "tool-call", toolCallId: "activity-1", toolName: "harness_run_activity", args: { activity: {} }, result: "ok" },
+      ],
+    },
+  ])));
+
+  const assistant = host.querySelector('.harness-assistant-message');
+  expect(assistant?.getAttribute("data-turn-answer")).toBe("## 最终结果 已完成");
+  expect(assistant?.querySelectorAll(".assistant-answer")).toHaveLength(1);
+  expect(assistant?.querySelector(".assistant-answer")?.textContent).toContain("最终结果");
+  expect(assistant?.querySelector(".assistant-answer")?.textContent).not.toContain("正在检查配置");
+});
