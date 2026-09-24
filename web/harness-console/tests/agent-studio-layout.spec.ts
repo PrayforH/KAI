@@ -864,7 +864,7 @@ describe("Agent Studio management page", () => {
     expect(styles).toMatch(/@media \(prefers-reduced-motion: no-preference\)/);
   });
 
-  it("opens on a clickable two-column Agent catalog before the single-column editor", () => {
+  it("opens on a clickable responsive three-column Agent catalog before the single-column editor", () => {
     expect(workbench).toContain('useState<"catalog" | "editor">("catalog")');
     expect(workbench).not.toContain("StudioSectionNavigation");
     expect(workbench).toContain('viewMode === "catalog"');
@@ -874,7 +874,7 @@ describe("Agent Studio management page", () => {
     expect(workbench).toContain('returnToCatalog');
     expect(workbench).toContain('open={viewMode === "editor" && Boolean(workspaceTarget)}');
     expect(styles).toContain(".agentCatalogCard");
-    expect(styles).toMatch(/\.agentCatalogList\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/s);
+    expect(styles).toMatch(/\.agentCatalogList\s*\{[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);/s);
     expect(styles).toMatch(/\.editorBody\s*\{[^}]*display:\s*block;/s);
     expect(styles).toMatch(/\.stageNav\s*\{[^}]*flex-direction:\s*row;/s);
   });

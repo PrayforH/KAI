@@ -1,5 +1,6 @@
 "use client";
 import { FeedbackToast } from "../feedback-toast";
+import { AgentAvatar } from "./agent-avatar";
 import { ConfigurationIcon } from "./configuration-icon";
 import { AgentVersionHistory } from "./agent-version-history";
 import { PanelResizeHandle } from "../panel-resize-handle";
@@ -2180,9 +2181,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                   }}
                   onClick={() => router.push(`/studio/agents/${encodeURIComponent(agent.name)}?draft=${encodeURIComponent(agent.draftId)}`)}
                 >
-                  <span className={styles.agentMonogram} aria-hidden="true">
-                    {agent.displayName.slice(0, 1)}
-                  </span>
+                  <AgentAvatar name={agent.name} displayName={agent.displayName} domain={agent.domain || ""} />
                   <div className={styles.agentCatalogCopy}>
                     <div>
                       <strong>{agent.displayName}</strong>
