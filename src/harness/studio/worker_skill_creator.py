@@ -201,12 +201,14 @@ class WorkerSkillCreator:
         authorize: Callable[[], object],
         *,
         timeout: float = 300,
+        inline: bool = False,
     ) -> None:
         self.container = container
         self.draft = draft
         self.user_id = user_id
         self.authorize = authorize
         self.timeout = timeout
+        self.inline = inline
 
     async def respond(
         self, tenant_id: str, request: SkillConversationRequest, *, name: str,
@@ -260,6 +262,7 @@ class WorkerSkillCreator:
             tenant_id,
             session.session_id,
             creator_id,
+            **({"dispatch_to_queue": False} if self.inline else {}),
             input={
                 "prompt": _creator_task(name, request),
                 "model_route_override": request.model_route,
@@ -268,7 +271,7 @@ class WorkerSkillCreator:
         run_id = creation.run.run_id
         task = (
             asyncio.create_task(container.worker.execute(tenant_id, run_id))
-            if container.auto_execute and creation.created
+            if (container.auto_execute or self.inline) and creation.created
             else None
         )
         try:

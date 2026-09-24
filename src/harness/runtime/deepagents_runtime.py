@@ -29,6 +29,7 @@ history into each Run instead of trusting graph state the platform cannot see.
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass, field
@@ -435,13 +436,13 @@ class DeepagentsRuntime:
                 quotas=self._quotas,
                 context_service=self._context_service,
                 observability=self._observability,
-                declared_tools=config.declared_tools,
+                declared_tools=config.declared_tools | frozenset(context.platform_tools.names),
             )
         )
         return create_deep_agent(
             model=self._chat_model(),
-            tools=self._bundle_tools(context),
-            system_prompt=f"{snapshot.system_prompt.rstrip()}\n\n{VISIBLE_EXECUTION_CONTRACT}",
+            tools=[*self._bundle_tools(context), *self._platform_tools(context)],
+            system_prompt=f"{snapshot.system_prompt.rstrip()}\n\n{VISIBLE_EXECUTION_CONTRACT}\n{context.platform_tools.instructions}",
             middleware=middleware,
             skills=[SKILL_ROOT] if snapshot.skill_snapshots else None,
             backend=backend,
@@ -479,6 +480,19 @@ class DeepagentsRuntime:
         raise ConflictError(
             f"DeepAgents has no text model for the route protocol: {config.api_format}"
         )
+
+    @staticmethod
+    def _platform_tools(context: RuntimeContext) -> list[StructuredTool]:
+        def adapt(tool, name):
+            async def invoke(**arguments: Any) -> str:
+                result = await tool.handler(arguments)
+                # Preserve failures as actionable tool results for model correction.
+                return json.dumps(result, ensure_ascii=False)
+            return StructuredTool.from_function(coroutine=invoke, name=name,
+                description=tool.description, args_schema=tool.schema)
+        return [adapt(tool, name) for tool, name in zip(
+            context.platform_tools.tools, context.platform_tools.names, strict=True
+        )]
 
     def _bundle_tools(self, context: RuntimeContext) -> list[StructuredTool]:
         """Expose Studio Bundle operators while executing them in the Sandbox.

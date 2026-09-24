@@ -173,6 +173,7 @@ class RunService:
         *,
         input: dict[str, object] | None = None,
         deduplicate_active_input: bool = True,
+        dispatch_to_queue: bool = True,
     ) -> RunCreation:
         lock = self._creation_locks.setdefault((tenant_id, session_id), asyncio.Lock())
         async with lock:
@@ -182,6 +183,7 @@ class RunService:
                 idempotency_key,
                 input=input,
                 deduplicate_active_input=deduplicate_active_input,
+                dispatch_to_queue=dispatch_to_queue,
             )
 
     async def _create_locked(
@@ -192,6 +194,7 @@ class RunService:
         *,
         input: dict[str, object] | None,
         deduplicate_active_input: bool,
+        dispatch_to_queue: bool,
     ) -> RunCreation:
         session = await self._sessions.get(tenant_id, session_id)
         existing = await self._runs.find_by_idempotency_key(tenant_id, session_id, idempotency_key)
@@ -285,9 +288,13 @@ class RunService:
             event_type="run.queued",
             payload=queue_payload,
         )
-        await self._queue.enqueue(
-            RunTask(tenant_id=tenant_id, run_id=run.run_id, session_id=session_id)
-        )
+        # A Builder tool may execute a child inside its existing worker slot.
+        # Never enqueue that child as well: it would race another worker, or
+        # deadlock if all slots are waiting for their own queued children.
+        if dispatch_to_queue:
+            await self._queue.enqueue(
+                RunTask(tenant_id=tenant_id, run_id=run.run_id, session_id=session_id)
+            )
         return RunCreation(run=run, created=True, deduplicated=False)
 
     def _annotate_trace(

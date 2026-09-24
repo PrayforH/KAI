@@ -914,6 +914,14 @@ class ClaudeSdkRuntime:
                 raise ToolResolutionError("duplicate MCP server name: harness-artifacts")
             mcp_servers["harness-artifacts"] = create_artifact_mcp_server()
             allowed_tools.append("mcp__harness-artifacts__publish_artifact")
+        if context.platform_tools.tools:
+            if "harness-builder" in mcp_servers:
+                raise ToolResolutionError("duplicate MCP server name: harness-builder")
+            mcp_servers["harness-builder"] = context.platform_tools.sdk_server()
+            allowed_tools.extend(context.platform_tools.names)
+            result_trust.update({
+                name: ContextTrust.SENSITIVE for name in context.platform_tools.names
+            })
         agents: dict[str, AgentDefinition] = {}
         subagent_bindings = {
             subagent.runtime_name: subagent for subagent in manifest.spec.subagents
@@ -992,6 +1000,7 @@ class ClaudeSdkRuntime:
                 f"{self._snapshot.system_prompt.rstrip()}\n\n{VISIBLE_EXECUTION_CONTRACT}\n{WEB_CONTRACT}"
                 f"{delegation_contract}{_knowledge_mode_contract(context)}"
                 f"{_sandbox_tool_contract(allowed_tools)}"
+                f"\n{context.platform_tools.instructions}"
             ),
             model=route.model,
             fallback_model=None,

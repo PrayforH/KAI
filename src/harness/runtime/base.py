@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from harness.core.models import ExecutionIdentity, Run, Session
 from harness.policy.runtime import ResolvedPolicy
 from harness.runtime.artifact_tools import ArtifactPublisher
+from harness.runtime.platform_tools import PlatformToolOverlay
 from harness.runtime.steering import SteeringInbox
 from harness.sandbox.base import SandboxCommandResult, SandboxEnforcement, SandboxIsolation
 
@@ -63,6 +64,9 @@ class RuntimeResultError(RuntimeError):
 class RuntimeContext(BaseModel):
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
+    platform_tools: PlatformToolOverlay = Field(
+        default_factory=PlatformToolOverlay, exclude=True, repr=False
+    )
     run: Run
     session: Session
     workspace: Path

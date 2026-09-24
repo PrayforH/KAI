@@ -77,6 +77,7 @@ from harness.runtime.input_redaction import (
     staged_read_path,
 )
 from harness.runtime.mcp_credentials import McpCredentialError
+from harness.runtime.platform_tools import PlatformToolOverlay
 from harness.runtime.steering import SteeringInbox
 from harness.runtime.subagent_governance import SubagentGovernanceError
 from harness.runtime.tools import ToolResolutionError
@@ -272,11 +273,15 @@ class RunOrchestrator:
         context_checkpoints: ContextCheckpointService | None = None,
         context_service: ContextService | None = None,
         sandbox_leases: SandboxLeaseService | None = None,
+        platform_tools_factory: (
+            Callable[[Run, Session], Awaitable[PlatformToolOverlay]] | None
+        ) = None,
     ) -> None:
         if cancellation_poll_interval_seconds <= 0:
             raise ValueError("cancellation poll interval must be positive")
         if cancellation_wakeup_timeout_seconds <= 0:
             raise ValueError("cancellation wakeup timeout must be positive")
+        self._platform_tools_factory = platform_tools_factory
         self._sessions = sessions
         self._runs = runs
         self._events = events
@@ -1373,6 +1378,8 @@ class RunOrchestrator:
                     payload={"mode": "durable_digest"},
                 )
             context = RuntimeContext(
+                platform_tools=(await self._platform_tools_factory(run, session)
+                                if self._platform_tools_factory else PlatformToolOverlay()),
                 run=run,
                 session=session,
                 workspace=handle.path,

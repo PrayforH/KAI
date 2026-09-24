@@ -825,6 +825,7 @@ export type StudioTryRun = {
   draftId: string;
   draftRevision: number;
   run: {
+    input?: { studio_builder?: { draft_id: string; revision: number } };
     run_id: string;
     session_id: string;
     status: StudioRunStatus;
@@ -2245,7 +2246,7 @@ export const studioClient = {
     expectedRevision: number,
     prompt: string,
     idempotencyKey: string,
-    options: { continueFromRunId?: string; inputArtifactIds?: string[] } = {},
+    options: { continueFromRunId?: string; inputArtifactIds?: string[]; builderTools?: boolean; pendingProposal?: StudioBuilderChanges } = {},
   ) => request<StudioTryRun>(`drafts/${encodeURIComponent(draftId)}/try-runs`, {
     method: "POST",
     body: JSON.stringify({ expectedRevision, prompt, idempotencyKey, ...options }),

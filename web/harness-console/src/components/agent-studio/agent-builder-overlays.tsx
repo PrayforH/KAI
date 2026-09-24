@@ -177,7 +177,7 @@ export function AgentBuilderAssistant({
   const [intent, setIntent] = useState<"auto" | "run" | "edit">("auto");
   const [editing, setEditing] = useState(false);
   const [applying, setApplying] = useState(false);
-  const [proposal, setProposal] = useState<(StudioBuilderReply & { before: StudioDraft; testTurn?: PreviewTurn }) | null>(null);
+  const [proposal, setProposal] = useState<(StudioBuilderReply & { before: StudioDraft; testTurn?: PreviewTurn; sourceRunId?: string }) | null>(null);
   const [proposalReview, setProposalReview] = useState<{ source: typeof proposal; changes: StudioBuilderChanges; selected: string[] } | null>(null);
   const review = useMemo(() => proposalReview?.source === proposal && proposalReview ? proposalReview : {
     source: proposal, changes: proposal?.changes ?? {}, selected: Object.keys(proposal?.changes ?? {}).filter(key => key !== "capabilityCatalogRevision"),
@@ -348,6 +348,22 @@ export function AgentBuilderAssistant({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [result?.run.run_id, activeDraft.id]);
 
+  const observedProposals = useRef(new Set<string>());
+  useEffect(() => {
+    if (!writable || !result) return;
+    const event = result.events.findLast(item => ["builder.proposal", "builder.proposal.discarded"].includes(item.type));
+    if (!event) return;
+    const key = `${result.run.run_id}:${event.sequence}`;
+    if (observedProposals.current.has(key)) return;
+    observedProposals.current.add(key);
+    if (event.type === "builder.proposal.discarded") {setProposal(null); setCodeComparison(undefined); setComparisonPending(false); return;}
+    const reply = event.payload as unknown as StudioBuilderReply;
+    if (reply.baseRevision !== activeDraft.revision || !reply.changedFields?.length || !reply.changes) return;
+    const testTurn = [...archivedTurns].findLast(turn => !turn.result.events.some(item => item.type === "builder.proposal"));
+    setProposal({...reply, before: activeDraft, testTurn, sourceRunId: result.run.run_id});
+    setCodeComparison(undefined); setComparisonPending(false);
+  }, [result, writable, activeDraft, archivedTurns]);
+
   useEffect(() => {
     if (followOutput.current) transcriptRef.current?.scrollTo({ top: transcriptRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, result, buildReply, buildProgress]);
@@ -375,7 +391,7 @@ export function AgentBuilderAssistant({
     finally { if (epoch === epochRef.current) {setUploading(false); uploadLock.current = false;} }
   }
 
-  async function startRun(value: string, targetDraft?: StudioDraft, continueConversation = false, artifactIds: string[] = [], names: string[] = []): Promise<boolean> {
+  async function startRun(value: string, targetDraft?: StudioDraft, continueConversation = false, artifactIds: string[] = [], names: string[] = [], builderTools = false): Promise<boolean> {
     if (historyLoading || startingRef.current || (result && !terminal)) return false;
     startingRef.current = true;
     const epoch = epochRef.current;
@@ -387,13 +403,13 @@ export function AgentBuilderAssistant({
       const latestTurn = workspaceTarget
         ? [...archivedTurns.map(turn => turn.result), ...(result ? [result] : [])].findLast(turn => turn.run.session_id === testSessionId)
         : result;
-      const previous = continueConversation && latestTurn?.draftRevision === runnableDraft.revision ? latestTurn : null;
+      const previous = continueConversation && latestTurn?.draftRevision === runnableDraft.revision && Boolean(latestTurn.run.input?.studio_builder) === builderTools ? latestTurn : null;
       const started = await studioClient.createTryRun(
         runnableDraft.id,
         runnableDraft.revision,
         value.trim(),
         `studio-try-${createRandomId()}`,
-        { ...(previous ? { continueFromRunId: previous.run.run_id } : {}), ...(artifactIds.length ? { inputArtifactIds: artifactIds } : {}) },
+        { ...(builderTools ? {builderTools: true, ...(proposal ? {pendingProposal: reviewedChanges} : {})} : {}), ...(previous ? { continueFromRunId: previous.run.run_id } : {}), ...(artifactIds.length ? { inputArtifactIds: artifactIds } : {}) },
       );
       if (epoch !== epochRef.current) return false;
       runStreamAbortRef.current?.abort();
@@ -626,8 +642,9 @@ export function AgentBuilderAssistant({
   async function sendUnified(value: string, ids: string[], names: string[]): Promise<boolean> {
     if (submitLock.current || active || editing || applying || historyLoading) return false;
     const explicitRun = /^(?:\/run(?:\s|$)|试跑(?:智能体)?\s*[:：])/i.test(value.trim());
-    const authoring = !explicitRun && writable;
-    if (explicitRun && proposal) {setError("请先应用或放弃当前修改建议，再开始试跑。");return false;}
+    const useBuilderTools = writable && !explicitRun && ["claude-agent-sdk", "deepagents"].includes(activeDraft.runtime);
+    const authoring = !explicitRun && writable && !useBuilderTools;
+    if (proposal && !authoring && !useBuilderTools) {setError("请先应用或放弃当前修改建议，再继续对话。");return false;}
     submitLock.current = true;
     const epoch = epochRef.current;
     const messageId = createRandomId();
@@ -639,12 +656,12 @@ export function AgentBuilderAssistant({
         setBuildMessageId(createRandomId()); setBuildStartedAt(new Date().toISOString());
         setBuildReply(""); setBuildProgress("");
       }
-      setReadingMaterials(Boolean(ids.length));
+      setReadingMaterials(Boolean(ids.length && (!draftReady || authoring)));
       const materialContext = ids.length && (!draftReady || authoring) ? (await studioClient.readBuilderMaterials(ids, activeDraft.modelRoute)).context : "";
       if (epoch !== epochRef.current) return false;
       setReadingMaterials(false);
       setMessages(current => [...current, {id:messageId, role:"user",text:value, artifactIds:ids,files:names,materialContext}]);
-      accepted = Boolean(!draftReady ? await createDraft(value, materialContext) : authoring ? await converse(value, materialContext, files) : await startRun(value, undefined, true, ids, names));
+      accepted = Boolean(!draftReady ? await createDraft(value, materialContext) : authoring ? await converse(value, materialContext, files) : await startRun(value, undefined, true, ids, names, useBuilderTools));
       return accepted;
     } catch (reason) {
       if (epoch === epochRef.current) setError(reason instanceof Error ? reason.message : "发送失败，请重试。");
@@ -672,7 +689,7 @@ export function AgentBuilderAssistant({
   </> : null;
   const proposalCard = writable && proposal ? <BuilderProposalCard
     changes={review.changes} selected={review.selected} labels={editLabels} before={key => beforeEdit(proposal.before, key)} revision={proposal.baseRevision}
-    disabled={applying || editing || comparing} stale={hasUnsavedChanges || activeDraft.revision !== proposal.baseRevision} comparing={comparing} canRerun={Boolean(lastTestPrompt)} rerunDisabled={active}
+    disabled={applying || editing || comparing} stale={hasUnsavedChanges || activeDraft.revision !== proposal.baseRevision} comparing={comparing} canRerun={Boolean(proposal.sourceRunId ? proposal.testTurn : lastTestPrompt)} rerunDisabled={active}
     onChange={changes => { setProposalReview({...review, changes}); setCodeComparison(undefined); setComparisonPending(false); }}
     onSelect={selected => { setProposalReview({...review, selected}); setCodeComparison(undefined); setComparisonPending(false); }}
     onPreview={workspaceTarget ? () => void previewCodeChanges() : undefined} onApply={rerun => void applyEdit(rerun)}

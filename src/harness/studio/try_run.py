@@ -11,10 +11,13 @@ from harness.agui.response import final_response_text
 from harness.core.events import RunEvent
 from harness.core.models import ApprovalRequest, Artifact, Run, RunStatus
 from harness.evals.models import EvalDatasetVersion
+from harness.studio.builder_conversation import BuilderChanges
 from harness.studio.models import AgentDraft, PublishedAgentVersion, StudioModel
 
 
 class CreateStudioTryRunRequest(StudioModel):
+    builder_tools: bool = Field(default=False, alias="builderTools")
+    pending_proposal: BuilderChanges | None = Field(default=None, alias="pendingProposal")
     expected_revision: int = Field(alias="expectedRevision", ge=1)
     prompt: str = Field(min_length=1, max_length=100_000)
     idempotency_key: str = Field(alias="idempotencyKey", min_length=1, max_length=200)

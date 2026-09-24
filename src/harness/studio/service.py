@@ -9,7 +9,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import uuid4
 
 from harness.auth.audit import AuditService
@@ -1058,63 +1058,12 @@ class AgentStudioService:
         await self._require_shared_permission(tenant_id, user_id, current, AgentPermission.EDIT)
         if current.revision != request.expected_revision:
             raise ConflictError("草稿已更新，请基于最新配置重新生成建议")
-        # No credentials or script contents are passed to the authoring model.
-        context = current.spec.model_dump(mode="json", by_alias=True)
-        context["skills"] = [
-            {"name": skill.name, "instructions": skill.instructions}
-            for skill in current.spec.skills
-        ]
-        # Operator code is authoring content, not credentials; it is required to preserve
-        # existing operators when generating the complete replacement list.
-        catalog_revision, catalog = await self._builder_catalog(tenant_id, user_id)
-        runtime_features = next(
-            (
-                set(item.capabilities)
-                for item in catalog.runtime_capabilities
-                if item.runtime == current.spec.runtime
-            ),
-            set(),
+        builder_context = await self.builder_context(
+            tenant_id, user_id, draft_id, request.expected_revision
         )
-        # Offer only tools this runtime can actually honour. A tool it cannot
-        # execute must not appear among the Builder's choices: the model would
-        # select it, the draft would save, and the failure would surface only at
-        # publish time as an error the operator has no way to act on from the
-        # conversation. Same declaration the compiler refuses on.
-        offerable_tools = builtin_tools_for_runtime(
-            catalog.builtin_tools,
-            runtime_features,
-        )
-        knowledge_bases = await self._builder_knowledge_bases(tenant_id, user_id)
-        subagents = await self._builder_subagents(tenant_id, user_id, current)
+        catalog_revision = builder_context["assemblyCatalog"]["revision"]
         prompt = json.dumps({
-            "assemblyCatalog": {
-                "runtimes": [item.model_dump(mode="json", by_alias=True)
-                             for item in catalog.runtime_capabilities],
-                "knowledgeBases": knowledge_bases,
-                "subagents": subagents,
-                "modelRoutes": [{"routeId": item.route_id, "label": item.label,
-                    "models": item.models, "capabilities": item.capabilities}
-                    for item in catalog.model_routes if item.enabled
-                    and item.model_type in {"chat", "vision"}],
-                "executionProfiles": [{"profileId": item.profile_id, "label": item.label,
-                    "description": item.description} for item in catalog.execution_profiles
-                    if item.enabled],
-                "policies": [{"policyId": item.policy_id, "label": item.label,
-                    "description": item.description} for item in catalog.policies if item.enabled],
-                "revision": catalog_revision,
-                "skills": [{"packageId": s.package_id, "revision": s.revision,
-                    "label": s.label, "summary": s.summary, "risk": s.risk_level}
-                    for s in catalog.skills if s.enabled
-                    and current.spec.runtime in s.compatible_runtimes],
-                "builtinTools": [item.model_dump() for item in offerable_tools],
-                "mcpServers": [{"reference": item.reference, "label": item.label,
-                    "description": item.description, "category": item.category,
-                    "tools": item.tools, "risk": item.risk,
-                    "networkAccess": item.network_access,
-                    "allowedExecutionProfileIds": item.allowed_execution_profile_ids}
-                    for item in catalog.mcp_servers if item.enabled],
-            },
-            "currentDraft": context,
+            **builder_context,
             "conversation": [item.model_dump() for item in request.messages],
             "runContext": request.run_context,
         }, ensure_ascii=False)
@@ -1177,6 +1126,85 @@ class AgentStudioService:
             await on_progress({"type": "progress", "text": "正在检查修改范围和配置一致性…"})
         if request.intent == "edit" and reply.action not in {"edit", "ask", "reply"}:
             raise ConflictError("修改模式不能发起试跑，请重新描述修改要求")
+        return await self.preview_builder_reply(
+            tenant_id, user_id, draft_id, request.expected_revision, reply,
+            catalog_revision=catalog_revision, creator=creator, on_progress=on_progress,
+        )
+
+    async def builder_context(self, tenant_id: str, user_id: str, draft_id: str,
+                              expected_revision: int) -> dict[str, Any]:
+        current = await self.get(tenant_id, user_id, draft_id)
+        await self._require_shared_permission(tenant_id, user_id, current, AgentPermission.EDIT)
+        if current.revision != expected_revision:
+            raise ConflictError("草稿已更新，请基于最新配置重新生成建议")
+        # No credentials or script contents are passed to the authoring model.
+        context = current.spec.model_dump(mode="json", by_alias=True)
+        context["skills"] = [
+            {"name": skill.name, "instructions": skill.instructions}
+            for skill in current.spec.skills
+        ]
+        # Operator code is authoring content, not credentials; it is required to preserve
+        # existing operators when generating the complete replacement list.
+        catalog_revision, catalog = await self._builder_catalog(tenant_id, user_id)
+        runtime_features = next(
+            (
+                set(item.capabilities)
+                for item in catalog.runtime_capabilities
+                if item.runtime == current.spec.runtime
+            ),
+            set(),
+        )
+        # Offer only tools this runtime can actually honour. A tool it cannot
+        # execute must not appear among the Builder's choices: the model would
+        # select it, the draft would save, and the failure would surface only at
+        # publish time as an error the operator has no way to act on from the
+        # conversation. Same declaration the compiler refuses on.
+        offerable_tools = builtin_tools_for_runtime(
+            catalog.builtin_tools,
+            runtime_features,
+        )
+        knowledge_bases = await self._builder_knowledge_bases(tenant_id, user_id)
+        subagents = await self._builder_subagents(tenant_id, user_id, current)
+        return {
+            "assemblyCatalog": {
+                "runtimes": [item.model_dump(mode="json", by_alias=True)
+                             for item in catalog.runtime_capabilities],
+                "knowledgeBases": knowledge_bases,
+                "subagents": subagents,
+                "modelRoutes": [{"routeId": item.route_id, "label": item.label,
+                    "models": item.models, "capabilities": item.capabilities}
+                    for item in catalog.model_routes if item.enabled
+                    and item.model_type in {"chat", "vision"}],
+                "executionProfiles": [{"profileId": item.profile_id, "label": item.label,
+                    "description": item.description} for item in catalog.execution_profiles
+                    if item.enabled],
+                "policies": [{"policyId": item.policy_id, "label": item.label,
+                    "description": item.description} for item in catalog.policies if item.enabled],
+                "revision": catalog_revision,
+                "skills": [{"packageId": s.package_id, "revision": s.revision,
+                    "label": s.label, "summary": s.summary, "risk": s.risk_level}
+                    for s in catalog.skills if s.enabled
+                    and current.spec.runtime in s.compatible_runtimes],
+                "builtinTools": [item.model_dump() for item in offerable_tools],
+                "mcpServers": [{"reference": item.reference, "label": item.label,
+                    "description": item.description, "category": item.category,
+                    "tools": item.tools, "risk": item.risk,
+                    "networkAccess": item.network_access,
+                    "allowedExecutionProfileIds": item.allowed_execution_profile_ids}
+                    for item in catalog.mcp_servers if item.enabled],
+            },
+            "currentDraft": context,
+        }
+
+    async def preview_builder_reply(
+        self, tenant_id: str, user_id: str, draft_id: str, expected_revision: int,
+        reply: BuilderModelReply, *, catalog_revision: int,
+        creator: WorkerSkillCreator | None = None, on_progress: Progress | None = None,
+    ) -> BuilderConversationReply:
+        current = await self.get(tenant_id, user_id, draft_id)
+        await self._require_shared_permission(tenant_id, user_id, current, AgentPermission.EDIT)
+        if current.revision != expected_revision:
+            raise ConflictError("草稿已更新，请基于最新配置重新生成建议")
         selects_catalog_resource = any(
             getattr(reply.changes, field) is not None
             for field in ("runtime", "model", "subagents", "execution_profile", "permission_policy")

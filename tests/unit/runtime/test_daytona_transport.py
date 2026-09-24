@@ -343,3 +343,23 @@ def test_remote_command_ignores_legacy_budget() -> None:
     )
     assert "--max-budget-usd" not in command
     assert "--permission-mode" in command
+
+
+@pytest.mark.asyncio
+async def test_builder_sdk_bridge_stays_in_worker_and_serializes_only_cli_descriptor() -> None:
+    import json
+
+    configured = replace(options(), mcp_servers={
+        "harness-builder": create_sdk_mcp_server("harness-builder", tools=[]),
+    })
+    session = FakeRemoteSession([None])
+    transport = DaytonaClaudeTransport(session=session, options=configured,
+        remote_workspace="/workspace/run-a", cli_path="/home/daytona/.local/bin/claude")
+    await transport.connect()
+    assert session.started is not None
+    descriptor = json.loads(session.started[2]["HARNESS_CLAUDE_MCP_CONFIG"])
+    assert descriptor == {"mcpServers": {"harness-builder": {
+        "type": "sdk", "name": "harness-builder",
+    }}}
+    assert "instance" in configured.mcp_servers["harness-builder"]
+    await transport.close()

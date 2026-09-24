@@ -274,3 +274,28 @@ async def test_creator_timeout_cancels_run_without_changing_draft(monkeypatch) -
     arranged.runs.cancel.assert_awaited_once_with("tenant-a", "creator-run")
     draft = await arranged.container.studio.get("tenant-a", "user-a", arranged.draft.draft_id)
     assert draft.revision == 1
+
+
+@pytest.mark.asyncio
+async def test_creator_inside_builder_uses_parent_worker_slot_without_queueing_child() -> None:
+    import asyncio
+
+    arranged = await arrange_creator(calls=(SKILL_LOADED, PACKAGED))
+    executed = asyncio.Event()
+
+    async def execute(*args):
+        executed.set()
+
+    worker = SimpleNamespace(execute=AsyncMock(side_effect=execute))
+    container = replace(arranged.container, worker=worker)
+    creator = WorkerSkillCreator(container, arranged.draft, "user-a", Mock(), inline=True)
+
+    async def await_child(*args, **kwargs):
+        await asyncio.wait_for(executed.wait(), timeout=1)
+        return SimpleNamespace(status=RunStatus.SUCCEEDED)
+
+    creator._await_run = await_child
+    result = await creator.respond("tenant-a", arranged.request, name="sample-skill")
+    assert result.skill and result.skill.name == "sample-skill"
+    assert arranged.runs.create_with_result.call_args.kwargs["dispatch_to_queue"] is False
+    worker.execute.assert_awaited_once_with("tenant-a", "creator-run")

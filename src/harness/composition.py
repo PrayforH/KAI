@@ -1470,7 +1470,12 @@ def build_production_container(
         clock=clock,
         quotas=enforced_quotas,
     )
+    async def runtime_builder_tools(run, session):
+        from harness.studio.runtime_builder import builder_overlay
+        return await builder_overlay(container, events, run, session)
+
     worker = RunOrchestrator(
+        platform_tools_factory=runtime_builder_tools,
         sessions=session_repository,
         runs=runs,
         events=events,
@@ -1644,7 +1649,7 @@ def build_production_container(
         await redis.aclose()
         await engine.dispose()
 
-    return ApiContainer(
+    container = ApiContainer(
         evolution=evolution,
         environment="production",
         api_bearer_token=settings.api_bearer_token,
@@ -1721,3 +1726,4 @@ def build_production_container(
         sandbox_startup=sandbox_startup,
         close=close,
     )
+    return container

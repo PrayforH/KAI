@@ -79,6 +79,7 @@ from harness.quota.models import (
 from harness.quota.repositories import QuotaExceededError
 from harness.quota.service import QuotaService
 from harness.runtime.input_redaction import redact_internal_agent_asset_events
+from harness.sharing.models import AgentPermission
 from harness.studio.agent_builder import (
     AgentBuilderPatch,
     AgentBuilderPatchRequest,
@@ -2044,6 +2045,7 @@ async def create_studio_try_run(
     background_tasks: BackgroundTasks,
     request: Request,
     actor: Annotated[StudioActor, Depends(require_studio_previewer)],
+    identity: Annotated[Identity, Depends(require_identity)],
     service: Annotated[AgentStudioService, Depends(get_studio_service)],
     models: Annotated[ModelConfigurationService, Depends(get_model_configuration_service)],
 ) -> StudioTryRunView:
@@ -2058,6 +2060,13 @@ async def create_studio_try_run(
             raise ConflictError(
                 f"draft revision changed: expected {body.expected_revision}, "
                 f"actual {draft.revision}"
+            )
+        if body.builder_tools:
+            _authorize_studio_actor(identity, "studio:write")
+            if draft.spec.runtime not in {"claude-agent-sdk", "deepagents"}:
+                raise ConflictError("当前运行时暂不支持 Builder 工具")
+            await service._require_shared_permission(
+                actor.tenant_id, actor.user_id, draft, AgentPermission.EDIT
             )
         graph = await service.preview_graph(actor.tenant_id, actor.user_id, draft_id)
         compiled = graph.root
@@ -2096,6 +2105,8 @@ async def create_studio_try_run(
             if not previous.status.is_terminal:
                 raise ConflictError("Previous preview turn is still running")
             session = await container.sessions.get(actor.tenant_id, previous.session_id)
+            if bool(previous.input.get("studio_builder")) != body.builder_tools:
+                raise ConflictError("Builder 工具权限已变化，请开启新会话")
             if session.agent_version != preview_version:
                 raise ConflictError("Preview configuration changed; start a new conversation")
         else:
@@ -2155,6 +2166,11 @@ async def create_studio_try_run(
             body.idempotency_key,
             input={
                 "prompt": body.prompt,
+                **({"studio_builder": {"draft_id": draft_id, "revision": draft.revision,
+                    "pending_proposal": body.pending_proposal.model_dump(
+                        mode="json", by_alias=True, exclude_unset=True
+                    ) if body.pending_proposal else None}}
+                   if body.builder_tools else {}),
                 "conversation_prompts": [*previous_prompts, body.prompt],
                 "input_artifact_ids": [item.input_artifact_id for item in resolved],
                 **({"model_route_override": model_override} if model_override else {}),
@@ -2181,7 +2197,7 @@ async def create_studio_try_run(
                 "issues": [issue.model_dump(mode="json", by_alias=True) for issue in error.issues],
             },
         ) from error
-    except (ConflictError, NotFoundError) as error:
+    except (ConflictError, NotFoundError, PermissionDeniedError) as error:
         raise _translate_domain_error(error) from error
 
 

@@ -953,7 +953,12 @@ def build_memory_container(
         clock=clock,
         quotas=enforced_quotas,
     )
+    async def runtime_builder_tools(run, session):
+        from harness.studio.runtime_builder import builder_overlay
+        return await builder_overlay(container, event_service, run, session)
+
     worker = RunOrchestrator(
+        platform_tools_factory=runtime_builder_tools,
         sessions=sessions,
         runs=runs,
         events=event_service,
@@ -1059,7 +1064,7 @@ def build_memory_container(
         clock=clock,
         id_generator=id_generator,
     )
-    return ApiContainer(
+    container = ApiContainer(
         evolution=evolution,
         environment=resolved_settings.environment,
         api_bearer_token=resolved_settings.api_bearer_token,
@@ -1129,6 +1134,7 @@ def build_memory_container(
         skill_conversation=skill_conversation,
         sandbox_maintenance=sandbox_maintenance,
     )
+    return container
 
 
 def get_container(request: Request) -> ApiContainer:

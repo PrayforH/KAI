@@ -15,8 +15,9 @@ let toggleOpen: (value: boolean) => void;
 let setDirty: (value: boolean) => void;
 let newDraft: () => void;
 let enableWorkspace: () => void;
+let setRuntime: (runtime: StudioDraft["runtime"]) => void;
 let switchMode: (mode: "build" | "chat") => void;
-const initial: StudioDraft = { ...DEFAULT_STUDIO_DRAFT, id: "draft-multi", revision: 1 };
+const initial: StudioDraft = { ...DEFAULT_STUDIO_DRAFT, id: "draft-multi", revision: 1, runtime: "codex-app-server" };
 const updated = vi.fn();
 function api(draft: StudioDraft): ApiAgentDraft {
   return { draftId: draft.id, revision: draft.revision, spec: studioDraftToSpec(draft),
@@ -45,7 +46,7 @@ beforeEach(() => {
     const runId = `run-${++nextRun}`;
     const sessionId = (options?.continueFromRunId && sessionByRun.get(options.continueFromRunId)) || `session-${runId}`;
     sessionByRun.set(runId, sessionId);
-    return { ...run, draftRevision: revision, run: { ...run.run, run_id: runId, session_id: sessionId } };
+    return { ...run, draftRevision: revision, run: { ...run.run, run_id: runId, session_id: sessionId, ...(options?.builderTools ? {input:{studio_builder:{draft_id:_id,revision}}} : {}) } };
   });
   vi.spyOn(studioClient, "streamTryRunEvents").mockResolvedValue();
   vi.spyOn(studioClient, "getTryRun").mockImplementation(async (_id, revision, runId) => ({ ...run, draftRevision: revision, run: { ...run.run, run_id: runId, session_id: "preview-session" } }));
@@ -57,6 +58,7 @@ beforeEach(() => {
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   function Harness() {
     const [draft, setDraft] = useState(initial);
+    setRuntime = runtime => setDraft(current => ({...current, runtime}));
     const [playgroundMode, setPlaygroundMode] = useState<"build" | "chat">("build");
     switchMode = setPlaygroundMode;
     const [embedded, setEmbedded] = useState(false);
@@ -654,6 +656,58 @@ it("clears a pending edit only when the model explicitly replaces it with an emp
   expect(host.querySelector('[aria-label="待确认的配置修改"]')).not.toBeNull();
   vi.mocked(studioClient.converseBuilder).mockResolvedValueOnce({baseRevision:1,action:"edit",reply:"已取消待应用建议",changedFields:[],changes:{}});
   await send("刚才那个不要改了");
+  expect(host.querySelector('[aria-label="待确认的配置修改"]')).toBeNull();
+  expect(studioClient.applyBuilderEdit).not.toHaveBeenCalled();
+});
+
+it.each(["claude-agent-sdk", "deepagents"] as const)("%s executes workspace tasks without preliminary classification", async runtime => {
+  await act(async () => {setRuntime(runtime); enableWorkspace();});
+  await sendTest("分析资料"); await sendTest("继续说明来源");
+  expect(studioClient.converseBuilder).not.toHaveBeenCalled();
+  expect(studioClient.readBuilderMaterials).not.toHaveBeenCalled();
+  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toEqual({builderTools:true,continueFromRunId:"run-1"});
+  expect(host.querySelectorAll("textarea")).toHaveLength(1);
+});
+
+it("reviews a durable runtime proposal once and applies only selected changes", async () => {
+  await act(async () => {setRuntime("claude-agent-sdk"); enableWorkspace();});
+  const payload = {baseRevision:1,action:"edit",reply:"建议修改",changedFields:["displayName","systemPrompt"],changes:{displayName:"新名称",systemPrompt:"输出表格"}};
+  vi.mocked(studioClient.createTryRun).mockResolvedValueOnce({...run,run:{...run.run,session_id:"builder-session"},events:[{event_id:"proposal-1",sequence:1,type:"builder.proposal",timestamp:new Date().toISOString(),payload}]});
+  await sendTest("修改名称和输出格式");
+  expect(studioClient.converseBuilder).not.toHaveBeenCalled();
+  expect(studioClient.applyBuilderEdit).not.toHaveBeenCalled();
+  expect(host.querySelectorAll('[aria-label="待确认的配置修改"]')).toHaveLength(1);
+  expect([...host.querySelectorAll("button")].some(button=>button.textContent === "应用并重新试跑")).toBe(false);
+  await click("选择显示名称"); await click("应用修改");
+  expect(studioClient.applyBuilderEdit).toHaveBeenCalledWith("draft-multi",{expectedRevision:1,changes:{systemPrompt:"输出表格"}});
+  expect(host.querySelector('[aria-label="待确认的配置修改"]')).toBeNull();
+});
+
+it("retains attachments after direct run failure without an authoring-model preread", async () => {
+  await act(async () => {setRuntime("claude-agent-sdk"); enableWorkspace();});
+  vi.spyOn(globalThis,"fetch").mockImplementation(async(url)=>String(url).endsWith("/limits") ? Response.json({max_file_bytes:52428800,max_files:10,max_total_bytes:104857600}) : Response.json({input_artifact_id:"input_example",name:"材料.txt",media_type:"text/plain",status:"ready",size_bytes:8}));
+  await act(async()=>{
+    const event = new Event("paste",{bubbles:true,cancelable:true});
+    Object.defineProperty(event,"clipboardData",{value:{files:[new File(["原始材料"],"材料.txt",{type:"text/plain"})]}});
+    host.querySelector('[aria-label="消息输入"]')!.dispatchEvent(event);
+  });
+  vi.mocked(studioClient.createTryRun).mockRejectedValueOnce(new Error("临时中断"));
+  await sendTest("分析附件");
+  expect(host.querySelector<HTMLTextAreaElement>('[aria-label="消息输入"]')?.value).toBe("分析附件");
+  expect(host.querySelector('.composer-file-card')?.textContent).toContain("材料.txt");
+  await sendTest("分析附件");
+  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toMatchObject({builderTools:true,inputArtifactIds:["input_example"]});
+  expect(studioClient.readBuilderMaterials).not.toHaveBeenCalled();
+});
+
+it("can discuss and cancel an unapplied tool proposal without applying it", async () => {
+  await act(async () => {setRuntime("claude-agent-sdk"); enableWorkspace();});
+  const payload = {baseRevision:1,action:"edit",reply:"建议修改",changedFields:["systemPrompt"],changes:{systemPrompt:"输出表格"}};
+  vi.mocked(studioClient.createTryRun).mockResolvedValueOnce({...run,run:{...run.run,session_id:"builder-session"},events:[{event_id:"p",sequence:1,type:"builder.proposal",timestamp:new Date().toISOString(),payload}]});
+  await sendTest("修改输出格式");
+  vi.mocked(studioClient.createTryRun).mockResolvedValueOnce({...run,run:{...run.run,run_id:"cancel-run",session_id:"cancel-session"},events:[{event_id:"cancel",sequence:1,type:"builder.proposal.discarded",timestamp:new Date().toISOString(),payload:{baseRevision:1}}]});
+  await sendTest("刚才的修改不要了");
+  expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toMatchObject({builderTools:true,pendingProposal:{systemPrompt:"输出表格"}});
   expect(host.querySelector('[aria-label="待确认的配置修改"]')).toBeNull();
   expect(studioClient.applyBuilderEdit).not.toHaveBeenCalled();
 });

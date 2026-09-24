@@ -54,6 +54,12 @@ def _mcp_config(options: ClaudeAgentOptions) -> str | None:
     servers: dict[str, object] = {}
     for name, raw in options.mcp_servers.items():
         if raw.get("type") == "sdk":
+            if name == "harness-builder":
+                # ClaudeSDKClient keeps this server in the Worker and services its
+                # mcp_message requests over the bidirectional control transport.
+                # Match the SDK's CLI serialization: never serialize the instance.
+                servers[name] = {key: value for key, value in raw.items() if key != "instance"}
+                continue
             raise DaytonaTransportError(
                 "in-process SDK MCP servers cannot be serialized into Daytona; "
                 f"configure an authenticated HTTP MCP server instead ({name})"
