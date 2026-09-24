@@ -1,0 +1,127 @@
+{
+  "draftBefore": {
+    "status": 200,
+    "revision": 4,
+    "builtin": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Write",
+      "Edit",
+      "Bash"
+    ],
+    "runtime": "claude-agent-sdk",
+    "published": null
+  },
+  "draftAfter": {
+    "status": 200,
+    "revision": 5,
+    "builtin": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Write",
+      "Edit",
+      "Bash",
+      "WebSearch",
+      "WebFetch"
+    ],
+    "runtime": "claude-agent-sdk",
+    "published": null
+  },
+  "apply": {
+    "found": true,
+    "elapsedMs": 1226,
+    "diffCalled": 0,
+    "applyRequests": [
+      {
+        "ms": 548
+      }
+    ]
+  },
+  "endpoints": {
+    "/api/studio/drafts/{draft}/builder-conversation": [
+      {
+        "ms": 12264
+      }
+    ],
+    "/api/studio/drafts/{draft}/builder-apply": [
+      {
+        "ms": 548
+      }
+    ]
+  },
+  "running": {
+    "assistantCount": 1,
+    "ribbonInMessage": true,
+    "ribbonClass": "execution-ribbon phase-running",
+    "sweepRunning": 1,
+    "sweepTexts": [
+      "正在处理"
+    ],
+    "ribbonBeforeBody": true,
+    "detailsButton": false,
+    "bodyLen": 17
+  },
+  "atEnd": {
+    "assistantCount": 1,
+    "ribbonInMessage": true,
+    "ribbonClass": "execution-ribbon phase-completed",
+    "sweepRunning": 0,
+    "sweepTexts": [],
+    "ribbonBeforeBody": true,
+    "detailsButton": false,
+    "bodyLen": 80
+  },
+  "warningsBeforeNav": 0,
+  "warningsAfterNav": 0,
+  "history": {
+    "afterNew": 0,
+    "afterReload": 0,
+    "urls": []
+  },
+  "uiTools": {
+    "cardText": null,
+    "checked": [
+      "搜索公开网页WebSearch",
+      "读取公开网页WebFetch",
+      "读取文件",
+      "查找文件",
+      "搜索文件内容",
+      "创建文件",
+      "编辑文件",
+      "运行命令"
+    ]
+  },
+  "console": {
+    "error": {},
+    "warning": {}
+  },
+  "pageErrors": [],
+  "badRequests": [],
+  "loginForm": {
+    "method": "post"
+  },
+  "historyAfterFirstRun": {
+    "thread_id": "97a4b853-c9dc-4c73-91e5-07d070039785",
+    "run_id": "run_c63fc64e49834f058baa00d00b9a60e8",
+    "session_id": "session_b8821e07d0b746158722bf3363e2033d",
+    "agent_name": "evolution-smoke-164806",
+    "agent_version": "0.1.0",
+    "status": "succeeded",
+    "created_at": "2026-09-24T05:59:10.036074Z",
+    "runtime": "claude-agent-sdk",
+    "runtimeEvidence": "173 sessions.payload.runtime_type, read-only database query",
+    "historyAfterReload": [
+      {
+        "path": "/api/agui/threads/{id}/history",
+        "status": 200
+      }
+    ],
+    "restoredUserMessage": true,
+    "restoredAssistantCount": 1,
+    "sameAssistantTextAfterReload": true,
+    "consoleErrors": {},
+    "pageErrors": []
+  }
+}
