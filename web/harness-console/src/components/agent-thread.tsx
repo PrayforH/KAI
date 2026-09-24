@@ -1269,13 +1269,21 @@ function HarnessAssistantText(part: TextMessagePartProps) {
     aui.part.source === "message" && aui.part.query.type === "index"
       ? aui.part.query.index
       : -1;
-  if (
-    shouldSuppressNativeAssistantText(
-      ownsLiveResponse(isLast, messageId, live.messageId),
-      live,
-    ) || isIntermediateAssistantTextPart(parts, partIndex)
-  ) {
-    return null;
+  const liveSuppressed = shouldSuppressNativeAssistantText(
+    ownsLiveResponse(isLast, messageId, live.messageId),
+    live,
+  );
+  const intermediate = isIntermediateAssistantTextPart(parts, partIndex);
+  if (liveSuppressed || intermediate) {
+    return (
+      <span
+        hidden
+        data-debug-text-index={partIndex}
+        data-debug-text-live-suppressed={liveSuppressed ? "true" : "false"}
+        data-debug-text-intermediate={intermediate ? "true" : "false"}
+        data-debug-text-parts={parts.map((item) => item.type === "tool-call" ? item.toolName : item.type).join(",")}
+      />
+    );
   }
   return (
     <div
