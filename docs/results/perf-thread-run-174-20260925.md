@@ -26,7 +26,7 @@ Langfuse Worker trace 实际存在。根 trace 名 `agent-run`，`harness.worker
 
 提交 `b12e5550`：Worker 已将版本固定的 Skills 放到本 Run workspace 后，通过 `RuntimeContext.agent_assets_staged` 告知 Claude/DeepAgents runtime，不再二次删除并重建 `.claude/skills`；独立 Runtime 调用仍保留原 materialize 路径。174 镜像 `perf-20260925-b12e5550`（API/Worker×3 均健康）。
 
-测试：`tests/unit/runtime/test_staged_agent_assets.py` 确认已 staged 的 Skill 树不被重建、未 staged 仍正确 materialize；广泛 runtime/worker/integration 回归 **491 passed**，ruff 通过。174 真实 Run `run_3abf9d729ed34e50a18c1be861acbd6d` 仍有 `agent.assets.staged`、精确 `context.window.observed` 和 `run.succeeded`。
+测试：`tests/unit/runtime/test_staged_agent_assets.py` 确认已 staged 的 Skill 树不被重建、未 staged 仍正确 materialize；Worker 断言 stage→RuntimeContext 标记传递；广泛 runtime/worker/integration 回归 **491 passed**，ruff 通过。174 真实 Run `run_3abf9d729ed34e50a18c1be861acbd6d` 仍有 `agent.assets.staged`、精确 `context.window.observed` 和 `run.succeeded`。另有真实 Skill 验收 `run_71ec40624de84ca48cd804e82378a42b`：`general-task-orchestration` 确实列在 staged assets，模型发起 `Skill` 工具调用，但 `production-orchestrator` 策略拒绝为 `no policy rule matched`；**Skill 未实际加载，此项不是通过**。该策略阻断独立于本次资产去重，后续需在授权规则允许的 fixture 上验证加载与工具结果。
 
 A/B：同一 `lead-agent@1.0.3+platform.c95a6965`、同一提示词 `你好，请只回复 OK`、同一用户、174:8800 直连 API；每组 2 次 warmup＋20 次正式 Run，按时间顺序执行，不是随机交错对照。旧版基线为回滚后的 `develop-20260924-d9eec75b`（与 `753932e2` 仅相差只读诊断 span），新版为 `b12e5550`。原始样本和 Run ID 已保存：
 
