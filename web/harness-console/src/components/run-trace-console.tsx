@@ -16,9 +16,13 @@ import {
   loadFullThreadHistory,
   type ThreadHistoryResponse,
 } from "../lib/task-history";
+import {
+  fetchAgentManifestSummary,
+  type AgentManifestSummary,
+} from "../lib/agent-manifest-summary";
 import styles from "./run-trace-console.module.css";
 
-type DetailTab = "overview" | "arguments" | "output" | "timing";
+type DetailTab = "overview" | "prompt" | "entries" | "arguments" | "output" | "timing";
 
 const TAB_LABELS: ReadonlyArray<readonly [DetailTab, string]> = [
   ["overview", "概述"],
@@ -28,6 +32,15 @@ const TAB_LABELS: ReadonlyArray<readonly [DetailTab, string]> = [
 ];
 
 function nodeTabs(node: TraceNode): ReadonlyArray<readonly [DetailTab, string]> {
+  if (node.badge === "系统") {
+    const tabs: ReadonlyArray<readonly [DetailTab, string]> = [
+      ["overview", "概述"],
+      ...(node.systemPrompt ? [["prompt", "系统提示词"] as const] : []),
+      ...(node.entries?.length ? [["entries", "工具"] as const] : []),
+      ["timing", "计时"] as const,
+    ];
+    return tabs;
+  }
   if (node.lane === "input" || !node.argumentsText) {
     return TAB_LABELS.filter(([tab]) => tab !== "arguments");
   }
@@ -92,6 +105,8 @@ export function RunTraceConsole({
   liveActivity,
   runBusy = false,
   onBack,
+  agentName,
+  agentVersion,
 }: {
   threadId: string;
   liveActivity?: RunActivity | null;
@@ -100,10 +115,14 @@ export function RunTraceConsole({
   runBusy?: boolean;
   /** Return to the conversation view (the trace view replaces it in place). */
   onBack?: () => void;
+  /** The task's agent version; resolves the 系统 node's prompt and tools. */
+  agentName?: string;
+  agentVersion?: string;
 }) {
   const [history, setHistory] = useState<ThreadHistoryResponse["messages"] | null>(
     null,
   );
+  const [manifest, setManifest] = useState<AgentManifestSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [reloadNonce, setReloadNonce] = useState(0);
@@ -158,13 +177,29 @@ export function RunTraceConsole({
     wasLiveRunId.current = liveRunId;
   }, [liveRunId]);
 
+  // Resolve the versioned system prompt / tool list once per agent version.
+  useEffect(() => {
+    if (!agentName || !agentVersion) {
+      setManifest(null);
+      return;
+    }
+    let active = true;
+    fetchAgentManifestSummary(agentName, agentVersion).then((summary) => {
+      if (active) setManifest(summary);
+    });
+    return () => {
+      active = false;
+    };
+  }, [agentName, agentVersion]);
+
   const trace = useMemo(
     () =>
       buildSessionTrace(
         history ? extractSessionRuns(history) : [],
         liveActivity ?? undefined,
+        manifest ?? undefined,
       ),
-    [history, liveActivity],
+    [history, liveActivity, manifest],
   );
 
   // While the task runs (or a live activity is on screen) and no durable run
@@ -298,11 +333,35 @@ export function RunTraceConsole({
       </div>
 
       <div className={styles.timeline} aria-hidden={trace.window.totalMs <= 0}>
+        {trace.window.totalMs > 0 && trace.turns.length > 1 && (
+          <div className={styles.turnAxis} aria-hidden="true">
+            {trace.turns.map((turn) => (
+              <span
+                key={turn.turn}
+                className={styles.turnTickLabel}
+                style={{ left: `${turn.left}%` }}
+              >
+                第 {turn.turn} 轮
+              </span>
+            ))}
+          </div>
+        )}
         {trace.window.totalMs > 0 &&
           lanes.map(([label, lane]) => (
             <div className={styles.lane} key={lane}>
               <span className={styles.laneLabel}>{label}</span>
               <div className={styles.laneTrack}>
+                {trace.turns.length > 1 &&
+                  trace.turns
+                    .filter((turn) => turn.left > 0.5)
+                    .map((turn) => (
+                      <span
+                        key={`line-${turn.turn}`}
+                        className={styles.turnLine}
+                        style={{ left: `${turn.left}%` }}
+                        aria-hidden="true"
+                      />
+                    ))}
                 {visibleNodes
                   .filter((node) => node.lane === lane)
                   .map((node) => {
@@ -443,6 +502,19 @@ export function RunTraceConsole({
                     )}
                   </dl>
                 </div>
+              )}
+              {activeTab === "prompt" && (
+                <pre className={styles.code}>{selected.systemPrompt}</pre>
+              )}
+              {activeTab === "entries" && (
+                <ul className={styles.entryList}>
+                  {(selected.entries ?? []).map((entry) => (
+                    <li key={entry.name}>
+                      <strong>{entry.name}</strong>
+                      {entry.description && <span>{entry.description}</span>}
+                    </li>
+                  ))}
+                </ul>
               )}
               {activeTab === "arguments" && (
                 <pre className={styles.code}>{selected.argumentsText}</pre>

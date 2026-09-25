@@ -773,6 +773,8 @@ function AuthenticatedHome() {
                 liveActivity={runActivity}
                 runBusy={currentTaskBusy}
                 onBack={() => setStageView("conversation")}
+                agentName={selectedAgent?.name}
+                agentVersion={selectedAgent?.version}
               />
             ) : (
             <div className="chat-surface">

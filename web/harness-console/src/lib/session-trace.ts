@@ -20,6 +20,12 @@ export interface SessionTraceRun {
 
 export type TraceLane = "input" | "model" | "tool";
 
+/** System-prompt summary resolved from the agent's versioned draft. */
+export interface TraceManifest {
+  systemPrompt?: string;
+  entries: Array<{ name: string; description: string }>;
+}
+
 export interface TraceNode {
   id: string;
   runId: string;
@@ -36,6 +42,8 @@ export interface TraceNode {
   argumentsText?: string;
   output?: string;
   summary?: string;
+  systemPrompt?: string;
+  entries?: Array<{ name: string; description: string }>;
   artifact?: {
     id: string;
     name: string;
@@ -45,10 +53,17 @@ export interface TraceNode {
   running: boolean;
 }
 
+export interface TurnWindow {
+  turn: number;
+  left: number;
+  width: number;
+}
+
 export interface SessionTrace {
   runs: SessionTraceRun[];
   nodes: TraceNode[];
   window: { startMs: number; endMs: number; totalMs: number };
+  turns: TurnWindow[];
   summary: { turns: number; toolCalls: number; durationMs: number };
 }
 
@@ -195,6 +210,15 @@ export function formatClock(ms: number): string {
 
 const TERMINAL_STATUSES = new Set(["succeeded", "completed", "passed"]);
 const RUNNING_STATUSES = new Set(["running", "queued", "provisioning", "waiting"]);
+// Environment/context framing events: they describe what surrounded the model
+// call (assets, permissions, runtime, workspace) rather than an action.
+const CONTEXT_EVENT_TYPES = new Set([
+  "agent.assets.staged",
+  "policy.resolved",
+  "runtime.system",
+  "workspace.restored",
+  "workspace.archived",
+]);
 
 function isRunningStatus(status: string): boolean {
   return RUNNING_STATUSES.has(status);
@@ -207,7 +231,10 @@ interface MessageSpan {
   status: string;
 }
 
-function buildTraceNodes(runs: readonly SessionTraceRun[]): TraceNode[] {
+function buildTraceNodes(
+  runs: readonly SessionTraceRun[],
+  manifest?: TraceManifest,
+): TraceNode[] {
   const nodes: TraceNode[] = [];
 
   for (const run of runs) {
@@ -254,6 +281,25 @@ function buildTraceNodes(runs: readonly SessionTraceRun[]): TraceNode[] {
     for (const item of activity.items) {
       const timestampMs = safeMs(item.timestamp);
       if (!Number.isFinite(timestampMs)) continue;
+
+      if (CONTEXT_EVENT_TYPES.has(item.event_type)) {
+        nodes.push({
+          id: `context-${run.runId}-${item.id}`,
+          runId: run.runId,
+          turn: run.turn,
+          step: nodes.filter((node) => node.runId === run.runId).length + 1,
+          lane: "input",
+          badge: "上下文",
+          label: item.title || item.event_type,
+          detail: preview(item.summary ?? "", 140),
+          status: item.status,
+          startMs: timestampMs,
+          endMs: timestampMs,
+          summary: item.summary ?? undefined,
+          running: false,
+        });
+        continue;
+      }
 
       if (item.event_type === "message.delta" || item.event_type === "message.completed") {
         const messageId = typeof item.metadata.message_id === "string"
@@ -520,21 +566,78 @@ export function mergeLiveRun(
 export function buildSessionTrace(
   historyRuns: readonly SessionTraceRun[],
   liveActivity?: RunActivity,
+  manifest?: TraceManifest,
 ): SessionTrace {
   const runs = mergeLiveRun(historyRuns, liveActivity);
-  const nodes = buildTraceNodes(runs);
+  const nodes = buildTraceNodes(runs, manifest);
+
+  // One 系统 row at session start: the versioned system prompt when the
+  // draft is resolvable, otherwise the runtime facts for turn one.
+  const firstRun = runs[0];
+  const firstNode = nodes[0];
+  if (firstRun && firstNode) {
+    const route = [...(firstRun.activity?.items ?? [])]
+      .reverse()
+      .find((item) => item.event_type === "model.route.selected");
+    const routeModel = typeof route?.metadata.model === "string"
+      ? route.metadata.model
+      : route?.summary ?? undefined;
+    const startMs = firstNode.startMs;
+    nodes.unshift({
+      id: `system-${firstRun.runId}`,
+      runId: firstRun.runId,
+      turn: firstRun.turn,
+      step: 0,
+      lane: "input",
+      badge: "系统",
+      label: manifest?.systemPrompt ? "初始系统提示词" : "系统与运行时",
+      detail: manifest?.systemPrompt
+        ? preview(manifest.systemPrompt, 120)
+        : `模型路由 ${routeModel ?? "—"} · 权限与运行时随轮次上下文注入`,
+      status: "succeeded",
+      startMs,
+      endMs: startMs,
+      systemPrompt: manifest?.systemPrompt,
+      entries: manifest?.entries,
+      summary: manifest?.systemPrompt ? undefined : routeModel,
+      running: false,
+    });
+  }
+
+  nodes.sort((left, right) =>
+    left.startMs - right.startMs || left.turn - right.turn || left.step - right.step,
+  );
+
   const starts = nodes.map((node) => node.startMs).filter(Number.isFinite);
   const ends = nodes.map((node) => node.endMs).filter(Number.isFinite);
   const startMs = starts.length ? Math.min(...starts) : 0;
   const endMs = ends.length ? Math.max(...ends) : startMs;
+  const totalMs = Math.max(0, endMs - startMs);
+
+  const turns: TurnWindow[] = runs.map((run) => {
+    const scoped = nodes.filter((node) => node.runId === run.runId);
+    const runStarts = scoped.map((node) => node.startMs).filter(Number.isFinite);
+    const runEnds = scoped.map((node) => node.endMs).filter(Number.isFinite);
+    const from = runStarts.length ? Math.min(...runStarts) : startMs;
+    const to = runEnds.length ? Math.max(...runEnds) : from;
+    const left = totalMs > 0 ? ((from - startMs) / totalMs) * 100 : 0;
+    const width = totalMs > 0 ? ((to - from) / totalMs) * 100 : 0;
+    return {
+      turn: run.turn,
+      left: Math.min(Math.max(left, 0), 100),
+      width: Math.min(Math.max(width, 0.6), 100 - Math.min(Math.max(left, 0), 100)),
+    };
+  });
+
   return {
     runs,
     nodes,
-    window: { startMs, endMs, totalMs: Math.max(0, endMs - startMs) },
+    window: { startMs, endMs, totalMs },
+    turns,
     summary: {
       turns: runs.length,
       toolCalls: nodes.filter((node) => node.badge === "工具").length,
-      durationMs: Math.max(0, endMs - startMs),
+      durationMs: totalMs,
     },
   };
 }

@@ -481,3 +481,65 @@
 .backButton:hover {
   border-color: var(--line-strong);
 }
+
+.turnAxis {
+  position: relative;
+  height: 15px;
+  margin-left: 42px;
+  margin-bottom: 1px;
+}
+
+.turnTickLabel {
+  position: absolute;
+  top: 0;
+  transform: translateX(2px);
+  padding: 0 5px;
+  border-left: 1px solid color-mix(in srgb, var(--rail) 45%, transparent);
+  color: var(--faint-ink);
+  font-size: 10.5px;
+  line-height: 14px;
+  white-space: nowrap;
+}
+
+.turnLine {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: color-mix(in srgb, var(--line) 80%, transparent);
+  pointer-events: none;
+}
+
+.badge.lane-system,
+.badge:global(.lane-system) {
+  background: #4a5462;
+}
+
+.entryList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.entryList li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-subtle, color-mix(in srgb, var(--line) 14%, transparent));
+}
+
+.entryList strong {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.entryList span {
+  color: var(--muted-ink);
+  font-size: 12px;
+}

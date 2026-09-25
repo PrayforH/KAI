@@ -26,12 +26,12 @@ function activityToolCall(runId: string, activity: Record<string, unknown>) {
   };
 }
 
-function runActivity(runId: string, items: Record<string, unknown>[]) {
+function runActivity(runId: string, items: Record<string, unknown>[], startOffset = 0) {
   return {
     run_id: runId,
     trace_id: null,
     status: "succeeded",
-    started_at: at(0),
+    started_at: at(startOffset),
     items,
     metrics: {},
   };
@@ -173,7 +173,7 @@ describe("buildSessionTrace", () => {
     expect(model[0].startMs).toBe(T0 + 100);
     expect(model[0].endMs).toBe(T0 + 300);
     expect(model[0].output).toBe("你好你好");
-    const input = trace.nodes.find((node) => node.lane === "input");
+    const input = trace.nodes.find((node) => node.badge === "用户");
     expect(input?.badge).toBe("用户");
     expect(input?.output).toBe("整理目录并汇报");
   });
@@ -394,6 +394,89 @@ describe("buildSessionTrace", () => {
     expect(approvals).toHaveLength(1);
     expect(approvals[0].status).toBe("failed");
     expect(approvals[0].endMs - approvals[0].startMs).toBe(300);
+  });
+
+  it("renders one system node with the versioned prompt and tool list", () => {
+    const runs = extractSessionRuns(runOneHistory);
+    const trace = buildSessionTrace(runs, undefined, {
+      systemPrompt: "你是档案助手。",
+      entries: [{ name: "archive-policy", description: "档案分类规范" }],
+    });
+    const system = trace.nodes.filter((node) => node.badge === "系统");
+    expect(system).toHaveLength(1);
+    expect(system[0].label).toBe("初始系统提示词");
+    expect(system[0].systemPrompt).toBe("你是档案助手。");
+    expect(system[0].entries?.[0].name).toBe("archive-policy");
+    expect(trace.nodes[0].badge).toBe("系统");
+  });
+
+  it("falls back to runtime facts when no manifest resolves", () => {
+    const runs = extractSessionRuns(runOneHistory);
+    const trace = buildSessionTrace(runs);
+    const system = trace.nodes.filter((node) => node.badge === "系统");
+    expect(system).toHaveLength(1);
+    expect(system[0].label).toBe("系统与运行时");
+    expect(system[0].systemPrompt).toBeUndefined();
+  });
+
+  it("maps runtime framing events to 上下文 nodes", () => {
+    const runs = extractSessionRuns([
+      historyMessage({ id: "user-run-c", role: "user", content: "带上下文事件" }),
+      historyMessage({
+        id: "assistant-run-c",
+        role: "assistant",
+        content: "",
+        toolCalls: [activityToolCall("run-c", runActivity("run-c", [
+          {
+            id: "ctx-1",
+            event_type: "policy.resolved",
+            kind: "analysis",
+            status: "succeeded",
+            title: "运行权限已确认",
+            summary: "默认策略",
+            timestamp: at(50),
+            sequence: 1,
+            metadata: {},
+          },
+          {
+            id: "ctx-2",
+            event_type: "runtime.system",
+            kind: "analysis",
+            status: "running",
+            title: "模型正在处理",
+            summary: null,
+            timestamp: at(60),
+            sequence: 2,
+            metadata: {},
+          },
+        ]))],
+      }),
+    ]);
+    const trace = buildSessionTrace(runs);
+    const contexts = trace.nodes.filter((node) => node.badge === "上下文");
+    expect(contexts.map((node) => node.label)).toEqual([
+      "运行权限已确认",
+      "模型正在处理",
+    ]);
+  });
+
+  it("computes per-turn windows for the timeline axis", () => {
+    const secondRun = [
+      historyMessage({ id: "user-run-2", role: "user", content: "再来一轮" }),
+      historyMessage({
+        id: "assistant-run-2",
+        role: "assistant",
+        content: "",
+        toolCalls: [activityToolCall("run-2", runActivity("run-2", [
+          ...deltaItems("m-2", [5_000, 5_400], "第二轮回答"),
+        ], 5_000))],
+      }),
+    ];
+    const trace = buildSessionTrace(extractSessionRuns([...runOneHistory, ...secondRun]));
+    expect(trace.turns).toHaveLength(2);
+    expect(trace.turns[0].left).toBe(0);
+    expect(trace.turns[1].left).toBeGreaterThan(trace.turns[0].left);
+    expect(trace.turns[1].left + trace.turns[1].width).toBeLessThanOrEqual(100.01);
   });
 });
 
