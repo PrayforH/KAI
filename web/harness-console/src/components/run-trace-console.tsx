@@ -139,7 +139,9 @@ export function RunTraceConsole({
   const [history, setHistory] = useState<ThreadHistoryResponse["messages"] | null>(
     null,
   );
+  const [historyReady, setHistoryReady] = useState(false);
   const [manifest, setManifest] = useState<AgentManifestSummary | null>(null);
+  const [manifestReady, setManifestReady] = useState(false);
   const [threadContext, setThreadContext] = useState<SessionContextOverview | null>(null);
   const [contextState, setContextState] = useState<"idle" | "loading" | "ready" | "unavailable">("idle");
   const [loading, setLoading] = useState(false);
@@ -198,10 +200,12 @@ export function RunTraceConsole({
   useEffect(() => {
     if (!threadId) {
       setHistory(null);
+      setHistoryReady(false);
       setError("");
       return;
     }
     let active = true;
+    setHistoryReady(false);
     setLoading(true);
     setError("");
     loadFullThreadHistory(threadId, {
@@ -210,11 +214,15 @@ export function RunTraceConsole({
       },
     })
       .then((messages) => {
-        if (active) setHistory(messages);
+        if (active) {
+          setHistory(messages);
+          setHistoryReady(true);
+        }
       })
       .catch((cause: unknown) => {
         if (active && lastStatus !== 404) {
           setError(cause instanceof Error ? cause.message : String(cause));
+          setHistoryReady(true);
         }
       })
       .finally(() => {
@@ -240,11 +248,16 @@ export function RunTraceConsole({
   useEffect(() => {
     if (!agentName || !agentVersion) {
       setManifest(null);
+      setManifestReady(true);
       return;
     }
     let active = true;
+    setManifestReady(false);
     fetchAgentManifestSummary(agentName, agentVersion).then((summary) => {
-      if (active) setManifest(summary);
+      if (active) {
+        setManifest(summary);
+        setManifestReady(true);
+      }
     });
     return () => {
       active = false;
@@ -368,6 +381,24 @@ export function RunTraceConsole({
     ["模型", "model"],
     ["工具", "tool"],
   ];
+
+  if (!historyReady || !manifestReady) {
+    return (
+      <div className={styles.console} aria-label="调用轨迹" aria-busy="true">
+        <div className={styles.toolbar}>
+          <div className={styles.chips}>
+            <span className={styles.loading}>正在读取完整轨迹…</span>
+          </div>
+          <div className={styles.traceSkeleton} aria-hidden="true" />
+        </div>
+        <div className={styles.traceLoadingBody}>
+          <span />
+          <span />
+          <span />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={styles.console} aria-label="调用轨迹">

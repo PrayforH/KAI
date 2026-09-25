@@ -78,24 +78,20 @@ const history = [
 // The console fetches history on mount; renderToStaticMarkup cannot await that,
 // so the loading skeleton and empty states are the server-render contract.
 describe("RunTraceConsole", () => {
-  it("renders the trace toolbar with summary chips and search", () => {
+  it("renders a stable loading shell before the full projection is ready", () => {
     const html = renderToStaticMarkup(
       <RunTraceConsole threadId="thread-1" liveActivity={null} />,
     );
-    expect(html).toContain("时长");
-    expect(html).toContain("轮次");
-    expect(html).toContain("调用");
-    expect(html).toContain("搜索轨迹");
+    expect(html).toContain("正在读取完整轨迹");
+    expect(html).toContain('aria-busy="true"');
   });
 
-  it("renders timeline lanes and keeps the event list accessible", () => {
+  it("keeps the event shell accessible while the full projection loads", () => {
     const html = renderToStaticMarkup(
       <RunTraceConsole threadId="thread-1" liveActivity={null} />,
     );
-    expect(html).toContain("输入");
-    expect(html).toContain("模型");
-    expect(html).toContain("工具");
-    expect(html).toContain("轨迹事件");
+    expect(html).toContain("调用轨迹");
+    expect(html).toContain("正在读取完整轨迹");
   });
 
   it("extracts nodes the console will display once history arrives", () => {

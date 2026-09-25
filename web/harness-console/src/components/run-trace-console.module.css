@@ -745,3 +745,36 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+
+.traceSkeleton {
+  width: 120px;
+  height: 24px;
+  border-radius: 7px;
+  background: linear-gradient(90deg, var(--surface-subtle), var(--line), var(--surface-subtle));
+  background-size: 200% 100%;
+  animation: trace-shimmer 1.2s ease-in-out infinite;
+}
+
+.traceLoadingBody {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 24px 16px;
+}
+
+.traceLoadingBody span {
+  display: block;
+  height: 34px;
+  border-radius: 7px;
+  background: linear-gradient(90deg, var(--surface-subtle), var(--line), var(--surface-subtle));
+  background-size: 200% 100%;
+  animation: trace-shimmer 1.2s ease-in-out infinite;
+}
+
+.traceLoadingBody span:nth-child(2) { width: 82%; }
+.traceLoadingBody span:nth-child(3) { width: 64%; }
+
+@keyframes trace-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
