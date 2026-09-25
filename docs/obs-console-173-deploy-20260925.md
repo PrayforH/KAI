@@ -57,3 +57,5 @@ docker compose -f compose.json up -d --no-deps --no-build --wait web
 > r12/r13（r13 BUILD_ID `TNDWcE8UZ8-TiQS7siTzY`）：修复时间条视觉问题。r12 先将瞬时系统/上下文/用户事件从持续阶段条过滤，避免最小宽度渲染为连续点；时长/轮次按 Run lifecycle。r13 在每轮生命周期窗口下增加连续淡色背景带，模型/工具等真实持续阶段作为叠加块，瞬时事件仍只在下方事件流显示。截图 `runs/trace-r13-timeline.png`，回归探针通过。
 
 > r14（web BUILD_ID `OLFwBWlX-BEh0hRRPZX6b`）：时间条阶段块支持 hover/focus 观测 tooltip，显示徽标/名称、开始时刻、持续时长、状态和摘要；tooltip 探针实测助手阶段 `1.2s · succeeded` 并带摘要。r13 的连续轮次背景带保留，瞬时事件仍只在事件流展示。
+
+> r16/r17（r17 BUILD_ID `GFUtgtf_x_4etoxNOVhZ2`）：按 DSH 可见能力补“阶段进度”总览：排队、环境、权限/资源、模型路由、运行时、思考/回复、工具/审批、产物、终态。每阶段只取已有 RunEvent/activity 事件；有数据显示完成/失败，未采集明确标灰“未采集”，不造值。r16/r17 同时保留可缩放时间画布（1×/2×/4×）、每轮连续背景带、模型/工具阶段叠加、瞬时事件下沉事件流。
