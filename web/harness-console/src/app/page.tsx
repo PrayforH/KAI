@@ -848,6 +848,7 @@ function AuthenticatedHome() {
               <RunTraceConsole
                 threadId={threadId}
                 liveActivity={runActivity}
+                runBusy={currentTaskBusy}
               />
             )}
           </section>

@@ -195,14 +195,6 @@ export function formatClock(ms: number): string {
 
 const TERMINAL_STATUSES = new Set(["succeeded", "completed", "passed"]);
 const RUNNING_STATUSES = new Set(["running", "queued", "provisioning", "waiting"]);
-// High-frequency subagent progress frames must not become tool-lane nodes;
-// only the milestones carry real start/end information.
-const SUBAGENT_MILESTONES = new Set([
-  "subagent.started",
-  "subagent.completed",
-  "subagent.failed",
-  "subagent.cancelled",
-]);
 
 function isRunningStatus(status: string): boolean {
   return RUNNING_STATUSES.has(status);
@@ -224,6 +216,8 @@ function buildTraceNodes(runs: readonly SessionTraceRun[]): TraceNode[] {
     const startedMs = safeMs(activity.started_at);
     const spans = new Map<string, MessageSpan>();
     const results = new Map<string, ActivityItem>();
+    const approvals = new Map<string, ActivityItem>();
+    const approvalTerminals = new Map<string, ActivityItem>();
     const subagentTerminals = new Map<string, ActivityItem>();
 
     for (const item of activity.items) {
@@ -233,6 +227,19 @@ function buildTraceNodes(runs: readonly SessionTraceRun[]): TraceNode[] {
         (item.event_type === "tool.result" || item.event_type === "tool.allowed")
       ) {
         results.set(toolCallId, item);
+      }
+      // approval.requested carries tool_call_id; terminal approval events carry
+      // only approval_id, so pair them in two steps.
+      if (item.event_type === "approval.requested" && typeof toolCallId === "string") {
+        approvals.set(toolCallId, item);
+      }
+      const approvalId = item.metadata.approval_id;
+      if (
+        typeof approvalId === "string" &&
+        ["approval.approved", "approval.rejected", "approval.expired", "approval.cancelled"]
+          .includes(item.event_type)
+      ) {
+        approvalTerminals.set(approvalId, item);
       }
       const taskId = item.metadata.task_id;
       if (
@@ -283,7 +290,14 @@ function buildTraceNodes(runs: readonly SessionTraceRun[]): TraceNode[] {
           ? item.metadata.tool_call_id
           : item.id;
         const result = results.get(toolCallId);
-        const endMs = result ? safeMs(result.timestamp) : Number.NaN;
+        const requested = approvals.get(toolCallId);
+        const approvalId = typeof requested?.metadata.approval_id === "string"
+          ? requested.metadata.approval_id
+          : undefined;
+        const approvalEnd = approvalId ? approvalTerminals.get(approvalId) : undefined;
+        const endItem = result ?? approvalEnd;
+        const endMs = endItem ? safeMs(endItem.timestamp) : Number.NaN;
+        const waitingApproval = Boolean(requested) && !approvalEnd && !result;
         nodes.push({
           id: `tool-${run.runId}-${toolCallId}`,
           runId: run.runId,
@@ -292,14 +306,14 @@ function buildTraceNodes(runs: readonly SessionTraceRun[]): TraceNode[] {
           lane: "tool",
           badge: "工具",
           label: name,
-          detail: `${toolInputPreview(name, argumentsValue)}${
+          detail: `${waitingApproval ? "待审批 · " : ""}${toolInputPreview(name, argumentsValue)}${
             result?.metadata.result_preview
               ? ` → ${preview(String(result.metadata.result_preview), 90)}`
               : result?.metadata.result_summary
                 ? ` → ${preview(String(result.metadata.result_summary), 90)}`
                 : ""
           }`,
-          status: result?.status ?? item.status,
+          status: result?.status ?? approvalEnd?.status ?? (waitingApproval ? "waiting" : item.status),
           startMs: timestampMs,
           endMs: Number.isFinite(endMs) ? endMs : timestampMs,
           argumentsText: toolArgumentsText(argumentsValue),
@@ -309,12 +323,28 @@ function buildTraceNodes(runs: readonly SessionTraceRun[]): TraceNode[] {
               ? result.metadata.result_summary
               : undefined,
           summary: toolLabel(argumentsValue) || item.summary || undefined,
-          running: !result && isRunningStatus(item.status),
+          running: !endItem && (waitingApproval || isRunningStatus(item.status)),
         });
         continue;
       }
 
+      // Approval nodes stand alone only when no tool call carries them; a
+      // paired approval is already reflected on its tool node's status.
       if (item.event_type === "approval.requested") {
+        const toolCallId = item.metadata.tool_call_id;
+        const pairedToolRequest =
+          typeof toolCallId === "string" &&
+          activity.items.some(
+            (candidate) =>
+              candidate.event_type === "tool.request" &&
+              candidate.metadata.tool_call_id === toolCallId,
+          );
+        if (pairedToolRequest) continue;
+        const approvalId = typeof item.metadata.approval_id === "string"
+          ? item.metadata.approval_id
+          : undefined;
+        const approvalEnd = approvalId ? approvalTerminals.get(approvalId) : undefined;
+        const endMs = approvalEnd ? safeMs(approvalEnd.timestamp) : Number.NaN;
         nodes.push({
           id: `approval-${run.runId}-${item.id}`,
           runId: run.runId,
@@ -322,13 +352,22 @@ function buildTraceNodes(runs: readonly SessionTraceRun[]): TraceNode[] {
           step: nodes.filter((node) => node.runId === run.runId).length + 1,
           lane: "tool",
           badge: "审批",
-          label: item.title || "等待审批",
+          label: item.title || "等待人工审批",
           detail: preview(item.summary ?? "", 120),
-          status: item.status,
+          status: approvalEnd?.status ?? item.status,
           startMs: timestampMs,
-          endMs: timestampMs,
-          running: item.status === "requested" || item.status === "waiting",
+          endMs: Number.isFinite(endMs) ? endMs : timestampMs,
+          running: !approvalEnd,
         });
+        continue;
+      }
+
+      if (
+        typeof item.metadata.approval_id === "string" &&
+        ["approval.approved", "approval.rejected", "approval.expired", "approval.cancelled"]
+          .includes(item.event_type)
+      ) {
+        // Terminal approval events are folded into their request's node above.
         continue;
       }
 

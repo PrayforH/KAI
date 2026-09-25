@@ -246,6 +246,155 @@ describe("buildSessionTrace", () => {
     expect(subagents[0].endMs - subagents[0].startMs).toBe(800);
     expect(subagents[0].status).toBe("succeeded");
   });
+
+  it("folds approval lifecycle into the paired tool node", () => {
+    const runs = extractSessionRuns([
+      historyMessage({ id: "user-run-a", role: "user", content: "需要审批的任务" }),
+      historyMessage({
+        id: "assistant-run-a",
+        role: "assistant",
+        content: "",
+        toolCalls: [activityToolCall("run-a", runActivity("run-a", [
+          {
+            id: "req-1",
+            event_type: "tool.request",
+            kind: "tool",
+            status: "running",
+            title: "Bash",
+            summary: null,
+            timestamp: at(100),
+            sequence: 1,
+            metadata: {
+              tool_call_id: "c-7",
+              name: "Bash",
+              arguments: { command: "rm draft.txt" },
+            },
+          },
+          {
+            id: "appr-1",
+            event_type: "approval.requested",
+            kind: "tool",
+            status: "waiting",
+            title: "等待人工审批",
+            summary: "删除文件需要确认",
+            timestamp: at(150),
+            sequence: 2,
+            metadata: { approval_id: "ap-1", tool_call_id: "c-7" },
+          },
+          {
+            id: "appr-done",
+            event_type: "approval.approved",
+            kind: "tool",
+            status: "succeeded",
+            title: "审批已通过",
+            summary: null,
+            timestamp: at(600),
+            sequence: 3,
+            metadata: { approval_id: "ap-1" },
+          },
+          {
+            id: "res-1",
+            event_type: "tool.result",
+            kind: "tool",
+            status: "succeeded",
+            title: "Bash",
+            summary: null,
+            timestamp: at(800),
+            sequence: 4,
+            metadata: { tool_call_id: "c-7", result_preview: "deleted" },
+          },
+        ]))],
+      }),
+    ]);
+    const trace = buildSessionTrace(runs);
+    const toolNodes = trace.nodes.filter((node) => node.badge === "工具");
+    const approvalNodes = trace.nodes.filter((node) => node.badge === "审批");
+    expect(approvalNodes).toHaveLength(0);
+    expect(toolNodes).toHaveLength(1);
+    expect(toolNodes[0].status).toBe("succeeded");
+    expect(toolNodes[0].endMs - toolNodes[0].startMs).toBe(700);
+    expect(toolNodes[0].detail).not.toContain("待审批");
+  });
+
+  it("marks a tool as waiting approval until the approval settles", () => {
+    const runs = extractSessionRuns([
+      historyMessage({ id: "user-run-w", role: "user", content: "等待审批" }),
+      historyMessage({
+        id: "assistant-run-w",
+        role: "assistant",
+        content: "",
+        toolCalls: [activityToolCall("run-w", runActivity("run-w", [
+          {
+            id: "req-w",
+            event_type: "tool.request",
+            kind: "tool",
+            status: "running",
+            title: "Write",
+            summary: null,
+            timestamp: at(100),
+            sequence: 1,
+            metadata: { tool_call_id: "c-8", name: "Write", arguments: { file_path: "a.md" } },
+          },
+          {
+            id: "appr-w",
+            event_type: "approval.requested",
+            kind: "tool",
+            status: "waiting",
+            title: "等待人工审批",
+            summary: null,
+            timestamp: at(150),
+            sequence: 2,
+            metadata: { approval_id: "ap-8", tool_call_id: "c-8" },
+          },
+        ]))],
+      }),
+    ]);
+    const trace = buildSessionTrace(runs);
+    const tool = trace.nodes.find((node) => node.badge === "工具");
+    expect(tool?.running).toBe(true);
+    expect(tool?.status).toBe("waiting");
+    expect(tool?.detail).toContain("待审批");
+  });
+
+  it("keeps a standalone approval node when no tool call carries it", () => {
+    const runs = extractSessionRuns([
+      historyMessage({ id: "user-run-p", role: "user", content: "独立审批" }),
+      historyMessage({
+        id: "assistant-run-p",
+        role: "assistant",
+        content: "",
+        toolCalls: [activityToolCall("run-p", runActivity("run-p", [
+          {
+            id: "appr-p",
+            event_type: "approval.requested",
+            kind: "tool",
+            status: "waiting",
+            title: "等待人工审批",
+            summary: "敏感操作",
+            timestamp: at(100),
+            sequence: 1,
+            metadata: { approval_id: "ap-p", tool_call_id: "ghost-1" },
+          },
+          {
+            id: "appr-p-rej",
+            event_type: "approval.rejected",
+            kind: "tool",
+            status: "failed",
+            title: "审批已拒绝",
+            summary: null,
+            timestamp: at(400),
+            sequence: 2,
+            metadata: { approval_id: "ap-p" },
+          },
+        ]))],
+      }),
+    ]);
+    const trace = buildSessionTrace(runs);
+    const approvals = trace.nodes.filter((node) => node.badge === "审批");
+    expect(approvals).toHaveLength(1);
+    expect(approvals[0].status).toBe("failed");
+    expect(approvals[0].endMs - approvals[0].startMs).toBe(300);
+  });
 });
 
 describe("searchTraceNodes", () => {

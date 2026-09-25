@@ -90,9 +90,13 @@ function downloadSessionLog(trace: SessionTrace, threadId: string) {
 export function RunTraceConsole({
   threadId,
   liveActivity,
+  runBusy = false,
 }: {
   threadId: string;
   liveActivity?: RunActivity | null;
+  /** True while the task's current run is queued/running; a fall to false
+   * triggers one history refetch so the finished turn shows up. */
+  runBusy?: boolean;
 }) {
   const [history, setHistory] = useState<ThreadHistoryResponse["messages"] | null>(
     null,
@@ -150,10 +154,28 @@ export function RunTraceConsole({
   );
 
   const selectNode = useCallback((node: TraceNode) => {
-    setSelectedId(node.id);
+    setSelectedId((current) => (current === node.id ? null : node.id));
     setActiveTab("overview");
     scrolledForSelection.current = null;
   }, []);
+
+  // The active turn is merged from the live store; once the run settles, one
+  // refetch replaces it with the durable history projection (and picks up any
+  // turns that completed while the tab was open).
+  const wasBusy = useRef(runBusy);
+  useEffect(() => {
+    if (wasBusy.current && !runBusy) setReloadNonce((value) => value + 1);
+    wasBusy.current = runBusy;
+  }, [runBusy]);
+
+  useEffect(() => {
+    if (!selected) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSelectedId(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selected]);
 
   // Clicking a timeline segment selects the node; the list scrolls once so the
   // row is visible without fighting later re-renders.
@@ -247,7 +269,7 @@ export function RunTraceConsole({
                           left: `${position.left}%`,
                           width: `${position.width}%`,
                         }}
-                        title={`${formatClock(node.startMs)} · ${node.label}`}
+                        title={`${node.badge} ${node.label} · ${formatDuration(node.endMs - node.startMs)} · ${formatClock(node.startMs)}`}
                         aria-label={`${node.badge} ${node.label}`}
                         onClick={() => selectNode(node)}
                       />
@@ -260,37 +282,46 @@ export function RunTraceConsole({
 
       <div className={styles.body}>
         <ol className={styles.list} ref={listRef} aria-label="轨迹事件">
-          {visibleNodes.map((node) => (
-            <li key={node.id} data-node-id={node.id}>
-              <button
-                type="button"
-                className={`${styles.row}${selectedId === node.id ? ` ${styles["is-selected"]}` : ""}`}
-                onClick={() => selectNode(node)}
-              >
-                <span
-                  className={`${styles.dot} ${statusClass(styles, node.status, node.running)}`}
-                  aria-hidden="true"
-                />
-                <span className={`${styles.badge} ${styles[`lane-${node.lane}`]}`}>
-                  {node.badge}
-                </span>
-                <span className={styles.rowMain}>
-                  <span className={styles.rowLabel}>{node.label}</span>
-                  {node.detail && (
-                    <span className={styles.rowDetail}>{node.detail}</span>
-                  )}
-                </span>
-                <span className={styles.rowMeta}>
-                  {node.endMs > node.startMs && (
-                    <span className={styles.rowDuration}>
-                      {formatDuration(node.endMs - node.startMs)}
-                    </span>
-                  )}
-                  <span className={styles.rowClock}>{formatClock(node.startMs)}</span>
-                </span>
-              </button>
-            </li>
-          ))}
+          {visibleNodes.map((node, index) => {
+            const previous = visibleNodes[index - 1];
+            const showTurn = !previous || previous.turn !== node.turn;
+            return (
+              <li key={node.id} data-node-id={node.id}>
+                {showTurn && (
+                  <div className={styles.turnDivider} role="presentation">
+                    第 {node.turn} 轮
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className={`${styles.row}${selectedId === node.id ? ` ${styles["is-selected"]}` : ""}${node.running ? "" : ["failed", "rejected", "timed_out", "error"].includes(node.status) ? ` ${styles["is-failed-row"]}` : ""}`}
+                  onClick={() => selectNode(node)}
+                >
+                  <span
+                    className={`${styles.dot} ${statusClass(styles, node.status, node.running)}`}
+                    aria-hidden="true"
+                  />
+                  <span className={`${styles.badge} ${styles[`lane-${node.lane}`]}`}>
+                    {node.badge}
+                  </span>
+                  <span className={styles.rowMain}>
+                    <span className={styles.rowLabel}>{node.label}</span>
+                    {node.detail && (
+                      <span className={styles.rowDetail}>{node.detail}</span>
+                    )}
+                  </span>
+                  <span className={styles.rowMeta}>
+                    {node.endMs > node.startMs && (
+                      <span className={styles.rowDuration}>
+                        {formatDuration(node.endMs - node.startMs)}
+                      </span>
+                    )}
+                    <span className={styles.rowClock}>{formatClock(node.startMs)}</span>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
           {!loading && !visibleNodes.length && (
             <li className={styles.empty}>
               <strong>{query ? "没有匹配的轨迹事件" : "还没有可展示的轨迹"}</strong>

@@ -432,3 +432,25 @@
     flex-basis: 60%;
   }
 }
+
+.turnDivider {
+  padding: 8px 16px 3px;
+  border-top: 1px solid var(--line);
+  margin-top: 4px;
+  color: var(--faint-ink);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+
+.list > li:first-child .turnDivider {
+  border-top: 0;
+  margin-top: 0;
+}
+
+.row.is-failed-row .rowLabel {
+  color: var(--danger);
+}
+
+.row.is-failed-row .dot {
+  background: var(--danger);
+}
