@@ -293,6 +293,16 @@ function buildTraceNodes(
       if (!Number.isFinite(timestampMs)) continue;
 
       if (CONTEXT_EVENT_TYPES.has(item.event_type)) {
+        // `runtime.system` includes heartbeat-like "模型正在处理" frames.
+        // They are status narration, not user-visible steps; keeping them made
+        // the trace look like duplicate 处理过程 rows.
+        if (
+          item.event_type === "runtime.system" &&
+          item.title !== "运行时与工具已连接" &&
+          item.title !== "正在压缩长上下文"
+        ) {
+          continue;
+        }
         nodes.push({
           id: `context-${run.runId}-${item.id}`,
           runId: run.runId,
@@ -646,18 +656,40 @@ export function buildSessionTrace(
     left.startMs - right.startMs || left.turn - right.turn || left.step - right.step,
   );
 
-  const starts = nodes.map((node) => node.startMs).filter(Number.isFinite);
-  const ends = nodes.map((node) => node.endMs).filter(Number.isFinite);
-  const startMs = starts.length ? Math.min(...starts) : 0;
-  const endMs = ends.length ? Math.max(...ends) : startMs;
+  const nodeStarts = nodes.map((node) => node.startMs).filter(Number.isFinite);
+  const nodeEnds = nodes.map((node) => node.endMs).filter(Number.isFinite);
+  const lifecycleFor = (run: SessionTraceRun) => {
+    const items = run.activity?.items ?? [];
+    const scopedNodeStarts = nodes
+      .filter((node) => node.runId === run.runId)
+      .map((node) => node.startMs)
+      .filter(Number.isFinite);
+    const start = items
+      .filter((item) => ["run.queued", "run.started", "run.running", "run.provisioning"].includes(item.event_type))
+      .map((item) => safeMs(item.timestamp))
+      .find(Number.isFinite);
+    const terminal = items
+      .filter((item) => item.event_type.startsWith("run.") && ["run.succeeded", "run.failed", "run.cancelled", "run.timed_out", "run.rejected"].includes(item.event_type))
+      .map((item) => safeMs(item.timestamp))
+      .find(Number.isFinite);
+    return {
+      start: start ?? (scopedNodeStarts.length ? Math.min(...scopedNodeStarts) : undefined),
+      end: terminal ?? undefined,
+    };
+  };
+  const lifecycle = runs.map((run) => lifecycleFor(run));
+  const starts = lifecycle.map((item) => item.start).filter((value): value is number => Number.isFinite(value));
+  const ends = lifecycle.map((item) => item.end).filter((value): value is number => Number.isFinite(value));
+  const startMs = starts.length ? Math.min(...starts) : (nodeStarts.length ? Math.min(...nodeStarts) : 0);
+  const endMs = ends.length ? Math.max(...ends) : (nodeEnds.length ? Math.max(...nodeEnds) : startMs);
   const totalMs = Math.max(0, endMs - startMs);
 
-  const turns: TurnWindow[] = runs.map((run) => {
+  const turns: TurnWindow[] = runs.map((run, index) => {
     const scoped = nodes.filter((node) => node.runId === run.runId);
     const runStarts = scoped.map((node) => node.startMs).filter(Number.isFinite);
     const runEnds = scoped.map((node) => node.endMs).filter(Number.isFinite);
-    const from = runStarts.length ? Math.min(...runStarts) : startMs;
-    const to = runEnds.length ? Math.max(...runEnds) : from;
+    const from = lifecycle[index].start ?? (runStarts.length ? Math.min(...runStarts) : startMs);
+    const to = lifecycle[index].end ?? (runEnds.length ? Math.max(...runEnds) : from);
     const left = totalMs > 0 ? ((from - startMs) / totalMs) * 100 : 0;
     const width = totalMs > 0 ? ((to - from) / totalMs) * 100 : 0;
     return {

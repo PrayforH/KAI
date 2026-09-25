@@ -496,7 +496,6 @@ describe("buildSessionTrace", () => {
     const contexts = trace.nodes.filter((node) => node.badge === "上下文");
     expect(contexts.map((node) => node.label)).toEqual([
       "运行权限已确认",
-      "模型正在处理",
     ]);
   });
 
