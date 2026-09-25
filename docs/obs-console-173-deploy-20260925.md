@@ -53,3 +53,5 @@ docker compose -f compose.json up -d --no-deps --no-build --wait web
 - 待人工验收：整体视觉与交互、暗色主题下的观感、长会话（20+ 轮）滚动与搜索性能。
 
 > r11（`3jYFRyAgWikcVB3fHSYp8`，web `evolution-obs-console-r11`，api/worker 保持 `evolution-obsconsole-d96165bf`）：修复用户指出的顶部时间条与统计问题。`runtime.system` 的“模型正在处理/运行时状态更新”不再生成步骤，避免重复“处理过程”；顶部时长/时间轴总窗口与每轮窗口优先按 `run.queued/running → run.succeeded/failed/cancelled/timed_out` 的真实生命周期计算，缺生命周期事件时按当前 Run 自己的节点回退（不再把第一轮的节点时间当第二轮起点）。全套 944 测试通过，现存/筛选/上下文探针全过。
+
+> r12/r13（r13 BUILD_ID `TNDWcE8UZ8-TiQS7siTzY`）：修复时间条视觉问题。r12 先将瞬时系统/上下文/用户事件从持续阶段条过滤，避免最小宽度渲染为连续点；时长/轮次按 Run lifecycle。r13 在每轮生命周期窗口下增加连续淡色背景带，模型/工具等真实持续阶段作为叠加块，瞬时事件仍只在下方事件流显示。截图 `runs/trace-r13-timeline.png`，回归探针通过。
