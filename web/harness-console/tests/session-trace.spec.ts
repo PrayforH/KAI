@@ -422,6 +422,43 @@ describe("buildSessionTrace", () => {
     expect(system[0].systemPrompt).toBeUndefined();
   });
 
+  it("fills the staged-assets row with the manifest skill list", () => {
+    const runs = extractSessionRuns([
+      historyMessage({ id: "user-run-m", role: "user", content: "装载资产" }),
+      historyMessage({
+        id: "assistant-run-m",
+        role: "assistant",
+        content: "",
+        toolCalls: [activityToolCall("run-m", runActivity("run-m", [
+          {
+            id: "staged-1",
+            event_type: "agent.assets.staged",
+            kind: "analysis",
+            status: "succeeded",
+            title: "Agent 资源已准备",
+            summary: "已装载 2 个技能",
+            timestamp: at(50),
+            sequence: 1,
+            metadata: { skill_count: 2 },
+          },
+        ]))],
+      }),
+    ]);
+    const manifest = {
+      systemPrompt: "p",
+      entries: [
+        { name: "skill-a", description: "A" },
+        { name: "skill-b", description: "B" },
+      ],
+    };
+    const trace = buildSessionTrace(runs, undefined, manifest);
+    const staged = trace.nodes.find((node) => node.badge === "上下文");
+    expect(staged?.entries?.map((entry) => entry.name)).toEqual(["skill-a", "skill-b"]);
+    // Without a manifest the row stays count-only.
+    const bare = buildSessionTrace(runs);
+    expect(bare.nodes.find((node) => node.badge === "上下文")?.entries).toBeUndefined();
+  });
+
   it("maps runtime framing events to 上下文 nodes", () => {
     const runs = extractSessionRuns([
       historyMessage({ id: "user-run-c", role: "user", content: "带上下文事件" }),

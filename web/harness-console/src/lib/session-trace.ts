@@ -297,6 +297,9 @@ function buildTraceNodes(
           startMs: timestampMs,
           endMs: timestampMs,
           summary: item.summary ?? undefined,
+          // The staged-assets event only carries a skill count; the drawer
+          // fills the actual list from the resolved draft manifest.
+          entries: item.event_type === "agent.assets.staged" ? manifest?.entries : undefined,
           running: false,
         });
         continue;

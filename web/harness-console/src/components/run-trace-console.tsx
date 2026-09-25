@@ -24,6 +24,10 @@ import {
   fetchAgentManifestSummary,
   type AgentManifestSummary,
 } from "../lib/agent-manifest-summary";
+import {
+  loadThreadContext,
+  type SessionContextOverview,
+} from "../lib/context-client";
 import styles from "./run-trace-console.module.css";
 
 type DetailTab = "overview" | "prompt" | "entries" | "arguments" | "output" | "timing";
@@ -36,11 +40,13 @@ const TAB_LABELS: ReadonlyArray<readonly [DetailTab, string]> = [
 ];
 
 function nodeTabs(node: TraceNode): ReadonlyArray<readonly [DetailTab, string]> {
-  if (node.badge === "系统") {
+  if (node.badge === "系统" || node.entries?.length) {
     const tabs: ReadonlyArray<readonly [DetailTab, string]> = [
       ["overview", "概述"],
       ...(node.systemPrompt ? [["prompt", "系统提示词"] as const] : []),
-      ...(node.entries?.length ? [["entries", "工具"] as const] : []),
+      ...(node.entries?.length
+        ? [["entries", node.badge === "系统" ? "工具" : "技能"] as const]
+        : []),
       ["timing", "计时"] as const,
     ];
     return tabs;
@@ -127,6 +133,8 @@ export function RunTraceConsole({
     null,
   );
   const [manifest, setManifest] = useState<AgentManifestSummary | null>(null);
+  const [threadContext, setThreadContext] = useState<SessionContextOverview | null>(null);
+  const [contextState, setContextState] = useState<"idle" | "loading" | "ready" | "unavailable">("idle");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [reloadNonce, setReloadNonce] = useState(0);
@@ -265,6 +273,27 @@ export function RunTraceConsole({
     () => trace.nodes.find((node) => node.id === selectedId) ?? null,
     [trace.nodes, selectedId],
   );
+
+  // The durable 上下文 rows carry only counts; the drawer fills them with the
+  // session's context read model (window snapshot + digest entries), loaded
+  // once per thread the first time a context row is inspected.
+  useEffect(() => {
+    if (!selected || selected.badge !== "上下文" || contextState !== "idle" || !threadId) return;
+    setContextState("loading");
+    let active = true;
+    loadThreadContext(threadId)
+      .then((overview) => {
+        if (!active) return;
+        setThreadContext(overview);
+        setContextState("ready");
+      })
+      .catch(() => {
+        if (active) setContextState("unavailable");
+      });
+    return () => {
+      active = false;
+    };
+  }, [selected, contextState, threadId]);
 
   const selectNode = useCallback((node: TraceNode) => {
     setSelectedId((current) => (current === node.id ? null : node.id));
@@ -634,6 +663,56 @@ export function RunTraceConsole({
                       </div>
                     )}
                   </dl>
+                  {selected.badge === "上下文" && (
+                    <div className={styles.contextPanel}>
+                      <p className={styles.contextPanelTitle}>会话上下文</p>
+                      {contextState === "loading" && <p>加载会话上下文…</p>}
+                      {contextState === "unavailable" && (
+                        <p>暂无会话上下文快照</p>
+                      )}
+                      {contextState === "ready" && threadContext && (
+                        <>
+                          {threadContext.window && (
+                            <p>
+                              上下文窗口 {threadContext.window.total_tokens}/
+                              {threadContext.window.max_tokens} tokens（
+                              {Math.round(threadContext.window.percentage)}%，
+                              {threadContext.window.model}）
+                              {threadContext.window.categories.length > 0 && (
+                                <span className={styles.contextCats}>
+                                  {threadContext.window.categories
+                                    .slice(0, 5)
+                                    .map((cat) => `${cat.name} ${cat.tokens}`)
+                                    .join(" · ")}
+                                </span>
+                              )}
+                            </p>
+                          )}
+                          {(() => {
+                            const digest = threadContext.digests?.at(-1);
+                            if (!digest) return <p>暂无上下文摘要（首轮运行通常没有）。</p>;
+                            const sections: ReadonlyArray<readonly [string, typeof digest.facts]> = [
+                              ["事实", digest.facts],
+                              ["决定", digest.decisions],
+                              ["待办", digest.open_tasks],
+                            ];
+                            return sections.map(([label, entries]) =>
+                              entries.length ? (
+                                <div key={label} className={styles.contextSection}>
+                                  <p>{label}（{entries.length}）</p>
+                                  <ul>
+                                    {entries.slice(0, 5).map((entry, index) => (
+                                      <li key={index}>{entry.text}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              ) : null,
+                            );
+                          })()}
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
               {activeTab === "prompt" && (
