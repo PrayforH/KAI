@@ -831,3 +831,40 @@
 .timeline.zoom-4 {
   padding-right: 16px;
 }
+
+.stageProgress {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: calc(100% * var(--trace-zoom, 1));
+  padding: 5px 16px 7px 42px;
+  border-bottom: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.stagePill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1 1 0;
+  min-width: 72px;
+  padding: 4px 7px;
+  border-radius: 5px;
+  background: var(--surface-subtle);
+  color: var(--muted-ink);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.stagePill i {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--line-strong);
+}
+
+.stage-complete i { background: var(--rail); }
+.stage-active i { background: var(--signal); animation: trace-pulse 1.2s ease-in-out infinite; }
+.stage-failed i { background: var(--danger); }
+.stage-unknown { opacity: .62; }

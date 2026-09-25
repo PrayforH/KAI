@@ -462,6 +462,18 @@ export function RunTraceConsole({
         aria-hidden={trace.window.totalMs <= 0}
         style={{ "--trace-zoom": timelineZoom } as CSSProperties}
       >
+        <div className={styles.stageProgress} aria-label="运行阶段进度">
+          {trace.stages.map((stage) => (
+            <span
+              key={stage.key}
+              className={`${styles.stagePill} ${styles[`stage-${stage.status}`]}`}
+              title={`${stage.label} · ${stage.status === "unknown" ? "未采集" : stage.detail ?? stage.status}`}
+            >
+              <i aria-hidden="true" />
+              {stage.label}
+            </span>
+          ))}
+        </div>
         {trace.window.totalMs > 0 && timelineNodes.length === 0 && (
           <div className={styles.timelineEmpty}>
             暂无可量化的持续阶段（瞬时事件见下方事件流）
