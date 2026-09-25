@@ -24,6 +24,12 @@
 
 同线程 `run_8d3222b2b7524a9a81924fca7ad6ddbb` 用新 Run ID 绑定 DOM 观察：`run.queued` 后服务端首 `message.delta` 约 3.08 s，`run.succeeded` 约 4.32 s，`history.snapshot` 约 5.42 s；浏览器 `.assistant-answer` 首次非空约 5.66 s，终态正文稳定 `OK`。该单次样本的终态交接有约 1.1 s 长尾，但不是 p95。另两次探针误把上一轮答案/被重建的 assistant 行当作新首字，判无效，不入统计。该长尾与首次终态 `/history` 回退路径有关：当没有 `history.snapshot` 时，`src/harness/agui/routes.py` 在折叠 RunEvent 后同步等待 `EventService.append` 写回 snapshot。`run_8d3222...` 的 snapshot 比 `run.succeeded` 晚约 1.10 s，DOM 正文更晚约 0.24 s；这是时间相关而非单独阶段的因果证明。不能简单改为请求内 fire-and-forget/FastAPI BackgroundTasks：进程退出会丢写入，并发 GET 可重复写 snapshot。若要移出关键路径，应先设计幂等的持久投影/可恢复任务，并补并发和重启测试；本轮未修改该路径。一次关闭 live/durable 二次平滑的本地实验通过测试，但只能解释几十毫秒且未证明 1.1 s 收益，已撤回，未部署。
 
+## 30 个有效浏览器 Run 的分段 p95
+
+严格按新出现的 Run ID 绑定 DOM 节点，串行采集 33 个尝试，其中 30 个满足 `run_id`、终态正文为 `OK`、单一 `.assistant-answer`；3 个页面/采样器长停（约 60 秒）单列，不静默纳入。原始 ID 与排除项见 [浏览器样本 JSON](perf-browser-174-valid-20260925.json)。有效稳定正文：首非空 DOM p50 **5,787 ms**、p95 **9,877 ms**；终态标记/正文稳定 p50 约 **5,001 ms**、p95 **9,877 ms**。该测量为顺序单页 IAB 交互，浏览器 p95 会受页面刷新/虚拟化/assistant-ui 调度影响，服务端事件作为分段权威。
+
+对其中 28 个可完整读取服务端事件的 Run：`queued→message.delta` p50 **3,092 ms**、p95 **3,623 ms**；`queued→run.succeeded` p50 **4,270 ms**、p95 **4,838 ms**；`queued→history.snapshot` p50 **5,045 ms**、p95 **8,569 ms**。因此浏览器稳定正文比服务端首 delta 多出约 6.3 s（p95），且 snapshot 写回与终态交接位于同一长尾区间；这不是模型 API 时长。延迟 history reconciliation 的 174 单次灰度 `run_54d549889fca40af9fd4aaf6fdcfe467` 终态 `OK` 稳定，但尚无 30 次对照，不能宣称 p95 改善。
+
 ## 限制与后续
 
 - 第八轮 DOM 轨迹中 `data-turn-answer=OK` 后 live 文本节点短时空白，直到完成交接才出现 durable `OK`；不能把浏览器 live 首字体验宣称为彻底优化完成。API SSE p95 数据仍以 `perf-thread-run-174-20260925.md` 为准。
