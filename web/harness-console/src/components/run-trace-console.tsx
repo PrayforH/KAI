@@ -495,6 +495,14 @@ export function RunTraceConsole({
             <div className={styles.lane} key={lane}>
               <span className={styles.laneLabel}>{label}</span>
               <div className={styles.laneTrack}>
+                {trace.turns.map((turn) => (
+                  <span
+                    key={`span-${turn.turn}`}
+                    className={styles.turnSpan}
+                    style={{ left: `${turn.left}%`, width: `${turn.width}%` }}
+                    aria-hidden="true"
+                  />
+                ))}
                 {trace.turns.length > 1 &&
                   trace.turns
                     .filter((turn) => turn.left > 0.5)
