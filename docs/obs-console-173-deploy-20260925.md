@@ -4,6 +4,8 @@
 
 ## 1. 提交与功能
 
+> r7 追加（`ba6e9bff`）：思考过程行（reasoning.delta 独立成 span，紫色徽标，不与助手消息混流）、事件类型筛选弹层（系统提示词/上下文/用户消息/思考过程/助手消息/工具调用/子任务产物审批 共 7 个开关，localStorage 持久化，联动列表与时间线）、详情抽屉上一步/下一步 + ↑/↓ 键盘导航（16 步实测）、用户消息详情"在对话中查看"跳转。线上 `kai/axis-web:evolution-obs-console-r7`（BUILD_ID `d1IBo9vRgpM7BsQ14U_sS`，基座 r6）。探针 `trace-filter-probe.mjs` 全过（筛选 17→15 行、恢复、导航、ArrowUp）。
+
 | 提交 | 内容 |
 | --- | --- |
 | `7077d7c3` | `session-trace.ts` 数据层、轨迹控制台组件、菜单入口、933+ 项测试 |
