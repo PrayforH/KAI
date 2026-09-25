@@ -147,6 +147,8 @@ export function RunTraceConsole({
     };
   }, [threadId, reloadNonce]);
 
+  const liveRunId = liveActivity?.run_id ?? null;
+
   // A new run starting (steer/queued turn) is worth one refetch.
   const wasLiveRunId = useRef(liveRunId);
   useEffect(() => {
@@ -169,7 +171,6 @@ export function RunTraceConsole({
   // has been parsed yet, poll through the window where history may only hold
   // the raw user message. Parsed runs end the polling; the busy→idle
   // transition then does the final refetch.
-  const liveRunId = liveActivity?.run_id ?? null;
   useEffect(() => {
     if (!threadId || (!runBusy && !liveRunId)) return;
     if (trace.runs.length > 0) return;
