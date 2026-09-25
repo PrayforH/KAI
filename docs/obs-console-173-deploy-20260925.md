@@ -4,6 +4,8 @@
 
 ## 1. 提交与功能
 
+> r8/r9 追加（`d96165bf`，线上 `evolution-obs-console-r9`，BUILD_ID `2mhJe9q9oAuQdlMMiOmSD`，基座 r8）：**上下文行内容充实**——后端事件投影只带计数（skill_count/工具数量/policy_id），Agent 资源行复用草稿清单出「技能」页签；全部上下文行详情内嵌「会话上下文」面板（`loadThreadContext` 窗口快照 + 最新 digest 事实/决定/待办，实测 4937/200000 tokens 及真实 digest 文本）。修复：面板加载守卫改 ref（state 标志因 deps 变化使在途 fetch 的 cleanup 失效，面板永远停在加载中）。部署血统注意：重部署脚本的 base 必须等于当前在跑 tag（r8 首次部署后即不满足 base=r7，静默 exit 1）。
+
 > r7 追加（`ba6e9bff`）：思考过程行（reasoning.delta 独立成 span，紫色徽标，不与助手消息混流）、事件类型筛选弹层（系统提示词/上下文/用户消息/思考过程/助手消息/工具调用/子任务产物审批 共 7 个开关，localStorage 持久化，联动列表与时间线）、详情抽屉上一步/下一步 + ↑/↓ 键盘导航（16 步实测）、用户消息详情"在对话中查看"跳转。线上 `kai/axis-web:evolution-obs-console-r7`（BUILD_ID `d1IBo9vRgpM7BsQ14U_sS`，基座 r6）。探针 `trace-filter-probe.mjs` 全过（筛选 17→15 行、恢复、导航、ArrowUp）。
 
 | 提交 | 内容 |
