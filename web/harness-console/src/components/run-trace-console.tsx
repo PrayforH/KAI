@@ -276,6 +276,13 @@ export function RunTraceConsole({
     () => searchTraceNodes(filterTraceNodes(trace.nodes, filters), query),
     [trace.nodes, filters, query],
   );
+  // Timeline bars represent phases, not instants. System/context/user markers
+  // have zero duration and remain in the event stream/detail view only; drawing
+  // them with a minimum width made the bar look like uninterrupted dots.
+  const timelineNodes = useMemo(
+    () => visibleNodes.filter((node) => node.endMs > node.startMs),
+    [visibleNodes],
+  );
   const selected = useMemo(
     () => trace.nodes.find((node) => node.id === selectedId) ?? null,
     [trace.nodes, selectedId],
@@ -465,6 +472,11 @@ export function RunTraceConsole({
       </div>
 
       <div className={styles.timeline} aria-hidden={trace.window.totalMs <= 0}>
+        {trace.window.totalMs > 0 && timelineNodes.length === 0 && (
+          <div className={styles.timelineEmpty}>
+            暂无可量化的持续阶段（瞬时事件见下方事件流）
+          </div>
+        )}
         {trace.window.totalMs > 0 && trace.turns.length > 1 && (
           <div className={styles.turnAxis} aria-hidden="true">
             {trace.turns.map((turn) => (
@@ -494,7 +506,7 @@ export function RunTraceConsole({
                         aria-hidden="true"
                       />
                     ))}
-                {visibleNodes
+                {timelineNodes
                   .filter((node) => node.lane === lane)
                   .map((node) => {
                     const position = timelinePosition(node, trace.window);

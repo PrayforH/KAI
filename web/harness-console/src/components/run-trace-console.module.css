@@ -691,3 +691,9 @@
   color: var(--faint-ink);
   font-variant-numeric: tabular-nums;
 }
+
+.timelineEmpty {
+  padding: 4px 0 2px 42px;
+  color: var(--faint-ink);
+  font-size: 11px;
+}
