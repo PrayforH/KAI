@@ -24,6 +24,10 @@
 
 同线程 `run_8d3222b2b7524a9a81924fca7ad6ddbb` 用新 Run ID 绑定 DOM 观察：`run.queued` 后服务端首 `message.delta` 约 3.08 s，`run.succeeded` 约 4.32 s，`history.snapshot` 约 5.42 s；浏览器 `.assistant-answer` 首次非空约 5.66 s，终态正文稳定 `OK`。该单次样本的终态交接有约 1.1 s 长尾，但不是 p95。另两次探针误把上一轮答案/被重建的 assistant 行当作新首字，判无效，不入统计。该长尾与首次终态 `/history` 回退路径有关：当没有 `history.snapshot` 时，`src/harness/agui/routes.py` 在折叠 RunEvent 后同步等待 `EventService.append` 写回 snapshot。`run_8d3222...` 的 snapshot 比 `run.succeeded` 晚约 1.10 s，DOM 正文更晚约 0.24 s；这是时间相关而非单独阶段的因果证明。不能简单改为请求内 fire-and-forget/FastAPI BackgroundTasks：进程退出会丢写入，并发 GET 可重复写 snapshot。若要移出关键路径，应先设计幂等的持久投影/可恢复任务，并补并发和重启测试；本轮未修改该路径。一次关闭 live/durable 二次平滑的本地实验通过测试，但只能解释几十毫秒且未证明 1.1 s 收益，已撤回，未部署。
 
+## 延后 history reconciliation 灰度
+
+提交 `2df106e4` 将成功回调触发的完整 history import 延后 250ms，保留 history GET/cache 语义；174 Web 镜像 `perf-web-20260925-defer-history` 已部署，相关 60 项测试与 TypeScript 通过。单次 Run `run_54d549889fca40af9fd4aaf6fdcfe467` 终态 `OK` 稳定，但未形成 30 次 Web 对照，不能宣称 p95 收益。`history.snapshot` 仍同步写回，未引入不可靠后台任务。
+
 ## 30 个有效浏览器 Run 的分段 p95
 
 严格按新出现的 Run ID 绑定 DOM 节点，串行采集 33 个尝试，其中 30 个满足 `run_id`、终态正文为 `OK`、单一 `.assistant-answer`；3 个页面/采样器长停（约 60 秒）单列，不静默纳入。原始 ID 与排除项见 [浏览器样本 JSON](perf-browser-174-valid-20260925.json)。有效稳定正文：首非空 DOM p50 **5,787 ms**、p95 **9,877 ms**；终态标记/正文稳定 p50 约 **5,001 ms**、p95 **9,877 ms**。该测量为顺序单页 IAB 交互，浏览器 p95 会受页面刷新/虚拟化/assistant-ui 调度影响，服务端事件作为分段权威。
