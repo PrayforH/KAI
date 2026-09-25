@@ -778,3 +778,56 @@
   0% { background-position: 100% 0; }
   100% { background-position: -100% 0; }
 }
+
+.zoomControls {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.zoomButton {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.zoomButton:hover:not(:disabled) {
+  background: var(--surface-subtle);
+}
+
+.zoomButton:disabled {
+  color: var(--faint-ink);
+  cursor: default;
+}
+
+.zoomLabel {
+  min-width: 24px;
+  color: var(--muted-ink);
+  font-size: 11px;
+  text-align: center;
+}
+
+.timeline {
+  overflow-x: auto;
+}
+
+.timeline > .turnAxis,
+.timeline > .lane {
+  min-width: calc(100% * var(--trace-zoom, 1));
+}
+
+.timeline.zoom-2,
+.timeline.zoom-4 {
+  padding-right: 16px;
+}

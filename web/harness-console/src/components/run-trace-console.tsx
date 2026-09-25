@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   allFiltersEnabled,
   buildSessionTrace,
@@ -150,6 +150,7 @@ export function RunTraceConsole({
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [timelineZoom, setTimelineZoom] = useState<1 | 2 | 4>(1);
   const [activeTab, setActiveTab] = useState<DetailTab>("overview");
   const [filters, setFilters] = useState<Record<string, boolean>>(allFiltersEnabled);
   const [filterOpen, setFilterOpen] = useState(false);
@@ -428,82 +429,39 @@ export function RunTraceConsole({
         </div>
         <div className={styles.toolbarActions}>
           {onBack && (
-            <button
-              type="button"
-              className={styles.backButton}
-              onClick={onBack}
-            >
-              <svg viewBox="0 0 20 20" aria-hidden="true">
-                <path d="M12.5 4.5 7 10l5.5 5.5" />
-              </svg>
+            <button type="button" className={styles.backButton} onClick={onBack}>
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4.5 7 10l5.5 5.5" /></svg>
               对话
             </button>
           )}
-          <input
-            className={styles.search}
-            type="search"
-            placeholder="搜索"
-            aria-label="搜索轨迹"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
+          <div className={styles.zoomControls} aria-label="时间轴缩放">
+            <button type="button" className={styles.zoomButton} aria-label="缩小时间轴" disabled={timelineZoom === 1} onClick={() => setTimelineZoom((value) => value === 4 ? 2 : 1)}>−</button>
+            <span className={styles.zoomLabel}>{timelineZoom}×</span>
+            <button type="button" className={styles.zoomButton} aria-label="放大时间轴" disabled={timelineZoom === 4} onClick={() => setTimelineZoom((value) => value === 1 ? 2 : 4)}>+</button>
+          </div>
+          <input className={styles.search} type="search" placeholder="搜索" aria-label="搜索轨迹" value={query} onChange={(event) => setQuery(event.target.value)} />
           <div className={styles.filterWrap} ref={filterRef}>
-            <button
-              type="button"
-              className={styles.iconButton}
-              aria-label="筛选事件类型"
-              aria-expanded={filterOpen}
-              title="筛选事件类型"
-              onClick={() => setFilterOpen((value) => !value)}
-            >
-              <svg viewBox="0 0 20 20" aria-hidden="true">
-                <path d="M3.5 6h13M3.5 10h13M3.5 14h13" />
-                <circle cx="7.5" cy="6" r="1.7" fill="var(--surface)" />
-                <circle cx="12.5" cy="10" r="1.7" fill="var(--surface)" />
-                <circle cx="8.5" cy="14" r="1.7" fill="var(--surface)" />
-              </svg>
+            <button type="button" className={styles.iconButton} aria-label="筛选事件类型" aria-expanded={filterOpen} title="筛选事件类型" onClick={() => setFilterOpen((value) => !value)}>
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 6h13M3.5 10h13M3.5 14h13" /><circle cx="7.5" cy="6" r="1.7" fill="var(--surface)" /><circle cx="12.5" cy="10" r="1.7" fill="var(--surface)" /><circle cx="8.5" cy="14" r="1.7" fill="var(--surface)" /></svg>
             </button>
             {filterOpen && (
               <div className={styles.filterPanel} role="dialog" aria-label="筛选事件类型">
                 {TRACE_FILTER_GROUPS.map((group) => (
-                  <label key={group.key} className={styles.filterRow}>
-                    <span>{group.label}</span>
-                    <input
-                      type="checkbox"
-                      role="switch"
-                      checked={filters[group.key] !== false}
-                      onChange={(event) => setFilter(group.key, event.target.checked)}
-                    />
-                  </label>
+                  <label key={group.key} className={styles.filterRow}><span>{group.label}</span><input type="checkbox" role="switch" checked={filters[group.key] !== false} onChange={(event) => setFilter(group.key, event.target.checked)} /></label>
                 ))}
               </div>
             )}
           </div>
-          <button
-            type="button"
-            className={styles.iconButton}
-            aria-label="刷新轨迹"
-            title="刷新轨迹"
-            onClick={() => setReloadNonce((value) => value + 1)}
-          >
-            <svg viewBox="0 0 20 20" aria-hidden="true">
-              <path d="M15.5 10a5.5 5.5 0 1 1-1.6-3.9M15.5 3.5v3h-3" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            className={styles.iconButton}
-            aria-label="下载 Session 日志"
-            title="下载 Session 日志"
-            disabled={!trace.nodes.length}
-            onClick={() => downloadSessionLog(trace, threadId)}
-          >
-            <DownloadIcon />
-          </button>
+          <button type="button" className={styles.iconButton} aria-label="刷新轨迹" title="刷新轨迹" onClick={() => setReloadNonce((value) => value + 1)}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.5 10a5.5 5.5 0 1 1-1.6-3.9M15.5 3.5v3h-3" /></svg></button>
+          <button type="button" className={styles.iconButton} aria-label="下载 Session 日志" title="下载 Session 日志" disabled={!trace.nodes.length} onClick={() => downloadSessionLog(trace, threadId)}><DownloadIcon /></button>
         </div>
       </div>
 
-      <div className={styles.timeline} aria-hidden={trace.window.totalMs <= 0}>
+      <div
+        className={`${styles.timeline} ${styles[`zoom-${timelineZoom}`]}`}
+        aria-hidden={trace.window.totalMs <= 0}
+        style={{ "--trace-zoom": timelineZoom } as CSSProperties}
+      >
         {trace.window.totalMs > 0 && timelineNodes.length === 0 && (
           <div className={styles.timelineEmpty}>
             暂无可量化的持续阶段（瞬时事件见下方事件流）
