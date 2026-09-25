@@ -86,6 +86,13 @@ function statusClass(
   return stylesMap["is-ok"];
 }
 
+export function formatTokenCount(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return "0";
+  if (value < 1_000) return String(value);
+  if (value < 1_000_000) return `${(value / 1_000).toFixed(1)}k`;
+  return `${(value / 1_000_000).toFixed(2)}M`;
+}
+
 function downloadSessionLog(trace: SessionTrace, threadId: string) {
   const payload = {
     thread_id: threadId,
@@ -367,6 +374,14 @@ export function RunTraceConsole({
           <span className={styles.chip}>
             <strong>{trace.summary.toolCalls}</strong>调用
           </span>
+          {trace.usage.known && (
+            <span
+              className={styles.chip}
+              title={`输入 ${trace.usage.inputTokens} · 输出 ${trace.usage.outputTokens} tokens`}
+            >
+              <strong>{formatTokenCount(trace.usage.inputTokens + trace.usage.outputTokens)}</strong>tokens
+            </span>
+          )}
           {loading && <span className={styles.loading}>加载中…</span>}
           {error && (
             <span className={styles.error} role="alert">加载失败：{error}</span>
@@ -664,6 +679,21 @@ export function RunTraceConsole({
                       </div>
                     )}
                   </dl>
+                  {selected.citations?.length ? (
+                    <div className={styles.citationList}>
+                      <p className={styles.contextPanelTitle}>知识引用（{selected.citations.length}）</p>
+                      <ol>
+                        {selected.citations.map((citation) => (
+                          <li key={`${citation.index}-${citation.sourceReference}`}>
+                            <span>{citation.title || citation.sourceReference}</span>
+                            {typeof citation.score === "number" && (
+                              <small>score {citation.score.toFixed(3)}</small>
+                            )}
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  ) : null}
                   {selected.badge === "上下文" && (
                     <div className={styles.contextPanel}>
                       <p className={styles.contextPanelTitle}>会话上下文</p>

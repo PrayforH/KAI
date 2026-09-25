@@ -500,6 +500,64 @@ describe("buildSessionTrace", () => {
     ]);
   });
 
+  it("attaches citations to tool nodes and aggregates run-level usage", () => {
+    const runs = extractSessionRuns([
+      historyMessage({ id: "user-run-k", role: "user", content: "检索知识" }),
+      historyMessage({
+        id: "assistant-run-k",
+        role: "assistant",
+        content: "",
+        toolCalls: [activityToolCall("run-k", runActivity("run-k", [
+          {
+            id: "req-k",
+            event_type: "tool.request",
+            kind: "tool",
+            status: "running",
+            title: "search",
+            summary: null,
+            timestamp: at(100),
+            sequence: 1,
+            metadata: { tool_call_id: "c-k", name: "knowledge_search", arguments: { query: "档案" } },
+          },
+          {
+            id: "res-k",
+            event_type: "tool.result",
+            kind: "tool",
+            status: "succeeded",
+            title: "search",
+            summary: null,
+            timestamp: at(500),
+            sequence: 2,
+            metadata: {
+              tool_call_id: "c-k",
+              result_preview: "hits",
+              citations: [
+                { index: 1, chunkId: "ck1", sourceReference: "doc/a.md", title: "档案规范", score: 0.91 },
+                { index: 2, sourceReference: "doc/b.md" },
+              ],
+            },
+          },
+          {
+            id: "final-k",
+            event_type: "runtime.result",
+            kind: "result",
+            status: "succeeded",
+            title: "模型执行完成",
+            summary: null,
+            timestamp: at(900),
+            sequence: 3,
+            metadata: { usage: { input_tokens: 1200, output_tokens: 340 } },
+          },
+        ]))],
+      }),
+    ]);
+    const trace = buildSessionTrace(runs);
+    const tool = trace.nodes.find((node) => node.badge === "工具");
+    expect(tool?.citations).toHaveLength(2);
+    expect(tool?.citations?.[0].title).toBe("档案规范");
+    expect(trace.usage).toEqual({ inputTokens: 1200, outputTokens: 340, known: true });
+  });
+
   it("computes per-turn windows for the timeline axis", () => {
     const secondRun = [
       historyMessage({ id: "user-run-2", role: "user", content: "再来一轮" }),

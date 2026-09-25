@@ -65,6 +65,13 @@ def _tool_result_summary(payload: dict[str, Any]) -> str | None:
     return None
 
 
+# Tool-result previews feed the trace console's 结果 tab. The full sanitized
+# content already lives in the durable tool.result event, so this bound only
+# caps what the activity projection repeats; keep it generous enough that real
+# command output and file reads survive instead of trailing off mid-line.
+_RESULT_PREVIEW_LIMIT = 8_000
+
+
 def _tool_result_preview(payload: dict[str, Any]) -> str | None:
     if payload.get("redacted") is True:
         return None
@@ -86,7 +93,7 @@ def _tool_result_preview(payload: dict[str, Any]) -> str | None:
     stripped = rendered.strip()
     if not stripped:
         return None
-    return redact_text(stripped, limit=1_200)
+    return redact_text(stripped, limit=_RESULT_PREVIEW_LIMIT)
 
 
 _MAX_CITATIONS = 12

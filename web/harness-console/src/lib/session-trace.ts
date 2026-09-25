@@ -44,6 +44,13 @@ export interface TraceNode {
   summary?: string;
   systemPrompt?: string;
   entries?: Array<{ name: string; description: string }>;
+  citations?: Array<{
+    index: number;
+    title?: string;
+    sourceReference: string;
+    uri?: string;
+    score?: number;
+  }>;
   artifact?: {
     id: string;
     name: string;
@@ -65,6 +72,8 @@ export interface SessionTrace {
   window: { startMs: number; endMs: number; totalMs: number };
   turns: TurnWindow[];
   summary: { turns: number; toolCalls: number; durationMs: number };
+  /** Run-level model usage aggregated from runtime.result events. */
+  usage: { inputTokens: number; outputTokens: number; known: boolean };
 }
 
 interface HistoryToolCall {
@@ -359,6 +368,19 @@ function buildTraceNodes(
         const endItem = result ?? approvalEnd;
         const endMs = endItem ? safeMs(endItem.timestamp) : Number.NaN;
         const waitingApproval = Boolean(requested) && !approvalEnd && !result;
+        const rawCitations = result?.metadata.citations;
+        const citations = Array.isArray(rawCitations)
+          ? rawCitations
+              .map((entry) => entry as Record<string, unknown>)
+              .filter((entry) => typeof entry.sourceReference === "string")
+              .map((entry) => ({
+                index: typeof entry.index === "number" ? entry.index : 0,
+                title: typeof entry.title === "string" ? entry.title : undefined,
+                sourceReference: entry.sourceReference as string,
+                uri: typeof entry.uri === "string" ? entry.uri : undefined,
+                score: typeof entry.score === "number" ? entry.score : undefined,
+              }))
+          : undefined;
         nodes.push({
           id: `tool-${run.runId}-${toolCallId}`,
           runId: run.runId,
@@ -384,6 +406,7 @@ function buildTraceNodes(
               ? result.metadata.result_summary
               : undefined,
           summary: toolLabel(argumentsValue) || item.summary || undefined,
+          citations: citations?.length ? citations : undefined,
           running: !endItem && (waitingApproval || isRunningStatus(item.status)),
         });
         continue;
@@ -644,6 +667,24 @@ export function buildSessionTrace(
     };
   });
 
+  // Run-level model usage: runtime.result events carry the aggregate tokens
+  // for each run; take the max as the session total (retries inflate sums).
+  const usage = { inputTokens: 0, outputTokens: 0, known: false };
+  for (const run of runs) {
+    for (const item of run.activity?.items ?? []) {
+      if (item.event_type !== "runtime.result") continue;
+      const raw = item.metadata.usage;
+      if (!raw || typeof raw !== "object") continue;
+      const values = raw as Record<string, unknown>;
+      const input = typeof values.input_tokens === "number" ? values.input_tokens : 0;
+      const output = typeof values.output_tokens === "number" ? values.output_tokens : 0;
+      if (!input && !output) continue;
+      usage.known = true;
+      usage.inputTokens = Math.max(usage.inputTokens, input);
+      usage.outputTokens = Math.max(usage.outputTokens, output);
+    }
+  }
+
   return {
     runs,
     nodes,
@@ -654,6 +695,7 @@ export function buildSessionTrace(
       toolCalls: nodes.filter((node) => node.badge === "工具").length,
       durationMs: totalMs,
     },
+    usage,
   };
 }
 
