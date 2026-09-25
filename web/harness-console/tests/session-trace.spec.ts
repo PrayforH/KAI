@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  allFiltersEnabled,
   buildSessionTrace,
+  filterTraceNodes,
+  traceFilterKey,
   extractSessionRuns,
   formatClock,
   formatDuration,
@@ -477,6 +480,59 @@ describe("buildSessionTrace", () => {
     expect(trace.turns[0].left).toBe(0);
     expect(trace.turns[1].left).toBeGreaterThan(trace.turns[0].left);
     expect(trace.turns[1].left + trace.turns[1].width).toBeLessThanOrEqual(100.01);
+  });
+});
+
+describe("filters", () => {
+  it("groups badges and filters nodes by enabled toggles", () => {
+    const trace = buildSessionTrace(extractSessionRuns(runOneHistory));
+    const keys = new Set(trace.nodes.map((node) => traceFilterKey(node.badge)));
+    expect(keys.has("system")).toBe(true);
+    expect(keys.has("user")).toBe(true);
+    const onlyTools = filterTraceNodes(trace.nodes, {
+      ...allFiltersEnabled(),
+      system: false,
+      user: false,
+      assistant: false,
+      context: false,
+    });
+    expect(
+      onlyTools.every((node) => ["工具", "子任务", "产物", "审批", "异常"].includes(node.badge)),
+    ).toBe(true);
+    expect(filterTraceNodes(trace.nodes, allFiltersEnabled())).toHaveLength(trace.nodes.length);
+  });
+
+  it("groups reasoning streams into 思考 rows separate from 助手 rows", () => {
+    const runs = extractSessionRuns([
+      historyMessage({ id: "user-run-t", role: "user", content: "带思考" }),
+      historyMessage({
+        id: "assistant-run-t",
+        role: "assistant",
+        content: "",
+        toolCalls: [activityToolCall("run-t", runActivity("run-t", [
+          ...deltaItems("m-9", [100, 200], "答案"),
+          {
+            id: "th-1",
+            event_type: "reasoning.delta",
+            kind: "analysis",
+            status: "running",
+            title: "思考",
+            summary: "先分析",
+            timestamp: at(50),
+            sequence: 0,
+            metadata: { message_id: "m-9" },
+          },
+        ]))],
+      }),
+    ]);
+    const trace = buildSessionTrace(runs);
+    const thinking = trace.nodes.filter((node) => node.badge === "思考");
+    const answers = trace.nodes.filter((node) => node.badge === "助手");
+    expect(thinking).toHaveLength(1);
+    expect(thinking[0].output).toBe("先分析");
+    expect(answers).toHaveLength(1);
+    expect(answers[0].output).toBe("答案答案");
+    expect(traceFilterKey("思考")).toBe("thinking");
   });
 });
 

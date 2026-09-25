@@ -2,12 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  allFiltersEnabled,
   buildSessionTrace,
   extractSessionRuns,
+  filterTraceNodes,
   formatClock,
   formatDuration,
   searchTraceNodes,
+  TRACE_FILTER_GROUPS,
   timelinePosition,
+  traceFilterKey,
   type SessionTrace,
   type TraceNode,
 } from "../lib/session-trace";
@@ -129,8 +133,47 @@ export function RunTraceConsole({
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<DetailTab>("overview");
+  const [filters, setFilters] = useState<Record<string, boolean>>(allFiltersEnabled);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const filterRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLOListElement>(null);
   const scrolledForSelection = useRef<string | null>(null);
+
+  // Type toggles persist per browser so an operator's preferred view sticks.
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem("harness-trace-filters");
+      if (stored) setFilters({ ...allFiltersEnabled(), ...JSON.parse(stored) as Record<string, boolean> });
+    } catch {
+      // Defaults are fine when storage is unavailable.
+    }
+  }, []);
+  const setFilter = useCallback((key: string, value: boolean) => {
+    setFilters((current) => {
+      const next = { ...current, [key]: value };
+      try {
+        window.localStorage.setItem("harness-trace-filters", JSON.stringify(next));
+      } catch {
+        // Ignore storage failures; the toggle still applies for this session.
+      }
+      return next;
+    });
+  }, []);
+  useEffect(() => {
+    if (!filterOpen) return;
+    function onPointerDown(event: PointerEvent) {
+      if (!filterRef.current?.contains(event.target as Node)) setFilterOpen(false);
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setFilterOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [filterOpen]);
 
   // A thread created moments ago has no durable binding yet: its history
   // returns 404 until the first run is accepted. That is "no trace yet", not
@@ -215,8 +258,8 @@ export function RunTraceConsole({
     return () => globalThis.clearInterval(timer);
   }, [threadId, runBusy, liveRunId, trace.runs.length]);
   const visibleNodes = useMemo(
-    () => searchTraceNodes(trace.nodes, query),
-    [trace.nodes, query],
+    () => searchTraceNodes(filterTraceNodes(trace.nodes, filters), query),
+    [trace.nodes, filters, query],
   );
   const selected = useMemo(
     () => trace.nodes.find((node) => node.id === selectedId) ?? null,
@@ -241,11 +284,23 @@ export function RunTraceConsole({
   useEffect(() => {
     if (!selected) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setSelectedId(null);
+      if (event.key === "Escape") {
+        setSelectedId(null);
+        return;
+      }
+      if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+        const index = visibleNodes.findIndex((node) => node.id === selected.id);
+        if (index < 0) return;
+        const next = event.key === "ArrowUp" ? index - 1 : index + 1;
+        if (next >= 0 && next < visibleNodes.length) {
+          event.preventDefault();
+          selectNode(visibleNodes[next]);
+        }
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selected]);
+  }, [selected, visibleNodes, selectNode]);
 
   // Clicking a timeline segment selects the node; the list scrolls once so the
   // row is visible without fighting later re-renders.
@@ -308,6 +363,38 @@ export function RunTraceConsole({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
+          <div className={styles.filterWrap} ref={filterRef}>
+            <button
+              type="button"
+              className={styles.iconButton}
+              aria-label="筛选事件类型"
+              aria-expanded={filterOpen}
+              title="筛选事件类型"
+              onClick={() => setFilterOpen((value) => !value)}
+            >
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <path d="M3.5 6h13M3.5 10h13M3.5 14h13" />
+                <circle cx="7.5" cy="6" r="1.7" fill="var(--surface)" />
+                <circle cx="12.5" cy="10" r="1.7" fill="var(--surface)" />
+                <circle cx="8.5" cy="14" r="1.7" fill="var(--surface)" />
+              </svg>
+            </button>
+            {filterOpen && (
+              <div className={styles.filterPanel} role="dialog" aria-label="筛选事件类型">
+                {TRACE_FILTER_GROUPS.map((group) => (
+                  <label key={group.key} className={styles.filterRow}>
+                    <span>{group.label}</span>
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      checked={filters[group.key] !== false}
+                      onChange={(event) => setFilter(group.key, event.target.checked)}
+                    />
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
           <button
             type="button"
             className={styles.iconButton}
@@ -407,7 +494,7 @@ export function RunTraceConsole({
                     className={`${styles.dot} ${statusClass(styles, node.status, node.running)}`}
                     aria-hidden="true"
                   />
-                  <span className={`${styles.badge} ${styles[`lane-${node.lane}`]}`}>
+                  <span className={`${styles.badge} ${node.badge === "思考" ? styles["lane-thinking"] : styles[`lane-${node.lane}`]}`}>
                     {node.badge}
                   </span>
                   <span className={styles.rowMain}>
@@ -447,6 +534,36 @@ export function RunTraceConsole({
               <span className={styles.detailContext}>
                 第 {selected.turn} 轮 · 步骤 {selected.step}
               </span>
+              <div className={styles.stepNav}>
+                <button
+                  type="button"
+                  className={styles.iconButton}
+                  aria-label="上一步"
+                  title="上一步 (↑)"
+                  disabled={visibleNodes.findIndex((node) => node.id === selected.id) <= 0}
+                  onClick={() => {
+                    const index = visibleNodes.findIndex((node) => node.id === selected.id);
+                    if (index > 0) selectNode(visibleNodes[index - 1]);
+                  }}
+                >
+                  <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 12 5-5 5 5" /></svg>
+                </button>
+                <button
+                  type="button"
+                  className={styles.iconButton}
+                  aria-label="下一步"
+                  title="下一步 (↓)"
+                  disabled={visibleNodes.findIndex((node) => node.id === selected.id) >= visibleNodes.length - 1}
+                  onClick={() => {
+                    const index = visibleNodes.findIndex((node) => node.id === selected.id);
+                    if (index >= 0 && index < visibleNodes.length - 1) {
+                      selectNode(visibleNodes[index + 1]);
+                    }
+                  }}
+                >
+                  <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 8 5 5 5-5" /></svg>
+                </button>
+              </div>
               <button
                 type="button"
                 className={styles.iconButton}
@@ -480,6 +597,22 @@ export function RunTraceConsole({
                       <dt>状态</dt>
                       <dd>{selected.running ? "运行中" : selected.status}</dd>
                     </div>
+                    {selected.badge === "用户" && onBack && (
+                      <div>
+                        <dt>对话</dt>
+                        <dd>
+                          <a
+                            href="#"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              onBack();
+                            }}
+                          >
+                            在对话中查看
+                          </a>
+                        </dd>
+                      </div>
+                    )}
                     {selected.artifact && (
                       <div>
                         <dt>产物</dt>

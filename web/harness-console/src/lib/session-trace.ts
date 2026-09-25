@@ -229,6 +229,7 @@ interface MessageSpan {
   endMs: number;
   output: string;
   status: string;
+  thinking: boolean;
 }
 
 function buildTraceNodes(
@@ -301,15 +302,25 @@ function buildTraceNodes(
         continue;
       }
 
-      if (item.event_type === "message.delta" || item.event_type === "message.completed") {
-        const messageId = typeof item.metadata.message_id === "string"
+      const isMessageFrame =
+        item.event_type === "message.delta" || item.event_type === "message.completed";
+      const isReasoningFrame =
+        item.event_type === "reasoning.delta" || item.event_type === "reasoning.completed";
+      if (isMessageFrame || isReasoningFrame) {
+        const rawId = typeof item.metadata.message_id === "string"
           ? item.metadata.message_id
           : item.id;
+        // Reasoning and answer streams can share a message id; keep them as
+        // separate spans so 思考过程 stays its own row.
+        const messageId = isReasoningFrame ? `reasoning:${rawId}` : `answer:${rawId}`;
         const existing = spans.get(messageId);
         const text = typeof item.summary === "string" ? item.summary : "";
+        const completed = isMessageFrame
+          ? "message.completed"
+          : "reasoning.completed";
         if (existing) {
           existing.endMs = Math.max(existing.endMs, timestampMs);
-          if (item.event_type === "message.completed" && text) existing.output = text;
+          if (item.event_type === completed && text) existing.output = text;
           else if (text) existing.output += text;
           if (TERMINAL_STATUSES.has(item.status)) existing.status = item.status;
         } else {
@@ -318,6 +329,7 @@ function buildTraceNodes(
             endMs: timestampMs,
             output: text,
             status: item.status,
+            thinking: isReasoningFrame,
           });
         }
         continue;
@@ -504,8 +516,8 @@ function buildTraceNodes(
         turn: run.turn,
         step: nodes.filter((node) => node.runId === run.runId).length + 1,
         lane: "model",
-        badge: "助手",
-        label: "助手",
+        badge: span.thinking ? "思考" : "助手",
+        label: span.thinking ? "思考过程" : "助手",
         detail: preview(span.output, 140),
         status: span.status,
         startMs: span.startMs,
@@ -654,6 +666,37 @@ export function searchTraceNodes(
     .toLowerCase()
     .includes(needle),
   );
+}
+
+/** Filter groups, rendered as toggles in the console's filter popover. */
+export const TRACE_FILTER_GROUPS: ReadonlyArray<{
+  key: string;
+  label: string;
+  badges: readonly string[];
+}> = [
+  { key: "system", label: "系统提示词", badges: ["系统"] },
+  { key: "context", label: "上下文", badges: ["上下文"] },
+  { key: "user", label: "用户消息", badges: ["用户"] },
+  { key: "thinking", label: "思考过程", badges: ["思考"] },
+  { key: "assistant", label: "助手消息", badges: ["助手"] },
+  { key: "tool", label: "工具调用", badges: ["工具"] },
+  { key: "other", label: "子任务/产物/审批", badges: ["子任务", "产物", "审批", "异常"] },
+];
+
+export function traceFilterKey(badge: string): string {
+  const group = TRACE_FILTER_GROUPS.find((entry) => entry.badges.includes(badge));
+  return group?.key ?? "other";
+}
+
+export function filterTraceNodes(
+  nodes: readonly TraceNode[],
+  enabled: Readonly<Record<string, boolean>>,
+): TraceNode[] {
+  return nodes.filter((node) => enabled[traceFilterKey(node.badge)] !== false);
+}
+
+export function allFiltersEnabled(): Record<string, boolean> {
+  return Object.fromEntries(TRACE_FILTER_GROUPS.map((group) => [group.key, true]));
 }
 
 /** Percent positions for timeline rendering; clamped, min width for dots. */
