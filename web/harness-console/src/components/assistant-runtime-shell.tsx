@@ -72,7 +72,12 @@ export function AssistantRuntimeShell({
   const refreshDurableHistory = useCallback(() => {
     localOnlyRef.current = false;
     invalidateThreadHistory(threadId);
-    setHistoryRevision((current) => current + 1);
+    // Let the terminal live answer paint before reconciling the durable snapshot.
+    // History remains the recovery source; this only moves its cache refresh off
+    // the immediate terminal event path.
+    window.setTimeout(() => {
+      setHistoryRevision((current) => current + 1);
+    }, 250);
   }, [threadId]);
   const previousLocalOnly = useRef(localOnly);
   useEffect(() => {
