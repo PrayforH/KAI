@@ -276,24 +276,25 @@ export function RunTraceConsole({
 
   // The durable 上下文 rows carry only counts; the drawer fills them with the
   // session's context read model (window snapshot + digest entries), loaded
-  // once per thread the first time a context row is inspected.
+  // once per thread the first time a context row is inspected. The in-flight
+  // guard lives in a ref: a state-based flag would re-run this effect on
+  // "loading" and invalidate the pending fetch's cleanup flag.
+  const contextLoadRef = useRef<"idle" | "loading" | "done">("idle");
   useEffect(() => {
-    if (!selected || selected.badge !== "上下文" || contextState !== "idle" || !threadId) return;
+    if (!selected || selected.badge !== "上下文" || contextLoadRef.current !== "idle" || !threadId) return;
+    contextLoadRef.current = "loading";
     setContextState("loading");
-    let active = true;
     loadThreadContext(threadId)
       .then((overview) => {
-        if (!active) return;
+        contextLoadRef.current = "done";
         setThreadContext(overview);
         setContextState("ready");
       })
       .catch(() => {
-        if (active) setContextState("unavailable");
+        contextLoadRef.current = "done";
+        setContextState("unavailable");
       });
-    return () => {
-      active = false;
-    };
-  }, [selected, contextState, threadId]);
+  }, [selected, threadId]);
 
   const selectNode = useCallback((node: TraceNode) => {
     setSelectedId((current) => (current === node.id ? null : node.id));
