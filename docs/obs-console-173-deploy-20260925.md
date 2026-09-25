@@ -51,3 +51,5 @@ docker compose -f compose.json up -d --no-deps --no-build --wait web
 - DSH 的逐条模型消息上下文（system-reminder 级）需要模型 I/O 级数据，当前 RunEvent 不含；平台已有会话上下文读模型（context-client 的 digest/窗口），后续可在轨迹页加"上下文窗口"下钻。
 - 审批在无匹配 tool.request 时单独成行；审批等待的持续段暂以点表示，未画持续条。
 - 待人工验收：整体视觉与交互、暗色主题下的观感、长会话（20+ 轮）滚动与搜索性能。
+
+> r11（`3jYFRyAgWikcVB3fHSYp8`，web `evolution-obs-console-r11`，api/worker 保持 `evolution-obsconsole-d96165bf`）：修复用户指出的顶部时间条与统计问题。`runtime.system` 的“模型正在处理/运行时状态更新”不再生成步骤，避免重复“处理过程”；顶部时长/时间轴总窗口与每轮窗口优先按 `run.queued/running → run.succeeded/failed/cancelled/timed_out` 的真实生命周期计算，缺生命周期事件时按当前 Run 自己的节点回退（不再把第一轮的节点时间当第二轮起点）。全套 944 测试通过，现存/筛选/上下文探针全过。
