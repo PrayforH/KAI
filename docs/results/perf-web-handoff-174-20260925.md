@@ -34,7 +34,12 @@
 
 对其中 28 个可完整读取服务端事件的 Run：`queued→message.delta` p50 **3,092 ms**、p95 **3,623 ms**；`queued→run.succeeded` p50 **4,270 ms**、p95 **4,838 ms**；`queued→history.snapshot` p50 **5,045 ms**、p95 **8,569 ms**。因此浏览器稳定正文比服务端首 delta 多出约 6.3 s（p95），且 snapshot 写回与终态交接位于同一长尾区间；这不是模型 API 时长。延迟 history reconciliation 的 174 单次灰度 `run_54d549889fca40af9fd4aaf6fdcfe467` 终态 `OK` 稳定，但尚无 30 次对照，不能宣称 p95 改善。
 
-## 限制与后续
+## 异步 snapshot cache 灰度（2026-09-25）
+
+提交 `63961e74` 将 terminal history 的可重建 `history.snapshot` 写回移出 GET 响应关键路径：响应先返回事件折叠结果，使用 FastAPI best-effort `BackgroundTasks` 写缓存；写入失败或进程退出只导致下次 GET 重新折叠，不影响 RunEvent、Run 状态或答案正确性。该设计**不是持久投影队列**，并发首次 GET 可能产生重复 snapshot，后续应以 `(tenant, run, version)` 幂等投影表/队列替代。
+
+174 API/3 Worker 镜像 `perf-20260925-history-async` 健康；集成历史、AG-UI、trace、worker 回归 **135 passed**。单次灰度 Run `run_af47622c19de499aaebd286b309cee87` 的 server timing：`queued→message.delta` 5.02s、`queued→run.succeeded` 6.26s、`history.snapshot` 6.69s；终态正文 `OK` 稳定。该单次样本未用严格点击时间标记，不能据此宣称 p95 改善；下一步应在有幂等投影保障后再做 30 次交错 A/B。
+
 
 - 第八轮 DOM 轨迹中 `data-turn-answer=OK` 后 live 文本节点短时空白，直到完成交接才出现 durable `OK`；不能把浏览器 live 首字体验宣称为彻底优化完成。API SSE p95 数据仍以 `perf-thread-run-174-20260925.md` 为准。
 - 真实 `Skill` 加载被 `production-orchestrator` 策略拒绝；需授权 fixture 才可验收 Skill 工具结果。
