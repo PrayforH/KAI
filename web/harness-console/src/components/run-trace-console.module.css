@@ -709,3 +709,39 @@
   border: 1px solid color-mix(in srgb, var(--rail) 20%, transparent);
   pointer-events: none;
 }
+
+.timelineTooltip {
+  position: absolute;
+  z-index: 20;
+  top: 19px;
+  min-width: 190px;
+  max-width: 300px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--surface-raised, var(--surface));
+  box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
+  color: var(--ink);
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11.5px;
+}
+
+.timelineTooltip strong {
+  font-size: 12px;
+}
+
+.timelineTooltip span {
+  color: var(--muted-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.timelineTooltip em {
+  overflow: hidden;
+  color: var(--muted-ink);
+  font-style: normal;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

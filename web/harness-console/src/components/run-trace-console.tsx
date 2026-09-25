@@ -147,6 +147,7 @@ export function RunTraceConsole({
   const [reloadNonce, setReloadNonce] = useState(0);
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<DetailTab>("overview");
   const [filters, setFilters] = useState<Record<string, boolean>>(allFiltersEnabled);
   const [filterOpen, setFilterOpen] = useState(false);
@@ -529,10 +530,30 @@ export function RunTraceConsole({
                         }}
                         title={`${node.badge} ${node.label} · ${formatDuration(node.endMs - node.startMs)} · ${formatClock(node.startMs)}`}
                         aria-label={`${node.badge} ${node.label}`}
+                        onMouseEnter={() => setHoveredId(node.id)}
+                        onMouseLeave={() => setHoveredId(null)}
+                        onFocus={() => setHoveredId(node.id)}
+                        onBlur={() => setHoveredId(null)}
                         onClick={() => selectNode(node)}
                       />
                     );
                   })}
+                {hoveredId && (() => {
+                  const node = timelineNodes.find((item) => item.id === hoveredId);
+                  if (!node || node.lane !== lane) return null;
+                  const position = timelinePosition(node, trace.window);
+                  return (
+                    <div
+                      className={styles.timelineTooltip}
+                      style={{ left: `${Math.min(Math.max(position.left, 4), 78)}%` }}
+                      role="tooltip"
+                    >
+                      <strong>{node.badge} · {node.label}</strong>
+                      <span>{formatClock(node.startMs)} · {formatDuration(node.endMs - node.startMs)} · {node.status}</span>
+                      {node.detail && <em>{node.detail}</em>}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           ))}
