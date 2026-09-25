@@ -147,19 +147,6 @@ export function RunTraceConsole({
     };
   }, [threadId, reloadNonce]);
 
-  // While the task runs (or a live activity is on screen), poll through the
-  // binding-not-persisted window; once history resolves this interval is a
-  // cheap no-op because the effect only re-runs on the flags below.
-  const liveRunId = liveActivity?.run_id ?? null;
-  useEffect(() => {
-    if (!threadId || (!runBusy && !liveRunId)) return;
-    if (history && history.length > 0) return;
-    const timer = globalThis.setInterval(() => {
-      setReloadNonce((value) => value + 1);
-    }, 3_000);
-    return () => globalThis.clearInterval(timer);
-  }, [threadId, runBusy, liveRunId, history]);
-
   // A new run starting (steer/queued turn) is worth one refetch.
   const wasLiveRunId = useRef(liveRunId);
   useEffect(() => {
@@ -177,6 +164,20 @@ export function RunTraceConsole({
       ),
     [history, liveActivity],
   );
+
+  // While the task runs (or a live activity is on screen) and no durable run
+  // has been parsed yet, poll through the window where history may only hold
+  // the raw user message. Parsed runs end the polling; the busy→idle
+  // transition then does the final refetch.
+  const liveRunId = liveActivity?.run_id ?? null;
+  useEffect(() => {
+    if (!threadId || (!runBusy && !liveRunId)) return;
+    if (trace.runs.length > 0) return;
+    const timer = globalThis.setInterval(() => {
+      setReloadNonce((value) => value + 1);
+    }, 3_000);
+    return () => globalThis.clearInterval(timer);
+  }, [threadId, runBusy, liveRunId, trace.runs.length]);
   const visibleNodes = useMemo(
     () => searchTraceNodes(trace.nodes, query),
     [trace.nodes, query],
