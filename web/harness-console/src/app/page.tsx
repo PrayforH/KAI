@@ -767,30 +767,15 @@ function AuthenticatedHome() {
             />
           </header>
           <section className="chat-stage" aria-label="Agent 任务对话">
-            <div className="session-view-tabs" role="tablist" aria-label="会话视图">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={stageView === "conversation"}
-                className={stageView === "conversation" ? "is-active" : undefined}
-                onClick={() => setStageView("conversation")}
-              >
-                对话
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={stageView === "trace"}
-                className={stageView === "trace" ? "is-active" : undefined}
-                onClick={() => setStageView("trace")}
-              >
-                轨迹
-              </button>
-            </div>
-            <div
-              className="chat-surface"
-              hidden={stageView === "trace"}
-            >
+            {stageView === "trace" ? (
+              <RunTraceConsole
+                threadId={threadId}
+                liveActivity={runActivity}
+                runBusy={currentTaskBusy}
+                onBack={() => setStageView("conversation")}
+              />
+            ) : (
+            <div className="chat-surface">
               {threadId && selectedAgent ? (
                 <AssistantRuntimeShell
                   key={`${threadId}:${runtimeAgentKey(selectedAgent)}`}
@@ -844,12 +829,6 @@ function AuthenticatedHome() {
                 </div>
               )}
             </div>
-            {stageView === "trace" && (
-              <RunTraceConsole
-                threadId={threadId}
-                liveActivity={runActivity}
-                runBusy={currentTaskBusy}
-              />
             )}
           </section>
         </div>

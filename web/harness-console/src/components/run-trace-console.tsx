@@ -91,12 +91,15 @@ export function RunTraceConsole({
   threadId,
   liveActivity,
   runBusy = false,
+  onBack,
 }: {
   threadId: string;
   liveActivity?: RunActivity | null;
   /** True while the task's current run is queued/running; a fall to false
    * triggers one history refetch so the finished turn shows up. */
   runBusy?: boolean;
+  /** Return to the conversation view (the trace view replaces it in place). */
+  onBack?: () => void;
 }) {
   const [history, setHistory] = useState<ThreadHistoryResponse["messages"] | null>(
     null,
@@ -110,6 +113,10 @@ export function RunTraceConsole({
   const listRef = useRef<HTMLOListElement>(null);
   const scrolledForSelection = useRef<string | null>(null);
 
+  // A thread created moments ago has no durable binding yet: its history
+  // returns 404 until the first run is accepted. That is "no trace yet", not
+  // a failure — retry while a run is in flight so the turn shows up.
+  let lastStatus = 0;
   useEffect(() => {
     if (!threadId) {
       setHistory(null);
@@ -119,12 +126,16 @@ export function RunTraceConsole({
     let active = true;
     setLoading(true);
     setError("");
-    loadFullThreadHistory(threadId)
+    loadFullThreadHistory(threadId, {
+      onNotFound: () => {
+        lastStatus = 404;
+      },
+    })
       .then((messages) => {
         if (active) setHistory(messages);
       })
       .catch((cause: unknown) => {
-        if (active) {
+        if (active && lastStatus !== 404) {
           setError(cause instanceof Error ? cause.message : String(cause));
         }
       })
@@ -135,6 +146,28 @@ export function RunTraceConsole({
       active = false;
     };
   }, [threadId, reloadNonce]);
+
+  // While the task runs (or a live activity is on screen), poll through the
+  // binding-not-persisted window; once history resolves this interval is a
+  // cheap no-op because the effect only re-runs on the flags below.
+  const liveRunId = liveActivity?.run_id ?? null;
+  useEffect(() => {
+    if (!threadId || (!runBusy && !liveRunId)) return;
+    if (history && history.length > 0) return;
+    const timer = globalThis.setInterval(() => {
+      setReloadNonce((value) => value + 1);
+    }, 3_000);
+    return () => globalThis.clearInterval(timer);
+  }, [threadId, runBusy, liveRunId, history]);
+
+  // A new run starting (steer/queued turn) is worth one refetch.
+  const wasLiveRunId = useRef(liveRunId);
+  useEffect(() => {
+    if (wasLiveRunId.current && liveRunId && wasLiveRunId.current !== liveRunId) {
+      setReloadNonce((value) => value + 1);
+    }
+    wasLiveRunId.current = liveRunId;
+  }, [liveRunId]);
 
   const trace = useMemo(
     () =>
@@ -218,6 +251,18 @@ export function RunTraceConsole({
           )}
         </div>
         <div className={styles.toolbarActions}>
+          {onBack && (
+            <button
+              type="button"
+              className={styles.backButton}
+              onClick={onBack}
+            >
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <path d="M12.5 4.5 7 10l5.5 5.5" />
+              </svg>
+              对话
+            </button>
+          )}
           <input
             className={styles.search}
             type="search"

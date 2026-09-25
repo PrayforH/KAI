@@ -391,35 +391,6 @@ export function TaskHeaderActions({
       <FeedbackToast message={error} tone="error" onDismiss={() => setError("")} />
       {open && (
         <div className="task-header-menu" role="menu" aria-label="更多任务操作">
-          {onOpenTrace ? (
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                close();
-                onOpenTrace();
-              }}
-            >
-              <TraceIcon />
-              <span>调用轨迹</span>
-            </button>
-          ) : observabilityHref ? (
-            <a
-              role="menuitem"
-              href={observabilityHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={close}
-            >
-              <TraceIcon />
-              <span>调用轨迹</span>
-            </a>
-          ) : (
-            <span className="task-header-menu-unavailable" aria-disabled="true">
-              <TraceIcon />
-              <span>调用轨迹</span>
-            </span>
-          )}
           <button type="button" role="menuitem" disabled={busy} onClick={togglePinned}>
             <PinIcon />
             <span>{pinned ? "取消置顶任务" : "置顶任务"}</span>
@@ -467,6 +438,35 @@ export function TaskHeaderActions({
             <ArchiveIcon />
             <span>归档任务</span>
           </button>
+          {onOpenTrace ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                close();
+                onOpenTrace();
+              }}
+            >
+              <TraceIcon />
+              <span>调用轨迹</span>
+            </button>
+          ) : observabilityHref ? (
+            <a
+              role="menuitem"
+              href={observabilityHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={close}
+            >
+              <TraceIcon />
+              <span>调用轨迹</span>
+            </a>
+          ) : (
+            <span className="task-header-menu-unavailable" aria-disabled="true">
+              <TraceIcon />
+              <span>调用轨迹</span>
+            </span>
+          )}
         </div>
       )}
       <RenameTaskDialog

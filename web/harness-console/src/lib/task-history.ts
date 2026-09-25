@@ -200,6 +200,7 @@ export const TRACE_HISTORY_MAX_PAGES = 20;
 
 export async function loadFullThreadHistory(
   threadId: string,
+  options: { onNotFound?: () => void } = {},
 ): Promise<ThreadHistoryResponse["messages"]> {
   const messages: ThreadHistoryResponse["messages"] = [];
   let before: string | undefined;
@@ -212,6 +213,12 @@ export async function loadFullThreadHistory(
         { cache: "no-store" },
       ),
     );
+    if (response.status === 404) {
+      // The thread binding is not durable yet (first run still being
+      // accepted); the caller decides how to wait for it.
+      options.onNotFound?.();
+      return messages;
+    }
     if (!response.ok) {
       throw new Error((await response.text()) || `HTTP ${response.status}`);
     }
