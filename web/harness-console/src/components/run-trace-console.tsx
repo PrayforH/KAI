@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   allFiltersEnabled,
   buildSessionTrace,
@@ -150,7 +150,6 @@ export function RunTraceConsole({
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
-  const [timelineZoom, setTimelineZoom] = useState<1 | 2 | 4>(1);
   const [activeTab, setActiveTab] = useState<DetailTab>("overview");
   const [filters, setFilters] = useState<Record<string, boolean>>(allFiltersEnabled);
   const [filterOpen, setFilterOpen] = useState(false);
@@ -383,25 +382,6 @@ export function RunTraceConsole({
     ["工具", "tool"],
   ];
 
-  // Trackpad pinch arrives as ctrl+wheel. A non-passive listener is required
-  // so the browser's own page zoom can be prevented while scaling the canvas.
-  const timelineRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const node = timelineRef.current;
-    if (!node) return;
-    const onWheel = (event: WheelEvent) => {
-      if (!event.ctrlKey) return;
-      event.preventDefault();
-      setTimelineZoom((current) => {
-        const steps: Array<1 | 2 | 4> = event.deltaY < 0 ? [1, 2, 4] : [4, 2, 1];
-        const index = steps.indexOf(current);
-        return index >= 0 && index < steps.length - 1 ? steps[index + 1] : current;
-      });
-    };
-    node.addEventListener("wheel", onWheel, { passive: false });
-    return () => node.removeEventListener("wheel", onWheel);
-  }, []);
-
   if (!historyReady || !manifestReady) {
     return (
       <div className={styles.console} aria-label="调用轨迹" aria-busy="true">
@@ -453,11 +433,6 @@ export function RunTraceConsole({
               对话
             </button>
           )}
-          <div className={styles.zoomControls} aria-label="时间轴缩放">
-            <button type="button" className={styles.zoomButton} aria-label="缩小时间轴" disabled={timelineZoom === 1} onClick={() => setTimelineZoom((value) => value === 4 ? 2 : 1)}>−</button>
-            <span className={styles.zoomLabel}>{timelineZoom}×</span>
-            <button type="button" className={styles.zoomButton} aria-label="放大时间轴" disabled={timelineZoom === 4} onClick={() => setTimelineZoom((value) => value === 1 ? 2 : 4)}>+</button>
-          </div>
           <input className={styles.search} type="search" placeholder="搜索" aria-label="搜索轨迹" value={query} onChange={(event) => setQuery(event.target.value)} />
           <div className={styles.filterWrap} ref={filterRef}>
             <button type="button" className={styles.iconButton} aria-label="筛选事件类型" aria-expanded={filterOpen} title="筛选事件类型" onClick={() => setFilterOpen((value) => !value)}>
@@ -476,12 +451,7 @@ export function RunTraceConsole({
         </div>
       </div>
 
-      <div
-        ref={timelineRef}
-        className={`${styles.timeline} ${styles[`zoom-${timelineZoom}`]}`}
-        aria-hidden={trace.window.totalMs <= 0}
-        style={{ "--trace-zoom": timelineZoom } as CSSProperties}
-      >
+      <div className={styles.timeline} aria-hidden={trace.window.totalMs <= 0}>
         {trace.window.totalMs > 0 && timelineNodes.length === 0 && (
           <div className={styles.timelineEmpty}>
             暂无可量化的持续阶段（瞬时事件见下方事件流）
@@ -500,7 +470,7 @@ export function RunTraceConsole({
                       <button
                         key={node.id}
                         type="button"
-                        className={`${styles.block} ${statusClass(styles, node.status, node.running)}${selectedId === node.id ? ` ${styles["is-selected"]}` : ""}`}
+                        className={`${styles.block} ${styles[`block-${node.lane}`]} ${statusClass(styles, node.status, node.running)}${selectedId === node.id ? ` ${styles["is-selected"]}` : ""}`}
                         style={{
                           left: `${position.left}%`,
                           width: `${position.width}%`,

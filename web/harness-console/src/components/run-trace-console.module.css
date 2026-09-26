@@ -108,13 +108,7 @@
   stroke-linejoin: round;
 }
 
-.timeline {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 6px 16px 10px;
-  border-bottom: 1px solid var(--line);
-}
+
 
 .lane {
   display: grid;
@@ -749,58 +743,23 @@
   100% { background-position: -100% 0; }
 }
 
-.zoomControls {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-}
 
-.zoomButton {
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--ink);
-  font-size: 16px;
-  line-height: 20px;
-  cursor: pointer;
-}
 
-.zoomButton:hover:not(:disabled) {
-  background: var(--surface-subtle);
-}
 
-.zoomButton:disabled {
-  color: var(--faint-ink);
-  cursor: default;
-}
 
-.zoomLabel {
-  min-width: 24px;
-  color: var(--muted-ink);
-  font-size: 11px;
-  text-align: center;
-}
+
+
+
+
+
 
 .timeline {
   overflow-x: auto;
 }
 
-.timeline > .turnAxis,
-.timeline > .lane {
-  min-width: calc(100% * var(--trace-zoom, 1));
-}
 
-.timeline.zoom-2,
-.timeline.zoom-4 {
-  padding-right: 16px;
-}
+
+
 
 
 
@@ -814,7 +773,48 @@
   background: var(--line-strong);
 }
 
+/* DSH-style compact duration strip: three thin lanes, solid rounded blocks,
+   no track chrome. Colors follow the DSH reference (model purple, tool orange,
+   input blue tick). */
+.timeline {
+  padding: 2px 16px 4px;
+  border-bottom: 1px solid var(--line);
+}
 
+.lane {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  align-items: center;
+  gap: 8px;
+  height: 14px;
+}
 
+.laneLabel {
+  color: var(--muted-ink);
+  font-size: 11px;
+  text-align: right;
+}
 
+.laneTrack {
+  position: relative;
+  height: 12px;
+}
 
+.block {
+  position: absolute;
+  top: 2px;
+  height: 8px;
+  min-width: 3px;
+  border: 0;
+  padding: 0;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.block-lane-input { background: #4a9df0; }
+.block-lane-model { background: #8b7cf8; }
+.block-lane-tool { background: #e8963c; }
+
+.block.is-failed { background: var(--danger); }
+.block.is-running { animation: trace-pulse 1.2s ease-in-out infinite; }
+.block.is-selected { outline: 1.5px solid color-mix(in srgb, currentColor 70%, transparent); outline-offset: 1px; }
