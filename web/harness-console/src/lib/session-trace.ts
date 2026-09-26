@@ -794,16 +794,67 @@ export function allFiltersEnabled(): Record<string, boolean> {
 }
 
 /** Percent positions for timeline rendering; clamped, min width for dots. */
-export function timelinePosition(
-  node: Pick<TraceNode, "startMs" | "endMs">,
-  turn: TurnWindow,
-): { left: number; width: number } {
-  const duration = Math.max(turn.endMs - turn.startMs, 1);
-  const offset = ((node.startMs - turn.startMs) / duration) * turn.width;
-  const width = Math.max(((node.endMs - node.startMs) / duration) * turn.width, 0.15);
-  const left = turn.left + Math.min(Math.max(offset, 0), Math.max(turn.width - width, 0));
-  return {
-    left: Math.min(Math.max(left, 0), 100),
-    width: Math.min(width, turn.width),
-  };
+// Gapless packed strip: phases that are adjacent in time render touching;
+// only real idle (a phase starting later than the previous ended) inserts a
+// fixed small gap. Widths are proportional to phase duration, so three 3s
+// phases fill exactly the same axis span as 9s of continuous work.
+const STRIP_ADJACENT_MS = 500;
+const STRIP_GAP_PCT_MAX = 0.8;
+
+export interface StripEntry {
+  id: string;
+  left: number;
+  width?: number;
+}
+
+export interface StripLayout {
+  blocks: StripEntry[];
+  ticks: StripEntry[];
+}
+
+export function buildStripLayout(
+  phases: ReadonlyArray<Pick<TraceNode, "id" | "startMs" | "endMs" | "lane">>,
+  ticks: ReadonlyArray<Pick<TraceNode, "id" | "startMs" | "endMs" | "lane">>,
+): StripLayout {
+  const sorted = [...phases]
+    .filter((node) => node.endMs > node.startMs)
+    .sort((a, b) => a.startMs - b.startMs || a.endMs - b.endMs);
+  let gapCount = 0;
+  for (let index = 1; index < sorted.length; index += 1) {
+    if (sorted[index].startMs - sorted[index - 1].endMs > STRIP_ADJACENT_MS) gapCount += 1;
+  }
+  const gapPct = gapCount > 0 ? Math.min(STRIP_GAP_PCT_MAX, 22 / gapCount) : 0;
+  const busyTotal =
+    sorted.reduce((sum, node) => sum + (node.endMs - node.startMs), 0) || 1;
+  const scale = (100 - gapPct * gapCount) / busyTotal;
+
+  const blocks: StripEntry[] = [];
+  const anchors: Array<{ start: number; end: number; left: number; width: number }> = [];
+  let cursor = 0;
+  for (let index = 0; index < sorted.length; index += 1) {
+    const node = sorted[index];
+    const width = Math.max((node.endMs - node.startMs) * scale, 0.15);
+    blocks.push({ id: node.id, left: cursor, width });
+    anchors.push({ start: node.startMs, end: node.endMs, left: cursor, width });
+    cursor += width;
+    const next = sorted[index + 1];
+    if (next && next.startMs - node.endMs > STRIP_ADJACENT_MS) cursor += gapPct;
+  }
+
+  // Input ticks map through the packed anchors: inside a phase linearly, in a
+  // gap at its middle, before/after everything clamped to the edges.
+  const mapped = ticks.map((tick) => {
+    if (!anchors.length) return { id: tick.id, left: 0 };
+    if (tick.startMs <= anchors[0].start) return { id: tick.id, left: anchors[0].left };
+    for (const anchor of anchors) {
+      if (tick.startMs <= anchor.end) {
+        const duration = Math.max(anchor.end - anchor.start, 1);
+        const offset = Math.max(tick.startMs - anchor.start, 0) / duration;
+        return { id: tick.id, left: anchor.left + offset * anchor.width };
+      }
+    }
+    return { id: tick.id, left: 100 };
+  });
+
+  return { blocks, ticks: mapped };
 }

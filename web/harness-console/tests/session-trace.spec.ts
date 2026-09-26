@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   allFiltersEnabled,
   buildSessionTrace,
+  buildStripLayout,
   filterTraceNodes,
   traceFilterKey,
   extractSessionRuns,
@@ -9,7 +10,6 @@ import {
   formatDuration,
   mergeLiveRun,
   searchTraceNodes,
-  timelinePosition,
 } from "../src/lib/session-trace";
 
 const T0 = Date.parse("2026-09-25T03:00:00.000Z");
@@ -641,19 +641,43 @@ describe("searchTraceNodes", () => {
   });
 });
 
-describe("timelinePosition", () => {
-  const turn = { turn: 1, runId: "run-1", startMs: 0, endMs: 1000, left: 0, width: 50 };
+describe("buildStripLayout", () => {
+  it("lays temporally adjacent phases touching, proportional to duration", () => {
+    const phases = [
+      { id: "a", startMs: 0, endMs: 3_000, lane: "tool" as const },
+      { id: "b", startMs: 3_000, endMs: 6_000, lane: "tool" as const },
+      { id: "c", startMs: 6_000, endMs: 9_000, lane: "model" as const },
+    ];
+    const layout = buildStripLayout(
+      phases as never,
+      [],
+    );
+    expect(layout.blocks.map((block) => Math.round(block.left))).toEqual([0, 33, 67]);
+    expect(layout.blocks.every((block) => Math.round(block.width ?? 0) === 33)).toBe(true);
+  });
 
-  it("maps node spans into the packed turn segment", () => {
-    expect(timelinePosition({ startMs: 100, endMs: 200 }, turn)).toEqual({
-      left: 5,
-      width: 5,
-    });
-    expect(timelinePosition({ startMs: 500, endMs: 500 }, turn).width).toBeGreaterThan(0);
-    expect(timelinePosition({ startMs: -50, endMs: 50 }, turn).left).toBe(0);
-    // Clamped inside the turn segment.
-    const beyond = timelinePosition({ startMs: 1_500, endMs: 1_800 }, turn);
-    expect(beyond.left + beyond.width).toBeLessThanOrEqual(50.01);
+  it("inserts a small fixed gap only for real idle time", () => {
+    const phases = [
+      { id: "a", startMs: 0, endMs: 3_000, lane: "tool" as const },
+      { id: "b", startMs: 60_000, endMs: 63_000, lane: "tool" as const },
+    ];
+    const layout = buildStripLayout(phases as never, []);
+    const [first, second] = layout.blocks;
+    expect(second.left).toBeGreaterThan(first.left + (first.width ?? 0));
+    expect(second.left - (first.left + (first.width ?? 0))).toBeLessThan(2);
+  });
+
+  it("maps input ticks through the packed anchors", () => {
+    const phases = [
+      { id: "a", startMs: 0, endMs: 3_000, lane: "tool" as const },
+      { id: "b", startMs: 3_000, endMs: 6_000, lane: "model" as const },
+    ];
+    const layout = buildStripLayout(phases as never, [
+      { id: "u1", startMs: 1_500, endMs: 1_500, lane: "input" as const },
+    ]);
+    const block = layout.blocks[0];
+    expect(block).toBeDefined();
+    expect(layout.ticks[0].left).toBeCloseTo((block?.left ?? 0) + (block?.width ?? 0) / 2, 0);
   });
 });
 

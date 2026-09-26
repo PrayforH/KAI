@@ -8,9 +8,9 @@ import {
   filterTraceNodes,
   formatClock,
   formatDuration,
+  buildStripLayout,
   searchTraceNodes,
   TRACE_FILTER_GROUPS,
-  timelinePosition,
   traceFilterKey,
   type SessionTrace,
   type TraceNode,
@@ -339,9 +339,20 @@ export function RunTraceConsole({
       ),
     [visibleNodes],
   );
-  const turnWindows = useMemo(
-    () => new Map(trace.turns.map((turn) => [turn.turn, turn])),
-    [trace.turns],
+  // Gapless strip: blocks are laid out in phase order (adjacent in time touch),
+  // input ticks map through the same anchors.
+  const strip = useMemo(() => {
+    const phases = timelineNodes.filter((node) => node.lane !== "input");
+    const ticks = timelineNodes.filter((node) => node.lane === "input");
+    return buildStripLayout(phases, ticks);
+  }, [timelineNodes]);
+  const stripBlocks = useMemo(
+    () => new Map(strip.blocks.map((entry) => [entry.id, entry])),
+    [strip.blocks],
+  );
+  const stripTicks = useMemo(
+    () => new Map(strip.ticks.map((entry) => [entry.id, entry])),
+    [strip.ticks],
   );
   const selected = useMemo(
     () => trace.nodes.find((node) => node.id === selectedId) ?? null,
@@ -516,9 +527,8 @@ export function RunTraceConsole({
                 {timelineNodes
                   .filter((node) => node.lane === lane)
                   .map((node) => {
-                    const turnWindow = turnWindows.get(node.turn);
-                    if (!turnWindow) return null;
-                    const position = timelinePosition(node, turnWindow);
+                    const position = stripBlocks.get(node.id);
+                    if (!position) return null;
                     return (
                       <button
                         key={node.id}
@@ -540,9 +550,11 @@ export function RunTraceConsole({
                   })}
                 {hoveredId && (() => {
                   const node = timelineNodes.find((item) => item.id === hoveredId);
-                  const turnWindow = node ? turnWindows.get(node.turn) : undefined;
-                  if (!node || !turnWindow || node.lane !== lane) return null;
-                  const position = timelinePosition(node, turnWindow);
+                  if (!node || node.lane !== lane) return null;
+                  const position = node.lane === "input"
+                    ? stripTicks.get(node.id)
+                    : stripBlocks.get(node.id);
+                  if (!position) return null;
                   return (
                     <div
                       className={styles.timelineTooltip}
