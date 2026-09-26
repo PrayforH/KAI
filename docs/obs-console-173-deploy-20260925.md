@@ -69,3 +69,5 @@ docker compose -f compose.json up -d --no-deps --no-build --wait web
 > r25（BUILD_ID `pUHtQ22Ftz4IhNWIwngMN`）：修复用户输入泳道为空——渲染时误用阶段块 map 取刻度位置（取不到即返回 null）。现按泳道选择 anchors：输入行用 stripTicks（固定 4px 琥珀刻度），其余泳道用 stripBlocks。注意：同一 tag 原地重建镜像后，部署脚本 base 断言会失败（在跑 tag==目标 tag），需手动 build+compose up。
 
 > r26（BUILD_ID `7V9Pdu0oxh3A33Ju7RqgA`）：hover 气泡改为紧凑深色气泡（11px 字号、深底圆角、开始→结束时刻+耗时+摘要预览），并移除色块上的原生 title 提示（用户反馈"字体太大"的大字提示实为浏览器原生 tooltip 与气泡重复）。部署插曲：同一 r26 脚本链上 base 与 compose 断言需与实际在跑 tag 同步（r25→r26 两次 sed），否则 build 成功后卡在断言。
+
+> r27（BUILD_ID `onQqT--mB-ivaUjh0771W`）：修思考过程碎片化。根因：思考流事件带 item_id（非 message_id），客户端按 message_id 分组退化为每 delta 一行（"Op"、"is" 之类的单词行）。修复：按 item_id 分组 + 相邻思考片段（间隔 <600ms、中间无工具/审批）合并为一行。时间轴：思考是真实模型处理时间，strip 布局把同泳道 ≤2s 间隙的阶段合并为连续块（思考+回答构成连续模型活动，与 DSH 一致）；事件流保留独立思考行。
