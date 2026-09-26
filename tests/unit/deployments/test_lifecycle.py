@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
+import hashlib
+import json
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from pydantic import ValidationError
@@ -49,6 +51,15 @@ from harness.studio.models import (
     ReplaceAgentDraftRequest,
     ReplaceCapabilityCatalogRequest,
 )
+from harness.studio.preflight_models import (
+    PreflightArtifactProof,
+    PreflightCheck,
+    PreflightCheckStatus,
+    PreflightResult,
+    PreflightResultStatus,
+    PreflightStage,
+)
+from harness.studio.preview_models import PreviewDeployment, PreviewStatus
 
 TENANT = "tenant-a"
 USER = "release-manager"
@@ -105,6 +116,88 @@ def promotion(
     )
 
 
+class PreviewLookup:
+    def __init__(self) -> None:
+        self.previews: dict[str, PreviewDeployment] = {}
+
+    async def get(self, tenant_id: str, user_id: str, preview_id: str) -> PreviewDeployment:
+        preview = self.previews[preview_id]
+        assert (tenant_id, user_id) == (preview.tenant_id, preview.requested_by)
+        return preview
+
+
+async def production_proof(container: ApiContainer, request: PromoteRequest) -> PromoteRequest:
+    """Attach typed, package/profile/policy-bound Preflight proof to a release request."""
+    version = await container.deployments._registry.get(  # pyright: ignore[reportPrivateUsage]
+        TENANT, USER, request.agent_name, request.agent_version
+    )
+    assert version.package_hash is not None
+    manifest = AgentManifestSnapshot.model_validate(version.snapshot).manifest
+    policy = await container.governance.resolve_runtime(TENANT, manifest.spec.permissions.policy)
+    profile = await container.deployments._execution_profile(  # pyright: ignore[reportPrivateUsage]
+        TENANT, request.execution_profile
+    )
+    profile_hash = hashlib.sha256(
+        json.dumps(
+            profile.model_dump(mode="json", by_alias=True), sort_keys=True, separators=(",", ":")
+        ).encode()
+    ).hexdigest()
+    now = datetime.now(UTC)
+    preview_id = f"preview-{request.idempotency_key}"
+    result = PreflightResult(
+        previewId=preview_id,
+        status=PreflightResultStatus.PASSED,
+        startedAt=now,
+        completedAt=now,
+        checks=tuple(
+            PreflightCheck(
+                stage=stage,
+                status=PreflightCheckStatus.PASSED,
+                startedAt=now,
+                completedAt=now,
+                durationMs=0,
+                summary="Passed",
+            )
+            for stage in PreflightStage
+        ),
+        events=(),
+        artifact=PreflightArtifactProof(
+            name="proof.txt",
+            mediaType="text/plain",
+            sha256="a" * 64,
+            sizeBytes=1,
+        ),
+        policyId=policy.policy_id,
+        policyRevision=policy.revision,
+        policyHash=policy.content_hash,
+        packageHash=version.package_hash,
+        executionProfileHash=profile_hash,
+    )
+    preview = PreviewDeployment(
+        previewId=preview_id,
+        tenantId=TENANT,
+        draftId=request.agent_name,
+        draftRevision=1,
+        contentHash=version.manifest_hash,
+        packageHash=version.package_hash,
+        requestedBy=USER,
+        idempotencyKey=request.idempotency_key,
+        status=PreviewStatus.READY,
+        executionProfile=profile.profile_id,
+        executionProfileVersion=profile.version,
+        createdAt=now,
+        updatedAt=now,
+        expiresAt=now + timedelta(hours=1),
+        preflightResult=result,
+    )
+    lookup = container.deployments._previews  # pyright: ignore[reportPrivateUsage]
+    if not isinstance(lookup, PreviewLookup):
+        lookup = PreviewLookup()
+        container.deployments._previews = lookup  # pyright: ignore[reportPrivateUsage, reportAttributeAccessIssue]
+    lookup.previews[preview_id] = preview
+    return request.model_copy(update={"preview_id": preview_id})
+
+
 async def promote_and_drain(container: ApiContainer, request: PromoteRequest) -> DeploymentSnapshot:
     view = await container.deployments.promote(tenant_id=TENANT, user_id=USER, request=request)
     result = await container.deployment_controller.drain_locally(
@@ -120,11 +213,14 @@ async def test_canary_only_routes_new_sessions_and_rollback_restores_snapshot() 
     draft, first_version, second_version = await published_versions(container)
     first = await promote_and_drain(
         container,
-        promotion(
-            agent_name=draft.spec.name,
-            version=first_version,
-            revision=0,
-            key="first-release",
+        await production_proof(
+            container,
+            promotion(
+                agent_name=draft.spec.name,
+                version=first_version,
+                revision=0,
+                key="first-release",
+            ),
         ),
     )
     old_session = await container.sessions.create(
@@ -137,12 +233,15 @@ async def test_canary_only_routes_new_sessions_and_rollback_restores_snapshot() 
 
     await promote_and_drain(
         container,
-        promotion(
-            agent_name=draft.spec.name,
-            version=second_version,
-            revision=1,
-            key="canary-release",
-            canary=50,
+        await production_proof(
+            container,
+            promotion(
+                agent_name=draft.spec.name,
+                version=second_version,
+                revision=1,
+                key="canary-release",
+                canary=50,
+            ),
         ),
     )
     assert old_session.agent_version == first_version
@@ -203,11 +302,14 @@ async def test_environment_policy_snapshot_is_immutable_per_session() -> None:
     )
     await promote_and_drain(
         container,
-        promotion(
-            agent_name=draft.spec.name,
-            version=first_version,
-            revision=0,
-            key="environment-policy-release",
+        await production_proof(
+            container,
+            promotion(
+                agent_name=draft.spec.name,
+                version=first_version,
+                revision=0,
+                key="environment-policy-release",
+            ),
         ),
     )
     old_session = await container.sessions.create(
@@ -309,11 +411,14 @@ async def test_environment_policy_denies_agent_resources_and_workload_scope() ->
     )
     await promote_and_drain(
         container,
-        promotion(
-            agent_name=draft.spec.name,
-            version=first_version,
-            revision=restored.revision,
-            key="environment-user-only",
+        await production_proof(
+            container,
+            promotion(
+                agent_name=draft.spec.name,
+                version=first_version,
+                revision=restored.revision,
+                key="environment-user-only",
+            ),
         ),
     )
     with pytest.raises(ConflictError, match="workload credentials"):
@@ -417,11 +522,14 @@ async def test_environment_allows_only_registered_knowledge_and_sessions_pin_sna
     )
     await promote_and_drain(
         container,
-        promotion(
-            agent_name=updated.spec.name,
-            version=version.version,
-            revision=allowed.revision,
-            key="knowledge-allowed",
+        await production_proof(
+            container,
+            promotion(
+                agent_name=updated.spec.name,
+                version=version.version,
+                revision=allowed.revision,
+                key="knowledge-allowed",
+            ),
         ),
     )
     first_session = await container.sessions.create(
@@ -502,11 +610,14 @@ async def test_promotion_survives_a_catalog_revision_bump() -> None:
     # Agent published before such a rewrite must still be deployable.
     snapshot = await promote_and_drain(
         container,
-        promotion(
-            agent_name=draft.spec.name,
-            version=first_version,
-            revision=environment.revision,
-            key="stale-tool-catalog-release",
+        await production_proof(
+            container,
+            promotion(
+                agent_name=draft.spec.name,
+                version=first_version,
+                revision=environment.revision,
+                key="stale-tool-catalog-release",
+            ),
         ),
     )
     assert snapshot.agent_version == first_version
@@ -520,21 +631,27 @@ async def test_failed_reconcile_preserves_last_healthy_environment() -> None:
     )
     first = await promote_and_drain(
         container,
-        promotion(
-            agent_name=draft.spec.name,
-            version=first_version,
-            revision=0,
-            key="healthy-release",
+        await production_proof(
+            container,
+            promotion(
+                agent_name=draft.spec.name,
+                version=first_version,
+                revision=0,
+                key="healthy-release",
+            ),
         ),
     )
     pending = await container.deployments.promote(
         tenant_id=TENANT,
         user_id=USER,
-        request=promotion(
-            agent_name=draft.spec.name,
-            version=second_version,
-            revision=1,
-            key="broken-release",
+        request=await production_proof(
+            container,
+            promotion(
+                agent_name=draft.spec.name,
+                version=second_version,
+                revision=1,
+                key="broken-release",
+            ),
         ),
     )
 
@@ -564,21 +681,27 @@ async def test_concurrent_promotions_use_environment_compare_and_set() -> None:
     first = await container.deployments.promote(
         tenant_id=TENANT,
         user_id=USER,
-        request=promotion(
-            agent_name=draft.spec.name,
-            version=first_version,
-            revision=0,
-            key="concurrent-first",
+        request=await production_proof(
+            container,
+            promotion(
+                agent_name=draft.spec.name,
+                version=first_version,
+                revision=0,
+                key="concurrent-first",
+            ),
         ),
     )
     second = await container.deployments.promote(
         tenant_id=TENANT,
         user_id=USER,
-        request=promotion(
-            agent_name=draft.spec.name,
-            version=second_version,
-            revision=0,
-            key="concurrent-second",
+        request=await production_proof(
+            container,
+            promotion(
+                agent_name=draft.spec.name,
+                version=second_version,
+                revision=0,
+                key="concurrent-second",
+            ),
         ),
     )
     controller = container.deployment_controller
@@ -603,11 +726,14 @@ async def test_deployment_idempotency_and_secret_free_config_contract() -> None:
     draft, first_version, _second_version = await published_versions(
         container, "idempotent-deployment-agent"
     )
-    request = promotion(
-        agent_name=draft.spec.name,
-        version=first_version,
-        revision=0,
-        key="same-release",
+    request = await production_proof(
+        container,
+        promotion(
+            agent_name=draft.spec.name,
+            version=first_version,
+            revision=0,
+            key="same-release",
+        ),
     )
     first = await container.deployments.promote(tenant_id=TENANT, user_id=USER, request=request)
     repeated = await container.deployments.promote(tenant_id=TENANT, user_id=USER, request=request)
@@ -662,11 +788,14 @@ async def test_deployment_promotion_quota_rejects_before_snapshot_is_created() -
     await container.deployments.promote(
         tenant_id=TENANT,
         user_id=USER,
-        request=promotion(
-            agent_name=draft.spec.name,
-            version=first_version,
-            revision=0,
-            key="quota-release-one",
+        request=await production_proof(
+            container,
+            promotion(
+                agent_name=draft.spec.name,
+                version=first_version,
+                revision=0,
+                key="quota-release-one",
+            ),
         ),
     )
 
@@ -674,11 +803,14 @@ async def test_deployment_promotion_quota_rejects_before_snapshot_is_created() -
         await container.deployments.promote(
             tenant_id=TENANT,
             user_id=USER,
-            request=promotion(
-                agent_name=draft.spec.name,
-                version=second_version,
-                revision=0,
-                key="quota-release-two",
+            request=await production_proof(
+                container,
+                promotion(
+                    agent_name=draft.spec.name,
+                    version=second_version,
+                    revision=0,
+                    key="quota-release-two",
+                ),
             ),
         )
 
@@ -715,11 +847,14 @@ async def test_profile_revision_requires_environment_approval_and_local_is_rejec
     container.deployments._execution_profile_resolver = resolve_profile  # pyright: ignore[reportPrivateUsage]
     first = await promote_and_drain(
         container,
-        promotion(
-            agent_name=draft.spec.name,
-            version=first_version,
-            revision=0,
-            key="profile-v1",
+        await production_proof(
+            container,
+            promotion(
+                agent_name=draft.spec.name,
+                version=first_version,
+                revision=0,
+                key="profile-v1",
+            ),
         ),
     )
     current_version = 3

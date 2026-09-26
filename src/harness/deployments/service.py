@@ -32,16 +32,24 @@ from harness.deployments.models import (
 from harness.deployments.queue import DeploymentTask, DeploymentTaskQueue
 from harness.deployments.repositories import DeploymentRepository, EnvironmentRepository
 from harness.evals.service import EvalControlPlaneService
+from harness.policy.runtime import ResolvedPolicy
 from harness.quota.models import QuotaResource, ResourceReservation
 from harness.quota.service import QuotaService
 from harness.studio.catalog import default_capability_catalog
 from harness.studio.models import CapabilityCatalogRecord, ExecutionProfileMetadata
+from harness.studio.preflight_models import (
+    PreflightCheckStatus,
+    PreflightResultStatus,
+    PreflightStage,
+)
+from harness.studio.preview_models import PreviewDeployment, PreviewStatus
 from harness.studio.preview_service import PreviewService
 
 QualityGate = Callable[[str, str, str, str], Awaitable[object]]
 ExecutionProfileResolver = Callable[[str, str], Awaitable[ExecutionProfileMetadata]]
 CapabilityCatalogResolver = Callable[[str], Awaitable[CapabilityCatalogRecord]]
 KnowledgeReferenceValidator = Callable[[str, tuple[str, ...]], Awaitable[None]]
+PolicyRuntimeResolver = Callable[[str, str], Awaitable[ResolvedPolicy]]
 
 
 def _id(prefix: str) -> str:
@@ -65,6 +73,7 @@ class DeploymentService:
         execution_profile_resolver: ExecutionProfileResolver | None = None,
         capability_catalog_resolver: CapabilityCatalogResolver | None = None,
         knowledge_reference_validator: KnowledgeReferenceValidator | None = None,
+        policy_resolver: PolicyRuntimeResolver | None = None,
         quotas: QuotaService | None = None,
     ) -> None:
         self._environments = environments
@@ -80,6 +89,7 @@ class DeploymentService:
         self._execution_profile_resolver = execution_profile_resolver
         self._capability_catalog_resolver = capability_catalog_resolver
         self._knowledge_reference_validator = knowledge_reference_validator
+        self._policy_resolver = policy_resolver
         self._quotas = quotas
 
     async def _catalog(self, tenant_id: str) -> CapabilityCatalogRecord:
@@ -417,6 +427,63 @@ class DeploymentService:
             )
         return updated
 
+    @staticmethod
+    def _require_preflight(
+        preview: PreviewDeployment | None,
+        *,
+        agent_name: str,
+        version: AgentVersion,
+        profile_hash: str,
+        profile: ExecutionProfileMetadata,
+        policy: ResolvedPolicy,
+        now: datetime,
+    ) -> None:
+        if preview is None:
+            raise ConflictError("Production promotion requires a verified Preview")
+        result = preview.preflight_result
+        published = AgentManifestSnapshot.model_validate(version.snapshot)
+        required = set(PreflightStage)
+        passed_stages: set[PreflightStage] = (
+            {check.stage for check in result.checks if check.status is PreflightCheckStatus.PASSED}
+            if result is not None else set()
+        )
+        skipped_stages: set[PreflightStage] = (
+            {check.stage for check in result.checks if check.status is PreflightCheckStatus.SKIPPED}
+            if result is not None else set()
+        )
+        mcp_declared = any(tool.mcp is not None for tool in published.manifest.spec.tools)
+        allowed_skips: set[PreflightStage] = (
+            set() if mcp_declared else {PreflightStage.MCP}
+        )
+        if (
+            preview.status is not PreviewStatus.READY
+            or preview.stale
+            or preview.expires_at <= now
+            or preview.package_hash != version.package_hash
+            or preview.content_hash != version.manifest_hash
+            or preview.execution_profile != profile.profile_id
+            or preview.execution_profile_version != profile.version
+            or published.manifest.metadata.name != agent_name
+            or result is None
+            or result.preview_id != preview.preview_id
+            or result.status is not PreflightResultStatus.PASSED
+            or result.error_code is not None
+            or result.artifact is None
+            or len(result.checks) != len(required)
+            or passed_stages | skipped_stages != required
+            or bool(passed_stages & skipped_stages)
+            or not skipped_stages <= allowed_skips
+            or result.started_at < preview.created_at
+            or result.completed_at > preview.expires_at
+            or result.completed_at > now
+            or result.package_hash != version.package_hash
+            or result.execution_profile_hash != profile_hash
+            or result.policy_id != policy.policy_id
+            or result.policy_revision != policy.revision
+            or result.policy_hash != policy.content_hash
+        ):
+            raise ConflictError("Production Preview Preflight evidence is missing or drifted")
+
     async def promote(
         self, *, tenant_id: str, user_id: str, request: PromoteRequest
     ) -> DeploymentView:
@@ -440,13 +507,14 @@ class DeploymentService:
         )
         if self._quality_gate is not None:
             await self._quality_gate(tenant_id, user_id, request.agent_name, request.agent_version)
+        preview: PreviewDeployment | None = None
         if request.preview_id:
             if self._previews is None:
                 raise ConflictError("Preview verification is unavailable")
             preview = await self._previews.get(tenant_id, user_id, request.preview_id)
             if (
                 preview.stale
-                or preview.status.value != "ready"
+                or preview.status is not PreviewStatus.READY
                 or preview.package_hash != version.package_hash
             ):
                 raise ConflictError("Promotion Preview does not prove this Agent package")
@@ -490,6 +558,23 @@ class DeploymentService:
                 separators=(",", ":"),
             ).encode()
         ).hexdigest()
+        effective_policy: ResolvedPolicy | None = None
+        if request.environment is EnvironmentName.PRODUCTION:
+            if self._policy_resolver is None:
+                raise ConflictError("Production policy verification is unavailable")
+            published = AgentManifestSnapshot.model_validate(version.snapshot)
+            effective_policy = await self._policy_resolver(
+                tenant_id, published.manifest.spec.permissions.policy
+            )
+            self._require_preflight(
+                preview,
+                agent_name=request.agent_name,
+                version=version,
+                profile_hash=profile_hash,
+                profile=profile,
+                policy=effective_policy,
+                now=self._clock(),
+            )
         snapshot = DeploymentSnapshot(
             tenantId=tenant_id,
             snapshotId=self._ids("deployment_snapshot"),
@@ -510,6 +595,20 @@ class DeploymentService:
             evalGatePassed=gate.passed,
             evalRequiredDatasets=gate.required_datasets,
             previewId=request.preview_id,
+            preflightPolicyId=effective_policy.policy_id if effective_policy else None,
+            preflightPolicyRevision=effective_policy.revision if effective_policy else None,
+            preflightPolicyHash=effective_policy.content_hash if effective_policy else None,
+            preflightResultHash=(
+                hashlib.sha256(json.dumps(
+                    preview.preflight_result.model_dump(mode="json", by_alias=True),
+                    sort_keys=True, separators=(",", ":"),
+                ).encode()).hexdigest()
+                if effective_policy and preview and preview.preflight_result else None
+            ),
+            preflightCompletedAt=(
+                preview.preflight_result.completed_at
+                if effective_policy and preview and preview.preflight_result else None
+            ),
             createdBy=user_id,
             createdAt=self._clock(),
         )
@@ -725,6 +824,11 @@ class DeploymentService:
         if (
             existing.action != "promote"
             or target.agent_version != request.agent_version
+            or target.agent_name != request.agent_name
+            or target.image_digest != request.image_digest
+            or target.execution_profile != request.execution_profile
+            or target.config != request.config
+            or target.preview_id != request.preview_id
             or existing.environment is not request.environment
             or existing.canary_percent != request.canary_percent
         ):

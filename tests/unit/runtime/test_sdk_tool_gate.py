@@ -393,6 +393,31 @@ async def test_manifest_policy_profile_controls_the_sdk_gate(tmp_path: Path) -> 
 
 
 @pytest.mark.asyncio
+async def test_skill_loader_requires_declared_agent_skill(tmp_path: Path) -> None:
+    gate, _, _, events, context = await _arrange(tmp_path, use_profiles=True)
+    hook = gate.hooks(
+        context, policy_id="production-orchestrator",
+        skill_names=("pptx-generator",),
+        subagent_policy_ids={"helper": "production-read-only"},
+        subagent_skill_names={"helper": ("reader-skill",)},
+    )["PreToolUse"][0].hooks[0]
+
+    for tool_id, name, agent_type, expected in (
+        ("skill-lead", "pptx-generator", "", "allow"),
+        ("skill-unknown", "unpublished-skill", "", "deny"),
+        ("skill-child", "reader-skill", "helper", "deny"),
+        ("skill-child-cross", "pptx-generator", "helper", "deny"),
+    ):
+        output = await hook(
+            _input("Skill", {"skill": name}, tool_id, agent_type=agent_type),
+            tool_id, {"signal": None},
+        )
+        assert _decision(cast(SyncHookJSONOutput, output)) == expected
+    emitted = await events.list_after("tenant-a", "run-sdk", 0)
+    assert sum(event.type == "tool.allowed" for event in emitted) == 1
+
+
+@pytest.mark.asyncio
 async def test_subagent_uses_its_own_policy_profile(tmp_path: Path) -> None:
     gate, _, _, events, context = await _arrange(tmp_path, use_profiles=True)
     matcher = gate.hooks(

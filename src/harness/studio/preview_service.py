@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -12,6 +12,7 @@ from harness.quota.models import QuotaResource
 from harness.quota.service import QuotaService
 from harness.studio.catalog import default_capability_catalog
 from harness.studio.compiler import DraftCompilationError
+from harness.studio.models import CapabilityCatalogRecord
 from harness.studio.preview_models import (
     CreatePreviewRequest,
     PreviewDeployment,
@@ -34,6 +35,7 @@ class PreviewService:
         clock: Callable[[], datetime] | None = None,
         id_generator: Callable[[], str] | None = None,
         quotas: QuotaService | None = None,
+        catalog_resolver: Callable[[str], Awaitable[CapabilityCatalogRecord]] | None = None,
     ) -> None:
         self._repository = repository
         self._queue = queue
@@ -42,6 +44,7 @@ class PreviewService:
         self._clock = clock or (lambda: datetime.now(UTC))
         self._id_generator = id_generator or (lambda: f"preview_{uuid4().hex}")
         self._quotas = quotas
+        self._catalog_resolver = catalog_resolver
 
     async def create(
         self,
@@ -71,10 +74,14 @@ class PreviewService:
         if validation.content_hash is None or validation.package_hash is None:
             raise RuntimeError("ready Draft validation did not produce immutable hashes")
         now = self._clock()
+        catalog = (
+            (await self._catalog_resolver(tenant_id)).catalog
+            if self._catalog_resolver is not None else default_capability_catalog()
+        )
         profile = next(
             (
                 item
-                for item in default_capability_catalog().execution_profiles
+                for item in catalog.execution_profiles
                 if item.profile_id == draft.spec.execution_profile and item.enabled
             ),
             None,

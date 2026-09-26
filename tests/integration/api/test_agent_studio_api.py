@@ -24,7 +24,7 @@ from harness.auth.models import Membership
 from harness.auth.repositories import InMemoryAuthRepository
 from harness.config import Settings
 from harness.core.errors import NotFoundError
-from harness.core.manifest import ToolDirectorySnapshot
+from harness.core.manifest import AgentManifestSnapshot, ToolDirectorySnapshot
 from harness.evals.models import EvalRunStatus
 from harness.quota.models import QuotaResource, ReplaceQuotaPolicyRequest
 from harness.sharing.models import WorkspaceAgentStatus
@@ -33,6 +33,15 @@ from harness.studio.mcp_discovery import (
     McpDiscoveryService,
 )
 from harness.studio.models import CapabilityRisk, McpCapability, NetworkAccess
+from harness.studio.preflight_models import (
+    PreflightArtifactProof,
+    PreflightCheck,
+    PreflightCheckStatus,
+    PreflightResult,
+    PreflightResultStatus,
+    PreflightStage,
+)
+from harness.studio.preview_models import PreviewDeployment, PreviewStatus
 
 SERVICE_TOKEN = "studio-service-token-with-at-least-32-characters"
 
@@ -101,6 +110,86 @@ def team_search_resource() -> dict[str, Any]:
         authMode="bearer",
         authKey="api_key",
     ).model_dump(mode="json", by_alias=True)
+
+
+async def production_preview_evidence(
+    container: ApiContainer,
+    *,
+    tenant_id: str,
+    user_id: str,
+    draft_id: str,
+    agent_name: str,
+    agent_version: str,
+    idempotency_key: str,
+) -> str:
+    """Persist typed, package/profile/policy-bound Preview evidence for API promotion."""
+    version = await container.agents.get_published(
+        tenant_id, user_id, agent_name, agent_version
+    )
+    draft = await container.studio.get(tenant_id, user_id, draft_id)
+    assert version.package_hash is not None
+    manifest = AgentManifestSnapshot.model_validate(version.snapshot).manifest
+    policy = await container.governance.resolve_runtime(
+        tenant_id, manifest.spec.permissions.policy
+    )
+    profile = await container.deployments._execution_profile(  # pyright: ignore[reportPrivateUsage]
+        tenant_id, draft.spec.execution_profile
+    )
+    profile_hash = hashlib.sha256(
+        json.dumps(
+            profile.model_dump(mode="json", by_alias=True),
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    now = datetime.now(UTC)
+    preview_id = f"preview-{idempotency_key}"
+    result = PreflightResult(
+        previewId=preview_id,
+        status=PreflightResultStatus.PASSED,
+        startedAt=now,
+        completedAt=now,
+        checks=tuple(
+            PreflightCheck(
+                stage=stage,
+                status=PreflightCheckStatus.PASSED,
+                startedAt=now,
+                completedAt=now,
+                durationMs=0,
+                summary="Passed",
+            )
+            for stage in PreflightStage
+        ),
+        events=(),
+        artifact=PreflightArtifactProof(
+            name="proof.txt", mediaType="text/plain", sha256="a" * 64, sizeBytes=1
+        ),
+        policyId=policy.policy_id,
+        policyRevision=policy.revision,
+        policyHash=policy.content_hash,
+        packageHash=version.package_hash,
+        executionProfileHash=profile_hash,
+    )
+    await container.preview_repository.add(
+        PreviewDeployment(
+            previewId=preview_id,
+            tenantId=tenant_id,
+            draftId=draft_id,
+            draftRevision=draft.revision,
+            contentHash=version.manifest_hash,
+            packageHash=version.package_hash,
+            requestedBy=user_id,
+            idempotencyKey=idempotency_key,
+            status=PreviewStatus.READY,
+            executionProfile=profile.profile_id,
+            executionProfileVersion=profile.version,
+            createdAt=now,
+            updatedAt=now,
+            expiresAt=now + timedelta(hours=1),
+            preflightResult=result,
+        )
+    )
+    return preview_id
 
 
 async def drain_eval(container: ApiContainer, eval_run_id: str) -> None:
@@ -1234,7 +1323,7 @@ async def test_studio_api_round_trips_and_bundles_on_demand_tool_directory() -> 
 
 @pytest.mark.asyncio
 async def test_deployment_api_promotes_and_environment_sessions_pin_snapshot() -> None:
-    application, _container = app_and_container(auto_execute=True)
+    application, container = app_and_container(auto_execute=True)
     headers = {
         "Authorization": f"Bearer {SERVICE_TOKEN}",
         "X-Tenant-ID": "tenant-a",
@@ -1250,6 +1339,15 @@ async def test_deployment_api_promotes_and_environment_sessions_pin_snapshot() -
         )
         draft_id = created.json()["draftId"]
         published = await client.post(f"/v1/studio/drafts/{draft_id}/publish", headers=headers)
+        preview_id = await production_preview_evidence(
+            container,
+            tenant_id="tenant-a",
+            user_id="release-manager",
+            draft_id=draft_id,
+            agent_name="deployed-agent",
+            agent_version=published.json()["version"],
+            idempotency_key="api-first-release-preview",
+        )
         promoted = await client.post(
             "/v1/studio/deployments/promote",
             headers=headers,
@@ -1263,6 +1361,7 @@ async def test_deployment_api_promotes_and_environment_sessions_pin_snapshot() -
                 "executionProfile": "isolated-default",
                 "config": {"LOG_LEVEL": "info"},
                 "idempotencyKey": "api-first-release",
+                "previewId": preview_id,
             },
         )
         deployment_id = promoted.json()["deployment"]["deploymentId"]
@@ -1331,6 +1430,15 @@ async def test_webhook_trigger_is_secret_scoped_idempotent_and_disableable() -> 
             f"/v1/studio/drafts/{draft_id}/publish",
             headers=headers,
         )
+        preview_id = await production_preview_evidence(
+            container,
+            tenant_id="tenant-a",
+            user_id="release-manager",
+            draft_id=draft_id,
+            agent_name="webhook-agent",
+            agent_version=published.json()["version"],
+            idempotency_key="webhook-agent-preview",
+        )
         promoted = await client.post(
             "/v1/studio/deployments/promote",
             headers=headers,
@@ -1344,6 +1452,7 @@ async def test_webhook_trigger_is_secret_scoped_idempotent_and_disableable() -> 
                 "executionProfile": "isolated-default",
                 "config": {},
                 "idempotencyKey": "webhook-agent-release",
+                "previewId": preview_id,
             },
         )
         trigger_created = await client.post(
@@ -1513,6 +1622,15 @@ async def test_a2a_chatops_schedule_and_platform_mcp_use_existing_control_plane(
             f"/v1/studio/drafts/{created.json()['draftId']}/publish",
             headers=headers,
         )
+        preview_id = await production_preview_evidence(
+            container,
+            tenant_id="tenant-a",
+            user_id="platform-admin",
+            draft_id=created.json()["draftId"],
+            agent_name="interop-agent",
+            agent_version=published.json()["version"],
+            idempotency_key="interop-preview",
+        )
         promoted = await client.post(
             "/v1/studio/deployments/promote",
             headers=headers,
@@ -1526,6 +1644,7 @@ async def test_a2a_chatops_schedule_and_platform_mcp_use_existing_control_plane(
                 "executionProfile": "isolated-default",
                 "config": {},
                 "idempotencyKey": "interop-release",
+                "previewId": preview_id,
             },
         )
         await container.deployment_controller.drain_locally(
@@ -1657,7 +1776,7 @@ async def test_a2a_chatops_schedule_and_platform_mcp_use_existing_control_plane(
 
 @pytest.mark.asyncio
 async def test_a2a_1_0_projects_completed_tasks_context_streams_and_artifacts() -> None:
-    application, _container = app_and_container(auto_execute=True)
+    application, container = app_and_container(auto_execute=True)
     admin_headers = {
         "Authorization": f"Bearer {SERVICE_TOKEN}",
         "X-Tenant-ID": "tenant-a",
@@ -1676,6 +1795,15 @@ async def test_a2a_1_0_projects_completed_tasks_context_streams_and_artifacts() 
             f"/v1/studio/drafts/{created.json()['draftId']}/publish",
             headers=admin_headers,
         )
+        preview_id = await production_preview_evidence(
+            container,
+            tenant_id="tenant-a",
+            user_id="a2a-admin",
+            draft_id=created.json()["draftId"],
+            agent_name="a2a-complete-agent",
+            agent_version=published.json()["version"],
+            idempotency_key="a2a-complete-preview",
+        )
         promoted = await client.post(
             "/v1/studio/deployments/promote",
             headers=admin_headers,
@@ -1689,6 +1817,7 @@ async def test_a2a_1_0_projects_completed_tasks_context_streams_and_artifacts() 
                 "executionProfile": "isolated-default",
                 "config": {},
                 "idempotencyKey": "a2a-complete-release",
+                "previewId": preview_id,
             },
         )
         trigger_response = await client.post(

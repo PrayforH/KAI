@@ -1048,6 +1048,11 @@ class ClaudeSdkRuntime:
                         name: snapshot.manifest.spec.permissions.policy
                         for name, snapshot in subagent_snapshots.items()
                     },
+                    skill_names=skill_names,
+                    subagent_skill_names={
+                        name: tuple(skill.name for skill in snapshot.skill_snapshots)
+                        for name, snapshot in subagent_snapshots.items()
+                    },
                     result_trust_by_tool=resolved_tools.result_trust,
                     delegate_allowed_to_sdk_permissions=(permission_mode == "auto"),
                 )

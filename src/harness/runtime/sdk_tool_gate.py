@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from pathlib import Path, PurePosixPath
 from typing import Any, Protocol, cast
 
@@ -60,6 +60,8 @@ class ToolGate(Protocol):
         *,
         policy_id: str | None = None,
         subagent_policy_ids: Mapping[str, str] | None = None,
+        skill_names: Collection[str] = (),
+        subagent_skill_names: Mapping[str, Collection[str]] | None = None,
         result_trust_by_tool: Mapping[str, ContextTrust] | None = None,
         delegate_allowed_to_sdk_permissions: bool = False,
     ) -> dict[HookEvent, list[HookMatcher]]: ...
@@ -209,6 +211,8 @@ class SdkToolGate:
         *,
         policy_id: str | None = None,
         subagent_policy_ids: Mapping[str, str] | None = None,
+        skill_names: Collection[str] = (),
+        subagent_skill_names: Mapping[str, Collection[str]] | None = None,
         result_trust_by_tool: Mapping[str, ContextTrust] | None = None,
         delegate_allowed_to_sdk_permissions: bool = False,
     ) -> dict[HookEvent, list[HookMatcher]]:
@@ -242,6 +246,11 @@ class SdkToolGate:
         current_context_trust: ContextTrust | None = None
         pending_result_trust: dict[str, tuple[str, ContextTrust, str]] = {}
         declared_result_trust = dict(result_trust_by_tool or {})
+        lead_skills = frozenset(skill_names)
+        child_skills = {
+            name: frozenset(names)
+            for name, names in (subagent_skill_names or {}).items()
+        }
 
         async def load_context_trust() -> ContextTrust:
             nonlocal current_context_trust
@@ -316,6 +325,7 @@ class SdkToolGate:
             typed_input = cast(PreToolUseHookInput, hook_input)
             selected_policy_id = active_policy_id
             selected_policy = policy
+            key = ""
             if subagent_policies:
                 agent_type = str(typed_input.get("agent_type") or "")
                 agent_id = str(typed_input.get("agent_id") or "")
@@ -376,6 +386,7 @@ class SdkToolGate:
                 policy_id=selected_policy_id,
                 file_capabilities=file_capabilities,
                 allowed_subagent_aliases=frozenset(subagent_policies),
+                allowed_skill_names=child_skills.get(key, frozenset()) if key else lead_skills,
                 declared_tools=frozenset(declared_result_trust),
                 context_trust=context_trust,
                 delegate_allowed_to_sdk_permissions=delegate_allowed_to_sdk_permissions,
@@ -546,6 +557,7 @@ class SdkToolGate:
         policy_id: str,
         file_capabilities: _ClaudeRunFileCapabilities,
         allowed_subagent_aliases: frozenset[str] = frozenset(),
+        allowed_skill_names: frozenset[str] = frozenset(),
         declared_tools: frozenset[str] = frozenset(),
         context_trust: ContextTrust = ContextTrust.SAFE,
         delegate_allowed_to_sdk_permissions: bool = False,
@@ -602,6 +614,12 @@ class SdkToolGate:
             event_type="tool.request",
             payload=request_payload,
         )
+        if tool_name == "Skill":
+            requested_skill = arguments.get("skill")
+            if not isinstance(requested_skill, str) or requested_skill not in allowed_skill_names:
+                reason = "Skill is not declared by this published Agent version"
+                await self._append_denied(context, tool_call_id, reason)
+                return _hook_output("deny", reason)
         if tool_name in {"Task", "Agent"} and allowed_subagent_aliases:
             requested_alias = next(
                 (
@@ -628,24 +646,26 @@ class SdkToolGate:
                 await self._append_denied(context, tool_call_id, reason)
                 return _hook_output("deny", reason)
             file_capabilities.observe(write_target)
-        result = (
-            PolicyResult(
+        policy_context = PolicyContext(
+            tenant_id=context.run.tenant_id,
+            agent_name=context.session.agent_name,
+            tool_name=tool_name,
+            arguments=arguments,
+            sandbox_isolation=context.sandbox_isolation,
+            context_trust=context_trust,
+        )
+        result = policy.evaluate(policy_context)
+        if (
+            result.rule_name == "implicit-deny"
+            and write_target is not None
+            and file_capabilities.is_generated(write_target)
+        ):
+            result = PolicyResult(
                 decision=PolicyDecision.ALLOW,
                 rule_name="run-generated-file",
                 reason="matched run-created file capability",
             )
-            if write_target is not None and file_capabilities.is_generated(write_target)
-            else policy.evaluate(
-                PolicyContext(
-                    tenant_id=context.run.tenant_id,
-                    agent_name=context.session.agent_name,
-                    tool_name=tool_name,
-                    arguments=arguments,
-                    sandbox_isolation=context.sandbox_isolation,
-                    context_trust=context_trust,
-                )
-            )
-        )
+
         result = apply_allow_overrides(
             result,
             raw_tool_name=raw_tool_name,

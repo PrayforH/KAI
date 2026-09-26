@@ -76,3 +76,9 @@ class PreflightResult(StudioModel):
     events: tuple[PreflightEvent, ...]
     error_code: str | None = Field(default=None, alias="errorCode")
     artifact: PreflightArtifactProof | None = None
+    # Optional for historical records; required for new production promotions.
+    policy_id: str | None = Field(default=None, alias="policyId")
+    policy_revision: int | None = Field(default=None, alias="policyRevision")
+    policy_hash: str | None = Field(default=None, alias="policyHash")
+    package_hash: str | None = Field(default=None, alias="packageHash")
+    execution_profile_hash: str | None = Field(default=None, alias="executionProfileHash")

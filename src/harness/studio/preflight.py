@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 from collections.abc import Awaitable, Callable
 from contextlib import nullcontext, suppress
 from datetime import UTC, datetime
@@ -18,7 +19,7 @@ from harness.policy.runtime import ResolvedPolicy
 from harness.sandbox.base import SandboxHandle, SandboxProvider
 from harness.studio.catalog import default_capability_catalog
 from harness.studio.compiler import CompiledAgentDraft, DraftCompilationError
-from harness.studio.models import AgentDraft
+from harness.studio.models import AgentDraft, CapabilityCatalogRecord, ExecutionProfileMetadata
 from harness.studio.preflight_models import (
     PreflightArtifactProof,
     PreflightCheck,
@@ -60,6 +61,7 @@ class LivePreflightRunner:
         mcp_probe: McpPreflightProbe,
         policies: PolicyProfileRegistry,
         policy_resolver: PolicyRuntimeResolver | None = None,
+        catalog_resolver: Callable[[str], Awaitable[CapabilityCatalogRecord]] | None = None,
         observability: Observability | None = None,
         timeout_seconds: float = 180,
         clock: Callable[[], datetime] | None = None,
@@ -76,30 +78,36 @@ class LivePreflightRunner:
         self._mcp_probe = mcp_probe
         self._policies = policies
         self._policy_resolver = policy_resolver
+        self._catalog_resolver = catalog_resolver
         self._observability = observability
         self._timeout_seconds = timeout_seconds
         self._enforce_execution_profile_provider = enforce_execution_profile_provider
         self._clock = clock or (lambda: datetime.now(UTC))
 
-    def _sandbox_for(self, preview: PreviewDeployment) -> SandboxProvider:
-        """Pick the backend this preview's execution profile pins."""
-
-        if self._sandbox_for_profile is None:
-            return self._sandbox
+    async def _execution_profile(self, preview: PreviewDeployment) -> ExecutionProfileMetadata:
+        catalog = (
+            (await self._catalog_resolver(preview.tenant_id)).catalog
+            if self._catalog_resolver is not None else default_capability_catalog()
+        )
         profile = next(
-            (
-                item
-                for item in default_capability_catalog().execution_profiles
-                if item.profile_id == preview.execution_profile
-                and item.version == preview.execution_profile_version
-            ),
+            (item for item in catalog.execution_profiles
+             if item.profile_id == preview.execution_profile
+             and item.version == preview.execution_profile_version and item.enabled),
             None,
         )
         if profile is None:
             raise PreflightCheckError(
                 "deployment_execution_profile_unavailable",
-                "Preview pins an Execution Profile this build does not know",
+                "Preview pins an Execution Profile this tenant no longer serves",
             )
+        return profile
+
+    async def _sandbox_for(self, preview: PreviewDeployment) -> SandboxProvider:
+        """Pick the backend this preview's execution profile pins."""
+
+        if self._sandbox_for_profile is None:
+            return self._sandbox
+        profile = await self._execution_profile(preview)
         return self._sandbox_for_profile(profile.sandbox_provider)
 
     async def run(self, preview: PreviewDeployment, *, cancelled: CancelCheck) -> PreflightResult:
@@ -114,6 +122,8 @@ class LivePreflightRunner:
         manifest: AgentManifest | None = None
         handle: SandboxHandle | None = None
         artifact: PreflightArtifactProof | None = None
+        resolved_policy: ResolvedPolicy | None = None
+        profile_hash: str | None = None
         result_status = PreflightResultStatus.PASSED
         error_code: str | None = None
 
@@ -298,10 +308,10 @@ class LivePreflightRunner:
             )
 
         async def provision_check() -> PreflightEvidence:
-            nonlocal handle, sandbox
+            nonlocal handle, sandbox, profile_hash
             # Selection happens inside the guarded check so an unknown or
             # unserved profile is reported as a Preflight failure, not raised.
-            sandbox = self._sandbox_for(preview)
+            sandbox = await self._sandbox_for(preview)
             now = self._clock()
             run = Run(
                 run_id=f"preflight-{preview.preview_id}",
@@ -315,20 +325,16 @@ class LivePreflightRunner:
                 input={"preflight": True},
             )
             handle = await sandbox.provision(run)
-            profile = next(
-                (
-                    item
-                    for item in default_capability_catalog().execution_profiles
-                    if item.profile_id == preview.execution_profile
-                    and item.version == preview.execution_profile_version
-                ),
-                None,
-            )
+            profile = await self._execution_profile(preview)
+            profile_hash = hashlib.sha256(
+                json.dumps(profile.model_dump(mode="json", by_alias=True),
+                           sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest()
             actual_provider = (
                 "gvisor" if handle.provider == "kubernetes-gvisor" else handle.provider
             )
             if self._enforce_execution_profile_provider and (
-                profile is None or profile.sandbox_provider != actual_provider
+                profile.sandbox_provider != actual_provider
             ):
                 raise PreflightCheckError(
                     "execution_profile_sandbox_provider_mismatch",
@@ -379,14 +385,13 @@ class LivePreflightRunner:
                 and manifest is not None
                 and handle is not None
             )
+            nonlocal resolved_policy
+            resolved_policy = (
+                await self._policy_resolver(preview.tenant_id, manifest.spec.permissions.policy)
+                if self._policy_resolver is not None else None
+            )
             policy = (
-                (
-                    await self._policy_resolver(
-                        preview.tenant_id,
-                        manifest.spec.permissions.policy,
-                    )
-                ).call_policy
-                if self._policy_resolver is not None
+                resolved_policy.call_policy if resolved_policy is not None
                 else self._policies.resolve(manifest.spec.permissions.policy)
             )
             directory = compiled.report.snapshot.tool_directory
@@ -395,6 +400,9 @@ class LivePreflightRunner:
                 if directory is not None
                 else {tool.builtin for tool in manifest.spec.tools if tool.builtin is not None}
             )
+            skill_names = {skill.name for skill in compiled.report.snapshot.skill_snapshots}
+            if skill_names:
+                declared.add("Skill")
             decisions: dict[str, str | int | bool] = {}
             for tool_name in sorted(declared):
                 result = policy.evaluate(
@@ -542,6 +550,11 @@ class LivePreflightRunner:
             events=tuple(events),
             errorCode=error_code,
             artifact=artifact,
+            policyId=resolved_policy.policy_id if resolved_policy is not None else None,
+            policyRevision=resolved_policy.revision if resolved_policy is not None else None,
+            policyHash=resolved_policy.content_hash if resolved_policy is not None else None,
+            packageHash=preview.package_hash if compiled is not None else None,
+            executionProfileHash=profile_hash,
         )
 
 

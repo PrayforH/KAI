@@ -101,6 +101,23 @@ def test_default_policy_varies_by_trusted_sandbox_isolation(
     assert result.decision is expected
 
 
+def test_explicit_deny_cannot_be_overridden_by_higher_priority_allow() -> None:
+    engine = PolicyEngine([
+        PolicyRule(
+            name="protect", tool="Write", path_glob="*secret.txt",
+            decision=PolicyDecision.DENY,
+        ),
+        PolicyRule(name="broad-allow", tool="Write", decision=PolicyDecision.ALLOW, priority=100),
+    ])
+    result = engine.evaluate(PolicyContext(
+        tenant_id="tenant-a", agent_name="echo-agent", tool_name="Write",
+        arguments={"file_path": "secret.txt"},
+    ))
+    assert result.decision is PolicyDecision.DENY
+    assert result.rule_name == "protect"
+
+
+
 def test_isolation_rule_is_more_specific_than_generic_tool_rule() -> None:
     engine = PolicyEngine(
         [

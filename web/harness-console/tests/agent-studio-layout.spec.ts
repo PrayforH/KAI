@@ -630,6 +630,21 @@ describe("Agent Studio management page", () => {
     expect(styles).toContain(".leadAgentCard");
   });
 
+  it("summarizes effective runtime bindings without migrating existing choices", () => {
+    expect(workbench).toContain('aria-label="当前执行与权限摘要"');
+    expect(workbench).toContain("不自动更改既有配置");
+    expect(workbench).toContain("selectedExecutionProfile.sandboxProvider");
+    expect(workbench).toContain("selectedProfileSupportsMcp");
+    expect(workbench).toContain("selectedGovernedPolicy.publishedRevision");
+    expect(workbench).toContain("服务端检查与运行时判定");
+    expect(workbench).toContain('value={draft.executionProfile}');
+    expect(workbench).toContain('value={draft.policy}');
+    expect(workbench).toContain("governanceAdminOpen && <GovernanceControlPlane");
+    expect(workbench).not.toContain("Docker 容器工作区 · 平台托管");
+    expect(styles).toContain(".runtimeEffectiveSummary");
+    expect(styles).toContain(".governanceAdminEntry");
+  });
+
   it("keeps sandbox mandatory and exposes platform web tools with MCP retained", () => {
     expect(workbench).toContain("执行与权限");
     expect(workbench).toContain("配置智能体运行时、执行方式和工具权限");

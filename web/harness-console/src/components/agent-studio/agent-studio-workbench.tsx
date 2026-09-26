@@ -324,6 +324,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
   const [bindSubagentRef, setBindSubagentRef] = useState("");
   const [capabilities, setCapabilities] = useState<StudioCapabilities | null>(null);
   const [governedPolicies, setGovernedPolicies] = useState<StudioGovernedPolicy[]>([]);
+  const [governanceAdminOpen, setGovernanceAdminOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -1846,6 +1847,9 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
   ) ?? [];
   const selectedExecutionProfile = options.profiles.find(
     (profile) => profile.profileId === draft.executionProfile,
+  );
+  const selectedGovernedPolicy = governedPolicies.find(
+    (policy) => policy.policyId === draft.policy,
   );
   const selectedMcpCapabilities = options.mcp.filter(
     (mcp) => draft.mcpServers.includes(mcp.id),
@@ -3498,8 +3502,28 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                   title="执行与权限"
                   description="配置智能体运行时、执行方式和工具权限。"
                 />
-                <div className={styles.formGridSingle}>
-
+                <div className={styles.runtimeEffectiveSummary} aria-label="当前执行与权限摘要">
+                  <strong>当前绑定 · 不自动更改既有配置</strong>
+                  <dl>
+                    <div><dt>执行环境</dt><dd>{selectedExecutionProfile
+                      ? `${selectedExecutionProfile.label} · ${selectedExecutionProfile.sandboxProvider} · v${selectedExecutionProfile.version}`
+                      : `未找到已绑定档位（${draft.executionProfile || "未选择"}）`}</dd></div>
+                    <div><dt>发布资格</dt><dd>{selectedExecutionProfile
+                      ? selectedProfileSupportsMcp
+                        ? selectedExecutionProfile.productionAllowed ? "所选 MCP 兼容 · 可用于生产" : "仅限 Preview"
+                        : "所选 MCP 与此档位不兼容"
+                      : "待选择有效档位"}</dd></div>
+                    <div><dt>权限策略</dt><dd>{policyOptions.find((item) => item.id === draft.policy)?.label ?? draft.policy}
+                      {selectedGovernedPolicy
+                        ? selectedGovernedPolicy.publishedRevision
+                          ? ` · 已发布 r${selectedGovernedPolicy.publishedRevision}`
+                          : " · 租户草稿，未发布"
+                        : capabilities?.policies.some((item) => item.policyId === draft.policy && item.enabled)
+                          ? " · 平台策略"
+                          : " · 未找到策略"}</dd></div>
+                    <div><dt>声明工具</dt><dd>{draft.builtinTools.length} 个内置工具 · {selectedMcpTools.length} 个 MCP 工具</dd></div>
+                  </dl>
+                  <p>策略规则、工具参数及最终可执行性由服务端检查与运行时判定；摘要不代表所有声明工具均获准调用。</p>
                 </div>
                 <details className={styles.advancedRuntimeSettings}>
                   <summary>
@@ -3553,8 +3577,8 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                 <div className={styles.isolationCard}>
                   <span className={styles.isolationGlyph} aria-hidden="true"><i /><i /></span>
                   <div>
-                    <strong>Docker 容器工作区 · 平台托管</strong>
-                    <p>文件和命令在 Worker 容器内执行，租户、会话、产物和策略边界保持独立。</p>
+                    <strong>当前绑定的执行环境 · {selectedExecutionProfile?.sandboxProvider ?? "未知提供方"}</strong>
+                    <p>实际隔离与文件、命令执行方式取决于所选 Execution Profile 和平台配置；请以服务端检查与运行时结果为准。</p>
                   </div>
                   <span className={styles.lockedBadge}>当前环境</span>
                 </div>
@@ -3695,9 +3719,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                         当前 Agent 声明 {draft.builtinTools.length + selectedMcpTools.length} 个工具
                       </strong>
                       <span>
-                        {draft.policy === "production-read-only"
-                          ? `只读 Profile 覆盖工作区读取和 ${selectedMcpTools.length} 个已审核 MCP 工具；其他调用默认拒绝。`
-                          : `${draft.policy} 将按已发布规则逐项判定；未匹配规则默认拒绝。`}
+                        所选策略按已发布规则逐项判定，未匹配规则默认拒绝；工具声明不等于授权。保存并检查以获取服务端验证结果。
                       </span>
                     </div>
                   </div>
@@ -3771,7 +3793,15 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                     每个 Sub 使用独立会话，只把结果返回 Lead。根 Agent 默认最多 64 轮，不设置时长、模型 Token 或费用硬中止；委派深度固定为 1，隔离与权限边界仍然生效。
                   </p>
                 </div>
-                <GovernanceControlPlane
+                  </div>
+                </details>
+                <div className={styles.governanceAdminEntry}>
+                  <div><strong>权限与治理 · 管理员操作</strong><p>策略规则、模拟和连接登记与智能体的普通配置分开管理。打开此区域不会改变当前绑定。</p></div>
+                  <button type="button" onClick={() => setGovernanceAdminOpen((open) => !open)} aria-expanded={governanceAdminOpen}>
+                    {governanceAdminOpen ? "收起治理管理" : "打开治理管理"}
+                  </button>
+                </div>
+                {governanceAdminOpen && <GovernanceControlPlane
                   agentName={draft.name}
                   policyId={draft.policy}
                   mcpReferences={draft.mcpServers}
@@ -3779,9 +3809,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                   canManage={canPublish}
                   policies={governedPolicies}
                   onPoliciesChanged={setGovernedPolicies}
-                />
-                  </div>
-                </details>
+                /> }
               </section>
             )}
 

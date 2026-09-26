@@ -98,6 +98,9 @@ def test_standard_profile_uses_trusted_sandbox_facts() -> None:
         is PolicyDecision.ALLOW
     )
     assert _decision("production-standard", "Bash") is PolicyDecision.ALLOW
+    assert _decision("production-standard", "Skill") is PolicyDecision.ALLOW
+    assert _decision("production-standard", "Task") is PolicyDecision.DENY
+    assert _decision("production-standard", "Agent") is PolicyDecision.DENY
     assert (
         _decision("production-standard", "mcp__novel-search__sag_get_document")
         is PolicyDecision.ALLOW
@@ -126,6 +129,8 @@ def test_standard_profile_uses_trusted_sandbox_facts() -> None:
 def test_orchestrator_profile_allows_explicit_delegation() -> None:
     assert _decision("production-orchestrator", "Task") is PolicyDecision.ALLOW
     assert _decision("production-orchestrator", "Agent") is PolicyDecision.ALLOW
+    assert _decision("production-orchestrator", "Skill") is PolicyDecision.ALLOW
+    assert _decision("production-orchestrator", "UnknownTool") is PolicyDecision.DENY
 
 
 def test_local_standard_remains_a_backward_compatible_alias() -> None:

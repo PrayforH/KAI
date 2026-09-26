@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../auth-provider";
 import { EnvironmentPolicyControlPlane } from "./environment-policy-control-plane";
 import { AgentTriggerControlPlane } from "./agent-trigger-control-plane";
-import { apiDraftToStudioDraft, studioClient, type StudioCapabilities, type StudioDeployment, type StudioDeploymentSnapshot, type StudioEnvironment, type StudioEvalDataset, type StudioEvalRun } from "../../lib/studio-client";
+import { apiDraftToStudioDraft, studioClient, type StudioCapabilities, type StudioDeployment, type StudioDeploymentSnapshot, type StudioEnvironment, type StudioEvalDataset, type StudioEvalRun, type StudioPreview } from "../../lib/studio-client";
 import type { StudioDraft } from "../../lib/agent-studio";
 import { createRandomId } from "../../lib/random-id";
 import styles from "./agent-operations-workspace.module.css";
@@ -42,6 +42,7 @@ export function AgentOperationsWorkspace({ agentName, evolutionJob, candidateId,
   const [environments, setEnvironments] = useState<StudioEnvironment[]>([]);
   const [deployments, setDeployments] = useState<StudioDeployment[]>([]);
   const [snapshots, setSnapshots] = useState<StudioDeploymentSnapshot[]>([]);
+  const [previews, setPreviews] = useState<StudioPreview[]>([]);
   const [busy, setBusy] = useState("");
   const [notice, setNotice] = useState("正在读取运行控制面…");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -53,9 +54,9 @@ export function AgentOperationsWorkspace({ agentName, evolutionJob, candidateId,
 
   async function refresh() {
     setReleaseTarget(null);
-    const [summaries, caps, allDatasets, allRuns, envs, deps, snaps] = await Promise.all([
+    const [summaries, caps, allDatasets, allRuns, envs, deps, snaps, previewRows] = await Promise.all([
       studioClient.listAccessibleDrafts(), studioClient.capabilities(), studioClient.listEvalDatasets(), studioClient.listEvalRuns(),
-      studioClient.listEnvironments(agentName), studioClient.listDeployments(agentName), studioClient.listDeploymentSnapshots(agentName),
+      studioClient.listEnvironments(agentName), studioClient.listDeployments(agentName), studioClient.listDeploymentSnapshots(agentName), studioClient.listPreviews(),
     ]);
     const summary = summaries.find((item) => item.name === agentName && !item.spaceId);
     if (!summary) throw new Error(`没有找到 Agent：${agentName}`);
@@ -64,6 +65,7 @@ export function AgentOperationsWorkspace({ agentName, evolutionJob, candidateId,
     setDatasets(allDatasets.filter((item) => item.agentName === agentName));
     setRuns(allRuns.filter((item) => item.run.agentName === agentName));
     setEnvironments(envs); setDeployments(deps); setSnapshots(snaps);
+    setPreviews(previewRows.filter((item) => item.draftId === source.id));
     if (evolutionJob) {
       const job = await evolutionRequest<EvolutionJob>(`/${encodeURIComponent(evolutionJob)}`);
       const candidate = job.candidates.find(c => c.candidateId === candidateId && c.status === "released");
@@ -163,8 +165,20 @@ export function AgentOperationsWorkspace({ agentName, evolutionJob, candidateId,
     finally { setBusy(""); }
   }
   async function promote(environment: StudioEnvironment) {
-    if (!draft || !selectedVersion || !selectedPackageHash) return; setBusy(`promote-${environment.name}`);
-    try { await studioClient.promoteDeployment(agentName, selectedVersion, environment, selectedPackageHash, draft.executionProfile, environment.name === "canary" && environment.healthySnapshotId ? 10 : 100); await refresh(); }
+    if (!draft || !selectedVersion || !selectedPackageHash) return;
+    const preview = environment.name === "production"
+      ? previews.find((item) => item.packageHash === selectedPackageHash
+          && item.executionProfile === draft.executionProfile
+          && item.status === "ready" && !item.stale
+          && item.preflightResult?.status === "passed"
+          && Date.parse(item.expiresAt) > Date.now())
+      : undefined;
+    if (environment.name === "production" && !preview) {
+      setNotice("生产部署需要同一版本与执行档的有效 Preview/Preflight。请返回 Builder 完成预检后刷新。");
+      return;
+    }
+    setBusy(`promote-${environment.name}`);
+    try { await studioClient.promoteDeployment(agentName, selectedVersion, environment, selectedPackageHash, draft.executionProfile, environment.name === "canary" && environment.healthySnapshotId ? 10 : 100, preview?.previewId); await refresh(); }
     catch (error) { setNotice(error instanceof Error ? error.message : "部署失败"); }
     finally { setBusy(""); }
   }

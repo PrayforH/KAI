@@ -122,6 +122,7 @@ async def context(
         requestedBy="builder",
         idempotencyKey="preflight-live",
         status=PreviewStatus.PROVISIONING,
+        executionProfileVersion=2,
         createdAt=NOW,
         updatedAt=NOW,
         expiresAt=NOW + timedelta(minutes=10),
@@ -152,7 +153,10 @@ async def test_preflight_rejects_sandbox_that_does_not_match_pinned_profile(
 ) -> None:
     runner, preview, sandbox = await context(tmp_path, enforce_profile=True)
 
-    result = await runner.run(preview, cancelled=never_cancelled)
+    incompatible_preview = preview.model_copy(update={
+        "execution_profile": "e2b-public-egress", "execution_profile_version": 1,
+    })
+    result = await runner.run(incompatible_preview, cancelled=never_cancelled)
 
     assert result.error_code == "execution_profile_sandbox_provider_mismatch"
     assert sandbox.destroyed
@@ -163,7 +167,9 @@ async def test_local_development_profile_matches_explicit_local_preview(
     tmp_path: Path,
 ) -> None:
     runner, preview, sandbox = await context(tmp_path, enforce_profile=True)
-    local_preview = preview.model_copy(update={"execution_profile": "local-development"})
+    local_preview = preview.model_copy(update={
+        "execution_profile": "local-development", "execution_profile_version": 1,
+    })
 
     result = await runner.run(local_preview, cancelled=never_cancelled)
 

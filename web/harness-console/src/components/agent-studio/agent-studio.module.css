@@ -3964,6 +3964,65 @@
   left: 17px;
 }
 
+.runtimeEffectiveSummary {
+  padding: 16px;
+  border: 1px solid var(--studio-line-strong);
+  border-radius: 10px;
+  background: var(--studio-panel-subtle);
+}
+
+.runtimeEffectiveSummary > strong {
+  display: block;
+  margin-bottom: 12px;
+  color: var(--studio-ink);
+  font-size: 12px;
+}
+
+.runtimeEffectiveSummary dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.runtimeEffectiveSummary dl > div {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  gap: 10px;
+  font-size: 11px;
+}
+
+.runtimeEffectiveSummary dt { color: var(--studio-muted); }
+.runtimeEffectiveSummary dd { margin: 0; color: var(--studio-ink); overflow-wrap: anywhere; }
+.runtimeEffectiveSummary p, .governanceAdminEntry p {
+  margin: 12px 0 0;
+  color: var(--studio-muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.governanceAdminEntry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 20px;
+  padding: 14px;
+  border: 1px solid var(--studio-line);
+  border-radius: 9px;
+}
+
+.governanceAdminEntry strong { font-size: 11px; }
+.governanceAdminEntry p { margin-top: 4px; }
+.governanceAdminEntry button {
+  flex: none;
+  padding: 8px 12px;
+  border: 1px solid var(--studio-line-strong);
+  border-radius: 7px;
+  color: var(--studio-ink);
+  background: var(--studio-panel);
+  cursor: pointer;
+}
+
 .advancedRuntimeSettings {
   margin-top: 16px;
   border: 1px solid var(--studio-line);
