@@ -775,6 +775,7 @@ function AuthenticatedHome() {
                 onBack={() => setStageView("conversation")}
                 agentName={selectedAgent?.name}
                 agentVersion={selectedAgent?.version}
+                traceHref={observabilityHref}
               />
             ) : (
             <div className="chat-surface">

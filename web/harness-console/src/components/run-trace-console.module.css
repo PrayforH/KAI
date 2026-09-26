@@ -840,3 +840,8 @@
 .section .code {
   margin-top: 8px;
 }
+
+.footnote a {
+  color: var(--rail);
+  font-weight: 600;
+}

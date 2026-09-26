@@ -125,6 +125,7 @@ export function RunTraceConsole({
   onBack,
   agentName,
   agentVersion,
+  traceHref,
 }: {
   threadId: string;
   liveActivity?: RunActivity | null;
@@ -136,6 +137,8 @@ export function RunTraceConsole({
   /** The task's agent version; resolves the 系统 node's prompt and tools. */
   agentName?: string;
   agentVersion?: string;
+  /** External model-span trace (Langfuse) for the run on screen. */
+  traceHref?: string | null;
 }) {
   const [history, setHistory] = useState<ThreadHistoryResponse["messages"] | null>(
     null,
@@ -469,9 +472,6 @@ export function RunTraceConsole({
       <div className={styles.toolbar}>
         <div className={styles.chips} aria-label="轨迹摘要">
           <span className={styles.chip}>
-            <strong>{formatDuration(trace.summary.durationMs)}</strong>时长
-          </span>
-          <span className={styles.chip}>
             <strong>{trace.summary.turns}</strong>轮次
           </span>
           <span className={styles.chip}>
@@ -639,7 +639,7 @@ export function RunTraceConsole({
         {selected && (
           <aside className={styles.detail} aria-label="轨迹详情">
             <header className={styles.detailHeader}>
-              <span className={styles.badge}>{selected.badge}</span>
+              <span className={`${styles.badge} ${styles[`lane-${selected.lane}`]}`}>{selected.badge}</span>
               <span className={styles.detailContext}>
                 第 {selected.turn} 轮 · 步骤 {selected.step}
               </span>
@@ -771,7 +771,7 @@ export function RunTraceConsole({
                       </ol>
                     </details>
                   ) : null}
-                  <details className={styles.section}>
+                  <details className={styles.section} open>
                     <summary>计时</summary>
                     <dl className={styles.timing}>
                       <div><dt>开始</dt><dd>{formatClock(selected.startMs)}</dd></div>
@@ -860,7 +860,16 @@ export function RunTraceConsole({
       </div>
 
       <p className={styles.footnote}>
-        轨迹来自本会话各轮次的服务端运行事件；模型级 Span 见开发者抽屉的外部 Trace 链接。
+        轨迹来自本会话各轮次的服务端运行事件
+        {traceHref ? (
+          <>
+            {" · "}
+            <a href={traceHref} target="_blank" rel="noreferrer">模型级 Span（外部 Trace）↗</a>
+          </>
+        ) : (
+          "；模型级 Span 见对话过程卡片「运行详情」里的外部 Trace 链接"
+        )}
+        。
       </p>
     </div>
   );
