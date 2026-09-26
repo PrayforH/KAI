@@ -760,5 +760,36 @@
 .timelineTooltip {
   position: fixed;
   z-index: 60;
-  max-width: 330px;
+  max-width: 300px;
+  padding: 6px 9px;
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 8px;
+  background: rgb(24 27 31 / 96%);
+  color: #e8edf4;
+  font-size: 11px;
+  line-height: 1.5;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 35%);
+}
+
+.timelineTooltip strong {
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.timelineTooltip span {
+  color: #a9b6c6;
+  font-variant-numeric: tabular-nums;
+}
+
+.timelineTooltip em {
+  overflow: hidden;
+  color: #8f9caa;
+  font-style: normal;
+  font-size: 10.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }

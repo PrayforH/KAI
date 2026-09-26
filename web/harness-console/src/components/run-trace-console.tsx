@@ -541,7 +541,6 @@ export function RunTraceConsole({
                           left: `${position.left}%`,
                           width: position.width === undefined ? "4px" : `${position.width}%`,
                         }}
-                        title={`${node.badge} ${node.label} · ${formatDuration(node.endMs - node.startMs)} · ${formatClock(node.startMs)}`}
                         aria-label={`${node.badge} ${node.label}`}
                         onMouseEnter={(event) => setHovered({ id: node.id, x: event.clientX, y: event.clientY })}
                         onMouseLeave={() => setHovered(null)}
@@ -571,7 +570,7 @@ export function RunTraceConsole({
             role="tooltip"
           >
             <strong>{node.badge} · {node.label}</strong>
-            <span>{formatClock(node.startMs)} · {formatDuration(node.endMs - node.startMs)} · {node.running ? "运行中" : node.status}</span>
+            <span>{formatClock(node.startMs)} → {formatClock(node.endMs)} · {formatDuration(node.endMs - node.startMs)}</span>
             {node.detail && <em>{node.detail}</em>}
           </div>,
           document.body,
