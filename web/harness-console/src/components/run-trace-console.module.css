@@ -757,6 +757,14 @@
 .block.lane-model { background: var(--rail); }
 .block.lane-tool { background: #b0642a; }
 
+/* State overrides win over lane colors regardless of source order. */
+.block.is-failed,
+.block.lane-input.is-failed,
+.block.lane-model.is-failed,
+.block.lane-tool.is-failed {
+  background: var(--danger);
+}
+
 .timelineTooltip {
   position: fixed;
   z-index: 60;

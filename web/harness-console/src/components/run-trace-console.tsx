@@ -336,15 +336,21 @@ export function RunTraceConsole({
     () =>
       visibleNodes.filter(
         (node) =>
-          (node.lane === "input" && node.badge === "用户") || node.endMs > node.startMs,
+          (node.lane === "input" && node.badge === "用户") ||
+          node.badge === "异常" ||
+          node.endMs > node.startMs,
       ),
     [visibleNodes],
   );
   // Gapless strip: blocks are laid out in phase order (adjacent in time touch),
   // input ticks map through the same anchors.
   const strip = useMemo(() => {
-    const phases = timelineNodes.filter((node) => node.lane !== "input");
-    const ticks = timelineNodes.filter((node) => node.lane === "input");
+    const phases = timelineNodes.filter(
+      (node) => node.lane !== "input" && node.badge !== "异常",
+    );
+    const ticks = timelineNodes.filter(
+      (node) => (node.lane === "input" && node.badge === "用户") || node.badge === "异常",
+    );
     return buildStripLayout(phases, ticks);
   }, [timelineNodes]);
   const stripBlocks = useMemo(
@@ -528,18 +534,17 @@ export function RunTraceConsole({
                 {timelineNodes
                   .filter((node) => node.lane === lane)
                   .map((node) => {
-                    const position = lane === "input"
-                      ? stripTicks.get(node.id)
-                      : stripBlocks.get(node.id);
+                    const isTick = node.lane === "input" || node.badge === "异常";
+                    const position = isTick ? stripTicks.get(node.id) : stripBlocks.get(node.id);
                     if (!position) return null;
                     return (
                       <button
                         key={node.id}
                         type="button"
-                        className={`${styles.block} ${styles[`lane-${node.lane}`]} ${statusClass(styles, node.status, node.running)}${selectedId === node.id ? ` ${styles["is-selected"]}` : ""}`}
+                        className={`${styles.block} ${styles[`lane-${node.lane}`]} ${statusClass(styles, node.status, node.running)}${node.badge === "异常" ? ` ${styles["is-failed"]}` : ""}${selectedId === node.id ? ` ${styles["is-selected"]}` : ""}`}
                         style={{
                           left: `${position.left}%`,
-                          width: position.width === undefined ? "4px" : `${position.width}%`,
+                          width: position.width === undefined ? "5px" : `${position.width}%`,
                         }}
                         aria-label={`${node.badge} ${node.label}`}
                         onMouseEnter={(event) => setHovered({ id: node.id, x: event.clientX, y: event.clientY })}
