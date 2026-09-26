@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import {
   allFiltersEnabled,
   buildSessionTrace,
@@ -149,7 +150,7 @@ export function RunTraceConsole({
   const [reloadNonce, setReloadNonce] = useState(0);
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [hovered, setHovered] = useState<{ id: string; x: number; y: number } | null>(null);
   const [timelineZoom, setTimelineZoom] = useState<1 | 2 | 4>(1);
   // Pinch (ctrl+wheel) magnifies around the cursor: keep the time under the
   // pointer fixed by re-anchoring scrollLeft after the zoom step.
@@ -533,44 +534,47 @@ export function RunTraceConsole({
                       <button
                         key={node.id}
                         type="button"
-                        className={`${styles.block} ${statusClass(styles, node.status, node.running)}${selectedId === node.id ? ` ${styles["is-selected"]}` : ""}`}
+                        className={`${styles.block} ${styles[`lane-${node.lane}`]} ${statusClass(styles, node.status, node.running)}${selectedId === node.id ? ` ${styles["is-selected"]}` : ""}`}
                         style={{
                           left: `${position.left}%`,
                           width: `${position.width}%`,
                         }}
                         title={`${node.badge} ${node.label} · ${formatDuration(node.endMs - node.startMs)} · ${formatClock(node.startMs)}`}
                         aria-label={`${node.badge} ${node.label}`}
-                        onMouseEnter={() => setHoveredId(node.id)}
-                        onMouseLeave={() => setHoveredId(null)}
-                        onFocus={() => setHoveredId(node.id)}
-                        onBlur={() => setHoveredId(null)}
+                        onMouseEnter={(event) => setHovered({ id: node.id, x: event.clientX, y: event.clientY })}
+                        onMouseLeave={() => setHovered(null)}
+                        onFocus={(event) => {
+                          const rect = event.currentTarget.getBoundingClientRect();
+                          setHovered({ id: node.id, x: rect.left, y: rect.top });
+                        }}
+                        onBlur={() => setHovered(null)}
                         onClick={() => selectNode(node)}
                       />
                     );
                   })}
-                {hoveredId && (() => {
-                  const node = timelineNodes.find((item) => item.id === hoveredId);
-                  if (!node || node.lane !== lane) return null;
-                  const position = node.lane === "input"
-                    ? stripTicks.get(node.id)
-                    : stripBlocks.get(node.id);
-                  if (!position) return null;
-                  return (
-                    <div
-                      className={styles.timelineTooltip}
-                      style={{ left: `${Math.min(Math.max(position.left, 4), 78)}%` }}
-                      role="tooltip"
-                    >
-                      <strong>{node.badge} · {node.label}</strong>
-                      <span>{formatClock(node.startMs)} · {formatDuration(node.endMs - node.startMs)} · {node.status}</span>
-                      {node.detail && <em>{node.detail}</em>}
-                    </div>
-                  );
-                })()}
               </div>
             </div>
           ))}
       </div>
+
+      {hovered && (() => {
+        const node = timelineNodes.find((item) => item.id === hovered.id);
+        if (!node) return null;
+        const clampedX = Math.min(hovered.x + 12, window.innerWidth - 330);
+        const clampedY = Math.min(hovered.y + 14, window.innerHeight - 110);
+        return createPortal(
+          <div
+            className={styles.timelineTooltip}
+            style={{ left: clampedX, top: clampedY }}
+            role="tooltip"
+          >
+            <strong>{node.badge} · {node.label}</strong>
+            <span>{formatClock(node.startMs)} · {formatDuration(node.endMs - node.startMs)} · {node.running ? "运行中" : node.status}</span>
+            {node.detail && <em>{node.detail}</em>}
+          </div>,
+          document.body,
+        );
+      })()}
 
       <div className={styles.body}>
         <ol className={styles.list} ref={listRef} aria-label="轨迹事件">
