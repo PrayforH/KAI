@@ -637,7 +637,7 @@ export function RunTraceConsole({
                     className={`${styles.dot} ${statusClass(styles, node.status, node.running)}`}
                     aria-hidden="true"
                   />
-                  <span className={`${styles.badge} ${node.badge === "思考" ? styles["lane-thinking"] : styles[`lane-${node.lane}`]}`}>
+                  <span className={`${styles.badge} ${node.badge === "上下文" ? styles["is-context"] : node.badge === "思考" ? styles["lane-thinking"] : styles[`lane-${node.lane}`]}`}>
                     {node.badge}
                   </span>
                   <span className={styles.rowMain}>
@@ -673,7 +673,7 @@ export function RunTraceConsole({
         {selected && (
           <aside className={styles.detail} aria-label="轨迹详情">
             <header className={styles.detailHeader}>
-              <span className={`${styles.badge} ${styles[`lane-${selected.lane}`]}`}>{selected.badge}</span>
+              <span className={`${styles.badge} ${selected.badge === "上下文" ? styles["is-context"] : styles[`lane-${selected.lane}`]}`}>{selected.badge}</span>
               <span className={styles.detailContext}>
                 第 {selected.turn} 轮 · 步骤 {selected.step}
               </span>

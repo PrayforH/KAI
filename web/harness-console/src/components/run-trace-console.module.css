@@ -151,12 +151,7 @@
   padding: 0;
   min-width: 4px;
   cursor: pointer;
-  background: var(--rail);
-  opacity: 0.85;
-}
-
-.block.is-ok {
-  background: var(--rail);
+  opacity: 0.9;
 }
 
 .block.is-running {
@@ -255,6 +250,10 @@
   border-radius: 5px;
   font-size: 11px;
   color: var(--on-accent, #fff);
+  background: var(--rail);
+}
+
+.badge.is-context {
   background: var(--rail);
 }
 
