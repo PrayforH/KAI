@@ -253,7 +253,7 @@
   background: var(--rail);
 }
 
-.badge.is-context {
+.badge.lane-context {
   background: var(--rail);
 }
 
@@ -753,6 +753,7 @@
 
 /* Strip blocks use the same lane colors as the event stream badges. */
 .block.lane-input { background: var(--signal); }
+.block.lane-context { background: var(--rail); }
 .block.lane-model { background: var(--rail); }
 .block.lane-tool { background: #b0642a; }
 

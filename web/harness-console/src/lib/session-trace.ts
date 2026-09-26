@@ -18,7 +18,7 @@ export interface SessionTraceRun {
   activity?: RunActivity;
 }
 
-export type TraceLane = "input" | "model" | "tool";
+export type TraceLane = "input" | "context" | "model" | "tool";
 
 /** System-prompt summary resolved from the agent's versioned draft. */
 export interface TraceManifest {
@@ -608,7 +608,7 @@ function buildTraceNodes(
         runId: run.runId,
         turn: run.turn,
         step: 0,
-        lane: "input",
+        lane: "context",
         badge: "上下文",
         label: "运行上下文",
         detail: preview(
