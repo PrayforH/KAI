@@ -65,3 +65,5 @@ docker compose -f compose.json up -d --no-deps --no-build --wait web
 > r21/r22（r22 BUILD_ID `4VXvWYI7odeaWwV9-_naE`）：**时间轴改为“处理时长打包轴”**——轮次之间的墙钟空闲被压缩，每轮宽度 ∝ 该轮处理时长（10s 会话铺满；多天会话不再坍缩成两个点，修掉大量黑色空白）。块在轮内按比例定位；hover tooltip 仍显示绝对时钟。同时恢复双指捏合缩放（ctrl+wheel，以光标为锚点）与横向滚动，去掉 ± 按钮；输入泳道只画用户消息刻度，上下文瞬时行只留在事件流。
 
 > r24（BUILD_ID `68WHC96_UagvOQPU43xfw`）：①时间条泳道配色与事件流徽章对齐——输入琥珀、模型绿、工具橙棕、失败红（此前全部同色绿，泳道不可辨）；②hover tooltip 改为 portal 到 body、跟随光标的浮动定位，不再被横向滚动容器裁剪（用户报告"移动上去被遮挡"）；探针同步改为 body 作用域并验证 hover/focus。
+
+> r25（BUILD_ID `pUHtQ22Ftz4IhNWIwngMN`）：修复用户输入泳道为空——渲染时误用阶段块 map 取刻度位置（取不到即返回 null）。现按泳道选择 anchors：输入行用 stripTicks（固定 4px 琥珀刻度），其余泳道用 stripBlocks。注意：同一 tag 原地重建镜像后，部署脚本 base 断言会失败（在跑 tag==目标 tag），需手动 build+compose up。
