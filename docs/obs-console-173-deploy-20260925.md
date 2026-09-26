@@ -77,3 +77,5 @@ docker compose -f compose.json up -d --no-deps --no-build --wait web
 > r29（BUILD_ID `b96uTDW1HmEiNGgCMjJUU`）：失败/错误在时间轴上标红。两处修复：①CSS 优先级——泳道配色规则（r24 引入）与 `.is-failed` 同优先级且靠后，红色被覆盖（用户此前看到失败块仍显示泳道色）；现在状态色显式覆盖泳道色。②"异常"类瞬时事件此前根本不上时间轴（零时长被过滤），现在画为工具泳道上的红色 5px 刻度。
 
 > r30（BUILD_ID `p7uohFxSSK5d0ZKFukN5P`）：①顶部移除总时长 chip（对齐 DSH/ZCode：时长按环节看，不做会话总时长统计）；②详情抽屉左上角徽章使用泳道配色（与时间条色块一致）；③概述中"计时"分区默认展开；④脚注的"外部 Trace"改为可直接点击的链接（运行中 Run 的 Langfuse 地址），无运行时提示入口在对话过程卡片的「运行详情」。
+
+> r31（BUILD_ID `L1pTUsAlBAaCj3xmbs76d`）：概述各分区（参数/结果/来源/计时）之间去掉横线分隔，仅保留间距。
