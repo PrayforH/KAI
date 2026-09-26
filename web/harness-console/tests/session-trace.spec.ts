@@ -652,8 +652,10 @@ describe("buildStripLayout", () => {
       phases as never,
       [],
     );
-    expect(layout.blocks.map((block) => Math.round(block.left))).toEqual([0, 33, 67]);
-    expect(layout.blocks.every((block) => Math.round(block.width ?? 0) === 33)).toBe(true);
+    // Same-lane phases that touch merge into one continuous block (a+b, 6s);
+    // the model-lane phase keeps its own block (3s).
+    expect(layout.blocks.map((block) => Math.round(block.left))).toEqual([0, 67]);
+    expect(layout.blocks.map((block) => Math.round(block.width ?? 0))).toEqual([67, 33]);
   });
 
   it("inserts a small fixed gap only for real idle time", () => {

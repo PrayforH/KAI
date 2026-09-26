@@ -331,15 +331,17 @@ function buildTraceNodes(
 
       const isMessageFrame =
         item.event_type === "message.delta" || item.event_type === "message.completed";
-      const isReasoningFrame =
-        item.event_type === "reasoning.delta" || item.event_type === "reasoning.completed";
+      const isReasoningFrame = item.event_type.startsWith("reasoning.");
       if (isMessageFrame || isReasoningFrame) {
-        const rawId = typeof item.metadata.message_id === "string"
-          ? item.metadata.message_id
-          : item.id;
-        // Reasoning and answer streams can share a message id; keep them as
-        // separate spans so 思考过程 stays its own row.
-        const messageId = isReasoningFrame ? `reasoning:${rawId}` : `answer:${rawId}`;
+        // Reasoning streams carry item_id; answer streams carry message_id.
+        // Keying reasoning by message_id (absent) used to split every delta
+        // into its own 思考 row.
+        const rawId = isReasoningFrame
+          ? item.metadata.item_id ?? item.metadata.message_id
+          : item.metadata.message_id;
+        const messageId = `${isReasoningFrame ? "reasoning" : "answer"}:${
+          typeof rawId === "string" ? rawId : item.id
+        }`;
         const existing = spans.get(messageId);
         const text = typeof item.summary === "string" ? item.summary : "";
         const completed = isMessageFrame
@@ -550,7 +552,30 @@ function buildTraceNodes(
       }
     }
 
-    for (const [messageId, span] of spans) {
+    const spanEntries = [...spans.entries()].sort(
+      ([, a], [, b]) => a.startMs - b.startMs,
+    );
+    // Merge chronologically adjacent thinking fragments (no tool/approval in
+    // between, <600ms apart) so one reasoning run is one 思考 row.
+    const merged: Array<{ id: string; span: MessageSpan }> = [];
+    for (const [messageId, span] of spanEntries) {
+      const previous = merged.at(-1);
+      if (
+        previous &&
+        previous.span.thinking &&
+        span.thinking &&
+        span.startMs - previous.span.endMs <= 600
+      ) {
+        previous.span.endMs = Math.max(previous.span.endMs, span.endMs);
+        previous.span.output += span.output;
+        if (TERMINAL_STATUSES.has(span.status)) previous.span.status = span.status;
+        continue;
+      }
+      merged.push({ id: messageId, span });
+    }
+    for (const mergedEntry of merged) {
+      const messageId = mergedEntry.id;
+      const span = mergedEntry.span;
       nodes.push({
         id: `message-${run.runId}-${messageId}`,
         runId: run.runId,
@@ -816,9 +841,26 @@ export function buildStripLayout(
   phases: ReadonlyArray<Pick<TraceNode, "id" | "startMs" | "endMs" | "lane">>,
   ticks: ReadonlyArray<Pick<TraceNode, "id" | "startMs" | "endMs" | "lane">>,
 ): StripLayout {
-  const sorted = [...phases]
+  // Same-lane phases separated by a small gap merge into one strip block:
+  // thinking fragments interleave with answers inside one model activity, and
+  // sub-second tool latency should not read as idle.
+  const laneMergeMs = 2_000;
+  const mergedPhases: Array<Pick<TraceNode, "id" | "startMs" | "endMs" | "lane">> = [];
+  for (const node of [...phases]
     .filter((node) => node.endMs > node.startMs)
-    .sort((a, b) => a.startMs - b.startMs || a.endMs - b.endMs);
+    .sort((a, b) => a.startMs - b.startMs || a.endMs - b.endMs)) {
+    const previous = mergedPhases.at(-1);
+    if (
+      previous &&
+      previous.lane === node.lane &&
+      node.startMs - previous.endMs <= laneMergeMs
+    ) {
+      previous.endMs = Math.max(previous.endMs, node.endMs);
+      continue;
+    }
+    mergedPhases.push({ ...node });
+  }
+  const sorted = mergedPhases;
   let gapCount = 0;
   for (let index = 1; index < sorted.length; index += 1) {
     if (sorted[index].startMs - sorted[index - 1].endMs > STRIP_ADJACENT_MS) gapCount += 1;
