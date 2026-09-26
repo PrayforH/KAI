@@ -71,3 +71,5 @@ docker compose -f compose.json up -d --no-deps --no-build --wait web
 > r26（BUILD_ID `7V9Pdu0oxh3A33Ju7RqgA`）：hover 气泡改为紧凑深色气泡（11px 字号、深底圆角、开始→结束时刻+耗时+摘要预览），并移除色块上的原生 title 提示（用户反馈"字体太大"的大字提示实为浏览器原生 tooltip 与气泡重复）。部署插曲：同一 r26 脚本链上 base 与 compose 断言需与实际在跑 tag 同步（r25→r26 两次 sed），否则 build 成功后卡在断言。
 
 > r27（BUILD_ID `onQqT--mB-ivaUjh0771W`）：修思考过程碎片化。根因：思考流事件带 item_id（非 message_id），客户端按 message_id 分组退化为每 delta 一行（"Op"、"is" 之类的单词行）。修复：按 item_id 分组 + 相邻思考片段（间隔 <600ms、中间无工具/审批）合并为一行。时间轴：思考是真实模型处理时间，strip 布局把同泳道 ≤2s 间隙的阶段合并为连续块（思考+回答构成连续模型活动，与 DSH 一致）；事件流保留独立思考行。
+
+> r28（BUILD_ID `aQk3qTc0i01ttjXt6Yn1Y`）：详情"概述"整合化——按 DSH 形态把 参数/结果/来源引用/计时 作为概述内可折叠分区（参数、结果默认展开，带 › 旋转指示），状态行常驻；独立页签保留便于快速跳转。Schema 分区未做：活动事件不含工具 schema（在运行时注册表，需后端开放），不造假数据。
