@@ -31,7 +31,14 @@ import {
 } from "../lib/context-client";
 import styles from "./run-trace-console.module.css";
 
-type DetailTab = "overview" | "prompt" | "entries" | "arguments" | "output" | "timing";
+type DetailTab =
+  | "overview"
+  | "prompt"
+  | "entries"
+  | "arguments"
+  | "output"
+  | "thinking"
+  | "timing";
 
 const TAB_LABELS: ReadonlyArray<readonly [DetailTab, string]> = [
   ["overview", "概述"],
@@ -41,6 +48,15 @@ const TAB_LABELS: ReadonlyArray<readonly [DetailTab, string]> = [
 ];
 
 function nodeTabs(node: TraceNode): ReadonlyArray<readonly [DetailTab, string]> {
+  if (node.thinking) {
+    const tabs: ReadonlyArray<readonly [DetailTab, string]> = [
+      ["overview", "概述"],
+      ["output", "回答"],
+      ["thinking", "思考"],
+      ["timing", "计时"],
+    ];
+    return tabs;
+  }
   if (node.badge === "系统" || node.entries?.length) {
     const tabs: ReadonlyArray<readonly [DetailTab, string]> = [
       ["overview", "概述"],
@@ -339,7 +355,8 @@ export function RunTraceConsole({
     () =>
       visibleNodes.filter(
         (node) =>
-          (node.lane === "input" && node.badge === "用户") ||
+          (node.lane === "input" &&
+            (node.badge === "用户" || node.badge === "上下文")) ||
           node.badge === "异常" ||
           node.endMs > node.startMs,
       ),
@@ -352,7 +369,10 @@ export function RunTraceConsole({
       (node) => node.lane !== "input" && node.badge !== "异常",
     );
     const ticks = timelineNodes.filter(
-      (node) => (node.lane === "input" && node.badge === "用户") || node.badge === "异常",
+      (node) =>
+        (node.lane === "input" &&
+          (node.badge === "用户" || node.badge === "上下文")) ||
+        node.badge === "异常",
     );
     return buildStripLayout(phases, ticks);
   }, [timelineNodes]);
@@ -541,7 +561,7 @@ export function RunTraceConsole({
                       <button
                         key={node.id}
                         type="button"
-                        className={`${styles.block} ${styles[`lane-${node.lane}`]} ${statusClass(styles, node.status, node.running)}${node.badge === "异常" ? ` ${styles["is-failed"]}` : ""}${selectedId === node.id ? ` ${styles["is-selected"]}` : ""}`}
+                        className={`${styles.block} ${styles[`lane-${node.lane}`]} ${node.badge === "上下文" ? ` ${styles["is-context"]}` : ""} ${statusClass(styles, node.status, node.running)}${node.badge === "异常" ? ` ${styles["is-failed"]}` : ""}${selectedId === node.id ? ` ${styles["is-selected"]}` : ""}`}
                         style={{
                           left: `${position.left}%`,
                           width: position.width === undefined ? "5px" : `${position.width}%`,
@@ -742,6 +762,12 @@ export function RunTraceConsole({
                     </p>
                   )}
 
+                  {selected.thinking && (
+                    <details className={styles.section}>
+                      <summary>思考</summary>
+                      <pre className={styles.code}>{selected.thinking}</pre>
+                    </details>
+                  )}
                   {selected.argumentsText && (
                     <details className={styles.section} open>
                       <summary>参数</summary>
@@ -834,6 +860,9 @@ export function RunTraceConsole({
                     </li>
                   ))}
                 </ul>
+              )}
+              {activeTab === "thinking" && (
+                <pre className={styles.code}>{selected.thinking}</pre>
               )}
               {activeTab === "arguments" && (
                 <pre className={styles.code}>{selected.argumentsText}</pre>

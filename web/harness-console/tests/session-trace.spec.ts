@@ -494,9 +494,10 @@ describe("buildSessionTrace", () => {
     ]);
     const trace = buildSessionTrace(runs);
     const contexts = trace.nodes.filter((node) => node.badge === "上下文");
-    expect(contexts.map((node) => node.label)).toEqual([
-      "运行权限已确认",
-    ]);
+    expect(contexts).toHaveLength(1);
+    expect(contexts[0].label).toBe("运行上下文");
+    expect(contexts[0].output).toContain("运行权限已确认");
+    // Heartbeat "模型正在处理" frames stay suppressed (r11).
   });
 
   it("attaches citations to tool nodes and aggregates run-level usage", () => {
@@ -620,12 +621,15 @@ describe("filters", () => {
       }),
     ]);
     const trace = buildSessionTrace(runs);
+    // Thinking is folded into the assistant message it precedes (DSH nesting).
     const thinking = trace.nodes.filter((node) => node.badge === "思考");
     const answers = trace.nodes.filter((node) => node.badge === "助手");
-    expect(thinking).toHaveLength(1);
-    expect(thinking[0].output).toBe("先分析");
+    expect(thinking).toHaveLength(0);
     expect(answers).toHaveLength(1);
+    expect(answers[0].thinking).toBe("先分析");
     expect(answers[0].output).toBe("答案答案");
+    // The timeline block covers thinking + answer.
+    expect(answers[0].startMs).toBe(T0 + 50);
     expect(traceFilterKey("思考")).toBe("thinking");
   });
 });

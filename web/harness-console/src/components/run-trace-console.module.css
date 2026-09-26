@@ -843,3 +843,7 @@
   color: var(--rail);
   font-weight: 600;
 }
+
+.block.lane-input.is-context {
+  background: var(--rail);
+}

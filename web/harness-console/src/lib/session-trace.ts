@@ -23,6 +23,8 @@ export type TraceLane = "input" | "model" | "tool";
 /** System-prompt summary resolved from the agent's versioned draft. */
 export interface TraceManifest {
   systemPrompt?: string;
+  /** Reasoning text absorbed from the thinking spans preceding this answer. */
+  thinking?: string;
   entries: Array<{ name: string; description: string }>;
 }
 
@@ -43,6 +45,8 @@ export interface TraceNode {
   output?: string;
   summary?: string;
   systemPrompt?: string;
+  /** Reasoning text absorbed from the thinking spans preceding this answer. */
+  thinking?: string;
   entries?: Array<{ name: string; description: string }>;
   citations?: Array<{
     index: number;
@@ -259,6 +263,13 @@ function buildTraceNodes(
     const spans = new Map<string, MessageSpan>();
     const results = new Map<string, ActivityItem>();
     const approvals = new Map<string, ActivityItem>();
+    const contextFacts: Array<{
+      id: string;
+      title: string;
+      summary?: string;
+      timestampMs: number;
+      entries?: Array<{ name: string; description: string }>;
+    }> = [];
     const approvalTerminals = new Map<string, ActivityItem>();
     const subagentTerminals = new Map<string, ActivityItem>();
 
@@ -299,8 +310,7 @@ function buildTraceNodes(
 
       if (CONTEXT_EVENT_TYPES.has(item.event_type)) {
         // `runtime.system` includes heartbeat-like "模型正在处理" frames.
-        // They are status narration, not user-visible steps; keeping them made
-        // the trace look like duplicate 处理过程 rows.
+        // They are status narration, not user-visible steps.
         if (
           item.event_type === "runtime.system" &&
           item.title !== "运行时与工具已连接" &&
@@ -308,23 +318,12 @@ function buildTraceNodes(
         ) {
           continue;
         }
-        nodes.push({
-          id: `context-${run.runId}-${item.id}`,
-          runId: run.runId,
-          turn: run.turn,
-          step: nodes.filter((node) => node.runId === run.runId).length + 1,
-          lane: "input",
-          badge: "上下文",
-          label: item.title || item.event_type,
-          detail: preview(item.summary ?? "", 140),
-          status: item.status,
-          startMs: timestampMs,
-          endMs: timestampMs,
+        contextFacts.push({
+          id: item.id,
+          title: item.title || item.event_type,
           summary: item.summary ?? undefined,
-          // The staged-assets event only carries a skill count; the drawer
-          // fills the actual list from the resolved draft manifest.
+          timestampMs,
           entries: item.event_type === "agent.assets.staged" ? manifest?.entries : undefined,
-          running: false,
         });
         continue;
       }
@@ -555,41 +554,73 @@ function buildTraceNodes(
     const spanEntries = [...spans.entries()].sort(
       ([, a], [, b]) => a.startMs - b.startMs,
     );
-    // Merge chronologically adjacent thinking fragments (no tool/approval in
-    // between, <600ms apart) so one reasoning run is one 思考 row.
-    const merged: Array<{ id: string; span: MessageSpan }> = [];
-    for (const [messageId, span] of spanEntries) {
-      const previous = merged.at(-1);
-      if (
-        previous &&
-        previous.span.thinking &&
-        span.thinking &&
-        span.startMs - previous.span.endMs <= 600
-      ) {
-        previous.span.endMs = Math.max(previous.span.endMs, span.endMs);
-        previous.span.output += span.output;
-        if (TERMINAL_STATUSES.has(span.status)) previous.span.status = span.status;
-        continue;
+    // DSH nesting: thinking is folded into the assistant message it precedes
+    // (the timeline block then covers thinking + answer). Thinking with no
+    // following answer in the run stays a standalone row.
+    const answers = spanEntries.filter(([, span]) => !span.thinking);
+    const thinkingSpans = spanEntries.filter(([, span]) => span.thinking);
+    const absorbedBy = new Map<string, string>();
+    const thinkingByAnswer = new Map<string, string>();
+    for (const [thinkingId, span] of thinkingSpans) {
+      const nextAnswer = answers.find(([, answer]) => answer.startMs >= span.startMs - 600);
+      if (nextAnswer) {
+        absorbedBy.set(thinkingId, nextAnswer[0]);
+        thinkingByAnswer.set(
+          nextAnswer[0],
+          `${thinkingByAnswer.get(nextAnswer[0]) ?? ""}${span.output}`,
+        );
       }
-      merged.push({ id: messageId, span });
     }
-    for (const mergedEntry of merged) {
-      const messageId = mergedEntry.id;
-      const span = mergedEntry.span;
+    for (const [messageId, span] of spanEntries) {
+      const thinkingText = thinkingByAnswer.get(messageId);
+      if (span.thinking && absorbedBy.has(messageId)) continue;
+      const thinkingStarts = thinkingSpans
+        .filter(([thinkingId]) => absorbedBy.get(thinkingId) === messageId)
+        .map(([, thinkingSpan]) => thinkingSpan.startMs);
       nodes.push({
         id: `message-${run.runId}-${messageId}`,
         runId: run.runId,
         turn: run.turn,
         step: nodes.filter((node) => node.runId === run.runId).length + 1,
         lane: "model",
-        badge: span.thinking ? "思考" : "助手",
-        label: span.thinking ? "思考过程" : "助手",
+        badge: "助手",
+        label: "助手",
         detail: preview(span.output, 140),
         status: span.status,
-        startMs: span.startMs,
+        startMs: thinkingStarts.length
+          ? Math.min(span.startMs, ...thinkingStarts)
+          : span.startMs,
         endMs: span.endMs,
         output: span.output || undefined,
+        thinking: thinkingText || (span.thinking ? span.output : undefined),
         running: isRunningStatus(span.status),
+      });
+    }
+
+    if (contextFacts.length) {
+      const facts = [...contextFacts].sort((a, b) => a.timestampMs - b.timestampMs);
+      const factText = facts
+        .map((fact) => `${fact.title}${fact.summary ? `：${fact.summary}` : ""}`)
+        .join("\n");
+      const skills = facts.find((fact) => fact.entries)?.entries;
+      nodes.push({
+        id: `context-${run.runId}`,
+        runId: run.runId,
+        turn: run.turn,
+        step: 0,
+        lane: "input",
+        badge: "上下文",
+        label: "运行上下文",
+        detail: preview(
+          facts.map((fact) => fact.summary ?? fact.title).join(" · "),
+          140,
+        ),
+        status: "succeeded",
+        startMs: facts[0].timestampMs,
+        endMs: facts.at(-1)?.timestampMs ?? facts[0].timestampMs,
+        output: factText,
+        entries: skills,
+        running: false,
       });
     }
 
