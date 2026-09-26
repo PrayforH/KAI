@@ -59,3 +59,5 @@ docker compose -f compose.json up -d --no-deps --no-build --wait web
 > r14（web BUILD_ID `OLFwBWlX-BEh0hRRPZX6b`）：时间条阶段块支持 hover/focus 观测 tooltip，显示徽标/名称、开始时刻、持续时长、状态和摘要；tooltip 探针实测助手阶段 `1.2s · succeeded` 并带摘要。r13 的连续轮次背景带保留，瞬时事件仍只在事件流展示。
 
 > r16/r17（r17 BUILD_ID `GFUtgtf_x_4etoxNOVhZ2`）：按 DSH 可见能力补“阶段进度”总览：排队、环境、权限/资源、模型路由、运行时、思考/回复、工具/审批、产物、终态。每阶段只取已有 RunEvent/activity 事件；有数据显示完成/失败，未采集明确标灰“未采集”，不造值。r16/r17 同时保留可缩放时间画布（1×/2×/4×）、每轮连续背景带、模型/工具阶段叠加、瞬时事件下沉事件流。
+
+> r18（BUILD_ID `8hVSrINPZFqye6H7wQm9y`）：按用户裁决重做时间轴。①移除阶段 pill 行（排队/环境/…/终态）及其数据层；②移除轮次刻度、轮次分隔线与轮次背景带——时间轴不再区分轮次，模型/工具等持续阶段按真实时间连续铺满整条时间轴（对齐 DSH 截图样式）；③缩放除 ± 按钮外支持触控板双指捏合（ctrl+wheel 非被动监听，1×/2×/4× 阶梯），画布横向滚动。hover tooltip、事件流完整瞬时事件、类型筛选均保留。截图 `runs/trace-r18-timeline.png`，tooltip/console 探针通过。
