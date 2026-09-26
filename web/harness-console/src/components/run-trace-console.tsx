@@ -376,6 +376,10 @@ export function RunTraceConsole({
     );
     return buildStripLayout(phases, ticks);
   }, [timelineNodes]);
+  const turnWindows = useMemo(
+    () => new Map(trace.turns.map((turn) => [turn.turn, turn])),
+    [trace.turns],
+  );
   const stripBlocks = useMemo(
     () => new Map(strip.blocks.map((entry) => [entry.id, entry])),
     [strip.blocks],
@@ -491,7 +495,12 @@ export function RunTraceConsole({
     <div className={styles.console} aria-label="调用轨迹">
       <div className={styles.toolbar}>
         <div className={styles.chips} aria-label="轨迹摘要">
-          <span className={styles.chip}>
+          <span
+            className={styles.chip}
+            title={trace.turns
+              .map((turn) => `第${turn.turn}轮 ${formatDuration(turn.endMs - turn.startMs)}`)
+              .join(" · ")}
+          >
             <strong>{trace.summary.turns}</strong>轮次
           </span>
           <span className={styles.chip}>
@@ -612,6 +621,11 @@ export function RunTraceConsole({
                 {showTurn && (
                   <div className={styles.turnDivider} role="presentation">
                     第 {node.turn} 轮
+                    {(() => {
+                      const turn = turnWindows.get(node.turn);
+                      const duration = turn ? turn.endMs - turn.startMs : 0;
+                      return duration > 0 ? ` · ${formatDuration(duration)}` : "";
+                    })()}
                   </div>
                 )}
                 <button
