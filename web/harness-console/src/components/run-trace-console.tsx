@@ -293,8 +293,10 @@ export function RunTraceConsole({
   // Timeline bars represent phases, not instants. System/context/user markers
   // have zero duration and remain in the event stream/detail view only; drawing
   // them with a minimum width made the bar look like uninterrupted dots.
+  // DSH strip: the 输入 lane shows user inputs as fixed blue ticks; every
+  // other lane draws only phases with real duration.
   const timelineNodes = useMemo(
-    () => visibleNodes.filter((node) => node.endMs > node.startMs),
+    () => visibleNodes.filter((node) => node.lane === "input" || node.endMs > node.startMs),
     [visibleNodes],
   );
   const selected = useMemo(
@@ -470,7 +472,7 @@ export function RunTraceConsole({
                       <button
                         key={node.id}
                         type="button"
-                        className={`${styles.block} ${styles[`block-${node.lane}`]} ${statusClass(styles, node.status, node.running)}${selectedId === node.id ? ` ${styles["is-selected"]}` : ""}`}
+                        className={`${styles.block} ${statusClass(styles, node.status, node.running)}${selectedId === node.id ? ` ${styles["is-selected"]}` : ""}`}
                         style={{
                           left: `${position.left}%`,
                           width: `${position.width}%`,
