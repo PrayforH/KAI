@@ -265,3 +265,114 @@ async def test_task_files_are_isolated_for_two_tasks_of_the_same_agent() -> None
         assert denied.status_code == 404
         global_files = await client.get("/v1/artifacts", headers=HEADERS)
         assert len(global_files.json()) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("retained_session", [False, True])
+@pytest.mark.parametrize("archived", [False, True])
+async def test_automation_artifacts_follow_task_binding_without_granting_write_access(
+    retained_session: bool, archived: bool
+) -> None:
+    from datetime import UTC, datetime
+
+    from harness.core.models import AguiThreadBinding
+
+    app = create_memory_app()
+    container = app.state.container
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS)
+        session = await container.sessions.create(
+            "tenant-a",
+            "automation:daily-news",
+            "echo-agent",
+            "0.1.0",
+            api_key_id="daily-news",
+            agent_owner_user_id="user-1",
+        )
+        run = await container.runs.create("tenant-a", session.session_id, "automation-artifact")
+        content = b"<html>Daily AI news</html>"
+        artifact = await container.artifacts.upload(
+            tenant_id="tenant-a",
+            run_id=run.run_id,
+            name="news.html",
+            media_type="text/html",
+            content=content,
+        )
+        url = f"/v1/artifacts/{artifact.artifact_id}/content"
+        # Owning the Agent is insufficient: the task binding grants read access.
+        assert (await client.get(url, headers=HEADERS)).status_code == 404
+        now = datetime.now(UTC)
+        await container.agui._bindings.add(
+            AguiThreadBinding(
+                tenant_id="tenant-a",
+                user_id="user-1",
+                thread_id="daily-news",
+                session_id=session.session_id,
+                title="Daily AI news",
+                created_at=now,
+                updated_at=now,
+                archived_at=now if archived else None,
+            )
+        )
+        if retained_session:
+            next_session = await container.sessions.create(
+                "tenant-a",
+                "automation:daily-news",
+                "echo-agent",
+                "0.1.0",
+                api_key_id="daily-news",
+                agent_owner_user_id="user-1",
+            )
+            await container.agui._bindings.rebind_session(
+                "tenant-a",
+                "user-1",
+                "daily-news",
+                expected_session_id=session.session_id,
+                session_id=next_session.session_id,
+                updated_at=now,
+            )
+        for params in ({}, {"thread_id": "daily-news"}):
+            listed = await client.get("/v1/artifacts", params=params, headers=HEADERS)
+            assert listed.status_code == 200
+            assert [item["artifact_id"] for item in listed.json()] == [artifact.artifact_id]
+            assert listed.json()[0]["task_archived"] is archived
+            downloaded = await client.get(url, params=params, headers=HEADERS)
+            assert downloaded.status_code == 200
+            assert downloaded.content == content
+            assert downloaded.headers["content-type"].startswith("text/html")
+        by_run = await client.get(f"/v1/runs/{run.run_id}/artifacts", headers=HEADERS)
+        assert by_run.status_code == 200
+        assert [item["artifact_id"] for item in by_run.json()] == [artifact.artifact_id]
+        await container.agui._bindings.add(
+            AguiThreadBinding(
+                tenant_id="tenant-a",
+                user_id="user-1",
+                thread_id="other-task",
+                session_id="other-session",
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        assert (
+            await client.get(url, params={"thread_id": "other-task"}, headers=HEADERS)
+        ).status_code == 404
+        for headers in (
+            {**HEADERS, "X-User-ID": "user-2"},
+            {**HEADERS, "X-Tenant-ID": "tenant-b"},
+        ):
+            assert (await client.get("/v1/artifacts", headers=headers)).json() == []
+            for path in (
+                url,
+                f"/v1/runs/{run.run_id}/artifacts",
+                "/v1/artifacts?thread_id=daily-news",
+            ):
+                assert (await client.get(path, headers=headers)).status_code == 404
+        assert (
+            await client.post(f"/v1/runs/{run.run_id}/cancel", headers=HEADERS)
+        ).status_code == 404
+        uploaded = await client.post(
+            f"/v1/runs/{run.run_id}/artifacts",
+            headers=HEADERS,
+            files={"file": ("overwrite.html", b"no", "text/html")},
+        )
+        assert uploaded.status_code == 404

@@ -183,6 +183,12 @@ class AguiRunService:
     ) -> StoredAguiThreadBinding:
         return await self._bindings.get_by_thread(tenant_id, user_id, thread_id)
 
+    async def get_thread_record_for_session(
+        self, *, tenant_id: str, user_id: str, session_id: str
+    ) -> StoredAguiThreadBinding:
+        """Resolve only this user's binding, including retained session history."""
+        return await self._bindings.get_by_session(tenant_id, user_id, session_id)
+
     async def list_bindings(
         self,
         *,
