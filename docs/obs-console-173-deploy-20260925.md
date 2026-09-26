@@ -85,3 +85,5 @@ docker compose -f compose.json up -d --no-deps --no-build --wait web
 > r33（BUILD_ID `XOxCN1BUFy9kapkuyY6xE`）：每轮耗时可见——事件流"第 N 轮"分隔行标注该轮处理耗时（与打包轴同口径：轮内活跃时段，不含轮间空闲）；顶部"轮次"chip 悬停显示每轮耗时明细。
 
 > r34（BUILD_ID `aRXZ-1woS_4t2uDU7lNVI`）：用户/上下文区分展示——事件流徽章与时间轴刻度：用户=琥珀、上下文=绿色（`.is-context`，与 DSH 绿对齐）；根因是 `.block.is-ok` 通用绿底覆盖了琥珀泳道色，已移除（泳道类接管配色）。
+
+> r35（BUILD_ID `WH1gHd-j9EQuD27ejo516`）：上下文独立泳道——时间轴四条：输入（琥珀用户刻度）、上下文（绿色刻度）、模型（绿块）、工具（橙块）。此前用户与上下文刻度同在输入泳道且起点几乎重合（都在 0%），绿色盖住琥珀。事件流徽章同步：上下文绿、用户琥珀。
