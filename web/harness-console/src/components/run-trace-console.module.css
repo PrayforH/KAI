@@ -765,13 +765,7 @@
 
 
 
-.stagePill i {
-  width: 6px;
-  height: 6px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  background: var(--line-strong);
-}
+
 
 /* DSH-style compact duration strip: three thin lanes, solid rounded blocks,
    no track chrome. Colors follow the DSH reference (model purple, tool orange,
