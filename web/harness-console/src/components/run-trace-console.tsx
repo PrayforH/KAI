@@ -701,22 +701,6 @@ export function RunTraceConsole({
                       <dt>状态</dt>
                       <dd>{selected.running ? "运行中" : selected.status}</dd>
                     </div>
-                    {selected.badge === "用户" && onBack && (
-                      <div>
-                        <dt>对话</dt>
-                        <dd>
-                          <a
-                            href="#"
-                            onClick={(event) => {
-                              event.preventDefault();
-                              onBack();
-                            }}
-                          >
-                            在对话中查看
-                          </a>
-                        </dd>
-                      </div>
-                    )}
                     {selected.artifact && (
                       <div>
                         <dt>产物</dt>
@@ -738,10 +722,39 @@ export function RunTraceConsole({
                       </div>
                     )}
                   </dl>
+
+                  {selected.badge === "用户" && onBack && (
+                    <p className={styles.overviewLink}>
+                      <a
+                        href="#"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          onBack();
+                        }}
+                      >
+                        在对话中查看 ↗
+                      </a>
+                    </p>
+                  )}
+
+                  {selected.argumentsText && (
+                    <details className={styles.section} open>
+                      <summary>参数</summary>
+                      <pre className={styles.code}>{selected.argumentsText}</pre>
+                    </details>
+                  )}
+                  {(selected.output || selected.detail) && (
+                    <details className={styles.section} open>
+                      <summary>结果</summary>
+                      <pre className={styles.code}>
+                        {selected.output ?? selected.detail ?? "（无输出）"}
+                      </pre>
+                    </details>
+                  )}
                   {selected.citations?.length ? (
-                    <div className={styles.citationList}>
-                      <p className={styles.contextPanelTitle}>知识引用（{selected.citations.length}）</p>
-                      <ol>
+                    <details className={styles.section}>
+                      <summary>来源引用（{selected.citations.length}）</summary>
+                      <ol className={styles.citationList}>
                         {selected.citations.map((citation) => (
                           <li key={`${citation.index}-${citation.sourceReference}`}>
                             <span>{citation.title || citation.sourceReference}</span>
@@ -751,15 +764,22 @@ export function RunTraceConsole({
                           </li>
                         ))}
                       </ol>
-                    </div>
+                    </details>
                   ) : null}
+                  <details className={styles.section}>
+                    <summary>计时</summary>
+                    <dl className={styles.timing}>
+                      <div><dt>开始</dt><dd>{formatClock(selected.startMs)}</dd></div>
+                      <div><dt>结束</dt><dd>{formatClock(selected.endMs)}</dd></div>
+                      <div><dt>耗时</dt><dd>{formatDuration(selected.endMs - selected.startMs)}</dd></div>
+                      <div><dt>轮次</dt><dd>第 {selected.turn} 轮 · 步骤 {selected.step}</dd></div>
+                    </dl>
+                  </details>
                   {selected.badge === "上下文" && (
                     <div className={styles.contextPanel}>
                       <p className={styles.contextPanelTitle}>会话上下文</p>
                       {contextState === "loading" && <p>加载会话上下文…</p>}
-                      {contextState === "unavailable" && (
-                        <p>暂无会话上下文快照</p>
-                      )}
+                      {contextState === "unavailable" && <p>暂无会话上下文快照</p>}
                       {contextState === "ready" && threadContext && (
                         <>
                           {threadContext.window && (
@@ -768,14 +788,6 @@ export function RunTraceConsole({
                               {threadContext.window.max_tokens} tokens（
                               {Math.round(threadContext.window.percentage)}%，
                               {threadContext.window.model}）
-                              {threadContext.window.categories.length > 0 && (
-                                <span className={styles.contextCats}>
-                                  {threadContext.window.categories
-                                    .slice(0, 5)
-                                    .map((cat) => `${cat.name} ${cat.tokens}`)
-                                    .join(" · ")}
-                                </span>
-                              )}
                             </p>
                           )}
                           {(() => {

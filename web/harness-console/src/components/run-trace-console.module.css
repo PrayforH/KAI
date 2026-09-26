@@ -793,3 +793,42 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+
+.overviewLink {
+  margin: 6px 0;
+}
+
+.section {
+  margin-top: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+
+.section summary {
+  cursor: pointer;
+  color: var(--ink);
+  font-weight: 600;
+  font-size: 12.5px;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.section summary::before {
+  content: "›";
+  color: var(--muted-ink);
+  transition: transform 0.15s ease;
+}
+
+.section[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.section summary::-webkit-details-marker {
+  display: none;
+}
+
+.section .code {
+  margin-top: 8px;
+}
