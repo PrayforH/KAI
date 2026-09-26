@@ -67,3 +67,5 @@ docker compose -f compose.json up -d --no-deps --no-build --wait web
 > r24（BUILD_ID `68WHC96_UagvOQPU43xfw`）：①时间条泳道配色与事件流徽章对齐——输入琥珀、模型绿、工具橙棕、失败红（此前全部同色绿，泳道不可辨）；②hover tooltip 改为 portal 到 body、跟随光标的浮动定位，不再被横向滚动容器裁剪（用户报告"移动上去被遮挡"）；探针同步改为 body 作用域并验证 hover/focus。
 
 > r25（BUILD_ID `pUHtQ22Ftz4IhNWIwngMN`）：修复用户输入泳道为空——渲染时误用阶段块 map 取刻度位置（取不到即返回 null）。现按泳道选择 anchors：输入行用 stripTicks（固定 4px 琥珀刻度），其余泳道用 stripBlocks。注意：同一 tag 原地重建镜像后，部署脚本 base 断言会失败（在跑 tag==目标 tag），需手动 build+compose up。
+
+> r26（BUILD_ID `7V9Pdu0oxh3A33Ju7RqgA`）：hover 气泡改为紧凑深色气泡（11px 字号、深底圆角、开始→结束时刻+耗时+摘要预览），并移除色块上的原生 title 提示（用户反馈"字体太大"的大字提示实为浏览器原生 tooltip 与气泡重复）。部署插曲：同一 r26 脚本链上 base 与 compose 断言需与实际在跑 tag 同步（r25→r26 两次 sed），否则 build 成功后卡在断言。
