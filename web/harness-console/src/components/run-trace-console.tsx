@@ -528,7 +528,9 @@ export function RunTraceConsole({
                 {timelineNodes
                   .filter((node) => node.lane === lane)
                   .map((node) => {
-                    const position = stripBlocks.get(node.id);
+                    const position = lane === "input"
+                      ? stripTicks.get(node.id)
+                      : stripBlocks.get(node.id);
                     if (!position) return null;
                     return (
                       <button
@@ -537,7 +539,7 @@ export function RunTraceConsole({
                         className={`${styles.block} ${styles[`lane-${node.lane}`]} ${statusClass(styles, node.status, node.running)}${selectedId === node.id ? ` ${styles["is-selected"]}` : ""}`}
                         style={{
                           left: `${position.left}%`,
-                          width: `${position.width}%`,
+                          width: position.width === undefined ? "4px" : `${position.width}%`,
                         }}
                         title={`${node.badge} ${node.label} · ${formatDuration(node.endMs - node.startMs)} · ${formatClock(node.startMs)}`}
                         aria-label={`${node.badge} ${node.label}`}
