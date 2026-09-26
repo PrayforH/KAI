@@ -253,7 +253,7 @@
   background: var(--rail);
 }
 
-.badge.lane-context {
+.badge.is-context {
   background: var(--rail);
 }
 
@@ -753,7 +753,6 @@
 
 /* Strip blocks use the same lane colors as the event stream badges. */
 .block.lane-input { background: var(--signal); }
-.block.lane-context { background: var(--rail); }
 .block.lane-model { background: var(--rail); }
 .block.lane-tool { background: #b0642a; }
 
@@ -844,6 +843,14 @@
   font-weight: 600;
 }
 
+/* Both markers share the input lane but occupy separate vertical slots. */
+.block.lane-input:not(.is-context) {
+  top: 1px;
+  height: 5px;
+}
+
 .block.lane-input.is-context {
+  top: 8px;
+  height: 5px;
   background: var(--rail);
 }

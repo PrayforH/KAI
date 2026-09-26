@@ -496,6 +496,7 @@ describe("buildSessionTrace", () => {
     const contexts = trace.nodes.filter((node) => node.badge === "上下文");
     expect(contexts).toHaveLength(1);
     expect(contexts[0].label).toBe("运行上下文");
+    expect(contexts[0].lane).toBe("input");
     expect(contexts[0].output).toContain("运行权限已确认");
     // Heartbeat "模型正在处理" frames stay suppressed (r11).
   });
