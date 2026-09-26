@@ -328,10 +328,15 @@ export function RunTraceConsole({
   // Timeline bars represent phases, not instants. System/context/user markers
   // have zero duration and remain in the event stream/detail view only; drawing
   // them with a minimum width made the bar look like uninterrupted dots.
-  // DSH strip: the 输入 lane shows user inputs as fixed blue ticks; every
-  // other lane draws only phases with real duration.
+  // DSH strip: the 输入 lane shows only user-input ticks; context and other
+  // instant rows stay in the event stream. Every other lane draws phases with
+  // real duration.
   const timelineNodes = useMemo(
-    () => visibleNodes.filter((node) => node.lane === "input" || node.endMs > node.startMs),
+    () =>
+      visibleNodes.filter(
+        (node) =>
+          (node.lane === "input" && node.badge === "用户") || node.endMs > node.startMs,
+      ),
     [visibleNodes],
   );
   const turnWindows = useMemo(
