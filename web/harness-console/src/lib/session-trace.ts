@@ -66,21 +66,11 @@ export interface TurnWindow {
   width: number;
 }
 
-export interface ProgressStage {
-  key: string;
-  label: string;
-  status: "pending" | "active" | "complete" | "failed" | "unknown";
-  startMs?: number;
-  endMs?: number;
-  detail?: string;
-}
-
 export interface SessionTrace {
   runs: SessionTraceRun[];
   nodes: TraceNode[];
   window: { startMs: number; endMs: number; totalMs: number };
   turns: TurnWindow[];
-  stages: ProgressStage[];
   summary: { turns: number; toolCalls: number; durationMs: number };
   /** Run-level model usage aggregated from runtime.result events. */
   usage: { inputTokens: number; outputTokens: number; known: boolean };
@@ -727,38 +717,11 @@ export function buildSessionTrace(
     }
   }
 
-  const stageDefs: Array<[string, string, string[]]> = [
-    ["queue", "排队", ["run.queued"]],
-    ["environment", "环境", ["run.provisioning", "workspace.restored", "workspace.recovery_retained"]],
-    ["policy", "权限/资源", ["policy.resolved", "agent.assets.staged", "credential.lease.issued", "tool.directory.loaded"]],
-    ["route", "模型路由", ["model.route.selected"]],
-    ["runtime", "运行时", ["runtime.system", "context.compaction.started"]],
-    ["response", "思考/回复", ["reasoning.delta", "message.delta", "message.completed"]],
-    ["action", "工具/审批", ["tool.request", "tool.result", "approval.requested", "approval.approved", "approval.rejected"]],
-    ["artifact", "产物", ["artifact.ready", "artifact.published"]],
-    ["terminal", "终态", ["run.succeeded", "run.failed", "run.cancelled", "run.timed_out", "run.rejected"]],
-  ];
-  const stageEvents = runs.flatMap((run) => run.activity?.items ?? []);
-  const stages: ProgressStage[] = stageDefs.map(([key, label, types]) => {
-    const matches = stageEvents.filter((item) => types.includes(item.event_type));
-    const failed = matches.some((item) => ["failed", "rejected", "error"].includes(item.status));
-    const last = matches.at(-1);
-    return {
-      key,
-      label,
-      status: matches.length === 0 ? "unknown" : failed ? "failed" : "complete",
-      startMs: matches.length ? safeMs(matches[0].timestamp) : undefined,
-      endMs: matches.length ? safeMs(last?.timestamp) : undefined,
-      detail: matches.length ? last?.summary ?? undefined : "未采集",
-    };
-  });
-
   return {
     runs,
     nodes,
     window: { startMs, endMs, totalMs },
     turns,
-    stages,
     summary: {
       turns: runs.length,
       toolCalls: nodes.filter((node) => node.badge === "工具").length,

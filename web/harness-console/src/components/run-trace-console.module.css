@@ -482,33 +482,11 @@
   border-color: var(--line-strong);
 }
 
-.turnAxis {
-  position: relative;
-  height: 15px;
-  margin-left: 42px;
-  margin-bottom: 1px;
-}
 
-.turnTickLabel {
-  position: absolute;
-  top: 0;
-  transform: translateX(2px);
-  padding: 0 5px;
-  border-left: 1px solid color-mix(in srgb, var(--rail) 45%, transparent);
-  color: var(--faint-ink);
-  font-size: 10.5px;
-  line-height: 14px;
-  white-space: nowrap;
-}
 
-.turnLine {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  background: color-mix(in srgb, var(--line) 80%, transparent);
-  pointer-events: none;
-}
+
+
+
 
 .badge.lane-system,
 .badge:global(.lane-system) {
@@ -700,15 +678,7 @@
 
 /* A faint continuous band communicates the real Run/turn duration; phase
    blocks (model/tool) sit above it, so short phases do not read as dots. */
-.turnSpan {
-  position: absolute;
-  top: 1px;
-  bottom: 1px;
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--rail) 15%, transparent);
-  border: 1px solid color-mix(in srgb, var(--rail) 20%, transparent);
-  pointer-events: none;
-}
+
 
 .timelineTooltip {
   position: absolute;
@@ -832,29 +802,9 @@
   padding-right: 16px;
 }
 
-.stageProgress {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: calc(100% * var(--trace-zoom, 1));
-  padding: 5px 16px 7px 42px;
-  border-bottom: 1px solid var(--line);
-  overflow: hidden;
-}
 
-.stagePill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex: 1 1 0;
-  min-width: 72px;
-  padding: 4px 7px;
-  border-radius: 5px;
-  background: var(--surface-subtle);
-  color: var(--muted-ink);
-  font-size: 10.5px;
-  white-space: nowrap;
-}
+
+
 
 .stagePill i {
   width: 6px;
@@ -864,7 +814,7 @@
   background: var(--line-strong);
 }
 
-.stage-complete i { background: var(--rail); }
-.stage-active i { background: var(--signal); animation: trace-pulse 1.2s ease-in-out infinite; }
-.stage-failed i { background: var(--danger); }
-.stage-unknown { opacity: .62; }
+
+
+
+

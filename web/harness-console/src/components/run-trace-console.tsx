@@ -383,6 +383,25 @@ export function RunTraceConsole({
     ["工具", "tool"],
   ];
 
+  // Trackpad pinch arrives as ctrl+wheel. A non-passive listener is required
+  // so the browser's own page zoom can be prevented while scaling the canvas.
+  const timelineRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const node = timelineRef.current;
+    if (!node) return;
+    const onWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey) return;
+      event.preventDefault();
+      setTimelineZoom((current) => {
+        const steps: Array<1 | 2 | 4> = event.deltaY < 0 ? [1, 2, 4] : [4, 2, 1];
+        const index = steps.indexOf(current);
+        return index >= 0 && index < steps.length - 1 ? steps[index + 1] : current;
+      });
+    };
+    node.addEventListener("wheel", onWheel, { passive: false });
+    return () => node.removeEventListener("wheel", onWheel);
+  }, []);
+
   if (!historyReady || !manifestReady) {
     return (
       <div className={styles.console} aria-label="调用轨迹" aria-busy="true">
@@ -458,38 +477,14 @@ export function RunTraceConsole({
       </div>
 
       <div
+        ref={timelineRef}
         className={`${styles.timeline} ${styles[`zoom-${timelineZoom}`]}`}
         aria-hidden={trace.window.totalMs <= 0}
         style={{ "--trace-zoom": timelineZoom } as CSSProperties}
       >
-        <div className={styles.stageProgress} aria-label="运行阶段进度">
-          {trace.stages.map((stage) => (
-            <span
-              key={stage.key}
-              className={`${styles.stagePill} ${styles[`stage-${stage.status}`]}`}
-              title={`${stage.label} · ${stage.status === "unknown" ? "未采集" : stage.detail ?? stage.status}`}
-            >
-              <i aria-hidden="true" />
-              {stage.label}
-            </span>
-          ))}
-        </div>
         {trace.window.totalMs > 0 && timelineNodes.length === 0 && (
           <div className={styles.timelineEmpty}>
             暂无可量化的持续阶段（瞬时事件见下方事件流）
-          </div>
-        )}
-        {trace.window.totalMs > 0 && trace.turns.length > 1 && (
-          <div className={styles.turnAxis} aria-hidden="true">
-            {trace.turns.map((turn) => (
-              <span
-                key={turn.turn}
-                className={styles.turnTickLabel}
-                style={{ left: `${turn.left}%` }}
-              >
-                第 {turn.turn} 轮
-              </span>
-            ))}
           </div>
         )}
         {trace.window.totalMs > 0 &&
@@ -497,25 +492,6 @@ export function RunTraceConsole({
             <div className={styles.lane} key={lane}>
               <span className={styles.laneLabel}>{label}</span>
               <div className={styles.laneTrack}>
-                {trace.turns.map((turn) => (
-                  <span
-                    key={`span-${turn.turn}`}
-                    className={styles.turnSpan}
-                    style={{ left: `${turn.left}%`, width: `${turn.width}%` }}
-                    aria-hidden="true"
-                  />
-                ))}
-                {trace.turns.length > 1 &&
-                  trace.turns
-                    .filter((turn) => turn.left > 0.5)
-                    .map((turn) => (
-                      <span
-                        key={`line-${turn.turn}`}
-                        className={styles.turnLine}
-                        style={{ left: `${turn.left}%` }}
-                        aria-hidden="true"
-                      />
-                    ))}
                 {timelineNodes
                   .filter((node) => node.lane === lane)
                   .map((node) => {
