@@ -63,3 +63,5 @@ docker compose -f compose.json up -d --no-deps --no-build --wait web
 > r18（BUILD_ID `8hVSrINPZFqye6H7wQm9y`）：按用户裁决重做时间轴。①移除阶段 pill 行（排队/环境/…/终态）及其数据层；②移除轮次刻度、轮次分隔线与轮次背景带——时间轴不再区分轮次，模型/工具等持续阶段按真实时间连续铺满整条时间轴（对齐 DSH 截图样式）；③缩放除 ± 按钮外支持触控板双指捏合（ctrl+wheel 非被动监听，1×/2×/4× 阶梯），画布横向滚动。hover tooltip、事件流完整瞬时事件、类型筛选均保留。截图 `runs/trace-r18-timeline.png`，tooltip/console 探针通过。
 
 > r21/r22（r22 BUILD_ID `4VXvWYI7odeaWwV9-_naE`）：**时间轴改为“处理时长打包轴”**——轮次之间的墙钟空闲被压缩，每轮宽度 ∝ 该轮处理时长（10s 会话铺满；多天会话不再坍缩成两个点，修掉大量黑色空白）。块在轮内按比例定位；hover tooltip 仍显示绝对时钟。同时恢复双指捏合缩放（ctrl+wheel，以光标为锚点）与横向滚动，去掉 ± 按钮；输入泳道只画用户消息刻度，上下文瞬时行只留在事件流。
+
+> r24（BUILD_ID `68WHC96_UagvOQPU43xfw`）：①时间条泳道配色与事件流徽章对齐——输入琥珀、模型绿、工具橙棕、失败红（此前全部同色绿，泳道不可辨）；②hover tooltip 改为 portal 到 body、跟随光标的浮动定位，不再被横向滚动容器裁剪（用户报告"移动上去被遮挡"）；探针同步改为 body 作用域并验证 hover/focus。
