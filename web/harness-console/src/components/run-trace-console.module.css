@@ -113,6 +113,13 @@
 .timeline {
   padding: 6px 16px 10px;
   border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.timeline > .turnAxis,
+.timeline > .lane {
+  min-width: calc(100% * var(--trace-zoom, 1));
 }
 
 .lane {

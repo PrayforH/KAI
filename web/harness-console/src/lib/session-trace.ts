@@ -62,6 +62,11 @@ export interface TraceNode {
 
 export interface TurnWindow {
   turn: number;
+  runId: string;
+  /** Active span of the run (absolute clock). */
+  startMs: number;
+  endMs: number;
+  /** Packed layout position (%) on the compressed axis. */
   left: number;
   width: number;
 }
@@ -684,20 +689,32 @@ export function buildSessionTrace(
   const endMs = ends.length ? Math.max(...ends) : (nodeEnds.length ? Math.max(...nodeEnds) : startMs);
   const totalMs = Math.max(0, endMs - startMs);
 
-  const turns: TurnWindow[] = runs.map((run, index) => {
+  // Packed time axis: wall-clock idle time BETWEEN runs is compressed out, so
+  // the strip is proportional to processing time (a 10s session fills the
+  // width; a multi-day session no longer collapses into two dots).
+  const spans = runs.map((run, index) => {
     const scoped = nodes.filter((node) => node.runId === run.runId);
     const runStarts = scoped.map((node) => node.startMs).filter(Number.isFinite);
     const runEnds = scoped.map((node) => node.endMs).filter(Number.isFinite);
-    const from = lifecycle[index].start ?? (runStarts.length ? Math.min(...runStarts) : startMs);
-    const to = lifecycle[index].end ?? (runEnds.length ? Math.max(...runEnds) : from);
-    const left = totalMs > 0 ? ((from - startMs) / totalMs) * 100 : 0;
-    const width = totalMs > 0 ? ((to - from) / totalMs) * 100 : 0;
+    const from = lifecycle[index]?.start ?? (runStarts.length ? Math.min(...runStarts) : startMs);
+    const to = lifecycle[index]?.end ?? (runEnds.length ? Math.max(...runEnds) : from);
     return {
       turn: run.turn,
-      left: Math.min(Math.max(left, 0), 100),
-      width: Math.min(Math.max(width, 0.6), 100 - Math.min(Math.max(left, 0), 100)),
+      runId: run.runId,
+      startMs: from,
+      endMs: Math.max(to, from + 200),
     };
   });
+  const gapPercent = runs.length > 1 ? 0.5 : 0;
+  const available = 100 - gapPercent * (runs.length - 1);
+  const busyTotal = spans.reduce((sum, span) => sum + (span.endMs - span.startMs), 0) || 1;
+  const turns: TurnWindow[] = [];
+  let cursor = 0;
+  for (const span of spans) {
+    const width = ((span.endMs - span.startMs) / busyTotal) * available;
+    turns.push({ ...span, left: cursor, width: Math.max(width, 0.4) });
+    cursor += width + gapPercent;
+  }
 
   // Run-level model usage: runtime.result events carry the aggregate tokens
   // for each run; take the max as the session total (retries inflate sums).
@@ -779,13 +796,14 @@ export function allFiltersEnabled(): Record<string, boolean> {
 /** Percent positions for timeline rendering; clamped, min width for dots. */
 export function timelinePosition(
   node: Pick<TraceNode, "startMs" | "endMs">,
-  window: SessionTrace["window"],
+  turn: TurnWindow,
 ): { left: number; width: number } {
-  if (window.totalMs <= 0) return { left: 0, width: 0.8 };
-  const left = ((node.startMs - window.startMs) / window.totalMs) * 100;
-  const width = Math.max(((node.endMs - node.startMs) / window.totalMs) * 100, 0.8);
+  const duration = Math.max(turn.endMs - turn.startMs, 1);
+  const offset = ((node.startMs - turn.startMs) / duration) * turn.width;
+  const width = Math.max(((node.endMs - node.startMs) / duration) * turn.width, 0.15);
+  const left = turn.left + Math.min(Math.max(offset, 0), Math.max(turn.width - width, 0));
   return {
     left: Math.min(Math.max(left, 0), 100),
-    width: Math.min(width, 100 - Math.min(Math.max(left, 0), 100)),
+    width: Math.min(width, turn.width),
   };
 }

@@ -572,7 +572,7 @@ describe("buildSessionTrace", () => {
     const trace = buildSessionTrace(extractSessionRuns([...runOneHistory, ...secondRun]));
     expect(trace.turns).toHaveLength(2);
     expect(trace.turns[0].left).toBe(0);
-    expect(trace.turns[1].left).toBeGreaterThan(trace.turns[0].left);
+    expect(trace.turns[1].left).toBeGreaterThanOrEqual(trace.turns[0].left + trace.turns[0].width);
     expect(trace.turns[1].left + trace.turns[1].width).toBeLessThanOrEqual(100.01);
   });
 });
@@ -642,15 +642,18 @@ describe("searchTraceNodes", () => {
 });
 
 describe("timelinePosition", () => {
-  const window = { startMs: 0, endMs: 1000, totalMs: 1000 };
+  const turn = { turn: 1, runId: "run-1", startMs: 0, endMs: 1000, left: 0, width: 50 };
 
-  it("maps node spans to percentages with a minimum width", () => {
-    expect(timelinePosition({ startMs: 100, endMs: 200 }, window)).toEqual({
-      left: 10,
-      width: 10,
+  it("maps node spans into the packed turn segment", () => {
+    expect(timelinePosition({ startMs: 100, endMs: 200 }, turn)).toEqual({
+      left: 5,
+      width: 5,
     });
-    expect(timelinePosition({ startMs: 500, endMs: 500 }, window).width).toBeGreaterThan(0);
-    expect(timelinePosition({ startMs: -50, endMs: 50 }, window).left).toBe(0);
+    expect(timelinePosition({ startMs: 500, endMs: 500 }, turn).width).toBeGreaterThan(0);
+    expect(timelinePosition({ startMs: -50, endMs: 50 }, turn).left).toBe(0);
+    // Clamped inside the turn segment.
+    const beyond = timelinePosition({ startMs: 1_500, endMs: 1_800 }, turn);
+    expect(beyond.left + beyond.width).toBeLessThanOrEqual(50.01);
   });
 });
 

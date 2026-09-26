@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   allFiltersEnabled,
   buildSessionTrace,
@@ -150,6 +150,41 @@ export function RunTraceConsole({
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [timelineZoom, setTimelineZoom] = useState<1 | 2 | 4>(1);
+  // Pinch (ctrl+wheel) magnifies around the cursor: keep the time under the
+  // pointer fixed by re-anchoring scrollLeft after the zoom step.
+  const timelineRef = useRef<HTMLDivElement>(null);
+  const zoomAnchor = useRef<{ fraction: number; cursorX: number } | null>(null);
+  useEffect(() => {
+    const anchor = zoomAnchor.current;
+    const container = timelineRef.current;
+    if (!anchor || !container) return;
+    zoomAnchor.current = null;
+    const contentWidth = container.scrollWidth;
+    container.scrollLeft = Math.max(0, anchor.fraction * contentWidth - anchor.cursorX);
+  }, [timelineZoom]);
+  useEffect(() => {
+    const container = timelineRef.current;
+    if (!container) return;
+    const onWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey) return;
+      event.preventDefault();
+      const rect = container.getBoundingClientRect();
+      const cursorX = event.clientX - rect.left;
+      const contentWidth = container.scrollWidth;
+      zoomAnchor.current = {
+        fraction: (container.scrollLeft + cursorX) / Math.max(contentWidth, 1),
+        cursorX,
+      };
+      setTimelineZoom((current) => {
+        const steps: Array<1 | 2 | 4> = event.deltaY < 0 ? [1, 2, 4] : [4, 2, 1];
+        const index = steps.indexOf(current);
+        return index >= 0 && index < steps.length - 1 ? steps[index + 1] : current;
+      });
+    };
+    container.addEventListener("wheel", onWheel, { passive: false });
+    return () => container.removeEventListener("wheel", onWheel);
+  }, []);
   const [activeTab, setActiveTab] = useState<DetailTab>("overview");
   const [filters, setFilters] = useState<Record<string, boolean>>(allFiltersEnabled);
   const [filterOpen, setFilterOpen] = useState(false);
@@ -298,6 +333,10 @@ export function RunTraceConsole({
   const timelineNodes = useMemo(
     () => visibleNodes.filter((node) => node.lane === "input" || node.endMs > node.startMs),
     [visibleNodes],
+  );
+  const turnWindows = useMemo(
+    () => new Map(trace.turns.map((turn) => [turn.turn, turn])),
+    [trace.turns],
   );
   const selected = useMemo(
     () => trace.nodes.find((node) => node.id === selectedId) ?? null,
@@ -453,7 +492,12 @@ export function RunTraceConsole({
         </div>
       </div>
 
-      <div className={styles.timeline} aria-hidden={trace.window.totalMs <= 0}>
+      <div
+        ref={timelineRef}
+        className={styles.timeline}
+        aria-hidden={trace.window.totalMs <= 0}
+        style={{ "--trace-zoom": timelineZoom } as CSSProperties}
+      >
         {trace.window.totalMs > 0 && timelineNodes.length === 0 && (
           <div className={styles.timelineEmpty}>
             暂无可量化的持续阶段（瞬时事件见下方事件流）
@@ -467,7 +511,9 @@ export function RunTraceConsole({
                 {timelineNodes
                   .filter((node) => node.lane === lane)
                   .map((node) => {
-                    const position = timelinePosition(node, trace.window);
+                    const turnWindow = turnWindows.get(node.turn);
+                    if (!turnWindow) return null;
+                    const position = timelinePosition(node, turnWindow);
                     return (
                       <button
                         key={node.id}
@@ -489,8 +535,9 @@ export function RunTraceConsole({
                   })}
                 {hoveredId && (() => {
                   const node = timelineNodes.find((item) => item.id === hoveredId);
-                  if (!node || node.lane !== lane) return null;
-                  const position = timelinePosition(node, trace.window);
+                  const turnWindow = node ? turnWindows.get(node.turn) : undefined;
+                  if (!node || !turnWindow || node.lane !== lane) return null;
+                  const position = timelinePosition(node, turnWindow);
                   return (
                     <div
                       className={styles.timelineTooltip}
