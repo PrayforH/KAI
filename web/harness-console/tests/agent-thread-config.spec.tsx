@@ -270,12 +270,11 @@ it("renders uploaded images in an in-app original-size preview", () => {
 });
 
 it("keeps final assistant text mounted outside the live-stream handoff", () => {
-  expect(agentThreadSource).toContain(
-    "function HarnessAssistantText(part: TextMessagePartProps)",
-  );
+  expect(agentThreadSource).toContain("function HarnessAssistantText(part: TextMessagePartProps)");
+  expect(agentThreadSource).toContain("Text: HarnessAssistantText");
+  expect(agentThreadSource).toContain("complete={messageStatus?.type === \"complete\"}");
+  expect(agentThreadSource).toContain("<TextMessagePartProvider text={text} isRunning={false}>");
   expect(agentThreadSource).toContain("<MarkdownText />");
-  expect(agentThreadSource).toContain("shouldSuppressNativeAssistantText(");
-  expect(agentThreadSource).toContain("isIntermediateAssistantTextPart(parts, partIndex)");
 });
 
 it("projects only pre-tool assistant prose as activity commentary", () => {
@@ -331,9 +330,7 @@ it("keeps the final answer visible before durable activity projections", () => {
 
 it("uses one stable native assistant message for streaming output", () => {
   expect(agentThreadSource).toContain('className="assistant-answer"');
-  expect(agentThreadSource).toContain(
-    'data-streaming={part.status.type === "running" ? "true" : "false"}',
-  );
+  expect(agentThreadSource).toContain('data-streaming="false" aria-busy={false}');
   expect(agentThreadSource).not.toContain("MessagesFooter:");
   expect(agentThreadSource).toContain(
     'data-direct-stream={directStream ? "true" : "false"}',

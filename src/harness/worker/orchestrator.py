@@ -1383,6 +1383,7 @@ class RunOrchestrator:
                 run=run,
                 session=session,
                 workspace=handle.path,
+                agent_assets_staged=self._runtime_asset_stager is not None,
                 sandbox_provider=handle.provider,
                 sandbox_isolation=handle.isolation_level,
                 sandbox_enforcement=sandbox_enforcement(

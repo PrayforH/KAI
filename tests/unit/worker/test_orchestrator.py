@@ -1118,14 +1118,17 @@ async def test_runtime_assets_are_staged_before_sandbox_prepare(tmp_path: Path) 
         (target / "SKILL.md").write_text("immutable")
         return ("domain-core",)
 
+    runtime = CapturingRuntime()
     orchestrator, _, _, events = await arrange(
         tmp_path,
         sandbox_override=sandbox,
+        runtime_override=runtime,
         runtime_asset_stager=stage_assets,
     )
 
     await orchestrator.execute("tenant-a", "run-1")
 
+    assert runtime.contexts[0].agent_assets_staged is True
     assert sandbox.asset_was_ready is True
     emitted = await events.list_after("tenant-a", "run-1", 0)
     staged = [event for event in emitted if event.type == "agent.assets.staged"]

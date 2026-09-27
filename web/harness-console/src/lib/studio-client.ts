@@ -2503,6 +2503,7 @@ export const studioClient = {
     packageHash: string,
     executionProfile: string,
     canaryPercent: number,
+    previewId?: string,
   ) => request<StudioDeployment>("deployments/promote", {
     method: "POST",
     body: JSON.stringify({
@@ -2513,6 +2514,7 @@ export const studioClient = {
       canaryPercent,
       imageDigest: `sha256:${packageHash}`,
       executionProfile,
+      ...(previewId ? { previewId } : {}),
       config: {},
       idempotencyKey: `studio-deploy:${agentName}:${agentVersion}:${environment.name}:r${environment.revision}:${createRandomId()}`,
     }),

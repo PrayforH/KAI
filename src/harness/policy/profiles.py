@@ -63,7 +63,10 @@ def read_only_policy_rules() -> list[PolicyRule]:
 
 def default_policy_profiles() -> PolicyProfileRegistry:
     read_only = PolicyEngine(read_only_policy_rules())
-    standard = PolicyEngine(default_policy_rules())
+    standard = PolicyEngine([
+        rule for rule in default_policy_rules()
+        if rule.tool not in {"Task", "Agent"}
+    ])
     orchestrator = PolicyEngine(default_policy_rules())
     return PolicyProfileRegistry(
         {

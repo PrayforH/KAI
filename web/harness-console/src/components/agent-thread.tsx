@@ -1264,12 +1264,14 @@ function HarnessAssistantText(part: TextMessagePartProps) {
   const live = useLiveResponse();
   const isLast = useAuiState((state) => state.message.isLast);
   const messageId = useAuiState((state) => state.message.id);
+  const status = useAuiState((state) => state.message.status);
   const parts = useAuiState((state) => state.message.content);
   const partIndex =
     aui.part.source === "message" && aui.part.query.type === "index"
       ? aui.part.query.index
       : -1;
   if (
+    status?.type === "complete" ||
     shouldSuppressNativeAssistantText(
       ownsLiveResponse(isLast, messageId, live.messageId),
       live,
@@ -1284,6 +1286,17 @@ function HarnessAssistantText(part: TextMessagePartProps) {
       aria-busy={part.status.type === "running"}
     >
       <MarkdownText />
+    </div>
+  );
+}
+
+export function DurableAssistantResponse({ text, directStream, complete }: { text: string; directStream: boolean; complete: boolean }) {
+  if (!complete || directStream || !text) return null;
+  return (
+    <div className="assistant-answer" data-streaming="false" aria-busy={false}>
+      <TextMessagePartProvider text={text} isRunning={false}>
+        <MarkdownText />
+      </TextMessagePartProvider>
     </div>
   );
 }
@@ -1446,7 +1459,7 @@ export function turnOwnsRun(
   );
 }
 
-function HarnessAssistantMessage() {
+export function HarnessAssistantMessage() {
   const conversationScope = useConversationScope();
   const live = useLiveResponse();
   const isLast = useAuiState((state) => state.message.isLast);
@@ -1501,6 +1514,7 @@ function HarnessAssistantMessage() {
         messageId={messageId}
       />
       <LiveAssistantResponse live={live} ownsMessage={ownsLive} />
+      <DurableAssistantResponse text={copyText} directStream={directStream} complete={messageStatus?.type === "complete"} />
       <AssistantMessage.Content
         components={{
           Text: HarnessAssistantText,

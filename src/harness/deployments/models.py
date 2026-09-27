@@ -227,6 +227,11 @@ class DeploymentSnapshot(StudioModel):
     eval_gate_passed: bool = Field(alias="evalGatePassed")
     eval_required_datasets: int = Field(alias="evalRequiredDatasets", ge=0)
     preview_id: str | None = Field(default=None, alias="previewId")
+    preflight_policy_id: str | None = Field(default=None, alias="preflightPolicyId")
+    preflight_policy_revision: int | None = Field(default=None, alias="preflightPolicyRevision")
+    preflight_policy_hash: str | None = Field(default=None, alias="preflightPolicyHash")
+    preflight_result_hash: str | None = Field(default=None, alias="preflightResultHash")
+    preflight_completed_at: datetime | None = Field(default=None, alias="preflightCompletedAt")
     created_by: str = Field(alias="createdBy", min_length=1)
     created_at: datetime = Field(alias="createdAt")
 

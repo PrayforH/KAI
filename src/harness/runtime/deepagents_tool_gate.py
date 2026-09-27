@@ -200,23 +200,27 @@ class DeepagentsToolGate(AgentMiddleware):
                 return self._denied(tool_call_id, raw_name, reason)
             self._file_capabilities.observe(write_target)
 
-        if write_target is not None and self._file_capabilities.is_generated(write_target):
+        result = self._policy.evaluate(
+            PolicyContext(
+                tenant_id=context.run.tenant_id,
+                agent_name=context.session.agent_name,
+                tool_name=tool_name,
+                arguments=arguments,
+                sandbox_isolation=context.sandbox_isolation,
+                context_trust=context_trust,
+            )
+        )
+        if (
+            result.rule_name == "implicit-deny"
+            and write_target is not None
+            and self._file_capabilities.is_generated(write_target)
+        ):
             result = PolicyResult(
                 decision=PolicyDecision.ALLOW,
                 rule_name="run-generated-file",
                 reason="matched run-created file capability",
             )
-        else:
-            result = self._policy.evaluate(
-                PolicyContext(
-                    tenant_id=context.run.tenant_id,
-                    agent_name=context.session.agent_name,
-                    tool_name=tool_name,
-                    arguments=arguments,
-                    sandbox_isolation=context.sandbox_isolation,
-                    context_trust=context_trust,
-                )
-            )
+
         result = self._apply_overrides(
             result,
             raw_name=raw_name,

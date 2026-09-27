@@ -18,8 +18,8 @@ from ag_ui.core import (
     TextMessageEndEvent,
     TextMessageStartEvent,
 )
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from harness.agui.activity import build_run_activity
@@ -819,9 +819,10 @@ async def get_agui_thread_history(
     thread_id: str,
     identity: Annotated[Identity, Depends(require_identity)],
     container: Annotated[ApiContainer, Depends(get_container)],
+    background_tasks: BackgroundTasks,
     limit: Annotated[int, Query(ge=1, le=_HISTORY_RUN_PAGE_MAX)] = _HISTORY_RUN_PAGE_DEFAULT,
     before: str | None = Query(default=None),
-) -> AguiThreadHistory:
+) -> JSONResponse:
     ensure_permission(identity, "tasks:read")
     binding = await container.agui.get_binding(
         tenant_id=identity.tenant_id,
@@ -853,13 +854,21 @@ async def get_agui_thread_history(
 
     async def reconstruct(run: Run) -> list[AguiHistoryMessage]:
         async with semaphore:
-            return await _history_messages_for_run(container, identity, run)
+            return await _history_messages_for_run(
+                container, identity, run, write_snapshot=False
+            )
 
     reconstructed = await asyncio.gather(*(reconstruct(run) for run in page))
+    terminal_snapshot_tasks = [
+        run for run in page if run.status.is_terminal
+    ]
+    for run in terminal_snapshot_tasks:
+        background_tasks.add_task(_materialize_history_snapshot, container, identity.tenant_id, run)
+
     messages: list[AguiHistoryMessage] = [
         message for chunk in reconstructed for message in chunk
     ]
-    return AguiThreadHistory(
+    body = AguiThreadHistory(
         thread_id=thread_id,
         status=latest.status.value if latest is not None else "idle",
         run_id=latest.run_id if latest is not None else None,
@@ -868,6 +877,7 @@ async def get_agui_thread_history(
         has_more=has_more,
         total=len(ordered),
     )
+    return JSONResponse(content=body.model_dump(mode="json", by_alias=True, exclude_none=True))
 
 
 def _encode_history_cursor(run: Run) -> str:
@@ -890,6 +900,8 @@ async def _run_projection(
     container: ApiContainer,
     tenant_id: str,
     run: Run,
+    *,
+    write_snapshot: bool = True,
 ) -> tuple[list[RunEvent], str, dict[str, Any] | None]:
     """Return steer events, response text and activity for one history run.
 
@@ -926,7 +938,8 @@ async def _run_projection(
     activity = build_run_activity(events)
     if run.status.is_terminal:
         response = final_response_text(events)
-        await _write_history_snapshot(container, run, response, activity)
+        if write_snapshot:
+            await _write_history_snapshot(container, run, response, activity)
         return steer_events, response, activity
     return steer_events, active_response_text(events), activity
 
@@ -959,10 +972,27 @@ async def _write_history_snapshot(
         )
 
 
+async def _materialize_history_snapshot(
+    container: ApiContainer,
+    tenant_id: str,
+    run: Run,
+) -> None:
+    try:
+        await _run_projection(container, tenant_id, run, write_snapshot=True)
+    except Exception:  # noqa: BLE001 - cache materialization is best effort
+        logger.debug(
+            "history snapshot materialization failed for run %s",
+            run.run_id,
+            exc_info=True,
+        )
+
+
 async def _history_messages_for_run(
     container: ApiContainer,
     identity: Identity,
     run: Run,
+    *,
+    write_snapshot: bool = True,
 ) -> list[AguiHistoryMessage]:
     tenant_id = identity.tenant_id
     messages: list[AguiHistoryMessage] = []
@@ -1013,7 +1043,9 @@ async def _history_messages_for_run(
         messages.append(
             AguiHistoryMessage(id=f"user-{run.run_id}", role="user", content=content)
         )
-    steer_events, response, activity = await _run_projection(container, tenant_id, run)
+    steer_events, response, activity = await _run_projection(
+        container, tenant_id, run, write_snapshot=write_snapshot
+    )
     for guidance in steer_events:
         messages.append(AguiHistoryMessage(
             id=f"steer-{guidance.payload.get('request_id', guidance.event_id)}",

@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Collection, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
@@ -70,6 +70,8 @@ class RecordingToolGate:
         *,
         policy_id: str | None = None,
         subagent_policy_ids: Mapping[str, str] | None = None,
+        skill_names: Collection[str] = (),
+        subagent_skill_names: Mapping[str, Collection[str]] | None = None,
         result_trust_by_tool: Mapping[str, ContextTrust] | None = None,
         delegate_allowed_to_sdk_permissions: bool = False,
     ) -> dict[HookEvent, list[HookMatcher]]:

@@ -76,8 +76,9 @@ class PolicyEngine:
                 rule_name="implicit-deny",
                 reason="no policy rule matched",
             )
+        denials = [rule for rule in matches if rule.decision is PolicyDecision.DENY]
         selected = max(
-            matches,
+            denials or matches,
             key=lambda rule: (
                 rule.priority,
                 _specificity(rule),
@@ -154,6 +155,7 @@ def default_policy_rules() -> list[PolicyRule]:
         PolicyRule(name="web-search", tool="WebSearch", decision=PolicyDecision.ALLOW),
         PolicyRule(name="web-fetch", tool="WebFetch", decision=PolicyDecision.ALLOW),
         PolicyRule(name="read", tool="Read", decision=PolicyDecision.ALLOW),
+        PolicyRule(name="skill-loader", tool="Skill", decision=PolicyDecision.ALLOW),
         PolicyRule(name="glob", tool="Glob", decision=PolicyDecision.ALLOW),
         PolicyRule(name="grep", tool="Grep", decision=PolicyDecision.ALLOW),
         PolicyRule(name="delegate", tool="Task", decision=PolicyDecision.ALLOW),

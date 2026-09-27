@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import shutil
+import time
 from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import AbstractContextManager, ExitStack, aclosing, nullcontext, suppress
 from dataclasses import dataclass, replace
@@ -334,6 +335,8 @@ async def _client_query(
     transport: Transport | None = None,
     context_usage_timeout_seconds: float | None = None,
     steering: SteeringInbox | None = None,
+    observability: Observability | None = None,
+    run_id: str | None = None,
 ) -> AsyncIterator[object]:
     attempt_options = (
         replace(options, extra_args={**options.extra_args, "replay-user-messages": None})
@@ -349,14 +352,41 @@ async def _client_query(
             else ClaudeSDKClient(options=attempt_options, transport=transport)
         )
         try:
+            connect_started_ns = time.time_ns()
             async with client:
+                if observability is not None and run_id is not None:
+                    observability.record_completed_span(
+                        "harness.sdk.connect",
+                        started_at_ns=connect_started_ns,
+                        ended_at_ns=time.time_ns(),
+                        attributes={"run.id": run_id},
+                    )
                 # Fresh sessions have no historical window to govern. On resumed
                 # sessions the optional control request runs only after the provider
                 # result, so it cannot add latency to first text.
                 observe_resumed_context = attempt_options.resume is not None
                 terminal_result: ResultMessage | None = None
+                query_started_ns = time.time_ns()
                 await client.query(prompt)
+                if observability is not None and run_id is not None:
+                    observability.record_completed_span(
+                        "harness.sdk.query.send",
+                        started_at_ns=query_started_ns,
+                        ended_at_ns=time.time_ns(),
+                        attributes={"run.id": run_id},
+                    )
+                first_message_pending = True
+                wait_started_ns = time.time_ns()
                 async for message in _steerable_response(client, steering):
+                    if first_message_pending:
+                        first_message_pending = False
+                        if observability is not None and run_id is not None:
+                            observability.record_completed_span(
+                                "harness.sdk.first_message_wait",
+                                started_at_ns=wait_started_ns,
+                                ended_at_ns=time.time_ns(),
+                                attributes={"run.id": run_id},
+                            )
                     received_message = True
                     if recovery_session_id is not None:
                         yield SessionResumeRecovery(recovery_session_id)
@@ -654,15 +684,13 @@ class ClaudeSdkRuntime:
             name: AgentManifestSnapshot.model_validate(version.snapshot)
             for name, version in self._subagent_versions.items()
         }
-        materialized_skill_names = (
+        if not context.agent_assets_staged and (
+            self._snapshot.skill_snapshots
+            or any(snapshot.skill_snapshots for snapshot in subagent_snapshots.values())
+        ):
             materialize_skill_snapshot_set(
                 (self._snapshot, *subagent_snapshots.values()), context.workspace
             )
-            if self._snapshot.skill_snapshots
-            or any(snapshot.skill_snapshots for snapshot in subagent_snapshots.values())
-            else tuple(Path(skill).name for skill in manifest.spec.skills)
-        )
-        del materialized_skill_names
         # The workspace contains every immutable child Skill, but the Lead
         # advertises only its own names. Each AgentDefinition below receives
         # the Skills pinned to that child version.
@@ -1020,6 +1048,11 @@ class ClaudeSdkRuntime:
                         name: snapshot.manifest.spec.permissions.policy
                         for name, snapshot in subagent_snapshots.items()
                     },
+                    skill_names=skill_names,
+                    subagent_skill_names={
+                        name: tuple(skill.name for skill in snapshot.skill_snapshots)
+                        for name, snapshot in subagent_snapshots.items()
+                    },
                     result_trust_by_tool=resolved_tools.result_trust,
                     delegate_allowed_to_sdk_permissions=(permission_mode == "auto"),
                 )
@@ -1238,7 +1271,13 @@ class ClaudeSdkRuntime:
                 )
             if context.runtime_transport_factory is None:
                 query_messages = (
-                    _client_query(prompt, options, steering=context.steering)
+                    _client_query(
+                        prompt,
+                        options,
+                        steering=context.steering,
+                        observability=self._observability,
+                        run_id=context.run.run_id,
+                    )
                     if self._query is _default_query
                     else self._query(prompt, options)
                 )
@@ -1257,6 +1296,8 @@ class ClaudeSdkRuntime:
                     transport=transport,
                     steering=context.steering,
                     context_usage_timeout_seconds=(REMOTE_CONTEXT_USAGE_CONTROL_TIMEOUT_SECONDS),
+                    observability=self._observability,
+                    run_id=context.run.run_id,
                 )
             model_messages = self._model_messages(
                 query_messages,
