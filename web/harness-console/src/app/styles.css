@@ -8973,3 +8973,6 @@ textarea.user-message-editor-input:focus-visible {
   .composer-file-card .attachment-upload-track > span { transition: none; }
   .composer-file-card .attachment-upload-track > span.indeterminate { animation: none; width: 100%; opacity: .45; }
 }
+
+/* Session trace console: opened from the task header "更多" menu; it replaces
+   the conversation pane in place and offers a 返回对话 control in its toolbar. */

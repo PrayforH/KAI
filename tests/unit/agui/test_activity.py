@@ -666,3 +666,32 @@ def test_tool_result_error_never_projects_citations() -> None:
     projected = activity_projection(event("tool.result", payload))
     metadata = projected[0].model_dump(by_alias=True)["patch"][0]["value"]["metadata"]
     assert metadata.get("citations") is None
+
+
+def test_tool_result_preview_keeps_long_content_up_to_bound() -> None:
+    """The projection cap only caps the preview; multi-k output survives."""
+    content = "\n".join(f"line-{index}: " + "x" * 80 for index in range(80))
+    result = activity_projection(
+        event(
+            "tool.result",
+            {"tool_call_id": "tool-long", "content": content, "is_error": False},
+            3,
+        )
+    )[0].model_dump(by_alias=True)
+    preview = result["patch"][0]["value"]["metadata"]["result_preview"]
+    assert preview is not None
+    assert "line-0:" in preview
+    assert "line-79:" in preview
+    # Beyond the bound the preview still truncates instead of growing unbounded.
+    over = "\n".join(f"line-{index}: " + "x" * 80 for index in range(200))
+    truncated = activity_projection(
+        event(
+            "tool.result",
+            {"tool_call_id": "tool-over", "content": over, "is_error": False},
+            4,
+        )
+    )[0].model_dump(by_alias=True)
+    over_preview = truncated["patch"][0]["value"]["metadata"]["result_preview"]
+    assert over_preview is not None
+    assert over_preview.endswith("…")
+    assert len(over_preview) <= 8_000

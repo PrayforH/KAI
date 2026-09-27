@@ -14,6 +14,7 @@ import { AgentThread } from "../components/agent-thread";
 import { AuthProvider, useAuth } from "../components/auth-provider";
 import { AssistantRuntimeShell } from "../components/assistant-runtime-shell";
 import { ProductivityCommandCenter } from "../components/productivity-command-center";
+import { RunTraceConsole } from "../components/run-trace-console";
 import {
   TaskAgentSwitcher,
   taskAgentSwitchMode,
@@ -197,6 +198,7 @@ function TaskContextBar({
   task,
   switcher,
   observabilityHref,
+  onOpenTrace,
   onRenamed,
   onArchived,
   projects = [],
@@ -207,6 +209,7 @@ function TaskContextBar({
   /** Version switcher for switchable agents, folded into the folder popover. */
   switcher?: ReactNode;
   observabilityHref?: string | null;
+  onOpenTrace?: () => void;
   onRenamed: (title: string) => void;
   onArchived: () => void;
   projects?: readonly ApiProject[];
@@ -229,6 +232,7 @@ function TaskContextBar({
           task={task}
           projects={projects}
           observabilityHref={observabilityHref}
+          onOpenTrace={onOpenTrace}
           onRenamed={onRenamed}
           onArchived={onArchived}
           onProjectChanged={() => onProjectChanged?.()}
@@ -286,6 +290,18 @@ function AuthenticatedHome() {
     useState<SkillCreatorLaunch | null>(null);
   const runView = useRunViewModel();
   const runActivity = useRunActivity();
+  const [stageView, setStageView] = useState<"conversation" | "trace">(
+    "conversation",
+  );
+  useEffect(() => {
+    const openTrace = () => setStageView("trace");
+    window.addEventListener("harness:open-trace", openTrace);
+    return () => window.removeEventListener("harness:open-trace", openTrace);
+  }, []);
+  // A new task starts a clean thread: the trace view has nothing to show yet.
+  useEffect(() => {
+    if (localThreadId === threadId) setStageView("conversation");
+  }, [threadId, localThreadId]);
   // One click into Langfuse for the run on screen, or nothing before it exists.
   const observabilityHref = runActivity?.run_id
     ? `/api/harness/observability?run_id=${encodeURIComponent(runActivity.run_id)}&trace_id=${encodeURIComponent(runActivity.trace_id ?? "")}`
@@ -716,6 +732,7 @@ function AuthenticatedHome() {
                 taskTitle={currentTaskTitle}
                 task={currentTask}
                 observabilityHref={observabilityHref}
+                onOpenTrace={() => setStageView("trace")}
                 projects={projects}
                 onProjectChanged={() => {
                   // The task moved between sections: reload both the list and
@@ -750,6 +767,17 @@ function AuthenticatedHome() {
             />
           </header>
           <section className="chat-stage" aria-label="Agent 任务对话">
+            {stageView === "trace" ? (
+              <RunTraceConsole
+                threadId={threadId}
+                liveActivity={runActivity}
+                runBusy={currentTaskBusy}
+                onBack={() => setStageView("conversation")}
+                agentName={selectedAgent?.name}
+                agentVersion={selectedAgent?.version}
+                traceHref={observabilityHref}
+              />
+            ) : (
             <div className="chat-surface">
               {threadId && selectedAgent ? (
                 <AssistantRuntimeShell
@@ -804,6 +832,7 @@ function AuthenticatedHome() {
                 </div>
               )}
             </div>
+            )}
           </section>
         </div>
         <WorkbenchRail
