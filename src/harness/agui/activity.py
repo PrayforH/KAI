@@ -646,8 +646,10 @@ def _merge_stream_item(
     metadata = item.get("metadata")
     if not isinstance(previous_metadata, dict) or not isinstance(metadata, dict):
         return False
-    stream_id = metadata.get(key)
-    if stream_id is None or previous_metadata.get(key) != stream_id:
+    current_stream = cast(dict[str, Any], metadata)
+    previous_stream = cast(dict[str, Any], previous_metadata)
+    stream_id = current_stream.get(key)
+    if stream_id is None or previous_stream.get(key) != stream_id:
         return False
     previous["summary"] = f"{previous.get('summary') or ''}{item.get('summary') or ''}"
     return True
