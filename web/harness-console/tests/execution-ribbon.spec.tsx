@@ -158,6 +158,9 @@ describe("execution ribbon", () => {
       '<section class="execution-ribbon phase-running" aria-label="执行进度 run-ribbon" data-run-id="run-ribbon" data-response-started="false" data-open="true">',
     );
     expect(html).toContain("正在处理");
+    expect(html).not.toMatch(/class="execution-phase execution-state-sweep"/);
+    expect(html).toContain('class="execution-state-sweep" data-running="true"');
+    expect((html.match(/class="execution-state-sweep" data-running="true"/g) ?? []).length).toBe(2);
     expect(html).toContain("已持续 6s");
     expect(html).toContain('aria-expanded="true"');
     expect(html).not.toContain('class="execution-state-mark"');

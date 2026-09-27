@@ -25,6 +25,7 @@ export function DurableHistorySync({
     if (!needsRecovery) return;
     let disposed = false;
     let pending = false;
+    let handoffFrame = 0;
     async function refresh() {
       if (pending || thread.getState().isRunning) return;
       pending = true;
@@ -32,7 +33,9 @@ export function DurableHistorySync({
         await history.loadSnapshot((repository) => {
           if (!disposed && !thread.getState().isRunning) {
             thread.import(repository);
-            liveResponseStore.clear(threadId);
+            handoffFrame = window.requestAnimationFrame(() => {
+              if (!disposed && !thread.getState().isRunning) liveResponseStore.clear(threadId);
+            });
           }
         });
       } catch (error) {
@@ -41,7 +44,7 @@ export function DurableHistorySync({
     }
     const timer = window.setInterval(() => void refresh(), 1500);
     void refresh();
-    return () => { disposed = true; window.clearInterval(timer); };
+    return () => { disposed = true; window.clearInterval(timer); window.cancelAnimationFrame(handoffFrame); };
   }, [history, needsRecovery, thread, threadId]);
 
   useEffect(() => {
@@ -49,6 +52,7 @@ export function DurableHistorySync({
     // Wait for that transition instead of dropping the only terminal refresh.
     if (running) return;
     let disposed = false;
+    let handoffFrame = 0;
     // One frame is enough to let the runtime finish mounting; a longer wait left
     // the conversation area visibly empty after switching tasks.
     const timer = window.setTimeout(() => {
@@ -56,7 +60,9 @@ export function DurableHistorySync({
         .loadSnapshot((repository) => {
           if (!disposed && repository && !thread.getState().isRunning) {
             thread.import(repository);
-            liveResponseStore.clear(threadId);
+            handoffFrame = window.requestAnimationFrame(() => {
+              if (!disposed && !thread.getState().isRunning) liveResponseStore.clear(threadId);
+            });
           }
         })
         .finally(() => { if (!disposed) onSettled?.(); })
@@ -72,6 +78,7 @@ export function DurableHistorySync({
     return () => {
       disposed = true;
       window.clearTimeout(timer);
+      window.cancelAnimationFrame(handoffFrame);
     };
   }, [history, revision, running, thread, threadId]);
 

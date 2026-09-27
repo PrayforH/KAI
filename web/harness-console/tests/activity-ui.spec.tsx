@@ -11,6 +11,7 @@ import type { RunViewModel } from "../src/lib/run-view-model";
 import {
   artifactsForTurn,
   hasProjectedTool,
+  selectActivityForTurn,
   selectTurnActivity,
   shouldCaptureTurnActivity,
   shouldKeepActivityInLatestSlot,
@@ -230,6 +231,14 @@ describe("Codex-style activity UI", () => {
     expect(selectTurnActivity(newer, completed, true, true)?.run_id).toBe(
       "run-2",
     );
+  });
+
+  it("keeps durable process above its answer after the live Run identity changes", () => {
+    const durable = runActivitySchema.parse({ ...activity, status: "succeeded" });
+    const newer = runActivitySchema.parse({ ...activity, run_id: "run-2" });
+    expect(selectActivityForTurn(durable, newer, undefined, true, true)).toBe(durable);
+    expect(selectActivityForTurn(durable, undefined, undefined, false, true)).toBe(durable);
+    expect(selectActivityForTurn(undefined, newer, undefined, true, false)).toBe(newer);
   });
 
   it("captures a batched terminal delta after the turn stops being last", () => {

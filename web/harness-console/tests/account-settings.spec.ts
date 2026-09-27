@@ -20,6 +20,7 @@ const studioSidebar = readFileSync(
 );
 const workbench = readFileSync(join(process.cwd(), "src/app/page.tsx"), "utf8");
 const styles = readFileSync(join(process.cwd(), "src/app/styles.css"), "utf8");
+const conversationStyles = readFileSync(join(process.cwd(), "src/app/conversation-experience.css"), "utf8");
 const login = readFileSync(
   join(process.cwd(), "src/app/login/page.tsx"),
   "utf8",
@@ -49,6 +50,11 @@ describe("account settings", () => {
     expect(menu).not.toContain('<ProductIcon name="book" />');
     expect(menu).toContain('<ProductIcon name="settings" />');
     expect(menu).toContain('<ProductIcon name="logout" />');
+  });
+
+  it("aligns the theme row with account actions", () => {
+    expect(conversationStyles).toMatch(/\.account-theme \.nested-menu-trigger\s*\{[^}]*min-height:\s*36px;[^}]*padding:\s*0 10px;[^}]*gap:\s*9px;/s);
+    expect(conversationStyles).toMatch(/\.account-theme \.nested-menu-trigger > svg:first-child\s*\{[^}]*width:\s*17px;[^}]*height:\s*17px;[^}]*flex:\s*0 0 17px;/s);
   });
 
   it("keeps governance links out of the simplified task account menu", () => {

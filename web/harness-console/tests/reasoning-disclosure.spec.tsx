@@ -87,7 +87,8 @@ it("keeps one disclosure through four streamed file requests and results", async
         expect(next).toBe(row);
         expect(next.querySelector("summary")).toBe(summary);
         expect(next.querySelector("strong")?.getAttribute("data-running")).toBe(String(!completed));
-        expect(host.querySelector(".execution-phase")?.getAttribute("data-running")).toBe("true");
+        expect(host.querySelector(".execution-phase")?.textContent).toBe("正在处理");
+        expect(host.querySelector(".execution-phase")?.hasAttribute("data-running")).toBe(false);
         expect(next.querySelector(".execution-row-sweep")).toBeNull();
         if (index === 1 && completed) row.open = true;
         if (index > 1) expect(row.open).toBe(true);
@@ -108,7 +109,7 @@ it("keeps the overall running indicator during answer output and stops it on exi
   try {
     await act(async () => root.render(<ActivitySummary activity={view} responseStarted />));
     const phase = host.querySelector(".execution-phase");
-    expect(phase?.getAttribute("data-running")).toBe("true");
+    expect(phase?.hasAttribute("data-running")).toBe(false);
     expect(phase?.textContent).toBe("正在处理");
     expect(host.querySelector('.execution-reasoning-label[data-running="true"]')).toBeNull();
     for (const status of ["succeeded", "failed", "cancelled", "waiting_approval"] as const) {

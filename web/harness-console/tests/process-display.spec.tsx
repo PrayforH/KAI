@@ -78,7 +78,7 @@ it("does not expose arbitrary thinking metadata as provider content", () => {
   expect(host.textContent).not.toContain("原始内部字段");
   expect(host.querySelector(".execution-reasoning")).toBeNull();
 });
-it("sweeps only a running tool and keeps the run indicator until a terminal or approval event", () => {
+it("sweeps only a running tool while the run indicator stays visible until terminal or approval", () => {
   const running = runActivitySchema.parse({ ...completed, run_id: "tool-tail-dsh", status: "running", items: [
     item("run.running", 1, "开始"),
     { ...item("tool.request", 2, "读取"), status: "running", kind: "tool", metadata: { tool_call_id: "t1", name: "Read", arguments: { file_path: "notes.txt" } } },
@@ -88,9 +88,10 @@ it("sweeps only a running tool and keeps the run indicator until a terminal or a
   const result = { ...running, items: [...running.items, { ...item("tool.result", 3, "已读取"), metadata: {tool_call_id: "t1"} }] };
   render(result);
   expect(host.querySelector('.execution-action strong[data-running="true"]')).toBeNull();
-  expect(host.querySelector('.execution-phase[data-running="true"]')).not.toBeNull();
+  expect(host.querySelector('.execution-phase')?.textContent).toBe("正在处理");
+  expect(host.querySelector('.execution-phase[data-running]')).toBeNull();
   render(result, true);
-  expect(host.querySelector('.execution-phase[data-running="true"]')).not.toBeNull();
+  expect(host.querySelector('.execution-phase')?.textContent).toBe("正在处理");
   for (const event of ["approval.requested", "run.failed", "run.cancelled", "run.succeeded"]) {
     render(runActivitySchema.parse({ ...result, items: [...result.items, { ...item(event, 4, "结束"), metadata: { approval_id: "a1" } }] }));
     expect(host.querySelector('[data-running="true"]')).toBeNull();

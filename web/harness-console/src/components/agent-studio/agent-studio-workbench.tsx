@@ -63,6 +63,7 @@ import { useDialogFocus } from "../../lib/use-dialog-focus";
 import { useDismissablePopovers } from "../../lib/use-dismissable-popovers";
 import { GovernanceControlPlane } from "./governance-control-plane";
 import { skillCreatorHref } from "../../lib/skill-creator-launch";
+import { matchesPlatformSkillQuery } from "../../lib/skill-catalog-search";
 import { SkillConversationBuilder } from "./skill-conversation-builder";
 const StudioCodeEditor = dynamic(() => import("./studio-code-editor").then((module) => module.StudioCodeEditor));
 const AgentBuilderAssistant = dynamic(() => import("./agent-builder-overlays").then((module) => module.AgentBuilderAssistant));
@@ -3039,7 +3040,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                 {platformSkills === null && !platformSkillError && (
                   <p className={styles.skillEmpty}>正在读取平台技能目录…</p>
                 )}
-                {(platformSkills ?? []).filter(pkg => `${pkg.displayName} ${pkg.summary}`.toLowerCase().includes(skillQuery.trim().toLowerCase())).map((pkg) => {
+                {(platformSkills ?? []).filter(pkg => matchesPlatformSkillQuery(pkg, skillQuery)).map((pkg) => {
                   const enabled = draft.skills.some(
                     (candidate) => candidate.name === pkg.skill.name,
                   );

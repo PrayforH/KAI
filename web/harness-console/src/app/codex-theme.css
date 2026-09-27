@@ -44,7 +44,14 @@
   --codex-glint: rgb(255 255 255 / 3%);
   --codex-control-height: 40px;
   --codex-control-radius: 8px;
-  --codex-control-transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+  /* Motion is a product rhythm: quick feedback, deliberate surfaces, no spectacle. */
+  --codex-motion-ease: cubic-bezier(.2, .8, .2, 1);
+  --codex-motion-ease-out: cubic-bezier(.16, 1, .3, 1);
+  --codex-motion-fast: 120ms;
+  --codex-motion-control: 160ms;
+  --codex-motion-content: 220ms;
+  --codex-motion-panel: 280ms;
+  --codex-control-transition: border-color var(--codex-motion-control) var(--codex-motion-ease), background-color var(--codex-motion-control) var(--codex-motion-ease), box-shadow var(--codex-motion-control) var(--codex-motion-ease);
   /* One primary-navigation contract shared by Tasks and every Studio route. */
   --app-sidebar-expanded-width: 264px;
   --app-sidebar-collapsed-width: 52px;
@@ -532,6 +539,33 @@ select:not([multiple]):not(.task-model-control select):not(.task-agent-version-s
   border-color: rgb(250 66 62 / 34%);
   color: var(--codex-danger);
   background: var(--codex-danger-soft);
+}
+
+body.codex-theme-v1 .account-popover {
+  transform-origin: bottom left;
+  animation: codex-surface-in var(--codex-motion-content) var(--codex-motion-ease-out) both;
+}
+
+body.codex-theme-v1 .task-sidebar,
+body.codex-theme-v1 .task-sidebar.is-collapsed,
+body.codex-theme-v1 .developer-drawer {
+  transition: width var(--codex-motion-panel) var(--codex-motion-ease),
+    transform var(--codex-motion-panel) var(--codex-motion-ease),
+    opacity var(--codex-motion-content) var(--codex-motion-ease);
+}
+
+@keyframes codex-surface-in {
+  from { opacity: 0; transform: translateY(5px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes codex-state-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.codex-motion-state {
+  animation: codex-state-in var(--codex-motion-content) var(--codex-motion-ease-out) both;
 }
 
 /* Quick theme-appearance switch inside the account popover: mirrors the

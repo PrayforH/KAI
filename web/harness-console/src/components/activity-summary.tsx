@@ -777,9 +777,6 @@ export function ActivitySummary({
     latestTimelineEntry?.kind === "commentary"
       ? latestTimelineEntry.commentary.id
       : null;
-  const activeActionId = thinkingActive && !responseStarted &&
-    latestTimelineEntry?.kind === "action" && latestTimelineEntry.action.status === "running"
-      ? latestTimelineEntry.action.id : null;
   const heading = activityHeading(view);
   const elapsedCopy = active
     ? `已持续 ${elapsed < 1_000 ? "0s" : durationLabel(elapsed)}`
@@ -810,7 +807,7 @@ export function ActivitySummary({
         onClick={hasContent ? toggleDisclosure : undefined}
         aria-expanded={hasContent ? open : undefined}
       >
-        <span className="execution-phase execution-state-sweep" data-running={thinkingActive}>{heading}</span>
+        <span className="execution-phase">{heading}</span>
         <span className="execution-duration">· {elapsedCopy}</span>
         {hasContent && <span className="execution-chevron" aria-hidden="true" />}
       </Disclosure>
@@ -856,7 +853,7 @@ export function ActivitySummary({
                   active={entry.commentary.id === activeCommentaryId}
                 />
               ) : (
-                <ActionRow key={entry.action.id} action={entry.action} active={entry.action.id === activeActionId} />
+                <ActionRow key={entry.action.id} action={entry.action} active={thinkingActive && entry.action.status === "running"} />
               ),
             )}
           </section>

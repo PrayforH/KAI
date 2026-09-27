@@ -71,6 +71,7 @@ describe("Skills catalog page", () => {
   });
 
   it("supports search and a centered detail modal", () => {
+    expect(component).toContain("matchesSkillQuery(skill, query)");
     expect(component).toContain("搜索技能…");
     expect(component).toContain("useDialogFocus");
     expect(component).toContain("detailBackdrop");
