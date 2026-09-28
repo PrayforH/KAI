@@ -20,9 +20,9 @@
 ## 验证
 
 - Web Vitest 全量 958 passed/1 skipped；Next 构建 BUILD_ID `bl4Rs2lUKI8UzzMgugwt6`。
-- 部署 174:3501：`kai/axis-web:develop-856abf15`（image `sha256:b61f223b…`，revision label `856abf15…`），基座 `develop-953d8cc2`；3599 canary 四端点 200/401 后切换，新容器 healthy/restarts 0；旧容器 `axis-web-develop-953d8cc2-rollback-856abf15` 保留。API/三 Worker（`develop-7bdc9d81`）、3301、173 均未动。
+- 两轮部署 174:3501（仅 Web）：先 `develop-856abf15`（26px 版），用户反馈偏矮后 `develop-034bd5d5`（30px 版，image `sha256:5c64cd70…`，BUILD_ID `y0CyN7PK4aShd0mFHUm7n`，基座 `develop-856abf15`）。第二轮 3599 canary 在拆除时仍为 `starting`、未取到 healthy，该步本轮**非结论性**；切换后的 3501 容器为 healthy/restarts 0，并另经 HTTP 与浏览器实测。回滚容器 `axis-web-develop-856abf15-rollback-034bd5d5`（更早一轮为 `…-953d8cc2-rollback-856abf15`）保留。API/三 Worker（`develop-7bdc9d81`）、3301、173 均未动。
 - 线上 chunk 自证：3501 提供的 `29nqp_blvllk2.css` 含 `min-height:26px` 与新 shelf 规则。
-- 浏览器复测（注入真实类名的芯片+弹层）：720 视口条带高 40px、弹层完整且 `fullyInsideViewport: true`；480 矮视口弹层不再越界（此前复现的裁剪消失）。长列表场景的钳制由单测覆盖。
+- 浏览器复测（用组件自身的类名渲染芯片+弹层；QA 账号无可用知识库，无法点出真实芯片，已在报告里注明）：30px 版实测芯片 30px、字号 13px、条带 44px（原 58px）；720 视口弹层完整且 `fullyInsideViewport: true`；480 矮视口弹层不再越界（此前复现的裁剪消失）。长列表场景的钳制由单测覆盖。
 - 3301、173:3302 均 200 未受影响。
 
 ## 说明与回滚
