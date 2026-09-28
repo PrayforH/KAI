@@ -240,7 +240,16 @@ export function TaskKnowledgeControl({ disabled, label }: { disabled: boolean; l
         </>}
       </button>
       {open && (
-        <section id={menuId} role="dialog" aria-label="选择知识库" className="task-knowledge-menu">
+        <section id={menuId} role="dialog" aria-label="选择知识库" className="task-knowledge-menu"
+          ref={(node) => {
+            if (!node) return;
+            // The menu opens upward from the trigger, but the thread viewport is a
+            // scroll box: a menu taller than the space above the trigger gets its
+            // top clipped into an unreadable sliver. Cap it at that space instead.
+            const top = trigger.current?.getBoundingClientRect().top ?? window.innerHeight;
+            const room = Math.round(top - 16);
+            node.style.maxHeight = `${Math.max(160, Math.min(360, room))}px`;
+          }}>
           <KnowledgeBasePicker />
         </section>
       )}

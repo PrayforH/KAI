@@ -82,6 +82,21 @@ it("never attaches a new run's sources to an older canonical answer", () => {
   expect(citationsForTurn("assistant-old", false, observed, durable)).toEqual([]);
 });
 
+it("caps the picker at the space above its trigger so the scroll box cannot clip it", async () => {
+  await act(async () => root.render(<Harness />));
+  act(() => {
+    host.querySelector<HTMLButtonElement>(".task-knowledge-trigger")!.style.marginTop = "900px";
+    host.querySelector<HTMLButtonElement>(".task-knowledge-trigger")!.click();
+  });
+  const menu = host.querySelector<HTMLElement>('[role="dialog"]')!;
+  expect(menu).not.toBeNull();
+  // The trigger sits 900px down inside a 768px viewport: without the cap the
+  // thread viewport's scroll box shears the menu's top into a sliver.
+  const cap = Number.parseInt(menu.style.maxHeight, 10);
+  expect(cap).toBeLessThanOrEqual(360);
+  expect(cap).toBeGreaterThanOrEqual(160);
+});
+
 it("opens the shared multi-picker from the context shelf and removes a selected base", async () => {
   function Shelf() {
     const [selected, setSelected] = useState(["cases", "policy"]);
