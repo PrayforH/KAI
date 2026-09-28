@@ -377,6 +377,10 @@ describe("Agent Studio management page", () => {
     expect(titleBlock).toContain("已保存 r${draft.revision}");
     expect(titleBlock).not.toContain("已同步 r${draft.revision}");
     expect(styles).toContain(".syncState");
+    // The name stands alone: no identity icon block, and no leftover styling.
+    expect(titleBlock).toContain("<h1>{draft.displayName}</h1>");
+    expect(titleBlock).not.toContain("agentIdentityIcon");
+    expect(styles).not.toContain("agentIdentityIcon");
   });
 
   it("saves unsaved work before creating another personal Agent", () => {

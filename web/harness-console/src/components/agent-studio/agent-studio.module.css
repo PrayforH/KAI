@@ -8352,7 +8352,6 @@
 .studioShell[data-agent-focused=true] .titleBlock { gap: 14px; }
 .studioShell[data-agent-focused=true] .eyebrow { color: var(--studio-muted); font-size: 11px; margin: 0; letter-spacing: normal; }
 .studioShell[data-agent-focused=true] .draftDot { background: var(--studio-muted); }
-.agentIdentityIcon { display: grid; place-items: center; width: 28px; height: 28px; flex: 0 0 28px; border-radius: 6px; color: var(--studio-ink-soft); background: var(--studio-panel-subtle); }
 .versionTrigger { display: inline-flex; align-items: center; gap: 5px; }
 .versionTrigger svg { width: 14px; height: 14px; }
 
@@ -8418,7 +8417,6 @@
 .studioShell[data-agent-focused=true] .titleBlock { align-items: center; min-width: 0; gap: 12px; }
 .studioShell[data-agent-focused=true] .titleLine, .studioShell[data-agent-focused=true] .eyebrow { display: flex; align-items: center; min-height: 30px; margin: 0; gap: 8px; }
 .studioShell[data-agent-focused=true] .titleLine h1 { margin: 0; line-height: 20px; }
-.studioShell[data-agent-focused=true] .agentIdentityIcon { box-sizing: border-box; width: 30px; height: 30px; margin: 0; }
 .studioShell[data-agent-focused=true] .versionTrigger { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 7px; box-sizing: border-box; }
 .studioShell[data-agent-focused=true] .syncState { display: inline-flex; align-items: center; gap: 6px; line-height: 20px; }
 .studioShell[data-agent-focused=true] .headerActions .publishButton, .studioShell[data-agent-focused=true] .headerActions .iconActionButton { box-sizing: border-box; height: 30px; min-height: 30px; }

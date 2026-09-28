@@ -2249,7 +2249,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
               </span>
             </div>
             <div className={styles.titleLine}>
-              <span className={styles.agentIdentityIcon}><ConfigurationIcon name="agent" /></span><h1>{draft.displayName}</h1>
+              <h1>{draft.displayName}</h1>
               <code>{draft.name}@{draft.version}</code>
             </div>
             <p>{draft.description}</p>
