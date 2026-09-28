@@ -3,6 +3,8 @@ import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import ReactMarkdown from "react-markdown";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TaskKnowledgeProvider, TaskKnowledgeControl, TaskKnowledgeModeSwitch, TaskKnowledgeSelection } from "../src/components/task-knowledge-context";
 import { citationsForTurn, citationTarget, dedupeCitations, knowledgeUrlTransform, parseWikiTarget, remarkWikiLinks } from "../src/lib/knowledge-links";
@@ -95,6 +97,23 @@ it("caps the picker at the space above its trigger so the scroll box cannot clip
   const cap = Number.parseInt(menu.style.maxHeight, 10);
   expect(cap).toBeLessThanOrEqual(360);
   expect(cap).toBeGreaterThanOrEqual(160);
+});
+
+it("draws the remove mark as a stroked icon and sizes the picker to its rows", async () => {
+  const css = readFileSync(join(process.cwd(), "src/app/web-codex.css"), "utf8");
+  function Shelf() {
+    return <TaskKnowledgeProvider selected={["cases"]} onChange={() => {}} mode="rag" onModeChange={() => {}}>
+      <TaskKnowledgeSelection disabled={false} />
+    </TaskKnowledgeProvider>;
+  }
+  await act(async () => root.render(<Shelf />));
+  const remove = host.querySelector('[aria-label="移除知识库 案例库"]')!;
+  // The text glyph × sits above the optical centre of its em box; the icon is
+  // drawn on the same 16px grid as the folder/chevron beside it.
+  expect(remove.querySelector("svg.task-knowledge-remove")).not.toBeNull();
+  expect(remove.textContent).toBe("");
+  // Both pickers size to their rows instead of reserving a fixed panel width.
+  expect(css).toContain(".task-knowledge-menu { left: -34px; width: fit-content;");
 });
 
 it("opens the shared multi-picker from the context shelf and removes a selected base", async () => {

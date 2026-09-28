@@ -47,7 +47,7 @@
 .embedded .hero { grid-template-columns: minmax(0, 1fr) minmax(220px, .6fr); gap: 24px; padding-bottom: 20px; }
 .embedded .hero h1, .embedded .hero p { display: none; }
 .embedded .hero > div > span { margin-top: 0; }
-.scope select { width: 100%; min-width: 0; height: 38px; padding: 0 32px 0 10px; color: var(--ink); background-color: var(--codex-field); border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+.scope select { width: fit-content; min-width: min(220px, 100%); max-width: 100%; height: 38px; padding: 0 32px 0 10px; color: var(--ink); background-color: var(--codex-field); border: 1px solid var(--line); border-radius: 8px; font: inherit; }
 .embedded .workspace { grid-template-columns: minmax(0, 1fr) 280px; gap: 18px; }
 .embedded .sectionLabel { display: none; }
 .embedded :is(.primary, .save) { color: var(--codex-on-accent); }

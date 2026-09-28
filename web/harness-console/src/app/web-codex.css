@@ -2970,7 +2970,7 @@ body.codex-theme-v1:has(.console-shell) .task-sidebar-brand .task-sidebar-search
 }
 
 /* Knowledge Q&A controls share the existing monochrome composer rhythm. */
-.task-knowledge-menu { left: -34px; width: min(300px, calc(100vw - 48px)); max-height: min(360px, 55dvh); }
+.task-knowledge-menu { left: -34px; width: fit-content; min-width: 220px; max-width: min(300px, calc(100vw - 48px)); max-height: min(360px, 55dvh); }
 .task-knowledge-search { width: 100%; box-sizing: border-box; padding: 8px 10px; margin-bottom: 8px; border: 1px solid var(--codex-line); border-radius: 7px; background: var(--codex-inset, #171717); color: var(--codex-ink); font: inherit; font-size: 12px; }
 .task-knowledge-menu-head { color: var(--codex-muted); }
 .task-knowledge-option-copy small { color: var(--codex-muted); }
@@ -2998,7 +2998,8 @@ body.codex-theme-v1 .composer-context-shelf.task-knowledge-selection { padding-t
 .task-knowledge-chevron { width: 14px; height: 14px; flex: 0 0 14px; fill: none; stroke: var(--codex-muted); stroke-width: 1.5; }
 .task-knowledge-folder { width: 17px; height: 17px; flex: 0 0 17px; fill: none; stroke: var(--codex-ink, #f5f5f5); stroke-width: 1.5; stroke-linejoin: round; }
 .task-knowledge-selected-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.task-knowledge-selected-chip > button { display: grid; place-items: center; flex: 0 0 22px; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--codex-muted); font: inherit; font-size: 16px; cursor: pointer; }
+.task-knowledge-selected-chip > button { display: grid; place-items: center; flex: 0 0 22px; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--codex-muted); cursor: pointer; }
+.task-knowledge-remove { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
 .task-knowledge-selected-chip > button:hover:not(:disabled) { background: var(--codex-accent-faint); color: var(--codex-ink); }
 .task-knowledge-selected-chip > button:disabled { opacity: .45; cursor: default; }
 .task-knowledge-trigger:focus-visible, .task-knowledge-option:focus-visible, .task-knowledge-switch:focus-visible, .task-knowledge-search:focus-visible, .task-knowledge-selection button:focus-visible, .aui-citation-link:focus-visible { outline: 2px solid var(--codex-ink); outline-offset: 2px; }

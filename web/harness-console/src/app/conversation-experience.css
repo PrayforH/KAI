@@ -1,5 +1,5 @@
 /* Conversation controls share the existing product colors and scale. */
-body.codex-theme-v1 .harness-composer-shell .task-agent-menu { width: min(360px, calc(100vw - 52px)); max-height: min(420px, 65dvh); padding: 8px; border-radius: 12px; box-shadow: 0 12px 36px rgb(0 0 0 / 18%); }
+body.codex-theme-v1 .harness-composer-shell .task-agent-menu { width: fit-content; min-width: 200px; max-width: min(360px, calc(100vw - 52px)); max-height: min(420px, 65dvh); padding: 8px; border-radius: 12px; box-shadow: 0 12px 36px rgb(0 0 0 / 18%); }
 body.codex-theme-v1 .task-agent-menu > header { padding: 5px 8px 9px; border: 0; }
 body.codex-theme-v1 .task-agent-menu > header strong { font-size: 12px; font-weight: 500; color: var(--codex-muted); }
 body.codex-theme-v1 .task-agent-menu > header > span { display: none; }

@@ -292,7 +292,9 @@ export function TaskKnowledgeSelection({ disabled }: { disabled: boolean }) {
       const name = available.find((item) => item.reference === reference)?.displayName ?? reference;
       return <span className="task-knowledge-selected-chip" key={reference} title={name}>
         <TaskKnowledgeControl disabled={disabled} label={name} />
-        <button type="button" disabled={disabled} onClick={() => toggle(reference)} aria-label={`移除知识库 ${name}`}><span aria-hidden="true">×</span></button>
+        <button type="button" disabled={disabled} onClick={() => toggle(reference)} aria-label={`移除知识库 ${name}`}>
+          <svg className="task-knowledge-remove" viewBox="0 0 16 16" aria-hidden="true"><path d="m4.6 4.6 6.8 6.8M11.4 4.6 4.6 11.4" /></svg>
+        </button>
       </span>;
     })}
   </div>;
