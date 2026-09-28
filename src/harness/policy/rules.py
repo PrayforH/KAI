@@ -98,7 +98,12 @@ class PolicyEngine:
 
 
 def knowledge_search_read_rules() -> list[PolicyRule]:
-    """Allow the reviewed read-only knowledge tools under legacy and current names."""
+    """Allow the reviewed read-only knowledge tools under legacy and current names.
+
+    The platform's own in-process knowledge server belongs here too: its two
+    tools are read-only searches over publisher-reviewed snapshots, and the
+    runtimes spell them ``mcp__harness-knowledge__…`` on every kernel.
+    """
 
     tools = (
         "sag_search",
@@ -115,6 +120,13 @@ def knowledge_search_read_rules() -> list[PolicyRule]:
         )
         for server_name in ("novel-search", "knowledge-search")
         for tool_name in tools
+    ] + [
+        PolicyRule(
+            name=f"harness-knowledge-{tool_name}",
+            tool=f"mcp__harness-knowledge__{tool_name}",
+            decision=PolicyDecision.ALLOW,
+        )
+        for tool_name in ("query_knowledge_sources", "search_wiki_pages")
     ]
 
 

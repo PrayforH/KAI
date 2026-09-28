@@ -70,10 +70,10 @@ describe("RuntimeCapabilities v0 contract (shared fixture with the compiler)", (
       "anthropic_compatible",
       "openai_compatible",
     ]);
-    // Sub Agents and knowledge are compile-time errors for this runtime, so the
-    // capability list must not promise them.
+    // Sub Agents remain a compile-time error for this runtime; knowledge is
+    // served by the platform's own tool and must stay declared.
     expect(deepagents?.capabilities).not.toContain("subagents");
-    expect(deepagents?.capabilities).not.toContain("knowledge");
+    expect(deepagents?.capabilities).toContain("knowledge");
     expect(deepagents?.limitations.length ?? 0).toBeGreaterThan(0);
   });
 });

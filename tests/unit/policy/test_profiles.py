@@ -133,6 +133,29 @@ def test_orchestrator_profile_allows_explicit_delegation() -> None:
     assert _decision("production-orchestrator", "UnknownTool") is PolicyDecision.DENY
 
 
+def test_platform_knowledge_tools_are_allowed_on_every_profile() -> None:
+    """The platform's own read-only knowledge server must not implicit-deny.
+
+    Both runtimes answer knowledge under ``mcp__harness-knowledge__…``; before
+    these rules existed every profile denied the tool a published Agent was
+    already declaring.
+    """
+
+    for profile in (
+        "production-read-only",
+        "production-standard",
+        "production-orchestrator",
+    ):
+        assert (
+            _decision(profile, "mcp__harness-knowledge__query_knowledge_sources")
+            is PolicyDecision.ALLOW
+        )
+        assert (
+            _decision(profile, "mcp__harness-knowledge__search_wiki_pages")
+            is PolicyDecision.ALLOW
+        )
+
+
 def test_local_standard_remains_a_backward_compatible_alias() -> None:
     profiles = default_policy_profiles()
 

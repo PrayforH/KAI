@@ -18,6 +18,7 @@ from harness.application.approvals import ApprovalService
 from harness.application.events import EventService
 from harness.context.service import ContextService
 from harness.core.ports import AgentRegistry
+from harness.knowledge.service import KnowledgeService
 from harness.observability.provider import Observability
 from harness.policy.profiles import PolicyProfileRegistry
 from harness.policy.rules import PolicyEngine
@@ -37,6 +38,7 @@ def build_deepagents_runtime(
     context_service: ContextService | None = None,
     observability: Observability | None = None,
     tool_resolver: ToolResolver | None = None,
+    knowledge: KnowledgeService | None = None,
     policy: PolicyEngine | None = None,
     policy_profiles: PolicyProfileRegistry | None = None,
 ) -> AgentRuntime:
@@ -69,6 +71,7 @@ def build_deepagents_runtime(
         context_service=context_service,
         observability=observability,
         tool_resolver=tool_resolver,
+        knowledge=knowledge,
         policy=policy,
         policy_profiles=policy_profiles,
     )

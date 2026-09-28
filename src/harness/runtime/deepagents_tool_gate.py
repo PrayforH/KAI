@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, cast
 from uuid import uuid4
 
@@ -96,6 +96,7 @@ class DeepagentsToolGate(AgentMiddleware):
         context_service: ContextService | None = None,
         observability: Observability | None = None,
         declared_tools: frozenset[str] = frozenset(),
+        result_trust: Mapping[str, ContextTrust] | None = None,
     ) -> None:
         if (policy is None) == (profiles is None):
             raise ValueError("configure exactly one policy engine or profile registry")
@@ -106,6 +107,9 @@ class DeepagentsToolGate(AgentMiddleware):
         self._context_service = context_service
         self._observability = observability
         self._declared_tools = declared_tools
+        # Per-tool floors for results the graph cannot vouch for, mirroring the
+        # Claude runtime's resolver-seeded result trust (knowledge citations).
+        self._result_trust: Mapping[str, ContextTrust] = result_trust or {}
         self._file_capabilities = RunFileCapabilities(context)
         resolved = context.resolved_policy
         self._policy_id = resolved.policy_id if resolved is not None else "local-standard"
@@ -413,7 +417,13 @@ class DeepagentsToolGate(AgentMiddleware):
             tool_name, agent_name=context.session.agent_name
         )
         current = await self._context_trust_high_watermark()
-        next_trust = stricter_trust(current, result_policy.trust)
+        # The floor expresses what the content is (a knowledge citation), the
+        # result policy what the tenant decided; the stricter of the three wins.
+        floor = self._result_trust.get(tool_name)
+        next_trust = stricter_trust(
+            stricter_trust(current, floor) if floor is not None else current,
+            result_policy.trust,
+        )
         if next_trust is current:
             return
         if self._context_service is None:

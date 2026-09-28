@@ -1155,6 +1155,33 @@ def test_skill_references_resolve_into_bundle_with_platform_provenance() -> None
     assert "skills/minimax-xlsx/SKILL.md" in packaged
 
 
+def test_a_deepagents_draft_keeps_knowledge_references_publishable() -> None:
+    """DeepAgents answers bound knowledge on the platform, so selection publishes.
+
+    The Builder lets a draft tick knowledge bases regardless of runtime; when the
+    DeepAgents kernel gained the knowledge tool this check must not keep failing
+    the draft with "runtime_knowledge_unsupported" at save/publish time. Codex
+    still has no knowledge plane and keeps its error.
+    """
+
+    compiler = AgentDraftCompiler(default_capability_catalog())
+    base = draft()
+    candidate = base.model_copy(
+        update={
+            "spec": base.spec.model_copy(
+                update={"runtime": "deepagents", "knowledge_references": ("company-policy",)}
+            )
+        }
+    )
+
+    validation = compiler.validate(candidate)
+    assert not any(
+        issue.code in {"runtime_knowledge_unsupported", "codex_knowledge_unsupported"}
+        for issue in validation.issues
+    )
+    assert validation.ready
+
+
 def test_a_deepagents_draft_resolves_platform_skill_references() -> None:
     """A reviewed platform Skill is offered to every runtime it was measured on.
 

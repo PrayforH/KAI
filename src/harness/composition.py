@@ -1265,6 +1265,7 @@ def build_production_container(
                             context_service=context_service,
                             observability=observability,
                             tool_resolver=tool_resolver,
+                            knowledge=knowledge,
                             # The registry, not the resolved engine: a DeepAgents
                             # Run is authorized against the policy its own snapshot
                             # names, and this is the only object that can resolve an

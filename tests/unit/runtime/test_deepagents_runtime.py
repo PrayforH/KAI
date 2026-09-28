@@ -18,6 +18,7 @@ graph is not what is under test here.
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
@@ -308,3 +309,84 @@ async def test_the_observation_reports_the_answer_the_worker_reports(
     attributes = span_recorder.attributes("harness.model.run")
     assert attributes["langfuse.observation.output"] == "已完成"
     assert attributes["langfuse.trace.output"] == "已完成"
+
+
+@pytest.mark.asyncio
+async def test_knowledge_bindings_expose_one_platform_tool(tmp_path: Path) -> None:
+    """Bound knowledge becomes the canonical platform tool, not a silent drop.
+
+    The Builder lets a draft tick knowledge bases on every runtime; the
+    DeepAgents kernel used to answer that with a publish-blocking validation
+    error. Now the graph gets the same ``mcp__harness-knowledge__…`` tool the
+    Claude path serves, calling the platform service with the run identity.
+    """
+
+    from harness.knowledge.models import KnowledgeResultTrust, KnowledgeSnapshotBinding
+    from harness.knowledge.runtime import knowledge_query_tool_name
+
+    binding = KnowledgeSnapshotBinding(
+        knowledgeBaseReference="aipolicy",
+        sourceReference="aipolicy",
+        snapshotId="snap-1",
+        trust=KnowledgeResultTrust.SENSITIVE,
+    )
+
+    class _FakeKnowledge:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, Any]] = []
+
+        async def search(
+            self,
+            tenant_id: str,
+            actor_id: str,
+            query: str,
+            *,
+            bindings: tuple[Any, ...] = (),
+            limit: int = 8,
+            team_ids: tuple[str, ...] = (),
+        ):
+            self.calls.append({"query": query, "limit": limit})
+            from harness.knowledge.models import SearchKnowledgeResponse
+
+            return SearchKnowledgeResponse.model_validate(
+                {"hits": [], "searchedSnapshotIds": ["snap-1"]}
+            )
+
+    service = _FakeKnowledge()
+    config = _config()
+    config = DeepagentsRuntimeConfig(
+        snapshot=config.snapshot,
+        route_id=config.route_id,
+        provider=config.provider,
+        api_format=config.api_format,
+        model=config.model,
+        base_url=config.base_url,
+        api_key=config.api_key,
+        knowledge=cast(Any, service),
+        knowledge_bindings=(binding,),
+    )
+    runtime = DeepagentsRuntime(
+        config=config,
+        approvals=cast(Any, object()),
+        events=cast(Any, object()),
+    )
+    context = _context(tmp_path)
+
+    unbound = DeepagentsRuntime(
+        config=_config(), approvals=cast(Any, object()), events=cast(Any, object())
+    )
+    assert unbound._knowledge_tools(context, wiki_mode=False) == []  # pyright: ignore[reportPrivateUsage]
+
+    # The helper is runtime-internal; the test exercises it directly.
+    tools = runtime._knowledge_tools(context, wiki_mode=False)  # pyright: ignore[reportPrivateUsage]
+    assert [tool.name for tool in tools] == [
+        knowledge_query_tool_name(wiki_mode=False)
+    ]
+    invoke = tools[0].coroutine
+    assert invoke is not None
+    payload = json.loads(await invoke(query="知识边界", limit=3))
+    assert payload["searchedSnapshotIds"] == ["snap-1"]
+    assert service.calls == [{"query": "知识边界", "limit": 3}]
+    # The model can correct a bad call instead of crashing the run.
+    with pytest.raises(ValueError, match="non-empty"):
+        await invoke(query="   ")

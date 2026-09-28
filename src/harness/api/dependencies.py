@@ -918,6 +918,7 @@ def build_memory_container(
                             context_service=context_service,
                             observability=observability,
                             tool_resolver=tool_resolver,
+                            knowledge=knowledge,
                             # See composition.py: a DeepAgents Run is authorized
                             # against the policy its own snapshot names, so the
                             # registry is passed rather than one resolved engine.

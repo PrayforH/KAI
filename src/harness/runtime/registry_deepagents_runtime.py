@@ -40,6 +40,10 @@ from harness.deployments.boundaries import (
     enforce_runtime_environment,
     enforce_runtime_model_route,
 )
+from harness.knowledge.runtime import (
+    knowledge_bindings_for_run,
+)
+from harness.knowledge.service import KnowledgeService
 from harness.observability.provider import Observability
 from harness.policy.profiles import PolicyProfileRegistry
 from harness.policy.rules import PolicyEngine
@@ -208,6 +212,7 @@ class RegistryDeepagentsRuntime:
         context_service: ContextService | None = None,
         observability: Observability | None = None,
         tool_resolver: ToolResolver | None = None,
+        knowledge: KnowledgeService | None = None,
         policy: PolicyEngine | None = None,
         policy_profiles: PolicyProfileRegistry | None = None,
     ) -> None:
@@ -222,6 +227,7 @@ class RegistryDeepagentsRuntime:
         self._context_service = context_service
         self._observability = observability
         self._tool_resolver = tool_resolver or ToolResolver()
+        self._knowledge = knowledge
         self._policy = policy
         self._policy_profiles = policy_profiles
 
@@ -273,6 +279,15 @@ class RegistryDeepagentsRuntime:
                 tolerate_unavailable_mcp=True,
             ),
         )
+        # The same binding rule as the Claude path (run override wins over the
+        # session's pins); the runtime derives the tool and its trust floor.
+        knowledge_bindings = knowledge_bindings_for_run(
+            context.run.input, context.session.knowledge_snapshot_bindings
+        )
+        if knowledge_bindings and self._knowledge is None:
+            raise ToolResolutionError(
+                "knowledge service is unavailable for pinned Session knowledge"
+            )
         runtime = DeepagentsRuntime(
             config=DeepagentsRuntimeConfig(
                 snapshot=snapshot,
@@ -287,6 +302,8 @@ class RegistryDeepagentsRuntime:
                 bundle_operators=_bundle_operators(
                     snapshot, resolved, materialized=staged.materialized
                 ),
+                knowledge=self._knowledge,
+                knowledge_bindings=knowledge_bindings,
                 package_hash=version.package_hash,
             ),
             approvals=self._approvals,

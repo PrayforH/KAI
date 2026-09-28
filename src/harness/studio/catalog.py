@@ -465,6 +465,7 @@ def default_capability_catalog() -> CapabilityCatalog:
                     "builtin_tools",
                     "python_tools",
                     "mcp_http",
+                    "knowledge",
                     "session_resume",
                     "approvals",
                     "artifacts",
@@ -473,7 +474,6 @@ def default_capability_catalog() -> CapabilityCatalog:
                 modelApiFormats=("anthropic_compatible", "openai_compatible"),
                 limitations=(
                     "Studio Sub Agents are not connected",
-                    "Knowledge references are not connected",
                     "On-demand tool search is not connected",
                     "Platform web tools are not connected; use an MCP server instead",
                     "Only streamable HTTP MCP registrations are supported",
