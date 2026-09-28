@@ -12,6 +12,7 @@ from harness.studio.deepagents_export import (
     export_deepagents_project,
     project_source,
 )
+from harness.studio.deepagents_scaffold import PACKAGE, PACKAGE_ROOT
 from harness.studio.factory import create_draft_spec
 from harness.studio.models import (
     AgentDraft,
@@ -68,6 +69,65 @@ def make_draft(**spec_updates: object) -> AgentDraft:
     )
 
 
+def test_exported_imports_resolve_inside_the_archive() -> None:
+    """Paths, imports and packaging metadata must describe one package.
+
+    The runtime contract test needs an isolated DeepAgents venv, which CI may not
+    have; this keeps the rename honest with the standard library alone.
+    """
+
+    source = make_draft(
+        builtin_tools=("Read", "Write", "Task"),
+        mcp_servers=(TAVILY.reference,),
+        subagents=(
+            DraftSubagent(
+                alias="fact-researcher",
+                ref="helper-agent@1.0.0",
+                responsibility="只读核验事实。",
+            ),
+        ),
+    )
+    exported = export_deepagents_project(
+        source,
+        subagent_drafts={"helper-agent@1.0.0": make_draft(name="helper-agent", version="1.0.0")},
+    )
+
+    with ZipFile(BytesIO(exported.content)) as bundle:
+        names = set(bundle.namelist())
+        modules = {
+            name[: -len(".py")].replace("/", ".") for name in names if name.endswith(".py")
+        }
+        packages = {
+            name[: -len("/__init__.py")].replace("/", ".")
+            for name in names
+            if name.endswith("/__init__.py")
+        }
+        assert "src.deep_agents" in packages
+        for name in sorted(names):
+            if not name.endswith(".py"):
+                continue
+            for module in _package_imports(bundle.read(name).decode()):
+                assert module == PACKAGE or module.startswith(f"{PACKAGE}."), (name, module)
+                assert f"src.{module}" in modules | packages, (name, module)
+        # Packaging must point at the directory the files actually ship under.
+            assert f'include = ["{PACKAGE}*"]' in bundle.read("pyproject.toml").decode()
+            assert f"graft {PACKAGE_ROOT.rstrip('/')}" in bundle.read("MANIFEST.in").decode()
+        extensions = json.loads(bundle.read("agent-studio.json").decode())
+        assert extensions["pythonPackage"] == PACKAGE
+
+
+def _package_imports(source: str) -> list[str]:
+    """Return the exported package's own module references in one Python file."""
+
+    modules: list[str] = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            modules.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            modules.append(node.module)
+    return [module for module in modules if module.split(".")[0] == PACKAGE]
+
+
 def _names(archive: bytes) -> set[str]:
     with ZipFile(BytesIO(archive)) as bundle:
         return set(bundle.namelist())
@@ -76,6 +136,30 @@ def _names(archive: bytes) -> set[str]:
 def _read(archive: bytes, name: str) -> str:
     with ZipFile(BytesIO(archive)) as bundle:
         return bundle.read(name).decode()
+
+
+def test_export_never_exposes_the_internal_package_codename() -> None:
+    """The exported project is user-visible, so it must not carry internal codenames.
+
+    The package name is one constant, but it is interpolated into paths, imports,
+    packaging metadata and README prose; a regression only shows up when someone
+    opens the code view or unzips the download.
+    """
+
+    source = make_draft(builtin_tools=("Read", "Glob", "Grep", "Write"))
+    exported = export_deepagents_project(source)
+
+    with ZipFile(BytesIO(exported.content)) as bundle:
+        assert "src/deep_agents/agents/agent.py" in bundle.namelist()
+        for entry in bundle.infolist():
+            assert "sapling" not in entry.filename
+            if entry.is_dir():
+                continue
+            try:
+                text = bundle.read(entry).decode("utf-8")
+            except UnicodeDecodeError:
+                continue
+            assert "sapling" not in text, entry.filename
 
 
 def test_export_pins_runtime_and_carries_default_assets() -> None:
@@ -91,22 +175,22 @@ def test_export_pins_runtime_and_carries_default_assets() -> None:
         ".env.example",
         ".gitignore",
         "agent-studio.json",
-        "src/sapling_deep_agents/agents/agent.py",
+        "src/deep_agents/agents/agent.py",
         "langgraph.json",
-        "src/sapling_deep_agents/tools/__init__.py",
-        "src/sapling_deep_agents/agents/subagents/__init__.py",
+        "src/deep_agents/tools/__init__.py",
+        "src/deep_agents/agents/subagents/__init__.py",
     } <= names
-    assert "src/sapling_deep_agents/middleware/mcp_servers.py" not in names
+    assert "src/deep_agents/middleware/mcp_servers.py" not in names
 
     pyproject = _read(exported.content, "pyproject.toml")
     assert f'"deepagents=={DEEPAGENTS_PINNED_VERSION}"' in pyproject
     assert '"python-dotenv>=1.0,<2.0"' in pyproject
 
-    agent_py = _read(exported.content, "src/sapling_deep_agents/agents/agent.py")
+    agent_py = _read(exported.content, "src/deep_agents/agents/agent.py")
     assert "TodoListMiddleware()" in agent_py
     assert "FilesystemMiddleware(backend=BACKEND, tools=_FILESYSTEM_TOOLS," in agent_py
     # .env loading must run before MODEL / MCP credential resolution.
-    settings = _read(exported.content, "src/sapling_deep_agents/config/settings.py")
+    settings = _read(exported.content, "src/deep_agents/config/settings.py")
     assert 'load_dotenv(PROJECT_ROOT / ".env")' in settings
     assert settings.index("load_dotenv(") < settings.index("MODEL = ")
     # Only answer blocks reach stdout; reasoning blocks must not leak.
@@ -211,7 +295,7 @@ def test_export_maps_bash_branch_permissions_and_subagents() -> None:
         },
     )
 
-    agent_py = _read(exported.content, "src/sapling_deep_agents/agents/agent.py")
+    agent_py = _read(exported.content, "src/deep_agents/agents/agent.py")
     # LangGraph API owns persistence: a self-managed saver makes `langgraph dev`
     # refuse the graph, so none may be emitted. The comment may mention the word.
     assert "checkpointer=" not in agent_py
@@ -226,27 +310,27 @@ def test_export_maps_bash_branch_permissions_and_subagents() -> None:
     assert 'interrupt_on={"execute": True, "write_file": True, "edit_file": True},' in agent_py
 
     subagent_py = _read(
-        exported.content, "src/sapling_deep_agents/agents/subagents/fact_researcher/agents/agent.py"
+        exported.content, "src/deep_agents/agents/subagents/fact_researcher/agents/agent.py"
     )
     assert "真实固定子智能体提示词" in _read(
         exported.content,
-        "src/sapling_deep_agents/agents/subagents/fact_researcher/prompts/system.md",
+        "src/deep_agents/agents/subagents/fact_researcher/prompts/system.md",
     )
     assert "NoSubagentsMiddleware" in subagent_py
 
     skill_md = _read(
-        exported.content, "src/sapling_deep_agents/skills/invoice-reviewer-core/SKILL.md"
+        exported.content, "src/deep_agents/skills/invoice-reviewer-core/SKILL.md"
     )
     assert "name: invoice-reviewer-core" in skill_md
     with ZipFile(BytesIO(exported.content)) as bundle:
         assert (
-            bundle.read("src/sapling_deep_agents/skills/invoice-reviewer-core/assets/template.png")
+            bundle.read("src/deep_agents/skills/invoice-reviewer-core/assets/template.png")
             == b"\x89PNG"
         )
 
-    tool_py = _read(exported.content, "src/sapling_deep_agents/tools/normalize_score.py")
+    tool_py = _read(exported.content, "src/deep_agents/tools/normalize_score.py")
     assert "def run(arguments):" in _read(
-        exported.content, "src/sapling_deep_agents/tools/operators/normalize_score.py"
+        exported.content, "src/deep_agents/tools/operators/normalize_score.py"
     )
     assert '"value"' in tool_py
 
@@ -266,16 +350,16 @@ def test_export_declares_dropped_knowledge_and_mcp_env_placeholders() -> None:
         mcp_capabilities={"tavily-readonly": TAVILY},
     )
 
-    assert "src/sapling_deep_agents/middleware/mcp_servers.py" in _names(exported.content)
-    mcp_py = _read(exported.content, "src/sapling_deep_agents/middleware/mcp_servers.py")
+    assert "src/deep_agents/middleware/mcp_servers.py" in _names(exported.content)
+    mcp_py = _read(exported.content, "src/deep_agents/middleware/mcp_servers.py")
     assert "MultiServerMCPClient" in mcp_py
     # The connector module must never shadow the third-party mcp SDK.
     assert '"mcp"' not in _read(exported.content, "pyproject.toml")
-    assert "from sapling_deep_agents.middleware.mcp_servers import McpToolsMiddleware" in _read(
-        exported.content, "src/sapling_deep_agents/agents/agent.py"
+    assert "from deep_agents.middleware.mcp_servers import McpToolsMiddleware" in _read(
+        exported.content, "src/deep_agents/agents/agent.py"
     )
     assert "McpToolsMiddleware()," in _read(
-        exported.content, "src/sapling_deep_agents/agents/agent.py"
+        exported.content, "src/deep_agents/agents/agent.py"
     )
     assert "class McpToolsMiddleware(AgentMiddleware)" in mcp_py
     # Endpoint is exported; the query credential is an env placeholder.
@@ -312,7 +396,7 @@ def test_export_uses_route_api_format_for_provider_and_declares_managed_credenti
 
     exported = export_deepagents_project(source, model_route=route)
 
-    settings = _read(exported.content, "src/sapling_deep_agents/config/settings.py")
+    settings = _read(exported.content, "src/deep_agents/config/settings.py")
     assert f"'anthropic:{source.spec.model.model}'" in settings
     assert "'openai:" not in settings
 
@@ -384,7 +468,7 @@ def test_export_resolves_skill_references_like_the_compiler() -> None:
     exported = export_deepagents_project(source, skills=resolved)
 
     assert any(
-        name.startswith("src/sapling_deep_agents/skills/") for name in _names(exported.content)
+        name.startswith("src/deep_agents/skills/") for name in _names(exported.content)
     )
 
 
@@ -433,20 +517,20 @@ def test_export_scaffold_is_installable_and_contains_no_duplicate_entries() -> N
             "AGENTS.md",
             "pyrightconfig.json",
             "test/test_project.py",
-            "src/sapling_deep_agents/controller/agent.py",
-            "src/sapling_deep_agents/run/app.py",
-            "src/sapling_deep_agents/services/assets.py",
-            "src/sapling_deep_agents/prompts/system.md",
+            "src/deep_agents/controller/agent.py",
+            "src/deep_agents/run/app.py",
+            "src/deep_agents/services/assets.py",
+            "src/deep_agents/prompts/system.md",
         } <= set(names)
         project = tomllib.loads(archive.read("pyproject.toml").decode())
         assert project["tool"]["setuptools"]["packages"]["find"]["where"] == ["src"]
         assert "py-modules" not in project["tool"]["setuptools"]
-        assert archive.read("src/sapling_deep_agents/prompts/system.md").decode() == (
+        assert archive.read("src/deep_agents/prompts/system.md").decode() == (
             make_draft().spec.system_prompt
         )
         # The root shim must import the installed package, not mutate sys.path.
         assert (
-            "from sapling_deep_agents.controller.agent import" in archive.read("agent.py").decode()
+            "from deep_agents.controller.agent import" in archive.read("agent.py").decode()
         )
         assert "uv.lock" not in names  # Resolve on the target package index, never fake a lock.
 

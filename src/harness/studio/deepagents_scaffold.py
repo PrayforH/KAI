@@ -4,6 +4,12 @@ from __future__ import annotations
 
 import json
 
+# The exported project's own package name. Every generated path, import and
+# packaging entry derives from these two constants so the internal codename
+# never leaks into user-visible code.
+PACKAGE = "deep_agents"
+PACKAGE_ROOT = f"src/{PACKAGE}/"
+
 _ASSETS = '''"""Read packaged assets without writing into the installed package."""
 from pathlib import Path
 import shutil
@@ -45,13 +51,13 @@ class NoSubagentsMiddleware(AgentMiddleware):
         return "SubAgentMiddleware"
 '''
 
-_RUN = '''"""Start the local LangGraph dev server from the exported project root."""
+_RUN = f'''"""Start the local LangGraph dev server from the exported project root."""
 import subprocess
 import sys
 
 
 def main() -> None:
-    from sapling_deep_agents.config.settings import PROJECT_ROOT
+    from {PACKAGE}.config.settings import PROJECT_ROOT
     config = PROJECT_ROOT / "langgraph.json"
     if not config.is_file():
         raise SystemExit("Run from the exported project root or set DEEPAGENTS_PROJECT_ROOT.")
@@ -65,7 +71,7 @@ if __name__ == "__main__":
     main()
 '''
 
-_TEST = '''"""No provider credentials or network calls are needed for these contracts."""
+_TEST = f'''"""No provider credentials or network calls are needed for these contracts."""
 import importlib
 import json
 from pathlib import Path
@@ -74,12 +80,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_entry_point_and_packaged_assets():
-    import sapling_deep_agents
-    from sapling_deep_agents.controller.agent import agent
-    from sapling_deep_agents.services.assets import load_prompt
+    import {PACKAGE}
+    from {PACKAGE}.controller.agent import agent
+    from {PACKAGE}.services.assets import load_prompt
     assert callable(agent)
     assert isinstance(load_prompt(), str)
-    package = Path(sapling_deep_agents.__file__).parent
+    package = Path({PACKAGE}.__file__).parent
     for prompt in package.rglob("prompts/system.md"):
         assert isinstance(prompt.read_text(encoding="utf-8"), str)
     for operator in package.rglob("tools/operators/*.py"):
@@ -91,7 +97,7 @@ def test_entry_point_and_packaged_assets():
 def test_langgraph_configuration():
     config = json.loads((ROOT / "langgraph.json").read_text())
     assert config["dependencies"] == ["."]
-    assert set(config["graphs"].values()) == {"./agent.py:agent"}
+    assert set(config["graphs"].values()) == {{"./agent.py:agent"}}
 '''
 
 
@@ -119,7 +125,7 @@ RECURSION_LIMIT = {recursion_limit}
 
 def project_scaffold(namespace: str) -> dict[str, str]:
     """Return shared package files and root-only tooling (no dependency resolution)."""
-    root = "src/sapling_deep_agents/"
+    root = PACKAGE_ROOT
     files = {
         root + "__init__.py": '"""Standalone DeepAgents project exported by Agent Studio."""\n',
         root + "services/assets.py": _ASSETS,
@@ -129,15 +135,15 @@ def project_scaffold(namespace: str) -> dict[str, str]:
             '__all__ = ["agent", "build_agent"]\n'
         ),
         root + "run/app.py": _RUN,
-        "agent.py": '"""Compatibility entry; edit src/sapling_deep_agents/agents/agent.py."""\n'
-        "from sapling_deep_agents.controller.agent import agent, build_agent\n\n"
+        "agent.py": f'"""Compatibility entry; edit {PACKAGE_ROOT}agents/agent.py."""\n'
+        f"from {PACKAGE}.controller.agent import agent, build_agent\n\n"
         '__all__ = ["agent", "build_agent"]\n',
         "test/test_project.py": _TEST,
         "MANIFEST.in": (
             "include agent.py langgraph.json agent-studio.json .env.example\n"
             "include .gitignore .dockerignore .gitlab-ci.yml .pre-commit-config.yaml\n"
             "include pyrightconfig.json AGENTS.md\n"
-            "graft src/sapling_deep_agents\ngraft docker\ngraft test\n"
+            f"graft {PACKAGE_ROOT.rstrip('/')}\ngraft docker\ngraft test\n"
             "global-exclude __pycache__ *.py[cod]\n"
         ),
         "docker/Dockerfile": """FROM python:3.12-slim
@@ -196,11 +202,11 @@ project-check:
             {"include": ["src"], "pythonVersion": "3.12", "typeCheckingMode": "basic"}, indent=2
         )
         + "\n",
-        "AGENTS.md": """# Exported project maintenance
+        "AGENTS.md": f"""# Exported project maintenance
 
 Install with `python -m pip install -e '.[dev]'`, then run `python -m pytest`.
 The LangGraph factory must stay synchronous; LangGraph manages its checkpointer.
-Edit prompts under `src/sapling_deep_agents/prompts/` and operators under `tools/operators/`.
+Edit prompts under `{PACKAGE_ROOT}prompts/` and operators under `tools/operators/`.
 Keep credentials in `.env` or the process environment. Preserve pinned subagent assets.
 Run `uv lock` after dependency changes; commit the resulting lock for your own package index.
 """,

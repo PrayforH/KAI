@@ -185,7 +185,7 @@ it("opens file search within the directory toolbar and clears its filter on clos
 });
 
 it("opens the packaged DeepAgents assembly by default while retaining legacy entry points", async () => {
-  const path = "src/sapling_deep_agents/agents/agent.py";
+  const path = "src/deep_agents/agents/agent.py";
   vi.mocked(studioClient.getDeepagentsProjectSource).mockResolvedValue({...fixture, files: [...fixture.files, {path, size: 10, content: "build_agent()", unavailable: null}]});
   await render();
   expect(host.querySelector("pre")?.textContent).toBe("build_agent()");

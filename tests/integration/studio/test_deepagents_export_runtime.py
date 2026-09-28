@@ -91,12 +91,12 @@ def test_real_python_schema_mcp_execution_and_permissions(tmp_path: Path) -> Non
         tmp_path,
         MODEL
         + """
-from sapling_deep_agents.agents import agent
-from sapling_deep_agents.middleware import mcp_servers
+from deep_agents.agents import agent
+from deep_agents.middleware import mcp_servers
 from langchain_core.tools import StructuredTool
 from jsonschema import ValidationError
-from sapling_deep_agents.tools.echo_args import build, INPUT_SCHEMA
-from sapling_deep_agents.tools.operators.echo_args import run
+from deep_agents.tools.echo_args import build, INPUT_SCHEMA
+from deep_agents.tools.operators.echo_args import run
 args = {"is-valid": True, "optional": None, "nested": {"kind": "ok"}}
 tool = build()
 assert tool.args_schema == INPUT_SCHEMA
@@ -186,7 +186,7 @@ def test_real_fixed_subagent_delegation_and_assets(tmp_path: Path) -> None:
         tmp_path,
         MODEL
         + """
-from sapling_deep_agents.agents import agent
+from deep_agents.agents import agent
 SEEN_CHILD = []
 def reply(messages):
     if "IMMUTABLE_CHILD_PROMPT" in str(messages[0].content):
@@ -204,7 +204,7 @@ graph = agent.build_agent(model=Recorder())
 result = asyncio.run(graph.ainvoke({"messages":[{"role":"user", "content":"review"}]}))
 assert result["messages"][-1].content == "parent complete"
 assert SEEN_CHILD == [True]
-from sapling_deep_agents.agents.subagents.reviewer.tools.child_tool import build
+from deep_agents.agents.subagents.reviewer.tools.child_tool import build
 assert asyncio.run(build().ainvoke({})) == {"child": True}
 """,
     )
@@ -220,7 +220,7 @@ def test_real_bash_readonly_requires_approval(tmp_path: Path) -> None:
         tmp_path,
         MODEL
         + """
-from sapling_deep_agents.agents import agent
+from deep_agents.agents import agent
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 def reply(messages):
@@ -269,8 +269,8 @@ def test_settings_load_root_env_before_children_and_keep_workspaces_separate(
         tmp_path,
         """
 from pathlib import Path
-from sapling_deep_agents.agents import agent
-from sapling_deep_agents.agents.subagents.reviewer.agents import agent as child
+from deep_agents.agents import agent
+from deep_agents.agents.subagents.reviewer.agents import agent as child
 assert agent.MODEL == "openai:parent-env"
 assert child.MODEL == "openai:child-env"
 assert agent.WORKSPACE_ROOT == Path.cwd() / "workspace"
@@ -332,17 +332,17 @@ def test_built_wheel_imports_assets_outside_source_tree(tmp_path: Path) -> None:
 import sys
 from pathlib import Path
 sys.path.insert(0, {str(site)!r})
-import sapling_deep_agents
-from sapling_deep_agents.agents import agent
-from sapling_deep_agents.agents.subagents.reviewer.agents import agent as child
-assert str(sapling_deep_agents.__file__).startswith({str(site)!r})
+import deep_agents
+from deep_agents.agents import agent
+from deep_agents.agents.subagents.reviewer.agents import agent as child
+assert str(deep_agents.__file__).startswith({str(site)!r})
 assert agent.SYSTEM_PROMPT == {parent.spec.system_prompt!r}
 assert child.SYSTEM_PROMPT == {child.spec.system_prompt!r}
 for root in (agent.WORKSPACE_ROOT, child.WORKSPACE_ROOT):
     assert root.is_relative_to(Path.cwd())
     assert (root / "skills/wheel-evidence/assets/evidence.bin").read_bytes() == b"\\x00\\xffPNG"
     assert (root / "skills/wheel-evidence/.config/rules.txt").read_text() == "hidden asset"
-from sapling_deep_agents.services.assets import materialize_skills
+from deep_agents.services.assets import materialize_skills
 before = {{p: p.stat().st_mtime_ns for p in agent.WORKSPACE_ROOT.rglob("*") if p.is_file()}}
 user_file = agent.WORKSPACE_ROOT / "skills/user-notes.txt"
 user_file.write_text("Keep my notes")

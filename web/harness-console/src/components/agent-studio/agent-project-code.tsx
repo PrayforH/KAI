@@ -54,7 +54,7 @@ export function AgentProjectCode({ draftId, revision, name, dirty, onClose, comp
   const [mode, setMode] = useState<"files" | "changes">(comparison ? "changes" : "files");
   useEffect(() => { if (comparison) setMode("changes"); }, [comparison]);
   const [loadedProject, setProject] = useState<DeepagentsProjectSource | null>(null);
-  const [selected, setSelected] = useState("src/sapling_deep_agents/agents/agent.py");
+  const [selected, setSelected] = useState("src/deep_agents/agents/agent.py");
   const [filter, setFilter] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [refresh, setRefresh] = useState(0);
@@ -73,7 +73,7 @@ export function AgentProjectCode({ draftId, revision, name, dirty, onClose, comp
     void studioClient.getDeepagentsProjectSource(draftId, revision, controller.signal).then(value => {
       if (controller.signal.aborted) return;
       setProject(value);
-      setSelected(current => value.files.some(file => file.path === current) ? current : (value.files.find(file => file.path === "src/sapling_deep_agents/agents/agent.py")?.path ?? value.files.find(file => file.path === "agent.py")?.path ?? value.files[0]?.path ?? ""));
+      setSelected(current => value.files.some(file => file.path === current) ? current : (value.files.find(file => file.path === "src/deep_agents/agents/agent.py")?.path ?? value.files.find(file => file.path === "agent.py")?.path ?? value.files[0]?.path ?? ""));
     }).catch(reason => {
       if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "代码加载失败，请重试。");
     }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
@@ -82,7 +82,7 @@ export function AgentProjectCode({ draftId, revision, name, dirty, onClose, comp
   const project = mode === "changes" && comparison ? comparison.after : loadedProject;
   const changes = useMemo(() => comparison ? projectSourceChanges(comparison) : [], [comparison]);
   const files = useMemo(() => mode === "changes" ? changes.map(change => (change.after ?? change.before)!) : project?.files ?? [], [mode, changes, project]);
-  useEffect(() => { if (files.length && !files.some(file => file.path === selected)) setSelected(files.find(file => file.path === "src/sapling_deep_agents/agents/agent.py")?.path ?? files.find(file => file.path === "agent.py")?.path ?? files[0].path); }, [files, selected]);
+  useEffect(() => { if (files.length && !files.some(file => file.path === selected)) setSelected(files.find(file => file.path === "src/deep_agents/agents/agent.py")?.path ?? files.find(file => file.path === "agent.py")?.path ?? files[0].path); }, [files, selected]);
   const change = changes.find(item => item.path === selected);
   const visible = useMemo(() => files.filter(file => file.path.toLowerCase().includes(filter.trim().toLowerCase())), [files, filter]);
   const paths = useMemo(() => visible.map(file => file.path), [visible]);

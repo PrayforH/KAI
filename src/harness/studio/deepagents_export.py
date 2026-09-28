@@ -51,7 +51,12 @@ from harness.runtime.deepagents_plan import (
     DEEPAGENTS_PINNED_VERSION,
     build_deepagents_plan,
 )
-from harness.studio.deepagents_scaffold import project_scaffold, render_settings
+from harness.studio.deepagents_scaffold import (
+    PACKAGE,
+    PACKAGE_ROOT,
+    project_scaffold,
+    render_settings,
+)
 from harness.studio.factory import create_draft_spec
 from harness.studio.models import (
     AgentDraft,
@@ -612,7 +617,7 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["sapling_deep_agents*"]
+include = [{json.dumps(PACKAGE + "*")}]
 namespaces = false
 
 [tool.setuptools.package-data]
@@ -651,7 +656,7 @@ def _render_readme(
     else:
         bash_note = "草稿未选择 Bash，本项目没有 `execute` 工具。"
     mcp_note = (
-        "MCP 连接在 `src/sapling_deep_agents/middleware/mcp_servers.py` 中声明，"
+        f"MCP 连接在 `{PACKAGE_ROOT}middleware/mcp_servers.py` 中声明，"
         "凭据通过环境变量注入；"
         "远端工具在首次模型调用时由 `McpToolsMiddleware` 拉取（图工厂是同步的，"
         "不能在里面做异步发现），因此**必须走异步路径**（`langgraph dev` / `ainvoke`）。"
@@ -696,7 +701,7 @@ langgraph dev                 # 本地 LangGraph 服务 + Studio（浏览器自�
    也可以直接在解释器里调试图：
 
    ```python
-   from sapling_deep_agents.controller.agent import agent
+   from {PACKAGE}.controller.agent import agent
    graph = agent()
    ```
 
@@ -706,7 +711,7 @@ langgraph dev                 # 本地 LangGraph 服务 + Studio（浏览器自�
 ### 无界面调用
 
 ```python
-from sapling_deep_agents.controller.agent import agent
+from {PACKAGE}.controller.agent import agent
 graph = agent()                       # 同步零参工厂，与 langgraph.json 同一入口
 result = await graph.ainvoke(
     {{"messages": [{{"role": "user", "content": "任务"}}]}},
@@ -718,7 +723,7 @@ result = await graph.ainvoke(
 
 ```text
 docker/                  Dockerfile 与本地 Compose
-src/sapling_deep_agents/
+{PACKAGE_ROOT}
   agents/                主图装配和固定版本子智能体
   config/                环境变量与模型配置
   controller/            图工厂入口
@@ -734,7 +739,7 @@ test/                    无模型凭据的导出契约测试
 ```
 
 根目录 `agent.py` 是兼容入口，实际实现位于 `agents/agent.py`。
-`python -m sapling_deep_agents.run.app` 可启动开发服务（在项目根目录运行）。
+`python -m {PACKAGE}.run.app` 可启动开发服务（在项目根目录运行）。
 工作目录默认是当前目录下的 `workspace/`，也可设置 `DEEPAGENTS_WORKSPACE`；
 配置文件默认读取当前目录 `.env`，可用 `DEEPAGENTS_PROJECT_ROOT` 指定项目根目录。
 安装为 wheel 后也不会向 site-packages 写运行文件。子智能体各自使用独立 workspace。
@@ -754,7 +759,7 @@ docker compose -f docker/compose.yaml up --build
 
 ## 模型
 
-`src/sapling_deep_agents/config/settings.py` 的 `MODEL` 默认 `{model}`，
+`{PACKAGE_ROOT}config/settings.py` 的 `MODEL` 默认 `{model}`，
 可用 `DEEPAGENTS_MODEL` 覆盖。
 
 **平台的模型凭据不随导出提供**（平台路由 `{route_id}` 的凭据由平台托管），
@@ -781,14 +786,14 @@ docker compose -f docker/compose.yaml up --build
 
 ## 自定义 Python 算子
 
-`src/sapling_deep_agents/tools/operators/` 保留原始源码（包括 future imports），
+`{PACKAGE_ROOT}tools/operators/` 保留原始源码（包括 future imports），
 `tools/` 包装器保留完整
 JSON Schema 并验证入参。算子额外使用的第三方库需要加入 `pyproject.toml`；
 平台镜像中的预装包、系统命令和其他私有模块不会自动打包。
 
 ## 子智能体
 
-固定版本子智能体位于 `src/sapling_deep_agents/agents/subagents/<别名>/`，
+固定版本子智能体位于 `{PACKAGE_ROOT}agents/subagents/<别名>/`，
 包含各自真实的提示词、工具、技能、模型配置与导出边界说明。
 将子目录 `.env.example` 所需变量合并到根目录 `.env`；子智能体支持
 独立模型变量，默认使用自己的模型；同一 provider 的凭据使用进程级环境变量共享。
@@ -1037,7 +1042,7 @@ def export_deepagents_project(
         "exporter": "deepagents_export",
         "deepagentsVersion": DEEPAGENTS_PINNED_VERSION,
         "projectLayout": "src-v1",
-        "pythonPackage": "sapling_deep_agents",
+        "pythonPackage": PACKAGE,
         "version": spec.version,
         "routeId": spec.model.route_id,
         "model": spec.model.model,
@@ -1080,11 +1085,11 @@ def export_deepagents_project(
         permissions=permissions,
         with_mcp=bool(spec.mcp_servers),
         with_skills=bool(resolved_skills),
-        module_prefix=f"sapling_deep_agents.{module_prefix}",
+        module_prefix=f"{PACKAGE}.{module_prefix}",
     )
 
-    package_root = "" if module_prefix else "src/sapling_deep_agents/"
-    namespace = f"sapling_deep_agents.{module_prefix}"
+    package_root = "" if module_prefix else PACKAGE_ROOT
+    namespace = f"{PACKAGE}.{module_prefix}"
     output = io.BytesIO()
     with ZipFile(output, "w") as archive:
         _write(
@@ -1130,8 +1135,8 @@ def export_deepagents_project(
         ))
         _write(archive, package_root + "prompts/system.md", spec.system_prompt)
         for path, content in project_scaffold(namespace).items():
-            if path.startswith("src/sapling_deep_agents/"):
-                relative = path.removeprefix("src/sapling_deep_agents/")
+            if path.startswith(PACKAGE_ROOT):
+                relative = path.removeprefix(PACKAGE_ROOT)
                 _write(archive, package_root + relative, content)
             elif not module_prefix:
                 _write(archive, path, content)
