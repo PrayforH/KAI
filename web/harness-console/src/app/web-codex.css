@@ -2985,7 +2985,7 @@ body.codex-theme-v1:has(.console-shell) .task-sidebar-brand .task-sidebar-search
 }
 .task-knowledge-selected-chip { display: inline-flex; align-items: center; min-width: 0; max-width: 100%; }
 .task-knowledge-context-control { min-width: 0; }
-.task-knowledge-context-trigger { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 26px; padding: 2px 3px; border: 0; border-radius: 5px; background: transparent; color: var(--codex-ink-soft); font: inherit; font-size: 12px; cursor: pointer; }
+.task-knowledge-context-trigger { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; min-height: 30px; padding: 2px 4px; border: 0; border-radius: 5px; background: transparent; color: var(--codex-ink-soft); font: inherit; font-size: 13px; cursor: pointer; }
 /* The bound-knowledge strip is a one-line hint above the input, not a panel:
    keep it visibly thinner than the composer itself. */
 .composer-context-shelf.task-knowledge-selection { padding-top: 4px; padding-bottom: 8px; }
@@ -2998,7 +2998,7 @@ body.codex-theme-v1 .composer-context-shelf.task-knowledge-selection { padding-t
 .task-knowledge-chevron { width: 14px; height: 14px; flex: 0 0 14px; fill: none; stroke: var(--codex-muted); stroke-width: 1.5; }
 .task-knowledge-folder { width: 17px; height: 17px; flex: 0 0 17px; fill: none; stroke: var(--codex-ink, #f5f5f5); stroke-width: 1.5; stroke-linejoin: round; }
 .task-knowledge-selected-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.task-knowledge-selected-chip > button { display: grid; place-items: center; flex: 0 0 20px; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--codex-muted); font: inherit; font-size: 15px; cursor: pointer; }
+.task-knowledge-selected-chip > button { display: grid; place-items: center; flex: 0 0 22px; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--codex-muted); font: inherit; font-size: 16px; cursor: pointer; }
 .task-knowledge-selected-chip > button:hover:not(:disabled) { background: var(--codex-accent-faint); color: var(--codex-ink); }
 .task-knowledge-selected-chip > button:disabled { opacity: .45; cursor: default; }
 .task-knowledge-trigger:focus-visible, .task-knowledge-option:focus-visible, .task-knowledge-switch:focus-visible, .task-knowledge-search:focus-visible, .task-knowledge-selection button:focus-visible, .aui-citation-link:focus-visible { outline: 2px solid var(--codex-ink); outline-offset: 2px; }
