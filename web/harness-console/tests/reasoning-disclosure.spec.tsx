@@ -150,3 +150,35 @@ it("keeps one SDK thinking block across interleaved tool callbacks without mergi
     expect(row.querySelector(".execution-reasoning-body")?.textContent).toBe("Read install.out a few times.");
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
+
+it("preserves mixed thinking, tools and commentary order without duplicating the final answer", async () => {
+  const host = document.createElement("div"); document.body.appendChild(host);
+  const root = createRoot(host);
+  const thought = (seq: number, text: string, serial: number) => ({
+    ...item(`thought-${seq}`, seq, text), metadata: { item_id: `stable-reasoning:thinking:${serial}:0` },
+  });
+  const tool = (seq: number, eventType: string, callId: string) => ({
+    ...item(`tool-${seq}`, seq, "", eventType), kind: "tool" as const,
+    metadata: { tool_call_id: callId, name: "Bash", arguments: { command: callId } },
+  });
+  const events = [
+    thought(1, "Check ", 1), tool(2, "tool.request", "read"), thought(3, "source.", 1),
+    tool(4, "tool.result", "read"), item("progress", 5, "继续核验来源。", "message.delta"),
+    thought(6, "Validate ", 2), tool(7, "tool.request", "verify"), thought(8, "result.", 2),
+    tool(9, "tool.result", "verify"), item("answer", 10, "这是最终正文。", "message.delta"),
+  ];
+  try {
+    for (const status of ["running", "succeeded"]) {
+      await act(async () => root.render(<ActivitySummary activity={{ ...activity(events), status }} responseStarted />));
+      const rows = Array.from(host.querySelectorAll(".execution-reasoning, .execution-action, .execution-commentary"));
+      expect(rows.map(row => row.classList.contains("execution-reasoning") ? "thinking" :
+        row.classList.contains("execution-action") ? "tool" : "commentary")).toEqual([
+        "thinking", "tool", "commentary", "thinking", "tool",
+      ]);
+      expect(rows[0].textContent).toContain("Check source.");
+      expect(rows[2].textContent).toContain("继续核验来源。");
+      expect(rows[3].textContent).toContain("Validate result.");
+      expect(host.textContent).not.toContain("这是最终正文。");
+    }
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
