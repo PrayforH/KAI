@@ -4,7 +4,9 @@
 
 ## 交付状态
 
-已完成运行时代码、关闭开关时的兼容路径、故障与跨轮隔离测试，以及 173 演化栈容器中的真实 CLI 对照实验。**尚未发布到线上 Worker；开关默认关闭。** 173/174 的服务镜像、Compose 和环境变量均未改动。服务器实验在独立 Python 进程中临时加载新模块；没有调用外部模型，也没有读写线上会话数据库。
+**已部署到 173 演化栈 Worker，并开启小规模复用。** 镜像 `kai/axis-api:sdk-warm-20260929-r2`，源码提交 `37d7a254`。以线上 `context-compaction-20260928-r6` 镜像源码叠加补丁，保留此前上下文压缩改动。API/Web、173 旧栈及 174 未修改。
+
+此前独立 CLI 对照实验不调用外部模型、不读写线上会话库；本次部署验收另外通过真实 AG-UI、真实模型、Postgres、Redis 与 CubeSandbox 执行，结果见下文。
 
 ## 实现
 
@@ -51,8 +53,35 @@ HARNESS_SDK_WARM_IDLE_SECONDS=120
 HARNESS_SDK_WARM_MAX_SESSIONS=4
 ```
 
-以上为建议的小规模灰度值，未写入现有部署。默认值分别为 false / 300 / 16。每个 Worker 独立限制容量；此阶段没有新的数据库表、迁移或 AG-UI 协议。
+以上值已写入 173 演化栈 Worker。默认值分别为 false / 300 / 16。每个 Worker 独立限制容量；此阶段没有新的数据库表、迁移或 AG-UI 协议。
 
 173 演化栈当前单 Worker，适合首先灰度。174 当前 3 个 Worker，这版支持安全的机会式命中：会话转移后通过 transcript revision 冷恢复；**尚未增加 Worker 会话亲和路由**，因此不能保证 174 的命中率。不要把 173 单 Worker 的 100% 命中直接外推到 174。
 
 发布需以目标当前镜像源码应用补丁，不能用此工作区完整覆盖 173 的后续 context-compaction 改动。先验证真实多轮工具/附件/Skill 路径、审批与 Artifact 归属，再对比同 Agent/模型/负载的首字 p50/p95、失败率、CLI RSS、warm 命中率，以及 `harness.sdk.connect` / `harness.sdk.reuse` span。禁用开关并重建 Worker 可恢复冷路径；进行中的任务应排空后再重启。
+
+
+## 173 部署验收与回滚
+
+- 部署前确认无非终态 Run；仅通过 Compose 重建 `worker`。Worker 健康检查通过，重启次数为 0。
+- 线上叠加源码回归：440 passed；另 1 个 Deepagents staged-assets 测试的旧 mock 缺少 `profile`，在未打补丁的原镜像源码上复现同样失败，与此次修改无关。16 项 warm 专项、定向 Pyright（指定既有 venv）、Ruff 通过。
+- r1 验收暴露真实 CLI 在首轮 result 后继续发送 transcript mirror：过早释放 binding 会导致尾部落盘失败、第二轮回退。r2 增加首次 warm Run 的结束后 context control 请求，并在同一 gate/binding 内 drain SDK mirror batcher，再记录 revision。该内部 SDK 接口不可用时不保留连接；SDK 升级需回归此边界。增加模拟 post-result mirror 的回归测试。
+- r2 新会话连续 6 轮全部成功：首轮 connect **1,528 ms**；后续 5 轮均为 `harness.sdk.reuse`，依次 **6 / 7 / 8 / 7 / 7 ms**（Langfuse span，包含线上指纹和所有权/历史校验）。
+- 相同 Agent/version/提示语的普通回复：部署前 3 轮首文本为 3,274 / 3,286 / 2,779 ms；r2 首轮 4,173 ms，后续两轮 946 / 993 ms。小样本、模型响应存在波动，不能据此声称 p95 或整体任务耗时的稳定收益。
+- 后续两轮经沙箱工具创建 `warm-one.txt`，跨轮读取并创建 `warm-two.txt`；分别通过 SDK MCP `publish_artifact` 发布。下载内容逐字核对为 `WARM_ONE_20260929` / `WARM_TWO_20260929`；两个 Artifact 的 `run_id` 分别属于本轮，tool.request/result 和权限检查也落在对应 Run。该发布路径不创建 thread_files 行，归属通过 Artifact、RunEvent 与鉴权下载核验。
+- 第六轮 `Skill(delivery-verification)` 与沙箱 Bash 验证均成功。最终日志未发现 ERROR/WARNING/Traceback/mirror 异常；超过 120 秒空闲 TTL 后，Worker 内 warm CLI 进程数为 0，回收正常。真实 trace 与原始结果：[部署验收数据](results/sdk-warm-deployed-173-20260929.json)。
+- 业务文件工具仍走 `cubesandbox-deferred` 容器隔离；本次收益来自 Session 内保留 SDK/CLI，未改变业务沙箱生命周期。
+
+服务入口：`http://172.20.109.173:3302`，API `http://172.20.109.173:8802`。
+
+Compose：`/data/agent-studio-evolution-20260920/compose.json`。
+发布前备份：`/data/agent-studio-evolution-20260920/compose.pre-sdk-warm-20260929-r1.json`。
+构建目录：`/data/agent-studio-sdk-warm-20260929-r2`；原镜像保留。
+
+回滚时先排空 Run。优先只将 Worker image 改回 `kai/axis-api:context-compaction-20260928-r6`，删除三个 `HARNESS_SDK_WARM_*` 显式值，再执行：
+
+```sh
+cd /data/agent-studio-evolution-20260920
+docker compose -p agent-evolution-173 -f compose.json up -d --no-deps worker
+```
+
+备份供核对原值；若此后有其他发布，不要整份覆盖 Compose。仅关闭开关可回到每 Run 冷连接路径；完整回滚镜像也恢复原 Session gate 实现。不涉及数据库迁移。
