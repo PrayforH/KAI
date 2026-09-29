@@ -1,11 +1,19 @@
 """Claude Agent SDK runtime adapter with explicit gateway routing."""
 
 import asyncio
+import json
 import logging
 import shutil
 import time
-from collections.abc import AsyncIterator, Callable, Mapping
-from contextlib import AbstractContextManager, ExitStack, aclosing, nullcontext, suppress
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Mapping
+from contextlib import (
+    AbstractContextManager,
+    ExitStack,
+    aclosing,
+    asynccontextmanager,
+    nullcontext,
+    suppress,
+)
 from dataclasses import dataclass, replace
 from pathlib import Path
 from types import MappingProxyType
@@ -96,6 +104,7 @@ from harness.runtime.tools import (
     ToolResolver,
     enforce_published_tool_directory,
 )
+from harness.runtime.warm_sdk import WarmEntry, WarmSdkPool, WarmSdkRequest
 from harness.runtime.web_tools import WEB_BUILTINS, WEB_CONTRACT, WEB_SERVER, WEB_TOOL_NAMES
 
 SDK_JSON_MAX_BUFFER_SIZE = 32 * 1024 * 1024
@@ -266,7 +275,7 @@ def _context_window_observation(
 
 
 async def _observe_context_window(
-    client: ClaudeSDKClient,
+    client: ClaudeSDKClient | WarmEntry,
     phase: str,
     *,
     timeout_seconds: float | None = None,
@@ -282,6 +291,28 @@ async def _observe_context_window(
     return _context_window_observation(phase, usage)
 
 
+@asynccontextmanager
+async def _open_client(
+    options: ClaudeAgentOptions,
+    transport: Transport | None,
+    warm: WarmSdkRequest | None,
+) -> AsyncGenerator[Any]:
+    if warm is not None and transport is None:
+        async with warm.pool.acquire(
+            warm.key, options, scope=warm.scope, prepare=warm.prepare
+        ) as reused:
+            if reused is not None:
+                yield reused
+                return
+    client = (
+        ClaudeSDKClient(options=options)
+        if transport is None
+        else ClaudeSDKClient(options=options, transport=transport)
+    )
+    async with client:
+        yield client
+
+
 async def _client_query(
     prompt: str,
     options: ClaudeAgentOptions,
@@ -291,8 +322,9 @@ async def _client_query(
     steering: SteeringInbox | None = None,
     observability: Observability | None = None,
     run_id: str | None = None,
+    warm: WarmSdkRequest | None = None,
 ) -> AsyncIterator[object]:
-    attempt_options = (
+    attempt_options: ClaudeAgentOptions = (
         replace(options, extra_args={**options.extra_args, "replay-user-messages": None})
         if steering is not None
         else options
@@ -300,17 +332,17 @@ async def _client_query(
     recovery_session_id: str | None = None
     for attempt in range(len(SDK_STARTUP_RETRY_DELAYS_SECONDS) + 1):
         received_message = False
-        client = (
-            ClaudeSDKClient(options=attempt_options)
-            if transport is None
-            else ClaudeSDKClient(options=attempt_options, transport=transport)
-        )
+        warm_query_attempted = False
         try:
             connect_started_ns = time.time_ns()
-            async with client:
+            async with _open_client(attempt_options, transport, warm) as client:
                 if observability is not None and run_id is not None:
                     observability.record_completed_span(
-                        "harness.sdk.connect",
+                        (
+                            "harness.sdk.reuse"
+                            if isinstance(client, WarmEntry) and client.reused
+                            else "harness.sdk.connect"
+                        ),
                         started_at_ns=connect_started_ns,
                         ended_at_ns=time.time_ns(),
                         attributes={"run.id": run_id},
@@ -321,6 +353,7 @@ async def _client_query(
                 observe_resumed_context = attempt_options.resume is not None
                 terminal_result: ResultMessage | None = None
                 query_started_ns = time.time_ns()
+                warm_query_attempted = isinstance(client, WarmEntry)
                 await client.query(prompt)
                 if observability is not None and run_id is not None:
                     observability.record_completed_span(
@@ -346,8 +379,7 @@ async def _client_query(
                         yield SessionResumeRecovery(recovery_session_id)
                         recovery_session_id = None
                     if (
-                        observe_resumed_context
-                        and isinstance(message, ResultMessage)
+                        isinstance(message, ResultMessage)
                         and not message.is_error
                         and message.stop_reason == "end_turn"
                     ):
@@ -357,19 +389,25 @@ async def _client_query(
                         terminal_result = message
                         continue
                     yield message
-                if observe_resumed_context:
+                # A retained fresh CLI also needs a post-result control round
+                # trip: its final transcript frames can follow the result.
+                # Keep the Run binding/lease alive until that work is drained.
+                if observe_resumed_context or isinstance(client, WarmEntry):
                     yield await _observe_context_window(
                         client,
                         "after",
                         timeout_seconds=context_usage_timeout_seconds,
                     )
                 if terminal_result is not None:
+                    if isinstance(client, WarmEntry):
+                        await client.finish(terminal_result)
                     yield terminal_result
             return
         except ProcessError as error:
             can_retry = (
                 transport is None
                 and not received_message
+                and not warm_query_attempted
                 and attempt < len(SDK_STARTUP_RETRY_DELAYS_SECONDS)
             )
             logger.warning(
@@ -397,7 +435,7 @@ SDK_STEERING_RECEIPT_TIMEOUT_SECONDS = 10.0
 
 
 async def _steerable_response(
-    client: ClaudeSDKClient,
+    client: ClaudeSDKClient | WarmEntry,
     steering: SteeringInbox | None,
 ) -> AsyncIterator[object]:
     if steering is None:
@@ -544,6 +582,7 @@ class ClaudeSdkRuntime:
         knowledge: KnowledgeService | None = None,
         remote_knowledge_mcp: RemoteKnowledgeMcpProvider | None = None,
         observability: Observability | None = None,
+        warm_pool: WarmSdkPool | None = None,
     ) -> None:
         self._agent_version = agent_version
         self._snapshot = AgentManifestSnapshot.model_validate(agent_version.snapshot)
@@ -560,6 +599,7 @@ class ClaudeSdkRuntime:
         self._knowledge = knowledge
         self._remote_knowledge_mcp = remote_knowledge_mcp
         self._observability = observability
+        self._warm_pool = warm_pool
 
     def _span(
         self,
@@ -903,9 +943,9 @@ class ClaudeSdkRuntime:
                 raise ToolResolutionError("duplicate MCP server name: harness-builder")
             mcp_servers["harness-builder"] = context.platform_tools.sdk_server()
             allowed_tools.extend(context.platform_tools.names)
-            result_trust.update({
-                name: ContextTrust.SENSITIVE for name in context.platform_tools.names
-            })
+            result_trust.update(
+                {name: ContextTrust.SENSITIVE for name in context.platform_tools.names}
+            )
         agents: dict[str, AgentDefinition] = {}
         subagent_bindings = {
             subagent.runtime_name: subagent for subagent in manifest.spec.subagents
@@ -1132,9 +1172,7 @@ class ClaudeSdkRuntime:
                         "text, table, PDF or document form would work instead."
                     )
                 inventory_sections.append(
-                    "Original uploads:\n"
-                    f"{original_inventory}\n"
-                    f"{original_guidance}"
+                    f"Original uploads:\n{original_inventory}\n{original_guidance}"
                 )
             prompt = (
                 f"{prompt}\n\n"
@@ -1231,6 +1269,55 @@ class ClaudeSdkRuntime:
                     artifact_execution_context(context.artifact_publisher)
                 )
             if context.runtime_transport_factory is None:
+                warm: WarmSdkRequest | None = None
+                if (
+                    self._warm_pool is not None
+                    and context.sandbox_command_executor is not None
+                    and context.sandbox_provider != "local"
+                    and self._tool_gate is not None
+                ):
+                    snapshots = (
+                        self._snapshot,
+                        *(
+                            AgentManifestSnapshot.model_validate(version.snapshot)
+                            for version in self._subagent_versions.values()
+                        ),
+                    )
+                    assert context.identity is not None
+                    scope = json.dumps(
+                        {
+                            "assets": [snapshot.content_hash for snapshot in snapshots],
+                            "session": context.session.model_dump(
+                                mode="json",
+                                exclude={
+                                    "runtime_thread_id",
+                                    "claude_session_id",
+                                    "workspace_snapshot_id",
+                                },
+                            ),
+                            "identity": context.identity.model_dump(
+                                mode="json", exclude={"run_id"}
+                            ),
+                            "policy": (
+                                context.resolved_policy.content_hash
+                                if context.resolved_policy is not None
+                                else None
+                            ),
+                            "sandbox": context.sandbox_provider,
+                            "knowledge": context.run.input.get("knowledge_binding_override"),
+                        },
+                        sort_keys=True,
+                    )
+                    warm = WarmSdkRequest(
+                        self._warm_pool,
+                        (
+                            context.run.tenant_id,
+                            context.session.user_id,
+                            context.session.session_id,
+                        ),
+                        scope,
+                        lambda workspace: materialize_skill_snapshot_set(snapshots, workspace),
+                    )
                 query_messages = (
                     _client_query(
                         prompt,
@@ -1238,6 +1325,7 @@ class ClaudeSdkRuntime:
                         steering=context.steering,
                         observability=self._observability,
                         run_id=context.run.run_id,
+                        warm=warm,
                     )
                     if self._query is _default_query
                     else self._query(prompt, options)

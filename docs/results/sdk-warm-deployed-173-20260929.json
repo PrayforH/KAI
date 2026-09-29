@@ -1,0 +1,921 @@
+{
+  "deployment": {
+    "host": "172.20.109.173",
+    "stack": "agent-evolution-173",
+    "worker_image": "kai/axis-api:sdk-warm-20260929-r2",
+    "worker_image_id": "sha256:d4f0c760928dae42de6e252b61fda673c7e66ab1947620a0b6953dd485a8a527",
+    "source_commit": "37d7a254",
+    "base_image": "kai/axis-api:context-compaction-20260928-r6",
+    "settings": {
+      "sdk_warm_enabled": true,
+      "sdk_warm_idle_seconds": 120,
+      "sdk_warm_max_sessions": 4
+    }
+  },
+  "cold_api": {
+    "configuration": {
+      "api_url": "http://agent-evolution-173-api:8000",
+      "agent": "lead-agent@1.0.3+platform.99dfe677",
+      "runs": 3,
+      "warmups": 0,
+      "reuse_thread": true,
+      "prompt": "请只回复 OK，不需要使用工具。",
+      "tenant_id": "local",
+      "user_id": "user_57392570435541348708387662223c71",
+      "published_agents": false,
+      "required_text": "OK"
+    },
+    "samples": [
+      {
+        "run": 1,
+        "harness_run_id": "run_ddbfb4df05444c5fa265b53904fbd870",
+        "response_headers_ms": 253.1823143362999,
+        "first_event_ms": 253.751240670681,
+        "run_started_ms": 253.751240670681,
+        "first_text_ms": 3274.1852700710297,
+        "total_ms": 3401.911124587059,
+        "event_count": 26,
+        "text_characters": 2
+      },
+      {
+        "run": 2,
+        "harness_run_id": "run_9c1562b122f04627b6e996a1d3224596",
+        "response_headers_ms": 53.61124128103256,
+        "first_event_ms": 54.16443943977356,
+        "run_started_ms": 54.16443943977356,
+        "first_text_ms": 3285.7510820031166,
+        "total_ms": 4235.934630036354,
+        "event_count": 27,
+        "text_characters": 2
+      },
+      {
+        "run": 3,
+        "harness_run_id": "run_8e7c53caf91b446188ab42ad4616a07d",
+        "response_headers_ms": 37.992700934410095,
+        "first_event_ms": 38.408420979976654,
+        "run_started_ms": 38.408420979976654,
+        "first_text_ms": 2779.460184276104,
+        "total_ms": 3640.7793685793877,
+        "event_count": 27,
+        "text_characters": 2
+      }
+    ],
+    "summary": {
+      "response_headers_ms": {
+        "min": 37.992700934410095,
+        "p50": 53.61124128103256,
+        "p95": 253.1823143362999,
+        "p99": 253.1823143362999,
+        "max": 253.1823143362999,
+        "mean": 114.92875218391418
+      },
+      "first_event_ms": {
+        "min": 38.408420979976654,
+        "p50": 54.16443943977356,
+        "p95": 253.751240670681,
+        "p99": 253.751240670681,
+        "max": 253.751240670681,
+        "mean": 115.44136703014374
+      },
+      "run_started_ms": {
+        "min": 38.408420979976654,
+        "p50": 54.16443943977356,
+        "p95": 253.751240670681,
+        "p99": 253.751240670681,
+        "max": 253.751240670681,
+        "mean": 115.44136703014374
+      },
+      "first_text_ms": {
+        "min": 2779.460184276104,
+        "p50": 3274.1852700710297,
+        "p95": 3285.7510820031166,
+        "p99": 3285.7510820031166,
+        "max": 3285.7510820031166,
+        "mean": 3113.1321787834167
+      },
+      "total_ms": {
+        "min": 3401.911124587059,
+        "p50": 3640.7793685793877,
+        "p95": 4235.934630036354,
+        "p99": 4235.934630036354,
+        "max": 4235.934630036354,
+        "mean": 3759.5417077342668
+      }
+    }
+  },
+  "warm_acceptance": {
+    "thread": "sdk-warm-acceptance-fb3033d588964db2968a88b621c4a105",
+    "samples": [
+      {
+        "run": 1,
+        "harness_run_id": "run_4f794b7cf3a14bb88aef872f20453fd9",
+        "response_headers_ms": 173.97259920835495,
+        "first_event_ms": 174.33281242847443,
+        "run_started_ms": 174.33281242847443,
+        "first_text_ms": 4173.001237213612,
+        "total_ms": 5161.049000918865,
+        "event_count": 26,
+        "text_characters": 2
+      },
+      {
+        "run": 2,
+        "harness_run_id": "run_29d7a9731e0e414d8db4248a698467d9",
+        "response_headers_ms": 48.28766733407974,
+        "first_event_ms": 48.72330278158188,
+        "run_started_ms": 48.72330278158188,
+        "first_text_ms": 946.2520256638527,
+        "total_ms": 1816.3502514362335,
+        "event_count": 27,
+        "text_characters": 2
+      },
+      {
+        "run": 3,
+        "harness_run_id": "run_0d88a157a6004f42bda2f5197835a4ee",
+        "response_headers_ms": 37.36869990825653,
+        "first_event_ms": 37.93489933013916,
+        "run_started_ms": 37.93489933013916,
+        "first_text_ms": 993.1855276226997,
+        "total_ms": 1870.4982623457909,
+        "event_count": 27,
+        "text_characters": 2
+      },
+      {
+        "run": 4,
+        "harness_run_id": "run_87f9206f622f46b59f478a9ecaceec6b",
+        "response_headers_ms": 52.84977704286575,
+        "first_event_ms": 53.34678292274475,
+        "run_started_ms": 53.34678292274475,
+        "first_text_ms": 6834.097765386105,
+        "total_ms": 8394.067108631134,
+        "event_count": 79,
+        "text_characters": 51
+      },
+      {
+        "run": 5,
+        "harness_run_id": "run_33abc37ba9704c9cb48725f4a530ca10",
+        "response_headers_ms": 51.674485206604004,
+        "first_event_ms": 52.05158889293671,
+        "run_started_ms": 52.05158889293671,
+        "first_text_ms": 10558.137089014053,
+        "total_ms": 12512.389928102493,
+        "event_count": 98,
+        "text_characters": 184
+      },
+      {
+        "run": 6,
+        "harness_run_id": "run_bcc2867e1ad3499f9be4efa26375f063",
+        "response_headers_ms": 48.65742474794388,
+        "first_event_ms": 49.17403310537338,
+        "run_started_ms": 49.17403310537338,
+        "first_text_ms": 5749.482072889805,
+        "total_ms": 8282.471060752869,
+        "event_count": 135,
+        "text_characters": 384
+      }
+    ]
+  },
+  "traces": [
+    {
+      "run_id": "run_4f794b7cf3a14bb88aef872f20453fd9",
+      "status": "succeeded",
+      "session_id": "session_6912481520dc42fbb23caebd89169260",
+      "trace_id": "975046ef9361204b858ccd33e3839dd0",
+      "trace_status": 200,
+      "spans": [
+        {
+          "name": "harness.sandbox.collect",
+          "startTime": "2026-09-29T05:13:51.644Z",
+          "endTime": "2026-09-29T05:13:51.644Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sandbox.destroy",
+          "startTime": "2026-09-29T05:13:51.733Z",
+          "endTime": "2026-09-29T05:13:51.746Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sdk.first_message_wait",
+          "startTime": "2026-09-29T05:13:50.401Z",
+          "endTime": "2026-09-29T05:13:50.588Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sandbox.prepare",
+          "startTime": "2026-09-29T05:13:48.613Z",
+          "endTime": "2026-09-29T05:13:48.616Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sdk.query.send",
+          "startTime": "2026-09-29T05:13:50.400Z",
+          "endTime": "2026-09-29T05:13:50.401Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sdk.connect",
+          "startTime": "2026-09-29T05:13:48.872Z",
+          "endTime": "2026-09-29T05:13:50.400Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sandbox.provision",
+          "startTime": "2026-09-29T05:13:47.408Z",
+          "endTime": "2026-09-29T05:13:47.415Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        }
+      ]
+    },
+    {
+      "run_id": "run_29d7a9731e0e414d8db4248a698467d9",
+      "status": "succeeded",
+      "session_id": "session_6912481520dc42fbb23caebd89169260",
+      "trace_id": "79d30715192f305f5ba2884891f13154",
+      "trace_status": 200,
+      "spans": [
+        {
+          "name": "harness.sdk.reuse",
+          "startTime": "2026-09-29T05:13:52.502Z",
+          "endTime": "2026-09-29T05:13:52.508Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sdk.query.send",
+          "startTime": "2026-09-29T05:13:52.508Z",
+          "endTime": "2026-09-29T05:13:52.508Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sandbox.collect",
+          "startTime": "2026-09-29T05:13:53.486Z",
+          "endTime": "2026-09-29T05:13:53.486Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sandbox.destroy",
+          "startTime": "2026-09-29T05:13:53.551Z",
+          "endTime": "2026-09-29T05:13:53.568Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sandbox.prepare",
+          "startTime": "2026-09-29T05:13:52.346Z",
+          "endTime": "2026-09-29T05:13:52.348Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sdk.first_message_wait",
+          "startTime": "2026-09-29T05:13:52.509Z",
+          "endTime": "2026-09-29T05:13:52.526Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sandbox.provision",
+          "startTime": "2026-09-29T05:13:52.032Z",
+          "endTime": "2026-09-29T05:13:52.036Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        }
+      ]
+    },
+    {
+      "run_id": "run_0d88a157a6004f42bda2f5197835a4ee",
+      "status": "succeeded",
+      "session_id": "session_6912481520dc42fbb23caebd89169260",
+      "trace_id": "7e0aef6bbb4f5c613d8798c7f6dbdaa0",
+      "trace_status": 200,
+      "spans": [
+        {
+          "name": "harness.sandbox.destroy",
+          "startTime": "2026-09-29T05:13:55.421Z",
+          "endTime": "2026-09-29T05:13:55.435Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sdk.first_message_wait",
+          "startTime": "2026-09-29T05:13:54.394Z",
+          "endTime": "2026-09-29T05:13:54.410Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sandbox.collect",
+          "startTime": "2026-09-29T05:13:55.347Z",
+          "endTime": "2026-09-29T05:13:55.347Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sandbox.prepare",
+          "startTime": "2026-09-29T05:13:54.191Z",
+          "endTime": "2026-09-29T05:13:54.193Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sdk.reuse",
+          "startTime": "2026-09-29T05:13:54.386Z",
+          "endTime": "2026-09-29T05:13:54.393Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sdk.query.send",
+          "startTime": "2026-09-29T05:13:54.393Z",
+          "endTime": "2026-09-29T05:13:54.394Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sandbox.provision",
+          "startTime": "2026-09-29T05:13:53.809Z",
+          "endTime": "2026-09-29T05:13:53.812Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        }
+      ]
+    },
+    {
+      "run_id": "run_87f9206f622f46b59f478a9ecaceec6b",
+      "status": "succeeded",
+      "session_id": "session_6912481520dc42fbb23caebd89169260",
+      "trace_id": "b47e305285127458a80de5140352f615",
+      "trace_status": 200,
+      "spans": [
+        {
+          "name": "harness.sandbox.destroy",
+          "startTime": "2026-09-29T05:14:03.812Z",
+          "endTime": "2026-09-29T05:14:03.870Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sandbox.collect",
+          "startTime": "2026-09-29T05:14:03.213Z",
+          "endTime": "2026-09-29T05:14:03.744Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sdk.first_message_wait",
+          "startTime": "2026-09-29T05:13:56.465Z",
+          "endTime": "2026-09-29T05:13:56.477Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sdk.reuse",
+          "startTime": "2026-09-29T05:13:56.456Z",
+          "endTime": "2026-09-29T05:13:56.464Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sandbox.prepare",
+          "startTime": "2026-09-29T05:13:56.242Z",
+          "endTime": "2026-09-29T05:13:56.246Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sdk.query.send",
+          "startTime": "2026-09-29T05:13:56.464Z",
+          "endTime": "2026-09-29T05:13:56.465Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sandbox.provision",
+          "startTime": "2026-09-29T05:13:55.846Z",
+          "endTime": "2026-09-29T05:13:55.849Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        }
+      ]
+    },
+    {
+      "run_id": "run_33abc37ba9704c9cb48725f4a530ca10",
+      "status": "succeeded",
+      "session_id": "session_6912481520dc42fbb23caebd89169260",
+      "trace_id": "28d448b652d0a7bf46c38aa45049ea65",
+      "trace_status": 200,
+      "spans": [
+        {
+          "name": "harness.sandbox.destroy",
+          "startTime": "2026-09-29T05:14:16.328Z",
+          "endTime": "2026-09-29T05:14:16.391Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sandbox.collect",
+          "startTime": "2026-09-29T05:14:15.663Z",
+          "endTime": "2026-09-29T05:14:16.245Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sdk.query.send",
+          "startTime": "2026-09-29T05:14:04.581Z",
+          "endTime": "2026-09-29T05:14:04.581Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sdk.first_message_wait",
+          "startTime": "2026-09-29T05:14:04.581Z",
+          "endTime": "2026-09-29T05:14:04.593Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sdk.reuse",
+          "startTime": "2026-09-29T05:14:04.574Z",
+          "endTime": "2026-09-29T05:14:04.581Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sandbox.provision",
+          "startTime": "2026-09-29T05:14:04.123Z",
+          "endTime": "2026-09-29T05:14:04.126Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sandbox.prepare",
+          "startTime": "2026-09-29T05:14:04.415Z",
+          "endTime": "2026-09-29T05:14:04.417Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        }
+      ]
+    },
+    {
+      "run_id": "run_bcc2867e1ad3499f9be4efa26375f063",
+      "status": "succeeded",
+      "session_id": "session_6912481520dc42fbb23caebd89169260",
+      "trace_id": "4c4bc4527543ed826bea83c855b8a23b",
+      "trace_status": 200,
+      "spans": [
+        {
+          "name": "harness.sandbox.destroy",
+          "startTime": "2026-09-29T05:14:39.450Z",
+          "endTime": "2026-09-29T05:14:39.499Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sandbox.collect",
+          "startTime": "2026-09-29T05:14:38.936Z",
+          "endTime": "2026-09-29T05:14:39.377Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sdk.first_message_wait",
+          "startTime": "2026-09-29T05:14:31.961Z",
+          "endTime": "2026-09-29T05:14:31.980Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sdk.query.send",
+          "startTime": "2026-09-29T05:14:31.961Z",
+          "endTime": "2026-09-29T05:14:31.961Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sdk.reuse",
+          "startTime": "2026-09-29T05:14:31.954Z",
+          "endTime": "2026-09-29T05:14:31.961Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sandbox.prepare",
+          "startTime": "2026-09-29T05:14:31.797Z",
+          "endTime": "2026-09-29T05:14:31.799Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        },
+        {
+          "name": "harness.sandbox.provision",
+          "startTime": "2026-09-29T05:14:31.491Z",
+          "endTime": "2026-09-29T05:14:31.495Z",
+          "level": "DEFAULT",
+          "statusMessage": null
+        }
+      ]
+    }
+  ],
+  "artifact_checks": [
+    {
+      "run_id": "run_87f9206f622f46b59f478a9ecaceec6b",
+      "artifact_id": "artifact_82f779fade954002b465e7eb3e83fb77",
+      "name": "warm-one.txt",
+      "downloaded_content": "WARM_ONE_20260929",
+      "files": [],
+      "tool_events": [
+        {
+          "type": "tool.request",
+          "payload": {
+            "name": "Write",
+            "tool_call_id": "chatcmpl-tool-b61d63701a8c0f80",
+            "arguments": {
+              "file_path": "warm-one.txt",
+              "content": "[REDACTED]"
+            },
+            "policy_checked": true,
+            "policy_profile": "production-orchestrator",
+            "context_trust": "safe",
+            "message_id": "assistant-run_87f9206f622f46b59f478a9ecaceec6b-6849d42da6594c2393ccb26a52d388c9",
+            "sandbox": {
+              "provider": "cubesandbox-deferred",
+              "isolation": "container"
+            }
+          }
+        },
+        {
+          "type": "tool.allowed",
+          "payload": {
+            "tool_call_id": "chatcmpl-tool-b61d63701a8c0f80",
+            "permission_stage": "harness-final"
+          }
+        },
+        {
+          "type": "tool.result",
+          "payload": {
+            "tool_call_id": "chatcmpl-tool-b61d63701a8c0f80",
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"path\": \"warm-one.txt\", \"bytes\": 17}\n"
+              }
+            ],
+            "is_error": false
+          }
+        },
+        {
+          "type": "tool.request",
+          "payload": {
+            "name": "Read",
+            "tool_call_id": "chatcmpl-tool-99425b00f1aecf66",
+            "arguments": {
+              "file_path": "warm-one.txt"
+            },
+            "policy_checked": true,
+            "policy_profile": "production-orchestrator",
+            "context_trust": "safe",
+            "message_id": "assistant-run_87f9206f622f46b59f478a9ecaceec6b-6849d42da6594c2393ccb26a52d388c9",
+            "sandbox": {
+              "provider": "cubesandbox-deferred",
+              "isolation": "container"
+            }
+          }
+        },
+        {
+          "type": "tool.allowed",
+          "payload": {
+            "tool_call_id": "chatcmpl-tool-99425b00f1aecf66",
+            "permission_stage": "harness-final"
+          }
+        },
+        {
+          "type": "tool.result",
+          "payload": {
+            "tool_call_id": "chatcmpl-tool-99425b00f1aecf66",
+            "content": [
+              {
+                "type": "text",
+                "text": "WARM_ONE_20260929\n"
+              }
+            ],
+            "is_error": false
+          }
+        },
+        {
+          "type": "tool.request",
+          "payload": {
+            "name": "mcp__harness-artifacts__publish_artifact",
+            "tool_call_id": "chatcmpl-tool-a49a138bfc139de4",
+            "arguments": {
+              "path": "warm-one.txt",
+              "media_type": "text/plain",
+              "name": "warm-one.txt"
+            },
+            "policy_checked": true,
+            "policy_profile": "production-orchestrator",
+            "context_trust": "safe",
+            "message_id": "assistant-run_87f9206f622f46b59f478a9ecaceec6b-6849d42da6594c2393ccb26a52d388c9",
+            "sandbox": {
+              "provider": "cubesandbox-deferred",
+              "isolation": "container"
+            }
+          }
+        },
+        {
+          "type": "tool.allowed",
+          "payload": {
+            "tool_call_id": "chatcmpl-tool-a49a138bfc139de4",
+            "permission_stage": "harness-final"
+          }
+        },
+        {
+          "type": "tool.result",
+          "payload": {
+            "tool_call_id": "chatcmpl-tool-a49a138bfc139de4",
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"artifact_id\":\"artifact_82f779fade954002b465e7eb3e83fb77\",\"run_id\":\"run_87f9206f622f46b59f478a9ecaceec6b\",\"tenant_id\":\"local\",\"name\":\"warm-one.txt\",\"media_type\":\"text/plain\",\"status\":\"ready\",\"object_key\":\"local/artifact_82f779fade954002b465e7eb3e83fb77\",\"sha256\":\"1a2a5431bf970fc5ee31841953cc1e1ce5ca7e5a385edd7d336ed863345cfa04\",\"size_bytes\":17}"
+              }
+            ],
+            "is_error": false
+          }
+        }
+      ]
+    },
+    {
+      "run_id": "run_33abc37ba9704c9cb48725f4a530ca10",
+      "artifact_id": "artifact_bcc814df32a04ffc975dd58f3aadd943",
+      "name": "warm-two.txt",
+      "downloaded_content": "WARM_TWO_20260929",
+      "files": [],
+      "tool_events": [
+        {
+          "type": "tool.request",
+          "payload": {
+            "name": "Read",
+            "tool_call_id": "chatcmpl-tool-8d06263c1ed3d9fe",
+            "arguments": {
+              "file_path": "warm-one.txt"
+            },
+            "policy_checked": true,
+            "policy_profile": "production-orchestrator",
+            "context_trust": "safe",
+            "message_id": "assistant-run_33abc37ba9704c9cb48725f4a530ca10-07b995bf4b3240e980b7ee71b1da3a93",
+            "sandbox": {
+              "provider": "cubesandbox-deferred",
+              "isolation": "container"
+            }
+          }
+        },
+        {
+          "type": "tool.allowed",
+          "payload": {
+            "tool_call_id": "chatcmpl-tool-8d06263c1ed3d9fe",
+            "permission_stage": "harness-final"
+          }
+        },
+        {
+          "type": "tool.request",
+          "payload": {
+            "name": "Write",
+            "tool_call_id": "chatcmpl-tool-a78b9899a52297fc",
+            "arguments": {
+              "content": "[REDACTED]",
+              "file_path": "warm-two.txt"
+            },
+            "policy_checked": true,
+            "policy_profile": "production-orchestrator",
+            "context_trust": "safe",
+            "message_id": "assistant-run_33abc37ba9704c9cb48725f4a530ca10-07b995bf4b3240e980b7ee71b1da3a93",
+            "sandbox": {
+              "provider": "cubesandbox-deferred",
+              "isolation": "container"
+            }
+          }
+        },
+        {
+          "type": "tool.result",
+          "payload": {
+            "tool_call_id": "chatcmpl-tool-8d06263c1ed3d9fe",
+            "content": [
+              {
+                "type": "text",
+                "text": "WARM_ONE_20260929\n"
+              }
+            ],
+            "is_error": false
+          }
+        },
+        {
+          "type": "tool.allowed",
+          "payload": {
+            "tool_call_id": "chatcmpl-tool-a78b9899a52297fc",
+            "permission_stage": "harness-final"
+          }
+        },
+        {
+          "type": "tool.result",
+          "payload": {
+            "tool_call_id": "chatcmpl-tool-a78b9899a52297fc",
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"path\": \"warm-two.txt\", \"bytes\": 17}\n"
+              }
+            ],
+            "is_error": false
+          }
+        },
+        {
+          "type": "tool.request",
+          "payload": {
+            "name": "Read",
+            "tool_call_id": "chatcmpl-tool-b3958bb10f759ae9",
+            "arguments": {
+              "file_path": "warm-two.txt"
+            },
+            "policy_checked": true,
+            "policy_profile": "production-orchestrator",
+            "context_trust": "safe",
+            "message_id": "assistant-run_33abc37ba9704c9cb48725f4a530ca10-07b995bf4b3240e980b7ee71b1da3a93",
+            "sandbox": {
+              "provider": "cubesandbox-deferred",
+              "isolation": "container"
+            }
+          }
+        },
+        {
+          "type": "tool.allowed",
+          "payload": {
+            "tool_call_id": "chatcmpl-tool-b3958bb10f759ae9",
+            "permission_stage": "harness-final"
+          }
+        },
+        {
+          "type": "tool.result",
+          "payload": {
+            "tool_call_id": "chatcmpl-tool-b3958bb10f759ae9",
+            "content": [
+              {
+                "type": "text",
+                "text": "WARM_TWO_20260929\n"
+              }
+            ],
+            "is_error": false
+          }
+        },
+        {
+          "type": "tool.request",
+          "payload": {
+            "name": "mcp__harness-artifacts__publish_artifact",
+            "tool_call_id": "chatcmpl-tool-934b014989cff370",
+            "arguments": {
+              "media_type": "text/plain",
+              "name": "warm-two.txt",
+              "path": "warm-two.txt"
+            },
+            "policy_checked": true,
+            "policy_profile": "production-orchestrator",
+            "context_trust": "safe",
+            "message_id": "assistant-run_33abc37ba9704c9cb48725f4a530ca10-07b995bf4b3240e980b7ee71b1da3a93",
+            "sandbox": {
+              "provider": "cubesandbox-deferred",
+              "isolation": "container"
+            }
+          }
+        },
+        {
+          "type": "tool.allowed",
+          "payload": {
+            "tool_call_id": "chatcmpl-tool-934b014989cff370",
+            "permission_stage": "harness-final"
+          }
+        },
+        {
+          "type": "tool.result",
+          "payload": {
+            "tool_call_id": "chatcmpl-tool-934b014989cff370",
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"artifact_id\":\"artifact_bcc814df32a04ffc975dd58f3aadd943\",\"run_id\":\"run_33abc37ba9704c9cb48725f4a530ca10\",\"tenant_id\":\"local\",\"name\":\"warm-two.txt\",\"media_type\":\"text/plain\",\"status\":\"ready\",\"object_key\":\"local/artifact_bcc814df32a04ffc975dd58f3aadd943\",\"sha256\":\"b4a9a2d4431d002ef245ff30c47fc6fe2794a5db96e5c066cc70347d53d78c46\",\"size_bytes\":17}"
+              }
+            ],
+            "is_error": false
+          }
+        }
+      ]
+    }
+  ],
+  "skill_tool_events": [
+    {
+      "event_id": "event_fd0f6d4cf06846c3a119e82dea1ac11f",
+      "run_id": "run_bcc2867e1ad3499f9be4efa26375f063",
+      "session_id": "session_6912481520dc42fbb23caebd89169260",
+      "tenant_id": "local",
+      "sequence": 21,
+      "type": "tool.request",
+      "timestamp": "2026-09-29T05:14:32.900551Z",
+      "payload": {
+        "name": "Skill",
+        "tool_call_id": "chatcmpl-tool-a0c43769ae8bcc89",
+        "arguments": {
+          "skill": "delivery-verification"
+        },
+        "policy_checked": true,
+        "policy_profile": "production-orchestrator",
+        "context_trust": "safe",
+        "message_id": "assistant-run_bcc2867e1ad3499f9be4efa26375f063-f4df56c7191c4e4a92732e7b473f1cdc",
+        "sandbox": {
+          "provider": "cubesandbox-deferred",
+          "isolation": "container"
+        }
+      },
+      "schema_version": 1,
+      "trace_id": "4c4bc4527543ed826bea83c855b8a23b",
+      "span_id": "de9ff8c8d35e5dff"
+    },
+    {
+      "event_id": "event_4587f5687750400792c2c079cdc14d18",
+      "run_id": "run_bcc2867e1ad3499f9be4efa26375f063",
+      "session_id": "session_6912481520dc42fbb23caebd89169260",
+      "tenant_id": "local",
+      "sequence": 24,
+      "type": "tool.result",
+      "timestamp": "2026-09-29T05:14:32.950810Z",
+      "payload": {
+        "tool_call_id": "chatcmpl-tool-a0c43769ae8bcc89",
+        "content": "Launching skill: delivery-verification",
+        "is_error": false
+      },
+      "schema_version": 1,
+      "trace_id": "4c4bc4527543ed826bea83c855b8a23b",
+      "span_id": "fbdaff2f8d93d7a2"
+    },
+    {
+      "event_id": "event_eacd4e60c7584da1a183015feeb4967d",
+      "run_id": "run_bcc2867e1ad3499f9be4efa26375f063",
+      "session_id": "session_6912481520dc42fbb23caebd89169260",
+      "tenant_id": "local",
+      "sequence": 45,
+      "type": "tool.request",
+      "timestamp": "2026-09-29T05:14:34.348587Z",
+      "payload": {
+        "name": "Bash",
+        "tool_call_id": "chatcmpl-tool-a15f740946ebf00f",
+        "arguments": {
+          "command": "ls -l warm-one.txt warm-two.txt && echo \"---one---\" && cat warm-one.txt && echo && echo \"---two---\" && cat warm-two.txt && echo && md5sum warm-one.txt warm-two.txt"
+        },
+        "policy_checked": true,
+        "policy_profile": "production-orchestrator",
+        "context_trust": "safe",
+        "message_id": "assistant-run_bcc2867e1ad3499f9be4efa26375f063-f4df56c7191c4e4a92732e7b473f1cdc",
+        "sandbox": {
+          "provider": "cubesandbox-deferred",
+          "isolation": "container"
+        }
+      },
+      "schema_version": 1,
+      "trace_id": "4c4bc4527543ed826bea83c855b8a23b",
+      "span_id": "de9ff8c8d35e5dff"
+    },
+    {
+      "event_id": "event_3259b730aa57415ca5c2080ff5b8defd",
+      "run_id": "run_bcc2867e1ad3499f9be4efa26375f063",
+      "session_id": "session_6912481520dc42fbb23caebd89169260",
+      "tenant_id": "local",
+      "sequence": 48,
+      "type": "tool.result",
+      "timestamp": "2026-09-29T05:14:35.193788Z",
+      "payload": {
+        "tool_call_id": "chatcmpl-tool-a15f740946ebf00f",
+        "content": [
+          {
+            "type": "text",
+            "text": "-rw-r--r-- 1 root root 17 Sep 29 05:16 warm-one.txt\n-rw-r--r-- 1 root root 17 Sep 29 05:16 warm-two.txt\n---one---\nWARM_ONE_20260929\n---two---\nWARM_TWO_20260929\n323d98a72f4d735678bb7633e85ce835  warm-one.txt\n7cabe3dd5edc248d1e48c0961dad7d94  warm-two.txt\n"
+          }
+        ],
+        "is_error": false
+      },
+      "schema_version": 1,
+      "trace_id": "4c4bc4527543ed826bea83c855b8a23b",
+      "span_id": "fbdaff2f8d93d7a2"
+    }
+  ],
+  "final_health": {
+    "checked_at_server_utc": "2026-09-29T05:17:16Z",
+    "health": "healthy",
+    "restart_count": 0,
+    "warm_cli_processes_after_idle_ttl": 0,
+    "worker_error_warning_traceback_mirror_log_matches": 0
+  }
+}

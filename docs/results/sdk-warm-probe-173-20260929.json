@@ -1,0 +1,1071 @@
+{
+  "kind": "real CLI; synthetic localhost model; not production TTFT",
+  "cold": {
+    "samples": [
+      {
+        "run": "cold-0",
+        "reused": false,
+        "connect_or_acquire_ms": 1212.0972201228142,
+        "first_text_ms": 1448.6094638705254,
+        "total_ms": 1473.8526418805122
+      },
+      {
+        "run": "cold-1",
+        "reused": false,
+        "connect_or_acquire_ms": 1322.619877755642,
+        "first_text_ms": 1516.9745683670044,
+        "total_ms": 1546.8842685222626
+      },
+      {
+        "run": "cold-2",
+        "reused": false,
+        "connect_or_acquire_ms": 1301.0203912854195,
+        "first_text_ms": 1499.4190335273743,
+        "total_ms": 1539.5015999674797
+      },
+      {
+        "run": "cold-3",
+        "reused": false,
+        "connect_or_acquire_ms": 1024.1419598460197,
+        "first_text_ms": 1210.6936052441597,
+        "total_ms": 1239.3481358885765
+      },
+      {
+        "run": "cold-4",
+        "reused": false,
+        "connect_or_acquire_ms": 1226.3511940836906,
+        "first_text_ms": 1424.8231649398804,
+        "total_ms": 1461.8118330836296
+      },
+      {
+        "run": "cold-5",
+        "reused": false,
+        "connect_or_acquire_ms": 1287.0239615440369,
+        "first_text_ms": 1488.0031496286392,
+        "total_ms": 1525.440938770771
+      },
+      {
+        "run": "cold-6",
+        "reused": false,
+        "connect_or_acquire_ms": 1195.2020674943924,
+        "first_text_ms": 1376.3077408075333,
+        "total_ms": 1404.9410670995712
+      },
+      {
+        "run": "cold-7",
+        "reused": false,
+        "connect_or_acquire_ms": 948.1565579771996,
+        "first_text_ms": 1168.2384461164474,
+        "total_ms": 1206.5246999263763
+      },
+      {
+        "run": "cold-8",
+        "reused": false,
+        "connect_or_acquire_ms": 1017.9496631026268,
+        "first_text_ms": 1214.6607711911201,
+        "total_ms": 1253.0652731657028
+      },
+      {
+        "run": "cold-9",
+        "reused": false,
+        "connect_or_acquire_ms": 1128.7379935383797,
+        "first_text_ms": 1325.8007019758224,
+        "total_ms": 1361.0197976231575
+      },
+      {
+        "run": "cold-10",
+        "reused": false,
+        "connect_or_acquire_ms": 1346.5211614966393,
+        "first_text_ms": 1555.3029477596283,
+        "total_ms": 1592.531681060791
+      },
+      {
+        "run": "cold-11",
+        "reused": false,
+        "connect_or_acquire_ms": 1263.6983767151833,
+        "first_text_ms": 1489.275485277176,
+        "total_ms": 1525.3062471747398
+      },
+      {
+        "run": "cold-12",
+        "reused": false,
+        "connect_or_acquire_ms": 1123.4109997749329,
+        "first_text_ms": 1331.163763999939,
+        "total_ms": 1407.2394371032715
+      },
+      {
+        "run": "cold-13",
+        "reused": false,
+        "connect_or_acquire_ms": 1136.6694569587708,
+        "first_text_ms": 1378.0915662646294,
+        "total_ms": 1405.2549377083778
+      },
+      {
+        "run": "cold-14",
+        "reused": false,
+        "connect_or_acquire_ms": 1136.6187706589699,
+        "first_text_ms": 1317.1052783727646,
+        "total_ms": 1345.688946545124
+      },
+      {
+        "run": "cold-15",
+        "reused": false,
+        "connect_or_acquire_ms": 1306.588165462017,
+        "first_text_ms": 1502.913273870945,
+        "total_ms": 1538.8211756944656
+      },
+      {
+        "run": "cold-16",
+        "reused": false,
+        "connect_or_acquire_ms": 1208.2022950053215,
+        "first_text_ms": 1425.404042005539,
+        "total_ms": 1468.3105424046516
+      },
+      {
+        "run": "cold-17",
+        "reused": false,
+        "connect_or_acquire_ms": 1122.4474608898163,
+        "first_text_ms": 1275.7772505283356,
+        "total_ms": 1303.168036043644
+      },
+      {
+        "run": "cold-18",
+        "reused": false,
+        "connect_or_acquire_ms": 1128.6589056253433,
+        "first_text_ms": 1343.7623903155327,
+        "total_ms": 1380.4764598608017
+      },
+      {
+        "run": "cold-19",
+        "reused": false,
+        "connect_or_acquire_ms": 1272.195227444172,
+        "first_text_ms": 1489.203691482544,
+        "total_ms": 1525.1783952116966
+      },
+      {
+        "run": "cold-20",
+        "reused": false,
+        "connect_or_acquire_ms": 1101.3901829719543,
+        "first_text_ms": 1346.3684245944023,
+        "total_ms": 1382.8263133764267
+      },
+      {
+        "run": "cold-21",
+        "reused": false,
+        "connect_or_acquire_ms": 1095.8111882209778,
+        "first_text_ms": 1277.8265252709389,
+        "total_ms": 1318.0757462978363
+      },
+      {
+        "run": "cold-22",
+        "reused": false,
+        "connect_or_acquire_ms": 1287.6872271299362,
+        "first_text_ms": 1497.8466406464577,
+        "total_ms": 1536.786638200283
+      },
+      {
+        "run": "cold-23",
+        "reused": false,
+        "connect_or_acquire_ms": 1141.9039368629456,
+        "first_text_ms": 1357.6649576425552,
+        "total_ms": 1394.4614455103874
+      },
+      {
+        "run": "cold-24",
+        "reused": false,
+        "connect_or_acquire_ms": 1214.944288134575,
+        "first_text_ms": 1428.3490180969238,
+        "total_ms": 1473.1343165040016
+      },
+      {
+        "run": "cold-25",
+        "reused": false,
+        "connect_or_acquire_ms": 1199.3004456162453,
+        "first_text_ms": 1456.046462059021,
+        "total_ms": 1495.939590036869
+      },
+      {
+        "run": "cold-26",
+        "reused": false,
+        "connect_or_acquire_ms": 1049.8403534293175,
+        "first_text_ms": 1301.9823655486107,
+        "total_ms": 1341.567486524582
+      },
+      {
+        "run": "cold-27",
+        "reused": false,
+        "connect_or_acquire_ms": 1323.0265974998474,
+        "first_text_ms": 1532.6224640011787,
+        "total_ms": 1573.1995925307274
+      },
+      {
+        "run": "cold-28",
+        "reused": false,
+        "connect_or_acquire_ms": 1165.9609153866768,
+        "first_text_ms": 1411.0054820775986,
+        "total_ms": 1439.793899655342
+      },
+      {
+        "run": "cold-29",
+        "reused": false,
+        "connect_or_acquire_ms": 1177.152819931507,
+        "first_text_ms": 1397.6386114954948,
+        "total_ms": 1449.238769710064
+      },
+      {
+        "run": "cold-30",
+        "reused": false,
+        "connect_or_acquire_ms": 1366.0571351647377,
+        "first_text_ms": 1580.0662264227867,
+        "total_ms": 1626.8806457519531
+      }
+    ],
+    "callbacks": [
+      {
+        "kind": "hook",
+        "owner": "cold-0",
+        "context": "cold-0"
+      },
+      {
+        "kind": "mcp",
+        "owner": "cold-0",
+        "context": "cold-0"
+      },
+      {
+        "kind": "hook",
+        "owner": "cold-1",
+        "context": "cold-1"
+      },
+      {
+        "kind": "mcp",
+        "owner": "cold-1",
+        "context": "cold-1"
+      },
+      {
+        "kind": "hook",
+        "owner": "cold-2",
+        "context": "cold-2"
+      },
+      {
+        "kind": "mcp",
+        "owner": "cold-2",
+        "context": "cold-2"
+      },
+      {
+        "kind": "hook",
+        "owner": "cold-3",
+        "context": "cold-3"
+      },
+      {
+        "kind": "mcp",
+        "owner": "cold-3",
+        "context": "cold-3"
+      },
+      {
+        "kind": "hook",
+        "owner": "cold-4",
+        "context": "cold-4"
+      },
+      {
+        "kind": "mcp",
+        "owner": "cold-4",
+        "context": "cold-4"
+      },
+      {
+        "kind": "hook",
+        "owner": "cold-5",
+        "context": "cold-5"
+      },
+      {
+        "kind": "mcp",
+        "owner": "cold-5",
+        "context": "cold-5"
+      },
+      {
+        "kind": "hook",
+        "owner": "cold-6",
+        "context": "cold-6"
+      },
+      {
+        "kind": "mcp",
+        "owner": "cold-6",
+        "context": "cold-6"
+      },
+      {
+        "kind": "hook",
+        "owner": "cold-7",
+        "context": "cold-7"
+      },
+      {
+        "kind": "mcp",
+        "owner": "cold-7",
+        "context": "cold-7"
+      },
+      {
+        "kind": "hook",
+        "owner": "cold-8",
+        "context": "cold-8"
+      },
+      {
+        "kind": "mcp",
+        "owner": "cold-8",
+        "context": "cold-8"
+      },
+      {
+        "kind": "hook",
+        "owner": "cold-9",
+        "context": "cold-9"
+      },
+      {
+        "kind": "mcp",
+        "owner": "cold-9",
+        "context": "cold-9"
+      },
+      {
+        "kind": "hook",
+        "owner": "cold-10",
+        "context": "cold-10"
+      },
+      {
+        "kind": "mcp",
+        "owner": "cold-10",
+        "context": "cold-10"
+      },
+      {
+        "kind": "hook",
+        "owner": "cold-11",
+        "context": "cold-11"
+      },
+      {
+        "kind": "mcp",
+        "owner": "cold-11",
+        "context": "cold-11"
+      },
+      {
+        "kind": "hook",
+        "owner": "cold-12",
+        "context": "cold-12"
+      },
+      {
+        "kind": "mcp",
+        "owner": "cold-12",
+        "context": "cold-12"
+      },
+      {
+        "kind": "hook",
+        "owner": "cold-13",
+        "context": "cold-13"
+      },
+      {
+        "kind": "mcp",
+        "owner": "cold-13",
+        "context": "cold-13"
+      },
+      {
+        "kind": "hook",
+        "owner": "cold-14",
+        "context": "cold-14"
+      },
+      {
+        "kind": "mcp",
+        "owner": "cold-14",
+        "context": "cold-14"
+      },
+      {
+        "kind": "hook",
+        "owner": "cold-15",
+        "context": "cold-15"
+      },
+      {
+        "kind": "mcp",
+        "owner": "cold-15",
+        "context": "cold-15"
+      },
+      {
+        "kind": "hook",
+        "owner": "cold-16",
+        "context": "cold-16"
+      },
+      {
+        "kind": "mcp",
+        "owner": "cold-16",
+        "context": "cold-16"
+      },
+      {
+        "kind": "hook",
+        "owner": "cold-17",
+        "context": "cold-17"
+      },
+      {
+        "kind": "mcp",
+        "owner": "cold-17",
+        "context": "cold-17"
+      },
+      {
+        "kind": "hook",
+        "owner": "cold-18",
+        "context": "cold-18"
+      },
+      {
+        "kind": "mcp",
+        "owner": "cold-18",
+        "context": "cold-18"
+      },
+      {
+        "kind": "hook",
+        "owner": "cold-19",
+        "context": "cold-19"
+      },
+      {
+        "kind": "mcp",
+        "owner": "cold-19",
+        "context": "cold-19"
+      },
+      {
+        "kind": "hook",
+        "owner": "cold-20",
+        "context": "cold-20"
+      },
+      {
+        "kind": "mcp",
+        "owner": "cold-20",
+        "context": "cold-20"
+      },
+      {
+        "kind": "hook",
+        "owner": "cold-21",
+        "context": "cold-21"
+      },
+      {
+        "kind": "mcp",
+        "owner": "cold-21",
+        "context": "cold-21"
+      },
+      {
+        "kind": "hook",
+        "owner": "cold-22",
+        "context": "cold-22"
+      },
+      {
+        "kind": "mcp",
+        "owner": "cold-22",
+        "context": "cold-22"
+      },
+      {
+        "kind": "hook",
+        "owner": "cold-23",
+        "context": "cold-23"
+      },
+      {
+        "kind": "mcp",
+        "owner": "cold-23",
+        "context": "cold-23"
+      },
+      {
+        "kind": "hook",
+        "owner": "cold-24",
+        "context": "cold-24"
+      },
+      {
+        "kind": "mcp",
+        "owner": "cold-24",
+        "context": "cold-24"
+      },
+      {
+        "kind": "hook",
+        "owner": "cold-25",
+        "context": "cold-25"
+      },
+      {
+        "kind": "mcp",
+        "owner": "cold-25",
+        "context": "cold-25"
+      },
+      {
+        "kind": "hook",
+        "owner": "cold-26",
+        "context": "cold-26"
+      },
+      {
+        "kind": "mcp",
+        "owner": "cold-26",
+        "context": "cold-26"
+      },
+      {
+        "kind": "hook",
+        "owner": "cold-27",
+        "context": "cold-27"
+      },
+      {
+        "kind": "mcp",
+        "owner": "cold-27",
+        "context": "cold-27"
+      },
+      {
+        "kind": "hook",
+        "owner": "cold-28",
+        "context": "cold-28"
+      },
+      {
+        "kind": "mcp",
+        "owner": "cold-28",
+        "context": "cold-28"
+      },
+      {
+        "kind": "hook",
+        "owner": "cold-29",
+        "context": "cold-29"
+      },
+      {
+        "kind": "mcp",
+        "owner": "cold-29",
+        "context": "cold-29"
+      },
+      {
+        "kind": "hook",
+        "owner": "cold-30",
+        "context": "cold-30"
+      },
+      {
+        "kind": "mcp",
+        "owner": "cold-30",
+        "context": "cold-30"
+      }
+    ],
+    "median_connect_or_acquire_ms": 1186.1774437129498
+  },
+  "warm": {
+    "samples": [
+      {
+        "run": "warm-0",
+        "reused": false,
+        "connect_or_acquire_ms": 1217.4354791641235,
+        "first_text_ms": 1432.5420632958412,
+        "total_ms": 1450.5445435643196
+      },
+      {
+        "run": "warm-1",
+        "reused": true,
+        "connect_or_acquire_ms": 0.41940808296203613,
+        "first_text_ms": 31.888365745544434,
+        "total_ms": 47.69793897867203
+      },
+      {
+        "run": "warm-2",
+        "reused": true,
+        "connect_or_acquire_ms": 0.4160776734352112,
+        "first_text_ms": 27.96918898820877,
+        "total_ms": 35.99659353494644
+      },
+      {
+        "run": "warm-3",
+        "reused": true,
+        "connect_or_acquire_ms": 0.3844350576400757,
+        "first_text_ms": 27.436047792434692,
+        "total_ms": 35.32854467630386
+      },
+      {
+        "run": "warm-4",
+        "reused": true,
+        "connect_or_acquire_ms": 0.3715530037879944,
+        "first_text_ms": 28.23600172996521,
+        "total_ms": 35.91809421777725
+      },
+      {
+        "run": "warm-5",
+        "reused": true,
+        "connect_or_acquire_ms": 0.376187264919281,
+        "first_text_ms": 28.90387922525406,
+        "total_ms": 37.305332720279694
+      },
+      {
+        "run": "warm-6",
+        "reused": true,
+        "connect_or_acquire_ms": 0.5331933498382568,
+        "first_text_ms": 27.64400839805603,
+        "total_ms": 35.612501204013824
+      },
+      {
+        "run": "warm-7",
+        "reused": true,
+        "connect_or_acquire_ms": 0.474780797958374,
+        "first_text_ms": 30.74663132429123,
+        "total_ms": 41.45638644695282
+      },
+      {
+        "run": "warm-8",
+        "reused": true,
+        "connect_or_acquire_ms": 0.39920955896377563,
+        "first_text_ms": 33.35161507129669,
+        "total_ms": 51.626794040203094
+      },
+      {
+        "run": "warm-9",
+        "reused": true,
+        "connect_or_acquire_ms": 1.379355788230896,
+        "first_text_ms": 49.32557791471481,
+        "total_ms": 90.07319808006287
+      },
+      {
+        "run": "warm-10",
+        "reused": true,
+        "connect_or_acquire_ms": 0.4592910408973694,
+        "first_text_ms": 82.73802697658539,
+        "total_ms": 104.6292781829834
+      },
+      {
+        "run": "warm-11",
+        "reused": true,
+        "connect_or_acquire_ms": 0.40430575609207153,
+        "first_text_ms": 36.96247935295105,
+        "total_ms": 46.17492854595184
+      },
+      {
+        "run": "warm-12",
+        "reused": true,
+        "connect_or_acquire_ms": 0.35418570041656494,
+        "first_text_ms": 32.068729400634766,
+        "total_ms": 41.22801870107651
+      },
+      {
+        "run": "warm-13",
+        "reused": true,
+        "connect_or_acquire_ms": 0.3513246774673462,
+        "first_text_ms": 40.85208475589752,
+        "total_ms": 51.99187248945236
+      },
+      {
+        "run": "warm-14",
+        "reused": true,
+        "connect_or_acquire_ms": 0.5829855799674988,
+        "first_text_ms": 29.78070080280304,
+        "total_ms": 38.11991959810257
+      },
+      {
+        "run": "warm-15",
+        "reused": true,
+        "connect_or_acquire_ms": 0.4630759358406067,
+        "first_text_ms": 27.781739830970764,
+        "total_ms": 36.258265376091
+      },
+      {
+        "run": "warm-16",
+        "reused": true,
+        "connect_or_acquire_ms": 0.3809407353401184,
+        "first_text_ms": 40.311723947525024,
+        "total_ms": 49.999721348285675
+      },
+      {
+        "run": "warm-17",
+        "reused": true,
+        "connect_or_acquire_ms": 0.3976002335548401,
+        "first_text_ms": 29.770255088806152,
+        "total_ms": 38.538239896297455
+      },
+      {
+        "run": "warm-18",
+        "reused": true,
+        "connect_or_acquire_ms": 0.45026838779449463,
+        "first_text_ms": 33.38581323623657,
+        "total_ms": 42.95213520526886
+      },
+      {
+        "run": "warm-19",
+        "reused": true,
+        "connect_or_acquire_ms": 0.3320947289466858,
+        "first_text_ms": 31.050026416778564,
+        "total_ms": 39.81871157884598
+      },
+      {
+        "run": "warm-20",
+        "reused": true,
+        "connect_or_acquire_ms": 0.3139674663543701,
+        "first_text_ms": 29.86152470111847,
+        "total_ms": 37.42651641368866
+      },
+      {
+        "run": "warm-21",
+        "reused": true,
+        "connect_or_acquire_ms": 0.3124549984931946,
+        "first_text_ms": 25.004729628562927,
+        "total_ms": 35.34088283777237
+      },
+      {
+        "run": "warm-22",
+        "reused": true,
+        "connect_or_acquire_ms": 0.2945438027381897,
+        "first_text_ms": 27.891233563423157,
+        "total_ms": 35.79028695821762
+      },
+      {
+        "run": "warm-23",
+        "reused": true,
+        "connect_or_acquire_ms": 0.30446797609329224,
+        "first_text_ms": 31.304650008678436,
+        "total_ms": 40.54848104715347
+      },
+      {
+        "run": "warm-24",
+        "reused": true,
+        "connect_or_acquire_ms": 0.3137513995170593,
+        "first_text_ms": 29.333099722862244,
+        "total_ms": 37.988461554050446
+      },
+      {
+        "run": "warm-25",
+        "reused": true,
+        "connect_or_acquire_ms": 0.3132373094558716,
+        "first_text_ms": 28.794802725315094,
+        "total_ms": 40.308400988578796
+      },
+      {
+        "run": "warm-26",
+        "reused": true,
+        "connect_or_acquire_ms": 0.3060773015022278,
+        "first_text_ms": 28.702422976493835,
+        "total_ms": 36.68282926082611
+      },
+      {
+        "run": "warm-27",
+        "reused": true,
+        "connect_or_acquire_ms": 0.49279630184173584,
+        "first_text_ms": 28.236769139766693,
+        "total_ms": 38.15445303916931
+      },
+      {
+        "run": "warm-28",
+        "reused": true,
+        "connect_or_acquire_ms": 0.41653215885162354,
+        "first_text_ms": 30.963994562625885,
+        "total_ms": 39.237409830093384
+      },
+      {
+        "run": "warm-29",
+        "reused": true,
+        "connect_or_acquire_ms": 0.40584802627563477,
+        "first_text_ms": 44.922731816768646,
+        "total_ms": 54.83177304267883
+      },
+      {
+        "run": "warm-30",
+        "reused": true,
+        "connect_or_acquire_ms": 0.4033595323562622,
+        "first_text_ms": 28.53170782327652,
+        "total_ms": 36.37553006410599
+      }
+    ],
+    "callbacks": [
+      {
+        "kind": "hook",
+        "owner": "warm-0",
+        "context": "warm-0"
+      },
+      {
+        "kind": "mcp",
+        "owner": "warm-0",
+        "context": "warm-0"
+      },
+      {
+        "kind": "hook",
+        "owner": "warm-1",
+        "context": "warm-1"
+      },
+      {
+        "kind": "mcp",
+        "owner": "warm-1",
+        "context": "warm-1"
+      },
+      {
+        "kind": "hook",
+        "owner": "warm-2",
+        "context": "warm-2"
+      },
+      {
+        "kind": "mcp",
+        "owner": "warm-2",
+        "context": "warm-2"
+      },
+      {
+        "kind": "hook",
+        "owner": "warm-3",
+        "context": "warm-3"
+      },
+      {
+        "kind": "mcp",
+        "owner": "warm-3",
+        "context": "warm-3"
+      },
+      {
+        "kind": "hook",
+        "owner": "warm-4",
+        "context": "warm-4"
+      },
+      {
+        "kind": "mcp",
+        "owner": "warm-4",
+        "context": "warm-4"
+      },
+      {
+        "kind": "hook",
+        "owner": "warm-5",
+        "context": "warm-5"
+      },
+      {
+        "kind": "mcp",
+        "owner": "warm-5",
+        "context": "warm-5"
+      },
+      {
+        "kind": "hook",
+        "owner": "warm-6",
+        "context": "warm-6"
+      },
+      {
+        "kind": "mcp",
+        "owner": "warm-6",
+        "context": "warm-6"
+      },
+      {
+        "kind": "hook",
+        "owner": "warm-7",
+        "context": "warm-7"
+      },
+      {
+        "kind": "mcp",
+        "owner": "warm-7",
+        "context": "warm-7"
+      },
+      {
+        "kind": "hook",
+        "owner": "warm-8",
+        "context": "warm-8"
+      },
+      {
+        "kind": "mcp",
+        "owner": "warm-8",
+        "context": "warm-8"
+      },
+      {
+        "kind": "hook",
+        "owner": "warm-9",
+        "context": "warm-9"
+      },
+      {
+        "kind": "mcp",
+        "owner": "warm-9",
+        "context": "warm-9"
+      },
+      {
+        "kind": "hook",
+        "owner": "warm-10",
+        "context": "warm-10"
+      },
+      {
+        "kind": "mcp",
+        "owner": "warm-10",
+        "context": "warm-10"
+      },
+      {
+        "kind": "hook",
+        "owner": "warm-11",
+        "context": "warm-11"
+      },
+      {
+        "kind": "mcp",
+        "owner": "warm-11",
+        "context": "warm-11"
+      },
+      {
+        "kind": "hook",
+        "owner": "warm-12",
+        "context": "warm-12"
+      },
+      {
+        "kind": "mcp",
+        "owner": "warm-12",
+        "context": "warm-12"
+      },
+      {
+        "kind": "hook",
+        "owner": "warm-13",
+        "context": "warm-13"
+      },
+      {
+        "kind": "mcp",
+        "owner": "warm-13",
+        "context": "warm-13"
+      },
+      {
+        "kind": "hook",
+        "owner": "warm-14",
+        "context": "warm-14"
+      },
+      {
+        "kind": "mcp",
+        "owner": "warm-14",
+        "context": "warm-14"
+      },
+      {
+        "kind": "hook",
+        "owner": "warm-15",
+        "context": "warm-15"
+      },
+      {
+        "kind": "mcp",
+        "owner": "warm-15",
+        "context": "warm-15"
+      },
+      {
+        "kind": "hook",
+        "owner": "warm-16",
+        "context": "warm-16"
+      },
+      {
+        "kind": "mcp",
+        "owner": "warm-16",
+        "context": "warm-16"
+      },
+      {
+        "kind": "hook",
+        "owner": "warm-17",
+        "context": "warm-17"
+      },
+      {
+        "kind": "mcp",
+        "owner": "warm-17",
+        "context": "warm-17"
+      },
+      {
+        "kind": "hook",
+        "owner": "warm-18",
+        "context": "warm-18"
+      },
+      {
+        "kind": "mcp",
+        "owner": "warm-18",
+        "context": "warm-18"
+      },
+      {
+        "kind": "hook",
+        "owner": "warm-19",
+        "context": "warm-19"
+      },
+      {
+        "kind": "mcp",
+        "owner": "warm-19",
+        "context": "warm-19"
+      },
+      {
+        "kind": "hook",
+        "owner": "warm-20",
+        "context": "warm-20"
+      },
+      {
+        "kind": "mcp",
+        "owner": "warm-20",
+        "context": "warm-20"
+      },
+      {
+        "kind": "hook",
+        "owner": "warm-21",
+        "context": "warm-21"
+      },
+      {
+        "kind": "mcp",
+        "owner": "warm-21",
+        "context": "warm-21"
+      },
+      {
+        "kind": "hook",
+        "owner": "warm-22",
+        "context": "warm-22"
+      },
+      {
+        "kind": "mcp",
+        "owner": "warm-22",
+        "context": "warm-22"
+      },
+      {
+        "kind": "hook",
+        "owner": "warm-23",
+        "context": "warm-23"
+      },
+      {
+        "kind": "mcp",
+        "owner": "warm-23",
+        "context": "warm-23"
+      },
+      {
+        "kind": "hook",
+        "owner": "warm-24",
+        "context": "warm-24"
+      },
+      {
+        "kind": "mcp",
+        "owner": "warm-24",
+        "context": "warm-24"
+      },
+      {
+        "kind": "hook",
+        "owner": "warm-25",
+        "context": "warm-25"
+      },
+      {
+        "kind": "mcp",
+        "owner": "warm-25",
+        "context": "warm-25"
+      },
+      {
+        "kind": "hook",
+        "owner": "warm-26",
+        "context": "warm-26"
+      },
+      {
+        "kind": "mcp",
+        "owner": "warm-26",
+        "context": "warm-26"
+      },
+      {
+        "kind": "hook",
+        "owner": "warm-27",
+        "context": "warm-27"
+      },
+      {
+        "kind": "mcp",
+        "owner": "warm-27",
+        "context": "warm-27"
+      },
+      {
+        "kind": "hook",
+        "owner": "warm-28",
+        "context": "warm-28"
+      },
+      {
+        "kind": "mcp",
+        "owner": "warm-28",
+        "context": "warm-28"
+      },
+      {
+        "kind": "hook",
+        "owner": "warm-29",
+        "context": "warm-29"
+      },
+      {
+        "kind": "mcp",
+        "owner": "warm-29",
+        "context": "warm-29"
+      },
+      {
+        "kind": "hook",
+        "owner": "warm-30",
+        "context": "warm-30"
+      },
+      {
+        "kind": "mcp",
+        "owner": "warm-30",
+        "context": "warm-30"
+      }
+    ],
+    "median_connect_or_acquire_ms": 0.39840489625930786
+  }
+}

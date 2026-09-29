@@ -587,6 +587,16 @@ def build_production_container(
     # Production model routes and credentials are tenant control-plane data.
     # Environment-backed gateways remain supported by the local/dev composer,
     # but are deliberately ignored by the production container.
+    from harness.runtime.warm_sdk import WarmSdkPool
+
+    warm_sdk_pool = (
+        WarmSdkPool(
+            idle_seconds=settings.sdk_warm_idle_seconds,
+            max_sessions=settings.sdk_warm_max_sessions,
+        )
+        if settings.sdk_warm_enabled and execution_enabled
+        else None
+    )
     if execution_enabled:
         # Every backend this deployment serves, keyed the way execution profiles
         # name them. The configured default stays first and is what Runs without
@@ -1208,6 +1218,7 @@ def build_production_container(
             web_enabled=settings.web_tools_enabled,
         )
         claude_runtime = RegistryClaudeRuntime(
+            warm_pool=warm_sdk_pool,
             registry=registry,
             model_configurations=model_configurations,
             tool_resolver=tool_resolver,
@@ -1647,6 +1658,8 @@ def build_production_container(
     )
 
     async def close() -> None:
+        if warm_sdk_pool is not None:
+            await warm_sdk_pool.close()
         await redis.aclose()
         await engine.dispose()
 

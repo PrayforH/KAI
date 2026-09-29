@@ -34,3 +34,35 @@ async def test_postgres_sdk_session_store_conformance() -> None:
         )
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_warm_revision_tracks_child_writes_and_deletion_but_isolates_sessions() -> None:
+    engine, sessions = create_database(DATABASE_URL)
+    await drop_schema(engine)
+    await create_schema(engine)
+    store = PostgresSessionStore(sessions, tenant_id="a", project_id="session-a")
+    other = PostgresSessionStore(sessions, tenant_id="a", project_id="session-b")
+    try:
+        initial = await store.revision()
+        await store.append(
+            {"session_id": "native", "project_key": "cwd"},
+            [{"uuid": "one", "type": "user", "message": {"content": "one"}}],
+        )
+        first = await store.revision()
+        assert first != initial
+        await other.append(
+            {"session_id": "native", "project_key": "cwd"},
+            [{"uuid": "other", "type": "user", "message": {"content": "other"}}],
+        )
+        assert await store.revision() == first
+        await store.append(
+            {"session_id": "native", "project_key": "cwd", "subpath": "child"},
+            [{"uuid": "two", "type": "user", "message": {"content": "two"}}],
+        )
+        child = await store.revision()
+        assert child != first
+        await store.delete({"session_id": "native", "project_key": "cwd", "subpath": "child"})
+        assert await store.revision() != child
+    finally:
+        await engine.dispose()

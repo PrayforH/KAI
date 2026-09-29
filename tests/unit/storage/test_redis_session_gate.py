@@ -25,6 +25,10 @@ class FakeRedisClient:
         for key in expired:
             self.store.pop(key, None)
 
+    async def get(self, key: str) -> str | None:
+        item = self.store.get(key)
+        return item[0] if item is not None else None
+
     async def eval(self, script: str, numkeys: int, *keys_and_args: str) -> object:
         key, token, ttl_ms = keys_and_args[0], keys_and_args[1], keys_and_args[2]
         current = self.store.get(key)
@@ -72,15 +76,56 @@ async def test_second_acquire_waits_until_release() -> None:
     await entered.wait()
     assert client.store  # key held
 
-    waiter = gate.acquire(("t", "s"))
-    second = asyncio.create_task(waiter.__aenter__())
+    second_entered = asyncio.Event()
+    second_release = asyncio.Event()
+
+    async def waiter() -> None:
+        async with gate.acquire(("t", "s")):
+            second_entered.set()
+            await second_release.wait()
+
+    second = asyncio.create_task(waiter())
     with pytest.raises(asyncio.TimeoutError):
-        await asyncio.wait_for(asyncio.shield(second), timeout=0.1)
+        await asyncio.wait_for(second_entered.wait(), timeout=0.1)
 
     release.set()
     await first
-    await asyncio.wait_for(second, timeout=2)
-    await waiter.__aexit__(None, None, None)
+    await asyncio.wait_for(second_entered.wait(), timeout=2)
+    second_release.set()
+    await second
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["stolen", "redis_error"])
+async def test_lost_gate_actively_cancels_holder_and_revokes_callbacks(failure: str) -> None:
+    from harness.runtime.ownership import ExecutionOwnershipLostError, execution_ownership
+
+    client = FakeRedisClient()
+    gate = make_gate(client, refresh_interval_seconds=0.01)
+    authority = None
+    cancelled = False
+    with pytest.raises(SessionGateError, match="lease was lost"):
+        async with gate.acquire(("t", "s")):
+            authority = execution_ownership.get()
+            assert authority is not None
+            await authority.check()
+            if failure == "stolen":
+                client.store["harness:session-gate:t:s"] = ("new-owner", 999999)
+            else:
+
+                async def broken(*args: object) -> int:
+                    raise ConnectionError("Redis unavailable")
+
+                gate._run_script = broken  # type: ignore[method-assign]
+            try:
+                await asyncio.sleep(2)
+            except asyncio.CancelledError:
+                cancelled = True
+                raise
+    assert cancelled and authority is not None
+    with pytest.raises(ExecutionOwnershipLostError):
+        await authority.check()
+    assert execution_ownership.get() is None
 
 
 @pytest.mark.asyncio

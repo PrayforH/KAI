@@ -10,6 +10,11 @@ from uuid import uuid4
 
 from harness.core.events import RunEvent
 from harness.core.ports import RunTask
+from harness.runtime.ownership import (
+    ExecutionOwnership,
+    ExecutionOwnershipLostError,
+    execution_ownership,
+)
 
 
 class AsyncRedisClient(Protocol):
@@ -414,6 +419,8 @@ class RedisSessionGate:
 
     async def _run_script(self, script: str, key: str, token: str) -> int:
         result = await self._client.eval(script, 1, key, token, self._ttl_ms)
+        if not isinstance(result, (int, str, bytes)):
+            raise SessionGateError("Invalid Session gate script response")
         return int(result)
 
     @asynccontextmanager
@@ -430,10 +437,51 @@ class RedisSessionGate:
                 )
             await asyncio.sleep(self._poll_interval_seconds)
 
-        refresh_task = asyncio.create_task(self._refresh_loop(key, token))
+        holder = asyncio.current_task()
+        assert holder is not None
+        lost = False
+
+        async def verify() -> None:
+            nonlocal lost
+            try:
+                current = await self._client.get(key)
+                if isinstance(current, bytes):
+                    current = current.decode()
+                if current != token:
+                    raise ExecutionOwnershipLostError("Session gate ownership changed")
+            except Exception as error:
+                authority.active = False
+                if not lost:
+                    lost = True
+                    holder.cancel()
+                raise ExecutionOwnershipLostError("Cannot verify Session gate ownership") from error
+
+        authority = ExecutionOwnership(
+            verify, expires_at=time.monotonic() + int(self._ttl_ms) / 1000
+        )
+        context_token = execution_ownership.set(authority)
+
+        async def refresh() -> None:
+            nonlocal lost
+            try:
+                await self._refresh_loop(key, token, authority)
+            except Exception:
+                lost = True
+                authority.active = False
+                holder.cancel()
+
+        refresh_task = asyncio.create_task(refresh())
         try:
             yield
+            if lost:
+                raise SessionGateError("Session gate lease was lost during execution")
+        except asyncio.CancelledError:
+            if lost:
+                raise SessionGateError("Session gate lease was lost during execution") from None
+            raise
         finally:
+            authority.active = False
+            execution_ownership.reset(context_token)
             refresh_task.cancel()
             with suppress(asyncio.CancelledError):
                 await refresh_task
@@ -442,7 +490,10 @@ class RedisSessionGate:
             except Exception:  # noqa: BLE001 - release is best-effort; TTL reaps
                 pass
 
-    async def _refresh_loop(self, key: str, token: str) -> None:
+    async def _refresh_loop(self, key: str, token: str, authority: ExecutionOwnership) -> None:
         while True:
             await asyncio.sleep(self._refresh_interval_seconds)
-            await self._run_script(_SESSION_GATE_REFRESH_SCRIPT, key, token)
+            started = time.monotonic()
+            if not await self._run_script(_SESSION_GATE_REFRESH_SCRIPT, key, token):
+                raise SessionGateError("Session gate lease was lost")
+            authority.expires_at = started + int(self._ttl_ms) / 1000

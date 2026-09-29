@@ -40,6 +40,30 @@ class PostgresSessionStore:
     def _project(self, key: SessionKey | SessionListSubkeysKey) -> str:
         return self._project_id or key["project_key"]
 
+    async def revision(self) -> str:
+        """Watermark all transcripts, including child sessions and deletion/rebase.
+
+        Checked under the Session gate before borrowing a local warm connection.
+        A different Worker may have advanced the same native session ID.
+        """
+        if self._project_id is None:
+            raise ValueError("Warm SDK reuse requires a Session-bound store")
+        async with self._sessions() as session:
+            row = (
+                await session.execute(
+                    select(
+                        func.count(),
+                        func.max(SdkSessionEntryRow.modified_at),
+                        func.sum(SdkSessionEntryRow.sequence),
+                        func.max(SdkSessionEntryRow.entry_id),
+                    ).where(
+                        SdkSessionEntryRow.tenant_id == self._tenant_id,
+                        SdkSessionEntryRow.project_id == self._project_id,
+                    )
+                )
+            ).one()
+            return f"{row[0]}:{row[1]}:{row[2]}:{row[3]}"
+
     async def append(self, key: SessionKey, entries: list[SessionStoreEntry]) -> None:
         if not entries:
             return
