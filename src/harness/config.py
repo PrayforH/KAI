@@ -20,6 +20,10 @@ class Settings(BaseSettings):
 
     environment: Literal["local", "test", "production"] = "local"
     runtime: Literal["fake", "claude-sdk", "multi"] = "fake"
+    # Opt-in while real CLI/MCP isolation and multi-worker rollout are validated.
+    sdk_warm_enabled: bool = False
+    sdk_warm_idle_seconds: float = Field(default=300, gt=0)
+    sdk_warm_max_sessions: int = Field(default=16, ge=1)
     # In multi mode, only these kernels are constructed and allowed to execute.
     runtime_kernels: frozenset[AgentRuntimeType] = Field(
         default=frozenset(INSTALLED_AGENT_RUNTIMES), min_length=1

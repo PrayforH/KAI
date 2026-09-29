@@ -28,6 +28,7 @@ from harness.runtime.claude_sdk import ClaudeSdkRuntime, QueryFactory
 from harness.runtime.mcp_credentials import DynamicMcpCredentialProvider
 from harness.runtime.sdk_tool_gate import ToolGate
 from harness.runtime.tools import ToolResolver
+from harness.runtime.warm_sdk import WarmSdkPool
 from harness.studio.model_configuration import ModelConfigurationService
 
 
@@ -52,6 +53,7 @@ class RegistryClaudeRuntime:
         observability: Observability | None = None,
         credential_broker: CredentialBroker | None = None,
         model_configurations: ModelConfigurationService | None = None,
+        warm_pool: WarmSdkPool | None = None,
     ) -> None:
         if config is None and model_configurations is None:
             raise ValueError(
@@ -89,6 +91,7 @@ class RegistryClaudeRuntime:
         self._observability = observability
         self._credential_broker = credential_broker
         self._model_configurations = model_configurations
+        self._warm_pool = warm_pool
 
     def _config_for_route(
         self,
@@ -232,6 +235,7 @@ class RegistryClaudeRuntime:
             route_secrets[fallback_route_id] = fallback_secret
         if self._query_factory is None:
             runtime = ClaudeSdkRuntime(
+                warm_pool=self._warm_pool,
                 agent_version=agent_version,
                 routes=routes,
                 route_secrets=route_secrets,

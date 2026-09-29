@@ -1,0 +1,122 @@
+{
+  "kind": "real CLI; synthetic localhost model; not production TTFT",
+  "sdk_version": "0.2.152",
+  "platform": "Linux-3.10.0-1160.71.1.el7.x86_64-x86_64-with-glibc2.36",
+  "warm_source_sha256": "0a72ad6235ba590e998088e9e868ea5a7d94c69b71b8bd4e39ea3758da09532e",
+  "cold": {
+    "samples": [
+      {
+        "run": "cold-0",
+        "reused": false,
+        "connect_or_acquire_ms": 1148.2103243470192,
+        "first_text_ms": 1358.3775237202644,
+        "total_ms": 1406.8134129047394
+      },
+      {
+        "run": "cold-1",
+        "reused": false,
+        "connect_or_acquire_ms": 1145.1777294278145,
+        "first_text_ms": 1294.9182614684105,
+        "total_ms": 1323.2067748904228
+      },
+      {
+        "run": "cold-2",
+        "reused": false,
+        "connect_or_acquire_ms": 1281.9794937968254,
+        "first_text_ms": 1472.6031869649887,
+        "total_ms": 1508.9842900633812
+      }
+    ],
+    "callbacks": [
+      {
+        "kind": "hook",
+        "owner": "cold-0",
+        "context": "cold-0"
+      },
+      {
+        "kind": "mcp",
+        "owner": "cold-0",
+        "context": "cold-0"
+      },
+      {
+        "kind": "hook",
+        "owner": "cold-1",
+        "context": "cold-1"
+      },
+      {
+        "kind": "mcp",
+        "owner": "cold-1",
+        "context": "cold-1"
+      },
+      {
+        "kind": "hook",
+        "owner": "cold-2",
+        "context": "cold-2"
+      },
+      {
+        "kind": "mcp",
+        "owner": "cold-2",
+        "context": "cold-2"
+      }
+    ],
+    "median_connect_or_acquire_ms": 1213.57861161232
+  },
+  "warm": {
+    "samples": [
+      {
+        "run": "warm-0",
+        "reused": false,
+        "connect_or_acquire_ms": 1066.2908107042313,
+        "first_text_ms": 1303.7473782896996,
+        "total_ms": 1383.851520717144
+      },
+      {
+        "run": "warm-1",
+        "reused": true,
+        "connect_or_acquire_ms": 0.7263049483299255,
+        "first_text_ms": 43.62664371728897,
+        "total_ms": 62.362514436244965
+      },
+      {
+        "run": "warm-2",
+        "reused": true,
+        "connect_or_acquire_ms": 0.6485432386398315,
+        "first_text_ms": 36.53976321220398,
+        "total_ms": 45.86455971002579
+      }
+    ],
+    "callbacks": [
+      {
+        "kind": "hook",
+        "owner": "warm-0",
+        "context": "warm-0"
+      },
+      {
+        "kind": "mcp",
+        "owner": "warm-0",
+        "context": "warm-0"
+      },
+      {
+        "kind": "hook",
+        "owner": "warm-1",
+        "context": "warm-1"
+      },
+      {
+        "kind": "mcp",
+        "owner": "warm-1",
+        "context": "warm-1"
+      },
+      {
+        "kind": "hook",
+        "owner": "warm-2",
+        "context": "warm-2"
+      },
+      {
+        "kind": "mcp",
+        "owner": "warm-2",
+        "context": "warm-2"
+      }
+    ],
+    "median_connect_or_acquire_ms": 0.6874240934848785
+  }
+}
