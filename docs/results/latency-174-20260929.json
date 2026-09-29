@@ -1,0 +1,737 @@
+{
+  "date": "2026-09-29",
+  "host": "172.20.109.174",
+  "code_revision": "2da37133",
+  "worker_image": "kai/axis-api:latency174-2da37133",
+  "worker_image_id": "sha256:5548fce3680fca0ee323e268a808f27d5dc3605ffb7d681291006fa5ac24106e",
+  "settings": {
+    "worker_session_affinity_seconds": 0.35,
+    "sdk_warm_idle_seconds": 120,
+    "sdk_warm_max_sessions": 4,
+    "workers": 3
+  },
+  "samples": {
+    "before": {
+      "runs": [
+        {
+          "phase": "before-shdata",
+          "run": 1,
+          "run_id": "run_b3905b88913843a8aa422e5dd5a5e453",
+          "thread": "latency-before-shdata-02fc40da577c48cfb02d80eb6b19e605",
+          "first_ms": 2990.68,
+          "text_done_ms": 3329.57,
+          "total_ms": 4816.8,
+          "chars": 168,
+          "terminal": "RUN_FINISHED",
+          "trace_id": "e58eda3abc669c3035fe26bb8f36851d",
+          "sdk": [
+            {
+              "name": "harness.sdk.connect",
+              "duration_ms": 1665.0,
+              "worker": "548ef6b5-5de5-48e4-98bd-2b4f64ed0802",
+              "miss_reason": null
+            }
+          ],
+          "context_events": [
+            {
+              "type": "context.window.unavailable",
+              "ms": 4482.5,
+              "data": {
+                "phase": "after",
+                "reason": "control_timeout"
+              }
+            }
+          ]
+        },
+        {
+          "phase": "before-shdata",
+          "run": 2,
+          "run_id": "run_e86325bbd0274133a968f2d09ae02614",
+          "thread": "latency-before-shdata-02fc40da577c48cfb02d80eb6b19e605",
+          "first_ms": 4111.38,
+          "text_done_ms": 4393.39,
+          "total_ms": 8495.04,
+          "chars": 115,
+          "terminal": "RUN_FINISHED",
+          "trace_id": "34f54babccf6dacb2f0e59b7511c3e92",
+          "sdk": [
+            {
+              "name": "harness.sdk.connect",
+              "duration_ms": 1712.0,
+              "worker": "e1fae1e7-2b8f-4c04-8bce-c7389cceb525",
+              "miss_reason": null
+            }
+          ],
+          "context_events": [
+            {
+              "type": "context.window.unavailable",
+              "ms": 8337.23,
+              "data": {
+                "phase": "after",
+                "reason": "control_timeout"
+              }
+            }
+          ]
+        },
+        {
+          "phase": "before-shdata",
+          "run": 3,
+          "run_id": "run_29d97187b8534fb3a72b87f0b46eaa06",
+          "thread": "latency-before-shdata-02fc40da577c48cfb02d80eb6b19e605",
+          "first_ms": 4005.6,
+          "text_done_ms": 8002.02,
+          "total_ms": 10406.15,
+          "chars": 173,
+          "terminal": "RUN_FINISHED",
+          "trace_id": "eea87f47dc7c0ab4f5f0300d3f45082d",
+          "sdk": [
+            {
+              "name": "harness.sdk.connect",
+              "duration_ms": 1667.0,
+              "worker": "a1a45f2d-a3ee-40f4-b44f-6d9c2b39382a",
+              "miss_reason": null
+            }
+          ],
+          "context_events": [
+            {
+              "type": "context.window.unavailable",
+              "ms": 10223.15,
+              "data": {
+                "phase": "after",
+                "reason": "control_timeout"
+              }
+            }
+          ]
+        },
+        {
+          "phase": "before-shdata",
+          "run": 4,
+          "run_id": "run_b51f8b4c383048239eef4f23a5949ca6",
+          "thread": "latency-before-shdata-02fc40da577c48cfb02d80eb6b19e605",
+          "first_ms": 3301.1,
+          "text_done_ms": 3950.95,
+          "total_ms": 5831.97,
+          "chars": 156,
+          "terminal": "RUN_FINISHED",
+          "trace_id": "00a7df83b7783b3f3aedc180fdc8cc1b",
+          "sdk": [
+            {
+              "name": "harness.sdk.connect",
+              "duration_ms": 1655.0,
+              "worker": "548ef6b5-5de5-48e4-98bd-2b4f64ed0802",
+              "miss_reason": null
+            }
+          ],
+          "context_events": [
+            {
+              "type": "context.window.unavailable",
+              "ms": 5682.35,
+              "data": {
+                "phase": "after",
+                "reason": "control_timeout"
+              }
+            }
+          ]
+        },
+        {
+          "phase": "before-shdata",
+          "run": 5,
+          "run_id": "run_f314ed453dde4dfc91516b115f03ccd7",
+          "thread": "latency-before-shdata-02fc40da577c48cfb02d80eb6b19e605",
+          "first_ms": 4151.2,
+          "text_done_ms": 4479.29,
+          "total_ms": 5841.87,
+          "chars": 65,
+          "terminal": "RUN_FINISHED",
+          "trace_id": "48098058d55056e3a8a5a95094b43fa1",
+          "sdk": [
+            {
+              "name": "harness.sdk.connect",
+              "duration_ms": 1566.0,
+              "worker": "a1a45f2d-a3ee-40f4-b44f-6d9c2b39382a",
+              "miss_reason": null
+            }
+          ],
+          "context_events": [
+            {
+              "type": "context.window.unavailable",
+              "ms": 5636.75,
+              "data": {
+                "phase": "after",
+                "reason": "control_timeout"
+              }
+            }
+          ]
+        }
+      ],
+      "median_first_ms": 4005.6,
+      "median_total_ms": 5841.87
+    },
+    "after_r1": {
+      "runs": [
+        {
+          "phase": "after-shdata",
+          "run": 1,
+          "run_id": "run_fc5962b3a0f9458a842c34a38112628d",
+          "thread": "latency-after-shdata-9d9f235bb2044fecb3ac319e5ced91c5",
+          "first_ms": 4342.91,
+          "text_done_ms": 4359.02,
+          "total_ms": 5959.77,
+          "chars": 14,
+          "terminal": "RUN_FINISHED",
+          "trace_id": "315cdbf998468f337808053d786b9a44",
+          "sdk": [
+            {
+              "name": "harness.sdk.connect",
+              "duration_ms": 1564.0,
+              "worker": "a6ad8309-d404-4eda-8e28-237d4812a3e9",
+              "miss_reason": null
+            }
+          ],
+          "context_events": [
+            {
+              "type": "context.window.observed",
+              "ms": 5602.84
+            }
+          ]
+        },
+        {
+          "phase": "after-shdata",
+          "run": 2,
+          "run_id": "run_ca67d8fbbdcc411cb16598b4cbf16b59",
+          "thread": "latency-after-shdata-9d9f235bb2044fecb3ac319e5ced91c5",
+          "first_ms": 1256.72,
+          "text_done_ms": 1274.43,
+          "total_ms": 4113.05,
+          "chars": 18,
+          "terminal": "RUN_FINISHED",
+          "trace_id": "6916c282ba88231998580a3a46d15c1a",
+          "sdk": [
+            {
+              "name": "harness.sdk.reuse",
+              "duration_ms": 11.0,
+              "worker": "a6ad8309-d404-4eda-8e28-237d4812a3e9",
+              "miss_reason": null
+            }
+          ],
+          "context_events": [
+            {
+              "type": "context.window.observed",
+              "ms": 3932.82
+            }
+          ]
+        },
+        {
+          "phase": "after-shdata",
+          "run": 3,
+          "run_id": "run_ab8934fe6c0b4f47b6078aae9ec29094",
+          "thread": "latency-after-shdata-9d9f235bb2044fecb3ac319e5ced91c5",
+          "first_ms": 1667.24,
+          "text_done_ms": 1802.99,
+          "total_ms": 3297.77,
+          "chars": 57,
+          "terminal": "RUN_FINISHED",
+          "trace_id": "a5bb422bb190b7947ebba0be2c843263",
+          "sdk": [
+            {
+              "name": "harness.sdk.reuse",
+              "duration_ms": 11.0,
+              "worker": "a6ad8309-d404-4eda-8e28-237d4812a3e9",
+              "miss_reason": null
+            }
+          ],
+          "context_events": [
+            {
+              "type": "context.window.unavailable",
+              "ms": 3102.41,
+              "data": {
+                "phase": "after",
+                "reason": "control_timeout"
+              }
+            }
+          ]
+        },
+        {
+          "phase": "after-shdata",
+          "run": 4,
+          "run_id": "run_ce909defc02e4d5db28ec9b55ec1d8dc",
+          "thread": "latency-after-shdata-9d9f235bb2044fecb3ac319e5ced91c5",
+          "first_ms": 3688.48,
+          "text_done_ms": 4104.41,
+          "total_ms": 5675.5,
+          "chars": 180,
+          "terminal": "RUN_FINISHED",
+          "trace_id": "3f5b044f3b22ed35a9cb63a6f508180c",
+          "sdk": [
+            {
+              "name": "harness.sdk.connect",
+              "duration_ms": 1713.0,
+              "worker": "a6ad8309-d404-4eda-8e28-237d4812a3e9",
+              "miss_reason": null
+            }
+          ],
+          "context_events": [
+            {
+              "type": "context.window.observed",
+              "ms": 5490.99
+            }
+          ]
+        },
+        {
+          "phase": "after-shdata",
+          "run": 5,
+          "run_id": "run_0511819d6cd4456bb5baf65e0e70e2af",
+          "thread": "latency-after-shdata-9d9f235bb2044fecb3ac319e5ced91c5",
+          "first_ms": 1734.9,
+          "text_done_ms": 1810.47,
+          "total_ms": 3317.68,
+          "chars": 27,
+          "terminal": "RUN_FINISHED",
+          "trace_id": "4d8a3fa47c951e80eaffc06c31e403a4",
+          "sdk": [
+            {
+              "name": "harness.sdk.reuse",
+              "duration_ms": 8.0,
+              "worker": "a6ad8309-d404-4eda-8e28-237d4812a3e9",
+              "miss_reason": null
+            }
+          ],
+          "context_events": [
+            {
+              "type": "context.window.unavailable",
+              "ms": 3132.71,
+              "data": {
+                "phase": "after",
+                "reason": "control_timeout"
+              }
+            }
+          ]
+        }
+      ],
+      "median_first_ms": 1734.9,
+      "median_total_ms": 4113.05
+    },
+    "after_r2": {
+      "runs": [
+        {
+          "phase": "after-r2-shdata",
+          "run": 1,
+          "run_id": "run_93dff00205824685ac2be92fdb1548f3",
+          "thread": "latency-after-r2-shdata-b0eac22884734e5e93027c0c928696cd",
+          "first_ms": 4238.31,
+          "text_done_ms": 4255.14,
+          "total_ms": 6254.92,
+          "chars": 14,
+          "terminal": "RUN_FINISHED",
+          "trace_id": "b77c9b071da8f88eea0bb76c04c0f0bd",
+          "sdk": [
+            {
+              "name": "harness.sdk.connect",
+              "duration_ms": 1421.0,
+              "worker": "e1f1ba30-1d18-47f9-be49-1cc81d649874",
+              "miss_reason": "not_cached"
+            }
+          ],
+          "context_events": [
+            {
+              "type": "context.window.unavailable",
+              "ms": 5890.06,
+              "data": {
+                "phase": "after",
+                "reason": "control_timeout"
+              }
+            }
+          ]
+        },
+        {
+          "phase": "after-r2-shdata",
+          "run": 2,
+          "run_id": "run_20e85ac61f8249e6bbd02b5ef4ee85e5",
+          "thread": "latency-after-r2-shdata-b0eac22884734e5e93027c0c928696cd",
+          "first_ms": 3208.04,
+          "text_done_ms": 3258.79,
+          "total_ms": 4961.76,
+          "chars": 18,
+          "terminal": "RUN_FINISHED",
+          "trace_id": "ba545d9f044e8cd1757503c34528c98f",
+          "sdk": [
+            {
+              "name": "harness.sdk.connect",
+              "duration_ms": 1764.0,
+              "worker": "e1f1ba30-1d18-47f9-be49-1cc81d649874",
+              "miss_reason": "unhealthy"
+            }
+          ],
+          "context_events": [
+            {
+              "type": "context.window.observed",
+              "ms": 4784.14
+            }
+          ]
+        },
+        {
+          "phase": "after-r2-shdata",
+          "run": 3,
+          "run_id": "run_d440ca0369604774a04095da363521c4",
+          "thread": "latency-after-r2-shdata-b0eac22884734e5e93027c0c928696cd",
+          "first_ms": 1572.4,
+          "text_done_ms": 1741.89,
+          "total_ms": 5996.74,
+          "chars": 102,
+          "terminal": "RUN_FINISHED",
+          "trace_id": "79283e573df23230d3d560878e21a522",
+          "sdk": [
+            {
+              "name": "harness.sdk.reuse",
+              "duration_ms": 9.0,
+              "worker": "e1f1ba30-1d18-47f9-be49-1cc81d649874",
+              "miss_reason": ""
+            }
+          ],
+          "context_events": [
+            {
+              "type": "context.window.unavailable",
+              "ms": 5794.66,
+              "data": {
+                "phase": "after",
+                "reason": "control_timeout"
+              }
+            }
+          ]
+        },
+        {
+          "phase": "after-r2-shdata",
+          "run": 4,
+          "run_id": "run_7b2e5d8c6e984ad7a604e0d0423e583c",
+          "thread": "latency-after-r2-shdata-b0eac22884734e5e93027c0c928696cd",
+          "first_ms": 3523.63,
+          "text_done_ms": 3669.96,
+          "total_ms": 5308.74,
+          "chars": 49,
+          "terminal": "RUN_FINISHED",
+          "trace_id": "5f4012a93c5e7d5046fee5fccbfec241",
+          "sdk": [
+            {
+              "name": "harness.sdk.connect",
+              "duration_ms": 1700.0,
+              "worker": "e1f1ba30-1d18-47f9-be49-1cc81d649874",
+              "miss_reason": "unhealthy"
+            }
+          ],
+          "context_events": [
+            {
+              "type": "context.window.observed",
+              "ms": 5088.12
+            }
+          ]
+        },
+        {
+          "phase": "after-r2-shdata",
+          "run": 5,
+          "run_id": "run_adca3a51b62348448043b8981497e1cd",
+          "thread": "latency-after-r2-shdata-b0eac22884734e5e93027c0c928696cd",
+          "first_ms": 1826.46,
+          "text_done_ms": 1854.23,
+          "total_ms": 3851.11,
+          "chars": 16,
+          "terminal": "RUN_FINISHED",
+          "trace_id": "75eacc8e13bd5320dfb9b0ecfa42105d",
+          "sdk": [
+            {
+              "name": "harness.sdk.reuse",
+              "duration_ms": 9.0,
+              "worker": "e1f1ba30-1d18-47f9-be49-1cc81d649874",
+              "miss_reason": ""
+            }
+          ],
+          "context_events": [
+            {
+              "type": "context.window.observed",
+              "ms": 3658.18
+            }
+          ]
+        }
+      ],
+      "median_first_ms": 3208.04,
+      "median_total_ms": 5308.74
+    },
+    "after_final": {
+      "runs": [
+        {
+          "phase": "after-summary-shdata",
+          "run": 1,
+          "run_id": "run_bd4c09f798f64ee0b3332d418051257f",
+          "thread": "latency-after-summary-shdata-962912452cfd4a828199b112d69b6eb9",
+          "first_ms": 4009.83,
+          "text_done_ms": 4158.78,
+          "total_ms": 4542.83,
+          "chars": 56,
+          "terminal": "RUN_FINISHED",
+          "trace_id": "7f011873dd4545c6b67e7d054125e998",
+          "sdk": [
+            {
+              "name": "harness.sdk.connect",
+              "duration_ms": 1404.0,
+              "worker": "0b213f99-c34f-41e2-9620-6401d4923e35",
+              "miss_reason": "not_cached"
+            }
+          ],
+          "context_events": [
+            {
+              "type": "context.window.observed",
+              "ms": 4223.64
+            }
+          ],
+          "context_after_steering_ms": 32.0
+        },
+        {
+          "phase": "after-summary-shdata",
+          "run": 2,
+          "run_id": "run_8ae89212a1c44316838d608e179dc5a2",
+          "thread": "latency-after-summary-shdata-962912452cfd4a828199b112d69b6eb9",
+          "first_ms": 4359.67,
+          "text_done_ms": 4439.88,
+          "total_ms": 6244.29,
+          "chars": 29,
+          "terminal": "RUN_FINISHED",
+          "trace_id": "de89b18cb4b2656056f2ccadf2ff2e9f",
+          "sdk": [
+            {
+              "name": "harness.sdk.connect",
+              "duration_ms": 2800.0,
+              "worker": "0b213f99-c34f-41e2-9620-6401d4923e35",
+              "miss_reason": "unhealthy"
+            }
+          ],
+          "context_events": [
+            {
+              "type": "context.window.observed",
+              "ms": 6102.32
+            }
+          ],
+          "context_after_steering_ms": 35.9
+        },
+        {
+          "phase": "after-summary-shdata",
+          "run": 3,
+          "run_id": "run_906125cb84574090ba135554506fadaa",
+          "thread": "latency-after-summary-shdata-962912452cfd4a828199b112d69b6eb9",
+          "first_ms": 1688.12,
+          "text_done_ms": 1840.34,
+          "total_ms": 3767.02,
+          "chars": 53,
+          "terminal": "RUN_FINISHED",
+          "trace_id": "edf491325d5aa948e8d200b8af481046",
+          "sdk": [
+            {
+              "name": "harness.sdk.reuse",
+              "duration_ms": 6.0,
+              "worker": "0b213f99-c34f-41e2-9620-6401d4923e35",
+              "miss_reason": ""
+            }
+          ],
+          "context_events": [
+            {
+              "type": "context.window.observed",
+              "ms": 3607.11
+            }
+          ],
+          "context_after_steering_ms": 30.05
+        },
+        {
+          "phase": "after-summary-shdata",
+          "run": 4,
+          "run_id": "run_020689e107fb461399019177edfad070",
+          "thread": "latency-after-summary-shdata-962912452cfd4a828199b112d69b6eb9",
+          "first_ms": 1444.12,
+          "text_done_ms": 1866.75,
+          "total_ms": 3233.58,
+          "chars": 149,
+          "terminal": "RUN_FINISHED",
+          "trace_id": "ebf024a91781ff9a9e00b59f1d72e43f",
+          "sdk": [
+            {
+              "name": "harness.sdk.reuse",
+              "duration_ms": 9.0,
+              "worker": "0b213f99-c34f-41e2-9620-6401d4923e35",
+              "miss_reason": ""
+            }
+          ],
+          "context_events": [
+            {
+              "type": "context.window.observed",
+              "ms": 3084.9
+            }
+          ],
+          "context_after_steering_ms": 34.61
+        },
+        {
+          "phase": "after-summary-shdata",
+          "run": 5,
+          "run_id": "run_c01b3a723a5c4491b092f7e0dad89117",
+          "thread": "latency-after-summary-shdata-962912452cfd4a828199b112d69b6eb9",
+          "first_ms": 1991.61,
+          "text_done_ms": 2179.9,
+          "total_ms": 3611.17,
+          "chars": 64,
+          "terminal": "RUN_FINISHED",
+          "trace_id": "0e4a347dab8411cbd08f5247fb608b6a",
+          "sdk": [
+            {
+              "name": "harness.sdk.reuse",
+              "duration_ms": 10.0,
+              "worker": "0b213f99-c34f-41e2-9620-6401d4923e35",
+              "miss_reason": ""
+            }
+          ],
+          "context_events": [
+            {
+              "type": "context.window.observed",
+              "ms": 3437.01
+            }
+          ],
+          "context_after_steering_ms": 32.11
+        }
+      ],
+      "median_first_ms": 1991.61,
+      "median_total_ms": 3767.02
+    }
+  },
+  "web_revision": "4e2e1dd1",
+  "web_image": "kai/axis-web:markdown174-4e2e1dd1",
+  "web_image_id": "sha256:7b80090f157ff098bb0893cc8a43da0b8048a0fa09b3b0417d09a6fc0311a7e9",
+  "web_build_id": "tpxut7vG1Bez0w6mAl1-V",
+  "intermediate_functional_smoke": {
+    "host": "174",
+    "thread": "latency-cfc8eee2-174-37663672aeb84ff3858f9bcbaf7f67a1",
+    "agent_version": "1.0.3+platform.99dfe677",
+    "samples": [
+      {
+        "run": 1,
+        "run_id": "run_e0a17ea522664fb39ee4f2b5757b2b67",
+        "terminal": "RUN_FINISHED",
+        "first_text_ms": 4670.11,
+        "total_ms": 6932.08,
+        "answer": "OK",
+        "errors": []
+      },
+      {
+        "run": 2,
+        "run_id": "run_12bfab87dafd4da9afb721bce14480ae",
+        "terminal": "RUN_FINISHED",
+        "first_text_ms": 2883.06,
+        "total_ms": 4419.86,
+        "answer": "OK",
+        "errors": []
+      },
+      {
+        "run": 3,
+        "run_id": "run_d26d1e4db3484c1f9769b4bc3386701c",
+        "terminal": "RUN_FINISHED",
+        "first_text_ms": 1497.55,
+        "total_ms": 4308.25,
+        "answer": "OK",
+        "errors": []
+      },
+      {
+        "run": 4,
+        "run_id": "run_d7d3c6e20f46413394d3a0420b8f0b61",
+        "terminal": "RUN_FINISHED",
+        "first_text_ms": 12428.9,
+        "total_ms": 21095.35,
+        "answer": "OK\n\n文件已创建并发布：\n\n- 路径：`release-check.txt`\n- 内容：`LATENCY_CFC8EEE2_174`（20 字节）\n- 下载：artifact_0cc8610b6be24e5297cee009716448e9（release-check.txt，text/plain，状态 ready）",
+        "errors": []
+      },
+      {
+        "run": 5,
+        "run_id": "run_d2f5ef74161e43e09ee1b8ccb723e5b6",
+        "terminal": "RUN_FINISHED",
+        "first_text_ms": 4869.36,
+        "total_ms": 6400.59,
+        "answer": "LATENCY_CFC8EEE2_174",
+        "errors": []
+      }
+    ],
+    "artifact_id": "artifact_0cc8610b6be24e5297cee009716448e9",
+    "artifact_content": "LATENCY_CFC8EEE2_174"
+  },
+  "css_validation": {
+    "fixture": "Reported reply rendered by actual MarkdownText with production CSS and inherited pre-line under aui-root",
+    "before": {
+      "height_px": 1317.859375,
+      "list_style": "none",
+      "list_row_step_px": 57.375
+    },
+    "after": {
+      "height_px": 790.484375,
+      "list_style": "disc",
+      "list_row_step_px": 30.6875
+    },
+    "cursor": {
+      "streaming": "codex-stream-caret",
+      "text_ended": "none"
+    }
+  },
+  "functional_smoke": {
+    "host": "174",
+    "thread": "latency-cfc8eee2-174-6799ffb28d964512b41fed849e6d5631",
+    "agent_version": "1.0.3+platform.99dfe677",
+    "samples": [
+      {
+        "run": 1,
+        "run_id": "run_5a671d23d55e4da7b1e227c487eebebf",
+        "terminal": "RUN_FINISHED",
+        "first_text_ms": 2804.75,
+        "total_ms": 3252.07,
+        "answer": "OK",
+        "errors": []
+      },
+      {
+        "run": 2,
+        "run_id": "run_50be7d347a2d48ef8d4c30839632cd35",
+        "terminal": "RUN_FINISHED",
+        "first_text_ms": 4285.66,
+        "total_ms": 5063.79,
+        "answer": "OK",
+        "errors": []
+      },
+      {
+        "run": 3,
+        "run_id": "run_289485b672ba464caf1b7c718a6d148a",
+        "terminal": "RUN_FINISHED",
+        "first_text_ms": 1209.78,
+        "total_ms": 1690.54,
+        "answer": "OK",
+        "errors": []
+      },
+      {
+        "run": 4,
+        "run_id": "run_eabeb7189f7040878406af6de2547f9c",
+        "terminal": "RUN_FINISHED",
+        "first_text_ms": 7646.69,
+        "total_ms": 8620.54,
+        "answer": "OK\n\n下载链接：release-check.txt 已发布（artifact_id: `artifact_086ec4b9c87a4ef48b8eeef8d6fe302e`），内容为 `LATENCY_CFC8EEE2_174`，可在产物列表中下载。",
+        "errors": []
+      },
+      {
+        "run": 5,
+        "run_id": "run_53c056fca69f41dab573c8cb271725f7",
+        "terminal": "RUN_FINISHED",
+        "first_text_ms": 2997.54,
+        "total_ms": 4559.14,
+        "answer": "LATENCY_CFC8EEE2_174",
+        "errors": []
+      }
+    ],
+    "artifact_id": "artifact_086ec4b9c87a4ef48b8eeef8d6fe302e",
+    "artifact_content": "LATENCY_CFC8EEE2_174"
+  },
+  "validation": {
+    "backend_tests": 50,
+    "frontend_tests": 46,
+    "ruff": "passed",
+    "pyright": "passed",
+    "webpack_production_build": "passed",
+    "database_revision": "0037"
+  }
+}
