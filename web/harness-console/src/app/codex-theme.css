@@ -2518,6 +2518,9 @@ body.codex-theme-v1 .aui-table-scroll {
 body.codex-theme-v1 .assistant-answer .aui-md {
   font-size: 14px;
   line-height: 1.74;
+  /* Markdown supplies block structure and explicit <br> nodes. Inherited
+     pre-line/pre-wrap must not turn parser whitespace into extra blank rows. */
+  white-space: normal;
 }
 
 body.codex-theme-v1 .assistant-answer .aui-md p {
@@ -2529,9 +2532,17 @@ body.codex-theme-v1 .assistant-answer .aui-md ol {
   margin-block: 7px 9px;
 }
 
-body.codex-theme-v1 .assistant-answer .aui-md li > p {
-  margin-bottom: 3px;
-}
+/* assistant-ui resets lists beneath .aui-root; our custom list renderers
+   use semantic tags rather than the library's aui-md-ul/ol classes. */
+body.codex-theme-v1 .assistant-answer .aui-md ul { list-style: disc outside; }
+body.codex-theme-v1 .assistant-answer .aui-md ol { list-style: decimal outside; }
+body.codex-theme-v1 .assistant-answer .aui-md ul ul { list-style-type: circle; }
+body.codex-theme-v1 .assistant-answer .aui-md li { display: list-item; }
+body.codex-theme-v1 .assistant-answer .aui-md li > p { margin-block: 0 3px; }
+body.codex-theme-v1 .assistant-answer .aui-md li > p:last-child { margin-bottom: 0; }
+body.codex-theme-v1 .assistant-answer .aui-md li > :is(ul, ol) { margin-block: 4px; }
+body.codex-theme-v1 .assistant-answer .aui-md pre,
+body.codex-theme-v1 .assistant-answer .aui-md pre code { white-space: pre; }
 
 body.codex-theme-v1 .assistant-answer .aui-md h1,
 body.codex-theme-v1 .assistant-answer .aui-md h2,
