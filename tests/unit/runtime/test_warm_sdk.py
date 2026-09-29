@@ -544,3 +544,41 @@ async def test_finish_waits_for_detached_eager_flush_before_unbinding(harness: H
             assert flushed == ["flush-owner"]
             assert entry.revision == "flushed"
             assert entry.binding is not None and entry.binding.complete
+
+
+@pytest.mark.asyncio
+async def test_slow_local_context_stats_do_not_evict_a_healthy_warm_session(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original = FakeCLI.write
+
+    async def delayed_context(cli: FakeCLI, data: str) -> None:
+        message = json.loads(data)
+        if message.get("request", {}).get("subtype") == "get_context_usage":
+            await asyncio.sleep(1.05)
+        await original(cli, data)
+
+    monkeypatch.setattr(FakeCLI, "write", delayed_context)
+    await harness.query("first")
+    await harness.query("second", resume="native-session")
+    assert len(harness.transports) == 1
+    assert harness.pool.entries[harness.key].healthy
+
+
+@pytest.mark.asyncio
+async def test_stalled_context_control_is_still_bounded_and_evicts_connection(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original = FakeCLI.write
+
+    async def stalled_context(cli: FakeCLI, data: str) -> None:
+        message = json.loads(data)
+        if message.get("request", {}).get("subtype") == "get_context_usage":
+            await asyncio.Event().wait()
+        await original(cli, data)
+
+    monkeypatch.setattr(FakeCLI, "write", stalled_context)
+    async with asyncio.timeout(2):
+        await harness.query("stalled")
+    assert harness.transports[0].closed
+    assert harness.key not in harness.pool.entries
