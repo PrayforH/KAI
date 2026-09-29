@@ -17,20 +17,21 @@ import {
   type SessionContextDigest,
   type SessionContextOverview,
 } from "../lib/context-client";
+import { ContextCompactionHistory } from "./context-compaction-history";
 import { useDialogFocus } from "../lib/use-dialog-focus";
 
 const contextBudgetLabels: Record<ContextBudgetLevel, string> = {
   green: "窗口充足",
   watch: "接近软阈值",
-  compact_ready: "建议压缩",
+  compact_ready: "接近压缩阈值",
   emergency: "需要立即处理",
 };
 
 const contextBudgetGuidance: Record<ContextBudgetLevel, string> = {
   green: "当前上下文空间充足，可继续对话。",
-  watch: "建议减少非必要上下文注入；复杂任务完成后可考虑压缩。",
-  compact_ready: "建议在没有运行中任务时建立精简会话，完整历史仍会保留。",
-  emergency: "窗口余量很低，请在当前任务结束后立即压缩，避免下一轮触及模型上限。",
+  watch: "可减少非必要的附件与上下文，自动压缩按智能体配置执行。",
+  compact_ready: "自动压缩由运行时按配置触发，原始对话记录会保留。",
+  emergency: "窗口余量较低，可减少新增材料；如仍超出上限，可另开任务。",
 };
 
 function formatTokens(value: number) {
@@ -179,10 +180,10 @@ export function ContextRecoveryPanel({ threadId }: { threadId: string }) {
     try {
       if (operation === "rebase") {
         await rebaseThreadContext(threadId);
-        setNotice("已切换到精简上下文；旧会话完整保留，可随时回滚。");
+        setNotice("已从恢复点建立新会话；旧会话保留，可切回。");
       } else {
         await rollbackThreadContextRebase(threadId);
-        setNotice("已恢复压缩前的完整会话上下文。");
+        setNotice("已恢复重建前的完整会话上下文。");
       }
       await refresh();
       setAction("idle");
@@ -201,7 +202,7 @@ export function ContextRecoveryPanel({ threadId }: { threadId: string }) {
         className="icon-button context-recovery-trigger"
         type="button"
         onClick={() => setOpen(true)}
-        aria-label="上下文与恢复点"
+        aria-label="上下文与压缩"
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls="context-recovery-panel"
@@ -229,7 +230,7 @@ export function ContextRecoveryPanel({ threadId }: { threadId: string }) {
             <header>
               <div>
                 <p>SESSION CONTEXT</p>
-                <h2 id="context-recovery-title">上下文与恢复点</h2>
+                <h2 id="context-recovery-title">上下文与压缩</h2>
               </div>
               <button
                 ref={closeButtonRef}
@@ -241,23 +242,7 @@ export function ContextRecoveryPanel({ threadId }: { threadId: string }) {
               </button>
             </header>
             <div className="context-recovery-body">
-              <section className="context-recovery-overview">
-                <div>
-                  <span>信任水位</span>
-                  <strong className={`trust-${trust}`}>{contextTrustLabels[trust]}</strong>
-                </div>
-                <div>
-                  <span>恢复点</span>
-                  <strong>{state?.latest_digest_version ?? 0}</strong>
-                </div>
-                <div>
-                  <span>状态版本</span>
-                  <strong>{state?.revision ?? "—"}</strong>
-                </div>
-              </section>
-              <p className="context-recovery-explainer">
-                恢复点只保存脱敏事实与耐久对象引用；原始 transcript 仍由 SDK 管理，不会在此展示。
-              </p>
+              <ContextCompactionHistory key={threadId} threadId={threadId} />
               {windowSnapshot ? (
                 <section
                   className={`context-window-card level-${windowSnapshot.level}`}
@@ -295,99 +280,82 @@ export function ContextRecoveryPanel({ threadId }: { threadId: string }) {
                     </span>
                   </footer>
                 </section>
-              ) : overview?.window_status?.status === "unavailable" ? (
-                <div className="context-window-unavailable is-unsupported" role="status">
-                  <strong>精确窗口观测不可用</strong>
-                  <span>
-                    当前运行时未返回 SDK token 窗口；仍由 SDK 原生自动压缩保护，平台不会用字符数估算替代。
-                  </span>
-                </div>
               ) : (
-                <div className="context-window-unavailable">
-                  <strong>等待精确窗口观测</strong>
-                  <span>
-                    同一会话完成下一轮模型任务后尝试读取；系统不会用字符数冒充 token。
-                  </span>
-                </div>
+                <p className="context-history-note">精确窗口用量尚未返回；上方仅展示历史文本字符数。</p>
               )}
-              {overview?.rebase_supported || overview?.rollback_supported ? (
-                <section className="context-recovery-actions" aria-label="上下文压缩与恢复">
-                  <div>
-                    <strong>上下文维护</strong>
-                    <span>
-                      {overview.previous_session_count
-                        ? `已保留 ${overview.previous_session_count} 个完整历史会话`
-                        : "建立精简会话，降低后续长对话负担"}
-                    </span>
-                  </div>
-                  <div className="context-recovery-action-buttons">
-                    {overview.rebase_supported ? (
-                      <button
-                        type="button"
-                        onClick={() => setAction("confirm-rebase")}
-                        disabled={action === "running"}
-                      >
-                        压缩上下文
-                      </button>
-                    ) : null}
-                    {overview.rollback_supported ? (
-                      <button
-                        className="is-secondary"
-                        type="button"
-                        onClick={() => setAction("confirm-rollback")}
-                        disabled={action === "running"}
-                      >
-                        回到压缩前
-                      </button>
-                    ) : null}
-                  </div>
-                  {action === "confirm-rebase" ? (
-                    <div className="context-recovery-confirm" role="alert">
-                      <p>将以当前恢复点建立新会话。事实、决定、待办与工作区引用会保留，原会话不会删除。</p>
+              {(overview?.digests.length || overview?.rebase_supported || overview?.rollback_supported) ? (
+                <details className="context-maintenance">
+                  <summary>高级维护 · 故障恢复</summary>
+                  <p className="context-history-note">用于会话异常时从恢复点重建或切回旧会话，不是撤销自动压缩。正常对话无需操作。</p>
+                  {overview?.rebase_supported || overview?.rollback_supported ? (
+                    <section className="context-recovery-actions" aria-label="上下文重建与恢复">
                       <div>
-                        <button type="button" onClick={() => void mutateContext("rebase")}>确认压缩</button>
-                        <button className="is-secondary" type="button" onClick={() => setAction("idle")}>取消</button>
+                        <strong>上下文维护</strong>
+                        <span>
+                          {overview.previous_session_count
+                            ? `已保留 ${overview.previous_session_count} 个完整历史会话`
+                            : "从恢复点重建会话，仅用于异常恢复"}
+                        </span>
                       </div>
-                    </div>
-                  ) : null}
-                  {action === "confirm-rollback" ? (
-                    <div className="context-recovery-confirm" role="alert">
-                      <p>将重新绑定到压缩前的完整会话。当前精简会话同样会保留。</p>
-                      <div>
-                        <button type="button" onClick={() => void mutateContext("rollback")}>确认恢复</button>
-                        <button className="is-secondary" type="button" onClick={() => setAction("idle")}>取消</button>
+                      <div className="context-recovery-action-buttons">
+                        {overview.rebase_supported ? (
+                          <button
+                            type="button"
+                            onClick={() => setAction("confirm-rebase")}
+                            disabled={action === "running"}
+                          >
+                            从恢复点重建
+                          </button>
+                        ) : null}
+                        {overview.rollback_supported ? (
+                          <button
+                            className="is-secondary"
+                            type="button"
+                            onClick={() => setAction("confirm-rollback")}
+                            disabled={action === "running"}
+                          >
+                            回到重建前
+                          </button>
+                        ) : null}
                       </div>
-                    </div>
+                      {action === "confirm-rebase" ? (
+                        <div className="context-recovery-confirm" role="alert">
+                          <p>将以当前恢复点建立新会话。这不是模型对完整历史的摘要压缩，恢复点可能只包含最近一轮的信息。原会话保留，可随时切回。</p>
+                          <div>
+                            <button type="button" onClick={() => void mutateContext("rebase")}>确认重建</button>
+                            <button className="is-secondary" type="button" onClick={() => setAction("idle")}>取消</button>
+                          </div>
+                        </div>
+                      ) : null}
+                      {action === "confirm-rollback" ? (
+                        <div className="context-recovery-confirm" role="alert">
+                          <p>将重新绑定到重建前的完整会话。当前新会话同样会保留。</p>
+                          <div>
+                            <button type="button" onClick={() => void mutateContext("rollback")}>确认恢复</button>
+                            <button className="is-secondary" type="button" onClick={() => setAction("idle")}>取消</button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </section>
                   ) : null}
-                </section>
+                  {notice ? <p className="context-recovery-notice" role="status">{notice}</p> : null}
+                  {overview?.digests.map((digest, index) => (
+                    <RecoveryPoint key={digest.digest_id} digest={digest} latest={index === 0} />
+                  ))}
+                  {overview?.next_before_version ? (
+                    <button
+                      className="context-recovery-more"
+                      type="button"
+                      onClick={() => void loadMore()}
+                      disabled={loadingMore}
+                    >
+                      {loadingMore ? "正在加载…" : "加载更早恢复点"}
+                    </button>
+                  ) : null}
+                </details>
               ) : null}
-              {notice ? <p className="context-recovery-notice" role="status">{notice}</p> : null}
-              {loading && !overview ? <p className="context-recovery-empty">正在读取上下文状态…</p> : null}
-              {error ? (
-                <div className="context-recovery-error" role="alert">
-                  <span>{error}</span>
-                  <button type="button" onClick={() => void refresh()}>重试</button>
-                </div>
-              ) : null}
-              {!loading && !error && (!overview || overview.digests.length === 0) ? (
-                <div className="context-recovery-empty">
-                  <strong>还没有恢复点</strong>
-                  <span>完成首轮真实模型任务后，系统会在成功终态前自动生成。</span>
-                </div>
-              ) : null}
-              {overview?.digests.map((digest, index) => (
-                <RecoveryPoint key={digest.digest_id} digest={digest} latest={index === 0} />
-              ))}
-              {overview?.next_before_version ? (
-                <button
-                  className="context-recovery-more"
-                  type="button"
-                  onClick={() => void loadMore()}
-                  disabled={loadingMore}
-                >
-                  {loadingMore ? "正在加载…" : "加载更早恢复点"}
-                </button>
-              ) : null}
+              {loading && !overview ? <p className="context-history-note">正在读取上下文状态…</p> : null}
+              {error ? <p role="alert">{error} <button type="button" onClick={() => void refresh()}>重试</button></p> : null}
             </div>
           </aside>
         </div>,

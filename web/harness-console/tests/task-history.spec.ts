@@ -256,3 +256,22 @@ it("refreshes a mutated task list and prevents an older read from replacing it",
     vi.unstubAllGlobals();
   }
 });
+
+it("does not reuse a pending history request invalidated by a newer run", async () => {
+  let resolveOld!: (response: Response) => void;
+  const response = (text: string) => new Response(JSON.stringify({ thread_id: "race-thread", status: "succeeded", messages: [{ id: "answer", role: "assistant", content: text }] }));
+  const fetcher = vi.fn().mockImplementationOnce(() => new Promise<Response>(resolve => { resolveOld = resolve; }))
+    .mockResolvedValueOnce(response("current"));
+  vi.stubGlobal("fetch", fetcher);
+  const old = prefetchThreadHistory("race-thread");
+  invalidateThreadHistory("race-thread");
+  const adapter = createThreadHistoryAdapter("race-thread");
+  const latest = await adapter.load();
+  resolveOld(response("stale"));
+  await old;
+  const cached = await adapter.load();
+  expect(latest.messages[0].message.content).toEqual(cached.messages[0].message.content);
+  expect(cached.messages[0].message.content).toEqual([{ type: "text", text: "current" }]);
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  adapter.dispose(); vi.unstubAllGlobals();
+});

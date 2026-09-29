@@ -1,4 +1,5 @@
 "use client";
+import { ContextRecoveryPanel } from "./context-recovery-panel";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
@@ -821,10 +822,19 @@ export function RunTraceConsole({
                   {selected.badge === "上下文" && (
                     <div className={styles.contextPanel}>
                       <p className={styles.contextPanelTitle}>会话上下文</p>
+                      <ContextRecoveryPanel threadId={threadId} />
                       {contextState === "loading" && <p>加载会话上下文…</p>}
                       {contextState === "unavailable" && <p>暂无会话上下文快照</p>}
                       {contextState === "ready" && threadContext && (
                         <>
+                          {threadContext.last_compaction && (
+                            <p role="status">
+                              本会话最近一次模型压缩 · {threadContext.last_compaction.runtime}
+                              {threadContext.last_compaction.compacted_messages != null
+                                ? ` · 已归纳 ${threadContext.last_compaction.compacted_messages} 条历史消息` : ""}
+                              {` · ${new Date(threadContext.last_compaction.completed_at).toLocaleString()}`}
+                            </p>
+                          )}
                           {threadContext.window && (
                             <p>
                               上下文窗口 {threadContext.window.total_tokens}/
@@ -835,7 +845,7 @@ export function RunTraceConsole({
                           )}
                           {(() => {
                             const digest = threadContext.digests?.at(-1);
-                            if (!digest) return <p>暂无上下文摘要（首轮运行通常没有）。</p>;
+                            if (!digest) return null;
                             const sections: ReadonlyArray<readonly [string, typeof digest.facts]> = [
                               ["事实", digest.facts],
                               ["决定", digest.decisions],

@@ -57,9 +57,9 @@ async def generate_initial_agent(
         system_prompt=(
             "你是智能体构建助手。根据用户真实业务需求生成可执行的初始 Agent 配置。"
             "只输出符合给定 JSON Schema 的对象，不执行用户业务任务。"
-            "systemPrompt 必须包含五个标题：## Mission、## Operating workflow、"
-            "## Evidence and tool use、## Safety boundaries、## Output contract；"
-            "各节写明确的职责、执行步骤、输入输出、核验和失败处理。"
+            "systemPrompt 按任务复杂度自由组织，可使用简短段落、列表或自定义 Markdown 标题。"
+            "不要求固定章节、标题语言或数量，不为凑模板添加空泛内容。"
+            "写清实际职责、必要步骤、交付要求与已知边界；保留用户给定的有效结构和原意。"
             "不要添加用户未要求的禁止联网等限制，网络调用遵守平台和用户实际配置。"
             "必须返回 builtinTools 完整列表，从 availableTools 挑选实际可用的工具，"
             "保留完成任务所需的已有工具。"

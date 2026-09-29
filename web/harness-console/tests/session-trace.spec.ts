@@ -696,3 +696,38 @@ describe("formatting", () => {
     expect(formatClock(Number.NaN)).toBe("—");
   });
 });
+
+describe("provider streams without message identifiers", () => {
+  const frame = (type: string, sequence: number, text = "", metadata = {}) => ({
+    id: `event-${sequence}`, event_type: type, sequence, timestamp: at(sequence * 100),
+    title: "", summary: text, kind: "analysis" as const, status: "succeeded", metadata,
+  });
+  const traceFor = (items: ReturnType<typeof frame>[]) => buildSessionTrace([{
+    runId: "missing-ids", turn: 1, activity: runActivity("missing-ids", items) as never,
+  }]);
+  it("joins token fragments in both thinking and answer and retains a stable live row", () => {
+    const thinking = [frame("reasoning.delta", 1, "The "), frame("reasoning.delta", 2, "user "), frame("reasoning.delta", 3, "asks.")];
+    const live = traceFor(thinking).nodes.filter(node => node.lane === "model");
+    expect(live).toHaveLength(1); expect(live[0].badge).toBe("思考");
+    expect(live[0].thinking).toBe("The user asks.");
+    expect(live[0].id).toBe(traceFor(thinking.slice(0, 1)).nodes.find(node => node.lane === "model")?.id);
+    const final = traceFor([...thinking, frame("message.start", 4), frame("message.delta", 5, "项目"), frame("message.delta", 6, "说明"), frame("message.completed", 7)]);
+    const answers = final.nodes.filter(node => node.badge === "助手");
+    expect(answers).toHaveLength(1); expect(answers[0].output).toBe("项目说明");
+    expect(answers[0].thinking).toBe("The user asks.");
+  });
+  it("does not join across tools, new messages or reused provider IDs", () => {
+    const trace = traceFor([
+      frame("reasoning.delta", 1, "准备检索", { item_id: "reused" }),
+      frame("tool.request", 2), frame("tool.result", 3),
+      frame("reasoning.delta", 4, "核对结果", { item_id: "reused" }),
+      frame("message.start", 5), frame("message.delta", 6, "第一条"), frame("message.completed", 7),
+      frame("message.start", 8), frame("message.delta", 9, "第二条"), frame("message.completed", 10),
+    ]);
+    expect(trace.nodes.filter(node => node.badge === "思考").map(node => node.thinking)).toEqual(["准备检索"]);
+    const answers = trace.nodes.filter(node => node.badge === "助手");
+    expect(answers.map(node => node.output)).toEqual(["第一条", "第二条"]);
+    expect(answers[0].thinking).toBe("核对结果");
+    expect(answers[1].thinking).toBeUndefined();
+  });
+});

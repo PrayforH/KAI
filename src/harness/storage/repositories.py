@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any, cast
 
-from sqlalchemy import CursorResult, func, select, update
+from sqlalchemy import CursorResult, func, select, tuple_, update
 from sqlalchemy.exc import IntegrityError
 
 from harness.core.errors import ConflictError, EventSequenceConflictError, NotFoundError
@@ -217,3 +217,28 @@ class PostgresEventRepository:
         async with self._sessions() as session:
             row = (await session.execute(statement)).scalar_one_or_none()
             return None if row is None else RunEvent.model_validate(row.payload)
+
+
+    async def recent_for_session_types(
+        self, tenant_id: str, session_id: str, event_types: tuple[str, ...],
+        *, limit: int = 20, before: RunEvent | None = None,
+        exclude_run_id: str | None = None,
+    ) -> list[RunEvent]:
+        statement = select(EventRow).where(
+            EventRow.tenant_id == tenant_id,
+            EventRow.payload["session_id"].as_string() == session_id,
+            EventRow.payload["type"].as_string().in_(event_types),
+        )
+        if before is not None:
+            statement = statement.where(
+                tuple_(EventRow.timestamp, EventRow.run_id, EventRow.sequence)
+                < (before.timestamp, before.run_id, before.sequence)
+            )
+        if exclude_run_id is not None:
+            statement = statement.where(EventRow.run_id != exclude_run_id)
+        statement = statement.order_by(
+            EventRow.timestamp.desc(), EventRow.run_id.desc(), EventRow.sequence.desc(),
+        ).limit(limit)
+        async with self._sessions() as session:
+            rows = (await session.execute(statement)).scalars().all()
+            return [RunEvent.model_validate(row.payload) for row in rows]

@@ -825,6 +825,7 @@ def parse_agent_bundle(content: bytes) -> ParsedAgentBundle:
                 restoreSession=manifest_spec.workspace.restore_session,
                 archiveOnComplete=manifest_spec.workspace.archive_on_complete,
             ),
+            context=manifest_spec.context,
             limits=DraftLimits(
                 maxTurns=limits.max_turns,
                 maxToolCalls=limits.max_tool_calls,

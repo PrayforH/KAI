@@ -1147,3 +1147,35 @@ html[data-color-mode="light"] .nested-menu-panel { background: #fff; border-colo
 .rail-office-sheet .rail-preview-table-wrap { flex:1; min-height:0; overflow:auto; }
 .rail-office-sheet .rail-preview-table td { min-width:96px; max-width:360px; white-space:pre-wrap; overflow-wrap:anywhere; }
 .rail-office-sheet-count { flex:none; margin:0; padding:8px 12px; font-size:11px; color:var(--codex-muted); }
+
+/* Only structural phase changes animate; streaming updates retain their DOM. */
+.execution-process-reveal { min-width: 0; overflow: hidden; }
+.execution-process-reveal[hidden] { display: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .execution-log > * { animation: conversation-content-in 160ms ease-out; }
+}
+@keyframes conversation-content-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* Anchor to the composer's top edge, even as a multiline draft grows. */
+.aui-thread-viewport-footer > .conversation-jump {
+  position: absolute;
+  top: auto;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 50%;
+  z-index: 2;
+  cursor: pointer;
+}
+.conversation-jump svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.conversation-jump:focus-visible { outline: 2px solid var(--codex-muted); outline-offset: 3px; }
+
+/* Long sent messages fold; drafts have no mask or centered expand button. */
+body.codex-theme-v1 .aui-user-message-content.sent-user-content[data-collapsed="true"] { max-height: 12em; overflow: hidden; }
+.sent-user-expand { align-self: flex-end; justify-self: end; grid-column: 2; border: 0; padding: 5px 2px; color: var(--codex-muted); background: transparent; font: inherit; font-size: 12px; cursor: pointer; }
+.sent-user-expand:hover { color: var(--codex-ink); }

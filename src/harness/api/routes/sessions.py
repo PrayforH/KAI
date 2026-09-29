@@ -12,7 +12,7 @@ from harness.api.dependencies import (
 )
 from harness.api.schemas import CreateSessionRequest
 from harness.context.models import SessionContextDigest, SessionContextOverview
-from harness.context.window import context_window_view
+from harness.context.window import compaction_observation, context_window_view
 from harness.core.errors import ConflictError
 from harness.core.models import Session
 from harness.deployments.models import EnvironmentName
@@ -80,10 +80,14 @@ async def get_session_context(
         ("context.window.observed", "context.window.unavailable"),
     )
     window, window_status = context_window_view(window_event)
+    compacted = await container.events.latest_for_session_type(
+        identity.tenant_id, session.session_id, "context.compacted"
+    )
     return overview.model_copy(
         update={
             "window": window,
             "window_status": window_status,
+            "last_compaction": compaction_observation(compacted),
         }
     )
 

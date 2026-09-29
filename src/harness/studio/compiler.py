@@ -186,6 +186,7 @@ class AgentDraftCompiler:
                         "restoreSession": spec.workspace.restore_session,
                         "archiveOnComplete": spec.workspace.archive_on_complete,
                     },
+                    "context": spec.context.model_dump(mode="json", by_alias=True),
                     "limits": {
                         "maxTurns": spec.limits.max_turns,
                         "maxToolCalls": spec.limits.max_tool_calls,

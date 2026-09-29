@@ -54,13 +54,6 @@ _SEMVER = re.compile(
     r"(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
     r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
 )
-_REQUIRED_PROMPT_HEADINGS = (
-    "## Mission",
-    "## Operating workflow",
-    "## Evidence and tool use",
-    "## Safety boundaries",
-    "## Output contract",
-)
 _SECRET_FILE = re.compile(
     r"(^|/)(?:\.env(?:\..+)?|credentials?(?:\..+)?|secrets?(?:\..+)?|"
     r"id_rsa|id_ed25519|[^/]+\.(?:pem|key|p12|pfx))$",
@@ -205,9 +198,8 @@ def check_agent_package(
         issues.append("Task tool requires at least one pinned subagent")
 
     prompt = snapshot.system_prompt
-    for heading in _REQUIRED_PROMPT_HEADINGS:
-        if heading not in prompt:
-            issues.append(f"system prompt is missing required heading: {heading}")
+    if not prompt.strip():
+        issues.append("system prompt must not be empty")
     if "replace-me" in prompt.lower() or "TODO" in prompt:
         issues.append("system prompt contains an unfinished placeholder")
 

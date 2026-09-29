@@ -695,3 +695,18 @@ def test_tool_result_preview_keeps_long_content_up_to_bound() -> None:
     assert over_preview is not None
     assert over_preview.endswith("…")
     assert len(over_preview) <= 8_000
+
+
+def test_compaction_terminals_are_projected_without_summary_contents() -> None:
+    for kind, status, title in [
+        ("context.compacted", "succeeded", "上下文已压缩"),
+        ("context.compaction.completed", "succeeded", "上下文已压缩"),
+        ("context.compaction.failed", "failed", "上下文压缩失败"),
+    ]:
+        projected = activity_projection(
+            event(kind, {"runtime": "deepagents", "summary": "private"})
+        )
+        item = projected[0].model_dump(by_alias=True)["patch"][0]["value"]
+        assert item["status"] == status
+        assert item["title"] == title
+        assert "private" not in repr(projected)

@@ -54,6 +54,12 @@ function environmentPolicy(): StudioEnvironmentResourcePolicy {
 }
 
 describe("Studio typed API mapping", () => {
+  it("round-trips context compaction configuration", () => {
+    const source = apiDraft();
+    source.spec.context = { autoCompactTokenLimit: 64000, contextWindowTokens: 128000 };
+    const draft = apiDraftToStudioDraft(source);
+    expect(studioDraftToSpec(draft).context).toEqual(source.spec.context);
+  });
   afterEach(() => vi.unstubAllGlobals());
   it("round-trips the editable server Draft without losing revision or files", () => {
     const source = apiDraft();

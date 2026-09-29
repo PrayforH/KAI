@@ -95,6 +95,7 @@ async def test_session_context_api_is_owner_scoped_and_cursor_paginated() -> Non
         "digests": [],
         "next_before_version": None,
         "window": None,
+        "last_compaction": None,
         "window_status": {
             "status": "pending",
             "checked_at": None,
@@ -402,3 +403,74 @@ async def test_run_creation_retries_on_session_rebase_race(
         run.idempotency_key == "client-run-racing-rebase" and run.status.value == "cancelled"
         for run in old_runs
     )
+
+
+@pytest.mark.asyncio
+async def test_compaction_inspection_reuses_history_and_enforces_thread_ownership() -> None:
+    from datetime import timedelta
+
+    from harness.context.compaction_view import SUMMARY_PREFIX
+
+    app = create_memory_app(auto_execute=True)
+    container = app.state.container
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=OWNER_HEADERS)
+        await client.post(
+            "/v1/agui?agent_name=echo-agent&agent_version=0.1.0",
+            json=_agui_request(), headers=OWNER_HEADERS,
+        )
+        binding = await container.agui.get_binding(
+            tenant_id="tenant-a", user_id="owner-a", thread_id="thread-context",
+        )
+        run = (await container.runs.list_for_sessions("tenant-a", [binding.session_id], limit=1))[0]
+        now = datetime.now(UTC)
+        await container.events.append(RunEvent(
+            event_id="prior-checkpoint", tenant_id="tenant-a", session_id=binding.session_id,
+            run_id="prior-run", sequence=1, type="context.history.checkpoint",
+            timestamp=now - timedelta(seconds=1), payload={"schema_version": 1, "messages": [
+                {"role": "user", "content": "预算48万元 password=hidden-value"},
+                {"role": "tool", "content": "private-tool-output"},
+            ]},
+        ))
+        for event_type, payload in [
+            ("context.compacted", {"runtime": "deepagents", "compacted_messages": 1}),
+            ("context.history.checkpoint", {"schema_version": 1, "messages": [
+                {"role": "user", "content": SUMMARY_PREFIX + "\n<summary>预算48万元</summary>"},
+                {"role": "user", "content": "预算改为52万元"},
+                {"role": "assistant", "content": "已记录52万元"},
+            ]}),
+        ]:
+            sequence = await container.events.latest_sequence("tenant-a", run.run_id) + 1
+            await container.events.append(RunEvent(
+                event_id=f"inspection-{sequence}", tenant_id="tenant-a",
+                session_id=binding.session_id,
+                run_id=run.run_id, sequence=sequence, type=event_type,
+                timestamp=now, payload=payload,
+            ))
+        url = "/v1/agui/threads/thread-context/context/compactions"
+        before_sequence = await container.events.latest_sequence("tenant-a", run.run_id)
+        listing = await client.get(url, headers=OWNER_HEADERS)
+        detail = await client.get(f"{url}/{run.run_id}", headers=OWNER_HEADERS)
+        assert listing.status_code == detail.status_code == 200
+        assert listing.json()["items"][0]["source_run_id"] == run.run_id
+        body = detail.json()
+        assert body["status"] == "available"
+        assert body["before"]["message_count"] == 1
+        assert body["after"]["message_count"] == 3
+        assert "预算48万元" in body["summary"]["content"]
+        assert "hidden-value" not in detail.text
+        assert "private-tool-output" not in detail.text
+        assert await container.events.latest_sequence("tenant-a", run.run_id) == before_sequence
+        assert (await client.get(url, headers=OTHER_HEADERS)).status_code == 404
+        assert (await client.get(f"{url}/{run.run_id}", headers=OTHER_HEADERS)).status_code == 404
+        another = _agui_request()
+        another["threadId"] = "thread-other"
+        another["runId"] = "client-other"
+        await client.post(
+            "/v1/agui?agent_name=echo-agent&agent_version=0.1.0",
+            json=another, headers=OWNER_HEADERS,
+        )
+        assert (await client.get(
+            f"/v1/agui/threads/thread-other/context/compactions/{run.run_id}",
+            headers=OWNER_HEADERS,
+        )).status_code == 404

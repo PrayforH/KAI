@@ -4,7 +4,7 @@ import {
   MarkdownTextPrimitive,
   type CodeHeaderProps,
 } from "@assistant-ui/react-markdown";
-import { TextMessagePartProvider, useMessagePartText, useSmooth } from "@assistant-ui/react";
+import { TextMessagePartProvider, useMessagePartText } from "@assistant-ui/react";
 import remend from "remend";
 import remarkGfm from "remark-gfm";
 import { Children, memo, useMemo, useState, type ComponentPropsWithoutRef, type ReactElement, type ReactNode } from "react";
@@ -175,8 +175,6 @@ function WikiLink({
   );
 }
 
-const STREAM_SMOOTHING = { drainMs: 120, maxCharIntervalMs: 4, minCommitMs: 32 };
-const FINAL_SMOOTHING = { drainMs: 32, maxCharIntervalMs: 1, minCommitMs: 32 };
 // One multi-hundred-KB markdown message can block the main thread for seconds
 // (the 2026-09-17 "page unresponsive" reports). Render a prefix first and let
 // the user expand; the copy action still copies the complete provider text.
@@ -188,14 +186,14 @@ function markdownUrlTransform(url: string) {
 function MarkdownTextImpl() {
   const part = useMessagePartText();
   const normalized = useMemo(() => ({ ...part, text: conversationInputDisplay(normalizeMessageText(part.text), part.status.type === "running") }), [part]);
-  const smooth = useSmooth(normalized, part.status.type === "running" ? STREAM_SMOOTHING : FINAL_SMOOTHING);
-  const running = smooth.status.type === "running";
+  // Render the actual stream; do not queue a second typewriter animation.
+  const running = normalized.status.type === "running";
   const [expanded, setExpanded] = useState(false);
   // Complete syntax only in the display projection, after smoothing. Stored
   // text and the message copy action retain the exact provider response.
   const displayText = useMemo(
-    () => running ? remend(smooth.text, { katex: false }) : smooth.text,
-    [running, smooth.text],
+    () => running ? remend(normalized.text, { katex: false }) : normalized.text,
+    [running, normalized.text],
   );
   const oversized = !running && !expanded && displayText.length > MESSAGE_TEXT_CLAMP_CHARS;
   const renderedText = oversized

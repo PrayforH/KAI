@@ -23,7 +23,6 @@ import {
   useThreadRuntime,
   type CompleteAttachment,
   type ReasoningMessagePartComponent,
-  type TextMessagePartProps,
   type ToolCallMessagePartProps,
 } from "@assistant-ui/react";
 import {
@@ -49,6 +48,7 @@ import { ConversationThread } from "./conversation-thread";
 import { ConversationIndex } from "./conversation-index";
 import { PromptQueue } from "./prompt-queue";
 import { useFollowUpPreference } from "../lib/interface-preferences";
+import { SentUserContent } from "./sent-user-content";
 import { ConversationInput } from "./conversation-input";
 import { groupWorkspaceFiles } from "../lib/workspace-file-groups";
 import { ActivitySummary } from "./activity-summary";
@@ -401,24 +401,6 @@ function HarnessComposer() {
   const steeringRunId = queue.find((item) => item.steerRunId)?.steerRunId ?? runView?.runId;
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const composingRef = useRef(false);
-  // The collapsed input shows a fixed number of rows; the chevron toggle
-  // expands it once the text overflows the collapsed window.
-  const [composerExpanded, setComposerExpanded] = useState(false);
-  const [composerOverflowing, setComposerOverflowing] = useState(false);
-  useEffect(() => {
-    const input = inputRef.current;
-    if (!input) return;
-    const measure = () => {
-      setComposerOverflowing(input.scrollHeight > input.clientHeight + 2);
-    };
-    measure();
-    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
-    observer?.observe(input);
-    return () => observer?.disconnect();
-  }, [composerText, composerAttachments.length, composerExpanded]);
-  useEffect(() => {
-    if (!composerText) setComposerExpanded(false);
-  }, [composerText]);
   const knowledge = useTaskKnowledge();
   const [wikiSlug, setWikiSlug] = useState<string | null>(null);
   useEffect(() => {
@@ -808,8 +790,6 @@ function HarnessComposer() {
         <Composer.Attachments components={{ Attachment: HarnessComposerAttachment }} />
         <div
           className="composer-input-wrap"
-          data-expanded={composerExpanded ? "true" : "false"}
-          data-overflowing={composerOverflowing ? "true" : "false"}
         >
         <ConversationInput
           ref={inputRef}
@@ -847,20 +827,6 @@ function HarnessComposer() {
             }
           }}
         />
-        {(composerOverflowing || composerExpanded) && (
-          <button
-            type="button"
-            className="composer-expand-toggle"
-            aria-expanded={composerExpanded}
-            aria-label={composerExpanded ? "收起输入框" : "展开输入框"}
-            title={composerExpanded ? "收起输入框" : "展开输入框"}
-            onClick={() => setComposerExpanded((value) => !value)}
-          >
-            <svg viewBox="0 0 20 20" aria-hidden="true">
-              <path d={composerExpanded ? "m5 12 5-5 5 5" : "m5 8 5 5 5-5"} />
-            </svg>
-          </button>
-        )}
         </div>
         <div className="composer-footer">
         <div className="composer-toolbar">
@@ -1245,65 +1211,15 @@ export function isIntermediateAssistantTextPart(
   );
 }
 
-function HarnessAssistantText(part: TextMessagePartProps) {
-  const aui = useAui();
-  const live = useLiveResponse();
-  const isLast = useAuiState((state) => state.message.isLast);
-  const messageId = useAuiState((state) => state.message.id);
-  const status = useAuiState((state) => state.message.status);
-  const parts = useAuiState((state) => state.message.content);
-  const partIndex =
-    aui.part.source === "message" && aui.part.query.type === "index"
-      ? aui.part.query.index
-      : -1;
-  if (
-    status?.type === "complete" ||
-    shouldSuppressNativeAssistantText(
-      ownsLiveResponse(isLast, messageId, live.messageId),
-      live,
-    ) || isIntermediateAssistantTextPart(parts, partIndex)
-  ) {
-    return null;
-  }
-  return (
-    <div
-      className="assistant-answer"
-      data-streaming={part.status.type === "running" ? "true" : "false"}
-      aria-busy={part.status.type === "running"}
-    >
-      <MarkdownText />
-    </div>
-  );
-}
+// All text sources share this slot. Switching a live answer to durable history
+// must update props, not unmount Markdown (which also resets expanded blocks).
+function HiddenAssistantText() { return null; }
 
-export function DurableAssistantResponse({ text, directStream, complete }: { text: string; directStream: boolean; complete: boolean }) {
-  if (!complete || directStream || !text) return null;
+export function AssistantResponse({ text, streaming }: { text: string; streaming: boolean }) {
+  if (!text) return null;
   return (
-    <div className="assistant-answer" data-streaming="false" aria-busy={false}>
-      <TextMessagePartProvider text={text} isRunning={false}>
-        <MarkdownText />
-      </TextMessagePartProvider>
-    </div>
-  );
-}
-
-function LiveAssistantResponse({
-  live,
-  ownsMessage,
-}: {
-  live: LiveResponseSnapshot;
-  ownsMessage: boolean;
-}) {
-  if (!ownsMessage || !live.visible || !live.text.trim()) return null;
-  const streaming = live.status === "streaming";
-  return (
-    <div
-      className="assistant-answer live-assistant-response"
-      data-streaming={streaming ? "true" : "false"}
-      aria-busy={streaming}
-      aria-live="polite"
-    >
-      <TextMessagePartProvider text={live.text} isRunning={streaming}>
+    <div className="assistant-answer" data-streaming={streaming ? "true" : "false"} aria-busy={streaming}>
+      <TextMessagePartProvider text={text} isRunning={streaming}>
         <MarkdownText />
       </TextMessagePartProvider>
     </div>
@@ -1332,7 +1248,7 @@ function TurnActivity({
     messageId,
     activity.run_id,
     isLast,
-    runView?.runId,
+    ["running", "queued", "waiting_approval"].includes(runView?.phase ?? "") ? runView?.runId : undefined,
   )
     ? activity
     : undefined;
@@ -1454,7 +1370,7 @@ export function turnOwnsRun(
   // cannot contain the durable server run ID.  The current Activity snapshot
   // is still authoritative for the latest turn, so keep it attached there.
   return messageOwnsRun(messageId, activityRunId) || (
-    isLast && viewRunId === activityRunId
+    messageId.startsWith("__optimistic__") && isLast && viewRunId === activityRunId
   );
 }
 
@@ -1512,11 +1428,10 @@ export function HarnessAssistantMessage() {
         hasDurableProjection={hasRunActivityToolCall(content)}
         messageId={messageId}
       />
-      <LiveAssistantResponse live={live} ownsMessage={ownsLive} />
-      <DurableAssistantResponse text={copyText} directStream={directStream} complete={messageStatus?.type === "complete"} />
+      <AssistantResponse text={copyText} streaming={directStream ? live.status === "streaming" : messageStatus?.type === "running"} />
       <AssistantMessage.Content
         components={{
-          Text: HarnessAssistantText,
+          Text: HiddenAssistantText,
           Reasoning: ReasoningPart,
           data: {
             by_name: {
@@ -1573,10 +1488,11 @@ function TurnCompletion() {
   const content = useAuiState((state) => state.message.content);
   const isLast = useAuiState((state) => state.message.isLast);
   const observed = useRunViewModel();
+  const messageId = useAuiState((state) => state.message.id);
   const durable = content.find((part) => part.type === "tool-call" && part.toolName === "harness_run_activity");
   const parsed = durable?.type === "tool-call" ? runActivitySchema.safeParse(durable.args.activity) : null;
   const activity = parsed?.success ? parsed.data : null;
-  const view = isLast && observed ? observed : activity ? reduceRunViewModel(undefined, activity) : null;
+  const view = activity ? reduceRunViewModel(undefined, activity) : isLast && observed && messageOwnsRun(messageId, observed.runId) ? observed : null;
   if (!view || view.phase !== "completed") return null;
   const date = new Date(view.updatedAt);
   if (!Number.isFinite(date.getTime())) return null;
@@ -1768,7 +1684,7 @@ function HarnessUserMessage() {
             </div>
           ) : (
             <>
-              <UserMessage.Content />
+              <SentUserContent key={message.id} />
               <ActionBarPrimitive.Root
                 className="harness-user-action-bar"
                 autohide="never"

@@ -131,6 +131,21 @@ def test_default_draft_compiles_to_existing_reproducible_bundle_contract() -> No
     assert {entry.name for entry in directory.entries} == set(draft().spec.builtin_tools)
 
 
+def test_context_configuration_survives_publish_and_bundle_import() -> None:
+    from harness.core.manifest import ContextSpec
+
+    source = draft()
+    source = source.model_copy(update={"spec": source.spec.model_copy(update={
+        "context": ContextSpec(autoCompactPercentage=70),
+    })})
+    compiled = AgentDraftCompiler(default_capability_catalog()).compile(source)
+    assert compiled.report.snapshot.manifest.spec.context.auto_compact_percentage == 70
+    with ZipFile(BytesIO(compiled.bundle)) as bundle:
+        manifest = yaml.safe_load(bundle.read("agent.yaml"))
+    assert manifest["spec"]["context"]["autoCompactPercentage"] == 70
+    assert parse_agent_bundle(compiled.bundle).spec.context.auto_compact_percentage == 70
+
+
 def test_platform_skill_provenance_round_trips_through_the_immutable_bundle() -> None:
     compiler = AgentDraftCompiler(default_capability_catalog())
     source = draft()

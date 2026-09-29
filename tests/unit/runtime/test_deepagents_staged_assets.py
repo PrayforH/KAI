@@ -41,7 +41,9 @@ def test_deepagents_reuses_staged_skills_without_replacing_workspace(
         model="gateway-model",
         with_skills=True,
     )
-    monkeypatch.setattr(runtime, "_chat_model", lambda: cast(Any, object()))
+    from langchain_core.language_models.fake_chat_models import FakeListChatModel
+
+    monkeypatch.setattr(runtime, "_chat_model", lambda: FakeListChatModel(responses=["summary"]))
     monkeypatch.setattr(runtime, "_bundle_tools", lambda _context: [])
     monkeypatch.setattr(runtime, "_platform_tools", lambda _context: [])
     monkeypatch.setattr(

@@ -204,6 +204,30 @@ def test_rejects_inline_secrets(tmp_path: Path) -> None:
         load_manifest(path)
 
 
+@pytest.mark.parametrize("runtime,context", [
+    ("deepagents", {"autoCompactTokenLimit": 2048, "keepRecentMessages": 2}),
+    ("codex-app-server", {"autoCompactTokenLimit": 64000, "contextWindowTokens": 128000}),
+])
+def test_context_token_budgets_pass_publication_secret_check(
+    tmp_path: Path, runtime: str, context: dict[str, int],
+) -> None:
+    manifest = yaml.safe_load(FIXTURE.read_text())
+    manifest["spec"].update(runtime=runtime, context=context)
+    path = tmp_path / "agent.yaml"
+    path.write_text(yaml.safe_dump(manifest, sort_keys=False))
+    (tmp_path / "prompts").mkdir()
+    (tmp_path / "prompts/system.md").write_text("prompt")
+    snapshot = load_manifest(path)
+    assert (
+        snapshot.manifest.spec.context.auto_compact_token_limit == context["autoCompactTokenLimit"]
+    )
+
+    manifest["spec"]["context"]["autoCompactTokenLimit"] = "sk-not-a-budget"
+    path.write_text(yaml.safe_dump(manifest, sort_keys=False))
+    with pytest.raises(ManifestValidationError, match="secret-like field"):
+        load_manifest(path)
+
+
 def test_on_demand_manifest_requires_a_hash_validated_tool_directory(
     tmp_path: Path,
 ) -> None:

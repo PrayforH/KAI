@@ -66,6 +66,16 @@ class EventService:
             event_types,
         )
 
+    async def recent_for_session_types(
+        self, tenant_id: str, session_id: str, event_types: tuple[str, ...],
+        *, limit: int = 20, before: RunEvent | None = None,
+        exclude_run_id: str | None = None,
+    ) -> list[RunEvent]:
+        return await self._repository.recent_for_session_types(
+            tenant_id, session_id, event_types, limit=limit, before=before,
+            exclude_run_id=exclude_run_id,
+        )
+
     async def append(
         self,
         *,

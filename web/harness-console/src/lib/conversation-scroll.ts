@@ -1,5 +1,5 @@
 /** Follow layout changes, not individual tokens. Only reader intent pauses follow. */
-export function attachConversationScroll(viewport: HTMLElement) {
+export function attachConversationScroll(viewport: HTMLElement, onJumpVisibility?: (visible: boolean) => void) {
   const tolerance = 24;
   let following = true;
   let frame: number | null = null;
@@ -7,20 +7,34 @@ export function attachConversationScroll(viewport: HTMLElement) {
   let lastTop = viewport.scrollTop;
   let lastHeight = viewport.scrollHeight;
   let touchY: number | null = null;
+  let writing = false;
   const atBottom = () => viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop <= tolerance;
+  let jumpVisible = false;
+  function publishJumpVisibility() {
+    const visible = !following && !atBottom();
+    if (visible === jumpVisible) return;
+    jumpVisible = visible;
+    onJumpVisibility?.(visible);
+  }
 
+  function followLayout() {
+    if (disposed) return;
+    if (!following) { publishJumpVisibility(); return; }
+    const target = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+    writing = true;
+    if (viewport.scrollTop !== target) viewport.scrollTo({ top: target, behavior: "instant" });
+    writing = false;
+    lastTop = viewport.scrollTop;
+    lastHeight = viewport.scrollHeight;
+  }
   function schedule() {
     if (disposed || frame !== null) return;
-    frame = requestAnimationFrame(() => {
-      frame = null;
-      if (!following) return;
-      viewport.scrollTo({ top: viewport.scrollHeight, behavior: "instant" });
-      lastTop = viewport.scrollTop;
-      lastHeight = viewport.scrollHeight;
-    });
+    frame = requestAnimationFrame(() => { frame = null; followLayout(); });
   }
-  function resume() { following = true; schedule(); }
+  function resume() { following = true; publishJumpVisibility(); schedule(); }
+
   function onScroll() {
+    if (writing) return;
     // This listener is intentionally not capturing: scrolling a thought/result
     // preview must not change the outer conversation's follow state.
     const top = viewport.scrollTop;
@@ -29,6 +43,7 @@ export function attachConversationScroll(viewport: HTMLElement) {
     else if (atBottom()) following = true;
     lastTop = top;
     lastHeight = height;
+    publishJumpVisibility();
   }
   function isNestedScroller(target: EventTarget | null) {
     let element = target instanceof Element ? target : null;
@@ -60,7 +75,9 @@ export function attachConversationScroll(viewport: HTMLElement) {
   // The viewport's own size doesn't change when messages/images grow. Observe
   // message roots and the sticky composer as well, including late image loads.
   const observed = new Set<Element>();
-  const resize = new ResizeObserver(schedule);
+  // ResizeObserver runs before paint. Deferring it to another frame briefly
+  // exposes an older turn after process collapse or composer resizing.
+  const resize = new ResizeObserver(followLayout);
   resize.observe(viewport);
   function syncChildren() {
     const children = new Set(viewport.children);

@@ -443,14 +443,41 @@ def map_codex_notification(message: Mapping[str, Any]) -> list[RuntimeEvent]:
         # Only the provider-authored summary channel above is user-visible.
         return []
     if method == "item/started":
-        event = _item_request(_mapping(params.get("item")))
+        item = _mapping(params.get("item"))
+        if item.get("type") == "contextCompaction":
+            return [RuntimeEvent(type="context.compaction.started", payload={
+                "runtime": "codex-app-server", "item_id": _identifier(item.get("id")),
+                "trigger": "auto",
+            })]
+        event = _item_request(item)
         return [event] if event is not None else []
     if method == "item/completed":
+        item = _mapping(params.get("item"))
+        if item.get("type") == "contextCompaction":
+            return [RuntimeEvent(type="context.compacted", payload={
+                "runtime": "codex-app-server", "item_id": _identifier(item.get("id")),
+            })]
         event = _item_result(_mapping(params.get("item")))
         return [event] if event is not None else []
     if method == "thread/tokenUsage/updated":
-        usage = _safe_usage(params.get("tokenUsage") or params.get("usage"))
-        return [RuntimeEvent(type="usage.updated", payload=usage)] if usage else []
+        raw = _mapping(params.get("tokenUsage") or params.get("usage"))
+        usage = _safe_usage(raw.get("total") or raw)
+        events = [RuntimeEvent(type="usage.updated", payload=usage)] if usage else []
+        # `total` is cumulative billing usage; `last` describes the current
+        # context. Using total here falsely grows the meter after compaction.
+        last = _safe_usage(raw.get("last"))
+        maximum = raw.get("modelContextWindow")
+        current = last.get("totalTokens")
+        if isinstance(maximum, int) and maximum > 0 and current is not None:
+            events.append(RuntimeEvent(type="context.window.observed", payload={
+                "phase": "after", "total_tokens": current,
+                "max_tokens": maximum, "raw_max_tokens": maximum,
+                "percentage": min(100.0, current / maximum * 100),
+                "auto_compact_enabled": True,
+                "auto_compact_threshold": None,
+                "categories": [],
+            }))
+        return events
     if method == "turn/completed":
         status = _turn_status(params) or "completed"
         return [

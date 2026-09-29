@@ -6,7 +6,6 @@ import {
 } from "../src/lib/agent-templates";
 import {
   DEFAULT_STUDIO_DRAFT,
-  REQUIRED_PROMPT_HEADINGS,
 } from "../src/lib/agent-studio";
 import {
   studioDraftToSpec,
@@ -44,8 +43,8 @@ it("keeps server model/runtime bindings and produces complete instructions for e
     expect(result.modelRoute).toBe(original.modelRoute);
     expect(result.runtime).toBe(original.runtime);
     expect(result.taskContract?.inputs).toEqual([template.input]);
-    for (const heading of REQUIRED_PROMPT_HEADINGS)
-      expect(result.systemPrompt).toContain(heading);
+    expect(result.systemPrompt).toContain(template.description);
+    expect(result.systemPrompt).toContain(template.output);
     expect(result.evalCases[0].prompt).toBe(template.example);
   }
 });

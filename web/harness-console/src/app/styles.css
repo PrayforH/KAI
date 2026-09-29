@@ -7940,8 +7940,8 @@ textarea.user-message-editor-input:focus-visible {
   min-width: 22px;
   padding: 2px 5px;
   border-radius: 999px;
-  background: var(--rail-soft);
-  color: var(--rail);
+  background: var(--surface-subtle);
+  color: var(--muted-ink);
   font: 700 9px/1 ui-monospace, "SFMono-Regular", Consolas, monospace;
 }
 
@@ -7949,8 +7949,8 @@ textarea.user-message-editor-input:focus-visible {
   width: 8px;
   height: 8px;
   border-radius: 999px;
-  background: #4f846d;
-  box-shadow: 0 0 0 3px rgb(79 132 109 / 12%);
+  background: #8c9199;
+  box-shadow: 0 0 0 3px rgb(140 145 153 / 12%);
 }
 
 .context-recovery-dot.trust-sensitive {
@@ -8007,8 +8007,8 @@ textarea.user-message-editor-input:focus-visible {
   --faint-ink: var(--codex-faint, #737373);
   --line: var(--codex-line, #303030);
   --line-strong: var(--codex-line-strong, #444444);
-  --rail: var(--codex-success, #40c977);
-  --rail-soft: var(--codex-success-soft, rgb(64 201 119 / 13%));
+  --rail: var(--codex-muted, #a1a1a1);
+  --rail-soft: rgb(128 128 128 / 10%);
   --signal: var(--codex-warning, #e6aa4a);
   --danger: var(--codex-danger, #fa423e);
   height: 100%;
@@ -8033,7 +8033,7 @@ textarea.user-message-editor-input:focus-visible {
 
 .context-recovery-panel > header p {
   margin: 0 0 4px;
-  color: var(--rail);
+  color: var(--muted-ink);
   font: 700 9px/1 ui-monospace, "SFMono-Regular", Consolas, monospace;
   letter-spacing: 0.12em;
 }
@@ -8104,7 +8104,7 @@ textarea.user-message-editor-input:focus-visible {
 }
 
 .context-recovery-overview strong.trust-safe {
-  color: var(--rail);
+  color: var(--muted-ink);
 }
 
 .context-recovery-overview strong.trust-sensitive {
@@ -8123,7 +8123,7 @@ textarea.user-message-editor-input:focus-visible {
 }
 
 .context-window-card {
-  --window-signal: #4f846d;
+  --window-signal: #949ba6;
   margin: 0 0 14px;
   padding: 12px;
   display: grid;
@@ -8976,3 +8976,60 @@ textarea.user-message-editor-input:focus-visible {
 
 /* Session trace console: opened from the task header "更多" menu; it replaces
    the conversation pane in place and offers a 返回对话 control in its toolbar. */
+
+/* Read-only compaction inspection: neutral surfaces, lazy message bodies. */
+.context-recovery-panel { width: min(680px, 100vw); }
+.context-compaction-history { margin-bottom: 22px; }
+.context-compaction-history h3 { margin: 0 0 8px; font-size: 14px; color: var(--ink); }
+.context-history-note { color: var(--muted-ink); font-size: 12px; line-height: 1.65; }
+.context-compaction-record { margin: 12px 0; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-subtle); }
+.context-compaction-record > summary { padding: 14px; display: flex; justify-content: space-between; align-items: center; gap: 12px; cursor: pointer; list-style: none; }
+.context-compaction-record > summary > span:first-child { display: grid; gap: 6px; }
+.context-compaction-record > summary strong { color: var(--ink); font-size: 13px; }
+.context-compaction-record > summary small, .context-compaction-record > summary > span:last-child { color: var(--muted-ink); font-size: 11px; }
+.context-compaction-record > div { padding: 0 14px 14px; }
+.context-history-metrics { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 16px; padding: 14px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.context-history-metrics div { display: grid; gap: 8px; }
+.context-history-metrics small, .context-history-metrics strong span { color: var(--muted-ink); font-size: 11px; font-weight: 400; }
+.context-history-metrics strong { font-size: 21px; font-variant-numeric: tabular-nums; color: var(--ink); }
+.context-compaction-summary h4 { margin: 16px 0 8px; font-size: 13px; color: var(--ink); }
+.context-compaction-summary pre, .context-history-messages pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; font-size: 12px; line-height: 1.75; color: var(--ink); max-height: 380px; overflow-y: auto; }
+.context-compaction-summary { padding: 0 0 16px; }
+.context-history-section, .context-maintenance { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 12px; }
+.context-history-section > summary, .context-maintenance > summary { color: var(--muted-ink); font-size: 12px; cursor: pointer; padding: 5px 0; }
+.context-history-messages article { margin: 10px 0; padding: 12px; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; }
+.context-history-messages small { display: block; margin-bottom: 8px; color: var(--faint-ink); font-size: 10px; }
+.context-compaction-history button { color: var(--ink); background: var(--surface); border: 1px solid var(--line-strong); border-radius: 6px; padding: 4px 8px; cursor: pointer; }
+
+/* Real compaction lifecycle; neutral status and reduced-motion support. */
+.execution-compaction {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--codex-muted, #a1a1a1);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.execution-compaction-icon {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 14px;
+}
+.execution-compaction.is-running .execution-compaction-icon {
+  border: 1.5px solid color-mix(in srgb, currentColor 25%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: context-compaction-spin 900ms linear infinite;
+}
+@keyframes context-compaction-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .execution-compaction.is-running .execution-compaction-icon { animation: none; }
+}

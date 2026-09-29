@@ -162,7 +162,10 @@ describe("HarnessHttpAgent", () => {
       ) => Promise<unknown>
     )(input, undefined, { signal: abortController.signal });
     abortController.abort();
+    liveResponseStore.startRun("next-run", "thread-1");
     await run;
+    expect(liveResponseStore.getSnapshot()).toMatchObject({ runId: "next-run", status: "streaming" });
+    liveResponseStore.clear();
 
     expect(cancelUrl).toBe(
       "http://harness/v1/agui/threads/thread-1/runs/run-1/cancel",

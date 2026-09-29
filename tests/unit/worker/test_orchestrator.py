@@ -616,6 +616,46 @@ async def arrange(
     return orchestrator, runtime, runs, event_repository
 
 
+@pytest.mark.asyncio
+async def test_deepagents_history_replays_durable_roles_then_prefers_compacted_checkpoint(
+    tmp_path: Path,
+) -> None:
+    orchestrator, _, runs, _ = await arrange(tmp_path)
+    current = await runs.get("tenant-a", "run-1")
+    session = Session(
+        session_id="session-1", tenant_id="tenant-a", user_id="user-1",
+        agent_name="echo-agent", agent_version="1.0.0", created_at=NOW,
+        runtime_type="deepagents",
+    )
+    previous = current.model_copy(update={
+        "run_id": "run-0", "idempotency_key": "previous", "status": RunStatus.SUCCEEDED,
+        "created_at": NOW - timedelta(minutes=1), "input": {"prompt": "旧问题"},
+    })
+    await runs.add(previous)
+    for event_type, payload in (
+        ("message.start", {}), ("message.delta", {"text": "已核实的答复"}),
+        ("message.completed", {}),
+    ):
+        await orchestrator._events.append(
+            tenant_id="tenant-a", session_id="session-1", run_id="run-0",
+            event_type=event_type, payload=payload,
+        )
+    assert await orchestrator._conversation_history(session, current) == (
+        {"role": "user", "content": "旧问题"},
+        {"role": "assistant", "content": "已核实的答复"},
+    )
+    compacted = [{"role": "user", "content": "已整理的会话摘要"}]
+    await orchestrator._events.append(
+        tenant_id="tenant-a", session_id="session-1", run_id="run-0",
+        event_type="context.history.checkpoint",
+        payload={"schema_version": 1, "messages": compacted},
+    )
+    assert await orchestrator._conversation_history(session, current) == tuple(compacted)
+    other_session = session.model_copy(update={"session_id": "other-session"})
+    other_run = current.model_copy(update={"session_id": "other-session"})
+    assert await orchestrator._conversation_history(other_session, other_run) == ()
+
+
 class ManyPreviousOutputsSandbox(LocalSandboxProvider):
     async def prepare(self, handle: SandboxHandle) -> None:
         output = handle.path / "outputs/images"

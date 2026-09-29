@@ -34,8 +34,9 @@ from harness.api.dependencies import (
     require_owned_run,
 )
 from harness.api.event_streaming import wait_for_run_event
+from harness.context.compaction_view import CompactionDetail, compaction_detail
 from harness.context.models import SessionContextDigest, SessionContextOverview
-from harness.context.window import context_window_view
+from harness.context.window import compaction_observation, context_window_view
 from harness.core.errors import ConflictError, NotFoundError
 from harness.core.events import RunEvent
 from harness.core.models import AguiThreadBinding, ApprovalRequest, ApprovalStatus, Run
@@ -357,6 +358,9 @@ async def get_agui_thread_context(
         ("context.window.observed", "context.window.unavailable"),
     )
     window, window_status = context_window_view(window_event)
+    compacted = await container.events.latest_for_session_type(
+        identity.tenant_id, binding.session_id, "context.compacted"
+    )
     return AguiThreadContextOverview.model_validate(
         {
             **overview.model_dump(),
@@ -371,8 +375,51 @@ async def get_agui_thread_context(
             ),
             "window": window,
             "window_status": window_status,
+            "last_compaction": compaction_observation(compacted),
         }
     )
+
+
+@router.get("/threads/{thread_id}/context/compactions")
+async def list_thread_compactions(
+    thread_id: str,
+    identity: Annotated[Identity, Depends(require_identity)],
+    container: Annotated[ApiContainer, Depends(get_container)],
+) -> dict[str, Any]:
+    ensure_permission(identity, "tasks:read")
+    binding = await container.agui.get_binding(
+        tenant_id=identity.tenant_id, user_id=identity.user_id, thread_id=thread_id,
+    )
+    events = await container.events.recent_for_session_types(
+        identity.tenant_id, binding.session_id, ("context.compacted",), limit=21,
+    )
+    seen: set[str] = set()
+    items = []
+    for event in events[:20]:
+        if event.run_id in seen:
+            continue
+        seen.add(event.run_id)
+        observation = compaction_observation(event)
+        if observation is not None:
+            items.append(observation)
+    return {"items": items, "has_older": len(events) > 20}
+
+
+@router.get("/threads/{thread_id}/context/compactions/{run_id}", response_model=CompactionDetail)
+async def get_thread_compaction(
+    thread_id: str,
+    run_id: str,
+    identity: Annotated[Identity, Depends(require_identity)],
+    container: Annotated[ApiContainer, Depends(get_container)],
+) -> CompactionDetail:
+    ensure_permission(identity, "tasks:read")
+    binding = await container.agui.get_binding(
+        tenant_id=identity.tenant_id, user_id=identity.user_id, thread_id=thread_id,
+    )
+    run = await require_owned_run(container, identity, run_id)
+    if run.session_id != binding.session_id:
+        raise NotFoundError("run not found in this session")
+    return await compaction_detail(container.events, identity.tenant_id, binding.session_id, run_id)
 
 
 @router.post(

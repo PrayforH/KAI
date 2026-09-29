@@ -8,11 +8,31 @@ import {
   createPersonalStudioDraft,
   evaluateStudioDraft,
   mcpOptionsForDraft,
+  promptOutline,
   restoreStudioDraft,
   type McpOption,
 } from "../src/lib/agent-studio";
 
 describe("Agent Studio effective contract", () => {
+  it("accepts freeform and custom headings without rewriting the prompt", () => {
+    for (const systemPrompt of ["根据用户材料给出有依据的简短回答。", "# 分析助手\n## 输出\n只给结论。"] ) {
+      const draft = { ...DEFAULT_STUDIO_DRAFT, systemPrompt };
+      expect(evaluateStudioDraft(draft).issues.filter(issue => issue.includes("Prompt"))).toEqual([]);
+      expect(draft.systemPrompt).toBe(systemPrompt);
+    }
+  });
+  it("indexes actual headings outside code blocks, including duplicate titles", () => {
+    const text = "# 总则\n```md\n## 示例\n```\n## 输出\n文本\n## 输出\n后续";
+    const sections = promptOutline(text);
+    expect(sections.map(section => section.title)).toEqual(["总则", "输出", "输出"]);
+    expect(sections.map(section => text.slice(section.start, section.end))).toEqual(["# 总则", "## 输出", "## 输出"]);
+    expect(sections[1].start).not.toBe(sections[2].start);
+  });
+  it("resets runtime-specific compaction settings when changing kernels", () => {
+    const source = { ...DEFAULT_STUDIO_DRAFT, context: { autoCompactPercentage: 70 } };
+    expect(applyStudioDraftUpdate(source, { runtime: "codex-app-server" }).context).toEqual({});
+    expect(applyStudioDraftUpdate(source, { description: "updated" }).context).toEqual(source.context);
+  });
   const specialists = [
     {
       alias: "researcher",
@@ -205,7 +225,7 @@ describe("Agent Studio effective contract", () => {
   it("fails closed when prompt, subagent, policy and eval coverage disagree", () => {
     const contract = evaluateStudioDraft({
       ...DEFAULT_STUDIO_DRAFT,
-      systemPrompt: "Only a short prompt",
+      systemPrompt: "   ",
       builtinTools: [...DEFAULT_STUDIO_DRAFT.builtinTools, "Task"],
       subagents: [],
       policy: "production-read-only",
@@ -215,7 +235,7 @@ describe("Agent Studio effective contract", () => {
     });
 
     expect(contract.ready).toBe(false);
-    expect(contract.issues).toContain("System Prompt 缺少必需章节");
+    expect(contract.issues).toContain("System Prompt 不能为空");
     expect(contract.issues).toContain("Task 工具需要固定版本子 Agent");
     expect(contract.issues).toContain("只读权限不能包含写入或命令工具");
     expect(contract.issues).toContain("评测集缺少 ambiguous 场景");

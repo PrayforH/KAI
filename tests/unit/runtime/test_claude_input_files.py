@@ -21,7 +21,14 @@ from harness.runtime.claude_sdk import ClaudeSdkRuntime
 
 @pytest.mark.asyncio
 async def test_runtime_adds_staged_input_inventory_to_prompt(tmp_path: Path) -> None:
+    from harness.core.manifest import ContextSpec
+
     snapshot = load_manifest("tests/fixtures/agents/echo-agent/agent.yaml")
+    snapshot = snapshot.model_copy(update={"manifest": snapshot.manifest.model_copy(update={
+        "spec": snapshot.manifest.spec.model_copy(update={
+            "context": ContextSpec(autoCompactPercentage=70),
+        }),
+    })})
     now = datetime.now(UTC)
     version = AgentVersion(
         tenant_id="tenant-a",
@@ -44,6 +51,7 @@ async def test_runtime_adds_staged_input_inventory_to_prompt(tmp_path: Path) -> 
     prompts: list[str] = []
 
     async def fake_query(prompt: str, _options: ClaudeAgentOptions) -> AsyncIterator[object]:
+        assert _options.env["CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"] == "70"
         prompts.append(prompt)
         yield ResultMessage(
             subtype="success",

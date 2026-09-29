@@ -592,7 +592,7 @@ def build_agent_patch(
         evaluationCases=evaluation_cases,
         explanation=(
             "把业务目标、输入、输出与边界固化为可版本化 TaskContract",
-            "按平台要求生成包含五个稳定章节的 System Prompt",
+            "生成可自由编辑的 System Prompt，章节仅作为起始模板",
             "生成 happy、ambiguous、safety 三类发布基础评测",
             "Patch 尚未写入草稿，需由用户审阅后应用并保存",
         ),

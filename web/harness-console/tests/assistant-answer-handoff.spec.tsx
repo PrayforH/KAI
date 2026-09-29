@@ -79,3 +79,31 @@ it("keeps only the final text when durable activity follows an operational tool"
   expect(assistant?.querySelector(".assistant-answer")?.textContent).toContain("最终结果");
   expect(assistant?.querySelector(".assistant-answer")?.textContent).not.toContain("正在检查配置");
 });
+
+it("preserves the actual answer DOM across completion and history handoff", async () => {
+  host = document.createElement("div"); document.body.appendChild(host); root = createRoot(host);
+  await act(async () => root.render(<Fixture />));
+  const answer = { id: "assistant-run-1", role: "assistant" as const, content: [{ type: "text" as const, text: "A stable answer. ".repeat(12) }] };
+  await act(async () => {
+    thread!.import(ExportedMessageRepository.fromArray([answer]));
+    liveResponseStore.startRun("run-1"); liveResponseStore.startMessage(answer.id);
+    liveResponseStore.append(answer.id, answer.content[0].text);
+    liveResponseStore.completeMessage(answer.id);
+  });
+  const node = host.querySelector(".assistant-answer");
+  const paragraph = node?.querySelector("p");
+  expect(node?.textContent).toBe(answer.content[0].text.trim());
+  await act(async () => liveResponseStore.completeRun());
+  expect(host.querySelector(".assistant-answer")).toBe(node);
+  expect(host.querySelector(".assistant-answer p")).toBe(paragraph);
+  await act(async () => {
+    thread!.import(ExportedMessageRepository.fromArray([answer]));
+    liveResponseStore.clear();
+  });
+  expect(host.querySelector(".assistant-answer")).toBe(node);
+  expect(host.querySelector(".assistant-answer p")).toBe(paragraph);
+  expect(node?.textContent).toBe(answer.content[0].text.trim());
+  await act(async () => liveResponseStore.startRun("run-2"));
+  expect(host.querySelector(".assistant-answer")).toBe(node);
+  expect(node?.textContent).toBe(answer.content[0].text.trim());
+});

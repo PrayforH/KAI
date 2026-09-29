@@ -184,6 +184,8 @@ def test_codex_mcp_configuration_rejects_query_string_credentials() -> None:
 async def test_control_plane_model_becomes_secret_safe_codex_provider(
     tmp_path: Path,
 ) -> None:
+    from harness.core.manifest import ContextSpec
+
     snapshot = load_manifest("agents/helper-agent/agent.yaml")
     manifest = snapshot.manifest.model_copy(
         update={
@@ -198,6 +200,7 @@ async def test_control_plane_model_becomes_secret_safe_codex_provider(
             "spec": snapshot.manifest.spec.model_copy(
                 update={
                     "runtime": "codex-app-server",
+                    "context": ContextSpec(autoCompactTokenLimit=64000, contextWindowTokens=128000),
                     "model": snapshot.manifest.spec.model.model_copy(
                         update={"route": "codex-responses"}
                     ),
@@ -329,6 +332,8 @@ async def test_control_plane_model_becomes_secret_safe_codex_provider(
     assert "agents.max_concurrent_threads_per_session=4" in options.config_overrides
     assert 'model_reasoning_effort="low"' in options.config_overrides
     assert "tool_output_token_limit=32000" in options.config_overrides
+    assert "model_auto_compact_token_limit=64000" in options.config_overrides
+    assert "model_context_window=128000" in options.config_overrides
     thread_start = client.requests[0][1]
     assert thread_start["model"] == "gpt-control-plane"
     assert thread_start["modelProvider"] == "agent_studio"

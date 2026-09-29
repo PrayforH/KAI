@@ -3,6 +3,7 @@ import {
   type RunActivity,
   runActivitySchema,
 } from "./activity-schema";
+import { isResponseBoundary } from "./process-boundary";
 
 /**
  * Session-level trace model. A 会话 (thread) holds many runs; each run is one
@@ -231,6 +232,10 @@ const RUNNING_STATUSES = new Set(["running", "queued", "provisioning", "waiting"
 // Environment/context framing events: they describe what surrounded the model
 // call (assets, permissions, runtime, workspace) rather than an action.
 const CONTEXT_EVENT_TYPES = new Set([
+  "context.compaction.started",
+  "context.compaction.completed",
+  "context.compacted",
+  "context.compaction.failed",
   "agent.assets.staged",
   "policy.resolved",
   "runtime.system",
@@ -243,6 +248,7 @@ function isRunningStatus(status: string): boolean {
 }
 
 interface MessageSpan {
+  segment: number;
   startMs: number;
   endMs: number;
   output: string;
@@ -261,6 +267,8 @@ function buildTraceNodes(
     if (!activity) continue;
     const startedMs = safeMs(activity.started_at);
     const spans = new Map<string, MessageSpan>();
+    const openStreams = new Map<string, string>();
+    let segment = 0;
     const results = new Map<string, ActivityItem>();
     const approvals = new Map<string, ActivityItem>();
     const contextFacts: Array<{
@@ -307,6 +315,11 @@ function buildTraceNodes(
     for (const item of activity.items) {
       const timestampMs = safeMs(item.timestamp);
       if (!Number.isFinite(timestampMs)) continue;
+      if (isResponseBoundary(item.event_type)) {
+        segment += 1;
+        openStreams.clear();
+      }
+      if (item.event_type === "message.start") openStreams.delete("answer");
 
       if (CONTEXT_EVENT_TYPES.has(item.event_type)) {
         // `runtime.system` includes heartbeat-like "模型正在处理" frames.
@@ -338,9 +351,20 @@ function buildTraceNodes(
         const rawId = isReasoningFrame
           ? item.metadata.item_id ?? item.metadata.message_id
           : item.metadata.message_id;
-        const messageId = `${isReasoningFrame ? "reasoning" : "answer"}:${
-          typeof rawId === "string" ? rawId : item.id
-        }`;
+        const channel = isReasoningFrame
+          ? item.event_type.startsWith("reasoning.summary.") ? "reasoning-summary" : "reasoning"
+          : "answer";
+        // Some runtimes (including DeepAgents) omit stream IDs. Their event
+        // IDs identify individual tokens, not messages. Keep one fallback
+        // stream until a real message/tool boundary, including history replay.
+        const messageId = typeof rawId === "string" && rawId
+          ? `${channel}:${segment}:${rawId}`
+          : openStreams.get(channel) ?? `${channel}:${segment}:${item.id}`;
+        openStreams.set(channel, messageId);
+        if (isMessageFrame) {
+          openStreams.delete("reasoning");
+          openStreams.delete("reasoning-summary");
+        }
         const existing = spans.get(messageId);
         const text = typeof item.summary === "string" ? item.summary : "";
         const completed = isMessageFrame
@@ -353,6 +377,7 @@ function buildTraceNodes(
           if (TERMINAL_STATUSES.has(item.status)) existing.status = item.status;
         } else {
           spans.set(messageId, {
+            segment,
             startMs: timestampMs,
             endMs: timestampMs,
             output: text,
@@ -360,6 +385,7 @@ function buildTraceNodes(
             thinking: isReasoningFrame,
           });
         }
+        if (item.event_type === completed) openStreams.delete(channel);
         continue;
       }
 
@@ -562,7 +588,8 @@ function buildTraceNodes(
     const absorbedBy = new Map<string, string>();
     const thinkingByAnswer = new Map<string, string>();
     for (const [thinkingId, span] of thinkingSpans) {
-      const nextAnswer = answers.find(([, answer]) => answer.startMs >= span.startMs - 600);
+      const nextAnswer = answers.find(([, answer]) =>
+        answer.segment === span.segment && answer.startMs >= span.startMs - 600);
       if (nextAnswer) {
         absorbedBy.set(thinkingId, nextAnswer[0]);
         thinkingByAnswer.set(
@@ -583,8 +610,8 @@ function buildTraceNodes(
         turn: run.turn,
         step: nodes.filter((node) => node.runId === run.runId).length + 1,
         lane: "model",
-        badge: "助手",
-        label: "助手",
+        badge: span.thinking ? "思考" : "助手",
+        label: span.thinking ? "思考" : "助手",
         detail: preview(span.output, 140),
         status: span.status,
         startMs: thinkingStarts.length

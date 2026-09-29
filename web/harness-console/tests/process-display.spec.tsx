@@ -42,7 +42,7 @@ it("does not offer an empty disclosure or render infrastructure noise in either 
     act(() => setDetailedProcess(detailed)); render();
     expect(host.querySelector("button.execution-disclosure")).toBeNull();
     expect(host.querySelector(".execution-chevron")).toBeNull();
-    expect(getComputedStyle(host.querySelector<HTMLElement>(".execution-tree")!).display).toBe("none");
+    expect(host.querySelector<HTMLElement>(".execution-process-reveal")!.hidden).toBe(true);
     expect(host.textContent).not.toContain("正在准备运行环境");
     expect(host.textContent).not.toContain("未提供可展示");
     expect(host.textContent).not.toContain("正在输出回复");

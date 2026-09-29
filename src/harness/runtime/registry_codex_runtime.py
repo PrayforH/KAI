@@ -240,6 +240,15 @@ class RegistryCodexRuntime:
             resolved_tools = self._remote_memory_mcp.attach(resolved_tools, context.identity)
         mcp_config_overrides, mcp_environment = _codex_mcp_configuration(resolved_tools)
         reasoning_config_overrides = _codex_reasoning_configuration(snapshot)
+        context_config = snapshot.manifest.spec.context
+        context_config_overrides = tuple(
+            f"{key}={value}"
+            for key, value in (
+                ("model_context_window", context_config.context_window_tokens),
+                ("model_auto_compact_token_limit", context_config.auto_compact_token_limit),
+            )
+            if value is not None
+        )
         limits = snapshot.manifest.spec.limits
         subagent_config_overrides = (
             "agents.enabled=true",
@@ -259,6 +268,7 @@ class RegistryCodexRuntime:
                 config_overrides=(
                     *provider_config_overrides,
                     *reasoning_config_overrides,
+                    *context_config_overrides,
                     *mcp_config_overrides,
                     *subagent_config_overrides,
                     f"tool_output_token_limit={self._tool_output_token_limit}",

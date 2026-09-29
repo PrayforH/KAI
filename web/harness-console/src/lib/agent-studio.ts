@@ -227,6 +227,12 @@ export interface StudioDraft {
   restoreSession: boolean;
   archiveOnComplete: boolean;
   maxTurns: number | null;
+  context?: {
+    autoCompactTokenLimit?: number | null;
+    contextWindowTokens?: number | null;
+    autoCompactPercentage?: number | null;
+    keepRecentMessages?: number;
+  };
   maxToolCalls: number | null;
   timeoutSeconds: number | null;
   maxBudgetUsd: number | null;
@@ -250,6 +256,9 @@ export function applyStudioDraftUpdate(
   update: Partial<StudioDraft>,
 ): StudioDraft {
   const next = { ...current, ...update };
+  if (update.runtime && update.runtime !== current.runtime && !update.context) {
+    next.context = {};
+  }
   if (
     !("version" in update) &&
     current.publishedVersion &&
@@ -409,13 +418,23 @@ export const POLICY_OPTIONS = [
   },
 ];
 
-export const REQUIRED_PROMPT_HEADINGS = [
-  "## Mission",
-  "## Operating workflow",
-  "## Evidence and tool use",
-  "## Safety boundaries",
-  "## Output contract",
-];
+export function promptOutline(text: string): { title: string; start: number; end: number }[] {
+  const headings: { title: string; start: number; end: number }[] = [];
+  let offset = 0;
+  let fence: string | null = null;
+  for (const line of text.split("\n")) {
+    const marker = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
+    if (marker) {
+      if (!fence) fence = marker;
+      else if (marker[0] === fence[0] && marker.length >= fence.length) fence = null;
+    } else if (!fence) {
+      const heading = /^ {0,3}#{1,6}\s+(.+?)\s*#*\s*$/.exec(line);
+      if (heading) headings.push({ title: heading[1], start: offset, end: offset + line.length });
+    }
+    offset += line.length + 1;
+  }
+  return headings;
+}
 
 const GENERAL_LEAD_SYSTEM_PROMPT = `# 通用助手
 
@@ -657,9 +676,7 @@ export function evaluateStudioDraft(
   const routes = catalog.routes ?? MODEL_ROUTES;
   const mcpOptions = catalog.mcp ?? MCP_OPTIONS;
   const route = routes.find((item) => item.id === draft.modelRoute);
-  const promptSections = REQUIRED_PROMPT_HEADINGS.filter((heading) =>
-    draft.systemPrompt.includes(heading),
-  ).length;
+  const promptSections = promptOutline(draft.systemPrompt).length;
   if (!route) issues.push("模型路由未注册");
   // A route that publishes no model list is one this client does not know well
   // enough to judge, which is not the same as a mismatch: the deployment catalog
@@ -675,8 +692,8 @@ export function evaluateStudioDraft(
   ) {
     issues.push("当前模型路由不支持按需工具加载");
   }
-  if (promptSections !== REQUIRED_PROMPT_HEADINGS.length) {
-    issues.push("System Prompt 缺少必需章节");
+  if (!draft.systemPrompt.trim()) {
+    issues.push("System Prompt 不能为空");
   }
   // Runtime compatibility is intentionally not duplicated here. The server
   // Compiler returns the authoritative RuntimeCompatibility and issues after

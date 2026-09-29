@@ -80,6 +80,7 @@ class RuntimeContext(BaseModel):
     identity: ExecutionIdentity | None = None
     memory_projection: str = Field(default="", exclude=True, repr=False)
     context_projection: str = Field(default="", exclude=True, repr=False)
+    conversation_history: tuple[dict[str, str], ...] = Field(default=(), exclude=True, repr=False)
     processed_input_paths: tuple[str, ...] = ()
     runtime_transport_factory: RuntimeTransportFactory | None = Field(
         default=None, exclude=True, repr=False

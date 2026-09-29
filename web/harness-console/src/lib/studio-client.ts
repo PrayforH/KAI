@@ -295,6 +295,7 @@ type ApiDraftSpec = {
   permissionPolicy: string;
   executionProfile: string;
   workspace: { restoreSession: boolean; archiveOnComplete: boolean };
+  context?: StudioDraft["context"];
   limits: {
     maxTurns: number | null;
     maxToolCalls: number | null;
@@ -1543,6 +1544,7 @@ export function apiDraftToStudioDraft(source: ApiAgentDraft): StudioDraft {
     restoreSession: spec.workspace.restoreSession,
     archiveOnComplete: spec.workspace.archiveOnComplete,
     maxTurns: spec.limits.maxTurns,
+    context: spec.context ?? {},
     maxToolCalls: spec.limits.maxToolCalls ?? 256,
     timeoutSeconds: spec.limits.timeoutSeconds,
     maxBudgetUsd: spec.limits.maxBudgetUsd,
@@ -1605,6 +1607,7 @@ export function studioDraftToSpec(draft: StudioDraft): ApiDraftSpec {
       maxConcurrentSubagents: draft.maxConcurrentSubagents,
       maxSubagentUsageUnits: draft.maxSubagentUsageUnits,
     },
+    context: draft.context ?? {},
     evaluationEnabled: draft.evaluationEnabled,
     evaluationCases: draft.evalCases.map((item) => ({
       id: item.id,

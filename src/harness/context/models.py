@@ -225,6 +225,14 @@ class SessionContextState(ContextModel):
         return self
 
 
+class ContextCompactionObservation(ContextModel):
+    source_run_id: str
+    completed_at: datetime
+    runtime: str
+    before_tokens: int | None = None
+    compacted_messages: int | None = None
+
+
 class SessionContextOverview(ContextModel):
     """Owner-visible Session context state and immutable recovery points."""
 
@@ -233,6 +241,7 @@ class SessionContextOverview(ContextModel):
     digests: tuple[SessionContextDigest, ...] = Field(default=(), max_length=50)
     next_before_version: int | None = Field(default=None, ge=1)
     window: ContextWindowSnapshot | None = None
+    last_compaction: ContextCompactionObservation | None = None
     window_status: ContextWindowAvailability = Field(
         default_factory=lambda: ContextWindowAvailability(status="pending")
     )

@@ -75,6 +75,11 @@ from harness.runtime.base import (
     RuntimeResultError,
 )
 from harness.runtime.deepagents_backend import HarnessSandboxBackend
+from harness.runtime.deepagents_context import (
+    HISTORY_EVENT,
+    checkpoint_messages,
+    summarization_middleware,
+)
 from harness.runtime.deepagents_events import DeepagentsStreamMapper
 from harness.runtime.deepagents_plan import DeepagentsPlan, build_deepagents_plan
 from harness.runtime.deepagents_tool_gate import DeepagentsToolGate
@@ -305,6 +310,10 @@ class DeepagentsRuntime:
         started_at = time.monotonic()
         timeout = float(spec.limits.timeout_seconds) if spec.limits.timeout_seconds else None
         prompt = self._prompt(context)
+        replay = [*context.conversation_history, {"role": "user", "content": prompt}]
+        final_state: Mapping[str, Any] | None = None
+        last_compaction: object = None
+        compacting = False
         # The same observation every runtime opens, so Langfuse shows a
         # generation for a DeepAgents Run too. DeepAgents has no SDK permission
         # mode, so that attribute is simply not reported.
@@ -325,10 +334,31 @@ class DeepagentsRuntime:
             try:
                 async with asyncio.timeout(timeout):
                     async for mode, payload in graph.astream(
-                        {"messages": [{"role": "user", "content": prompt}]},
+                        {"messages": replay},
                         config={"recursion_limit": plan.recursion_limit},
-                        stream_mode=["messages", "updates"],
+                        stream_mode=["messages", "updates", "values", "custom"],
                     ):
+                        if mode == "custom":
+                            phase = (payload.get("harness_context_compaction")
+                                     if isinstance(payload, dict) else None)
+                            if phase in {"started", "completed"}:
+                                compacting = phase == "started"
+                                yield RuntimeEvent(type=f"context.compaction.{phase}", payload={
+                                    "runtime": "deepagents", "trigger": "auto",
+                                })
+                            continue
+                        if mode == "values":
+                            final_state = cast(Mapping[str, Any], payload)
+                            compaction = final_state.get("_summarization_event")
+                            if compaction and compaction != last_compaction:
+                                last_compaction = compaction
+                                compacting = False
+                                yield RuntimeEvent(type="context.compacted", payload={
+                                    "runtime": "deepagents",
+                                    "trigger": "auto",
+                                    "compacted_messages": compaction.get("cutoff_index"),
+                                })
+                            continue
                         for event in self._map(mapper, mode=mode, payload=payload):
                             if event.type == "tool.request":
                                 tool_calls += 1
@@ -361,9 +391,19 @@ class DeepagentsRuntime:
                                 final_text = "".join(active_text)
                             yield event
             except TimeoutError as error:
+                if compacting:
+                    yield RuntimeEvent(type="context.compaction.failed", payload={
+                        "runtime": "deepagents", "reason": "timeout",
+                    })
                 raise RuntimeExecutionTimeoutError(
                     "the DeepAgents runtime exceeded its Manifest timeout"
                 ) from error
+            except Exception:
+                if compacting:
+                    yield RuntimeEvent(type="context.compaction.failed", payload={
+                        "runtime": "deepagents", "reason": "summary_failed",
+                    })
+                raise
             # Reported from the same payload the Worker consumes, so the
             # observation and the durable `runtime.result` cannot disagree about
             # what the run cost.
@@ -377,6 +417,14 @@ class DeepagentsRuntime:
                 stop_reason=cast(str | None, result.payload.get("stop_reason")),
                 output=final_text or None,
             )
+        # Only publish after successful graph completion. The next Run restores
+        # the effective summary + tail, so old history cannot reappear after a
+        # successful compaction or a Worker restart.
+        history = (
+            checkpoint_messages(final_state) if final_state is not None
+            else [*replay, {"role": "assistant", "content": final_text}]
+        )
+        yield RuntimeEvent(type=HISTORY_EVENT, payload={"schema_version": 1, "messages": history})
         yield result
 
     @staticmethod
@@ -426,7 +474,9 @@ class DeepagentsRuntime:
         snapshot = config.snapshot
         if snapshot.skill_snapshots and not context.agent_assets_staged:
             materialize_skill_snapshot_set((snapshot,), context.workspace)
-        middleware: list[AgentMiddleware] = [
+        model = self._chat_model()
+        middleware: list[AgentMiddleware[Any, Any, Any]] = [
+            summarization_middleware(model, backend, snapshot.manifest.spec.context),
             TodoListMiddleware(),
             # Tool selection withholds `delete`. Read-only enforcement belongs
             # to DeepagentsToolGate and the Run's resolved platform policy:
@@ -473,7 +523,7 @@ class DeepagentsRuntime:
         )
         wiki_mode = knowledge_mode_for_run(context.run.input) == "wiki"
         return create_deep_agent(
-            model=self._chat_model(),
+            model=model,
             tools=[
                 *self._bundle_tools(context),
                 *self._platform_tools(context),

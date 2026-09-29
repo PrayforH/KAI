@@ -13,7 +13,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
-from harness.core.manifest import ToolExposureMode
+from harness.core.manifest import ContextSpec, ToolExposureMode
 from harness.core.models import AgentRuntimeType
 from harness.evals.suite import EvalCase
 from harness.sandbox.base import SandboxEnforcement
@@ -390,11 +390,13 @@ class AgentDraftSpec(StudioModel):
     )
     workspace: DraftWorkspace = DraftWorkspace()
     limits: DraftLimits = DraftLimits()
+    context: ContextSpec = ContextSpec()
     evaluation_enabled: bool = Field(default=True, alias="evaluationEnabled")
     evaluation_cases: tuple[EvalCase, ...] = Field(min_length=1, alias="evaluationCases")
 
     @model_validator(mode="after")
     def unique_capabilities(self) -> AgentDraftSpec:
+        self.context.validate_runtime(self.runtime)
         for label, values in (
             ("builtin tool", self.builtin_tools),
             ("MCP server", self.mcp_servers),

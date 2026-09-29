@@ -20,6 +20,8 @@ import { KnowledgeCitations } from "./knowledge/knowledge-citations";
 import { MarkdownText } from "./markdown-text";
 import { useRunDetails } from "./run-details-context";
 import { isResponseBoundary } from "../lib/process-boundary";
+import { ProcessDisclosure } from "./process-disclosure";
+import { CompactionProgressIndicator } from "./compaction-progress";
 import { useDetailedProcess } from "../lib/process-display-preference";
 
 const phaseLabels: Record<RunPhase, string> = {
@@ -811,6 +813,7 @@ export function ActivitySummary({
         <span className="execution-duration">· {elapsedCopy}</span>
         {hasContent && <span className="execution-chevron" aria-hidden="true" />}
       </Disclosure>
+      <CompactionProgressIndicator view={view} />
       {publicationNotice?.summary && <p className="execution-publication-notice" role="status">{publicationNotice.summary}</p>}
       {active && progressText && <p className="execution-publication-notice" role="status">{progressText}</p>}
       {runDetails && detailsAvailable ? (
@@ -825,7 +828,8 @@ export function ActivitySummary({
           运行详情
         </button>
       ) : null}
-      <div className="execution-tree" hidden={!open || !hasContent}>
+      <ProcessDisclosure open={open && hasContent}>
+      <div className="execution-tree">
         {failure ? (
           <section className="execution-failure-diagnostic" aria-label="失败定位">
             <span>失败定位</span>
@@ -859,6 +863,7 @@ export function ActivitySummary({
           </section>
         ) : null}
       </div>
+      </ProcessDisclosure>
     </section>
   );
 }

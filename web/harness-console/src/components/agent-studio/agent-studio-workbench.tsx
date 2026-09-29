@@ -16,7 +16,7 @@ import { useConfirmationDialog } from "../confirmation-dialog";
 import { PRODUCT_NAME, ProductBrandMark } from "../product-brand";
 import {
   DEFAULT_STUDIO_DRAFT,
-  REQUIRED_PROMPT_HEADINGS,
+  promptOutline,
   STUDIO_STAGES,
   applyStudioDraftUpdate,
   builtinToolAvailable,
@@ -663,24 +663,9 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
     if (name !== nextSkill.name) setActiveSkillName(nextSkill.name);
   }
 
-  function moveToPromptSection(heading: string) {
-    const existingIndex = draft.systemPrompt.indexOf(heading);
-    if (existingIndex >= 0) {
-      promptEditorRef.current?.focus();
-      promptEditorRef.current?.setSelectionRange(
-        existingIndex,
-        existingIndex + heading.length,
-      );
-      return;
-    }
-    const separator = draft.systemPrompt.trimEnd() ? "\n\n" : "";
-    const nextPrompt = `${draft.systemPrompt.trimEnd()}${separator}${heading}\n\n`;
-    updateDraft({ systemPrompt: nextPrompt });
-    window.requestAnimationFrame(() => {
-      const cursor = nextPrompt.length;
-      promptEditorRef.current?.focus();
-      promptEditorRef.current?.setSelectionRange(cursor, cursor);
-    });
+  function moveToPromptSection(section: { start: number; end: number }) {
+    promptEditorRef.current?.focus();
+    promptEditorRef.current?.setSelectionRange(section.start, section.end);
   }
 
   function handlePromptEditorKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -1735,7 +1720,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
       case "model":
         return draft.model ? "已选择" : "待选择";
       case "prompt":
-        return `${contract.promptSections}/5`;
+        return draft.systemPrompt.trim() ? "已填写" : "待填写";
       case "orchestration":
         return draft.subagents.length ? `${draft.subagents.length} 角色` : "单 Agent";
       case "skills":
@@ -1956,7 +1941,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
           ? "complete"
           : "pending";
       case "behavior":
-        return contract.promptSections === 5 ? "complete" : "pending";
+        return draft.systemPrompt.trim() ? "complete" : "pending";
       case "trial":
         return activePreview?.preflightResult?.status === "passed" ? "complete" : "pending";
       case "publish":
@@ -2800,28 +2785,23 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                     <div className={styles.promptOutlineHeading}>
                       <div>
                         <span>Prompt 结构</span>
-                        <strong>{contract.promptSections} / 5 完整</strong>
+                        <strong>{contract.promptSections} 个标题</strong>
                       </div>
-                      <small>选择章节可定位；缺失章节会自动补到文末。</small>
+                      <small>目录来自正文；支持自由文本和任意 Markdown 结构。</small>
                     </div>
                     <div className={styles.promptChecklist}>
-                      {REQUIRED_PROMPT_HEADINGS.map((heading, index) => {
-                        const present = draft.systemPrompt.includes(heading);
-                        return (
-                          <button
-                            type="button"
-                            key={heading}
-                            className={present ? styles.checkPresent : styles.checkMissing}
-                            onClick={() => moveToPromptSection(heading)}
-                          >
-                            <span aria-hidden="true">{present ? "✓" : "+"}</span>
-                            <span>
-                              <strong>{heading.replace("## ", "")}</strong>
-                              <small>{present ? `章节 ${index + 1} · 已包含` : "点击补充"}</small>
-                            </span>
-                          </button>
-                        );
-                      })}
+                      {promptOutline(draft.systemPrompt).map((section) => (
+                        <button
+                          type="button"
+                          key={section.start}
+                          className={styles.checkPresent}
+                          onClick={() => moveToPromptSection(section)}
+                        >
+                          <span aria-hidden="true">#</span>
+                          <span><strong>{section.title}</strong></span>
+                        </button>
+                      ))}
+                      {contract.promptSections === 0 && <p>没有标题也可以发布，无需补齐模板。</p>}
                     </div>
                     <div className={styles.promptBoundaryNote}>
                       <strong>放什么在这里？</strong>
@@ -2875,8 +2855,8 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                       <span>{draft.systemPrompt.split("\n").length} 行</span>
                       <span>{draft.systemPrompt.length.toLocaleString("zh-CN")} 字符</span>
                       <span>{new Blob([draft.systemPrompt]).size.toLocaleString("zh-CN")} bytes</span>
-                      <span data-state={contract.promptSections === 5 ? "ready" : "missing"}>
-                        {contract.promptSections === 5 ? "结构门禁已满足" : `缺少 ${5 - contract.promptSections} 个章节`}
+                      <span data-state={draft.systemPrompt.trim() ? "ready" : "missing"}>
+                        {draft.systemPrompt.trim() ? "自由结构 · 不限制章节" : "请填写指令内容"}
                       </span>
                     </div>
                   </div>
@@ -3724,6 +3704,38 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                       </span>
                     </div>
                   </div>
+                  <Field label="自动压缩阈值" wide hint={draft.runtime === "claude-agent-sdk"
+                    ? "上下文使用百分比（1–95）；留空采用运行时默认值。达到阈值后由模型生成摘要并继续会话。"
+                    : "上下文 token 数（至少 1024）；留空采用运行时默认值。DeepAgents 使用估算 token 触发摘要。"}>
+                    <input type="number"
+                      min={draft.runtime === "claude-agent-sdk" ? 1 : 1024}
+                      max={draft.runtime === "claude-agent-sdk" ? 95 : undefined}
+                      value={(draft.runtime === "claude-agent-sdk"
+                        ? draft.context?.autoCompactPercentage : draft.context?.autoCompactTokenLimit) ?? ""}
+                      placeholder="运行时默认值"
+                      onChange={(event) => updateDraft({ context: {
+                        ...draft.context,
+                        [draft.runtime === "claude-agent-sdk" ? "autoCompactPercentage" : "autoCompactTokenLimit"]:
+                          event.target.value ? Number(event.target.value) : null,
+                      } })}
+                    />
+                  </Field>
+                  {draft.runtime === "codex-app-server" && (
+                    <Field label="模型上下文窗口（token）" hint="可选，仅覆盖已知模型窗口；必须大于压缩阈值。">
+                      <input type="number" min={2048} value={draft.context?.contextWindowTokens ?? ""}
+                        placeholder="模型默认值" onChange={(event) => updateDraft({ context: {
+                          ...draft.context, contextWindowTokens: event.target.value ? Number(event.target.value) : null,
+                        } })} />
+                    </Field>
+                  )}
+                  {draft.runtime === "deepagents" && (
+                    <Field label="压缩后保留近期消息数" hint="默认 20 条；较早消息归入摘要，完整历史仍保留在运行记录中。">
+                      <input type="number" min={2} max={100} value={draft.context?.keepRecentMessages ?? 20}
+                        onChange={(event) => updateDraft({ context: {
+                          ...draft.context, keepRecentMessages: Number(event.target.value),
+                        } })} />
+                    </Field>
+                  )}
                   <Field label="Agent 最大轮次" hint="建议 64；留空表示不限制">
                     <input
                       type="number"

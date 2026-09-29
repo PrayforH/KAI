@@ -278,18 +278,23 @@ export class HarnessHttpAgent extends HttpAgent {
       this.activeInput = activeInput;
     }
     const runtimeThreadId = activeInput?.threadId ?? this.threadId;
+    // Release the previous response before the network delivers RUN_STARTED.
+    if (activeInput) liveResponseStore.startRun(activeInput.runId, runtimeThreadId);
     const wrapped: AgentSubscriber = {
       ...subscriber,
       onRunStartedEvent: async (params) => {
+        if (options?.signal?.aborted) return;
         liveResponseStore.startRun(params.event.runId, runtimeThreadId);
         runStreamStore.startRun(params.event.runId, runtimeThreadId);
         return subscriber?.onRunStartedEvent?.(params);
       },
       onTextMessageStartEvent: async (params) => {
+        if (options?.signal?.aborted) return;
         liveResponseStore.startMessage(params.event.messageId, runtimeThreadId);
         return subscriber?.onTextMessageStartEvent?.(params);
       },
       onTextMessageContentEvent: async (params) => {
+        if (options?.signal?.aborted) return;
         liveResponseStore.append(
           params.event.messageId,
           params.event.delta,
@@ -298,10 +303,12 @@ export class HarnessHttpAgent extends HttpAgent {
         return subscriber?.onTextMessageContentEvent?.(params);
       },
       onTextMessageEndEvent: async (params) => {
+        if (options?.signal?.aborted) return;
         liveResponseStore.completeMessage(params.event.messageId, runtimeThreadId);
         return subscriber?.onTextMessageEndEvent?.(params);
       },
       onToolCallStartEvent: async (params) => {
+        if (options?.signal?.aborted) return;
         // Artifact presentation is a response deliverable, not another model
         // action. Keeping the final response active also lets the UI render
         // that prose immediately before the generated file card.
@@ -313,6 +320,7 @@ export class HarnessHttpAgent extends HttpAgent {
         return subscriber?.onToolCallStartEvent?.(params);
       },
       onRunFinishedEvent: async (params) => {
+        if (options?.signal?.aborted) return;
         liveResponseStore.completeRun(runtimeThreadId);
         runStreamStore.completeRun(params.event.runId, runtimeThreadId);
         const result = await subscriber?.onRunFinishedEvent?.(params);
@@ -320,6 +328,7 @@ export class HarnessHttpAgent extends HttpAgent {
         return result;
       },
       onRunErrorEvent: async (params) => {
+        if (options?.signal?.aborted) return;
         liveResponseStore.failRun(runtimeThreadId);
         runStreamStore.failRun(
           typeof params.event.runId === "string"
@@ -330,6 +339,7 @@ export class HarnessHttpAgent extends HttpAgent {
         return subscriber?.onRunErrorEvent?.(params);
       },
       onActivitySnapshotEvent: async (params) => {
+        if (options?.signal?.aborted) return;
         if (params.event.activityType === "harness.run.v1") {
           const parsed = runActivitySchema.safeParse(params.event.content);
           if (parsed.success) {
@@ -342,6 +352,7 @@ export class HarnessHttpAgent extends HttpAgent {
         return subscriber?.onActivitySnapshotEvent?.(params);
       },
       onActivityDeltaEvent: async (params) => {
+        if (options?.signal?.aborted) return;
         if (params.event.activityType === "harness.run.v1") {
           activityStore.patch(
             params.event.patch as readonly ActivityPatchOperation[],
@@ -362,8 +373,10 @@ export class HarnessHttpAgent extends HttpAgent {
       : parameters;
     return super.runAgent(routedParameters, wrapped)
       .catch((error: unknown) => {
-        liveResponseStore.failRun(runtimeThreadId);
-        runStreamStore.failRun(activeInput?.runId, runtimeThreadId);
+        if (!signal?.aborted) {
+          liveResponseStore.failRun(runtimeThreadId);
+          runStreamStore.failRun(activeInput?.runId, runtimeThreadId);
+        }
         throw error;
       })
       .finally(() => {

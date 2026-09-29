@@ -376,6 +376,17 @@ def _activity_item(event: RunEvent) -> dict[str, Any] | None:
                 used_fallback=payload.get("used_fallback"),
             ),
         )
+    if event.type in {
+        "context.compacted", "context.compaction.completed", "context.compaction.failed",
+    }:
+        failed = event.type == "context.compaction.failed"
+        return _item(
+            event, kind="analysis", status="failed" if failed else "succeeded",
+            title="上下文压缩失败" if failed else "上下文已压缩",
+            summary=("摘要未能完成，本轮已停止；可重试。" if failed
+                     else "已保留摘要和近期消息，继续处理当前问题"),
+            metadata=_metadata(runtime=payload.get("runtime")),
+        )
     if event.type == "context.compaction.started":
         trigger = str(payload.get("trigger", "auto"))
         return _item(

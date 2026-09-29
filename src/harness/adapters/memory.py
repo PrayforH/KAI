@@ -444,6 +444,24 @@ class InMemoryEventRepository:
         )
 
 
+    async def recent_for_session_types(
+        self, tenant_id: str, session_id: str, event_types: tuple[str, ...],
+        *, limit: int = 20, before: RunEvent | None = None,
+        exclude_run_id: str | None = None,
+    ) -> list[RunEvent]:
+        def key(event: RunEvent) -> tuple[datetime, str, int]:
+            return event.timestamp, event.run_id, event.sequence
+
+        matches = [
+            event for (stored_tenant, _), events in self._items.items()
+            if stored_tenant == tenant_id for event in events
+            if event.session_id == session_id and event.type in event_types
+            and event.run_id != exclude_run_id
+            and (before is None or key(event) < key(before))
+        ]
+        return sorted(matches, key=key, reverse=True)[:limit]
+
+
 class InMemoryEventBus:
     def __init__(self) -> None:
         self._items: dict[tuple[str, str], list[RunEvent]] = defaultdict(list)

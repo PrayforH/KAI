@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from harness.context.models import (
     ContextBudgetLevel,
+    ContextCompactionObservation,
     ContextWindowAvailability,
     ContextWindowCategory,
     ContextWindowSnapshot,
@@ -17,6 +18,21 @@ from harness.core.events import RunEvent
 DEFAULT_SOFT_THRESHOLD_PERCENTAGE = 65.0
 DEFAULT_COMPACT_READY_PERCENTAGE = 75.0
 DEFAULT_HARD_THRESHOLD_PERCENTAGE = 85.0
+
+
+def compaction_observation(event: RunEvent | None) -> ContextCompactionObservation | None:
+    if event is None or event.type != "context.compacted":
+        return None
+    try:
+        return ContextCompactionObservation(
+            source_run_id=event.run_id,
+            completed_at=event.timestamp,
+            runtime=str(event.payload.get("runtime", "")),
+            before_tokens=event.payload.get("before_tokens"),
+            compacted_messages=event.payload.get("compacted_messages"),
+        )
+    except ValidationError:
+        return None
 
 
 def context_window_view(

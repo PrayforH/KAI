@@ -154,6 +154,28 @@ def test_package_hash_changes_when_evaluation_changes(tmp_path: Path) -> None:
     assert first.package_hash != second.package_hash
 
 
+@pytest.mark.parametrize("prompt", [
+    "根据提供的资料回答，注明来源；缺失的信息明确说明，不编造。",
+    "# 资料助理\n\n## 回答方式\n先给结论，再给依据。\n\n## 无资料时\n说明缺失信息。",
+])
+def test_publish_preserves_freeform_prompt(tmp_path: Path, prompt: str) -> None:
+    package = tmp_path / "agent"
+    copytree(Path("agents/public-opinion-agent"), package)
+    (package / "prompts/system.md").write_text(prompt)
+    archive, report = pack_agent_package(package / "agent.yaml", output_directory=tmp_path / "dist")
+    manifest, _, _ = extract_agent_bundle(archive.read_bytes(), destination=tmp_path / "extracted")
+    assert report.snapshot.system_prompt == prompt
+    assert load_manifest(manifest).system_prompt == prompt
+
+
+def test_publish_rejects_whitespace_prompt(tmp_path: Path) -> None:
+    package = tmp_path / "agent"
+    copytree(Path("agents/public-opinion-agent"), package)
+    (package / "prompts/system.md").write_text(" \n ")
+    with pytest.raises(AgentPackageCheckError, match="system prompt must not be empty"):
+        check_agent_package(package / "agent.yaml")
+
+
 def test_bundle_extraction_rejects_path_traversal(tmp_path: Path) -> None:
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w") as archive:

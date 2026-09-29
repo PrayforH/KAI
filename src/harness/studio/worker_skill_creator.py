@@ -59,8 +59,7 @@ _MAX_EVALUATION_BYTES = 1024 * 1024
 _MAX_REPLY_CHARS = 4000
 _STATUS_POLL_SECONDS = 1.0
 
-# The five section headings are required verbatim by the Agent package validator
-# (harness.agent_package._REQUIRED_PROMPT_HEADINGS); only the bodies are ours.
+# This executor uses sections for readability; package validation accepts any structure.
 _CREATOR_SYSTEM_PROMPT = """## Mission
 你是构建助手的 Skill 创建执行器。使用已挂载的真正 skill-creator 技能完成本轮创建或修改。
 

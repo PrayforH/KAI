@@ -973,6 +973,9 @@ class ClaudeSdkRuntime:
         option_tools = list(builtin_tools)
         if skill_names:
             option_tools.append("Skill")
+        compact_percentage = manifest.spec.context.auto_compact_percentage
+        if compact_percentage is not None:
+            environment["CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"] = str(compact_percentage)
         options = ClaudeAgentOptions(
             tools=option_tools,
             # allowed_tools are unconditional permission grants in Claude Code.

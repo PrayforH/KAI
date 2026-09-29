@@ -77,6 +77,13 @@ export interface ContextWindowAvailability {
 }
 
 export interface SessionContextOverview {
+  last_compaction?: {
+    source_run_id: string;
+    completed_at: string;
+    runtime: string;
+    before_tokens?: number | null;
+    compacted_messages?: number | null;
+  } | null;
   session_id: string;
   state: SessionContextState | null;
   digests: SessionContextDigest[];
@@ -126,6 +133,7 @@ export function mergeContextPages(
     rollback_supported: next.rollback_supported ?? current.rollback_supported,
     window: next.window ?? current.window,
     window_status: next.window_status ?? current.window_status,
+    last_compaction: next.last_compaction ?? current.last_compaction,
   };
 }
 
@@ -190,4 +198,45 @@ export async function loadThreadContext(
     throw new Error((await response.text()) || `HTTP ${response.status}`);
   }
   return response.json() as Promise<SessionContextOverview>;
+}
+
+export type CompactionObservation = NonNullable<SessionContextOverview["last_compaction"]>;
+export interface HistoryMessageView {
+  role: string;
+  content: string;
+  truncated: boolean;
+}
+export interface HistorySnapshotView {
+  source_run_id: string;
+  message_count: number;
+  characters: number;
+  messages: HistoryMessageView[];
+  truncated: boolean;
+}
+export interface CompactionDetail {
+  run_id: string;
+  runtime: string;
+  status: "available" | "unavailable";
+  reason: string | null;
+  compaction_count: number;
+  before: HistorySnapshotView | null;
+  after: HistorySnapshotView | null;
+  summary: HistoryMessageView | null;
+}
+
+async function readCompaction<T>(threadId: string, suffix: string, fetcher: typeof fetch): Promise<T> {
+  const response = requireAuthenticatedResponse(await fetcher(
+    `/api/agui/threads/${encodeURIComponent(threadId)}/context/compactions${suffix}`,
+    { cache: "no-store" },
+  ));
+  if (!response.ok) throw new Error("压缩记录暂不可用，请重试。");
+  return response.json() as Promise<T>;
+}
+
+export function loadThreadCompactions(threadId: string, fetcher: typeof fetch = fetch) {
+  return readCompaction<{ items: CompactionObservation[]; has_older: boolean }>(threadId, "", fetcher);
+}
+
+export function loadCompactionDetail(threadId: string, runId: string, fetcher: typeof fetch = fetch) {
+  return readCompaction<CompactionDetail>(threadId, `/${encodeURIComponent(runId)}`, fetcher);
 }

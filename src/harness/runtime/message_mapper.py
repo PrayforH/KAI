@@ -328,6 +328,17 @@ def map_sdk_message(message: object) -> list[RuntimeEvent]:
             )
         ]
     if isinstance(message, SystemMessage):
+        if message.subtype == "compact_boundary":
+            metadata = message.data.get("compact_metadata", {})
+            safe_compaction: dict[str, Any] = {"runtime": "claude-agent-sdk"}
+            if isinstance(metadata, dict):
+                metadata = cast(dict[str, Any], metadata)
+                if metadata.get("trigger") in {"auto", "manual"}:
+                    safe_compaction["trigger"] = metadata["trigger"]
+                before = metadata.get("pre_tokens")
+                if isinstance(before, int) and not isinstance(before, bool) and before >= 0:
+                    safe_compaction["before_tokens"] = before
+            return [RuntimeEvent(type="context.compacted", payload=safe_compaction)]
         task_event = _map_task_message(message)
         if task_event is not None:
             return [task_event]

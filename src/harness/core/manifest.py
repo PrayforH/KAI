@@ -167,6 +167,41 @@ class LimitSpec(ManifestModel):
     )
 
 
+class ContextSpec(ManifestModel):
+    """Native compaction controls, distinct from token quotas and recovery digests."""
+
+    auto_compact_token_limit: int | None = Field(
+        default=None, alias="autoCompactTokenLimit", ge=1024
+    )
+    context_window_tokens: int | None = Field(
+        default=None, alias="contextWindowTokens", ge=2048
+    )
+    auto_compact_percentage: int | None = Field(
+        default=None, alias="autoCompactPercentage", ge=1, le=95
+    )
+    keep_recent_messages: int = Field(default=20, alias="keepRecentMessages", ge=2, le=100)
+
+    @model_validator(mode="after")
+    def valid_budget(self) -> ContextSpec:
+        if (
+            self.auto_compact_token_limit is not None
+            and self.context_window_tokens is not None
+            and self.auto_compact_token_limit >= self.context_window_tokens
+        ):
+            raise ValueError("autoCompactTokenLimit must be below contextWindowTokens")
+        return self
+
+    def validate_runtime(self, runtime: str) -> None:
+        if self.auto_compact_percentage is not None and runtime != "claude-agent-sdk":
+            raise ValueError("autoCompactPercentage is only supported by Claude")
+        if self.auto_compact_token_limit is not None and runtime == "claude-agent-sdk":
+            raise ValueError("Claude uses autoCompactPercentage, not autoCompactTokenLimit")
+        if self.context_window_tokens is not None and runtime != "codex-app-server":
+            raise ValueError("contextWindowTokens is only supported by Codex")
+        if self.keep_recent_messages != 20 and runtime != "deepagents":
+            raise ValueError("keepRecentMessages is only configurable for DeepAgents")
+
+
 class AgentSpec(ManifestModel):
     runtime: Literal["claude-agent-sdk", "codex-app-server", "deepagents"]
     model: ModelSpec
@@ -186,9 +221,11 @@ class AgentSpec(ManifestModel):
     permissions: PermissionSpec
     workspace: WorkspaceSpec = WorkspaceSpec()
     limits: LimitSpec = LimitSpec()
+    context: ContextSpec = ContextSpec()
 
     @model_validator(mode="after")
     def unique_subagent_runtime_names(self) -> AgentSpec:
+        self.context.validate_runtime(self.runtime)
         runtime_names = [subagent.runtime_name for subagent in self.subagents]
         duplicates = sorted({name for name in runtime_names if runtime_names.count(name) > 1})
         if duplicates:
@@ -267,9 +304,15 @@ def _assert_no_inline_secrets(value: object, path: str = "manifest") -> None:
         mapping = cast(dict[object, object], value)
         for key, child in mapping.items():
             key_text = str(key)
+            context_token_budget = (
+                path == "manifest.spec.context"
+                and key_text in {"autoCompactTokenLimit", "contextWindowTokens"}
+                and type(child) is int
+            )
             if (
                 _SECRET_KEY.search(key_text)
                 and key_text.lower() not in _NON_SECRET_TOKEN_FIELDS
+                and not context_token_budget
                 and child not in (None, "")
             ):
                 raise ManifestValidationError(

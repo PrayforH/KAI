@@ -100,6 +100,8 @@ class DeepagentsStreamMapper:
         metadata: Mapping[str, Any] | None = None,
     ) -> list[RuntimeEvent]:
         meta = metadata or {}
+        if meta.get("lc_source") == "summarization":
+            return []
         namespace = meta.get("checkpoint_ns")
         nested = isinstance(namespace, str) and _SUBGRAPH_SEPARATOR in namespace
         parent = str(namespace) if nested else ""

@@ -187,7 +187,7 @@ it("keeps assistant output avatar-free so activity rows cannot overlap it", () =
 });
 
 it("places copy before edit below the user message content", () => {
-  const content = agentThreadSource.indexOf("<UserMessage.Content />");
+  const content = agentThreadSource.indexOf("<SentUserContent ");
   const actions = agentThreadSource.indexOf("<ActionBarPrimitive.Root", content);
   const copy = agentThreadSource.indexOf("<MessageCopyButton", actions);
   const edit = agentThreadSource.indexOf('aria-label="编辑消息"', actions);
@@ -269,14 +269,6 @@ it("renders uploaded images in an in-app original-size preview", () => {
   expect(agentThreadSource).not.toContain('target: "_blank"');
 });
 
-it("keeps final assistant text mounted outside the live-stream handoff", () => {
-  expect(agentThreadSource).toContain("function HarnessAssistantText(part: TextMessagePartProps)");
-  expect(agentThreadSource).toContain("Text: HarnessAssistantText");
-  expect(agentThreadSource).toContain("complete={messageStatus?.type === \"complete\"}");
-  expect(agentThreadSource).toContain("<TextMessagePartProvider text={text} isRunning={false}>");
-  expect(agentThreadSource).toContain("<MarkdownText />");
-});
-
 it("projects only pre-tool assistant prose as activity commentary", () => {
   expect(
     isIntermediateAssistantTextPart(
@@ -328,23 +320,6 @@ it("keeps the final answer visible before durable activity projections", () => {
   ).toBe(true);
 });
 
-it("uses one stable native assistant message for streaming output", () => {
-  expect(agentThreadSource).toContain('className="assistant-answer"');
-  expect(agentThreadSource).toContain('data-streaming="false" aria-busy={false}');
-  expect(agentThreadSource).not.toContain("MessagesFooter:");
-  expect(agentThreadSource).toContain(
-    'data-direct-stream={directStream ? "true" : "false"}',
-  );
-  expect(agentThreadSource).toContain(
-    "<LiveAssistantResponse live={live} ownsMessage={ownsLive} />",
-  );
-  expect(agentThreadSource).toMatch(
-    /<LiveAssistantResponse live=\{live\} ownsMessage=\{ownsLive\} \/>[\s\S]*?<AssistantMessage\.Content/,
-  );
-  expect(agentThreadSource).toContain("<TextMessagePartProvider");
-  expect(agentThreadSource).not.toContain("hasCurrentTurnAssistantText");
-});
-
 it("does not render the native text slot while the live response owns it", () => {
   expect(shouldSuppressNativeAssistantText(true, { status: "streaming", visible: false, text: "" })).toBe(true);
   expect(shouldSuppressNativeAssistantText(true, { status: "complete", visible: true, text: "final" })).toBe(true);
@@ -377,4 +352,8 @@ it("attaches a resumed run to the latest optimistic assistant turn", () => {
     expect(shouldSuppressNativeAssistantText(true, { status, visible: false, text: "tool preface" })).toBe(true);
     expect(shouldSuppressNativeAssistantText(true, { status, visible: true, text: "  " })).toBe(false);
   }
+});
+
+it("does not assign a newer run to an older durable assistant", () => {
+  expect(turnOwnsRun("assistant-run_1", "run_2", true, "run_2")).toBe(false);
 });

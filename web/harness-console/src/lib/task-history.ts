@@ -147,10 +147,8 @@ async function loadThreadHistory(
         return response.json() as Promise<ThreadHistoryResponse>;
       })
       .then((history) => {
-        if (!history || !activeStatuses.has(history.status)) {
-          cacheThreadHistory(threadId, history);
-        }
-        if (isLatestPage) {
+        if (isLatestPage && threadHistoryRequests.get(threadId) === request) {
+          if (!history || !activeStatuses.has(history.status)) cacheThreadHistory(threadId, history);
           seedAccumulatedHistory(threadId, history);
         }
         return history;
@@ -231,6 +229,7 @@ export async function loadFullThreadHistory(
 }
 
 export function invalidateThreadHistory(threadId: string): void {
+  threadHistoryRequests.delete(threadId);
   threadHistorySnapshots.delete(threadId);
   resetAccumulatedHistory(threadId);
 }
@@ -504,7 +503,7 @@ export async function setTaskArchived(
 export function createThreadHistoryAdapter(
   threadId: string,
   options: { onActiveRun?: (serverRunId: string) => void; isLocalOnly?: () => boolean } = {},
-): ThreadHistoryAdapter & { dispose(): void; loadSnapshot(onLoaded?: (repository: ReturnType<typeof ExportedMessageRepository.fromArray>) => void): Promise<ReturnType<typeof ExportedMessageRepository.fromArray>> } {
+): ThreadHistoryAdapter & { dispose(): void; loadSnapshot(onLoaded?: (repository: ReturnType<typeof ExportedMessageRepository.fromArray>) => void | boolean): Promise<ReturnType<typeof ExportedMessageRepository.fromArray>> } {
   const disposal = new AbortController();
   return {
     async loadSnapshot(onLoaded) {
@@ -521,8 +520,8 @@ export function createThreadHistoryAdapter(
       const converted = history ? fromAgUiMessages(history.messages, { showThinking: true }) : [];
       const repository = ExportedMessageRepository.fromArray(converted);
       // Import terminal text before publishing the phase that stops recovery polling.
-      onLoaded?.(repository);
-      if (history) publishHistoryActivity(history, threadId);
+      const accepted = !disposal.signal.aborted && onLoaded?.(repository) !== false;
+      if (history && accepted) publishHistoryActivity(history, threadId);
       return repository;
     },
     async load() {

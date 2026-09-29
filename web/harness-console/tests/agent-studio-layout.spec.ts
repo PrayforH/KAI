@@ -550,7 +550,8 @@ describe("Agent Studio management page", () => {
 
   it("provides a structured prompt editor instead of an undifferentiated textarea", () => {
     expect(workbench).toContain('aria-label="System Prompt 结构"');
-    expect(workbench).toContain("选择章节可定位");
+    expect(workbench).toContain("目录来自正文；支持自由文本和任意 Markdown 结构。");
+    expect(workbench).not.toContain("缺失章节会自动补到文末");
     expect(workbench).toContain("专注编辑");
     expect(workbench).toContain("Ctrl / ⌘ S 保存");
     expect(workbench).toContain("moveToPromptSection");

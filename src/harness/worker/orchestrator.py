@@ -969,6 +969,57 @@ class RunOrchestrator:
         if result.status.is_terminal and self._quotas is not None:
             await self._quotas.release_subject(result.tenant_id, result.run_id)
 
+    async def _conversation_history(self, session: Session, run: Run) -> tuple[dict[str, str], ...]:
+        if session.runtime_type != "deepagents":
+            return ()
+        checkpoint = await self._events.latest_for_session_type(
+            run.tenant_id, run.session_id, "context.history.checkpoint"
+        )
+        if checkpoint is not None and checkpoint.run_id != run.run_id:
+            messages = checkpoint.payload.get("messages")
+            if checkpoint.payload.get("schema_version") != 1 or not isinstance(messages, list):
+                raise ValueError("unsupported conversation checkpoint")
+            history: list[dict[str, str]] = []
+            for raw_message in cast(list[object], messages):
+                if not isinstance(raw_message, dict):
+                    raise ValueError("invalid conversation checkpoint message")
+                message = cast(dict[str, Any], raw_message)
+                if (
+                    message.get("role") not in {"user", "assistant"}
+                    or not isinstance(message.get("content"), str)
+                ):
+                    raise ValueError("invalid conversation checkpoint message")
+                history.append({"role": message["role"], "content": message["content"]})
+            return tuple(history)
+        # One-time migration for sessions created before replay checkpoints.
+        # Read server-owned history, not a browser's claimed assistant messages.
+        runs = await self._runs.list_for_sessions(run.tenant_id, [run.session_id], limit=1001)
+        if len(runs) > 1000:
+            raise ValueError("legacy conversation requires migration before replay (>1000 Runs)")
+        history = []
+        for previous in sorted(runs, key=lambda item: (item.created_at, item.run_id)):
+            if previous.run_id == run.run_id or previous.status is not RunStatus.SUCCEEDED:
+                continue
+            prompt = previous.input.get("prompt")
+            if isinstance(prompt, str) and prompt:
+                history.append({"role": "user", "content": prompt})
+            events = await self._events.list_after(
+                run.tenant_id, previous.run_id, 0,
+                types=("message.start", "message.delta", "message.completed"),
+            )
+            active = ""
+            final = ""
+            for event in events:
+                if event.type == "message.start":
+                    active = ""
+                elif event.type == "message.delta":
+                    active += str(event.payload.get("text", ""))
+                elif event.type == "message.completed":
+                    final = active
+            if final:
+                history.append({"role": "assistant", "content": final})
+        return tuple(history)
+
     async def _checkpoint_context(
         self,
         *,
@@ -1398,6 +1449,7 @@ class RunOrchestrator:
                 identity=identity,
                 memory_projection=memory_projection,
                 context_projection=context_projection,
+                conversation_history=await self._conversation_history(session, run),
                 processed_input_paths=tuple(
                     path for item in staged_inputs for path in item.processed_paths
                 ),
