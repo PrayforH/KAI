@@ -15,14 +15,14 @@ from sqlalchemy.exc import IntegrityError
 
 from harness.core.errors import ConflictError
 from harness.core.events import RunEvent
-from harness.core.models import Run
+from harness.core.models import Run, RunDispatchMode, RunStatus
 from harness.core.ports import (
     ExecutionCommandStatus,
     RunExecutionCommand,
     RunExecutionCommandBacklog,
 )
 from harness.storage.database import SessionFactory
-from harness.storage.models import RunExecutionCommandRow
+from harness.storage.models import RunExecutionCommandRow, RunRow
 from harness.storage.repositories import build_event_row, build_run_row
 
 
@@ -235,6 +235,20 @@ class PostgresRunAcceptance:
 
     async def ensure_command(self, command: RunExecutionCommand) -> bool:
         async with self._sessions() as session:
+            # Serialize repair with Run deletion and state changes. Checking
+            # the service's earlier snapshot cannot protect this insertion.
+            row = await session.get(
+                RunRow, (command.tenant_id, command.run_id), with_for_update=True
+            )
+            if row is None:
+                return False
+            run = Run.model_validate(row.payload)
+            if (
+                run.status is not RunStatus.QUEUED
+                or run.dispatch_mode is not RunDispatchMode.QUEUED
+            ):
+                return False
+            _require_matching_command(run, command)
             session.add(build_command_row(command))
             try:
                 await session.commit()

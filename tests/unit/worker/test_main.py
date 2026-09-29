@@ -669,3 +669,71 @@ async def test_a_disabled_dispatcher_still_releases_shared_resources() -> None:
     assert container.closed is True
     assert (await dispatcher.health()).running is False
     assert queue.published == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cancel_again", [False, True])
+async def test_cancelled_shutdown_joins_dispatcher_before_closing_resources(
+    cancel_again: bool,
+) -> None:
+    publishing = asyncio.Event()
+    shutting_down = asyncio.Event()
+    cleaning_up = asyncio.Event()
+    allow_cleanup = asyncio.Event()
+    finished = asyncio.Event()
+
+    class Queue(InMemoryTaskQueue):
+        async def enqueue(self, task: RunTask) -> None:
+            publishing.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cleaning_up.set()
+                await allow_cleanup.wait()
+                finished.set()
+
+    commands = InMemoryRunExecutionCommandRepository()
+    await commands.insert(order_command("run-1"))
+    dispatcher = ExecutionCommandDispatcher(
+        commands, Queue(), clock=order_clock, owner="dispatcher-a",
+        enqueue_timeout_seconds=60,
+    )
+    closed = False
+
+    class Container:
+        def __init__(self, dispatcher: ExecutionCommandDispatcher) -> None:
+            self.dispatcher = dispatcher
+
+        async def close(self) -> None:
+            nonlocal closed
+            assert finished.is_set(), "Dispatcher still uses the shared resources"
+            closed = True
+
+    container = Container(dispatcher)
+
+    async def owner() -> None:
+        async with worker_lifecycle(container, dispatch_enabled=True, grace_seconds=60):
+            await publishing.wait()
+            shutting_down.set()
+
+    task = asyncio.create_task(owner())
+    await asyncio.wait_for(shutting_down.wait(), timeout=3)
+    background = dispatcher._task
+    assert background is not None
+    try:
+        task.cancel()
+        await asyncio.wait_for(cleaning_up.wait(), timeout=1)
+        assert not closed
+        if cancel_again:
+            task.cancel()
+            await asyncio.sleep(0)
+            assert not closed
+        allow_cleanup.set()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, timeout=3)
+        assert closed and background.done()
+        assert (await dispatcher.health()).running is False
+    finally:
+        allow_cleanup.set()
+        background.cancel()
+        await asyncio.gather(background, task, return_exceptions=True)

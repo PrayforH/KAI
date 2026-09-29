@@ -678,3 +678,30 @@ async def test_the_recorded_mode_survives_a_status_change() -> None:
 
     assert stored.status is RunStatus.SUCCEEDED
     assert stored.dispatch_mode is RunDispatchMode.QUEUED
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("changed", ["deleted", "running", "inline", "unknown"])
+async def test_memory_repair_rechecks_target_before_inserting(changed: str) -> None:
+    harness = Harness()
+    await harness.seed_session()
+    created = await harness.service().create_with_result(
+        "tenant-a", "session-1", "idem-repair", input={"prompt": "hello"}
+    )
+    command = await harness.commands.get("tenant-a", created.run.run_id)
+    assert command is not None
+    await harness.commands.remove(command.command_id)
+    if changed == "deleted":
+        await harness.runs.remove("tenant-a", created.run.run_id)
+    else:
+        updates: dict[str, object] = {"fencing_token": 1}
+        if changed == "running":
+            updates["status"] = RunStatus.RUNNING
+        else:
+            updates["dispatch_mode"] = RunDispatchMode.INLINE if changed == "inline" else None
+        assert await harness.runs.compare_and_set(
+            RunStatus.QUEUED, created.run.model_copy(update=updates)
+        )
+    acceptance = InMemoryRunAcceptance(harness.runs, harness.events, harness.commands)
+    assert await acceptance.ensure_command(command) is False
+    assert await harness.commands.get("tenant-a", created.run.run_id) is None

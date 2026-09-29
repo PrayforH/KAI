@@ -181,7 +181,8 @@ class RunAcceptanceUnitOfWork(Protocol):
         This is the recovery path for a retry of an already-accepted request:
         the Run is stable, and a missing intent is restored without creating a
         second command or touching an existing one. Returns whether a row was
-        inserted.
+        inserted. Recheck that the target still exists, is queued and was
+        accepted for queue dispatch, serialized with Run deletion and updates.
         """
         ...
 

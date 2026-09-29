@@ -17,6 +17,7 @@ from harness.core.models import (
     Artifact,
     InputArtifact,
     Run,
+    RunDispatchMode,
     RunStatus,
     Session,
     ThreadFile,
@@ -525,7 +526,18 @@ class InMemoryRunAcceptance:
                 raise
 
     async def ensure_command(self, command: RunExecutionCommand) -> bool:
-        async with self._lock:
+        # Use the same lock as removal and status CAS, matching the database's
+        # Run row lock through the command insertion.
+        async with self._runs._lock:
+            run = self._runs._items.get((command.tenant_id, command.run_id))
+            if (
+                run is None
+                or run.status is not RunStatus.QUEUED
+                or run.dispatch_mode is not RunDispatchMode.QUEUED
+            ):
+                return False
+            if run.session_id != command.session_id:
+                raise ValueError("dispatch command session does not match the run")
             return await self._commands.insert(command)
 
 

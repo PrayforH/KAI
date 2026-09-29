@@ -154,19 +154,32 @@ class ExecutionCommandDispatcher:
         assert self._stop is not None
         task = self._task
         self._stop.set()
+        caller = asyncio.current_task()
+        assert caller is not None
+        cancelled = False
         try:
-            await asyncio.wait_for(asyncio.shield(task), timeout=grace_seconds)
-        except TimeoutError:
-            task.cancel()
             try:
-                await task
+                await asyncio.wait_for(asyncio.shield(task), timeout=grace_seconds)
+            except TimeoutError:
+                task.cancel()
             except asyncio.CancelledError:
-                pass
-        except asyncio.CancelledError:
-            pass
+                cancelled = bool(caller.cancelling())
+                task.cancel()
+            # Keep ownership of the task until it has released its resources.
+            # Further cancellation of the caller must not interrupt the
+            # Dispatcher's own cleanup or allow the container to close early.
+            while not task.done():
+                try:
+                    await asyncio.shield(task)
+                except asyncio.CancelledError:
+                    cancelled = cancelled or bool(caller.cancelling())
+            if not task.cancelled():
+                task.result()
         finally:
             self._task = None
             self._stop = None
+        if cancelled:
+            raise asyncio.CancelledError
 
     async def run_once(self) -> DispatchCycle:
         """Claim one batch, publish outside the transaction, close the leases."""

@@ -5,6 +5,7 @@ to leave its pending obligation behind, so the Dispatcher handed the queue a
 task whose target no longer existed and the Worker retried it forever.
 """
 
+import asyncio
 import os
 from collections.abc import AsyncGenerator, Callable
 from datetime import UTC, datetime, timedelta
@@ -13,7 +14,7 @@ from typing import cast
 import pytest
 import pytest_asyncio
 from redis.asyncio import Redis
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.selectable import FromClause
@@ -21,7 +22,7 @@ from sqlalchemy.sql.selectable import FromClause
 from harness.adapters.memory import InMemorySessionRepository
 from harness.application.events import EventService
 from harness.application.runs import RunService
-from harness.core.models import RunDispatchMode, Session
+from harness.core.models import RunDispatchMode, RunStatus, Session
 from harness.core.ports import ExecutionCommandStatus, RunTask
 from harness.lifecycle.models import (
     DataLifecycleJob,
@@ -412,3 +413,77 @@ async def test_an_inline_run_is_never_given_an_obligation_by_a_retry(
     stored = await arranged.runs.get("tenant-a", child.run.run_id)
     assert stored.dispatch_mode is RunDispatchMode.INLINE
     assert (await arranged.dispatcher().run_once()).claimed == 0
+
+
+@pytest.mark.asyncio
+async def test_retry_cannot_restore_a_command_after_concurrent_deletion(
+    arranged: Arrangement, database: DatabaseFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    engine, _ = database
+    await arranged.seed_session("tenant-a", "session-1")
+    await arranged.accept("tenant-a", "session-1", "key-a")
+    repairing = asyncio.Event()
+    deleted = asyncio.Event()
+    ensure = arranged.acceptance.ensure_command
+
+    async def paused_ensure(command):
+        repairing.set()
+        await deleted.wait()
+        return await ensure(command)
+
+    monkeypatch.setattr(arranged.acceptance, "ensure_command", paused_ensure)
+    retry = asyncio.create_task(arranged.accept("tenant-a", "session-1", "key-a"))
+    try:
+        await asyncio.wait_for(repairing.wait(), timeout=3)
+        await PostgresLifecycleAdapter(arranged.sessions).delete(delete_job("tenant-a"))
+    finally:
+        deleted.set()
+        await asyncio.wait_for(retry, timeout=3)
+
+    assert await count(engine, RunRow, tenant_id="tenant-a") == 0
+    assert await count(engine, RunExecutionCommandRow, tenant_id="tenant-a") == 0
+    assert (await arranged.dispatcher().run_once()).claimed == 0
+
+
+@pytest.mark.asyncio
+async def test_repair_rechecks_the_current_run_status(arranged: Arrangement) -> None:
+    await arranged.seed_session("tenant-a", "session-1")
+    creation = await arranged.accept("tenant-a", "session-1", "key-a")
+    command = await arranged.commands.get("tenant-a", creation.run.run_id)
+    assert command is not None
+    async with arranged.sessions() as db:
+        await db.execute(delete(RunExecutionCommandRow))
+        await db.commit()
+    updated = creation.run.model_copy(
+        update={"status": RunStatus.CANCELLED, "fencing_token": 1}
+    )
+    assert await arranged.runs.compare_and_set(RunStatus.QUEUED, updated)
+    assert await arranged.acceptance.ensure_command(command) is False
+    assert await arranged.commands.get("tenant-a", creation.run.run_id) is None
+
+
+@pytest.mark.asyncio
+async def test_repair_waits_for_an_uncommitted_run_deletion(arranged: Arrangement) -> None:
+    await arranged.seed_session("tenant-a", "session-1")
+    creation = await arranged.accept("tenant-a", "session-1", "key-a")
+    command = await arranged.commands.get("tenant-a", creation.run.run_id)
+    assert command is not None
+    async with arranged.sessions() as db:
+        await db.execute(delete(RunExecutionCommandRow))
+        await db.commit()
+    async with arranged.sessions() as deletion:
+        await deletion.execute(
+            delete(RunRow).where(RunRow.run_id == creation.run.run_id)
+        )
+        repair = asyncio.create_task(arranged.acceptance.ensure_command(command))
+        try:
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(asyncio.shield(repair), timeout=0.1)
+            await deletion.commit()
+            assert await asyncio.wait_for(repair, timeout=3) is False
+        finally:
+            await deletion.rollback()
+            if not repair.done():
+                repair.cancel()
+            await asyncio.gather(repair, return_exceptions=True)
+    assert await arranged.commands.get("tenant-a", creation.run.run_id) is None
