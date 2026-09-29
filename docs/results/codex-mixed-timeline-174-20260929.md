@@ -54,3 +54,20 @@ Codex 按 Thread / Turn / Item 组织输出。同一 Item 的 started、delta、
 最后切换渲染。没有 phase 的 Claude / 旧历史需要明确兼容规则，不能伪造官方 final_answer 语义。
 验收必须覆盖工具回调交错、并行工具、正文后继续调用工具、流断开重放、历史刷新、错误/取消、
 重复事件、权威完成快照以及展开状态稳定。
+
+## 部署结果
+
+用户澄清“整体替换”指 Web / API / Worker 全部更新，不是实施上述统一 Item 模型。
+未进行统一 Item 模型改造。174 已部署同一源码版本 `55c60dd4`：
+
+- API 与 3 个 Worker：`kai/axis-api:unified174-55c60dd4`，
+  `sha256:d58bc3c885fd8dddd9eeedda28b778d1c0c5795f833fda45bb8273247410e1a5`。
+- Web 3301 / 3501：`kai/axis-web:unified174-55c60dd4`，
+  `sha256:f147de1d80b12a943218e3da7fa5fe54f276a89d7d54c10deaf2d25d0a7c5107`。
+- Web BUILD_ID：`yZRX3pBGtWrlZ7Oh2W-zV`；6 个目标容器均 healthy，RestartCount 0。
+- 打包时校验了 337 个 Python 源文件哈希；依赖与基线一致，SDK 0.2.152。
+  数据库仍为 0037，不执行迁移。正式替换 API/Worker 前确认无活动 Run。
+- 完整对话验收 `run_556667a7b5894b3bad2f07412bb96360` 返回 `OK` / RUN_FINISHED；
+  首段 3886.1ms，总耗时 4495.72ms。新会话单次部署冒烟，不作为稳定性能结论。
+- 发布目录 `/data/releases/unified174-55c60dd4` 保存配置备份及回滚脚本；
+  旧镜像和 3501 容器保留。临时 canary 已移除。173 未修改。
