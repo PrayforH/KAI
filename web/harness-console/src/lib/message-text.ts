@@ -17,3 +17,34 @@ export function normalizeMessageText(value: string): string {
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
+
+/** Temperature range separators are prose, not GFM strikethrough delimiters.
+ * Preserve literal code (including an unfinished streaming code span/fence).
+ */
+export function normalizeTemperatureRanges(value: string): string {
+  let fence: { char: string; length: number } | undefined;
+  let ticks = 0;
+  return value.split("\n").map((line) => {
+    const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (fence) {
+      if (marker && marker[1][0] === fence.char && marker[1].length >= fence.length && !marker[2].trim()) fence = undefined;
+      return line;
+    }
+    if (marker && !ticks) {
+      fence = { char: marker[1][0], length: marker[1].length };
+      return line;
+    }
+    if (/^(?: {4}|\t)/.test(line)) return line;
+    return line.split(/(`+)/).map((part, index) => {
+      if (index % 2) {
+        ticks = ticks === part.length ? 0 : ticks || part.length;
+        return part;
+      }
+      if (ticks) return part;
+      return part.replace(
+        /(?<![\d~])([+-]?\d+(?:\.\d+)?(?:[ \t]*(?:℃|°[CF]))?)[ \t]*~{1,2}(?!~)[ \t]*([+-]?\d+(?:\.\d+)?[ \t]*(?:℃|°[CF]))/g,
+        "$1～$2",
+      );
+    }).join("");
+  }).join("\n");
+}

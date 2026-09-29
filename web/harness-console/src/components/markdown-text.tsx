@@ -9,7 +9,7 @@ import remend from "remend";
 import remarkGfm from "remark-gfm";
 import { Children, memo, useMemo, useState, type ComponentPropsWithoutRef, type ReactElement, type ReactNode } from "react";
 import { conversationInputDisplay } from "../lib/conversation-input";
-import { normalizeMessageText } from "../lib/message-text";
+import { normalizeMessageText, normalizeTemperatureRanges } from "../lib/message-text";
 import { MermaidCodeHeader, MermaidDiagram } from "./mermaid-diagram";
 import { citationTarget, knowledgeUrlTransform, remarkWikiLinks } from "../lib/knowledge-links";
 import { useAnswerCitations } from "./knowledge/answer-citation-context";
@@ -192,7 +192,10 @@ function MarkdownTextImpl() {
   // Complete syntax only in the display projection, after smoothing. Stored
   // text and the message copy action retain the exact provider response.
   const displayText = useMemo(
-    () => running ? remend(normalized.text, { katex: false }) : normalized.text,
+    () => {
+      const text = normalizeTemperatureRanges(normalized.text);
+      return running ? remend(text, { katex: false }) : text;
+    },
     [running, normalized.text],
   );
   const oversized = !running && !expanded && displayText.length > MESSAGE_TEXT_CLAMP_CHARS;

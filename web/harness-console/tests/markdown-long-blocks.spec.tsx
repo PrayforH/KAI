@@ -70,3 +70,10 @@ it("folds a long table body but keeps its header", async () => {
   await click(container.querySelector(".aui-md-clamp button"));
   expect(container.querySelectorAll("tbody tr")).toHaveLength(25);
 });
+
+it("renders temperature ranges without striking through the intervening sentence", async () => {
+  const container = await render("18~~24℃，我采用覆盖全周的官方通报口径 17~~26℃。\n\n~~旧数据~~ `18~~24℃`");
+  expect(container.querySelector("p")?.textContent).toBe("18～24℃，我采用覆盖全周的官方通报口径 17～26℃。");
+  expect([...container.querySelectorAll("del")].map((node) => node.textContent)).toEqual(["旧数据"]);
+  expect(container.querySelector("code")?.textContent).toBe("18~~24℃");
+});
