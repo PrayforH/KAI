@@ -1,0 +1,143 @@
+{
+  "source_revision": "d409e795e296f94b8ce878e8ed490494d37d6afe",
+  "build_id": "xb_tbaQP7TzCnrePeDjt3",
+  "image": "kai/axis-web:stream-fix-d409e795",
+  "image_id": "sha256:57059f9e1037920b97330bd4b939a8c921413c84372d5a53ab73f5414df9de4b",
+  "before": {
+    "url": "http://172.20.109.174:3501",
+    "css": [
+      "http://172.20.109.174:3501/_next/static/css/573eed740ebdd5c2.css",
+      "http://172.20.109.174:3501/_next/static/css/2effd2ac2573e175.css",
+      "http://172.20.109.174:3501/_next/static/css/3d6933447decf4f1.css",
+      "http://172.20.109.174:3501/_next/static/css/65bb3b765250aed2.css",
+      "http://172.20.109.174:3501/_next/static/css/b9d10591281fafe2.css"
+    ],
+    "states": [
+      {
+        "text": "首段正文已到达。",
+        "display": "none",
+        "visibility": "visible",
+        "height": 0,
+        "streaming": "true"
+      },
+      {
+        "text": "首段正文已到达。第二段正在持续生成。",
+        "display": "none",
+        "visibility": "visible",
+        "height": 0,
+        "streaming": "true"
+      },
+      {
+        "text": "首段正文已到达。第二段正在持续生成。最终完整回答。",
+        "display": "none",
+        "visibility": "visible",
+        "height": 0,
+        "streaming": "true"
+      },
+      {
+        "display": "none",
+        "height": 0,
+        "streaming": "false"
+      },
+      {
+        "display": "block",
+        "height": 24.359375,
+        "phase": "history"
+      }
+    ]
+  },
+  "after": {
+    "3301": {
+      "url": "http://172.20.109.174:3301",
+      "css": [
+        "http://172.20.109.174:3301/_next/static/css/573eed740ebdd5c2.css",
+        "http://172.20.109.174:3301/_next/static/css/4792fea02feb1a41.css",
+        "http://172.20.109.174:3301/_next/static/css/c9c4499209bc793c.css",
+        "http://172.20.109.174:3301/_next/static/css/65bb3b765250aed2.css",
+        "http://172.20.109.174:3301/_next/static/css/b9d10591281fafe2.css"
+      ],
+      "states": [
+        {
+          "text": "首段正文已到达。",
+          "display": "block",
+          "visibility": "visible",
+          "height": 24.359375,
+          "streaming": "true"
+        },
+        {
+          "text": "首段正文已到达。第二段正在持续生成。",
+          "display": "block",
+          "visibility": "visible",
+          "height": 24.359375,
+          "streaming": "true"
+        },
+        {
+          "text": "首段正文已到达。第二段正在持续生成。最终完整回答。",
+          "display": "block",
+          "visibility": "visible",
+          "height": 24.359375,
+          "streaming": "true"
+        },
+        {
+          "display": "block",
+          "height": 24.359375,
+          "streaming": "false"
+        },
+        {
+          "display": "block",
+          "height": 24.359375,
+          "phase": "history"
+        }
+      ]
+    },
+    "3501": {
+      "url": "http://172.20.109.174:3501",
+      "css": [
+        "http://172.20.109.174:3501/_next/static/css/573eed740ebdd5c2.css",
+        "http://172.20.109.174:3501/_next/static/css/4792fea02feb1a41.css",
+        "http://172.20.109.174:3501/_next/static/css/c9c4499209bc793c.css",
+        "http://172.20.109.174:3501/_next/static/css/65bb3b765250aed2.css",
+        "http://172.20.109.174:3501/_next/static/css/b9d10591281fafe2.css"
+      ],
+      "states": [
+        {
+          "text": "首段正文已到达。",
+          "display": "block",
+          "visibility": "visible",
+          "height": 24.359375,
+          "streaming": "true"
+        },
+        {
+          "text": "首段正文已到达。第二段正在持续生成。",
+          "display": "block",
+          "visibility": "visible",
+          "height": 24.359375,
+          "streaming": "true"
+        },
+        {
+          "text": "首段正文已到达。第二段正在持续生成。最终完整回答。",
+          "display": "block",
+          "visibility": "visible",
+          "height": 24.359375,
+          "streaming": "true"
+        },
+        {
+          "display": "block",
+          "height": 24.359375,
+          "streaming": "false"
+        },
+        {
+          "display": "block",
+          "height": 24.359375,
+          "phase": "history"
+        }
+      ]
+    }
+  },
+  "sse_probe": {
+    "run_id": "8d8810880e154f8cb60717647b268017",
+    "content_chunks": 77,
+    "first_text_ms": 3370,
+    "finished_ms": 11310
+  }
+}
