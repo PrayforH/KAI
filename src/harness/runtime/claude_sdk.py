@@ -389,7 +389,10 @@ async def _client_query(
                         terminal_result = message
                         continue
                     yield message
-                if observe_resumed_context:
+                # A retained fresh CLI also needs a post-result control round
+                # trip: its final transcript frames can follow the result.
+                # Keep the Run binding/lease alive until that work is drained.
+                if observe_resumed_context or isinstance(client, WarmEntry):
                     yield await _observe_context_window(
                         client,
                         "after",

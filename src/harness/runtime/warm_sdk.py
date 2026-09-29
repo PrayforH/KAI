@@ -287,6 +287,16 @@ class WarmEntry:
         if result.is_error or result.stop_reason != "end_turn":
             return
         await self.binding.authority.check()
+        # The SDK flushes before yielding result, but the CLI can emit trailing
+        # mirror frames during the post-result control request. Drain them while
+        # this Run still owns its lease, before taking the history watermark.
+        # Fail closed if a future SDK changes this private adapter boundary.
+        query = getattr(self.client, "_query", None)
+        batcher = getattr(query, "_transcript_mirror_batcher", None)
+        if batcher is None or not callable(getattr(batcher, "flush", None)):
+            self.healthy = False
+            return
+        await batcher.flush()
         if self.callbacks:
             self.healthy = False
             return

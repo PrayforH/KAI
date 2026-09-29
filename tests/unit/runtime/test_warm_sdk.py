@@ -474,3 +474,42 @@ async def test_disconnect_can_flush_store_with_current_run_but_cannot_call_tools
             # No terminal result: eviction/ordinary cancellation path.
     assert flushed == ["cancelled-but-owned"]
     assert harness.transports[0].closed
+
+
+@pytest.mark.asyncio
+async def test_fresh_run_drains_post_result_mirror_before_releasing_binding(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    flushed: list[str] = []
+    original = FakeCLI.write
+
+    async def append(key: Any, entries: Any) -> None:
+        flushed.append(current_run.get())
+        harness.store.value = str(len(flushed))
+
+    async def write(cli: FakeCLI, data: str) -> None:
+        message = json.loads(data)
+        if (
+            message["type"] == "control_request"
+            and message["request"]["subtype"] == "get_context_usage"
+        ):
+            root = harness.pool.entries[harness.key].workspace
+            await cli.queue.put(
+                {
+                    "type": "transcript_mirror",
+                    "filePath": str(root / ".runtime-config/projects/project/native-session.jsonl"),
+                    "entries": [{"type": "system", "uuid": f"tail-{cli.turn}"}],
+                }
+            )
+        await original(cli, data)
+
+    monkeypatch.setattr(harness.store, "append", append)
+    monkeypatch.setattr(FakeCLI, "write", write)
+    await harness.query("first")
+    entry = harness.pool.entries[harness.key]
+    assert flushed == ["first"]
+    assert entry.revision == "1"
+    await harness.query("second", resume="native-session")
+    assert flushed == ["first", "second"]
+    assert entry.revision == "2"
+    assert len(harness.transports) == 1
