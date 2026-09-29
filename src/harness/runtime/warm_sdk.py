@@ -131,6 +131,7 @@ class WarmEntry:
         self.revision: str | None = None
         self.idle_since = time.monotonic()
         self.reused = False
+        self.miss_reason = "not_cached"
 
     async def dispatch(
         self, call: Callable[[RunBinding], Awaitable[Any]], *, store_flush: bool = False
@@ -296,7 +297,14 @@ class WarmEntry:
         if batcher is None or not callable(getattr(batcher, "flush", None)):
             self.healthy = False
             return
+        # Eager mirroring schedules detached flush tasks. A direct flush can
+        # drain the buffer before those tasks have started; wait for the last
+        # scheduled one while this Run still owns its binding and lease.
         await batcher.flush()
+        eager_flush = getattr(batcher, "_flush_task", None)
+        if eager_flush is not None:
+            await eager_flush.wait()
+            await batcher.flush()
         if self.callbacks:
             self.healthy = False
             return
@@ -393,13 +401,16 @@ class WarmSdkPool:
             if old is not None and old.binding is not None:
                 # Never bypass Session serialization through a second client.
                 raise RuntimeError("Concurrent warm SDK acquisition for one Session")
-            if old is not None and (
-                not old.healthy
-                or old.fingerprint != fingerprint
-                or old.native_id != options.resume
-                or old.revision != revision
-                or time.monotonic() - old.idle_since >= self.idle_seconds
-            ):
+            miss_reason = "not_cached"
+            if old is not None:
+                miss_reason = next((reason for changed, reason in (
+                    (not old.healthy, "unhealthy"),
+                    (old.fingerprint != fingerprint, "options_changed"),
+                    (old.native_id != options.resume, "native_session_changed"),
+                    (old.revision != revision, "history_changed"),
+                    (time.monotonic() - old.idle_since >= self.idle_seconds, "idle_expired"),
+                ) if changed), "")
+            if old is not None and miss_reason:
                 await old.close()
                 del self.entries[key]
                 old = None
@@ -414,6 +425,7 @@ class WarmSdkPool:
                 entry.reused = True
             elif len(self.entries) < self.max_sessions:
                 entry = WarmEntry(fingerprint, self.client_factory)
+                entry.miss_reason = miss_reason
                 self.entries[key] = entry
             if entry is not None:
                 entry.binding = binding

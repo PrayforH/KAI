@@ -345,7 +345,13 @@ async def _client_query(
                         ),
                         started_at_ns=connect_started_ns,
                         ended_at_ns=time.time_ns(),
-                        attributes={"run.id": run_id},
+                        attributes={
+                            "run.id": run_id,
+                            "sdk.cache.miss_reason": (
+                                client.miss_reason
+                                if isinstance(client, WarmEntry) and not client.reused else ""
+                            ),
+                        },
                     )
                 # Fresh sessions have no historical window to govern. On resumed
                 # sessions the optional control request runs only after the provider

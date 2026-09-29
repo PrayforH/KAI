@@ -76,10 +76,58 @@ end
 return item
 """
 
+# A bounded preference, not an ownership lock: a dead or busy preferred worker
+# cannot strand a task. Session fencing remains the execution authority.
+_DEQUEUE_AFFINE = """
+local current = redis.call('TIME')
+local now = tonumber(current[1]) + tonumber(current[2]) / 1000000
+local expired = redis.call('ZRANGEBYSCORE', KEYS[3], '-inf', now)
+for _, item in ipairs(expired) do
+  redis.call('ZREM', KEYS[3], item)
+  redis.call('HDEL', KEYS[4], item)
+  redis.call('ZADD', KEYS[2], now, item)
+end
+local items = redis.call('ZRANGEBYSCORE', KEYS[2], '-inf', now,
+                         'WITHSCORES', 'LIMIT', 0, 64)
+for i = 1, #items, 2 do
+  local item, ready_at = items[i], tonumber(items[i + 1])
+  local ok, task = pcall(cjson.decode, item)
+  local affinity_key, owner
+  if ok and task.session_id and task.session_id ~= cjson.null then
+    affinity_key = ARGV[6] .. redis.sha1hex(cjson.encode({task.tenant_id, task.session_id}))
+    owner = redis.call('GET', affinity_key)
+  end
+  if not owner or owner == ARGV[3] or now - ready_at >= tonumber(ARGV[4]) then
+    redis.call('ZREM', KEYS[2], item)
+    redis.call('ZADD', KEYS[3], now + tonumber(ARGV[1]), item)
+    redis.call('HSET', KEYS[4], item, ARGV[2])
+    if affinity_key then
+      redis.call('SET', affinity_key, ARGV[3], 'PX', ARGV[5])
+    end
+    return item
+  end
+end
+return nil
+"""
+
 _ACKNOWLEDGE = """
 if redis.call('HGET', KEYS[3], ARGV[1]) == ARGV[2] then
   redis.call('ZREM', KEYS[2], ARGV[1])
   redis.call('HDEL', KEYS[3], ARGV[1])
+  return redis.call('SREM', KEYS[1], ARGV[1])
+end
+return 0
+"""
+
+_ACKNOWLEDGE_AFFINE = """
+if redis.call('HGET', KEYS[3], ARGV[1]) == ARGV[2] then
+  redis.call('ZREM', KEYS[2], ARGV[1])
+  redis.call('HDEL', KEYS[3], ARGV[1])
+  local task = cjson.decode(ARGV[1])
+  if task.session_id and task.session_id ~= cjson.null then
+    local key = ARGV[5] .. redis.sha1hex(cjson.encode({task.tenant_id, task.session_id}))
+    redis.call('SET', key, ARGV[3], 'PX', ARGV[4])
+  end
   return redis.call('SREM', KEYS[1], ARGV[1])
 end
 return 0
@@ -130,9 +178,17 @@ class RedisTaskQueue:
         namespace: str = "harness",
         visibility_timeout_seconds: float = 60,
         retry_delay_seconds: float = 1,
+        session_affinity_seconds: float = 0,
+        session_affinity_ttl_seconds: float = 120,
     ) -> None:
         if visibility_timeout_seconds <= 0 or retry_delay_seconds < 0:
             raise ValueError("queue visibility must be positive and retry delay non-negative")
+        if session_affinity_seconds < 0 or session_affinity_ttl_seconds <= 0:
+            raise ValueError("session affinity grace must be non-negative and TTL positive")
+        self._affinity_seconds = session_affinity_seconds
+        self._affinity_ttl_ms = max(1, int(session_affinity_ttl_seconds * 1000))
+        self._affinity_prefix = f"{namespace}:queue:affinity:"
+        self._worker_id = uuid4().hex
         self._client = client
         self._pending = f"{namespace}:queue:pending"
         self._ready = f"{namespace}:queue:ready"
@@ -155,7 +211,7 @@ class RedisTaskQueue:
     async def dequeue(self) -> RunTask | None:
         receipt = uuid4().hex
         value = await self._client.eval(
-            _DEQUEUE,
+            _DEQUEUE_AFFINE if self._affinity_seconds else _DEQUEUE,
             4,
             self._pending,
             self._ready,
@@ -163,6 +219,11 @@ class RedisTaskQueue:
             self._receipt_key,
             str(self._visibility_timeout_seconds),
             receipt,
+            *(
+                [self._worker_id, str(self._affinity_seconds),
+                 str(self._affinity_ttl_ms), self._affinity_prefix]
+                if self._affinity_seconds else []
+            ),
         )
         if value is None:
             return None
@@ -174,13 +235,17 @@ class RedisTaskQueue:
         payload = task.model_dump_json()
         receipt = self._receipts.pop(payload, "")
         await self._client.eval(
-            _ACKNOWLEDGE,
+            _ACKNOWLEDGE_AFFINE if self._affinity_seconds else _ACKNOWLEDGE,
             3,
             self._pending,
             self._processing,
             self._receipt_key,
             payload,
             receipt,
+            *(
+                [self._worker_id, str(self._affinity_ttl_ms), self._affinity_prefix]
+                if self._affinity_seconds else []
+            ),
         )
 
     async def retry(self, task: RunTask) -> None:

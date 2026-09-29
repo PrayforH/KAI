@@ -513,3 +513,34 @@ async def test_fresh_run_drains_post_result_mirror_before_releasing_binding(
     assert flushed == ["first", "second"]
     assert entry.revision == "2"
     assert len(harness.transports) == 1
+
+
+@pytest.mark.asyncio
+async def test_finish_waits_for_detached_eager_flush_before_unbinding(harness: Harness) -> None:
+    """A detached flush may start after a direct empty flush has returned."""
+    async with harness.run("flush-owner"):
+        async with harness.pool.acquire(
+            harness.key, harness.options("flush-owner"), scope="scope", prepare=lambda root: None
+        ) as entry:
+            assert entry is not None
+            flushed: list[str] = []
+
+            class PendingFlush:
+                async def wait(self) -> None:
+                    await asyncio.sleep(0)
+                    await entry.dispatch(
+                        lambda binding: harness.store.append({}, []), store_flush=True
+                    )
+                    flushed.append(current_run.get())
+                    harness.store.value = "flushed"
+
+            batcher = entry.client._query._transcript_mirror_batcher
+            batcher._flush_task = PendingFlush()
+            result = ResultMessage(
+                subtype="success", duration_ms=0, duration_api_ms=0,
+                is_error=False, num_turns=1, session_id="native-session", stop_reason="end_turn",
+            )
+            await entry.finish(result)
+            assert flushed == ["flush-owner"]
+            assert entry.revision == "flushed"
+            assert entry.binding is not None and entry.binding.complete

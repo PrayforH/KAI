@@ -711,6 +711,10 @@ def build_production_container(
         redis_client,
         visibility_timeout_seconds=settings.worker_task_visibility_timeout_seconds,
         retry_delay_seconds=settings.worker_task_retry_delay_seconds,
+        session_affinity_seconds=(
+            settings.worker_session_affinity_seconds if settings.sdk_warm_enabled else 0
+        ),
+        session_affinity_ttl_seconds=settings.sdk_warm_idle_seconds,
     )
     session_gate = RedisSessionGate(
         redis_client,
