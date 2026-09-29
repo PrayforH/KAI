@@ -215,7 +215,14 @@ function commentaryNodes(view: RunViewModel): CommentaryNode[] {
       const itemId = typeof item.metadata.item_id === "string"
         ? item.metadata.item_id
         : "run";
-      const groupKey = `${item.event_type}:${itemId}:${reasoningSegment}`;
+      // Harness SDK IDs contain a Run-local message serial and block index.
+      // Tool callbacks can overtake buffered thinking deltas: they must not
+      // split one identified block into rows such as "install" / ".out".
+      // Unlabelled or provider-reused IDs still need step boundaries.
+      const sdkPrefix = `${view.runId}:thinking:`;
+      const stableBlock = itemId.startsWith(sdkPrefix) &&
+        /^\d+:\d+$/.test(itemId.slice(sdkPrefix.length));
+      const groupKey = `${item.event_type}:${itemId}:${stableBlock ? "block" : reasoningSegment}`;
       const existing = grouped.get(groupKey);
       grouped.set(groupKey, {
         id: existing?.id ?? item.id,

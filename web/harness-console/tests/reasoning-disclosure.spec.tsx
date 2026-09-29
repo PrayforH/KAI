@@ -120,3 +120,33 @@ it("keeps the overall running indicator during answer output and stops it on exi
     }
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
+
+it("keeps one SDK thinking block across interleaved tool callbacks without merging the next round", async () => {
+  const host = document.createElement("div"); document.body.appendChild(host);
+  const root = createRoot(host);
+  const thought = (id: string, seq: number, text: string, serial = 12) => ({
+    ...item(id, seq, text), metadata: { item_id: `stable-reasoning:thinking:${serial}:0` },
+  });
+  const tool = (seq: number, type: string) => ({
+    ...item(`tool-${seq}`, seq, "", type), kind: "tool" as const,
+    metadata: { tool_call_id: "poll", name: "Bash" },
+  });
+  const events = [thought("start", 1, "Read "), tool(2, "tool.request"), thought("partial", 3, "install")];
+  try {
+    await act(async () => root.render(<ActivitySummary activity={activity(events)} />));
+    const row = host.querySelector(".execution-reasoning") as HTMLDetailsElement;
+    expect(host.querySelectorAll(".execution-reasoning")).toHaveLength(1);
+    await act(async () => { row.open = true; row.dispatchEvent(new Event("toggle")); });
+    const next = [...events, tool(4, "tool.result"), thought("tail", 5, ".out a few times."),
+      thought("next-round", 6, "Next round.", 14)];
+    await act(async () => root.render(<ActivitySummary activity={activity(next)} />));
+    expect(host.querySelectorAll(".execution-reasoning")).toHaveLength(2);
+    expect(host.querySelector(".execution-reasoning")).toBe(row);
+    expect(row.open).toBe(true);
+    expect(row.querySelector(".execution-reasoning-body")?.textContent).toBe("Read install.out a few times.");
+    // Durable snapshots follow the same grouping path as incremental updates.
+    await act(async () => root.render(<ActivitySummary activity={{ ...activity(next), status: "succeeded" }} />));
+    expect(host.querySelectorAll(".execution-reasoning")).toHaveLength(2);
+    expect(row.querySelector(".execution-reasoning-body")?.textContent).toBe("Read install.out a few times.");
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
