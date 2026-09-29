@@ -1,0 +1,371 @@
+{
+  "code_revision": "e7b2250fb70176fb193ced280033224ecd691ccf",
+  "web_build_id": "dvB9OOMlmyt03jQyvC_au",
+  "hosts": {
+    "173": {
+      "health": {
+        "host": "173",
+        "containers": [
+          {
+            "container": "agent-evolution-173-api",
+            "image": "kai/axis-api:develop-e7b2250f",
+            "image_id": "sha256:40d35a7e4aefc761d9235e83748e026bce8c2a1e3248441e1aa9e7dd20e9f81e",
+            "running": true,
+            "health": "healthy",
+            "restart_count": 0,
+            "revision": "e7b2250fb70176fb193ced280033224ecd691ccf"
+          },
+          {
+            "container": "agent-evolution-173-worker",
+            "image": "kai/axis-api:develop-e7b2250f",
+            "image_id": "sha256:40d35a7e4aefc761d9235e83748e026bce8c2a1e3248441e1aa9e7dd20e9f81e",
+            "running": true,
+            "health": "healthy",
+            "restart_count": 0,
+            "revision": "e7b2250fb70176fb193ced280033224ecd691ccf",
+            "warm_settings": {
+              "HARNESS_SDK_WARM_IDLE_SECONDS": "120",
+              "HARNESS_SDK_WARM_MAX_SESSIONS": "4",
+              "HARNESS_SDK_WARM_ENABLED": "true"
+            }
+          },
+          {
+            "container": "agent-evolution-173-web",
+            "image": "kai/axis-web:develop-e7b2250f",
+            "image_id": "sha256:b8aff32fc2149f59116d646e77919bcb0593797315f78fa5be4f5d96d447fc88",
+            "running": true,
+            "health": "healthy",
+            "restart_count": 0,
+            "revision": "e7b2250fb70176fb193ced280033224ecd691ccf"
+          }
+        ]
+      },
+      "smoke": {
+        "host": "173",
+        "thread": "deploy-e7b2250f-173-dcf17a8fef1a4b188653c547f6b9120f",
+        "agent_version": "1.0.3+platform.99dfe677",
+        "samples": [
+          {
+            "run": 1,
+            "run_id": "run_10d34f9b23654f749a8a672b8641438f",
+            "terminal": "RUN_FINISHED",
+            "first_text_ms": 4430.33,
+            "total_ms": 5402.37,
+            "answer": "OK",
+            "errors": []
+          },
+          {
+            "run": 2,
+            "run_id": "run_0cae3cb4f2004bd498e515a0c2c19876",
+            "terminal": "RUN_FINISHED",
+            "first_text_ms": 3187.81,
+            "total_ms": 4115.5,
+            "answer": "OK",
+            "errors": []
+          },
+          {
+            "run": 3,
+            "run_id": "run_514031a592d1452ab008350e19012242",
+            "terminal": "RUN_FINISHED",
+            "first_text_ms": 1449.17,
+            "total_ms": 2335.0,
+            "answer": "OK",
+            "errors": []
+          },
+          {
+            "run": 4,
+            "run_id": "run_56f88bd03c2942eea040a3ae8d23150a",
+            "terminal": "RUN_FINISHED",
+            "first_text_ms": 5850.37,
+            "total_ms": 7585.33,
+            "answer": "OK\n\n文件已创建并发布，内容为 `DEPLOY_E7B2250F_173`（19 字节，校验通过）。\n\n- 工作区路径：`outputs/release-check.txt`\n- artifact_id：`artifact_9ea166561b134cc3858212e0eacd58e7`\n- 下载：请通过平台 artifact 卡片（`release-check.txt`）获取。",
+            "errors": []
+          },
+          {
+            "run": 5,
+            "run_id": "run_7688a89632af4ddf82ab6e27e0c5f9ec",
+            "terminal": "RUN_FINISHED",
+            "first_text_ms": 3014.58,
+            "total_ms": 3947.12,
+            "answer": "DEPLOY_E7B2250F_173",
+            "errors": []
+          }
+        ],
+        "artifact_id": "artifact_9ea166561b134cc3858212e0eacd58e7",
+        "artifact_content": "DEPLOY_E7B2250F_173"
+      },
+      "traces": {
+        "host": "173",
+        "runs": [
+          {
+            "run_id": "run_0cae3cb4f2004bd498e515a0c2c19876",
+            "status": "succeeded",
+            "trace_id": "f3258aa6062cd1c3f416cbd675b1d5b8",
+            "sdk_spans": [
+              {
+                "name": "harness.sdk.connect",
+                "duration_ms": 2028.0
+              }
+            ]
+          },
+          {
+            "run_id": "run_10d34f9b23654f749a8a672b8641438f",
+            "status": "succeeded",
+            "trace_id": "33a2bb8a65fe1fc6d60c27e43b36cdd9",
+            "sdk_spans": [
+              {
+                "name": "harness.sdk.connect",
+                "duration_ms": 1462.0
+              }
+            ]
+          },
+          {
+            "run_id": "run_514031a592d1452ab008350e19012242",
+            "status": "succeeded",
+            "trace_id": "07a215da05e82409fdabe4b9bcbaee03",
+            "sdk_spans": [
+              {
+                "name": "harness.sdk.reuse",
+                "duration_ms": 8.0
+              }
+            ]
+          },
+          {
+            "run_id": "run_56f88bd03c2942eea040a3ae8d23150a",
+            "status": "succeeded",
+            "trace_id": "b56f2fe1386d4a5f7121bc4a40150e1c",
+            "sdk_spans": [
+              {
+                "name": "harness.sdk.reuse",
+                "duration_ms": 6.0
+              }
+            ]
+          },
+          {
+            "run_id": "run_7688a89632af4ddf82ab6e27e0c5f9ec",
+            "status": "succeeded",
+            "trace_id": "92c9db8a0e3370a20b652ddb21bcbd62",
+            "sdk_spans": [
+              {
+                "name": "harness.sdk.reuse",
+                "duration_ms": 7.0
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "174": {
+      "health": {
+        "host": "174",
+        "containers": [
+          {
+            "container": "agent-studio-174-api-1",
+            "image": "kai/axis-api:develop-e7b2250f",
+            "image_id": "sha256:40d35a7e4aefc761d9235e83748e026bce8c2a1e3248441e1aa9e7dd20e9f81e",
+            "running": true,
+            "health": "healthy",
+            "restart_count": 0,
+            "revision": "e7b2250fb70176fb193ced280033224ecd691ccf"
+          },
+          {
+            "container": "agent-studio-174-worker-1",
+            "image": "kai/axis-api:develop-e7b2250f",
+            "image_id": "sha256:40d35a7e4aefc761d9235e83748e026bce8c2a1e3248441e1aa9e7dd20e9f81e",
+            "running": true,
+            "health": "healthy",
+            "restart_count": 0,
+            "revision": "e7b2250fb70176fb193ced280033224ecd691ccf",
+            "warm_settings": {
+              "HARNESS_SDK_WARM_ENABLED": "true",
+              "HARNESS_SDK_WARM_MAX_SESSIONS": "4",
+              "HARNESS_SDK_WARM_IDLE_SECONDS": "120"
+            }
+          },
+          {
+            "container": "agent-studio-174-worker-2",
+            "image": "kai/axis-api:develop-e7b2250f",
+            "image_id": "sha256:40d35a7e4aefc761d9235e83748e026bce8c2a1e3248441e1aa9e7dd20e9f81e",
+            "running": true,
+            "health": "healthy",
+            "restart_count": 0,
+            "revision": "e7b2250fb70176fb193ced280033224ecd691ccf",
+            "warm_settings": {
+              "HARNESS_SDK_WARM_IDLE_SECONDS": "120",
+              "HARNESS_SDK_WARM_MAX_SESSIONS": "4",
+              "HARNESS_SDK_WARM_ENABLED": "true"
+            }
+          },
+          {
+            "container": "agent-studio-174-worker-3",
+            "image": "kai/axis-api:develop-e7b2250f",
+            "image_id": "sha256:40d35a7e4aefc761d9235e83748e026bce8c2a1e3248441e1aa9e7dd20e9f81e",
+            "running": true,
+            "health": "healthy",
+            "restart_count": 0,
+            "revision": "e7b2250fb70176fb193ced280033224ecd691ccf",
+            "warm_settings": {
+              "HARNESS_SDK_WARM_IDLE_SECONDS": "120",
+              "HARNESS_SDK_WARM_ENABLED": "true",
+              "HARNESS_SDK_WARM_MAX_SESSIONS": "4"
+            }
+          },
+          {
+            "container": "agent-studio-174-web-1",
+            "image": "kai/axis-web:develop-e7b2250f",
+            "image_id": "sha256:b8aff32fc2149f59116d646e77919bcb0593797315f78fa5be4f5d96d447fc88",
+            "running": true,
+            "health": "healthy",
+            "restart_count": 0,
+            "revision": "e7b2250fb70176fb193ced280033224ecd691ccf"
+          },
+          {
+            "container": "axis-web-develop-e7b2250f",
+            "image": "kai/axis-web:develop-e7b2250f",
+            "image_id": "sha256:b8aff32fc2149f59116d646e77919bcb0593797315f78fa5be4f5d96d447fc88",
+            "running": true,
+            "health": "healthy",
+            "restart_count": 0,
+            "revision": "e7b2250fb70176fb193ced280033224ecd691ccf"
+          }
+        ]
+      },
+      "smoke": {
+        "host": "174",
+        "thread": "deploy-e7b2250f-174-c390feef962f49728ec1f1286af0fc67",
+        "agent_version": "1.0.3+platform.99dfe677",
+        "samples": [
+          {
+            "run": 1,
+            "run_id": "run_ec86686ab7cd4cf7abab73c59d39040b",
+            "terminal": "RUN_FINISHED",
+            "first_text_ms": 54869.92,
+            "total_ms": 55892.13,
+            "answer": "OK",
+            "errors": []
+          },
+          {
+            "run": 2,
+            "run_id": "run_143425293d484041aedc0f4f7fe2985c",
+            "terminal": "RUN_FINISHED",
+            "first_text_ms": 4467.52,
+            "total_ms": 5566.46,
+            "answer": "OK",
+            "errors": []
+          },
+          {
+            "run": 3,
+            "run_id": "run_7c3096010c34480fba9a2ad209bf0ca2",
+            "terminal": "RUN_FINISHED",
+            "first_text_ms": 3294.51,
+            "total_ms": 4182.74,
+            "answer": "OK",
+            "errors": []
+          },
+          {
+            "run": 4,
+            "run_id": "run_b6a39347b56a4b5db3bf7723b5e2b3ee",
+            "terminal": "RUN_FINISHED",
+            "first_text_ms": 4904.74,
+            "total_ms": 6730.75,
+            "answer": "OK\n\n下载链接：`release-check.txt`（artifact_id: artifact_ad4eb9b6feb84a24ba2ba847777f7bc0，19 字节）",
+            "errors": []
+          },
+          {
+            "run": 5,
+            "run_id": "run_9ef9732778eb45878a5c1d62594e22fe",
+            "terminal": "RUN_FINISHED",
+            "first_text_ms": 6202.04,
+            "total_ms": 7316.36,
+            "answer": "DEPLOY_E7B2250F_174",
+            "errors": []
+          }
+        ],
+        "artifact_id": "artifact_ad4eb9b6feb84a24ba2ba847777f7bc0",
+        "artifact_content": "DEPLOY_E7B2250F_174"
+      },
+      "traces": {
+        "host": "174",
+        "runs": [
+          {
+            "run_id": "run_143425293d484041aedc0f4f7fe2985c",
+            "status": "succeeded",
+            "trace_id": "4d06a995a60c22310b68cd8bbf7f6fac",
+            "sdk_spans": [
+              {
+                "name": "harness.sdk.connect",
+                "duration_ms": 1614.0
+              }
+            ]
+          },
+          {
+            "run_id": "run_7c3096010c34480fba9a2ad209bf0ca2",
+            "status": "succeeded",
+            "trace_id": "f6a19c2fa4b1d30484c98db1cabf15cd",
+            "sdk_spans": [
+              {
+                "name": "harness.sdk.connect",
+                "duration_ms": 1550.0
+              }
+            ]
+          },
+          {
+            "run_id": "run_9ef9732778eb45878a5c1d62594e22fe",
+            "status": "succeeded",
+            "trace_id": "ac0cb12e5620509c8ea75ee9b2201d21",
+            "sdk_spans": [
+              {
+                "name": "harness.sdk.connect",
+                "duration_ms": 1603.0
+              }
+            ]
+          },
+          {
+            "run_id": "run_b6a39347b56a4b5db3bf7723b5e2b3ee",
+            "status": "succeeded",
+            "trace_id": "49eabd5f68525b15dc10d8be926eb0ec",
+            "sdk_spans": [
+              {
+                "name": "harness.sdk.reuse",
+                "duration_ms": 9.0
+              }
+            ]
+          },
+          {
+            "run_id": "run_ec86686ab7cd4cf7abab73c59d39040b",
+            "status": "succeeded",
+            "trace_id": "a17848ce8aec05ac427f26d87a9b0a03",
+            "sdk_spans": [
+              {
+                "name": "harness.sdk.connect",
+                "duration_ms": 1496.0
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "branch_cleanup": {
+    "deleted_local": {
+      "auto/agent-evolution": "6d28480c670dbf3b890341e5a7b515b0fc8b9303",
+      "auto/obs-console-173": "c744d02c1c19954fa118f0fc2ac156f4bc500508",
+      "auto/session-runtime-reuse": "b783d70a5e8b21155f208037bfc1a1f26c6ee823",
+      "feature/deepagents-project-layout": "499f0368093cfcfc574c82ffe105d2da3f28bc32",
+      "fix/deepagents-package-name-174": "953d8cc2b1cf29c20eb46914ee3f194ee053747c",
+      "integrate/develop-174-20260927": "c36ff62b88b09fc6c50f06470453e54f7d798aa9",
+      "perf/thread-run-latency-174": "512ad9383356c8cbe0e1cce5f99660d548abd96b"
+    },
+    "deleted_remote": {
+      "auto/agent-evolution": "6d28480c670dbf3b890341e5a7b515b0fc8b9303",
+      "feature/deepagents-project-layout": "499f0368093cfcfc574c82ffe105d2da3f28bc32"
+    },
+    "preserved": [
+      "develop",
+      "auto/context-compaction (uncommitted work)",
+      "auto/zcode-173-simple-fixes (unique QA evidence and uncommitted work)",
+      "14 Dependabot branches with open PRs"
+    ],
+    "integration_branch": "auto/integrate-173-174: remove after this record is merged into develop"
+  }
+}
