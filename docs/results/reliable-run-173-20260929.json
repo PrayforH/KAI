@@ -1,0 +1,98 @@
+{
+  "revision": "5799e1563df252581dd2a0e41539d2a430661581",
+  "branch": "auto/reliable-run-submit",
+  "environment": "173 iteration / agent-evolution-173",
+  "web_url": "http://172.20.109.173:3302",
+  "api_url": "http://172.20.109.173:8802",
+  "image": "kai/axis-api:dispatch-5799e156",
+  "image_id": "sha256:9d67b0f7797ba272a97d35c8b7c50c5d36241a20a352fe51cc2cecb6e31090d0",
+  "schema_before": "0037",
+  "schema_after": "0038",
+  "verified_python_files_per_container": 339,
+  "local_tests": {
+    "unit": 100,
+    "integration": 91,
+    "total": 191
+  },
+  "smoke": [
+    {
+      "label": "1",
+      "run_id": "run_bc73f07c1aa64b8b92da484a7442a8a6",
+      "terminal": "RUN_FINISHED",
+      "answer": "OK",
+      "elapsed_seconds": 5.855,
+      "first_text_seconds": 4.877
+    },
+    {
+      "label": "2",
+      "run_id": "run_37d73a51000d4489b8de213cc5dfafae",
+      "terminal": "RUN_FINISHED",
+      "answer": "OK\n\n文件已创建并发布（内容已核验为 `DISPATCH_5799E156_fc61d594`）。\n\n下载链接：artifact_50c3192a9a544fb9b08eae9993acd5cb（reliable-run-check.txt，text/plain，26 bytes）",
+      "elapsed_seconds": 9.757,
+      "first_text_seconds": 8.206
+    },
+    {
+      "label": "3",
+      "run_id": "run_69cf3ab9c51948c782cdbf2973612b7b",
+      "terminal": "RUN_FINISHED",
+      "answer": "DISPATCH_5799E156_fc61d594",
+      "elapsed_seconds": 4.225,
+      "first_text_seconds": 3.314
+    },
+    {
+      "label": "idempotent-replay",
+      "run_id": "run_bc73f07c1aa64b8b92da484a7442a8a6",
+      "terminal": "RUN_FINISHED",
+      "answer": "OK",
+      "elapsed_seconds": 0.06,
+      "first_text_seconds": 0.041
+    },
+    {
+      "thread": "dispatch-5799e156-3649e0d78a1545c2b882f08af15f2751",
+      "user": "user_cfc668c896d54165a28fc82243bc0ba8",
+      "agent_version": "1.0.3+platform.99dfe677",
+      "marker": "DISPATCH_5799E156_fc61d594",
+      "artifact_id": "artifact_50c3192a9a544fb9b08eae9993acd5cb",
+      "checks": [
+        {
+          "run_id": "run_bc73f07c1aa64b8b92da484a7442a8a6",
+          "status": "succeeded",
+          "mode": "queued",
+          "dispatch_status": "dispatched",
+          "attempts": 1,
+          "queued_events": 1
+        },
+        {
+          "run_id": "run_37d73a51000d4489b8de213cc5dfafae",
+          "status": "succeeded",
+          "mode": "queued",
+          "dispatch_status": "dispatched",
+          "attempts": 1,
+          "queued_events": 1
+        },
+        {
+          "run_id": "run_69cf3ab9c51948c782cdbf2973612b7b",
+          "status": "succeeded",
+          "mode": "queued",
+          "dispatch_status": "dispatched",
+          "attempts": 1,
+          "queued_events": 1
+        }
+      ],
+      "success": true
+    }
+  ],
+  "post_smoke": {
+    "active_runs": 0,
+    "pending_commands": 0,
+    "dispatched_commands": 3,
+    "pending_age_seconds": 0,
+    "api_healthy": true,
+    "worker_healthy": true,
+    "restarts": 0
+  },
+  "backup_directory": "/data/releases/dispatch-5799e156/backup",
+  "database_dump_bytes": 101264794,
+  "known_warning": "One pre-existing SDK TranscriptMirrorBatcher callback after its Run became inactive; all three Runs succeeded.",
+  "scope": "Updated only iteration stack API and Worker on 173. Web, legacy 173 stack and 174 unchanged."
+}
