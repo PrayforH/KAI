@@ -42,9 +42,9 @@ from harness.studio.preflight_models import (
     PreflightStage,
 )
 from harness.studio.preview_models import PreviewDeployment, PreviewStatus
+from tests.support import deliver_pending_tasks
 
 SERVICE_TOKEN = "studio-service-token-with-at-least-32-characters"
-
 
 def image_bytes(*, format: str = "PNG") -> bytes:
     output = BytesIO()
@@ -195,6 +195,9 @@ async def production_preview_evidence(
 async def drain_eval(container: ApiContainer, eval_run_id: str) -> None:
     for _ in range(40):
         await container.eval_controller.process_once()
+        # Accepted Runs carry a durable dispatch obligation, so the local drain
+        # has to deliver it before it can consume the Run task.
+        await deliver_pending_tasks(container)
         task = await container.task_queue.dequeue()
         if task is not None:
             await container.worker.execute(task.tenant_id, task.run_id)

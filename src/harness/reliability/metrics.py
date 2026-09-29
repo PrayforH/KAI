@@ -76,6 +76,38 @@ DEFINITIONS = (
         ("state",),
     ),
     MetricDefinition(
+        "harness_dispatch_commands",
+        "Durable Run dispatch obligations by state.",
+        "gauge",
+        ("state",),
+    ),
+    MetricDefinition(
+        "harness_dispatch_pending_age_seconds",
+        "Age of the oldest Run dispatch obligation not yet handed to the queue.",
+        "gauge",
+    ),
+    MetricDefinition(
+        "harness_queue_dispatch_total",
+        "Run dispatch obligations handed to the queue.",
+        "counter",
+    ),
+    MetricDefinition(
+        "harness_queue_dispatch_failures_total",
+        "Run dispatch delivery failures by bounded operation.",
+        "counter",
+        ("operation",),
+    ),
+    MetricDefinition(
+        "harness_dispatch_recovered_total",
+        "Accepted Runs whose missing dispatch intent was restored on retry.",
+        "counter",
+    ),
+    MetricDefinition(
+        "harness_idempotency_key_reuse_total",
+        "Idempotency keys reused for a different request body.",
+        "counter",
+    ),
+    MetricDefinition(
         "harness_capacity_resource",
         "Current platform capacity fact.",
         "gauge",
@@ -133,6 +165,12 @@ LABEL_VALUE_ALLOWLISTS: dict[tuple[str, str], frozenset[str]] = {
         {"queued", "provisioning", "running", "waiting_approval", "cancelling"}
     ),
     ("harness_queue_tasks", "state"): frozenset({"ready", "processing"}),
+    ("harness_dispatch_commands", "state"): frozenset(
+        {"pending", "leased", "dispatched"}
+    ),
+    ("harness_queue_dispatch_failures_total", "operation"): frozenset(
+        {"enqueue", "claim"}
+    ),
     ("harness_capacity_resource", "resource"): frozenset(
         {
             "active_previews",

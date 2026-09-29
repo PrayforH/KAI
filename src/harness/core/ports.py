@@ -1,6 +1,7 @@
 """Framework-independent ports implemented by infrastructure adapters."""
 
 from datetime import datetime
+from enum import StrEnum
 from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict
@@ -39,6 +40,150 @@ class RunTask(BaseModel):
     # Run queues created before concurrent workers did not include this field.
     # Keeping it optional preserves wire compatibility with already-enqueued tasks.
     session_id: str | None = None
+
+
+class ExecutionCommandStatus(StrEnum):
+    """Lifecycle of one durable "hand this Run to the queue" intent."""
+
+    PENDING = "pending"
+    DISPATCHED = "dispatched"
+
+
+def execution_command_id(run_id: str) -> str:
+    """Derive the one stable command id a logical Run can ever have.
+
+    Deriving it from the Run makes the intent idempotent by construction: a
+    repeated acceptance attempt for the same Run targets the same row, so the
+    platform can never accumulate two competing dispatch intents for one Run.
+    """
+
+    return f"dispatch:{run_id}"
+
+
+class RunExecutionCommand(BaseModel):
+    """Durable record of the obligation to deliver one Run to the Run queue.
+
+    This is the single authority for pending Run dispatch. The Redis queue is
+    only a delivery transport: a command in ``PENDING`` is still owed even when
+    Redis is unreachable, and the Dispatcher keeps retrying it until the queue
+    acknowledges the hand-off.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    command_id: str
+    tenant_id: str
+    run_id: str
+    session_id: str | None = None
+    status: ExecutionCommandStatus = ExecutionCommandStatus.PENDING
+    created_at: datetime
+    # Next moment the command may be claimed. Backoff pushes it forward.
+    available_at: datetime
+    # Delivery attempts (incremented on every claim) and delivery failures
+    # (incremented on every release-for-retry) are tracked separately so an
+    # operator can tell "busy retrying" from "keeps failing to publish".
+    attempts: int = 0
+    failures: int = 0
+    lease_owner: str | None = None
+    lease_expires_at: datetime | None = None
+    dispatched_at: datetime | None = None
+    last_error: str | None = None
+
+    def to_task(self) -> RunTask:
+        return RunTask(
+            tenant_id=self.tenant_id,
+            run_id=self.run_id,
+            session_id=self.session_id,
+        )
+
+
+class RunExecutionCommandBacklog(BaseModel):
+    """Bounded observation of the dispatch obligation table."""
+
+    model_config = ConfigDict(frozen=True)
+
+    # Every obligation not yet handed to the queue, whatever its lease state.
+    pending: int = 0
+    # Claimable right now: pending, past its backoff, and not lease-held.
+    ready: int = 0
+    # Pending under a live lease, i.e. a Dispatcher is publishing it now.
+    leased: int = 0
+    dispatched: int = 0
+    # Age of the oldest outstanding obligation; the silent-backlog signal.
+    oldest_pending_age_seconds: float | None = None
+
+
+class RunExecutionCommandRepository(Protocol):
+    """Lease-based work queue inside PostgreSQL for pending Run dispatch."""
+
+    async def claim_pending(
+        self,
+        *,
+        owner: str,
+        lease_seconds: float,
+        limit: int,
+        now: datetime,
+    ) -> list[RunExecutionCommand]:
+        """Lease up to ``limit`` deliverable commands for ``owner``.
+
+        Claimable means pending, past its ``available_at`` and either unleased
+        or holding an expired lease. Concurrent claimants never receive the
+        same command.
+        """
+        ...
+
+    async def mark_dispatched(self, command: RunExecutionCommand, *, now: datetime) -> bool:
+        """Close the lease after a successful publish.
+
+        Scoped to the current lease owner, so a command already reclaimed by
+        another Dispatcher is never silently marked done here. Returns whether
+        this owner still held the lease.
+        """
+        ...
+
+    async def reschedule(
+        self, command: RunExecutionCommand, *, available_at: datetime, error: str | None
+    ) -> bool:
+        """Return the command to the pending pool after a failed publish."""
+        ...
+
+    async def get(self, tenant_id: str, run_id: str) -> RunExecutionCommand | None: ...
+
+    async def backlog(self, *, now: datetime) -> RunExecutionCommandBacklog: ...
+
+
+class RunAcceptanceUnitOfWork(Protocol):
+    """Atomically persist everything that makes an accepted Run true.
+
+    A Run the platform has accepted must already carry its execution intent.
+    Writing the Run, its ``run.queued`` event and the dispatch command through
+    one transaction is what makes that guarantee hold when the process dies
+    between the acceptance response and any queue publish.
+    """
+
+    async def accept(
+        self,
+        run: Run,
+        event: RunEvent,
+        command: RunExecutionCommand | None,
+    ) -> None:
+        """Commit Run, event and (when queued) the dispatch command together.
+
+        Raises ``ConflictError`` when the Run already exists, which callers
+        resolve by returning the established Run. ``command`` is ``None`` for
+        inline child Runs, which must never become another Worker's work item.
+        """
+        ...
+
+    async def ensure_command(self, command: RunExecutionCommand) -> bool:
+        """Insert the dispatch command only when the Run has none yet.
+
+        This is the recovery path for a retry of an already-accepted request:
+        the Run is stable, and a missing intent is restored without creating a
+        second command or touching an existing one. Returns whether a row was
+        inserted.
+        """
+        ...
 
 
 class AgentRegistry(Protocol):

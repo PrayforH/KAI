@@ -10,6 +10,7 @@ from typing import cast
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from harness.api.app import create_app, create_configured_app
 from harness.api.dependencies import build_memory_container
@@ -31,6 +32,7 @@ from harness.sandbox.e2b import E2BSandboxProvider
 from harness.sandbox.kubernetes import KubernetesSandboxProvider
 from harness.sandbox.opensandbox import OpenSandboxSandboxProvider
 from harness.storage.catalog_repository import PostgresCapabilityCatalogRepository
+from harness.storage.execution_commands import PostgresRunExecutionCommandRepository
 from harness.storage.redis import RedisTaskQueue
 from harness.storage.repositories import PostgresEventRepository
 from harness.storage.studio_repository import PostgresAgentDraftRepository
@@ -42,6 +44,7 @@ from harness.studio.mcp_credential_store import (
 )
 from harness.studio.models import NetworkAccess
 from harness.studio.preflight import LivePreflightProvisioner, LivePreflightRunner
+from harness.worker.dispatcher import ExecutionCommandDispatcher
 
 
 def production_settings(**overrides: object) -> Settings:
@@ -162,6 +165,16 @@ async def test_production_container_uses_durable_event_and_queue_adapters() -> N
         )
         assert isinstance(container.task_queue, RedisTaskQueue)
         assert container.auto_execute is False
+        # Acceptance must commit the dispatch obligation in the same database
+        # transaction as the Run, so both adapters have to be the PostgreSQL
+        # ones and the Dispatcher has to be composed beside them.
+        assert isinstance(
+            container.execution_commands, PostgresRunExecutionCommandRepository
+        )
+        assert isinstance(container.dispatcher, ExecutionCommandDispatcher)
+        assert isinstance(
+            vars(container.execution_commands)["_sessions"], async_sessionmaker
+        )
         runtime = cast(RegistryClaudeRuntime, container.runtime)
         assert vars(runtime)["_config"] is None
         assert vars(runtime)["_route_configs"] == ()

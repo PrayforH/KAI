@@ -141,6 +141,14 @@ class Settings(BaseSettings):
     worker_task_visibility_timeout_seconds: float = Field(default=60, gt=0)
     worker_task_retry_delay_seconds: float = Field(default=1, ge=0)
     worker_task_heartbeat_seconds: float = Field(default=20, gt=0)
+    # Durable dispatch of accepted Runs. The obligation is committed with the
+    # Run, so these knobs only govern how quickly it reaches the Run queue.
+    worker_dispatch_enabled: bool = True
+    worker_dispatch_interval_seconds: float = Field(default=0.5, gt=0, le=60)
+    worker_dispatch_batch_size: int = Field(default=50, ge=1, le=1000)
+    worker_dispatch_lease_seconds: float = Field(default=60, gt=0, le=3600)
+    worker_dispatch_retry_base_seconds: float = Field(default=1, gt=0, le=600)
+    worker_dispatch_retry_max_seconds: float = Field(default=60, gt=0, le=3600)
     run_reservation_ttl_seconds: int = Field(default=86_400, ge=300, le=604_800)
     quota_enforcement_enabled: bool = False
     preflight_timeout_seconds: float = Field(default=180, ge=30, le=900)

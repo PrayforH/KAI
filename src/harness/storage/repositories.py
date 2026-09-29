@@ -13,24 +13,43 @@ from harness.storage.database import SessionFactory
 from harness.storage.models import EventRow, RunRow
 
 
+def build_run_row(run: Run) -> RunRow:
+    """Map a Run to its authoritative row.
+
+    Shared with the acceptance transaction so the Run, its event and its
+    dispatch command are written by one mapping rather than two that can drift.
+    """
+
+    return RunRow(
+        tenant_id=run.tenant_id,
+        run_id=run.run_id,
+        session_id=run.session_id,
+        idempotency_key=run.idempotency_key,
+        status=run.status.value,
+        fencing_token=run.fencing_token,
+        updated_at=run.updated_at,
+        payload=run.model_dump(mode="json"),
+    )
+
+
+def build_event_row(event: RunEvent) -> EventRow:
+    return EventRow(
+        event_id=event.event_id,
+        tenant_id=event.tenant_id,
+        run_id=event.run_id,
+        sequence=event.sequence,
+        timestamp=event.timestamp,
+        payload=event.model_dump(mode="json"),
+    )
+
+
 class PostgresRunRepository:
     def __init__(self, sessions: SessionFactory) -> None:
         self._sessions = sessions
 
     async def add(self, run: Run) -> None:
         async with self._sessions() as session:
-            session.add(
-                RunRow(
-                    tenant_id=run.tenant_id,
-                    run_id=run.run_id,
-                    session_id=run.session_id,
-                    idempotency_key=run.idempotency_key,
-                    status=run.status.value,
-                    fencing_token=run.fencing_token,
-                    updated_at=run.updated_at,
-                    payload=run.model_dump(mode="json"),
-                )
-            )
+            session.add(build_run_row(run))
             try:
                 await session.commit()
             except IntegrityError as error:
@@ -139,16 +158,7 @@ class PostgresEventRepository:
                         f"event id already contains different data: {event.event_id}"
                     )
                 return
-            session.add(
-                EventRow(
-                    event_id=event.event_id,
-                    tenant_id=event.tenant_id,
-                    run_id=event.run_id,
-                    sequence=event.sequence,
-                    timestamp=event.timestamp,
-                    payload=event.model_dump(mode="json"),
-                )
-            )
+            session.add(build_event_row(event))
             try:
                 await session.commit()
             except IntegrityError as error:

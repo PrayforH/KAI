@@ -29,6 +29,7 @@ from harness.studio.models import (
     DraftLimits,
     ReplaceAgentDraftRequest,
 )
+from tests.support import deliver_pending_tasks
 
 
 async def seed(container: ApiContainer) -> tuple[AgentDraft, CreateEvolutionJob, EvolutionJob]:
@@ -108,6 +109,9 @@ async def evaluate(c: ApiContainer, job: EvolutionJob) -> EvolutionJob:
     )
     for _ in range(60):
         await c.eval_controller.process_once()
+        # Accepted Runs carry a durable dispatch obligation; deliver it before
+        # consuming, the same hop the Worker makes in production.
+        await deliver_pending_tasks(c)
         task = await c.task_queue.dequeue()
         if task:
             await c.worker.execute(task.tenant_id, task.run_id)

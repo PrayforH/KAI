@@ -22,6 +22,8 @@ from harness.adapters.memory import (
     InMemoryEventBus,
     InMemoryEventRepository,
     InMemoryInputArtifactRepository,
+    InMemoryRunAcceptance,
+    InMemoryRunExecutionCommandRepository,
     InMemoryRunRepository,
     InMemorySessionRepository,
     InMemoryTaskQueue,
@@ -60,7 +62,12 @@ from harness.context.service import ContextService
 from harness.core.errors import NotFoundError
 from harness.core.manifest import AgentManifestSnapshot
 from harness.core.models import Run, RunStatus, Session
-from harness.core.ports import EventRepository, EventWakeup, TaskQueue
+from harness.core.ports import (
+    EventRepository,
+    EventWakeup,
+    RunExecutionCommandRepository,
+    TaskQueue,
+)
 from harness.deployments.controller import DeploymentController
 from harness.deployments.queue import DeploymentTaskQueue
 from harness.deployments.repositories import (
@@ -194,6 +201,7 @@ from harness.studio.skill_builder import (
 from harness.studio.web_configuration import WebConfigurationService
 from harness.triggers.repositories import InMemoryAgentTriggerRepository
 from harness.triggers.service import AgentTriggerService
+from harness.worker.dispatcher import ExecutionCommandDispatcher
 from harness.worker.orchestrator import RunOrchestrator
 
 
@@ -274,6 +282,11 @@ class ApiContainer:
     worker: RunOrchestrator
     agui: AguiRunService
     auto_execute: bool
+    # The durable dispatch obligation behind every accepted Run, and the
+    # Dispatcher that delivers it. The Worker entrypoint starts and stops the
+    # Dispatcher; the API process only carries the acceptance side.
+    execution_commands: RunExecutionCommandRepository | None = None
+    dispatcher: ExecutionCommandDispatcher | None = None
     event_wakeup: EventWakeup | None = None
     skill_conversation: SkillConversationService | None = None
     sandbox_maintenance: Callable[[], Awaitable[object]] | None = None
@@ -313,6 +326,8 @@ def build_memory_container(
     bus = InMemoryEventBus()
     cancellation_wakeup = InMemoryCancellationWakeup()
     queue = InMemoryTaskQueue()
+    execution_commands = InMemoryRunExecutionCommandRepository()
+    run_acceptance = InMemoryRunAcceptance(runs, raw_events, execution_commands)
     observability = build_observability(resolved_settings)
     reliability_metrics = ReliabilityMetrics()
     observed_events = ObservedEventRepository(raw_events, reliability_metrics)
@@ -530,6 +545,19 @@ def build_memory_container(
         admission=enforced_quotas,
         quota_plan_resolver=run_quota_plan,
         cancellation_wakeup=cancellation_wakeup,
+        acceptance=run_acceptance,
+    )
+    dispatcher = ExecutionCommandDispatcher(
+        execution_commands,
+        queue,
+        clock=clock,
+        owner=id_generator("dispatcher"),
+        lease_seconds=resolved_settings.worker_dispatch_lease_seconds,
+        batch_size=resolved_settings.worker_dispatch_batch_size,
+        interval_seconds=resolved_settings.worker_dispatch_interval_seconds,
+        retry_base_seconds=resolved_settings.worker_dispatch_retry_base_seconds,
+        retry_max_seconds=resolved_settings.worker_dispatch_retry_max_seconds,
+        metrics=reliability_metrics,
     )
     session_service = SessionService(
         registry,
@@ -1129,6 +1157,8 @@ def build_memory_container(
         observed_events=observed_events,
         event_service=event_service,
         task_queue=queue,
+        execution_commands=execution_commands,
+        dispatcher=dispatcher,
         observability=observability,
         runtime=runtime,
         worker=worker,

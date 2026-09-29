@@ -4,18 +4,24 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Protocol, cast
 
 from harness.application.events import EventService
 from harness.application.types import Clock, IdGenerator
 from harness.core.errors import ConflictError
+from harness.core.events import RunEvent
 from harness.core.models import Run, RunStatus, Session
 from harness.core.ports import (
     CancellationWakeup,
+    ExecutionCommandStatus,
+    RunAcceptanceUnitOfWork,
+    RunExecutionCommand,
     RunRepository,
     RunTask,
     SessionRepository,
     TaskQueue,
+    execution_command_id,
 )
 from harness.core.state_machine import transition
 from harness.observability.provider import Observability
@@ -114,6 +120,7 @@ class RunService:
         admission: RunAdmission | None = None,
         quota_plan_resolver: RunQuotaPlanResolver | None = None,
         cancellation_wakeup: CancellationWakeup | None = None,
+        acceptance: RunAcceptanceUnitOfWork | None = None,
     ) -> None:
         self._sessions = sessions
         self._runs = runs
@@ -126,7 +133,9 @@ class RunService:
         self._admission = admission
         self._quota_plan_resolver = quota_plan_resolver
         self._cancellation_wakeup = cancellation_wakeup
+        self._acceptance = acceptance
         self._creation_locks: dict[tuple[str, str], asyncio.Lock] = {}
+        self._warned_missing_acceptance = False
 
     async def _notify_cancellation(self, run: Run) -> None:
         if self._cancellation_wakeup is None:
@@ -204,6 +213,8 @@ class RunService:
                 existing.run_id,
                 existing.input.get("prompt"),
             )
+            self._observe_reused_idempotency_key(existing, input)
+            await self._recover_missing_intent(existing, dispatch_to_queue)
             return RunCreation(run=existing, created=False, deduplicated=False)
         run_input = input or {}
         active_runs = [
@@ -222,6 +233,7 @@ class RunService:
                     duplicate.run_id,
                     duplicate.input.get("prompt"),
                 )
+                await self._recover_missing_intent(duplicate, dispatch_to_queue)
                 return RunCreation(run=duplicate, created=False, deduplicated=True)
         timestamp = self._clock()
         run_id = self._id_generator("run")
@@ -263,12 +275,6 @@ class RunService:
                 ttl_seconds=plan.ttl_seconds,
             )
             admitted = True
-        try:
-            await self._runs.add(run)
-        except Exception:
-            if admitted and self._admission is not None:
-                await self._admission.release_subject(tenant_id, run_id)
-            raise
         predecessor = _blocking_predecessor(active_runs)
         queue_payload: dict[str, object] = {}
         if predecessor is not None:
@@ -281,7 +287,7 @@ class RunService:
                 "blocked_by_run_id": predecessor.run_id,
                 "blocked_by_status": predecessor.status.value,
             }
-        await self._events.append(
+        event = self._events.new_event(
             tenant_id=tenant_id,
             run_id=run.run_id,
             session_id=session_id,
@@ -289,13 +295,153 @@ class RunService:
             payload=queue_payload,
         )
         # A Builder tool may execute a child inside its existing worker slot.
-        # Never enqueue that child as well: it would race another worker, or
-        # deadlock if all slots are waiting for their own queued children.
+        # Never record an intent for that child: it would be handed to another
+        # worker, or deadlock if all slots are waiting for their own children.
+        command = self._build_command(run, timestamp) if dispatch_to_queue else None
+        if self._acceptance is None:
+            return await self._accept_without_unit_of_work(
+                run,
+                event,
+                admitted=admitted,
+                dispatch_to_queue=dispatch_to_queue,
+            )
+        try:
+            await self._acceptance.accept(run, event, command)
+        except ConflictError:
+            # Another replica won the idempotency race for this key. Its Run is
+            # the accepted one, and the intent committed with it is the
+            # authority; this request must not create a second Run or command.
+            won = await self._runs.find_by_idempotency_key(tenant_id, session_id, idempotency_key)
+            if won is None:
+                await self._release_admission(tenant_id, run_id, admitted)
+                raise
+            await self._release_admission(tenant_id, run_id, admitted)
+            self._annotate_trace(session_id, won.run_id, won.input.get("prompt"))
+            await self._recover_missing_intent(won, dispatch_to_queue)
+            return RunCreation(run=won, created=False, deduplicated=False)
+        except Exception:
+            await self._release_admission(tenant_id, run_id, admitted)
+            raise
+        # The Run, its event and its dispatch intent are durable now, so the
+        # transient fan-out is only an optimization for live readers.
+        await self._events.notify(event)
+        return RunCreation(run=run, created=True, deduplicated=False)
+
+    async def _accept_without_unit_of_work(
+        self,
+        run: Run,
+        event: RunEvent,
+        *,
+        admitted: bool,
+        dispatch_to_queue: bool,
+    ) -> RunCreation:
+        """Legacy three-step acceptance for process-local test harnesses.
+
+        Compose the production or memory container to use the transactional
+        unit of work instead; this path cannot promise that a committed Run has
+        a recoverable execution intent.
+        """
+
+        if not self._warned_missing_acceptance:
+            self._warned_missing_acceptance = True
+            logger.warning(
+                "RunService has no acceptance unit of work: a Run can be committed "
+                "without a durable dispatch intent"
+            )
+        try:
+            await self._runs.add(run)
+        except Exception:
+            await self._release_admission(run.tenant_id, run.run_id, admitted)
+            raise
+        await self._events.append_event(event)
         if dispatch_to_queue:
             await self._queue.enqueue(
-                RunTask(tenant_id=tenant_id, run_id=run.run_id, session_id=session_id)
+                RunTask(
+                    tenant_id=run.tenant_id,
+                    run_id=run.run_id,
+                    session_id=run.session_id,
+                )
             )
         return RunCreation(run=run, created=True, deduplicated=False)
+
+    def _build_command(self, run: Run, now: datetime) -> RunExecutionCommand:
+        """Derive the Run's one dispatch obligation from the Run itself."""
+
+        return RunExecutionCommand(
+            command_id=execution_command_id(run.run_id),
+            tenant_id=run.tenant_id,
+            run_id=run.run_id,
+            session_id=run.session_id,
+            status=ExecutionCommandStatus.PENDING,
+            created_at=now,
+            available_at=now,
+        )
+
+    async def _recover_missing_intent(self, run: Run, dispatch_to_queue: bool) -> None:
+        """Restore a dispatch intent that a previous round of code lost.
+
+        With the transactional acceptance this is a no-op, because the command
+        was committed with the Run. It matters for a retry of a Run accepted
+        before that guarantee existed: without it, the retry would keep
+        returning a queued Run that nothing will ever deliver.
+        """
+
+        if self._acceptance is None or not dispatch_to_queue:
+            return
+        # Only a queued Run is "accepted but not started". Anything else is
+        # owned by a worker or already finished and must not be re-delivered.
+        if run.status is not RunStatus.QUEUED:
+            return
+        inserted = await self._acceptance.ensure_command(
+            self._build_command(run, self._clock())
+        )
+        if not inserted:
+            return
+        logger.warning(
+            "recovered a missing dispatch intent for an accepted run",
+            extra={"tenant_id": run.tenant_id, "run_id": run.run_id},
+        )
+        if self._metrics is not None:
+            self._metrics.increment("harness_dispatch_recovered_total")
+
+    async def _release_admission(self, tenant_id: str, run_id: str, admitted: bool) -> None:
+        """Compensate a quota reservation whose Run was never accepted.
+
+        The reservation carries a TTL and is also reaped, so a process that
+        dies here leaks nothing permanently; this just closes the window sooner.
+        """
+
+        if not admitted or self._admission is None:
+            return
+        try:
+            await self._admission.release_subject(tenant_id, run_id)
+        except Exception:
+            logger.warning(
+                "quota release after failed run acceptance failed; reservation TTL reaps it",
+                extra={"tenant_id": tenant_id, "run_id": run_id},
+                exc_info=True,
+            )
+
+    def _observe_reused_idempotency_key(
+        self, existing: Run, input: dict[str, object] | None
+    ) -> None:
+        """Record, without breaking callers, a key reused for a different request.
+
+        The contract stays as it was: the established Run is returned and no
+        second Run or intent is created. A differing input under one key is a
+        client bug, so it is counted for operators rather than silently
+        absorbed. Rejecting it outright would change the response contract and
+        is left for the next round.
+        """
+
+        if input is None or _same_user_request(existing.input, input):
+            return
+        logger.warning(
+            "idempotency key reused with a different request",
+            extra={"tenant_id": existing.tenant_id, "run_id": existing.run_id},
+        )
+        if self._metrics is not None:
+            self._metrics.increment("harness_idempotency_key_reuse_total")
 
     def _annotate_trace(
         self,

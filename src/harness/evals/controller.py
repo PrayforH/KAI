@@ -34,6 +34,7 @@ from harness.evals.runner import (
     evaluate_recorded_run,
 )
 from harness.evals.suite import EvalCase
+from harness.worker.dispatcher import ExecutionCommandDispatcher
 from harness.worker.main import RunExecutor
 
 
@@ -92,12 +93,18 @@ class EvalController:
         *,
         run_queue: TaskQueue,
         executor: RunExecutor,
+        dispatcher: ExecutionCommandDispatcher | None = None,
         max_steps: int = 200,
     ) -> EvalRun:
         """Drive both queues only for the explicit in-memory auto-execute mode."""
 
         for _step in range(max_steps):
             await self.process_once()
+            if dispatcher is not None:
+                # A child Run is accepted together with its durable dispatch
+                # obligation, so this mode must make the same deliver-then-
+                # consume hop the Worker makes in production.
+                await dispatcher.run_once()
             task = await run_queue.dequeue()
             if task is not None:
                 try:

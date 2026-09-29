@@ -152,6 +152,10 @@ from harness.storage.eval_repository import (
     PostgresEvalDatasetRepository,
     PostgresEvalRunRepository,
 )
+from harness.storage.execution_commands import (
+    PostgresRunAcceptance,
+    PostgresRunExecutionCommandRepository,
+)
 from harness.storage.governance_repository import PostgresGovernanceRepository
 from harness.storage.knowledge_repository import PostgresKnowledgeRepository
 from harness.storage.lifecycle_adapters import (
@@ -222,6 +226,7 @@ from harness.studio.service import AgentStudioService
 from harness.studio.skill_builder import ControlPlaneSkillConversationService
 from harness.studio.web_configuration import WebConfigurationService
 from harness.triggers.service import AgentTriggerService
+from harness.worker.dispatcher import ExecutionCommandDispatcher
 from harness.worker.orchestrator import RunOrchestrator, SandboxResolver
 
 
@@ -667,6 +672,8 @@ def build_production_container(
     snapshot_repository = PostgresWorkspaceSnapshotRepository(sessions)
     binding_repository = PostgresAguiThreadBindingRepository(sessions)
     raw_event_repository = PostgresEventRepository(sessions)
+    run_acceptance = PostgresRunAcceptance(sessions)
+    execution_commands = PostgresRunExecutionCommandRepository(sessions)
     agent_drafts = PostgresAgentDraftRepository(sessions, skill_blobs)
     preview_repository = PostgresPreviewRepository(sessions)
     eval_dataset_repository = PostgresEvalDatasetRepository(sessions)
@@ -965,6 +972,19 @@ def build_production_container(
         admission=enforced_quotas,
         quota_plan_resolver=run_quota_plan,
         cancellation_wakeup=cancellation_wakeup,
+        acceptance=run_acceptance,
+    )
+    dispatcher = ExecutionCommandDispatcher(
+        execution_commands,
+        queue,
+        clock=clock,
+        owner=ids("dispatcher"),
+        lease_seconds=settings.worker_dispatch_lease_seconds,
+        batch_size=settings.worker_dispatch_batch_size,
+        interval_seconds=settings.worker_dispatch_interval_seconds,
+        retry_base_seconds=settings.worker_dispatch_retry_base_seconds,
+        retry_max_seconds=settings.worker_dispatch_retry_max_seconds,
+        metrics=reliability_metrics,
     )
     # Governance is per backend: every enabled backend is reaped and validated on
     # its own, so adding one to the routing table cannot leave it unmanaged.
@@ -1724,6 +1744,8 @@ def build_production_container(
         observed_events=observed_event_repository,
         event_service=events,
         task_queue=queue,
+        execution_commands=execution_commands,
+        dispatcher=dispatcher,
         session_gate=session_gate,
         sandbox_leases=sandbox_leases,
         sandbox_governance=sandbox_governance,

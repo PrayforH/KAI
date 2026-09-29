@@ -1024,6 +1024,41 @@ class OutboxRow(Base):
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class RunExecutionCommandRow(Base):
+    """Single authority for a Run that is still owed a queue hand-off.
+
+    One row per Run (``uq_run_execution_command``) so a repeated acceptance can
+    never create a second competing intent. The lease columns let several
+    Dispatcher replicas share the table without a bespoke lock, and
+    ``available_at`` carries publish backoff.
+    """
+
+    __tablename__ = "run_execution_commands"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "run_id", name="uq_run_execution_command"),
+        Index(
+            "ix_run_execution_commands_claimable",
+            "status",
+            "available_at",
+            "command_id",
+        ),
+    )
+
+    command_id: Mapped[str] = mapped_column(String(191), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(128), index=True)
+    run_id: Mapped[str] = mapped_column(String(128), index=True)
+    session_id: Mapped[str | None] = mapped_column(String(128))
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    failures: Mapped[int] = mapped_column(Integer, default=0)
+    lease_owner: Mapped[str | None] = mapped_column(String(128))
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(String(512))
+
+
 class SdkSessionEntryRow(Base):
     __tablename__ = "sdk_session_entries"
     __table_args__ = (

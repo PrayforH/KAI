@@ -21,6 +21,7 @@ from harness.quality.models import (
     QualitySyncStatus,
 )
 from harness.studio.models import AgentTemplate, CreateAgentDraftRequest
+from tests.support import deliver_pending_tasks
 
 
 async def seed_run(container: ApiContainer, name: str = "quality-agent"):
@@ -42,6 +43,9 @@ async def seed_run(container: ApiContainer, name: str = "quality-agent"):
     await container.runs.create(
         "tenant-a", session.session_id, "quality-run", input={"prompt": "hello"}
     )
+    # Acceptance records the durable obligation; one dispatch pass is what hands
+    # the task to the queue.
+    await deliver_pending_tasks(container)
     task = await container.task_queue.dequeue()
     assert task is not None
     result = await container.worker.execute(task.tenant_id, task.run_id)

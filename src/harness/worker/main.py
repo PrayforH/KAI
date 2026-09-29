@@ -12,6 +12,7 @@ from harness.core.models import Run
 from harness.core.ports import RunTask, TaskQueue
 from harness.reliability.metrics import ReliabilityMetrics
 from harness.sandbox.lease import SandboxLeaseService, SandboxLeaseState
+from harness.worker.dispatcher import running_dispatcher
 from harness.worker.orchestrator import RunOrchestrator
 
 logger = logging.getLogger(__name__)
@@ -322,96 +323,102 @@ async def serve(settings: Settings) -> None:
             loop.add_signal_handler(shutdown_signal, stop.set)
         except NotImplementedError:  # pragma: no cover - Windows event loop
             pass
-    try:
-
-        async def preview_maintenance() -> None:
-            await container.preview_controller.process_once()
-
-        async def eval_maintenance() -> None:
-            await container.eval_controller.process_once()
-
-        async def deployment_maintenance() -> None:
-            await container.deployment_controller.process_once()
-
-        async def reliability_maintenance() -> None:
-            await container.reliability_controller.process_once()
-
-        async def trigger_maintenance() -> None:
-            await container.triggers.dispatch_due()
-
-        async def automation_maintenance() -> None:
-            await container.automations.dispatch_due()
-
-        control_tasks = [
-            asyncio.create_task(
-                maintenance_loop(
-                    preview_maintenance,
-                    stop=stop,
-                    poll_interval=settings.worker_poll_interval_seconds,
-                    label="preview",
-                )
-            ),
-            asyncio.create_task(
-                maintenance_loop(
-                    eval_maintenance,
-                    stop=stop,
-                    poll_interval=settings.worker_poll_interval_seconds,
-                    label="eval",
-                )
-            ),
-            asyncio.create_task(
-                maintenance_loop(
-                    deployment_maintenance,
-                    stop=stop,
-                    poll_interval=settings.worker_poll_interval_seconds,
-                    label="deployment",
-                )
-            ),
-            asyncio.create_task(
-                maintenance_loop(
-                    reliability_maintenance,
-                    stop=stop,
-                    poll_interval=settings.reliability_reaper_interval_seconds,
-                    label="reliability",
-                )
-            ),
-            asyncio.create_task(
-                maintenance_loop(
-                    trigger_maintenance,
-                    stop=stop,
-                    poll_interval=1.0,
-                    label="triggers",
-                )
-            ),
-            asyncio.create_task(
-                maintenance_loop(
-                    automation_maintenance,
-                    stop=stop,
-                    poll_interval=1.0,
-                    label="automations",
-                )
-            ),
-        ]
+    # Accepted Runs carry a durable dispatch obligation, so this loop is what
+    # turns "accepted" into "executing somewhere". It runs for the whole
+    # consumption window and drains before the container closes.
+    async with running_dispatcher(
+        container.dispatcher, enabled=settings.worker_dispatch_enabled
+    ):
         try:
-            await worker_loop(
-                container.task_queue,
-                container.worker,
-                stop=stop,
-                poll_interval=settings.worker_poll_interval_seconds,
-                lease_heartbeat_interval=settings.worker_task_heartbeat_seconds,
-                concurrency=settings.worker_concurrency,
-                metrics=container.reliability_metrics,
-                session_gate=getattr(container, "session_gate", None),
-                sandbox_leases=getattr(container, "sandbox_leases", None),
-            )
+
+            async def preview_maintenance() -> None:
+                await container.preview_controller.process_once()
+
+            async def eval_maintenance() -> None:
+                await container.eval_controller.process_once()
+
+            async def deployment_maintenance() -> None:
+                await container.deployment_controller.process_once()
+
+            async def reliability_maintenance() -> None:
+                await container.reliability_controller.process_once()
+
+            async def trigger_maintenance() -> None:
+                await container.triggers.dispatch_due()
+
+            async def automation_maintenance() -> None:
+                await container.automations.dispatch_due()
+
+            control_tasks = [
+                asyncio.create_task(
+                    maintenance_loop(
+                        preview_maintenance,
+                        stop=stop,
+                        poll_interval=settings.worker_poll_interval_seconds,
+                        label="preview",
+                    )
+                ),
+                asyncio.create_task(
+                    maintenance_loop(
+                        eval_maintenance,
+                        stop=stop,
+                        poll_interval=settings.worker_poll_interval_seconds,
+                        label="eval",
+                    )
+                ),
+                asyncio.create_task(
+                    maintenance_loop(
+                        deployment_maintenance,
+                        stop=stop,
+                        poll_interval=settings.worker_poll_interval_seconds,
+                        label="deployment",
+                    )
+                ),
+                asyncio.create_task(
+                    maintenance_loop(
+                        reliability_maintenance,
+                        stop=stop,
+                        poll_interval=settings.reliability_reaper_interval_seconds,
+                        label="reliability",
+                    )
+                ),
+                asyncio.create_task(
+                    maintenance_loop(
+                        trigger_maintenance,
+                        stop=stop,
+                        poll_interval=1.0,
+                        label="triggers",
+                    )
+                ),
+                asyncio.create_task(
+                    maintenance_loop(
+                        automation_maintenance,
+                        stop=stop,
+                        poll_interval=1.0,
+                        label="automations",
+                    )
+                ),
+            ]
+            try:
+                await worker_loop(
+                    container.task_queue,
+                    container.worker,
+                    stop=stop,
+                    poll_interval=settings.worker_poll_interval_seconds,
+                    lease_heartbeat_interval=settings.worker_task_heartbeat_seconds,
+                    concurrency=settings.worker_concurrency,
+                    metrics=container.reliability_metrics,
+                    session_gate=getattr(container, "session_gate", None),
+                    sandbox_leases=getattr(container, "sandbox_leases", None),
+                )
+            finally:
+                stop.set()
+                await asyncio.gather(*control_tasks)
         finally:
-            stop.set()
-            await asyncio.gather(*control_tasks)
-    finally:
-        metrics_server.close()
-        await metrics_server.wait_closed()
-        if container.close is not None:
-            await container.close()
+            metrics_server.close()
+            await metrics_server.wait_closed()
+            if container.close is not None:
+                await container.close()
 
 
 def entrypoint() -> None:

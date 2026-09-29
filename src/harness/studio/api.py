@@ -791,6 +791,7 @@ async def create_eval_run(
             result.run.eval_run_id,
             run_queue=container.task_queue,
             executor=container.worker,
+            dispatcher=container.dispatcher,
         )
     return result
 
@@ -867,6 +868,7 @@ async def cancel_eval_run(
             eval_run_id,
             run_queue=container.task_queue,
             executor=container.worker,
+            dispatcher=container.dispatcher,
         )
     return result
 

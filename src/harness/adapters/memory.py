@@ -3,7 +3,7 @@
 import asyncio
 import hashlib
 from collections import defaultdict, deque
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Literal
 
 from harness.core.errors import ConflictError, EventSequenceConflictError, NotFoundError
@@ -23,7 +23,13 @@ from harness.core.models import (
     UserMemory,
     WorkspaceSnapshot,
 )
-from harness.core.ports import RunTask, StoredObject
+from harness.core.ports import (
+    ExecutionCommandStatus,
+    RunExecutionCommand,
+    RunExecutionCommandBacklog,
+    RunTask,
+    StoredObject,
+)
 
 
 class InMemoryAgentRegistry:
@@ -256,6 +262,16 @@ class InMemoryRunRepository:
             self._items[key] = run
             self._idempotency[idem_key] = run.run_id
 
+    async def remove(self, tenant_id: str, run_id: str) -> None:
+        """Undo an add; used only to keep acceptance atomic without a transaction."""
+
+        async with self._lock:
+            run = self._items.pop((tenant_id, run_id), None)
+            if run is not None:
+                self._idempotency.pop(
+                    (tenant_id, run.session_id, run.idempotency_key), None
+                )
+
     async def get(self, tenant_id: str, run_id: str) -> Run:
         try:
             return self._items[(tenant_id, run_id)]
@@ -313,6 +329,204 @@ class InMemoryRunRepository:
             if run.status in statuses and run.updated_at <= updated_at_or_before
         ]
         return sorted(values, key=lambda item: (item.updated_at, item.run_id))[:limit]
+
+
+class InMemoryRunExecutionCommandRepository:
+    """Lease-based pending-dispatch table with the same rules as PostgreSQL."""
+
+    def __init__(self) -> None:
+        self._items: dict[str, RunExecutionCommand] = {}
+        self._lock = asyncio.Lock()
+
+    async def claim_pending(
+        self,
+        *,
+        owner: str,
+        lease_seconds: float,
+        limit: int,
+        now: datetime,
+    ) -> list[RunExecutionCommand]:
+        async with self._lock:
+            claimable = sorted(
+                (
+                    command
+                    for command in self._items.values()
+                    if command.status is ExecutionCommandStatus.PENDING
+                    and command.available_at <= now
+                    and (
+                        command.lease_expires_at is None
+                        or command.lease_expires_at <= now
+                    )
+                ),
+                key=lambda command: (command.available_at, command.command_id),
+            )[:limit]
+            claimed: list[RunExecutionCommand] = []
+            for command in claimable:
+                leased = command.model_copy(
+                    update={
+                        "lease_owner": owner,
+                        "lease_expires_at": now + timedelta(seconds=lease_seconds),
+                        "attempts": command.attempts + 1,
+                    }
+                )
+                self._items[command.command_id] = leased
+                claimed.append(leased)
+            return claimed
+
+    async def mark_dispatched(self, command: RunExecutionCommand, *, now: datetime) -> bool:
+        async with self._lock:
+            current = self._items.get(command.command_id)
+            if (
+                current is None
+                or current.status is not ExecutionCommandStatus.PENDING
+                or current.lease_owner != command.lease_owner
+            ):
+                return False
+            self._items[command.command_id] = current.model_copy(
+                update={
+                    "status": ExecutionCommandStatus.DISPATCHED,
+                    "dispatched_at": now,
+                    "lease_owner": None,
+                    "lease_expires_at": None,
+                    "last_error": None,
+                }
+            )
+            return True
+
+    async def reschedule(
+        self,
+        command: RunExecutionCommand,
+        *,
+        available_at: datetime,
+        error: str | None,
+    ) -> bool:
+        async with self._lock:
+            current = self._items.get(command.command_id)
+            if (
+                current is None
+                or current.status is not ExecutionCommandStatus.PENDING
+                or current.lease_owner != command.lease_owner
+            ):
+                return False
+            self._items[command.command_id] = current.model_copy(
+                update={
+                    "available_at": available_at,
+                    "failures": current.failures + 1,
+                    "lease_owner": None,
+                    "lease_expires_at": None,
+                    "last_error": error,
+                }
+            )
+            return True
+
+    async def insert(self, command: RunExecutionCommand) -> bool:
+        """Insert only when this Run has no obligation yet.
+
+        Mirrors the PostgreSQL unique constraints: an existing row for either
+        the command id or the Run means the acceptance already happened, so the
+        insert is a no-op rather than a failure.
+        """
+
+        async with self._lock:
+            if command.command_id in self._items:
+                return False
+            if await self._get_locked(command.tenant_id, command.run_id) is not None:
+                return False
+            self._items[command.command_id] = command
+            return True
+
+    async def remove(self, command_id: str) -> None:
+        async with self._lock:
+            self._items.pop(command_id, None)
+
+    async def _get_locked(self, tenant_id: str, run_id: str) -> RunExecutionCommand | None:
+        return next(
+            (
+                command
+                for command in self._items.values()
+                if command.tenant_id == tenant_id and command.run_id == run_id
+            ),
+            None,
+        )
+
+    async def get(self, tenant_id: str, run_id: str) -> RunExecutionCommand | None:
+        return await self._get_locked(tenant_id, run_id)
+
+    async def backlog(self, *, now: datetime) -> RunExecutionCommandBacklog:
+        pending = [
+            command
+            for command in self._items.values()
+            if command.status is ExecutionCommandStatus.PENDING
+        ]
+        return RunExecutionCommandBacklog(
+            pending=len(pending),
+            ready=sum(
+                1
+                for command in pending
+                if command.available_at <= now
+                and (
+                    command.lease_expires_at is None or command.lease_expires_at <= now
+                )
+            ),
+            leased=sum(
+                1
+                for command in pending
+                if command.lease_expires_at is not None
+                and command.lease_expires_at > now
+            ),
+            dispatched=sum(
+                1
+                for command in self._items.values()
+                if command.status is ExecutionCommandStatus.DISPATCHED
+            ),
+            oldest_pending_age_seconds=(
+                max(0.0, (now - min(item.created_at for item in pending)).total_seconds())
+                if pending
+                else None
+            ),
+        )
+
+
+class InMemoryRunAcceptance:
+    """Run, ``run.queued`` event and dispatch command as one atomic step."""
+
+    def __init__(
+        self,
+        runs: "InMemoryRunRepository",
+        events: "InMemoryEventRepository",
+        commands: InMemoryRunExecutionCommandRepository,
+    ) -> None:
+        self._runs = runs
+        self._events = events
+        self._commands = commands
+        # Held across all three writes so no reader or writer observes a Run
+        # without the event and command that were accepted with it.
+        self._lock = asyncio.Lock()
+
+    async def accept(
+        self,
+        run: Run,
+        event: RunEvent,
+        command: RunExecutionCommand | None,
+    ) -> None:
+        async with self._lock:
+            await self._runs.add(run)
+            try:
+                await self._events.append(event)
+                if command is not None:
+                    await self._commands.insert(command)
+            except Exception:
+                # The in-memory adapters cannot roll back, so undo the writes
+                # explicitly to keep the observable state all-or-nothing.
+                if command is not None:
+                    await self._commands.remove(command.command_id)
+                await self._events.remove(event.event_id)
+                await self._runs.remove(run.tenant_id, run.run_id)
+                raise
+
+    async def ensure_command(self, command: RunExecutionCommand) -> bool:
+        async with self._lock:
+            return await self._commands.insert(command)
 
 
 class InMemoryApprovalRepository:
@@ -406,6 +620,18 @@ class InMemoryEventRepository:
     async def latest_sequence(self, tenant_id: str, run_id: str) -> int:
         events = self._items[(tenant_id, run_id)]
         return events[-1].sequence if events else 0
+
+    async def remove(self, event_id: str) -> None:
+        """Undo an append; used only to keep acceptance atomic without a transaction."""
+
+        async with self._lock:
+            event = self._by_id.pop(event_id, None)
+            if event is not None:
+                self._items[(event.tenant_id, event.run_id)] = [
+                    item
+                    for item in self._items[(event.tenant_id, event.run_id)]
+                    if item.event_id != event_id
+                ]
 
     async def list_after(
         self,

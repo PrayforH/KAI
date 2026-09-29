@@ -24,6 +24,7 @@ from harness.studio.models import (
     CreateAgentDraftRequest,
     ReplaceAgentDraftRequest,
 )
+from tests.support import deliver_pending_tasks
 from tests.support.policies import fake_runtime_review_profiles
 
 
@@ -111,6 +112,9 @@ async def seed(container: ApiContainer, suffix: str = "default") -> str:
 
 
 async def execute_one_child(container: ApiContainer) -> None:
+    # Child eval Runs are accepted together with their dispatch obligation, so
+    # every drain pass has to deliver before it can consume.
+    await deliver_pending_tasks(container)
     task = await container.task_queue.dequeue()
     if task is None:
         return
