@@ -547,7 +547,7 @@ async def test_finish_waits_for_detached_eager_flush_before_unbinding(harness: H
 
 
 @pytest.mark.asyncio
-async def test_slow_local_context_stats_do_not_evict_a_healthy_warm_session(
+async def test_summary_context_avoids_full_token_count_and_keeps_warm_session(
     harness: Harness, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     original = FakeCLI.write
@@ -555,7 +555,7 @@ async def test_slow_local_context_stats_do_not_evict_a_healthy_warm_session(
     async def delayed_context(cli: FakeCLI, data: str) -> None:
         message = json.loads(data)
         if message.get("request", {}).get("subtype") == "get_context_usage":
-            await asyncio.sleep(1.05)
+            assert message["request"].get("detail") == "summary"
         await original(cli, data)
 
     monkeypatch.setattr(FakeCLI, "write", delayed_context)

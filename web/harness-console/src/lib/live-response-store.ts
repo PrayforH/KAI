@@ -17,6 +17,7 @@ export interface LiveResponseSnapshot {
   text: string;
   status: LiveResponseStatus;
   visible: boolean;
+  textComplete?: boolean;
 }
 
 const emptySnapshot: LiveResponseSnapshot = Object.freeze({
@@ -66,7 +67,8 @@ function publish(next: LiveResponseSnapshot) {
     snapshot.messageId === next.messageId &&
     snapshot.text === next.text &&
     snapshot.status === next.status &&
-    snapshot.visible === next.visible
+    snapshot.visible === next.visible &&
+    snapshot.textComplete === next.textComplete
   ) {
     return;
   }
@@ -237,9 +239,10 @@ export const liveResponseStore = {
     if (!isActiveRuntimeThread(threadId)) return;
     flushPendingDelta(disposition !== "activity");
     if (activeMessageId !== messageId && snapshot.messageId !== messageId) return;
-    // A provider text block can end before its tools even start. Only the run
-    // terminal event releases this turn's text ownership to durable history.
-    // Marking a block complete let hidden progress reappear in the native slot.
+    // Stop the text cursor independently of Run completion. Keep ownership
+    // and disposition until the terminal event so a pre-tool block cannot
+    // reappear through the native text slot during post-processing.
+    publish({ ...snapshot, textComplete: true });
   },
   completeRun(threadId?: string) {
     if (!isActiveRuntimeThread(threadId)) return;

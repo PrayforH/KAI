@@ -262,6 +262,16 @@ class WarmEntry:
 
     async def get_context_usage(self) -> Any:
         try:
+            # The SDK public method requests full per-category token counting,
+            # which makes additional provider API calls after text has ended.
+            # The pinned CLI supports a summary from last-response usage and
+            # local estimates; keep the control round trip as a drain barrier.
+            query = getattr(self.client, "_query", None)
+            request = getattr(query, "_send_control_request", None)
+            if callable(request):
+                return await cast(Callable[..., Awaitable[Any]], request)(
+                    {"subtype": "get_context_usage", "detail": "summary"}
+                )
             return await self.client.get_context_usage()
         except BaseException:
             self.healthy = False

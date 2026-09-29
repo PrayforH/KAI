@@ -12,6 +12,25 @@ describe("liveResponseStore", () => {
     vi.unstubAllGlobals();
   });
 
+  it("stops the text cursor at message end while retaining live ownership until run end", () => {
+    liveResponseStore.startRun("run-tail");
+    liveResponseStore.startMessage("message-tail");
+    liveResponseStore.append("message-tail", "回答正文");
+    vi.advanceTimersByTime(200);
+    liveResponseStore.completeMessage("message-tail");
+    expect(liveResponseStore.getSnapshot()).toMatchObject({
+      status: "streaming", visible: true, textComplete: true, text: "回答正文",
+    });
+    // A later text block within the same Run resumes the cursor.
+    liveResponseStore.append("message-tail", "补充");
+    expect(liveResponseStore.getSnapshot().textComplete).not.toBe(true);
+    liveResponseStore.completeMessage("message-tail");
+    liveResponseStore.completeRun();
+    expect(liveResponseStore.getSnapshot()).toMatchObject({
+      status: "complete", visible: true, text: "回答正文补充",
+    });
+  });
+
   it("keeps a short progress preface out of the response when a tool follows", () => {
     liveResponseStore.startRun("run-1");
     liveResponseStore.startMessage("assistant-run-1");

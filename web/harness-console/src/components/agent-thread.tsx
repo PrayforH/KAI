@@ -1440,7 +1440,7 @@ export function HarnessAssistantMessage() {
           },
         }}
       />
-      <AssistantResponse text={copyText} streaming={directStream ? live.status === "streaming" : messageStatus?.type === "running"} />
+      <AssistantResponse text={copyText} streaming={directStream ? live.status === "streaming" && !live.textComplete : messageStatus?.type === "running"} />
       {answerCitations.length > 0 ? (
         <KnowledgeCitations citations={answerCitations} showSources={false} />
       ) : null}

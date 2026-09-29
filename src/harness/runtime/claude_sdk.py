@@ -109,10 +109,6 @@ from harness.runtime.web_tools import WEB_BUILTINS, WEB_CONTRACT, WEB_SERVER, WE
 
 SDK_JSON_MAX_BUFFER_SIZE = 32 * 1024 * 1024
 CONTEXT_USAGE_CONTROL_TIMEOUT_SECONDS = 1.0
-# Warm local CLIs commonly answer the optional control request around one
-# second. A little headroom avoids discarding a reusable connection at that
-# boundary and paying another ~1.6 s connect on the next Run.
-WARM_CONTEXT_USAGE_CONTROL_TIMEOUT_SECONDS = 1.5
 # Daytona/E2B/Kubernetes transports cross at least one control-plane hop after
 # the Claude CLI has produced its terminal result.  The local one-second budget
 # is intentionally tight, but applying it to a remote transport made the exact
@@ -406,12 +402,7 @@ async def _client_query(
                     yield await _observe_context_window(
                         client,
                         "after",
-                        timeout_seconds=(
-                            WARM_CONTEXT_USAGE_CONTROL_TIMEOUT_SECONDS
-                            if (isinstance(client, WarmEntry)
-                                and context_usage_timeout_seconds is None)
-                            else context_usage_timeout_seconds
-                        ),
+                        timeout_seconds=context_usage_timeout_seconds,
                     )
                 if terminal_result is not None:
                     if isinstance(client, WarmEntry):
