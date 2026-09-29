@@ -3068,7 +3068,7 @@ body.codex-theme-v1
   ~ .assistant-message-controls,
 body.codex-theme-v1
   .harness-assistant-message
-  > .live-assistant-response:hover
+  > .assistant-answer:hover
   ~ .assistant-message-controls,
 body.codex-theme-v1 .assistant-message-controls:hover,
 body.codex-theme-v1 .assistant-message-controls:focus-within {

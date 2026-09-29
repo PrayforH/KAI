@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act } from "react";
+import { readFileSync } from "node:fs";
 import { createRoot, type Root } from "react-dom/client";
 import { AssistantRuntimeProvider, ExportedMessageRepository, MessagePrimitive, ThreadPrimitive, useLocalRuntime, useThreadRuntime } from "@assistant-ui/react";
 import { afterEach, expect, it, vi } from "vitest";
@@ -11,6 +12,7 @@ import { resetRuntimeThreadScope } from "../src/lib/runtime-thread-scope";
 vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
 vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
 vi.stubGlobal("localStorage", { getItem: () => null, setItem() {}, removeItem() {} });
+let stylesheet: HTMLStyleElement;
 let root: Root;
 let host: HTMLDivElement;
 let thread: ReturnType<typeof useThreadRuntime>;
@@ -35,6 +37,7 @@ function CaptureThread() {
 afterEach(async () => {
   if (root) await act(async () => root.unmount());
   host?.remove();
+  stylesheet?.remove();
   liveResponseStore.clear();
   resetRuntimeThreadScope();
 });
@@ -106,4 +109,39 @@ it("preserves the actual answer DOM across completion and history handoff", asyn
   await act(async () => liveResponseStore.startRun("run-2"));
   expect(host.querySelector(".assistant-answer")).toBe(node);
   expect(node?.textContent).toBe(answer.content[0].text.trim());
+});
+
+
+it("keeps streamed text visibly painted with production CSS before history handoff", async () => {
+  stylesheet = document.createElement("style");
+  stylesheet.textContent = readFileSync("src/app/styles.css", "utf8");
+  document.head.appendChild(stylesheet);
+  host = document.createElement("div"); document.body.appendChild(host); root = createRoot(host);
+  await act(async () => root.render(<Fixture />));
+  const id = "assistant-stream-visibility";
+  const prefix = "A visible streamed paragraph. ".repeat(8);
+  await act(async () => {
+    thread!.import(ExportedMessageRepository.fromArray([
+      { id, role: "assistant", content: [{ type: "text", text: prefix }] },
+    ]));
+    liveResponseStore.startRun("stream-visibility");
+    liveResponseStore.startMessage(id);
+    liveResponseStore.append(id, prefix);
+    liveResponseStore.completeMessage(id);
+  });
+  const assistant = host.querySelector(".harness-assistant-message")!;
+  const answer = assistant.querySelector<HTMLElement>(".assistant-answer")!;
+  expect(assistant.getAttribute("data-direct-stream")).toBe("true");
+  expect(answer.textContent).toBe(prefix.trim());
+  expect(getComputedStyle(answer).display).not.toBe("none");
+  expect(answer.getAttribute("data-streaming")).toBe("true");
+  await act(async () => {
+    liveResponseStore.append(id, "The next chunk arrives before completion.");
+    liveResponseStore.completeMessage(id);
+  });
+  expect(assistant.querySelector(".assistant-answer")).toBe(answer);
+  expect(answer.textContent).toContain("The next chunk arrives before completion.");
+  expect(getComputedStyle(answer).display).not.toBe("none");
+  await act(async () => liveResponseStore.completeRun());
+  expect(getComputedStyle(answer).display).not.toBe("none");
 });
