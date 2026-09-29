@@ -1,6 +1,6 @@
 """Read-only inspection of existing replay checkpoints, not provider requests."""
 
-from typing import Literal
+from typing import Literal, cast
 
 from pydantic import BaseModel
 
@@ -43,13 +43,15 @@ def _messages(event: RunEvent) -> list[dict[str, str]]:
     raw = event.payload.get("messages", [])
     if not isinstance(raw, list):
         return []
-    return [
-        {"role": item["role"], "content": item["content"]}
-        for item in raw
-        if isinstance(item, dict)
-        and item.get("role") in {"user", "assistant"}
-        and isinstance(item.get("content"), str)
-    ]
+    messages: list[dict[str, str]] = []
+    for value in cast(list[object], raw):
+        if not isinstance(value, dict):
+            continue
+        item = cast(dict[str, object], value)
+        role, content = item.get("role"), item.get("content")
+        if isinstance(role, str) and role in {"user", "assistant"} and isinstance(content, str):
+            messages.append({"role": role, "content": content})
+    return messages
 
 
 def _snapshot(event: RunEvent, messages: list[dict[str, str]]) -> HistorySnapshotView:

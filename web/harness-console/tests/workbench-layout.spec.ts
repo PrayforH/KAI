@@ -312,7 +312,7 @@ describe("full-page agent workbench", () => {
   });
 
   it("keeps the compact context trigger named and the modal focus-contained", () => {
-    expect(contextRecovery).toContain('aria-label="上下文与恢复点"');
+    expect(contextRecovery).toContain('aria-label="上下文与压缩"');
     expect(contextRecovery).toContain('aria-controls="context-recovery-panel"');
     expect(contextRecovery).toContain('id="context-recovery-panel"');
     expect(contextRecovery).toContain("useDialogFocus({");

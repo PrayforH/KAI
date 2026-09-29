@@ -1428,7 +1428,6 @@ export function HarnessAssistantMessage() {
         hasDurableProjection={hasRunActivityToolCall(content)}
         messageId={messageId}
       />
-      <AssistantResponse text={copyText} streaming={directStream ? live.status === "streaming" : messageStatus?.type === "running"} />
       <AssistantMessage.Content
         components={{
           Text: HiddenAssistantText,
@@ -1441,6 +1440,7 @@ export function HarnessAssistantMessage() {
           },
         }}
       />
+      <AssistantResponse text={copyText} streaming={directStream ? live.status === "streaming" : messageStatus?.type === "running"} />
       {answerCitations.length > 0 ? (
         <KnowledgeCitations citations={answerCitations} showSources={false} />
       ) : null}

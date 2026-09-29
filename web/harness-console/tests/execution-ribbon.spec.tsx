@@ -214,7 +214,7 @@ describe("execution ribbon", () => {
 
     expect(html).toContain('data-open="false"');
     expect(html).toContain('aria-expanded="false"');
-    expect(html).toContain('<div class="execution-tree" hidden="">');
+    expect(html).toContain('<div class="execution-process-reveal" hidden="" aria-hidden="true" inert=""><div class="execution-tree">');
   });
 
   it("automatically folds the completed Codex transcript", () => {
