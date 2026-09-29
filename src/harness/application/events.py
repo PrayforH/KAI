@@ -1,5 +1,6 @@
 """Ordered event persistence and fan-out."""
 
+import asyncio
 import logging
 from typing import Any, Protocol
 
@@ -9,6 +10,10 @@ from harness.core.events import RunEvent
 from harness.core.ports import EventBus, EventRepository
 
 logger = logging.getLogger(__name__)
+
+# Short by default: the durable fact is already committed before this runs, so
+# waiting longer only delays the caller that already succeeded.
+DEFAULT_NOTIFY_TIMEOUT_SECONDS = 2.0
 
 
 class TraceContext(Protocol):
@@ -26,12 +31,16 @@ class EventService:
         clock: Clock,
         id_generator: IdGenerator,
         trace_context: TraceContext | None = None,
+        notify_timeout_seconds: float = DEFAULT_NOTIFY_TIMEOUT_SECONDS,
     ) -> None:
+        if notify_timeout_seconds <= 0:
+            raise ValueError("event notify timeout must be positive")
         self._repository = repository
         self._bus = bus
         self._clock = clock
         self._id_generator = id_generator
         self._trace_context = trace_context
+        self._notify_timeout_seconds = notify_timeout_seconds
 
     async def list_after(
         self,
@@ -114,15 +123,30 @@ class EventService:
         )
 
     async def notify(self, event: RunEvent) -> None:
-        """Fan an already-durable event out transiently.
+        """Fan an already-durable event out transiently, within a short bound.
 
-        Readers re-read PostgreSQL, so a failed publish costs latency and
-        nothing else; it must never turn a committed fact into an error for the
-        caller that committed it.
+        Readers re-read PostgreSQL, so a failed or slow publish costs latency
+        and nothing else; it must never turn a committed fact into an error for
+        the caller that committed it, and it must never hold that caller open
+        while a Redis that accepts connections stops answering.
+
+        An outer cancellation still propagates: only this call's own deadline
+        is absorbed, so shutdown and request cancellation stay honest.
         """
 
         try:
-            await self._bus.publish(event)
+            async with asyncio.timeout(self._notify_timeout_seconds):
+                await self._bus.publish(event)
+        except TimeoutError:
+            logger.warning(
+                "event bus publish exceeded its budget; durable polling still serves readers",
+                extra={
+                    "tenant_id": event.tenant_id,
+                    "run_id": event.run_id,
+                    "event_type": event.type,
+                    "timeout_seconds": self._notify_timeout_seconds,
+                },
+            )
         except Exception:
             logger.warning(
                 "event bus publish failed; durable polling still serves readers",

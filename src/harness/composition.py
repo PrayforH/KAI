@@ -647,7 +647,15 @@ def build_production_container(
         )
 
     engine, sessions = create_database(settings.database_url)
-    redis = Redis.from_url(settings.redis_url)  # pyright: ignore[reportUnknownMemberType]
+    redis = Redis.from_url(  # pyright: ignore[reportUnknownMemberType]
+        settings.redis_url,
+        # A Redis that accepts connections and then stops answering must not
+        # pin a caller: both the handshake and every read/write are bounded.
+        # Blocking pubsub reads pass their own explicit timeout, which replaces
+        # this value for that call, so long-poll subscribers are unaffected.
+        socket_connect_timeout=settings.redis_connect_timeout_seconds,
+        socket_timeout=settings.redis_socket_timeout_seconds,
+    )
     redis_client = cast(AsyncRedisClient, redis)
     store: ArtifactStore = MinioArtifactStore(
         endpoint=settings.minio_endpoint,
@@ -932,6 +940,7 @@ def build_production_container(
         clock=clock,
         id_generator=ids,
         trace_context=observability,
+        notify_timeout_seconds=settings.event_notify_timeout_seconds,
     )
     session_service = SessionService(
         registry,
@@ -984,6 +993,7 @@ def build_production_container(
         interval_seconds=settings.worker_dispatch_interval_seconds,
         retry_base_seconds=settings.worker_dispatch_retry_base_seconds,
         retry_max_seconds=settings.worker_dispatch_retry_max_seconds,
+        enqueue_timeout_seconds=settings.worker_dispatch_enqueue_timeout_seconds,
         metrics=reliability_metrics,
     )
     # Governance is per backend: every enabled backend is reaped and validated on

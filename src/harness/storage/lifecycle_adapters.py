@@ -39,6 +39,7 @@ from harness.storage.models import (
     QualityIncidentRow,
     QualityRuleRow,
     QualityScoreRow,
+    RunExecutionCommandRow,
     RunRow,
     SdkSessionEntryRow,
     SessionContextDigestRow,
@@ -548,6 +549,13 @@ class PostgresLifecycleAdapter:
                         delete(RunRow).where(
                             RunRow.tenant_id == job.tenant_id,
                             RunRow.run_id.in_(run_ids),
+                        ),
+                        # A dispatch obligation that outlived its Run would be
+                        # handed to a Worker that can never find the target, so
+                        # it is deleted in the same transaction and tenant.
+                        delete(RunExecutionCommandRow).where(
+                            RunExecutionCommandRow.tenant_id == job.tenant_id,
+                            RunExecutionCommandRow.run_id.in_(run_ids),
                         ),
                     ]
                 )

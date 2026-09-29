@@ -99,6 +99,13 @@ class Settings(BaseSettings):
     )
     database_url: str = "postgresql+asyncpg://harness:harness@localhost:5432/harness"
     redis_url: str = "redis://localhost:6379/0"
+    # Bounded connect/read/write so a stalled Redis cannot pin a caller
+    # forever. Blocking pubsub reads pass their own explicit timeout, which
+    # replaces this value for that call, so long-poll subscribers are unaffected.
+    redis_connect_timeout_seconds: float = Field(default=5, gt=0, le=120)
+    redis_socket_timeout_seconds: float = Field(default=5, gt=0, le=120)
+    # A committed acceptance answer must not wait on the transient event fan-out.
+    event_notify_timeout_seconds: float = Field(default=2, gt=0, le=60)
 
     minio_endpoint: str = "localhost:9000"
     minio_access_key: SecretStr = SecretStr("")
@@ -149,6 +156,9 @@ class Settings(BaseSettings):
     worker_dispatch_lease_seconds: float = Field(default=60, gt=0, le=3600)
     worker_dispatch_retry_base_seconds: float = Field(default=1, gt=0, le=600)
     worker_dispatch_retry_max_seconds: float = Field(default=60, gt=0, le=3600)
+    # One hand-off must not pin a Dispatcher pass; a publish that does not
+    # confirm within this bound is retried with backoff instead.
+    worker_dispatch_enqueue_timeout_seconds: float = Field(default=5, gt=0, le=120)
     run_reservation_ttl_seconds: int = Field(default=86_400, ge=300, le=604_800)
     quota_enforcement_enabled: bool = False
     preflight_timeout_seconds: float = Field(default=180, ge=30, le=900)

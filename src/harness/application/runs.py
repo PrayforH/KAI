@@ -11,7 +11,7 @@ from harness.application.events import EventService
 from harness.application.types import Clock, IdGenerator
 from harness.core.errors import ConflictError
 from harness.core.events import RunEvent
-from harness.core.models import Run, RunStatus, Session
+from harness.core.models import Run, RunDispatchMode, RunStatus, Session
 from harness.core.ports import (
     CancellationWakeup,
     ExecutionCommandStatus,
@@ -214,7 +214,7 @@ class RunService:
                 existing.input.get("prompt"),
             )
             self._observe_reused_idempotency_key(existing, input)
-            await self._recover_missing_intent(existing, dispatch_to_queue)
+            await self._recover_missing_intent(existing)
             return RunCreation(run=existing, created=False, deduplicated=False)
         run_input = input or {}
         active_runs = [
@@ -233,7 +233,7 @@ class RunService:
                     duplicate.run_id,
                     duplicate.input.get("prompt"),
                 )
-                await self._recover_missing_intent(duplicate, dispatch_to_queue)
+                await self._recover_missing_intent(duplicate)
                 return RunCreation(run=duplicate, created=False, deduplicated=True)
         timestamp = self._clock()
         run_id = self._id_generator("run")
@@ -248,6 +248,11 @@ class RunService:
             updated_at=timestamp,
             input=run_input,
             trace_context=(self._observability.inject() if self._observability is not None else {}),
+            # Fixed at acceptance: a later retry must never change how this Run
+            # was accepted to start.
+            dispatch_mode=(
+                RunDispatchMode.QUEUED if dispatch_to_queue else RunDispatchMode.INLINE
+            ),
         )
         admitted = False
         if self._admission is not None:
@@ -317,7 +322,7 @@ class RunService:
                 raise
             await self._release_admission(tenant_id, run_id, admitted)
             self._annotate_trace(session_id, won.run_id, won.input.get("prompt"))
-            await self._recover_missing_intent(won, dispatch_to_queue)
+            await self._recover_missing_intent(won)
             return RunCreation(run=won, created=False, deduplicated=False)
         except Exception:
             await self._release_admission(tenant_id, run_id, admitted)
@@ -377,16 +382,32 @@ class RunService:
             available_at=now,
         )
 
-    async def _recover_missing_intent(self, run: Run, dispatch_to_queue: bool) -> None:
-        """Restore a dispatch intent that a previous round of code lost.
+    async def _recover_missing_intent(self, run: Run) -> None:
+        """Restore a dispatch intent that was lost, for a Run that was queued.
 
-        With the transactional acceptance this is a no-op, because the command
-        was committed with the Run. It matters for a retry of a Run accepted
-        before that guarantee existed: without it, the retry would keep
-        returning a queued Run that nothing will ever deliver.
+        The mode recorded on the Run decides this, never the caller's current
+        argument: a retry of an inline Run must not turn it into a queue task,
+        and a retry of a queued Run must not lose the repair.
         """
 
-        if self._acceptance is None or not dispatch_to_queue:
+        if self._acceptance is None:
+            return
+        if run.dispatch_mode is RunDispatchMode.INLINE:
+            return
+        if run.dispatch_mode is None:
+            # Legacy Run with no recorded mode. Nothing proves it was meant to
+            # be queued, so it is left alone and counted for an operator to
+            # resolve; inventing a task here is exactly the bug this rule
+            # prevents.
+            if self._metrics is not None:
+                self._metrics.increment(
+                    "harness_dispatch_unbackfilled_total",
+                    labels={"reason": "unknown_mode"},
+                )
+            logger.warning(
+                "run predates the recorded dispatch mode; not backfilling a dispatch intent",
+                extra={"tenant_id": run.tenant_id, "run_id": run.run_id},
+            )
             return
         # Only a queued Run is "accepted but not started". Anything else is
         # owned by a worker or already finished and must not be re-delivered.

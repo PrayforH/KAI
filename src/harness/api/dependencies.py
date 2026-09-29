@@ -513,6 +513,7 @@ def build_memory_container(
         clock=clock,
         id_generator=id_generator,
         trace_context=observability,
+        notify_timeout_seconds=resolved_settings.event_notify_timeout_seconds,
     )
 
     async def run_quota_plan(
@@ -557,6 +558,9 @@ def build_memory_container(
         interval_seconds=resolved_settings.worker_dispatch_interval_seconds,
         retry_base_seconds=resolved_settings.worker_dispatch_retry_base_seconds,
         retry_max_seconds=resolved_settings.worker_dispatch_retry_max_seconds,
+        enqueue_timeout_seconds=(
+            resolved_settings.worker_dispatch_enqueue_timeout_seconds
+        ),
         metrics=reliability_metrics,
     )
     session_service = SessionService(

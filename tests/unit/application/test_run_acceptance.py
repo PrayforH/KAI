@@ -1,6 +1,7 @@
 """Acceptance must commit the execution intent with the Run it accepted."""
 
 import asyncio
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import cast
@@ -19,8 +20,15 @@ from harness.adapters.memory import (
 from harness.application.events import EventService
 from harness.application.runs import RunCreation, RunService
 from harness.core.errors import ConflictError
-from harness.core.models import RunStatus, Session
-from harness.core.ports import ExecutionCommandStatus, RunTask
+from harness.core.events import RunEvent
+from harness.core.models import Run, RunDispatchMode, RunStatus, Session
+from harness.core.ports import (
+    ExecutionCommandStatus,
+    RunTask,
+    execution_command_id,
+)
+from harness.reliability.metrics import ReliabilityMetrics
+from harness.worker.dispatcher import ExecutionCommandDispatcher
 
 NOW = datetime(2026, 9, 29, 12, 0, tzinfo=UTC)
 
@@ -238,8 +246,13 @@ async def test_a_terminal_run_never_gains_a_dispatch_intent() -> None:
     creation = await harness.service().create_with_result(
         "tenant-a", "session-1", "idem-1", input={"prompt": "hello"}
     )
-    finished = creation.run.model_copy(update={"status": RunStatus.SUCCEEDED})
-    await harness.runs.compare_and_set(RunStatus.QUEUED, finished)
+    finished = creation.run.model_copy(
+        update={
+            "status": RunStatus.SUCCEEDED,
+            "fencing_token": creation.run.fencing_token + 1,
+        }
+    )
+    assert await harness.runs.compare_and_set(RunStatus.QUEUED, finished) is True
 
     await harness.service().create_with_result(
         "tenant-a", "session-1", "idem-1", input={"prompt": "hello"}
@@ -250,6 +263,9 @@ async def test_a_terminal_run_never_gains_a_dispatch_intent() -> None:
     # The command exists from the first acceptance but is still pending, and no
     # second intent was added for the finished Run.
     assert (await harness.commands.backlog(now=NOW)).pending == 1
+    assert (await harness.runs.get("tenant-a", creation.run.run_id)).status is (
+        RunStatus.SUCCEEDED
+    )
 
 
 @pytest.mark.asyncio
@@ -382,3 +398,283 @@ async def test_a_conflicting_acceptance_releases_the_losing_reservation() -> Non
 
     # No Run was accepted for this key, so the reservation must not be kept.
     assert released == [("tenant-a", "run-1")]
+
+
+@pytest.mark.asyncio
+async def test_an_unresponsive_event_bus_cannot_hold_a_committed_acceptance() -> None:
+    """Fix 1: the notification is an optimization, never a precondition.
+
+    A Redis that accepts the connection and then stops answering must not keep
+    the caller open after its Run is already committed, and the timeout must
+    not turn the accepted Run into an error.
+    """
+
+    harness = Harness()
+    await harness.seed_session()
+
+    class HangingBus:
+        def __init__(self) -> None:
+            self.attempted = False
+
+        async def publish(self, event: RunEvent) -> None:
+            self.attempted = True
+            await asyncio.Event().wait()
+
+        async def read(
+            self, tenant_id: str, run_id: str, after_sequence: int = 0
+        ) -> list[RunEvent]:
+            del tenant_id, run_id, after_sequence
+            return []
+
+    hanging = HangingBus()
+    service = RunService(
+        harness.sessions,
+        harness.runs,
+        harness.queue,
+        EventService(
+            harness.events,
+            hanging,
+            clock=lambda: NOW,
+            id_generator=harness.ids,
+            notify_timeout_seconds=0.05,
+        ),
+        clock=lambda: NOW,
+        id_generator=harness.ids,
+        acceptance=InMemoryRunAcceptance(harness.runs, harness.events, harness.commands),
+    )
+
+    started = time.monotonic()
+    creation = await asyncio.wait_for(
+        service.create_with_result(
+            "tenant-a", "session-1", "idem-1", input={"prompt": "hello"}
+        ),
+        timeout=3,
+    )
+    elapsed = time.monotonic() - started
+
+    assert elapsed < 1, "a committed acceptance must not wait out a stalled bus"
+    assert hanging.attempted is True
+    assert creation.created is True
+    # The durable facts are unaffected by the failed notification.
+    stored = await harness.runs.get("tenant-a", creation.run.run_id)
+    assert stored.status is RunStatus.QUEUED
+    assert [
+        item.type
+        for item in await harness.events.list_after("tenant-a", creation.run.run_id, 0)
+    ] == ["run.queued"]
+    command = await harness.commands.get("tenant-a", creation.run.run_id)
+    assert command is not None and command.status is ExecutionCommandStatus.PENDING
+
+
+@pytest.mark.asyncio
+async def test_an_unresponsive_event_bus_does_not_lose_the_dispatch_obligation() -> None:
+    """Fix 1: with the notification stalled, the Dispatcher still delivers."""
+
+    harness = Harness()
+    await harness.seed_session()
+    metrics = ReliabilityMetrics()
+
+    class HangingBus:
+        async def publish(self, event: RunEvent) -> None:
+            await asyncio.Event().wait()
+
+        async def read(
+            self, tenant_id: str, run_id: str, after_sequence: int = 0
+        ) -> list[RunEvent]:
+            del tenant_id, run_id, after_sequence
+            return []
+
+    service = RunService(
+        harness.sessions,
+        harness.runs,
+        harness.queue,
+        EventService(
+            harness.events,
+            HangingBus(),
+            clock=lambda: NOW,
+            id_generator=harness.ids,
+            notify_timeout_seconds=0.05,
+        ),
+        clock=lambda: NOW,
+        id_generator=harness.ids,
+        metrics=metrics,
+        acceptance=InMemoryRunAcceptance(harness.runs, harness.events, harness.commands),
+    )
+    creation = await asyncio.wait_for(
+        service.create_with_result(
+            "tenant-a", "session-1", "idem-1", input={"prompt": "hello"}
+        ),
+        timeout=3,
+    )
+
+    delivered = await ExecutionCommandDispatcher(
+        harness.commands,
+        harness.queue,
+        clock=lambda: NOW,
+        owner="dispatcher-a",
+    ).run_once()
+
+    assert (delivered.claimed, delivered.dispatched) == (1, 1)
+    task = await harness.queue.dequeue()
+    assert task is not None and task.run_id == creation.run.run_id
+
+
+@pytest.mark.asyncio
+async def test_retrying_an_inline_run_never_turns_it_into_a_queue_task() -> None:
+    """Fix 3: the recorded mode wins over the retry's arguments.
+
+    Reproduces the reported defect: an inline child was created first, then
+    retried with default arguments, which used to manufacture a dispatch
+    intent and hand the child to another Worker.
+    """
+
+    harness = Harness()
+    await harness.seed_session()
+    service = harness.service()
+
+    child = await service.create_with_result(
+        "tenant-a",
+        "session-1",
+        "child-1",
+        input={"prompt": "child"},
+        dispatch_to_queue=False,
+    )
+    assert child.run.dispatch_mode is RunDispatchMode.INLINE
+
+    # Same key, default arguments: a plain retry.
+    retried = await service.create_with_result(
+        "tenant-a", "session-1", "child-1", input={"prompt": "child"}
+    )
+
+    assert retried.created is False
+    assert retried.run.run_id == child.run.run_id
+    assert retried.run.dispatch_mode is RunDispatchMode.INLINE
+    assert await harness.commands.get("tenant-a", child.run.run_id) is None
+    assert (await harness.commands.backlog(now=NOW)).pending == 0
+    assert await harness.queue.dequeue() is None
+
+
+@pytest.mark.asyncio
+async def test_same_input_deduplication_does_not_queue_an_inline_run() -> None:
+    """Fix 3: the dedup path reads the Run's own mode, not the caller's flag."""
+
+    harness = Harness()
+    await harness.seed_session()
+    service = harness.service()
+    child = await service.create_with_result(
+        "tenant-a",
+        "session-1",
+        "child-1",
+        input={"prompt": "child"},
+        dispatch_to_queue=False,
+    )
+
+    duplicate = await service.create_with_result(
+        "tenant-a",
+        "session-1",
+        "other-key",
+        input={"prompt": "child"},
+        deduplicate_active_input=True,
+    )
+
+    assert duplicate.deduplicated is True
+    assert duplicate.run.run_id == child.run.run_id
+    assert await harness.commands.get("tenant-a", child.run.run_id) is None
+    assert await harness.queue.dequeue() is None
+
+
+@pytest.mark.asyncio
+async def test_a_queued_run_whose_intent_was_lost_is_still_repaired() -> None:
+    """Fix 3 keeps the repair ability for Runs that were genuinely queued."""
+
+    harness = Harness()
+    await harness.seed_session()
+    service = harness.service()
+    created = await service.create_with_result(
+        "tenant-a", "session-1", "idem-1", input={"prompt": "hello"}
+    )
+    assert created.run.dispatch_mode is RunDispatchMode.QUEUED
+    # The intent is lost - for example the row was removed with its Run gone.
+    await harness.commands.remove(execution_command_id(created.run.run_id))
+    assert (await harness.commands.backlog(now=NOW)).pending == 0
+
+    retried = await service.create_with_result(
+        "tenant-a", "session-1", "idem-1", input={"prompt": "hello"}
+    )
+
+    assert retried.run.run_id == created.run.run_id
+    command = await harness.commands.get("tenant-a", created.run.run_id)
+    assert command is not None and command.status is ExecutionCommandStatus.PENDING
+
+
+@pytest.mark.asyncio
+async def test_a_legacy_run_without_a_recorded_mode_is_left_for_an_operator() -> None:
+    """Fix 3: nothing proves a legacy Run was meant to be queued, so it is not.
+
+    Auto-dispatching here is what used to convert an inline child into a
+    background task, so the rule is explicit: unknown means untouched, and it
+    is counted so the leftovers can be found.
+    """
+
+    harness = Harness()
+    await harness.seed_session()
+    metrics = ReliabilityMetrics()
+    legacy = Run(
+        run_id="run-legacy",
+        session_id="session-1",
+        tenant_id="tenant-a",
+        status=RunStatus.QUEUED,
+        idempotency_key="legacy-key",
+        created_at=NOW,
+        updated_at=NOW,
+        input={"prompt": "hello"},
+        dispatch_mode=None,
+    )
+    await harness.runs.add(legacy)
+    service = RunService(
+        harness.sessions,
+        harness.runs,
+        harness.queue,
+        EventService(harness.events, harness.bus, clock=lambda: NOW, id_generator=harness.ids),
+        clock=lambda: NOW,
+        id_generator=harness.ids,
+        metrics=metrics,
+        acceptance=InMemoryRunAcceptance(harness.runs, harness.events, harness.commands),
+    )
+
+    retried = await service.create_with_result(
+        "tenant-a", "session-1", "legacy-key", input={"prompt": "hello"}
+    )
+
+    assert retried.run.run_id == legacy.run_id
+    assert retried.run.dispatch_mode is None
+    assert await harness.commands.get("tenant-a", legacy.run_id) is None
+    assert (
+        metrics.count(
+            "harness_dispatch_unbackfilled_total", labels={"reason": "unknown_mode"}
+        )
+        == 1
+    )
+
+
+@pytest.mark.asyncio
+async def test_the_recorded_mode_survives_a_status_change() -> None:
+    """Fix 3: the mode is durable, so the Dispatcher can never be told otherwise."""
+
+    harness = Harness()
+    await harness.seed_session()
+    created = await harness.service().create_with_result(
+        "tenant-a", "session-1", "idem-1", input={"prompt": "hello"}
+    )
+    finished = created.run.model_copy(
+        update={
+            "status": RunStatus.SUCCEEDED,
+            "fencing_token": created.run.fencing_token + 1,
+        }
+    )
+    assert await harness.runs.compare_and_set(RunStatus.QUEUED, finished) is True
+
+    stored = await harness.runs.get("tenant-a", created.run.run_id)
+
+    assert stored.status is RunStatus.SUCCEEDED
+    assert stored.dispatch_mode is RunDispatchMode.QUEUED

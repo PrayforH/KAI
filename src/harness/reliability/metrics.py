@@ -103,6 +103,12 @@ DEFINITIONS = (
         "counter",
     ),
     MetricDefinition(
+        "harness_dispatch_unbackfilled_total",
+        "Accepted Runs left without a dispatch intent by policy.",
+        "counter",
+        ("reason",),
+    ),
+    MetricDefinition(
         "harness_idempotency_key_reuse_total",
         "Idempotency keys reused for a different request body.",
         "counter",
@@ -141,7 +147,7 @@ LABEL_VALUE_ALLOWLISTS: dict[tuple[str, str], frozenset[str]] = {
         }
     ),
     ("harness_worker_queue_failures_total", "operation"): frozenset(
-        {"dequeue", "acknowledge", "retry", "extend_lease"}
+        {"dequeue", "acknowledge", "retry", "extend_lease", "target_gone"}
     ),
     ("harness_trace_terminal_total", "completeness"): frozenset(
         {"complete", "missing"}
@@ -169,7 +175,10 @@ LABEL_VALUE_ALLOWLISTS: dict[tuple[str, str], frozenset[str]] = {
         {"pending", "leased", "dispatched"}
     ),
     ("harness_queue_dispatch_failures_total", "operation"): frozenset(
-        {"enqueue", "claim"}
+        {"enqueue", "enqueue_timeout", "claim"}
+    ),
+    ("harness_dispatch_unbackfilled_total", "reason"): frozenset(
+        {"unknown_mode"}
     ),
     ("harness_capacity_resource", "resource"): frozenset(
         {

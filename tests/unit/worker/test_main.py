@@ -1,11 +1,26 @@
 import asyncio
+from datetime import UTC, datetime
 
 import pytest
+from sqlalchemy.exc import OperationalError
 
+from harness.adapters.memory import (
+    InMemoryRunExecutionCommandRepository,
+    InMemoryTaskQueue,
+)
+from harness.core.errors import NotFoundError
 from harness.core.models import Run
-from harness.core.ports import RunTask
+from harness.core.ports import (
+    ExecutionCommandStatus,
+    RunExecutionCommand,
+    RunTask,
+    execution_command_id,
+)
 from harness.reliability.metrics import ReliabilityMetrics
-from harness.worker.main import maintenance_loop, worker_loop
+from harness.worker.dispatcher import ExecutionCommandDispatcher
+from harness.worker.main import maintenance_loop, worker_lifecycle, worker_loop
+
+ORDER_NOW = datetime(2026, 9, 29, 12, 0, tzinfo=UTC)
 
 
 class Queue:
@@ -432,3 +447,225 @@ async def test_control_plane_maintenance_runs_while_a_child_run_is_active() -> N
     assert not worker.done()
     executor.release.set()
     await asyncio.gather(worker, controller)
+
+
+class FailingExecutor:
+    def __init__(self, stop: asyncio.Event, error: BaseException) -> None:
+        self.stop = stop
+        self.error = error
+
+    async def execute(self, tenant_id: str, run_id: str) -> Run:
+        self.stop.set()
+        raise self.error
+
+
+@pytest.mark.asyncio
+async def test_a_deleted_target_is_retired_instead_of_retried_forever() -> None:
+    """Fix 2: a task whose Run is gone converges instead of looping.
+
+    Reproduces the reported behaviour: the Run (and its dispatch obligation)
+    were deleted, so the Worker must not keep re-queueing a task it can never
+    execute.
+    """
+
+    stop = asyncio.Event()
+    task = RunTask(tenant_id="tenant-a", run_id="run-deleted")
+    queue = Queue([task])
+    executor = FailingExecutor(stop, NotFoundError("run not found: run-deleted"))
+    metrics = ReliabilityMetrics()
+
+    async def absent(tenant_id: str, run_id: str) -> Run:
+        raise NotFoundError(f"run not found: {run_id}")
+
+    await worker_loop(
+        queue,
+        executor,
+        stop=stop,
+        poll_interval=0.001,
+        metrics=metrics,
+        run_target=absent,
+    )
+
+    assert queue.acknowledged == [task]
+    assert queue.retried == []
+    retired = metrics.count(
+        "harness_worker_queue_failures_total", labels={"operation": "target_gone"}
+    )
+    assert retired == 1
+
+
+@pytest.mark.asyncio
+async def test_an_unverifiable_target_is_still_retried() -> None:
+    """Fix 2: a database outage is not evidence that the Run was deleted."""
+
+    stop = asyncio.Event()
+    task = RunTask(tenant_id="tenant-a", run_id="run-1")
+    queue = Queue([task])
+    executor = FailingExecutor(stop, NotFoundError("run not found: run-1"))
+
+    async def unavailable(tenant_id: str, run_id: str) -> Run:
+        raise OperationalError("select 1", {}, RuntimeError("database is down"))
+
+    await worker_loop(
+        queue,
+        executor,
+        stop=stop,
+        poll_interval=0.001,
+        run_target=unavailable,
+    )
+
+    assert queue.retried == [task]
+    assert queue.acknowledged == []
+
+
+@pytest.mark.asyncio
+async def test_a_failure_with_an_existing_target_is_retried() -> None:
+    """Fix 2: a present target keeps the existing retry behaviour."""
+
+    stop = asyncio.Event()
+    task = RunTask(tenant_id="tenant-a", run_id="run-1")
+    queue = Queue([task])
+    executor = FailingExecutor(stop, NotFoundError("transient probe failure"))
+
+    async def present(tenant_id: str, run_id: str) -> Run:
+        return Run.model_construct()
+
+    await worker_loop(
+        queue,
+        executor,
+        stop=stop,
+        poll_interval=0.001,
+        run_target=present,
+    )
+
+    assert queue.retried == [task]
+    assert queue.acknowledged == []
+
+
+@pytest.mark.asyncio
+async def test_without_a_probe_nothing_is_treated_as_deleted() -> None:
+    """Fix 2: absent probe configuration means the old behaviour, not a guess."""
+
+    stop = asyncio.Event()
+    task = RunTask(tenant_id="tenant-a", run_id="run-1")
+    queue = Queue([task])
+    executor = FailingExecutor(stop, NotFoundError("run not found: run-1"))
+
+    await worker_loop(queue, executor, stop=stop, poll_interval=0.001)
+
+    assert queue.retried == [task]
+    assert queue.acknowledged == []
+
+
+class OrderedQueue(InMemoryTaskQueue):
+    """An in-memory queue that records each successful hand-off."""
+
+    def __init__(self, orders: list[str]) -> None:
+        super().__init__()
+        self.orders = orders
+        self.published: list[str] = []
+
+    async def enqueue(self, task: RunTask) -> None:
+        await super().enqueue(task)
+        self.published.append(task.run_id)
+        self.orders.append(f"publish:{task.run_id}")
+
+
+def order_command(run_id: str) -> RunExecutionCommand:
+    return RunExecutionCommand(
+        command_id=execution_command_id(run_id),
+        tenant_id="tenant-a",
+        run_id=run_id,
+        session_id="session-1",
+        status=ExecutionCommandStatus.PENDING,
+        created_at=ORDER_NOW,
+        available_at=ORDER_NOW,
+    )
+
+
+def order_clock() -> datetime:
+    return ORDER_NOW
+
+
+class OrderRecordingContainer:
+    """A container that records when its shared resources were released."""
+
+    def __init__(self, dispatcher: ExecutionCommandDispatcher) -> None:
+        self.dispatcher = dispatcher
+        self.close = self._close
+        self.closed = False
+
+    async def _close(self) -> None:
+        health = await self.dispatcher.health()
+        assert health.running is False, (
+            "shared resources were released while the Dispatcher still ran"
+        )
+        self.closed = True
+
+
+async def _dispatcher_over(
+    queue: InMemoryTaskQueue,
+) -> ExecutionCommandDispatcher:
+    return ExecutionCommandDispatcher(
+        InMemoryRunExecutionCommandRepository(),
+        queue,
+        clock=order_clock,
+        owner="dispatcher-a",
+        interval_seconds=0.01,
+    )
+
+
+@pytest.mark.asyncio
+async def test_the_dispatcher_stops_before_shared_resources_are_released() -> None:
+    """Fix 4: the container is released only after the Dispatcher has stopped."""
+
+    orders: list[str] = []
+    queue = OrderedQueue(orders)
+    commands = InMemoryRunExecutionCommandRepository()
+    await commands.insert(order_command("run-1"))
+    dispatcher = ExecutionCommandDispatcher(
+        commands, queue, clock=order_clock, owner="dispatcher-a", interval_seconds=0.01
+    )
+    container = OrderRecordingContainer(dispatcher)
+
+    async with worker_lifecycle(container, dispatch_enabled=True):
+        for _ in range(100):
+            if queue.published:
+                break
+            await asyncio.sleep(0.01)
+
+    assert orders == ["publish:run-1"]
+    assert container.closed is True
+    assert (await dispatcher.health()).running is False
+
+
+@pytest.mark.asyncio
+async def test_shared_resources_are_released_when_the_body_raises() -> None:
+    """Fix 4: an abnormal exit keeps the same stop-then-release order."""
+
+    queue = OrderedQueue([])
+    dispatcher = await _dispatcher_over(queue)
+    container = OrderRecordingContainer(dispatcher)
+
+    with pytest.raises(RuntimeError):
+        async with worker_lifecycle(container, dispatch_enabled=True):
+            raise RuntimeError("worker body failed")
+
+    assert container.closed is True
+    assert (await dispatcher.health()).running is False
+
+
+@pytest.mark.asyncio
+async def test_a_disabled_dispatcher_still_releases_shared_resources() -> None:
+    """Fix 4: nothing is left open when dispatching is switched off."""
+
+    queue = OrderedQueue([])
+    dispatcher = await _dispatcher_over(queue)
+    container = OrderRecordingContainer(dispatcher)
+
+    async with worker_lifecycle(container, dispatch_enabled=False):
+        pass
+
+    assert container.closed is True
+    assert (await dispatcher.health()).running is False
+    assert queue.published == []

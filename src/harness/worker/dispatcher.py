@@ -40,6 +40,10 @@ _URL_USERINFO = re.compile(r"(?i)\b([a-z][a-z0-9+.\-]*://)[^/\s@]*@")
 _AUTHORIZATION = re.compile(r"(?i)\b(authorization\s*[:=]\s*)[^\s,;]+")
 _MAX_ERROR_LENGTH = 200
 
+# One hand-off must not pin a Dispatcher pass: a Redis that accepts the
+# connection and then stops answering would otherwise stall the whole batch.
+DEFAULT_ENQUEUE_TIMEOUT_SECONDS = 5.0
+
 
 def safe_error(error: BaseException) -> str:
     """Describe an exception for storage without leaking credentials."""
@@ -99,12 +103,15 @@ class ExecutionCommandDispatcher:
         interval_seconds: float = 0.5,
         retry_base_seconds: float = 1,
         retry_max_seconds: float = 60,
+        enqueue_timeout_seconds: float = DEFAULT_ENQUEUE_TIMEOUT_SECONDS,
         metrics: ReliabilityMetrics | None = None,
     ) -> None:
         if lease_seconds <= 0 or interval_seconds <= 0 or batch_size < 1:
             raise ValueError("dispatcher lease, interval and batch size must be positive")
         if retry_base_seconds <= 0 or retry_max_seconds < retry_base_seconds:
             raise ValueError("dispatcher retry backoff must be positive and ordered")
+        if enqueue_timeout_seconds <= 0:
+            raise ValueError("dispatcher enqueue timeout must be positive")
         self._commands = commands
         self._queue = queue
         self._clock = clock
@@ -114,6 +121,7 @@ class ExecutionCommandDispatcher:
         self._interval_seconds = interval_seconds
         self._retry_base_seconds = retry_base_seconds
         self._retry_max_seconds = retry_max_seconds
+        self._enqueue_timeout_seconds = enqueue_timeout_seconds
         self._metrics = metrics
         self._task: asyncio.Task[None] | None = None
         self._stop: asyncio.Event | None = None
@@ -174,16 +182,24 @@ class ExecutionCommandDispatcher:
         rescheduled = 0
         lost = 0
         for command in claimed:
-            try:
-                await self._queue.enqueue(command.to_task())
-            except asyncio.CancelledError:
-                raise
-            except Exception as error:
-                await self._reschedule(command, error)
+            if not await self._publish(command):
                 rescheduled += 1
                 continue
             if await self._commands.mark_dispatched(command, now=self._clock()):
                 dispatched += 1
+            elif await self._commands.get(command.tenant_id, command.run_id) is None:
+                # The obligation is gone, which means the Run and its command
+                # were deleted while this pass held the lease. Nothing is owed,
+                # and the delivered task is absorbed by the consumer's "target
+                # no longer exists" convergence.
+                logger.info(
+                    "dispatch obligation was removed while publishing",
+                    extra={
+                        "tenant_id": command.tenant_id,
+                        "run_id": command.run_id,
+                        "command_id": command.command_id,
+                    },
+                )
             else:
                 # The lease was reclaimed while publishing. The command stays
                 # pending, so the task will be published again; that duplicate
@@ -208,6 +224,34 @@ class ExecutionCommandDispatcher:
         await self._observe(cycle)
         return cycle
 
+    async def _publish(self, command: RunExecutionCommand) -> bool:
+        """Hand one obligation to the queue; True only when it was accepted.
+
+        Every failure path leaves the obligation pending for a backed-off
+        retry, because a failed publish is never proof that Redis did not
+        receive the command: a timeout or a broken connection can land after
+        the server already queued it. A duplicate is therefore possible by
+        design, and the Worker's idempotency, status validation and fencing are
+        what keep it from becoming a second execution.
+        """
+
+        try:
+            async with asyncio.timeout(self._enqueue_timeout_seconds):
+                await self._queue.enqueue(command.to_task())
+        except asyncio.CancelledError:
+            # Shutdown or an explicit cancel owns this: the lease stays held and
+            # expires, so the obligation is recovered rather than lost.
+            raise
+        except TimeoutError:
+            await self._reschedule(
+                command, None, operation="enqueue_timeout", uncertain=True
+            )
+            return False
+        except Exception as error:
+            await self._reschedule(command, error, operation="enqueue", uncertain=True)
+            return False
+        return True
+
     def _retry_delay(self, attempts: int) -> float:
         """Exponential backoff from the first retry, capped so a long outage
         still retries steadily instead of waiting out a runaway exponent."""
@@ -217,9 +261,24 @@ class ExecutionCommandDispatcher:
             self._retry_base_seconds * (2 ** max(0, min(attempts - 1, 16))),
         )
 
-    async def _reschedule(self, command: RunExecutionCommand, error: BaseException) -> None:
+    async def _reschedule(
+        self,
+        command: RunExecutionCommand,
+        error: BaseException | None,
+        *,
+        operation: str,
+        uncertain: bool = False,
+    ) -> None:
         available_at = self._clock() + timedelta(seconds=self._retry_delay(command.attempts))
-        detail = safe_error(error)
+        detail = (
+            f"TimeoutError: publish exceeded {self._enqueue_timeout_seconds}s"
+            if error is None
+            else safe_error(error)
+        )
+        if uncertain:
+            # Recorded so an operator reading the table knows a duplicate is
+            # possible for this command, not that the publish definitely failed.
+            detail = f"unconfirmed:{detail}"
         await self._commands.reschedule(
             command, available_at=available_at, error=detail
         )
@@ -227,10 +286,10 @@ class ExecutionCommandDispatcher:
         if self._metrics is not None:
             self._metrics.increment(
                 "harness_queue_dispatch_failures_total",
-                labels={"operation": "enqueue"},
+                labels={"operation": operation},
             )
         logger.warning(
-            "run dispatch publish failed; retrying with backoff",
+            "run dispatch publish did not confirm; retrying with backoff",
             extra={
                 "tenant_id": command.tenant_id,
                 "run_id": command.run_id,
@@ -258,7 +317,11 @@ class ExecutionCommandDispatcher:
         self._metrics.gauge(
             "harness_dispatch_commands", backlog.dispatched, labels={"state": "dispatched"}
         )
-        if backlog.oldest_pending_age_seconds is not None:
+        if backlog.oldest_pending_age_seconds is None:
+            # An empty backlog is the recovered state, so the gauge has to say
+            # zero rather than keep reporting the age of a backlog that is gone.
+            self._metrics.gauge("harness_dispatch_pending_age_seconds", 0.0)
+        else:
             # A pending obligation that keeps ageing is work nobody is
             # delivering; it must be visible rather than silently accumulating.
             self._metrics.gauge(
@@ -304,13 +367,19 @@ class ExecutionCommandDispatcher:
 
 @asynccontextmanager
 async def running_dispatcher(
-    dispatcher: "ExecutionCommandDispatcher | None", *, enabled: bool
+    dispatcher: "ExecutionCommandDispatcher | None",
+    *,
+    enabled: bool,
+    grace_seconds: float = 5,
 ) -> AsyncGenerator["ExecutionCommandDispatcher | None", None]:
     """Run the Dispatcher for the duration of the block, when it is enabled.
 
     The Worker owns this lifecycle: the API process only writes obligations.
     A Dispatcher that is stopped or never started leaves every obligation
     pending, which is visible in the backlog gauge rather than silent.
+
+    ``grace_seconds`` bounds the wait for an in-flight pass, so a publish that
+    is stuck against an unresponsive Redis cannot hold shutdown open.
     """
 
     if dispatcher is None or not enabled:
@@ -320,4 +389,4 @@ async def running_dispatcher(
     try:
         yield dispatcher
     finally:
-        await dispatcher.stop()
+        await dispatcher.stop(grace_seconds=grace_seconds)

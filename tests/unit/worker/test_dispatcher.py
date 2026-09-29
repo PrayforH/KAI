@@ -1,6 +1,7 @@
 """Durable dispatch behaviour: leasing, backoff, reclaim and observation."""
 
 import asyncio
+import time
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -12,6 +13,7 @@ from harness.adapters.memory import (
 from harness.core.ports import (
     ExecutionCommandStatus,
     RunExecutionCommand,
+    RunTask,
     execution_command_id,
 )
 from harness.reliability.metrics import ReliabilityMetrics
@@ -52,6 +54,31 @@ class FailingQueue(InMemoryTaskQueue):
         await super().enqueue(task)
 
 
+class HangingQueue(InMemoryTaskQueue):
+    """A queue that accepts the connection and then never answers.
+
+    This is the shape a stalled Redis actually takes: the socket is open, the
+    write goes out, and nothing ever comes back. It reproduces what an
+    immediately-raised ConnectionError cannot.
+    """
+
+    def __init__(self, *, absorb: bool = False) -> None:
+        super().__init__()
+        self.hang = asyncio.Event()
+        self.received = 0
+        self.published: list[RunTask] = []
+        self._absorb = absorb
+
+    async def enqueue(self, task: RunTask) -> None:
+        if self.hang.is_set():
+            self.received += 1
+            if self._absorb:
+                # The server side took the command before the client gave up.
+                self.published.append(task)
+            await asyncio.Event().wait()
+        await super().enqueue(task)
+
+
 def command(run_id: str, now: datetime, *, tenant_id: str = "tenant-a") -> RunExecutionCommand:
     return RunExecutionCommand(
         command_id=execution_command_id(run_id),
@@ -72,6 +99,7 @@ def dispatcher(
     owner: str = "dispatcher-a",
     lease_seconds: float = 60,
     metrics: ReliabilityMetrics | None = None,
+    enqueue_timeout_seconds: float = 5,
 ) -> ExecutionCommandDispatcher:
     return ExecutionCommandDispatcher(
         commands,
@@ -83,6 +111,7 @@ def dispatcher(
         interval_seconds=0.5,
         retry_base_seconds=2,
         retry_max_seconds=8,
+        enqueue_timeout_seconds=enqueue_timeout_seconds,
         metrics=metrics,
     )
 
@@ -377,3 +406,200 @@ def test_a_dispatcher_refuses_an_incoherent_configuration() -> None:
             retry_base_seconds=10,
             retry_max_seconds=1,
         )
+
+
+@pytest.mark.asyncio
+async def test_a_hung_publish_times_out_and_keeps_the_obligation() -> None:
+    """Fix 1: Redis accepts the connection, then stops answering.
+
+    The pass has to end on its own, the obligation has to survive as pending,
+    and it has to be retried later - an unresponsive server must never look
+    like a completed hand-off, and the caller must never wait forever.
+    """
+
+    commands = InMemoryRunExecutionCommandRepository()
+    queue = HangingQueue()
+    metrics = ReliabilityMetrics()
+    clock = MutableClock()
+    queue.hang.set()
+    await commands.insert(command("run-1", START))
+    pending = dispatcher(
+        commands, queue, clock, metrics=metrics, enqueue_timeout_seconds=0.05
+    )
+
+    started = time.monotonic()
+    cycle = await asyncio.wait_for(pending.run_once(), timeout=2)
+    elapsed = time.monotonic() - started
+
+    assert elapsed < 1, "a stalled publish must be bounded, not waited out"
+    assert (cycle.claimed, cycle.dispatched, cycle.rescheduled) == (1, 0, 1)
+    stored = await commands.get("tenant-a", "run-1")
+    assert stored is not None
+    assert stored.status is ExecutionCommandStatus.PENDING
+    assert stored.lease_owner is None
+    assert stored.failures == 1
+    assert stored.last_error is not None
+    assert stored.last_error.startswith("unconfirmed:")
+    assert "TimeoutError" in stored.last_error
+    assert (
+        metrics.count(
+            "harness_queue_dispatch_failures_total",
+            labels={"operation": "enqueue_timeout"},
+        )
+        == 1
+    )
+
+    # Recovery is a real publish, exactly as the at-least-once contract says.
+    queue.hang.clear()
+    clock.advance(2)
+    recovered = await pending.run_once()
+    assert (recovered.claimed, recovered.dispatched) == (1, 1)
+    assert (await queue.dequeue()).run_id == "run-1"  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+async def test_a_publish_that_may_have_landed_is_redelivered_not_dropped() -> None:
+    """Fix 1: the outcome of a timed-out publish is unknown, so treat it that way.
+
+    The server may already hold the command when the client gives up. The
+    obligation must stay pending so it is delivered again; at-least-once plus
+    the Worker's idempotency is what keeps that duplicate harmless.
+    """
+
+    commands = InMemoryRunExecutionCommandRepository()
+    queue = HangingQueue(absorb=True)
+    clock = MutableClock()
+    queue.hang.set()
+    await commands.insert(command("run-1", START))
+    pending = dispatcher(commands, queue, clock, enqueue_timeout_seconds=0.05)
+
+    await asyncio.wait_for(pending.run_once(), timeout=2)
+
+    # The "server" kept it...
+    assert [task.run_id for task in queue.published] == ["run-1"]
+    # ...but the platform does not claim the hand-off happened.
+    stored = await commands.get("tenant-a", "run-1")
+    assert stored is not None
+    assert stored.status is ExecutionCommandStatus.PENDING
+    assert stored.dispatched_at is None
+
+    # The retry produces a second delivery attempt for the same single Run.
+    queue.hang.clear()
+    clock.advance(2)
+    retried = await pending.run_once()
+    assert retried.dispatched == 1
+    assert queue.received == 1
+    assert (await commands.get("tenant-a", "run-1")).status is (  # type: ignore[union-attr]
+        ExecutionCommandStatus.DISPATCHED
+    )
+
+
+@pytest.mark.asyncio
+async def test_cancelling_a_stuck_dispatch_pass_propagates_and_keeps_the_lease() -> None:
+    """Fix 1: an outer cancel must not be swallowed by the publish bound."""
+
+    commands = InMemoryRunExecutionCommandRepository()
+    queue = HangingQueue()
+    clock = MutableClock()
+    queue.hang.set()
+    await commands.insert(command("run-1", START))
+    pending = dispatcher(
+        commands, queue, clock, enqueue_timeout_seconds=30, lease_seconds=30
+    )
+
+    task = asyncio.create_task(pending.run_once())
+    for _ in range(100):
+        if queue.received:
+            break
+        await asyncio.sleep(0.01)
+    assert queue.received == 1, "the publish should have been attempted by now"
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    # The pass died mid-publish, so the claim is left to its lease instead of
+    # being silently completed.
+    stored = await commands.get("tenant-a", "run-1")
+    assert stored is not None
+    assert stored.status is ExecutionCommandStatus.PENDING
+
+
+@pytest.mark.asyncio
+async def test_the_pending_age_gauge_returns_to_zero_after_the_backlog_clears() -> None:
+    """Fix 5: backlog -> recovered delivery -> empty backlog reports zero."""
+
+    commands = InMemoryRunExecutionCommandRepository()
+    queue = FailingQueue()
+    metrics = ReliabilityMetrics()
+    clock = MutableClock()
+    await commands.insert(command("run-1", START))
+    pending = dispatcher(commands, queue, clock, metrics=metrics)
+
+    # Backlog: the publish fails, so the obligation stays and ages visibly.
+    queue.available = False
+    clock.advance(120)
+    await pending.run_once()
+
+    assert metrics.count("harness_dispatch_commands", labels={"state": "pending"}) == 1
+    assert metrics.count("harness_dispatch_pending_age_seconds") == 120
+
+    # Recovery: the retry succeeds and the backlog is drained.
+    queue.available = True
+    clock.advance(2)
+    await pending.run_once()
+
+    assert metrics.count("harness_dispatch_commands", labels={"state": "pending"}) == 0
+    assert metrics.count("harness_dispatch_commands", labels={"state": "dispatched"}) == 1
+    # The gauge reports the recovered state instead of the age of a backlog
+    # that no longer exists.
+    assert metrics.count("harness_dispatch_pending_age_seconds") == 0
+
+    # And it stays at zero on a later idle pass.
+    clock.advance(600)
+    await pending.run_once()
+    assert metrics.count("harness_dispatch_pending_age_seconds") == 0
+
+
+@pytest.mark.asyncio
+async def test_a_stuck_publish_cannot_hold_shutdown_open() -> None:
+    """Fix 4: exit stays bounded even when a publish is stuck."""
+
+    commands = InMemoryRunExecutionCommandRepository()
+    queue = HangingQueue()
+    clock = MutableClock()
+    queue.hang.set()
+    await commands.insert(command("run-1", START))
+    pending = dispatcher(commands, queue, clock, enqueue_timeout_seconds=30)
+
+    started = time.monotonic()
+    async with running_dispatcher(pending, enabled=True, grace_seconds=0.05):
+        for _ in range(100):
+            if (await pending.health()).last_claimed:
+                break
+            await asyncio.sleep(0.01)
+    elapsed = time.monotonic() - started
+
+    assert elapsed < 2, "shutdown must not wait out a stuck publish"
+    assert (await pending.health()).running is False
+
+
+@pytest.mark.asyncio
+async def test_a_command_removed_while_publishing_is_not_reported_as_a_lost_lease() -> None:
+    """Fix 2: a deleted obligation is a completed one, not a lost lease."""
+
+    commands = InMemoryRunExecutionCommandRepository()
+    clock = MutableClock()
+
+    class RemovingQueue(InMemoryTaskQueue):
+        async def enqueue(self, task: RunTask) -> None:
+            await super().enqueue(task)
+            # The Run and its obligation are deleted while the pass is open.
+            await commands.remove(execution_command_id(task.run_id))
+
+    removing = RemovingQueue()
+    await commands.insert(command("run-1", START))
+
+    cycle = await dispatcher(commands, removing, clock).run_once()
+
+    assert (cycle.claimed, cycle.dispatched, cycle.lost_lease) == (1, 0, 0)
+    assert await commands.get("tenant-a", "run-1") is None

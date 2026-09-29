@@ -1,0 +1,32 @@
+# Review 修复：失败复现与修复后对照（真实 PostgreSQL + Redis）
+
+脚本：`/tmp/reproduce_review_findings.py`（同一脚本在两个树上运行，只使用两边都存在的 API；
+新参数存在时才启用，不存在即说明该树早于修复）。
+
+- 修复前树：worktree `/tmp/reliable-run-prefix`，detached HEAD `710beda5`（被 review 的提交）
+- 修复后树：worktree `/Users/xiaokai/Documents/agent-studio-reliable-run-submit`，分支 `auto/reliable-run-submit`
+- 数据库：本机隔离库 `harness_test`（脚本自行 drop/create schema）
+- Redis：本机 6379 db12，按 `dispatch-test*` 前缀清理，不执行 flushdb
+- 运行：`uv run python /tmp/reproduce_review_findings.py`
+
+## 修复前（710beda5）
+
+```
+[REPRO] 1a  acceptance waits on a stalled event bus: create_with_result did not return within 0.5s
+[REPRO] 1b  dispatch waits on a stalled publish: run_once did not return within 0.5s
+[REPRO] 2   deletion leaves the dispatch obligation behind: runs left=0 obligations before=2 after=2
+[REPRO] 3   inline Run gains a queue task when retried: obligations before=0 after=1 recorded mode=unrecorded
+[REPRO] 5   pending-age gauge keeps a stale value: age while backed up=120.0 after the backlog cleared=122.0
+[REPRO] 4   shared resources released before the Dispatcher stopped: no lifecycle owner exists: the entrypoint nests container.close() inside the dispatcher scope, so close runs before it stops
+```
+
+## 修复后
+
+```
+[ OK ] 1a  acceptance waits on a stalled event bus: bounded; Run committed and the dispatch intent is present (True)
+[ OK ] 1b  dispatch waits on a stalled publish: bounded: claimed=1 dispatched=0 rescheduled=1; intent kept as pending
+[ OK ] 2   deletion leaves the dispatch obligation behind: runs left=0 obligations before=2 after=0
+[ OK ] 3   inline Run gains a queue task when retried: obligations before=0 after=0 recorded mode=inline
+[ OK ] 5   pending-age gauge keeps a stale value: age while backed up=120.0 after the backlog cleared=0.0
+[ OK ] 4   shared resources released before the Dispatcher stopped: observed order=['close-after-stop']
+```

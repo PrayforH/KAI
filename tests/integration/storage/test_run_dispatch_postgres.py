@@ -7,6 +7,7 @@ is the Session lookup, because a Session is not what this loop is about.
 
 import asyncio
 import os
+import time
 from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -50,6 +51,7 @@ DatabaseFixture = tuple[AsyncEngine, SessionFactory]
 
 NOW = datetime(2026, 9, 29, 12, 0, tzinfo=UTC)
 REDIS_DATABASE = 12
+NAMESPACE = "dispatch-test"
 
 
 class MutableClock:
@@ -122,7 +124,7 @@ class Arrangement:
         self.commands = PostgresRunExecutionCommandRepository(sessions_factory)
         self.redis = RedisTaskQueue(
             client,
-            namespace="dispatch-test",
+            namespace=NAMESPACE,
             visibility_timeout_seconds=60,
             retry_delay_seconds=1,
         )
@@ -131,7 +133,7 @@ class Arrangement:
         self.metrics = ReliabilityMetrics()
         self.event_service = EventService(
             self.events,
-            RedisEventBus(client, namespace="dispatch-test"),
+            RedisEventBus(client, namespace=NAMESPACE),
             clock=self.clock,
             id_generator=self.ids,
         )
@@ -182,15 +184,30 @@ class Arrangement:
 
 @pytest_asyncio.fixture
 async def redis_client() -> AsyncIterator[AsyncRedisClient]:
+    """A scoped Redis client that clears only keys under its own namespace.
+
+    ``flushdb`` would erase whatever else shares the index, so cleanup is
+    restricted to this suite's key prefix.
+    """
+
     client: Redis = Redis.from_url(  # pyright: ignore[reportUnknownMemberType]
         os.getenv("HARNESS_TEST_REDIS_URL", f"redis://127.0.0.1:6379/{REDIS_DATABASE}"),
         decode_responses=True,
+        socket_connect_timeout=5,
+        socket_timeout=5,
     )
-    await client.flushdb()  # pyright: ignore[reportUnknownMemberType]
+    await clear_namespace(client)
     try:
         yield cast(AsyncRedisClient, client)
     finally:
+        await clear_namespace(client)
         await client.aclose()
+
+
+async def clear_namespace(client: Redis) -> None:
+    keys = await client.keys(f"{NAMESPACE}:*")  # pyright: ignore[reportUnknownMemberType]
+    if keys:
+        await client.delete(*keys)  # pyright: ignore[reportUnknownMemberType]
 
 
 @pytest_asyncio.fixture
@@ -673,3 +690,75 @@ async def test_dispatching_records_delivery_without_executing_or_owning_the_run(
     assert (delivered.claimed, delivered.dispatched) == (1, 1)
     unchanged = await arranged.runs.get("tenant-a", creation.run.run_id)
     assert unchanged == owned
+
+@pytest.mark.asyncio
+async def test_a_timed_out_publish_is_recorded_as_unconfirmed_in_postgres(
+    arranged: Arrangement, database: DatabaseFixture
+) -> None:
+    """Fix 1 on the real store: the uncertain outcome is durable and retried."""
+
+    engine, _ = database
+    await arranged.seed_session()
+    creation = await arranged.service().create_with_result(
+        "tenant-a", "session-1", "idem-1", input={"prompt": "hello"}
+    )
+
+    class HangingQueue:
+        """Accepts the connection, then never answers."""
+
+        def __init__(self) -> None:
+            self.attempts = 0
+
+        async def enqueue(self, task: RunTask) -> None:
+            self.attempts += 1
+            await asyncio.Event().wait()
+
+        async def dequeue(self) -> RunTask | None:
+            return None
+
+        async def acknowledge(self, task: RunTask) -> None:
+            del task
+
+        async def retry(self, task: RunTask) -> None:
+            del task
+
+        async def extend_lease(self, task: RunTask) -> None:
+            del task
+
+        async def stats(self) -> dict[str, int]:
+            return {}
+
+    hanging = HangingQueue()
+    pending = ExecutionCommandDispatcher(
+        arranged.commands,
+        hanging,
+        clock=arranged.clock,
+        owner="dispatcher-hung",
+        lease_seconds=30,
+        retry_base_seconds=2,
+        retry_max_seconds=8,
+        enqueue_timeout_seconds=0.05,
+    )
+
+    started = time.monotonic()
+    cycle = await asyncio.wait_for(pending.run_once(), timeout=3)
+    elapsed = time.monotonic() - started
+
+    assert elapsed < 1
+    assert (cycle.claimed, cycle.dispatched, cycle.rescheduled) == (1, 0, 1)
+    stored = await arranged.commands.get("tenant-a", creation.run.run_id)
+    assert stored is not None
+    assert stored.status is ExecutionCommandStatus.PENDING
+    assert stored.lease_owner is None
+    assert stored.failures == 1
+    assert stored.last_error is not None
+    assert stored.last_error.startswith("unconfirmed:")
+    assert "TimeoutError" in stored.last_error
+    # The Run itself is untouched: acceptance is already durable.
+    assert (
+        await count_rows(engine, RunRow, run_id=creation.run.run_id) == 1
+    )
+    assert (await arranged.runs.get("tenant-a", creation.run.run_id)).status is (
+        RunStatus.QUEUED
+    )
+

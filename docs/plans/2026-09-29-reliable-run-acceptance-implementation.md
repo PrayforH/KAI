@@ -5,6 +5,10 @@
 分支：`auto/reliable-run-submit`（独立 worktree，主工作区未提交改动未触碰）
 范围：只做「接受即持久化执行意图」的可恢复闭环；不部署、不改线上配置、不合并。
 
+> **第二次提交（Review 修复）**见文末「十、Review 修复批次」。该批次修复了 `710beda5` 的
+> 5 个问题（Redis 无响应阻塞受理/投递、生命周期删除遗漏、内联 Run 被重试转成后台任务、
+> Worker 停机顺序、积压年龄指标不归零），每个问题都给出了在 `710beda5` 上的失败复现与修复后对照。
+
 ---
 
 ## 一、现状核实（改动前，全部在代码中确认）
@@ -143,3 +147,68 @@ uv run python scripts/final_readiness.py          → migrationHead=0038
 3. `outbox` 表**不在任何 Alembic 修订里**：既有库只有在 `0001` 的 legacy `create_all` 执行时 `OutboxRow` 已在模型中，该表才存在。将来若要真正接入 Outbox，必须补一个带 `has_table` 守卫的修订，不能假设表已在。
 4. `RunRepository` 端口没有「按状态列出缺少执行命令的 Run」这类查询，因此本轮的存量补投只能靠重试请求触发。下一轮做 sweep 时需要新增一个跨表查询端口，而不是在服务层拼两个仓储。
 
+
+---
+
+# 十、Review 修复批次（在被 review 的 `710beda5` 之上）
+
+被 review 的提交：`710beda5`，分支 `auto/reliable-run-submit`。开始前已确认：工作区干净、
+该提交**未合入** `origin/develop`、也未被任何其他分支修复，五个问题在代码中全部复现。
+
+失败复现与修复后对照（同一脚本在两个 worktree 上跑真实 PostgreSQL + Redis）：
+`docs/results/review-fixes-reliable-acceptance-20260929.txt`。脚本在修复前的树上 5 项全部
+REPRO，在修复后的树上 5 项全部 OK。
+
+| # | 问题 | 修复前的实测现象 | 修复方式 | 回归测试 |
+| --- | --- | --- | --- | --- |
+| 1 | Redis 无响应仍会阻塞受理与投递 | `create_with_result` 与 `run_once` 在「连上但不回包」的 Redis 上 **0.5s 内不返回**（实测挂死） | `EventService.notify` 加短超时（默认 2s，可配）；Dispatcher 单次 publish 加超时（默认 5s，可配），超时按「结果不确定」处理：保留指令、退避重投；生产 Redis 客户端配置 `socket_connect_timeout`/`socket_timeout` | `test_an_unresponsive_event_bus_cannot_hold_a_committed_acceptance`、`test_a_hung_publish_times_out_and_keeps_the_obligation`、`test_a_publish_that_may_have_landed_is_redelivered_not_dropped`、`test_cancelling_a_stuck_dispatch_pass_propagates_and_keeps_the_lease`、PG 侧 `test_a_timed_out_publish_is_recorded_as_unconfirmed_in_postgres` |
+| 2 | 生命周期删除遗漏 `run_execution_commands` | 删除租户后：`runs` 剩 0 行，**指令剩 2 行**（会被继续投递给找不到 Run 的 Worker） | `PostgresLifecycleAdapter.delete` 在与 `RunRow` **同一事务、同一租户过滤、同一 run 集合**内删除指令；消费端对「确认不存在」的目标 ack 收敛 | `test_deleting_a_tenant_removes_its_dispatch_obligations`、`test_retention_cleanup_removes_dispatch_obligations_too`、`test_pending_dispatched_and_leased_obligations_are_all_removed`、`test_a_deletion_that_lands_after_the_claim_is_not_reported_as_a_lost_lease`、`test_a_deleted_target_is_retired_instead_of_retried_forever`、`test_an_unverifiable_target_is_still_retried` |
+| 3 | 内联 Run 被重试转换成后台任务 | 先 `dispatch_to_queue=False` 创建、再以同键默认参数重试：指令 **0 → 1**（子 Run 被交给别的 Worker） | 在 Run 上持久化 `dispatch_mode`（`queued`/`inline`，写在既有 `runs.payload`，无新列无迁移）；补偿逻辑只读 Run 自己的模式，不再看调用方参数；`None`＝历史未知，明确**不自动补投**并计数 | `test_retrying_an_inline_run_never_turns_it_into_a_queue_task`、`test_same_input_deduplication_does_not_queue_an_inline_run`、`test_a_queued_run_whose_intent_was_lost_is_still_repaired`、`test_a_legacy_run_without_a_recorded_mode_is_left_for_an_operator`、PG 侧 `test_an_inline_run_is_never_given_an_obligation_by_a_retry` |
+| 4 | Worker 停机顺序错误 | `serve()` 把 `container.close()` 嵌在 dispatcher 作用域内，关闭**先于** Dispatcher 停止（关闭后仍可能继续投递/重连） | 新增 `worker_lifecycle`：先 `stop()` 并等待 Dispatcher（有界 grace，默认 5s），**再**释放容器；释放放在 dispatcher 作用域之外，避免「body finally 先于作用域退出」这一陷阱 | `test_the_dispatcher_stops_before_shared_resources_are_released`、`test_shared_resources_are_released_when_the_body_raises`、`test_a_disabled_dispatcher_still_releases_shared_resources`、`test_a_stuck_publish_cannot_hold_shutdown_open` |
+| 5 | 积压年龄指标不归零 | 积压 120s 后投递完成，指标仍为 **122.0**（旧值残留） | 无积压时显式写入 0 | `test_the_pending_age_gauge_returns_to_zero_after_the_backlog_clears` |
+
+## 10.1 固定语义
+
+- **受理原子性不变**：Run、`run.queued`、投递指令仍在同一个数据库事务内提交；通知/投递失败都不改变「已接受」这一事实。
+- **至少一次 + 幂等**：超时被当作「结果不确定」而非失败——指令保持 pending 并重投，`last_error` 前缀 `unconfirmed:` 明示重复投递可能；重复消息仍由 Worker 的幂等、状态校验与 fencing 吸收。
+- **取消语义保留**：`asyncio.timeout` 只吸收本次调用自己的截止时间，外层取消照常 `CancelledError` 上抛；被取消的投递保留租约，由租约到期恢复。
+- **消费端区分「已删除」与「故障」**：只有在**明确确认**目标不存在（`NotFoundError`）时才 ack 收敛；数据库故障、鉴权失败、读取超时等一律继续重试（`test_an_unverifiable_target_is_still_retried`）。
+- **不凭「没有指令」推断历史 Run 应排队**：`dispatch_mode=None` 的历史 Run 一律不补投，`harness_dispatch_unbackfilled_total{reason="unknown_mode"}` 计数留待人工处置。这同时保证了 710beda5 之前的存量 stranded Run 不会被上线时的批量惊群重投。
+- **Memory 与 PostgreSQL 语义一致**：超时、模式判定、aging、收敛都在端口/领域层实现，两种适配器共用；删除流程只有 PostgreSQL 适配器有（内存模式用 `EmptyLifecycleAdapter`），因此删除语义的对照只在 PG 侧验证，这一点显式记录而非假定。
+
+## 10.2 本批次实测结果
+
+```
+uv run python -m pytest tests/unit tests/contract tests/contracts tests/integration -q
+  → 2004 passed, 8 skipped          （第一轮结束时为 1978 passed）
+uv run pyright                      → 1500 errors（与基准完全一致，未新增）
+uv run ruff check src tests         → 仅 3 条基准既有错误
+uv run python /tmp/reproduce_review_findings.py
+  → 修复前 5/5 REPRO，修复后 5/5 OK（真实 PostgreSQL + Redis）
+uv run python -m pytest tests/integration/storage/test_migration_0038_postgres.py tests/unit/test_migration_0038.py -q
+  → 7 passed（本批次无 schema 变化：git diff 710beda5 -- migrations 为空）
+uv run python -m pytest <取消/审批/Session gate/SDK 复用 9 个文件> -q
+  → 110 passed
+uv run python scripts/e2e_fake_runtime.py → status=succeeded, agui_events=52, 审批往返正常
+uv run python scripts/final_readiness.py  → migrationHead=0038
+```
+
+新增/扩大的测试：`tests/unit/worker/test_dispatcher.py` 20、`tests/unit/worker/test_main.py` 20、
+`tests/unit/application/test_run_acceptance.py` 18、`tests/integration/storage/test_run_dispatch_postgres.py` 13、
+`tests/integration/storage/test_run_command_lifecycle_postgres.py` 5。
+
+测试隔离：PostgreSQL 用隔离库 `harness_test`（fixture 自行 drop/create schema）；Redis 用独立 db
+并按 `dispatch-test*` 前缀删除自己的 key——**已把原先的 `flushdb()` 全部换掉**，不再可能清空同索引下
+其他测试或共享服务的数据。
+
+## 10.3 本批次未验证 / 未做
+
+1. **仍未在真实 173/174 环境部署或跑真实 Run**；全部结论来自本机真实 PostgreSQL + Redis。
+2. `socket_timeout` 对长任务的影响只在代码层推理（redis-py 的阻塞读会用自己的显式 timeout 覆盖它，
+   见 `redis/asyncio/connection.py` 的 `read_timeout = timeout if timeout is not None else self.socket_timeout`），
+   **未做线上压测**；默认 5s 是保守取值，可按环境调。
+3. Session gate 的持有校验走同一 Redis：把它设为有超时会改变「Redis 卡住」时的行为（从挂死变为
+   判定所有权失败并取消）。这是有意的取舍，但**未在线上验证**。
+4. 存量「指令存在但 Run 已被删除」的历史残留只由消费端收敛自愈，**未做全租户 orphan 扫描**
+   （与既有 `EventRow` 的处理方式保持一致）。
+5. 3 的兼容规则只做了计数与日志，**未提供存量补投的运维入口**（下一轮）。

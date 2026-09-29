@@ -3,16 +3,17 @@
 import asyncio
 import logging
 import signal
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Protocol
 
 from harness.config import Settings
+from harness.core.errors import NotFoundError
 from harness.core.models import Run
 from harness.core.ports import RunTask, TaskQueue
 from harness.reliability.metrics import ReliabilityMetrics
 from harness.sandbox.lease import SandboxLeaseService, SandboxLeaseState
-from harness.worker.dispatcher import running_dispatcher
+from harness.worker.dispatcher import ExecutionCommandDispatcher, running_dispatcher
 from harness.worker.orchestrator import RunOrchestrator
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,49 @@ logger = logging.getLogger(__name__)
 
 class RunExecutor(Protocol):
     async def execute(self, tenant_id: str, run_id: str) -> Run: ...
+
+
+class WorkerRuntime(Protocol):
+    """The shared-resource surface a Worker owns for its whole run.
+
+    Declared read-only so a frozen container satisfies it; the Worker only
+    reads these, and never rebinds them.
+    """
+
+    @property
+    def dispatcher(self) -> ExecutionCommandDispatcher | None: ...
+
+    @property
+    def close(self) -> Callable[[], Awaitable[None]] | None: ...
+
+
+@asynccontextmanager
+async def worker_lifecycle(
+    container: WorkerRuntime,
+    *,
+    dispatch_enabled: bool,
+    grace_seconds: float = 5,
+) -> AsyncGenerator[None, None]:
+    """Own the Dispatcher and shared-resource lifetime of a Worker process.
+
+    Shutdown order is the contract, not an implementation detail: the
+    Dispatcher is stopped and awaited **before** the container releases Redis
+    and the database. Releasing first would let a still-running pass publish
+    against a closed pool, or quietly reconnect after shutdown had begun.
+
+    The release sits outside the dispatcher scope on purpose: cleanup attached
+    to the body would run *before* that scope exits, which is the very ordering
+    this function exists to prevent.
+    """
+
+    try:
+        async with running_dispatcher(
+            container.dispatcher, enabled=dispatch_enabled, grace_seconds=grace_seconds
+        ):
+            yield
+    finally:
+        if container.close is not None:
+            await container.close()
 
 
 class SessionGate(Protocol):
@@ -118,6 +162,33 @@ async def _renew_sandbox_lease(leases: SandboxLeaseService, task: RunTask) -> No
         )
 
 
+async def _target_is_gone(
+    probe: Callable[[str, str], Awaitable[object]] | None, task: RunTask
+) -> bool:
+    """Whether the task's target is *known* to be absent.
+
+    Only a definitive "not found" counts. A probe that fails for any other
+    reason - the database is down, credentials are rejected, the read timed out
+    - must not be read as "deleted", because retiring the task on an
+    infrastructure failure would silently drop work that still exists.
+    """
+
+    if probe is None:
+        return False
+    try:
+        await probe(task.tenant_id, task.run_id)
+    except NotFoundError:
+        return True
+    except Exception:
+        logger.warning(
+            "could not confirm whether the run target still exists",
+            extra={"tenant_id": task.tenant_id, "run_id": task.run_id},
+            exc_info=True,
+        )
+        return False
+    return False
+
+
 async def worker_loop(
     queue: TaskQueue,
     executor: RunExecutor,
@@ -130,6 +201,7 @@ async def worker_loop(
     maintenance: Callable[[], Awaitable[object]] | None = None,
     metrics: ReliabilityMetrics | None = None,
     session_gate: SessionGate | None = None,
+    run_target: Callable[[str, str], Awaitable[object]] | None = None,
 ) -> None:
     """Consume durable run tasks until shutdown is requested.
 
@@ -167,21 +239,42 @@ async def worker_loop(
                 "run task execution escaped unexpectedly",
                 extra={"tenant_id": task.tenant_id, "run_id": task.run_id},
             )
-            try:
-                await queue.retry(task)
-            except Exception:
-                # Keep the processing lease intact. Visibility-timeout recovery
-                # will make the task eligible again without terminating this
-                # worker or blocking unrelated ready tasks.
-                logger.exception(
-                    "run task retry failed",
+            if await _target_is_gone(run_target, task):
+                # The accepted target was deleted while its task was in flight
+                # (or already was when the task arrived). Retrying can only
+                # repeat the same lookup, so the task is retired here.
+                logger.warning(
+                    "run task target no longer exists; retiring the task",
                     extra={"tenant_id": task.tenant_id, "run_id": task.run_id},
                 )
                 if metrics is not None:
                     metrics.increment(
                         "harness_worker_queue_failures_total",
-                        labels={"operation": "retry"},
+                        labels={"operation": "target_gone"},
                     )
+                try:
+                    await queue.acknowledge(task)
+                except Exception:
+                    logger.exception(
+                        "run task acknowledge for a missing target failed",
+                        extra={"tenant_id": task.tenant_id, "run_id": task.run_id},
+                    )
+            else:
+                try:
+                    await queue.retry(task)
+                except Exception:
+                    # Keep the processing lease intact. Visibility-timeout recovery
+                    # will make the task eligible again without terminating this
+                    # worker or blocking unrelated ready tasks.
+                    logger.exception(
+                        "run task retry failed",
+                        extra={"tenant_id": task.tenant_id, "run_id": task.run_id},
+                    )
+                    if metrics is not None:
+                        metrics.increment(
+                            "harness_worker_queue_failures_total",
+                            labels={"operation": "retry"},
+                        )
             await _wait_for_work(stop, poll_interval)
         else:
             try:
@@ -324,10 +417,10 @@ async def serve(settings: Settings) -> None:
         except NotImplementedError:  # pragma: no cover - Windows event loop
             pass
     # Accepted Runs carry a durable dispatch obligation, so this loop is what
-    # turns "accepted" into "executing somewhere". It runs for the whole
-    # consumption window and drains before the container closes.
-    async with running_dispatcher(
-        container.dispatcher, enabled=settings.worker_dispatch_enabled
+    # turns "accepted" into "executing somewhere". The lifecycle stops it and
+    # waits for it before the container releases Redis and the database.
+    async with worker_lifecycle(
+        container, dispatch_enabled=settings.worker_dispatch_enabled
     ):
         try:
 
@@ -410,15 +503,17 @@ async def serve(settings: Settings) -> None:
                     metrics=container.reliability_metrics,
                     session_gate=getattr(container, "session_gate", None),
                     sandbox_leases=getattr(container, "sandbox_leases", None),
+                    run_target=container.runs.get,
                 )
             finally:
                 stop.set()
                 await asyncio.gather(*control_tasks)
         finally:
+            # Only the metrics listener is closed here. Redis, the database and
+            # the rest of the shared resources belong to `worker_lifecycle`,
+            # which releases them after the Dispatcher has stopped.
             metrics_server.close()
             await metrics_server.wait_closed()
-            if container.close is not None:
-                await container.close()
 
 
 def entrypoint() -> None:

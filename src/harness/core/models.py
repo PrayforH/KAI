@@ -154,6 +154,18 @@ class Session(FrozenModel):
         return self.runtime_thread_id or self.claude_session_id
 
 
+class RunDispatchMode(StrEnum):
+    """How an accepted Run was started.
+
+    ``QUEUED`` Runs owe the queue a task. ``INLINE`` Runs execute inside the
+    worker slot that created them and must never become another Worker's work
+    item. The mode is fixed at acceptance and survives every retry.
+    """
+
+    QUEUED = "queued"
+    INLINE = "inline"
+
+
 class Run(FrozenModel):
     run_id: str
     session_id: str
@@ -166,6 +178,10 @@ class Run(FrozenModel):
     error_code: str | None = None
     input: dict[str, Any] = Field(default_factory=dict)
     trace_context: dict[str, str] = Field(default_factory=dict)
+    # ``None`` means the Run predates the recorded mode. It is not a third
+    # mode but the honest "unknown", and an unknown Run is never given a
+    # dispatch intent: nothing about it proves it was meant to be queued.
+    dispatch_mode: RunDispatchMode | None = None
 
 
 class Message(FrozenModel):
