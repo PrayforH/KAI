@@ -15,7 +15,16 @@ from starlette.responses import Response
 from harness.agent_package import AgentBundleValidationError, AgentPackageCheckError
 from harness.agui import routes as agui_routes
 from harness.api.dependencies import ApiContainer, Identity, build_memory_container
-from harness.api.routes import agents, approvals, artifacts, auth, input_artifacts, runs, sessions
+from harness.api.routes import (
+    agents,
+    approvals,
+    artifacts,
+    auth,
+    dictation,
+    input_artifacts,
+    runs,
+    sessions,
+)
 from harness.automations import api as automations_routes
 from harness.config import Settings
 from harness.core.errors import (
@@ -25,6 +34,8 @@ from harness.core.errors import (
     StorageCapacityError,
 )
 from harness.core.manifest import ManifestValidationError
+from harness.dictation.realtime import RealtimeDictation
+from harness.dictation.service import DictationService, DictationSettings
 from harness.governance import api as governance_routes
 from harness.knowledge import api as knowledge_routes
 from harness.lifecycle import api as lifecycle_routes
@@ -278,6 +289,7 @@ def create_app(container: ApiContainer) -> FastAPI:
                     try:
                         yield
                     finally:
+                        await _app.state.dictation_realtime.close()
                         if container.close is not None:
                             await container.close()
 
@@ -287,6 +299,8 @@ def create_app(container: ApiContainer) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.container = container
+    app.state.dictation = DictationService(DictationSettings())
+    app.state.dictation_realtime = RealtimeDictation(app.state.dictation.settings)
     app.mount("/mcp/memory", container.memory_mcp_app)
     app.mount("/mcp/knowledge", container.knowledge_mcp_app)
     app.mount("/mcp/platform", container.platform_mcp_app)
@@ -329,6 +343,7 @@ def create_app(container: ApiContainer) -> FastAPI:
         approvals.router,
         artifacts.router,
         input_artifacts.router,
+        dictation.router,
         lifecycle_routes.router,
         memory_bank_routes.router,
         reliability_routes.router,

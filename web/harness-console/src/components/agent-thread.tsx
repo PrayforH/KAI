@@ -119,6 +119,8 @@ import {
   loadTaskComposerDraft,
   persistTaskComposerDraft,
 } from "../lib/task-composer-draft";
+import { VoiceInput } from "./voice-input";
+import { useDictationComposer } from "./use-dictation-composer";
 import { HarnessComposerAttachment } from "./composer-attachment";
 import {
   skillCreatorPrompt,
@@ -388,6 +390,7 @@ function HarnessComposer() {
   const [queueLoaded, setQueueLoaded] = useState(false);
   const [queuePaused, setQueuePaused] = useState(false);
   const [inputError, setInputError] = useState("");
+  const [voiceActive, setVoiceActive] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [caret, setCaret] = useState(0);
   const [suggestionIndex, setSuggestionIndex] = useState(0);
@@ -400,6 +403,8 @@ function HarnessComposer() {
   const steeringRunId = queue.find((item) => item.steerRunId)?.steerRunId ?? runView?.runId;
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const composingRef = useRef(false);
+  const voiceComposer = useDictationComposer(inputRef, () => aui.composer().getState().text,
+    (text) => aui.composer().setText(text), composingRef);
   const knowledge = useTaskKnowledge();
   const [wikiSlug, setWikiSlug] = useState<string | null>(null);
   useEffect(() => {
@@ -588,6 +593,7 @@ function HarnessComposer() {
   }
   const composerSendLock = useRef(false);
   async function submitComposer(alternate = false) {
+    if (voiceActive) return;
     if (command(composerText.trim())) return;
     if (videoRoute) { void generateVideo(); return; }
     if (busy || queue.length) {
@@ -799,7 +805,7 @@ function HarnessComposer() {
           rows={Math.min(8, Math.max(2, composerText.split("\n").length))}
           aria-controls={options.length ? "composer-suggestions" : undefined}
           aria-activedescendant={options.length ? `composer-option-${suggestionIndex}` : undefined}
-          onChange={(event) => { if (!composingRef.current) setCaret(event.target.selectionStart); }}
+          onChange={(event) => { voiceComposer.onChange(event.target.value); if (!composingRef.current) setCaret(event.target.selectionStart); }}
           onCompositionEnd={(event) => setCaret(event.currentTarget.selectionStart)}
           onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
           onPaste={(event) => {
@@ -834,6 +840,7 @@ function HarnessComposer() {
               <path d="M10 4.5v11M4.5 10h11" />
             </svg>
           </Composer.AddAttachment>
+
           {!conversationScope?.compactComposer && <>{conversationScope ? <button type="button" className="aui-composer-attach" aria-label="配置智能体知识库" title="配置智能体知识库" onClick={conversationScope.onConfigureKnowledge}>@</button> : <TaskKnowledgeControl disabled={runLocked || showStop || videoGenerating} />}
           <TaskAgentSwitcher
             agents={agentSelection.agents}
@@ -844,15 +851,19 @@ function HarnessComposer() {
             onRefresh={agentSelection.onRefresh}
           />
           <TaskModelControl disabled={Boolean(conversationScope) || runLocked || showStop || videoGenerating} /></>}
+          <VoiceInput key={scope?.threadId || "new"} disabled={busy}
+            modelRoute={overrideRouteId || ""}
+            onActive={(active) => { voiceComposer.onActive(active); setVoiceActive(active); }}
+            onDraft={voiceComposer.onDraft} onInsert={voiceComposer.onInsert} />
         </div>
         {showStop && !composerText.trim() && !composerAttachments.length ? (
           <ConversationControl action="stop" aria-label="停止运行" onClick={() => void stopRun()} />
         ) : videoRoute ? (
-          <ConversationControl action="send" disabled={videoGenerating || !composerText.trim()}
+          <ConversationControl action="send" disabled={voiceActive || videoGenerating || !composerText.trim()}
             aria-label={videoGenerating ? "视频生成中" : "生成视频"}
             onClick={() => void generateVideo()} />
         ) : (
-          <ConversationControl action="send" aria-label={busy ? followUpBehavior === "steer" && steerAvailable && !composerAttachments.length ? "调整方向" : "加入队列" : queue.length ? "加入队列" : "发送消息"} title={busy ? `Enter ${followUpBehavior === "steer" ? "调整方向" : "加入队列"} · Alt Enter 切换` : "发送消息"} disabled={!composerText.trim() && !composerAttachments.length} onClick={() => submitComposer()} />
+          <ConversationControl action="send" aria-label={busy ? followUpBehavior === "steer" && steerAvailable && !composerAttachments.length ? "调整方向" : "加入队列" : queue.length ? "加入队列" : "发送消息"} title={busy ? `Enter ${followUpBehavior === "steer" ? "调整方向" : "加入队列"} · Alt Enter 切换` : "发送消息"} disabled={voiceActive || (!composerText.trim() && !composerAttachments.length)} onClick={() => submitComposer()} />
         )}
         </div>
       </Composer.Root>

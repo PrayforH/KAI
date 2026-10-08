@@ -88,7 +88,7 @@ export function TaskModelControl({
           </option>
           {overrideRoutes.map((route) => (
             <option key={route.id} value={route.id}>
-              {route.label}{route.modelType === "video_generation" ? " · 视频" : route.capabilities.includes("vision") ? " · Vision" : ""}
+              {route.label}
             </option>
           ))}
         </select>

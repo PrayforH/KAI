@@ -127,14 +127,17 @@ it("keeps streamed text visibly painted with production CSS before history hando
     liveResponseStore.startRun("stream-visibility");
     liveResponseStore.startMessage(id);
     liveResponseStore.append(id, prefix);
-    liveResponseStore.completeMessage(id);
   });
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 200)); });
+  expect(host.querySelector(".assistant-answer")?.getAttribute("data-streaming")).toBe("true");
+  await act(async () => liveResponseStore.completeMessage(id));
   const assistant = host.querySelector(".harness-assistant-message")!;
   const answer = assistant.querySelector<HTMLElement>(".assistant-answer")!;
   expect(assistant.getAttribute("data-direct-stream")).toBe("true");
   expect(answer.textContent).toBe(prefix.trim());
   expect(getComputedStyle(answer).display).not.toBe("none");
-  expect(answer.getAttribute("data-streaming")).toBe("true");
+  // Message completion ends the cursor while retaining visible response ownership.
+  expect(answer.getAttribute("data-streaming")).toBe("false");
   await act(async () => {
     liveResponseStore.append(id, "The next chunk arrives before completion.");
     liveResponseStore.completeMessage(id);

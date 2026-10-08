@@ -537,3 +537,26 @@ export async function proxyRunRequest(request: Request, config: HarnessServerCon
   const url = new URL(`${config.apiUrl}/v1/runs/${path}`);
   return forward(request, url.toString(), config, fetcher, "harness.web.run_control");
 }
+
+export async function proxyDictationRequest(request: Request, config: HarnessServerConfig, path: string) {
+  if (request.body) {
+    const maximum = path.endsWith("/audio") ? 32000 : 64000;
+    const reader = request.body.getReader();
+    const chunks: Uint8Array[] = []; let total = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maximum) {
+        await reader.cancel();
+        return Response.json({ error: { message: "语音输入数据过长" } }, { status: 413 });
+      }
+      chunks.push(value);
+    }
+    const data = new Uint8Array(total); let offset = 0;
+    for (const chunk of chunks) { data.set(chunk, offset); offset += chunk.byteLength; }
+    request = new Request(request, { body: data });
+  }
+  return forward(request, `${config.apiUrl}/v1/dictation/${path}${new URL(request.url).search}`,
+    config, fetch, "harness.web.dictation");
+}
