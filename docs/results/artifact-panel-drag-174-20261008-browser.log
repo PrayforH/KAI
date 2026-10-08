@@ -1,0 +1,9 @@
+normal_drag_beyond_half_viewport 805
+drag_drop_expands_over_conversation_and_preserves_preview true
+expanded_panel_drag_restores_conversation true
+escape_cancels_resize true
+inward_drop_collapses_and_reopen_remembers_width true
+keyboard_expand_collapse true
+dark_mode_and_close_button_restore true
+mobile_existing_controls_preserved true
+page_errors 0

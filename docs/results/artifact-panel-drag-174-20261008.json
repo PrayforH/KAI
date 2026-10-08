@@ -1,0 +1,44 @@
+{
+  "date": "2026-10-08",
+  "url": "https://172.20.109.174/",
+  "source_commit": "f0202de60a700c61141f1e3d6b1fc8d856436824",
+  "git_branch": "develop",
+  "container": "axis-web-artifact-panel-20261008",
+  "image": "kai/axis-web:artifact-panel-20261008",
+  "image_id": "sha256:1a70a31215b75c41f5da75bd9238bbb69899b0eb8ab747b79f18d4c2e627b6b0",
+  "tests": {
+    "files_passed": 160,
+    "passed": 1027,
+    "skipped": 1,
+    "typescript": "passed",
+    "next_production_build": "passed"
+  },
+  "browser": {
+    "canary": "passed",
+    "production": "passed",
+    "fixture": "browser-only mocked HTML artifact",
+    "errors": 0,
+    "cases": [
+      "resize beyond half viewport",
+      "drop expands over conversation",
+      "expanded drag restores conversation",
+      "escape cancels resize",
+      "inward drop collapses",
+      "reopen remembers width",
+      "preview state retained",
+      "composer text retained",
+      "keyboard expand/collapse",
+      "dark/light theme",
+      "mobile controls"
+    ]
+  },
+  "verified_source_files": 514,
+  "backend_recreated": false,
+  "cleanup": {
+    "temporary_https_removed": true,
+    "canary_removed": true,
+    "test_users_removed": 1,
+    "audit_logs_retained": true
+  },
+  "rollback_container": "axis-web-develop-voice-20261008"
+}
