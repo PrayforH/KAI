@@ -1,0 +1,13 @@
+secure_context true
+latest_develop_knowledge_switch_removed true
+text_visible_before_stop true first_meaningful_draft_ms 3534
+refinement_status unchanged
+live_to_refined_same_span_and_manual_text_preserved true
+cancel_restores_pre_recording_text true
+alerts [ '' ]
+page_errors []
+empty_result_silent_and_device_recovery true
+composer_geometry {"unchangedWhileRecording":true,"unchangedWhileFinishing":true,"normalTextAutoGrow":true,"baseline":100,"longText":244}
+narrow_dark_geometry_stable true
+startup_and_refinement_failures_have_no_visible_notice true
+{"passed":["real AudioWorklet","authenticated BFF","live Nano text visible in original composer before stop","refinement replaces same speech span","manual prefix/suffix edits preserved","tail flush","text-only refinement","mic between model and send","auto-fill without confirmation","cancel without refinement","empty result silent","explicit local microphone","simulated disconnect recovery","stable composer geometry","no visible status or preview","normal long-text auto-grow"],"audioPosts":17,"errors":[]}

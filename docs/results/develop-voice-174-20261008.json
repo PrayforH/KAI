@@ -1,0 +1,75 @@
+{
+  "status": "deployed_and_verified",
+  "public_url": "https://172.20.109.174",
+  "develop_base": "d2269396c67f141d43352b5626c2c2b3f9a3b994",
+  "deployed_code_commit": "79d2245b214f9e02206ae16a54a5e957f6530ce1",
+  "git_remote_branch": "origin/develop",
+  "integration_worktree_branch": "auto/voice-develop-174",
+  "images": {
+    "api_worker": {
+      "tag": "kai/axis-api:develop-voice-20261008",
+      "id": "sha256:4dfd94f4da1738074b5c59f11d1e3167ff7de9bcd3efc4991ad35494300aebcb"
+    },
+    "web": {
+      "tag": "kai/axis-web:develop-voice-20261008",
+      "id": "sha256:fb8d93ed5663d9745ec9989f92ded4f6b89dca8c914978cc985e3786ca03b00f"
+    }
+  },
+  "tests": {
+    "related_python_passed": 135,
+    "ruff_src": "passed",
+    "frontend_test_files": 159,
+    "frontend_passed": 1022,
+    "frontend_skipped": 1,
+    "typescript_next_build": "passed on 174",
+    "pyright_baseline_errors": 27,
+    "pyright_candidate_errors": 27,
+    "new_type_diagnostics": 0,
+    "browser": "passed with public audio fixture",
+    "real_time_text_before_stop": true,
+    "first_meaningful_draft_ms_in_fixture_test": 3534,
+    "same_span_refinement_and_manual_text": "passed",
+    "cancel_rollback": "passed",
+    "stable_composer_geometry": "passed",
+    "page_errors": []
+  },
+  "services": {
+    "main_web": "healthy",
+    "api": "healthy",
+    "workers": 3,
+    "all_workers": "healthy",
+    "matching_harness_source_files_in_each_api_and_worker": 341,
+    "source_mismatches": []
+  },
+  "deployment": {
+    "directory": "/data/kai-develop-voice-20261008",
+    "active_runs_at_cutover": 0,
+    "database_schema": "0037",
+    "migrations_required": false,
+    "production_environment_preserved": true,
+    "canonical_image_references_updated": true,
+    "npm_registry": "https://registry.npmmirror.com",
+    "npm_lockfile_cache": "reused offline"
+  },
+  "rollback": {
+    "web_container": "axis-web-voice-20261008-r8 retained stopped",
+    "backend_compose": "/data/kai-develop-voice-20261008/rollback.private.json",
+    "original_config_snapshots": "/data/kai-develop-voice-20261008/backups"
+  },
+  "unchanged": [
+    "original dirty workspace",
+    "173",
+    "3301 Web image",
+    "3401 Codex Web",
+    "database services",
+    "model channel configuration",
+    "quality-sync"
+  ],
+  "cleanup": {
+    "test_accounts_removed": 1,
+    "default_test_agent_and_version_removed": true,
+    "audit_logs_preserved": true,
+    "canary_services_removed": true,
+    "temporary_https_port_removed": true
+  }
+}
