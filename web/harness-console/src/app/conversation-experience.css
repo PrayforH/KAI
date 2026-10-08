@@ -83,7 +83,17 @@ body.codex-theme-v1 .harness-composer-shell .aui-composer-input { resize: none; 
      composer and its popovers are fixed, which is why this goes through
      visibility rather than clipping alone. */
   body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-expanded .task-content-shell { min-width: 0; overflow: hidden; visibility: hidden; }
+  /* While dragging, the edge follows the pointer even from the expanded state.
+     On release the existing expanded/closed shell states take over. */
+  body.codex-theme-v1:has(.console-shell) .console-shell[data-rail-resizing] .workspace-stage.tasks-open { grid-template-columns: var(--app-sidebar-expanded-width) minmax(0, 1fr) var(--drag-rail-width); }
+  body.codex-theme-v1:has(.console-shell) .console-shell[data-rail-resizing] .workspace-stage:not(.tasks-open) { grid-template-columns: var(--app-sidebar-collapsed-width) minmax(0, 1fr) var(--drag-rail-width); }
+  body.codex-theme-v1:has(.console-shell) .console-shell[data-rail-resizing] .workbench-rail { width: var(--drag-rail-width); }
+  body.codex-theme-v1:has(.console-shell) .workspace-stage.tasks-open { --rail-width-cap: calc(100vw - var(--app-sidebar-expanded-width)); }
+  body.codex-theme-v1:has(.console-shell) .workspace-stage:not(.tasks-open) { --rail-width-cap: calc(100vw - var(--app-sidebar-collapsed-width)); }
+  body.codex-theme-v1:has(.console-shell) .workspace-stage { --rail-panel-width: clamp(280px, var(--preferred-rail-width, 300px), var(--rail-width-cap)); }
 }
+.console-shell[data-rail-resizing], .console-shell[data-rail-resizing] * { cursor: col-resize !important; user-select: none !important; }
+.console-shell[data-rail-resizing] iframe { pointer-events: none; }
 body.codex-theme-v1 .workbench-rail-panel {
   width: 100%;
   container-type: inline-size;

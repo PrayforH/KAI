@@ -763,6 +763,7 @@ function AuthenticatedHome() {
               taskRailOpen={taskRailOpen}
               onToggleTaskRail={() => {
                 setTaskRailOpen((current) => !current);
+                setRailExpanded(false);
               }}
             />
           </header>
@@ -838,7 +839,7 @@ function AuthenticatedHome() {
         <WorkbenchRail
           key={threadId}
           open={taskRailOpen}
-          onClose={() => setTaskRailOpen(false)}
+          onClose={() => { setTaskRailOpen(false); setRailExpanded(false); }}
           expanded={railExpanded}
           onToggleExpanded={() => setRailExpanded((current) => !current)}
           runPhase={runView?.phase ?? null}

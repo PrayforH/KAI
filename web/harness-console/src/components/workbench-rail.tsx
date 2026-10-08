@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { groupWorkspaceFiles } from "../lib/workspace-file-groups";
 import { requireAuthenticatedResponse } from "../lib/client-auth";
 import { PanelResizeHandle } from "./panel-resize-handle";
+import { RailResizeHandle } from "./rail-resize-handle";
 import { SidebarPanelIcon } from "./panel-icons";
 import { RailFilePreview, previewKindFor, type PreviewKind, type PreviewTarget } from "./rail-file-preview";
 
@@ -308,7 +309,9 @@ export function WorkbenchRail({
       inert={!open}
       tabIndex={-1}
     >
-      {open && <PanelResizeHandle panel="rail" />}
+      {open && (workspace ? <PanelResizeHandle panel="rail" /> : <RailResizeHandle
+        expanded={expanded} onExpandedChange={(value) => { if (value !== expanded) onToggleExpanded(); }} onClose={onClose}
+      />)}
       <div className="workbench-rail-panel" aria-hidden={!open}>
         <header className="rail-bar">
           <div className="rail-bar-views">
