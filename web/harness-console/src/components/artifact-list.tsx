@@ -8,6 +8,17 @@ export interface ArtifactDetails {
   sha256?: string;
 }
 
+export function isImageArtifact(details: ArtifactDetails) {
+  return (details.media_type ?? "").toLowerCase().startsWith("image/") ||
+    /\.(png|jpe?g|gif|webp|avif|svg|bmp)$/i.test(details.name ?? "");
+}
+
+export function artifactPreviewUrl(details: ArtifactDetails) {
+  const params = new URLSearchParams({ preview: "1" });
+  if (details.thread_id) params.set("thread_id", details.thread_id);
+  return `/api/harness/artifacts/${encodeURIComponent(details.artifact_id)}?${params}`;
+}
+
 export function formatBytes(value?: number) {
   if (!value) return "0 B";
   if (value < 1024) return `${value} B`;

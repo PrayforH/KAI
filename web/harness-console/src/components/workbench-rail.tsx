@@ -4,7 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { groupWorkspaceFiles } from "../lib/workspace-file-groups";
 import { requireAuthenticatedResponse } from "../lib/client-auth";
 import { PanelResizeHandle } from "./panel-resize-handle";
-import { RailResizeHandle } from "./rail-resize-handle";
+import { RailResizeHandle, canSplitRail } from "./rail-resize-handle";
 import { SidebarPanelIcon } from "./panel-icons";
 import { RailFilePreview, previewKindFor, type PreviewKind, type PreviewTarget } from "./rail-file-preview";
 
@@ -333,7 +333,13 @@ export function WorkbenchRail({
               aria-label={expanded ? "还原对话区" : "扩展占满对话区"}
               title={expanded ? "还原对话区" : "扩展占满对话区"}
               aria-pressed={expanded}
-              onClick={onToggleExpanded}
+              onClick={(event) => {
+                const rail = event.currentTarget.closest(".workbench-rail");
+                const content = rail?.closest(".workspace-stage")?.querySelector(".task-content-shell");
+                if (!workspace && expanded && window.innerWidth >= 1100 && rail && content &&
+                  !canSplitRail(rail.getBoundingClientRect().right - content.getBoundingClientRect().left)) onClose();
+                else onToggleExpanded();
+              }}
             >
               {expandIcon ?? <ExpandIcon />}
             </button>

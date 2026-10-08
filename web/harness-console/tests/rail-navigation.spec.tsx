@@ -102,7 +102,7 @@ it("squeezes a real column, and covers the conversation when expanded", () => {
   // Header, composer and turn index all live in one column, so expanding hides
   // the whole shell: the composer is fixed, so visibility carries the hiding.
   expect(experience).toContain(".console-shell.is-rail-expanded .task-content-shell { min-width: 0; overflow: hidden; visibility: hidden; }");
-  expect(experience).not.toContain("visibility: visible");
+  expect(experience).toContain('.console-shell.is-rail-expanded[data-rail-resizing]:not([data-rail-resize-mode="expanded"]) .task-content-shell { visibility: visible; }');
   // An open file shares the drawer with the browser once it is wide enough.
   expect(experience).toContain('@container rail (min-width: 460px)');
   expect(experience).toMatch(/\.rail-files-section\[data-previewing="true"\]/);

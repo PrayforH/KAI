@@ -8,6 +8,7 @@ import { RailResizeHandle } from "../src/components/rail-resize-handle";
 let host: HTMLDivElement;
 let root: Root;
 let right: number;
+let left: number;
 const property = "--preferred-rail-width";
 const key = "agent-harness-rail-width";
 
@@ -25,11 +26,13 @@ function Harness() {
 }
 beforeEach(() => {
   right = 1440;
+  left = 264;
   const stored = new Map<string, string>();
   vi.stubGlobal("localStorage", { getItem: (key: string) => stored.get(key) ?? null, setItem: (key: string, value: string) => stored.set(key, value) });
+  localStorage.setItem(key, "300");
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
-    if (this.classList.contains("task-content-shell")) return { left: 264 } as DOMRect;
-    const width = this.closest(".is-rail-expanded") ? right - 264 : Number.parseFloat(document.documentElement.style.getPropertyValue(property)) || 300;
+    if (this.classList.contains("task-content-shell")) return { left } as DOMRect;
+    const width = this.closest(".is-rail-expanded") ? right - left : Number.parseFloat(document.documentElement.style.getPropertyValue(property)) || 300;
     return { right, width } as DOMRect;
   });
   HTMLElement.prototype.setPointerCapture = vi.fn();
@@ -51,10 +54,11 @@ const shell = () => host.querySelector(".console-shell")!;
 const expanded = () => shell().classList.contains("is-rail-expanded");
 const saved = () => localStorage.getItem(key);
 
-it("follows the pointer beyond half the viewport, and snaps over the conversation on release without saving the expanded width", () => {
+it("snaps the drag preview over the entire conversation before it becomes too narrow, without saving the expanded width", () => {
   localStorage.setItem(key, "420"); render();
   pointer("pointerdown", 1020); pointer("pointermove", 300);
-  expect((shell() as HTMLElement).style.getPropertyValue("--drag-rail-width")).toBe("1140px");
+  expect((shell() as HTMLElement).style.getPropertyValue("--drag-rail-width")).toBe("1176px");
+  expect(shell().getAttribute("data-rail-resize-mode")).toBe("expanded");
   expect(expanded()).toBe(false); expect(saved()).toBe("420");
   pointer("pointerup", 300);
   expect(expanded()).toBe(true); expect(saved()).toBe("420");
@@ -83,8 +87,8 @@ it("cancels a drag without changing the saved width or expansion, including Esca
 it("persists normal resizing, ignores a second pointer, and resets through the keyboard and double click", () => {
   render(); pointer("pointerdown", 1140); pointer("pointermove", 1100, 2); pointer("pointerup", 1100, 2);
   expect((shell() as HTMLElement).style.getPropertyValue("--drag-rail-width")).toBe("300px");
-  pointer("pointerup", 740); expect(saved()).toBe("700");
-  press("ArrowLeft"); expect(saved()).toBe("708");
+  pointer("pointerup", 800); expect(saved()).toBe("640");
+  press("ArrowLeft"); expect(saved()).toBe("648");
   press("End"); expect(expanded()).toBe(true);
   act(() => host.querySelector('[role="separator"]')!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
   expect(expanded()).toBe(false); expect(saved()).toBe("300");
@@ -98,4 +102,25 @@ it("cancels during viewport changes and cleans up if the handle unmounts while d
   pointer("pointerdown", 800); pointer("pointermove", 600);
   const previousShell = shell(); act(() => root.render(null));
   expect(previousShell.hasAttribute("data-rail-resizing")).toBe(false);
+});
+it("keeps stored preferences when the viewport clamps them, and never previews an inward sliver", () => {
+  localStorage.setItem(key, "600"); render();
+  act(() => { right = 1100; window.dispatchEvent(new Event("resize")); });
+  expect(host.querySelector('[role="separator"]')!.getAttribute("aria-valuenow")).toBe("356");
+  expect(saved()).toBe("600");
+  act(() => { right = 1440; window.dispatchEvent(new Event("resize")); });
+  expect(host.querySelector('[role="separator"]')!.getAttribute("aria-valuenow")).toBe("600");
+  pointer("pointerdown", 840); pointer("pointermove", 1300);
+  expect(shell().getAttribute("data-rail-resize-mode")).toBe("collapsed");
+  expect((shell() as HTMLElement).style.getPropertyValue("--drag-rail-width")).toBe("0px");
+  pointer("pointercancel", 1300); expect(saved()).toBe("600");
+});
+it("expands the whole panel when a wide navigation leaves no room for both readable conversation and file preview", () => {
+  vi.stubGlobal("innerWidth", 1100); right = 1100; left = 380;
+  localStorage.setItem(key, "600"); render();
+  expect(expanded()).toBe(true);
+  expect(saved()).toBe("600");
+  act(() => host.querySelector('[role="separator"]')!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+  expect(host.querySelector('[role="separator"]')).toBeNull();
+  expect(saved()).toBe("600");
 });

@@ -54,7 +54,8 @@ import { groupWorkspaceFiles } from "../lib/workspace-file-groups";
 import { ActivitySummary } from "./activity-summary";
 import { TaskAgentSwitcher } from "./task-agent-switcher";
 import { ApprovalCard, type ApprovalDetails } from "./approval-card";
-import { ArtifactCard, type ArtifactDetails } from "./artifact-list";
+import { ArtifactCard, isImageArtifact, type ArtifactDetails } from "./artifact-list";
+import { ReplyArtifactImages } from "./reply-artifact-images";
 import { AnswerCitationProvider } from "./knowledge/answer-citation-context";
 import { citationsForTurn, parseWikiTarget } from "../lib/knowledge-links";
 import { KnowledgeCitations } from "./knowledge/knowledge-citations";
@@ -1085,13 +1086,6 @@ function artifactMark(name: string | undefined, mediaType: string | undefined) {
   return extension ? extension.slice(0, 4).toUpperCase() : "FILE";
 }
 
-function isImageArtifact(details: ArtifactDetails) {
-  const type = (details.media_type ?? "").toLowerCase();
-  return type.startsWith("image/") || ["png", "jpg", "jpeg", "gif", "webp", "avif", "svg"].includes(
-    (details.name ?? "").split(".").pop()?.toLowerCase() ?? "",
-  );
-}
-
 const ARTIFACT_THUMBNAIL_COUNT = 3;
 
 /** One row above the answer's actions: a few thumbnails and the count, opening
@@ -1450,6 +1444,8 @@ export function HarnessAssistantMessage() {
         }}
       />
       <AssistantResponse text={copyText} streaming={directStream ? live.status === "streaming" && !live.textComplete : messageStatus?.type === "running"} />
+      <ReplyArtifactImages artifacts={turnArtifacts} answer={copyText}
+        onPreview={conversationScope ? () => conversationScope.onOpenFiles() : undefined} />
       {answerCitations.length > 0 ? (
         <KnowledgeCitations citations={answerCitations} showSources={false} />
       ) : null}

@@ -88,10 +88,19 @@ body.codex-theme-v1 .harness-composer-shell .aui-composer-input { resize: none; 
   body.codex-theme-v1:has(.console-shell) .console-shell[data-rail-resizing] .workspace-stage.tasks-open { grid-template-columns: var(--app-sidebar-expanded-width) minmax(0, 1fr) var(--drag-rail-width); }
   body.codex-theme-v1:has(.console-shell) .console-shell[data-rail-resizing] .workspace-stage:not(.tasks-open) { grid-template-columns: var(--app-sidebar-collapsed-width) minmax(0, 1fr) var(--drag-rail-width); }
   body.codex-theme-v1:has(.console-shell) .console-shell[data-rail-resizing] .workbench-rail { width: var(--drag-rail-width); }
-  body.codex-theme-v1:has(.console-shell) .workspace-stage.tasks-open { --rail-width-cap: calc(100vw - var(--app-sidebar-expanded-width)); }
-  body.codex-theme-v1:has(.console-shell) .workspace-stage:not(.tasks-open) { --rail-width-cap: calc(100vw - var(--app-sidebar-collapsed-width)); }
+  body.codex-theme-v1:has(.console-shell) .console-shell[data-rail-resize-mode="expanded"] .task-content-shell { min-width: 0; overflow: hidden; visibility: hidden; }
+  body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-expanded[data-rail-resizing]:not([data-rail-resize-mode="expanded"]) .task-content-shell { visibility: visible; }
+  body.codex-theme-v1:has(.console-shell) .console-shell[data-rail-resize-mode="collapsed"] .workbench-rail { visibility: hidden; }
+  body.codex-theme-v1:has(.console-shell) .console-shell[data-rail-resize-mode="collapsed"] .workbench-rail .panel-resize-handle { visibility: visible; }
+  body.codex-theme-v1:has(.console-shell) .workspace-stage.tasks-open { --rail-width-cap: max(280px, calc(100vw - var(--app-sidebar-expanded-width) - 480px)); }
+  body.codex-theme-v1:has(.console-shell) .workspace-stage:not(.tasks-open) { --rail-width-cap: max(280px, calc(100vw - var(--app-sidebar-collapsed-width) - 480px)); }
   body.codex-theme-v1:has(.console-shell) .workspace-stage { --rail-panel-width: clamp(280px, var(--preferred-rail-width, 300px), var(--rail-width-cap)); }
 }
+body.codex-theme-v1:has(.console-shell) .task-content-shell { isolation: isolate; grid-template-columns: minmax(0, 1fr); }
+body.codex-theme-v1:has(.console-shell) .task-content-shell > .chat-stage { min-width: 0; }
+body.codex-theme-v1 .task-content-shell .aui-thread-viewport-footer,
+body.codex-theme-v1 .task-content-shell .harness-composer-shell,
+body.codex-theme-v1 .task-content-shell .aui-composer-root { min-width: 0; max-width: 100%; box-sizing: border-box; }
 .console-shell[data-rail-resizing], .console-shell[data-rail-resizing] * { cursor: col-resize !important; user-select: none !important; }
 .console-shell[data-rail-resizing] iframe { pointer-events: none; }
 body.codex-theme-v1 .workbench-rail-panel {
@@ -1032,6 +1041,12 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-prev
    clicking it opens the task's file drawer. The scope keeps it ahead of the
    rule that flattens every button in the message controls. */
 body.codex-theme-v1 .harness-assistant-message > .artifact-summary-line { order: 2; margin-top: 8px; opacity: 1; }
+body.codex-theme-v1 .harness-assistant-message > .reply-artifact-images { order: 2; display: grid; gap: 16px; min-width: 0; max-width: 100%; margin-top: 12px; }
+.reply-artifact-image { min-width: 0; max-width: 100%; margin: 0; }
+.reply-artifact-image-preview { display: block; width: fit-content; max-width: 100%; padding: 0; border: 0; border-radius: 12px; background: transparent; overflow: hidden; cursor: zoom-in; }
+.reply-artifact-image-preview img { display: block; width: auto; height: auto; max-width: 100%; max-height: 520px; object-fit: contain; border-radius: inherit; }
+.reply-artifact-image-preview:focus-visible { outline: 2px solid var(--codex-muted); outline-offset: 3px; }
+.reply-artifact-image figcaption { margin-top: 6px; color: var(--codex-faint); font-size: 12px; overflow-wrap: anywhere; }
 body.codex-theme-v1 .harness-assistant-message > .artifact-summary-line:empty { display: none; }
 body.codex-theme-v1 .harness-assistant-message .artifact-summary-line { flex: 0 0 auto; display: flex; align-items: center; }
 body.codex-theme-v1 .harness-assistant-message .artifact-summary-row {

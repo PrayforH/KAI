@@ -270,11 +270,12 @@ function AuthenticatedHome() {
   // Artifact cards in the transcript ask the rail to show that file.
   useEffect(() => {
     const handler = (event: Event) => {
-      const detail = (event as CustomEvent).detail as PreviewTarget | undefined;
+      const detail = (event as CustomEvent).detail as (PreviewTarget & { expanded?: boolean }) | undefined;
       if (!detail?.artifact_id) return;
       previewNonce.current += 1;
       setRailPreview({ ...detail, nonce: previewNonce.current });
       setTaskRailOpen(true);
+      if (detail.expanded) setRailExpanded(true);
     };
     window.addEventListener("harness:preview-artifact", handler);
     return () => window.removeEventListener("harness:preview-artifact", handler);
@@ -844,6 +845,7 @@ function AuthenticatedHome() {
           onToggleExpanded={() => setRailExpanded((current) => !current)}
           runPhase={runView?.phase ?? null}
           threadId={threadId}
+          previewRequest={railPreview}
         />
       </div>
     </main>
