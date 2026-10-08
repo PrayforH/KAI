@@ -1,0 +1,227 @@
+{
+  "environment": "http://172.20.109.173:3302",
+  "deployedImages": {
+    "api": "kai/axis-api:kb-hybrid-20261008-1732",
+    "worker": "kai/axis-api:kb-hybrid-20261008-1732",
+    "web": "kai/axis-web:kb-hybrid-20261008-1732"
+  },
+  "manifest": {
+    "baseline_web": "e7b2250f",
+    "baseline_api": "dispatch-5799e156",
+    "files": {
+      "src/harness/agui/service.py": "507fc0c652162a1f313e42c68dc726a332efa46fd3021cbeec422bf102dfffa8",
+      "src/harness/knowledge/runtime.py": "6b6286e818260a6e4b5ea06c0cf775cdc1dcfb9f1f6bed85d76d2dc911dd5cb0",
+      "src/harness/knowledge/service.py": "c31b96df8ca47c97879e07bcf88f115c5e646e4cc96a5cd6e75db3a605978754",
+      "src/harness/knowledge/weknora/client.py": "b8c2e2f64762c956e945ac7c2883a6b94067b43465f28587261d64ce79c0d0d6",
+      "src/harness/knowledge/weknora/gateway.py": "6b64adf249f556466bf52e54e189bc9c4332e38b01b8f52a7f2442ecdb4788b7",
+      "src/harness/knowledge/workload.py": "c80a2dd621d8a40460b8a269f5fc3c0ad2da31c9ab0e45235fffb7a166c5d8d8",
+      "src/harness/runtime/claude_sdk.py": "5d79191c5bd5e631905ae98250c865a3a8326ac2e214e2538022897e8b99725b",
+      "web/harness-console/src/app/web-codex.css": "e0a08cb699516f19b13af9b37812ffad93f713f4846062e0bf0c9a17307d1322",
+      "web/harness-console/src/components/agent-studio/agent-playground-thread.tsx": "68e0941924b029dc5e8cd7db056f395e183a9497fd90c7b27669b1d49f9f2835",
+      "web/harness-console/src/components/agent-studio/agent-studio-workbench.tsx": "cd615f1329bc6a52461ef5bbfaaafedcee6520fe9524bf3e9cbe55b7336130f3",
+      "web/harness-console/src/components/agent-thread.tsx": "c176d55f75e22a80b06a0915fe2b43e1d5c0e8c912e67e8d0e7df0072efdb94c",
+      "web/harness-console/src/components/assistant-runtime-shell.tsx": "014a9655a83914f090d45559614e76a9f4fe1892b4777c7365cdbfeb58cbc98a",
+      "web/harness-console/src/components/task-knowledge-context.tsx": "a19f5f35071fcd5b858467c5854748c89e99a3d39f4c950d0bd560bf74936be4",
+      "web/harness-console/src/lib/harness-agent.ts": "3214e4475b0476ed59c68abd407b19ab252cd6e0f8b2baa04fe16ce2ba3a01d0"
+    },
+    "buildId": "0l6N0y64ojS2rkS2TMdMk"
+  },
+  "backupPath": "/data/agent-studio-evolution-20260920/backups/kb-hybrid-20261008-1732",
+  "servicesHealthy": true,
+  "main3301Unchanged": true,
+  "deployedApiSourceHashesVerified": true,
+  "tests": {
+    "rootPythonPassed": 111,
+    "rootFrontendPassed": 25,
+    "deploymentSnapshotSelectedPythonPassed": 86,
+    "deploymentSnapshotFrontendPassed": 28,
+    "productionBuild": "passed",
+    "typescript": "passed",
+    "ruff": "passed"
+  },
+  "live": {
+    "runId": "run_4f57140fb34d4f62a7358c2c095da963",
+    "threadId": "kb-hybrid-verify-c69ccd3c-c6fa-480c-886d-233cd82d7576",
+    "status": "succeeded",
+    "selectedKnowledgeBases": [
+      "kb-hybrid-verify-20261008",
+      "qa-regression-kb-230037"
+    ],
+    "modelRoute": "minimax-m3",
+    "toolCalls": [
+      {
+        "name": "mcp__harness-knowledge__search_wiki_pages",
+        "arguments": {
+          "query": "云杉计划"
+        }
+      },
+      {
+        "name": "mcp__harness-knowledge__query_knowledge_sources",
+        "arguments": {
+          "query": "云杉计划 负责人 预算 验收日期 验收编号"
+        }
+      }
+    ],
+    "toolErrors": 0,
+    "wikiPageCount": 7,
+    "documentSearchCount": 2,
+    "wikiSearchCount": 5,
+    "answer": "我先并行检索 Wiki 和源文档，了解云杉计划并核实四项关键事实。云杉计划是用于验证 KAI 文档与 Wiki 混合检索的内部演示项目。以下为核实后的四项关键事实（Wiki 与文档信息一致）：\n\n| 项目 | 内容 |\n| --- | --- |\n| **项目负责人** | 林青 |\n| **项目预算** | 人民币 128 万元 |\n| **验收日期** | 2026 年 10 月 18 日 |\n| **验收编号** | KAI-HYBRID-20261008 |\n\n**来源引用：**\n\n- Wiki 页面来源：[[kb-hybrid-verify-20261008::entity/yun-shan-ji-hua|云杉计划]] 、[[kb-hybrid-verify-20261008::summary/319b21d0-7921-4ba0-9241-d858c032a0f3|云杉计划混合检索验收.md - Summary]] 、[[kb-hybrid-verify-20261008::entity/lin-qing|林青]] 、[[kb-hybrid-verify-20261008::entity/kai|KAI]]\n- 文档来源：[云杉计划混合检索验收.md](citation:kb-hybrid-verify-20261008:b71cb460-15e6-45d3-93aa-bf6aabd88e45)\n\n**信息一致性说明：** Wiki 摘要与源文档对负责人（林青）、预算（128 万元）、验收日期（2026-10-18）、验收编号（KAI-HYBRID-20261008）四项事实表述完全一致，已同时保留 Wiki 页面来源与文档来源链接，符合混合检索验收标准。"
+  },
+  "browser": {
+    "wikiSwitchCount": 0,
+    "knowledgePickerCount": 1,
+    "savedKnowledge": {
+      "references": [
+        "kb-hybrid-verify-20261008"
+      ]
+    },
+    "pageErrors": [],
+    "wikiCitationOpened": true,
+    "documentCitationOpened": true
+  },
+  "temporaryKnowledgeBaseCleanup": "completed",
+  "verifiedAt": "2026-10-08T11:10:38.691641+00:00",
+  "developMergeVerification": {
+    "baseline": "ff3b4740",
+    "changes": [
+      "Remove composer Wiki switch and legacy mode forwarding",
+      "Reuse WeKnora unified multi-base retrieval with backend ranking defaults",
+      "Enable both knowledge channels for Claude and DeepAgents",
+      "Remove the icon before the composer agent name",
+      "Compact attachment, knowledge and agent controls"
+    ],
+    "pythonRelatedPassed": 147,
+    "deepagentsSuitePassed": 89,
+    "frontendRelatedPassed": 31,
+    "frontendFullSuite": {
+      "passed": 992,
+      "failed": 3,
+      "skipped": 1,
+      "retryResult": "Builder tests all pass with one worker; the remaining handoff test also fails on unchanged develop"
+    },
+    "productionBuild": "passed",
+    "typescript": "passed",
+    "ruff": "passed",
+    "pythonTypecheck": {
+      "baseline": {
+        "filesAnalyzed": 20,
+        "errorCount": 27,
+        "warningCount": 0,
+        "informationCount": 0,
+        "timeInSec": 9.279
+      },
+      "current": {
+        "filesAnalyzed": 20,
+        "errorCount": 27,
+        "warningCount": 0,
+        "informationCount": 0,
+        "timeInSec": 12.212
+      },
+      "newErrors": []
+    },
+    "browser": {
+      "measurements": [
+        {
+          "viewport": {
+            "width": 1440,
+            "height": 1000
+          },
+          "row": [
+            {
+              "selector": ".aui-composer-attach",
+              "x": 481,
+              "y": 532.859375,
+              "width": 28,
+              "height": 32,
+              "text": "添加本地文件",
+              "columns": "none",
+              "gap": "8px",
+              "visible": true,
+              "iconCount": 0
+            },
+            {
+              "selector": ".task-knowledge-trigger",
+              "x": 510,
+              "y": 532.859375,
+              "width": 28,
+              "height": 32,
+              "text": "@",
+              "columns": "none",
+              "gap": "5px",
+              "visible": true,
+              "iconCount": 0
+            },
+            {
+              "selector": ".task-agent-switcher-trigger",
+              "x": 539,
+              "y": 532.859375,
+              "width": 72,
+              "height": 32,
+              "text": "当前智能体通用助手",
+              "columns": "48px",
+              "gap": "0px",
+              "visible": true,
+              "iconCount": 0
+            }
+          ],
+          "label": {
+            "width": 48,
+            "scroll": 48,
+            "visible": true
+          }
+        },
+        {
+          "viewport": {
+            "width": 390,
+            "height": 844
+          },
+          "row": [
+            {
+              "selector": ".aui-composer-attach",
+              "x": 39,
+              "y": 439.9375,
+              "width": 28,
+              "height": 40,
+              "text": "添加本地文件",
+              "columns": "none",
+              "gap": "8px",
+              "visible": true,
+              "iconCount": 0
+            },
+            {
+              "selector": ".task-knowledge-trigger",
+              "x": 68,
+              "y": 439.9375,
+              "width": 28,
+              "height": 40,
+              "text": "@",
+              "columns": "none",
+              "gap": "5px",
+              "visible": true,
+              "iconCount": 0
+            },
+            {
+              "selector": ".task-agent-switcher-trigger",
+              "x": 97,
+              "y": 439.9375,
+              "width": 72,
+              "height": 40,
+              "text": "当前智能体通用助手",
+              "columns": "48px",
+              "gap": "0px",
+              "visible": true,
+              "iconCount": 0
+            }
+          ],
+          "label": {
+            "width": 48,
+            "scroll": 48,
+            "visible": true
+          }
+        }
+      ],
+      "agentMenuOpened": true
+    }
+  }
+}

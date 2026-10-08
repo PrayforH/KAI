@@ -350,8 +350,6 @@ export function AgentPlaygroundThread({
         <TaskKnowledgeProvider
           selected={draft?.knowledgeReferences ?? []}
           onChange={() => {}}
-          mode="rag"
-          onModeChange={() => {}}
         >
           <TaskModelProvider
             routes={[

@@ -312,8 +312,11 @@ async def test_the_observation_reports_the_answer_the_worker_reports(
 
 
 @pytest.mark.asyncio
-async def test_knowledge_bindings_expose_one_platform_tool(tmp_path: Path) -> None:
-    """Bound knowledge becomes the canonical platform tool, not a silent drop.
+@pytest.mark.parametrize("legacy_mode", [None, "rag", "wiki"])
+async def test_knowledge_bindings_expose_both_platform_tools(
+    tmp_path: Path, legacy_mode: str | None
+) -> None:
+    """Both knowledge channels remain usable regardless of an old saved mode.
 
     The Builder lets a draft tick knowledge bases on every runtime; the
     DeepAgents kernel used to answer that with a publish-blocking validation
@@ -352,6 +355,18 @@ async def test_knowledge_bindings_expose_one_platform_tool(tmp_path: Path) -> No
                 {"hits": [], "searchedSnapshotIds": ["snap-1"]}
             )
 
+        async def search_bound_wiki_pages(
+            self, tenant_id: str, actor_id: str, bindings: tuple[Any, ...],
+            query: str, *, limit: int = 12, team_ids: tuple[str, ...] = (),
+        ):
+            self.calls.append({"query": query, "limit": limit, "wiki": True})
+            from harness.knowledge.models import KnowledgeWikiPage
+
+            return [KnowledgeWikiPage(
+                knowledgeBaseReference="aipolicy", slug="concept/policy", title="知识边界",
+                pageType="concept", content="概念摘要",
+            )]
+
     service = _FakeKnowledge()
     config = _config()
     config = DeepagentsRuntimeConfig(
@@ -371,22 +386,30 @@ async def test_knowledge_bindings_expose_one_platform_tool(tmp_path: Path) -> No
         events=cast(Any, object()),
     )
     context = _context(tmp_path)
+    context.run.input["knowledge_mode"] = legacy_mode
 
     unbound = DeepagentsRuntime(
         config=_config(), approvals=cast(Any, object()), events=cast(Any, object())
     )
-    assert unbound._knowledge_tools(context, wiki_mode=False) == []  # pyright: ignore[reportPrivateUsage]
+    assert unbound._knowledge_tools(context) == []  # pyright: ignore[reportPrivateUsage]
 
     # The helper is runtime-internal; the test exercises it directly.
-    tools = runtime._knowledge_tools(context, wiki_mode=False)  # pyright: ignore[reportPrivateUsage]
+    tools = runtime._knowledge_tools(context)  # pyright: ignore[reportPrivateUsage]
     assert [tool.name for tool in tools] == [
-        knowledge_query_tool_name(wiki_mode=False)
+        knowledge_query_tool_name(wiki_mode=False),
+        knowledge_query_tool_name(wiki_mode=True),
     ]
+    assert "complementary evidence channels" in runtime._system_prompt(context)  # pyright: ignore[reportPrivateUsage]
     invoke = tools[0].coroutine
     assert invoke is not None
     payload = json.loads(await invoke(query="知识边界", limit=3))
     assert payload["searchedSnapshotIds"] == ["snap-1"]
     assert service.calls == [{"query": "知识边界", "limit": 3}]
+    wiki_invoke = tools[1].coroutine
+    assert wiki_invoke is not None
+    wiki_payload = json.loads(await wiki_invoke(query="知识边界", limit=4))
+    assert wiki_payload["pages"][0]["citationLink"] == "[[aipolicy::concept/policy|知识边界]]"
+    assert service.calls[-1] == {"query": "知识边界", "limit": 4, "wiki": True}
     # The model can correct a bad call instead of crashing the run.
     with pytest.raises(ValueError, match="non-empty"):
         await invoke(query="   ")

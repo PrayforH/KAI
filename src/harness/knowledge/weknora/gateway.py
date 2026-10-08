@@ -215,6 +215,22 @@ class WeknoraKnowledgeEngine:
         *,
         limit: int,
     ) -> tuple[EngineSearchHit, ...]:
+        if not base_ids:
+            return ()
+        base_ids = tuple(dict.fromkeys(base_ids))
+        try:
+            rows = await self._client.knowledge_search(base_ids, query, limit=limit)
+        except WeknoraError as error:
+            # Older installations expose only the raw hybrid recall endpoint.
+            # Auth, validation and retrieval failures must still be surfaced.
+            if error.status_code not in {404, 405}:
+                raise KnowledgeEngineError(f"weknora search failed: {error}") from error
+        else:
+            fallback_id = base_ids[0] if len(base_ids) == 1 else ""
+            ranked_hits = tuple(_hit(row, fallback_id) for row in rows)
+            if any(not hit.knowledge_base_id for hit in ranked_hits):
+                raise KnowledgeEngineError("weknora search hit is missing a knowledge base id")
+            return ranked_hits[:limit]
         hits: list[EngineSearchHit] = []
         for base_id in base_ids:
             try:

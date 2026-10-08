@@ -22,7 +22,6 @@ export interface HarnessHttpAgentConfig extends HttpAgentConfig {
   cancelFetch?: typeof fetch;
   modelRouteOverride?: string | null;
   knowledgeReferences?: readonly string[];
-  knowledgeMode?: string | null;
   onRunSucceeded?: () => void;
 }
 
@@ -179,7 +178,6 @@ export class HarnessHttpAgent extends HttpAgent {
   private cancelFetch: typeof fetch;
   private modelRouteOverride?: string;
   private knowledgeReferences?: readonly string[];
-  private knowledgeMode?: string;
   private onRunSucceeded?: () => void;
 
   constructor(config: HarnessHttpAgentConfig) {
@@ -187,7 +185,6 @@ export class HarnessHttpAgent extends HttpAgent {
       cancelFetch,
       modelRouteOverride,
       knowledgeReferences,
-      knowledgeMode,
       onRunSucceeded,
       ...httpConfig
     } = config;
@@ -217,7 +214,6 @@ export class HarnessHttpAgent extends HttpAgent {
     super({ ...httpConfig, fetch: sessionAwareFetch });
     this.modelRouteOverride = modelRouteOverride || undefined;
     this.knowledgeReferences = knowledgeReferences?.length ? knowledgeReferences : undefined;
-    this.knowledgeMode = knowledgeMode || undefined;
     this.onRunSucceeded = onRunSucceeded;
     const cancelTransport = cancelFetch ?? globalThis.fetch.bind(globalThis);
     this.cancelFetch = async (input, init) => {
@@ -245,7 +241,7 @@ export class HarnessHttpAgent extends HttpAgent {
   }
 
   private withModelOverride<T extends object>(input: T): T {
-    if (!this.modelRouteOverride && !this.knowledgeReferences && !this.knowledgeMode) {
+    if (!this.modelRouteOverride && !this.knowledgeReferences) {
       return input;
     }
     const current = input as T & { forwardedProps?: Record<string, unknown> };
@@ -257,7 +253,6 @@ export class HarnessHttpAgent extends HttpAgent {
         ...(this.knowledgeReferences
           ? { knowledgeReferences: [...this.knowledgeReferences] }
           : {}),
-        ...(this.knowledgeMode ? { knowledgeMode: this.knowledgeMode } : {}),
       },
     };
   }

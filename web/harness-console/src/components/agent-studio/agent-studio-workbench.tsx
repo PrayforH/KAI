@@ -3214,8 +3214,6 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                 <TaskKnowledgeProvider
                   selected={draft.knowledgeReferences}
                   onChange={(references) => updateDraft({ knowledgeReferences: references })}
-                  mode="rag"
-                  onModeChange={() => {}}
                 >
                   <div className="task-knowledge-menu" data-inline="true">
                     <KnowledgeBasePicker autoFocus={false} clearLabel="清除知识库绑定" />

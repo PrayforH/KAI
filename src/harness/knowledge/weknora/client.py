@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Sequence
 from typing import Any, cast
 
 import httpx
@@ -195,6 +196,24 @@ class WeknoraClient:
         if isinstance(payload, list):
             return _dict_list(payload)
         return []
+
+    async def knowledge_search(
+        self,
+        base_ids: Sequence[str],
+        query: str,
+        *,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        """Reuse WeKnora's Q&A retrieval pipeline and tenant rerank defaults."""
+        payload = await self.post_data(
+            "/knowledge-search",
+            json={
+                "query": query,
+                "knowledge_base_ids": list(base_ids),
+                "match_count": limit,
+            },
+        )
+        return _dict_list(payload)
 
     # --- documents --------------------------------------------------------
 

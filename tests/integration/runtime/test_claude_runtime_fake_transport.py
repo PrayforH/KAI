@@ -37,6 +37,9 @@ from harness.core.models import (
     RunStatus,
     Session,
 )
+from harness.knowledge.models import KnowledgeSnapshotBinding
+from harness.knowledge.repositories import InMemoryKnowledgeRepository
+from harness.knowledge.service import KnowledgeService
 from harness.observability.provider import build_observability
 from harness.policy.models import ContextTrust
 from harness.runtime.base import (
@@ -82,10 +85,12 @@ class RecordingToolGate:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("web_enabled", [False, True])
 @pytest.mark.parametrize("personal_web_enabled", [False, True])
+@pytest.mark.parametrize("legacy_knowledge_mode", [None, "rag", "wiki"])
 async def test_runtime_builds_new_api_options_and_maps_fake_sdk_messages(
     tmp_path: Path,
     web_enabled: bool,
     personal_web_enabled: bool,
+    legacy_knowledge_mode: str | None,
 ) -> None:
     snapshot = load_manifest("tests/fixtures/agents/echo-agent/agent.yaml")
     if web_enabled:
@@ -168,6 +173,7 @@ async def test_runtime_builds_new_api_options_and_maps_fake_sdk_messages(
         query_factory=fake_query,
         tool_gate=gate,
         observability=observability,
+        knowledge=KnowledgeService(InMemoryKnowledgeRepository()),
     )
     now = datetime.now(UTC)
     context = RuntimeContext(
@@ -179,7 +185,7 @@ async def test_runtime_builds_new_api_options_and_maps_fake_sdk_messages(
             idempotency_key="idem-1",
             created_at=now,
             updated_at=now,
-            input={"prompt": "hello"},
+            input={"prompt": "hello", "knowledge_mode": legacy_knowledge_mode},
         ),
         session=Session(
             session_id="session-1",
@@ -188,6 +194,12 @@ async def test_runtime_builds_new_api_options_and_maps_fake_sdk_messages(
             agent_name="echo-agent",
             agent_version="0.1.0",
             created_at=now,
+            knowledge_snapshot_bindings=(
+                (KnowledgeSnapshotBinding(
+                    knowledgeBaseReference="cases", sourceReference="cases",
+                    snapshotId="weknora:remote-cases", trust="untrusted",
+                ).model_dump(mode="json", by_alias=True),) if legacy_knowledge_mode else ()
+            ),
         ),
         workspace=tmp_path,
         context_projection=(
@@ -206,6 +218,14 @@ async def test_runtime_builds_new_api_options_and_maps_fake_sdk_messages(
         "<current_user_request>\nhello\n</current_user_request>"
     )
     options = captured[0][1]
+    if legacy_knowledge_mode:
+        assert "harness-knowledge" in options.mcp_servers
+        assert "mcp__harness-knowledge__query_knowledge_sources" in options.allowed_tools
+        assert "mcp__harness-knowledge__search_wiki_pages" in options.allowed_tools
+        assert "complementary evidence channels" in str(options.system_prompt)
+    else:
+        assert "harness-knowledge" not in options.mcp_servers
+        assert "complementary evidence channels" not in str(options.system_prompt)
     if web_enabled and personal_web_enabled:
         assert "harness-web" in options.mcp_servers
         assert "mcp__harness-web__search" in options.allowed_tools

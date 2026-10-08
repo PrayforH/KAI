@@ -638,6 +638,40 @@ async def test_bound_wiki_propagates_engine_failure_instead_of_empty_evidence() 
 
 
 @pytest.mark.asyncio
+async def test_hybrid_selection_routes_only_to_supported_channels() -> None:
+    from unittest.mock import AsyncMock
+
+    service, engine = make_service()
+    engine.search = AsyncMock(return_value=())
+    engine.search_wiki_pages = AsyncMock(return_value=())
+    for reference, kb_type in (("docs", "rag"), ("wiki", "wiki"), ("both", "hybrid")):
+        engine.create_base = AsyncMock(return_value=f"remote-{reference}")
+        await service.create_base(
+            "local", "user-1",
+            CreateKnowledgeBaseRequest.model_validate({
+                "reference": reference, "displayName": reference,
+                "engine": "weknora", "kbType": kb_type,
+            }),
+        )
+    bindings = await service.resolve_bindings("local", "user-1", ("docs", "wiki", "both"), ())
+    await service.search("local", "user-1", "概念", bindings=bindings)
+    await service.search_bound_wiki_pages("local", "user-1", bindings, "概念")
+    assert engine.search.call_args.args[0] == ["remote-docs", "remote-both"]
+    assert [call.args[0] for call in engine.search_wiki_pages.call_args_list] == [
+        "remote-wiki", "remote-both",
+    ]
+
+    engine.search.reset_mock()
+    engine.search_wiki_pages.reset_mock()
+    denied = await service.search("local", "other", "概念", bindings=bindings)
+    denied_pages = await service.search_bound_wiki_pages("local", "other", bindings, "概念")
+    assert denied.hits == ()
+    assert denied_pages == []
+    engine.search.assert_not_called()
+    engine.search_wiki_pages.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_delete_base_removes_remote_base_and_local_rows() -> None:
     directory = InMemoryUserDirectory(
         [DirectoryUser(user_id="user-2", email="viewer@axis.test", display_name="查看者")]

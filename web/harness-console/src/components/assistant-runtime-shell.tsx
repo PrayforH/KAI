@@ -63,7 +63,6 @@ export function AssistantRuntimeShell({
   const [historyRevision, setHistoryRevision] = useState(0);
   const [historyReady, setHistoryReady] = useState(false);
   const [knowledgeReferences, setKnowledgeReferences] = useState<string[]>([]);
-  const [knowledgeMode, setKnowledgeMode] = useState<"rag" | "wiki">("rag");
   const [loadedKnowledgeKey, setLoadedKnowledgeKey] = useState<string | null>(null);
   const knowledgeStorageKey = `harness:thread-knowledge:${threadId}`;
   const conversationalModelRouteOverride = modelRoutes.find(
@@ -95,7 +94,6 @@ export function AssistantRuntimeShell({
       url: `/api/agui?${query.toString()}`,
       modelRouteOverride: conversationalModelRouteOverride,
       knowledgeReferences,
-      knowledgeMode,
       onRunSucceeded: refreshDurableHistory,
     });
     next.threadId = threadId;
@@ -106,7 +104,6 @@ export function AssistantRuntimeShell({
     agentVersion,
     conversationalModelRouteOverride,
     knowledgeReferences,
-    knowledgeMode,
     refreshDurableHistory,
     spaceId,
     threadId,
@@ -141,12 +138,10 @@ export function AssistantRuntimeShell({
   useEffect(() => {
     try {
       const raw = localStorage.getItem(knowledgeStorageKey);
-      const saved = raw ? (JSON.parse(raw) as { references?: string[]; mode?: string }) : null;
+      const saved = raw ? (JSON.parse(raw) as { references?: string[] }) : null;
       setKnowledgeReferences(Array.isArray(saved?.references) ? [...new Set(saved.references.filter((ref) => typeof ref === "string" && /^[a-z][a-z0-9-]{0,127}$/.test(ref)))] : []);
-      setKnowledgeMode(saved?.mode === "wiki" ? "wiki" : "rag");
     } catch {
       setKnowledgeReferences([]);
-      setKnowledgeMode("rag");
     }
     setLoadedKnowledgeKey(knowledgeStorageKey);
   }, [knowledgeStorageKey]);
@@ -156,12 +151,12 @@ export function AssistantRuntimeShell({
       if (loadedKnowledgeKey !== knowledgeStorageKey) return;
       localStorage.setItem(
         knowledgeStorageKey,
-        JSON.stringify({ references: knowledgeReferences, mode: knowledgeMode }),
+        JSON.stringify({ references: knowledgeReferences }),
       );
     } catch {
       /* storage unavailable: keep the in-memory selection */
     }
-  }, [knowledgeMode, knowledgeReferences, knowledgeStorageKey, loadedKnowledgeKey]);
+  }, [knowledgeReferences, knowledgeStorageKey, loadedKnowledgeKey]);
 
   useLayoutEffect(() => {
     activateRuntimeThread(threadId);
@@ -194,8 +189,6 @@ export function AssistantRuntimeShell({
         <TaskKnowledgeProvider
           selected={knowledgeReferences}
           onChange={setKnowledgeReferences}
-          mode={knowledgeMode}
-          onModeChange={setKnowledgeMode}
         >
           <div
             className="assistant-runtime-shell"

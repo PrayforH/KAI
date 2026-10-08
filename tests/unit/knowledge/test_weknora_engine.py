@@ -43,6 +43,63 @@ def login_response() -> httpx.Response:
 
 
 @pytest.mark.asyncio
+async def test_gateway_uses_one_ranked_search_across_bases() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/auth/login":
+            return login_response()
+        assert request.url.path == "/api/v1/knowledge-search"
+        assert json.loads(request.content) == {
+            "query": "事实",
+            "knowledge_base_ids": ["kb-1", "kb-2"],
+            "match_count": 2,
+        }
+        return httpx.Response(200, json={"data": [
+            {"id": "a", "knowledge_base_id": "kb-2", "score": 0.8},
+            {"id": "b", "knowledge_base_id": "kb-1", "score": 0.7},
+            {"id": "c", "knowledge_base_id": "kb-1", "score": 0.6},
+        ]})
+
+    engine = WeknoraKnowledgeEngine(WeknoraSettings(), make_client(handler))
+    try:
+        hits = await engine.search(["kb-1", "kb-2", "kb-1"], "事实", limit=2)
+    finally:
+        await engine.aclose()
+    assert [(hit.chunk_id, hit.knowledge_base_id) for hit in hits] == [
+        ("a", "kb-2"), ("b", "kb-1"),
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [404, 405, 403, 500])
+async def test_gateway_only_falls_back_for_unsupported_search_endpoint(status: int) -> None:
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/auth/login":
+            return login_response()
+        calls.append(request.url.path)
+        if request.url.path == "/api/v1/knowledge-search":
+            return httpx.Response(status, json={"error": "unavailable"})
+        assert json.loads(request.content) == {"query_text": "事实", "match_count": 2}
+        return httpx.Response(200, json={"data": [{"id": "a", "score": 0.2}]})
+
+    engine = WeknoraKnowledgeEngine(WeknoraSettings(), make_client(handler))
+    try:
+        if status in {404, 405}:
+            hits = await engine.search(["kb-1"], "事实", limit=2)
+            assert hits[0].knowledge_base_id == "kb-1"
+            assert calls == [
+                "/api/v1/knowledge-search", "/api/v1/knowledge-bases/kb-1/hybrid-search",
+            ]
+        else:
+            with pytest.raises(KnowledgeEngineError):
+                await engine.search(["kb-1"], "事实", limit=2)
+            assert calls == ["/api/v1/knowledge-search"]
+    finally:
+        await engine.aclose()
+
+
+@pytest.mark.asyncio
 async def test_client_logs_in_and_unwraps_envelope() -> None:
     calls: list[str] = []
 
@@ -113,9 +170,11 @@ async def test_gateway_search_normalizes_scores_and_titles() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/api/v1/auth/login":
             return login_response()
-        assert request.url.path == "/api/v1/knowledge-bases/kb-1/hybrid-search"
+        assert request.url.path == "/api/v1/knowledge-search"
         body = json.loads(request.content)
-        assert body["query_text"] == "非法集资"
+        assert body["query"] == "非法集资"
+        assert body["knowledge_base_ids"] == ["kb-1"]
+        assert "rerank" not in body
         assert body["match_count"] == 5
         return httpx.Response(
             200,

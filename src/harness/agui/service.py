@@ -95,19 +95,6 @@ def _knowledge_references_override(request: RunAgentInput) -> list[str] | None:
     return references or None
 
 
-def _knowledge_mode_override(request: RunAgentInput) -> str | None:
-    """Composer knowledge Q&A mode: ``rag`` (chunk retrieval) or ``wiki``."""
-    raw = request.forwarded_props
-    if not isinstance(raw, dict):
-        return None
-    value = cast(dict[str, object], raw).get("knowledgeMode")
-    if value is None or value == "":
-        return None
-    if value not in {"rag", "wiki"}:
-        raise ConflictError("task knowledge mode is invalid")
-    return cast(str, value)
-
-
 # How long a failed title generation suppresses the next attempt for the same
 # thread. Long enough that browsing the task list cannot amplify one broken model
 # route into a call per refresh, short enough that a transient failure recovers
@@ -316,7 +303,6 @@ class AguiRunService:
         )
         model_route_override = _model_route_override(request)
         requested_knowledge = _knowledge_references_override(request)
-        knowledge_mode = _knowledge_mode_override(request)
         creation = None
         for attempt in range(2):
             binding = await self._resolve_binding(
@@ -335,14 +321,10 @@ class AguiRunService:
                 session_id=binding.session_id,
                 references=requested_knowledge,
             )
-            if requested_knowledge or knowledge_mode == "wiki":
+            if requested_knowledge:
                 session = await self._sessions.get(tenant_id, binding.session_id)
                 if session.runtime_type != "claude-agent-sdk":
                     raise ConflictError("当前运行时不支持知识问答，请切换支持知识检索的智能体")
-                if knowledge_mode == "wiki" and not (
-                    knowledge_override or session.knowledge_snapshot_bindings
-                ):
-                    raise ConflictError("Wiki 问答需要先选择知识库，或使用已绑定知识库的智能体")
             run_input: dict[str, object] = {
                 "prompt": prompt,
                 "conversation_prompts": conversation_prompts,
@@ -360,7 +342,6 @@ class AguiRunService:
                 **(
                     {"knowledge_binding_override": knowledge_override} if knowledge_override else {}
                 ),
-                **({"knowledge_mode": knowledge_mode} if knowledge_mode else {}),
             }
             creation = await self._run_service.create_with_result(
                 tenant_id,

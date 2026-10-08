@@ -2802,70 +2802,6 @@ body.codex-theme-v1:has(.console-shell) .task-sidebar-brand .task-sidebar-search
   color: var(--codex-ink, #ffffff);
 }
 
-/* Wiki toggle: a compact switch in the composer toolbar. */
-.task-knowledge-switch {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 30px;
-  padding: 0 8px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--codex-muted, #a1a1a1);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.task-knowledge-switch:hover:not(:disabled) {
-  background: var(--codex-surface-hover, #2a2a2a);
-  color: var(--codex-ink, #ffffff);
-}
-
-.task-knowledge-switch:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.task-knowledge-switch-track {
-  position: relative;
-  width: 26px;
-  height: 15px;
-  flex: 0 0 26px;
-  border-radius: 999px;
-  background: var(--codex-surface-active, #303030);
-  transition: background-color 140ms ease;
-}
-
-.task-knowledge-switch-thumb {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: var(--codex-muted, #a1a1a1);
-  transition: transform 140ms ease, background-color 140ms ease;
-}
-
-.task-knowledge-switch.is-on {
-  color: var(--codex-ink, #ffffff);
-}
-
-.task-knowledge-switch.is-on .task-knowledge-switch-track {
-  background: var(--codex-accent, #ececec);
-}
-
-.task-knowledge-switch.is-on .task-knowledge-switch-thumb {
-  transform: translateX(11px);
-  background: var(--codex-on-accent, #07111a);
-}
-
-.task-knowledge-switch-label {
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
-
 /* The @ trigger keeps its footprint; the count sits above its top-right edge. */
 .task-knowledge-trigger {
   position: relative;
@@ -2938,7 +2874,7 @@ body.codex-theme-v1 .composer-context-shelf.task-knowledge-selection { padding-t
 .task-knowledge-remove { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
 .task-knowledge-selected-chip > button:hover:not(:disabled) { background: var(--codex-accent-faint); color: var(--codex-ink); }
 .task-knowledge-selected-chip > button:disabled { opacity: .45; cursor: default; }
-.task-knowledge-trigger:focus-visible, .task-knowledge-option:focus-visible, .task-knowledge-switch:focus-visible, .task-knowledge-search:focus-visible, .task-knowledge-selection button:focus-visible, .aui-citation-link:focus-visible { outline: 2px solid var(--codex-ink); outline-offset: 2px; }
+.task-knowledge-trigger:focus-visible, .task-knowledge-option:focus-visible, .task-knowledge-search:focus-visible, .task-knowledge-selection button:focus-visible, .aui-citation-link:focus-visible { outline: 2px solid var(--codex-ink); outline-offset: 2px; }
 body.codex-theme-v1:has(.console-shell) .harness-composer-shell .composer-toolbar { flex: 1 1 0%; flex-wrap: wrap; row-gap: 5px; }
 @media (max-width: 640px) {
   body.codex-theme-v1:has(.console-shell) .harness-composer-shell .composer-toolbar { gap: 2px; }

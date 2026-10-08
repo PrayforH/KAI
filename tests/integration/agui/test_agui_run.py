@@ -900,17 +900,21 @@ async def test_history_keeps_messages_and_valid_files_when_old_attachment_is_mis
 
 
 @pytest.mark.asyncio
-async def test_wiki_without_knowledge_fails_before_creating_a_run() -> None:
+@pytest.mark.parametrize("legacy_mode", ["rag", "wiki"])
+async def test_legacy_knowledge_mode_does_not_constrain_new_runs(legacy_mode: str) -> None:
     app = create_memory_app(auto_execute=True)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         published = await client.post(
             "/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS
         )
         assert published.status_code == 201
-        request = _request(thread_id="wiki-no-base", run_id="wiki-no-base", prompt="查询资料")
-        request["forwardedProps"] = {"knowledgeMode": "wiki"}
+        request = _request(thread_id="old-mode", run_id="old-mode", prompt="查询资料")
+        request["forwardedProps"] = {"knowledgeMode": legacy_mode}
         response = await client.post(
             "/v1/agui?agent_name=echo-agent&agent_version=0.1.0", json=request, headers=HEADERS
         )
-    assert response.status_code == 409
-    assert "Wiki 问答需要先选择知识库" in response.text
+        assert response.status_code == 200
+        run = await app.state.container.runs.get(
+            "tenant-a", response.headers["x-harness-run-id"]
+        )
+        assert "knowledge_mode" not in run.input

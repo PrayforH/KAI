@@ -109,7 +109,6 @@ import { ComposerAssist, composerOptions } from "./composer-assist";
 import {
   TaskKnowledgeControl,
   TaskKnowledgeSelection,
-  TaskKnowledgeModeSwitch,
   useTaskKnowledge,
 } from "./task-knowledge-context";
 import { composerTrigger, queueAttachments, queueMayDispatch, restorePromptQueue, type QueuedPrompt } from "../lib/composer-interactions";
@@ -844,7 +843,6 @@ function HarnessComposer() {
             onChange={agentSelection.onChange}
             onRefresh={agentSelection.onRefresh}
           />
-          {!conversationScope && <TaskKnowledgeModeSwitch disabled={runLocked || showStop || videoGenerating} />}
           <TaskModelControl disabled={Boolean(conversationScope) || runLocked || showStop || videoGenerating} /></>}
         </div>
         {showStop && !composerText.trim() && !composerAttachments.length ? (

@@ -172,7 +172,10 @@ def build_knowledge_mcp_app(
 
     @server.tool(
         name="query_knowledge_sources",
-        description=("Search the immutable Knowledge Base snapshots assigned to this Session."),
+        description=(
+            "Search this Session's document knowledge using hybrid keyword/vector retrieval "
+            "and configured reranking. Use this for precise source evidence and citations."
+        ),
     )
     async def query_knowledge_sources(
         query: str,

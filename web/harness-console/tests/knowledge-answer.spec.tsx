@@ -6,7 +6,7 @@ import ReactMarkdown from "react-markdown";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { TaskKnowledgeProvider, TaskKnowledgeControl, TaskKnowledgeModeSwitch, TaskKnowledgeSelection } from "../src/components/task-knowledge-context";
+import { TaskKnowledgeProvider, TaskKnowledgeControl, TaskKnowledgeSelection } from "../src/components/task-knowledge-context";
 import { citationsForTurn, citationTarget, dedupeCitations, knowledgeUrlTransform, parseWikiTarget, remarkWikiLinks } from "../src/lib/knowledge-links";
 import type { StudioKnowledgeBase } from "../src/lib/studio-client";
 
@@ -21,9 +21,8 @@ const bases = [
 ] as StudioKnowledgeBase[];
 function Harness() {
   const [selected, setSelected] = useState<string[]>([]);
-  const [mode, setMode] = useState<"rag" | "wiki">("rag");
-  return <TaskKnowledgeProvider selected={selected} onChange={setSelected} mode={mode} onModeChange={setMode}>
-    <TaskKnowledgeControl disabled={false} /><TaskKnowledgeModeSwitch disabled={false} />
+  return <TaskKnowledgeProvider selected={selected} onChange={setSelected}>
+    <TaskKnowledgeControl disabled={false} />
     <output>{selected.join(",")}</output>
   </TaskKnowledgeProvider>;
 }
@@ -42,15 +41,6 @@ it("opens a real picker, preserves multi-selection, and Escape returns focus", a
   expect(document.activeElement).toBe(host.querySelector(".task-knowledge-trigger"));
   click(".task-knowledge-trigger"); click(".task-knowledge-clear");
   expect(host.querySelector("output")?.textContent).toBe("");
-});
-it("disables Wiki for a RAG-only selection, and allows turning it off after selection changes", async () => {
-  await act(async () => root.render(<Harness />));
-  click(".task-knowledge-trigger"); click("li:nth-child(2) button");
-  expect(host.querySelector<HTMLButtonElement>('[role="switch"]')!.disabled).toBe(true);
-  click("li:nth-child(1) button"); click('[role="switch"]'); click("li:nth-child(1) button");
-  expect(host.querySelector<HTMLButtonElement>('[role="switch"]')!.disabled).toBe(false);
-  click('[role="switch"]');
-  expect(host.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("false");
 });
 it("shows retry when loading fails instead of reporting an empty catalog", async () => {
   list.mockRejectedValueOnce(new Error("offline"));
@@ -102,7 +92,7 @@ it("caps the picker at the space above its trigger so the scroll box cannot clip
 it("draws the remove mark as a stroked icon and sizes the picker to its rows", async () => {
   const css = readFileSync(join(process.cwd(), "src/app/web-codex.css"), "utf8");
   function Shelf() {
-    return <TaskKnowledgeProvider selected={["cases"]} onChange={() => {}} mode="rag" onModeChange={() => {}}>
+    return <TaskKnowledgeProvider selected={["cases"]} onChange={() => {}}>
       <TaskKnowledgeSelection disabled={false} />
     </TaskKnowledgeProvider>;
   }
@@ -119,7 +109,7 @@ it("draws the remove mark as a stroked icon and sizes the picker to its rows", a
 it("opens the shared multi-picker from the context shelf and removes a selected base", async () => {
   function Shelf() {
     const [selected, setSelected] = useState(["cases", "policy"]);
-    return <TaskKnowledgeProvider selected={selected} onChange={setSelected} mode="rag" onModeChange={() => {}}>
+    return <TaskKnowledgeProvider selected={selected} onChange={setSelected}>
       <TaskKnowledgeSelection disabled={false} /><TaskKnowledgeControl disabled={false} />
     </TaskKnowledgeProvider>;
   }

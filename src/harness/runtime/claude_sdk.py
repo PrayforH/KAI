@@ -46,12 +46,10 @@ from harness.core.manifest import (
 from harness.core.models import AgentVersion, ModelRoute
 from harness.knowledge.models import KnowledgeResultTrust
 from harness.knowledge.runtime import (
-    RAG_MODE_CONTRACT,
-    WIKI_MODE_CONTRACT,
+    HYBRID_KNOWLEDGE_CONTRACT,
     create_knowledge_mcp_server,
     knowledge_bindings_for_run,
     knowledge_execution_context,
-    knowledge_mode_for_run,
 )
 from harness.knowledge.service import KnowledgeService
 from harness.knowledge.workload import RemoteKnowledgeMcpProvider
@@ -161,11 +159,7 @@ def _knowledge_mode_contract(context: RuntimeContext) -> str:
     )
     if not bindings:
         return ""
-    return (
-        WIKI_MODE_CONTRACT
-        if knowledge_mode_for_run(context.run.input) == "wiki"
-        else RAG_MODE_CONTRACT
-    )
+    return HYBRID_KNOWLEDGE_CONTRACT
 
 
 def permission_mode_for_route(route: ModelRoute) -> Literal["auto", "dontAsk"]:
@@ -925,20 +919,19 @@ class ClaudeSdkRuntime:
                 )
             if "harness-knowledge" in mcp_servers:
                 raise ToolResolutionError("duplicate MCP server name: harness-knowledge")
-            wiki_mode = knowledge_mode_for_run(context.run.input) == "wiki"
-            knowledge_tool = (
-                "mcp__harness-knowledge__search_wiki_pages"
-                if wiki_mode
-                else "mcp__harness-knowledge__query_knowledge_sources"
+            knowledge_tools = (
+                "mcp__harness-knowledge__query_knowledge_sources",
+                "mcp__harness-knowledge__search_wiki_pages",
             )
-            mcp_servers["harness-knowledge"] = create_knowledge_mcp_server(wiki_mode=wiki_mode)
-            allowed_tools.append(knowledge_tool)
+            mcp_servers["harness-knowledge"] = create_knowledge_mcp_server()
+            allowed_tools.extend(knowledge_tools)
             knowledge_trust = (
                 ContextTrust.UNTRUSTED
                 if any(item.trust is KnowledgeResultTrust.UNTRUSTED for item in knowledge_bindings)
                 else ContextTrust.SENSITIVE
             )
-            result_trust[knowledge_tool] = knowledge_trust
+            for knowledge_tool in knowledge_tools:
+                result_trust[knowledge_tool] = knowledge_trust
         if context.artifact_publisher is not None and not remote_transport:
             if "harness-artifacts" in mcp_servers:
                 raise ToolResolutionError("duplicate MCP server name: harness-artifacts")
@@ -1267,7 +1260,6 @@ class ClaudeSdkRuntime:
                         self._knowledge,
                         context.identity,
                         run_knowledge_bindings,
-                        knowledge_mode_for_run(context.run.input),
                     )
                 )
             if context.artifact_publisher is not None:

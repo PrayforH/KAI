@@ -68,9 +68,7 @@ html[data-theme="codex-theme-v1"] body.codex-theme-v1 .harness-composer-shell.ha
   flex-wrap: wrap;
   justify-content: flex-start;
   padding: 0;
-  /* The toolbar's own buttons are 34px hit areas, so the row reads tighter
-     without a wide gutter between them. */
-  gap: 3px;
+  gap: 1px;
 }
 
 html[data-theme="codex-theme-v1"] body.codex-theme-v1 .harness-composer-shell.harness-composer-shell .aui-composer-attach {
@@ -93,4 +91,38 @@ html[data-theme="codex-theme-v1"] body.codex-theme-v1 .harness-composer-shell.ha
 html[data-theme="codex-theme-v1"] body.codex-theme-v1 .harness-composer-shell.harness-composer-shell .aui-composer-attach svg {
   width: 16px;
   height: 16px;
+}
+
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .harness-composer-shell .composer-footer .aui-composer-attach,
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .harness-composer-shell .composer-footer .task-knowledge-trigger {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 28px;
+  width: 28px;
+  min-width: 28px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+}
+
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .harness-composer-shell .composer-footer .task-agent-switcher {
+  margin: 0;
+}
+
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .harness-composer-shell .composer-footer .task-agent-switcher-trigger {
+  width: auto;
+  min-height: 32px;
+  padding: 4px 20px 4px 4px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .harness-composer-shell .composer-footer .task-agent-switcher-copy {
+  display: grid;
+}
+
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .harness-composer-shell .composer-footer .task-agent-switcher-chevron {
+  right: 4px;
 }

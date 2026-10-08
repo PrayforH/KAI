@@ -22,6 +22,7 @@ from harness.knowledge.models import (
     KnowledgeBase,
     KnowledgeBaseEngine,
     KnowledgeBaseMember,
+    KnowledgeBaseType,
     KnowledgeChunk,
     KnowledgeCitation,
     KnowledgeDocumentChunk,
@@ -774,6 +775,9 @@ class KnowledgeService:
         base_ids: list[str] = []
         base_by_id: dict[str, KnowledgeSnapshotBinding] = {}
         for binding in engine_bindings:
+            base = await self.repository.get_base(tenant_id, binding.knowledge_base_reference)
+            if base.kb_type is KnowledgeBaseType.WIKI:
+                continue
             source = source_by_reference[binding.source_reference]
             config = source.config
             remote_id = getattr(config, "weknora_base_id", "")
@@ -781,6 +785,8 @@ class KnowledgeService:
                 continue
             base_ids.append(remote_id)
             base_by_id[remote_id] = binding
+        if not base_ids:
+            return []
         engine_hits = await self._engine.search(base_ids, query, limit=limit)
         top = max((item.score for item in engine_hits), default=0.0)
         hits: list[KnowledgeSearchHit] = []
@@ -1526,6 +1532,9 @@ class KnowledgeService:
                 reference,
                 source,
             ):
+                continue
+            base = await self.repository.get_base(tenant_id, reference)
+            if base.kb_type is KnowledgeBaseType.RAG:
                 continue
             remote_id = _engine_base_id(source)
             if not remote_id:

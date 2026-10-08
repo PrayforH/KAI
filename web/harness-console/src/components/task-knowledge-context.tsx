@@ -16,8 +16,6 @@ import {
   type StudioKnowledgeBase,
 } from "../lib/studio-client";
 
-export type KnowledgeMode = "rag" | "wiki";
-
 type TaskKnowledgeValue = {
   /** Knowledge base references selected for this thread. */
   selected: string[];
@@ -28,9 +26,6 @@ type TaskKnowledgeValue = {
   toggle: (reference: string) => void;
   clear: () => void;
   isSelected: (reference: string) => boolean;
-  /** Q&A mode: chunk retrieval (RAG) or curated wiki pages. */
-  mode: KnowledgeMode;
-  setMode: (mode: KnowledgeMode) => void;
 };
 
 const TaskKnowledgeContext = createContext<TaskKnowledgeValue | null>(null);
@@ -38,14 +33,10 @@ const TaskKnowledgeContext = createContext<TaskKnowledgeValue | null>(null);
 export function TaskKnowledgeProvider({
   selected,
   onChange,
-  mode,
-  onModeChange,
   children,
 }: {
   selected: string[];
   onChange: (references: string[]) => void;
-  mode: KnowledgeMode;
-  onModeChange: (mode: KnowledgeMode) => void;
   children: ReactNode;
 }) {
   const [available, setAvailable] = useState<StudioKnowledgeBase[]>([]);
@@ -87,11 +78,6 @@ export function TaskKnowledgeProvider({
 
   const clear = useCallback(() => onChange([]), [onChange]);
 
-  const setMode = useCallback(
-    (next: KnowledgeMode) => onModeChange(next),
-    [onModeChange],
-  );
-
   const value = useMemo<TaskKnowledgeValue>(
     () => ({
       selected,
@@ -102,10 +88,8 @@ export function TaskKnowledgeProvider({
       toggle,
       clear,
       isSelected: (reference: string) => selected.includes(reference),
-      mode,
-      setMode,
     }),
-    [available, clear, loading, error, retry, mode, selected, setMode, toggle],
+    [available, clear, loading, error, retry, selected, toggle],
   );
 
   return (
@@ -254,33 +238,6 @@ export function TaskKnowledgeControl({ disabled, label }: { disabled: boolean; l
         </section>
       )}
     </div>
-  );
-}
-
-/** Compact Wiki on/off switch for the composer toolbar. */
-export function TaskKnowledgeModeSwitch({ disabled }: { disabled: boolean }) {
-  const { mode, setMode, selected, available, loading } = useTaskKnowledge();
-  const wiki = mode === "wiki";
-  const unsupported = !loading && selected.length > 0 && selected.every((ref) => {
-    const base = available.find((item) => item.reference === ref);
-    return base && (base.engine !== "weknora" || base.kbType === "rag");
-  });
-  return (
-    <button
-      type="button"
-      className={`task-knowledge-switch${wiki ? " is-on" : ""}`}
-      disabled={disabled || (!wiki && unsupported)}
-      role="switch"
-      aria-label="Wiki 问答"
-      aria-checked={wiki}
-      title={unsupported ? "所选知识库不支持 Wiki，请选择 Wiki 或混合知识库" : wiki ? "已开启 Wiki：基于知识页面回答" : "Wiki 已关闭：使用文档检索回答"}
-      onClick={() => setMode(wiki ? "rag" : "wiki")}
-    >
-      <span className="task-knowledge-switch-track" aria-hidden="true">
-        <span className="task-knowledge-switch-thumb" />
-      </span>
-      <span className="task-knowledge-switch-label">Wiki</span>
-    </button>
   );
 }
 
