@@ -1,0 +1,47 @@
+{
+  "date": "2026-10-08",
+  "url": "https://172.20.109.174/",
+  "source_commit": "6a2fea2d72d2fdf0006ab997ad5ec9880b5412ae",
+  "git_branch": "develop",
+  "container": "axis-web-artifact-inline-20261008",
+  "image": "kai/axis-web:artifact-inline-20261008",
+  "image_id": "sha256:73c97b8baf3ec844950a364fa1347946509086bc8b5ab7f8fc7ac86b07329664",
+  "tests": {
+    "files_passed": 161,
+    "passed": 1033,
+    "skipped": 1,
+    "typescript": "passed",
+    "next_production_build": "passed"
+  },
+  "browser": {
+    "canary": "passed",
+    "production": "passed",
+    "fixtures": "browser-only mocked history and PNG, no production artifacts or model tasks created",
+    "errors": 0,
+    "cases": [
+      "inline reply image and aspect ratio",
+      "selected image expanded preview",
+      "live snap before clipped conversation",
+      "inward whole-panel preview",
+      "Escape cancels both previews",
+      "input retained",
+      "window resize preserves width preference",
+      "wide navigation auto expands and restores by collapsing",
+      "collapsed navigation",
+      "dark/light",
+      "keyboard",
+      "390px mobile image and panel controls"
+    ]
+  },
+  "verified_source_files": 516,
+  "production_http_status": 200,
+  "backend_recreated": false,
+  "cleanup": {
+    "temporary_https_removed": true,
+    "canary_removed": true,
+    "test_users_removed": 1,
+    "audit_logs_retained": true,
+    "temporary_password_file_removed": true
+  },
+  "rollback_container": "axis-web-artifact-panel-20261008"
+}
