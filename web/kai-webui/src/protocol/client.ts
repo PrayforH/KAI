@@ -78,7 +78,7 @@ async function apiError(response: Response) {
   try {
     const body = await response.json() as Json;
     const detail = body.detail;
-    message = typeof detail === "string" ? detail : text(object(detail).message) || text(body.message) || message;
+    message = typeof detail === "string" ? detail : text(object(detail).message) || text(object(body.error).message) || text(body.message) || message;
   } catch { /* HTTP fallback is enough. */ }
   return new Error(message);
 }

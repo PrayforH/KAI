@@ -1,0 +1,252 @@
+{
+  "base_develop": "48ca7134fc4a177fa67693f3539f0b507838b902",
+  "original_worktree_head": "448b7656e1e418e9bb792feafcabdec7329b6315",
+  "tracked_modified_files_reviewed": 44,
+  "three_way_classification": {
+    "conflicts": 14,
+    "already_in_develop": 23,
+    "candidate": 7
+  },
+  "reviewed_tracked_files": [
+    {
+      "file": "src/harness/agui/service.py",
+      "classification": "conflicts"
+    },
+    {
+      "file": "src/harness/api/app.py",
+      "classification": "already_in_develop"
+    },
+    {
+      "file": "src/harness/api/routes/artifacts.py",
+      "classification": "already_in_develop"
+    },
+    {
+      "file": "src/harness/config.py",
+      "classification": "candidate"
+    },
+    {
+      "file": "src/harness/knowledge/runtime.py",
+      "classification": "conflicts"
+    },
+    {
+      "file": "src/harness/knowledge/service.py",
+      "classification": "conflicts"
+    },
+    {
+      "file": "src/harness/knowledge/weknora/client.py",
+      "classification": "already_in_develop"
+    },
+    {
+      "file": "src/harness/knowledge/weknora/gateway.py",
+      "classification": "already_in_develop"
+    },
+    {
+      "file": "src/harness/knowledge/workload.py",
+      "classification": "already_in_develop"
+    },
+    {
+      "file": "src/harness/runtime/claude_sdk.py",
+      "classification": "conflicts"
+    },
+    {
+      "file": "src/harness/sandbox/base.py",
+      "classification": "conflicts"
+    },
+    {
+      "file": "src/harness/sandbox/daytona.py",
+      "classification": "conflicts"
+    },
+    {
+      "file": "src/harness/sandbox/e2b.py",
+      "classification": "conflicts"
+    },
+    {
+      "file": "src/harness/sandbox/kubernetes.py",
+      "classification": "conflicts"
+    },
+    {
+      "file": "src/harness/sandbox/opensandbox.py",
+      "classification": "conflicts"
+    },
+    {
+      "file": "tests/integration/agui/test_agui_run.py",
+      "classification": "already_in_develop"
+    },
+    {
+      "file": "tests/integration/runtime/test_claude_runtime_fake_transport.py",
+      "classification": "already_in_develop"
+    },
+    {
+      "file": "tests/integration/test_artifact_api.py",
+      "classification": "already_in_develop"
+    },
+    {
+      "file": "tests/unit/knowledge/test_knowledge_engine_service.py",
+      "classification": "already_in_develop"
+    },
+    {
+      "file": "tests/unit/knowledge/test_weknora_engine.py",
+      "classification": "already_in_develop"
+    },
+    {
+      "file": "tests/unit/sandbox/test_e2b.py",
+      "classification": "conflicts"
+    },
+    {
+      "file": "tests/unit/sandbox/test_kubernetes.py",
+      "classification": "already_in_develop"
+    },
+    {
+      "file": "tests/unit/sandbox/test_opensandbox.py",
+      "classification": "conflicts"
+    },
+    {
+      "file": "web/harness-console/package-lock.json",
+      "classification": "candidate"
+    },
+    {
+      "file": "web/harness-console/package.json",
+      "classification": "candidate"
+    },
+    {
+      "file": "web/harness-console/src/app/web-codex.css",
+      "classification": "already_in_develop"
+    },
+    {
+      "file": "web/harness-console/src/components/activity-summary.tsx",
+      "classification": "conflicts"
+    },
+    {
+      "file": "web/harness-console/src/components/agent-thread.tsx",
+      "classification": "conflicts"
+    },
+    {
+      "file": "web/harness-console/src/components/assistant-runtime-shell.tsx",
+      "classification": "already_in_develop"
+    },
+    {
+      "file": "web/harness-console/src/components/task-agent-switcher.tsx",
+      "classification": "already_in_develop"
+    },
+    {
+      "file": "web/harness-console/src/components/task-knowledge-context.tsx",
+      "classification": "already_in_develop"
+    },
+    {
+      "file": "web/harness-console/src/components/task-model-context.tsx",
+      "classification": "already_in_develop"
+    },
+    {
+      "file": "web/harness-console/src/lib/activity-store.ts",
+      "classification": "already_in_develop"
+    },
+    {
+      "file": "web/harness-console/src/lib/harness-agent.ts",
+      "classification": "already_in_develop"
+    },
+    {
+      "file": "web/harness-console/src/lib/harness-proxy.ts",
+      "classification": "already_in_develop"
+    },
+    {
+      "file": "web/harness-console/src/lib/task-history.ts",
+      "classification": "already_in_develop"
+    },
+    {
+      "file": "web/harness-console/tests/activity-store.spec.ts",
+      "classification": "already_in_develop"
+    },
+    {
+      "file": "web/harness-console/tests/harness-agent.spec.ts",
+      "classification": "already_in_develop"
+    },
+    {
+      "file": "web/harness-console/tests/knowledge-answer.spec.tsx",
+      "classification": "already_in_develop"
+    },
+    {
+      "file": "web/harness-console/tests/process-display.spec.tsx",
+      "classification": "conflicts"
+    },
+    {
+      "file": "web/kai-webui/README.md",
+      "classification": "candidate"
+    },
+    {
+      "file": "web/kai-webui/src/App.tsx",
+      "classification": "candidate"
+    },
+    {
+      "file": "web/kai-webui/src/protocol/client.ts",
+      "classification": "candidate"
+    },
+    {
+      "file": "web/kai-webui/src/styles.css",
+      "classification": "candidate"
+    }
+  ],
+  "untracked_code_already_identical_to_develop": [
+    "src/harness/api/routes/dictation.py",
+    "src/harness/dictation/__init__.py",
+    "src/harness/dictation/realtime.py",
+    "src/harness/dictation/service.py",
+    "tests/integration/test_dictation_api.py",
+    "tests/integration/test_dictation_realtime_api.py",
+    "tests/unit/test_dictation.py",
+    "tests/unit/test_dictation_realtime.py",
+    "web/harness-console/public/dictation-worklet.js",
+    "web/harness-console/src/app/api/harness/dictation/[...path]/route.ts",
+    "web/harness-console/src/components/use-dictation-composer.ts",
+    "web/harness-console/src/components/voice-input.module.css",
+    "web/harness-console/src/components/voice-input.tsx",
+    "web/harness-console/src/lib/activity-stream.ts",
+    "web/harness-console/src/lib/dictation-audio.ts",
+    "web/harness-console/src/lib/dictation-client.ts",
+    "web/harness-console/src/lib/dictation-edit.ts",
+    "web/harness-console/tests/activity-stream.spec.ts",
+    "web/harness-console/tests/dictation-audio.spec.ts",
+    "web/harness-console/tests/dictation-client.spec.ts",
+    "web/harness-console/tests/dictation-edit.spec.ts",
+    "web/harness-console/tests/use-dictation-composer.spec.tsx",
+    "web/harness-console/tests/voice-input.spec.tsx"
+  ],
+  "untracked_code_new": [
+    "web/kai-webui/public/dictation-worklet.js",
+    "web/kai-webui/src/VoiceInput.tsx",
+    "web/kai-webui/src/protocol/dictation-audio.ts",
+    "web/kai-webui/tests/dictation-audio.test.ts"
+  ],
+  "untracked_code_different": [],
+  "selected_changes": [
+    {
+      "file": "web/kai-webui/src/protocol/client.ts",
+      "change": "read structured error.message while preserving detail and HTTP fallback precedence"
+    }
+  ],
+  "existing_optimizations_confirmed": [
+    "streamed activity compaction and throttling",
+    "lazy expanded reasoning and bounded collapsed previews",
+    "durable history replacement without duplicate fragments",
+    "atomic collection over read-only staged inputs",
+    "batched sandbox archive and file transfer",
+    "automation artifact visibility via owned task binding with write/cancel isolation",
+    "document and Wiki hybrid retrieval",
+    "live dictation in the original composer"
+  ],
+  "excluded_changes": [
+    "removal of desktop data-root and embedded database settings",
+    "RxJS duplicate/reordering without semantic dependency changes",
+    "old reasoning token-preview implementation superseded by the current status view",
+    "old sandbox per-file extraction implementations superseded by common archive/file-plane logic",
+    "old knowledge mode and SDK wiring incompatible with current contracts",
+    "duplicate VoiceInput imports caused by applying an old working-tree patch",
+    "standalone voice confirmation/review panel contradicting accepted voice UX",
+    "demo and trace probe scripts, personal memory, and unrelated research artifacts"
+  ],
+  "deployment_effect": "main 174 uses harness-console; selected change is in the separate kai-webui client, so no production 174 image restart is needed",
+  "verification": {
+    "webui_typescript_and_vite_build": "passed",
+    "api_error_response_scenarios": 6,
+    "api_error_checks": "passed"
+  }
+}
