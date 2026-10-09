@@ -1,0 +1,112 @@
+{
+  "sample": "public WAV repeated for a continuous 14-second capture",
+  "upstream": "ws://172.20.109.229:18013",
+  "updates": [
+    {
+      "partial_start_ms": 600,
+      "duration_ms": 600,
+      "old_preview_characters": 0,
+      "new_preview_characters": 0,
+      "provisional_terminal_period_deferred": false,
+      "final": false
+    },
+    {
+      "partial_start_ms": 290,
+      "duration_ms": 1200,
+      "old_preview_characters": 4,
+      "new_preview_characters": 3,
+      "provisional_terminal_period_deferred": true,
+      "final": false
+    },
+    {
+      "partial_start_ms": 290,
+      "duration_ms": 2400,
+      "old_preview_characters": 11,
+      "new_preview_characters": 10,
+      "provisional_terminal_period_deferred": true,
+      "final": false
+    },
+    {
+      "partial_start_ms": 290,
+      "duration_ms": 3600,
+      "old_preview_characters": 13,
+      "new_preview_characters": 12,
+      "provisional_terminal_period_deferred": true,
+      "final": false
+    },
+    {
+      "partial_start_ms": 290,
+      "duration_ms": 4800,
+      "old_preview_characters": 18,
+      "new_preview_characters": 17,
+      "provisional_terminal_period_deferred": true,
+      "final": false
+    },
+    {
+      "partial_start_ms": 290,
+      "duration_ms": 6000,
+      "old_preview_characters": 25,
+      "new_preview_characters": 24,
+      "provisional_terminal_period_deferred": true,
+      "final": false
+    },
+    {
+      "partial_start_ms": 290,
+      "duration_ms": 7200,
+      "old_preview_characters": 26,
+      "new_preview_characters": 25,
+      "provisional_terminal_period_deferred": true,
+      "final": false
+    },
+    {
+      "partial_start_ms": 400,
+      "duration_ms": 8400,
+      "old_preview_characters": 32,
+      "new_preview_characters": 31,
+      "provisional_terminal_period_deferred": true,
+      "final": false
+    },
+    {
+      "partial_start_ms": 1600,
+      "duration_ms": 9600,
+      "old_preview_characters": 34,
+      "new_preview_characters": 38,
+      "provisional_terminal_period_deferred": true,
+      "final": false
+    },
+    {
+      "partial_start_ms": 10800,
+      "duration_ms": 10800,
+      "old_preview_characters": 39,
+      "new_preview_characters": 39,
+      "provisional_terminal_period_deferred": false,
+      "final": false
+    },
+    {
+      "partial_start_ms": 10660,
+      "duration_ms": 12000,
+      "old_preview_characters": 45,
+      "new_preview_characters": 44,
+      "provisional_terminal_period_deferred": true,
+      "final": false
+    },
+    {
+      "partial_start_ms": 10660,
+      "duration_ms": 13200,
+      "old_preview_characters": 52,
+      "new_preview_characters": 51,
+      "provisional_terminal_period_deferred": true,
+      "final": false
+    },
+    {
+      "partial_start_ms": 0,
+      "duration_ms": 13824,
+      "old_preview_characters": 52,
+      "new_preview_characters": 52,
+      "provisional_terminal_period_deferred": false,
+      "final": true
+    }
+  ],
+  "sliding_prefix_preserved": true,
+  "final_result_matches_upstream": true
+}

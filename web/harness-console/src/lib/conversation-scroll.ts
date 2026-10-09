@@ -1,5 +1,6 @@
 /** Follow layout changes, not individual tokens. Only reader intent pauses follow. */
-export function attachConversationScroll(viewport: HTMLElement, onJumpVisibility?: (visible: boolean) => void) {
+export function attachConversationScroll(viewport: HTMLElement, onJumpVisibility?: (visible: boolean) => void,
+  options?: { canFollow: () => boolean }) {
   const tolerance = 24;
   let following = true;
   let frame: number | null = null;
@@ -19,6 +20,7 @@ export function attachConversationScroll(viewport: HTMLElement, onJumpVisibility
 
   function followLayout() {
     if (disposed) return;
+    if (options && !options.canFollow()) return;
     if (!following) { publishJumpVisibility(); return; }
     const target = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
     writing = true;
@@ -96,6 +98,7 @@ export function attachConversationScroll(viewport: HTMLElement, onJumpVisibility
   schedule();
   return {
     resume,
+    refresh: followLayout,
     dispose() {
       disposed = true;
       if (frame !== null) cancelAnimationFrame(frame);

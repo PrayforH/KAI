@@ -1,0 +1,26 @@
+Composer fixture regression
+long_draft_uses_normal_textarea_height_and_follows_tail true
+earlier_text_selection_and_reading_position_survive_tail_updates true
+scrolling_up_pauses_follow_without_moving_the_caret true
+returning_to_bottom_resumes_follow true
+stop_refines_once_without_resetting_earlier_selection_or_scroll true
+narrow_dark_cancel_restores_original_text true
+resumed_speech_revises_temporary_periods_without_accumulation true
+deleting_draft_resumes_new_speech_without_resurrecting_old_text_on_stop true
+page_errors []
+
+Real public audio regression
+secure_context true
+latest_develop_knowledge_switch_removed true
+text_visible_before_stop true first_meaningful_draft_ms 3408
+long_real_recording_keeps_manual_prefix_suffix true captured_drafts 10
+refinement_status fallback
+live_to_refined_same_span_and_manual_text_preserved true
+cancel_restores_pre_recording_text true
+alerts [ '' ]
+page_errors []
+empty_result_silent_and_device_recovery true
+composer_geometry {"unchangedWhileRecording":true,"unchangedWhileFinishing":true,"normalTextAutoGrow":true,"baseline":100,"longText":244}
+narrow_dark_geometry_stable true
+startup_and_refinement_failures_have_no_visible_notice true
+{"passed":["real AudioWorklet","authenticated BFF","live Nano text visible in original composer before stop","refinement replaces same speech span","manual prefix/suffix edits preserved","tail flush","text-only refinement","mic between model and send","auto-fill without confirmation","cancel without refinement","empty result silent","explicit local microphone","simulated disconnect recovery","stable composer geometry","no visible status or preview","normal long-text auto-grow"],"audioPosts":55,"errors":[]}

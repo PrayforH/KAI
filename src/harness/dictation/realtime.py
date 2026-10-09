@@ -15,6 +15,7 @@ from typing import cast
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import WebSocketException
 
+from harness.dictation.preview import RealtimePreview
 from harness.dictation.service import DictationError, DictationSettings
 
 
@@ -31,6 +32,7 @@ class RealtimeSession:
     sequence: int = 0
     audio_bytes: int = 0
     text: str = ""
+    preview: RealtimePreview = field(default_factory=RealtimePreview)
     finishing: bool = False
     subscribed: bool = False
     error: str = ""
@@ -145,11 +147,16 @@ class RealtimeDictation:
                     if not isinstance(sentence_text, str):
                         raise DictationError("实时语音服务返回了无效句子")
                     pieces.append(sentence_text)
-                text = "".join(pieces) + partial
+                start = result.get("partial_start_ms")
+                start_ms = start if type(start) is int and start >= 0 else None
+                text = session.preview.update(
+                    pieces, partial, start_ms, final=result.get("is_final") is True,
+                )
                 if len(text) > 12_000:
                     raise DictationError("语音文字过长，请分次输入")
-                session.text = text
-                await session.events.put({"type": "draft", "text": text})
+                if text != session.text:
+                    session.text = text
+                    await session.events.put({"type": "draft", "text": text})
             else:
                 raise DictationError("实时语音连接已中断，可保留已显示的草稿")
         except (WebSocketException, OSError, ValueError, DictationError) as error:

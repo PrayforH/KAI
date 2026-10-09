@@ -33,8 +33,41 @@ test("drafts appear in the original textarea before stop, with refinement replac
   const input = await mount();
   await act(async () => { callbacks.onActive(true); callbacks.onDraft("实"); callbacks.onDraft("实时文字"); });
   expect(input.value).toBe("前文实时文字后文");
+  expect(input.selectionStart).toBe(6);
   await act(async () => { callbacks.onInsert("整理文字。"); callbacks.onActive(false); });
   expect(input.value).toBe("前文整理文字。后文");
+});
+
+test("reading earlier dictated text keeps both its selection and scroll position across drafts and refinement", async () => {
+  const input = await mount();
+  await act(async () => { callbacks.onActive(true); callbacks.onDraft("上海的数据，武汉的数据"); });
+  Object.defineProperty(input, "scrollHeight", { configurable: true, value: 1000 });
+  Object.defineProperty(input, "clientHeight", { configurable: true, value: 200 });
+  input.scrollTop = 320;
+  input.setSelectionRange(3, 7, "backward");
+  await act(async () => callbacks.onDraft("上海的数据，武汉的数据，还有北京的数据"));
+  expect([input.selectionStart, input.selectionEnd, input.selectionDirection]).toEqual([3, 7, "backward"]);
+  expect(input.scrollTop).toBe(320);
+  await act(async () => { callbacks.onInsert("上海的数据，武汉的数据，还有北京的数据。"); callbacks.onActive(false); });
+  expect([input.selectionStart, input.selectionEnd]).toEqual([3, 7]);
+  expect(input.scrollTop).toBe(320);
+});
+
+test("drafts follow the bottom until the reader scrolls up, then resume at the bottom", async () => {
+  const input = await mount();
+  await act(async () => { callbacks.onActive(true); callbacks.onDraft("实时文字"); });
+  Object.defineProperty(input, "scrollHeight", { configurable: true, get: () => height });
+  Object.defineProperty(input, "clientHeight", { configurable: true, value: 200 });
+  let height = 1000;
+  input.scrollTop = 800;
+  await act(async () => { callbacks.onDraft("实时文字继续"); height = 1100; });
+  expect(input.scrollTop).toBe(1100);
+  input.scrollTop = 300;
+  await act(async () => callbacks.onDraft("实时文字继续增加"));
+  expect(input.scrollTop).toBe(300);
+  input.scrollTop = 900;
+  await act(async () => callbacks.onDraft("实时文字继续增加尾部"));
+  expect(input.scrollTop).toBe(1100);
 });
 
 test("cancel rolls back just the current recording and preserves manual edits outside it", async () => {
@@ -52,6 +85,16 @@ test("manual edits to speech are never overwritten or reinserted", async () => {
   await act(async () => setText("前文人工修改后文"));
   await act(async () => { callbacks.onDraft("更多识别"); callbacks.onInsert("整理结果"); callbacks.onActive(false); });
   expect(input.value).toBe("前文人工修改后文");
+});
+
+test("deleting the current speech resumes new recognition while preserving the deletion through stop", async () => {
+  const input = await mount("");input.setSelectionRange(0, 0);
+  await act(async () => { callbacks.onActive(true); callbacks.onDraft("先看上海的数据"); });
+  await act(async () => { setText("");callbacks.onChange(""); });
+  await act(async () => callbacks.onDraft("先看上海的数据，然后看武汉"));
+  expect(input.value).toBe("然后看武汉");
+  await act(async () => { callbacks.onInsert("查看上海和武汉的数据。");callbacks.onActive(false); });
+  expect(input.value).toBe("然后看武汉");
 });
 
 test("IME composition is not interrupted by partials or refinement", async () => {
