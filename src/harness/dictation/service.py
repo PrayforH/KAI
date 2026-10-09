@@ -33,7 +33,7 @@ class DictationSettings(BaseSettings):
     gateway_model: str = "Qwen3-ASR-1.7B"
     realtime_url: str = "ws://172.20.109.229:18013"
     max_session_seconds: int = Field(default=120, ge=10, le=300)
-    max_active_sessions: int = Field(default=8, ge=1, le=32)
+    max_active_sessions: int = Field(default=32, ge=1, le=32)
     refine_model_route: str = ""
     timeout_seconds: float = Field(default=20, gt=0, le=60)
     refine_timeout_seconds: float = Field(default=15, gt=0, le=60)
