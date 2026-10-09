@@ -3,7 +3,7 @@ import {
   type RunActivity,
   runActivitySchema,
 } from "./activity-schema";
-import { isResponseBoundary } from "./process-boundary";
+import { isResponseBoundary, isStableReasoningBlockId } from "./process-boundary";
 
 /**
  * Session-level trace model. A 会话 (thread) holds many runs; each run is one
@@ -248,7 +248,7 @@ function isRunningStatus(status: string): boolean {
 }
 
 interface MessageSpan {
-  segment: number;
+  startSequence: number;
   startMs: number;
   endMs: number;
   output: string;
@@ -269,6 +269,7 @@ function buildTraceNodes(
     const spans = new Map<string, MessageSpan>();
     const openStreams = new Map<string, string>();
     let segment = 0;
+    let reasoningSegment = 0;
     const results = new Map<string, ActivityItem>();
     const approvals = new Map<string, ActivityItem>();
     const contextFacts: Array<{
@@ -317,6 +318,7 @@ function buildTraceNodes(
       if (!Number.isFinite(timestampMs)) continue;
       if (isResponseBoundary(item.event_type)) {
         segment += 1;
+        reasoningSegment += 1;
         openStreams.clear();
       }
       if (item.event_type === "message.start") openStreams.delete("answer");
@@ -357,11 +359,17 @@ function buildTraceNodes(
         // Some runtimes (including DeepAgents) omit stream IDs. Their event
         // IDs identify individual tokens, not messages. Keep one fallback
         // stream until a real message/tool boundary, including history replay.
+        // SDK blocks remain the same block when tool callbacks overtake a
+        // buffered delta. Reused/unlabelled provider IDs still need boundaries.
+        const stableBlock = isReasoningFrame && typeof rawId === "string" &&
+          isStableReasoningBlockId(run.runId, rawId);
+        const streamSegment = stableBlock ? "block" : isReasoningFrame ? reasoningSegment : segment;
         const messageId = typeof rawId === "string" && rawId
-          ? `${channel}:${segment}:${rawId}`
-          : openStreams.get(channel) ?? `${channel}:${segment}:${item.id}`;
+          ? `${channel}:${streamSegment}:${rawId}`
+          : openStreams.get(channel) ?? `${channel}:${streamSegment}:${item.id}`;
         openStreams.set(channel, messageId);
         if (isMessageFrame) {
+          reasoningSegment += 1;
           openStreams.delete("reasoning");
           openStreams.delete("reasoning-summary");
         }
@@ -377,7 +385,7 @@ function buildTraceNodes(
           if (TERMINAL_STATUSES.has(item.status)) existing.status = item.status;
         } else {
           spans.set(messageId, {
-            segment,
+            startSequence: item.sequence,
             startMs: timestampMs,
             endMs: timestampMs,
             output: text,
@@ -582,28 +590,31 @@ function buildTraceNodes(
     );
     // DSH nesting: thinking is folded into the assistant message it precedes
     // (the timeline block then covers thinking + answer). Thinking with no
-    // following answer in the run stays a standalone row.
-    const answers = spanEntries.filter(([, span]) => !span.thinking);
+    // following answer in the run stays a standalone row. Tools separate
+    // provider streams, but must not prevent nesting in the next assistant.
+    // Use event order, not a clock tolerance that can select a previous answer.
+    const answers = spanEntries.filter(([, span]) => !span.thinking)
+      .sort(([, a], [, b]) => a.startSequence - b.startSequence);
     const thinkingSpans = spanEntries.filter(([, span]) => span.thinking);
     const absorbedBy = new Map<string, string>();
     const thinkingByAnswer = new Map<string, string>();
     for (const [thinkingId, span] of thinkingSpans) {
       const nextAnswer = answers.find(([, answer]) =>
-        answer.segment === span.segment && answer.startMs >= span.startMs - 600);
+        answer.startSequence >= span.startSequence);
       if (nextAnswer) {
         absorbedBy.set(thinkingId, nextAnswer[0]);
         thinkingByAnswer.set(
           nextAnswer[0],
-          `${thinkingByAnswer.get(nextAnswer[0]) ?? ""}${span.output}`,
+          [thinkingByAnswer.get(nextAnswer[0]), span.output].filter(Boolean).join("\n\n"),
         );
       }
     }
     for (const [messageId, span] of spanEntries) {
       const thinkingText = thinkingByAnswer.get(messageId);
       if (span.thinking && absorbedBy.has(messageId)) continue;
-      const thinkingStarts = thinkingSpans
+      const absorbedThinking = thinkingSpans
         .filter(([thinkingId]) => absorbedBy.get(thinkingId) === messageId)
-        .map(([, thinkingSpan]) => thinkingSpan.startMs);
+        .map(([, thinkingSpan]) => thinkingSpan);
       nodes.push({
         id: `message-${run.runId}-${messageId}`,
         runId: run.runId,
@@ -614,10 +625,10 @@ function buildTraceNodes(
         label: span.thinking ? "思考" : "助手",
         detail: preview(span.output, 140),
         status: span.status,
-        startMs: thinkingStarts.length
-          ? Math.min(span.startMs, ...thinkingStarts)
+        startMs: absorbedThinking.length
+          ? Math.min(span.startMs, ...absorbedThinking.map(thinking => thinking.startMs))
           : span.startMs,
-        endMs: span.endMs,
+        endMs: Math.max(span.endMs, ...absorbedThinking.map(thinking => thinking.endMs)),
         output: span.output || undefined,
         thinking: thinkingText || (span.thinking ? span.output : undefined),
         running: isRunningStatus(span.status),
