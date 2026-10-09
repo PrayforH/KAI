@@ -1,7 +1,7 @@
 "use client";
 
 import { TextMessagePartProvider } from "@assistant-ui/react";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { RunActivity } from "../lib/activity-schema";
 import { useRunViewModel } from "../lib/activity-store";
 import { activeElapsedMs, elapsedAnchorFor, type ElapsedAnchor } from "../lib/run-elapsed";
@@ -23,6 +23,7 @@ import { isResponseBoundary } from "../lib/process-boundary";
 import { ProcessDisclosure } from "./process-disclosure";
 import { CompactionProgressIndicator } from "./compaction-progress";
 import { useDetailedProcess } from "../lib/process-display-preference";
+import { attachConversationScroll } from "../lib/conversation-scroll";
 
 const phaseLabels: Record<RunPhase, string> = {
   queued: "等待处理",
@@ -258,6 +259,24 @@ const ExecutionCommentary = memo(function ExecutionCommentary({
   active: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const body = useRef<HTMLDivElement>(null);
+  const following = useRef<ReturnType<typeof attachConversationScroll> | null>(null);
+  const followEnabled = useRef(active);
+  useLayoutEffect(() => {
+    if (!expanded || !body.current) return;
+    const controller = attachConversationScroll(body.current, undefined, {
+      canFollow: () => followEnabled.current,
+    });
+    following.current = controller;
+    return () => { controller.dispose(); following.current = null; };
+  }, [expanded, commentary.source]);
+  useLayoutEffect(() => {
+    // Flush the last streamed text before turning follow off. The controller
+    // still respects a reader who has scrolled up, including at completion.
+    followEnabled.current = active || followEnabled.current;
+    following.current?.refresh();
+    followEnabled.current = active;
+  }, [active, commentary.text, expanded]);
   // The collapsed row is a status, not a token ticker. Completed rows show a
   // bounded prefix; the full trace is only mounted on explicit expansion.
   const preview = active ? "进行中" : commentary.text.slice(0, 160).replaceAll("**", "").replace(/\s+/g, " ").trim();
@@ -268,7 +287,7 @@ const ExecutionCommentary = memo(function ExecutionCommentary({
         <summary className="execution-reasoning-summary">
           <span className="execution-reasoning-icon"><ThinkingIcon /></span><span className="execution-reasoning-label execution-state-sweep" data-running={active}>思考</span><span className="execution-reasoning-separator" aria-hidden="true">·</span><span className="execution-reasoning-preview">{preview}</span><span className="execution-reasoning-chevron" aria-hidden="true" />
         </summary>
-        {expanded && <div className="execution-reasoning-body">
+        {expanded && <div className="execution-reasoning-body" ref={body} tabIndex={0} aria-label="思考内容">
           <div className="execution-reasoning-text">{commentary.text}</div>
         </div>}
       </details>

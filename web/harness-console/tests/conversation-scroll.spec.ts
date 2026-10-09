@@ -42,6 +42,19 @@ beforeEach(() => {
   control = attachConversationScroll(viewport);
 });
 afterEach(() => { control.dispose(); viewport.remove(); vi.unstubAllGlobals(); });
+it("gates follow for completed thoughts without discarding the reader's paused state", async () => {
+  control.dispose();
+  let active = false;
+  control = attachConversationScroll(viewport, undefined, { canFollow: () => active });
+  await flush(); expect(top).toBe(0);
+  active = true; control.refresh(); expect(top).toBe(700);
+  viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -120 }));
+  top = 300; scrollEvent(); height += 200; control.refresh(); expect(top).toBe(300);
+  active = false; grow(); await flush(); expect(top).toBe(300);
+  active = true; control.refresh(); expect(top).toBe(300);
+  top = height - client; scrollEvent(); grow(); await flush(); expect(top).toBe(height - client);
+  active = false; const stoppedTop = top; grow(); await flush(); expect(top).toBe(stoppedTop);
+});
 it("follows streamed output and late layout growth once per frame", async () => {
   await flush(); expect(top).toBe(700);
   const calls = vi.mocked(viewport.scrollTo).mock.calls.length;

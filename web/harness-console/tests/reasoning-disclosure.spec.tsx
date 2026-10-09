@@ -1,11 +1,26 @@
 // @vitest-environment jsdom
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ActivitySummary } from "../src/components/activity-summary";
 import { runActivitySchema, type RunActivity } from "../src/lib/activity-schema";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
+const originalScrollTo = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollTo");
+beforeEach(() => {
+  vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+  vi.stubGlobal("requestAnimationFrame", vi.fn(() => 1));
+  vi.stubGlobal("cancelAnimationFrame", vi.fn());
+  Object.defineProperty(HTMLElement.prototype, "scrollTo", { configurable: true, value: vi.fn(function (this: HTMLElement, options: ScrollToOptions) {
+    this.scrollTop = options.top ?? this.scrollTop;
+    this.dispatchEvent(new Event("scroll"));
+  }) });
+});
+afterEach(() => {
+  if (originalScrollTo) Object.defineProperty(HTMLElement.prototype, "scrollTo", originalScrollTo);
+  else Reflect.deleteProperty(HTMLElement.prototype, "scrollTo");
+  vi.restoreAllMocks(); vi.unstubAllGlobals();
+});
 const item = (id: string, sequence: number, summary: string, event_type = "reasoning.delta"): RunActivity["items"][number] => ({
   id, sequence, summary, event_type, kind: "analysis", status: "running", title: "思考",
   timestamp: "2026-09-24T00:00:00Z", metadata: {},
@@ -35,12 +50,30 @@ it("keeps streaming thought previews still and preserves the reader's position w
       details.dispatchEvent(new Event("toggle"));
     });
     const body = host.querySelector(".execution-reasoning-body") as HTMLElement;
-    body.scrollTop = 64;
+    let height = 1000;
+    Object.defineProperties(body, { scrollHeight: { get: () => height }, clientHeight: { value: 250 } });
+    text += "这是最新内容。";
+    await act(async () => root.render(<ActivitySummary activity={activity([item("thought", 1, text)])} />));
+    expect(body.scrollTop).toBe(750);
+    body.dispatchEvent(new WheelEvent("wheel", { deltaY: -120 }));
+    body.scrollTop = 64; body.dispatchEvent(new Event("scroll"));
+    height += 100;
     text += "这是最新内容。";
     await act(async () => root.render(<ActivitySummary activity={activity([item("thought", 1, text)])} />));
     expect(host.querySelector(".execution-reasoning-body")).toBe(body);
     expect(body.scrollTop).toBe(64);
     expect(body.textContent).toBe(text);
+    body.scrollTop = height - 250; body.dispatchEvent(new Event("scroll"));
+    height += 100; text += "恢复跟随。";
+    await act(async () => root.render(<ActivitySummary activity={activity([item("thought", 1, text)])} />));
+    expect(body.scrollTop).toBe(height - 250);
+    height += 100; text += "最后一段。";
+    await act(async () => root.render(<ActivitySummary activity={{ ...activity([item("thought", 1, text)]), status: "succeeded" }} />));
+    expect(body.scrollTop).toBe(height - 250);
+    body.scrollTop = 100; body.dispatchEvent(new Event("scroll"));
+    text += "历史修订。"; height += 100;
+    await act(async () => root.render(<ActivitySummary activity={{ ...activity([item("thought", 1, text)]), status: "succeeded" }} />));
+    expect(body.scrollTop).toBe(100);
     expect(host.querySelector(".execution-reasoning-summary")?.classList.contains("execution-row-sweep")).toBe(false);
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
