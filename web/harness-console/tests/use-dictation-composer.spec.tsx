@@ -87,6 +87,16 @@ test("manual edits to speech are never overwritten or reinserted", async () => {
   expect(input.value).toBe("前文人工修改后文");
 });
 
+test("deleting the current speech resumes new recognition while preserving the deletion through stop", async () => {
+  const input = await mount("");input.setSelectionRange(0, 0);
+  await act(async () => { callbacks.onActive(true); callbacks.onDraft("先看上海的数据"); });
+  await act(async () => { setText("");callbacks.onChange(""); });
+  await act(async () => callbacks.onDraft("先看上海的数据，然后看武汉"));
+  expect(input.value).toBe("然后看武汉");
+  await act(async () => { callbacks.onInsert("查看上海和武汉的数据。");callbacks.onActive(false); });
+  expect(input.value).toBe("然后看武汉");
+});
+
 test("IME composition is not interrupted by partials or refinement", async () => {
   const input = await mount();
   await act(async () => { callbacks.onActive(true); callbacks.onDraft("草稿"); });

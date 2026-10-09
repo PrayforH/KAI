@@ -59,7 +59,7 @@ export function useDictationComposer(input: RefObject<HTMLTextAreaElement | null
       if (!composing.current) apply(edit.current?.replace(read(), text));
     },
     onInsert(text: string) {
-      if (!composing.current) apply(edit.current?.replace(read(), text), true);
+      if (!composing.current) apply(edit.current?.replace(read(), text, true), true);
       edit.current = undefined;
     },
   };

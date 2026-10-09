@@ -1,12 +1,36 @@
 export type DictationPatch = { text: string; start: number; end: number; length: number };
 
-/** Own only the dictated span; edits inside it take precedence over later ASR/LLM results. */
+function continuation(previous: string, current: string): string | undefined {
+  if (current.startsWith(previous)) return current.slice(previous.length);
+  // A shorter interim result must not resurrect text that was deliberately removed.
+  if (previous.startsWith(current)) return;
+  const normalize = (text: string) => Array.from(text).map(char => char.toLowerCase())
+    .join("").replace(/[^\p{L}\p{N}]/gu, "");
+  const before = normalize(previous);
+  const positions: number[] = []; let after = "";
+  let offset = 0;
+  for (const char of current) {
+    const folded = normalize(char);
+    after += folded;
+    for (let index = 0; index < folded.length; index++) positions.push(offset + char.length);
+    offset += char.length;
+  }
+  // Match the end of the already displayed source through punctuation revisions.
+  for (let length = Math.min(before.length, after.length); length >= 3; length--) {
+    const anchor = before.slice(-length), at = after.indexOf(anchor);
+    if (at >= 0 && at === after.lastIndexOf(anchor)) return current.slice(positions[at + length - 1]);
+  }
+}
+
+/** Own the new dictated span; manual edits protect old text while future speech continues. */
 export class DictationEdit {
   private snapshot: string;
   private start: number;
   private end: number;
   private original: string;
-  private detached = false;
+  private manual = false;
+  private source = "";
+  private draft = "";
 
   constructor(text: string, start: number, end: number) {
     this.snapshot = text;
@@ -15,7 +39,7 @@ export class DictationEdit {
   }
 
   private reconcile(text: string) {
-    if (text === this.snapshot || this.detached) return;
+    if (text === this.snapshot) return;
     let left = 0;
     while (left < text.length && left < this.snapshot.length && text[left] === this.snapshot[left]) left++;
     let right = this.snapshot.length, nextRight = text.length;
@@ -24,16 +48,37 @@ export class DictationEdit {
       const shift = nextRight - right;
       this.start += shift; this.end += shift;
     } else if (left < this.end) {
-      this.detached = true;
+      // Start a fresh insertion at the user's edit. Keep the ASR source cursor
+      // so future cumulative results cannot bring deleted words back.
+      this.start = this.end = nextRight;
+      this.original = this.draft = "";
+      this.manual = true;
     }
     this.snapshot = text;
   }
 
   observe(text: string) { this.reconcile(text); }
 
-  replace(text: string, speech: string): DictationPatch | undefined {
+  replace(text: string, speech: string, refined = false): DictationPatch | undefined {
     this.reconcile(text);
-    if (this.detached) return;
+    if (this.manual) {
+      if (refined) return;
+      const added = continuation(this.source, speech);
+      // Rebase a changed source to let subsequent growth resume. A shorter
+      // hypothesis retains its previous cursor until it catches up.
+      if (!this.source.startsWith(speech)) this.source = speech;
+      if (added === undefined) return;
+      const fresh = !this.draft && (this.start === 0 || text[this.start - 1] === "\n")
+        ? added.replace(/^[\s，,。.!！?？;；:：、]+/u, "") : added;
+      this.draft += fresh;
+      speech = this.draft;
+    } else {
+      this.source = this.draft = speech;
+    }
+    return this.patch(text, speech);
+  }
+
+  private patch(text: string, speech: string): DictationPatch {
     const previous = text.slice(this.start, this.end);
     let left = 0;
     while (left < previous.length && left < speech.length && previous[left] === speech[left]) left++;
@@ -46,7 +91,7 @@ export class DictationEdit {
     return patch;
   }
 
-  cancel(text: string) { return this.replace(text, this.original); }
+  cancel(text: string) { this.reconcile(text); return this.patch(text, this.original); }
 }
 
 export function dictationCaret(position: number, patch: DictationPatch) {

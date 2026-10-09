@@ -20,7 +20,35 @@ test("manual changes to dictated text win over subsequent partials, refinement a
   edit.replace("前后", "实时文字");
   expect(edit.replace("前人工文字后", "新的识别文字")).toBeUndefined();
   expect(edit.replace("前人工文字后", "精修结果")).toBeUndefined();
-  expect(edit.cancel("前人工文字后")).toBeUndefined();
+  expect(edit.cancel("前人工文字后")?.text).toBe("前人工文字后");
+});
+
+test("clearing recognized text continues with new speech without restoring deleted history", () => {
+  const edit = new DictationEdit("", 0, 0);
+  edit.replace("", "先看上海的数据");
+  edit.observe("");
+  expect(edit.replace("", "先看上海的数据")?.text).toBe("");
+  expect(edit.replace("", "先看上海的数据，然后看武汉")?.text).toBe("然后看武汉");
+  expect(edit.replace("然后看武汉", "先看上海的数据，然后看武汉和北京")?.text).toBe("然后看武汉和北京");
+  expect(edit.replace("然后看武汉和北京", "整理后的整段上海武汉北京", true)).toBeUndefined();
+  expect(edit.cancel("然后看武汉和北京")?.text).toBe("");
+});
+
+test("editing earlier speech protects the edit and continues after an ASR punctuation revision", () => {
+  const edit = new DictationEdit("前文后文", 2, 2);
+  edit.replace("前文后文", "请查看上海的数据");
+  edit.observe("前文手动保留后文");
+  expect(edit.replace("前文手动保留后文", "请看上海的数据，然后看武汉")?.text).toBe("前文手动保留，然后看武汉后文");
+  expect(edit.replace("前文手动保留，然后看武汉后文", "请看上海的数据，然后看武汉。", true)).toBeUndefined();
+});
+
+test("shorter partials after deletion do not reinsert old text and an uncertain correction rebases future speech", () => {
+  const edit = new DictationEdit("", 0, 0);
+  edit.replace("", "上海的数据");edit.observe("");
+  expect(edit.replace("", "上海的")).toBeUndefined();
+  expect(edit.replace("", "上海的数据")?.text).toBe("");
+  expect(edit.replace("", "完全改写的结果")).toBeUndefined();
+  expect(edit.replace("", "完全改写的结果新增语音")?.text).toBe("新增语音");
 });
 
 test("typing at the end of a speech span is preserved", () => {
