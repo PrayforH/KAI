@@ -68,11 +68,15 @@ it("keeps streaming thought previews still and preserves the reader's position w
     await act(async () => root.render(<ActivitySummary activity={activity([item("thought", 1, text)])} />));
     expect(body.scrollTop).toBe(height - 250);
     height += 100; text += "最后一段。";
-    await act(async () => root.render(<ActivitySummary activity={{ ...activity([item("thought", 1, text)]), status: "succeeded" }} />));
+    const finished = () => ({ ...activity([item("thought", 1, text), {
+      ...item("done", 2, "", "run.succeeded"), kind: "run" as const, status: "succeeded",
+    }]), status: "succeeded" });
+    await act(async () => root.render(<ActivitySummary activity={finished()} />));
+    expect(host.querySelector(".execution-reasoning")?.getAttribute("data-active")).toBe("false");
     expect(body.scrollTop).toBe(height - 250);
     body.scrollTop = 100; body.dispatchEvent(new Event("scroll"));
     text += "历史修订。"; height += 100;
-    await act(async () => root.render(<ActivitySummary activity={{ ...activity([item("thought", 1, text)]), status: "succeeded" }} />));
+    await act(async () => root.render(<ActivitySummary activity={finished()} />));
     expect(body.scrollTop).toBe(100);
     expect(host.querySelector(".execution-reasoning-summary")?.classList.contains("execution-row-sweep")).toBe(false);
   } finally { await act(async () => root.unmount()); host.remove(); }
