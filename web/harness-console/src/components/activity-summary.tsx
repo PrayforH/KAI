@@ -19,7 +19,7 @@ import { toolActivitySentence } from "../lib/tool-presentation";
 import { KnowledgeCitations } from "./knowledge/knowledge-citations";
 import { MarkdownText } from "./markdown-text";
 import { useRunDetails } from "./run-details-context";
-import { isResponseBoundary } from "../lib/process-boundary";
+import { isResponseBoundary, isStableReasoningBlockId } from "../lib/process-boundary";
 import { ProcessDisclosure } from "./process-disclosure";
 import { CompactionProgressIndicator } from "./compaction-progress";
 import { useDetailedProcess } from "../lib/process-display-preference";
@@ -220,9 +220,7 @@ function commentaryNodes(view: RunViewModel): CommentaryNode[] {
       // Tool callbacks can overtake buffered thinking deltas: they must not
       // split one identified block into rows such as "install" / ".out".
       // Unlabelled or provider-reused IDs still need step boundaries.
-      const sdkPrefix = `${view.runId}:thinking:`;
-      const stableBlock = itemId.startsWith(sdkPrefix) &&
-        /^\d+:\d+$/.test(itemId.slice(sdkPrefix.length));
+      const stableBlock = isStableReasoningBlockId(view.runId, itemId);
       const groupKey = `${item.event_type}:${itemId}:${stableBlock ? "block" : reasoningSegment}`;
       const existing = grouped.get(groupKey);
       grouped.set(groupKey, {

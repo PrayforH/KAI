@@ -16,3 +16,9 @@ const RESPONSE_BOUNDARY_PREFIXES = ["approval.", "subagent.", "tool."] as const;
 export function isResponseBoundary(eventType: string): boolean {
   return RESPONSE_BOUNDARY_PREFIXES.some((prefix) => eventType.startsWith(prefix));
 }
+
+/** Harness SDK block IDs stay unique within a Run, even across delayed callbacks. */
+export function isStableReasoningBlockId(runId: string, itemId: string): boolean {
+  const prefix = `${runId}:thinking:`;
+  return itemId.startsWith(prefix) && /^\d+:\d+$/.test(itemId.slice(prefix.length));
+}

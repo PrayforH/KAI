@@ -598,7 +598,7 @@ describe("filters", () => {
     expect(filterTraceNodes(trace.nodes, allFiltersEnabled())).toHaveLength(trace.nodes.length);
   });
 
-  it("groups reasoning streams into 思考 rows separate from 助手 rows", () => {
+  it("nests reasoning inside the following assistant row", () => {
     const runs = extractSessionRuns([
       historyMessage({ id: "user-run-t", role: "user", content: "带思考" }),
       historyMessage({
@@ -724,10 +724,105 @@ describe("provider streams without message identifiers", () => {
       frame("message.start", 5), frame("message.delta", 6, "第一条"), frame("message.completed", 7),
       frame("message.start", 8), frame("message.delta", 9, "第二条"), frame("message.completed", 10),
     ]);
-    expect(trace.nodes.filter(node => node.badge === "思考").map(node => node.thinking)).toEqual(["准备检索"]);
+    expect(trace.nodes.filter(node => node.badge === "思考")).toHaveLength(0);
     const answers = trace.nodes.filter(node => node.badge === "助手");
     expect(answers.map(node => node.output)).toEqual(["第一条", "第二条"]);
-    expect(answers[0].thinking).toBe("核对结果");
+    expect(answers[0].thinking).toBe("准备检索\n\n核对结果");
     expect(answers[1].thinking).toBeUndefined();
+  });
+});
+
+describe("trace thinking across tool callbacks", () => {
+  const frame = (type: string, sequence: number, text = "", metadata = {}) => ({
+    id: `trace-event-${sequence}`, event_type: type, sequence, timestamp: at(sequence * 100),
+    title: "", summary: text, kind: "analysis" as const, status: "succeeded", metadata,
+  });
+  const traceFor = (items: ReturnType<typeof frame>[]) => buildSessionTrace([{
+    runId: "trace-split", turn: 1, activity: runActivity("trace-split", items) as never,
+  }]);
+  const block = { item_id: "trace-split:thinking:1:0" };
+
+  it("keeps one SDK block through tool callbacks and nests it in the assistant", () => {
+    const first = frame("reasoning.delta", 1, "先检查安装", block);
+    const request = frame("tool.request", 2, "", { tool_call_id: "c1", name: "Read" });
+    const tail = frame("reasoning.delta", 4, "日志，确认结果。", block);
+    const live = traceFor([first, request, frame("tool.allowed", 3), tail]);
+    const thoughts = live.nodes.filter(node => node.badge === "思考");
+    expect(thoughts).toHaveLength(1);
+    expect(thoughts[0].thinking).toBe("先检查安装日志，确认结果。");
+    expect(thoughts[0].id).toBe(traceFor([first]).nodes.find(node => node.badge === "思考")?.id);
+    const final = traceFor([first, request, frame("tool.allowed", 3), tail,
+      frame("tool.result", 5, "", { tool_call_id: "c1" }),
+      frame("message.start", 6), frame("message.delta", 7, "检查完成。"),
+      frame("message.completed", 8),
+    ]);
+    expect(final.nodes.filter(node => node.badge === "思考")).toHaveLength(0);
+    const answer = final.nodes.find(node => node.badge === "助手");
+    expect(answer?.thinking).toBe("先检查安装日志，确认结果。");
+    expect(answer?.output).toBe("检查完成。");
+    expect(answer?.startMs).toBe(T0 + 100);
+    expect(answer?.endMs).toBe(T0 + 800);
+    expect(final.nodes.filter(node => node.badge === "工具")).toHaveLength(1);
+  });
+
+  it("retains distinct reused-ID blocks while folding them into the next assistant", () => {
+    const final = traceFor([
+      frame("reasoning.delta", 1, "准备检索。", { item_id: "reused" }),
+      frame("tool.request", 2), frame("tool.result", 3),
+      frame("reasoning.delta", 4, "核对结果。", { item_id: "reused" }),
+      frame("message.delta", 5, "结论。"), frame("message.completed", 6),
+    ]);
+    expect(final.nodes.filter(node => node.badge === "思考")).toHaveLength(0);
+    expect(final.nodes.find(node => node.badge === "助手")?.thinking).toBe("准备检索。\n\n核对结果。");
+  });
+
+  it("does not move a completed message's thinking into a later answer", () => {
+    const trace = traceFor([
+      frame("reasoning.delta", 1, "第一次思考。", block),
+      frame("message.delta", 2, "第一条回答。"), frame("message.completed", 3),
+      frame("tool.request", 4), frame("tool.result", 5),
+      frame("reasoning.delta", 6, "第二次思考。", { item_id: "trace-split:thinking:2:0" }),
+      frame("message.start", 7), frame("message.delta", 8, "第二条回答。"),
+      frame("message.completed", 9),
+    ]);
+    expect(trace.nodes.filter(node => node.badge === "助手").map(node => node.thinking))
+      .toEqual(["第一次思考。", "第二次思考。"]);
+  });
+
+  it("separates provider-reused IDs across answers even without tool events", () => {
+    const reused = { item_id: "provider-id" };
+    const trace = traceFor([
+      frame("reasoning.delta", 1, "第一块。", reused),
+      frame("message.delta", 2, "第一条。"), frame("message.completed", 3),
+      frame("reasoning.delta", 4, "第二块。", reused),
+      frame("message.start", 5), frame("message.delta", 6, "第二条。"),
+      frame("message.completed", 7),
+    ]);
+    expect(trace.nodes.filter(node => node.badge === "助手").map(node => node.thinking))
+      .toEqual(["第一块。", "第二块。"]);
+  });
+
+  it("keeps a delayed SDK tail with its original assistant and includes its timing", () => {
+    const trace = traceFor([
+      frame("reasoning.delta", 1, "同一块", block),
+      frame("message.delta", 2, "答复。"), frame("message.completed", 3),
+      frame("tool.request", 4), frame("reasoning.delta", 5, "迟到片段。", block),
+    ]);
+    expect(trace.nodes.filter(node => node.badge === "思考")).toHaveLength(0);
+    const answer = trace.nodes.find(node => node.badge === "助手");
+    expect(answer?.thinking).toBe("同一块迟到片段。");
+    expect(answer?.endMs).toBe(T0 + 500);
+  });
+
+  it("keeps unmatched thinking visible without inventing an assistant answer", () => {
+    const trace = traceFor([
+      frame("message.delta", 1, "已有回答。"), frame("message.completed", 2),
+      frame("reasoning.delta", 10, "后续思考", block),
+      frame("tool.request", 11), frame("reasoning.delta", 12, "仍未生成答复。", block),
+    ]);
+    const thought = trace.nodes.filter(node => node.badge === "思考");
+    expect(thought).toHaveLength(1);
+    expect(thought[0].thinking).toBe("后续思考仍未生成答复。");
+    expect(trace.nodes.find(node => node.badge === "助手")?.thinking).toBeUndefined();
   });
 });
