@@ -1,0 +1,32 @@
+173 release
+bash: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8)
+/bin/sh: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8)
+sh: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8)
+{"active_dictation_connections_before_cutover": 0}
+{"active_runs_before_cutover": 0}
+173_https=200
+173_http_3302=200
+/agent-evolution-173-api kai/axis-api:develop-voice-32-20261009 healthy
+/agent-evolution-173-worker kai/axis-api:develop-voice-32-20261009 healthy
+/agent-evolution-173-web kai/axis-web:develop-voice-32-20261009 healthy
+/kai-https-voice32-173 harbor.shdata.com:5000/shdata_scip/amd64/nginx:alpine healthy
+173_live_max_active_sessions 32
+
+174 release
+bash: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8)
+/bin/sh: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8)
+sh: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8)
+{"active_dictation_connections_before_cutover": 0}
+{"active_runs_before_cutover": 0}
+174_https=200
+/agent-studio-174-api-1 kai/axis-api:develop-voice-32-20261009 healthy
+/axis-web-voice-draft-20261009 kai/axis-web:voice-draft-20261009 healthy
+/agent-studio-174-worker-1 kai/axis-api:develop-voice-20261008 healthy
+/agent-studio-174-worker-2 kai/axis-api:develop-voice-20261008 healthy
+/agent-studio-174-worker-3 kai/axis-api:develop-voice-20261008 healthy
+174_live_max_active_sessions 32
+
+173 short text refinement
+bash: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8)
+/bin/sh: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8)
+{"refine_status": "refined", "text": "再帮我看一下，除了上海的，我还想看一下关于武汉的。"}
