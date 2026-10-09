@@ -34,7 +34,13 @@ export class DictationEdit {
   replace(text: string, speech: string): DictationPatch | undefined {
     this.reconcile(text);
     if (this.detached) return;
-    const patch = { text: text.slice(0, this.start) + speech + text.slice(this.end), start: this.start, end: this.end, length: speech.length };
+    const previous = text.slice(this.start, this.end);
+    let left = 0;
+    while (left < previous.length && left < speech.length && previous[left] === speech[left]) left++;
+    let right = previous.length, nextRight = speech.length;
+    while (right > left && nextRight > left && previous[right - 1] === speech[nextRight - 1]) { right--; nextRight--; }
+    const patch = { text: text.slice(0, this.start) + speech + text.slice(this.end),
+      start: this.start + left, end: this.start + right, length: nextRight - left };
     this.end = this.start + speech.length;
     this.snapshot = patch.text;
     return patch;

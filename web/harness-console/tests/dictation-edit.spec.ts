@@ -42,3 +42,13 @@ test("caret follows the changing speech span and retains positions elsewhere", (
   expect(dictationCaret(3, patch)).toBe(5);
   expect(dictationCaret(4, patch)).toBe(6);
 });
+
+test("a tail revision leaves selection positions in the unchanged dictated prefix intact", () => {
+  const edit = new DictationEdit("前文后文", 2, 2);
+  edit.replace("前文后文", "上海的数据，武汉的数");
+  const patch = edit.replace("前文上海的数据，武汉的数后文", "上海的数据，武汉的数据。")!;
+  expect(patch.start).toBe(12);
+  expect(dictationCaret(4, patch)).toBe(4);
+  expect(dictationCaret(7, patch)).toBe(7);
+  expect(patch.text).toBe("前文上海的数据，武汉的数据。后文");
+});

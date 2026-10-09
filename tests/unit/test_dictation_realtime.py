@@ -89,3 +89,37 @@ async def test_upstream_disconnect_preserves_preview_and_reports_failure() -> No
         with pytest.raises(DictationError, match="中断"):
             await manager.finish(session)
         await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_sliding_partial_windows_keep_front_text_until_authoritative_final() -> None:
+    first = "请先查看上海的数据，然后再查看武汉的数据"
+    tail = "然后再查看武汉的数据，并与北京对比。"
+
+    async def upstream(socket: ServerConnection) -> None:
+        async for message in socket:
+            if message == "START":
+                await socket.send(json.dumps({"event": "started"}))
+            elif isinstance(message, bytes):
+                partial, start = (first, 290) if message[0] == 0 else (tail, 1600)
+                await socket.send(json.dumps({
+                    "sentences": [], "partial": partial, "partial_start_ms": start,
+                    "is_final": False,
+                }))
+            elif message == "STOP":
+                await socket.send(json.dumps({
+                    "sentences": [{"text": "查看上海、武汉和北京的数据。"}], "partial": "",
+                    "partial_start_ms": 0, "is_final": True,
+                }))
+                await socket.send(json.dumps({"event": "stopped"}))
+
+    async with serve(upstream, "127.0.0.1", 0) as server:
+        port = server.sockets[0].getsockname()[1]
+        manager = RealtimeDictation(DictationSettings(realtime_url=f"ws://127.0.0.1:{port}"))
+        session = await manager.start(("tenant-a", "user-a"))
+        await manager.send(session, 0, bytes(3200))
+        assert (await session.events.get())["text"] == first
+        await manager.send(session, 1, b"\x01\x00" + bytes(3198))
+        assert (await session.events.get())["text"] == "请先查看上海的数据，" + tail
+        assert await manager.finish(session) == "查看上海、武汉和北京的数据。"
+        await manager.close()
