@@ -52,7 +52,7 @@ test("explicitly acquires the built-in microphone even when iPhone is the defaul
   const env = environment([device("default", "Default - iPhone Microphone"), phone, headset, builtin]);
   const recorder = new PcmRecorder(); await recorder.start(vi.fn());
   expect(env.media.getUserMedia).toHaveBeenCalledExactlyOnceWith({ audio: {
-    channelCount: 1, echoCancellation: true, noiseSuppression: true, deviceId: { exact: "mac" },
+    channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: false, deviceId: { exact: "mac" },
   } });
   recorder.release(); expect(env.captures[0].stop).toHaveBeenCalled();
 });
@@ -82,6 +82,9 @@ test("a disconnected microphone is replaced in the existing audio graph", async 
   await vi.waitFor(() => expect(env.sources).toHaveLength(2));
   expect(env.sources[0].disconnect).toHaveBeenCalled(); expect(env.sources[1].connect).toHaveBeenCalled();
   expect(env.captures[1].label).toBe(headset.label); expect(ended).not.toHaveBeenCalled();
+  expect(env.media.getUserMedia.mock.calls[1][0]).toMatchObject({ audio: {
+    autoGainControl: false, echoCancellation: true, noiseSuppression: true,
+  } });
   recorder.release();
 });
 

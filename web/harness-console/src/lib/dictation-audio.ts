@@ -51,7 +51,9 @@ export class PcmRecorder {
 
   private async capture(device?: MediaDeviceInfo) {
     return navigator.mediaDevices.getUserMedia({ audio: {
-      channelCount: 1, echoCancellation: true, noiseSuppression: true,
+      // Keep microphone gain stable: automatic gain can raise distant office
+      // speech during pauses. This is not target-speaker separation.
+      channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: false,
       ...(device ? { deviceId: { exact: device.deviceId } } : {}),
     } });
   }
