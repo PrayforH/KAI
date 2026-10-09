@@ -56,6 +56,10 @@ class RealtimePreview:
         *,
         final: bool = False,
     ) -> str:
+        # Nano punctuates even an unfinished hypothesis. That terminal period
+        # is provisional and otherwise flickers or becomes frozen at a merge.
+        # Confirmed sentences/final results keep all authoritative punctuation.
+        partial = partial.rstrip().rstrip("。.")
         confirmed = tuple(sentences)
         if confirmed != self.confirmed or final:
             self.confirmed = confirmed

@@ -8,9 +8,9 @@ def test_sliding_windows_keep_prefix_and_only_revise_the_current_window() -> Non
     tail = "重点关注最近三个月"
     assert preview.update([], head + middle, 290) == head + middle
     assert preview.update([], middle + tail, 1600) == head + middle + tail
-    assert preview.update([], middle + tail + "。", 1600) == head + middle + tail + "。"
+    assert preview.update([], middle + tail + "。", 1600) == head + middle + tail
     ending = tail + "，并与上季度对比。"
-    assert preview.update([], ending, 3000) == head + middle + ending
+    assert preview.update([], ending, 3000) == head + middle + ending.rstrip("。")
 
 
 def test_confirmed_sentences_replace_speculative_preview_without_duplication() -> None:
@@ -47,3 +47,13 @@ def test_legacy_full_partials_and_independent_sessions() -> None:
     assert second.update([], "另一个用户的内容", 0) == "另一个用户的内容"
     assert first.update(["完成的文字。"], "", None, final=True) == "完成的文字。"
     assert second.update([], "", 8000) == "另一个用户的内容"
+
+
+def test_unconfirmed_terminal_periods_are_deferred_but_confirmed_punctuation_remains() -> None:
+    preview = RealtimePreview()
+    assert preview.update([], "先看看上海。", 0) == "先看看上海"
+    assert preview.update([], "先看看上海和武汉。", 0) == "先看看上海和武汉"
+    confirmed = "先看看上海和武汉。"
+    assert preview.update([confirmed], "再看看北京。", 4000) == confirmed + "再看看北京"
+    ending = "再看看北京。"
+    assert preview.update([confirmed, ending], "", 0, final=True) == confirmed + ending

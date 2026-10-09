@@ -51,6 +51,16 @@ test("shorter partials after deletion do not reinsert old text and an uncertain 
   expect(edit.replace("", "完全改写的结果新增语音")?.text).toBe("新增语音");
 });
 
+test("resumed speech replaces temporary punctuation and word revisions instead of accumulating each update", () => {
+  const edit = new DictationEdit("", 0, 0);
+  edit.replace("", "已经删掉的内容");edit.observe("");
+  expect(edit.replace("", "已经删掉的内容然后看上海。")?.text).toBe("然后看上海。");
+  expect(edit.replace("然后看上海。", "已经删掉的内容然后看上海和武汉。")?.text).toBe("然后看上海和武汉。");
+  expect(edit.replace("然后看上海和武汉。", "已经删掉的内容然后看上海与武汉的收入")?.text).toBe("然后看上海与武汉的收入");
+  edit.observe("然后看上海与武汉");
+  expect(edit.replace("然后看上海与武汉", "已经删掉的内容然后看上海与武汉的收入还有北京")?.text).toBe("然后看上海与武汉还有北京");
+});
+
 test("typing at the end of a speech span is preserved", () => {
   const edit = new DictationEdit("前文", 2, 2);
   edit.replace("前文", "草稿");

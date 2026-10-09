@@ -30,7 +30,9 @@ export class DictationEdit {
   private original: string;
   private manual = false;
   private source = "";
+  private latestSpeech = "";
   private draft = "";
+  private resumedPrefix = "";
 
   constructor(text: string, start: number, end: number) {
     this.snapshot = text;
@@ -52,6 +54,8 @@ export class DictationEdit {
       // so future cumulative results cannot bring deleted words back.
       this.start = this.end = nextRight;
       this.original = this.draft = "";
+      this.source = this.latestSpeech;
+      this.resumedPrefix = "";
       this.manual = true;
     }
     this.snapshot = text;
@@ -64,16 +68,23 @@ export class DictationEdit {
     if (this.manual) {
       if (refined) return;
       const added = continuation(this.source, speech);
-      // Rebase a changed source to let subsequent growth resume. A shorter
-      // hypothesis retains its previous cursor until it catches up.
-      if (!this.source.startsWith(speech)) this.source = speech;
-      if (added === undefined) return;
-      const fresh = !this.draft && (this.start === 0 || text[this.start - 1] === "\n")
+      this.latestSpeech = speech;
+      if (added === undefined) {
+        if (!this.source.startsWith(speech)) {
+          this.source = speech;
+          this.resumedPrefix = this.draft;
+        }
+        return;
+      }
+      // Keep the protected-history boundary, and replace the entire new tail.
+      // Appending every delta would freeze temporary words and punctuation.
+      this.source = speech.slice(0, speech.length - added.length);
+      const fresh = !this.resumedPrefix && (this.start === 0 || text[this.start - 1] === "\n")
         ? added.replace(/^[\s，,。.!！?？;；:：、]+/u, "") : added;
-      this.draft += fresh;
+      this.draft = this.resumedPrefix + fresh;
       speech = this.draft;
     } else {
-      this.source = this.draft = speech;
+      this.source = this.latestSpeech = this.draft = speech;
     }
     return this.patch(text, speech);
   }

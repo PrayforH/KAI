@@ -120,6 +120,6 @@ async def test_sliding_partial_windows_keep_front_text_until_authoritative_final
         await manager.send(session, 0, bytes(3200))
         assert (await session.events.get())["text"] == first
         await manager.send(session, 1, b"\x01\x00" + bytes(3198))
-        assert (await session.events.get())["text"] == "请先查看上海的数据，" + tail
+        assert (await session.events.get())["text"] == "请先查看上海的数据，" + tail.rstrip("。")
         assert await manager.finish(session) == "查看上海、武汉和北京的数据。"
         await manager.close()
