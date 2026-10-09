@@ -1,0 +1,5 @@
+completed_thinking_nested_in_assistant true
+one_sdk_block_survives_tool_callbacks true
+reused_provider_ids_remain_distinct_paragraphs true
+tool_rows_and_multi_turn_boundaries_preserved true
+page_errors []

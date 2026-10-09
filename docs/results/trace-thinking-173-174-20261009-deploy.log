@@ -1,0 +1,22 @@
+173 release
+bash: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8)
+/bin/sh: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8)
+sh: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8)
+{"active_dictation_connections_before_cutover": 0}
+{"active_runs_before_cutover": 0}
+173_https=200
+/agent-evolution-173-web kai/axis-web:trace-thinking-20261009 healthy
+/agent-evolution-173-api kai/axis-api:develop-voice-32-20261009 healthy
+/agent-evolution-173-worker kai/axis-api:develop-voice-32-20261009 healthy
+173_voice_session_limit 32
+
+174 release
+bash: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8)
+/bin/sh: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8)
+sh: warning: setlocale: LC_ALL: cannot change locale (C.UTF-8)
+{"active_dictation_connections_before_cutover": 0}
+{"active_runs_before_cutover": 0}
+174_https=200
+/axis-web-trace-thinking-20261009 kai/axis-web:trace-thinking-20261009 healthy
+/agent-studio-174-api-1 kai/axis-api:develop-voice-32-20261009 healthy
+174_voice_session_limit 32
