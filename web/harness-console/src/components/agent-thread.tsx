@@ -116,6 +116,8 @@ import { composerTrigger, queueAttachments, queueMayDispatch, restorePromptQueue
 
 export { normalizeMessageText } from "../lib/message-text";
 import { runReuseStore, useRunReuseNotice } from "../lib/run-reuse-store";
+import { IntelligentUiBlock } from "./intelligent-ui/presentation-host";
+import { presentationsForMessage } from "./intelligent-ui/schema";
 import {
   loadTaskComposerDraft,
   persistTaskComposerDraft,
@@ -1155,6 +1157,10 @@ function HarnessToolPart(part: ToolCallMessagePartProps) {
   if (part.toolName === "harness_present_artifact") {
     return <HarnessArtifactPart />;
   }
+  if (part.toolName === "harness_present_ui") {
+    // Rendered once, below the answer, by the turn's presentation list.
+    return null;
+  }
   if (shouldSuppressRawToolCard(runView, part.toolCallId)) {
     return null;
   }
@@ -1194,6 +1200,7 @@ type AssistantPartLike = {
 const responseProjectionToolNames = new Set([
   "harness_run_activity",
   "harness_present_artifact",
+  "harness_present_ui",
 ]);
 
 function isOperationalToolPart(part: AssistantPartLike) {
@@ -1419,6 +1426,9 @@ export function HarnessAssistantMessage() {
     () => artifactsForTurn(content, runView?.runId, isLast),
     [content, runView?.runId, isLast],
   );
+  // Interactive answer blocks arrive on the same tool-call channel artifacts do,
+  // so they are present live and after a reload without a second code path.
+  const turnPresentations = useMemo(() => presentationsForMessage(content), [content]);
   return (
     <AnswerCitationProvider citations={answerCitations}>
     <AssistantMessage.Root
@@ -1444,6 +1454,13 @@ export function HarnessAssistantMessage() {
         }}
       />
       <AssistantResponse text={copyText} streaming={directStream ? live.status === "streaming" && !live.textComplete : messageStatus?.type === "running"} />
+      {turnPresentations.length > 0 ? (
+        <div className="intelligent-ui-blocks">
+          {turnPresentations.map((presentation) => (
+            <IntelligentUiBlock key={presentation.presentation_id} value={presentation} />
+          ))}
+        </div>
+      ) : null}
       <ReplyArtifactImages artifacts={turnArtifacts} answer={copyText}
         onPreview={conversationScope ? () => conversationScope.onOpenFiles() : undefined} />
       {answerCitations.length > 0 ? (

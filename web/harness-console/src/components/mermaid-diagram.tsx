@@ -1,9 +1,6 @@
 "use client";
 
-import type {
-  CodeHeaderProps,
-  SyntaxHighlighterProps,
-} from "@assistant-ui/react-markdown";
+import type { CodeHeaderProps } from "@assistant-ui/react-markdown";
 import { useEffect, useId, useRef, useState } from "react";
 
 type ColorMode = "dark" | "light";
@@ -64,7 +61,10 @@ export function MermaidCodeHeader(_props: CodeHeaderProps) {
   return null;
 }
 
-export function MermaidDiagram({ code }: SyntaxHighlighterProps) {
+/** Renders one Mermaid source. Used both as the markdown fence highlighter and
+ * directly by the Intelligent UI diagram block, so it declares only the input it
+ * actually reads. */
+export function MermaidDiagram({ code }: { code: string }) {
   const colorMode = useColorMode();
   const reactId = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const renderSequence = useRef(0);

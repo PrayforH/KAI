@@ -24,6 +24,7 @@ from harness.api.routes import (
     input_artifacts,
     runs,
     sessions,
+    ui,
 )
 from harness.automations import api as automations_routes
 from harness.config import Settings
@@ -344,6 +345,7 @@ def create_app(container: ApiContainer) -> FastAPI:
         artifacts.router,
         input_artifacts.router,
         dictation.router,
+        ui.router,
         lifecycle_routes.router,
         memory_bank_routes.router,
         reliability_routes.router,

@@ -23,7 +23,11 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from harness.agui.activity import build_run_activity
-from harness.agui.mapper import map_harness_event
+from harness.agui.mapper import (
+    PRESENTATION_TOOL_NAME,
+    map_harness_event,
+    presentation_frames,
+)
 from harness.agui.response import active_response_text, final_response_text
 from harness.api.dependencies import (
     ApiContainer,
@@ -40,6 +44,7 @@ from harness.context.window import compaction_observation, context_window_view
 from harness.core.errors import ConflictError, NotFoundError
 from harness.core.events import RunEvent
 from harness.core.models import AguiThreadBinding, ApprovalRequest, ApprovalStatus, Run
+from harness.presentation import presentations_for_events
 from harness.runtime.input_redaction import redact_internal_agent_asset_events
 
 logger = logging.getLogger(__name__)
@@ -64,7 +69,9 @@ _HISTORY_SNAPSHOT_EVENT_TYPE = "history.snapshot"
 # Version 2 folds streaming deltas into one activity item per message or
 # thinking block. Version 1 snapshots carry one item per token (thousands of
 # items, ~1MB per run) and are ignored so they rebuild compactly on next read.
-_HISTORY_SNAPSHOT_VERSION = 2
+# Version 3 adds the run's validated interactive answer blocks, so a reload shows
+# the same widgets the live stream published.
+_HISTORY_SNAPSHOT_VERSION = 3
 _HISTORY_MARKER_EVENT_TYPES = (_HISTORY_SNAPSHOT_EVENT_TYPE, "run.steer.accepted")
 _HISTORY_RUN_PAGE_DEFAULT = 10
 _HISTORY_RUN_PAGE_MAX = 100
@@ -131,6 +138,17 @@ def _terminal_artifact_projection(
     return projection
 
 
+def _terminal_presentation_projection(run_events: list[RunEvent]) -> list[BaseEvent]:
+    """Attach the run's interactive answer blocks after the streamed response.
+
+    The blocks are derived from the run's own events, so this is the same object
+    the durable snapshot rebuilds on reload — a widget cannot appear live and
+    then vanish.
+    """
+
+    return presentation_frames(presentations_for_events(run_events))
+
+
 def project_stream_event(event: RunEvent, run_events: list[RunEvent]) -> list[BaseEvent]:
     """Keep one durable turn while preserving provider text-part boundaries."""
 
@@ -158,6 +176,7 @@ def project_stream_event(event: RunEvent, run_events: list[RunEvent]) -> list[Ba
             *projected[:-1],
             TextMessageEndEvent(message_id=message_id),
             *_terminal_artifact_projection(event, run_events),
+            *_terminal_presentation_projection(run_events),
             projected[-1],
         ]
 
@@ -171,11 +190,13 @@ def project_stream_event(event: RunEvent, run_events: list[RunEvent]) -> list[Ba
         return projected
 
     # Activity marks the Run complete first; the standard RUN_FINISHED remains
-    # the terminal frame after the response and every generated file card.
+    # the terminal frame after the response, every generated file card and every
+    # interactive answer block.
     return [
         *projected[:-1],
         TextMessageEndEvent(message_id=message_id),
         *_terminal_artifact_projection(event, run_events),
+        *_terminal_presentation_projection(run_events),
         projected[-1],
     ]
 
@@ -949,8 +970,8 @@ async def _run_projection(
     run: Run,
     *,
     write_snapshot: bool = True,
-) -> tuple[list[RunEvent], str, dict[str, Any] | None]:
-    """Return steer events, response text and activity for one history run.
+) -> tuple[list[RunEvent], str, dict[str, Any] | None, list[dict[str, Any]]]:
+    """Return steer events, response text, activity and UI blocks for one run.
 
     Terminal runs prefer the durable ``history.snapshot`` projection; a legacy
     run without one falls back to folding all events and persists the snapshot
@@ -972,23 +993,28 @@ async def _run_projection(
         )
         if snapshot is not None:
             activity_payload = snapshot.payload.get("activity")
+            ui_payload = snapshot.payload.get("ui")
             return (
                 [event for event in markers if event.type == "run.steer.accepted"],
                 str(snapshot.payload.get("response_text", "")),
                 activity_payload if isinstance(activity_payload, dict) else None,
+                [item for item in ui_payload if isinstance(item, dict)]
+                if isinstance(ui_payload, list)
+                else [],
             )
     events = await container.observed_events.list_after(tenant_id, run.run_id, 0)
     if not events:
-        return [], "", None
+        return [], "", None, []
     events = redact_internal_agent_asset_events(events)
     steer_events = [event for event in events if event.type == "run.steer.accepted"]
     activity = build_run_activity(events)
+    ui = [item.model_dump(mode="json") for item in presentations_for_events(events)]
     if run.status.is_terminal:
         response = final_response_text(events)
         if write_snapshot:
-            await _write_history_snapshot(container, run, response, activity)
-        return steer_events, response, activity
-    return steer_events, active_response_text(events), activity
+            await _write_history_snapshot(container, run, response, activity, ui)
+        return steer_events, response, activity, ui
+    return steer_events, active_response_text(events), activity, ui
 
 
 async def _write_history_snapshot(
@@ -996,6 +1022,7 @@ async def _write_history_snapshot(
     run: Run,
     response: str,
     activity: dict[str, Any] | None,
+    ui: list[dict[str, Any]],
 ) -> None:
     if container.event_service is None:
         return
@@ -1009,6 +1036,7 @@ async def _write_history_snapshot(
                 "version": _HISTORY_SNAPSHOT_VERSION,
                 "response_text": response,
                 "activity": activity,
+                "ui": ui,
             },
         )
     except Exception:  # noqa: BLE001 - the snapshot is a cache, never a read blocker
@@ -1090,7 +1118,7 @@ async def _history_messages_for_run(
         messages.append(
             AguiHistoryMessage(id=f"user-{run.run_id}", role="user", content=content)
         )
-    steer_events, response, activity = await _run_projection(
+    steer_events, response, activity, ui_blocks = await _run_projection(
         container, tenant_id, run, write_snapshot=write_snapshot
     )
     for guidance in steer_events:
@@ -1131,9 +1159,23 @@ async def _history_messages_for_run(
         )
         for artifact in artifacts
     ]
+    # The interactive answer blocks are rebuilt from the same projection the live
+    # stream published, so a reload shows the identical widgets in the same order.
+    ui_tool_calls = [
+        AguiHistoryToolCall(
+            id=f"{PRESENTATION_TOOL_NAME}-{block['presentation_id']}",
+            function=AguiHistoryFunction(
+                name=PRESENTATION_TOOL_NAME,
+                arguments=json.dumps(block, separators=(",", ":"), ensure_ascii=False),
+            ),
+        )
+        for block in ui_blocks
+        if isinstance(block.get("presentation_id"), str)
+    ]
     tool_calls = [
         *([activity_tool_call] if activity_tool_call is not None else []),
         *artifact_tool_calls,
+        *ui_tool_calls,
     ]
     if response or tool_calls:
         messages.append(
@@ -1161,6 +1203,16 @@ async def _history_messages_for_run(
             tool_call_id=f"harness-artifact-{artifact.artifact_id}",
         )
         for artifact in artifacts
+    )
+    messages.extend(
+        AguiHistoryMessage(
+            id=f"tool-result-{block['presentation_id']}",
+            role="tool",
+            content=json.dumps({"status": "ready"}, separators=(",", ":")),
+            tool_call_id=f"{PRESENTATION_TOOL_NAME}-{block['presentation_id']}",
+        )
+        for block in ui_blocks
+        if isinstance(block.get("presentation_id"), str)
     )
     return messages
 
