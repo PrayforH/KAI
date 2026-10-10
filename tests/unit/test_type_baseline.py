@@ -1,10 +1,12 @@
 from collections import Counter
 from pathlib import Path
+from subprocess import CompletedProcess
 from typing import Any
 
 import pytest
 
 from scripts.check_type_baseline import Diagnostic, baseline_diagnostics, compare, diagnostics
+from scripts.check_type_baseline import main as check_types
 
 
 def test_new_error_cannot_hide_behind_a_lower_total_count() -> None:
@@ -45,3 +47,15 @@ def test_invalid_baseline_is_not_treated_as_a_clean_type_check() -> None:
     }
     with pytest.raises(ValueError, match="invalid"):
         baseline_diagnostics(document)
+
+
+@pytest.mark.parametrize(("returncode", "stdout"), [(2, ""), (0, "not JSON")])
+def test_broken_checker_execution_fails_closed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, returncode: int, stdout: str
+) -> None:
+    def fake_run(*_args: object, **_kwargs: object) -> CompletedProcess[str]:
+        return CompletedProcess(["pyright"], returncode, stdout=stdout, stderr="broken checker")
+
+    monkeypatch.setattr("scripts.check_type_baseline.subprocess.run", fake_run)
+    monkeypatch.setattr("sys.argv", ["typecheck", "--report", str(tmp_path / "report.json")])
+    assert check_types() == 2

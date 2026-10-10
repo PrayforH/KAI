@@ -3673,12 +3673,6 @@
     {
       "file": "tests/unit/automations/test_service.py",
       "rule": "reportUnusedVariable",
-      "message": "Variable \"created_at\" is not accessed",
-      "count": 1
-    },
-    {
-      "file": "tests/unit/automations/test_service.py",
-      "rule": "reportUnusedVariable",
       "message": "Variable \"runs\" is not accessed",
       "count": 1
     },

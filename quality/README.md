@@ -4,8 +4,9 @@
 installed and Linux platform semantics, matching the production runtime. It
 checks the full `src` and `tests` trees in strict mode.
 
-The baseline records 1,524 pre-existing errors from unmodified develop commit
-`5d05f71386fc4c83693e0ab2878eb22b66ac9659`. These errors remain technical debt;
+The baseline was captured from 1,524 pre-existing errors in unmodified develop
+commit `5d05f71386fc4c83693e0ab2878eb22b66ac9659`. Removing an unused test variable
+resolved one diagnostic; the remaining baseline contains 1,523 errors. These remain technical debt;
 passing this gate does not mean the repository is free of type errors. The old
 aggregate ceiling of 284 dated from v0.1.0 and was no longer a usable gate.
 
