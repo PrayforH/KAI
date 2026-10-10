@@ -17,6 +17,17 @@ def codex_runtime_compose() -> dict[str, Any]:
     return cast(dict[str, Any], yaml.safe_load(CODEX_RUNTIME_COMPOSE_PATH.read_text()))
 
 
+def test_memory_extraction_configuration_reaches_api_and_workers() -> None:
+    services = compose()["services"]
+    template = (ROOT / "deploy/docker-compose/.env.docker.example").read_text()
+    for suffix in ("ENABLED", "SINCE", "BASE_URL", "API_KEY", "MODEL"):
+        key = f"HARNESS_MEMORY_EXTRACTION_{suffix}"
+        default = "false" if suffix == "ENABLED" else ""
+        for name in ("api", "worker"):
+            assert services[name]["environment"][key] == f"${{{key}:-{default}}}"
+        assert f"{key}={default}\n" in template
+
+
 def test_compose_contains_deployable_application_and_infrastructure() -> None:
     services = cast(dict[str, Any], compose()["services"])
 
