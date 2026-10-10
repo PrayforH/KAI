@@ -44,6 +44,29 @@ def test_ci_and_web_image_use_the_same_pinned_npm_version() -> None:
     assert f"npm install --global npm@{version.group(1)}" in workflow("verify.yml")
 
 
+@pytest.mark.parametrize("field", ["gitVersion", "gitCommit"])
+def test_kubectl_rebuild_rejects_unbound_upstream_before_network(
+    tmp_path: Path, field: str
+) -> None:
+    import json
+
+    metadata = {"gitVersion": "v1.36.4", "gitCommit": "a" * 40}
+    metadata[field] = "unexpected"
+    upstream = tmp_path / "kubectl"
+    upstream.write_text("#!/bin/bash\ncat <<'JSON'\n" + json.dumps(
+        metadata, indent=2
+    ) + "\nJSON\n")
+    upstream.chmod(0o755)
+    result = subprocess.run(
+        ["bash", "deploy/docker/build-kubectl.sh"],
+        env={**os.environ, "UPSTREAM_KUBECTL": str(upstream),
+             "KUBECTL_VERSION": "v1.36.4", "KUBECTL_SOURCE_COMMIT": "a" * 40},
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode != 0
+    assert "git" not in result.stderr
+
+
 def test_ci_blocks_package_eval_migration_and_vulnerability_failures() -> None:
     verify = workflow("verify.yml")
 

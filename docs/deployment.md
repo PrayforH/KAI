@@ -57,7 +57,9 @@ NPM_CONFIG_REGISTRY=https://registry.npmmirror.com
 - API 固定到 Python 3.12 Bookworm 的不可变 digest；Web/Sandbox 固定到 Node 22 的不可变
   digest。API、Web 与 Sandbox 的运行层删除构建时使用的 npm，保留运行所需的 Node、文档库、standalone 或 CLI。
 - API 的 kubectl 来自经过 Cosign 身份验证的 Chainguard 不可变镜像 digest，不在构建时从
-  未验证 URL 下载二进制。客户端构建由固定 digest 确定，项目声明并验证的 Kubernetes 目标版本为
+  未验证 URL 下载二进制。构建阶段验证该二进制的版本与源码 commit 绑定，再从固定源码重建
+  v1.36.4 客户端，使用 Go 1.27.2 和修复后的 `golang.org/x/net v0.60.0`；平台构建标记为
+  `v1.36.4+kai.netfix.1`。发布镜像签名覆盖此依赖修复构建，目标 Kubernetes 版本仍为
   1.35～1.36；升级集群或客户端时必须重新执行版本偏差、Sandbox 创建/删除与取消测试。
 - CI 对三张最终镜像执行 Trivy HIGH/CRITICAL fail-closed 扫描。`cryptography 49.0.0`
   对应的暂未有上游修复版本的报告项，只能由仓库内精确 PURL 的 OpenVEX 判断抑制；回归测试

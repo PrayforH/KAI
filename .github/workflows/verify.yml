@@ -168,7 +168,6 @@ jobs:
       - run: npm run build
 
   container-security:
-    needs: [backend, web]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -177,7 +176,7 @@ jobs:
           cosign-release: v3.0.6
       - name: Verify the immutable kubectl source image
         env:
-          KUBECTL_IMAGE: cgr.dev/chainguard/kubectl@sha256:333192bc8c507f58823da957aaadcfec438062fd9ae2ac80dde84bac0d5e5a8c
+          KUBECTL_IMAGE: cgr.dev/chainguard/kubectl@sha256:0fee370907fa4cd5aa8be82b35772649fbca19abc07add837de6f87a9a97b5d2
         run: |
           set -euo pipefail
           cosign verify \
@@ -186,7 +185,7 @@ jobs:
             "$KUBECTL_IMAGE" >/dev/null
       - name: Build the three production images without pushing
         env:
-          KUBECTL_IMAGE: cgr.dev/chainguard/kubectl@sha256:333192bc8c507f58823da957aaadcfec438062fd9ae2ac80dde84bac0d5e5a8c
+          KUBECTL_IMAGE: cgr.dev/chainguard/kubectl@sha256:0fee370907fa4cd5aa8be82b35772649fbca19abc07add837de6f87a9a97b5d2
         run: |
           set -euo pipefail
           docker build --pull --build-arg KUBECTL_IMAGE="$KUBECTL_IMAGE" \

@@ -16,7 +16,7 @@ COMPONENTS="${HARNESS_BUILD_COMPONENTS:-api web}"
 BUILDER="${HARNESS_BUILDX_BUILDER:-}"
 PROGRESS="${HARNESS_BUILDKIT_PROGRESS:-plain}"
 ATTESTATIONS="${HARNESS_BUILD_ATTESTATIONS:-auto}"
-KUBECTL_IMAGE="${KUBECTL_IMAGE:-cgr.dev/chainguard/kubectl@sha256:333192bc8c507f58823da957aaadcfec438062fd9ae2ac80dde84bac0d5e5a8c}"
+KUBECTL_IMAGE="${KUBECTL_IMAGE:-cgr.dev/chainguard/kubectl@sha256:0fee370907fa4cd5aa8be82b35772649fbca19abc07add837de6f87a9a97b5d2}"
 
 log() { printf '[build-174] %s\n' "$*"; }
 die() { log "ERROR: $*"; exit 1; }

@@ -1,8 +1,17 @@
-# Both upstreams are immutable. The Chainguard kubectl image is also verified
-# with Cosign in CI before Docker is allowed to copy its binary into our image.
-ARG KUBECTL_IMAGE=cgr.dev/chainguard/kubectl@sha256:333192bc8c507f58823da957aaadcfec438062fd9ae2ac80dde84bac0d5e5a8c
+# Upstreams are immutable. CI verifies the original kubectl image with Cosign;
+# its release metadata binds the source used for the dependency-only rebuild.
+ARG KUBECTL_IMAGE=cgr.dev/chainguard/kubectl@sha256:0fee370907fa4cd5aa8be82b35772649fbca19abc07add837de6f87a9a97b5d2
 ARG PYTHON_IMAGE=python:3.12-slim-bookworm@sha256:4766d8b510c428e595d74b9cc5bbb2fae8e26316fffb4adc89908d79aacd58a2
+ARG GO_IMAGE=golang:1.27.2-bookworm@sha256:5cf287a799e6b94384bad13d16b14904c531f51ba65792237e122ce42b392f61
 FROM ${KUBECTL_IMAGE} AS kubectl
+
+FROM ${GO_IMAGE} AS kubectl-builder
+ARG KUBECTL_VERSION=v1.36.4
+ARG KUBECTL_SOURCE_COMMIT=bb826b1d48562f110659e64e8ec444327433db95
+ARG KUBECTL_NET_VERSION=0.60.0
+COPY --from=kubectl /bin/kubectl /usr/local/bin/upstream-kubectl
+COPY deploy/docker/build-kubectl.sh /usr/local/bin/build-kubectl
+RUN bash /usr/local/bin/build-kubectl
 
 FROM ${PYTHON_IMAGE} AS builder
 
@@ -101,7 +110,7 @@ COPY --from=builder --chown=harness:harness /app/alembic.ini /app/alembic.ini
 COPY --from=builder --chown=harness:harness /app/agents /app/agents
 COPY --from=builder --chown=harness:harness /app/platform-skills /app/platform-skills
 COPY --from=builder --chown=harness:harness /app/scripts /app/scripts
-COPY --from=kubectl /bin/kubectl /usr/local/bin/kubectl
+COPY --from=kubectl-builder /out/kubectl /usr/local/bin/kubectl
 COPY --from=builder /opt/codex /opt/codex
 COPY --chown=harness:harness deploy/docker/entrypoint-api.sh /usr/local/bin/entrypoint-api
 COPY --chown=harness:harness deploy/docker/entrypoint-worker.sh /usr/local/bin/entrypoint-worker
