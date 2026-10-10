@@ -15,28 +15,11 @@
 
 ## 项目架构
 
-```mermaid
-flowchart TD
-    U[浏览器工作台] --> W[Next.js Web / 同源 BFF]
-    W --> A[FastAPI 控制面]
-    A --> P[(PostgreSQL / pgvector)]
-    A --> Q[(Redis 任务队列)]
-    A --> S[(S3 兼容产出物存储)]
-    Q --> K[Worker / 生命周期与质量任务]
-    K --> R[运行时适配层]
-    R --> C[Claude Agent SDK]
-    R --> X[Codex App Server]
-    R --> D[DeepAgents 可选运行时]
-    R --> M[租户模型路由 / 模型网关]
-    R --> B[隔离 Sandbox / MCP 工具]
-    K --> P
-    K --> S
-    A --> V[语音服务 / ASR 与文本整理]
-```
+![Agent 平台目标逻辑架构与运行边界](docs/assets/agent-platform-logical-architecture-20260929.jpg)
 
-浏览器经同源 BFF 访问 API，服务凭据留在后端。控制面保存 Session、Run、Agent Version、权限和耐久事件；Worker 消费队列并调用运行时。模型和工具由已发布的 Agent 配置及租户能力目录解析，运行时输出统一投影为前端事件。Sandbox 提供文件与命令执行边界，产出物进入对象存储。
+图引自 [Agent Studio 整体架构优化设计（2026-09-29）](https://my.feishu.cn/docx/ZSiFdITPkoWsDxxmreYcN2tRnme#doxcn8YsQFE1KDgxK47PvAxU39e)，展示模块边界和演进目标；逻辑模块可先模块化部署，再按隔离与容量需求拆分。持久命令的事务交接、完整恢复内核和领域 schema 迁移仍属于分阶段建设内容，当前实现说明见 [架构说明](docs/architecture.md)。
 
-详细组件、任务执行、语音与记忆链路见 [架构说明](docs/architecture.md)。
+当前浏览器经同源 BFF 访问 API，服务凭据留在后端。控制面保存 Session、Run、Agent Version、权限和耐久事件；Worker 消费队列并调用运行时。模型和工具由已发布的 Agent 配置及租户能力目录解析，运行时输出统一投影为前端事件。Sandbox 提供文件与命令执行边界，产出物进入对象存储。
 
 ## 开发准备
 
