@@ -424,7 +424,11 @@ async def test_record_extracts_output_summary_from_events() -> None:
     now = datetime(2026, 9, 19, 8, 0, tzinfo=UTC)
     service, _sessions, runs = build_service(clock=lambda: now)
     deltas = [
-        type("Event", (), {"type": "message.delta", "payload": {"text": "今日 AI 要点：…"}, "event_id": "1"})(),
+        type(
+            "Event",
+            (),
+            {"type": "message.delta", "payload": {"text": "今日 AI 要点：…"}, "event_id": "1"},
+        )(),
     ]
     service._events = FakeEvents(deltas)
     task = await service.create(
@@ -453,7 +457,6 @@ class FailingSessions:
 
 @pytest.mark.asyncio
 async def test_deterministic_dispatch_failure_records_failure_without_retry_spin() -> None:
-    created_at = datetime(2026, 9, 19, 8, 0, tzinfo=UTC)
     runs = FakeRuns()
     now = datetime(2026, 9, 19, 8, 6, tzinfo=UTC)
     service = AutomationService(

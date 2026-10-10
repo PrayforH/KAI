@@ -1,8 +1,7 @@
 # Docker deployment
 
-仅替换 174 验证环境的 AXIS Web（保留现有 API 与数据服务）时，使用
-[AXIS Web 构建与 174 部署手册](axis-web-174-build-deployment-runbook.md)，
-不要执行本页的全栈 Compose 重建流程。
+本页描述通用的全栈 Compose 部署。更新已有环境时，先确认目标服务、配置与数据卷，
+按所需服务执行构建和更新；部署地址不与 Git 分支绑定。
 
 认证、可选 Google/GitHub SSO、RBAC 与生产安全配置见
 [authentication.md](authentication.md)。
@@ -56,9 +55,11 @@ NPM_CONFIG_REGISTRY=https://registry.npmmirror.com
 ### 容器供应链基线
 
 - API 固定到 Python 3.12 Bookworm 的不可变 digest；Web/Sandbox 固定到 Node 22 的不可变
-  digest。Web 与 Sandbox 的运行层删除 npm，只保留运行所需的 Node/standalone/Claude CLI。
+  digest。API、Web 与 Sandbox 的运行层删除构建时使用的 npm，保留运行所需的 Node、文档库、standalone 或 CLI。
 - API 的 kubectl 来自经过 Cosign 身份验证的 Chainguard 不可变镜像 digest，不在构建时从
-  未验证 URL 下载二进制。当前客户端为 1.36.4，项目声明并验证的 Kubernetes 目标版本为
+  未验证 URL 下载二进制。构建阶段验证该二进制的版本与源码 commit 绑定，再从固定源码重建
+  v1.36.4 客户端，使用 Go 1.27.2 和修复后的 `golang.org/x/net v0.60.0`；平台构建标记为
+  `v1.36.4+kai.netfix.1`。发布镜像签名覆盖此依赖修复构建，目标 Kubernetes 版本仍为
   1.35～1.36；升级集群或客户端时必须重新执行版本偏差、Sandbox 创建/删除与取消测试。
 - CI 对三张最终镜像执行 Trivy HIGH/CRITICAL fail-closed 扫描。`cryptography 49.0.0`
   对应的暂未有上游修复版本的报告项，只能由仓库内精确 PURL 的 OpenVEX 判断抑制；回归测试
@@ -69,7 +70,7 @@ NPM_CONFIG_REGISTRY=https://registry.npmmirror.com
   entrypoint 需要先以 root 初始化再降权、nginx 绑定 80 端口、沙箱控制器必须 exec 进入
   隔离 Pod 并管理自身 NetworkPolicy）。该文件属于 Trivy 实验特性，工作流用
   `--ignorefile` 显式传入；新增 HIGH/CRITICAL 仍会失败，到期条目必须重新评估。
-- 本地开发与交叉构建使用 Colima；用于 174 的镜像平台必须显式为 `linux/amd64`。arm64
+- macOS 本地开发可使用 Colima；部署到 amd64 主机的镜像平台须显式为 `linux/amd64`。arm64
   上的 QEMU 结果不替代真实 amd64 主机 smoke。
 
 扫描与二进制核验原始证据见

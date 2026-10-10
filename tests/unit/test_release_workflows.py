@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import os
 import re
+import subprocess
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
+import pytest
 import yaml
 
 
@@ -24,6 +27,46 @@ def test_external_actions_are_pinned_to_full_commit_hashes() -> None:
             assert re.fullmatch(r"[^@]+@[a-f0-9]{40}", reference), reference
 
 
+def test_ci_does_not_depend_on_removed_minio_binary_distribution() -> None:
+    verify = workflow("verify.yml")
+    assert re.search(r"MINIO_SOURCE_COMMIT: [a-f0-9]{40}", verify)
+    assert 'rev-parse HEAD)\" = \"$MINIO_SOURCE_COMMIT\"' in verify
+    assert "CGO_ENABLED=0 go build" in verify
+    assert 'client.make_bucket("harness-artifacts")' in verify
+    assert "minio/minio:RELEASE" not in verify
+    assert "minio/mc:RELEASE" not in verify
+
+
+def test_ci_and_web_image_use_the_same_pinned_npm_version() -> None:
+    dockerfile = Path("deploy/docker/web.Dockerfile").read_text()
+    version = re.search(r"^ARG NPM_VERSION=(\S+)$", dockerfile, re.MULTILINE)
+    assert version is not None
+    assert f"npm install --global npm@{version.group(1)}" in workflow("verify.yml")
+
+
+@pytest.mark.parametrize("field", ["gitVersion", "gitCommit"])
+def test_kubectl_rebuild_rejects_unbound_upstream_before_network(
+    tmp_path: Path, field: str
+) -> None:
+    import json
+
+    metadata = {"gitVersion": "v1.36.4", "gitCommit": "a" * 40}
+    metadata[field] = "unexpected"
+    upstream = tmp_path / "kubectl"
+    upstream.write_text("#!/bin/bash\ncat <<'JSON'\n" + json.dumps(
+        metadata, indent=2
+    ) + "\nJSON\n")
+    upstream.chmod(0o755)
+    result = subprocess.run(
+        ["bash", "deploy/docker/build-kubectl.sh"],
+        env={**os.environ, "UPSTREAM_KUBECTL": str(upstream),
+             "KUBECTL_VERSION": "v1.36.4", "KUBECTL_SOURCE_COMMIT": "a" * 40},
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode != 0
+    assert "git" not in result.stderr
+
+
 def test_ci_blocks_package_eval_migration_and_vulnerability_failures() -> None:
     verify = workflow("verify.yml")
 
@@ -40,6 +83,45 @@ def test_ci_blocks_package_eval_migration_and_vulnerability_failures() -> None:
         assert required in verify
     makefile = Path("Makefile").read_text(encoding="utf-8")
     assert "verify: lint typecheck agent-check agent-determinism readiness test" in makefile
+
+
+@pytest.mark.parametrize("failed_target", ["", "harness-api:ci", "harness-web:ci",
+                                          "harness-sandbox:ci", "fs"])
+def test_security_scans_every_target_and_preserves_failure(
+    tmp_path: Path, failed_target: str
+) -> None:
+    data = cast(dict[str, Any], yaml.safe_load(workflow("verify.yml")))
+    steps = data["jobs"]["container-security"]["steps"]
+    step = next(s for s in steps if s.get("name", "").startswith("Verify the scanner"))
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for name, script in {
+        "cosign": "#!/bin/bash\nexit 0\n",
+        "docker": (
+            '#!/bin/bash\nprintf "%s\\n" "$*" >> "$SCAN_LOG"\n'
+            'if [[ -n "$FAILED_TARGET" && "$*" == *"$FAILED_TARGET"* ]]; '
+            "then exit 1; fi\n"
+        ),
+    }.items():
+        command = bin_dir / name
+        command.write_text(script)
+        command.chmod(0o755)
+    scan_log = tmp_path / "scan.log"
+    result = subprocess.run(
+        ["bash", "-c", step["run"]],
+        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}",
+             "RUNNER_TEMP": str(tmp_path), "TRIVY_IMAGE": "scanner:test",
+             "SCAN_LOG": str(scan_log), "FAILED_TARGET": failed_target},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == (1 if failed_target else 0), result.stderr
+    scans = scan_log.read_text().splitlines()
+    assert len(scans) == 4
+    for image in ("harness-api:ci", "harness-web:ci", "harness-sandbox:ci"):
+        assert any(line.endswith(image) for line in scans)
+    assert " fs " in scans[-1]
 
 
 def test_release_builds_once_and_emits_signed_hash_and_sbom_evidence() -> None:

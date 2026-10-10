@@ -1,8 +1,17 @@
-# Both upstreams are immutable. The Chainguard kubectl image is also verified
-# with Cosign in CI before Docker is allowed to copy its binary into our image.
+# Upstreams are immutable. CI verifies the original kubectl image with Cosign;
+# its release metadata binds the source used for the dependency-only rebuild.
 ARG KUBECTL_IMAGE=cgr.dev/chainguard/kubectl@sha256:0fee370907fa4cd5aa8be82b35772649fbca19abc07add837de6f87a9a97b5d2
 ARG PYTHON_IMAGE=python:3.12-slim-bookworm@sha256:4766d8b510c428e595d74b9cc5bbb2fae8e26316fffb4adc89908d79aacd58a2
+ARG GO_IMAGE=golang:1.27.2-bookworm@sha256:5cf287a799e6b94384bad13d16b14904c531f51ba65792237e122ce42b392f61
 FROM ${KUBECTL_IMAGE} AS kubectl
+
+FROM ${GO_IMAGE} AS kubectl-builder
+ARG KUBECTL_VERSION=v1.36.4
+ARG KUBECTL_SOURCE_COMMIT=bb826b1d48562f110659e64e8ec444327433db95
+ARG KUBECTL_NET_VERSION=0.60.0
+COPY --from=kubectl /bin/kubectl /usr/local/bin/upstream-kubectl
+COPY deploy/docker/build-kubectl.sh /usr/local/bin/build-kubectl
+RUN bash /usr/local/bin/build-kubectl
 
 FROM ${PYTHON_IMAGE} AS builder
 
@@ -67,22 +76,27 @@ ENV PATH="/app/project/bin:/app/.venv/bin:$PATH" \
 
 # libarchive provides bounded in-memory RAR4/RAR5 reading for Studio imports.
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends libarchive13 xz-utils \
     && rm -rf /var/lib/apt/lists/*
 # Vendored office Skills generate .docx/.pptx through the Node libraries, so
 # Node plus the two document packages ship in the image. Installing them at
 # build time keeps runs free of npm-registry egress.
-ARG NODE_VERSION=22.9.0
-ARG NODE_LINUX_X64_SHA256=1bfae9ef21ab43c92d8274f1bd032bf61f42ea004192a18d4c64477508626142
+ARG NODE_VERSION=22.23.3
+ARG NODE_LINUX_X64_SHA256=df450af89261115ef9f9e3830c3eeb2cc9213b63c720b1af623cb5dcbe2e02de
 ARG NPM_REGISTRY=https://registry.npmmirror.com
+COPY deploy/docker/office/ /opt/office/
 RUN python -c 'import os, urllib.request; v=os.environ["NODE_VERSION"]; r=os.environ["NPM_REGISTRY"].rstrip("/"); urllib.request.urlretrieve(f"{r}/-/binary/node/v{v}/node-v{v}-linux-x64.tar.xz", "/tmp/node.tar.xz")' \
     && printf '%s  %s\n' "${NODE_LINUX_X64_SHA256}" /tmp/node.tar.xz | sha256sum --check --strict \
     && tar -xJf /tmp/node.tar.xz --strip-components=1 -C /usr/local \
     && rm -f /tmp/node.tar.xz \
-    && npm install --global --registry="${NPM_REGISTRY}" docx pptxgenjs \
+    && npm ci --prefix /opt/office --omit=dev --registry="${NPM_REGISTRY}" \
+    && mv /opt/office/node_modules /node_modules \
     && npm cache clean --force \
-    && NODE_PATH=/usr/local/lib/node_modules node -e "require('docx'); require('pptxgenjs'); console.log('office npm libs ok')"
-ENV NODE_PATH=/usr/local/lib/node_modules
+    && rm -rf /usr/local/lib/node_modules/npm \
+    && rm -f /usr/local/bin/npm /usr/local/bin/npx \
+    && NODE_PATH=/node_modules node /opt/office/smoke.cjs
+ENV NODE_PATH=/node_modules
 RUN groupadd --system --gid 10001 harness \
     && useradd --system --uid 10001 --gid harness --home-dir /app harness \
     && mkdir -p /app/.codex \
@@ -96,7 +110,7 @@ COPY --from=builder --chown=harness:harness /app/alembic.ini /app/alembic.ini
 COPY --from=builder --chown=harness:harness /app/agents /app/agents
 COPY --from=builder --chown=harness:harness /app/platform-skills /app/platform-skills
 COPY --from=builder --chown=harness:harness /app/scripts /app/scripts
-COPY --from=kubectl /bin/kubectl /usr/local/bin/kubectl
+COPY --from=kubectl-builder /out/kubectl /usr/local/bin/kubectl
 COPY --from=builder /opt/codex /opt/codex
 COPY --chown=harness:harness deploy/docker/entrypoint-api.sh /usr/local/bin/entrypoint-api
 COPY --chown=harness:harness deploy/docker/entrypoint-worker.sh /usr/local/bin/entrypoint-worker

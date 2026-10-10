@@ -104,7 +104,7 @@ async def test_assign_task_validates_ownership_then_moves_it() -> None:
 
 
 @pytest.mark.asyncio
-async def test_assign_task_with_null_returns_the_task_to_任务() -> None:
+async def test_assign_task_with_null_returns_the_task_to_tasks() -> None:
     service, moves = build_service()
     project = await service.create(tenant_id="t", user_id="u", name="金融办")
     await service.assign_task(

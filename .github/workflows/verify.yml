@@ -4,7 +4,7 @@ on:
   workflow_call:
   pull_request:
   push:
-    branches: [develop, auto/agent-evolution]
+    branches: [main, develop]
 
 permissions:
   contents: read
@@ -64,27 +64,45 @@ jobs:
             tests/unit/runtime/test_deepagents_*.py \
             tests/unit/runtime/test_registry_deepagents_runtime.py \
             tests/integration/runtime/test_deepagents_graph.py
-      - name: Start MinIO test service
+      - uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+        with:
+          go-version: "1.24.2"
+          cache: false
+      - name: Build and start MinIO test service
+        env:
+          # Upstream RELEASE.2025-04-22T22-12-26Z. Its published images and
+          # archived binaries are no longer publicly downloadable.
+          MINIO_SOURCE_COMMIT: 0d7408fc9969caf07de6a8c3a84f9fbb10a6739e
         run: |
-          docker run -d --name harness-test-minio \
-            -p 9000:9000 \
-            -e MINIO_ROOT_USER=minioadmin \
-            -e MINIO_ROOT_PASSWORD=minioadmin \
-            minio/minio:RELEASE.2025-04-22T22-12-26Z \
-            server /data
+          set -euo pipefail
+          source_dir="$RUNNER_TEMP/minio-source"
+          git init "$source_dir"
+          git -C "$source_dir" remote add origin https://github.com/minio/minio.git
+          git -C "$source_dir" fetch --depth=1 origin "$MINIO_SOURCE_COMMIT"
+          git -C "$source_dir" checkout --detach FETCH_HEAD
+          test "$(git -C "$source_dir" rev-parse HEAD)" = "$MINIO_SOURCE_COMMIT"
+          (cd "$source_dir" && CGO_ENABLED=0 go build -o "$RUNNER_TEMP/minio" .)
+          MINIO_ROOT_USER=minioadmin MINIO_ROOT_PASSWORD=minioadmin \
+            "$RUNNER_TEMP/minio" server "$RUNNER_TEMP/minio-data" \
+            --address 127.0.0.1:9000 >"$RUNNER_TEMP/minio.log" 2>&1 &
           for attempt in $(seq 1 30); do
             if curl --fail --silent http://127.0.0.1:9000/minio/health/ready >/dev/null; then
               break
             fi
             if [ "$attempt" = 30 ]; then
-              docker logs harness-test-minio
+              cat "$RUNNER_TEMP/minio.log"
               exit 1
             fi
             sleep 1
           done
-          docker run --rm --network host --entrypoint /bin/sh \
-            minio/mc:RELEASE.2025-04-16T18-13-26Z \
-            -c 'mc alias set local http://127.0.0.1:9000 minioadmin minioadmin && mc mb --ignore-existing local/harness-artifacts'
+          uv run --frozen python - <<'PY'
+          from minio import Minio
+
+          client = Minio("127.0.0.1:9000", access_key="minioadmin",
+                         secret_key="minioadmin", secure=False)
+          if not client.bucket_exists("harness-artifacts"):
+              client.make_bucket("harness-artifacts")
+          PY
       - name: Verify single migration head and reversible latest revision
         run: |
           set -euo pipefail
@@ -115,6 +133,13 @@ jobs:
           PY
       - name: Lint, type, package determinism, and full Python suite
         run: make verify
+      - name: Retain the full type diagnostic report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pyright-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dist/quality/pyright.json
+          if-no-files-found: ignore
       - name: Deterministic runtime smoke and Eval/deployment gates
         run: |
           uv run python scripts/e2e_fake_runtime.py
@@ -136,12 +161,13 @@ jobs:
           cache: npm
           cache-dependency-path: web/harness-console/package-lock.json
           registry-url: https://registry.npmmirror.com
+      - name: Match the production builder npm version
+        run: npm install --global npm@11.6.2 --registry=https://registry.npmmirror.com
       - run: npm ci --registry=https://registry.npmmirror.com
       - run: npm test
       - run: npm run build
 
   container-security:
-    needs: [backend, web]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -175,15 +201,19 @@ jobs:
             --certificate-identity-regexp '^https://github.com/aquasecurity/' \
             --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
             "$TRIVY_IMAGE" >/dev/null
+          scan_status=0
           for image in harness-api:ci harness-web:ci harness-sandbox:ci; do
             docker run --rm \
               -v /var/run/docker.sock:/var/run/docker.sock \
               -v "$PWD:/workspace:ro" \
+              -v "$RUNNER_TEMP/trivy-cache:/root/.cache/trivy" \
               "$TRIVY_IMAGE" image --scanners vuln --ignore-unfixed \
               --vex /workspace/security/vex/cryptography-49.0.0.openvex.json \
-              --severity HIGH,CRITICAL --exit-code 1 "$image"
+              --severity HIGH,CRITICAL --exit-code 1 "$image" || scan_status=1
           done
           docker run --rm -v "$PWD:/workspace" -w /workspace \
+            -v "$RUNNER_TEMP/trivy-cache:/root/.cache/trivy" \
             "$TRIVY_IMAGE" fs --scanners secret,misconfig \
             --ignorefile /workspace/.trivyignore.yaml \
-            --severity HIGH,CRITICAL --exit-code 1 .
+            --severity HIGH,CRITICAL --exit-code 1 . || scan_status=1
+          exit "$scan_status"
