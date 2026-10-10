@@ -18,7 +18,7 @@ test "$(git rev-parse HEAD)" = "$KUBECTL_SOURCE_COMMIT"
 # GOSUMDB keeps module content verification enabled; no private-module bypass.
 export GOTOOLCHAIN=local CGO_ENABLED=0
 GOFLAGS=-mod=mod go get "golang.org/x/net@v$KUBECTL_NET_VERSION"
-go mod vendor
+go work vendor
 version_package=k8s.io/component-base/version
 build_version="$KUBECTL_VERSION+kai.netfix.1"
 go build -trimpath -buildvcs=false \
