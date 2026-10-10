@@ -24,6 +24,23 @@ def test_external_actions_are_pinned_to_full_commit_hashes() -> None:
             assert re.fullmatch(r"[^@]+@[a-f0-9]{40}", reference), reference
 
 
+def test_ci_does_not_depend_on_removed_minio_binary_distribution() -> None:
+    verify = workflow("verify.yml")
+    assert re.search(r"MINIO_SOURCE_COMMIT: [a-f0-9]{40}", verify)
+    assert 'rev-parse HEAD)\" = \"$MINIO_SOURCE_COMMIT\"' in verify
+    assert "CGO_ENABLED=0 go build" in verify
+    assert 'client.make_bucket("harness-artifacts")' in verify
+    assert "minio/minio:RELEASE" not in verify
+    assert "minio/mc:RELEASE" not in verify
+
+
+def test_ci_and_web_image_use_the_same_pinned_npm_version() -> None:
+    dockerfile = Path("deploy/docker/web.Dockerfile").read_text()
+    version = re.search(r"^ARG NPM_VERSION=(\S+)$", dockerfile, re.MULTILINE)
+    assert version is not None
+    assert f"npm install --global npm@{version.group(1)}" in workflow("verify.yml")
+
+
 def test_ci_blocks_package_eval_migration_and_vulnerability_failures() -> None:
     verify = workflow("verify.yml")
 

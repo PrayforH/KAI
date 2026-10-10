@@ -12,12 +12,9 @@ lint:
 	uv run ruff check src tests
 
 typecheck:
-	# Baseline gate: strict-mode debt exists (284 errors at v0.1.0, tracked in
-	# docs/runbooks/release-0.1.0-checklist.md). Fail only when the count grows.
-	@set -e; \
-	errors="$$(uv run pyright 2>&1 | uv run python -c 'import re,sys; m=re.search(r"([0-9]+) errors", sys.stdin.read()); print(m.group(1) if m else "0")')"; \
-	echo "pyright errors: $${errors} (baseline 284)"; \
-	test "$${errors}" -le 284
+	# Existing debt is matched by file/rule/message/occurrence count. New errors
+	# cannot hide behind fixes elsewhere or a failed/unparseable tool execution.
+	uv run --frozen --extra deepagents python scripts/check_type_baseline.py
 
 agent-check:
 	uv run python scripts/check_agent_packages.py
