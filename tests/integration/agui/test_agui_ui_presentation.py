@@ -180,6 +180,50 @@ async def test_publishes_a_block_shaped_the_way_a_live_model_wrote_it() -> None:
 
 
 @pytest.mark.asyncio
+async def test_publishes_a_block_shaped_the_way_the_second_live_answer_wrote_it() -> None:
+    """A later 173 answer used bare-string dimensions and named items with `key`.
+
+    Both live shapes are kept verbatim: they are what the deployed model actually
+    produces, and each one previously rendered as raw JSON.
+    """
+
+    live_shape = {
+        "version": 1,
+        "kind": "comparison",
+        "title": "三方案评估对比",
+        "fallback_text": "方案A成本120万；方案B成本90万；方案C成本150万。",
+        "data": {
+            "dimensions": ["成本", "周期", "风险"],
+            "items": [
+                {"key": "方案A", "values": {"成本": "120 万", "周期": "6 个月", "风险": "高"}},
+                {"key": "方案B", "values": {"成本": "90 万", "周期": "8 个月", "风险": "中"}},
+                {"key": "方案C", "values": {"成本": "150 万", "周期": "4 个月", "风险": "低"}},
+            ],
+        },
+        "config": {},
+    }
+    prompt = f"对比三个方案\n\n```harness-ui\n{json.dumps(live_shape, ensure_ascii=False)}\n```"
+    app = create_memory_app(auto_execute=True)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS)
+        response = await client.post(
+            "/v1/agui?agent_name=echo-agent&agent_version=0.1.0",
+            json=_request(thread_id="thread-live-shape-2", run_id="client-live-2", prompt=prompt),
+            headers=HEADERS,
+        )
+
+    published = _started_arguments(_events(response.text))[0]
+    assert published["kind"] == "comparison"
+    assert [dimension["key"] for dimension in published["data"]["dimensions"]] == [
+        "成本",
+        "周期",
+        "风险",
+    ]
+    assert [item["label"] for item in published["data"]["items"]] == ["方案A", "方案B", "方案C"]
+    assert published["data"]["items"][0]["values"]["成本"] == "120 万"
+
+
+@pytest.mark.asyncio
 async def test_capabilities_endpoint_describes_the_catalog() -> None:
     app = create_memory_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:

@@ -285,3 +285,56 @@ def test_rejects_values_keyed_by_an_undeclared_dimension() -> None:
     )
 
     assert presentation is None
+
+
+def test_accepts_bare_string_dimensions() -> None:
+    """A live 173 answer wrote `"dimensions": ["成本","周期","风险"]`."""
+    presentation = _validate(
+        {
+            "version": 1,
+            "kind": "comparison",
+            "fallback_text": "三个方案的对比。",
+            "data": {
+                "dimensions": ["成本", "周期"],
+                "items": [
+                    {"key": "方案A", "values": {"成本": "120 万", "周期": "6 个月"}},
+                    {"key": "方案B", "values": {"成本": "90 万", "周期": "8 个月"}},
+                ],
+            },
+        }
+    )
+
+    assert presentation is not None
+    assert presentation.data["dimensions"] == [
+        {"key": "成本", "label": "成本", "align": None},
+        {"key": "周期", "label": "周期", "align": None},
+    ]
+    assert presentation.data["items"][0]["label"] == "方案A"
+
+
+def test_accepts_a_bare_string_column_on_a_table() -> None:
+    presentation = _validate(
+        _block(data={"columns": ["名称"], "rows": [{"名称": "甲"}, {"名称": "乙"}]})
+    )
+
+    assert presentation is not None
+    assert presentation.data["columns"] == [{"key": "名称", "label": "名称", "align": None}]
+
+
+def test_still_rejects_an_item_with_no_name() -> None:
+    presentation = _validate(
+        {
+            "version": 1,
+            "kind": "comparison",
+            "fallback_text": "对比。",
+            "data": {
+                "dimensions": ["a"],
+                "items": [
+                    {"values": {"a": "1"}},
+                    {"label": "乙", "values": {"a": "2"}},
+                ],
+            },
+        }
+    )
+
+    assert presentation is None

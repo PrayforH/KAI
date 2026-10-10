@@ -89,15 +89,30 @@ class _Column(StrictModel):
 
 
 def _normalise_column(raw: Any) -> Any:
-    """Models reach for ``id`` about as often as ``key``; both name the same thing.
+    """Accept the ways models actually name a column.
 
-    Accepting the alias keeps an otherwise correct answer from being discarded
-    over a synonym. Everything downstream — renderer included — sees ``key``.
+    ``{"id": ...}`` and ``{"key": ...}`` mean the same thing, and a dimension that
+    is only a name arrives as a bare string. Normalising keeps an otherwise
+    correct answer from being discarded over a synonym; everything downstream —
+    renderer included — sees ``{"key", "label"}``.
     """
 
+    if isinstance(raw, str):
+        text = raw.strip()
+        return {"key": text, "label": text} if text else raw
     if isinstance(raw, dict) and "key" not in raw and "id" in raw:
         return {**{k: v for k, v in raw.items() if k != "id"}, "key": raw["id"]}
     return raw
+
+
+def _item_label(item: dict[str, Any]) -> Any:
+    """A comparison item's name, however the model spelled it."""
+
+    for field in ("label", "key", "name"):
+        value = item.get(field)
+        if isinstance(value, str) and value.strip():
+            return value
+    return None
 
 
 def _columns(value: Any, field_name: str = "columns") -> list[_Column]:
@@ -154,7 +169,7 @@ def _comparison(
     for item in raw_items:
         if not isinstance(item, dict):
             raise ValueError("every item must be an object")
-        label = _text(item.get("label"), maximum=MAX_STRING, field_name="item label")
+        label = _text(_item_label(item), maximum=MAX_STRING, field_name="item label")
         values = item.get("values")
         if isinstance(values, list):
             # A model that reads `values` as "one value per dimension, in order"

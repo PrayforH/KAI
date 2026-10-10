@@ -117,9 +117,10 @@ Rules:
 - Use only fields that appear in the shapes above. Unknown keys, unknown kinds or
   an out-of-range size reject the whole block and the user sees your raw JSON —
   check the shape before you write it.
-- A column or dimension may name itself `key` or `id`. A `comparison` item's
-  `values` may be an object keyed by dimension, or a list in dimension order.
-  Nothing else is inferred.
+- A column or dimension may name itself `key` or `id`, or be written as a bare
+  string when its name is all it has. A `comparison` item may name itself
+  `label`, `key` or `name`, and its `values` may be an object keyed by dimension
+  or a list in dimension order. Nothing else is inferred.
 - `data.rows`/`items`/`events` must be complete; the platform never fetches data
   for a block and never edits business state from one.
 - Keep every cell a JSON string, number, boolean or null. Never nest objects in a
