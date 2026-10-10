@@ -7,7 +7,7 @@ import logging
 import time
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
-from typing import Annotated, Any, Literal, cast
+from typing import Annotated, Any, Literal, NamedTuple, cast
 from uuid import uuid4
 
 from ag_ui.core import (
@@ -964,14 +964,23 @@ def _decode_history_cursor(cursor: str) -> tuple[datetime, str]:
     return created_at, str(decoded["run_id"])
 
 
+class RunProjection(NamedTuple):
+    """One run's replayable answer, as history and the live stream both need it."""
+
+    steer_events: list[RunEvent]
+    response_text: str
+    activity: dict[str, Any] | None
+    ui_blocks: list[dict[str, Any]]
+
+
 async def _run_projection(
     container: ApiContainer,
     tenant_id: str,
     run: Run,
     *,
     write_snapshot: bool = True,
-) -> tuple[list[RunEvent], str, dict[str, Any] | None, list[dict[str, Any]]]:
-    """Return steer events, response text, activity and UI blocks for one run.
+) -> RunProjection:
+    """Return the recorded projection of one run.
 
     Terminal runs prefer the durable ``history.snapshot`` projection; a legacy
     run without one falls back to folding all events and persists the snapshot
@@ -994,7 +1003,7 @@ async def _run_projection(
         if snapshot is not None:
             activity_payload = snapshot.payload.get("activity")
             ui_payload = snapshot.payload.get("ui")
-            return (
+            return RunProjection(
                 [event for event in markers if event.type == "run.steer.accepted"],
                 str(snapshot.payload.get("response_text", "")),
                 activity_payload if isinstance(activity_payload, dict) else None,
@@ -1004,17 +1013,17 @@ async def _run_projection(
             )
     events = await container.observed_events.list_after(tenant_id, run.run_id, 0)
     if not events:
-        return [], "", None, []
+        return RunProjection([], "", None, [])
     events = redact_internal_agent_asset_events(events)
-    steer_events = [event for event in events if event.type == "run.steer.accepted"]
     activity = build_run_activity(events)
     ui = [item.model_dump(mode="json") for item in presentations_for_events(events)]
-    if run.status.is_terminal:
-        response = final_response_text(events)
-        if write_snapshot:
-            await _write_history_snapshot(container, run, response, activity, ui)
-        return steer_events, response, activity, ui
-    return steer_events, active_response_text(events), activity, ui
+    steer_events = [event for event in events if event.type == "run.steer.accepted"]
+    if not run.status.is_terminal:
+        return RunProjection(steer_events, active_response_text(events), activity, ui)
+    response = final_response_text(events)
+    if write_snapshot:
+        await _write_history_snapshot(container, run, response, activity, ui)
+    return RunProjection(steer_events, response, activity, ui)
 
 
 async def _write_history_snapshot(
@@ -1118,10 +1127,12 @@ async def _history_messages_for_run(
         messages.append(
             AguiHistoryMessage(id=f"user-{run.run_id}", role="user", content=content)
         )
-    steer_events, response, activity, ui_blocks = await _run_projection(
+    projection = await _run_projection(
         container, tenant_id, run, write_snapshot=write_snapshot
     )
-    for guidance in steer_events:
+    activity = projection.activity
+    ui_blocks = projection.ui_blocks
+    for guidance in projection.steer_events:
         messages.append(AguiHistoryMessage(
             id=f"steer-{guidance.payload.get('request_id', guidance.event_id)}",
             role="user", content=str(guidance.payload.get("text", "")),
@@ -1177,12 +1188,12 @@ async def _history_messages_for_run(
         *artifact_tool_calls,
         *ui_tool_calls,
     ]
-    if response or tool_calls:
+    if projection.response_text or tool_calls:
         messages.append(
             AguiHistoryMessage(
                 id=f"assistant-{run.run_id}",
                 role="assistant",
-                content=response,
+                content=projection.response_text,
                 tool_calls=tool_calls or None,
             )
         )

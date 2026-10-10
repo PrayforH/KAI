@@ -212,3 +212,76 @@ def test_diagram_requires_mermaid_source() -> None:
 
     assert valid is not None
     assert invalid is None
+
+
+def test_accepts_id_as_a_column_alias_and_normalises_to_key() -> None:
+    """Live models write `id` about as often as `key`; the answer is the same."""
+    presentation = _validate(
+        _block(
+            data={
+                "columns": [{"id": "name", "label": "方案"}],
+                "rows": [{"name": "甲"}, {"name": "乙"}],
+            }
+        )
+    )
+
+    assert presentation is not None
+    assert presentation.data["columns"] == [{"key": "name", "label": "方案", "align": None}]
+
+
+def test_accepts_positional_comparison_values_in_dimension_order() -> None:
+    presentation = _validate(
+        {
+            "version": 1,
+            "kind": "comparison",
+            "fallback_text": "两个平台对比。",
+            "data": {
+                "dimensions": [{"id": "language", "label": "开发语言"}, {"id": "scale", "label": "规模"}],
+                "items": [
+                    {"label": "iOS", "values": ["Swift", "百万级"]},
+                    {"label": "Android", "values": ["Kotlin", "百万级"]},
+                ],
+            },
+        }
+    )
+
+    assert presentation is not None
+    assert presentation.data["items"][0]["values"] == {"language": "Swift", "scale": "百万级"}
+
+
+def test_rejects_positional_values_that_do_not_match_dimensions() -> None:
+    presentation = _validate(
+        {
+            "version": 1,
+            "kind": "comparison",
+            "fallback_text": "对比。",
+            "data": {
+                "dimensions": [{"key": "a"}, {"key": "b"}],
+                "items": [
+                    {"label": "甲", "values": ["only-one"]},
+                    {"label": "乙", "values": ["x", "y"]},
+                ],
+            },
+        }
+    )
+
+    assert presentation is None
+
+
+def test_rejects_values_keyed_by_an_undeclared_dimension() -> None:
+    presentation = _validate(
+        {
+            "version": 1,
+            "kind": "comparison",
+            "fallback_text": "对比。",
+            "data": {
+                "dimensions": [{"key": "a"}],
+                "items": [
+                    {"label": "甲", "values": {"b": "x"}},
+                    {"label": "乙", "values": {"a": "y"}},
+                ],
+            },
+        }
+    )
+
+    assert presentation is None

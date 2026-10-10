@@ -117,7 +117,8 @@ import { composerTrigger, queueAttachments, queueMayDispatch, restorePromptQueue
 export { normalizeMessageText } from "../lib/message-text";
 import { runReuseStore, useRunReuseNotice } from "../lib/run-reuse-store";
 import { IntelligentUiBlock } from "./intelligent-ui/presentation-host";
-import { presentationsForMessage } from "./intelligent-ui/schema";
+import { modelBlockCount, presentationsForMessage } from "./intelligent-ui/schema";
+import { PublishedBlocksProvider } from "./intelligent-ui/turn-context";
 import {
   loadTaskComposerDraft,
   persistTaskComposerDraft,
@@ -1429,8 +1430,12 @@ export function HarnessAssistantMessage() {
   // Interactive answer blocks arrive on the same tool-call channel artifacts do,
   // so they are present live and after a reload without a second code path.
   const turnPresentations = useMemo(() => presentationsForMessage(content), [content]);
+  // Only blocks the model authored came from a fence in this answer, so only that
+  // many fences may be hidden from the rendered Markdown.
+  const publishedBlocks = useMemo(() => modelBlockCount(turnPresentations), [turnPresentations]);
   return (
     <AnswerCitationProvider citations={answerCitations}>
+    <PublishedBlocksProvider count={publishedBlocks}>
     <AssistantMessage.Root
       className="harness-assistant-message"
       data-test-run={conversationScope && messageId.startsWith("assistant-") ? messageId.replace(/^assistant-/, "") : undefined}
@@ -1502,6 +1507,7 @@ export function HarnessAssistantMessage() {
       ) : null}
       {conversationScope?.afterMessage(messageId)}
     </AssistantMessage.Root>
+    </PublishedBlocksProvider>
     </AnswerCitationProvider>
   );
 }

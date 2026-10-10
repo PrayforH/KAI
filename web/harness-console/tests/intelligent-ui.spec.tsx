@@ -4,6 +4,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { IntelligentUiBlock } from "../src/components/intelligent-ui/presentation-host";
 import {
+  modelBlockCount,
+  type Presentation,
   parsePresentation,
   presentationsForMessage,
   stripHarnessUiFences,
@@ -14,7 +16,7 @@ import {
 let root: Root | undefined;
 let host: HTMLDivElement | undefined;
 
-const presentation = (overrides: Record<string, unknown> = {}) => ({
+const block = (overrides: Record<string, unknown> = {}) => ({
   schema_version: "harness.ui/v1",
   presentation_id: "ui_1",
   revision: 1,
@@ -36,9 +38,16 @@ const presentation = (overrides: Record<string, unknown> = {}) => ({
     ],
   },
   config: {},
-  decision: {},
+  decision: { origin: "model" },
   ...overrides,
 });
+
+/** The fixture is only useful if it is a block the console accepts. */
+function presentation(overrides: Record<string, unknown> = {}): Presentation {
+  const parsed = parsePresentation(block(overrides));
+  if (!parsed) throw new Error("fixture does not parse as a presentation");
+  return parsed;
+}
 
 beforeEach(() => {
   host = document.createElement("div");
@@ -64,11 +73,11 @@ it("parses a block the server published", () => {
 });
 
 it("refuses a block whose renderer version this bundle does not implement", () => {
-  expect(parsePresentation(presentation({ renderer_version: "table/2" }))).toBeNull();
+  expect(parsePresentation(block({ renderer_version: "table/2" }))).toBeNull();
 });
 
 it("refuses a block missing its schema version", () => {
-  expect(parsePresentation(presentation({ schema_version: "harness.ui/v2" }))).toBeNull();
+  expect(parsePresentation(block({ schema_version: "harness.ui/v2" }))).toBeNull();
 });
 
 it("collects the turn's blocks from tool-call parts, newest fields intact", () => {
@@ -91,7 +100,7 @@ it("renders a table block with its title and headers", () => {
 });
 
 it("falls back to the sentence when the bundle cannot render the block", () => {
-  render(presentation({ renderer_version: "table/2" }));
+  render(block({ renderer_version: "table/2" }));
   expect(host?.textContent).toBe("第一季度 120 件。");
   expect(host?.querySelector("table")).toBeNull();
 });
@@ -109,16 +118,36 @@ it("renders a metric block", () => {
   expect(host?.textContent).toContain("18.4");
 });
 
-it("strips a valid fence from the displayed answer but keeps an invalid one", () => {
-  const valid = '结论。\n\n```harness-ui\n{"version":1,"kind":"table"}\n```';
-  const invalid = '结论。\n\n```harness-ui\n{"not":"a block"}\n```';
-  expect(stripHarnessUiFences(valid)).toBe("结论。\n\n");
-  expect(stripHarnessUiFences(invalid)).toBe(invalid);
+it("hides only the fences the server actually published", () => {
+  const first = '```harness-ui\n{"version":1,"kind":"table"}\n```';
+  const second = '```harness-ui\n{"version":1,"kind":"metric"}\n```';
+  const text = `结论。\n\n${first}\n\n${second}`;
+
+  expect(stripHarnessUiFences(text, 2)).toBe("结论。\n\n\n\n");
+  // A rejected block stays visible: a hole where the model's content used to be
+  // is worse than a code block.
+  expect(stripHarnessUiFences(text, 1)).toBe(`结论。\n\n\n\n${second}`);
+  expect(stripHarnessUiFences(text, 0)).toBe(text);
+});
+
+it("never hides a fence that is not a protocol block", () => {
+  const text = '结论。\n\n```harness-ui\n{"not":"a block"}\n```';
+
+  expect(stripHarnessUiFences(text, 2)).toBe(text);
 });
 
 it("leaves other code fences alone", () => {
   const text = '```json\n{"kind":"table"}\n```';
-  expect(stripHarnessUiFences(text)).toBe(text);
+
+  expect(stripHarnessUiFences(text, 2)).toBe(text);
+});
+
+it("hides fences only for the blocks the model authored", () => {
+  const authored = presentation();
+  const projected = presentation({ presentation_id: "ui_2", decision: { origin: "shape" } });
+
+  expect(modelBlockCount([authored, projected])).toBe(1);
+  expect(modelBlockCount([projected])).toBe(0);
 });
 
 it("stops a chart from crashing when its configuration is unusable", () => {

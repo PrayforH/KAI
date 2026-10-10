@@ -132,6 +132,54 @@ async def test_an_plain_answer_publishes_no_block() -> None:
 
 
 @pytest.mark.asyncio
+async def test_publishes_a_block_shaped_the_way_a_live_model_wrote_it() -> None:
+    """A real 173 answer used `id` for dimensions and a positional `values` list.
+
+    That shape is reproduced verbatim so it keeps rendering instead of regressing
+    into raw JSON the next time someone tightens the schema.
+    """
+
+    live_shape = {
+        "version": 1,
+        "kind": "comparison",
+        "title": "三平台对比",
+        "fallback_text": "iOS 用 Swift，Android 用 Kotlin，HarmonyOS 用 ArkTS。",
+        "data": {
+            "dimensions": [
+                {"id": "language", "label": "开发语言"},
+                {"id": "privacy", "label": "权限"},
+            ],
+            "items": [
+                {"label": "iPhone (iOS)", "values": ["Swift", "沙盒+强制授权"]},
+                {"label": "Android", "values": ["Kotlin", "运行时权限"]},
+                {"label": "HarmonyOS", "values": ["ArkTS", "场景化分级授权"]},
+            ],
+        },
+    }
+    prompt = f"对比三个平台\n\n```harness-ui\n{json.dumps(live_shape, ensure_ascii=False)}\n```"
+    app = create_memory_app(auto_execute=True)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS)
+        response = await client.post(
+            "/v1/agui?agent_name=echo-agent&agent_version=0.1.0",
+            json=_request(thread_id="thread-live-shape", run_id="client-live", prompt=prompt),
+            headers=HEADERS,
+        )
+
+    published = _started_arguments(_events(response.text))[0]
+    assert published["kind"] == "comparison"
+    assert published["decision"]["origin"] == "model"
+    assert published["data"]["dimensions"] == [
+        {"key": "language", "label": "开发语言", "align": None},
+        {"key": "privacy", "label": "权限", "align": None},
+    ]
+    assert published["data"]["items"][0]["values"] == {
+        "language": "Swift",
+        "privacy": "沙盒+强制授权",
+    }
+
+
+@pytest.mark.asyncio
 async def test_capabilities_endpoint_describes_the_catalog() -> None:
     app = create_memory_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:

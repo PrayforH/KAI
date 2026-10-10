@@ -183,11 +183,20 @@ function isProtocolBlock(body: string): boolean {
   }
 }
 
-/** Remove only the fences the server was able to turn into a block. An invalid
- * block stays visible as a code block: the user sees the real answer, not a hole
- * where a widget silently failed. */
-export function stripHarnessUiFences(text: string): string {
-  return text.replace(UI_FENCE, (match, language: string, body: string) =>
-    language.trim().toLowerCase() === "harness-ui" && isProtocolBlock(body) ? "" : match,
-  );
+/** How many of this turn's blocks came from a fence the model wrote, in order.
+ * Only those may be hidden from the rendered answer: the projected blocks never
+ * had a fence, and a rejected fence must stay visible. */
+export function modelBlockCount(presentations: readonly Presentation[]): number {
+  return presentations.filter((item) => item.decision.origin === "model").length;
+}
+
+export function stripHarnessUiFences(text: string, published: number): string {
+  if (published <= 0) return text;
+  let remaining = published;
+  return text.replace(UI_FENCE, (match, language: string, body: string) => {
+    if (remaining <= 0 || language.trim().toLowerCase() !== "harness-ui") return match;
+    if (!isProtocolBlock(body)) return match;
+    remaining -= 1;
+    return "";
+  });
 }

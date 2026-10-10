@@ -3,22 +3,8 @@
 import { useMemo, useState } from "react";
 
 import { type ChartRow, cellText, formatNumber, isNumeric } from "./cells";
+import { downloadCsv, toCsv } from "./csv";
 import type { PresentationCell } from "./schema";
-
-function toCsv(header: string[], rows: string[][]): string {
-  return [header, ...rows]
-    .map((row) => row.map((value) => `"${value.replace(/"/g, '""')}"`).join(","))
-    .join("\n");
-}
-
-function download(name: string, content: string) {
-  const url = URL.createObjectURL(new Blob([content], { type: "text/csv;charset=utf-8" }));
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = name;
-  anchor.click();
-  URL.revokeObjectURL(url);
-}
 
 export type TableColumn = {
   key: string;
@@ -89,7 +75,7 @@ export function TableView({
           <button type="button" onClick={copy}>{copied ? "已复制" : "复制"}</button>
           <button
             type="button"
-            onClick={() => download(`${title ?? "数据"}.csv`, toCsv(header, body))}
+            onClick={() => downloadCsv(`${title ?? "数据"}.csv`, toCsv(header, body))}
           >
             下载 CSV
           </button>

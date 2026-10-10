@@ -16,12 +16,14 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterator, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from harness.core.events import RunEvent
 from harness.presentation.catalog import MAX_PRESENTATIONS_PER_TURN
 from harness.presentation.schema import (
+    MAX_BLOCK_CHARS,
     MAX_COLUMNS,
     MAX_ROWS,
     Presentation,
@@ -147,59 +149,75 @@ def _shape_block(parsed: Any) -> dict[str, Any] | None:
     }
 
 
-def _fenced_blocks(text: str) -> Iterable[Any]:
-    matched_spans: list[tuple[int, int]] = []
-    for match in _FENCE.finditer(text):
-        matched_spans.append((match.start(), match.end()))
-        if match.group(1).strip().lower() != "harness-ui":
-            continue
-        try:
-            yield json.loads(match.group(2))
-        except (ValueError, TypeError):
-            continue
-    # Models occasionally drop the fence but keep the object. Accept only a
-    # complete brace-balanced object that starts a line and declares a kind.
+def _maybe_json(text: str) -> Any:
+    try:
+        return json.loads(text)
+    except (ValueError, TypeError):
+        return None
+
+
+def _object_end(text: str, offset: int) -> int | None:
+    """Index just past the brace-balanced object that starts at ``offset``."""
+
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(offset, min(len(text), offset + MAX_BLOCK_CHARS)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+        elif char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return index + 1
+    return None
+
+
+def _unfenced_blocks(text: str, spans: list[tuple[int, int]]) -> Iterator[Any]:
+    """A model occasionally keeps the object and drops the fence. Accept only a
+    complete, brace-balanced object that starts a line and declares a kind."""
+
     for start in _BARE_OBJECT_START.finditer(text):
         offset = start.start() + len(start.group(0))
-        if any(begin <= offset < end for begin, end in matched_spans):
+        if any(begin <= offset < end for begin, end in spans):
             continue
-        depth = 0
-        quoted = False
-        escaped = False
-        for index in range(offset, min(len(text), offset + 64_000)):
-            char = text[index]
-            if quoted:
-                if escaped:
-                    escaped = False
-                elif char == "\\":
-                    escaped = True
-                elif char == '"':
-                    quoted = False
-            elif char == '"':
-                quoted = True
-            elif char == "{":
-                depth += 1
-            elif char == "}":
-                depth -= 1
-                if depth == 0:
-                    try:
-                        candidate = json.loads(text[offset : index + 1])
-                    except (ValueError, TypeError):
-                        break
-                    if isinstance(candidate, dict) and isinstance(candidate.get("kind"), str):
-                        yield candidate
-                    break
+        end = _object_end(text, offset)
+        if end is None:
+            continue
+        candidate = _maybe_json(text[offset:end])
+        if isinstance(candidate, dict) and isinstance(candidate.get("kind"), str):
+            yield candidate
 
 
-def _message_buffers(events: Sequence[RunEvent], run_id: str) -> dict[str, list[str]]:
-    buffers: dict[str, list[str]] = {}
-    for event in events:
-        if event.type == "message.delta":
-            message_id = _message_id(event, run_id)
-            text = event.payload.get("text")
-            if isinstance(text, str):
-                buffers.setdefault(message_id, []).append(text)
-    return buffers
+def _fenced_blocks(text: str) -> Iterator[Any]:
+    spans: list[tuple[int, int]] = []
+    for match in _FENCE.finditer(text):
+        spans.append((match.start(), match.end()))
+        if match.group(1).strip().lower() != "harness-ui":
+            continue
+        parsed = _maybe_json(match.group(2))
+        if parsed is not None:
+            yield parsed
+    yield from _unfenced_blocks(text, spans)
+
+
+@dataclass(frozen=True)
+class _Candidate:
+    """An unvalidated block plus the provenance the protocol records for it."""
+
+    block: Any
+    message_id: str
+    origin: str
+    reason_code: str
 
 
 def _message_id(event: RunEvent, run_id: str) -> str:
@@ -209,65 +227,66 @@ def _message_id(event: RunEvent, run_id: str) -> str:
     return f"assistant-{run_id}"
 
 
+def _tool_names(events: Sequence[RunEvent]) -> dict[str, str]:
+    return {
+        str(event.payload.get("tool_call_id")): str(event.payload.get("name", ""))
+        for event in events
+        if event.type in {"tool.request", "tool.allowed"} and event.payload.get("tool_call_id")
+    }
+
+
+def _candidates(events: Sequence[RunEvent], run_id: str) -> Iterator[_Candidate]:
+    """Every block the run's events justify, in durable sequence order."""
+
+    tool_names = _tool_names(events)
+    buffers: dict[str, list[str]] = {}
+    for event in events:
+        if event.type == "message.delta":
+            text = event.payload.get("text")
+            if isinstance(text, str):
+                buffers.setdefault(_message_id(event, run_id), []).append(text)
+            continue
+        if event.type == "message.completed":
+            message_id = _message_id(event, run_id)
+            for block in _fenced_blocks("".join(buffers.pop(message_id, ()))):
+                yield _Candidate(block, message_id, "model", "model_selected")
+            continue
+        if event.type != "tool.result" or _is_error(event.payload):
+            continue
+        tool_name = tool_names.get(str(event.payload.get("tool_call_id")), "")
+        if tool_name in _SHAPE_EXCLUDED_TOOLS or tool_name.startswith(_SHAPE_EXCLUDED_PREFIXES):
+            continue
+        block = _shape_block(_loads_structured(event.payload))
+        if block is not None:
+            yield _Candidate(block, _message_id(event, run_id), "shape", "structured_tool_result")
+
+
 def presentations_for_events(
     events: Sequence[RunEvent],
     *,
     limit: int = MAX_PRESENTATIONS_PER_TURN,
 ) -> list[Presentation]:
-    """Every presentation the run's events justify, in durable sequence order."""
+    """Every presentation the run's events justify, in durable sequence order.
+
+    The same events always yield the same blocks with the same ids, which is what
+    lets the live stream and a rebuilt history agree without storing a copy.
+    """
 
     run_id = next((event.run_id for event in events if event.run_id), "")
     if not run_id:
         return []
-    tool_names = {
-        str(event.payload.get("tool_call_id")): str(event.payload.get("name", ""))
-        for event in events
-        if event.type in {"tool.request", "tool.allowed"}
-        and event.payload.get("tool_call_id")
-    }
-    buffers = _message_buffers(events, run_id)
     presentations: list[Presentation] = []
-    index = 0
-    for event in events:
-        if event.type == "message.completed":
-            message_id = _message_id(event, run_id)
-            text = "".join(buffers.get(message_id, ()))
-            if not text:
-                continue
-            for block in _fenced_blocks(text):
-                presentation = validate_block(
-                    block,
-                    run_id=run_id,
-                    message_id=message_id,
-                    index=index,
-                    origin="model",
-                    reason_code="model_selected",
-                )
-                if presentation is not None:
-                    presentations.append(presentation)
-                    index += 1
-        elif event.type == "tool.result":
-            if _is_error(event.payload):
-                continue
-            tool_name = tool_names.get(str(event.payload.get("tool_call_id")), "")
-            if tool_name in _SHAPE_EXCLUDED_TOOLS or tool_name.startswith(
-                _SHAPE_EXCLUDED_PREFIXES
-            ):
-                continue
-            block = _shape_block(_loads_structured(event.payload))
-            if block is None:
-                continue
-            presentation = validate_block(
-                block,
-                run_id=run_id,
-                message_id=_message_id(event, run_id),
-                index=index,
-                origin="shape",
-                reason_code="structured_tool_result",
-            )
-            if presentation is not None:
-                presentations.append(presentation)
-                index += 1
+    for candidate in _candidates(events, run_id):
         if len(presentations) >= limit:
             break
-    return presentations[:limit]
+        presentation = validate_block(
+            candidate.block,
+            run_id=run_id,
+            message_id=candidate.message_id,
+            index=len(presentations),
+            origin=candidate.origin,
+            reason_code=candidate.reason_code,
+        )
+        if presentation is not None:
+            presentations.append(presentation)
+    return presentations

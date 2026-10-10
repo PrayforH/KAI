@@ -53,15 +53,20 @@ def _scalar(value: Any) -> str | int | float | bool | None:
 
 
 def _text(value: Any, *, maximum: int, field_name: str, required: bool = True) -> str:
-    if isinstance(value, str):
-        stripped = value.strip()
-        if stripped or not required:
-            if len(stripped) > maximum:
-                raise ValueError(f"{field_name} exceeds {maximum} characters")
-            return stripped
-    if not required and value is None:
+    """One short, trimmed string field. A missing value is allowed only when optional."""
+
+    if value is None:
+        if required:
+            raise ValueError(f"{field_name} is required")
         return ""
-    raise ValueError(f"{field_name} must be a non-empty string")
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} must be a string")
+    text = value.strip()
+    if not text and required:
+        raise ValueError(f"{field_name} is required")
+    if len(text) > maximum:
+        raise ValueError(f"{field_name} exceeds {maximum} characters")
+    return text
 
 
 def _rows(value: Any, *, maximum: int, minimum: int = 1) -> list[dict[str, Any]]:
@@ -83,13 +88,25 @@ class _Column(StrictModel):
     align: Literal["left", "right", "center"] | None = None
 
 
+def _normalise_column(raw: Any) -> Any:
+    """Models reach for ``id`` about as often as ``key``; both name the same thing.
+
+    Accepting the alias keeps an otherwise correct answer from being discarded
+    over a synonym. Everything downstream — renderer included — sees ``key``.
+    """
+
+    if isinstance(raw, dict) and "key" not in raw and "id" in raw:
+        return {**{k: v for k, v in raw.items() if k != "id"}, "key": raw["id"]}
+    return raw
+
+
 def _columns(value: Any, field_name: str = "columns") -> list[_Column]:
     if not isinstance(value, list) or not 1 <= len(value) <= MAX_COLUMNS:
         raise ValueError(f"{field_name} must hold between 1 and {MAX_COLUMNS} entries")
     columns: list[_Column] = []
     seen: set[str] = set()
     for item in value:
-        column = _Column.model_validate(item)
+        column = _Column.model_validate(_normalise_column(item))
         if not column.key.strip():
             raise ValueError("column key must not be empty")
         if column.key in seen:
@@ -132,15 +149,22 @@ def _comparison(
     raw_items = data.get("items")
     if not isinstance(raw_items, list) or not 2 <= len(raw_items) <= MAX_ITEMS:
         raise ValueError(f"items must hold between 2 and {MAX_ITEMS} entries")
+    declared = [dimension.key for dimension in dimensions]
     items: list[dict[str, Any]] = []
     for item in raw_items:
         if not isinstance(item, dict):
             raise ValueError("every item must be an object")
         label = _text(item.get("label"), maximum=MAX_STRING, field_name="item label")
         values = item.get("values")
+        if isinstance(values, list):
+            # A model that reads `values` as "one value per dimension, in order"
+            # is describing the same table; align it instead of rejecting.
+            if len(values) != len(declared):
+                raise ValueError("positional values must match dimensions in length")
+            values = dict(zip(declared, values, strict=True))
         if not isinstance(values, dict):
-            raise ValueError("item values must be an object")
-        unknown = set(values) - {dimension.key for dimension in dimensions}
+            raise ValueError("item values must be an object or a positional list")
+        unknown = set(values) - set(declared)
         if unknown:
             raise ValueError(f"item carries undeclared dimensions: {sorted(unknown)}")
         items.append(

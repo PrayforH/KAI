@@ -11,6 +11,7 @@ import { Children, memo, useMemo, useState, type ComponentPropsWithoutRef, type 
 import { conversationInputDisplay } from "../lib/conversation-input";
 import { normalizeMessageText, normalizeTemperatureRanges } from "../lib/message-text";
 import { stripHarnessUiFences } from "./intelligent-ui/schema";
+import { usePublishedBlocks } from "./intelligent-ui/turn-context";
 import { MermaidCodeHeader, MermaidDiagram } from "./mermaid-diagram";
 import { citationTarget, knowledgeUrlTransform, remarkWikiLinks } from "../lib/knowledge-links";
 import { useAnswerCitations } from "./knowledge/answer-citation-context";
@@ -186,7 +187,17 @@ function markdownUrlTransform(url: string) {
 
 function MarkdownTextImpl() {
   const part = useMessagePartText();
-  const normalized = useMemo(() => ({ ...part, text: stripHarnessUiFences(conversationInputDisplay(normalizeMessageText(part.text), part.status.type === "running")) }), [part]);
+  const published = usePublishedBlocks();
+  const normalized = useMemo(
+    () => ({
+      ...part,
+      text: stripHarnessUiFences(
+        conversationInputDisplay(normalizeMessageText(part.text), part.status.type === "running"),
+        published,
+      ),
+    }),
+    [part, published],
+  );
   // Render the actual stream; do not queue a second typewriter animation.
   const running = normalized.status.type === "running";
   const [expanded, setExpanded] = useState(false);
