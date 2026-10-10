@@ -3,6 +3,30 @@
 All notable product changes are recorded here. Versions follow Semantic Versioning; signed release
 manifests remain the authority for exact source commits, image digests, SBOMs and Agent bundle hashes.
 
+## [0.3.1] - 2026-10-10
+
+### Changed
+
+- Backend dictation supports 32 concurrent input sessions and writes live transcripts directly into
+  the Codex-style composer; text refinement runs after recording stops.
+- Artifact panels snap open or closed when dragged, and response images render inline.
+- Session-scoped SDK reuse, bounded failover and context probes reduce repeated startup work.
+- Public documentation explains module boundaries, branch management and the target architecture,
+  with the source architecture diagram preserved separately from the current implementation.
+
+### Fixed
+
+- Live dictation preserves stable text and the reading position, resumes after recognized text is
+  deleted, and defers provisional punctuation to avoid repeated sentence endings.
+- Microphone capture disables automatic gain for office dictation and avoids unnecessary composer
+  messages or layout changes during recording.
+- Streaming thoughts follow their scroll area and remain grouped across tool callbacks in traces.
+- Deployment preserves the configured long-term memory extraction settings.
+- CI restores reproducible dependency installation, validates existing type-check debt without
+  accepting new errors, and scans all production container targets.
+- Production images update vulnerable dependencies; kubectl retains its bound upstream source
+  version while rebuilding with patched network dependencies.
+
 ## [0.3.0] - 2026-09-08
 
 ### Added
