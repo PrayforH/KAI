@@ -2,7 +2,7 @@
 
 面向智能体构建、任务执行与运行治理的工作平台。KAI 把对话、Agent Studio、模型与能力管理、知识库、长期记忆和产出物整合到一个工作台，由统一控制面管理运行状态、权限、审批和发布。
 
-当前平台版本 **0.3.0** · [发布记录](https://github.com/PrayforH/KAI/releases) · [更新日志](CHANGELOG.md) · [Apache-2.0](LICENSE)
+当前平台版本 **0.3.1** · [发布记录](https://github.com/PrayforH/KAI/releases) · [更新日志](CHANGELOG.md) · [Apache-2.0](LICENSE)
 
 ## 主要能力
 
