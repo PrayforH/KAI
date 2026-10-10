@@ -1,6 +1,6 @@
 # Both upstreams are immutable. The Chainguard kubectl image is also verified
 # with Cosign in CI before Docker is allowed to copy its binary into our image.
-ARG KUBECTL_IMAGE=cgr.dev/chainguard/kubectl@sha256:0fee370907fa4cd5aa8be82b35772649fbca19abc07add837de6f87a9a97b5d2
+ARG KUBECTL_IMAGE=cgr.dev/chainguard/kubectl@sha256:333192bc8c507f58823da957aaadcfec438062fd9ae2ac80dde84bac0d5e5a8c
 ARG PYTHON_IMAGE=python:3.12-slim-bookworm@sha256:4766d8b510c428e595d74b9cc5bbb2fae8e26316fffb4adc89908d79aacd58a2
 FROM ${KUBECTL_IMAGE} AS kubectl
 
@@ -67,22 +67,27 @@ ENV PATH="/app/project/bin:/app/.venv/bin:$PATH" \
 
 # libarchive provides bounded in-memory RAR4/RAR5 reading for Studio imports.
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends libarchive13 xz-utils \
     && rm -rf /var/lib/apt/lists/*
 # Vendored office Skills generate .docx/.pptx through the Node libraries, so
 # Node plus the two document packages ship in the image. Installing them at
 # build time keeps runs free of npm-registry egress.
-ARG NODE_VERSION=22.9.0
-ARG NODE_LINUX_X64_SHA256=1bfae9ef21ab43c92d8274f1bd032bf61f42ea004192a18d4c64477508626142
+ARG NODE_VERSION=22.23.3
+ARG NODE_LINUX_X64_SHA256=df450af89261115ef9f9e3830c3eeb2cc9213b63c720b1af623cb5dcbe2e02de
 ARG NPM_REGISTRY=https://registry.npmmirror.com
+COPY deploy/docker/office/ /opt/office/
 RUN python -c 'import os, urllib.request; v=os.environ["NODE_VERSION"]; r=os.environ["NPM_REGISTRY"].rstrip("/"); urllib.request.urlretrieve(f"{r}/-/binary/node/v{v}/node-v{v}-linux-x64.tar.xz", "/tmp/node.tar.xz")' \
     && printf '%s  %s\n' "${NODE_LINUX_X64_SHA256}" /tmp/node.tar.xz | sha256sum --check --strict \
     && tar -xJf /tmp/node.tar.xz --strip-components=1 -C /usr/local \
     && rm -f /tmp/node.tar.xz \
-    && npm install --global --registry="${NPM_REGISTRY}" docx pptxgenjs \
+    && npm ci --prefix /opt/office --omit=dev --registry="${NPM_REGISTRY}" \
+    && mv /opt/office/node_modules /node_modules \
     && npm cache clean --force \
-    && NODE_PATH=/usr/local/lib/node_modules node -e "require('docx'); require('pptxgenjs'); console.log('office npm libs ok')"
-ENV NODE_PATH=/usr/local/lib/node_modules
+    && rm -rf /usr/local/lib/node_modules/npm \
+    && rm -f /usr/local/bin/npm /usr/local/bin/npx \
+    && NODE_PATH=/node_modules node /opt/office/smoke.cjs
+ENV NODE_PATH=/node_modules
 RUN groupadd --system --gid 10001 harness \
     && useradd --system --uid 10001 --gid harness --home-dir /app harness \
     && mkdir -p /app/.codex \

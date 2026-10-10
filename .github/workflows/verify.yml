@@ -177,7 +177,7 @@ jobs:
           cosign-release: v3.0.6
       - name: Verify the immutable kubectl source image
         env:
-          KUBECTL_IMAGE: cgr.dev/chainguard/kubectl@sha256:0fee370907fa4cd5aa8be82b35772649fbca19abc07add837de6f87a9a97b5d2
+          KUBECTL_IMAGE: cgr.dev/chainguard/kubectl@sha256:333192bc8c507f58823da957aaadcfec438062fd9ae2ac80dde84bac0d5e5a8c
         run: |
           set -euo pipefail
           cosign verify \
@@ -186,7 +186,7 @@ jobs:
             "$KUBECTL_IMAGE" >/dev/null
       - name: Build the three production images without pushing
         env:
-          KUBECTL_IMAGE: cgr.dev/chainguard/kubectl@sha256:0fee370907fa4cd5aa8be82b35772649fbca19abc07add837de6f87a9a97b5d2
+          KUBECTL_IMAGE: cgr.dev/chainguard/kubectl@sha256:333192bc8c507f58823da957aaadcfec438062fd9ae2ac80dde84bac0d5e5a8c
         run: |
           set -euo pipefail
           docker build --pull --build-arg KUBECTL_IMAGE="$KUBECTL_IMAGE" \
@@ -202,15 +202,19 @@ jobs:
             --certificate-identity-regexp '^https://github.com/aquasecurity/' \
             --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
             "$TRIVY_IMAGE" >/dev/null
+          scan_status=0
           for image in harness-api:ci harness-web:ci harness-sandbox:ci; do
             docker run --rm \
               -v /var/run/docker.sock:/var/run/docker.sock \
               -v "$PWD:/workspace:ro" \
+              -v "$RUNNER_TEMP/trivy-cache:/root/.cache/trivy" \
               "$TRIVY_IMAGE" image --scanners vuln --ignore-unfixed \
               --vex /workspace/security/vex/cryptography-49.0.0.openvex.json \
-              --severity HIGH,CRITICAL --exit-code 1 "$image"
+              --severity HIGH,CRITICAL --exit-code 1 "$image" || scan_status=1
           done
           docker run --rm -v "$PWD:/workspace" -w /workspace \
+            -v "$RUNNER_TEMP/trivy-cache:/root/.cache/trivy" \
             "$TRIVY_IMAGE" fs --scanners secret,misconfig \
             --ignorefile /workspace/.trivyignore.yaml \
-            --severity HIGH,CRITICAL --exit-code 1 .
+            --severity HIGH,CRITICAL --exit-code 1 . || scan_status=1
+          exit "$scan_status"

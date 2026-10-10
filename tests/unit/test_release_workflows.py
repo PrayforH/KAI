@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import os
 import re
+import subprocess
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
+import pytest
 import yaml
 
 
@@ -57,6 +60,45 @@ def test_ci_blocks_package_eval_migration_and_vulnerability_failures() -> None:
         assert required in verify
     makefile = Path("Makefile").read_text(encoding="utf-8")
     assert "verify: lint typecheck agent-check agent-determinism readiness test" in makefile
+
+
+@pytest.mark.parametrize("failed_target", ["", "harness-api:ci", "harness-web:ci",
+                                          "harness-sandbox:ci", "fs"])
+def test_security_scans_every_target_and_preserves_failure(
+    tmp_path: Path, failed_target: str
+) -> None:
+    data = cast(dict[str, Any], yaml.safe_load(workflow("verify.yml")))
+    steps = data["jobs"]["container-security"]["steps"]
+    step = next(s for s in steps if s.get("name", "").startswith("Verify the scanner"))
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for name, script in {
+        "cosign": "#!/bin/bash\nexit 0\n",
+        "docker": (
+            '#!/bin/bash\nprintf "%s\\n" "$*" >> "$SCAN_LOG"\n'
+            'if [[ -n "$FAILED_TARGET" && "$*" == *"$FAILED_TARGET"* ]]; '
+            "then exit 1; fi\n"
+        ),
+    }.items():
+        command = bin_dir / name
+        command.write_text(script)
+        command.chmod(0o755)
+    scan_log = tmp_path / "scan.log"
+    result = subprocess.run(
+        ["bash", "-c", step["run"]],
+        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}",
+             "RUNNER_TEMP": str(tmp_path), "TRIVY_IMAGE": "scanner:test",
+             "SCAN_LOG": str(scan_log), "FAILED_TARGET": failed_target},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == (1 if failed_target else 0), result.stderr
+    scans = scan_log.read_text().splitlines()
+    assert len(scans) == 4
+    for image in ("harness-api:ci", "harness-web:ci", "harness-sandbox:ci"):
+        assert any(line.endswith(image) for line in scans)
+    assert " fs " in scans[-1]
 
 
 def test_release_builds_once_and_emits_signed_hash_and_sbom_evidence() -> None:

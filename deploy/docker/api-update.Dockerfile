@@ -9,20 +9,22 @@ ARG PYPI_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
 # Vendored office Skills generate .docx/.pptx through the Node libraries, so
 # Node plus the two document packages ship in the image. Installing them at
 # build time keeps runs free of npm-registry egress.
-ARG NODE_VERSION=22.9.0
-ARG NODE_LINUX_X64_SHA256=1bfae9ef21ab43c92d8274f1bd032bf61f42ea004192a18d4c64477508626142
+ARG NODE_VERSION=22.23.3
+ARG NODE_LINUX_X64_SHA256=df450af89261115ef9f9e3830c3eeb2cc9213b63c720b1af623cb5dcbe2e02de
 ARG NPM_REGISTRY=https://registry.npmmirror.com
+COPY deploy/docker/office/ /opt/office/
 RUN /app/.venv/bin/pip install --no-cache-dir --no-deps --index-url "${PYPI_INDEX}" "claude-agent-sdk==${SDK_VERSION}" \
     && /app/.venv/bin/pip check \
     && python -c 'import os, urllib.request; v=os.environ["NODE_VERSION"]; r=os.environ["NPM_REGISTRY"].rstrip("/"); urllib.request.urlretrieve(f"{r}/-/binary/node/v{v}/node-v{v}-linux-x64.tar.xz", "/tmp/node.tar.xz")' \
     && printf '%s  %s\n' "${NODE_LINUX_X64_SHA256}" /tmp/node.tar.xz | sha256sum --check --strict \
     && tar -xJf /tmp/node.tar.xz --strip-components=1 -C /usr/local \
     && rm -f /tmp/node.tar.xz \
-    && npm install --global --registry="${NPM_REGISTRY}" docx pptxgenjs \
+    && npm ci --prefix /opt/office --omit=dev --registry="${NPM_REGISTRY}" \
     && npm cache clean --force \
-    && mkdir -p /node_modules \
-    && cp -R /usr/local/lib/node_modules/. /node_modules/ \
-    && node -e "require('docx'); require('pptxgenjs'); console.log('office npm libs ok')"
+    && rm -rf /node_modules /usr/local/lib/node_modules \
+    && mv /opt/office/node_modules /node_modules \
+    && rm -f /usr/local/bin/npm /usr/local/bin/npx \
+    && node /opt/office/smoke.cjs
 # Sandbox processes reconstruct their environment without NODE_PATH. Node's
 # parent-directory lookup must also find these packages from every workspace.
 RUN mkdir -p /tmp/office-probe \

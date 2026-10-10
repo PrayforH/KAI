@@ -1,0 +1,12 @@
+{
+  "name": "harness-office-runtime",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "docx": "9.9.0",
+    "pptxgenjs": "4.0.1"
+  },
+  "overrides": {
+    "image-size": "2.0.3"
+  }
+}
