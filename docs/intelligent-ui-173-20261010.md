@@ -123,6 +123,44 @@ LIVE == RELOAD: True
 这提示契约文本的可见性依赖模型是否读到系统提示尾部的这段常量，多 provider 路由下不可假设。
 所以校验侧的宽松归一化不是可选项，而是主通道可靠性的组成部分。
 
+## 阶段 B（第一片）：表单与块上的动作
+
+这一片把"业务交互"里最内层的东西做出来了：**用户点一下块上的按钮，或填完一张表单，就是他的下一轮发言**。
+动作自己贡献一句指令，用户贡献选择或填写的值，两者合成一条普通用户消息——平台因此只看到它本来就会
+管的那条消息，没有新增通道、也没有新增信任面（策略、审批、排队全部沿用既有 Run 链路）。
+
+- 新组件 `form`：字段 type 取 text/number/date/single/multi，单/多选必须给 2–8 个选项；
+  `submit_label` 命名真实操作。
+- `actions`：每个块最多 4 个，kind 取 `conversation` / `read` / `write`；
+  **`action_id` 由平台分配**（`<presentation_id>-a<序号>`），模型只声明按钮文案与它要说什么。
+- **表单必须声明一个 `read` 或 `write` 动作**，没有去处直接判无效，而不是渲染成一个走到死路的界面。
+- `local`（排序、切序列这类）**故意不做成可声明的动作**：那是组件自己的本事，不该往返一趟。
+- 没有回合上下文时（例如预览）表单只读展示字段、不给按钮——答案没有地方可去。
+
+验证：python `2056 passed / 8 skipped`、前端 `1067 passed / 1 skipped`、ruff 与 tsc 干净。
+173 上换 `kai/axis-api:intelligent-ui-20261011b` + `kai/axis-web:intelligent-ui-20261011`
+（web 容器内 `BUILD_ID=wnbC-knn2ZOUq_WWQex25`，分片里 `form` 渲染器 4 处、动作条 4 处），三容器 healthy。
+
+真实 Run（同一 `lead-agent`）要求"补一张采购立项表单"：
+
+```
+published: [('form', 'ui_4bc12cd60dadc7e570b6fa03')]
+  fields: [('project_name','text',False,[]), ('applicant','text',False,[]),
+           ('priority','single',False,['高','中','低'])]
+  submit_label: 发起采购立项
+  actions: [('ui_4bc12cd60dadc7e570b6fa03-a0', 'write', '提交立项申请', 'primary')]
+LIVE == RELOAD: True
+```
+
+一个诚实的观察：这次模型把三个字段的 `required` 都填成 `false`，尽管它在同一段话里说这三项是缺的。
+契约目前没有把 `required` 的语义讲透，下一轮迭代要在契约文本里明确"用户必须补的字段要标 required"。
+
+**这一片没做的（阶段 B 的其余部分）**：独立的动作端点 `POST /v1/ui/presentations/{id}/actions` 与
+服务端幂等键、`expected_revision` 的比较交换、`ui_presentations` / `ui_action_requests` 表、
+以及把 `action_id` 映射到"服务器允许的工具 + 参数 schema"的动作注册表。目前 `read`/`write` 与
+`conversation` 一样走普通回合，所以幂等、审批、排队用的是既有 Run 语义——够用，但还没到方案里
+"重复提交必须返回同一 Run"那种由动作层自己担保的强度。
+
 ## 未做
 
 方案里的阶段 B（comparison/timeline/form 的动作执行、审批与排队、revision CAS）、阶段 C
