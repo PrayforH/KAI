@@ -32,6 +32,10 @@ MAX_CHART_SERIES = 4
 MAX_STRING = 600
 MAX_MERMAID_CHARS = 8_000
 MAX_BLOCK_CHARS = 64_000
+MAX_FORM_FIELDS = 12
+MAX_ACTIONS = 4
+MAX_ACTION_PROMPT = 400
+MAX_ACTION_LABEL = 60
 
 
 class StrictModel(BaseModel):
@@ -290,6 +294,103 @@ def _metric(data: dict[str, Any], config: dict[str, Any]) -> tuple[dict[str, Any
     return {"items": items}, {}
 
 
+_FIELD_TYPES = ("text", "number", "date", "single", "multi")
+_CHOICE_TYPES = ("single", "multi")
+# ``local`` is deliberately absent: a client-side interaction is the component's
+# own affordance (sorting, toggling a series), so declaring it would ask the
+# platform to round-trip something that never leaves the browser.
+_ACTION_KINDS = ("conversation", "read", "write")
+
+
+def _first_text(item: dict[str, Any], *fields: str) -> Any:
+    for field in fields:
+        value = item.get(field)
+        if isinstance(value, str) and value.strip():
+            return value
+    return None
+
+
+def _form(data: dict[str, Any], config: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    raw_fields = data.get("fields")
+    if not isinstance(raw_fields, list) or not 1 <= len(raw_fields) <= MAX_FORM_FIELDS:
+        raise ValueError(f"fields must hold between 1 and {MAX_FORM_FIELDS} entries")
+    fields: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in raw_fields:
+        if not isinstance(item, dict):
+            raise ValueError("every field must be an object")
+        key = _text(_first_text(item, "key", "id", "name", "label"), maximum=64,
+                    field_name="field key")
+        if key in seen:
+            raise ValueError(f"duplicate field key: {key}")
+        seen.add(key)
+        field_type = item.get("type", "text")
+        if field_type not in _FIELD_TYPES:
+            raise ValueError(f"field type must be one of {list(_FIELD_TYPES)}")
+        options = item.get("options") or []
+        if field_type in _CHOICE_TYPES:
+            if not isinstance(options, list) or not 2 <= len(options) <= 8:
+                raise ValueError("a choice field carries between 2 and 8 options")
+            options = [
+                _text(option, maximum=120, field_name="field option") for option in options
+            ]
+        elif options:
+            raise ValueError(f"a {field_type} field cannot carry options")
+        fields.append(
+            {
+                "key": key,
+                "label": _text(item.get("label"), maximum=120, field_name="field label",
+                               required=False) or key,
+                "type": field_type,
+                "required": bool(item.get("required", False)),
+                "options": options,
+                "placeholder": _text(item.get("placeholder"), maximum=120,
+                                     field_name="field placeholder", required=False),
+            }
+        )
+    return (
+        {"fields": fields},
+        {
+            "submit_label": _text(config.get("submit_label"), maximum=MAX_ACTION_LABEL,
+                                   field_name="submit_label", required=False) or "提交"
+        },
+    )
+
+
+def _actions(raw: Any) -> list[dict[str, Any]]:
+    """The declared actions. Ids are assigned by the platform, never by the model.
+
+    An action only ever asks for a turn: the text it contributes becomes an
+    ordinary user message, so an action can reach nothing the composer cannot.
+    """
+
+    if raw is None:
+        return []
+    if not isinstance(raw, list) or len(raw) > MAX_ACTIONS:
+        raise ValueError(f"actions must hold at most {MAX_ACTIONS} entries")
+    actions: list[dict[str, Any]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            raise ValueError("every action must be an object")
+        kind = item.get("kind")
+        if kind not in _ACTION_KINDS:
+            raise ValueError(f"action kind must be one of {list(_ACTION_KINDS)}")
+        prompt = _text(item.get("prompt"), maximum=MAX_ACTION_PROMPT,
+                       field_name="action prompt", required=False)
+        if kind != "local" and not prompt:
+            raise ValueError("an action that reaches the platform must carry a prompt")
+        actions.append(
+            {
+                "kind": kind,
+                "label": _text(item.get("label"), maximum=MAX_ACTION_LABEL,
+                               field_name="action label"),
+                "prompt": prompt,
+                "style": "primary" if item.get("style") == "primary" else "default",
+            }
+        )
+    return actions
+
+
 _BUILDERS = {
     "table": _table,
     "comparison": _comparison,
@@ -297,6 +398,7 @@ _BUILDERS = {
     "diagram": _diagram,
     "timeline": _timeline,
     "metric": _metric,
+    "form": _form,
 }
 
 
@@ -309,6 +411,7 @@ class PresentationBlock(StrictModel):
     fallback_text: str
     data: dict[str, Any]
     config: dict[str, Any] = Field(default_factory=dict)
+    actions: list[dict[str, Any]] | None = None
 
 
 class Presentation(StrictModel):
@@ -326,6 +429,7 @@ class Presentation(StrictModel):
     fallback_text: str
     data: dict[str, Any]
     config: dict[str, Any] = Field(default_factory=dict)
+    actions: tuple[dict[str, Any], ...] = ()
     decision: dict[str, Any]
 
 
@@ -369,10 +473,14 @@ def validate_block(
             else ""
         )
         fallback = _text(block.fallback_text, maximum=MAX_STRING, field_name="fallback_text")
+        actions = _actions(block.actions)
+        if block.kind == "form" and not {"read", "write"} & {a["kind"] for a in actions}:
+            raise ValueError("a form needs a read or write action to submit into")
     except (ValueError, ValidationError):
         return None
+    presentation_id = presentation_id_for(run_id, message_id, index, raw)
     return Presentation(
-        presentation_id=presentation_id_for(run_id, message_id, index, raw),
+        presentation_id=presentation_id,
         run_id=run_id,
         message_id=message_id,
         kind=block.kind,
@@ -381,6 +489,12 @@ def validate_block(
         fallback_text=fallback,
         data=data,
         config=config,
+        # Ids are the platform's, one per declared action, in declaration order:
+        # a client can address an action without the model ever naming it.
+        actions=tuple(
+            {"action_id": f"{presentation_id}-a{position}", **action}
+            for position, action in enumerate(actions)
+        ),
         decision={
             "reason_code": reason_code,
             "rule_version": PRESENTATION_POLICY_VERSION,

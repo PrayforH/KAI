@@ -321,3 +321,150 @@
     transition: none;
   }
 }
+
+/* Actions: the block's own buttons. They send a turn, so they look like the
+ * composer's send affordance rather than like a form control. */
+.intelligent-ui-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--codex-line);
+}
+
+.intelligent-ui-actions button {
+  border: 1px solid var(--codex-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--codex-ink-soft);
+  font-size: 12.5px;
+  padding: 5px 14px;
+  cursor: pointer;
+  transition: var(--codex-control-transition);
+}
+
+.intelligent-ui-actions button:hover:not(:disabled) {
+  border-color: var(--codex-line-strong);
+  background: var(--codex-surface-hover);
+  color: var(--codex-ink);
+}
+
+.intelligent-ui-actions button[data-style="primary"] {
+  border-color: var(--codex-line-strong);
+  background: var(--codex-surface-raised);
+  color: var(--codex-ink);
+}
+
+.intelligent-ui-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.intelligent-ui-actions button:focus-visible,
+.intelligent-ui-form-footer button:focus-visible {
+  outline: 2px solid var(--codex-accent);
+  outline-offset: 1px;
+}
+
+/* Forms: one row per field, label left of the control on wide screens. */
+.intelligent-ui-fields {
+  display: flex;
+  flex-direction: column;
+}
+
+.intelligent-ui-field {
+  display: grid;
+  grid-template-columns: minmax(96px, 34%) 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--codex-line);
+}
+
+.intelligent-ui-field:last-child {
+  border-bottom: 0;
+}
+
+.intelligent-ui-field-label {
+  color: var(--codex-muted);
+  font-size: 12.5px;
+}
+
+.intelligent-ui-field-label em {
+  margin-left: 3px;
+  color: var(--codex-danger);
+  font-style: normal;
+}
+
+.intelligent-ui-input {
+  width: 100%;
+  border: 1px solid var(--codex-line);
+  border-radius: 8px;
+  background: var(--codex-field);
+  color: var(--codex-ink);
+  font-size: 13px;
+  padding: 7px 10px;
+}
+
+.intelligent-ui-input:focus {
+  outline: none;
+  border-color: var(--codex-line-strong);
+}
+
+.intelligent-ui-input:disabled {
+  opacity: 0.6;
+}
+
+.intelligent-ui-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+
+.intelligent-ui-options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--codex-ink-soft);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.intelligent-ui-options input {
+  accent-color: var(--codex-accent);
+}
+
+.intelligent-ui-form-footer {
+  justify-content: flex-end;
+  border-bottom: 0;
+}
+
+.intelligent-ui-form-footer button {
+  border: 1px solid var(--codex-line-strong);
+  border-radius: 8px;
+  background: var(--codex-surface-raised);
+  color: var(--codex-ink);
+  font-size: 12.5px;
+  padding: 6px 16px;
+  cursor: pointer;
+}
+
+.intelligent-ui-form-footer button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.intelligent-ui-form-error {
+  margin: 0;
+  padding: 8px 14px 0;
+  color: var(--codex-danger);
+  font-size: 12.5px;
+}
+
+@media (max-width: 640px) {
+  .intelligent-ui-field {
+    grid-template-columns: 1fr;
+    align-items: start;
+    gap: 6px;
+  }
+}

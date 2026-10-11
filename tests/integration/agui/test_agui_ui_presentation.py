@@ -241,4 +241,5 @@ async def test_capabilities_endpoint_describes_the_catalog() -> None:
         "diagram",
         "timeline",
         "metric",
+        "form",
     }

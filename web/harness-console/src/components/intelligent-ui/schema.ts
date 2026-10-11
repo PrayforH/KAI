@@ -9,9 +9,20 @@ export const SUPPORTED_RENDERER_VERSIONS: Record<string, string> = {
   diagram: "diagram/1",
   timeline: "timeline/1",
   metric: "metric/1",
+  form: "form/1",
 };
 
 const cellSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
+
+const actionSchema = z.object({
+  action_id: z.string().min(1),
+  kind: z.enum(["conversation", "read", "write"]),
+  label: z.string().min(1),
+  prompt: z.string().default(""),
+  style: z.enum(["primary", "default"]).default("default"),
+});
+
+export type PresentationAction = z.infer<typeof actionSchema>;
 
 const presentationSchema = z.object({
   schema_version: z.literal("harness.ui/v1"),
@@ -26,6 +37,7 @@ const presentationSchema = z.object({
   fallback_text: z.string().min(1),
   data: z.record(z.string(), z.unknown()),
   config: z.record(z.string(), z.unknown()).default({}),
+  actions: z.array(actionSchema).max(4).default([]),
   decision: z.record(z.string(), z.unknown()).default({}),
 });
 
@@ -84,6 +96,20 @@ const metricDataSchema = z.object({
     .min(1),
 });
 
+const formFieldSchema = z.object({
+  key: z.string().min(1),
+  label: z.string(),
+  type: z.enum(["text", "number", "date", "single", "multi"]),
+  required: z.boolean().default(false),
+  options: z.array(z.string()).default([]),
+  placeholder: z.string().default(""),
+});
+
+const formDataSchema = z.object({ fields: z.array(formFieldSchema).min(1) });
+
+export type FormField = z.infer<typeof formFieldSchema>;
+export type FormData = z.infer<typeof formDataSchema>;
+
 export type TableData = z.infer<typeof tableDataSchema>;
 export type ComparisonData = z.infer<typeof comparisonDataSchema>;
 export type ChartConfig = z.infer<typeof chartConfigSchema>;
@@ -100,7 +126,8 @@ export type PresentationBody =
   | { kind: "chart"; rows: ChartRow[]; config: ChartConfig }
   | { kind: "diagram"; source: string }
   | { kind: "timeline"; timeline: TimelineData }
-  | { kind: "metric"; metrics: MetricData };
+  | { kind: "metric"; metrics: MetricData }
+  | { kind: "form"; form: FormData; submitLabel: string };
 
 function configText(presentation: Presentation, key: string): string {
   const value = presentation.config[key];
@@ -150,9 +177,32 @@ export function parsePresentationBody(presentation: Presentation): PresentationB
       const metrics = metricDataSchema.safeParse(presentation.data);
       return metrics.success ? { kind: "metric", metrics: metrics.data } : null;
     }
+    case "form": {
+      const form = formDataSchema.safeParse(presentation.data);
+      if (!form.success) return null;
+      const submit = configText(presentation, "submit_label");
+      return { kind: "form", form: form.data, submitLabel: submit || "提交" };
+    }
     default:
       return null;
   }
+}
+
+/** The action a form submits through: its declared `read`/`write`, primary first.
+ * The server refuses a form without one, so this is a pick, not a fallback. */
+export function formAction(presentation: Presentation): PresentationAction | null {
+  const candidates = presentation.actions.filter(
+    (action) => action.kind === "read" || action.kind === "write",
+  );
+  return candidates.find((action) => action.style === "primary") ?? candidates[0] ?? null;
+}
+
+/** What clicking an action sends. The action contributes the instruction and the
+ * user contributes the selection; both are plain message text. */
+export function actionMessage(action: PresentationAction, value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return action.prompt;
+  return `${action.prompt}\n\n${trimmed}`;
 }
 
 /** Tool-part shape the console receives a presentation on, live and restored. */

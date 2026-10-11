@@ -3,8 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { IntelligentUiBlock } from "../src/components/intelligent-ui/presentation-host";
-import {
-  modelBlockCount,
+import { actionMessage, formAction, modelBlockCount,
   type Presentation,
   parsePresentation,
   presentationsForMessage,
@@ -191,4 +190,82 @@ it("never runs a chart timer after unmount", () => {
   root = undefined;
   expect(() => vi.runOnlyPendingTimers()).not.toThrow();
   vi.useRealTimers();
+});
+
+it("renders a form block with its fields and submit label", () => {
+  const value = presentation({
+    kind: "form",
+    renderer_version: "form/1",
+    data: {
+      fields: [
+        { key: "project", label: "项目名称", type: "text", required: true, options: [], placeholder: "" },
+        { key: "level", label: "优先级", type: "single", required: false, options: ["高", "低"], placeholder: "" },
+      ],
+    },
+    config: { submit_label: "提交立项" },
+    actions: [
+      { action_id: "a0", kind: "write", label: "提交立项", prompt: "请提交", style: "primary" },
+    ],
+  });
+  root = createRoot(host as HTMLDivElement);
+  act(() => root?.render(<IntelligentUiBlock value={value} onAction={() => {}} />));
+
+  expect(host?.textContent).toContain("项目名称");
+  expect(host?.textContent).toContain("优先级");
+  expect(host?.textContent).toContain("提交立项");
+  expect(host?.querySelectorAll("input").length).toBeGreaterThan(0);
+});
+
+it("sends the action's instruction together with what the user filled in", () => {
+  const actions = [
+    { action_id: "a0", kind: "write" as const, label: "提交", prompt: "请按以下信息发起提交", style: "primary" as const },
+  ];
+  const parsed = presentation({ kind: "form", renderer_version: "form/1",
+    data: { fields: [{ key: "project", label: "项目名称", type: "text", required: true, options: [], placeholder: "" }] },
+    config: { submit_label: "提交" }, actions });
+
+  expect(actionMessage(parsed.actions[0], "项目名称：星火")).toBe("请按以下信息发起提交\n\n项目名称：星火");
+  // An action with nothing filled in still sends exactly what it declares.
+  expect(actionMessage(parsed.actions[0], "   ")).toBe("请按以下信息发起提交");
+});
+
+it("picks a form's submit action from the ones the server published", () => {
+  const onlyConversation = presentation({ actions: [
+    { action_id: "a0", kind: "conversation", label: "聊聊", prompt: "请聊聊", style: "default" },
+  ] });
+  const withSubmit = presentation({ actions: [
+    { action_id: "a0", kind: "conversation", label: "聊聊", prompt: "请聊聊", style: "default" },
+    { action_id: "a1", kind: "write", label: "提交", prompt: "请提交", style: "primary" },
+  ] });
+
+  expect(formAction(onlyConversation)).toBeNull();
+  expect(formAction(withSubmit)?.action_id).toBe("a1");
+});
+
+it("offers the block's actions as buttons and reports the click", async () => {
+  const calls: string[] = [];
+  const value = presentation({
+    actions: [
+      { action_id: "a0", kind: "conversation", label: "解释这一行", prompt: "请展开说明", style: "default" },
+    ],
+  });
+  root = createRoot(host as HTMLDivElement);
+  act(() =>
+    root?.render(
+      <IntelligentUiBlock value={value} onAction={(_p, action) => { calls.push(action.action_id); }} />,
+    ),
+  );
+  const button = [...(host?.querySelectorAll("button") ?? [])].find((item) =>
+    item.textContent?.includes("解释这一行"),
+  );
+  expect(button).toBeTruthy();
+  await act(async () => { button?.click(); });
+  expect(calls).toEqual(["a0"]);
+});
+
+it("keeps a table's actions hidden when the turn cannot send", () => {
+  render(presentation({
+    actions: [{ action_id: "a0", kind: "conversation", label: "解释", prompt: "请解释", style: "default" }],
+  }));
+  expect(host?.querySelector(".intelligent-ui-actions")).toBeNull();
 });

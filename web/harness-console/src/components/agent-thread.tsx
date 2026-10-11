@@ -116,8 +116,11 @@ import { composerTrigger, queueAttachments, queueMayDispatch, restorePromptQueue
 
 export { normalizeMessageText } from "../lib/message-text";
 import { runReuseStore, useRunReuseNotice } from "../lib/run-reuse-store";
-import { IntelligentUiBlock } from "./intelligent-ui/presentation-host";
-import { modelBlockCount, presentationsForMessage } from "./intelligent-ui/schema";
+import {
+  IntelligentUiBlock,
+  type PresentationActionHandler,
+} from "./intelligent-ui/presentation-host";
+import { actionMessage, modelBlockCount, presentationsForMessage } from "./intelligent-ui/schema";
 import { PublishedBlocksProvider } from "./intelligent-ui/turn-context";
 import {
   loadTaskComposerDraft,
@@ -1392,6 +1395,7 @@ export function HarnessAssistantMessage() {
   const messageId = useAuiState((state) => state.message.id);
   const messageStatus = useAuiState((state) => state.message.status);
   const runView = useRunViewModel();
+  const threadRuntime = useThreadRuntime({ optional: true });
   const showIncompleteRecovery = shouldOfferIncompleteRetry(messageStatus);
   const content = useAuiState((state) => state.message.content);
   const hasVideoGeneration = content.some(
@@ -1433,6 +1437,20 @@ export function HarnessAssistantMessage() {
   // Only blocks the model authored came from a fence in this answer, so only that
   // many fences may be hidden from the rendered Markdown.
   const publishedBlocks = useMemo(() => modelBlockCount(turnPresentations), [turnPresentations]);
+  // Acting on a block is nothing more than the user's next turn: the action's own
+  // instruction plus what the user picked. No new transport, no new trust.
+  const runPresentationAction = useMemo<PresentationActionHandler | undefined>(
+    () =>
+      threadRuntime
+        ? (_presentation, action, value) =>
+            threadRuntime.append({
+              role: "user",
+              content: [{ type: "text", text: actionMessage(action, value) }],
+            })
+        : undefined,
+    [threadRuntime],
+  );
+  const actionBusy = ["running", "queued", "waiting_approval"].includes(runView?.phase ?? "");
   return (
     <AnswerCitationProvider citations={answerCitations}>
     <PublishedBlocksProvider count={publishedBlocks}>
@@ -1462,7 +1480,12 @@ export function HarnessAssistantMessage() {
       {turnPresentations.length > 0 ? (
         <div className="intelligent-ui-blocks">
           {turnPresentations.map((presentation) => (
-            <IntelligentUiBlock key={presentation.presentation_id} value={presentation} />
+            <IntelligentUiBlock
+              key={presentation.presentation_id}
+              value={presentation}
+              onAction={runPresentationAction}
+              disabled={actionBusy}
+            />
           ))}
         </div>
       ) : null}
