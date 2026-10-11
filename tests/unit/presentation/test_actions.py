@@ -12,7 +12,11 @@ from harness.presentation.schema import MAX_ACTIONS, validate_block
 
 def _validate(block: object, *, index: int = 0):
     return validate_block(
-        block, run_id="run-1", message_id="assistant-run-1", index=index, origin="model",
+        block,
+        run_id="run-1",
+        message_id="assistant-run-1",
+        index=index,
+        origin="model",
         reason_code="model_selected",
     )
 
@@ -26,11 +30,23 @@ def _form_block(**overrides: object) -> dict[str, object]:
             "fields": [
                 {"key": "project", "label": "项目名称", "type": "text", "required": True},
                 {"key": "budget", "label": "预算", "type": "number"},
-                {"key": "level", "label": "优先级", "type": "single", "options": ["高", "中", "低"]},
+                {
+                    "key": "level",
+                    "label": "优先级",
+                    "type": "single",
+                    "options": ["高", "中", "低"],
+                },
             ]
         },
         "config": {"submit_label": "提交立项"},
-        "actions": [{"kind": "write", "label": "提交立项", "prompt": "请按以下信息发起立项", "style": "primary"}],
+        "actions": [
+            {
+                "kind": "write",
+                "label": "提交立项",
+                "prompt": "请按以下信息发起立项",
+                "style": "primary",
+            }
+        ],
     }
     block.update(overrides)
     return block
@@ -66,9 +82,12 @@ def test_assigns_action_ids_in_declaration_order() -> None:
 def test_refuses_a_form_with_no_place_to_submit() -> None:
     assert _validate(_form_block(actions=[])) is None
     assert _validate(_form_block(actions=None)) is None
-    assert _validate(
-        _form_block(actions=[{"kind": "conversation", "label": "聊聊", "prompt": "请聊聊"}])
-    ) is None
+    assert (
+        _validate(
+            _form_block(actions=[{"kind": "conversation", "label": "聊聊", "prompt": "请聊聊"}])
+        )
+        is None
+    )
 
 
 def test_accepts_a_table_that_offers_actions() -> None:
@@ -77,8 +96,13 @@ def test_accepts_a_table_that_offers_actions() -> None:
             "version": 1,
             "kind": "table",
             "fallback_text": "三个方案的对比。",
-            "data": {"columns": [{"key": "a", "label": "方案"}], "rows": [{"a": "甲"}, {"a": "乙"}]},
-            "actions": [{"kind": "conversation", "label": "解释这一行", "prompt": "请展开说明这一行"}],
+            "data": {
+                "columns": [{"key": "a", "label": "方案"}],
+                "rows": [{"a": "甲"}, {"a": "乙"}],
+            },
+            "actions": [
+                {"kind": "conversation", "label": "解释这一行", "prompt": "请展开说明这一行"}
+            ],
         }
     )
 
@@ -88,16 +112,12 @@ def test_accepts_a_table_that_offers_actions() -> None:
 
 
 def test_refuses_an_action_without_a_prompt_to_send() -> None:
-    assert _validate(
-        _form_block(actions=[{"kind": "write", "label": "提交"}])
-    ) is None
+    assert _validate(_form_block(actions=[{"kind": "write", "label": "提交"}])) is None
 
 
 def test_refuses_a_local_action_the_platform_does_not_round_trip() -> None:
     """Client-side behaviour is the component's own affordance, not a declared action."""
-    assert _validate(
-        _form_block(actions=[{"kind": "local", "label": "排序"}])
-    ) is None
+    assert _validate(_form_block(actions=[{"kind": "local", "label": "排序"}])) is None
 
 
 def test_refuses_more_actions_than_the_protocol_carries() -> None:
@@ -110,26 +130,43 @@ def test_refuses_more_actions_than_the_protocol_carries() -> None:
 
 
 def test_refuses_a_choice_field_without_real_options() -> None:
-    assert _validate(
-        _form_block(
-            data={"fields": [{"key": "level", "label": "优先级", "type": "single", "options": ["高"]}]}
+    assert (
+        _validate(
+            _form_block(
+                data={
+                    "fields": [
+                        {"key": "level", "label": "优先级", "type": "single", "options": ["高"]}
+                    ]
+                }
+            )
         )
-    ) is None
-    assert _validate(
-        _form_block(
-            data={"fields": [{"key": "note", "label": "说明", "type": "text", "options": ["a", "b"]}]}
+        is None
+    )
+    assert (
+        _validate(
+            _form_block(
+                data={
+                    "fields": [
+                        {"key": "note", "label": "说明", "type": "text", "options": ["a", "b"]}
+                    ]
+                }
+            )
         )
-    ) is None
+        is None
+    )
 
 
 def test_refuses_duplicate_field_keys() -> None:
-    assert _validate(
-        _form_block(
-            data={
-                "fields": [
-                    {"key": "a", "label": "甲", "type": "text"},
-                    {"key": "a", "label": "乙", "type": "text"},
-                ]
-            }
+    assert (
+        _validate(
+            _form_block(
+                data={
+                    "fields": [
+                        {"key": "a", "label": "甲", "type": "text"},
+                        {"key": "a", "label": "乙", "type": "text"},
+                    ]
+                }
+            )
         )
-    ) is None
+        is None
+    )

@@ -3,7 +3,7 @@ import { sendComposerWithRecovery } from "../lib/composer-send";
 import { ConversationInputCard } from "./conversation-input-card";
 import { latestConversationInput } from "../lib/conversation-input";
 import { useConversationScope } from "../lib/conversation-scope";
-import { useAutoLoadEarlierMessages, useThreadHistoryPagination } from "../lib/task-history";
+import { createThreadHistoryAdapter, useAutoLoadEarlierMessages, useThreadHistoryPagination } from "../lib/task-history";
 import { startSteeringPolling } from "../lib/steering-poller";
 import { ConversationControl } from "./conversation-control";
 import { MessageAttachmentView } from "./message-attachment-view";
@@ -26,6 +26,7 @@ import {
   type ToolCallMessagePartProps,
 } from "@assistant-ui/react";
 import {
+  useCallback,
   createContext,
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -120,7 +121,8 @@ import {
   IntelligentUiBlock,
   type PresentationActionHandler,
 } from "./intelligent-ui/presentation-host";
-import { actionMessage, modelBlockCount, presentationsForMessage } from "./intelligent-ui/schema";
+import { submitUiAction } from "./intelligent-ui/client";
+import { modelBlockSources, presentationsForMessage } from "./intelligent-ui/schema";
 import { PublishedBlocksProvider } from "./intelligent-ui/turn-context";
 import {
   loadTaskComposerDraft,
@@ -1436,24 +1438,22 @@ export function HarnessAssistantMessage() {
   const turnPresentations = useMemo(() => presentationsForMessage(content), [content]);
   // Only blocks the model authored came from a fence in this answer, so only that
   // many fences may be hidden from the rendered Markdown.
-  const publishedBlocks = useMemo(() => modelBlockCount(turnPresentations), [turnPresentations]);
-  // Acting on a block is nothing more than the user's next turn: the action's own
-  // instruction plus what the user picked. No new transport, no new trust.
-  const runPresentationAction = useMemo<PresentationActionHandler | undefined>(
-    () =>
-      threadRuntime
-        ? (_presentation, action, value) =>
-            threadRuntime.append({
-              role: "user",
-              content: [{ type: "text", text: actionMessage(action, value) }],
-            })
-        : undefined,
-    [threadRuntime],
-  );
+  const publishedBlocks = useMemo(() => modelBlockSources(turnPresentations), [turnPresentations]);
+  const draftScope = useContext(ComposerDraftContext);
+  const runPresentationAction: PresentationActionHandler | undefined = threadRuntime && !conversationScope ? submitUiAction : undefined;
+  const actionHistory = useMemo(() => draftScope ? createThreadHistoryAdapter(draftScope.threadId) : null, [draftScope]);
+  useEffect(() => () => actionHistory?.dispose(), [actionHistory]);
+  const refreshActionHistory = useCallback(() => {
+    if (!actionHistory || !threadRuntime || threadRuntime.getState().isRunning) return;
+    void actionHistory.loadSnapshot(repository => {
+      if (threadRuntime.getState().isRunning) return false;
+      threadRuntime.import(repository);
+    }).catch(() => { /* persisted history remains available on refresh */ });
+  }, [actionHistory, threadRuntime]);
   const actionBusy = ["running", "queued", "waiting_approval"].includes(runView?.phase ?? "");
   return (
     <AnswerCitationProvider citations={answerCitations}>
-    <PublishedBlocksProvider count={publishedBlocks}>
+    <PublishedBlocksProvider sources={publishedBlocks}>
     <AssistantMessage.Root
       className="harness-assistant-message"
       data-test-run={conversationScope && messageId.startsWith("assistant-") ? messageId.replace(/^assistant-/, "") : undefined}
@@ -1484,6 +1484,8 @@ export function HarnessAssistantMessage() {
               key={presentation.presentation_id}
               value={presentation}
               onAction={runPresentationAction}
+              connected={!conversationScope && Boolean(threadRuntime)}
+              onSettled={refreshActionHistory}
               disabled={actionBusy}
             />
           ))}

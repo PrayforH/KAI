@@ -730,7 +730,7 @@ describe("full-page agent workbench", () => {
     expect(markdown).toContain("<ScrollableTable {...props}>");
     expect(markdown).toContain("smooth={false}");
     // Normalization runs before reveal; wiki links remain a Markdown plugin.
-    expect(markdown).toContain("normalizeMessageText(part.text)");
+    expect(markdown).toContain("normalizeMessageText(stripHarnessUiFences(part.text, published))");
     expect(markdown).toContain("normalizeMessageText");
     expect(markdown).not.toContain("codexStreamSmoothing");
     expect(styles).toMatch(

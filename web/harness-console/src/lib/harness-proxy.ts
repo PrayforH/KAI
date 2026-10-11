@@ -59,7 +59,7 @@ function upstreamHeaders(
     ...config.serviceHeaders,
   });
   if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
-  for (const name of ["accept", "content-type", "last-event-id"]) {
+  for (const name of ["accept", "content-type", "last-event-id", "idempotency-key"]) {
     const value = request.headers.get(name);
     if (value) headers.set(name, value);
   }
@@ -531,6 +531,14 @@ export async function proxyMemoryBankRequest(
     fetcher,
     "harness.web.memory_bank",
   );
+}
+
+export async function proxyUiRequest(
+  request: Request, config: HarnessServerConfig, fetcher: typeof fetch = fetch, path = "",
+) {
+  const url = new URL(`${config.apiUrl}/v1/ui/${path}`);
+  url.search = new URL(request.url).search;
+  return forward(request, url.toString(), config, fetcher, "harness.web.ui");
 }
 
 export async function proxyRunRequest(request: Request, config: HarnessServerConfig, fetcher: typeof fetch = fetch, path = "") {

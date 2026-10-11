@@ -1,5 +1,7 @@
 # Intelligent UI（harness.ui/v1）第一阶段实现与 173 验证
 
+> 后续状态更新：阶段 A/B 的耐久快照、独立动作 API、幂等执行及 173 验收见 [2026-10-11 Review 与验收](intelligent-ui-20261011/review-and-acceptance.md)。本文保留早期实现记录。
+
 对应方案文档：[KAI Agent Studio Intelligent UI 架构与实施方案](https://my.feishu.cn/docx/TCHHdVB3Oob3Rtxk3dIcQsa6nVg)（rev 16，2026-10-10）。
 本次交付的是方案第 10 节的 **阶段 A：领域协议与耐久呈现**，以及它的 173 验证。
 173 的这条栈已按"完全用 develop 分支的版本"重建（见下文"镜像与丢弃的东西"）。

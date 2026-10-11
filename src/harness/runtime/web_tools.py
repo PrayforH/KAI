@@ -218,9 +218,7 @@ class PublicWebClient:
                     async with (
                         httpcore.AsyncConnectionPool(proxy=httpcore.Proxy(self._proxy))
                         if self._proxy
-                        else httpcore.AsyncConnectionPool(
-                            network_backend=PublicNetworkBackend()
-                        )
+                        else httpcore.AsyncConnectionPool(network_backend=PublicNetworkBackend())
                     ) as pool:
                         async with pool.stream(
                             "GET",
@@ -262,9 +260,13 @@ class PublicWebClient:
                             encoding = headers.get("content-encoding", "identity").strip().lower()
                             if encoding not in {"identity", "gzip", "deflate"}:
                                 raise WebAccessError("网页返回不支持的压缩格式，请更换来源。")
-                            decoder = (zlib.decompressobj(16 + zlib.MAX_WBITS)
-                                       if encoding == "gzip" else zlib.decompressobj()
-                                       if encoding == "deflate" else None)
+                            decoder = (
+                                zlib.decompressobj(16 + zlib.MAX_WBITS)
+                                if encoding == "gzip"
+                                else zlib.decompressobj()
+                                if encoding == "deflate"
+                                else None
+                            )
                             body = bytearray()
                             wire_size = 0
                             try:
@@ -276,7 +278,8 @@ class PublicWebClient:
                                         )
                                     body.extend(
                                         decoder.decompress(chunk, _MAX_BYTES + 1 - len(body))
-                                        if decoder else chunk
+                                        if decoder
+                                        else chunk
                                     )
                                     if len(body) > _MAX_BYTES:
                                         raise WebAccessError(
@@ -317,7 +320,7 @@ class PublicWebClient:
             raise WebAccessError("网页读取超时或连接失败，请重试或更换来源。") from error
         raise WebAccessError("网页读取失败。")
 
-    async def search(self, query: str) -> dict[str, Any]:
+    async def search(self, query: str, *, include_images: bool = False) -> dict[str, Any]:
         query = check_public_query(query)
         key = await self._api_key() if self._api_key else ""
         if not key:
@@ -348,6 +351,8 @@ class PublicWebClient:
                         "search_depth": "basic",
                         "include_answer": False,
                         "include_raw_content": False,
+                        "include_images": include_images,
+                        "include_image_descriptions": include_images,
                     },
                 ) as response:
                     if response.status_code != 200:
@@ -369,7 +374,7 @@ class PublicWebClient:
                 or cast(dict[str, Any], base_resp).get("status_code", 0) != 0
             ):
                 raise WebAccessError("搜索服务拒绝请求，请检查平台搜索权限或额度。")
-            results: list[dict[str, str]] = []
+            results: list[dict[str, Any]] = []
             items = payload.get("organic" if self._provider == "minimax" else "results", [])
             if not isinstance(items, list):
                 raise WebAccessError("搜索服务返回无效来源列表。")
@@ -393,16 +398,73 @@ class PublicWebClient:
                         )[:2000],
                     }
                 )
+                if include_images and self._provider == "tavily":
+                    results[-1]["images"] = search_images(item.get("images"), source_url)
             return {
                 "query": query,
                 "trust": "untrusted",
                 "retrieved_at": datetime.now(UTC).isoformat(),
                 "results": results,
+                **(
+                    {
+                        "images": search_images(payload.get("images")),
+                        "images_status": "available"
+                        if self._provider == "tavily"
+                        else "unsupported",
+                        "images_notice": (
+                            "图片链接由搜索服务提供；未下载或验证图片内容。"
+                            if self._provider == "tavily"
+                            else "当前 MiniMax 搜索不支持图片获取；可使用本地 Tavily 测试。"
+                        ),
+                    }
+                    if include_images
+                    else {}
+                ),
             }
         except (TimeoutError, httpx.HTTPError, ValueError) as error:
             if isinstance(error, WebAccessError):
                 raise
             raise WebAccessError("搜索服务暂时不可用，请稍后重试。") from error
+
+
+def search_images(raw: Any, source_url: str | None = None) -> list[dict[str, str]]:
+    """Bound and validate search-provided references without fetching binary data."""
+    if not isinstance(raw, list):
+        return []
+    images: list[dict[str, str]] = []
+    for item in cast(list[Any], raw)[:8]:
+        if isinstance(item, dict):
+            item = cast(dict[str, Any], item)
+        value = (
+            item
+            if isinstance(item, str)
+            else cast(dict[str, Any], item).get("url")
+            if isinstance(item, dict)
+            else None
+        )
+        if not isinstance(value, str):
+            continue
+        try:
+            url = validate_public_url(value)
+            host = urlsplit(url).hostname or ""
+            try:
+                address = ipaddress.ip_address(host)
+            except ValueError:
+                address = None
+            if address is not None and not is_public_address(str(address)):
+                continue
+        except WebAccessError:
+            continue
+        reference = {
+            "url": url,
+            "description": str(cast(dict[str, Any], item).get("description", ""))[:600]
+            if isinstance(item, dict)
+            else "",
+        }
+        if source_url:
+            reference["source_url"] = source_url
+        images.append(reference)
+    return images
 
 
 def create_web_mcp_server(names: set[str], client: PublicWebClient) -> McpSdkServerConfig:
@@ -421,7 +483,14 @@ def create_web_mcp_server(names: set[str], client: PublicWebClient) -> McpSdkSer
                 value = args.get(argument)
                 if not isinstance(value, str):
                     raise WebAccessError(f"缺少 {argument} 参数。")
-                result = await operation(value)
+                images = args.get("include_images", False)
+                if argument == "query" and not isinstance(images, bool):
+                    raise WebAccessError("include_images 必须是布尔值。")
+                result = (
+                    await operation(value, include_images=images)
+                    if argument == "query"
+                    else await operation(value)
+                )
                 return {
                     "content": [
                         {
@@ -443,7 +512,8 @@ def create_web_mcp_server(names: set[str], client: PublicWebClient) -> McpSdkSer
             SdkMcpTool(
                 name="search" if builtin == "WebSearch" else "fetch",
                 description=(
-                    "搜索公开网页，输入简短公开关键词。"
+                    "搜索公开网页，输入简短公开关键词。需要图片时设置 include_images；"
+                    "图片能力取决于供应商，必须检查 images_status 和实际链接。"
                     if builtin == "WebSearch"
                     else "读取公开 HTTP(S) 网页正文。"
                 )
@@ -454,7 +524,12 @@ def create_web_mcp_server(names: set[str], client: PublicWebClient) -> McpSdkSer
                         argument: {
                             "type": "string",
                             "maxLength": 300 if argument == "query" else 2048,
-                        }
+                        },
+                        **(
+                            {"include_images": {"type": "boolean", "default": False}}
+                            if argument == "query"
+                            else {}
+                        ),
                     },
                     "required": [argument],
                     "additionalProperties": False,

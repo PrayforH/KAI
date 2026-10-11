@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -30,7 +31,7 @@ TABLE_BLOCK = {
 }
 
 
-def _request(*, thread_id: str, run_id: str, prompt: str) -> dict[str, object]:
+def _request(*, thread_id: str, run_id: str, prompt: str) -> dict[str, Any]:
     return {
         "threadId": thread_id,
         "runId": run_id,
@@ -42,7 +43,7 @@ def _request(*, thread_id: str, run_id: str, prompt: str) -> dict[str, object]:
     }
 
 
-def _events(body: str) -> list[dict[str, object]]:
+def _events(body: str) -> list[dict[str, Any]]:
     return [
         json.loads(line.removeprefix("data: "))
         for line in body.splitlines()
@@ -54,7 +55,7 @@ def _fenced_prompt(prefix: str) -> str:
     return f"{prefix}\n\n```harness-ui\n{json.dumps(TABLE_BLOCK, ensure_ascii=False)}\n```"
 
 
-def _started_arguments(events: list[dict[str, object]]) -> list[dict[str, object]]:
+def _started_arguments(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """The args a client aggregates from the streamed TOOL_CALL_ARGS deltas."""
 
     arguments: dict[str, str] = {}
@@ -72,7 +73,9 @@ async def test_publishes_an_interactive_block_live_and_on_reload() -> None:
         await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS)
         response = await client.post(
             "/v1/agui?agent_name=echo-agent&agent_version=0.1.0",
-            json=_request(thread_id="thread-ui", run_id="client-run-ui", prompt=_fenced_prompt("请看对比")),
+            json=_request(
+                thread_id="thread-ui", run_id="client-run-ui", prompt=_fenced_prompt("请看对比")
+            ),
             headers=HEADERS,
         )
         history = await client.get("/v1/agui/threads/thread-ui/history", headers=HEADERS)
@@ -99,12 +102,13 @@ async def test_publishes_an_interactive_block_live_and_on_reload() -> None:
     restored = [
         call
         for message in history.json()["messages"]
-        for call in (message.get("toolCalls") or [])
+        for call in cast(list[dict[str, Any]], message.get("toolCalls") or [])
         if call["function"]["name"] == "harness_present_ui"
     ]
     assert len(restored) == 1
-    assert json.loads(restored[0]["function"]["arguments"])["presentation_id"] == (
-        published["presentation_id"]
+    assert (
+        json.loads(restored[0]["function"]["arguments"])["presentation_id"]
+        == (published["presentation_id"])
     )
 
 
@@ -126,7 +130,7 @@ async def test_an_plain_answer_publishes_no_block() -> None:
     assert not [
         call
         for message in history.json()["messages"]
-        for call in (message.get("toolCalls") or [])
+        for call in cast(list[dict[str, Any]], message.get("toolCalls") or [])
         if call["function"]["name"] == "harness_present_ui"
     ]
 

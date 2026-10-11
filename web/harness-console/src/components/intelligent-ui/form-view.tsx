@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import type { FormField } from "./schema";
 
@@ -10,53 +10,75 @@ export function emptyValues(fields: readonly FormField[]): FieldValues {
   return Object.fromEntries(fields.map((field) => [field.key, []]));
 }
 
-/** A field's answer as one line of the message the form sends. Every answer is a
- * string: the platform turns the message into a user turn, not into typed data,
- * so there is nothing here to coerce or trust. */
-export function formatValues(fields: readonly FormField[], values: FieldValues): string | null {
+/** Human-readable confirmation; transport retains the original field keys. */
+export function formatValues(
+  fields: readonly FormField[],
+  values: FieldValues,
+): string | null {
   const lines: string[] = [];
   for (const field of fields) {
-    const filled = (values[field.key] ?? []).map((value) => value.trim()).filter(Boolean);
+    const filled = (values[field.key] ?? [])
+      .map((value) => value.trim())
+      .filter(Boolean);
     if (!filled.length) {
       if (field.required) return null;
       continue;
     }
     lines.push(`${field.label}：${filled.join("、")}`);
   }
-  return lines.length ? lines.join("\n") : null;
+  return lines.length
+    ? lines.join("\n")
+    : fields.some((field) => field.required)
+      ? null
+      : "无补充内容";
 }
 
-/** A form gathers the fields an answer is missing and submits them as the next
- * user turn. Nothing is written from the browser: the submit is a message. */
+/** Admission is separate from execution; the host displays durable status. */
 export function FormView({
   fields,
   submitLabel,
   disabled,
   onSubmit,
+  values: savedValues,
+  onChange,
+  singleUse = true,
 }: {
   fields: readonly FormField[];
   submitLabel: string;
   disabled: boolean;
   /** Absent outside a turn: the fields are then shown read-only with no submit,
    * because there is nowhere for the answer to go. */
-  onSubmit?: (message: string) => void | Promise<void>;
+  onSubmit?: (values: FieldValues) => void | Promise<void>;
+  values?: FieldValues;
+  onChange?: (values: FieldValues) => void;
+  singleUse?: boolean;
 }) {
-  const [values, setValues] = useState<FieldValues>(() => emptyValues(fields));
-  const [state, setState] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [localValues, setValues] = useState<FieldValues>(() =>
+    emptyValues(fields),
+  );
+  const values = savedValues ?? localValues;
+  const group = useId();
+  const [state, setState] = useState<"idle" | "sending" | "sent" | "error">(
+    "idle",
+  );
   const [error, setError] = useState("");
   const answer = formatValues(fields, values);
-  const locked = disabled || !onSubmit || state === "sending" || state === "sent";
+  const locked =
+    disabled || !onSubmit || state === "sending" || state === "sent";
 
-  const set = (key: string, next: string[]) =>
-    setValues((current) => ({ ...current, [key]: next }));
+  const set = (key: string, next: string[]) => {
+    const changed = { ...values, [key]: next };
+    setValues(changed);
+    onChange?.(changed);
+  };
 
   async function submit() {
     if (locked || !answer || !onSubmit) return;
     setState("sending");
     setError("");
     try {
-      await onSubmit(answer);
-      setState("sent");
+      await onSubmit(values);
+      setState(singleUse ? "sent" : "idle");
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "发送失败，请重试");
       setState("error");
@@ -75,12 +97,16 @@ export function FormView({
                 {field.required ? <em aria-hidden="true">*</em> : null}
               </span>
               {field.options.length > 0 ? (
-                <div className="intelligent-ui-options" role="group" aria-label={field.label}>
+                <div
+                  className="intelligent-ui-options"
+                  role="group"
+                  aria-label={field.label}
+                >
                   {field.options.map((option) => (
                     <label key={option}>
                       <input
                         type={field.type === "multi" ? "checkbox" : "radio"}
-                        name={field.key}
+                        name={`${group}-${field.key}`}
                         checked={filled.includes(option)}
                         disabled={locked}
                         onChange={(event) =>
@@ -101,8 +127,15 @@ export function FormView({
               ) : (
                 <input
                   className="intelligent-ui-input"
-                  type={field.type === "number" ? "number" : field.type === "date" ? "date" : "text"}
+                  type={
+                    field.type === "number"
+                      ? "number"
+                      : field.type === "date"
+                        ? "date"
+                        : "text"
+                  }
                   aria-label={field.label}
+                  aria-required={field.required}
                   placeholder={field.placeholder || "填写"}
                   maxLength={600}
                   disabled={locked}
@@ -114,10 +147,24 @@ export function FormView({
           );
         })}
       </div>
-      {error ? <p role="alert" className="intelligent-ui-form-error">{error}</p> : null}
+      {onSubmit && answer ? (
+        <details className="intelligent-ui-note">
+          <summary>确认提交内容</summary>
+          <p style={{ whiteSpace: "pre-wrap" }}>{answer}</p>
+        </details>
+      ) : null}
+      {error ? (
+        <p role="alert" className="intelligent-ui-form-error">
+          {error}
+        </p>
+      ) : null}
       {state === "sent" || !onSubmit ? null : (
         <div className="intelligent-ui-toolbar intelligent-ui-form-footer">
-          <button type="button" disabled={locked || !answer} onClick={() => void submit()}>
+          <button
+            type="button"
+            disabled={locked || !answer}
+            onClick={() => void submit()}
+          >
             {state === "sending" ? "提交中…" : submitLabel}
           </button>
         </div>

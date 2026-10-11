@@ -191,9 +191,9 @@ function MarkdownTextImpl() {
   const normalized = useMemo(
     () => ({
       ...part,
-      text: stripHarnessUiFences(
-        conversationInputDisplay(normalizeMessageText(part.text), part.status.type === "running"),
-        published,
+      text: conversationInputDisplay(
+        normalizeMessageText(stripHarnessUiFences(part.text, published)),
+        part.status.type === "running",
       ),
     }),
     [part, published],

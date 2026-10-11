@@ -129,6 +129,7 @@ async def worker_loop(
     maintenance: Callable[[], Awaitable[object]] | None = None,
     metrics: ReliabilityMetrics | None = None,
     session_gate: SessionGate | None = None,
+    on_completed: Callable[[Run], Awaitable[None]] | None = None,
 ) -> None:
     """Consume durable run tasks until shutdown is requested.
 
@@ -160,7 +161,9 @@ async def worker_loop(
             # provider conversation cannot race each other. The gate must be
             # shared across replicas (Redis) for that ordering to hold cluster-wide.
             async with gate.acquire(session_key):
-                await executor.execute(task.tenant_id, task.run_id)
+                result = await executor.execute(task.tenant_id, task.run_id)
+                if on_completed is not None and result.status.is_terminal:
+                    await on_completed(result)
         except Exception:
             logger.exception(
                 "run task execution escaped unexpectedly",
@@ -335,6 +338,7 @@ async def serve(settings: Settings) -> None:
 
         async def reliability_maintenance() -> None:
             await container.reliability_controller.process_once()
+            await container.presentations.process_once()
 
         async def trigger_maintenance() -> None:
             await container.triggers.dispatch_due()
@@ -402,6 +406,7 @@ async def serve(settings: Settings) -> None:
                 concurrency=settings.worker_concurrency,
                 metrics=container.reliability_metrics,
                 session_gate=getattr(container, "session_gate", None),
+                on_completed=container.presentations.complete_run,
                 sandbox_leases=getattr(container, "sandbox_leases", None),
             )
         finally:

@@ -2,23 +2,23 @@
 
 import { createContext, useContext, type ReactNode } from "react";
 
-/** How many model-authored answer blocks this turn actually published.
- *
- * The raw fences are hidden only for those, so a block the server rejected stays
- * visible as code instead of leaving a hole. It defaults to none, which is also
- * the correct answer for Markdown rendered outside an assistant turn. */
-const PublishedBlocksContext = createContext(0);
+/** Exact model text accepted by the server. Rejected candidates stay visible. */
+const PublishedBlocksContext = createContext<readonly string[]>([]);
 
 export function PublishedBlocksProvider({
-  count,
+  sources,
   children,
 }: {
-  count: number;
+  sources: readonly string[];
   children: ReactNode;
 }) {
-  return <PublishedBlocksContext.Provider value={count}>{children}</PublishedBlocksContext.Provider>;
+  return (
+    <PublishedBlocksContext.Provider value={sources}>
+      {children}
+    </PublishedBlocksContext.Provider>
+  );
 }
 
-export function usePublishedBlocks(): number {
+export function usePublishedBlocks(): readonly string[] {
   return useContext(PublishedBlocksContext);
 }

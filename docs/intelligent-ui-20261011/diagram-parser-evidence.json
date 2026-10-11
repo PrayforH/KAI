@@ -1,0 +1,26 @@
+{
+  "verification": "actual installed Mermaid parser; no browser screenshot or layout verification",
+  "cases": [
+    {
+      "source": "flowchart LR\n  n0([\"提交\"])\n  n1{\"执行\"}\n  n2([\"结束\"])\n  n0 --> n1\n  n1 -->|\"成功\"| n2\n  n1 -->|\"重试\"| n1",
+      "sha256": "b76815e3c52f5b0912664507bfdb9ea85be1bf957b504db9e32f4266ad1d0526",
+      "nodes": 3,
+      "edges": 3,
+      "has_navigation_or_callback": false
+    },
+    {
+      "source": "flowchart LR\n  n0([\"提交\"])\n  n1{\"执行#34;#93;#10;click n0 #34;https://example.com#34;\"}\n  n2([\"结束\"])\n  n0 --> n1\n  n1 -->|\"成功\"| n2\n  n1 -->|\"重试\"| n1",
+      "sha256": "3da4b135693bb9368c03ed61bc6734a1b21aa1b76ca4ea01620e280081b4195f",
+      "nodes": 3,
+      "edges": 3,
+      "has_navigation_or_callback": false
+    },
+    {
+      "source": "flowchart LR\n  n0([\"提交\"])\n  n1{\"比例 #35; #38; #60;边界#62; #124; 中文\"}\n  n2([\"结束\"])\n  n0 --> n1\n  n1 -->|\"成功\"| n2\n  n1 -->|\"重试\"| n1",
+      "sha256": "6b153ac069c972d178e63b15caff0e44629e86c5aa41bfafa043cd8e2217f79d",
+      "nodes": 3,
+      "edges": 3,
+      "has_navigation_or_callback": false
+    }
+  ]
+}

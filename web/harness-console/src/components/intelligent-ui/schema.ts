@@ -39,6 +39,9 @@ const presentationSchema = z.object({
   config: z.record(z.string(), z.unknown()).default({}),
   actions: z.array(actionSchema).max(4).default([]),
   decision: z.record(z.string(), z.unknown()).default({}),
+  source_text: z.string().nullish(),
+  source_refs: z.array(z.record(z.string(), z.unknown())).default([]),
+  snapshot_hash: z.string().default(""),
 });
 
 export type Presentation = z.infer<typeof presentationSchema>;
@@ -63,7 +66,9 @@ const chartRowsSchema = z.object({
 const comparisonDataSchema = z.object({
   dimensions: z.array(columnSchema).min(1),
   items: z
-    .array(z.object({ label: z.string(), values: z.record(z.string(), cellSchema) }))
+    .array(
+      z.object({ label: z.string(), values: z.record(z.string(), cellSchema) }),
+    )
     .min(2),
 });
 
@@ -79,7 +84,13 @@ const chartConfigSchema = z.object({
 
 const timelineDataSchema = z.object({
   events: z
-    .array(z.object({ at: z.string(), title: z.string(), detail: z.string().optional() }))
+    .array(
+      z.object({
+        at: z.string(),
+        title: z.string(),
+        detail: z.string().optional(),
+      }),
+    )
     .min(1),
 });
 
@@ -140,22 +151,36 @@ function configText(presentation: Presentation, key: string): string {
 export function parsePresentation(value: unknown): Presentation | null {
   const parsed = presentationSchema.safeParse(value);
   if (!parsed.success) return null;
-  if (SUPPORTED_RENDERER_VERSIONS[parsed.data.kind] !== parsed.data.renderer_version) return null;
+  if (
+    SUPPORTED_RENDERER_VERSIONS[parsed.data.kind] !==
+    parsed.data.renderer_version
+  )
+    return null;
   return parsed.data;
 }
 
-export function parsePresentationBody(presentation: Presentation): PresentationBody | null {
+export function parsePresentationBody(
+  presentation: Presentation,
+): PresentationBody | null {
   switch (presentation.kind) {
     case "table": {
       const table = tableDataSchema.safeParse(presentation.data);
       return table.success
-        ? { kind: "table", table: table.data, caption: configText(presentation, "caption") }
+        ? {
+            kind: "table",
+            table: table.data,
+            caption: configText(presentation, "caption"),
+          }
         : null;
     }
     case "comparison": {
       const comparison = comparisonDataSchema.safeParse(presentation.data);
       return comparison.success
-        ? { kind: "comparison", comparison: comparison.data, highlight: configText(presentation, "highlight") }
+        ? {
+            kind: "comparison",
+            comparison: comparison.data,
+            highlight: configText(presentation, "highlight"),
+          }
         : null;
     }
     case "chart": {
@@ -167,11 +192,15 @@ export function parsePresentationBody(presentation: Presentation): PresentationB
     }
     case "diagram": {
       const source = presentation.data.mermaid;
-      return typeof source === "string" && source.trim() ? { kind: "diagram", source } : null;
+      return typeof source === "string" && source.trim()
+        ? { kind: "diagram", source }
+        : null;
     }
     case "timeline": {
       const timeline = timelineDataSchema.safeParse(presentation.data);
-      return timeline.success ? { kind: "timeline", timeline: timeline.data } : null;
+      return timeline.success
+        ? { kind: "timeline", timeline: timeline.data }
+        : null;
     }
     case "metric": {
       const metrics = metricDataSchema.safeParse(presentation.data);
@@ -190,30 +219,47 @@ export function parsePresentationBody(presentation: Presentation): PresentationB
 
 /** The action a form submits through: its declared `read`/`write`, primary first.
  * The server refuses a form without one, so this is a pick, not a fallback. */
-export function formAction(presentation: Presentation): PresentationAction | null {
+export function formAction(
+  presentation: Presentation,
+): PresentationAction | null {
   const candidates = presentation.actions.filter(
     (action) => action.kind === "read" || action.kind === "write",
   );
-  return candidates.find((action) => action.style === "primary") ?? candidates[0] ?? null;
+  return (
+    candidates.find((action) => action.style === "primary") ??
+    candidates[0] ??
+    null
+  );
 }
 
 /** What clicking an action sends. The action contributes the instruction and the
  * user contributes the selection; both are plain message text. */
-export function actionMessage(action: PresentationAction, value: string): string {
+export function actionMessage(
+  action: PresentationAction,
+  value: string,
+): string {
   const trimmed = value.trim();
   if (!trimmed) return action.prompt;
   return `${action.prompt}\n\n${trimmed}`;
 }
 
 /** Tool-part shape the console receives a presentation on, live and restored. */
-type ContentPartLike = { type?: string; toolName?: string; args?: unknown; result?: unknown };
+type ContentPartLike = {
+  type?: string;
+  toolName?: string;
+  args?: unknown;
+  result?: unknown;
+};
 
 /** The interactive blocks this turn shows, in the order the server published them. */
-export function presentationsForMessage(parts: readonly ContentPartLike[]): Presentation[] {
+export function presentationsForMessage(
+  parts: readonly ContentPartLike[],
+): Presentation[] {
   const seen = new Set<string>();
   const presentations: Presentation[] = [];
   for (const part of parts) {
-    if (part.type !== "tool-call" || part.toolName !== "harness_present_ui") continue;
+    if (part.type !== "tool-call" || part.toolName !== "harness_present_ui")
+      continue;
     const presentation = parsePresentation(part.args);
     if (!presentation || seen.has(presentation.presentation_id)) continue;
     seen.add(presentation.presentation_id);
@@ -222,31 +268,28 @@ export function presentationsForMessage(parts: readonly ContentPartLike[]): Pres
   return presentations;
 }
 
-const UI_FENCE = /```([^\n]*)\n([\s\S]*?)\n```/g;
+/** Only remove the exact source candidates the server accepted, once each.
+ * Matching by count can hide a rejected candidate before a valid one. */
+export function modelBlockSources(
+  presentations: readonly Presentation[],
+): string[] {
+  return presentations.flatMap((item) =>
+    item.decision.origin === "model" && item.source_text
+      ? [item.source_text]
+      : [],
+  );
+}
 
-function isProtocolBlock(body: string): boolean {
-  try {
-    const parsed = JSON.parse(body);
-    return Boolean(parsed) && typeof parsed === "object" && typeof parsed.kind === "string";
-  } catch {
-    return false;
+export function stripHarnessUiFences(
+  text: string,
+  sources: readonly string[],
+): string {
+  let result = text;
+  for (const source of sources) {
+    if (!source) continue;
+    const index = result.indexOf(source);
+    if (index >= 0)
+      result = result.slice(0, index) + result.slice(index + source.length);
   }
-}
-
-/** How many of this turn's blocks came from a fence the model wrote, in order.
- * Only those may be hidden from the rendered answer: the projected blocks never
- * had a fence, and a rejected fence must stay visible. */
-export function modelBlockCount(presentations: readonly Presentation[]): number {
-  return presentations.filter((item) => item.decision.origin === "model").length;
-}
-
-export function stripHarnessUiFences(text: string, published: number): string {
-  if (published <= 0) return text;
-  let remaining = published;
-  return text.replace(UI_FENCE, (match, language: string, body: string) => {
-    if (remaining <= 0 || language.trim().toLowerCase() !== "harness-ui") return match;
-    if (!isProtocolBlock(body)) return match;
-    remaining -= 1;
-    return "";
-  });
+  return result;
 }

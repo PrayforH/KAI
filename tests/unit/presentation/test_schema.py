@@ -25,7 +25,11 @@ def _block(**overrides: object) -> dict[str, object]:
 
 def _validate(block: object, *, index: int = 0):
     return validate_block(
-        block, run_id="run-1", message_id="assistant-run-1", index=index, origin="model",
+        block,
+        run_id="run-1",
+        message_id="assistant-run-1",
+        index=index,
+        origin="model",
         reason_code="model_selected",
     )
 
@@ -39,6 +43,122 @@ def test_accepts_a_well_formed_table() -> None:
     assert presentation.schema_version == "harness.ui/v1"
     assert presentation.run_id == "run-1"
     assert presentation.decision["origin"] == "model"
+
+
+def test_accepts_the_categorical_chart_shape_observed_on_173() -> None:
+    p = _validate(
+        _block(
+            kind="chart",
+            data={
+                "type": "bar",
+                "categories": ["一季度", "二季度"],
+                "series": [{"name": "利润（万元）", "data": [120, -30]}],
+            },
+            config={},
+        )
+    )
+    assert p is not None
+    assert p.data["rows"] == [
+        {"category": "一季度", "series_0": 120},
+        {"category": "二季度", "series_0": -30},
+    ]
+    assert p.config["y_fields"] == ["series_0"]
+    assert p.config["y_labels"] == ["利润（万元）"]
+    assert p.config["x_label"] == "类别"
+
+
+def test_accepts_the_flat_form_observed_on_173() -> None:
+    p = _validate(
+        {
+            "version": 1,
+            "kind": "form",
+            "fallback_text": "请填写项目",
+            "fields": [
+                {"name": "project_name", "label": "项目名称", "type": "text", "required": True}
+            ],
+            "submit_label": "生成项目摘要",
+            "actions": [{"kind": "read", "label": "生成项目摘要", "prompt": "请根据字段生成摘要"}],
+        }
+    )
+    assert p is not None
+    assert p.data["fields"][0]["key"] == "project_name"
+    assert p.config["submit_label"] == "生成项目摘要"
+
+
+def test_accepts_the_labels_values_chart_observed_in_a_new_173_task() -> None:
+    p = _validate(
+        _block(
+            kind="chart",
+            data={
+                "labels": ["一季度", "二季度"],
+                "series": [{"name": "利润（万元）", "values": [120, -30]}],
+            },
+            config={"type": "bar"},
+        )
+    )
+    assert p is not None
+    assert p.config["chart_type"] == "bar"
+    assert p.config["x_label"] == "类别"
+    assert p.data["rows"][1]["series_0"] == -30
+
+
+def test_rejects_conflicting_chart_aliases() -> None:
+    assert (
+        _validate(
+            _block(
+                kind="chart",
+                data={
+                    "labels": ["一季度"],
+                    "categories": ["二季度"],
+                    "series": [{"name": "利润", "values": [120]}],
+                },
+                config={"type": "bar"},
+            )
+        )
+        is None
+    )
+
+
+def test_rejects_a_form_with_conflicting_flat_and_nested_content() -> None:
+    assert (
+        _validate(
+            {
+                "version": 1,
+                "kind": "form",
+                "fallback_text": "请填写项目",
+                "fields": [],
+                "data": {"fields": []},
+            }
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"series": [{"name": "利润", "data": [120]}]},
+        {"series": [{"name": "利润", "data": [120, -30], "onclick": "alert(1)"}]},
+        {"type": "pie"},
+        {"type": "unsupported"},
+    ],
+)
+def test_rejects_unsafe_or_ambiguous_categorical_charts(change: dict[str, object]) -> None:
+    assert (
+        _validate(
+            _block(
+                kind="chart",
+                data={
+                    "type": "bar",
+                    "categories": ["一季度", "二季度"],
+                    "series": [{"name": "利润", "data": [120, -30]}],
+                    **change,
+                },
+                config={},
+            )
+        )
+        is None
+    )
 
 
 def test_identity_is_deterministic_for_the_same_block() -> None:
@@ -206,12 +326,106 @@ def test_diagram_requires_mermaid_source() -> None:
             "data": {"mermaid": "flowchart LR\n  A[受理] --> B[审批]"},
         }
     )
-    invalid = _validate(
-        {"version": 1, "kind": "diagram", "fallback_text": "流程。", "data": {}}
-    )
+    invalid = _validate({"version": 1, "kind": "diagram", "fallback_text": "流程。", "data": {}})
 
     assert valid is not None
     assert invalid is None
+
+
+def test_normalises_timeline_date_and_description_observed_on_173() -> None:
+    result = _validate(
+        {
+            "version": 1,
+            "kind": "timeline",
+            "fallback_text": "需求确认后冻结协议。",
+            "data": {
+                "events": [
+                    {"date": "2026-10-01", "title": "需求确认", "description": "确定范围"},
+                    {"date": "2026-10-05", "title": "协议冻结", "description": "固定协议"},
+                ]
+            },
+        }
+    )
+    assert result is not None
+    assert result.data["events"] == [
+        {"at": "2026-10-01", "title": "需求确认", "detail": "确定范围"},
+        {"at": "2026-10-05", "title": "协议冻结", "detail": "固定协议"},
+    ]
+
+
+@pytest.mark.parametrize(
+    "event",
+    [
+        {"at": "2026-10-01", "date": "2026-10-02", "title": "确认"},
+        {"at": "2026-10-01", "title": "确认", "detail": "甲", "description": "乙"},
+        {"date": "2026-10-01", "title": "确认", "onclick": "alert(1)"},
+    ],
+)
+def test_rejects_ambiguous_or_unknown_timeline_fields(event: dict[str, object]) -> None:
+    assert (
+        _validate(
+            {
+                "version": 1,
+                "kind": "timeline",
+                "fallback_text": "节点。",
+                "data": {"events": [event]},
+            }
+        )
+        is None
+    )
+
+
+def test_normalises_data_only_diagram_without_interpreting_ids_or_labels() -> None:
+    result = _validate(
+        {
+            "version": 1,
+            "kind": "diagram",
+            "fallback_text": "提交后执行，失败重试。",
+            "data": {
+                "nodes": [
+                    {"id": "submit", "label": "提交任务", "shape": "start"},
+                    {"id": "exec", "label": '执行"]\nclick n0 "https://example.com"'},
+                    {"id": "retry", "label": "重试"},
+                ],
+                "edges": [
+                    {"from": "submit", "to": "exec"},
+                    {"from": "exec", "to": "retry", "label": "失败"},
+                    {"from": "retry", "to": "exec", "label": "再次执行"},
+                ],
+            },
+        }
+    )
+    assert result is not None
+    source = result.data["mermaid"]
+    assert source.startswith('flowchart LR\n  n0(["提交任务"])')
+    assert "  n0 --> n1" in source
+    assert '  n1 -->|"失败"| n2' in source
+    assert '  n2 -->|"再次执行"| n1' in source
+    assert "\nclick" not in source and "#34;#93;#10;click" in source
+    assert len(source.splitlines()) == 7
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        {"nodes": [{"id": "a", "label": "A"}, {"id": "a", "label": "B"}], "edges": []},
+        {"nodes": [{"id": "a", "label": "A"}], "edges": [{"from": "a", "to": "missing"}]},
+        {"nodes": [{"id": "a", "label": "A", "onclick": "alert(1)"}], "edges": []},
+        {"nodes": [{"id": "a", "label": "A", "shape": "script"}], "edges": []},
+        {
+            "nodes": [{"id": "a", "label": "A"}],
+            "edges": [{"from": "a", "to": "a", "href": "https://example.com"}],
+        },
+        {"mermaid": "flowchart LR\nA-->B", "nodes": [], "edges": []},
+        {"nodes": [{"id": str(i), "label": "A"} for i in range(25)], "edges": []},
+        {"nodes": [{"id": "a", "label": "A"}], "edges": [{"from": "a", "to": "a"}] * 49},
+    ],
+)
+def test_rejects_invalid_or_executable_diagram_data(data: dict[str, object]) -> None:
+    assert (
+        _validate({"version": 1, "kind": "diagram", "fallback_text": "流程。", "data": data})
+        is None
+    )
 
 
 def test_accepts_id_as_a_column_alias_and_normalises_to_key() -> None:
@@ -236,7 +450,10 @@ def test_accepts_positional_comparison_values_in_dimension_order() -> None:
             "kind": "comparison",
             "fallback_text": "两个平台对比。",
             "data": {
-                "dimensions": [{"id": "language", "label": "开发语言"}, {"id": "scale", "label": "规模"}],
+                "dimensions": [
+                    {"id": "language", "label": "开发语言"},
+                    {"id": "scale", "label": "规模"},
+                ],
                 "items": [
                     {"label": "iOS", "values": ["Swift", "百万级"]},
                     {"label": "Android", "values": ["Kotlin", "百万级"]},
@@ -338,3 +555,8 @@ def test_still_rejects_an_item_with_no_name() -> None:
     )
 
     assert presentation is None
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_rejects_nonfinite_values(value: float) -> None:
+    assert _validate(_block(data={"rows": [{"value": value}]})) is None

@@ -2,6 +2,7 @@
 
 import type { CodeHeaderProps } from "@assistant-ui/react-markdown";
 import { useEffect, useId, useRef, useState } from "react";
+import { writeTextToClipboard } from "../lib/clipboard";
 
 type ColorMode = "dark" | "light";
 
@@ -11,7 +12,9 @@ interface RenderedDiagram {
 }
 
 function currentColorMode(): ColorMode {
-  return document.documentElement.dataset.colorMode === "light" ? "light" : "dark";
+  return document.documentElement.dataset.colorMode === "light"
+    ? "light"
+    : "dark";
 }
 
 function useColorMode() {
@@ -74,6 +77,7 @@ export function MermaidDiagram({ code }: { code: string }) {
   const [error, setError] = useState<string | null>(null);
   const [showSource, setShowSource] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
   const source = code.trim();
 
   useEffect(() => {
@@ -123,7 +127,9 @@ export function MermaidDiagram({ code }: { code: string }) {
       } catch (caught) {
         if (!active || sequence !== renderSequence.current) return;
         setPending(false);
-        setError(caught instanceof Error ? caught.message : "无法解析 Mermaid 图表");
+        setError(
+          caught instanceof Error ? caught.message : "无法解析 Mermaid 图表",
+        );
       }
     }, 420);
 
@@ -134,14 +140,17 @@ export function MermaidDiagram({ code }: { code: string }) {
   }, [colorMode, reactId, source]);
 
   async function copySource() {
-    await navigator.clipboard?.writeText(source);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1400);
+    const success = await writeTextToClipboard(source);
+    setCopied(success);
+    setCopyFailed(!success);
+    if (success) window.setTimeout(() => setCopied(false), 1400);
   }
 
   function downloadSvg() {
     if (!rendered?.svg) return;
-    const blob = new Blob([rendered.svg], { type: "image/svg+xml;charset=utf-8" });
+    const blob = new Blob([rendered.svg], {
+      type: "image/svg+xml;charset=utf-8",
+    });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
@@ -181,6 +190,12 @@ export function MermaidDiagram({ code }: { code: string }) {
           </button>
         </span>
       </header>
+
+      {copyFailed ? (
+        <p className="mermaid-error" role="alert">
+          复制失败，请查看源码后手动复制。
+        </p>
+      ) : null}
 
       {showSource || (error && !rendered) ? (
         <pre className="mermaid-source">

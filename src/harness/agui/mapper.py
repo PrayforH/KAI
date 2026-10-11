@@ -110,6 +110,8 @@ def _domain_tool(
 
 def _map_standard_event(event: RunEvent) -> Sequence[BaseEvent]:
     message_id = str(event.payload.get("message_id", f"assistant-{event.run_id}"))
+    if event.type.startswith("ui."):
+        return _custom(event, event.type)
     if event.type == "run.queued":
         return [RunStartedEvent(thread_id=event.session_id, run_id=event.run_id)]
     if event.type == "run.succeeded":

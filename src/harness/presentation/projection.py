@@ -14,11 +14,12 @@ wrong or unrenderable shape simply yields nothing — the answer text is untouch
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from harness.core.events import RunEvent
 from harness.presentation.catalog import MAX_PRESENTATIONS_PER_TURN
@@ -62,16 +63,16 @@ def _text_parts(payload: dict[str, Any]) -> list[str]:
         return [content]
     if isinstance(content, list):
         parts: list[str] = []
-        for block in content:
+        for block in cast(list[Any], content):
             if isinstance(block, dict):
-                text = block.get("text")
+                text = cast(dict[str, Any], block).get("text")
                 if isinstance(text, str):
                     parts.append(text)
             elif isinstance(block, str):
                 parts.append(block)
         return parts
     if isinstance(content, dict):
-        text = content.get("text")
+        text = cast(dict[str, Any], content).get("text")
         return [text] if isinstance(text, str) else []
     return []
 
@@ -101,18 +102,21 @@ def _scalar_row(row: dict[str, Any], keys: Sequence[str]) -> dict[str, Any] | No
 
 def _shape_rows(parsed: Any) -> list[dict[str, Any]] | None:
     if isinstance(parsed, list):
-        rows = parsed
+        rows = cast(list[Any], parsed)
     elif isinstance(parsed, dict):
+        parsed = cast(dict[str, Any], parsed)
         rows = next(
             (parsed[key] for key in _SHAPE_ROW_KEYS if isinstance(parsed.get(key), list)),
             None,
         )
     else:
         return None
-    if not isinstance(rows, list) or not _SHAPE_MIN_ROWS <= len(rows) <= MAX_ROWS:
+    if not isinstance(rows, list) or not _SHAPE_MIN_ROWS <= len(cast(list[Any], rows)) <= MAX_ROWS:
         return None
-    if not all(isinstance(row, dict) and row for row in rows):
+    rows = cast(list[Any], rows)
+    if not all(isinstance(row, dict) and bool(cast(dict[str, Any], row)) for row in rows):
         return None
+    rows = cast(list[dict[str, Any]], rows)
     keys: list[str] = []
     for row in rows:
         for key in row:
@@ -182,7 +186,7 @@ def _object_end(text: str, offset: int) -> int | None:
     return None
 
 
-def _unfenced_blocks(text: str, spans: list[tuple[int, int]]) -> Iterator[Any]:
+def _unfenced_blocks(text: str, spans: list[tuple[int, int]]) -> Iterator[tuple[Any, str]]:
     """A model occasionally keeps the object and drops the fence. Accept only a
     complete, brace-balanced object that starts a line and declares a kind."""
 
@@ -194,11 +198,13 @@ def _unfenced_blocks(text: str, spans: list[tuple[int, int]]) -> Iterator[Any]:
         if end is None:
             continue
         candidate = _maybe_json(text[offset:end])
-        if isinstance(candidate, dict) and isinstance(candidate.get("kind"), str):
-            yield candidate
+        if isinstance(candidate, dict) and isinstance(
+            cast(dict[str, Any], candidate).get("kind"), str
+        ):
+            yield candidate, text[offset:end]
 
 
-def _fenced_blocks(text: str) -> Iterator[Any]:
+def _fenced_blocks(text: str) -> Iterator[tuple[Any, str]]:
     spans: list[tuple[int, int]] = []
     for match in _FENCE.finditer(text):
         spans.append((match.start(), match.end()))
@@ -206,7 +212,7 @@ def _fenced_blocks(text: str) -> Iterator[Any]:
             continue
         parsed = _maybe_json(match.group(2))
         if parsed is not None:
-            yield parsed
+            yield parsed, match.group(0)
     yield from _unfenced_blocks(text, spans)
 
 
@@ -218,6 +224,8 @@ class _Candidate:
     message_id: str
     origin: str
     reason_code: str
+    sequence: int
+    source_text: str | None = None
 
 
 def _message_id(event: RunEvent, run_id: str) -> str:
@@ -248,8 +256,10 @@ def _candidates(events: Sequence[RunEvent], run_id: str) -> Iterator[_Candidate]
             continue
         if event.type == "message.completed":
             message_id = _message_id(event, run_id)
-            for block in _fenced_blocks("".join(buffers.pop(message_id, ()))):
-                yield _Candidate(block, message_id, "model", "model_selected")
+            for block, source_text in _fenced_blocks("".join(buffers.pop(message_id, ()))):
+                yield _Candidate(
+                    block, message_id, "model", "model_selected", event.sequence, source_text
+                )
             continue
         if event.type != "tool.result" or _is_error(event.payload):
             continue
@@ -258,7 +268,9 @@ def _candidates(events: Sequence[RunEvent], run_id: str) -> Iterator[_Candidate]
             continue
         block = _shape_block(_loads_structured(event.payload))
         if block is not None:
-            yield _Candidate(block, _message_id(event, run_id), "shape", "structured_tool_result")
+            yield _Candidate(
+                block, _message_id(event, run_id), "shape", "structured_tool_result", event.sequence
+            )
 
 
 def presentations_for_events(
@@ -276,7 +288,12 @@ def presentations_for_events(
     if not run_id:
         return []
     presentations: list[Presentation] = []
-    for candidate in _candidates(events, run_id):
+    # Explicit answer blocks take precedence over incidental tool-result tables.
+    # Otherwise two search results can exhaust the turn's budget before its form.
+    candidates = sorted(
+        _candidates(events, run_id), key=lambda c: (c.origin != "model", c.sequence)
+    )
+    for candidate in candidates:
         if len(presentations) >= limit:
             break
         presentation = validate_block(
@@ -288,5 +305,30 @@ def presentations_for_events(
             reason_code=candidate.reason_code,
         )
         if presentation is not None:
-            presentations.append(presentation)
+            presentations.append(
+                presentation.model_copy(
+                    update={
+                        "source_text": candidate.source_text,
+                        "source_refs": (
+                            {
+                                "run_id": run_id,
+                                "sequence": candidate.sequence,
+                                "origin": candidate.origin,
+                            },
+                        ),
+                        "snapshot_hash": hashlib.sha256(
+                            json.dumps(
+                                {
+                                    "data": presentation.data,
+                                    "config": presentation.config,
+                                    "actions": presentation.actions,
+                                },
+                                sort_keys=True,
+                                ensure_ascii=False,
+                                allow_nan=False,
+                            ).encode()
+                        ).hexdigest(),
+                    }
+                )
+            )
     return presentations

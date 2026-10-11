@@ -1,13 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import {
+  executionLabel,
+  terminalExecution,
+  type UiExecution,
+  type UiViewState,
+} from "./client";
+import { usePresentation } from "./use-presentation";
 
 import { ChartView } from "./chart-view";
-import { FormView } from "./form-view";
+import { FormView, type FieldValues } from "./form-view";
 import {
   type Presentation,
   type PresentationAction,
-  actionMessage,
   formAction,
   parsePresentation,
   parsePresentationBody,
@@ -19,15 +25,20 @@ import { ComparisonView, DiagramView, MetricView, TimelineView } from "./views";
 export type PresentationActionHandler = (
   presentation: Presentation,
   action: PresentationAction,
-  value: string,
-) => void | Promise<void>;
+  values: FieldValues,
+  idempotencyKey: string,
+) => void | UiExecution | Promise<void | UiExecution>;
 
 function PresentationBodyView({
   body,
   presentation,
   onAction,
   disabled,
+  view,
+  onView,
 }: {
+  view: UiViewState;
+  onView: (state: UiViewState) => void;
   body: NonNullable<ReturnType<typeof parsePresentationBody>>;
   presentation: Presentation;
   onAction?: PresentationActionHandler;
@@ -41,12 +52,27 @@ function PresentationBodyView({
           rows={body.table.rows}
           title={presentation.title}
           caption={body.caption}
+          sort={view.sort}
+          onSort={(sort) => onView({ sort })}
         />
       );
     case "chart":
-      return <ChartView rows={body.rows} config={body.config} title={presentation.title} />;
+      return (
+        <ChartView
+          rows={body.rows}
+          config={body.config}
+          title={presentation.title}
+          showData={view.show_data}
+          onShowData={(show_data) => onView({ show_data })}
+        />
+      );
     case "comparison":
-      return <ComparisonView comparison={body.comparison} highlight={body.highlight} />;
+      return (
+        <ComparisonView
+          comparison={body.comparison}
+          highlight={body.highlight}
+        />
+      );
     case "timeline":
       return <TimelineView timeline={body.timeline} />;
     case "metric":
@@ -60,7 +86,16 @@ function PresentationBodyView({
           fields={body.form.fields}
           submitLabel={body.submitLabel || action?.label || "提交"}
           disabled={disabled}
-          onSubmit={action && onAction ? (value) => onAction(presentation, action, value) : undefined}
+          singleUse={action?.kind === "write"}
+          values={view.values}
+          onChange={(values) => onView({ values })}
+          onSubmit={
+            action && onAction
+              ? async (values) => {
+                  await onAction(presentation, action, values, "");
+                }
+              : undefined
+          }
         />
       );
     }
@@ -69,14 +104,14 @@ function PresentationBodyView({
   }
 }
 
-/** The buttons a block offers. They are the only place a block can reach beyond
- * itself, and all they do is put text in the composer's place: the platform sees
- * an ordinary user turn, never a privileged call. */
+/** Buttons request a server-owned action; accepting a request is not success. */
 function ActionBar({
   presentation,
   onAction,
   disabled,
+  requests,
 }: {
+  requests: UiExecution[];
   presentation: Presentation;
   onAction?: PresentationActionHandler;
   disabled: boolean;
@@ -86,7 +121,11 @@ function ActionBar({
   if (!onAction) return null;
   // A form owns its own submit button; showing both would offer the same turn twice.
   const actions = presentation.actions.filter(
-    (action) => !(presentation.kind === "form" && (action.kind === "read" || action.kind === "write")),
+    (action) =>
+      !(
+        presentation.kind === "form" &&
+        (action.kind === "read" || action.kind === "write")
+      ),
   );
   if (actions.length === 0) return null;
 
@@ -95,7 +134,7 @@ function ActionBar({
     setBusy(action.action_id);
     setError("");
     try {
-      await onAction?.(presentation, action, "");
+      await onAction?.(presentation, action, {}, "");
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "发送失败，请重试");
     } finally {
@@ -111,14 +150,23 @@ function ActionBar({
             key={action.action_id}
             type="button"
             data-style={action.style}
-            disabled={disabled || busy !== null}
+            disabled={
+              disabled ||
+              busy !== null ||
+              (action.kind === "write" &&
+                requests.some((r) => r.action_id === action.action_id))
+            }
             onClick={() => void run(action)}
           >
             {busy === action.action_id ? "发送中…" : action.label}
           </button>
         ))}
       </div>
-      {error ? <p role="alert" className="intelligent-ui-form-error">{error}</p> : null}
+      {error ? (
+        <p role="alert" className="intelligent-ui-form-error">
+          {error}
+        </p>
+      ) : null}
     </>
   );
 }
@@ -130,7 +178,11 @@ export function IntelligentUiBlock({
   value,
   onAction,
   disabled = false,
+  connected = false,
+  onSettled,
 }: {
+  connected?: boolean;
+  onSettled?: (runId: string) => void;
   value: unknown;
   onAction?: PresentationActionHandler;
   disabled?: boolean;
@@ -139,24 +191,123 @@ export function IntelligentUiBlock({
   const body = presentation ? parsePresentationBody(presentation) : null;
   if (!presentation || !body) {
     const text = fallbackText(value);
-    return text ? <figure className="intelligent-ui intelligent-ui-unavailable">{text}</figure> : null;
+    return text ? (
+      <figure className="intelligent-ui intelligent-ui-unavailable">
+        {text}
+      </figure>
+    ) : null;
   }
   return (
-    <figure
-      className="intelligent-ui"
-      data-kind={presentation.kind}
-      title={presentation.fallback_text}
-    >
+    <PublishedPresentation
+      presentation={presentation}
+      body={body}
+      onAction={onAction}
+      disabled={disabled}
+      connected={connected}
+      onSettled={onSettled}
+    />
+  );
+}
+
+function PublishedPresentation({
+  presentation,
+  body,
+  onAction,
+  disabled,
+  connected,
+  onSettled,
+}: {
+  presentation: Presentation;
+  body: NonNullable<ReturnType<typeof parsePresentationBody>>;
+  onAction?: PresentationActionHandler;
+  disabled: boolean;
+  connected: boolean;
+  onSettled?: (runId: string) => void;
+}) {
+  const state = usePresentation(presentation, connected, onSettled);
+  const keys = useRef(new Map<string, { payload: string; key: string }>());
+  const handle: PresentationActionHandler | undefined = onAction
+    ? async (p, action, values) => {
+        const payload = JSON.stringify([p.revision, values]);
+        let saved = keys.current.get(action.action_id);
+        if (!saved || saved.payload !== payload) {
+          saved = {
+            payload,
+            key:
+              globalThis.crypto?.randomUUID?.() ??
+              `ui-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          };
+          keys.current.set(action.action_id, saved);
+        }
+        const request = await onAction(p, action, values, saved.key);
+        state.accept(request);
+        return request;
+      }
+    : undefined;
+  const active = state.requests.some(
+    (r) => !terminalExecution(r.execution_status),
+  );
+  const form = formAction(presentation);
+  const formSubmitted =
+    form?.kind === "write" &&
+    state.requests.some((r) => r.action_id === form.action_id);
+  return (
+    <figure className="intelligent-ui" data-kind={presentation.kind}>
       {presentation.title ? (
-        <figcaption className="intelligent-ui-title">{presentation.title}</figcaption>
+        <figcaption className="intelligent-ui-title">
+          {presentation.title}
+        </figcaption>
       ) : null}
       <PresentationBodyView
         body={body}
         presentation={presentation}
-        onAction={onAction}
-        disabled={disabled}
+        onAction={handle}
+        disabled={disabled || !state.loaded || active || Boolean(formSubmitted)}
+        view={state.view}
+        onView={state.changeView}
       />
-      <ActionBar presentation={presentation} onAction={onAction} disabled={disabled} />
+      <ActionBar
+        presentation={presentation}
+        onAction={handle}
+        disabled={disabled || !state.loaded || active}
+        requests={state.requests}
+      />
+      {state.error ? (
+        <p role="alert" className="intelligent-ui-form-error">
+          {state.error}
+        </p>
+      ) : null}
+      {state.requests.map((request) => (
+        <div
+          className="intelligent-ui-note"
+          key={request.request_id}
+          role="status"
+        >
+          {
+            presentation.actions.find((a) => a.action_id === request.action_id)
+              ?.label
+          }{" "}
+          · {executionLabel(request.execution_status)}
+          {request.error_code ? (
+            <span> · 请求未完成，请核对任务详情</span>
+          ) : null}
+        </div>
+      ))}
+      <details className="intelligent-ui-note">
+        <summary>数据与来源</summary>
+        <p>{presentation.fallback_text}</p>
+        <p>
+          {presentation.decision.origin === "shape"
+            ? "基于本轮工具返回的数据"
+            : "基于本轮回答中的数据"}{" "}
+          · 版本 {presentation.revision}
+        </p>
+        {presentation.snapshot_hash ? (
+          <p title={presentation.snapshot_hash}>
+            数据快照 {presentation.snapshot_hash.slice(0, 12)}
+          </p>
+        ) : null}
+      </details>
     </figure>
   );
 }

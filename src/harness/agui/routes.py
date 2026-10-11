@@ -45,6 +45,7 @@ from harness.core.errors import ConflictError, NotFoundError
 from harness.core.events import RunEvent
 from harness.core.models import AguiThreadBinding, ApprovalRequest, ApprovalStatus, Run
 from harness.presentation import presentations_for_events
+from harness.presentation.schema import Presentation
 from harness.runtime.input_redaction import redact_internal_agent_asset_events
 
 logger = logging.getLogger(__name__)
@@ -71,7 +72,7 @@ _HISTORY_SNAPSHOT_EVENT_TYPE = "history.snapshot"
 # items, ~1MB per run) and are ignored so they rebuild compactly on next read.
 # Version 3 adds the run's validated interactive answer blocks, so a reload shows
 # the same widgets the live stream published.
-_HISTORY_SNAPSHOT_VERSION = 3
+_HISTORY_SNAPSHOT_VERSION = 4
 _HISTORY_MARKER_EVENT_TYPES = (_HISTORY_SNAPSHOT_EVENT_TYPE, "run.steer.accepted")
 _HISTORY_RUN_PAGE_DEFAULT = 10
 _HISTORY_RUN_PAGE_MAX = 100
@@ -138,7 +139,10 @@ def _terminal_artifact_projection(
     return projection
 
 
-def _terminal_presentation_projection(run_events: list[RunEvent]) -> list[BaseEvent]:
+def _terminal_presentation_projection(
+    run_events: list[RunEvent],
+    presentations: list[Presentation] | None = None,
+) -> list[BaseEvent]:
     """Attach the run's interactive answer blocks after the streamed response.
 
     The blocks are derived from the run's own events, so this is the same object
@@ -146,10 +150,16 @@ def _terminal_presentation_projection(run_events: list[RunEvent]) -> list[BaseEv
     then vanish.
     """
 
-    return presentation_frames(presentations_for_events(run_events))
+    return presentation_frames(
+        presentations if presentations is not None else presentations_for_events(run_events)
+    )
 
 
-def project_stream_event(event: RunEvent, run_events: list[RunEvent]) -> list[BaseEvent]:
+def project_stream_event(
+    event: RunEvent,
+    run_events: list[RunEvent],
+    presentations: list[Presentation] | None = None,
+) -> list[BaseEvent]:
     """Keep one durable turn while preserving provider text-part boundaries."""
 
     message_id = _stream_response_message_id(event.run_id)
@@ -176,7 +186,7 @@ def project_stream_event(event: RunEvent, run_events: list[RunEvent]) -> list[Ba
             *projected[:-1],
             TextMessageEndEvent(message_id=message_id),
             *_terminal_artifact_projection(event, run_events),
-            *_terminal_presentation_projection(run_events),
+            *_terminal_presentation_projection(run_events, presentations),
             projected[-1],
         ]
 
@@ -196,7 +206,7 @@ def project_stream_event(event: RunEvent, run_events: list[RunEvent]) -> list[Ba
         *projected[:-1],
         TextMessageEndEvent(message_id=message_id),
         *_terminal_artifact_projection(event, run_events),
-        *_terminal_presentation_projection(run_events),
+        *_terminal_presentation_projection(run_events, presentations),
         projected[-1],
     ]
 
@@ -248,9 +258,7 @@ class AguiThreadUpdateInput(BaseModel):
     pinned: bool | None = None
     title: Annotated[str | None, Field(min_length=1, max_length=200)] = None
     # null clears the project (the task returns to the plain 任务 list).
-    project_id: Annotated[
-        str | None, Field(alias="projectId", max_length=128)
-    ] = None
+    project_id: Annotated[str | None, Field(alias="projectId", max_length=128)] = None
 
 
 class AguiThreadUpdateResult(BaseModel):
@@ -409,10 +417,15 @@ async def list_thread_compactions(
 ) -> dict[str, Any]:
     ensure_permission(identity, "tasks:read")
     binding = await container.agui.get_binding(
-        tenant_id=identity.tenant_id, user_id=identity.user_id, thread_id=thread_id,
+        tenant_id=identity.tenant_id,
+        user_id=identity.user_id,
+        thread_id=thread_id,
     )
     events = await container.events.recent_for_session_types(
-        identity.tenant_id, binding.session_id, ("context.compacted",), limit=21,
+        identity.tenant_id,
+        binding.session_id,
+        ("context.compacted",),
+        limit=21,
     )
     seen: set[str] = set()
     items = []
@@ -435,7 +448,9 @@ async def get_thread_compaction(
 ) -> CompactionDetail:
     ensure_permission(identity, "tasks:read")
     binding = await container.agui.get_binding(
-        tenant_id=identity.tenant_id, user_id=identity.user_id, thread_id=thread_id,
+        tenant_id=identity.tenant_id,
+        user_id=identity.user_id,
+        thread_id=thread_id,
     )
     run = await require_owned_run(container, identity, run_id)
     if run.session_id != binding.session_id:
@@ -569,7 +584,11 @@ async def run_agui_agent(
             )
             for event in events:
                 run_events.append(event)
-                projected = project_stream_event(event, run_events)
+                ui = None
+                if event.type in _TERMINAL_EVENT_TYPES:
+                    current = await container.runs.get(identity.tenant_id, run.run_id)
+                    ui = await container.presentations.materialize(current, run_events)
+                projected = project_stream_event(event, run_events, ui)
                 for index, item in enumerate(projected):
                     if isinstance(item, (RunStartedEvent, RunFinishedEvent)):
                         item = item.model_copy(
@@ -627,7 +646,9 @@ async def create_project_thread(
 ) -> AguiThreadSummary:
     ensure_permission(identity, "tasks:write")
     project = await container.projects.get(
-        tenant_id=identity.tenant_id, user_id=identity.user_id, project_id=body.project_id,
+        tenant_id=identity.tenant_id,
+        user_id=identity.user_id,
+        project_id=body.project_id,
     )
     if project.archived_at is not None:
         raise ConflictError("Cannot create tasks in an archived project")
@@ -635,25 +656,39 @@ async def create_project_thread(
     connection_mode = "caller_owned"
     if body.space_id is not None:
         release = await container.team_spaces.require_agent_access(
-            identity.tenant_id, identity.user_id, body.space_id,
-            resolved_owner, body.agent_name, body.agent_version,
+            identity.tenant_id,
+            identity.user_id,
+            body.space_id,
+            resolved_owner,
+            body.agent_name,
+            body.agent_version,
         )
         connection_mode = release.connection_mode.value
     elif resolved_owner != identity.user_id:
         raise ConflictError("agent_owner_user_id requires a team space grant")
     binding = await container.agui.create_project_thread(
-        tenant_id=identity.tenant_id, user_id=identity.user_id,
-        thread_id=str(uuid4()), agent_name=body.agent_name, agent_version=body.agent_version,
-        agent_owner_user_id=resolved_owner, space_id=body.space_id,
-        connection_mode=connection_mode, project_id=body.project_id,
+        tenant_id=identity.tenant_id,
+        user_id=identity.user_id,
+        thread_id=str(uuid4()),
+        agent_name=body.agent_name,
+        agent_version=body.agent_version,
+        agent_owner_user_id=resolved_owner,
+        space_id=body.space_id,
+        connection_mode=connection_mode,
+        project_id=body.project_id,
     )
     return AguiThreadSummary(
-        thread_id=binding.thread_id, session_id=binding.session_id,
+        thread_id=binding.thread_id,
+        session_id=binding.session_id,
         title=await container.agui.resolve_title(binding, []),
-        agent_name=body.agent_name, agent_version=body.agent_version,
-        agent_owner_user_id=resolved_owner, space_id=body.space_id,
-        status="idle", project_id=binding.project_id,
-        created_at=binding.created_at, updated_at=binding.updated_at,
+        agent_name=body.agent_name,
+        agent_version=body.agent_version,
+        agent_owner_user_id=resolved_owner,
+        space_id=body.space_id,
+        status="idle",
+        project_id=binding.project_id,
+        created_at=binding.created_at,
+        updated_at=binding.updated_at,
     )
 
 
@@ -768,10 +803,14 @@ async def mark_agui_thread_read(
 ) -> AguiThreadReadResult:
     ensure_permission(identity, "tasks:read")
     binding = await container.agui.get_thread_record(
-        tenant_id=identity.tenant_id, user_id=identity.user_id, thread_id=thread_id,
+        tenant_id=identity.tenant_id,
+        user_id=identity.user_id,
+        thread_id=thread_id,
     )
     runs = await container.runs.list_for_sessions(
-        identity.tenant_id, list(binding.session_ids), limit=200,
+        identity.tenant_id,
+        list(binding.session_ids),
+        limit=200,
     )
     latest = max(
         (run.updated_at for run in _visible_thread_runs(runs)),
@@ -781,11 +820,14 @@ async def mark_agui_thread_read(
     # Clamp to the server's latest version; never mark future results as read.
     read_at = min(body.updated_at, latest)
     updated = await container.agui.mark_read(
-        tenant_id=identity.tenant_id, user_id=identity.user_id,
-        thread_id=thread_id, read_at=read_at,
+        tenant_id=identity.tenant_id,
+        user_id=identity.user_id,
+        thread_id=thread_id,
+        read_at=read_at,
     )
     return AguiThreadReadResult(
-        thread_id=thread_id, last_read_at=updated.last_read_at or read_at,
+        thread_id=thread_id,
+        last_read_at=updated.last_read_at or read_at,
     )
 
 
@@ -922,20 +964,14 @@ async def get_agui_thread_history(
 
     async def reconstruct(run: Run) -> list[AguiHistoryMessage]:
         async with semaphore:
-            return await _history_messages_for_run(
-                container, identity, run, write_snapshot=False
-            )
+            return await _history_messages_for_run(container, identity, run, write_snapshot=False)
 
     reconstructed = await asyncio.gather(*(reconstruct(run) for run in page))
-    terminal_snapshot_tasks = [
-        run for run in page if run.status.is_terminal
-    ]
+    terminal_snapshot_tasks = [run for run in page if run.status.is_terminal]
     for run in terminal_snapshot_tasks:
         background_tasks.add_task(_materialize_history_snapshot, container, identity.tenant_id, run)
 
-    messages: list[AguiHistoryMessage] = [
-        message for chunk in reconstructed for message in chunk
-    ]
+    messages: list[AguiHistoryMessage] = [message for chunk in reconstructed for message in chunk]
     body = AguiThreadHistory(
         thread_id=thread_id,
         status=latest.status.value if latest is not None else "idle",
@@ -1002,21 +1038,28 @@ async def _run_projection(
         )
         if snapshot is not None:
             activity_payload = snapshot.payload.get("activity")
-            ui_payload = snapshot.payload.get("ui")
+            ui_payload = [
+                p.model_dump(mode="json") for p in await container.presentations.materialize(run)
+            ]
             return RunProjection(
                 [event for event in markers if event.type == "run.steer.accepted"],
                 str(snapshot.payload.get("response_text", "")),
                 activity_payload if isinstance(activity_payload, dict) else None,
-                [item for item in ui_payload if isinstance(item, dict)]
-                if isinstance(ui_payload, list)
-                else [],
+                ui_payload,
             )
     events = await container.observed_events.list_after(tenant_id, run.run_id, 0)
     if not events:
         return RunProjection([], "", None, [])
     events = redact_internal_agent_asset_events(events)
     activity = build_run_activity(events)
-    ui = [item.model_dump(mode="json") for item in presentations_for_events(events)]
+    ui = [
+        item.model_dump(mode="json")
+        for item in (
+            await container.presentations.materialize(run, events)
+            if run.status.is_terminal
+            else presentations_for_events(events)
+        )
+    ]
     steer_events = [event for event in events if event.type == "run.steer.accepted"]
     if not run.status.is_terminal:
         return RunProjection(steer_events, active_response_text(events), activity, ui)
@@ -1081,14 +1124,14 @@ async def _history_messages_for_run(
     tenant_id = identity.tenant_id
     messages: list[AguiHistoryMessage] = []
     prompt = run.input.get("prompt")
+    if run.input.get("ui_action_request_id") and isinstance(
+        run.input.get("ui_action_display"), str
+    ):
+        prompt = run.input["ui_action_display"]
     if isinstance(prompt, str) and prompt:
         raw_input_ids = run.input.get("input_artifact_ids", [])
         input_ids = (
-            [
-                item
-                for item in cast(list[object], raw_input_ids)
-                if isinstance(item, str) and item
-            ]
+            [item for item in cast(list[object], raw_input_ids) if isinstance(item, str) and item]
             if isinstance(raw_input_ids, list)
             else []
         )
@@ -1096,11 +1139,13 @@ async def _history_messages_for_run(
         missing_inputs = False
         for input_id in input_ids:
             try:
-                input_artifacts.extend(await container.input_artifacts.resolve_for_run(
-                    tenant_id=tenant_id,
-                    user_id=identity.user_id,
-                    input_artifact_ids=[input_id],
-                ))
+                input_artifacts.extend(
+                    await container.input_artifacts.resolve_for_run(
+                        tenant_id=tenant_id,
+                        user_id=identity.user_id,
+                        input_artifact_ids=[input_id],
+                    )
+                )
             except NotFoundError:
                 # Attachment retention must not erase the conversation itself.
                 missing_inputs = True
@@ -1124,19 +1169,18 @@ async def _history_messages_for_run(
             ]
         else:
             content = prompt
-        messages.append(
-            AguiHistoryMessage(id=f"user-{run.run_id}", role="user", content=content)
-        )
-    projection = await _run_projection(
-        container, tenant_id, run, write_snapshot=write_snapshot
-    )
+        messages.append(AguiHistoryMessage(id=f"user-{run.run_id}", role="user", content=content))
+    projection = await _run_projection(container, tenant_id, run, write_snapshot=write_snapshot)
     activity = projection.activity
     ui_blocks = projection.ui_blocks
     for guidance in projection.steer_events:
-        messages.append(AguiHistoryMessage(
-            id=f"steer-{guidance.payload.get('request_id', guidance.event_id)}",
-            role="user", content=str(guidance.payload.get("text", "")),
-        ))
+        messages.append(
+            AguiHistoryMessage(
+                id=f"steer-{guidance.payload.get('request_id', guidance.event_id)}",
+                role="user",
+                content=str(guidance.payload.get("text", "")),
+            )
+        )
     artifacts = await container.artifacts.list_for_run(tenant_id, run.run_id)
     activity_tool_call = (
         AguiHistoryToolCall(
@@ -1335,10 +1379,15 @@ async def stream_agui_events(
         0,
     )
     all_events = redact_internal_agent_asset_events(all_events)
+    ui = (
+        await container.presentations.materialize(run, all_events)
+        if run.status.is_terminal
+        else None
+    )
 
     async def stream() -> AsyncIterator[str]:
         for event in events:
-            projected = project_stream_event(event, all_events)
+            projected = project_stream_event(event, all_events, ui)
             first_child = delivered_children if event.sequence == sequence else 0
             for index, item in enumerate(projected[first_child:], start=first_child):
                 if isinstance(item, (RunStartedEvent, RunFinishedEvent)):

@@ -26,6 +26,79 @@ def _ids() -> Callable[[str], str]:
     return generate
 
 
+@pytest.mark.asyncio
+async def test_outbox_retry_delivers_an_event_persisted_before_bus_failure() -> None:
+    class FailingBus(InMemoryEventBus):
+        fail_once = True
+
+        async def publish(self, event: RunEvent) -> None:
+            if self.fail_once:
+                self.fail_once = False
+                raise ConnectionError("bus unavailable")
+            await super().publish(event)
+
+    repository = InMemoryEventRepository()
+    bus = FailingBus()
+    service = EventService(repository, bus, clock=lambda: NOW, id_generator=_ids())
+
+    async def deliver() -> RunEvent:
+        return await service.append_once(
+            event_id="ui-event-1",
+            tenant_id="tenant-a",
+            run_id="run-1",
+            session_id="session-1",
+            event_type="ui.presentation.ready",
+            timestamp=NOW.isoformat(),
+            payload={"presentation_id": "p-1"},
+        )
+
+    with pytest.raises(ConnectionError):
+        await deliver()
+    assert await bus.read("tenant-a", "run-1") == []
+    recovered = await deliver()
+    assert await repository.list_after("tenant-a", "run-1", 0) == [recovered]
+    assert await bus.read("tenant-a", "run-1") == [recovered]
+
+
+@pytest.mark.asyncio
+async def test_outbox_reloads_the_sequence_chosen_by_a_concurrent_drain() -> None:
+    winner = RunEvent(
+        event_id="ui-event-1",
+        tenant_id="tenant-a",
+        run_id="run-1",
+        session_id="session-1",
+        sequence=1,
+        type="ui.presentation.ready",
+        timestamp=NOW,
+        payload={"presentation_id": "p-1"},
+    )
+
+    class ConcurrentDrain(InMemoryEventRepository):
+        injected = False
+
+        async def latest_sequence(self, tenant_id: str, run_id: str) -> int:
+            if not self.injected:
+                self.injected = True
+                await self.append(winner)
+            return await super().latest_sequence(tenant_id, run_id)
+
+    repository = ConcurrentDrain()
+    bus = InMemoryEventBus()
+    service = EventService(repository, bus, clock=lambda: NOW, id_generator=_ids())
+    delivered = await service.append_once(
+        event_id=winner.event_id,
+        tenant_id=winner.tenant_id,
+        run_id=winner.run_id,
+        session_id=winner.session_id,
+        event_type=winner.type,
+        timestamp=NOW.isoformat(),
+        payload=winner.payload,
+    )
+    assert delivered == winner
+    assert await repository.list_after("tenant-a", "run-1", 0) == [winner]
+    assert await bus.read("tenant-a", "run-1") == [winner]
+
+
 class RacingEventRepository:
     """Make the first two sequence reads observe the same empty stream."""
 

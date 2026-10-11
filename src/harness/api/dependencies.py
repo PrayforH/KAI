@@ -57,7 +57,7 @@ from harness.automations.service import AutomationService
 from harness.config import Settings
 from harness.context.repositories import InMemoryContextRepository
 from harness.context.service import ContextService
-from harness.core.errors import NotFoundError
+from harness.core.errors import NotFoundError, PermissionDeniedError
 from harness.core.manifest import AgentManifestSnapshot
 from harness.core.models import Run, RunStatus, Session
 from harness.core.ports import EventRepository, EventWakeup, TaskQueue
@@ -112,6 +112,9 @@ from harness.platform_mcp.workload import (
 )
 from harness.policy.profiles import PolicyProfileRegistry, default_policy_profiles
 from harness.policy.runtime import ResolvedPolicy
+from harness.presentation.models import ActionRequest, Publication
+from harness.presentation.repositories import InMemoryPresentationRepository
+from harness.presentation.service import PresentationService
 from harness.projects.repositories import InMemoryProjectRepository
 from harness.projects.service import ProjectService
 from harness.quality.controller import QualitySyncController
@@ -274,6 +277,7 @@ class ApiContainer:
     worker: RunOrchestrator
     agui: AguiRunService
     auto_execute: bool
+    presentations: PresentationService
     event_wakeup: EventWakeup | None = None
     skill_conversation: SkillConversationService | None = None
     sandbox_maintenance: Callable[[], Awaitable[object]] | None = None
@@ -957,8 +961,10 @@ def build_memory_container(
         clock=clock,
         quotas=enforced_quotas,
     )
+
     async def runtime_builder_tools(run, session):
         from harness.studio.runtime_builder import builder_overlay
+
         return await builder_overlay(container, event_service, run, session)
 
     worker = RunOrchestrator(
@@ -1068,7 +1074,37 @@ def build_memory_container(
         clock=clock,
         id_generator=id_generator,
     )
+
+    async def authorize_ui_action(publication: Publication, request: ActionRequest) -> None:
+        session = await session_service.get(publication.tenant_id, publication.session_id)
+        if session.user_id != request.actor_user_id:
+            raise PermissionDeniedError("task owner changed")
+        if request.authentication_method == "jwt":
+            user, membership = await auth.profile(publication.tenant_id, request.actor_user_id)
+            if user.disabled or membership.role not in {"owner", "admin", "member"}:
+                raise PermissionDeniedError("task write permission was revoked")
+        elif request.authentication_method != "service":
+            raise PermissionDeniedError("UI actions require an interactive user identity")
+        if session.team_ids:
+            await team_spaces.require_agent_access(
+                publication.tenant_id,
+                request.actor_user_id,
+                session.team_ids[0],
+                session.resolved_agent_owner_user_id,
+                session.agent_name,
+                session.agent_version,
+            )
+
+    presentations = PresentationService(
+        InMemoryPresentationRepository(),
+        sessions=sessions,
+        runs=run_service,
+        events=event_service,
+        queue=queue,
+        authorize=authorize_ui_action,
+    )
     container = ApiContainer(
+        presentations=presentations,
         evolution=evolution,
         environment=resolved_settings.environment,
         api_bearer_token=resolved_settings.api_bearer_token,

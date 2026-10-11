@@ -87,8 +87,13 @@ def test_caps_the_turn_at_two_blocks() -> None:
     assert len(presentations_for_events(_answer(text))) == 2
 
 
-def _tool_result(content: object, *, name: str = "mcp__harness-data__query",
-                 sequence: int = 2, is_error: bool = False) -> list[RunEvent]:
+def _tool_result(
+    content: object,
+    *,
+    name: str = "mcp__harness-data__query",
+    sequence: int = 2,
+    is_error: bool = False,
+) -> list[RunEvent]:
     return [
         _event("tool.request", sequence, tool_call_id="tc-1", name=name, arguments={}),
         _event(
@@ -155,3 +160,30 @@ def test_is_deterministic_across_repeated_projection() -> None:
 
     assert [item.presentation_id for item in first] == [item.presentation_id for item in second]
     assert [item.kind for item in first] == ["table", "table"]
+
+
+def test_records_exact_accepted_source_and_event_provenance() -> None:
+    rejected = _fence({**TABLE, "kind": "unsupported"})
+    accepted = _fence(TABLE)
+    presentations = presentations_for_events(_answer(rejected + "\n" + accepted))
+    assert len(presentations) == 1
+    assert presentations[0].source_text == accepted
+    assert presentations[0].source_refs[0]["sequence"] == 3
+    assert len(presentations[0].snapshot_hash) == 64
+
+
+def test_explicit_answer_block_is_not_starved_by_search_tables() -> None:
+    rows = [{"name": f"row-{i}", "count": i} for i in range(5)]
+    events = [
+        _event("tool.request", 1, tool_call_id="search1", name="WebSearch"),
+        _event("tool.result", 2, tool_call_id="search1", content=json.dumps(rows)),
+        _event("tool.request", 3, tool_call_id="search2", name="WebSearch"),
+        _event("tool.result", 4, tool_call_id="search2", content=json.dumps(rows)),
+        _event("message.start", 5, message_id=MESSAGE_ID),
+        _event("message.delta", 6, message_id=MESSAGE_ID, text=_fence(TABLE)),
+        _event("message.completed", 7, message_id=MESSAGE_ID),
+    ]
+    blocks = presentations_for_events(events)
+    assert len(blocks) == 2
+    assert blocks[0].decision["origin"] == "model"
+    assert blocks[0].source_text == _fence(TABLE)

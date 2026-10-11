@@ -97,6 +97,7 @@ _RENDERERS: tuple[Renderer, ...] = (
     ),
 )
 
+
 def _renderers_text() -> str:
     lines: list[str] = []
     for renderer in _RENDERERS:
@@ -116,6 +117,15 @@ answer genuinely helps the user read, compare or verify the result. Do not add a
 block to make a reply look richer: the platform shows at most
 {MAX_PRESENTATIONS_PER_TURN} per turn, and a wrong widget costs the user more than
 plain text.
+
+For a small chart, sortable table, comparison, timeline, diagram or short form
+meant to be used in this conversation, prefer these inline blocks.
+When the user explicitly asks for one of the available components, use that
+kind if the supplied data supports it; do not replace it with a prose list or
+offer to create the requested component in a later turn.
+"Interactive" alone does not ask for
+an HTML file. Generate a standalone file when the user asks for a downloadable
+artifact, a separate page, or interactions beyond the catalog below.
 
 When a block does help, end your turn with one fenced ```harness-ui block holding a
 single JSON object and nothing after the closing fence:
@@ -166,7 +176,10 @@ A block may carry up to {MAX_ACTIONS} `actions`. The platform assigns each one a
 - A `form` block's submit button is its action, so a form must declare one `read`
   or `write` action; one with nowhere to submit is rejected. Give it a
   `submit_label` that names the real operation, and never claim it already
-  happened."""
+  happened. Mark every field the user must supply as `required: true`; optional
+  fields alone are `required: false`. A submitted form is a tracked request, not
+  a completed business operation. `read` and `conversation` cannot invoke writes;
+  `write` uses the task's existing tool policy and approval requirements."""
 
 
 class UICapabilityCatalog:
