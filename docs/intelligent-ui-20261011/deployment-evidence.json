@@ -33,9 +33,12 @@
     "run_8c1f3dd613b94460ad8d457361ba745e"
   ],
   "remaining_acceptance": [
-    "New timeline/diagram browser visual review: CUA connection timed out",
-    "User-specified WeChat article examples: article content inaccessible"
+    "New timeline/diagram browser visual review: IAB screenshot works, DOM controls time out",
+    "Article examples: source read and generation probes complete; full interactive, image and fidelity acceptance pending"
   ],
   "web_build_provenance": "Built from feature source as intelligent-ui-20261011f; g aliases the identical image because subsequent changes are backend-only",
-  "feishu_document_revision": 29
+  "feishu_document_revision": 31,
+  "article_case_matrix": "article-case-matrix.json",
+  "article_generation_probes": "article-generation-probes.json",
+  "article_images_local_evidence": "article-images-local-evidence.json"
 }
