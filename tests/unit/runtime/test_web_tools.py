@@ -1,3 +1,4 @@
+import json
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -167,10 +168,13 @@ async def test_fetch_reads_through_configured_proxy(monkeypatch, scheme, from_en
     content = b"<html><title>Public source</title><p>Verified text</p></html>"
     response = (
         b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: "
-        + str(len(content)).encode() + b"\r\n\r\n" + content
+        + str(len(content)).encode()
+        + b"\r\n\r\n"
+        + content
     )
-    responses = ([b"HTTP/1.1 200 Connection established\r\n\r\n"]
-                 if scheme == "https" else []) + [response]
+    responses = ([b"HTTP/1.1 200 Connection established\r\n\r\n"] if scheme == "https" else []) + [
+        response
+    ]
     backend = httpcore.AsyncMockBackend(responses)
     connect = AsyncMock(wraps=backend.connect_tcp)
     monkeypatch.setattr(backend, "connect_tcp", connect)
@@ -247,11 +251,16 @@ async def test_fetch_decodes_compressed_pages_with_expanded_size_limit(encoding,
     import gzip
     import zlib
 
-    content = (b"x" * 2_000_001 if oversized
-               else b"<html><title>Public source</title><p>Verified text</p></html>")
+    content = (
+        b"x" * 2_000_001
+        if oversized
+        else b"<html><title>Public source</title><p>Verified text</p></html>"
+    )
     packed = gzip.compress(content) if encoding == "gzip" else zlib.compress(content)
-    wire = (f"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Encoding: {encoding}"
-            f"\r\nContent-Length: {len(packed)}\r\n\r\n").encode() + packed
+    wire = (
+        f"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Encoding: {encoding}"
+        f"\r\nContent-Length: {len(packed)}\r\n\r\n"
+    ).encode() + packed
 
     class Stream:
         def __init__(self):
@@ -298,3 +307,60 @@ async def test_web_failure_survives_sdk_mcp_result_serialization(name, arguments
     result = await server.request_handlers[CallToolRequest](request)
     assert result.root.isError is True
     assert result.root.content[0].text
+
+
+@pytest.mark.asyncio
+async def test_tavily_images_keep_their_page_source_and_reject_private_urls():
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        assert body["include_images"] and body["include_image_descriptions"]
+        return httpx.Response(
+            200,
+            json={
+                "results": [
+                    {
+                        "url": "https://example.com/page",
+                        "title": "Museum",
+                        "images": [
+                            {"url": "https://example.com/photo.jpg", "description": "Exterior"},
+                            "http://127.0.0.1/private.jpg",
+                            "https://example.com:8443/private.jpg",
+                        ],
+                    }
+                ],
+                "images": ["https://example.org/search-image.jpg"],
+            },
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    with patch("harness.runtime.web_tools.httpx.AsyncClient", return_value=client):
+        result = await PublicWebClient(AsyncMock(return_value="test-key"), "tavily").search(
+            "museum photos", include_images=True
+        )
+    assert result["results"][0]["images"] == [
+        {
+            "url": "https://example.com/photo.jpg",
+            "description": "Exterior",
+            "source_url": "https://example.com/page",
+        }
+    ]
+    assert "source_url" not in result["images"][0]  # cannot invent attribution
+    assert "未下载" in result["images_notice"]
+
+
+@pytest.mark.asyncio
+async def test_minimax_reports_missing_image_support_without_losing_text():
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200, json={"organic": [{"link": "https://example.com/", "title": "Public source"}]}
+            )
+        )
+    )
+    with patch("harness.runtime.web_tools.httpx.AsyncClient", return_value=client):
+        result = await PublicWebClient(AsyncMock(return_value="test-key"), "minimax").search(
+            "museum photos", include_images=True
+        )
+    assert len(result["results"]) == 1
+    assert result["images_status"] == "unsupported"
+    assert result["images"] == []

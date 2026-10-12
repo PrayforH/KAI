@@ -1,0 +1,28 @@
+{
+  "presentation_id": "ui_ad677ea6aba9a4c003f68f96",
+  "parent_run_id": "run_56593bb104e9498d9fc3ec7615b1c26d",
+  "child_run_id": "run_00045458fa3b41b78867e5dba5c8a658",
+  "request_id": "uia_ce726960fe3f335e99f7e4a0c505b9ef",
+  "concurrent_requests": 12,
+  "unique_child_runs": 1,
+  "execution_status": "succeeded",
+  "checks": {
+    "changed_write": 409,
+    "stale_revision": 409,
+    "invalid_number": 422,
+    "forged_actor": 422,
+    "stale_view": 409,
+    "other_actor": 404,
+    "other_tenant": 404,
+    "replay_matches_snapshot": true
+  },
+  "snapshot_hash": "945b1746662a0adf51782bef18c350aa59687cf9e2637b9b0e17914120883992",
+  "renderer_version": "form/1",
+  "rule_version": "presentation-policy/3",
+  "lifecycle_event_counts": {
+    "ui.presentation.ready": 1,
+    "ui.action.requested": 1,
+    "ui.action.completed": 1
+  },
+  "verified_image_tag": "intelligent-ui-20261011g"
+}

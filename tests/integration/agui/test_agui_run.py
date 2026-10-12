@@ -153,9 +153,7 @@ async def test_same_agent_can_switch_version_and_keep_thread_history(
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         for path in (FIXTURE_MANIFEST, manifest):
-            published = await client.post(
-                "/v1/agents", json={"path": str(path)}, headers=HEADERS
-            )
+            published = await client.post("/v1/agents", json={"path": str(path)}, headers=HEADERS)
             assert published.status_code == 201
 
         first = await client.post(
@@ -172,9 +170,7 @@ async def test_same_agent_can_switch_version_and_keep_thread_history(
             ),
             headers=HEADERS,
         )
-        history = await client.get(
-            "/v1/agui/threads/thread-upgrade/history", headers=HEADERS
-        )
+        history = await client.get("/v1/agui/threads/thread-upgrade/history", headers=HEADERS)
         listed = await client.get("/v1/agui/threads", headers=HEADERS)
 
     assert first.status_code == 200
@@ -185,9 +181,7 @@ async def test_same_agent_can_switch_version_and_keep_thread_history(
     assert len(binding.previous_session_ids) == 1
     assert binding.session_id not in binding.previous_session_ids
     assert [
-        message["content"]
-        for message in history.json()["messages"]
-        if message["role"] == "user"
+        message["content"] for message in history.json()["messages"] if message["role"] == "user"
     ] == ["old", "new"]
     task = next(item for item in listed.json() if item["thread_id"] == "thread-upgrade")
     assert task["agent_version"] == "0.1.1"
@@ -305,12 +299,8 @@ async def test_agui_thread_list_and_history_restore_owned_tasks() -> None:
 @pytest.mark.asyncio
 async def test_agui_thread_can_be_archived_restored_and_keeps_history() -> None:
     app = create_memory_app(auto_execute=True)
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        await client.post(
-            "/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS
-        )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS)
         run = await client.post(
             "/v1/agui?agent_name=echo-agent&agent_version=0.1.0",
             json=_request(
@@ -326,12 +316,8 @@ async def test_agui_thread_can_be_archived_restored_and_keeps_history() -> None:
             headers=HEADERS,
         )
         active_list = await client.get("/v1/agui/threads", headers=HEADERS)
-        archive_list = await client.get(
-            "/v1/agui/threads?archived=true", headers=HEADERS
-        )
-        history = await client.get(
-            "/v1/agui/threads/thread-archive/history", headers=HEADERS
-        )
+        archive_list = await client.get("/v1/agui/threads?archived=true", headers=HEADERS)
+        history = await client.get("/v1/agui/threads/thread-archive/history", headers=HEADERS)
         restored = await client.patch(
             "/v1/agui/threads/thread-archive",
             json={"archived": False},
@@ -354,12 +340,8 @@ async def test_agui_thread_can_be_archived_restored_and_keeps_history() -> None:
 @pytest.mark.asyncio
 async def test_agui_thread_can_be_pinned_renamed_and_ranks_pinned_first() -> None:
     app = create_memory_app(auto_execute=True)
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        await client.post(
-            "/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS
-        )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS)
         for index, thread_id in enumerate(["thread-pin-a", "thread-pin-b"]):
             run = await client.post(
                 "/v1/agui?agent_name=echo-agent&agent_version=0.1.0",
@@ -559,12 +541,8 @@ async def test_cancel_agui_run_resolves_protocol_ids_to_harness_run() -> None:
 @pytest.mark.asyncio
 async def test_cancel_resumed_agui_run_by_server_id() -> None:
     app = create_memory_app()
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        await client.post(
-            "/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS
-        )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS)
         request = RunAgentInput.model_validate(
             _request(
                 thread_id="thread-resumed",
@@ -870,19 +848,32 @@ async def test_history_keeps_messages_and_valid_files_when_old_attachment_is_mis
         attachments = []
         ids = []
         for filename in ("missing.txt", "valid.txt"):
-            upload = await client.post("/v1/input-artifacts",
-                files={"file": (filename, b"historical attachment", "text/plain")}, headers=HEADERS)
+            upload = await client.post(
+                "/v1/input-artifacts",
+                files={"file": (filename, b"historical attachment", "text/plain")},
+                headers=HEADERS,
+            )
             assert upload.status_code == 201
             input_id = upload.json()["input_artifact_id"]
             ids.append(input_id)
-            attachments.append({"type": "document", "source": {
-                "type": "data", "value": input_id, "mimeType": "text/plain"},
-                "metadata": {"filename": filename}})
+            attachments.append(
+                {
+                    "type": "document",
+                    "source": {"type": "data", "value": input_id, "mimeType": "text/plain"},
+                    "metadata": {"filename": filename},
+                }
+            )
         request = _request(thread_id="old-files", run_id="old-run", prompt="保留历史对话")
-        request["messages"] = [{"id": "m", "role": "user", "content": [
-            {"type": "text", "text": "保留历史对话"}, *attachments]}]
-        result = await client.post("/v1/agui?agent_name=echo-agent&agent_version=0.1.0",
-            json=request, headers=HEADERS)
+        request["messages"] = [
+            {
+                "id": "m",
+                "role": "user",
+                "content": [{"type": "text", "text": "保留历史对话"}, *attachments],
+            }
+        ]
+        result = await client.post(
+            "/v1/agui?agent_name=echo-agent&agent_version=0.1.0", json=request, headers=HEADERS
+        )
         assert result.status_code == 200
         repository = app.state.container.input_artifacts._repository
         assert isinstance(repository, InMemoryInputArtifactRepository)
@@ -894,8 +885,9 @@ async def test_history_keeps_messages_and_valid_files_when_old_attachment_is_mis
         assert "保留历史对话" in messages[0]["content"][0]["text"]
         assert "部分历史附件已不可用" in messages[0]["content"][0]["text"]
         assert messages[0]["content"][1]["source"]["value"] == ids[1]
-        denied = await client.get("/v1/agui/threads/old-files/history",
-            headers={**HEADERS, "X-User-ID": "someone-else"})
+        denied = await client.get(
+            "/v1/agui/threads/old-files/history", headers={**HEADERS, "X-User-ID": "someone-else"}
+        )
         assert denied.status_code == 404
 
 
@@ -914,7 +906,5 @@ async def test_legacy_knowledge_mode_does_not_constrain_new_runs(legacy_mode: st
             "/v1/agui?agent_name=echo-agent&agent_version=0.1.0", json=request, headers=HEADERS
         )
         assert response.status_code == 200
-        run = await app.state.container.runs.get(
-            "tenant-a", response.headers["x-harness-run-id"]
-        )
+        run = await app.state.container.runs.get("tenant-a", response.headers["x-harness-run-id"])
         assert "knowledge_mode" not in run.input

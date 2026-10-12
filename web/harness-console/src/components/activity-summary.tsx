@@ -24,12 +24,13 @@ import { ProcessDisclosure } from "./process-disclosure";
 import { CompactionProgressIndicator } from "./compaction-progress";
 import { useDetailedProcess } from "../lib/process-display-preference";
 import { attachConversationScroll } from "../lib/conversation-scroll";
+import { CodexResponseIcon } from "./codex-response-icon";
 
 const phaseLabels: Record<RunPhase, string> = {
   queued: "等待处理",
   running: "正在处理",
   waiting_approval: "等待审批",
-  completed: "处理完成",
+  completed: "已完成",
   failed: "处理失败",
   rejected: "已拒绝",
   cancelled: "已停止",
@@ -69,11 +70,11 @@ function rememberDisclosure(runId: string, open: boolean) {
 }
 
 export function durationLabel(elapsedMs: number) {
-  if (elapsedMs < 1_000) return `${elapsedMs}ms`;
-  if (elapsedMs < 60_000) return `${Math.round(elapsedMs / 1_000)}s`;
+  if (elapsedMs < 1_000) return `${elapsedMs}毫秒`;
+  if (elapsedMs < 60_000) return `${Math.round(elapsedMs / 1_000)}秒`;
   const minutes = Math.floor(elapsedMs / 60_000);
   const seconds = Math.floor((elapsedMs % 60_000) / 1_000);
-  return `${minutes}m ${seconds}s`;
+  return `${minutes}分${seconds ? `${seconds}秒` : ""}`;
 }
 
 interface CommentaryNode {
@@ -283,7 +284,10 @@ const ExecutionCommentary = memo(function ExecutionCommentary({
       <details className="execution-reasoning" open={expanded} onToggle={event => setExpanded(event.currentTarget.open)}
         data-commentary-source={commentary.source} data-active={active ? "true" : "false"}>
         <summary className="execution-reasoning-summary">
-          <span className="execution-reasoning-icon"><ThinkingIcon /></span><span className="execution-reasoning-label execution-state-sweep" data-running={active}>思考</span><span className="execution-reasoning-separator" aria-hidden="true">·</span><span className="execution-reasoning-preview">{preview}</span><span className="execution-reasoning-chevron" aria-hidden="true" />
+          <span className="execution-reasoning-icon"><CodexResponseIcon name="brain" /></span>
+          <span className="execution-reasoning-label execution-state-sweep" data-running={active}>思考</span>
+          <span className="execution-reasoning-preview">{preview}</span>
+          <span className="execution-reasoning-chevron"><CodexResponseIcon name="chevronDown" /></span>
         </summary>
         {expanded && <div className="execution-reasoning-body" ref={body} tabIndex={0} aria-label="思考内容">
           <div className="execution-reasoning-text">{commentary.text}</div>
@@ -603,36 +607,9 @@ function displayTimeline(view: RunViewModel, detailed = false): DisplayTimelineN
   return display;
 }
 
-function ThinkingIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path d="M10 2.8v14.4" />
-      <path d="M3.8 6.4l12.4 7.2" />
-      <path d="M16.2 6.4L3.8 13.6" />
-    </svg>
-  );
-}
-
 function ActionIcon({ kind }: { kind: ActionIconKind }) {
-  if (kind === "terminal") {
-    return <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="3" width="15" height="14" rx="3" /><path d="m6 8 2 2-2 2m4.5 0h3" /></svg>;
-  }
-  if (kind === "edit") {
-    return <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 14.8.8-3.8L13 2.8a2 2 0 0 1 2.8 2.8l-8.2 8.2-3.6 1Z" /><path d="m11.8 4 3 3" /></svg>;
-  }
-  if (kind === "search") {
-    return <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.8" cy="8.8" r="5.2" /><path d="m12.7 12.7 4 4" /></svg>;
-  }
-  if (kind === "agent") {
-    return <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="6" r="3" /><path d="M4 17c.5-3.5 2.5-5.3 6-5.3s5.5 1.8 6 5.3" /></svg>;
-  }
-  if (kind === "result") {
-    return <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 3.5h9l3 3V17H4Z" /><path d="M13 3.5V7h3M7 11l2 2 4-4" /></svg>;
-  }
-  if (kind === "model") {
-    return <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5v3M10 14.5v3M2.5 10h3M14.5 10h3M4.7 4.7l2.1 2.1M13.2 13.2l2.1 2.1M15.3 4.7l-2.1 2.1M6.8 13.2l-2.1 2.1" /><circle cx="10" cy="10" r="3.2" /></svg>;
-  }
-  return <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 6.5h14M5 3v3.5M15 3v3.5M4 6.5V17h12V6.5M7 10h6M7 13h4" /></svg>;
+  const names = { system: "settings", model: "brain", terminal: "terminal", edit: "pencil", search: "search", agent: "person", result: "document" } as const;
+  return <CodexResponseIcon name={names[kind]} />;
 }
 
 export function formatResultPreview(value: string) {
@@ -726,7 +703,7 @@ function ActionRow({ action, active = false }: { action: ActionNode; active?: bo
         onClick={hasResult ? undefined : (event) => event.preventDefault()}
       >
         {heading}
-        {hasResult && <span className="execution-action-chevron" aria-hidden="true" />}
+        {hasResult && <span className="execution-action-chevron"><CodexResponseIcon name="chevronDown" /></span>}
       </summary>
       {hasResult && result}
     </details>
@@ -805,8 +782,8 @@ export function ActivitySummary({
       : null;
   const heading = activityHeading(view);
   const elapsedCopy = active
-    ? `已持续 ${elapsed < 1_000 ? "0s" : durationLabel(elapsed)}`
-    : `持续了 ${durationLabel(elapsed)}`;
+    ? `已用时 ${elapsed < 1_000 ? "0秒" : durationLabel(elapsed)}`
+    : `耗时 ${durationLabel(elapsed)}`;
   const failure = view.phase === "failed" ? failureDetails(view) : null;
   const publicationNotice = view.items.findLast(item => item.event_type === "artifact.publication_limited");
   const hasContent = timeline.length > 0 || Boolean(failure);
@@ -835,7 +812,7 @@ export function ActivitySummary({
       >
         <span className="execution-phase">{heading}</span>
         <span className="execution-duration">· {elapsedCopy}</span>
-        {hasContent && <span className="execution-chevron" aria-hidden="true" />}
+        {hasContent && <span className="execution-chevron"><CodexResponseIcon name="chevronDown" /></span>}
       </Disclosure>
       <CompactionProgressIndicator view={view} />
       {publicationNotice?.summary && <p className="execution-publication-notice" role="status">{publicationNotice.summary}</p>}

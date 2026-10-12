@@ -133,8 +133,10 @@ class UserWebClient(PublicWebClient):
         self.service = service
         self.identity = identity
 
-    async def search(self, query: str) -> dict[str, Any]:
-        return await (await self.service.client(self.identity)).search(query)
+    async def search(self, query: str, *, include_images: bool = False) -> dict[str, Any]:
+        return await (await self.service.client(self.identity)).search(
+            query, include_images=include_images
+        )
 
     async def fetch(self, url: str) -> dict[str, Any]:
         return await (await self.service.client(self.identity)).fetch(url)

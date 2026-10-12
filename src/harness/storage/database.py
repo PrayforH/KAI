@@ -8,6 +8,9 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from harness.storage import (
+    ui_models as _ui_models,  # noqa: F401  # pyright: ignore[reportUnusedImport]
+)
 from harness.storage.models import Base
 
 SessionFactory = async_sessionmaker[AsyncSession]

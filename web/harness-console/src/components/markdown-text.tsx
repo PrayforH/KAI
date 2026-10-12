@@ -7,9 +7,13 @@ import {
 import { TextMessagePartProvider, useMessagePartText } from "@assistant-ui/react";
 import remend from "remend";
 import remarkGfm from "remark-gfm";
-import { Children, memo, useMemo, useState, type ComponentPropsWithoutRef, type ReactElement, type ReactNode } from "react";
+import { Children, memo, useEffect, useMemo, useRef, useState, type ComponentPropsWithoutRef, type ReactElement, type ReactNode } from "react";
+import { writeTextToClipboard } from "../lib/clipboard";
+import { CodexResponseIcon } from "./codex-response-icon";
 import { conversationInputDisplay } from "../lib/conversation-input";
 import { normalizeMessageText, normalizeTemperatureRanges } from "../lib/message-text";
+import { stripHarnessUiFences } from "./intelligent-ui/schema";
+import { usePublishedBlocks } from "./intelligent-ui/turn-context";
 import { MermaidCodeHeader, MermaidDiagram } from "./mermaid-diagram";
 import { citationTarget, knowledgeUrlTransform, remarkWikiLinks } from "../lib/knowledge-links";
 import { useAnswerCitations } from "./knowledge/answer-citation-context";
@@ -18,19 +22,43 @@ import { WikiEntityLink } from "./knowledge/wiki-entity-link";
 import { SourceLink } from "./source-link";
 
 function CodeHeader({ language, code }: CodeHeaderProps) {
-  const [copied, setCopied] = useState(false);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const [busy, setBusy] = useState(false);
+  const pending = useRef(false);
+  const alive = useRef(true);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => {
+    alive.current = true;
+    return () => { alive.current = false; clearTimeout(timer.current); };
+  }, []);
 
   async function copy() {
-    await navigator.clipboard?.writeText(code);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1400);
+    if (pending.current) return;
+    pending.current = true;
+    setBusy(true);
+    try {
+      const copied = await writeTextToClipboard(code);
+      if (alive.current) setCopyState(copied ? "copied" : "failed");
+    } catch {
+      if (alive.current) setCopyState("failed");
+    } finally {
+      pending.current = false;
+      if (alive.current) {
+        setBusy(false);
+        clearTimeout(timer.current);
+        timer.current = setTimeout(() => setCopyState("idle"), 1800);
+      }
+    }
   }
+  const feedback = copyState === "copied" ? "已复制" : copyState === "failed" ? "复制失败" : "复制";
 
   return (
     <div className="aui-code-header">
       <span>{language || "text"}</span>
-      <button type="button" onClick={copy} aria-label="复制代码">
-        {copied ? "已复制" : "复制"}
+      <button type="button" onClick={() => void copy()} disabled={busy} aria-label="复制代码"
+        title={copyState === "failed" ? "复制失败，请手动选择代码" : "复制代码"} data-copy-state={copyState}>
+        <CodexResponseIcon name={copyState === "copied" ? "check" : "copy"} />
+        <span role="status" aria-live="polite">{feedback}</span>
       </button>
     </div>
   );
@@ -75,8 +103,9 @@ function ClampFooter({ total, preview, unit, open, onToggle }: {
           ? `已展开全部 ${total} ${unit}`
           : `共 ${total} ${unit}，另有 ${Math.max(total - preview, 0)} ${unit}未显示`}
       </span>
-      <button type="button" onClick={onToggle}>
+      <button type="button" aria-expanded={open} onClick={onToggle}>
         {open ? "收起" : `展开全部（${total} ${unit}）`}
+        <CodexResponseIcon name="chevronDown" />
       </button>
     </div>
   );
@@ -185,7 +214,17 @@ function markdownUrlTransform(url: string) {
 
 function MarkdownTextImpl() {
   const part = useMessagePartText();
-  const normalized = useMemo(() => ({ ...part, text: conversationInputDisplay(normalizeMessageText(part.text), part.status.type === "running") }), [part]);
+  const published = usePublishedBlocks();
+  const normalized = useMemo(
+    () => ({
+      ...part,
+      text: conversationInputDisplay(
+        normalizeMessageText(stripHarnessUiFences(part.text, published)),
+        part.status.type === "running",
+      ),
+    }),
+    [part, published],
+  );
   // Render the actual stream; do not queue a second typewriter animation.
   const running = normalized.status.type === "running";
   const [expanded, setExpanded] = useState(false);

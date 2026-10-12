@@ -1,9 +1,10 @@
 """Ordered event persistence and fan-out."""
 
+from datetime import datetime
 from typing import Any, Protocol
 
 from harness.application.types import Clock, IdGenerator
-from harness.core.errors import EventSequenceConflictError
+from harness.core.errors import ConflictError, EventSequenceConflictError
 from harness.core.events import RunEvent
 from harness.core.ports import EventBus, EventRepository
 
@@ -15,6 +16,68 @@ class TraceContext(Protocol):
 
 
 class EventService:
+    async def append_once(
+        self,
+        *,
+        event_id: str,
+        tenant_id: str,
+        run_id: str,
+        session_id: str,
+        event_type: str,
+        timestamp: str,
+        payload: dict[str, Any],
+    ) -> RunEvent:
+        """Drain a transactional outbox notice with a stable event identity."""
+        while True:
+            existing = next(
+                (
+                    e
+                    for e in await self._repository.list_after(
+                        tenant_id,
+                        run_id,
+                        0,
+                        types=(event_type,),
+                    )
+                    if e.event_id == event_id
+                ),
+                None,
+            )
+            if existing is not None:
+                if existing.payload != payload or existing.session_id != session_id:
+                    raise ConflictError("outbox event identity has different content")
+                # Persistence may have succeeded before fan-out failed. Retry delivery
+                # with the same identity so subscribers can safely deduplicate it.
+                await self._bus.publish(existing)
+                return existing
+            event = RunEvent(
+                event_id=event_id,
+                tenant_id=tenant_id,
+                run_id=run_id,
+                session_id=session_id,
+                sequence=await self._repository.latest_sequence(tenant_id, run_id) + 1,
+                type=event_type,
+                timestamp=datetime.fromisoformat(timestamp),
+                payload=payload,
+            )
+            try:
+                await self._repository.append(event)
+            except EventSequenceConflictError:
+                continue
+            except ConflictError:
+                # A concurrent drain can win this identity between the lookup
+                # and sequence allocation. Reload its canonical sequence; a
+                # collision outside this run remains an actual conflict.
+                if any(
+                    e.event_id == event_id
+                    for e in await self._repository.list_after(
+                        tenant_id, run_id, 0, types=(event_type,)
+                    )
+                ):
+                    continue
+                raise
+            await self._bus.publish(event)
+            return event
+
     def __init__(
         self,
         repository: EventRepository,
@@ -38,9 +101,7 @@ class EventService:
         *,
         types: tuple[str, ...] | None = None,
     ) -> list[RunEvent]:
-        return await self._repository.list_after(
-            tenant_id, run_id, after_sequence, types=types
-        )
+        return await self._repository.list_after(tenant_id, run_id, after_sequence, types=types)
 
     async def latest_for_session_type(
         self,
@@ -67,12 +128,21 @@ class EventService:
         )
 
     async def recent_for_session_types(
-        self, tenant_id: str, session_id: str, event_types: tuple[str, ...],
-        *, limit: int = 20, before: RunEvent | None = None,
+        self,
+        tenant_id: str,
+        session_id: str,
+        event_types: tuple[str, ...],
+        *,
+        limit: int = 20,
+        before: RunEvent | None = None,
         exclude_run_id: str | None = None,
     ) -> list[RunEvent]:
         return await self._repository.recent_for_session_types(
-            tenant_id, session_id, event_types, limit=limit, before=before,
+            tenant_id,
+            session_id,
+            event_types,
+            limit=limit,
+            before=before,
             exclude_run_id=exclude_run_id,
         )
 

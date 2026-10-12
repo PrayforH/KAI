@@ -265,6 +265,21 @@ class RunService:
             admitted = True
         try:
             await self._runs.add(run)
+        except ConflictError:
+            if admitted and self._admission is not None:
+                await self._admission.release_subject(tenant_id, run_id)
+            # UI dispatch may recover concurrently on different API/Worker
+            # processes. Its durable request reserves the input before this
+            # insert; the database's idempotency constraint picks one Run.
+            existing = await self._runs.find_by_idempotency_key(
+                tenant_id, session_id, idempotency_key,
+            )
+            if (
+                existing is None or not run_input.get("ui_action_request_id")
+                or existing.input != run_input
+            ):
+                raise
+            return RunCreation(run=existing, created=False, deduplicated=False)
         except Exception:
             if admitted and self._admission is not None:
                 await self._admission.release_subject(tenant_id, run_id)

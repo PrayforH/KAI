@@ -13,6 +13,23 @@ function streamingRequest(cookie = "harness_access_token=valid", size = "20") {
   return { request: new Request("http://web.test/api/input-artifacts", init), controller };
 }
 describe("streaming input uploads", () => {
+  it.each([["资料.ZIP", 500, 201], ["files.rar", 501, 413], ["office.docx", 51, 413]])(
+    "uses the archive allowance for %s without buffering", async (name, mib, status) => {
+      const { request, controller } = streamingRequest(undefined, String(Number(mib) * 1024 * 1024));
+      request.headers.set("x-upload-name", encodeURIComponent(String(name)));
+      let forwarded = false;
+      const response = await proxyInputArtifactRequest(request, config, async (url, init) => {
+        if (String(url).endsWith("/limits")) return Response.json({ max_file_bytes: 50 * 1024 * 1024,
+          max_archive_file_bytes: 500 * 1024 * 1024, archive_extensions: [".zip", ".rar"] });
+        forwarded = true;
+        expect(init?.body).toBe(request.body);
+        return Response.json({ status: "ready" }, { status: 201 });
+      });
+      expect(response.status).toBe(status);
+      expect(forwarded).toBe(status === 201);
+      controller.close(); await response.text();
+    },
+  );
   it("starts forwarding before the last browser byte arrives", async () => {
     const { request, controller } = streamingRequest();
     const response = await proxyInputArtifactRequest(request, config, async (url, init) => {

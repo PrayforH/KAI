@@ -4178,7 +4178,6 @@ body.codex-theme-v1
   :is(.execution-phase, .execution-duration, .execution-chevron) {
   filter: none;
   transform-origin: center;
-  transition: none;
 }
 
 body.codex-theme-v1 .execution-ribbon > .execution-disclosure:focus-visible {

@@ -20,6 +20,7 @@ from collections.abc import (
     Sequence,
 )
 from contextlib import AbstractContextManager, nullcontext, suppress
+from dataclasses import replace
 from pathlib import Path, PurePosixPath
 from typing import Any, TypeVar, cast
 from uuid import uuid4
@@ -53,6 +54,7 @@ from harness.observability.redaction import correlation_hash
 from harness.policy.models import PolicyContext, PolicyDecision
 from harness.policy.rules import PolicyEngine
 from harness.policy.runtime import ResolvedPolicy
+from harness.presentation.policy import action_policy
 from harness.quota.repositories import QuotaExceededError
 from harness.quota.service import QuotaService
 from harness.reliability.metrics import ReliabilityMetrics
@@ -1266,6 +1268,9 @@ class RunOrchestrator:
                 if isinstance(policy_resolution, ResolvedPolicy)
                 else policy_resolution
             )
+            active_policy = action_policy(active_policy, run.input.get("ui_action_kind"))
+            if resolved_policy is not None:
+                resolved_policy = replace(resolved_policy, call_policy=active_policy)
             workspace_policy = (
                 await self._workspace_policy_resolver(
                     tenant_id,

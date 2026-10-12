@@ -1,0 +1,488 @@
+/* Intelligent UI answer blocks.
+ *
+ * One card per validated harness.ui/v1 presentation, sitting under the answer
+ * text the way a reader expects: prose first, then the interactive evidence.
+ * Everything reads from the shared --codex-* tokens, so light and dark come for
+ * free and a block never looks like a third-party widget. */
+
+.intelligent-ui-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.intelligent-ui {
+  margin: 0;
+  border: 1px solid var(--codex-line);
+  border-radius: 12px;
+  background: var(--codex-surface-subtle);
+  overflow: hidden;
+}
+
+.intelligent-ui-unavailable {
+  padding: 12px 14px;
+  color: var(--codex-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.intelligent-ui-title {
+  padding: 12px 14px 10px;
+  color: var(--codex-ink);
+  font-size: 13.5px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--codex-line);
+}
+
+.intelligent-ui-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--codex-line);
+  color: var(--codex-muted);
+  font-size: 12px;
+}
+
+.intelligent-ui-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.intelligent-ui-toolbar button {
+  border: 1px solid var(--codex-line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--codex-ink-soft);
+  font-size: 12px;
+  padding: 3px 9px;
+  cursor: pointer;
+  transition: var(--codex-control-transition);
+}
+
+.intelligent-ui-toolbar button:hover {
+  border-color: var(--codex-line-strong);
+  color: var(--codex-ink);
+  background: var(--codex-surface-hover);
+}
+
+.intelligent-ui-toolbar button:focus-visible {
+  outline: 2px solid var(--codex-accent);
+  outline-offset: 1px;
+}
+
+.intelligent-ui-count {
+  white-space: nowrap;
+}
+
+.intelligent-ui-scroll {
+  overflow-x: auto;
+}
+
+.intelligent-ui table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.intelligent-ui thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--codex-surface-subtle);
+  border-bottom: 1px solid var(--codex-line-strong);
+  color: var(--codex-muted);
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.intelligent-ui thead th button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 8px 12px;
+  cursor: pointer;
+  text-align: inherit;
+}
+
+.intelligent-ui thead th button:hover {
+  color: var(--codex-ink);
+}
+
+.intelligent-ui tbody th,
+.intelligent-ui tbody td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--codex-line);
+  color: var(--codex-ink-soft);
+  vertical-align: top;
+}
+
+.intelligent-ui tbody tr:last-child th,
+.intelligent-ui tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.intelligent-ui tbody tr:hover td,
+.intelligent-ui tbody tr:hover th {
+  background: var(--codex-surface-hover);
+}
+
+.intelligent-ui [data-align="right"] {
+  text-align: right;
+}
+
+.intelligent-ui [data-align="center"] {
+  text-align: center;
+}
+
+/* Comparison: the first column names the dimension, so it reads as a header
+ * cell rather than a value the reader might compare by mistake. */
+.intelligent-ui-comparison tbody th {
+  color: var(--codex-muted);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.intelligent-ui-chart .intelligent-ui-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  padding: 4px 0 0;
+}
+
+.intelligent-ui-grid {
+  stroke: var(--codex-line);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+}
+
+.intelligent-ui-tick {
+  fill: var(--codex-faint);
+  font-size: 11px;
+}
+
+.intelligent-ui-legend-text {
+  fill: var(--codex-ink-soft);
+  font-size: 11px;
+}
+
+.intelligent-ui-axis-title {
+  fill: var(--codex-muted);
+  font-size: 11px;
+}
+
+.intelligent-ui-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--codex-muted);
+}
+
+.intelligent-ui-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.intelligent-ui-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.intelligent-ui-note {
+  margin: 0;
+  padding: 6px 12px 10px;
+  color: var(--codex-faint);
+  font-size: 12px;
+}
+
+.intelligent-ui-timeline ol {
+  margin: 0;
+  padding: 12px 14px 12px 22px;
+  list-style: none;
+}
+
+.intelligent-ui-timeline li {
+  position: relative;
+  display: flex;
+  gap: 12px;
+  padding-bottom: 14px;
+}
+
+.intelligent-ui-timeline li:last-child {
+  padding-bottom: 0;
+}
+
+.intelligent-ui-timeline li::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 16px;
+  bottom: -2px;
+  width: 1px;
+  background: var(--codex-line);
+}
+
+.intelligent-ui-timeline li:last-child::before {
+  display: none;
+}
+
+.intelligent-ui-timeline-mark {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 9px;
+  width: 9px;
+  height: 9px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--codex-accent);
+}
+
+.intelligent-ui-timeline p {
+  margin: 0;
+}
+
+.intelligent-ui-timeline-at {
+  color: var(--codex-faint);
+  font-size: 11.5px;
+}
+
+.intelligent-ui-timeline-title {
+  color: var(--codex-ink);
+  font-size: 13.5px;
+}
+
+.intelligent-ui-timeline-detail {
+  color: var(--codex-muted);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.intelligent-ui-metric {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 1px;
+  background: var(--codex-line);
+}
+
+.intelligent-ui-metric-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px;
+  background: var(--codex-surface-subtle);
+}
+
+.intelligent-ui-metric-label {
+  color: var(--codex-muted);
+  font-size: 12px;
+}
+
+.intelligent-ui-metric-value {
+  color: var(--codex-ink);
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.intelligent-ui-metric-value small {
+  margin-left: 3px;
+  color: var(--codex-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.intelligent-ui-metric-hint {
+  color: var(--codex-faint);
+  font-size: 11.5px;
+}
+
+.intelligent-ui-diagram .mermaid-card {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .intelligent-ui-toolbar button {
+    transition: none;
+  }
+}
+
+/* Actions: the block's own buttons. They send a turn, so they look like the
+ * composer's send affordance rather than like a form control. */
+.intelligent-ui-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--codex-line);
+}
+
+.intelligent-ui-actions button {
+  border: 1px solid var(--codex-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--codex-ink-soft);
+  font-size: 12.5px;
+  padding: 5px 14px;
+  cursor: pointer;
+  transition: var(--codex-control-transition);
+}
+
+.intelligent-ui-actions button:hover:not(:disabled) {
+  border-color: var(--codex-line-strong);
+  background: var(--codex-surface-hover);
+  color: var(--codex-ink);
+}
+
+.intelligent-ui-actions button[data-style="primary"] {
+  border-color: var(--codex-line-strong);
+  background: var(--codex-surface-raised);
+  color: var(--codex-ink);
+}
+
+.intelligent-ui-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.intelligent-ui-actions button:focus-visible,
+.intelligent-ui-form-footer button:focus-visible {
+  outline: 2px solid var(--codex-accent);
+  outline-offset: 1px;
+}
+
+/* Forms: one row per field, label left of the control on wide screens. */
+.intelligent-ui-fields {
+  display: flex;
+  flex-direction: column;
+}
+
+.intelligent-ui-field {
+  display: grid;
+  grid-template-columns: minmax(96px, 34%) 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--codex-line);
+}
+
+.intelligent-ui-field:last-child {
+  border-bottom: 0;
+}
+
+.intelligent-ui-field-label {
+  color: var(--codex-muted);
+  font-size: 12.5px;
+}
+
+.intelligent-ui-field-label em {
+  margin-left: 3px;
+  color: var(--codex-danger);
+  font-style: normal;
+}
+
+.intelligent-ui-input {
+  width: 100%;
+  border: 1px solid var(--codex-line);
+  border-radius: 8px;
+  background: var(--codex-field);
+  color: var(--codex-ink);
+  font-size: 13px;
+  padding: 7px 10px;
+}
+
+.intelligent-ui-input:focus {
+  outline: none;
+  border-color: var(--codex-line-strong);
+}
+
+.intelligent-ui-input:disabled {
+  opacity: 0.6;
+}
+
+.intelligent-ui-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+
+.intelligent-ui-options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--codex-ink-soft);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.intelligent-ui-options input {
+  accent-color: var(--codex-accent);
+}
+
+.intelligent-ui-form-footer {
+  justify-content: flex-end;
+  border-bottom: 0;
+}
+
+.intelligent-ui-form-footer button {
+  border: 1px solid var(--codex-line-strong);
+  border-radius: 8px;
+  background: var(--codex-surface-raised);
+  color: var(--codex-ink);
+  font-size: 12.5px;
+  padding: 6px 16px;
+  cursor: pointer;
+}
+
+.intelligent-ui-form-footer button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.intelligent-ui-form-error {
+  margin: 0;
+  padding: 8px 14px 0;
+  color: var(--codex-danger);
+  font-size: 12.5px;
+}
+
+@media (max-width: 640px) {
+  .intelligent-ui-field {
+    grid-template-columns: 1fr;
+    align-items: start;
+    gap: 6px;
+  }
+}
+.intelligent-ui-html iframe { width: 100%; border: 1px solid var(--border, #333); border-radius: 10px; background: #fff; }
+.intelligent-ui-html-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-block: 8px; }
+.intelligent-ui-html-title > span { min-width: 0; overflow-wrap: anywhere; }
+.intelligent-ui-menu-trigger { display: grid; place-items: center; flex: 0 0 28px; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--codex-muted); cursor: pointer; }
+.intelligent-ui-menu-trigger:hover, .intelligent-ui-menu-trigger[aria-expanded="true"] { background: var(--codex-surface-hover); color: var(--codex-ink); }
+.intelligent-ui-menu-trigger:focus-visible, .intelligent-ui-menu-link:focus-visible { outline: 2px solid var(--codex-muted); outline-offset: 2px; }
+.intelligent-ui-menu-panel { position: fixed; z-index: 70; box-sizing: border-box; width: min(340px, calc(100vw - 16px)); max-height: min(420px, calc(100dvh - 16px)); overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--codex-line); border-radius: 14px; padding: 6px; color: var(--codex-ink); background: var(--codex-surface-raised); box-shadow: 0 8px 32px rgb(0 0 0 / 14%); font: 13px/1.6 var(--codex-font-ui, system-ui); animation: intelligent-ui-menu-enter 120ms ease-out; }
+.intelligent-ui-menu-panel .intelligent-ui-menu-link { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 8px; color: inherit; text-decoration: none; }
+.intelligent-ui-menu-panel .intelligent-ui-menu-link:hover { background: var(--codex-surface-hover); }
+.intelligent-ui-menu-panel svg, .intelligent-ui-menu-trigger svg { fill: currentColor; stroke: none; }
+.intelligent-ui-menu-info { margin-top: 4px; padding: 10px 8px 6px; border-top: 1px solid var(--codex-line); }
+.intelligent-ui-menu-info h3 { margin: 0 0 4px; font-size: 12px; font-weight: 500; color: var(--codex-muted); }
+.intelligent-ui-menu-info p { margin: 0 0 8px; overflow-wrap: anywhere; }
+.intelligent-ui-menu-info > span, .intelligent-ui-menu-info details { color: var(--codex-muted); font-size: 11px; }
+.intelligent-ui-menu-info summary { margin-top: 8px; cursor: pointer; }
+.intelligent-ui-menu-info code { display: block; overflow-wrap: anywhere; user-select: text; }
+@keyframes intelligent-ui-menu-enter { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .intelligent-ui-menu-panel { animation: none; } }

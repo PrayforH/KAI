@@ -161,13 +161,13 @@ describe("execution ribbon", () => {
     expect(html).not.toMatch(/class="execution-phase execution-state-sweep"/);
     expect(html).toContain('class="execution-state-sweep" data-running="true"');
     expect((html.match(/class="execution-state-sweep" data-running="true"/g) ?? []).length).toBe(2);
-    expect(html).toContain("已持续 6s");
+    expect(html).toContain("已用时 6秒");
     expect(html).toContain('aria-expanded="true"');
     expect(html).not.toContain('class="execution-state-mark"');
     expect(html).not.toContain('class="execution-summary-icon"');
     expect(html).toContain("运行了 2 个子任务");
     expect(html).toContain("搜索了 1 次内容 · 读取了 1 个文件");
-    expect(html).toContain("6s");
+    expect(html).toContain("6秒");
   });
 
   it("keeps active work expanded when response text starts", () => {
@@ -401,7 +401,7 @@ describe("execution ribbon", () => {
 
     expect(html).not.toContain("已准备运行环境");
     expect(html).not.toContain("已生成回复");
-    expect(html).toContain("处理完成");
+    expect(html).toContain("已完成");
     expect(html).not.toContain("正在生成本轮回复");
     expect(html).not.toContain("模型执行完成");
     expect(html).not.toContain("这是单独渲染的最终回答。");
