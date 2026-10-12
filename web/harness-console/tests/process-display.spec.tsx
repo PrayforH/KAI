@@ -114,7 +114,7 @@ it("keeps a still status label without replacing the row or changing manual expa
   render(running);
   const reasoning = host.querySelector<HTMLDetailsElement>(".execution-reasoning")!;
   const preview = reasoning.querySelector<HTMLElement>(".execution-reasoning-preview")!;
-  expect(reasoning.querySelector("summary")!.textContent).toBe("思考·进行中");
+  expect(reasoning.querySelector("summary")!.textContent).toBe("思考进行中");
   Object.defineProperty(preview, "scrollWidth", { value: 1200 });
   const continued = { ...running, items: [...running.items,
     { ...item("reasoning.delta", 3, "思考", " 持续打印。"), metadata: { item_id: "thought-1" } }] };

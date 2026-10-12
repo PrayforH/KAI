@@ -201,13 +201,12 @@ it("places copy before edit below the user message content", () => {
   expect(agentThreadSource).toContain('label="复制消息"');
 });
 
-it("normalizes copied message text and provides an HTTP-safe clipboard fallback", () => {
+it("normalizes copied message text and keeps copy feedback accessible", () => {
   expect(normalizeMessageText(" 第一行\r\n\r\n\r\n第二行  \n")).toBe("第一行\n\n第二行");
   expect(normalizeMessageText("标题\n　\n​\n\n正文\u2029\u2029结尾")).toBe(
     "标题\n\n正文\n\n结尾",
   );
   expect(normalizeMessageText("上海贤创广告有限公司 下钻")).toBe("上海贤创广告有限公司 下钻");
-  expect(agentThreadSource).toContain('document.execCommand("copy")');
   expect(agentThreadSource).toContain('data-copy-state={copyState}');
   expect(agentThreadSource).toContain('className="message-copy-status"');
   expect(agentThreadSource).not.toContain('className="sr-only"');

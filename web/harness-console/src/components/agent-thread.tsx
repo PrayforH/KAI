@@ -115,6 +115,10 @@ import {
 } from "./task-knowledge-context";
 import { composerTrigger, queueAttachments, queueMayDispatch, restorePromptQueue, type QueuedPrompt } from "../lib/composer-interactions";
 
+import { writeTextToClipboard } from "../lib/clipboard";
+import { CodexResponseIcon } from "./codex-response-icon";
+import { useResponseMotion } from "./use-response-motion";
+
 export { normalizeMessageText } from "../lib/message-text";
 import { runReuseStore, useRunReuseNotice } from "../lib/run-reuse-store";
 import {
@@ -164,40 +168,7 @@ export function shouldShowPreResponseActivity(
 }
 
 export async function writeMessageToClipboard(value: string): Promise<boolean> {
-  const text = normalizeMessageText(value);
-  if (!text) return false;
-
-  try {
-    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch {
-    // HTTP deployments and restrictive browser policies can reject the modern
-    // Clipboard API. Fall through to the selection-based copy path below.
-  }
-
-  if (typeof document === "undefined" || !document.body) return false;
-  const activeElement = document.activeElement instanceof HTMLElement
-    ? document.activeElement
-    : null;
-  const textarea = document.createElement("textarea");
-  textarea.value = text;
-  textarea.setAttribute("readonly", "");
-  textarea.style.position = "fixed";
-  textarea.style.inset = "0 auto auto -9999px";
-  textarea.style.opacity = "0";
-  document.body.appendChild(textarea);
-  textarea.focus();
-  textarea.select();
-  try {
-    return document.execCommand("copy");
-  } catch {
-    return false;
-  } finally {
-    textarea.remove();
-    activeElement?.focus({ preventScroll: true });
-  }
+  return writeTextToClipboard(normalizeMessageText(value));
 }
 
 function MessageCopyButton({
@@ -237,7 +208,7 @@ function MessageCopyButton({
       data-copy-state={copyState}
       onClick={() => void copy()}
     >
-      {copyState === "copied" ? <CopySuccessIcon /> : <CopyMessageIcon />}
+      <CodexResponseIcon name={copyState === "copied" ? "check" : "copy"} />
       <span className="message-copy-status" aria-live="polite">{feedback}</span>
     </button>
   );
@@ -309,7 +280,7 @@ function MessageFeedbackButtons({ runId }: { runId?: string }) {
         disabled={!runId || pending || value !== null}
         onClick={() => void submit("positive")}
       >
-        <ThumbUpIcon />
+        <CodexResponseIcon name="thumbUp" />
       </button>
       <button
         className="assistant-message-feedback"
@@ -321,7 +292,7 @@ function MessageFeedbackButtons({ runId }: { runId?: string }) {
         disabled={!runId || pending || value !== null}
         onClick={() => void submit("negative")}
       >
-        <ThumbDownIcon />
+        <CodexResponseIcon name="thumbDown" />
       </button>
       <span className="message-copy-status" aria-live="polite">{error}</span>
     </>
@@ -1232,9 +1203,11 @@ export function isIntermediateAssistantTextPart(
 function HiddenAssistantText() { return null; }
 
 export function AssistantResponse({ text, streaming }: { text: string; streaming: boolean }) {
+  const response = useRef<HTMLDivElement>(null);
+  useResponseMotion(response, Boolean(text));
   if (!text) return null;
   return (
-    <div className="assistant-answer" data-streaming={streaming ? "true" : "false"} aria-busy={streaming}>
+    <div ref={response} className="assistant-answer" data-streaming={streaming ? "true" : "false"} aria-busy={streaming}>
       <TextMessagePartProvider text={text} isRunning={streaming}>
         <MarkdownText />
       </TextMessagePartProvider>
@@ -1588,41 +1561,6 @@ function EditMessageIcon() {
     <svg viewBox="0 0 20 20" aria-hidden="true">
       <path d="M4 14.8 4.7 12 13 3.7a1.4 1.4 0 0 1 2 0l1.3 1.3a1.4 1.4 0 0 1 0 2L8 15.3l-2.8.7Z" />
       <path d="m12 4.7 3.3 3.3" />
-    </svg>
-  );
-}
-
-function CopyMessageIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <rect x="6.5" y="6.5" width="9" height="9" rx="1.5" />
-      <path d="M13.5 6.5v-2a1.5 1.5 0 0 0-1.5-1.5H4.5A1.5 1.5 0 0 0 3 4.5V12A1.5 1.5 0 0 0 4.5 13h2" />
-    </svg>
-  );
-}
-
-function CopySuccessIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path d="m4.5 10.2 3.4 3.4 7.6-7.7" />
-    </svg>
-  );
-}
-
-function ThumbUpIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path d="M6.5 8.2 9.2 3c.3-.6 1-.9 1.6-.6.7.3 1.1 1 1 1.7l-.5 3h3.8c1 0 1.7.9 1.5 1.9l-1 5.3c-.1.8-.8 1.3-1.6 1.3H6.5Z" />
-      <path d="M3.4 8.2h3.1v7.4H3.4Z" />
-    </svg>
-  );
-}
-
-function ThumbDownIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path d="m6.5 11.8 2.7 5.2c.3.6 1 .9 1.6.6.7-.3 1.1-1 1-1.7l-.5-3h3.8c1 0 1.7-.9 1.5-1.9l-1-5.3c-.1-.8-.8-1.3-1.6-1.3H6.5Z" />
-      <path d="M3.4 4.4h3.1v7.4H3.4Z" />
     </svg>
   );
 }

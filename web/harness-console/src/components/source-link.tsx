@@ -1,4 +1,5 @@
 import type { ComponentPropsWithoutRef } from "react";
+import { CodexResponseIcon } from "./codex-response-icon";
 
 type SourceLinkProps = ComponentPropsWithoutRef<"a">;
 
@@ -36,7 +37,7 @@ export function SourceLink({ children, className, href, ...props }: SourceLinkPr
       <span className="source-title">{children}</span>
       <span className="source-host">{host}</span>
       <span className="source-open" aria-hidden="true">
-        ↗
+        <CodexResponseIcon name="external" />
       </span>
     </a>
   );

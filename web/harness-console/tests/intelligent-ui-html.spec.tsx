@@ -54,7 +54,20 @@ it("restores once to the matching frame and admits only its state channel", () =
   expect(reply).toHaveBeenCalledTimes(1);
   message({ type: "harness.ui.state", token: nonce, state: { people: 5 } });
   expect(changed).toHaveBeenCalledWith({ people: 5 });
-  expect(host.textContent).not.toContain("重新打开时操作会从初始设置开始");
+  expect(host.textContent).not.toContain("此工具未启用状态恢复");
+});
+
+it("does not flash a stateless warning during handshake and clears it when the tool becomes ready", () => {
+  vi.useFakeTimers();
+  try {
+    render();
+    act(() => vi.advanceTimersByTime(2999));
+    expect(host.textContent).not.toContain("此工具未启用状态恢复");
+    act(() => vi.advanceTimersByTime(1));
+    expect(host.textContent).toContain("此工具未启用状态恢复");
+    message({ type: "harness.ui.ready", token: token() });
+    expect(host.textContent).not.toContain("此工具未启用状态恢复");
+  } finally { vi.useRealTimers(); }
 });
 
 it("refuses other windows, origins, tokens, extra fields and action messages", () => {

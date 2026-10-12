@@ -12,6 +12,7 @@ import { usePresentation } from "./use-presentation";
 import { ChartView } from "./chart-view";
 import { FormView, type FieldValues } from "./form-view";
 import { HtmlView } from "./html-view";
+import { PresentationMenu } from "./presentation-menu";
 import {
   type Presentation,
   type PresentationAction,
@@ -260,7 +261,10 @@ function PublishedPresentation({
     state.requests.some((r) => r.action_id === form.action_id);
   return (
     <figure className="intelligent-ui" data-kind={presentation.kind}>
-      {presentation.title ? (
+      {body.kind === "html" ? <figcaption className="intelligent-ui-title intelligent-ui-html-title">
+        <span>{presentation.title || "交互工具"}</span>
+        <PresentationMenu presentation={presentation} />
+      </figcaption> : presentation.title ? (
         <figcaption className="intelligent-ui-title">
           {presentation.title}
         </figcaption>
@@ -301,7 +305,7 @@ function PublishedPresentation({
           ) : null}
         </div>
       ))}
-      <details className="intelligent-ui-note">
+      {body.kind !== "html" && <details className="intelligent-ui-note">
         <summary>数据与来源</summary>
         <p>{presentation.fallback_text}</p>
         <p>
@@ -315,7 +319,7 @@ function PublishedPresentation({
             数据快照 {presentation.snapshot_hash.slice(0, 12)}
           </p>
         ) : null}
-      </details>
+      </details>}
     </figure>
   );
 }

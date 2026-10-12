@@ -15,6 +15,7 @@ export function HtmlView({ presentation, height, initialState, ready, onState }:
   const frame = useRef<HTMLIFrameElement>(null);
   const [token, setToken] = useState("");
   const [initialized, setInitialized] = useState(false);
+  const [showStateNotice, setShowStateNotice] = useState(false);
   const initializedRef = useRef(false);
   const [error, setError] = useState("");
   const restored = useRef(initialState);
@@ -28,6 +29,13 @@ export function HtmlView({ presentation, height, initialState, ready, onState }:
     setToken(Array.from(crypto.getRandomValues(new Uint8Array(16)),
       b => b.toString(16).padStart(2, "0")).join(""));
   }, []);
+
+  useEffect(() => {
+    if (!ready || !token || initialized) return;
+    // Avoid flashing a stateless notice while the normal ready handshake runs.
+    const timer = window.setTimeout(() => setShowStateNotice(true), 3_000);
+    return () => window.clearTimeout(timer);
+  }, [ready, token, initialized]);
 
   useLayoutEffect(() => {
     if (!ready || !token) return;
@@ -70,10 +78,7 @@ export function HtmlView({ presentation, height, initialState, ready, onState }:
     <iframe ref={frame} src={`${url}#harness_ui_token=${token}`}
       title={presentation.title || "交互工具"} height={height}
       sandbox="allow-scripts" referrerPolicy="no-referrer" />
-    <div className="intelligent-ui-html-toolbar">
-      <a href={url} target="_blank" rel="noopener noreferrer">在独立页面打开</a>
-      {!initialized ? <span className="intelligent-ui-note">重新打开时操作会从初始设置开始。</span> : null}
-    </div>
+    {showStateNotice && !initialized ? <p className="intelligent-ui-note">此工具未启用状态恢复，重新打开时会从初始设置开始。</p> : null}
     {error ? <p role="alert" className="intelligent-ui-form-error">{error}</p> : null}
   </div>;
 }

@@ -3,6 +3,7 @@
 import { useRef, useState, type KeyboardEvent } from "react";
 import { formatConversationAnswers, type ConversationInput } from "../lib/conversation-input";
 import styles from "./conversation-input-card.module.css";
+import { CodexResponseIcon } from "./codex-response-icon";
 
 type Answer = { selected: string[]; text: string };
 const emptyAnswer: Answer = { selected: [], text: "" };
@@ -80,15 +81,15 @@ export function ConversationInputCard({ input, disabled, onSubmit }: {
   return <section ref={card} className={styles.card} aria-label="待补充的信息" tabIndex={0} onKeyDown={onKeyDown}>
     <header className={styles.header}>
       <button className={styles.heading} type="button" aria-expanded={!collapsed} onClick={() => setCollapsed(!collapsed)}>
-        <svg viewBox="0 0 16 16" aria-hidden="true"><path d={collapsed ? "m6 4 4 4-4 4" : "m4 6 4 4 4-4"} /></svg>
+        <CodexResponseIcon name="chevronDown" className={collapsed ? styles.chevronCollapsed : undefined} />
         <span>{input.title}</span>
       </button>
       <div className={styles.navigation}>
         {submitted && <span role="status">已提交</span>}
         {input.questions.length > 1 && <>
-          <button type="button" aria-label="上一题" disabled={sending || questionIndex === 0} onClick={() => navigate(questionIndex - 1)}>‹</button>
+          <button type="button" aria-label="上一题" disabled={sending || questionIndex === 0} onClick={() => navigate(questionIndex - 1)}><CodexResponseIcon name="chevronDown" className={styles.previous} /></button>
           <span aria-live="polite">{questionIndex + 1} / {input.questions.length}</span>
-          <button type="button" aria-label="下一题" disabled={sending || lastQuestion} onClick={() => navigate(questionIndex + 1)}>›</button>
+          <button type="button" aria-label="下一题" disabled={sending || lastQuestion} onClick={() => navigate(questionIndex + 1)}><CodexResponseIcon name="chevronDown" className={styles.next} /></button>
         </>}
       </div>
     </header>
@@ -99,12 +100,12 @@ export function ConversationInputCard({ input, disabled, onSubmit }: {
           {question.options.map((option, index) => <label key={option} className={styles.option}>
             <input type={question.type === "multi" ? "checkbox" : "radio"} name={question.id}
               checked={value.selected.includes(option)} onChange={() => select(option)} />
-            <span className={styles.marker} aria-hidden="true">{value.selected.includes(option) ? "✓" : index + 1}</span>
+            <span className={styles.marker} aria-hidden="true">{value.selected.includes(option) ? <CodexResponseIcon name="check" /> : index + 1}</span>
             <span className={styles.optionText}>{option}</span>
           </label>)}
         </div>}
         <div className={styles.freeform}>
-          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 11.5 11.5 3l1.5 1.5L4.5 13H3v-1.5ZM9.5 5l1.5 1.5" /></svg>
+          <CodexResponseIcon name="pencil" />
           <input className={styles.text} type="text" aria-label={`${question.label} · 填写回答`}
             placeholder={question.type === "text" ? "填写回答" : "或填写其他答案 / 补充说明"}
             maxLength={4000} value={value.text} onChange={event => {
@@ -117,7 +118,7 @@ export function ConversationInputCard({ input, disabled, onSubmit }: {
       {!submitted && <footer className={styles.footer}>
         <span className={styles.hint}>{question.type === "multi" ? "可选择多项" : "选择一项或填写回答"}</span>
         <button className={styles.submit} type="button" disabled={locked || (lastQuestion ? !answer : !hasCurrentAnswer)} onClick={advance}>
-          {sending ? "发送中…" : lastQuestion ? "提交回答" : "下一步"}<span aria-hidden="true">↵</span>
+          {sending ? "发送中…" : lastQuestion ? "提交回答" : "下一步"}<span aria-hidden="true">⏎</span>
         </button>
       </footer>}
     </div>}

@@ -1,0 +1,69 @@
+/* Codex's quiet transcript, using the project's observable process events. */
+html body.codex-theme-v1 .execution-ribbon { font: 13px/1.6 var(--codex-font-ui, system-ui); }
+html body.codex-theme-v1 .execution-ribbon > .execution-disclosure,
+html body.codex-theme-v1 .execution-ribbon > .execution-disclosure:is(:hover, :active) {
+  width: auto; max-width: calc(100% - 88px); min-height: 28px;
+  padding: 3px 6px 3px 0; gap: 6px; border: 0; border-radius: 6px;
+  color: var(--codex-muted); background: transparent;
+}
+html body.codex-theme-v1 .execution-ribbon > button.execution-disclosure:hover { color: var(--codex-ink); }
+html body.codex-theme-v1 .execution-phase { font-size: 13px; font-weight: 450; line-height: 22px; }
+html body.codex-theme-v1 .execution-duration { font-size: 12px; color: var(--codex-muted); font-variant-numeric: tabular-nums; line-height: 22px; }
+html body.codex-theme-v1 .execution-details-trigger { font-size: 11px; color: var(--codex-muted); }
+html body.codex-theme-v1 .execution-tree { padding: 4px 0 6px; }
+html body.codex-theme-v1 .execution-log { gap: 8px; }
+html body.codex-theme-v1 .execution-reasoning,
+html body.codex-theme-v1 .execution-action { color: var(--codex-muted); font-size: 13px; }
+html body.codex-theme-v1 .execution-reasoning-summary,
+html body.codex-theme-v1 .execution-action-summary { min-height: 26px; gap: 8px; border-radius: 6px; transition: color 120ms ease; }
+html body.codex-theme-v1 .execution-action-summary { grid-template-columns: 16px minmax(0, 1fr) 16px; }
+html body.codex-theme-v1 .execution-reasoning-summary:hover,
+html body.codex-theme-v1 .execution-action-summary:not([aria-disabled="true"]):hover { color: var(--codex-ink); }
+html body.codex-theme-v1 .execution-reasoning-label,
+html body.codex-theme-v1 .execution-action-copy strong { color: inherit; font-size: 13px; font-weight: 450; }
+html body.codex-theme-v1 .execution-action-copy small { font-size: 12px; color: var(--codex-muted); }
+html body.codex-theme-v1 :is(.execution-reasoning-icon,.execution-action-icon) { margin-left: 0; color: var(--codex-muted); }
+html body.codex-theme-v1 .execution-ribbon .codex-response-icon { width: 16px; height: 16px; fill: currentColor; stroke: none; }
+html body.codex-theme-v1 .execution-reasoning-preview { color: var(--codex-muted); font-size: 12px; }
+html body.codex-theme-v1 .execution-reasoning[data-active="true"] .execution-reasoning-preview { opacity: .65; }
+html body.codex-theme-v1 :is(.execution-chevron,.execution-reasoning-chevron,.execution-action-chevron) {
+  display: inline-flex; flex: 0 0 16px; width: 16px; height: 16px; margin: 0;
+  border: 0; color: var(--codex-muted); opacity: .8;
+  transform: rotate(-90deg); transition: transform 160ms cubic-bezier(.16,1,.3,1);
+}
+html body.codex-theme-v1 .execution-ribbon[data-open="true"] > .execution-disclosure .execution-chevron,
+html body.codex-theme-v1 .execution-reasoning[open] .execution-reasoning-chevron,
+html body.codex-theme-v1 .execution-action[open] .execution-action-chevron { transform: rotate(0); }
+html body.codex-theme-v1 .execution-reasoning-body {
+  margin: 4px 0 0 7px; padding: 2px 12px 4px 16px;
+  border-left: 1px solid var(--codex-line); max-height: 256px;
+  color: var(--codex-muted); font-size: 13px; line-height: 1.625;
+  scrollbar-width: thin; overflow-y: auto; overscroll-behavior: contain;
+}
+html body.codex-theme-v1 .execution-action-body { margin: 4px 0 0 24px; padding-block: 2px; }
+html body.codex-theme-v1 .execution-action-result { font: 12px/1.625 var(--codex-font-mono, monospace); border-radius: 8px; background: var(--codex-surface-subtle); }
+html body.codex-theme-v1 .execution-action-detail { padding-block: 5px; }
+html body.codex-theme-v1 .execution-commentary-content .aui-md { color: var(--codex-muted); font-size: 13px; line-height: 1.625; }
+html body.codex-theme-v1 .execution-reasoning[open] .execution-reasoning-body,
+html body.codex-theme-v1 .execution-action[open] > .execution-action-body { animation: process-body-enter 160ms ease-out; }
+/* One second of light, then three seconds at rest. Text updates keep this node. */
+html body.codex-theme-v1 .execution-ribbon .execution-state-sweep[data-running="true"] {
+  color: transparent;
+  background-color: var(--codex-muted);
+  background-image: linear-gradient(90deg, transparent 0%, var(--codex-ink) 40% 60%, transparent 100%);
+  background-size: 50% 200%; background-repeat: no-repeat; background-position: -100% 0;
+  background-clip: text; -webkit-background-clip: text;
+  animation: process-text-cadence 4s steps(48, end) .6s infinite;
+}
+@keyframes process-text-cadence { 0% { background-position: -100% 0; } 25%, 100% { background-position: 250% 0; } }
+@keyframes process-body-enter { from { opacity: 0; } to { opacity: 1; } }
+@media (max-width: 480px) {
+  html body.codex-theme-v1 .execution-ribbon > .execution-disclosure { max-width: 100%; }
+  html body.codex-theme-v1 .execution-duration { font-size: 11px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html body.codex-theme-v1 .execution-ribbon .execution-state-sweep[data-running="true"] { animation: none; background: none; color: var(--codex-muted); }
+  html body.codex-theme-v1 .execution-ribbon :is(.execution-chevron,.execution-reasoning-chevron,.execution-action-chevron,.execution-reasoning-summary,.execution-action-summary) { transition: none; }
+  html body.codex-theme-v1 .execution-reasoning[open] .execution-reasoning-body,
+  html body.codex-theme-v1 .execution-action[open] > .execution-action-body { animation: none; }
+}
