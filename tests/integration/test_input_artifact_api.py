@@ -12,7 +12,9 @@ HEADERS = {"X-Tenant-ID": "tenant-a", "X-User-ID": "user-1"}
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("name", ["资料.ZIP", "files.rar", "bundle.7z", "bundle.tar.gz"])
+@pytest.mark.parametrize(
+    "name", ["资料.ZIP", "files.rar", "bundle.7z", "bundle.tar.gz", "installer.DMG"]
+)
 async def test_archive_allowance_checks_actual_bytes_and_run_total(name: str) -> None:
     container = build_memory_container()
     container.input_artifacts.max_file_bytes = 4
@@ -168,7 +170,9 @@ async def test_upload_limits_match_enforced_limit_and_require_permission() -> No
         assert response.json() == {
             "max_file_bytes": 1234, "max_files": 10, "max_total_bytes": 100 * 1024 * 1024,
             "max_archive_file_bytes": 500 * 1024 * 1024,
-            "archive_extensions": [".zip", ".rar", ".7z", ".tar", ".gz", ".tgz", ".bz2", ".xz"],
+            "archive_extensions": [
+                ".zip", ".rar", ".7z", ".tar", ".gz", ".tgz", ".bz2", ".xz", ".dmg"
+            ],
         }
         response = await client.get("/v1/input-artifacts/limits")
         assert response.status_code == 401
