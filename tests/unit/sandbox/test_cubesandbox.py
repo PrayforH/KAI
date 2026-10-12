@@ -220,3 +220,28 @@ async def test_command_timeout_preserves_watcher_and_kills_remote_process() -> N
     await session.terminate()
     process.kill.assert_awaited_once()
     assert await session.wait() == 137
+
+
+@pytest.mark.asyncio
+async def test_cube_unreadable_listing_keeps_only_validated_previous_pages(monkeypatch):
+    from types import SimpleNamespace
+
+    class Paginator:
+        has_next = True
+        calls = 0
+
+        async def next_items(self):
+            self.calls += 1
+            if self.calls == 1:
+                return [SimpleNamespace(
+                    sandbox_id="owned-instance",
+                    metadata={"harness.tenant": "tenant-a", "harness.run": "run-a"},
+                )]
+            raise KeyError("endAt")
+
+    monkeypatch.setattr(CubeAsyncSandbox, "list", lambda **kwargs: Paginator())
+    client = SdkCubeSandboxClient(api_url="http://api.test", api_key="test-key",
+                                  proxy_url="http://proxy.test", domain="cube.app")
+    assert await client.list_managed() == [
+        ("owned-instance", {"harness.tenant": "tenant-a", "harness.run": "run-a"})
+    ]

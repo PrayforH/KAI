@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import shlex
 from collections.abc import Mapping
 from pathlib import Path
@@ -31,6 +32,8 @@ from harness.sandbox.e2b import (
     SdkE2BRemoteSandbox,
     _platform_logs,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class CubeAsyncSandbox(AsyncSandbox):
@@ -203,7 +206,14 @@ class SdkCubeSandboxClient:
         entries: list[tuple[str, Mapping[str, str]]] = []
         paginator = CubeAsyncSandbox.list(**cast(Any, self._control_plane()))
         while paginator.has_next and len(entries) < _LIST_SCAN_LIMIT:
-            for info in await paginator.next_items():
+            try:
+                items = await paginator.next_items()
+            except (KeyError, TypeError, ValueError):
+                # Cube may omit E2B's endAt field while an instance is starting.
+                # Only already parsed entries can be considered for warm reuse.
+                logger.warning("CubeSandbox returned an unreadable sandbox page; stopping scan")
+                break
+            for info in items:
                 metadata = dict(info.metadata or {})
                 if _MANAGED_TENANT_KEY in metadata and _MANAGED_RUN_KEY in metadata:
                     entries.append((info.sandbox_id, metadata))
