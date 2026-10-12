@@ -7,6 +7,7 @@ import {
   type Span,
 } from "@opentelemetry/api";
 import type { HarnessServerConfig } from "./server-config";
+import { inputFileSizeLimit, type UploadLimits } from "./input-upload-limits";
 import {
   ACCESS_COOKIE,
   appendClearedSessionCookies,
@@ -255,15 +256,18 @@ async function forward(
               if (refreshed) upstream = await authorize(refreshed.access_token);
             }
             if (upstream.ok) {
-              const limits = await upstream.json() as { max_file_bytes: number };
+              const limits = await upstream.json() as UploadLimits;
               if (!Number.isSafeInteger(limits.max_file_bytes) || limits.max_file_bytes <= 0) {
                 throw new Error("Invalid input artifact limits");
               }
               const declaredSize = Number(request.headers.get("x-upload-size"));
-              if (declaredSize > limits.max_file_bytes) {
+              const name = decodeURIComponent(request.headers.get("x-upload-name") ?? "");
+              const maximum = inputFileSizeLimit(name, limits);
+              if (!Number.isSafeInteger(maximum) || maximum <= 0) throw new Error("Invalid input artifact limits");
+              if (declaredSize > maximum) {
                 upstream = Response.json({ error: {
                   code: "input_artifact_too_large",
-                  message: `单个附件不能超过 ${limits.max_file_bytes / (1024 * 1024)} MB，请压缩或拆分后上传。`,
+                  message: `单个附件不能超过 ${maximum / (1024 * 1024)} MB，请压缩或拆分后上传。`,
                 } }, { status: 413 });
               } else {
                 // No clone/tee or arrayBuffer: forward with backpressure, so

@@ -1053,6 +1053,7 @@ def build_production_container(
         id_generator=ids,
         clock=clock,
         max_file_bytes=settings.input_artifact_max_file_bytes,
+        max_archive_file_bytes=settings.input_artifact_max_archive_file_bytes,
         max_files_per_run=settings.input_artifact_max_files_per_run,
         max_total_bytes=settings.input_artifact_max_total_bytes,
         processor=DefaultInputProcessor(),

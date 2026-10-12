@@ -267,6 +267,7 @@ class Settings(BaseSettings):
     stuck_cancelling_seconds: int = Field(default=30, ge=10, le=3600)
     output_artifact_max_bytes: int = Field(default=50 * 1024 * 1024, gt=0)
     input_artifact_max_file_bytes: int = Field(default=50 * 1024 * 1024, gt=0)
+    input_artifact_max_archive_file_bytes: int = Field(default=500 * 1024 * 1024, gt=0)
     input_artifact_max_files_per_run: int = Field(default=10, gt=0)
     input_artifact_max_total_bytes: int = Field(default=100 * 1024 * 1024, gt=0)
     workspace_archive_max_bytes: int = Field(default=512 * 1024 * 1024, gt=0)

@@ -593,6 +593,7 @@ def build_memory_container(
         id_generator=id_generator,
         clock=clock,
         max_file_bytes=resolved_settings.input_artifact_max_file_bytes,
+        max_archive_file_bytes=resolved_settings.input_artifact_max_archive_file_bytes,
         max_files_per_run=resolved_settings.input_artifact_max_files_per_run,
         max_total_bytes=resolved_settings.input_artifact_max_total_bytes,
         processor=DefaultInputProcessor(),

@@ -71,9 +71,11 @@ def test_attachment_limits_are_configurable_and_positive(monkeypatch: pytest.Mon
     monkeypatch.setenv("HARNESS_INPUT_ARTIFACT_MAX_FILE_BYTES", "1234")
     monkeypatch.setenv("HARNESS_INPUT_ARTIFACT_MAX_FILES_PER_RUN", "3")
     monkeypatch.setenv("HARNESS_INPUT_ARTIFACT_MAX_TOTAL_BYTES", "3456")
+    monkeypatch.setenv("HARNESS_INPUT_ARTIFACT_MAX_ARCHIVE_FILE_BYTES", "5678")
     service = build_memory_container().input_artifacts
     assert service.max_file_bytes == 1234
     assert service.max_files_per_run == 3
     assert service.max_total_bytes == 3456
+    assert service.max_archive_file_bytes == 5678
     with pytest.raises(ValueError):
         Settings(input_artifact_max_file_bytes=0)
