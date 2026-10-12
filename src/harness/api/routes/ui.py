@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query
+from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from harness.api.dependencies import (
@@ -15,13 +17,21 @@ from harness.api.dependencies import (
     require_identity,
     require_owned_run,
 )
+from harness.core.models import ArtifactStatus
 from harness.presentation import default_catalog
 from harness.presentation.models import Publication
-from harness.presentation.schema import Presentation
+from harness.presentation.schema import MAX_HTML_BYTES, Presentation
 
 router = APIRouter(prefix="/ui", tags=["intelligent-ui"])
 Container = Annotated[ApiContainer, Depends(get_container)]
 Actor = Annotated[Identity, Depends(require_identity)]
+
+HTML_CONTENT_POLICY = (
+    "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; "
+    "style-src 'unsafe-inline'; img-src https: data: blob:; font-src data:; "
+    "media-src data: blob:; connect-src 'none'; frame-src 'none'; "
+    "form-action 'none'; base-uri 'none'; object-src 'none'"
+)
 
 
 class ActionInput(BaseModel):
@@ -68,7 +78,9 @@ async def get_ui_capabilities(
     if renderers is not None:
         supported = set(renderers.split(","))
         renderers_list = cast(list[dict[str, Any]], result["renderers"])
-        result["renderers"] = [r for r in renderers_list if r["renderer_version"] in supported]
+        available = [r for r in renderers_list if r["renderer_version"] in supported]
+        result["renderers"] = available
+        result["generated_html"] = any(r["kind"] == "html" for r in available)
     return result
 
 
@@ -94,6 +106,50 @@ async def get_presentation(
             for r in requests
         ],
     }
+
+
+@router.get("/presentations/{presentation_id}/html")
+async def get_html_document(
+    presentation_id: str,
+    actor: Actor,
+    container: Container,
+    revision: int = Query(ge=1),
+) -> Response:
+    owner, p = await owned(container, actor, presentation_id, revision)
+    if p.kind != "html":
+        raise HTTPException(404, "HTML presentation not found")
+    artifact = await container.artifacts.get(actor.tenant_id, p.data["artifact_id"])
+    if artifact.run_id != owner.run_id or artifact.status is not ArtifactStatus.READY:
+        raise HTTPException(404, "HTML artifact not found")
+    if (
+        artifact.media_type.split(";", 1)[0].strip().lower() != "text/html"
+        or artifact.sha256 != p.data["sha256"]
+        or artifact.size_bytes != p.data["size_bytes"]
+        or artifact.size_bytes is None
+        or not 0 < artifact.size_bytes <= MAX_HTML_BYTES
+    ):
+        raise HTTPException(409, "HTML artifact changed")
+    _, content = await container.artifacts.download(actor.tenant_id, artifact.artifact_id)
+    if (
+        len(content) != artifact.size_bytes
+        or hashlib.sha256(content).hexdigest() != p.data["sha256"]
+    ):
+        raise HTTPException(409, "HTML artifact content changed")
+    try:
+        content.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise HTTPException(422, "HTML artifact must use UTF-8") from error
+    return Response(
+        content,
+        media_type="text/html",
+        headers={
+            "Content-Security-Policy": HTML_CONTENT_POLICY,
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+            "Referrer-Policy": "no-referrer",
+            "Permissions-Policy": "camera=(), microphone=(), geolocation=(), clipboard-read=()",
+        },
+    )
 
 
 @router.post("/presentations/{presentation_id}/actions", status_code=202)

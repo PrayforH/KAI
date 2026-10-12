@@ -342,9 +342,15 @@ class PresentationService:
         owner, p = await self.repository.get(tenant_id, presentation_id, revision)
         if owner.owner_user_id != actor_user_id:
             raise NotFoundError("presentation not found")
-        if len(json.dumps(state, ensure_ascii=False)) > 16_000:
+        try:
+            encoded = json.dumps(state, ensure_ascii=False, allow_nan=False)
+        except (ValueError, TypeError, RecursionError) as error:
+            raise ValueError("invalid view state") from error
+        if len(encoded) > 16_000:
             raise ValueError("view state is too large")
-        allowed = {"table": "sort", "chart": "show_data", "form": "values"}.get(p.kind)
+        allowed = {
+            "table": "sort", "chart": "show_data", "form": "values", "html": "html_state"
+        }.get(p.kind)
         if set(state) - ({allowed} if allowed else set()):
             raise ValueError("unknown view state")
         if "sort" in state:
@@ -360,6 +366,10 @@ class PresentationService:
                 raise ValueError("invalid table sort")
         if "show_data" in state and not isinstance(state["show_data"], bool):
             raise ValueError("invalid chart view state")
+        if "html_state" in state and not isinstance(state["html_state"], dict):
+            raise ValueError("HTML view state must be an object")
+        if "html_state" in state and len(encoded.encode("utf-8")) > 16_000:
+            raise ValueError("HTML view state is too large")
         if "values" in state:
             if not isinstance(state["values"], dict):
                 raise ValueError("invalid form view state")

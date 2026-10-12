@@ -237,7 +237,7 @@ async def test_capabilities_endpoint_describes_the_catalog() -> None:
     payload = response.json()
     assert payload["schema_version"] == "harness.ui/v1"
     assert payload["max_presentations_per_turn"] == 2
-    assert payload["generated_html"] is False
+    assert payload["generated_html"] is True
     assert {renderer["kind"] for renderer in payload["renderers"]} == {
         "table",
         "comparison",
@@ -246,4 +246,5 @@ async def test_capabilities_endpoint_describes_the_catalog() -> None:
         "timeline",
         "metric",
         "form",
+        "html",
     }

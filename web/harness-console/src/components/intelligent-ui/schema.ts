@@ -10,6 +10,7 @@ export const SUPPORTED_RENDERER_VERSIONS: Record<string, string> = {
   timeline: "timeline/1",
   metric: "metric/1",
   form: "form/1",
+  html: "html/1",
 };
 
 const cellSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
@@ -118,6 +119,14 @@ const formFieldSchema = z.object({
 
 const formDataSchema = z.object({ fields: z.array(formFieldSchema).min(1) });
 
+const htmlDataSchema = z.object({
+  artifact_id: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/),
+  name: z.string().max(600),
+  sha256: z.string().regex(/^[0-9a-f]{64}$/),
+  size_bytes: z.number().int().positive().max(256 * 1024),
+}).strict();
+const htmlConfigSchema = z.object({ height: z.number().int().min(320).max(900) }).strict();
+
 export type FormField = z.infer<typeof formFieldSchema>;
 export type FormData = z.infer<typeof formDataSchema>;
 
@@ -132,6 +141,7 @@ export type ChartRow = Record<string, PresentationCell>;
  * parsing is not rendered at all — the caller shows `fallback_text` instead, so
  * a newer server can never leave the reader with an empty box. */
 export type PresentationBody =
+  | { kind: "html"; height: number }
   | { kind: "table"; table: TableData; caption: string }
   | { kind: "comparison"; comparison: ComparisonData; highlight: string }
   | { kind: "chart"; rows: ChartRow[]; config: ChartConfig }
@@ -163,6 +173,11 @@ export function parsePresentationBody(
   presentation: Presentation,
 ): PresentationBody | null {
   switch (presentation.kind) {
+    case "html": {
+      const data = htmlDataSchema.safeParse(presentation.data);
+      const config = htmlConfigSchema.safeParse(presentation.config);
+      return data.success && config.success ? { kind: "html", height: config.data.height } : null;
+    }
     case "table": {
       const table = tableDataSchema.safeParse(presentation.data);
       return table.success

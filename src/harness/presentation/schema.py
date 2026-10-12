@@ -15,12 +15,13 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 UI_SCHEMA_VERSION = "harness.ui/v1"
-PRESENTATION_POLICY_VERSION = "presentation-policy/4"
+PRESENTATION_POLICY_VERSION = "presentation-policy/6"
 
 # Resource limits. These are the numbers the catalog advertises to the model and
 # the numbers validation enforces; they live here once so the two cannot drift.
@@ -37,6 +38,7 @@ MAX_FORM_FIELDS = 12
 MAX_ACTIONS = 4
 MAX_ACTION_PROMPT = 400
 MAX_ACTION_LABEL = 60
+MAX_HTML_BYTES = 256 * 1024
 
 
 class StrictModel(BaseModel):
@@ -589,6 +591,19 @@ def _actions(raw: Any) -> list[dict[str, Any]]:
     return actions
 
 
+def _html(data: dict[str, Any], config: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    # The model names a published artifact, never markup, a path or a URL.
+    if set(data) != {"artifact_id"} or set(config) - {"height"}:
+        raise ValueError("HTML needs only an artifact reference")
+    artifact_id = _text(data["artifact_id"], maximum=128, field_name="artifact_id")
+    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", artifact_id) is None:
+        raise ValueError("invalid artifact identifier")
+    height = config.get("height", 560)
+    if type(height) is not int or not 320 <= height <= 900:
+        raise ValueError("HTML height must be between 320 and 900")
+    return {"artifact_id": artifact_id}, {"height": height}
+
+
 _BUILDERS = {
     "table": _table,
     "comparison": _comparison,
@@ -597,6 +612,7 @@ _BUILDERS = {
     "timeline": _timeline,
     "metric": _metric,
     "form": _form,
+    "html": _html,
 }
 
 
@@ -681,6 +697,14 @@ def validate_block(
                 **config_input,
                 **({"submit_label": raw["submit_label"]} if "submit_label" in raw else {}),
             },
+        }
+    # Real model outputs sometimes place the reference beside kind/title.
+    # Accept that one observed shorthand; strict validation still rejects
+    # duplicate references, markup, claimed metadata and arbitrary fields.
+    if raw.get("kind") == "html" and "artifact_id" in raw and "data" not in raw:
+        block_input = {
+            **{k: v for k, v in raw.items() if k != "artifact_id"},
+            "data": {"artifact_id": raw["artifact_id"]},
         }
     try:
         block = PresentationBlock.model_validate(block_input)

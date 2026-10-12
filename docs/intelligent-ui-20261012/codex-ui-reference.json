@@ -1,0 +1,32 @@
+{
+  "bundle_id": "com.openai.codex",
+  "version": "26.1007.30912",
+  "build": "20156",
+  "inspected_at": "2026-10-12",
+  "method": "Read-only inspection of installed UI bundle, no desktop or browser automation code inspected",
+  "assets": [
+    {
+      "path": "webview/assets/app-primary-6f60e9ac4103.js",
+      "size": 2385396,
+      "sha256": "7fe9c00b03cb1de3ebc3a4bf298fc44b13a7fe67ca9cc335a9e2ecda969a1321"
+    },
+    {
+      "path": "webview/assets/app-initial-6350d04672d0.js",
+      "size": 11440241,
+      "sha256": "604b5d2de4fbb41f3d0dc5b3662129c558e1c7b8aac8cc87225286f58dcfaf8f"
+    }
+  ],
+  "observed_patterns": [
+    "requestInputPanel: one question at a time, index indicator and previous/next controls",
+    "24 px outer radius, 12 px option rows, 20 px numbered choice markers",
+    "vertical option list with 4 px gaps and 8 px horizontal padding",
+    "separate inline custom response area",
+    "scoped keyboard handling for numeric choice, question navigation and IME composition"
+  ],
+  "adaptation": [
+    "Use project theme tokens and native radio/checkbox controls",
+    "No default selection; choosing an option does not submit",
+    "Require every question, preserve answers across navigation/collapse/retry",
+    "No skip, auto-resolution, approval flow or action bridge added"
+  ]
+}

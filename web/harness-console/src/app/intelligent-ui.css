@@ -468,3 +468,5 @@
     gap: 6px;
   }
 }
+.intelligent-ui-html iframe { width: 100%; border: 1px solid var(--border, #333); border-radius: 10px; background: #fff; }
+.intelligent-ui-html-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding-top: 8px; font-size: 12px; }

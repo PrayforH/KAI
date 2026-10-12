@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from harness.presentation.schema import (
     MAX_ACTIONS,
     MAX_CHART_SERIES,
+    MAX_HTML_BYTES,
     MAX_ITEMS,
     MAX_ROWS,
     MAX_STRING,
@@ -84,6 +85,13 @@ _RENDERERS: tuple[Renderer, ...] = (
         data_shape='{"items":[{"label":"转化率","value":"18.4","unit":"%"}]}',
     ),
     Renderer(
+        kind="html",
+        version="html/1",
+        summary="实时计数器、滑块计算、模拟、可玩游戏等目录组件无法表达的交互",
+        data_shape='{"artifact_id":"从本轮发布工具返回的真实 artifact_id"}',
+        config_shape='{"height":560}',
+    ),
+    Renderer(
         kind="form",
         version="form/1",
         summary="需要用户补齐的字段，一次收集后提交",
@@ -123,12 +131,17 @@ meant to be used in this conversation, prefer these inline blocks.
 When the user explicitly asks for one of the available components, use that
 kind if the supplied data supports it; do not replace it with a prose list or
 offer to create the requested component in a later turn.
-"Interactive" alone does not ask for
-an HTML file. Generate a standalone file when the user asks for a downloadable
-artifact, a separate page, or interactions beyond the catalog below.
+Use `html` for counters that recalculate, adjustable simulations, calculators,
+quizzes with local feedback, and playable games. A static table or chart does not
+fulfil a request to change inputs and see the result immediately. Create and
+publish a self-contained HTML file, then reference its returned artifact_id in
+the block; the user need not ask for an HTML file explicitly. Ordinary prose,
+tables and charts still use the other kinds. A file created for download alone
+does not need an inline block.
 
-When a block does help, end your turn with one fenced ```harness-ui block holding a
-single JSON object and nothing after the closing fence:
+When a block does help, end your answer with one (at most two) fenced
+```harness-ui blocks, each holding one JSON object. Put nothing after the final
+closing fence:
 
 {{"version":1,"kind":"table","title":"可选标题",
  "fallback_text":"一句话说明这个块展示了什么，不含 JSON",
@@ -155,6 +168,41 @@ Rules:
   {MAX_CHART_SERIES}, comparison items at {MAX_ITEMS}. Aggregate before you emit.
 - Say the conclusion in prose as well. The block illustrates the answer; it is not
   a replacement for it.
+
+### Generated HTML tools
+
+- Emit this exact shape, with `artifact_id` inside `data`:
+  {{"version":1,"kind":"html","title":"Interactive tool",
+    "fallback_text":"A standalone description of this tool",
+    "data":{{"artifact_id":"the actual id returned by publication"}},
+    "config":{{"height":560}}}}.
+- Publish the actual file in this run before referring to it. Never invent an
+  artifact_id, use another run's file, or place HTML, scripts, paths or URLs in
+  `data`. Only ready `text/html` artifacts up to {MAX_HTML_BYTES} bytes render.
+- Use inline CSS/JavaScript without CDN scripts, imports, API calls, authentication
+  or navigation. The sandbox has no console origin or network API access. Images
+  may use obtained public HTTPS image URLs; preserve their page sources and do
+  not claim unseen images were verified. Do not invent sources when search lacks
+  image support. Do not put secrets or private context in the file.
+- Buttons, inputs, sliders and games must implement the requested operation now.
+  Verify supplied input/output examples and boundaries. For currency, calculate
+  in integer minor units and allocate rounding remainders deterministically so
+  displayed person totals add up to the displayed bill. Preserve the user's
+  scientific data and assumptions; label an adapted test distribution explicitly.
+- State persistence uses a data-only frame channel. Listen for messages from
+  `window.parent` with type `harness.ui.init` and restore `event.data.state` as
+  data. Read the frame token with
+  `new URLSearchParams(location.hash.slice(1)).get("harness_ui_token")`.
+  After initializing the controls and installing that listener, send
+  `window.parent.postMessage({{type:"harness.ui.ready",token}}, "*")`.
+  After local changes send
+  `window.parent.postMessage({{type:"harness.ui.state",token,state:{{...}}}}, "*")`.
+  Only restore init messages whose source is `window.parent` and whose token
+  matches this frame's token. Keep default controls usable when opened standalone
+  without a parent frame or token.
+  Keep state a JSON object below 12 KB; restore without emitting another save.
+  This channel cannot call tools or submit actions. Use a separate native form
+  or the block's outer actions when another agent turn is needed.
 
 ### Letting the user act on a block
 
@@ -215,4 +263,4 @@ class UICapabilityCatalog:
 
 
 def default_catalog() -> UICapabilityCatalog:
-    return UICapabilityCatalog(_RENDERERS)
+    return UICapabilityCatalog(_RENDERERS, generated_html=True)

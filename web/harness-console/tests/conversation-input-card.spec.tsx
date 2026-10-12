@@ -8,9 +8,9 @@ import type { ConversationInput } from "../src/lib/conversation-input";
 let root: Root; let host: HTMLDivElement;
 afterEach(() => { act(() => root?.unmount()); host?.remove(); });
 const input: ConversationInput = {version: 1, title: "选择范围", questions: [{id: "scope", label: "修改哪些内容", type: "multi", options: ["UI", "接口"]}]};
-function mount(onSubmit = vi.fn(), disabled = false) {
+function mount(onSubmit = vi.fn(), disabled = false, data = input) {
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
-  act(() => root.render(<ConversationInputCard input={input} disabled={disabled} onSubmit={onSubmit} />)); return onSubmit;
+  act(() => root.render(<ConversationInputCard input={data} disabled={disabled} onSubmit={onSubmit} />)); return onSubmit;
 }
 function submit() { return [...host.querySelectorAll("button")].find(b => b.textContent?.includes("提交") || b.textContent?.includes("发送中"))!; }
 it("requires an actual selection, supports multiple answers and prevents duplicate submission", async () => {
@@ -33,4 +33,58 @@ it("preserves typed answers after submission failure and allows retry", async ()
 });
 it("does not submit when the conversation is locked", () => {
   const send = mount(vi.fn(), true); act(() => submit().click()); expect(send).not.toHaveBeenCalled();
+});
+
+const pagedInput: ConversationInput = { ...input, questions: [
+  { id: "scope", label: "修改哪些内容", type: "single", options: ["UI", "接口"] },
+  { id: "time", label: "何时执行", type: "single", options: ["今天", "明天"] },
+] };
+function button(label: string) {
+  return [...host.querySelectorAll("button")].find(el => el.textContent?.includes(label))!;
+}
+function key(target: Element, key: string, options: KeyboardEventInit = {}) {
+  act(() => target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...options })));
+}
+it("retains answers across pages and requires every question before sending", async () => {
+  const send = mount(vi.fn(), false, pagedInput);
+  expect(host.querySelectorAll("fieldset")).toHaveLength(1);
+  expect(button("下一步").disabled).toBe(true);
+  act(() => host.querySelector<HTMLButtonElement>('[aria-label="下一题"]')!.click());
+  act(() => host.querySelector<HTMLInputElement>('input[type="radio"]')!.click());
+  expect(submit().disabled).toBe(true);
+  act(() => host.querySelector<HTMLButtonElement>('[aria-label="上一题"]')!.click());
+  act(() => host.querySelector<HTMLInputElement>('input[type="radio"]')!.click());
+  act(() => button("下一步").click());
+  expect(host.querySelector<HTMLInputElement>('input[type="radio"]')!.checked).toBe(true);
+  expect(send).not.toHaveBeenCalled();
+  await act(async () => submit().click());
+  expect(send).toHaveBeenCalledWith("选择范围\n\n修改哪些内容\nUI\n\n何时执行\n今天");
+});
+it("scopes numeric and navigation shortcuts to the card without sending on selection", () => {
+  const send = mount(vi.fn(), false, pagedInput);
+  const card = host.querySelector("section")!;
+  key(card, "2");
+  expect(host.querySelectorAll<HTMLInputElement>('input[type="radio"]')[1].checked).toBe(true);
+  expect(send).not.toHaveBeenCalled();
+  key(card, "ArrowRight");
+  expect(host.textContent).toContain("何时执行");
+  key(card, "1", { ctrlKey: true });
+  key(card, "1", { isComposing: true });
+  expect(host.querySelectorAll("input:checked")).toHaveLength(0);
+  key(host.querySelector('input[type="text"]')!, "1");
+  expect(host.querySelectorAll("input:checked")).toHaveLength(0);
+  key(card, "ArrowLeft");
+  expect(host.querySelectorAll<HTMLInputElement>('input[type="radio"]')[1].checked).toBe(true);
+});
+it("preserves answers while collapsed and blocks shortcuts when disabled", () => {
+  mount();
+  const card = host.querySelector("section")!;
+  key(card, "1");
+  act(() => host.querySelector<HTMLButtonElement>('[aria-expanded]')!.click());
+  key(card, "2");
+  act(() => host.querySelector<HTMLButtonElement>('[aria-expanded]')!.click());
+  expect(host.querySelectorAll("input:checked")).toHaveLength(1);
+  act(() => root.render(<ConversationInputCard input={input} disabled onSubmit={vi.fn()} />));
+  key(card, "2");
+  expect(host.querySelectorAll("input:checked")).toHaveLength(1);
 });

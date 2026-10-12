@@ -16,6 +16,7 @@ export type UiViewState = {
   sort?: { key: string; descending: boolean } | null;
   show_data?: boolean;
   values?: FieldValues;
+  html_state?: Record<string, unknown>;
 };
 export type UiSnapshot = Presentation & {
   view_state: { version: number; state: UiViewState };

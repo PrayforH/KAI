@@ -11,6 +11,7 @@ import { usePresentation } from "./use-presentation";
 
 import { ChartView } from "./chart-view";
 import { FormView, type FieldValues } from "./form-view";
+import { HtmlView } from "./html-view";
 import {
   type Presentation,
   type PresentationAction,
@@ -34,6 +35,7 @@ function PresentationBodyView({
   presentation,
   onAction,
   disabled,
+  loaded,
   view,
   onView,
 }: {
@@ -43,8 +45,13 @@ function PresentationBodyView({
   presentation: Presentation;
   onAction?: PresentationActionHandler;
   disabled: boolean;
+  loaded: boolean;
 }) {
   switch (body.kind) {
+    case "html":
+      return <HtmlView key={`${presentation.presentation_id}:${presentation.revision}`}
+        presentation={presentation} height={body.height} initialState={view.html_state}
+        ready={loaded} onState={(html_state) => onView({ html_state })} />;
     case "table":
       return (
         <TableView
@@ -263,6 +270,7 @@ function PublishedPresentation({
         presentation={presentation}
         onAction={handle}
         disabled={disabled || !state.loaded || active || Boolean(formSubmitted)}
+        loaded={state.loaded}
         view={state.view}
         onView={state.changeView}
       />

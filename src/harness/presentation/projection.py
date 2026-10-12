@@ -21,12 +21,17 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import Any, cast
 
+from pydantic import ValidationError
+
 from harness.core.events import RunEvent
+from harness.core.models import Artifact, ArtifactStatus
 from harness.presentation.catalog import MAX_PRESENTATIONS_PER_TURN
 from harness.presentation.schema import (
     MAX_BLOCK_CHARS,
     MAX_COLUMNS,
+    MAX_HTML_BYTES,
     MAX_ROWS,
+    MAX_STRING,
     Presentation,
     validate_block,
 )
@@ -273,6 +278,42 @@ def _candidates(events: Sequence[RunEvent], run_id: str) -> Iterator[_Candidate]
             )
 
 
+def _html_artifacts(events: Sequence[RunEvent], run_id: str) -> dict[str, tuple[Artifact, int]]:
+    """Only this run's authoritative, unambiguous ready files can back a frame."""
+    scope = next((e for e in events if e.run_id == run_id), None)
+    found: dict[str, tuple[Artifact, int]] = {}
+    conflicting: set[str] = set()
+    for event in events:
+        if (
+            scope is None
+            or event.type != "artifact.ready"
+            or (event.tenant_id, event.run_id, event.session_id)
+            != (scope.tenant_id, run_id, scope.session_id)
+        ):
+            continue
+        try:
+            artifact = Artifact.model_validate(event.payload)
+        except ValidationError:
+            continue
+        if (
+            artifact.run_id != run_id
+            or artifact.tenant_id != scope.tenant_id
+            or artifact.status is not ArtifactStatus.READY
+            or artifact.media_type.split(";", 1)[0].strip().lower() != "text/html"
+            or not artifact.sha256
+            or re.fullmatch(r"[0-9a-f]{64}", artifact.sha256) is None
+            or artifact.size_bytes is None
+            or not 0 < artifact.size_bytes <= MAX_HTML_BYTES
+        ):
+            continue
+        previous = found.get(artifact.artifact_id)
+        if previous is not None and previous[0] != artifact:
+            conflicting.add(artifact.artifact_id)
+        else:
+            found.setdefault(artifact.artifact_id, (artifact, event.sequence))
+    return {key: value for key, value in found.items() if key not in conflicting}
+
+
 def presentations_for_events(
     events: Sequence[RunEvent],
     *,
@@ -288,6 +329,7 @@ def presentations_for_events(
     if not run_id:
         return []
     presentations: list[Presentation] = []
+    html_artifacts = _html_artifacts(events, run_id)
     # Explicit answer blocks take precedence over incidental tool-result tables.
     # Otherwise two search results can exhaust the turn's budget before its form.
     candidates = sorted(
@@ -305,17 +347,30 @@ def presentations_for_events(
             reason_code=candidate.reason_code,
         )
         if presentation is not None:
+            refs: tuple[dict[str, Any], ...] = (
+                {"run_id": run_id, "sequence": candidate.sequence, "origin": candidate.origin},
+            )
+            if presentation.kind == "html":
+                ready = html_artifacts.get(presentation.data["artifact_id"])
+                if ready is None:
+                    continue
+                artifact, sequence = ready
+                presentation = presentation.model_copy(
+                    update={
+                        "data": {
+                            "artifact_id": artifact.artifact_id,
+                            "name": artifact.name[:MAX_STRING],
+                            "sha256": artifact.sha256,
+                            "size_bytes": artifact.size_bytes,
+                        }
+                    }
+                )
+                refs += ({"run_id": run_id, "sequence": sequence, "origin": "artifact"},)
             presentations.append(
                 presentation.model_copy(
                     update={
                         "source_text": candidate.source_text,
-                        "source_refs": (
-                            {
-                                "run_id": run_id,
-                                "sequence": candidate.sequence,
-                                "origin": candidate.origin,
-                            },
-                        ),
+                        "source_refs": refs,
                         "snapshot_hash": hashlib.sha256(
                             json.dumps(
                                 {

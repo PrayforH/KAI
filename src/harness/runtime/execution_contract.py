@@ -13,6 +13,8 @@ _BASE_CONTRACT = """
   drafts for review, and requests for user input directly in the conversation. Chat text and
   Markdown formatting do not require a file. Do not inspect the workspace, execute commands,
   create files, or publish artifacts merely to produce or verify a conversational answer.
+  A requested interactive tool whose behavior needs generated HTML is authorized file work;
+  implement it rather than substituting a static conversational answer.
 - Respect user-owned decisions and stage boundaries. When the user asks to choose, review, or
   supply information before the next step, present the requested options or questions and stop
   this turn. Do not select on their behalf or perform the dependent work before their reply.

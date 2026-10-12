@@ -1,0 +1,135 @@
+{
+  "image_tag": "intelligent-ui-20261012b",
+  "browser_acceptance": "pending",
+  "cases": [
+    {
+      "id": "lamb",
+      "run_id": "run_c7995a9ccc0a4c8988bfefc225f9d8a4",
+      "presentation_id": "ui_d8a2d0f713d1524a65b63d64",
+      "rule_version": "presentation-policy/6",
+      "artifact_id": "artifact_f18efc3d9c114cb6a8cf9e8dcc23e346",
+      "sha256": "d0e7cbd437087c9c22b652b9341c883a6e90aadeb3418f622243ad4433036f78",
+      "size_bytes": 6191,
+      "checks": {
+        "inline_projection": true,
+        "authenticated_bytes_match": true,
+        "sandbox_headers": true,
+        "foreign_actor": 404,
+        "stale_revision": 404,
+        "state_cas": true,
+        "state_roundtrip": true
+      },
+      "interaction_acceptance": "pending_browser_verification"
+    },
+    {
+      "id": "bill-rounding",
+      "run_id": "run_4a58003126ff4f8b9fb86518e32042c8",
+      "presentation_id": "ui_8cac04cfaaa8b21ea7c47d77",
+      "rule_version": "presentation-policy/6",
+      "artifact_id": "artifact_e75ad7d7b2d94fb8a0c26d103f16e83c",
+      "sha256": "c3dbd605261df227b8887018d4dbad1adf5a9e642eef9b342d5152beae14f2fd",
+      "size_bytes": 8664,
+      "checks": {
+        "inline_projection": true,
+        "authenticated_bytes_match": true,
+        "sandbox_headers": true,
+        "foreign_actor": 404,
+        "stale_revision": 404,
+        "state_cas": true,
+        "state_roundtrip": true
+      },
+      "interaction_acceptance": "pending_browser_verification"
+    },
+    {
+      "id": "monty",
+      "run_id": "run_4440416724664cd2a3f0a0874385dd70",
+      "presentation_id": "ui_94902cf47f3b1278b2514b13",
+      "rule_version": "presentation-policy/6",
+      "artifact_id": "artifact_45154095d3f54318adaca6eaefc1b68b",
+      "sha256": "6650fd0a338724651434c43efa72f0c9781fad06fe76c12fd999931c2f5f19a5",
+      "size_bytes": 13218,
+      "checks": {
+        "inline_projection": true,
+        "authenticated_bytes_match": true,
+        "sandbox_headers": true,
+        "foreign_actor": 404,
+        "stale_revision": 404,
+        "state_cas": true,
+        "state_roundtrip": true
+      },
+      "interaction_acceptance": "pending_browser_verification"
+    }
+  ],
+  "script_syntax": {
+    "lamb": "passed",
+    "bill-rounding": "passed",
+    "monty": "passed"
+  },
+  "bill_math": {
+    "method": "isolated pure compute functions extracted from the generated script; no DOM or browser interaction",
+    "inputs": [
+      {
+        "amount": 1,
+        "people": 3,
+        "tax": 0,
+        "tip": 0
+      },
+      {
+        "amount": 60,
+        "people": 5,
+        "tax": 0,
+        "tip": 18
+      },
+      {
+        "amount": 0.01,
+        "people": 3,
+        "tax": 0,
+        "tip": 0
+      }
+    ],
+    "outputs": [
+      {
+        "sub": 100,
+        "total": 100,
+        "shares": [
+          34,
+          33,
+          33
+        ],
+        "base": 33,
+        "rem": 1,
+        "taxC": 0,
+        "tipC": 0
+      },
+      {
+        "sub": 6000,
+        "total": 7080,
+        "shares": [
+          1416,
+          1416,
+          1416,
+          1416,
+          1416
+        ],
+        "base": 1416,
+        "rem": 0,
+        "taxC": 0,
+        "tipC": 1080
+      },
+      {
+        "sub": 1,
+        "total": 1,
+        "shares": [
+          1,
+          0,
+          0
+        ],
+        "base": 0,
+        "rem": 1,
+        "taxC": 0,
+        "tipC": 0
+      }
+    ]
+  },
+  "state_protocol_review": "Bill HTML emits one save after init render despite the contract requesting no echo; browser restore behavior remains unverified. Parent handshake is one-shot, so this is not an init/save loop."
+}
