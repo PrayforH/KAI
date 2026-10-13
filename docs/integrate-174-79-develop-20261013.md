@@ -12,7 +12,7 @@
 - 79：入口 `https://172.20.105.79:3543`，默认联网搜索为 `tavily`，API / Worker / Web 共享合并后的源码。
 - 保留个人显式选择的搜索服务；默认值只作用于使用平台默认配置的用户。
 - 不迁移或覆盖数据库、存储卷、模型凭据、ASR 转发和长期记忆状态。数据库迁移头仍为 0039。
-- 镜像名为 `kai/axis-api:develop-174-79-20261013` 和 `kai/axis-web:develop-174-79-20261013`。各主机派生自自己的现有 API 镜像；Web 使用同一次 Linux 构建产物。镜像代码版本标记为 `e88e6cc7`，后续提交只补充测试标注和本文档。
+- 镜像名为 `kai/axis-api:develop-174-79-20261013` 和 `kai/axis-web:develop-174-79-20261013`。各主机派生自自己的现有 API 镜像；Web 使用同一次 Linux 构建产物。镜像代码版本标记为 `e88e6cc7`，后续提交补充测试标注、本文档和 CI 触发配置。
 - 发布前确认无活动任务，私有 Compose 备份存入各主机 `/data/kai-develop-174-79-20261013/`，权限 0600。仅更新应用服务，保留旧镜像供回退。
 
 ## 验证
@@ -21,4 +21,4 @@
 
 GitHub develop 要求通过 PR 和三项 CI，整合 PR 为 https://github.com/PrayforH/KAI/pull/63 。最终合并及发布结果以 PR 状态和服务健康核验为准。验证未发起真实视频生成。
 
-PR 仍自动运行 verify 的三项必需检查。取消 push 到 develop 后的重复执行，增加 workflow_dispatch 手动入口；main 的 push 检查和 release 的 workflow_call 保留。需要重跑时可在 Actions 中手动运行 verify，并选择目标分支。
+PR 仍自动运行 verify 的三项必需检查。取消 push 到 develop 后的重复执行，增加 workflow_dispatch 手动入口；main 的 push 检查和 release 的 workflow_call 保留。需要重跑时运行 `gh workflow run verify.yml --ref develop`。GitHub 网页的手动按钮需要默认分支 main 也包含 workflow_dispatch 声明。CI 的 API 镜像构建使用官方 PyPI，内网构建仍保留 Dockerfile 的原镜像源默认值。
