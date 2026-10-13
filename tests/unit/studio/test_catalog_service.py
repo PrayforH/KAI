@@ -1109,3 +1109,20 @@ async def test_new_drafts_choose_configured_opensandbox_default() -> None:
         displayName="通用助手", description="处理一般任务")
     draft = await service.create(tenant_id="tenant-network", user_id="owner", request=request)
     assert draft.spec.execution_profile == "opensandbox-gvisor"
+    from harness.adapters.memory import InMemoryAgentRegistry
+    from harness.api.dependencies import build_memory_container
+    from harness.deployments.models import EnvironmentName
+    from harness.deployments.queue import DeploymentTaskQueue
+    from harness.deployments.service import DeploymentService
+    container = build_memory_container()
+    deployments = DeploymentService(environments=container.environment_repository,
+        deployments=container.deployment_repository, queue=DeploymentTaskQueue.memory(),
+        registry=InMemoryAgentRegistry(), evals=container.evals,
+        capability_catalog_resolver=catalogs.get_for_deployment,
+        default_execution_profile="opensandbox-gvisor")
+    environment = await deployments.environment("tenant-network", "owner",
+        draft.spec.name, EnvironmentName.PRODUCTION)
+    policy = environment.resource_policy
+    assert policy.execution_profile_id == draft.spec.execution_profile
+    assert policy.network_access == (
+        NetworkAccess.NONE, NetworkAccess.INTERNAL, NetworkAccess.EXTERNAL)

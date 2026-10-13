@@ -500,7 +500,7 @@ def build_memory_container(
         clock=clock,
         id_generator=lambda: id_generator("preview"),
         quotas=enforced_quotas,
-        catalog_resolver=capability_catalogs.get,
+        catalog_resolver=capability_catalogs.get_for_deployment,
     )
     event_service = EventService(
         raw_events,
@@ -654,7 +654,7 @@ def build_memory_container(
         clock=clock,
         id_generator=id_generator,
         quality_gate=quality_service.require_promotion_allowed,
-        capability_catalog_resolver=capability_catalogs.get,
+        capability_catalog_resolver=capability_catalogs.get_for_deployment,
         knowledge_reference_validator=knowledge.require_bases,
         policy_resolver=governance.resolve_runtime,
         quotas=enforced_quotas,
@@ -951,7 +951,7 @@ def build_memory_container(
         mcp_probe=mcp_probe,
         policies=active_policy_profiles,
         policy_resolver=governance.resolve_runtime,
-        catalog_resolver=capability_catalogs.get,
+        catalog_resolver=capability_catalogs.get_for_deployment,
         observability=observability,
         timeout_seconds=resolved_settings.preflight_timeout_seconds,
         clock=clock,

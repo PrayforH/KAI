@@ -1128,7 +1128,10 @@ def build_production_container(
         clock=clock,
         id_generator=ids,
         quality_gate=quality_service.require_promotion_allowed,
-        capability_catalog_resolver=capability_catalogs.get,
+        capability_catalog_resolver=capability_catalogs.get_for_deployment,
+        default_execution_profile=("opensandbox-gvisor"
+                                   if settings.sandbox_provider == "opensandbox"
+                                   else "isolated-default"),
         knowledge_reference_validator=knowledge.require_bases,
         quotas=enforced_quotas,
     )
@@ -1483,6 +1486,7 @@ def build_production_container(
         studio=studio_service,
         sandbox=preflight_sandbox,
         sandbox_for_profile=sandbox_for_profile,
+        catalog_resolver=capability_catalogs.get_for_deployment,
         model_probe=model_probe,
         mcp_probe=mcp_probe,
         policies=policy_profiles,

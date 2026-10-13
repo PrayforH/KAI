@@ -11,6 +11,6 @@ D1 使用独立的 `HARNESS_STUDIO_BUILDER_INTENT_*` 配置，自动模式先判
 | 109 网段 / 174 | `http://172.20.109.113:14090` | `http://172.20.109.111:13000`，proxy `:80` |
 | 105 网段 / 79 | `http://172.20.105.79:24090` | 同上 |
 
-`HARNESS_SANDBOX_NETWORK_ACCESS` 声明每个后端实际可达的网络：默认 OpenSandbox 为 `["none","internal","external"]`，CubeSandbox 为 `["none"]`。该配置是平台能力上限，不会授予智能体工具权限，也不会修改沙箱服务器网络。用户能力目录只展示已启用后端，网络能力与部署配置取交集；保存的资源目录不被覆盖，切换部署配置可恢复原有资源。
+`HARNESS_SANDBOX_NETWORK_ACCESS` 声明每个后端实际可达的网络：默认 OpenSandbox 为 `["none","internal","external"]`，CubeSandbox 为 `["none"]`。该配置是平台能力上限，不会授予智能体工具权限，也不会修改沙箱服务器网络。用户能力目录、编译、试跑和发布策略共用部署能力配置，只展示已启用后端，网络能力与部署配置取交集；保存的资源目录不被覆盖，切换部署配置可恢复原有资源。
 
 113、79 现有 OpenSandbox 服务使用不要求 API Key 的模式，因此连接端显式配置 `HARNESS_OPENSANDBOX_AUTH_MODE=none`；代码默认仍为 `api_key`。使用服务器已存在的 `harbor.shdata.com:5000/deerflow/sandbox:1.11.0` 镜像。CubeSandbox 保留原有模板别名、密钥和 warm 策略。

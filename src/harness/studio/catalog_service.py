@@ -453,7 +453,11 @@ class CapabilityCatalogService:
     ) -> CapabilityCatalogRecord:
         """Return platform controls plus only the current user's personal MCP entries."""
 
-        record = self._record_for_user(await self.get(tenant_id), user_id)
+        return self._record_for_user(await self.get_for_deployment(tenant_id), user_id)
+
+    async def get_for_deployment(self, tenant_id: str) -> CapabilityCatalogRecord:
+        """Project service availability for compilation, preflight and deployment policies."""
+        record = await self.get(tenant_id)
         profiles = tuple(
             profile.model_copy(update={"network_access": tuple(
                 access for access in profile.network_access
