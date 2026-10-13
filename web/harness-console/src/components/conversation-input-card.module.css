@@ -48,3 +48,7 @@
 .error { margin: 8px; color: var(--codex-danger, var(--codex-ink)); font-size: 13px; }
 @media (max-width: 480px) { .header { gap: 8px; } .hint { display: none; } .footer { justify-content: flex-end; } }
 @media (prefers-reduced-motion: reduce) { .option, .heading svg { transition: none; } }
+
+.actions { display: flex; align-items: center; gap: 8px; }
+.skip { border: 0; border-radius: 16px; padding: 6px 12px; min-height: 32px; background: transparent; color: var(--codex-muted); font: inherit; cursor: pointer; }
+.skip:hover:not(:disabled) { background: var(--codex-surface-hover); }

@@ -628,6 +628,7 @@ class ModelRouteCapability(StudioModel):
         "openai_images",
         "openai_videos",
         "minimax_videos",
+        "minimax_videos_v2",
     ] = Field(default="anthropic_compatible", alias="apiFormat")
     auth_scheme: Literal["bearer", "x-api-key", "none"] = Field(
         default="bearer", alias="authScheme"
@@ -663,14 +664,16 @@ class ModelRouteCapability(StudioModel):
         if self.model_type == "video_generation" and self.api_format not in {
             "openai_videos",
             "minimax_videos",
+            "minimax_videos_v2",
         }:
             raise ValueError("video generation models must use a video API format")
         if self.model_type != "video_generation" and self.api_format in {
             "openai_videos",
             "minimax_videos",
+            "minimax_videos_v2",
         }:
             raise ValueError("video API formats are only valid for video generation models")
-        if self.api_format == "minimax_videos" and self.base_url is not None:
+        if self.api_format in {"minimax_videos", "minimax_videos_v2"} and self.base_url is not None:
             parsed = urlsplit(self.base_url or "")
             if (
                 parsed.scheme != "https"
@@ -680,11 +683,13 @@ class ModelRouteCapability(StudioModel):
                     "api.minimax.cn",
                     "api.minimax.io",
                 }
-                or parsed.path.rstrip("/") != "/v1"
+                or parsed.path.rstrip("/")
+                != ("/v2" if self.api_format == "minimax_videos_v2" else "/v1")
                 or self.auth_scheme != "bearer"
             ):
                 raise ValueError(
-                    "MiniMax videos require an official HTTPS /v1 endpoint and Bearer auth"
+                    "MiniMax videos require an official HTTPS endpoint "
+                    "matching the API version and Bearer auth"
                 )
         if self.auth_scheme == "none" and self.model_type != "video_generation":
             raise ValueError(
@@ -948,6 +953,7 @@ class RuntimeCapability(StudioModel):
             "openai_images",
             "openai_videos",
             "minimax_videos",
+            "minimax_videos_v2",
         ],
         ...,
     ] = Field(alias="modelApiFormats")

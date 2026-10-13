@@ -1,6 +1,7 @@
 import json
 from datetime import UTC, datetime
 from io import BytesIO
+from typing import Any
 
 import httpx
 import pytest
@@ -1022,3 +1023,158 @@ async def test_video_task_survives_service_restart_and_enforces_ownership() -> N
         assert sum(item.method == "POST" for item in calls) == 1
         for task in recreated._video_monitors.values():  # pyright: ignore[reportPrivateUsage]
             task.cancel()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("model", "resolution", "seconds"), [("MiniMax-H3", "2K", 15), ("MiniMax-H3-Max", "480P", 5)]
+)
+async def test_official_h3_lifecycle(model: str, resolution: str, seconds: int) -> None:
+    submissions: list[dict[str, Any]] = []
+
+    def handler(incoming: httpx.Request) -> httpx.Response:
+        if incoming.url.host == "cdn.example.test":
+            assert "authorization" not in incoming.headers
+            return httpx.Response(
+                200, content=b"\x00\x00\x00\x18ftypmp42data", headers={"content-type": "video/mp4"}
+            )
+        if incoming.method == "POST":
+            assert incoming.url.path == "/v2/video_generation"
+            submissions.append(json.loads(incoming.content))
+            return httpx.Response(200, json={"task_id": "123456"})
+        if incoming.url.path == "/v2/query/video_generation":
+            return httpx.Response(200, json={"items": [], "total": 0})
+        assert incoming.url.path == "/v2/query/video_generation/123456"
+        return httpx.Response(
+            200,
+            json={
+                "task": {
+                    "status": "succeeded",
+                    "content": {"url": "https://cdn.example.test/video.mp4"},
+                }
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        models, _, _ = service(client=client)
+        await models.configure(
+            "tenant-a",
+            "admin-a",
+            "h3",
+            request(
+                modelType="video_generation",
+                model=model,
+                baseUrl="https://api.minimaxi.com/v2",
+                apiFormat="minimax_videos_v2",
+            ),
+        )
+        assert (await models.test("tenant-a", "h3")).ok
+        job = await models.create_video_job(
+            "tenant-a",
+            "member-a",
+            "h3",
+            GenerateVideoRequest.model_validate(
+                {
+                    "prompt": "test",
+                    "seconds": seconds,
+                    "resolution": resolution,
+                    "aspectRatio": "9:16",
+                }
+            ),
+        )
+        assert submissions == [
+            {
+                "model": model,
+                "content": [{"type": "text", "text": "test"}],
+                "duration": seconds,
+                "resolution": resolution,
+                "ratio": "9:16",
+            }
+        ]
+        result = await models.get_video_job("tenant-a", "member-a", "h3", job.job_id)
+        assert result.status == "completed" and result.video_url
+        assert (
+            await models.download_video("tenant-a", "member-a", "h3", job.job_id)
+        ).media_type == "video/mp4"
+        assert not (
+            await models.cancel_video_job("tenant-a", "member-a", "h3", job.job_id)
+        ).cancellation_supported
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("model", "resolution", "seconds"),
+    [("MiniMax-H3", "1080P", 5), ("MiniMax-H3-Max", "2K", 5), ("MiniMax-H3-Max", "480P", 4)],
+)
+async def test_h3_rejects_invalid_combinations_before_submission(
+    model: str, resolution: str, seconds: int
+) -> None:
+    def handler(incoming: httpx.Request) -> httpx.Response:
+        raise AssertionError("invalid settings must not reach provider")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        models, _, _ = service(client=client)
+        await models.configure(
+            "tenant-a",
+            "admin-a",
+            "h3",
+            request(
+                modelType="video_generation",
+                model=model,
+                baseUrl="https://api.minimaxi.com/v2",
+                apiFormat="minimax_videos_v2",
+            ),
+        )
+        with pytest.raises(ConflictError):
+            await models.create_video_job(
+                "tenant-a",
+                "member-a",
+                "h3",
+                GenerateVideoRequest.model_validate(
+                    {"prompt": "test", "seconds": seconds, "resolution": resolution}
+                ),
+            )
+
+
+@pytest.mark.asyncio
+async def test_h3_reference_roles_and_sanitized_failure() -> None:
+    submissions: list[dict[str, Any]] = []
+
+    def handler(incoming: httpx.Request) -> httpx.Response:
+        submissions.append(json.loads(incoming.content))
+        return httpx.Response(402, json={"error": {"message": "secret-value-never-returned"}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        models, _, _ = service(client=client)
+        await models.configure(
+            "tenant-a",
+            "admin-a",
+            "h3",
+            request(
+                modelType="video_generation",
+                model="MiniMax-H3",
+                baseUrl="https://api.minimaxi.com/v2",
+                apiFormat="minimax_videos_v2",
+            ),
+        )
+        refs = (GeneratedVideoReference("a.png", "image/png", image_bytes()),) * 2
+        with pytest.raises(ConflictError, match="余额不足") as error:
+            await models.create_video_job(
+                "tenant-a",
+                "member-a",
+                "h3",
+                GenerateVideoRequest(
+                    prompt="test",
+                    seconds=10,
+                    inputArtifactIds=("input_artifact_a", "input_artifact_b"),
+                ),
+                references=refs,
+            )
+        assert "secret" not in str(error.value)
+        assert len(submissions) == 1
+        assert [item.get("role") for item in submissions[0]["content"]] == [
+            None,
+            "first_frame",
+            "last_frame",
+        ]
+        assert submissions[0]["ratio"] == "adaptive"

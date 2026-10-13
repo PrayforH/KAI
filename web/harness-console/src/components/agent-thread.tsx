@@ -669,6 +669,7 @@ function HarnessComposer() {
       routeId: videoRoute.id,
       routeLabel: videoRoute.label,
       apiFormat: videoRoute.apiFormat,
+      model: videoRoute.model,
       prompt,
       inputArtifactIds,
       attachments,
@@ -751,6 +752,7 @@ function HarnessComposer() {
             label={videoRoute.label}
             routeId={videoRoute.id}
             apiFormat={videoRoute.apiFormat}
+            model={videoRoute.model}
             referenceCount={composerAttachments.length}
             disabled={videoGenerating}
           />
