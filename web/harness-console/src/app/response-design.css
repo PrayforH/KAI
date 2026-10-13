@@ -64,6 +64,7 @@ html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer button:f
 html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer :is(.aui-code-header,.aui-md-clamp) button svg { flex-shrink: 0; width: 16px; height: 16px; }
 html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-md-clamp button svg { transition: transform var(--codex-motion-control) var(--codex-motion-ease); }
 html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-md-clamp button[aria-expanded="true"] svg { transform: rotate(180deg); }
+body.codex-theme-v1 .user-message-action .codex-response-icon,
 body.codex-theme-v1 .assistant-message-controls .codex-response-icon { width: 16px; height: 16px; fill: currentColor; stroke: none; }
 body.codex-theme-v1 .assistant-message-controls { transition: opacity var(--codex-motion-fast); }
 html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .source-link { gap: .3em; padding: 0; border: 0; border-radius: 0; background: transparent; color: inherit; text-decoration: underline dotted var(--codex-muted); text-underline-offset: 2px; }

@@ -23,7 +23,6 @@ import {
   TaskDetailsPopover,
   TaskHeaderActions,
 } from "../components/task-header-actions";
-import { TaskRunStatus } from "../components/task-run-status";
 import { TaskSidebar } from "../components/task-sidebar";
 import { createProjectTask } from "../lib/project-task";
 import { ApiProject } from "../lib/studio-client";
@@ -787,7 +786,6 @@ function AuthenticatedHome() {
                   startNewTask();
                 }}
               />
-              <TaskRunStatus activity={runActivity} stream={runStream} status={currentTask?.status} />
             </div>
             <HeaderUtilities
               taskRailOpen={taskRailOpen}
