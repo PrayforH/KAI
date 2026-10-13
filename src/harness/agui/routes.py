@@ -1129,7 +1129,10 @@ async def _history_messages_for_run(
     ):
         prompt = run.input["ui_action_display"]
     if isinstance(prompt, str) and prompt:
-        raw_input_ids = run.input.get("input_artifact_ids", [])
+        raw_input_ids = (
+            [] if run.input.get("inherited_input_artifact_ids")
+            else run.input.get("input_artifact_ids", [])
+        )
         input_ids = (
             [item for item in cast(list[object], raw_input_ids) if isinstance(item, str) and item]
             if isinstance(raw_input_ids, list)
@@ -1170,17 +1173,48 @@ async def _history_messages_for_run(
         else:
             content = prompt
         messages.append(AguiHistoryMessage(id=f"user-{run.run_id}", role="user", content=content))
+    video = cast(dict[str, Any] | None, run.input.get("video_generation"))
+    if isinstance(video, dict):
+        public = {key: value for key, value in video.items() if key != "providerJobId"}
+        tool_id = f"harness-video-{run.run_id}"
+        messages.append(
+            AguiHistoryMessage(
+                id=f"assistant-{run.run_id}",
+                role="assistant",
+                content="",
+                tool_calls=[
+                    AguiHistoryToolCall(
+                        id=tool_id,
+                        function=AguiHistoryFunction(
+                            name="harness_video_generation",
+                            arguments=json.dumps(public, separators=(",", ":")),
+                        ),
+                    )
+                ],
+            )
+        )
+        messages.append(
+            AguiHistoryMessage(
+                id=f"tool-video-{run.run_id}",
+                role="tool",
+                content='{"status":"ready"}',
+                tool_call_id=tool_id,
+            )
+        )
+        return messages
     projection = await _run_projection(container, tenant_id, run, write_snapshot=write_snapshot)
     activity = projection.activity
     ui_blocks = projection.ui_blocks
-    for guidance in projection.steer_events:
-        messages.append(
-            AguiHistoryMessage(
-                id=f"steer-{guidance.payload.get('request_id', guidance.event_id)}",
-                role="user",
-                content=str(guidance.payload.get("text", "")),
-            )
-        )
+    # Accepted input belongs at its receipt sequence inside this Run's process,
+    # not as a user bubble inserted directly after the initial question.
+    if activity is not None and projection.steer_events:
+        receipt_activity = build_run_activity(projection.steer_events)
+        if receipt_activity is not None:
+            activity = dict(activity)
+            items = list(activity.get("items", []))
+            known = {item["id"] for item in items}
+            items.extend(item for item in receipt_activity["items"] if item["id"] not in known)
+            activity["items"] = sorted(items, key=lambda item: item["sequence"])
     artifacts = await container.artifacts.list_for_run(tenant_id, run.run_id)
     activity_tool_call = (
         AguiHistoryToolCall(

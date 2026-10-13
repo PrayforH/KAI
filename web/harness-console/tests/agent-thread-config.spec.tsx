@@ -159,12 +159,9 @@ it("switches the composer action to stop for an active run", () => {
   expect(shouldShowComposerStop(false, "error")).toBe(false);
   expect(shouldShowComposerStop(true, "running", "failed")).toBe(false);
   expect(shouldShowComposerStop(true, "running", "cancelled")).toBe(false);
-  expect(agentThreadSource).toContain(
-    '<ConversationControl action="stop" aria-label="停止运行"',
-  );
-  expect(agentThreadSource).toContain('aria-label="停止运行"');
-  expect(agentThreadSource.match(/action="stop" aria-label="停止运行"/g)).toHaveLength(1);
-  expect(agentThreadSource).toContain("aui.thread().cancelRun()");
+  expect(agentThreadSource.match(/action="stop"/g)).toHaveLength(1);
+  expect(agentThreadSource).toContain('disabled={stopPending}');
+  expect(agentThreadSource).toContain('await cancelActiveRun()');
   expect(agentThreadSource).toContain('<ConversationControl action="send"');
   expect(agentThreadSource).not.toContain("<Composer.Action");
 });

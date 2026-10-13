@@ -880,6 +880,8 @@ def build_production_container(
         mcp_credential_service,
         environment="production",
         server_routes=_deployment_model_routes(settings),
+        runs=runs,
+        sessions=session_repository,
     )
     discovery_credentials = StoredMcpCredentialProvider(
         mcp_credential_service,
@@ -1133,6 +1135,7 @@ def build_production_container(
     )
     memory_bank = MemoryBankService(
         memory_bank_repository,
+        default_allow_agent_personal=settings.memory_auto_save_personal_default,
         embedder=embedding_client(settings),
         semantic_threshold=settings.memory_semantic_threshold,
         audit=audit,

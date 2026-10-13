@@ -1,0 +1,6 @@
+.settings { margin: 0 0 8px; font-family: var(--codex-font-ui); font-size: 12px; color: var(--codex-muted); }
+.row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.row select { height: 28px; padding: 0 8px; border: 1px solid var(--codex-line); border-radius: 6px; background: var(--codex-surface); color: var(--codex-ink); font: inherit; cursor: pointer; }
+.row select:focus-visible { outline: 2px solid var(--codex-ink); outline-offset: 2px; }
+.row select:disabled { opacity: .5; cursor: default; }
+.quota { margin-left: auto; font-variant-numeric: tabular-nums; }

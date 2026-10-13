@@ -10,6 +10,10 @@ from httpx import ASGITransport, AsyncClient
 from harness.api.app import create_memory_app
 from harness.core.errors import ConflictError, NotFoundError
 
+from datetime import UTC, datetime
+from harness.core.events import RunEvent
+
+
 FIXTURE_MANIFEST = Path("tests/fixtures/agents/echo-agent/agent.yaml")
 HEADERS = {"X-Tenant-ID": "tenant-a", "X-User-ID": "user-1"}
 PPTX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
@@ -908,3 +912,188 @@ async def test_legacy_knowledge_mode_does_not_constrain_new_runs(legacy_mode: st
         assert response.status_code == 200
         run = await app.state.container.runs.get("tenant-a", response.headers["x-harness-run-id"])
         assert "knowledge_mode" not in run.input
+
+
+@pytest.mark.asyncio
+async def test_followup_restages_uploads_after_workspace_inputs_are_excluded() -> None:
+    app = create_memory_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS)
+        uploaded = await client.post(
+            "/v1/input-artifacts",
+            files={"file": ("source.txt", b"Original retained upload", "text/plain")},
+            headers=HEADERS,
+        )
+    artifact_id = uploaded.json()["input_artifact_id"]
+    initial = _request(thread_id="followup-file", run_id="file-first", prompt="Read")
+    initial["messages"] = [
+        {
+            "id": "first",
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Read"},
+                {"type": "binary", "mimeType": "text/plain", "id": artifact_id},
+            ],
+        }
+    ]
+    c = app.state.container
+    first = await c.agui.create_run(
+        tenant_id="tenant-a",
+        user_id="user-1",
+        agent_name="echo-agent",
+        agent_version="0.1.0",
+        request=RunAgentInput.model_validate(initial),
+    )
+    await c.worker.execute("tenant-a", first.run_id)
+    followup = await c.agui.create_run(
+        tenant_id="tenant-a",
+        user_id="user-1",
+        agent_name="echo-agent",
+        agent_version="0.1.0",
+        request=RunAgentInput.model_validate(
+            _request(
+                thread_id="followup-file",
+                run_id="file-continue",
+                prompt="Continue",
+            )
+        ),
+    )
+    assert followup.input["input_artifact_ids"] == [artifact_id]
+    assert followup.input["inherited_input_artifact_ids"] == [artifact_id]
+    await c.worker.execute("tenant-a", followup.run_id)
+    events = await c.events.list_after("tenant-a", followup.run_id, 0)
+    staged = [event for event in events if event.type == "input.staged"]
+    assert len(staged) == 1
+    assert staged[0].payload["input_artifact_id"] == artifact_id
+
+
+@pytest.mark.asyncio
+async def test_history_receipt_stays_inside_process_even_with_cached_snapshot() -> None:
+    app = create_memory_app(auto_execute=True)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        assert (
+            await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS)
+        ).status_code == 201
+        response = await client.post(
+            "/v1/agui?agent_name=echo-agent&agent_version=0.1.0",
+            json=_request(thread_id="steer-history", run_id="steer-client", prompt="初始问题"),
+            headers=HEADERS,
+        )
+        assert response.status_code == 200
+        first = await client.get("/v1/agui/threads/steer-history/history", headers=HEADERS)
+        run = await app.state.container.runs.get("tenant-a", first.json()["run_id"])
+        sequence = await app.state.container.events.latest_sequence("tenant-a", run.run_id) + 1
+        await app.state.container.events.append(
+            RunEvent(
+                event_id="guidance-receipt-test",
+                tenant_id="tenant-a",
+                run_id=run.run_id,
+                session_id=run.session_id,
+                sequence=sequence,
+                type="run.steer.accepted",
+                timestamp=datetime.now(UTC),
+                payload={"request_id": "receipt", "text": "补充要求"},
+            )
+        )
+        history = await client.get("/v1/agui/threads/steer-history/history", headers=HEADERS)
+        messages = history.json()["messages"]
+        assert len([message for message in messages if message["role"] == "user"]) == 1
+        calls = [
+            call
+            for message in messages
+            for call in message.get("toolCalls", [])
+            if call["function"]["name"] == "harness_run_activity"
+        ]
+        activity = json.loads(calls[0]["function"]["arguments"])["activity"]
+        receipts = [
+            item for item in activity["items"] if item["event_type"] == "run.steer.accepted"
+        ]
+        assert len(receipts) == 1
+        assert receipts[0]["summary"] == "补充要求"
+        assert activity["status"] == "succeeded"
+
+
+@pytest.mark.asyncio
+async def test_video_generation_is_a_durable_task_with_media_history() -> None:
+    import httpx
+
+    from harness.studio.model_configuration import ConfigureModelRequest
+    from tests.unit.studio.test_model_configuration import minimax_quota_response, minimax_request
+
+    application = create_memory_app(auto_execute=False)
+    container = application.state.container
+    captured: list[httpx.Request] = []
+
+    def provider(incoming: httpx.Request) -> httpx.Response:
+        captured.append(incoming)
+        if incoming.url.path.endswith("/remains"):
+            return httpx.Response(200, json=minimax_quota_response())
+        if incoming.method == "POST":
+            return httpx.Response(200, json={"task_id": "12345", "base_resp": {"status_code": 0}})
+        if incoming.url.path.endswith("/video_generation"):
+            return httpx.Response(
+                200, json={"status": "Success", "file_id": "23456", "base_resp": {"status_code": 0}}
+            )
+        return httpx.Response(
+            200,
+            json={
+                "file": {"download_url": "https://cdn.example.test/video.mp4"},
+                "base_resp": {"status_code": 0},
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as upstream:
+        container.model_configurations._http_client = upstream
+        await container.model_configurations.configure(
+            "tenant-a",
+            "admin",
+            "minimax-video",
+            ConfigureModelRequest.model_validate(minimax_request().model_dump(by_alias=True)),
+        )
+        async with AsyncClient(
+            transport=ASGITransport(app=application), base_url="http://test"
+        ) as client:
+            assert (
+                await client.post(
+                    "/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS
+                )
+            ).status_code == 201
+            response = await client.post(
+                "/v1/studio/models/minimax-video/videos",
+                headers=HEADERS,
+                json={
+                    "prompt": "test media task",
+                    "seconds": 6,
+                    "task": {
+                        "threadId": "video-thread",
+                        "agentName": "echo-agent",
+                        "agentVersion": "0.1.0",
+                    },
+                },
+            )
+            assert response.status_code == 200, response.text
+            job_id = response.json()["jobId"]
+            tasks = await client.get("/v1/agui/threads", headers=HEADERS)
+            assert tasks.json()[0]["thread_id"] == "video-thread"
+            assert tasks.json()[0]["status"] == "running"
+            container.model_configurations._video_jobs.clear()
+            completed = await client.get(
+                "/v1/studio/models/minimax-video/videos/" + job_id, headers=HEADERS
+            )
+            assert completed.json()["status"] == "completed"
+            history = await client.get("/v1/agui/threads/video-thread/history", headers=HEADERS)
+            assert history.json()["status"] == "succeeded"
+            assert (
+                history.json()["messages"][1]["toolCalls"][0]["function"]["name"]
+                == "harness_video_generation"
+            )
+            assert "providerJobId" not in history.text
+            assert "sk-cp-test-key" not in tasks.text + history.text
+            other = await client.get(
+                "/v1/studio/models/minimax-video/videos/" + job_id,
+                headers={**HEADERS, "X-User-ID": "other"},
+            )
+            assert other.status_code == 404
+            assert sum(item.method == "POST" for item in captured) == 1
+        for task in container.model_configurations._video_monitors.values():
+            task.cancel()

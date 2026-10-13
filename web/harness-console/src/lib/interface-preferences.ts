@@ -23,11 +23,11 @@ export type FollowUpBehavior = "queue" | "steer";
 export function useFollowUpPreference() {
   const { user } = useAuth();
   const key = `harness:preferences:${user.user_id}:follow-up`;
-  const [behavior, setBehavior] = useState<FollowUpBehavior>("queue");
+  const [behavior, setBehavior] = useState<FollowUpBehavior>("steer");
   useEffect(() => {
     const sync = () => {
-      try { setBehavior(localStorage.getItem(key) === "steer" ? "steer" : "queue"); }
-      catch { setBehavior("queue"); }
+      try { setBehavior(localStorage.getItem(key) === "queue" ? "queue" : "steer"); }
+      catch { setBehavior("steer"); }
     };
     sync();
     window.addEventListener("storage", sync);

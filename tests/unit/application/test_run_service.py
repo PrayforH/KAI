@@ -391,3 +391,64 @@ async def test_cancel_active_run_waits_for_worker_terminal_and_is_idempotent() -
         (1, "run.queued"),
         (2, "run.cancelling"),
     ]
+
+
+@pytest.mark.asyncio
+async def test_followups_restore_latest_upload_batch_without_crossing_sessions() -> None:
+    sessions = InMemorySessionRepository()
+    runs = InMemoryRunRepository()
+    ids = id_generator()
+    clock_tick = 0
+
+    def clock():
+        nonlocal clock_tick
+        from datetime import timedelta
+
+        clock_tick += 1
+        return NOW + timedelta(seconds=clock_tick)
+
+    for session_id in ("session-1", "session-2"):
+        await sessions.add(
+            Session(
+                session_id=session_id,
+                tenant_id="tenant-a",
+                user_id="user-1",
+                agent_name="echo-agent",
+                agent_version="1.0.0",
+                created_at=NOW,
+            )
+        )
+    service = RunService(
+        sessions,
+        runs,
+        InMemoryTaskQueue(),
+        EventService(InMemoryEventRepository(), InMemoryEventBus(), clock=clock, id_generator=ids),
+        clock=clock,
+        id_generator=ids,
+    )
+    await service.create(
+        "tenant-a", "session-1", "first", input={"prompt": "first", "input_artifact_ids": ["old"]}
+    )
+    await service.create(
+        "tenant-a",
+        "session-1",
+        "second",
+        input={"prompt": "second", "input_artifact_ids": ["zip-1", "zip-2"]},
+    )
+    request = {"prompt": "continue", "input_artifact_ids": []}
+    followup = await service.create("tenant-a", "session-1", "third", input=request)
+    assert followup.input["inherited_input_artifact_ids"] == ["zip-1", "zip-2"]
+    assert request == {"prompt": "continue", "input_artifact_ids": []}
+    next_followup = await service.create(
+        "tenant-a", "session-1", "fourth", input={"prompt": "next"}
+    )
+    assert next_followup.input["inherited_input_artifact_ids"] == ["zip-1", "zip-2"]
+    other = await service.create("tenant-a", "session-2", "other", input={"prompt": "continue"})
+    assert "inherited_input_artifact_ids" not in other.input
+    replaced = await service.create(
+        "tenant-a",
+        "session-1",
+        "replace",
+        input={"prompt": "new", "input_artifact_ids": ["new-zip"]},
+    )
+    assert "inherited_input_artifact_ids" not in replaced.input

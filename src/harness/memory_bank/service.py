@@ -43,6 +43,7 @@ class MemoryBankService:
         clock: Callable[[], datetime] | None = None,
         id_generator: Callable[[str], str] | None = None,
         default_retention_days: int = 180,
+        default_allow_agent_personal: bool = False,
         embedder: MemoryEmbedder | None = None,
         semantic_threshold: float = 0.5,
     ) -> None:
@@ -54,6 +55,7 @@ class MemoryBankService:
         self._clock = clock or (lambda: datetime.now(UTC))
         self._ids = id_generator or _id
         self._default_retention_days = default_retention_days
+        self._default_allow_agent_personal = default_allow_agent_personal
 
     async def propose(
         self,
@@ -158,7 +160,7 @@ class MemoryBankService:
                     return enriched
                 return item
         now = self._clock()
-        consent = await self.repository.get_consent(
+        consent = await self._ensure_default_consent(
             tenant_id, user_id, policy_key(user_id, agent_name, owner_id)
         )
         auto_activate = (
@@ -686,11 +688,32 @@ class MemoryBankService:
             raise ConflictError("memory retention changed while update was applied")
         return retention
 
+    async def _ensure_default_consent(
+        self, tenant_id: str, user_id: str, agent_name: str
+    ) -> MemoryConsent | None:
+        current = await self.repository.get_consent(tenant_id, user_id, agent_name)
+        if current is not None or not self._default_allow_agent_personal:
+            return current
+        try:
+            return await self.replace_consent(
+                tenant_id,
+                user_id,
+                agent_name,
+                expected_version=0,
+                allow_agent_personal=True,
+            )
+        except ConflictError:
+            # A concurrent policy initialization or explicit user choice wins.
+            current = await self.repository.get_consent(tenant_id, user_id, agent_name)
+            if current is None:
+                raise
+            return current
+
     async def get_policy(
         self, tenant_id: str, user_id: str, agent_name: str
     ) -> tuple[MemoryConsent | None, MemoryRetention]:
         return (
-            await self.repository.get_consent(tenant_id, user_id, agent_name),
+            await self._ensure_default_consent(tenant_id, user_id, agent_name),
             await self._retention(tenant_id, user_id, agent_name),
         )
 

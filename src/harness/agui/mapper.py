@@ -18,10 +18,11 @@ from ag_ui.core import (
     ToolCallResultEvent,
     ToolCallStartEvent,
 )
+from harness.presentation.schema import Presentation
 
 from harness.agui.activity import activity_projection
+from harness.agui.failure import failure_message
 from harness.core.events import RunEvent
-from harness.presentation.schema import Presentation
 from harness.runtime.message_mapper import safe_model_text
 
 # The domain tool the console renders an interactive answer block from. It carries
@@ -119,7 +120,7 @@ def _map_standard_event(event: RunEvent) -> Sequence[BaseEvent]:
     if event.type in {"run.failed", "run.rejected", "run.timed_out"}:
         return [
             RunErrorEvent(
-                message=str(event.payload.get("message", event.type)),
+                message=failure_message(event.type, event.payload),
                 code=str(event.payload.get("error_code", event.type.removeprefix("run."))),
             )
         ]

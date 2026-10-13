@@ -8,6 +8,7 @@ export interface TaskModelRoute {
   model: string;
   capabilities: string[];
   modelType: "chat" | "vision" | "video_generation";
+  apiFormat?: string;
 }
 
 interface CapabilityResponse {
@@ -19,6 +20,7 @@ interface CapabilityResponse {
     capabilities: string[];
     modelType?: "chat" | "vision" | "image_generation" | "video_generation";
     enabled: boolean;
+    apiFormat?: string;
   }>;
 }
 
@@ -50,6 +52,7 @@ export async function loadTaskModelRoutes(): Promise<TaskModelRoute[]> {
       provider: route.provider,
       model: route.models[0],
       capabilities: route.capabilities,
+      apiFormat: route.apiFormat,
       modelType: route.modelType === "video_generation"
         ? "video_generation"
         : route.modelType === "vision" || route.capabilities.includes("vision")

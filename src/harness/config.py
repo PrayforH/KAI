@@ -291,6 +291,7 @@ class Settings(BaseSettings):
     memory_embedding_model: str = "shdata-bge-m3"
     memory_embedding_dimensions: int = Field(default=1024, ge=1024, le=1024)
     memory_semantic_threshold: float = Field(default=0.5, ge=0, le=1)
+    memory_auto_save_personal_default: bool = False
     memory_extraction_enabled: bool = False
     memory_extraction_since: str = ""
     memory_extraction_base_url: str = ""

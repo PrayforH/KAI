@@ -7,6 +7,7 @@ included in API responses, logs, manifests, or task input.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import ipaddress
 import json
@@ -23,7 +24,8 @@ from PIL import Image, UnidentifiedImageError
 from pydantic import Field, SecretStr, model_validator
 
 from harness.core.errors import ConflictError, NotFoundError
-from harness.core.models import ModelCompatibility
+from harness.core.models import ModelCompatibility, Run, RunStatus
+from harness.core.ports import RunRepository, SessionRepository
 from harness.runtime.cc_switch import CcSwitchClaudeConfig
 from harness.studio.catalog_service import CapabilityCatalogService
 from harness.studio.mcp_credential_store import (
@@ -53,12 +55,14 @@ class ConfigureModelRequest(StudioModel):
     model: str = Field(min_length=1, max_length=300)
     base_url: str = Field(alias="baseUrl", min_length=1, max_length=2048)
     api_format: Literal[
-        "anthropic_compatible", "openai_compatible", "openai_images", "openai_videos"
+        "anthropic_compatible",
+        "openai_compatible",
+        "openai_images",
+        "openai_videos",
+        "minimax_videos",
     ] = Field(alias="apiFormat")
     auth_scheme: Literal["bearer", "x-api-key", "none"] = Field(alias="authScheme")
-    api_key: SecretStr | None = Field(
-        default=None, alias="apiKey", min_length=1, max_length=16_384
-    )
+    api_key: SecretStr | None = Field(default=None, alias="apiKey", min_length=1, max_length=16_384)
     enabled: bool = True
 
 
@@ -72,7 +76,11 @@ class ModelConfiguration(StudioModel):
     model: str
     base_url: str | None = Field(alias="baseUrl")
     api_format: Literal[
-        "anthropic_compatible", "openai_compatible", "openai_images", "openai_videos"
+        "anthropic_compatible",
+        "openai_compatible",
+        "openai_images",
+        "openai_videos",
+        "minimax_videos",
     ] = Field(alias="apiFormat")
     auth_scheme: Literal["bearer", "x-api-key", "none"] = Field(alias="authScheme")
     capabilities: tuple[str, ...]
@@ -117,7 +125,16 @@ class GenerateImageResult(StudioModel):
     images: tuple[GeneratedImage, ...]
 
 
+class VideoTaskContext(StudioModel):
+    thread_id: str = Field(alias="threadId", min_length=1, max_length=128)
+    agent_name: str = Field(alias="agentName", min_length=1, max_length=128)
+    agent_version: str = Field(alias="agentVersion", min_length=1, max_length=128)
+    agent_owner_user_id: str | None = Field(default=None, alias="agentOwnerUserId")
+    space_id: str | None = Field(default=None, alias="spaceId")
+
+
 class GenerateVideoRequest(StudioModel):
+    task: VideoTaskContext | None = None
     prompt: str = Field(min_length=1, max_length=8_000)
     mode: Literal["auto", "ref2va"] = "auto"
     aspect_ratio: Literal["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"] = Field(
@@ -150,6 +167,17 @@ class VideoGenerationJob(StudioModel):
     progress: int = Field(default=0, ge=0, le=100)
     error: str | None = None
     inference_time_seconds: float | None = Field(default=None, alias="inferenceTimeSeconds")
+    video_url: str | None = Field(default=None, alias="videoUrl")
+    cancellation_supported: bool = Field(default=True, alias="cancellationSupported")
+
+
+class VideoGenerationQuota(StudioModel):
+    daily_total: int = Field(alias="dailyTotal", ge=0)
+    daily_used: int = Field(alias="dailyUsed", ge=0)
+    daily_remaining: int = Field(alias="dailyRemaining", ge=0)
+    weekly_total: int = Field(alias="weeklyTotal", ge=0)
+    weekly_used: int = Field(alias="weeklyUsed", ge=0)
+    weekly_remaining: int = Field(alias="weeklyRemaining", ge=0)
 
 
 @dataclass(frozen=True, slots=True)
@@ -194,6 +222,8 @@ class ModelConfigurationService:
         environment: str = "local",
         server_routes: Iterable[CcSwitchClaudeConfig] = (),
         http_client: httpx.AsyncClient | None = None,
+        runs: RunRepository | None = None,
+        sessions: SessionRepository | None = None,
     ) -> None:
         self._catalogs = catalogs
         self._credentials = credentials
@@ -203,6 +233,9 @@ class ModelConfigurationService:
         }
         self._http_client = http_client
         self._video_jobs: dict[str, _ManagedVideoJob] = {}
+        self._runs = runs
+        self._sessions = sessions
+        self._video_monitors: dict[str, asyncio.Task[None]] = {}
 
     async def list(self, tenant_id: str) -> ModelConfigurationList:
         record = await self._import_server_models(tenant_id)
@@ -439,15 +472,30 @@ class ModelConfigurationService:
             if route.api_format == "openai_compatible":
                 user_content = [
                     {"type": "text", "text": user_prompt},
-                    *({"type": "image_url", "image_url": {
-                        "url": f"data:{mime};base64,{base64.b64encode(data).decode()}"
-                    }} for mime, data in images),
+                    *(
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{mime};base64,{base64.b64encode(data).decode()}"
+                            },
+                        }
+                        for mime, data in images
+                    ),
                 ]
             else:
                 user_content = [
                     {"type": "text", "text": user_prompt},
-                    *({"type": "image", "source": {"type": "base64", "media_type": mime,
-                       "data": base64.b64encode(data).decode()}} for mime, data in images),
+                    *(
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": mime,
+                                "data": base64.b64encode(data).decode(),
+                            },
+                        }
+                        for mime, data in images
+                    ),
                 ]
         secret = await self._credential_for_route(tenant_id, route)
         if route.api_format == "openai_compatible":
@@ -488,8 +536,11 @@ class ModelConfigurationService:
         return text
 
     async def _stream_completion(
-        self, route: ModelRouteCapability, secret: SecretStr | None,
-        path: str, payload: dict[str, object],
+        self,
+        route: ModelRouteCapability,
+        secret: SecretStr | None,
+        path: str,
+        payload: dict[str, object],
         on_delta: Callable[[str], Awaitable[None]],
     ) -> str:
         assert route.base_url is not None
@@ -497,13 +548,16 @@ class ModelConfigurationService:
         if route.api_format == "anthropic_compatible" and not base.endswith("/v1"):
             base += "/v1"
         client = self._http_client or httpx.AsyncClient(
-            timeout=httpx.Timeout(90, connect=10), follow_redirects=False,
+            timeout=httpx.Timeout(90, connect=10),
+            follow_redirects=False,
         )
         chunks: list[str] = []
         finished = False
         try:
             async with client.stream(
-                "POST", f"{base}/{path}", headers=self._headers(route, secret),
+                "POST",
+                f"{base}/{path}",
+                headers=self._headers(route, secret),
                 json={**payload, "stream": True},
             ) as response:
                 response.raise_for_status()
@@ -595,6 +649,16 @@ class ModelConfigurationService:
         started = monotonic()
         payload: dict[str, object]
         if route.model_type == "video_generation":
+            if route.api_format == "minimax_videos":
+                quota = await self.video_quota(tenant_id, route_id)
+                return ModelConnectionTestResult(
+                    ok=True,
+                    latencyMs=int((monotonic() - started) * 1000),
+                    message=(
+                        f"连接成功，今日视频额度剩余 "
+                        f"{quota.daily_remaining}/{quota.daily_total} 条。"
+                    ),
+                )
             try:
                 response = await self._get(route, secret, "models")
                 response.raise_for_status()
@@ -709,12 +773,19 @@ class ModelConfigurationService:
         request: GenerateVideoRequest,
         *,
         references: tuple[GeneratedVideoReference, ...] = (),
+        task_session_id: str | None = None,
     ) -> VideoGenerationJob:
         route = await self._route(tenant_id, route_id)
         if route.model_type != "video_generation" or not route.enabled:
             raise ConflictError("the selected route is not an enabled video generation model")
         secret = await self._credential_for_route(tenant_id, route)
         form, reference_files = self._video_request_form(route, request, references)
+        if route.api_format == "minimax_videos":
+            view = await self._create_minimax_video(
+                tenant_id, user_id, route, secret, request, references
+            )
+            await self._record_video_task(view, route, request, task_session_id)
+            return view
         try:
             response = await self._post_multipart(
                 route,
@@ -747,7 +818,9 @@ class ModelConfigurationService:
             created_at=datetime.now(UTC),
         )
         self._prune_video_jobs()
-        return self._video_job_view(job_id, raw)
+        view = self._video_job_view(job_id, raw)
+        await self._record_video_task(view, route, request, task_session_id)
+        return view
 
     async def get_video_job(
         self,
@@ -756,9 +829,13 @@ class ModelConfigurationService:
         route_id: str,
         job_id: str,
     ) -> VideoGenerationJob:
-        job = self._video_job(tenant_id, user_id, route_id, job_id)
+        job = await self._video_job(tenant_id, user_id, route_id, job_id)
         route = await self._route(tenant_id, route_id)
         secret = await self._credential_for_route(tenant_id, route)
+        if route.api_format == "minimax_videos":
+            view = await self._get_minimax_video(route, secret, job_id, job.provider_job_id)
+            await self._update_video_task(tenant_id, view)
+            return view
         try:
             response = await self._get(
                 route, secret, f"videos/{quote(job.provider_job_id, safe='')}"
@@ -773,7 +850,9 @@ class ModelConfigurationService:
             ) from None
         except httpx.HTTPError:
             raise ConflictError("video provider connection failed") from None
-        return self._video_job_view(job_id, self._video_provider_response(response))
+        view = self._video_job_view(job_id, self._video_provider_response(response))
+        await self._update_video_task(tenant_id, view)
+        return view
 
     async def cancel_video_job(
         self,
@@ -782,9 +861,13 @@ class ModelConfigurationService:
         route_id: str,
         job_id: str,
     ) -> VideoGenerationJob:
-        job = self._video_job(tenant_id, user_id, route_id, job_id)
+        job = await self._video_job(tenant_id, user_id, route_id, job_id)
         route = await self._route(tenant_id, route_id)
         secret = await self._credential_for_route(tenant_id, route)
+        if route.api_format == "minimax_videos":
+            # MiniMax publishes no cancellation endpoint. Keep the provider
+            # task available for status queries; this only stops client waiting.
+            return VideoGenerationJob(jobId=job_id, status="cancelled", cancellationSupported=False)
         try:
             response = await self._delete(
                 route, secret, f"videos/{quote(job.provider_job_id, safe='')}"
@@ -800,7 +883,9 @@ class ModelConfigurationService:
         except httpx.HTTPError:
             raise ConflictError("video provider connection failed") from None
         self._video_jobs.pop(job_id, None)
-        return VideoGenerationJob(jobId=job_id, status="cancelled", progress=0)
+        view = VideoGenerationJob(jobId=job_id, status="cancelled", progress=0)
+        await self._update_video_task(tenant_id, view)
+        return view
 
     async def download_video(
         self,
@@ -809,9 +894,41 @@ class ModelConfigurationService:
         route_id: str,
         job_id: str,
     ) -> GeneratedVideo:
-        job = self._video_job(tenant_id, user_id, route_id, job_id)
+        job = await self._video_job(tenant_id, user_id, route_id, job_id)
         route = await self._route(tenant_id, route_id)
         secret = await self._credential_for_route(tenant_id, route)
+        if route.api_format == "minimax_videos":
+            result = await self._get_minimax_video(route, secret, job_id, job.provider_job_id)
+            if result.status != "completed" or result.video_url is None:
+                raise ConflictError("视频尚未生成完成。")
+            # Only explicit downloads use the authenticated content endpoint.
+            # Playback keeps the default provider URL. Never forward the model
+            # credential to the CDN or accept a download URL from the caller.
+            client = self._http_client or httpx.AsyncClient(timeout=60.0, follow_redirects=False)
+            try:
+                async with client.stream("GET", result.video_url) as response:
+                    response.raise_for_status()
+                    media_type = response.headers.get("content-type", "").partition(";")[0]
+                    if media_type.strip() != "video/mp4":
+                        raise ConflictError("MiniMax 未返回有效的 MP4 文件。")
+                    content = bytearray()
+                    async for chunk in response.aiter_bytes():
+                        if len(content) + len(chunk) > _MAX_GENERATED_VIDEO_BYTES:
+                            raise ConflictError("视频文件超过 128 MiB 下载限制。")
+                        content.extend(chunk)
+            except httpx.HTTPError:
+                raise ConflictError("视频下载暂时不可用，请稍后重试。") from None
+            finally:
+                if self._http_client is None:
+                    await client.aclose()
+            if len(content) < 12 or bytes(content[4:8]) != b"ftyp":
+                raise ConflictError("MiniMax 未返回有效的 MP4 文件。")
+            return GeneratedVideo(
+                content=bytes(content),
+                media_type="video/mp4",
+                request_id=None,
+                inference_time_seconds=None,
+            )
         try:
             response = await self._get(
                 route,
@@ -841,6 +958,197 @@ class ModelConfigurationService:
             request_id=response.headers.get("x-request-id"),
             inference_time_seconds=response.headers.get("x-inference-time-s"),
         )
+
+    async def video_quota(self, tenant_id: str, route_id: str) -> VideoGenerationQuota:
+        route = await self._route(tenant_id, route_id)
+        if route.api_format != "minimax_videos" or not route.enabled:
+            raise ConflictError("该模型不支持套餐视频额度查询。")
+        secret = await self._credential_for_route(tenant_id, route)
+        if secret is None or not secret.get_secret_value().startswith("sk-cp-"):
+            raise ConflictError("视频额度查询需要 MiniMax 套餐 Key。")
+        # The official API also serves the subscription account endpoint.
+        # Use the configured API host; the website host can be unreachable
+        # from deployment networks even when model generation works.
+        try:
+            raw = self._minimax_response(await self._get(route, secret, "token_plan/remains"))
+        except httpx.HTTPError:
+            raise ConflictError("MiniMax 视频额度暂时不可用，请稍后重试。") from None
+        remains = raw.get("model_remains")
+        if not isinstance(remains, list):
+            raise ConflictError("MiniMax 未返回有效的视频额度。")
+        video: dict[str, object] | None = None
+        for item in cast(list[object], remains):
+            if isinstance(item, dict):
+                values = cast(dict[str, object], item)
+                if values.get("model_name") == "video":
+                    video = values
+                    break
+        if video is None:
+            raise ConflictError("当前套餐未提供视频生成额度。")
+
+        def count(name: str) -> int:
+            assert video is not None
+            value = video.get(name)
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                raise ConflictError("MiniMax 未返回有效的视频额度。")
+            return value
+
+        daily_total = count("current_interval_total_count")
+        daily_used = count("current_interval_usage_count")
+        weekly_total = count("current_weekly_total_count")
+        weekly_used = count("current_weekly_usage_count")
+        return VideoGenerationQuota(
+            dailyTotal=daily_total,
+            dailyUsed=daily_used,
+            dailyRemaining=max(0, daily_total - daily_used),
+            weeklyTotal=weekly_total,
+            weeklyUsed=weekly_used,
+            weeklyRemaining=max(0, weekly_total - weekly_used),
+        )
+
+    @staticmethod
+    def _minimax_response(response: httpx.Response) -> dict[str, object]:
+        try:
+            response.raise_for_status()
+            raw = cast(object, response.json())
+        except (httpx.HTTPError, ValueError):
+            raise ConflictError("MiniMax 视频服务请求失败，请稍后重试。") from None
+        if not isinstance(raw, dict):
+            raise ConflictError("MiniMax 视频服务返回了无效响应。")
+        values = cast(dict[str, object], raw)
+        base_resp = values.get("base_resp")
+        if not isinstance(base_resp, dict):
+            raise ConflictError("MiniMax 视频服务返回了无效响应。")
+        code = cast(dict[str, object], base_resp).get("status_code")
+        if not isinstance(code, int) or isinstance(code, bool):
+            raise ConflictError("MiniMax 视频服务返回了无效状态码。")
+        if code != 0:
+            messages = {
+                1002: "MiniMax 请求过于频繁，请稍后重试。",
+                1004: "MiniMax Key 无效，请检查模型配置。",
+                1008: "MiniMax 视频额度不足。",
+                2013: "MiniMax 视频参数无效。",
+            }
+            # Provider messages may echo credentials or inputs. Only publish
+            # known messages and the numeric code, never the upstream body.
+            suffix = f"（{code}）"
+            raise ConflictError(messages.get(code, "MiniMax 视频请求未成功。") + suffix)
+        return values
+
+    async def _create_minimax_video(
+        self,
+        tenant_id: str,
+        user_id: str,
+        route: ModelRouteCapability,
+        secret: SecretStr | None,
+        request: GenerateVideoRequest,
+        references: tuple[GeneratedVideoReference, ...],
+    ) -> VideoGenerationJob:
+        if (
+            request.seconds not in {6, 10}
+            or request.mode != "auto"
+            or len(references) > 1
+            or request.seed is not None
+            or request.negative_prompt
+            or request.aspect_ratio != "16:9"
+        ):
+            raise ConflictError("官方视频支持 6 或 10 秒，可添加一张首帧图片；不支持 H3 高级参数。")
+        if secret is not None and secret.get_secret_value().startswith("sk-cp-"):
+            quota = await self.video_quota(tenant_id, route.route_id)
+            if quota.daily_remaining == 0 or quota.weekly_remaining == 0:
+                raise ConflictError("MiniMax 套餐视频额度已用完，请等待额度重置。")
+        payload: dict[str, object] = {
+            "model": route.models[0],
+            "prompt": request.prompt,
+            "duration": request.seconds,
+            "resolution": "768P",
+        }
+        if references:
+            item = references[0]
+            payload["first_frame_image"] = f"data:{item.media_type};base64," + base64.b64encode(
+                item.content
+            ).decode("ascii")
+        # Submit once. Retrying a POST can consume another daily generation.
+        try:
+            raw = self._minimax_response(
+                await self._post(route, secret, "video_generation", payload)
+            )
+        except httpx.HTTPError:
+            raise ConflictError("MiniMax 连接中断；请先核实额度，避免重复提交。") from None
+        task_id = raw.get("task_id")
+        if not isinstance(task_id, str) or not task_id.isdigit() or len(task_id) > 256:
+            raise ConflictError("MiniMax 未返回有效的视频任务 ID。")
+        job_id = f"video_job_{uuid4().hex}"
+        self._video_jobs[job_id] = _ManagedVideoJob(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            route_id=route.route_id,
+            provider_job_id=task_id,
+            created_at=datetime.now(UTC),
+        )
+        self._prune_video_jobs()
+        return VideoGenerationJob(jobId=job_id, status="queued", cancellationSupported=False)
+
+    async def _get_minimax_video(
+        self,
+        route: ModelRouteCapability,
+        secret: SecretStr | None,
+        job_id: str,
+        task_id: str,
+    ) -> VideoGenerationJob:
+        try:
+            raw = self._minimax_response(
+                await self._get(
+                    route, secret, f"query/video_generation?task_id={quote(task_id, safe='')}"
+                )
+            )
+            raw_status = raw.get("status")
+            statuses = {
+                "Preparing": "queued",
+                "Queueing": "queued",
+                "Processing": "in_progress",
+                "Success": "completed",
+                "Fail": "failed",
+                "Failed": "failed",
+            }
+            status = statuses.get(raw_status) if isinstance(raw_status, str) else None
+            if status is None:
+                raise ConflictError("MiniMax 返回了未知的视频任务状态。")
+            video_url = None
+            if status == "completed":
+                file_id = raw.get("file_id")
+                if not isinstance(file_id, str) or not file_id.isdigit():
+                    raise ConflictError("MiniMax 未返回有效的视频文件 ID。")
+                file = self._minimax_response(
+                    await self._get(
+                        route, secret, f"files/retrieve?file_id={quote(file_id, safe='')}"
+                    )
+                ).get("file")
+                video_url = (
+                    cast(dict[str, object], file).get("download_url")
+                    if isinstance(file, dict)
+                    else None
+                )
+                if not isinstance(video_url, str):
+                    raise ConflictError("MiniMax 未返回视频链接。")
+                parsed = urlsplit(video_url)
+                if (
+                    parsed.scheme != "https"
+                    or not parsed.hostname
+                    or parsed.username
+                    or parsed.password
+                ):
+                    raise ConflictError("MiniMax 返回了无效的视频链接。")
+            return VideoGenerationJob(
+                jobId=job_id,
+                status=cast(Any, status),
+                progress=100 if status == "completed" else 0,
+                videoUrl=video_url,
+                cancellationSupported=False,
+                error="MiniMax 未能完成视频生成。" if status == "failed" else None,
+            )
+        except httpx.HTTPError:
+            raise ConflictError("MiniMax 视频状态暂时不可用，请稍后继续查询。") from None
 
     def _video_request_form(
         self,
@@ -902,10 +1210,27 @@ class ModelConfigurationService:
         )
         return form, reference_files
 
-    def _video_job(
+    async def _video_job(
         self, tenant_id: str, user_id: str, route_id: str, job_id: str
     ) -> _ManagedVideoJob:
         job = self._video_jobs.get(job_id)
+        if job is None and self._runs is not None and self._sessions is not None:
+            run = await self._runs.get(tenant_id, job_id)
+            session = await self._sessions.get(tenant_id, run.session_id)
+            saved = cast(dict[str, Any] | None, run.input.get("video_generation"))
+            if (
+                session.user_id != user_id
+                or not isinstance(saved, dict)
+                or saved.get("routeId") != route_id
+            ):
+                raise NotFoundError(f"video generation job not found: {job_id}")
+            provider_id = saved.get("providerJobId")
+            if not isinstance(provider_id, str):
+                raise NotFoundError(f"video generation job not found: {job_id}")
+            job = _ManagedVideoJob(tenant_id, user_id, route_id, provider_id, run.created_at)
+            self._video_jobs[job_id] = job
+            if not run.status.is_terminal:
+                self._monitor_video_task(job_id, job)
         if (
             job is None
             or job.tenant_id != tenant_id
@@ -914,6 +1239,104 @@ class ModelConfigurationService:
         ):
             raise NotFoundError(f"video generation job not found: {job_id}")
         return job
+
+    async def _record_video_task(
+        self,
+        view: VideoGenerationJob,
+        route: ModelRouteCapability,
+        request: GenerateVideoRequest,
+        session_id: str | None,
+    ) -> None:
+        if session_id is None:
+            return
+        if self._runs is None:
+            raise ConflictError("video task persistence is unavailable")
+        job = self._video_jobs[view.job_id]
+        now = datetime.now(UTC)
+        await self._runs.add(
+            Run(
+                run_id=view.job_id,
+                session_id=session_id,
+                tenant_id=job.tenant_id,
+                status=self._video_run_status(view),
+                idempotency_key=view.job_id,
+                created_at=now,
+                updated_at=now,
+                input={
+                    "prompt": request.prompt,
+                    "input_artifact_ids": list(request.input_artifact_ids),
+                    "video_generation": {
+                        "routeId": job.route_id,
+                        "routeLabel": route.label,
+                        "apiFormat": route.api_format,
+                        "providerJobId": job.provider_job_id,
+                        "request": request.model_dump(mode="json", by_alias=True, exclude={"task"}),
+                        "job": view.model_dump(mode="json", by_alias=True),
+                    },
+                },
+            )
+        )
+        if view.status in {"queued", "in_progress"}:
+            self._monitor_video_task(view.job_id, job)
+
+    @staticmethod
+    def _video_run_status(view: VideoGenerationJob) -> RunStatus:
+        return {
+            "completed": RunStatus.SUCCEEDED,
+            "failed": RunStatus.FAILED,
+            "cancelled": RunStatus.CANCELLED,
+        }.get(view.status, RunStatus.RUNNING)
+
+    async def _update_video_task(self, tenant_id: str, view: VideoGenerationJob) -> None:
+        if self._runs is None:
+            return
+        for _ in range(3):
+            try:
+                run = await self._runs.get(tenant_id, view.job_id)
+            except NotFoundError:
+                return
+            saved = cast(dict[str, Any] | None, run.input.get("video_generation"))
+            if not isinstance(saved, dict):
+                return
+            if run.status.is_terminal and view.status in {"queued", "in_progress"}:
+                return
+            payload = view.model_dump(mode="json", by_alias=True)
+            if saved.get("job") == payload:
+                return
+            updated = run.model_copy(
+                update={
+                    "status": self._video_run_status(view),
+                    "fencing_token": run.fencing_token + 1,
+                    "updated_at": datetime.now(UTC),
+                    "input": {**run.input, "video_generation": {**saved, "job": payload}},
+                }
+            )
+            if await self._runs.compare_and_set(run.status, updated):
+                return
+        raise ConflictError("video task status changed concurrently; query again")
+
+    def _monitor_video_task(self, job_id: str, job: _ManagedVideoJob) -> None:
+        if job_id in self._video_monitors:
+            return
+
+        async def monitor() -> None:
+            try:
+                for _ in range(360):
+                    await asyncio.sleep(5)
+                    try:
+                        view = await self.get_video_job(
+                            job.tenant_id, job.user_id, job.route_id, job_id
+                        )
+                        if view.status not in {"queued", "in_progress"}:
+                            return
+                    except ConflictError:
+                        continue
+                    except NotFoundError:
+                        return
+            finally:
+                self._video_monitors.pop(job_id, None)
+
+        self._video_monitors[job_id] = asyncio.create_task(monitor())
 
     @staticmethod
     def _video_provider_response(response: httpx.Response) -> dict[str, object]:
@@ -1133,8 +1556,11 @@ class ModelConfigurationService:
     ) -> httpx.Response:
         assert route.base_url is not None
         base_url = route.base_url.rstrip("/")
-        if (route.api_format == "anthropic_compatible" and path == "messages"
-                and not base_url.endswith("/v1")):
+        if (
+            route.api_format == "anthropic_compatible"
+            and path == "messages"
+            and not base_url.endswith("/v1")
+        ):
             base_url += "/v1"
         headers = {"content-type": "application/json", **self._headers(route, secret)}
         client = self._http_client or httpx.AsyncClient(timeout=30.0, follow_redirects=False)

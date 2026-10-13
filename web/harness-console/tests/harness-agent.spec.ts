@@ -96,10 +96,10 @@ describe("HarnessHttpAgent", () => {
       method: "POST",
       headers: { "X-Tenant-ID": "local", "X-User-ID": "developer" },
     });
-    expect(liveResponseStore.getSnapshot().status).toBe("complete");
+    expect(liveResponseStore.getSnapshot().status).toBe("streaming");
     expect(runStreamStore.getSnapshot()).toMatchObject({
       runId: "run/1",
-      status: "complete",
+      status: "running",
     });
   });
 
@@ -220,8 +220,8 @@ describe("HarnessHttpAgent", () => {
       status: "error",
     });
 
-    agent.cancelActiveRun();
-    expect(runStreamStore.getSnapshot().status).toBe("complete");
+    await agent.cancelActiveRun();
+    expect(runStreamStore.getSnapshot().status).toBe("error");
   });
 
   it("forwards native text deltas while tracking run lifecycle without duplicating text", async () => {
@@ -662,4 +662,32 @@ it("keeps a streamed answer visible when thinking interrupts it", async () => {
   expect(liveResponseStore.getSnapshot()).toMatchObject({ text: `${answer}结论：42。`, visible: true });
   expect(seen.at(0)).toBe(answer);
   activityStore.clear(); liveResponseStore.clear();
+});
+
+
+it("shares a pending stop and retains the run target after HTTP failure", async () => {
+  let resolve!: (response: Response) => void;
+  const request = vi.fn(() => new Promise<Response>(done => { resolve = done; }));
+  const agent = new HarnessHttpAgent({ url: "http://harness/v1/agui", cancelFetch: request });
+  agent.adoptActiveRun("thread", "server-run");
+  const one = agent.cancelActiveRun();
+  const two = agent.cancelActiveRun();
+  expect(one).toBe(two);
+  expect(request).toHaveBeenCalledTimes(1);
+  resolve(new Response(null, { status: 500 }));
+  await expect(one).rejects.toThrow("500");
+  const retry = agent.cancelActiveRun();
+  expect(request).toHaveBeenCalledTimes(2);
+  resolve(new Response(null, { status: 202 }));
+  await retry;
+});
+
+it("retries an early stop against the same client binding", async () => {
+  const request = vi.fn().mockResolvedValueOnce(new Response(null, {status: 404})).mockResolvedValueOnce(new Response(null, {status: 202}));
+  const agent = new HarnessHttpAgent({ url: "http://harness/v1/agui", cancelFetch: request });
+  agent.run({threadId: "early-thread", runId: "client-run", messages: [], tools: [], context: [], state: {}});
+  await agent.cancelActiveRun();
+  expect(request).toHaveBeenCalledTimes(2);
+  expect(request.mock.calls[0][0]).toBe("http://harness/v1/agui/threads/early-thread/runs/client-run/cancel");
+  expect(request.mock.calls[1][0]).toBe(request.mock.calls[0][0]);
 });
