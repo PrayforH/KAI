@@ -1204,3 +1204,17 @@ html[data-color-mode="light"] .nested-menu-panel { background: #fff; border-colo
 body.codex-theme-v1 .aui-user-message-content.sent-user-content[data-collapsed="true"] { max-height: 12em; overflow: hidden; }
 .sent-user-expand { align-self: flex-end; justify-self: end; grid-column: 2; border: 0; padding: 5px 2px; color: var(--codex-muted); background: transparent; font: inherit; font-size: 12px; cursor: pointer; }
 .sent-user-expand:hover { color: var(--codex-ink); }
+
+/* Codex 26.1007.30912 UserMessage compact variant:
+   user-message-f152e09d34c3.css + user-message-dd2539189e70.js. */
+.steering-user-message { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; width: 100%; margin: 16px 0; }
+.steering-user-message-bubble { width: fit-content; max-width: min(456px, 100%); min-width: 0; padding: 8px 12px; border: 0; border-radius: 16px; corner-shape: superellipse(1); background: #414141; color: var(--codex-ink, #ededed); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 18px; letter-spacing: -.01em; }
+.steering-user-message-status { font-size: 12px; line-height: 16px; color: var(--codex-muted, #8f8f8f); padding-inline: 3px; }
+html[data-color-mode="light"] .steering-user-message-bubble { background: #f3f3f3; color: var(--codex-ink, #202020); }
+.execution-log-segment { display: flex; flex-direction: column; gap: 8px; }
+
+/* Message growth must enlarge the scroll range, never shrink a grid message
+   and let its reasoning overflow behind the sticky composer. */
+body.codex-theme-v1 .harness-thread-frame .aui-thread-viewport > * {
+  flex-shrink: 0;
+}

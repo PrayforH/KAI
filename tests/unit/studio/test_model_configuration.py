@@ -617,14 +617,22 @@ async def test_authoring_completion_forwards_image_bytes(api_format: str) -> Non
 
     def handler(incoming: httpx.Request) -> httpx.Response:
         captured.append(incoming)
-        return httpx.Response(200, json={"choices": [{"message": {"content": "red"}}],
-                                        "content": [{"type": "text", "text": "red"}]})
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": "red"}}],
+                "content": [{"type": "text", "text": "red"}],
+            },
+        )
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         models, _, _ = service(client=client)
         await models.configure("tenant-a", "admin-a", "vision", request(apiFormat=api_format))
         text = await models.complete_text(
-            "tenant-a", "vision", system_prompt="describe", user_prompt="color?",
+            "tenant-a",
+            "vision",
+            system_prompt="describe",
+            user_prompt="color?",
             images=(("image/png", image_bytes()),),
         )
     assert text == "red"
@@ -638,18 +646,35 @@ async def test_authoring_completion_forwards_image_bytes(api_format: str) -> Non
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("base_url", ["https://models.example.test/api/anthropic", "https://models.example.test/api/anthropic/v1"])
+@pytest.mark.parametrize(
+    "base_url",
+    ["https://models.example.test/api/anthropic", "https://models.example.test/api/anthropic/v1"],
+)
 async def test_managed_anthropic_sdk_base_uses_one_v1_segment(base_url: str) -> None:
     calls: list[httpx.Request] = []
+
     def handler(incoming: httpx.Request) -> httpx.Response:
         calls.append(incoming)
         return httpx.Response(200, json={"content": [{"type": "text", "text": "red square"}]})
+
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         models, _, _ = service(client=client)
-        await models.configure("tenant-a", "admin-a", "vision", request(
-            apiFormat="anthropic_compatible", baseUrl=base_url))
-        assert await models.complete_text("tenant-a", "vision", system_prompt="describe",
-            user_prompt="color?", images=(("image/png", image_bytes()),)) == "red square"
+        await models.configure(
+            "tenant-a",
+            "admin-a",
+            "vision",
+            request(apiFormat="anthropic_compatible", baseUrl=base_url),
+        )
+        assert (
+            await models.complete_text(
+                "tenant-a",
+                "vision",
+                system_prompt="describe",
+                user_prompt="color?",
+                images=(("image/png", image_bytes()),),
+            )
+            == "red square"
+        )
     assert str(calls[0].url) == "https://models.example.test/api/anthropic/v1/messages"
 
 
@@ -690,13 +715,310 @@ async def test_completion_forwards_provider_deltas_before_stream_finishes(api_fo
 
 @pytest.mark.asyncio
 async def test_completion_rejects_truncated_stream() -> None:
-    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda req: httpx.Response(
-        200, text='data: {"choices":[{"delta":{"content":"partial"}}]}\n\n',
-    ))) as client:
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda req: httpx.Response(
+                200,
+                text='data: {"choices":[{"delta":{"content":"partial"}}]}\n\n',
+            )
+        )
+    ) as client:
         models, _, _ = service(client=client)
         await models.configure("tenant-a", "admin-a", "stream-route", request())
+
         async def consume(text: str) -> None:
             pass
+
         with pytest.raises(ConflictError, match="中断"):
-            await models.complete_text("tenant-a", "stream-route", system_prompt="s",
-                                       user_prompt="u", on_delta=consume)
+            await models.complete_text(
+                "tenant-a", "stream-route", system_prompt="s", user_prompt="u", on_delta=consume
+            )
+
+
+def minimax_request(**updates: object) -> ConfigureModelRequest:
+    return request(
+        modelType="video_generation",
+        model="MiniMax-Hailuo-2.3",
+        baseUrl="https://api.minimaxi.com/v1",
+        apiFormat="minimax_videos",
+        apiKey="sk-cp-test-key",
+        **updates,
+    )
+
+
+def minimax_quota_response(used: int = 1) -> dict[str, object]:
+    return {
+        "base_resp": {"status_code": 0},
+        "model_remains": [
+            {
+                "model_name": "video",
+                "current_interval_total_count": 3,
+                "current_interval_usage_count": used,
+                "current_weekly_total_count": 21,
+                "current_weekly_usage_count": used,
+            }
+        ],
+    }
+
+
+@pytest.mark.asyncio
+async def test_minimax_native_video_keeps_url_and_cancel_only_detaches() -> None:
+    captured: list[httpx.Request] = []
+
+    def handler(incoming: httpx.Request) -> httpx.Response:
+        captured.append(incoming)
+        path = incoming.url.path
+        if path == "/v1/token_plan/remains":
+            return httpx.Response(200, json=minimax_quota_response())
+        if incoming.method == "POST":
+            return httpx.Response(200, json={"task_id": "12345", "base_resp": {"status_code": 0}})
+        if path == "/v1/query/video_generation":
+            return httpx.Response(
+                200, json={"status": "Success", "file_id": "67890", "base_resp": {"status_code": 0}}
+            )
+        if path == "/v1/files/retrieve":
+            return httpx.Response(
+                200,
+                json={
+                    "file": {"download_url": "https://cdn.example.test/video.mp4?signed=yes"},
+                    "base_resp": {"status_code": 0},
+                },
+            )
+        pytest.fail(f"unexpected provider request: {incoming.method} {path}")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        models, _, _ = service(client=client)
+        await models.configure("tenant-a", "admin-a", "minimax-official-video", minimax_request())
+        tested = await models.test("tenant-a", "minimax-official-video")
+        assert tested.ok and "2/3" in tested.message
+        job = await models.create_video_job(
+            "tenant-a",
+            "member-a",
+            "minimax-official-video",
+            GenerateVideoRequest(prompt="霓虹街道", seconds=6),
+        )
+        assert job.cancellation_supported is False
+        cancelled = await models.cancel_video_job(
+            "tenant-a", "member-a", "minimax-official-video", job.job_id
+        )
+        assert cancelled.status == "cancelled"
+        result = await models.get_video_job(
+            "tenant-a", "member-a", "minimax-official-video", job.job_id
+        )
+        assert result.status == "completed"
+        assert result.video_url == "https://cdn.example.test/video.mp4?signed=yes"
+        with pytest.raises(Exception, match="not found"):
+            await models.get_video_job("tenant-a", "member-b", "minimax-official-video", job.job_id)
+    posts = [item for item in captured if item.method == "POST"]
+    assert len(posts) == 1
+    assert posts[0].url.path == "/v1/video_generation"
+    assert json.loads(posts[0].content) == {
+        "model": "MiniMax-Hailuo-2.3",
+        "prompt": "霓虹街道",
+        "duration": 6,
+        "resolution": "768P",
+    }
+    assert all(item.headers["authorization"] == "Bearer sk-cp-test-key" for item in captured)
+    assert not any(
+        item.method == "DELETE" or item.url.host == "cdn.example.test" for item in captured
+    )
+    assert all(item.url.host == "api.minimaxi.com" for item in captured)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("quota_status", ["exhausted", "unavailable"])
+async def test_minimax_plan_quota_does_not_block_extra_credit_generation(quota_status: str) -> None:
+    captured: list[str] = []
+
+    def handler(incoming: httpx.Request) -> httpx.Response:
+        captured.append(incoming.method)
+        if incoming.url.path == "/v1/token_plan/remains":
+            if quota_status == "unavailable":
+                return httpx.Response(503)
+            return httpx.Response(200, json=minimax_quota_response(21))
+        return httpx.Response(200, json={"task_id": "12345", "base_resp": {"status_code": 0}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        models, _, _ = service(client=client)
+        await models.configure("tenant-a", "admin-a", "minimax-official-video", minimax_request())
+        if quota_status == "exhausted":
+            quota = await models.video_quota("tenant-a", "minimax-official-video")
+            assert quota.daily_remaining == quota.weekly_remaining == 0
+        else:
+            with pytest.raises(ConflictError):
+                await models.video_quota("tenant-a", "minimax-official-video")
+        captured.clear()
+        job = await models.create_video_job(
+            "tenant-a", "member-a", "minimax-official-video",
+            GenerateVideoRequest(prompt="test", seconds=6),
+        )
+        assert job.status == "queued"
+    assert captured == ["POST"]
+
+
+@pytest.mark.asyncio
+async def test_minimax_1080p_is_forwarded_and_invalid_duration_is_rejected() -> None:
+    captured: list[httpx.Request] = []
+
+    def handler(incoming: httpx.Request) -> httpx.Response:
+        captured.append(incoming)
+        return httpx.Response(200, json={"task_id": "12345", "base_resp": {"status_code": 0}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        models, _, _ = service(client=client)
+        await models.configure("tenant-a", "admin-a", "minimax-official-video", minimax_request())
+        await models.create_video_job(
+            "tenant-a", "member-a", "minimax-official-video",
+            GenerateVideoRequest(prompt="test", seconds=6, resolution="1080P"),
+        )
+        with pytest.raises(ConflictError, match="1080P"):
+            await models.create_video_job(
+                "tenant-a", "member-a", "minimax-official-video",
+                GenerateVideoRequest(prompt="test", seconds=10, resolution="1080P"),
+            )
+    assert len(captured) == 1
+    assert json.loads(captured[0].content)["resolution"] == "1080P"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("seconds", [4, 5, 7, 15])
+async def test_minimax_rejects_h3_durations_before_provider_call(seconds: int) -> None:
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda _: pytest.fail("unexpected call"))
+    ) as client:
+        models, _, _ = service(client=client)
+        await models.configure("tenant-a", "admin-a", "minimax-official-video", minimax_request())
+        with pytest.raises(ConflictError, match="6 或 10 秒"):
+            await models.create_video_job(
+                "tenant-a",
+                "member-a",
+                "minimax-official-video",
+                GenerateVideoRequest(prompt="test", seconds=seconds),
+            )
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"base_resp": {"status_code": 1004, "status_msg": "leaked-key"}},
+        {"base_resp": {"status_code": {"bad": "leaked-key"}}},
+        {"base_resp": {}},
+    ],
+)
+def test_minimax_errors_never_echo_provider_secrets(body: dict[str, object]) -> None:
+    with pytest.raises(ConflictError) as error:
+        ModelConfigurationService._minimax_response(  # pyright: ignore[reportPrivateUsage]
+            httpx.Response(
+                200, json=body, request=httpx.Request("GET", "https://api.minimaxi.com/v1/example")
+            )
+        )
+    assert "leaked-key" not in str(error.value)
+
+
+@pytest.mark.asyncio
+async def test_minimax_explicit_download_fetches_mp4_without_sending_key_to_cdn() -> None:
+    captured: list[httpx.Request] = []
+    mp4 = b"\x00\x00\x00\x18ftypmp42" + b"video-data"
+
+    def handler(incoming: httpx.Request) -> httpx.Response:
+        captured.append(incoming)
+        if incoming.url.host == "cdn.example.test":
+            return httpx.Response(200, content=mp4, headers={"content-type": "video/mp4"})
+        if incoming.url.path == "/v1/token_plan/remains":
+            return httpx.Response(200, json=minimax_quota_response())
+        if incoming.method == "POST":
+            body = {"task_id": "12345"}
+        elif incoming.url.path == "/v1/query/video_generation":
+            body = {"status": "Success", "file_id": "67890"}
+        else:
+            body = {"file": {"download_url": "https://cdn.example.test/video.mp4"}}
+        return httpx.Response(200, json={**body, "base_resp": {"status_code": 0}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        models, _, _ = service(client=client)
+        await models.configure("tenant-a", "admin-a", "minimax-video", minimax_request())
+        job = await models.create_video_job(
+            "tenant-a", "member-a", "minimax-video", GenerateVideoRequest(prompt="test", seconds=6)
+        )
+        assert all(item.url.host != "cdn.example.test" for item in captured)
+        result = await models.download_video("tenant-a", "member-a", "minimax-video", job.job_id)
+    assert result.content == mp4
+    assert result.media_type == "video/mp4"
+    assert captured[-1].url.host == "cdn.example.test"
+    assert "authorization" not in captured[-1].headers
+
+
+@pytest.mark.asyncio
+async def test_video_task_survives_service_restart_and_enforces_ownership() -> None:
+    from harness.adapters.memory import InMemoryRunRepository, InMemorySessionRepository
+    from harness.core.errors import NotFoundError
+    from harness.core.models import RunStatus, Session
+
+    calls: list[httpx.Request] = []
+
+    def provider(incoming: httpx.Request) -> httpx.Response:
+        calls.append(incoming)
+        if incoming.url.path.endswith("/remains"):
+            return httpx.Response(200, json=minimax_quota_response())
+        if incoming.method == "POST":
+            return httpx.Response(200, json={"task_id": "98765", "base_resp": {"status_code": 0}})
+        if incoming.url.path.endswith("/video_generation"):
+            return httpx.Response(
+                200, json={"status": "Success", "file_id": "87654", "base_resp": {"status_code": 0}}
+            )
+        return httpx.Response(
+            200,
+            json={
+                "file": {"download_url": "https://cdn.example.test/result.mp4"},
+                "base_resp": {"status_code": 0},
+            },
+        )
+
+    runs, sessions = InMemoryRunRepository(), InMemorySessionRepository()
+    await sessions.add(
+        Session(
+            session_id="media-session",
+            tenant_id="tenant-a",
+            user_id="member-a",
+            agent_name="echo-agent",
+            agent_version="0.1.0",
+            created_at=datetime.now(UTC),
+        )
+    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
+        models, catalogs, credentials = service(client=client)
+        # Inject durable repositories to simulate restarting a configured service.
+        models._runs, models._sessions = runs, sessions  # pyright: ignore[reportPrivateUsage]
+        await models.configure("tenant-a", "admin-a", "minimax-video", minimax_request())
+        job = await models.create_video_job(
+            "tenant-a",
+            "member-a",
+            "minimax-video",
+            GenerateVideoRequest(prompt="test", seconds=6),
+            task_session_id="media-session",
+        )
+        # Simulate process shutdown without allowing its monitor to finish the job.
+        for task in models._video_monitors.values():  # pyright: ignore[reportPrivateUsage]
+            task.cancel()
+        recreated = ModelConfigurationService(
+            catalogs,
+            McpCredentialService(
+                credentials, McpCredentialCipher(SecretStr("test-encryption-key"))
+            ),
+            environment="test",
+            http_client=client,
+            runs=runs,
+            sessions=sessions,
+        )
+        with pytest.raises(NotFoundError):
+            await recreated.get_video_job("tenant-a", "other-user", "minimax-video", job.job_id)
+        restored = await recreated.get_video_job(
+            "tenant-a", "member-a", "minimax-video", job.job_id
+        )
+        assert restored.video_url == "https://cdn.example.test/result.mp4"
+        durable = await runs.get("tenant-a", job.job_id)
+        assert durable.status is RunStatus.SUCCEEDED
+        assert "sk-cp-test-key" not in durable.model_dump_json()
+        assert sum(item.method == "POST" for item in calls) == 1
+        for task in recreated._video_monitors.values():  # pyright: ignore[reportPrivateUsage]
+            task.cancel()

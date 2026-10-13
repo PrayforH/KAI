@@ -333,10 +333,11 @@ describe("Codex-style activity UI", () => {
     );
 
     expect(html).toContain("允许执行这个操作？");
-    expect(html).toContain("允许并继续");
-    expect(html).toContain("高风险");
+    expect(html).toContain("允许一次");
+    expect(html).toContain("较高风险");
     expect(html).toContain("拒绝");
-    expect(html).toContain("write-review");
+    expect(html).toContain("平台策略要求确认本次操作。");
+    expect(html).not.toContain("write-review");
   });
 });
 

@@ -3807,3 +3807,85 @@ async def test_member_installs_existing_skill_without_catalog_management_permiss
         )
         assert applied.status_code == 200, applied.text
         assert applied.json()["spec"]["skills"][0]["name"] == package["skill"]["name"]
+
+
+@pytest.mark.asyncio
+async def test_official_minimax_quota_and_connection_probe_never_generate_video() -> None:
+    application, container = app_and_container()
+    captured: list[httpx.Request] = []
+
+    def provider(incoming: httpx.Request) -> httpx.Response:
+        captured.append(incoming)
+        return httpx.Response(
+            200,
+            json={
+                "base_resp": {"status_code": 0},
+                "model_remains": [
+                    {
+                        "model_name": "video",
+                        "current_interval_total_count": 3,
+                        "current_interval_usage_count": 1,
+                        "current_weekly_total_count": 21,
+                        "current_weekly_usage_count": 1,
+                    }
+                ],
+            },
+        )
+
+    owner = {
+        "Authorization": f"Bearer {SERVICE_TOKEN}",
+        "X-Tenant-ID": "local",
+        "X-User-ID": "owner-a",
+    }
+    async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as provider_client:
+        # Keep the integration route real and replace only its external provider transport.
+        models = container.model_configurations
+        models._http_client = provider_client  # pyright: ignore[reportPrivateUsage]
+        async with AsyncClient(
+            transport=ASGITransport(app=application), base_url="http://test"
+        ) as client:
+            await register(client, "video-owner@example.com")
+            member = await register(client, "video-member@example.com")
+            initial = await client.get("/v1/studio/models", headers=owner)
+            configured = await client.put(
+                "/v1/studio/models/minimax-official-video",
+                headers=owner,
+                json={
+                    "expectedRevision": initial.json()["revision"],
+                    "label": "MiniMax 视频",
+                    "modelType": "video_generation",
+                    "provider": "MiniMax",
+                    "model": "MiniMax-Hailuo-2.3",
+                    "baseUrl": "https://api.minimaxi.com/v1",
+                    "apiFormat": "minimax_videos",
+                    "authScheme": "bearer",
+                    "apiKey": "sk-cp-private-video-key",
+                    "enabled": True,
+                },
+            )
+            quota = await client.get(
+                "/v1/studio/models/minimax-official-video/video-quota",
+                headers={"Authorization": f"Bearer {member['access_token']}"},
+            )
+            tested = await client.post(
+                "/v1/studio/models/minimax-official-video/test", headers=owner
+            )
+            catalog = await client.get("/v1/studio/capabilities", headers=owner)
+    assert configured.status_code == 200
+    assert (
+        "sk-cp-private-video-key" not in configured.text + quota.text + tested.text + catalog.text
+    )
+    assert quota.status_code == 200
+    assert quota.json()["dailyRemaining"] == 2
+    assert tested.status_code == 200
+    assert len(captured) == 2
+    assert all(
+        item.method == "GET" and item.url.path == "/v1/token_plan/remains" for item in captured
+    )
+    route = next(
+        item
+        for item in catalog.json()["modelRoutes"]
+        if item["routeId"] == "minimax-official-video"
+    )
+    assert route["apiFormat"] == "minimax_videos"
+    assert route["baseUrl"] is None

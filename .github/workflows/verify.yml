@@ -2,9 +2,10 @@ name: verify
 
 on:
   workflow_call:
+  workflow_dispatch:
   pull_request:
   push:
-    branches: [main, develop]
+    branches: [main]
 
 permissions:
   contents: read
@@ -188,7 +189,10 @@ jobs:
           KUBECTL_IMAGE: cgr.dev/chainguard/kubectl@sha256:0fee370907fa4cd5aa8be82b35772649fbca19abc07add837de6f87a9a97b5d2
         run: |
           set -euo pipefail
+          # GitHub-hosted runners use PyPI directly; keep the Dockerfile's
+          # regional default for builds inside the deployment network.
           docker build --pull --build-arg KUBECTL_IMAGE="$KUBECTL_IMAGE" \
+            --build-arg UV_DEFAULT_INDEX=https://pypi.org/simple \
             -f deploy/docker/api.Dockerfile -t harness-api:ci .
           docker build --pull -f deploy/docker/web.Dockerfile -t harness-web:ci .
           docker build --pull -f deploy/docker/sandbox.Dockerfile -t harness-sandbox:ci .

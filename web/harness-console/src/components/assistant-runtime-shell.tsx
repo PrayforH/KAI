@@ -29,6 +29,7 @@ import type { TaskModelRoute } from "../lib/task-model-catalog";
 import { TaskKnowledgeProvider } from "./task-knowledge-context";
 import { DurableHistorySync } from "./durable-history-sync";
 import { ThreadHistoryReadyProvider } from "./thread-history-ready";
+import { RunCancelProvider } from "./run-cancel-context";
 import { TaskModelProvider } from "./task-model-context";
 
 
@@ -178,6 +179,7 @@ export function AssistantRuntimeShell({
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
+      <RunCancelProvider value={() => agent.cancelActiveRun()}>
       <ThreadHistoryReadyProvider value={historyReady}>
       <DurableHistorySync threadId={threadId} revision={historyRevision} history={history} onSettled={() => setHistoryReady(true)} />
       <TaskModelProvider
@@ -199,6 +201,7 @@ export function AssistantRuntimeShell({
         </TaskKnowledgeProvider>
       </TaskModelProvider>
       </ThreadHistoryReadyProvider>
+    </RunCancelProvider>
     </AssistantRuntimeProvider>
   );
 }

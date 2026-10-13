@@ -463,6 +463,8 @@ def build_memory_container(
         capability_catalogs,
         mcp_credential_service,
         environment=resolved_settings.environment,
+        runs=runs,
+        sessions=sessions,
     )
     mcp_credentials = StoredMcpCredentialProvider(
         mcp_credential_service,

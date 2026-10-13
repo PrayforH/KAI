@@ -50,6 +50,9 @@ const videoGeneration = readFileSync(
   join(process.cwd(), "src/components/video-generation.tsx"),
   "utf8",
 );
+const videoResult = readFileSync(
+  join(process.cwd(), "src/components/video-generation-result.tsx"), "utf8",
+);
 const activitySummary = readFileSync(
   join(process.cwd(), "src/components/activity-summary.tsx"),
   "utf8",
@@ -502,10 +505,8 @@ describe("full-page agent workbench", () => {
   it("preserves unsent task text across refreshes and task switches", () => {
     expect(page).toContain("<AgentThread");
     expect(page).toContain("threadId={threadId}");
-    expect(agentThread).toContain("loadTaskComposerDraft");
-    expect(agentThread).toContain("persistTaskComposerDraft");
+    expect(agentThread).toContain("useTaskComposerSnapshot");
     expect(agentThread).not.toContain("未发送内容已保存在当前浏览器");
-    expect(agentThread).toContain("auiRef.current.composer().setText(saved)");
   });
 
   it("uses Codex neutrals and keeps the workbench strictly black, white and gray", () => {
@@ -523,13 +524,13 @@ describe("full-page agent workbench", () => {
 
   it("runs managed video models through a dedicated conversation composer path", () => {
     expect(agentThread).toContain('route.modelType === "video_generation"');
-    expect(videoGeneration).toContain("/videos`");
+    expect(videoGeneration).toContain("/videos${existingJobId");
     expect(videoGeneration).toContain("inputArtifactIds");
     expect(videoGeneration).toContain("自定义时长（4–15 秒）");
-    expect(videoGeneration).toContain("下载 MP4");
-    expect(videoGeneration).toContain("重新生成");
-    expect(videoGeneration).toContain("沿用参数");
-    expect(videoGeneration).toContain("<video");
+    expect(videoResult).toContain("下载 MP4");
+    expect(videoResult).toContain("重新生成");
+    expect(videoResult).toContain("沿用参数");
+    expect(videoResult).toContain("<video");
     expect(styles).toContain(".composer-video-settings");
     expect(styles).toContain(".video-answer-card");
     expect(styles).toContain(".aui-composer-video-send");

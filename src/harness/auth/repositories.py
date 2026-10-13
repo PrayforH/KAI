@@ -188,15 +188,6 @@ class InMemoryAuthRepository:
                 "replaced_by_hash": replacement.token_hash,
             }
         )
-        for token_hash, token in tuple(self.refresh_tokens.items()):
-            if (
-                token.user_id == replacement.user_id
-                and token.family_id != replacement.family_id
-                and token.revoked_at is None
-            ):
-                self.refresh_tokens[token_hash] = token.model_copy(
-                    update={"revoked_at": revoked_at}
-                )
         self.refresh_tokens[replacement.token_hash] = replacement
         return True
 
@@ -467,15 +458,6 @@ class PostgresAuthRepository:
             if not cast(CursorResult[object], result).rowcount:
                 await session.rollback()
                 return False
-            await session.execute(
-                update(RefreshTokenRow)
-                .where(
-                    RefreshTokenRow.user_id == replacement.user_id,
-                    RefreshTokenRow.family_id != replacement.family_id,
-                    RefreshTokenRow.revoked_at.is_(None),
-                )
-                .values(revoked_at=cast(datetime, revoked_at))
-            )
             session.add(_refresh_row(replacement))
             await session.commit()
             return True

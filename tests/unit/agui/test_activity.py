@@ -164,7 +164,7 @@ def test_max_turns_projects_a_specific_failure_diagnostic() -> None:
         "stop_reason": "tool_use",
     }
     assert failed["title"] == "达到最大执行回合数"
-    assert failed["summary"] == ("Agent 多次调用工具后仍未完成任务，请查看处理过程中的失败动作。")
+    assert failed["summary"] == ("该轮触发了历史回合数上限，平台现已取消这项限制，请继续当前任务。")
 
 
 def test_stale_mcp_directory_projects_an_actionable_agent_upgrade() -> None:
@@ -594,9 +594,16 @@ def test_streaming_deltas_fold_into_one_item_per_message_or_thinking_block() -> 
 
 
 def test_historical_budget_failure_is_explained() -> None:
-    projected = activity_projection(event("runtime.result", {
-        "subtype": "error_max_budget_usd", "is_error": True, "total_cost_usd": 4.005826,
-    }))
+    projected = activity_projection(
+        event(
+            "runtime.result",
+            {
+                "subtype": "error_max_budget_usd",
+                "is_error": True,
+                "total_cost_usd": 4.005826,
+            },
+        )
+    )
     assert projected is not None
     result = projected[0].model_dump(by_alias=True)["patch"][0]["value"]
     assert result["title"] == "达到运行费用上限"
@@ -710,3 +717,34 @@ def test_compaction_terminals_are_projected_without_summary_contents() -> None:
         assert item["status"] == status
         assert item["title"] == title
         assert "private" not in repr(projected)
+
+
+def test_steering_receipt_keeps_run_running_and_its_sequence() -> None:
+    receipt = event("run.steer.accepted", {"request_id": "guidance-1", "text": "改用新格式"}, 4)
+    events = [
+        event("run.queued", sequence=1),
+        event("run.running", sequence=2),
+        event("tool.started", {"tool_name": "shell"}, 3),
+        receipt,
+    ]
+    activity = build_run_activity(events)
+    assert activity is not None
+    assert activity["status"] == "running"
+    assert activity["items"][-1]["sequence"] == 4
+    assert activity["items"][-1]["summary"] == "改用新格式"
+    patch = activity_projection(receipt)[0].model_dump(by_alias=True)["patch"]
+    assert all(item["path"] != "/status" for item in patch)
+    assert activity_projection(event("run.steer.sending", {"text": "还未确认"}, 3)) == []
+
+
+def test_pending_and_failed_steering_are_activity_facts_without_changing_run_status() -> None:
+    for event_type in ("run.steer.requested", "run.steer.failed"):
+        guidance = event(
+            event_type, {"request_id": "input-1", "text": "保留目录", "error": "未收到确认"}, 3
+        )
+        activity = build_run_activity([event("run.running", sequence=1), guidance])
+        assert activity is not None
+        assert activity["status"] == "running"
+        assert activity["items"][-1]["metadata"]["request_id"] == "input-1"
+        patch = activity_projection(guidance)[0].model_dump(by_alias=True)["patch"]
+        assert all(item["path"] != "/status" for item in patch)

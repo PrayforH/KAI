@@ -20,6 +20,7 @@ import { KnowledgeCitations } from "./knowledge/knowledge-citations";
 import { MarkdownText } from "./markdown-text";
 import { useRunDetails } from "./run-details-context";
 import { isResponseBoundary, isStableReasoningBlockId } from "../lib/process-boundary";
+import { SteeringUserMessage } from "./steering-user-message";
 import { ProcessDisclosure } from "./process-disclosure";
 import { CompactionProgressIndicator } from "./compaction-progress";
 import { useDetailedProcess } from "../lib/process-display-preference";
@@ -81,7 +82,8 @@ interface CommentaryNode {
   id: string;
   text: string;
   sequence: number;
-  source: "progress" | "reasoning_summary" | "reasoning";
+  source: "progress" | "reasoning_summary" | "reasoning" | "guidance";
+  steeringStatus?: "pending" | "accepted";
 }
 
 type ProcessCategory = "setup" | "model" | "result";
@@ -212,6 +214,16 @@ function commentaryNodes(view: RunViewModel): CommentaryNode[] {
     // Some providers omit/reuse item_id across tool rounds. A new step must
     // never append its thinking into an earlier, already completed row.
     if (isResponseBoundary(item.event_type) || item.event_type === "message.delta") reasoningSegment += 1;
+    if (item.event_type.startsWith("run.steer.")) {
+      const key = `guidance:${String(item.metadata.request_id ?? item.id)}`;
+      if (item.event_type === "run.steer.failed") grouped.delete(key);
+      else if (item.summary && (item.event_type === "run.steer.accepted" ||
+        (item.event_type === "run.steer.requested" && ["queued", "running", "waiting_approval"].includes(view.phase)))) {
+        grouped.set(key, { id: key, sequence: item.sequence, text: item.summary, source: "guidance",
+          steeringStatus: item.event_type === "run.steer.accepted" ? "accepted" : "pending" });
+      }
+      continue;
+    }
     if (!item.summary) continue;
     if (item.event_type === "reasoning.summary.delta" || item.event_type === "reasoning.delta") {
       const itemId = typeof item.metadata.item_id === "string"
@@ -279,7 +291,7 @@ const ExecutionCommentary = memo(function ExecutionCommentary({
   // The collapsed row is a status, not a token ticker. Completed rows show a
   // bounded prefix; the full trace is only mounted on explicit expansion.
   const preview = active ? "进行中" : commentary.text.slice(0, 160).replaceAll("**", "").replace(/\s+/g, " ").trim();
-  if (commentary.source !== "progress") {
+  if (commentary.source === "reasoning" || commentary.source === "reasoning_summary") {
     return (
       <details className="execution-reasoning" open={expanded} onToggle={event => setExpanded(event.currentTarget.open)}
         data-commentary-source={commentary.source} data-active={active ? "true" : "false"}>
@@ -295,6 +307,7 @@ const ExecutionCommentary = memo(function ExecutionCommentary({
       </details>
     );
   }
+  if (commentary.source === "guidance") return <SteeringUserMessage text={commentary.text} status={commentary.steeringStatus ?? "accepted"} />;
   return (
     <article
       className="execution-commentary"
@@ -308,7 +321,7 @@ const ExecutionCommentary = memo(function ExecutionCommentary({
       </div>
     </article>
   );
-}, (previous, next) => previous.active === next.active && previous.commentary.id === next.commentary.id && previous.commentary.source === next.commentary.source && previous.commentary.text === next.commentary.text);
+}, (previous, next) => previous.active === next.active && previous.commentary.id === next.commentary.id && previous.commentary.source === next.commentary.source && previous.commentary.text === next.commentary.text && previous.commentary.steeringStatus === next.commentary.steeringStatus);
 
 function rawTimeline(view: RunViewModel): RawTimelineNode[] {
   return [
@@ -333,6 +346,21 @@ function rawTimeline(view: RunViewModel): RawTimelineNode[] {
       (tool): RawTimelineNode => ({ kind: "tool", sequence: tool.sequence, tool }),
     ),
   ].sort((left, right) => left.sequence - right.sequence);
+}
+
+/** Steering is authored user content, so folding agent work must never hide it. */
+function transcriptSegments(timeline: DisplayTimelineNode[]) {
+  const segments: { key: string; guidance?: CommentaryNode; entries: DisplayTimelineNode[] }[] = [];
+  for (const entry of timeline) {
+    if (entry.kind === "commentary" && entry.commentary.source === "guidance") {
+      segments.push({ key: entry.commentary.id, guidance: entry.commentary, entries: [] });
+    } else {
+      let segment = segments.at(-1);
+      if (!segment || segment.guidance) { segment = { key: `process:${entry.sequence}`, entries: [] }; segments.push(segment); }
+      segment.entries.push(entry);
+    }
+  }
+  return segments;
 }
 
 function combinedStatus(statuses: readonly WorkStatus[]): WorkStatus {
@@ -786,7 +814,8 @@ export function ActivitySummary({
     : `耗时 ${durationLabel(elapsed)}`;
   const failure = view.phase === "failed" ? failureDetails(view) : null;
   const publicationNotice = view.items.findLast(item => item.event_type === "artifact.publication_limited");
-  const hasContent = timeline.length > 0 || Boolean(failure);
+  const hasContent = timeline.some(entry => entry.kind !== "commentary" || entry.commentary.source !== "guidance") || Boolean(failure);
+  const segments = transcriptSegments(timeline);
   const Disclosure = hasContent ? "button" : "div";
   const runDetails = useRunDetails();
 
@@ -829,8 +858,8 @@ export function ActivitySummary({
           运行详情
         </button>
       ) : null}
-      <ProcessDisclosure open={open && hasContent}>
       <div className="execution-tree">
+        <ProcessDisclosure open={open && Boolean(failure)}>
         {failure ? (
           <section className="execution-failure-diagnostic" aria-label="失败定位">
             <span>失败定位</span>
@@ -848,23 +877,25 @@ export function ActivitySummary({
             </small>
           </section>
         ) : null}
+        </ProcessDisclosure>
         {timeline.length > 0 ? (
           <section className="execution-log" aria-label="运行过程，仅展示可观察事件">
-            {timeline.map((entry) =>
-              entry.kind === "commentary" ? (
-                <ExecutionCommentary
-                  key={entry.commentary.id}
-                  commentary={entry.commentary}
-                  active={entry.commentary.id === activeCommentaryId}
-                />
-              ) : (
-                <ActionRow key={entry.action.id} action={entry.action} active={thinkingActive && entry.action.status === "running"} />
-              ),
-            )}
+            {segments.map(segment => segment.guidance ? (
+              <SteeringUserMessage key={segment.key} text={segment.guidance.text} status={segment.guidance.steeringStatus ?? "accepted"} />
+            ) : (
+              <ProcessDisclosure key={segment.key} open={open}>
+                <div className="execution-log-segment">
+                  {segment.entries.map(entry => entry.kind === "commentary" ? (
+                    <ExecutionCommentary key={entry.commentary.id} commentary={entry.commentary} active={entry.commentary.id === activeCommentaryId} />
+                  ) : (
+                    <ActionRow key={entry.action.id} action={entry.action} active={thinkingActive && entry.action.status === "running"} />
+                  ))}
+                </div>
+              </ProcessDisclosure>
+            ))}
           </section>
         ) : null}
       </div>
-      </ProcessDisclosure>
     </section>
   );
 }

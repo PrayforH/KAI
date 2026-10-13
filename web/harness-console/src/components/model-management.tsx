@@ -9,7 +9,7 @@ import { SecretInput } from "./secret-input";
 import styles from "./model-management.module.css";
 
 type ModelType = "chat" | "vision" | "image_generation" | "video_generation";
-type ApiFormat = "anthropic_compatible" | "openai_compatible" | "openai_images" | "openai_videos";
+type ApiFormat = "anthropic_compatible" | "openai_compatible" | "openai_images" | "openai_videos" | "minimax_videos";
 
 type ManagedModel = {
   routeId: string;
@@ -34,7 +34,7 @@ type ModelState = {
 };
 
 type AgentItem = { name: string; display_name: string };
-type ProviderPreset = "minimax" | "minimax_h3" | "openai" | "anthropic" | "custom";
+type ProviderPreset = "minimax" | "minimax_video" | "minimax_h3" | "openai" | "anthropic" | "custom";
 
 const TYPE_COPY: Record<ModelType, { label: string; mark: string; description: string }> = {
   chat: { label: "对话", mark: "C", description: "文本理解、工具调用与流式回答" },
@@ -58,6 +58,13 @@ const PROVIDER_PRESETS: Record<Exclude<ProviderPreset, "custom">, {
     baseUrl: "https://api.minimaxi.com/anthropic/v1",
     apiFormat: "anthropic_compatible",
     authScheme: "x-api-key",
+  },
+  minimax_video: {
+    label: "MiniMax 视频（官方）",
+    provider: "MiniMax",
+    baseUrl: "https://api.minimaxi.com/v1",
+    apiFormat: "minimax_videos",
+    authScheme: "bearer",
   },
   minimax_h3: {
     label: "MiniMax H3（229 内网）",
@@ -109,6 +116,7 @@ function routeIdFromLabel(value: string) {
 function providerPresetFor(model: ManagedModel | null): ProviderPreset {
   if (!model) return "minimax";
   const signature = `${model.provider} ${model.baseUrl ?? ""}`.toLowerCase();
+  if (model.apiFormat === "minimax_videos") return "minimax_video";
   if (model.apiFormat === "openai_videos" || signature.includes("172.20.109.229:18000")) return "minimax_h3";
   if (signature.includes("minimax")) return "minimax";
   if (signature.includes("anthropic")) return "anthropic";
@@ -334,7 +342,7 @@ function ModelDialog({
   const [providerPreset, setProviderPreset] = useState<ProviderPreset>(initialPreset);
   const [provider, setProvider] = useState(model?.provider ?? initialConnection?.provider ?? "MiniMax");
   const [baseUrl, setBaseUrl] = useState(model?.baseUrl ?? initialConnection?.baseUrl ?? "");
-  const [modelName, setModelName] = useState(model?.model ?? (initialPreset === "minimax_h3" ? "/model" : ""));
+  const [modelName, setModelName] = useState(model?.model ?? (initialPreset === "minimax_h3" ? "/model" : initialPreset === "minimax_video" ? "MiniMax-Hailuo-2.3" : ""));
   const [apiFormat, setApiFormat] = useState<ApiFormat>(
     model?.apiFormat ?? initialConnection?.apiFormat ?? "openai_compatible",
   );
@@ -351,12 +359,13 @@ function ModelDialog({
     setApiFormat(preset.apiFormat);
     setAuthScheme(preset.authScheme);
     if (next === "minimax_h3") setModelName("/model");
+    if (next === "minimax_video") setModelName("MiniMax-Hailuo-2.3");
   }
 
   function chooseType(next: ModelType) {
     setType(next);
-    if (next === "video_generation") chooseProvider("minimax_h3");
-    else if (providerPreset === "minimax_h3") chooseProvider("minimax");
+    if (next === "video_generation") chooseProvider("minimax_video");
+    else if (providerPreset === "minimax_h3" || providerPreset === "minimax_video") chooseProvider("minimax");
   }
 
   async function save(event: FormEvent<HTMLFormElement>) {
@@ -384,7 +393,7 @@ function ModelDialog({
           provider,
           model: normalizedModelName,
           baseUrl,
-          apiFormat: type === "image_generation" ? "openai_images" : type === "video_generation" ? "openai_videos" : apiFormat,
+          apiFormat: type === "image_generation" ? "openai_images" : type === "video_generation" && apiFormat !== "minimax_videos" ? "openai_videos" : apiFormat,
           authScheme,
           apiKey: apiKey || null,
           enabled: true,
@@ -420,7 +429,7 @@ function ModelDialog({
             <small>选择服务商后会自动填写接口地址和鉴权方式，通常只需确认模型名称并粘贴 API Key。</small>
           </div>
           <div className={styles.formGrid}>
-            <label>服务商<select value={providerPreset} onChange={(event) => chooseProvider(event.target.value as ProviderPreset)}><option value="minimax">MiniMax</option><option value="minimax_h3">MiniMax H3（229 内网）</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="custom">自定义兼容接口</option></select></label>
+            <label>服务商<select value={providerPreset} onChange={(event) => chooseProvider(event.target.value as ProviderPreset)}><option value="minimax">MiniMax</option><option value="minimax_video">MiniMax 视频（官方）</option><option value="minimax_h3">MiniMax H3（229 内网）</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="custom">自定义兼容接口</option></select></label>
             <label>模型名称<input name="model" value={modelName} onChange={(event) => setModelName(event.target.value)} required placeholder="服务商使用的实际模型名" /></label>
             <label className={styles.full}>API Key<SecretInput name="apiKey" autoComplete="new-password" disabled={authScheme === "none"} required={authScheme !== "none" && !model?.credentialConfigured} placeholder={authScheme === "none" ? "该内网服务无需鉴权" : model?.credentialConfigured ? "已安全保存；留空则保持不变" : "输入 API Key"} revealLabel="API Key" /><small>{authScheme === "none" ? "不会保存或发送密钥。" : "保存后不会再次显示明文。"}</small></label>
           </div>

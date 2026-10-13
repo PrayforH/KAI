@@ -25,6 +25,7 @@ from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
     ClaudeSDKClient,
+    CLIJSONDecodeError,
     ContextUsageResponse,
     ProcessError,
     ResultMessage,
@@ -105,7 +106,9 @@ from harness.runtime.tools import (
 from harness.runtime.warm_sdk import WarmEntry, WarmSdkPool, WarmSdkRequest
 from harness.runtime.web_tools import WEB_BUILTINS, WEB_CONTRACT, WEB_SERVER, WEB_TOOL_NAMES
 
-SDK_JSON_MAX_BUFFER_SIZE = 32 * 1024 * 1024
+# Compaction can mirror an entire image-heavy transcript in one JSON frame.
+# Keep a finite limit, with room for the aggregate frame rather than one image.
+SDK_JSON_MAX_BUFFER_SIZE = 256 * 1024 * 1024
 CONTEXT_USAGE_CONTROL_TIMEOUT_SECONDS = 1.0
 # Daytona/E2B/Kubernetes transports cross at least one control-plane hop after
 # the Claude CLI has produced its terminal result.  The local one-second budget
@@ -403,6 +406,18 @@ async def _client_query(
                         await client.finish(terminal_result)
                     yield terminal_result
             return
+        except CLIJSONDecodeError as error:
+            oversized = "exceeded maximum buffer size" in str(error)
+            raise RuntimeResultError(
+                "sdk_message_too_large" if oversized else "sdk_invalid_json",
+                error_code="runtime_message_too_large" if oversized else "runtime_invalid_json",
+                user_message=(
+                    "批量图片处理产生的运行消息超过容量限制，本轮已中断。"
+                    "请继续当前任务并缩小每批处理范围。"
+                    if oversized
+                    else "运行时消息解析失败，本轮已中断，请重试当前任务。"
+                ),
+            ) from error
         except ProcessError as error:
             can_retry = (
                 transport is None
@@ -976,7 +991,7 @@ class ClaudeSdkRuntime:
                 ),
                 tools=subagent_tools,
                 model="inherit",
-                maxTurns=subagent_manifest.spec.limits.max_turns,
+                maxTurns=None,
                 skills=[skill.name for skill in snapshot.skill_snapshots] or None,
                 background=binding.background if binding is not None else False,
             )
@@ -1031,7 +1046,9 @@ class ClaudeSdkRuntime:
             model=route.model,
             fallback_model=None,
             cwd=context.workspace,
-            max_turns=manifest.spec.limits.max_turns,
+            # Historical manifests may carry a turn budget. Platform tasks
+            # continue until completion or explicit cancellation.
+            max_turns=None,
             # Usage is telemetry, never an execution quota (including legacy manifests).
             max_budget_usd=None,
             permission_mode=permission_mode,
@@ -1063,9 +1080,8 @@ class ClaudeSdkRuntime:
             session_store_flush="eager",
             resume=context.session.resolved_runtime_thread_id,
             stderr=SdkDiagnosticTail(),
-            # Native Read returns image blocks as base64 inside one SDK JSON
-            # message. The upstream 1 MiB default rejects ordinary phone
-            # photos before a vision-capable model can inspect them.
+            # Read images and compaction transcript-mirror batches both travel
+            # in SDK JSON frames; the latter can contain many base64 images.
             max_buffer_size=SDK_JSON_MAX_BUFFER_SIZE,
         )
         return options, resolved_tools

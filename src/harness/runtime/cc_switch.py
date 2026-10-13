@@ -36,6 +36,7 @@ class CcSwitchClaudeConfig(BaseModel):
         "openai_compatible",
         "openai_images",
         "openai_videos",
+        "minimax_videos",
     ] | None = None
     compatibility: ModelCompatibility = ModelCompatibility.FULL
     capabilities: frozenset[str] = frozenset({"streaming", "tool_use"})

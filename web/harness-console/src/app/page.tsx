@@ -23,6 +23,7 @@ import {
   TaskDetailsPopover,
   TaskHeaderActions,
 } from "../components/task-header-actions";
+import { TaskRunStatus } from "../components/task-run-status";
 import { TaskSidebar } from "../components/task-sidebar";
 import { createProjectTask } from "../lib/project-task";
 import { ApiProject } from "../lib/studio-client";
@@ -52,7 +53,7 @@ import {
   loadTaskAgentCatalog,
   type TaskAgent,
 } from "../lib/task-agent-catalog";
-import { loadTasks, type TaskSummary } from "../lib/task-history";
+import { loadTasks, peekCachedTasks, type TaskSummary } from "../lib/task-history";
 import {
   loadTaskModelOverride,
   loadTaskModelRoutes,
@@ -63,7 +64,7 @@ import {
   resolveTaskLaunchMode,
   type TaskThreadState,
 } from "../lib/task-launch";
-import { persistTaskComposerDraft } from "../lib/task-composer-draft";
+import { persistTaskComposerDraft, rememberNewTaskDraft, pendingNewTaskDraft } from "../lib/task-composer-draft";
 import {
   parseSkillCreatorLaunch,
   skillCreatorPrompt,
@@ -550,6 +551,7 @@ function AuthenticatedHome() {
     const storage = createUserScopedStorage(window.localStorage, user.user_id);
     const nextThreadId = createNewThread(storage);
     window.history.replaceState(window.history.state, "", `/?thread=${encodeURIComponent(nextThreadId)}`);
+    rememberNewTaskDraft(window.localStorage, user.user_id, nextThreadId);
     bindThreadAgent(storage, nextThreadId, nextAgent);
     setSelectedAgent(nextAgent);
     setLocalThreadId(nextThreadId);
@@ -586,7 +588,7 @@ function AuthenticatedHome() {
         if (!active) return;
         const current = tasks.find((task) => task.thread_id === threadId) ?? null;
         setCurrentTask(current);
-        if (current) setCurrentTaskTitle(current.title);
+        if (current) { markThreadPersisted(taskStorage(), threadId); setLocalThreadId(null); setCurrentTaskTitle(current.title); setCurrentThreadState("durable"); }
       }).catch(() => undefined);
     };
     sync();
@@ -613,8 +615,33 @@ function AuthenticatedHome() {
       : taskAgents[0];
     const nextAgent = currentSystemAssistant(candidate ?? null, systemAssistant);
     if (!nextAgent) return;
+    if (currentThreadState === "empty") {
+      if (selectedAgent && nextAgent.version !== selectedAgent.version) {
+        bindThreadAgent(taskStorage(), threadId, nextAgent);
+        setSelectedAgent(nextAgent);
+      }
+      focusTaskComposer();
+      return;
+    }
+    const pendingThreadId = pendingNewTaskDraft(window.localStorage, user.user_id, new Set(peekCachedTasks()?.map(task => task.thread_id)));
+    if (pendingThreadId) {
+      const storedAgent = loadThreadAgent(taskStorage(), pendingThreadId);
+      if (storedAgent) {
+        const draftAgent = findTaskAgent(taskAgents, storedAgent);
+        if (draftAgent) {
+          taskSelectionRevision.current += 1;
+          window.history.replaceState(window.history.state, "", `/?thread=${encodeURIComponent(pendingThreadId)}`);
+          setSelectedAgent(draftAgent);
+          setLocalThreadId(pendingThreadId);
+          setThreadId(selectThread(taskStorage(), pendingThreadId));
+          setCurrentTask(null); setCurrentTaskTitle("新任务"); setCurrentThreadState("empty");
+          setModelRouteOverride(loadTaskModelOverride(taskStorage(), pendingThreadId));
+          setActiveSkillLaunch(null); focusTaskComposer(); return;
+        }
+      }
+    }
     createTaskWithAgent(nextAgent);
-  }, [createTaskWithAgent, selectedAgent, taskAgents, systemAssistant]);
+  }, [createTaskWithAgent, currentThreadState, focusTaskComposer, selectedAgent, taskAgents, systemAssistant, threadId]);
 
   function switchTask(task: TaskSummary) {
     taskSelectionRevision.current += 1;
@@ -634,6 +661,7 @@ function AuthenticatedHome() {
         scope: task.space_id ? "team" : "personal",
         spaceId: task.space_id ?? undefined,
       };
+    if (currentThreadState === "empty") rememberNewTaskDraft(window.localStorage, user.user_id, threadId);
     const storage = taskStorage();
     bindThreadAgent(storage, task.thread_id, nextAgent);
     setSelectedAgent(nextAgent);
@@ -759,6 +787,7 @@ function AuthenticatedHome() {
                   startNewTask();
                 }}
               />
+              <TaskRunStatus activity={runActivity} stream={runStream} status={currentTask?.status} />
             </div>
             <HeaderUtilities
               taskRailOpen={taskRailOpen}

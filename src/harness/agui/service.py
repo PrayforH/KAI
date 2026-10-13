@@ -259,6 +259,28 @@ class AguiRunService:
             generated_at=datetime.now(UTC),
         )
 
+    async def resolve_media_thread(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        thread_id: str,
+        agent_name: str,
+        agent_version: str,
+        agent_owner_user_id: str | None = None,
+        space_id: str | None = None,
+    ) -> AguiThreadBinding:
+        """Authorize and bind a media task without queuing a language-model run."""
+        return await self._resolve_binding(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            thread_id=thread_id,
+            agent_name=agent_name,
+            agent_version=agent_version,
+            agent_owner_user_id=agent_owner_user_id,
+            space_id=space_id,
+        )
+
     async def create_run(
         self,
         *,
