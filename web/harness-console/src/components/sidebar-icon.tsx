@@ -23,9 +23,9 @@ const paths = {
   chevronUp: "m6 12 4-4 4 4",
 } as const;
 
-export function SidebarIcon({ name, className }: { name: keyof typeof paths; className?: string }) {
+export function SidebarIcon({ name, className, size = 16 }: { name: keyof typeof paths; className?: string; size?: number }) {
   return <svg className={className} data-sidebar-icon={name} viewBox="0 0 20 20" aria-hidden="true" focusable="false"
-    style={{ width: 18, height: 18, flexShrink: 0, fill: "none", stroke: "currentColor", strokeWidth: 1.5, strokeLinecap: "round", strokeLinejoin: "round" }}>
+    style={{ width: size, height: size, flexShrink: 0, fill: "none", stroke: "currentColor", strokeWidth: 1.5, strokeLinecap: "round", strokeLinejoin: "round" }}>
     <path d={paths[name]} />
   </svg>;
 }

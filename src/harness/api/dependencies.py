@@ -160,6 +160,7 @@ from harness.sharing.workspace_repositories import (
 )
 from harness.studio.catalog_repository import InMemoryCapabilityCatalogRepository
 from harness.studio.catalog_service import CapabilityCatalogService
+from harness.studio.intent_router import BuilderIntentRouter
 from harness.studio.mcp_credential_store import (
     InMemoryMcpCredentialRepository,
     McpCredentialCipher,
@@ -443,6 +444,8 @@ def build_memory_container(
         capability_catalog_repository,
         agent_drafts,
         clock=clock,
+        sandbox_network_access={
+            str(k): v for k, v in resolved_settings.sandbox_network_access.items()},
     )
     environment_mcp_credentials = server_secret_credential_provider(
         references_json=resolved_settings.mcp_secret_references_json,
@@ -485,6 +488,7 @@ def build_memory_container(
         audit=audit,
         agent_ids=agent_ids,
         draft_permissions=team_spaces,
+        intent_router=BuilderIntentRouter.from_settings(resolved_settings),
         clock=clock,
         id_generator=lambda: id_generator("draft"),
     )
@@ -496,7 +500,7 @@ def build_memory_container(
         clock=clock,
         id_generator=lambda: id_generator("preview"),
         quotas=enforced_quotas,
-        catalog_resolver=capability_catalogs.get,
+        catalog_resolver=capability_catalogs.get_for_deployment,
     )
     event_service = EventService(
         raw_events,
@@ -650,7 +654,7 @@ def build_memory_container(
         clock=clock,
         id_generator=id_generator,
         quality_gate=quality_service.require_promotion_allowed,
-        capability_catalog_resolver=capability_catalogs.get,
+        capability_catalog_resolver=capability_catalogs.get_for_deployment,
         knowledge_reference_validator=knowledge.require_bases,
         policy_resolver=governance.resolve_runtime,
         quotas=enforced_quotas,
@@ -947,7 +951,7 @@ def build_memory_container(
         mcp_probe=mcp_probe,
         policies=active_policy_profiles,
         policy_resolver=governance.resolve_runtime,
-        catalog_resolver=capability_catalogs.get,
+        catalog_resolver=capability_catalogs.get_for_deployment,
         observability=observability,
         timeout_seconds=resolved_settings.preflight_timeout_seconds,
         clock=clock,

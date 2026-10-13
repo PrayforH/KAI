@@ -860,11 +860,14 @@ function HarnessComposer() {
             onChange={agentSelection.onChange}
             onRefresh={agentSelection.onRefresh}
           />
-          <TaskModelControl disabled={Boolean(conversationScope) || runLocked || showStop || videoGenerating} /></>}
+          </>}
+          <div className="composer-model-voice">
+          {!conversationScope?.compactComposer && <TaskModelControl disabled={Boolean(conversationScope) || runLocked || showStop || videoGenerating} />}
           <VoiceInput key={scope?.threadId || "new"} disabled={busy || followupVoiceActive}
             modelRoute={overrideRouteId || ""}
             onActive={(active) => { voiceComposer.onActive(active); setVoiceActive(active); }}
             onDraft={voiceComposer.onDraft} onInsert={voiceComposer.onInsert} />
+          </div>
         </div>
         {showStop && !composerText.trim() && !composerAttachments.length ? (
           <ConversationControl action="stop" aria-label={stopPending ? "正在停止运行" : "停止运行"} disabled={stopPending} onClick={() => void stopRun()} />

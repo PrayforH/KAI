@@ -166,3 +166,37 @@ it("preserves a deliberately collapsed current project across remounts", async (
     expect(container.querySelector('[aria-label="展开项目 研究"]')).not.toBeNull();
   } finally { await act(async () => root.unmount()); }
 });
+
+
+it("collapses project and task sections independently and persists them across remounts", async () => {
+  const projects = [{ projectId: "p1", tenantId: "test", userId: "test", name: "示例项目", description: "", createdAt: "2026-09-07T00:00:00Z", updatedAt: "2026-09-07T00:00:00Z" }];
+  loadTasks.mockResolvedValue([{ ...task("succeeded", "project-task"), project_id: "p1" },
+    ...Array.from({ length: 7 }, (_, i) => task("succeeded", `loose-${i}`))]);
+  const container = document.createElement("div"); document.body.appendChild(container);
+  let root = createRoot(container);
+  const render = () => root.render(<TaskSidebar currentThreadId="project-task" collapsed={false} projects={projects}
+    onToggle={() => {}} onSelect={() => {}} onNewTask={() => {}} />);
+  const button = (label: string) => container.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!;
+  try {
+    await act(async () => render());
+    expect([...container.querySelectorAll(".task-section-toggle")].map((item) => item.textContent)).toEqual(["项目", "任务"]);
+    expect(container.querySelectorAll(".task-list-row")).toHaveLength(6);
+    await act(async () => button("展开任务").click());
+    expect(container.querySelectorAll(".task-list-row")).toHaveLength(8);
+    await act(async () => button("收起项目分组").click());
+    expect(container.querySelector('[data-project-id="p1"]')).toBeNull();
+    expect(container.querySelectorAll(".task-list-row")).toHaveLength(7);
+    await act(async () => button("收起任务分组").click());
+    expect(container.querySelectorAll(".task-list-row")).toHaveLength(0);
+    expect(button("展开任务分组").getAttribute("aria-expanded")).toBe("false");
+    expect(button("新建项目")).not.toBeNull();
+    await act(async () => root.unmount()); root = createRoot(container);
+    await act(async () => render());
+    expect(button("展开项目分组").getAttribute("aria-expanded")).toBe("false");
+    expect(container.querySelectorAll(".task-list-row")).toHaveLength(0);
+    await act(async () => button("展开任务分组").click());
+    expect(container.querySelectorAll(".task-list-row")).toHaveLength(7);
+    await act(async () => button("展开项目分组").click());
+    expect(container.querySelectorAll(".task-list-row")).toHaveLength(8);
+  } finally { await act(async () => root.unmount()); container.remove(); }
+});

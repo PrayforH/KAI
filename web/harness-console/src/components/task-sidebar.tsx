@@ -5,7 +5,7 @@ import { SidebarIcon } from "./sidebar-icon";
 import Link from "next/link";
 import { ProjectCreateDialog } from "./project-create-dialog";
 import { PanelResizeHandle } from "./panel-resize-handle";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { AccountMenu } from "./account-menu";
 import { useAuth } from "./auth-provider";
 import { ProductBrandMark, PRODUCT_NAME } from "./product-brand";
@@ -134,6 +134,19 @@ export function TaskSidebar({
   const runView = useRunViewModel();
   const { user } = useAuth();
   const [expandedTaskGroups, setExpandedTaskGroups] = useSidebarGroups(user.user_id);
+  const sectionId = useId();
+  const projectsCollapsed = expandedTaskGroups.has("section:projects:collapsed");
+  const tasksCollapsed = expandedTaskGroups.has("section:tasks:collapsed");
+  function toggleSection(section: "projects" | "tasks") {
+    setExpandedTaskGroups((current) => {
+      const next = new Set(current);
+      const key = `section:${section}:collapsed`;
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
 
   // Acknowledge only the version displayed on a visible task page. Server
   // watermarks are shared across devices; failed writes retry on list refresh.
@@ -466,10 +479,13 @@ export function TaskSidebar({
           <div className="task-list-scroll">
           <div className="task-list-toolbar task-project-toolbar">
             <div className="task-list-heading">
-              <span className="task-list-heading-copy">
-                <ProjectFolderIcon />
-                项目
-              </span>
+              <button type="button" className="task-section-toggle"
+                aria-label={`${projectsCollapsed ? "展开" : "收起"}项目分组`}
+                aria-expanded={!projectsCollapsed} aria-controls={`${sectionId}-projects`}
+                onClick={() => toggleSection("projects")}>
+                <span>项目</span>
+                <SidebarIcon name="chevronDown" size={12} className="task-group-chevron" />
+              </button>
             </div>
             <button
               type="button"
@@ -481,7 +497,7 @@ export function TaskSidebar({
               <AddToProjectIcon />
             </button>
           </div>
-          <div className="task-list" role="list">
+          {!projectsCollapsed && <div className="task-list" role="list" id={`${sectionId}-projects`}>
             {projectCreateError && <p className="task-project-create-error" role="alert">{projectCreateError}</p>}
             {projectGroups.map(({ project, tasks: projectTasks }) => {
               const collapsed = !expandedTaskGroups.has(`project:${project.projectId}`);
@@ -529,6 +545,7 @@ export function TaskSidebar({
                           {project.name}
                         </span>
                       </strong>
+                      <SidebarIcon name="chevronDown" size={12} className="task-group-chevron" />
                     </button>
                     <button
                         type="button"
@@ -573,13 +590,19 @@ export function TaskSidebar({
                 </section>
               );
             })}
-          </div>
+          </div>}
           <div className="task-list-toolbar task-agent-section-heading">
             <div className="task-list-heading">
-              <span className="task-list-heading-copy">任务</span>
+              <button type="button" className="task-section-toggle"
+                aria-label={`${tasksCollapsed ? "展开" : "收起"}任务分组`}
+                aria-expanded={!tasksCollapsed} aria-controls={`${sectionId}-tasks`}
+                onClick={() => toggleSection("tasks")}>
+                <span>任务</span>
+                <SidebarIcon name="chevronDown" size={12} className="task-group-chevron" />
+              </button>
             </div>
           </div>
-          <div className="task-list" role="list">
+          {!tasksCollapsed && <div className="task-list" role="list" id={`${sectionId}-tasks`}>
             {looseTasks.length === 0 && tasks.length > 0 && (
               <p className="task-project-empty">所有任务都在项目中</p>
             )}
@@ -629,7 +652,7 @@ export function TaskSidebar({
                 <button type="button" onClick={retryTasks}>重新加载</button>
               </div>
             )}
-          </div>
+          </div>}
           </div>
           <div className="task-sidebar-account">
             <AccountMenu />

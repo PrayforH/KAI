@@ -444,7 +444,9 @@ def _execution_profile(
             for reference in references
         )
     ]
-    for preferred in ("isolated-default", "gvisor-production", "e2b-public-egress"):
+    for preferred in (
+        "opensandbox-gvisor", "isolated-default", "gvisor-production", "e2b-public-egress"
+    ):
         if any(item.profile_id == preferred for item in candidates):
             return preferred
     if candidates:
