@@ -372,6 +372,7 @@ function HarnessComposer() {
   const [queuePaused, setQueuePaused] = useState(false);
   const [inputError, setInputError] = useState("");
   const [voiceActive, setVoiceActive] = useState(false);
+  const [followupVoiceActive, setFollowupVoiceActive] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [caret, setCaret] = useState(0);
   const [suggestionIndex, setSuggestionIndex] = useState(0);
@@ -595,7 +596,7 @@ function HarnessComposer() {
   }
   const composerSendLock = useRef(false);
   async function submitComposer(alternate = false) {
-    if (voiceActive) return;
+    if (voiceActive || followupVoiceActive) return;
     if (command(composerText.trim())) return;
     if (videoRoute) { void generateVideo(); return; }
     if (busy || queue.length) {
@@ -683,7 +684,7 @@ function HarnessComposer() {
       aria-busy={runLocked}
     >
       {conversationScope?.composerAccessory}
-      {requestedInput && !conversationScope?.composerAccessory && <ConversationInputCard key={requestedInput.messageId} input={requestedInput.input} disabled={runLocked || busy || threadRunning} onSubmit={answer => {
+      {requestedInput && !conversationScope?.composerAccessory && <ConversationInputCard key={requestedInput.messageId} input={requestedInput.input} modelRoute={overrideRouteId || ""} onVoiceActive={setFollowupVoiceActive} disabled={runLocked || busy || threadRunning || voiceActive} onSubmit={answer => {
         threadRuntime.append({ role: "user", content: [{type: "text", text: answer}] });
       }} />}
       {reuseNotice ? (
@@ -860,7 +861,7 @@ function HarnessComposer() {
             onRefresh={agentSelection.onRefresh}
           />
           <TaskModelControl disabled={Boolean(conversationScope) || runLocked || showStop || videoGenerating} /></>}
-          <VoiceInput key={scope?.threadId || "new"} disabled={busy}
+          <VoiceInput key={scope?.threadId || "new"} disabled={busy || followupVoiceActive}
             modelRoute={overrideRouteId || ""}
             onActive={(active) => { voiceComposer.onActive(active); setVoiceActive(active); }}
             onDraft={voiceComposer.onDraft} onInsert={voiceComposer.onInsert} />
@@ -868,11 +869,11 @@ function HarnessComposer() {
         {showStop && !composerText.trim() && !composerAttachments.length ? (
           <ConversationControl action="stop" aria-label={stopPending ? "正在停止运行" : "停止运行"} disabled={stopPending} onClick={() => void stopRun()} />
         ) : videoRoute ? (
-          <ConversationControl action="send" disabled={voiceActive || videoGenerating || !composerText.trim()}
+          <ConversationControl action="send" disabled={voiceActive || followupVoiceActive || videoGenerating || !composerText.trim()}
             aria-label={videoGenerating ? "视频生成中" : "生成视频"}
             onClick={() => void generateVideo()} />
         ) : (
-          <ConversationControl action="send" aria-label={busy ? followUpBehavior === "steer" && steerAvailable && !composerAttachments.length ? "补充说明" : "加入队列" : queue.length ? "加入队列" : "发送消息"} title={busy ? `Enter ${followUpBehavior === "steer" ? "补充说明" : "加入队列"} · Alt Enter 切换` : "发送消息"} disabled={voiceActive || (!composerText.trim() && !composerAttachments.length)} onClick={() => submitComposer()} />
+          <ConversationControl action="send" aria-label={busy ? followUpBehavior === "steer" && steerAvailable && !composerAttachments.length ? "补充说明" : "加入队列" : queue.length ? "加入队列" : "发送消息"} title={busy ? `Enter ${followUpBehavior === "steer" ? "补充说明" : "加入队列"} · Alt Enter 切换` : "发送消息"} disabled={voiceActive || followupVoiceActive || (!composerText.trim() && !composerAttachments.length)} onClick={() => submitComposer()} />
         )}
         </div>
       </Composer.Root>
