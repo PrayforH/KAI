@@ -1202,8 +1202,11 @@ html[data-color-mode="light"] .nested-menu-panel { background: #fff; border-colo
 
 /* Long sent messages fold; drafts have no mask or centered expand button. */
 body.codex-theme-v1 .aui-user-message-content.sent-user-content[data-collapsed="true"] { max-height: 12em; overflow: hidden; }
-.sent-user-expand { align-self: flex-end; justify-self: end; grid-column: 2; border: 0; padding: 5px 2px; color: var(--codex-muted); background: transparent; font: inherit; font-size: 12px; cursor: pointer; }
-.sent-user-expand:hover { color: var(--codex-ink); }
+.sent-user-expand { align-self: flex-end; justify-self: end; grid-column: 2; display: grid; place-items: center; width: 28px; height: 28px; margin-top: 4px; border: 0; border-radius: 6px; padding: 6px; color: var(--codex-muted); background: transparent; cursor: pointer; }
+.sent-user-expand:is(:hover, :focus-visible) { color: var(--codex-ink); background: var(--codex-surface-hover); }
+.sent-user-expand:focus-visible { outline: 2px solid var(--codex-muted); outline-offset: 2px; }
+.sent-user-expand .codex-response-icon { width: 16px; height: 16px; fill: currentColor; stroke: none; }
+.sent-user-expand[aria-expanded="true"] .codex-response-icon { transform: rotate(180deg); }
 
 /* Codex 26.1007.30912 UserMessage compact variant:
    user-message-f152e09d34c3.css + user-message-dd2539189e70.js. */

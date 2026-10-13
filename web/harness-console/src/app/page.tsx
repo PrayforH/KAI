@@ -23,13 +23,13 @@ import {
   TaskDetailsPopover,
   TaskHeaderActions,
 } from "../components/task-header-actions";
-import { TaskRunStatus } from "../components/task-run-status";
+import { SidebarIcon } from "../components/sidebar-icon";
 import { TaskSidebar } from "../components/task-sidebar";
 import { createProjectTask } from "../lib/project-task";
 import { ApiProject } from "../lib/studio-client";
 import { useSidebarProjects } from "../lib/sidebar-state";
 import { ProductBrandMark, ProductLoading, PRODUCT_NAME } from "../components/product-brand";
-import { SidebarLeftIcon, SidebarPanelIcon } from "../components/panel-icons";
+import { SidebarPanelIcon } from "../components/panel-icons";
 import { WorkbenchRail } from "../components/workbench-rail";
 import type { PreviewTarget } from "../components/rail-file-preview";
 import { useRunActivity, useRunViewModel } from "../lib/activity-store";
@@ -125,7 +125,7 @@ function SidebarExpandToggle({ onToggle }: { onToggle: () => void }) {
       title="展开任务列表"
       onClick={onToggle}
     >
-      <SidebarLeftIcon />
+      <SidebarIcon name="panel" />
     </button>
   );
 }
@@ -787,7 +787,6 @@ function AuthenticatedHome() {
                   startNewTask();
                 }}
               />
-              <TaskRunStatus activity={runActivity} stream={runStream} status={currentTask?.status} />
             </div>
             <HeaderUtilities
               taskRailOpen={taskRailOpen}
