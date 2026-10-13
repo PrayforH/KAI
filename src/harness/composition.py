@@ -201,6 +201,7 @@ from harness.storage.ui_repository import PostgresPresentationRepository
 from harness.storage.workspace_repository import PostgresWorkspaceAgentRepository
 from harness.studio.catalog import default_capability_catalog
 from harness.studio.catalog_service import CapabilityCatalogService
+from harness.studio.intent_router import BuilderIntentRouter
 from harness.studio.mcp_credential_store import (
     McpCredentialCipher,
     McpCredentialService,
@@ -859,6 +860,9 @@ def build_production_container(
         agent_drafts,
         published_route_references=registry.route_references,
         clock=clock,
+        sandbox_network_access={str(k): v for k, v in settings.sandbox_network_access.items()},
+        sandbox_providers=frozenset(profile_provider_name(name)
+                                    for name in _enabled_providers(settings)),
     )
     environment_mcp_credentials = server_secret_credential_provider(
         references_json=settings.mcp_secret_references_json,
@@ -902,6 +906,9 @@ def build_production_container(
         audit=audit,
         agent_ids=agent_ids,
         draft_permissions=team_spaces,
+        intent_router=BuilderIntentRouter.from_settings(settings),
+        default_execution_profile=("opensandbox-gvisor"
+                                   if settings.sandbox_provider == "opensandbox" else None),
         clock=clock,
         id_generator=lambda: ids("draft"),
     )

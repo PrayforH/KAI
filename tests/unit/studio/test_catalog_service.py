@@ -1067,3 +1067,45 @@ async def test_a_stored_runtime_declaration_follows_the_platform() -> None:
     assert runtimes["claude-agent-sdk"].limitations != ("stale limitation",)
     # The other runtimes are added because the stored catalog never had them.
     assert set(runtimes) == {"claude-agent-sdk", "codex-app-server", "deepagents"}
+
+
+@pytest.mark.asyncio
+async def test_deployment_profiles_reflect_reachable_networks_without_overwriting_catalog() -> None:
+    repository = InMemoryCapabilityCatalogRepository()
+    drafts = InMemoryAgentDraftRepository()
+    service = CapabilityCatalogService(repository, drafts,
+        sandbox_providers=frozenset({"opensandbox", "cubesandbox"}),
+        sandbox_network_access={"opensandbox": ("none", "internal", "external"),
+                                "cubesandbox": ("none",)})
+    visible = (await service.get_for_user("tenant-network", "owner")).catalog
+    profiles = {item.profile_id: item for item in visible.execution_profiles}
+    assert {item.sandbox_provider for item in profiles.values()} == {"opensandbox", "cubesandbox"}
+    assert profiles["opensandbox-gvisor"].network_access == (
+        NetworkAccess.NONE, NetworkAccess.INTERNAL, NetworkAccess.EXTERNAL)
+    assert profiles["cubesandbox-private"].network_access == (NetworkAccess.NONE,)
+    assert profiles["cubesandbox-egress-enforced"].network_access == (NetworkAccess.NONE,)
+    stored = (await repository.get("tenant-network")).catalog
+    assert len(stored.execution_profiles) > len(profiles)
+    # A service configuration switch can expose networking without rewriting resources.
+    reconfigured = CapabilityCatalogService(repository, drafts,
+        sandbox_providers=frozenset({"cubesandbox"}),
+        sandbox_network_access={"cubesandbox": ("none", "internal")})
+    restored = (await reconfigured.get_for_user("tenant-network", "owner")).catalog
+    assert all(item.sandbox_provider == "cubesandbox" for item in restored.execution_profiles)
+    assert restored.execution_profiles[0].network_access == (
+        NetworkAccess.NONE, NetworkAccess.INTERNAL)
+
+
+@pytest.mark.asyncio
+async def test_new_drafts_choose_configured_opensandbox_default() -> None:
+    repository = InMemoryCapabilityCatalogRepository()
+    drafts = InMemoryAgentDraftRepository()
+    catalogs = CapabilityCatalogService(repository, drafts,
+        sandbox_providers=frozenset({"opensandbox", "cubesandbox"}),
+        sandbox_network_access={"cubesandbox": ("none",)})
+    service = AgentStudioService(drafts, catalogs=catalogs,
+        default_execution_profile="opensandbox-gvisor")
+    request = CreateAgentDraftRequest(name="general-assistant", domain="general",
+        displayName="通用助手", description="处理一般任务")
+    draft = await service.create(tenant_id="tenant-network", user_id="owner", request=request)
+    assert draft.spec.execution_profile == "opensandbox-gvisor"

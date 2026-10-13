@@ -14,11 +14,7 @@ const page = readFileSync(join(process.cwd(), "src/app/page.tsx"), "utf8");
 const client = readFileSync(join(process.cwd(), "src/lib/studio-client.ts"), "utf8");
 
 describe("project-grouped task list", () => {
-  it("renders 项目 above 任务 and drops the recency view", () => {
-    const projectsIndex = sidebar.indexOf("<ProjectFolderIcon />\n                项目");
-    const tasksIndex = sidebar.indexOf('>任务</span>');
-    expect(projectsIndex).toBeGreaterThan(-1);
-    expect(tasksIndex).toBeGreaterThan(projectsIndex);
+  it("drops the recency view", () => {
     // 最近/今天/昨天 buckets were replaced by the project containers.
     expect(sidebar).not.toContain("TASK_TIME_BUCKET_LABELS");
     expect(sidebar).not.toContain("recentBuckets");

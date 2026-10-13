@@ -367,10 +367,10 @@ def default_capability_catalog() -> CapabilityCatalog:
             ExecutionProfileMetadata.model_validate(
                 {
                     "profileId": "opensandbox-gvisor",
-                    "label": "OpenSandbox gVisor 沙箱",
+                    "label": "OpenSandbox 沙箱",
                     "description": (
-                        "通过内网 OpenSandbox 分配 gVisor 隔离沙箱，执行命令并回收制品；"
-                        "沙箱内核边界由平台侧运行时保证，Harness 只选择镜像与出口策略。"
+                        "通过 OpenSandbox 分配独立沙箱，执行命令并回收制品；"
+                        "网络能力由部署配置声明，隔离边界由服务端运行时保证。"
                     ),
                     "sandboxProvider": "opensandbox",
                     "minimumEnforcement": "delegated",

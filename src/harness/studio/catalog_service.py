@@ -1,6 +1,6 @@
 """Catalog seeding, optimistic updates and Draft impact analysis."""
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -19,6 +19,7 @@ from harness.studio.models import (
     ExecutionProfileMetadata,
     McpCapability,
     ModelRouteCapability,
+    NetworkAccess,
     PolicyCapability,
     ReplaceCapabilityCatalogRequest,
     RuntimeCapability,
@@ -109,6 +110,7 @@ def _refresh_platform_runtime_capabilities(
 def _append_missing[
     CatalogEntry: (
         ModelRouteCapability,
+    NetworkAccess,
         BuiltinToolCapability,
         McpCapability,
         PolicyCapability,
@@ -322,10 +324,14 @@ class CapabilityCatalogService:
         drafts: AgentDraftRepository,
         *,
         published_route_references: Callable[[str, str], Awaitable[tuple[str, ...]]] | None = None,
+        sandbox_providers: frozenset[str] | None = None,
+        sandbox_network_access: Mapping[str, tuple[str, ...]] | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._repository = repository
         self._drafts = drafts
+        self._sandbox_providers = sandbox_providers
+        self._sandbox_network_access = sandbox_network_access or {}
         # Published Agent versions are immutable and sessions pin them, so a
         # route removal must see them; drafts alone are not the whole impact.
         self._published_route_references = published_route_references
@@ -447,7 +453,22 @@ class CapabilityCatalogService:
     ) -> CapabilityCatalogRecord:
         """Return platform controls plus only the current user's personal MCP entries."""
 
-        return self._record_for_user(await self.get(tenant_id), user_id)
+        record = self._record_for_user(await self.get(tenant_id), user_id)
+        profiles = tuple(
+            profile.model_copy(update={"network_access": tuple(
+                access for access in profile.network_access
+                if access is NetworkAccess.NONE
+                or access.value in self._sandbox_network_access.get(
+                    profile.sandbox_provider, tuple(item.value for item in profile.network_access)
+                )
+            )})
+            for profile in record.catalog.execution_profiles
+            if (self._sandbox_providers is None
+                or profile.sandbox_provider in self._sandbox_providers)
+        )
+        return record.model_copy(update={"catalog": record.catalog.model_copy(
+            update={"execution_profiles": profiles}
+        )})
 
     async def _scope_legacy_mcp_capabilities(
         self,
