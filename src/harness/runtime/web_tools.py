@@ -206,10 +206,7 @@ def reject_access_challenge(text: str, requested_url: str, final_url: str) -> No
     requested_path = urlsplit(requested_url).path.rstrip("/").lower()
     final_path = urlsplit(final_url).path.rstrip("/").lower()
     login_paths = {"login", "signin", "sign-in", "log-in"}
-    if (
-        final_path.rsplit("/", 1)[-1] in login_paths
-        and requested_path != final_path
-    ):
+    if final_path.rsplit("/", 1)[-1] in login_paths and requested_path != final_path:
         raise WebAccessError(
             "网页跳转到登录页，未取得所请求页面的正文。请更换公开来源，并说明该来源需要登录。"
         )
@@ -396,8 +393,9 @@ class PublicWebClient:
                 "trust": "untrusted",
                 "retrieved_at": datetime.now(UTC).isoformat(),
                 "results": self._sources(payload.get("results"), limit=body["max_results"]),
-                "images": self._images(payload.get("images")),
+                "images": self.normalize_images(payload.get("images")),
                 "images_status": "available" if include_images else "not_requested",
+                "images_notice": "图片链接由搜索服务提供；未下载或验证图片内容。",
             }
         key = await self._api_key() if self._api_key else ""
         if not key:
@@ -411,7 +409,7 @@ class PublicWebClient:
                     trust_env=False,
                     follow_redirects=False,
                     timeout=20,
-                    **({"proxy": self._proxy} if self._proxy else {}),
+                    proxy=self._proxy or None,
                 ) as client,
             ):
                 async with client.stream(
@@ -510,20 +508,20 @@ class PublicWebClient:
             return None
 
     @classmethod
-    def _images(cls, items: Any, *, source_url: str | None = None) -> list[dict[str, str]]:
+    def normalize_images(cls, items: Any, *, source_url: str | None = None) -> list[dict[str, str]]:
         if not isinstance(items, list):
             return []
         images: list[dict[str, str]] = []
         seen: set[str] = set()
-        for item in items[:40]:
-            value = item.get("url") if isinstance(item, dict) else item
+        for item in cast(list[Any], items)[:40]:
+            value = cast(dict[str, Any], item).get("url") if isinstance(item, dict) else item
             url = cls._result_url(value)
             if not url or url in seen or not url.startswith("https://"):
                 continue
             seen.add(url)
             image = {
                 "url": url,
-                "description": str(item.get("description", ""))[:500]
+                "description": str(cast(dict[str, Any], item).get("description", ""))[:500]
                 if isinstance(item, dict)
                 else "",
             }
@@ -541,9 +539,10 @@ class PublicWebClient:
         if not isinstance(items, list):
             raise WebAccessError("搜索服务返回无效来源列表。")
         results: list[dict[str, Any]] = []
-        for item in items[:limit]:
-            if not isinstance(item, dict):
+        for raw_item in cast(list[Any], items)[:limit]:
+            if not isinstance(raw_item, dict):
                 continue
+            item = cast(dict[str, Any], raw_item)
             url = cls._result_url(item.get("url"))
             if not url:
                 continue
@@ -553,7 +552,7 @@ class PublicWebClient:
                 "title": str(item.get("title", ""))[:300],
                 "content": content[:content_limit],
                 "truncated": len(content) > content_limit,
-                "images": cls._images(item.get("images"), source_url=url),
+                "images": cls.normalize_images(item.get("images"), source_url=url),
             }
             if isinstance(item.get("published_date"), str):
                 result["published_date"] = item["published_date"][:100]
@@ -571,7 +570,7 @@ class PublicWebClient:
                     trust_env=False,
                     follow_redirects=False,
                     timeout=30,
-                    **({"proxy": self._proxy} if self._proxy else {}),
+                    proxy=self._proxy or None,
                 ) as client,
             ):
                 async with client.stream(
@@ -651,7 +650,10 @@ class PublicWebClient:
             items = payload.get("results", [])
             if not isinstance(items, list):
                 raise WebAccessError("站点检索返回无效链接列表。")
-            return {**common, "links": [u for v in items[:limit] if (u := self._result_url(v))]}
+            return {
+                **common,
+                "links": [u for v in cast(list[Any], items)[:limit] if (u := self._result_url(v))],
+            }
         results = self._sources(
             payload.get("results", []), limit=limit, content_limit=_MAX_CHARS // limit
         )
@@ -667,7 +669,7 @@ class PublicWebClient:
 
 def search_images(raw: Any, source_url: str | None = None) -> list[dict[str, str]]:
     """Compatibility helper for existing callers of the image reference normalizer."""
-    return PublicWebClient._images(raw, source_url=source_url)
+    return PublicWebClient.normalize_images(raw, source_url=source_url)
 
 
 def create_web_mcp_server(names: set[str], client: PublicWebClient) -> McpSdkServerConfig:

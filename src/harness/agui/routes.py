@@ -1129,7 +1129,7 @@ async def _history_messages_for_run(
     ):
         prompt = run.input["ui_action_display"]
     if isinstance(prompt, str) and prompt:
-        raw_input_ids = (
+        raw_input_ids: Any = (
             [] if run.input.get("inherited_input_artifact_ids")
             else run.input.get("input_artifact_ids", [])
         )

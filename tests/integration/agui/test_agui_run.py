@@ -1,6 +1,7 @@
 import asyncio
 import json
 import shutil
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -9,10 +10,7 @@ from httpx import ASGITransport, AsyncClient
 
 from harness.api.app import create_memory_app
 from harness.core.errors import ConflictError, NotFoundError
-
-from datetime import UTC, datetime
 from harness.core.events import RunEvent
-
 
 FIXTURE_MANIFEST = Path("tests/fixtures/agents/echo-agent/agent.yaml")
 HEADERS = {"X-Tenant-ID": "tenant-a", "X-User-ID": "user-1"}

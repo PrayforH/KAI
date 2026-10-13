@@ -18,11 +18,11 @@ from ag_ui.core import (
     ToolCallResultEvent,
     ToolCallStartEvent,
 )
-from harness.presentation.schema import Presentation
 
 from harness.agui.activity import activity_projection
 from harness.agui.failure import failure_message
 from harness.core.events import RunEvent
+from harness.presentation.schema import Presentation
 from harness.runtime.message_mapper import safe_model_text
 
 # The domain tool the console renders an interactive answer block from. It carries

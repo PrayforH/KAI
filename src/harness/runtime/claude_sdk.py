@@ -36,7 +36,6 @@ from claude_agent_sdk import (
     Transport,
     UserMessage,
 )
-from harness.runtime.warm_sdk import WarmEntry, WarmSdkPool, WarmSdkRequest
 
 from harness.application.memory import UserMemoryService
 from harness.core.errors import ConflictError
@@ -104,6 +103,7 @@ from harness.runtime.tools import (
     ToolResolver,
     enforce_published_tool_directory,
 )
+from harness.runtime.warm_sdk import WarmEntry, WarmSdkPool, WarmSdkRequest
 from harness.runtime.web_tools import WEB_BUILTINS, WEB_CONTRACT, WEB_SERVER, WEB_TOOL_NAMES
 
 # Compaction can mirror an entire image-heavy transcript in one JSON frame.
