@@ -1,5 +1,6 @@
 "use client";
 import { sendComposerWithRecovery } from "../lib/composer-send";
+import { TerminalResponseNotice } from "./terminal-response-notice";
 import { ConversationInputCard } from "./conversation-input-card";
 import { latestConversationInput } from "../lib/conversation-input";
 import { useConversationScope } from "../lib/conversation-scope";
@@ -1376,6 +1377,11 @@ export function HarnessAssistantMessage() {
   // retrieval in one run shows one chip per slice.
   const durablePart = content.find((part) => part.type === "tool-call" && part.toolName === "harness_run_activity");
   const durable = durablePart?.type === "tool-call" ? runActivitySchema.safeParse(durablePart.args.activity) : null;
+  const currentActivity = useRunActivity();
+  const ownedActivity = currentActivity && turnOwnsRun(messageId, currentActivity.run_id, isLast, runView?.runId)
+    ? currentActivity : undefined;
+  const terminalActivity = ownedActivity && (!durable?.success || durable.data.run_id === ownedActivity.run_id)
+    ? ownedActivity : durable?.success ? durable.data : undefined;
   const capturedCitations = useRef<{ messageId: string; citations: RunCitation[] }>({ messageId, citations: [] });
   const turnCitations = citationsForTurn(messageId, isLast, runView, durable?.success ? durable.data : undefined);
   if (turnCitations) capturedCitations.current = { messageId, citations: turnCitations };
@@ -1428,6 +1434,8 @@ export function HarnessAssistantMessage() {
         }}
       />
       <AssistantResponse text={copyText} streaming={directStream ? live.status === "streaming" && !live.textComplete : messageStatus?.type === "running"} />
+      {!hasVideoGeneration && <TerminalResponseNotice activity={terminalActivity}
+        hasResponse={Boolean(copyText.trim()) || turnPresentations.length > 0 || turnArtifacts.length > 0} />}
       {turnPresentations.length > 0 ? (
         <div className="intelligent-ui-blocks">
           {turnPresentations.map((presentation) => (

@@ -1212,3 +1212,9 @@ body.codex-theme-v1 .aui-user-message-content.sent-user-content[data-collapsed="
 .steering-user-message-status { font-size: 12px; line-height: 16px; color: var(--codex-muted, #8f8f8f); padding-inline: 3px; }
 html[data-color-mode="light"] .steering-user-message-bubble { background: #f3f3f3; color: var(--codex-ink, #202020); }
 .execution-log-segment { display: flex; flex-direction: column; gap: 8px; }
+
+/* Message growth must enlarge the scroll range, never shrink a grid message
+   and let its reasoning overflow behind the sticky composer. */
+body.codex-theme-v1 .harness-thread-frame .aui-thread-viewport > * {
+  flex-shrink: 0;
+}

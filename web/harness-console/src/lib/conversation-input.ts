@@ -27,7 +27,7 @@ function inputBlock(text: string): InputBlock | null {
   const blocks: InputBlock[] = [];
   const codeBlocks = [...text.matchAll(/```([^\n]*)\n([\s\S]*?)\n```/g)];
   for (const match of codeBlocks) {
-    if (!["harness-input", "json", ""].includes(match[1].trim().toLowerCase())) continue;
+    if (!["harness-input", "harness", "json", ""].includes(match[1].trim().toLowerCase())) continue;
     const input = validateInput(match[2]);
     if (input) blocks.push({start: match.index!, end: match.index! + match[0].length, input});
   }
@@ -65,7 +65,7 @@ export function conversationInputDisplay(text: string, streaming = false): strin
   const block = inputBlock(text);
   if (block) return text.slice(0, block.start) + [block.input.title, ...block.input.questions.map(q => `${q.label}${q.options.length ? `（${q.options.join(" / ")}）` : ""}`)].join("\n\n") + text.slice(block.end);
   if (streaming) {
-    const start = /(?:^|\n)```harness-input(?:\s|$)/.exec(text)
+    const start = /(?:^|\n)```harness(?:-input)?(?:\s|$)/.exec(text)
       ?? /(?:^|\n)[ \t]*\{\s*"version"\s*:\s*1\s*,\s*"title"\s*:\s*"[^"\n]*"\s*,\s*"questions"\s*:\s*\[/.exec(text);
     if (start) return text.slice(0, start.index);
   }

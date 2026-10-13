@@ -364,3 +364,191 @@ async def test_minimax_reports_missing_image_support_without_losing_text():
     assert len(result["results"]) == 1
     assert result["images_status"] == "unsupported"
     assert result["images"] == []
+
+
+@pytest.mark.asyncio
+async def test_tavily_news_keeps_images_and_dates_without_inventing_article_sources():
+    import json
+
+    seen = []
+    payload = {
+        "results": [
+            {
+                "url": "https://news.example.com/article",
+                "title": "Person in news",
+                "published_date": "2026-10-13",
+                "content": "News",
+                "images": [{"url": "https://cdn.example.com/article.jpg", "description": "Event"}],
+            }
+        ],
+        "images": [
+            "https://cdn.example.com/general.jpg",
+            "http://10.0.0.1/private.jpg",
+            {"url": "https://cdn.example.com/general.jpg"},
+            {"url": "https://cdn.example.com/person.jpg", "description": "Person"},
+        ],
+    }
+
+    def handler(request):
+        seen.append(json.loads(request.content))
+        return httpx.Response(200, json=payload)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    with patch("harness.runtime.web_tools.httpx.AsyncClient", return_value=client):
+        result = await PublicWebClient(AsyncMock(return_value="test-key"), "tavily").search(
+            "public person",
+            topic="news",
+            time_range="week",
+            search_depth="advanced",
+        )
+    assert seen[0]["include_images"] and seen[0]["include_image_descriptions"]
+    assert seen[0]["topic"] == "news" and seen[0]["time_range"] == "week"
+    assert len(result["images"]) == 2
+    assert "source_url" not in result["images"][0]
+    source = result["results"][0]
+    assert source["published_date"] == "2026-10-13"
+    assert source["images"][0]["source_url"] == source["url"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["extract", "crawl", "map"])
+async def test_tavily_retrieval_preserves_article_images_and_bounds_crawl(operation):
+    import json
+
+    seen = []
+
+    def handler(request):
+        seen.append((request.url.path, json.loads(request.content)))
+        return httpx.Response(
+            200,
+            json={
+                "results": ["https://example.com/child"]
+                if operation == "map"
+                else [
+                    {
+                        "url": "https://example.com/article",
+                        "raw_content": "Article body",
+                        "images": ["https://cdn.example.com/news.jpg"],
+                    }
+                ],
+                "failed_results": [
+                    {"url": "https://example.com/missing", "error": "private diagnostic"}
+                ],
+            },
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    with (
+        patch("harness.runtime.web_tools.httpx.AsyncClient", return_value=client),
+        patch("harness.runtime.web_tools.resolve_public", AsyncMock(return_value=["8.8.8.8"])),
+    ):
+        result = await PublicWebClient(AsyncMock(return_value="test-key"), "tavily").fetch(
+            "https://example.com/article",
+            operation=operation,
+            query="public facts",
+            limit=99,
+        )
+    path, body = seen[0]
+    assert path == f"/{operation}"
+    if operation != "extract":
+        assert body["limit"] == 5 and body["max_depth"] == 1
+        assert body["allow_external"] is False
+    if operation == "map":
+        assert result["links"] == ["https://example.com/child"]
+    else:
+        assert result["images"][0]["source_url"] == "https://example.com/article"
+        assert result["results"][0]["content"] == "Article body"
+        assert result["partial"] is True
+    assert "private diagnostic" not in str(result)
+
+
+@pytest.mark.asyncio
+async def test_tavily_extraction_private_dns_blocked_before_provider_call():
+    client = PublicWebClient(AsyncMock(return_value="test-key"), "tavily")
+    with patch(
+        "harness.runtime.web_tools.resolve_public", AsyncMock(side_effect=WebAccessError("非公网"))
+    ):
+        with pytest.raises(WebAccessError, match="非公网"):
+            await client.fetch("https://example.com", operation="extract")
+    client._api_key.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_tavily_partial_extraction_with_no_success_is_error():
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                json={"results": [], "failed_results": [{"error": "private diagnostic"}]},
+            )
+        )
+    )
+    with (
+        patch("harness.runtime.web_tools.httpx.AsyncClient", return_value=client),
+        patch("harness.runtime.web_tools.resolve_public", AsyncMock(return_value=["8.8.8.8"])),
+    ):
+        with pytest.raises(WebAccessError, match="未能提取"):
+            await PublicWebClient(AsyncMock(return_value="key"), "tavily").fetch(
+                "https://example.com",
+                operation="extract",
+            )
+
+
+def test_observed_qcc_challenge_and_login_redirect_are_not_page_content():
+    from harness.runtime.web_tools import reject_access_challenge
+
+    with pytest.raises(WebAccessError, match="反爬验证"):
+        reject_access_challenge(
+            '{"l1":"var arg1=\'5de0458b12682f6eaa997dc0e6b37c445d01c0abc67661696f\';"}'
+            'encoded-challenge',
+            "https://www.qcc.com/firm/company.html",
+            "https://www.qcc.com/firm/company.html",
+        )
+    with pytest.raises(WebAccessError, match="登录页"):
+        reject_access_challenge(
+            "登录以继续",
+            "https://www.tianyancha.com/company/123",
+            "https://www.tianyancha.com/login?from=/company/123",
+        )
+    reject_access_challenge(
+        "本文解释 var arg1 和反爬验证的原理",
+        "https://example.com/article",
+        "https://example.com/article",
+    )
+    reject_access_challenge("登录说明", "https://example.com/login", "https://example.com/login")
+
+
+@pytest.mark.asyncio
+async def test_fetch_rejects_observed_hidden_textarea_qcc_challenge():
+    content = (
+        b'<textarea id="renderData" style="display:none">'
+        b'{"l1":"var arg1=\'5de0458b12682f6eaa997dc0e6b37c445d01c0abc67661696f\';"}'
+        b'</textarea><!doctype html><html><head>'
+        b'<meta name="aliyun_waf_aa" content="challenge"><script>challenge()</script>'
+        b'</head><body>encoded-challenge</body></html>'
+    )
+    wire = (
+        f"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n"
+        f"Content-Length: {len(content)}\r\n\r\n"
+    ).encode() + content
+
+    class Stream:
+        def __init__(self):
+            self.data = wire
+
+        async def read(self, max_bytes, timeout=None):
+            data, self.data = self.data[:max_bytes], self.data[max_bytes:]
+            return data
+
+        async def write(self, buffer, timeout=None):
+            pass
+
+        async def aclose(self):
+            pass
+
+        def get_extra_info(self, info):
+            return None
+
+    with patch.object(PublicNetworkBackend, "connect_tcp", AsyncMock(return_value=Stream())):
+        with pytest.raises(WebAccessError, match="反爬验证"):
+            await PublicWebClient().fetch("http://example.com/firm/company.html")

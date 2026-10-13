@@ -20,6 +20,7 @@ import { useAnswerCitations } from "./knowledge/answer-citation-context";
 import { CitationLink } from "./knowledge/citation-link";
 import { WikiEntityLink } from "./knowledge/wiki-entity-link";
 import { SourceLink } from "./source-link";
+import { WebSourceImage } from "./web-source-image";
 
 function CodeHeader({ language, code }: CodeHeaderProps) {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
@@ -254,6 +255,7 @@ function MarkdownTextImpl() {
         components={{
           CodeHeader,
           a: WikiLink,
+          img: WebSourceImage,
           table: CollapsibleTable,
           ul: CollapsibleUnorderedList,
           ol: CollapsibleOrderedList,
