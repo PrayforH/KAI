@@ -545,7 +545,6 @@ export function TaskSidebar({
                           {project.name}
                         </span>
                       </strong>
-                      <SidebarIcon name="chevronDown" size={12} className="task-group-chevron" />
                     </button>
                     <button
                         type="button"
