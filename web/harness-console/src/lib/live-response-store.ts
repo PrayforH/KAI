@@ -157,7 +157,7 @@ export const liveResponseStore = {
     if (snapshot === emptySnapshot) return;
     publish(emptySnapshot);
   },
-  startRun(runId: string, threadId?: string) {
+  startRun(runId: string | undefined, threadId?: string) {
     if (!isActiveRuntimeThread(threadId)) return;
     cancelScheduledFrame();
     pendingMessageId = undefined;

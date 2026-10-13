@@ -276,6 +276,7 @@ export class HarnessHttpAgent extends HttpAgent {
     const runtimeThreadId = activeInput?.threadId ?? this.threadId;
     // Release the previous response before the network delivers RUN_STARTED.
     if (activeInput) liveResponseStore.startRun(activeInput.runId, runtimeThreadId);
+    else liveResponseStore.startRun(undefined, runtimeThreadId);
     const wrapped: AgentSubscriber = {
       ...subscriber,
       onRunStartedEvent: async (params) => {
