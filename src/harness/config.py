@@ -134,6 +134,11 @@ class Settings(BaseSettings):
     new_api_compatibility: Literal["full", "degraded", "unsupported"] = "full"
     new_api_capabilities: str = "streaming,tool_use"
 
+    ui_intent_base_url: str = ""
+    ui_intent_api_key: SecretStr = SecretStr("")
+    ui_intent_model: str = ""
+    ui_intent_timeout_seconds: float = Field(default=3, ge=1, le=15)
+
     # Purpose-specific OpenAI text endpoint; does not change any Agent model binding.
     studio_builder_intent_base_url: str = ""
     studio_builder_intent_api_key: SecretStr = SecretStr("")

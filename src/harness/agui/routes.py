@@ -1057,7 +1057,9 @@ async def _run_projection(
         for item in (
             await container.presentations.materialize(run, events)
             if run.status.is_terminal
-            else presentations_for_events(events)
+            else presentations_for_events(
+                events, include_shapes=not container.presentations.automatic_selection_enabled
+            )
         )
     ]
     steer_events = [event for event in events if event.type == "run.steer.accepted"]

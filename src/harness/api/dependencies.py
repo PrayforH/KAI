@@ -112,6 +112,7 @@ from harness.platform_mcp.workload import (
 )
 from harness.policy.profiles import PolicyProfileRegistry, default_policy_profiles
 from harness.policy.runtime import ResolvedPolicy
+from harness.presentation.intent import UIIntentSelector
 from harness.presentation.models import ActionRequest, Publication
 from harness.presentation.repositories import InMemoryPresentationRepository
 from harness.presentation.service import PresentationService
@@ -1109,6 +1110,8 @@ def build_memory_container(
         events=event_service,
         queue=queue,
         authorize=authorize_ui_action,
+        intent_selector=UIIntentSelector.from_settings(resolved_settings),
+        memory=memory_bank,
     )
     container = ApiContainer(
         presentations=presentations,

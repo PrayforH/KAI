@@ -87,6 +87,7 @@ from harness.platform_mcp.workload import (
 )
 from harness.policy.profiles import default_policy_profiles
 from harness.policy.runtime import ResolvedPolicy
+from harness.presentation.intent import UIIntentSelector
 from harness.presentation.models import ActionRequest, Publication
 from harness.presentation.service import PresentationService
 from harness.projects.pg_repositories import PostgresProjectRepository
@@ -1717,6 +1718,8 @@ def build_production_container(
         events=events,
         queue=queue,
         authorize=authorize_ui_action,
+        intent_selector=UIIntentSelector.from_settings(settings),
+        memory=memory_bank,
     )
     container = ApiContainer(
         presentations=presentations,
