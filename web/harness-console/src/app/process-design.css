@@ -79,3 +79,16 @@ html body.codex-theme-v1 .execution-disclosure:is(:hover, :focus-visible) .execu
 @media (prefers-reduced-motion: reduce) {
   html body.codex-theme-v1 .execution-disclosure .execution-chevron { transition: none; }
 }
+
+/* Individual process rows follow the same quiet disclosure as the heading. */
+html body.codex-theme-v1 :is(.execution-reasoning-chevron, .execution-action-chevron) { opacity: 0; transition: opacity 120ms ease, transform 160ms ease; }
+html body.codex-theme-v1 .execution-reasoning-summary:is(:hover, :focus-visible) .execution-reasoning-chevron,
+html body.codex-theme-v1 .execution-action-summary:not([aria-disabled="true"]):is(:hover, :focus-visible) .execution-action-chevron { opacity: .8; }
+html body.codex-theme-v1 .execution-action-summary[aria-disabled="true"] .execution-action-chevron { display: none; }
+@media (hover: none) {
+  html body.codex-theme-v1 .execution-reasoning-chevron,
+  html body.codex-theme-v1 .execution-action-summary:not([aria-disabled="true"]) .execution-action-chevron { opacity: .8; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html body.codex-theme-v1 :is(.execution-reasoning-chevron, .execution-action-chevron) { transition: none; }
+}

@@ -1345,6 +1345,27 @@ export function turnOwnsRun(
   );
 }
 
+type CapturedTurnResponse = { messageId: string; text: string };
+
+/** Keep the cleaned live projection when a turn stops being the latest one.
+ * The native stream may still contain pre-tool prose until history commits. */
+export function responseTextForTurn(messageId: string, nativeText: string, directStream: boolean,
+  live: Pick<LiveResponseSnapshot, "text" | "visible" | "status">,
+  captured: { current: CapturedTurnResponse | undefined }) {
+  if (captured.current?.messageId !== messageId) captured.current = undefined;
+  if (directStream) {
+    const text = normalizeMessageText(live.visible ? live.text : "");
+    captured.current = { messageId, text };
+    return text;
+  }
+  if (captured.current) {
+    if (live.status === "idle") captured.current = undefined;
+    else if (nativeText === captured.current.text) captured.current = undefined;
+    else return captured.current.text;
+  }
+  return nativeText;
+}
+
 export function HarnessAssistantMessage() {
   const conversationScope = useConversationScope();
   const live = useLiveResponse();
@@ -1363,17 +1384,13 @@ export function HarnessAssistantMessage() {
   // this only on visible text lets assistant-ui paint the same preface once.
   const ownsLive = ownsLiveResponse(isLast, messageId, live.messageId);
   const directStream = shouldSuppressNativeAssistantText(ownsLive, live);
-  const copyText = directStream
-    ? normalizeMessageText(live.visible ? live.text : "")
-    : normalizeMessageText(
-        content
-          .flatMap((part, index) => (
-            part.type === "text" && !isIntermediateAssistantTextPart(content, index)
-              ? [part.text]
-              : []
-          ))
-          .join("\n"),
-      );
+  const capturedResponse = useRef<CapturedTurnResponse | undefined>(undefined);
+  const nativeText = normalizeMessageText(
+    content.flatMap((part, index) => (
+      part.type === "text" && !isIntermediateAssistantTextPart(content, index) ? [part.text] : []
+    )).join("\n"),
+  );
+  const copyText = responseTextForTurn(messageId, nativeText, directStream, live, capturedResponse);
   const feedbackRun = feedbackRunId(messageId, isLast, runView?.runId);
   // Requirement: citations must be reachable from the reply itself, not only
   // from the collapsed execution summary. Deduplicate by chunk so repeated
@@ -1436,7 +1453,7 @@ export function HarnessAssistantMessage() {
           },
         }}
       />
-      <AssistantResponse text={copyText} streaming={directStream ? live.status === "streaming" && !live.textComplete : messageStatus?.type === "running"} />
+      <AssistantResponse key={messageId} text={copyText} streaming={directStream ? live.status === "streaming" && !live.textComplete : messageStatus?.type === "running"} />
       {!hasVideoGeneration && <TerminalResponseNotice activity={terminalActivity}
         hasResponse={Boolean(copyText.trim()) || turnPresentations.length > 0 || turnArtifacts.length > 0} />}
       {turnPresentations.length > 0 ? (

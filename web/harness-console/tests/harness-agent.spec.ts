@@ -691,3 +691,21 @@ it("retries an early stop against the same client binding", async () => {
   expect(request.mock.calls[0][0]).toBe("http://harness/v1/agui/threads/early-thread/runs/client-run/cancel");
   expect(request.mock.calls[1][0]).toBe(request.mock.calls[0][0]);
 });
+
+it("clears the previous response before a default-id run reaches the network", async () => {
+  liveResponseStore.clear();
+  liveResponseStore.startRun("previous");
+  liveResponseStore.startMessage("assistant-previous");
+  liveResponseStore.append("assistant-previous", "之前的几行答案");
+  liveResponseStore.completeRun();
+  expect(liveResponseStore.getSnapshot().text).toContain("之前的几行");
+  let observed: ReturnType<typeof liveResponseStore.getSnapshot> | undefined;
+  const agent = new HarnessHttpAgent({url: "http://harness/v1/agui", threadId: "thread-default", fetch: async () => {
+    observed = liveResponseStore.getSnapshot();
+    return new Response('data: {"type":"RUN_STARTED","runId":"next","threadId":"thread-default"}\n\ndata: {"type":"RUN_FINISHED","runId":"next","threadId":"thread-default"}\n\n', {headers: {"Content-Type": "text/event-stream"}});
+  }});
+  await agent.runAgent();
+  expect(observed).toMatchObject({text: "", visible: false, status: "streaming"});
+  expect(observed?.messageId).toBeUndefined();
+  liveResponseStore.clear();
+});
