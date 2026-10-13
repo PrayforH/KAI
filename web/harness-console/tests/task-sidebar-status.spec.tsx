@@ -169,7 +169,7 @@ it("preserves a deliberately collapsed current project across remounts", async (
 
 
 it("collapses project and task sections independently and persists them across remounts", async () => {
-  const projects = [{ projectId: "p1", name: "示例项目", description: "", createdAt: "2026-09-07T00:00:00Z", updatedAt: "2026-09-07T00:00:00Z" }];
+  const projects = [{ projectId: "p1", tenantId: "test", userId: "test", name: "示例项目", description: "", createdAt: "2026-09-07T00:00:00Z", updatedAt: "2026-09-07T00:00:00Z" }];
   loadTasks.mockResolvedValue([{ ...task("succeeded", "project-task"), project_id: "p1" },
     ...Array.from({ length: 7 }, (_, i) => task("succeeded", `loose-${i}`))]);
   const container = document.createElement("div"); document.body.appendChild(container);
