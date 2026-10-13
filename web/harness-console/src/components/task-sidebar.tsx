@@ -1,6 +1,7 @@
 "use client";
 
 import { isFailedRunStatus } from "../lib/run-status";
+import { SidebarIcon } from "./sidebar-icon";
 import Link from "next/link";
 import { ProjectCreateDialog } from "./project-create-dialog";
 import { PanelResizeHandle } from "./panel-resize-handle";
@@ -44,50 +45,11 @@ const statusLabels: Record<string, string> = {
   timed_out: "已超时",
 };
 
-function NewTaskIcon() {
-  return (
-    <svg className="task-new-icon" viewBox="0 0 20 20" aria-hidden="true">
-      <rect x="3.5" y="5.5" width="11" height="11" rx="2" />
-      <path d="M8 13.2 8.5 11l6.8-6.8a1.4 1.4 0 0 1 2 2L10.5 13Z" />
-    </svg>
-  );
-}
-
-function AddToProjectIcon() {
-  return (
-    <svg viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M8 3.5v9M3.5 8h9" />
-    </svg>
-  );
-}
-
-function SidebarCollapseIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <rect x="2.75" y="4.25" width="14.5" height="11.5" rx="2.5" />
-      <path d="M6.75 4.25v11.5" />
-    </svg>
-  );
-}
-
-function ArchiveIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path d="M3.5 6.5h13v9a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5Z" />
-      <path d="M2.5 3.5h15v3h-15Z" />
-      <path d="M7.5 10h5" />
-    </svg>
-  );
-}
-
-function ProjectFolderIcon() {
-  return (
-    <svg className="task-project-folder" viewBox="0 0 20 20" aria-hidden="true">
-      <path d="M2.75 5.75a2 2 0 0 1 2-2h3.1l1.7 1.9h5.7a2 2 0 0 1 2 2v6.5a2 2 0 0 1-2 2H4.75a2 2 0 0 1-2-2Z" />
-      <path d="M2.75 8h14.5" />
-    </svg>
-  );
-}
+function NewTaskIcon() { return <SidebarIcon name="compose" className="task-new-icon" />; }
+function AddToProjectIcon() { return <SidebarIcon name="plus" />; }
+function SidebarCollapseIcon() { return <SidebarIcon name="panel" />; }
+function ArchiveIcon() { return <SidebarIcon name="archive" />; }
+function ProjectFolderIcon() { return <SidebarIcon name="folder" className="task-project-folder" />; }
 
 function ScrollingTaskTitle({ title }: { title: string }) {
   const viewportRef = useRef<HTMLSpanElement>(null);

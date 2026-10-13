@@ -135,8 +135,7 @@ describe("full-page agent workbench", () => {
   it("uses a compact project icon language in the task tree", () => {
     expect(taskSidebar).toContain("function ProjectFolderIcon()");
     expect(taskSidebar).toContain("<ProjectFolderIcon />");
-    // Keep the Codex-style top seam in both expanded and collapsed states.
-    expect(taskSidebar).toContain('d="M2.75 8h14.5"');
+    expect(taskSidebar).toContain('<SidebarIcon name="folder" className="task-project-folder" />');
     expect(webCodexStyles).toMatch(
       /\.task-project-heading svg,[\s\S]*?stroke-width:\s*1\.6;/s,
     );

@@ -48,8 +48,8 @@ describe("account settings", () => {
     expect(menu).toContain('href="/api/auth/logout"');
     expect(menu).toContain("退出登录");
     expect(menu).not.toContain('<ProductIcon name="book" />');
-    expect(menu).toContain('<ProductIcon name="settings" />');
-    expect(menu).toContain('<ProductIcon name="logout" />');
+    expect(menu).toContain('<SidebarIcon name="settings" />');
+    expect(menu).toContain('<SidebarIcon name="logout" />');
   });
 
   it("aligns the theme row with account actions", () => {
