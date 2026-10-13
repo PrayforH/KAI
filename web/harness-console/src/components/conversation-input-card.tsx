@@ -45,12 +45,13 @@ export function ConversationInputCard({ input, disabled, onSubmit }: {
     card.current?.focus();
   }
 
-  async function submit() {
-    if (locked || !answer || pending.current) return;
+  async function submit(skip = false) {
+    const response = skip ? formatConversationAnswers(input, answers, true) : answer;
+    if (locked || !response || pending.current) return;
     pending.current = true;
     setSending(true);
     setError("");
-    try { await onSubmit(answer); setSubmitted(true); }
+    try { await onSubmit(response); setSubmitted(true); }
     catch (error) { setError(error instanceof Error ? error.message : "发送失败，请重试"); }
     finally { pending.current = false; setSending(false); }
   }
@@ -117,9 +118,10 @@ export function ConversationInputCard({ input, disabled, onSubmit }: {
       {error && <p role="alert" className={styles.error}>{error}</p>}
       {!submitted && <footer className={styles.footer}>
         <span className={styles.hint}>{question.type === "multi" ? "可选择多项" : "选择一项或填写回答"}</span>
+        <div className={styles.actions}><button className={styles.skip} type="button" disabled={locked} onClick={() => void submit(true)}>跳过</button>
         <button className={styles.submit} type="button" disabled={locked || (lastQuestion ? !answer : !hasCurrentAnswer)} onClick={advance}>
           {sending ? "发送中…" : lastQuestion ? "提交回答" : "下一步"}<span aria-hidden="true">⏎</span>
-        </button>
+        </button></div>
       </footer>}
     </div>}
   </section>;

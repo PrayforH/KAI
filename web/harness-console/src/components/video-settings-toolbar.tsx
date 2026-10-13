@@ -17,8 +17,8 @@ function Icon({ kind }: { kind: "clock" | "frame" | "chevron" }) {
   return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">{paths[kind]}</svg>;
 }
 
-export function VideoSettingsToolbar({ routeId, official, referenceCount, disabled, settings, onChange, renderControls }: {
-  routeId?: string; official: boolean; referenceCount: number; disabled: boolean;
+export function VideoSettingsToolbar({ routeId, official, h3 = false, model, referenceCount, disabled, settings, onChange, renderControls }: {
+  routeId?: string; official: boolean; h3?: boolean; model?: string; referenceCount: number; disabled: boolean;
   settings: VideoGenerationSettings; onChange: (settings: VideoGenerationSettings) => void;
   renderControls: (controls: { format: ReactNode; duration: ReactNode }) => ReactNode;
 }) {
@@ -28,6 +28,7 @@ export function VideoSettingsToolbar({ routeId, official, referenceCount, disabl
   const popover = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement | null>(null);
   const id = useId();
+  const resolutions = h3 ? model === "MiniMax-H3-Max" ? ["480P", "768P"] as const : ["768P", "2K"] as const : ["768P", "1080P"] as const;
   const resolution = settings.resolution ?? "768P";
   const seconds = official ? (resolution === "1080P" ? 6 : settings.seconds === 10 ? 10 : 6) : settings.seconds;
   const followsReference = referenceCount > 0;
@@ -36,7 +37,7 @@ export function VideoSettingsToolbar({ routeId, official, referenceCount, disabl
   const minSeconds = official ? 6 : 4;
   const close = (restoreFocus = false) => { setPanel(null); if (restoreFocus) trigger.current?.focus(); };
 
-  useEffect(() => { setPanel(null); }, [routeId, official, disabled]);
+  useEffect(() => { setPanel(null); }, [routeId, official, h3, model, disabled]);
   useLayoutEffect(() => {
     if (!panel || !trigger.current || !popover.current) return;
     const anchor = trigger.current.getBoundingClientRect();
@@ -73,7 +74,7 @@ export function VideoSettingsToolbar({ routeId, official, referenceCount, disabl
 
   return <div className={styles.anchor} ref={toolbar}>
     {renderControls({
-      format: button("format", "画幅与分辨率", "frame", <><span>{ratio}</span>{official && <><span className={styles.dot}>·</span><span>{resolution}</span></>}</>),
+      format: button("format", "画幅与分辨率", "frame", <><span>{ratio}</span>{(official || h3) && <><span className={styles.dot}>·</span><span>{resolution}</span></>}</>),
       duration: button("duration", "视频时长", "clock", `${seconds} 秒`),
     })}
     {panel && !disabled && createPortal(<div ref={popover} id={id} role="dialog" tabIndex={-1}
@@ -91,13 +92,13 @@ export function VideoSettingsToolbar({ routeId, official, referenceCount, disabl
             </button>)}
           </div>}
         </fieldset>
-        {official && <fieldset className={styles.fieldset}><legend>分辨率</legend><div className={styles.segments}>
-          {(["768P", "1080P"] as const).map(value => <button key={value} type="button" aria-pressed={resolution === value}
-            onClick={() => onChange({ ...settings, resolution: value, seconds: value === "1080P" ? 6 : seconds })}>{value}<small>{value === "768P" ? "标准" : "高清"}</small></button>)}
-        </div><p className={styles.note}>1080P 支持 6 秒视频。</p></fieldset>}
+        {(official || h3) && <fieldset className={styles.fieldset}><legend>分辨率</legend><div className={styles.segments}>
+          {resolutions.map(value => <button key={value} type="button" aria-pressed={resolution === value}
+            onClick={() => onChange({ ...settings, resolution: value, seconds: official && value === "1080P" ? 6 : seconds })}>{value}<small>{value === "480P" ? "流畅" : value === "768P" ? "标准" : "高清"}</small></button>)}
+        </div>{official && <p className={styles.note}>1080P 支持 6 秒视频。</p>}</fieldset>}
       </>}
       {panel === "duration" && <>
-        {official ? <div className={styles.segments}>{[6, 10].map(value => <button type="button" key={value} disabled={value > maxSeconds}
+        {official || h3 ? <div className={styles.segments}>{(h3 ? [5, 10, 15] : [6, 10]).map(value => <button type="button" key={value} disabled={value > maxSeconds}
           aria-pressed={seconds === value} onClick={() => onChange({ ...settings, seconds: value })}>{value}<small>秒</small></button>)}</div> :
           <div className={styles.duration}><div className={styles.slider}><input aria-label="视频时长滑块" type="range" min={minSeconds} max={maxSeconds} step={1}
             value={seconds} style={{ "--range-fill": `${((seconds - minSeconds) / (maxSeconds - minSeconds)) * 100}%` } as CSSProperties} onChange={event => onChange({ ...settings, seconds: Number(event.target.value) })} />
@@ -105,7 +106,7 @@ export function VideoSettingsToolbar({ routeId, official, referenceCount, disabl
             <label className={styles.number}><input aria-label="视频时长秒数" type="number" min={minSeconds} max={maxSeconds} step={1} value={seconds}
               onChange={event => { if (event.target.value) onChange({ ...settings, seconds: Math.max(minSeconds, Math.min(maxSeconds, Math.round(Number(event.target.value)))) }); }} /><span>秒</span></label>
           </div>}
-        <p className={styles.note}>{official ? resolution === "1080P" ? "当前为高清画质，切换到 768P 可选择 10 秒。" : "时长越长，生成所需时间和消耗通常越多。" : "支持 4–15 秒，生成后可随时查看进度。"}</p>
+        <p className={styles.note}>{official ? resolution === "1080P" ? "当前为高清画质，切换到 768P 可选择 10 秒。" : "时长越长，生成所需时间和消耗通常越多。" : h3 ? "可选择 5、10 或 15 秒，生成后可随时查看进度。" : "支持 4–15 秒，生成后可随时查看进度。"}</p>
       </>}
     </div>, document.body)}
   </div>;

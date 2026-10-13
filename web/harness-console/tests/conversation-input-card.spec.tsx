@@ -88,3 +88,23 @@ it("preserves answers while collapsed and blocks shortcuts when disabled", () =>
   key(card, "2");
   expect(host.querySelectorAll("input:checked")).toHaveLength(1);
 });
+
+it("skips unanswered questions while preserving answers and preventing duplicate sends", async () => {
+  let finish!: () => void;
+  const send = mount(vi.fn(() => new Promise<void>(resolve => { finish = resolve; })), false, pagedInput);
+  act(() => host.querySelector<HTMLInputElement>('input[type="radio"]')!.click());
+  await act(async () => { button("跳过").click(); button("跳过").click(); });
+  expect(send).toHaveBeenCalledTimes(1);
+  expect(send.mock.calls[0][0]).toContain("修改哪些内容\nUI");
+  expect(send.mock.calls[0][0]).toContain("何时执行\n已跳过");
+  await act(async () => finish());
+  expect(host.textContent).toContain("已提交");
+});
+it("allows skipping an empty form but not while the conversation is locked", async () => {
+  const send = mount(vi.fn(), true);
+  act(() => button("跳过").click());
+  expect(send).not.toHaveBeenCalled();
+  act(() => root.render(<ConversationInputCard input={input} disabled={false} onSubmit={send} />));
+  await act(async () => button("跳过").click());
+  expect(send).toHaveBeenCalledTimes(1);
+});

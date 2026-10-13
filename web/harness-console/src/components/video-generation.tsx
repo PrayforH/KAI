@@ -29,7 +29,7 @@ export type VideoDuration = number;
 export interface VideoGenerationSettings {
   mode: "auto" | "ref2va";
   seconds: VideoDuration;
-  resolution?: "768P" | "1080P";
+  resolution?: "480P" | "768P" | "1080P" | "2K";
   aspectRatio: VideoAspectRatio;
   seed: string;
   negativePrompt: string;
@@ -44,6 +44,7 @@ interface VideoGenerationRequest {
   routeId: string;
   routeLabel: string;
   apiFormat?: string;
+  model?: string;
   prompt: string;
   inputArtifactIds: string[];
   attachments: CompleteAttachment[];
@@ -153,7 +154,7 @@ export function VideoGenerationProvider({ children, task }: { children: ReactNod
 
   const execute = useCallback(async (id: string, request: VideoGenerationRequest, existingJobId?: string) => {
     request = {
-      routeId: request.routeId, routeLabel: request.routeLabel, apiFormat: request.apiFormat,
+      routeId: request.routeId, routeLabel: request.routeLabel, apiFormat: request.apiFormat, model: request.model,
       prompt: request.prompt, inputArtifactIds: request.inputArtifactIds,
       attachments: request.attachments, settings: request.settings,
     };
@@ -169,7 +170,7 @@ export function VideoGenerationProvider({ children, task }: { children: ReactNod
     const startedAt = performance.now();
     setEntries((current) => ({
       ...current,
-      [id]: { ...request, id, status: "generating", jobId: existingJobId, cancellationSupported: request.apiFormat !== "minimax_videos" },
+      [id]: { ...request, id, status: "generating", jobId: existingJobId, cancellationSupported: !request.apiFormat?.startsWith("minimax_videos") },
     }));
     try {
       const seed = request.settings.seed.trim();
@@ -185,7 +186,7 @@ export function VideoGenerationProvider({ children, task }: { children: ReactNod
               mode: request.settings.mode,
               aspectRatio: request.settings.aspectRatio,
               seconds: request.settings.seconds,
-              ...(request.apiFormat === "minimax_videos" ? { resolution: request.settings.resolution ?? "768P" } : {}),
+              ...(request.apiFormat?.startsWith("minimax_videos") ? { resolution: request.settings.resolution ?? "768P" } : {}),
               inputArtifactIds: request.inputArtifactIds,
               ...(taskRef.current ? { task: taskRef.current } : {}),
               ...(seed ? { seed: Number(seed) } : {}),
@@ -290,7 +291,7 @@ export function VideoGenerationProvider({ children, task }: { children: ReactNod
         },
       }));
     } catch (error) {
-      if (controller.signal.aborted && cancellationRequests.current.has(id) && request.apiFormat !== "minimax_videos") return;
+      if (controller.signal.aborted && cancellationRequests.current.has(id) && !request.apiFormat?.startsWith("minimax_videos")) return;
       setEntries((current) => ({
         ...current,
         [id]: {
@@ -322,7 +323,7 @@ export function VideoGenerationProvider({ children, task }: { children: ReactNod
     const snapshot: VideoGenerationRequest = { ...request, settings: request.apiFormat === "minimax_videos" ? {
       ...DEFAULT_SETTINGS, seconds: settings.resolution === "1080P" ? 6 : settings.seconds === 10 ? 10 : 6,
       resolution: settings.resolution ?? "768P",
-    } : { ...settings } };
+    } : request.apiFormat === "minimax_videos_v2" ? { ...DEFAULT_SETTINGS, seconds: [5, 10, 15].includes(settings.seconds) ? settings.seconds : 5, aspectRatio: settings.aspectRatio, resolution: request.model === "MiniMax-H3-Max" ? (settings.resolution === "480P" ? "480P" : "768P") : (settings.resolution === "2K" ? "2K" : "768P") } : { ...settings } };
     const thread = aui.thread();
     const parentId = thread.getState().messages.at(-1)?.id ?? null;
     thread.append({
@@ -442,11 +443,12 @@ export function VideoGenerationProvider({ children, task }: { children: ReactNod
       const snapshot: VideoGenerationRequest = {
         routeId: data.routeId, routeLabel: typeof data.routeLabel === "string" ? data.routeLabel : "视频",
         apiFormat: typeof data.apiFormat === "string" ? data.apiFormat : undefined,
+        model: typeof data.model === "string" ? data.model : undefined,
         prompt: request.prompt, inputArtifactIds: ids,
         attachments: ids.map(artifactId => ({ id: artifactId, type: "image", name: "参考图片", contentType: "image/png", status: { type: "complete" },
           content: [{ type: "file", data: artifactId, mimeType: "image/png", filename: "参考图片" }] })),
         settings: { mode: request.mode === "ref2va" ? "ref2va" : "auto", seconds: typeof request.seconds === "number" ? request.seconds : 6,
-          resolution: request.resolution === "1080P" ? "1080P" : "768P",
+          resolution: request.resolution === "1080P" || request.resolution === "480P" || request.resolution === "2K" ? request.resolution : "768P",
           aspectRatio: (request.aspectRatio as VideoAspectRatio) ?? "16:9", seed: typeof request.seed === "number" ? String(request.seed) : "",
           negativePrompt: typeof request.negativePrompt === "string" ? request.negativePrompt : "" },
       };
@@ -486,22 +488,25 @@ export function VideoGenerationControls({
   label,
   routeId,
   apiFormat,
+  model,
   referenceCount,
   disabled,
 }: {
   label: string;
   routeId?: string;
   apiFormat?: string;
+  model?: string;
   referenceCount: number;
   disabled: boolean;
 }) {
   const { settings, setSettings } = useVideoGeneration();
   const official = apiFormat === "minimax_videos";
+  const h3 = apiFormat === "minimax_videos_v2";
   useEffect(() => {
-    setSettings(official ? { ...DEFAULT_SETTINGS, seconds: 6, resolution: "768P" } : DEFAULT_SETTINGS);
-  }, [official, setSettings]);
+    setSettings(official ? { ...DEFAULT_SETTINGS, seconds: 6, resolution: "768P" } : h3 ? { ...DEFAULT_SETTINGS, resolution: "768P" } : DEFAULT_SETTINGS);
+  }, [official, h3, model, setSettings]);
   const renderControls = ({ duration, format }: { duration: ReactNode; format: ReactNode }) => {
-    if (official) return <section className={controlStyles.settings} aria-label="视频生成设置">
+    if (official || h3) return <section className={controlStyles.settings} aria-label="视频生成设置">
       <div className={controlStyles.row}>
         <span>视频</span>
         {duration}
@@ -625,7 +630,7 @@ export function VideoGenerationControls({
       </section>
     );
   };
-  return <VideoSettingsToolbar routeId={routeId} official={official}
+  return <VideoSettingsToolbar routeId={routeId} official={official} h3={h3} model={model}
     referenceCount={referenceCount} disabled={disabled} settings={settings} onChange={setSettings}
     renderControls={renderControls} />;
 }

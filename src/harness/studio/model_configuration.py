@@ -60,6 +60,7 @@ class ConfigureModelRequest(StudioModel):
         "openai_images",
         "openai_videos",
         "minimax_videos",
+        "minimax_videos_v2",
     ] = Field(alias="apiFormat")
     auth_scheme: Literal["bearer", "x-api-key", "none"] = Field(alias="authScheme")
     api_key: SecretStr | None = Field(default=None, alias="apiKey", min_length=1, max_length=16_384)
@@ -81,6 +82,7 @@ class ModelConfiguration(StudioModel):
         "openai_images",
         "openai_videos",
         "minimax_videos",
+        "minimax_videos_v2",
     ] = Field(alias="apiFormat")
     auth_scheme: Literal["bearer", "x-api-key", "none"] = Field(alias="authScheme")
     capabilities: tuple[str, ...]
@@ -141,7 +143,7 @@ class GenerateVideoRequest(StudioModel):
         default="16:9", alias="aspectRatio"
     )
     seconds: int = Field(default=5, ge=4, le=15)
-    resolution: Literal["768P", "1080P"] = "768P"
+    resolution: Literal["480P", "768P", "1080P", "2K"] = "768P"
     seed: int | None = Field(default=None, ge=0)
     negative_prompt: str | None = Field(default=None, alias="negativePrompt", max_length=4_000)
     input_artifact_ids: tuple[str, ...] = Field(default=(), alias="inputArtifactIds", max_length=9)
@@ -650,6 +652,17 @@ class ModelConfigurationService:
         started = monotonic()
         payload: dict[str, object]
         if route.model_type == "video_generation":
+            if route.api_format == "minimax_videos_v2":
+                raw = self._minimax_h3_response(
+                    await self._get(route, secret, "query/video_generation?page_num=1&page_size=1")
+                )
+                if not isinstance(raw.get("items"), list):
+                    raise ConflictError("MiniMax H3 未返回有效的任务列表。")
+                return ModelConnectionTestResult(
+                    ok=True,
+                    latencyMs=int((monotonic() - started) * 1000),
+                    message="连接成功，H3 服务已就绪。",
+                )
             if route.api_format == "minimax_videos":
                 quota = await self.video_quota(tenant_id, route_id)
                 return ModelConnectionTestResult(
@@ -781,6 +794,12 @@ class ModelConfigurationService:
             raise ConflictError("the selected route is not an enabled video generation model")
         secret = await self._credential_for_route(tenant_id, route)
         form, reference_files = self._video_request_form(route, request, references)
+        if route.api_format == "minimax_videos_v2":
+            view = await self._create_minimax_h3_video(
+                tenant_id, user_id, route, secret, request, references
+            )
+            await self._record_video_task(view, route, request, task_session_id)
+            return view
         if route.api_format == "minimax_videos":
             view = await self._create_minimax_video(
                 tenant_id, user_id, route, secret, request, references
@@ -833,7 +852,7 @@ class ModelConfigurationService:
         job = await self._video_job(tenant_id, user_id, route_id, job_id)
         route = await self._route(tenant_id, route_id)
         secret = await self._credential_for_route(tenant_id, route)
-        if route.api_format == "minimax_videos":
+        if route.api_format in {"minimax_videos", "minimax_videos_v2"}:
             view = await self._get_minimax_video(route, secret, job_id, job.provider_job_id)
             await self._update_video_task(tenant_id, view)
             return view
@@ -865,9 +884,9 @@ class ModelConfigurationService:
         job = await self._video_job(tenant_id, user_id, route_id, job_id)
         route = await self._route(tenant_id, route_id)
         secret = await self._credential_for_route(tenant_id, route)
-        if route.api_format == "minimax_videos":
-            # MiniMax publishes no cancellation endpoint. Keep the provider
-            # task available for status queries; this only stops client waiting.
+        if route.api_format in {"minimax_videos", "minimax_videos_v2"}:
+            # Stop waiting without deleting the remote record. H3 can only cancel
+            # queued tasks; running tasks remain available for status queries.
             return VideoGenerationJob(jobId=job_id, status="cancelled", cancellationSupported=False)
         try:
             response = await self._delete(
@@ -898,7 +917,7 @@ class ModelConfigurationService:
         job = await self._video_job(tenant_id, user_id, route_id, job_id)
         route = await self._route(tenant_id, route_id)
         secret = await self._credential_for_route(tenant_id, route)
-        if route.api_format == "minimax_videos":
+        if route.api_format in {"minimax_videos", "minimax_videos_v2"}:
             result = await self._get_minimax_video(route, secret, job_id, job.provider_job_id)
             if result.status != "completed" or result.video_url is None:
                 raise ConflictError("视频尚未生成完成。")
@@ -1046,7 +1065,8 @@ class ModelConfigurationService:
         references: tuple[GeneratedVideoReference, ...],
     ) -> VideoGenerationJob:
         if (
-            request.seconds not in {6, 10}
+            request.resolution not in {"768P", "1080P"}
+            or request.seconds not in {6, 10}
             or request.mode != "auto"
             or len(references) > 1
             or request.seed is not None
@@ -1090,6 +1110,136 @@ class ModelConfigurationService:
         self._prune_video_jobs()
         return VideoGenerationJob(jobId=job_id, status="queued", cancellationSupported=False)
 
+    @staticmethod
+    def _minimax_h3_response(response: httpx.Response) -> dict[str, object]:
+        if response.is_error:
+            messages = {
+                401: "MiniMax H3 Key 无效或无权访问。",
+                402: "MiniMax H3 余额不足。",
+                429: "MiniMax H3 请求过于频繁。",
+            }
+            raise ConflictError(messages.get(response.status_code, "MiniMax H3 请求失败。"))
+        raw = ModelConfigurationService._video_provider_response(response)
+        if "error" in raw:
+            raise ConflictError("MiniMax H3 请求失败。")
+        return raw
+
+    async def _create_minimax_h3_video(
+        self,
+        tenant_id: str,
+        user_id: str,
+        route: ModelRouteCapability,
+        secret: SecretStr | None,
+        request: GenerateVideoRequest,
+        references: tuple[GeneratedVideoReference, ...],
+    ) -> VideoGenerationJob:
+        model = route.models[0]
+        resolutions = {"MiniMax-H3": {"768P", "2K"}, "MiniMax-H3-Max": {"480P", "768P"}}
+        if model not in resolutions or request.resolution not in resolutions[model]:
+            raise ConflictError("当前 H3 模型不支持所选分辨率。")
+        if request.seconds < (5 if model == "MiniMax-H3-Max" else 4):
+            raise ConflictError("H3 Max 支持 5–15 秒。")
+        if len(request.prompt) > 7000 or request.seed is not None or request.negative_prompt:
+            raise ConflictError("H3 提示词最多 7000 字，不支持随机种子或负向提示词。")
+        content: list[dict[str, object]] = [{"type": "text", "text": request.prompt}]
+        for index, reference in enumerate(references):
+            with Image.open(BytesIO(reference.content)) as image:
+                width, height = image.size
+            if not 2 / 5 <= width / height <= 5 / 2:
+                raise ConflictError("H3 参考图片比例需在 2:5 至 5:2 之间。")
+            role = (
+                "reference_image"
+                if request.mode == "ref2va"
+                else ("first_frame" if index == 0 else "last_frame")
+            )
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{reference.media_type};base64,"
+                        + base64.b64encode(reference.content).decode("ascii")
+                    },
+                    "role": role,
+                }
+            )
+        payload: dict[str, object] = {
+            "model": model,
+            "content": content,
+            "duration": request.seconds,
+            "resolution": request.resolution,
+            "ratio": "adaptive" if references and request.mode == "auto" else request.aspect_ratio,
+        }
+        if len(json.dumps(payload).encode()) > 64 * 1024 * 1024:
+            raise ConflictError("H3 请求超过 64 MiB，请减少参考素材。")
+        try:
+            raw = self._minimax_h3_response(
+                await self._post(route, secret, "video_generation", payload)
+            )
+        except httpx.HTTPError:
+            raise ConflictError("MiniMax H3 连接中断，请先核实任务状态，避免重复提交。") from None
+        task_id = raw.get("task_id")
+        if not isinstance(task_id, str) or not task_id.isdigit() or len(task_id) > 256:
+            raise ConflictError("MiniMax H3 未返回有效的视频任务 ID。")
+        job_id = f"video_job_{uuid4().hex}"
+        self._video_jobs[job_id] = _ManagedVideoJob(
+            tenant_id, user_id, route.route_id, task_id, datetime.now(UTC)
+        )
+        self._prune_video_jobs()
+        return VideoGenerationJob(jobId=job_id, status="queued", cancellationSupported=False)
+
+    async def _get_minimax_h3_video(
+        self,
+        route: ModelRouteCapability,
+        secret: SecretStr | None,
+        job_id: str,
+        task_id: str,
+    ) -> VideoGenerationJob:
+        try:
+            raw = self._minimax_h3_response(
+                await self._get(route, secret, f"query/video_generation/{quote(task_id, safe='')}")
+            )
+        except httpx.HTTPError:
+            raise ConflictError("MiniMax H3 视频状态暂时不可用，请稍后继续查询。") from None
+        task = raw.get("task")
+        if not isinstance(task, dict):
+            raise ConflictError("MiniMax H3 未返回有效任务。")
+        task = cast(dict[str, object], task)
+        statuses = {
+            "queued": "queued",
+            "running": "in_progress",
+            "succeeded": "completed",
+            "failed": "failed",
+            "cancelled": "cancelled",
+        }
+        raw_status = task.get("status")
+        status = statuses.get(raw_status) if isinstance(raw_status, str) else None
+        if status is None:
+            raise ConflictError("MiniMax H3 返回了未知的任务状态。")
+        video_url = None
+        if status == "completed":
+            content = task.get("content")
+            video_url = (
+                cast(dict[str, object], content).get("url") if isinstance(content, dict) else None
+            )
+            if not isinstance(video_url, str):
+                raise ConflictError("MiniMax H3 未返回视频链接。")
+            parsed = urlsplit(video_url)
+            if (
+                parsed.scheme != "https"
+                or not parsed.hostname
+                or parsed.username
+                or parsed.password
+            ):
+                raise ConflictError("MiniMax H3 返回了无效的视频链接。")
+        return VideoGenerationJob(
+            jobId=job_id,
+            status=cast(Any, status),
+            progress=100 if status == "completed" else 0,
+            videoUrl=video_url,
+            cancellationSupported=False,
+            error="MiniMax H3 未能完成视频生成。" if status == "failed" else None,
+        )
+
     async def _get_minimax_video(
         self,
         route: ModelRouteCapability,
@@ -1097,6 +1247,8 @@ class ModelConfigurationService:
         job_id: str,
         task_id: str,
     ) -> VideoGenerationJob:
+        if route.api_format == "minimax_videos_v2":
+            return await self._get_minimax_h3_video(route, secret, job_id, task_id)
         try:
             raw = self._minimax_response(
                 await self._get(
@@ -1269,6 +1421,7 @@ class ModelConfigurationService:
                     "video_generation": {
                         "routeId": job.route_id,
                         "routeLabel": route.label,
+                        "model": route.models[0],
                         "apiFormat": route.api_format,
                         "providerJobId": job.provider_job_id,
                         "request": request.model_dump(mode="json", by_alias=True, exclude={"task"}),

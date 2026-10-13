@@ -77,14 +77,14 @@ export function latestConversationInput(messages: readonly { id: string; role: s
   const input = parseConversationInput(last.content.filter(p => p.type === "text").map(p => p.text ?? "").join("\n"));
   return input ? { messageId: last.id, input } : null;
 }
-export function formatConversationAnswers(input: ConversationInput, answers: Record<string, { selected: string[]; text: string }>): string | null {
+export function formatConversationAnswers(input: ConversationInput, answers: Record<string, { selected: string[]; text: string }>, skipMissing = false): string | null {
   const lines: string[] = [];
   for (const question of input.questions) {
     const answer = answers[question.id];
     const selected = answer?.selected.filter(value => question.options.includes(value)) ?? [];
     const values = [...(question.type === "text" ? [] : selected.slice(0, question.type === "single" ? 1 : 8)), answer?.text.trim().slice(0, 4000)].filter(Boolean);
-    if (!values.length) return null;
-    lines.push(`${question.label}\n${values.join("；")}`);
+    if (!values.length && !skipMissing) return null;
+    lines.push(`${question.label}\n${values.join("；") || "已跳过"}`);
   }
-  return `${input.title}\n\n${lines.join("\n\n")}`;
+  return `${input.title}\n\n${lines.join("\n\n")}${skipMissing ? "\n\n跳过未回答的问题，请基于已有信息继续；必要信息缺失时说明限制。" : ""}`;
 }

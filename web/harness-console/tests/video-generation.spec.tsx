@@ -196,3 +196,27 @@ test("H3 popovers preserve aspect ratio, reference mode and all supported durati
   expect(document.querySelector('[role="dialog"]')).toBeNull();
   expect((host.querySelector('[aria-label="视频时长"]') as HTMLButtonElement).disabled).toBe(true);
 });
+
+test("official models switch duration and resolution without expanding the composer", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const fetcher = vi.fn(async (_url: unknown, _init?: RequestInit) => reply(ready)); vi.stubGlobal("fetch", fetcher);
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host); roots.push(root);
+  const render = (model: string) => root.render(<VideoGenerationProvider><VideoGenerationControls label={model} routeId={model} model={model} apiFormat="minimax_videos_v2" referenceCount={0} disabled={false} /><Probe /></VideoGenerationProvider>);
+  await act(async () => render("MiniMax-H3"));
+  expect(host.querySelector(".composer-video-settings")).toBeNull();
+  await act(async () => (host.querySelector('[aria-label="视频时长"]') as HTMLButtonElement).click());
+  expect([...document.querySelectorAll('[role="dialog"] button[aria-pressed]')].map(b => b.textContent)).toEqual(["5秒", "10秒", "15秒"]);
+  await act(async () => (document.querySelectorAll('[role="dialog"] button[aria-pressed]')[2] as HTMLButtonElement).click());
+  await act(async () => (host.querySelector('[aria-label="画幅与分辨率"]') as HTMLButtonElement).click());
+  const resolution = [...document.querySelectorAll('[role="dialog"] button')].find(b => b.textContent?.startsWith("2K")) as HTMLButtonElement;
+  await act(async () => resolution.click());
+  expect(controller.settings.resolution).toBe("2K");
+  await act(async () => controller.start({ ...request, model: "MiniMax-H3", apiFormat: "minimax_videos_v2" }));
+  expect(JSON.parse(fetcher.mock.calls[0][1]!.body as string)).toMatchObject({ seconds: 15, resolution: "2K" });
+  await act(async () => render("MiniMax-H3-Max"));
+  expect(controller.settings).toMatchObject({ seconds: 5, resolution: "768P" });
+  await act(async () => (host.querySelector('[aria-label="画幅与分辨率"]') as HTMLButtonElement).click());
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("480P");
+  expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain("2K");
+});
