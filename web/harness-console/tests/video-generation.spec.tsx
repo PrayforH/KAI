@@ -23,14 +23,38 @@ const request = { routeId: "minimax-video", routeLabel: "MiniMax 视频", apiFor
 const ready = { jobId: "video_job_123", status: "completed", progress: 100, cancellationSupported: false, videoUrl: "https://cdn.example.test/clip.mp4?signature=abc" };
 const reply = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
 
-test("opening official video controls only queries quota and offers supported durations", async () => {
-  const fetcher = vi.fn(async (_url: string, _init?: RequestInit) => reply({ dailyTotal: 3, dailyRemaining: 2 })); vi.stubGlobal("fetch", fetcher);
+test("video settings use popovers without querying or imposing plan quotas", async () => {
+  const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
   const host = await mount(true);
+  expect(fetcher).not.toHaveBeenCalled();
+  expect(host.textContent).not.toContain("今日剩余");
+  expect(host.querySelector("select")).toBeNull();
+  await act(async () => (host.querySelector('[aria-label="视频时长"]') as HTMLButtonElement).click());
+  const dialog = document.querySelector('[role="dialog"]')!;
+  expect(dialog.textContent).toContain("6秒");
+  expect(dialog.textContent).toContain("10秒");
+  await act(async () => ([...dialog.querySelectorAll("button")].find(x => x.textContent === "10秒")!).click());
+  expect(controller.settings.seconds).toBe(10);
+  await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(document.activeElement).toBe(host.querySelector('[aria-label="视频时长"]'));
+});
+
+test("selecting HD synchronizes duration and sends the chosen resolution", async () => {
+  const fetcher = vi.fn(async () => reply(ready)); vi.stubGlobal("fetch", fetcher);
+  const host = await mount(true);
+  await act(async () => controller.setSettings({ ...controller.settings, seconds: 10 }));
+  await act(async () => (host.querySelector('[aria-label="画幅与分辨率"]') as HTMLButtonElement).click());
+  await act(async () => ([...document.querySelectorAll('[role="dialog"] button')].find(x => x.textContent === "1080P高清") as HTMLButtonElement).click());
+  expect(controller.settings.resolution).toBe("1080P");
+  expect(controller.settings.seconds).toBe(6);
+  await act(async () => (host.querySelector('[aria-label="视频时长"]') as HTMLButtonElement).click());
+  expect(([...document.querySelectorAll('[role="dialog"] button')].find(x => x.textContent === "10秒") as HTMLButtonElement).disabled).toBe(true);
+  await act(async () => controller.start(request));
   expect(fetcher).toHaveBeenCalledTimes(1);
-  expect(fetcher.mock.calls[0][0]).toContain("/video-quota");
-  expect(host.textContent).toContain("今日剩余 2/3 条");
-  expect([...host.querySelectorAll("option")].map(x => x.value)).toEqual(["6", "10"]);
-  expect(host.textContent).not.toContain("Ref2VA");
+  const body = JSON.parse((fetcher.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
+  expect(body.resolution).toBe("1080P");
+  expect(body.seconds).toBe(6);
 });
 
 test("successful native generation plays the signed URL without fetching the video blob", async () => {
@@ -101,14 +125,14 @@ test("regeneration keeps the first result and ignores a rapid duplicate click", 
 
 test("a failed regeneration preserves the earlier video without reusing its URL on the error", async () => {
   let submissions = 0;
-  vi.stubGlobal("fetch", vi.fn(async () => ++submissions === 1 ? reply(ready) : new Response(JSON.stringify({ error: { message: "今日额度已用完" } }), { status: 409 })));
+  vi.stubGlobal("fetch", vi.fn(async () => ++submissions === 1 ? reply(ready) : new Response(JSON.stringify({ error: { message: "账户积分不足" } }), { status: 409 })));
   const host = await mount();
   let firstId = "";
   await act(async () => { firstId = controller.start(request); });
   await act(async () => controller.retry(firstId));
   expect(host.querySelectorAll("video")).toHaveLength(1);
   expect(host.querySelectorAll('[aria-label="打开视频"]')).toHaveLength(1);
-  expect(host.textContent).toContain("今日额度已用完");
+  expect(host.textContent).toContain("账户积分不足");
   expect(controller.entries[firstId].url).toBe(ready.videoUrl);
   expect(Object.values(controller.entries).find(entry => entry.status === "failed")?.url).toBeUndefined();
 });
@@ -145,4 +169,30 @@ test("durable media history refreshes the original job URL without submitting an
   expect(fetcher.mock.calls[0][0]).toContain("/videos/" + ready.jobId);
   expect(fetcher.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
   expect(host.querySelector("video")?.getAttribute("src")).toBe(ready.videoUrl);
+});
+
+test("H3 popovers preserve aspect ratio, reference mode and all supported duration values", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host); roots.push(root);
+  const render = (referenceCount: number, disabled = false) => root.render(<VideoGenerationProvider>
+    <VideoGenerationControls label="H3 视频" routeId="h3" referenceCount={referenceCount} disabled={disabled} /><Probe />
+  </VideoGenerationProvider>);
+  await act(async () => render(0));
+  await act(async () => (host.querySelector('[aria-label="画幅与分辨率"]') as HTMLButtonElement).click());
+  expect(document.querySelectorAll('[role="dialog"] [aria-pressed]')).toHaveLength(6);
+  await act(async () => (document.querySelector('[aria-label="画幅 9:16"]') as HTMLButtonElement).click());
+  expect(controller.settings.aspectRatio).toBe("9:16");
+  await act(async () => (host.querySelector('[aria-label="视频时长"]') as HTMLButtonElement).click());
+  const slider = document.querySelector('input[type="range"]') as HTMLInputElement;
+  expect([slider.min, slider.max, slider.step]).toEqual(["4", "15", "1"]);
+  await act(async () => document.body.dispatchEvent(new Event("pointerdown", { bubbles: true })));
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  await act(async () => render(1));
+  expect(host.textContent).toContain("跟随首图");
+  await act(async () => (host.querySelector('[aria-label="画幅与分辨率"]') as HTMLButtonElement).click());
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("输出画幅由图片比例决定");
+  await act(async () => render(1, true));
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect((host.querySelector('[aria-label="视频时长"]') as HTMLButtonElement).disabled).toBe(true);
 });

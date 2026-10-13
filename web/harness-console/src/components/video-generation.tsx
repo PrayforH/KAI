@@ -18,6 +18,7 @@ import {
 import { invalidateThreadHistory, notifyTaskListChanged } from "../lib/task-history";
 import { requireAuthenticatedResponse } from "../lib/client-auth";
 import { VideoGenerationResult } from "./video-generation-result";
+import { VideoSettingsToolbar } from "./video-settings-toolbar";
 import controlStyles from "./video-generation-controls.module.css";
 
 export const VIDEO_GENERATION_PART_NAME = "harness.video-generation";
@@ -28,6 +29,7 @@ export type VideoDuration = number;
 export interface VideoGenerationSettings {
   mode: "auto" | "ref2va";
   seconds: VideoDuration;
+  resolution?: "768P" | "1080P";
   aspectRatio: VideoAspectRatio;
   seed: string;
   negativePrompt: string;
@@ -183,6 +185,7 @@ export function VideoGenerationProvider({ children, task }: { children: ReactNod
               mode: request.settings.mode,
               aspectRatio: request.settings.aspectRatio,
               seconds: request.settings.seconds,
+              ...(request.apiFormat === "minimax_videos" ? { resolution: request.settings.resolution ?? "768P" } : {}),
               inputArtifactIds: request.inputArtifactIds,
               ...(taskRef.current ? { task: taskRef.current } : {}),
               ...(seed ? { seed: Number(seed) } : {}),
@@ -317,7 +320,8 @@ export function VideoGenerationProvider({ children, task }: { children: ReactNod
     if (active) return active;
     const id = generationId();
     const snapshot: VideoGenerationRequest = { ...request, settings: request.apiFormat === "minimax_videos" ? {
-      ...DEFAULT_SETTINGS, seconds: settings.seconds === 10 ? 10 : 6,
+      ...DEFAULT_SETTINGS, seconds: settings.resolution === "1080P" ? 6 : settings.seconds === 10 ? 10 : 6,
+      resolution: settings.resolution ?? "768P",
     } : { ...settings } };
     const thread = aui.thread();
     const parentId = thread.getState().messages.at(-1)?.id ?? null;
@@ -442,6 +446,7 @@ export function VideoGenerationProvider({ children, task }: { children: ReactNod
         attachments: ids.map(artifactId => ({ id: artifactId, type: "image", name: "参考图片", contentType: "image/png", status: { type: "complete" },
           content: [{ type: "file", data: artifactId, mimeType: "image/png", filename: "参考图片" }] })),
         settings: { mode: request.mode === "ref2va" ? "ref2va" : "auto", seconds: typeof request.seconds === "number" ? request.seconds : 6,
+          resolution: request.resolution === "1080P" ? "1080P" : "768P",
           aspectRatio: (request.aspectRatio as VideoAspectRatio) ?? "16:9", seed: typeof request.seed === "number" ? String(request.seed) : "",
           negativePrompt: typeof request.negativePrompt === "string" ? request.negativePrompt : "" },
       };
@@ -490,179 +495,139 @@ export function VideoGenerationControls({
   referenceCount: number;
   disabled: boolean;
 }) {
-  const { settings, setSettings, generating } = useVideoGeneration();
+  const { settings, setSettings } = useVideoGeneration();
   const official = apiFormat === "minimax_videos";
-  const [quota, setQuota] = useState<{ dailyTotal: number; dailyRemaining: number } | null>(null);
-  const [quotaError, setQuotaError] = useState("");
   useEffect(() => {
-    setSettings(official ? { ...DEFAULT_SETTINGS, seconds: 6 } : DEFAULT_SETTINGS);
+    setSettings(official ? { ...DEFAULT_SETTINGS, seconds: 6, resolution: "768P" } : DEFAULT_SETTINGS);
   }, [official, setSettings]);
-  useEffect(() => {
-    if (!official || !routeId) return;
-    const controller = new AbortController();
-    setQuota(null);
-    setQuotaError("");
-    void fetch(`/api/studio/models/${encodeURIComponent(routeId)}/video-quota`, { signal: controller.signal, cache: "no-store" })
-      .then(requireAuthenticatedResponse)
-      .then(async (response) => {
-        if (!response.ok) throw new Error(responseError(await response.text(), response.status));
-        return response.json() as Promise<{ dailyTotal: number; dailyRemaining: number }>;
-      })
-      .then(setQuota)
-      .catch((error: unknown) => { if (!controller.signal.aborted) setQuotaError(error instanceof Error ? error.message : "额度暂不可用"); });
-    return () => controller.abort();
-  }, [official, routeId, generating]);
-  const followsReference = referenceCount > 0;
-  if (official) return <section className={controlStyles.settings} aria-label="视频生成设置">
-    <div className={controlStyles.row}>
-      <span>视频</span>
-      <select aria-label="视频时长" disabled={disabled} value={settings.seconds === 10 ? 10 : 6} onChange={(event) => setSettings({ ...settings, seconds: Number(event.target.value) })}>
-        <option value={6}>6 秒</option><option value={10}>10 秒</option>
-      </select>
-      <span>768P · {followsReference ? "跟随首图" : "16:9"}</span>
-      <span className={controlStyles.quota} role="status">{quota ? `今日剩余 ${quota.dailyRemaining}/${quota.dailyTotal} 条` : quotaError || "查询额度…"}</span>
-    </div>
-  </section>;
-  const resolvedMode = settings.mode === "ref2va"
-    ? "Ref2VA"
-    : referenceCount > 0
-      ? "FL2VA"
-      : "T2VA";
-  return (
-    <section className="composer-video-settings" aria-label="视频生成设置">
-      <div className="video-mode-control">
-        <span>
-          <strong>生成模式</strong>
-          <small>
-            {settings.mode === "ref2va"
-              ? "参考图片控制人物、场景或风格"
-              : "根据当前素材自动选择文本或图片驱动"}
-          </small>
-        </span>
-        <fieldset disabled={disabled}>
-          <legend className="video-mode-legend">选择视频生成模式</legend>
-          <button
-            type="button"
-            aria-pressed={settings.mode === "auto"}
-            onClick={() => setSettings({ ...settings, mode: "auto" })}
-          >
-            自动
-            <small>{referenceCount ? "FL2VA" : "T2VA"}</small>
-          </button>
-          <button
-            type="button"
-            aria-pressed={settings.mode === "ref2va"}
-            onClick={() => setSettings({ ...settings, mode: "ref2va" })}
-          >
-            Ref2VA
-            <small>1–9 张参考图</small>
-          </button>
-        </fieldset>
+  const renderControls = ({ duration, format }: { duration: ReactNode; format: ReactNode }) => {
+    if (official) return <section className={controlStyles.settings} aria-label="视频生成设置">
+      <div className={controlStyles.row}>
+        <span>视频</span>
+        {duration}
+        {format}
       </div>
-      <div className="composer-video-settings-primary">
-        <span className="composer-video-model">
-          <strong>{label}</strong>
-          <small>
-            {resolvedMode} · {referenceCount ? `${referenceCount} 张参考图` : "文本生成视频"}
-          </small>
-        </span>
-        <fieldset className="video-duration-control" disabled={disabled}>
-          <legend>时长</legend>
-          {[5, 10, 15].map((seconds) => (
+    </section>;
+    const resolvedMode = settings.mode === "ref2va"
+      ? "Ref2VA"
+      : referenceCount > 0
+        ? "FL2VA"
+        : "T2VA";
+    return (
+      <section className="composer-video-settings" aria-label="视频生成设置">
+        <div className="video-mode-control">
+          <span>
+            <strong>生成模式</strong>
+            <small>
+              {settings.mode === "ref2va"
+                ? "参考图片控制人物、场景或风格"
+                : "根据当前素材自动选择文本或图片驱动"}
+            </small>
+          </span>
+          <fieldset disabled={disabled}>
+            <legend className="video-mode-legend">选择视频生成模式</legend>
             <button
-              key={seconds}
               type="button"
-              aria-pressed={settings.seconds === seconds}
-              onClick={() => setSettings({ ...settings, seconds })}
+              aria-pressed={settings.mode === "auto"}
+              onClick={() => setSettings({ ...settings, mode: "auto" })}
             >
-              {seconds}s
+              自动
+              <small>{referenceCount ? "FL2VA" : "T2VA"}</small>
             </button>
-          ))}
-        </fieldset>
-        <label className="video-ratio-control">
-          <span>画面比例</span>
-          {followsReference ? (
-            <strong title="有参考图时，H3 根据第一张图片确定输出比例">跟随首图</strong>
-          ) : (
-            <select
-              value={settings.aspectRatio}
-              disabled={disabled}
-              onChange={(event) => setSettings({
-                ...settings,
-                aspectRatio: event.target.value as VideoAspectRatio,
-              })}
+            <button
+              type="button"
+              aria-pressed={settings.mode === "ref2va"}
+              onClick={() => setSettings({ ...settings, mode: "ref2va" })}
             >
-              {(["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"] as const).map(
-                (ratio) => <option key={ratio} value={ratio}>{ratio}</option>,
-              )}
-            </select>
-          )}
-        </label>
-      </div>
-      {settings.mode === "ref2va" ? (
-        <p
-          className={referenceCount ? "composer-video-mode-note" : "composer-video-mode-warning"}
-          role="status"
-        >
-          {referenceCount
-            ? `将使用 ${referenceCount} 张图片作为 Ref2VA 参考素材。`
-            : "Ref2VA 至少需要添加 1 张参考图片。"}
-        </p>
-      ) : null}
-      {settings.seconds > 5 ? (
-        <p className="composer-video-duration-note" role="status">
-          10–15 秒视频生成耗时较长，提交后可查看实时状态或取消任务。
-        </p>
-      ) : null}
-      <details className="composer-video-advanced">
-        <summary>高级设置</summary>
-        <div>
-          <label>
-            <span>自定义时长（4–15 秒）</span>
-            <select
-              value={settings.seconds}
-              disabled={disabled}
-              onChange={(event) => setSettings({
-                ...settings,
-                seconds: Number(event.target.value),
-              })}
-            >
-              {Array.from({ length: 12 }, (_, index) => index + 4).map((seconds) => (
-                <option key={seconds} value={seconds}>{seconds} 秒</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>随机种子</span>
-            <input
-              type="number"
-              min="0"
-              step="1"
-              inputMode="numeric"
-              value={settings.seed}
-              disabled={disabled}
-              placeholder="自动"
-              onChange={(event) => setSettings({ ...settings, seed: event.target.value })}
-            />
-          </label>
-          <label className="video-negative-prompt">
-            <span>负向提示词</span>
-            <input
-              type="text"
-              maxLength={4_000}
-              value={settings.negativePrompt}
-              disabled={disabled}
-              placeholder="例如：画面抖动、变形、文字水印"
-              onChange={(event) => setSettings({
-                ...settings,
-                negativePrompt: event.target.value,
-              })}
-            />
-          </label>
+              Ref2VA
+              <small>1–9 张参考图</small>
+            </button>
+          </fieldset>
         </div>
-      </details>
-    </section>
-  );
+        <div className="composer-video-settings-primary">
+          <span className="composer-video-model">
+            <strong>{label}</strong>
+            <small>
+              {resolvedMode} · {referenceCount ? `${referenceCount} 张参考图` : "文本生成视频"}
+            </small>
+          </span>
+          <fieldset className="video-duration-control" disabled={disabled}>
+            <legend>时长</legend>
+            {duration}
+          </fieldset>
+          <div className="video-ratio-control">
+            <span>画面比例</span>
+            {format}
+          </div>
+        </div>
+        {settings.mode === "ref2va" ? (
+          <p
+            className={referenceCount ? "composer-video-mode-note" : "composer-video-mode-warning"}
+            role="status"
+          >
+            {referenceCount
+              ? `将使用 ${referenceCount} 张图片作为 Ref2VA 参考素材。`
+              : "Ref2VA 至少需要添加 1 张参考图片。"}
+          </p>
+        ) : null}
+        {settings.seconds > 5 ? (
+          <p className="composer-video-duration-note" role="status">
+            10–15 秒视频生成耗时较长，提交后可查看实时状态或取消任务。
+          </p>
+        ) : null}
+        <details className="composer-video-advanced">
+          <summary>高级设置</summary>
+          <div>
+            <label>
+              <span>自定义时长（4–15 秒）</span>
+              <select
+                value={settings.seconds}
+                disabled={disabled}
+                onChange={(event) => setSettings({
+                  ...settings,
+                  seconds: Number(event.target.value),
+                })}
+              >
+                {Array.from({ length: 12 }, (_, index) => index + 4).map((seconds) => (
+                  <option key={seconds} value={seconds}>{seconds} 秒</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>随机种子</span>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                inputMode="numeric"
+                value={settings.seed}
+                disabled={disabled}
+                placeholder="自动"
+                onChange={(event) => setSettings({ ...settings, seed: event.target.value })}
+              />
+            </label>
+            <label className="video-negative-prompt">
+              <span>负向提示词</span>
+              <input
+                type="text"
+                maxLength={4_000}
+                value={settings.negativePrompt}
+                disabled={disabled}
+                placeholder="例如：画面抖动、变形、文字水印"
+                onChange={(event) => setSettings({
+                  ...settings,
+                  negativePrompt: event.target.value,
+                })}
+              />
+            </label>
+          </div>
+        </details>
+      </section>
+    );
+  };
+  return <VideoSettingsToolbar routeId={routeId} official={official}
+    referenceCount={referenceCount} disabled={disabled} settings={settings} onChange={setSettings}
+    renderControls={renderControls} />;
 }
 
 export function VideoGenerationMessagePart({

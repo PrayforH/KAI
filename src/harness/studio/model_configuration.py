@@ -141,6 +141,7 @@ class GenerateVideoRequest(StudioModel):
         default="16:9", alias="aspectRatio"
     )
     seconds: int = Field(default=5, ge=4, le=15)
+    resolution: Literal["768P", "1080P"] = "768P"
     seed: int | None = Field(default=None, ge=0)
     negative_prompt: str | None = Field(default=None, alias="negativePrompt", max_length=4_000)
     input_artifact_ids: tuple[str, ...] = Field(default=(), alias="inputArtifactIds", max_length=9)
@@ -1053,22 +1054,22 @@ class ModelConfigurationService:
             or request.aspect_ratio != "16:9"
         ):
             raise ConflictError("官方视频支持 6 或 10 秒，可添加一张首帧图片；不支持 H3 高级参数。")
-        if secret is not None and secret.get_secret_value().startswith("sk-cp-"):
-            quota = await self.video_quota(tenant_id, route.route_id)
-            if quota.daily_remaining == 0 or quota.weekly_remaining == 0:
-                raise ConflictError("MiniMax 套餐视频额度已用完，请等待额度重置。")
+        if request.resolution == "1080P" and request.seconds != 6:
+            raise ConflictError("1080P 视频仅支持 6 秒，请调整时长或选择 768P。")
+        # The provider accounts for plan allowances and extra credits. A plan-only
+        # quota check must not block requests that can use the account's balance.
         payload: dict[str, object] = {
             "model": route.models[0],
             "prompt": request.prompt,
             "duration": request.seconds,
-            "resolution": "768P",
+            "resolution": request.resolution,
         }
         if references:
             item = references[0]
             payload["first_frame_image"] = f"data:{item.media_type};base64," + base64.b64encode(
                 item.content
             ).decode("ascii")
-        # Submit once. Retrying a POST can consume another daily generation.
+        # Submit once. Retrying a POST can consume additional credits.
         try:
             raw = self._minimax_response(
                 await self._post(route, secret, "video_generation", payload)
