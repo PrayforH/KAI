@@ -1200,9 +1200,12 @@ html[data-color-mode="light"] .nested-menu-panel { background: #fff; border-colo
 .conversation-jump svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .conversation-jump:focus-visible { outline: 2px solid var(--codex-muted); outline-offset: 3px; }
 
-/* Long sent messages fold; drafts have no mask or centered expand button. */
+/* Long sent messages fold with an overlay control inside the message bubble. */
+.sent-user-bubble { position: relative; align-self: flex-end; width: fit-content; max-width: min(82%, 40rem); min-width: 0; }
+body.codex-theme-v1 .sent-user-bubble > .aui-user-message-content.sent-user-content { width: 100%; max-width: 100%; margin: 0; }
+body.codex-theme-v1 .sent-user-bubble[data-long="true"] > .sent-user-content { padding-bottom: 42px; }
 body.codex-theme-v1 .aui-user-message-content.sent-user-content[data-collapsed="true"] { max-height: 12em; overflow: hidden; }
-.sent-user-expand { align-self: flex-end; justify-self: end; grid-column: 2; display: grid; place-items: center; width: 28px; height: 28px; margin-top: 4px; border: 0; border-radius: 6px; padding: 6px; color: var(--codex-muted); background: transparent; cursor: pointer; }
+.sent-user-expand { position: absolute; right: 8px; bottom: 8px; display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--codex-line); border-radius: 50%; padding: 6px; color: var(--codex-muted); background: var(--codex-surface-raised); box-shadow: 0 2px 6px rgb(0 0 0 / 10%); cursor: pointer; }
 .sent-user-expand:is(:hover, :focus-visible) { color: var(--codex-ink); background: var(--codex-surface-hover); }
 .sent-user-expand:focus-visible { outline: 2px solid var(--codex-muted); outline-offset: 2px; }
 .sent-user-expand .codex-response-icon { width: 16px; height: 16px; fill: currentColor; stroke: none; }

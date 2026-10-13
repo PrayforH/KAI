@@ -126,3 +126,8 @@ html[data-theme="codex-theme-v1"] body.codex-theme-v1 .harness-composer-shell .c
 html[data-theme="codex-theme-v1"] body.codex-theme-v1 .harness-composer-shell .composer-footer .task-agent-switcher-chevron {
   right: 4px;
 }
+
+/* The voice control alone consumes spare toolbar width. */
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .harness-composer-shell .composer-footer .task-model-control {
+  margin-left: 0;
+}

@@ -20,10 +20,10 @@ export function SentUserContent() {
     resize.observe(node);
     return () => resize.disconnect();
   }, []);
-  return <>
+  return <div className="sent-user-bubble" data-long={long}>
     <UserMessage.Content id={contentId} ref={content} className="sent-user-content" data-collapsed={long && !expanded} />
     {long && <button type="button" className="sent-user-expand" aria-expanded={expanded} aria-controls={contentId}
       aria-label={expanded ? "收起全文" : "展开全文"} title={expanded ? "收起全文" : "展开全文"}
       onClick={() => setExpanded(value => !value)}><CodexResponseIcon name="chevronDown" /></button>}
-  </>;
+  </div>;
 }
