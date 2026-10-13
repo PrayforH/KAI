@@ -1,4 +1,5 @@
 import json
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -370,7 +371,7 @@ async def test_minimax_reports_missing_image_support_without_losing_text():
 async def test_tavily_news_keeps_images_and_dates_without_inventing_article_sources():
     import json
 
-    seen = []
+    seen: list[dict[str, Any]] = []
     payload = {
         "results": [
             {
@@ -389,7 +390,7 @@ async def test_tavily_news_keeps_images_and_dates_without_inventing_article_sour
         ],
     }
 
-    def handler(request):
+    def handler(request: httpx.Request) -> httpx.Response:
         seen.append(json.loads(request.content))
         return httpx.Response(200, json=payload)
 
@@ -412,12 +413,12 @@ async def test_tavily_news_keeps_images_and_dates_without_inventing_article_sour
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("operation", ["extract", "crawl", "map"])
-async def test_tavily_retrieval_preserves_article_images_and_bounds_crawl(operation):
+async def test_tavily_retrieval_preserves_article_images_and_bounds_crawl(operation: str):
     import json
 
-    seen = []
+    seen: list[tuple[str, dict[str, Any]]] = []
 
-    def handler(request):
+    def handler(request: httpx.Request) -> httpx.Response:
         seen.append((request.url.path, json.loads(request.content)))
         return httpx.Response(
             200,
@@ -464,13 +465,14 @@ async def test_tavily_retrieval_preserves_article_images_and_bounds_crawl(operat
 
 @pytest.mark.asyncio
 async def test_tavily_extraction_private_dns_blocked_before_provider_call():
-    client = PublicWebClient(AsyncMock(return_value="test-key"), "tavily")
+    api_key = AsyncMock(return_value="test-key")
+    client = PublicWebClient(api_key, "tavily")
     with patch(
         "harness.runtime.web_tools.resolve_public", AsyncMock(side_effect=WebAccessError("非公网"))
     ):
         with pytest.raises(WebAccessError, match="非公网"):
             await client.fetch("https://example.com", operation="extract")
-    client._api_key.assert_not_awaited()
+    api_key.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -536,17 +538,17 @@ async def test_fetch_rejects_observed_hidden_textarea_qcc_challenge():
         def __init__(self):
             self.data = wire
 
-        async def read(self, max_bytes, timeout=None):
+        async def read(self, max_bytes: int, timeout: float | None = None) -> bytes:
             data, self.data = self.data[:max_bytes], self.data[max_bytes:]
             return data
 
-        async def write(self, buffer, timeout=None):
+        async def write(self, buffer: bytes, timeout: float | None = None) -> None:
             pass
 
         async def aclose(self):
             pass
 
-        def get_extra_info(self, info):
+        def get_extra_info(self, info: str) -> None:
             return None
 
     with patch.object(PublicNetworkBackend, "connect_tcp", AsyncMock(return_value=Stream())):

@@ -3838,7 +3838,9 @@ async def test_official_minimax_quota_and_connection_probe_never_generate_video(
         "X-User-ID": "owner-a",
     }
     async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as provider_client:
-        container.model_configurations._http_client = provider_client
+        # Keep the integration route real and replace only its external provider transport.
+        models = container.model_configurations
+        models._http_client = provider_client  # pyright: ignore[reportPrivateUsage]
         async with AsyncClient(
             transport=ASGITransport(app=application), base_url="http://test"
         ) as client:

@@ -907,7 +907,7 @@ async def test_minimax_rejects_h3_durations_before_provider_call(seconds: int) -
 )
 def test_minimax_errors_never_echo_provider_secrets(body: dict[str, object]) -> None:
     with pytest.raises(ConflictError) as error:
-        ModelConfigurationService._minimax_response(
+        ModelConfigurationService._minimax_response(  # pyright: ignore[reportPrivateUsage]
             httpx.Response(
                 200, json=body, request=httpx.Request("GET", "https://api.minimaxi.com/v1/example")
             )
@@ -987,7 +987,8 @@ async def test_video_task_survives_service_restart_and_enforces_ownership() -> N
     )
     async with httpx.AsyncClient(transport=httpx.MockTransport(provider)) as client:
         models, catalogs, credentials = service(client=client)
-        models._runs, models._sessions = runs, sessions
+        # Inject durable repositories to simulate restarting a configured service.
+        models._runs, models._sessions = runs, sessions  # pyright: ignore[reportPrivateUsage]
         await models.configure("tenant-a", "admin-a", "minimax-video", minimax_request())
         job = await models.create_video_job(
             "tenant-a",
@@ -996,7 +997,8 @@ async def test_video_task_survives_service_restart_and_enforces_ownership() -> N
             GenerateVideoRequest(prompt="test", seconds=6),
             task_session_id="media-session",
         )
-        for task in models._video_monitors.values():
+        # Simulate process shutdown without allowing its monitor to finish the job.
+        for task in models._video_monitors.values():  # pyright: ignore[reportPrivateUsage]
             task.cancel()
         recreated = ModelConfigurationService(
             catalogs,
@@ -1018,5 +1020,5 @@ async def test_video_task_survives_service_restart_and_enforces_ownership() -> N
         assert durable.status is RunStatus.SUCCEEDED
         assert "sk-cp-test-key" not in durable.model_dump_json()
         assert sum(item.method == "POST" for item in calls) == 1
-        for task in recreated._video_monitors.values():
+        for task in recreated._video_monitors.values():  # pyright: ignore[reportPrivateUsage]
             task.cancel()

@@ -435,7 +435,7 @@ async def test_followups_restore_latest_upload_batch_without_crossing_sessions()
         "second",
         input={"prompt": "second", "input_artifact_ids": ["zip-1", "zip-2"]},
     )
-    request = {"prompt": "continue", "input_artifact_ids": []}
+    request: dict[str, object] = {"prompt": "continue", "input_artifact_ids": []}
     followup = await service.create("tenant-a", "session-1", "third", input=request)
     assert followup.input["inherited_input_artifact_ids"] == ["zip-1", "zip-2"]
     assert request == {"prompt": "continue", "input_artifact_ids": []}
