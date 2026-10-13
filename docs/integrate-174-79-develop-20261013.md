@@ -20,3 +20,5 @@
 本地后端 1,892 项测试通过，之后的源码类型修正又通过 74 项相关回归。前端 1,147 项通过、1 项跳过，macOS 和 Linux 构建环境均通过；TypeScript、Ruff 和 Next.js 生产构建通过。仓库完整 Pyright 基线检查为 1,512 条既存诊断、0 条新增、11 条已解决，不将既存债务描述为全量类型检查无错误。Agent 包验证、确定性验证和发布准备检查通过。
 
 GitHub develop 要求通过 PR 和三项 CI，整合 PR 为 https://github.com/PrayforH/KAI/pull/63 。最终合并及发布结果以 PR 状态和服务健康核验为准。验证未发起真实视频生成。
+
+PR 仍自动运行 verify 的三项必需检查。取消 push 到 develop 后的重复执行，增加 workflow_dispatch 手动入口；main 的 push 检查和 release 的 workflow_call 保留。需要重跑时可在 Actions 中手动运行 verify，并选择目标分支。
