@@ -27,6 +27,31 @@
   line-height: 1.6;
 }
 
+.intelligent-ui-summary-headline {
+  margin: 14px 14px 0;
+  color: var(--codex-ink);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.intelligent-ui-summary .intelligent-ui-metric-item:first-child .intelligent-ui-metric-value {
+  font-size: 30px;
+}
+
+.intelligent-ui-summary-provenance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: 0 14px 14px;
+  color: var(--codex-muted);
+  font-size: 12px;
+}
+
+.intelligent-ui-summary-provenance a {
+  color: var(--codex-ink-soft);
+  text-underline-offset: 3px;
+}
+
 .intelligent-ui-title {
   padding: 12px 14px 10px;
   color: var(--codex-ink);

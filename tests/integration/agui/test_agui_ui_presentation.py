@@ -239,6 +239,7 @@ async def test_capabilities_endpoint_describes_the_catalog() -> None:
     assert payload["max_presentations_per_turn"] == 2
     assert payload["generated_html"] is True
     assert {renderer["kind"] for renderer in payload["renderers"]} == {
+        "summary",
         "table",
         "comparison",
         "chart",

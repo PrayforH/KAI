@@ -28,7 +28,7 @@ from harness.memory_bank.service import MemoryBankService
 from harness.presentation.catalog import default_catalog
 from harness.presentation.intent import UIIntentSelector
 from harness.presentation.models import ActionRequest, Publication, ViewState
-from harness.presentation.projection import presentations_for_events
+from harness.presentation.projection import presentations_for_events, tool_result_evidence
 from harness.presentation.repositories import PresentationRepository
 from harness.presentation.schema import Presentation
 from harness.runtime.input_redaction import redact_internal_agent_asset_events
@@ -143,12 +143,20 @@ class PresentationService:
                 for e in visible
             ):
                 raise ConflictError("presentation events are outside the owning run")
-            proposed = presentations_for_events(visible)
+            proposed = presentations_for_events(
+                visible, include_summaries=self._intent_selector is not None
+            )
             if self._intent_selector is not None:
+                evidence = tool_result_evidence(visible)
                 mode = run.input.get("ui_presentation_mode")
                 if mode == "text":
                     proposed = []
-                elif any(p.decision.get("origin") == "shape" for p in proposed):
+                elif any(
+                    p.decision.get("origin") == "shape"
+                    or p.kind == "summary"
+                    or (evidence and p.kind in {"table", "chart", "comparison"})
+                    for p in proposed
+                ):
                     allowed = set(default_catalog().kinds)
                     client_kinds = run.input.get("ui_presentation_kinds")
                     if isinstance(client_kinds, list):
@@ -205,6 +213,7 @@ class PresentationService:
                                 allowed_kinds=tuple(sorted(allowed)),
                                 preferences=preferences,
                                 answer_summary=answer,
+                                result_evidence=evidence,
                             )
                             for p in proposed
                         ]

@@ -17,11 +17,12 @@ import json
 import math
 import re
 from typing import Any, Literal, cast
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 UI_SCHEMA_VERSION = "harness.ui/v1"
-PRESENTATION_POLICY_VERSION = "presentation-policy/7"
+PRESENTATION_POLICY_VERSION = "presentation-policy/8"
 
 # Resource limits. These are the numbers the catalog advertises to the model and
 # the numbers validation enforces; they live here once so the two cannot drift.
@@ -163,8 +164,7 @@ def _table(data: dict[str, Any], config: dict[str, Any]) -> tuple[dict[str, Any]
         if columns is None or not 1 <= len(entries) <= MAX_ROWS:
             raise ValueError("positional rows require explicit columns and bounded rows")
         if not all(
-            isinstance(row, list) and len(cast(list[Any], row)) == len(columns)
-            for row in entries
+            isinstance(row, list) and len(cast(list[Any], row)) == len(columns) for row in entries
         ):
             raise ValueError("positional rows must all match the declared columns")
         raw_rows = [
@@ -474,6 +474,43 @@ def _metric(data: dict[str, Any], config: dict[str, Any]) -> tuple[dict[str, Any
     return {"items": items}, {}
 
 
+def _summary(data: dict[str, Any], config: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """A compact factual snapshot; metrics retain their existing scalar contract."""
+    if config or set(data) - {"items", "headline", "sources", "updated_at"}:
+        raise ValueError("unknown summary fields")
+    metrics, _ = _metric(data, {})
+    raw_sources = data.get("sources", [])
+    if not isinstance(raw_sources, list) or len(cast(list[Any], raw_sources)) > 4:
+        raise ValueError("summary supports at most four sources")
+    sources: list[dict[str, str]] = []
+    for raw in cast(list[Any], raw_sources):
+        if not isinstance(raw, dict) or set(cast(dict[str, Any], raw)) != {"label", "url"}:
+            raise ValueError("invalid summary source")
+        raw = cast(dict[str, Any], raw)
+        url = _text(raw["url"], maximum=2048, field_name="source URL")
+        parsed = urlsplit(url)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username
+            or parsed.password
+        ):
+            raise ValueError("summary source must be an HTTP(S) URL without credentials")
+        sources.append(
+            {"label": _text(raw["label"], maximum=120, field_name="source label"), "url": url}
+        )
+    return {
+        **metrics,
+        "headline": _text(
+            data.get("headline"), maximum=MAX_STRING, field_name="headline", required=False
+        ),
+        "updated_at": _text(
+            data.get("updated_at"), maximum=120, field_name="updated_at", required=False
+        ),
+        "sources": sources,
+    }, {}
+
+
 _FIELD_TYPES = ("text", "number", "date", "single", "multi")
 _CHOICE_TYPES = ("single", "multi")
 # ``local`` is deliberately absent: a client-side interaction is the component's
@@ -626,6 +663,7 @@ _BUILDERS = {
     "diagram": _diagram,
     "timeline": _timeline,
     "metric": _metric,
+    "summary": _summary,
     "form": _form,
     "html": _html,
 }

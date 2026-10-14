@@ -2,7 +2,25 @@
 
 import { MermaidDiagram } from "../mermaid-diagram";
 import { cellText } from "./cells";
-import type { ComparisonData, MetricData, TimelineData } from "./schema";
+import type { ComparisonData, MetricData, SummaryData, TimelineData } from "./schema";
+
+/** A factual snapshot, with the leading fact prominent and provenance adjacent. */
+export function SummaryView({ summary }: { summary: SummaryData }) {
+  return (
+    <div className="intelligent-ui-block intelligent-ui-summary">
+      {summary.headline && <p className="intelligent-ui-summary-headline">{summary.headline}</p>}
+      <MetricView metrics={summary} />
+      {(summary.updated_at || summary.sources.length > 0) && (
+        <footer className="intelligent-ui-summary-provenance">
+          {summary.updated_at && <span>资料时间：{summary.updated_at}</span>}
+          {summary.sources.map((source, index) => (
+            <a key={index} href={source.url} target="_blank" rel="noopener noreferrer">{source.label}</a>
+          ))}
+        </footer>
+      )}
+    </div>
+  );
+}
 
 /** The same dimensions, one column per option: the shape a decision has. */
 export function ComparisonView({

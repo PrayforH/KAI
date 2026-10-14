@@ -701,3 +701,35 @@ it("persists restored table sorting with its state version", async () => {
     vi.useRealTimers();
   }
 });
+
+const summary = () => presentation({
+  kind: "summary", renderer_version: "summary/1", title: "上海天气",
+  data: {
+    headline: "多云", items: [{ label: "气温", value: 23, unit: "°C" }, { label: "降雨概率", value: 20, unit: "%" }],
+    sources: [{ label: "天气来源", url: "https://example.org/weather" }], updated_at: "2026-10-14 16:00",
+  },
+});
+
+it("renders a compact factual snapshot with units, source and source-provided time", () => {
+  render(summary());
+  expect(host?.querySelector('[data-kind="summary"]')).not.toBeNull();
+  expect(host?.textContent).toContain("23°C");
+  expect(host?.textContent).toContain("资料时间：2026-10-14 16:00");
+  expect(host?.querySelector('a')?.getAttribute("href")).toBe("https://example.org/weather");
+  expect(host?.querySelector("iframe")).toBeNull();
+});
+
+it("keeps selected text readable without a card or a leaked protocol fence", () => {
+  const value = { ...summary(), source_text: "```harness-ui\n{}\n```", decision: { origin: "model", display: "text" } };
+  render(value);
+  expect(host?.querySelector("figure")).toBeNull();
+  expect(host?.textContent).toBe(value.fallback_text);
+  expect(stripHarnessUiFences(`结论。\n${value.source_text}`, modelBlockSources([value]))).toBe("结论。\n");
+});
+
+it("rejects executable source links instead of mounting them", () => {
+  const value = summary();
+  render({ ...value, data: { ...value.data, sources: [{ label: "unsafe", url: "javascript:alert(1)" }] } });
+  expect(host?.querySelector("a")).toBeNull();
+  expect(host?.textContent).toContain(value.fallback_text);
+});

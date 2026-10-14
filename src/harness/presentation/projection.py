@@ -158,6 +158,30 @@ def _shape_block(parsed: Any) -> dict[str, Any] | None:
     }
 
 
+def _summary_shape_block(parsed: Any) -> dict[str, Any] | None:
+    """A small scalar object can be a snapshot; d1 decides whether it is useful."""
+    if not isinstance(parsed, dict):
+        return None
+    fields = cast(dict[str, Any], parsed)
+    if not 2 <= len(fields) <= 8:
+        return None
+    if any(
+        not key.strip()
+        or len(key) > 64
+        or value is None
+        or not isinstance(value, str | int | float | bool)
+        or (isinstance(value, str) and (not value.strip() or len(value) > _SHAPE_TEXT_CELL_LIMIT))
+        for key, value in fields.items()
+    ):
+        return None
+    return {
+        "version": 1,
+        "kind": "summary",
+        "fallback_text": "；".join(f"{key}：{value}" for key, value in fields.items())[:MAX_STRING],
+        "data": {"items": [{"label": key, "value": value} for key, value in fields.items()]},
+    }
+
+
 def _maybe_json(text: str) -> Any:
     try:
         return json.loads(text)
@@ -248,7 +272,30 @@ def _tool_names(events: Sequence[RunEvent]) -> dict[str, str]:
     }
 
 
-def _candidates(events: Sequence[RunEvent], run_id: str) -> Iterator[_Candidate]:
+def tool_result_evidence(events: Sequence[RunEvent]) -> list[dict[str, Any]]:
+    """Bounded, successful results for semantic selection, never instructions."""
+    names = _tool_names(events)
+    evidence: list[dict[str, Any]] = []
+    for event in events:
+        if event.type != "tool.result" or _is_error(event.payload):
+            continue
+        name = names.get(str(event.payload.get("tool_call_id")), "")
+        if name in _SHAPE_EXCLUDED_TOOLS or name.startswith(_SHAPE_EXCLUDED_PREFIXES):
+            continue
+        content = "\n".join(_text_parts(event.payload))
+        parsed = _maybe_json(content)
+        if isinstance(parsed, dict | list):
+            content = json.dumps(parsed, ensure_ascii=False)
+        if content.strip():
+            evidence.append(
+                {"tool_name": name, "sequence": event.sequence, "content": content[:1600]}
+            )
+    return evidence[-4:]
+
+
+def _candidates(
+    events: Sequence[RunEvent], run_id: str, *, include_summaries: bool = False
+) -> Iterator[_Candidate]:
     """Every block the run's events justify, in durable sequence order."""
 
     tool_names = _tool_names(events)
@@ -271,7 +318,10 @@ def _candidates(events: Sequence[RunEvent], run_id: str) -> Iterator[_Candidate]
         tool_name = tool_names.get(str(event.payload.get("tool_call_id")), "")
         if tool_name in _SHAPE_EXCLUDED_TOOLS or tool_name.startswith(_SHAPE_EXCLUDED_PREFIXES):
             continue
-        block = _shape_block(_loads_structured(event.payload))
+        parsed = _loads_structured(event.payload)
+        block = _shape_block(parsed)
+        if block is None and include_summaries:
+            block = _summary_shape_block(parsed)
         if block is not None:
             yield _Candidate(
                 block, _message_id(event, run_id), "shape", "structured_tool_result", event.sequence
@@ -319,6 +369,7 @@ def presentations_for_events(
     *,
     limit: int = MAX_PRESENTATIONS_PER_TURN,
     include_shapes: bool = True,
+    include_summaries: bool = False,
 ) -> list[Presentation]:
     """Every presentation the run's events justify, in durable sequence order.
 
@@ -334,10 +385,21 @@ def presentations_for_events(
     # Explicit answer blocks take precedence over incidental tool-result tables.
     # Otherwise two search results can exhaust the turn's budget before its form.
     candidates = sorted(
-        _candidates(events, run_id), key=lambda c: (c.origin != "model", c.sequence)
+        _candidates(events, run_id, include_summaries=include_summaries),
+        key=lambda c: (c.origin != "model", c.sequence),
     )
     for candidate in candidates:
+        candidate_block: Any = candidate.block
         if not include_shapes and candidate.origin == "shape":
+            continue
+        if (
+            candidate.origin == "shape"
+            and isinstance(candidate_block, dict)
+            and cast(dict[str, Any], candidate_block).get("kind") == "summary"
+            and any(p.decision.get("origin") == "model" for p in presentations)
+        ):
+            # An authored display already represents the answer. Incidental
+            # scalar results must not add a duplicate status card underneath it.
             continue
         if len(presentations) >= limit:
             break

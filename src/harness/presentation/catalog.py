@@ -40,16 +40,26 @@ class Renderer:
 
 _RENDERERS: tuple[Renderer, ...] = (
     Renderer(
+        kind="summary",
+        version="summary/1",
+        summary="查看概况",
+        data_shape=(
+            '{"headline":"状态或结论","items":[{"label":"关键指标","value":23,"unit":"单位"}],'
+            '"sources":[{"label":"查询来源","url":"真实 HTTP(S) 来源地址"}],'
+            '"updated_at":"来源明确提供的时间，可省略"}'
+        ),
+    ),
+    Renderer(
         kind="table",
         version="table/1",
-        summary="逐行可比的结构化记录，用户需要排序或核对具体数值时",
+        summary="逐条查看或核对记录明细",
         data_shape='{"columns":[{"key":"a","label":"名称"}],"rows":[{"a":"值"}]}',
         config_shape='{"caption":"可选说明"}',
     ),
     Renderer(
         kind="comparison",
         version="comparison/1",
-        summary="少量对象在同一组维度上的横向对比",
+        summary="横向比较多个对象或方案",
         data_shape=(
             '{"dimensions":[{"key":"price","label":"价格"}],'
             '"items":[{"label":"方案甲","values":{"price":"120"}},'
@@ -59,7 +69,7 @@ _RENDERERS: tuple[Renderer, ...] = (
     Renderer(
         kind="chart",
         version="chart/1",
-        summary="带单位或时间维度的数值趋势与分布",
+        summary="观察数值变化、趋势或分布",
         data_shape='{"rows":[{"q":"第一季度","count":120}]}',
         config_shape=(
             '{"chart_type":"bar|line|area|pie","x_field":"q","y_fields":["count"],'
@@ -123,8 +133,13 @@ UI_BLOCK_CONTRACT = f"""## Interactive answer blocks
 Choose the answer form from what the user needs to understand or do. Parameter
 changes, experiments, component exploration, editable plans and games benefit
 from interaction even when the user never names a UI component. Deliver useful
-interaction in this turn; do not merely offer to build it next. Short facts,
-ordinary writing and requests for plain text use prose. The platform shows at most
+interaction in this turn; do not merely offer to build it next. A single fact,
+ordinary writing and requests for plain text use prose. A compact snapshot of
+one entity's status or several key facts uses summary, even without interaction
+or photos. Use actual query results, units, sources and source-provided times;
+never invent missing facts or freshness. Time series may use chart and multiple
+entities may use comparison. Keep accompanying prose brief without repeating
+the card. The platform shows at most
 {MAX_PRESENTATIONS_PER_TURN} per turn, and a wrong widget costs the user more than
 plain text.
 
