@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { responseTextForTurn } from "../src/components/agent-thread";
+import { responseTextForTurn, turnDeliverablesReady, shouldSuppressNativeAssistantText } from "../src/components/agent-thread";
 import type { LiveResponseSnapshot } from "../src/lib/live-response-store";
 const idle: LiveResponseSnapshot = {text: "", status: "idle", visible: false};
 it("keeps the cleaned answer when the next turn starts before history commits", () => {
@@ -22,4 +22,20 @@ it("keeps hidden progress hidden, then accepts the durable response at hand-off"
 it("never carries a cached response into a recycled message slot", () => {
   const captured = {current: {messageId: "assistant-first", text: "旧答案"}};
   expect(responseTextForTurn("assistant-second", "新答案", false, {...idle, status: "streaming"}, captured)).toBe("新答案");
+});
+
+it("holds deliverables through model completion and until both run and message settle", () => {
+  expect(turnDeliverablesReady("running", "completed")).toBe(false); // previous run snapshot
+  expect(turnDeliverablesReady("complete", "running")).toBe(false); // model done, publishing
+  expect(turnDeliverablesReady("complete", "completed")).toBe(true);
+  expect(turnDeliverablesReady("incomplete", "failed")).toBe(true); // completed partial files
+  expect(turnDeliverablesReady("complete")).toBe(true); // historical earlier turn
+});
+it("does not paint a recycled native answer while awaiting this turn's first server message", () => {
+  const captured = {current: {messageId: "assistant-first", text: "旧答案"}};
+  const next: LiveResponseSnapshot = {runId: "second", text: "", status: "streaming", visible: false};
+  const suppressed = shouldSuppressNativeAssistantText(false, next, true);
+  expect(suppressed).toBe(true);
+  expect(responseTextForTurn("__optimistic__second", "旧答案", suppressed, next, captured)).toBe("");
+  expect(responseTextForTurn("assistant-second", "旧答案", true, {...next, visible:true, text:"新答案"}, captured)).toBe("新答案");
 });

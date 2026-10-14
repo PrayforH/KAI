@@ -48,3 +48,9 @@ export function normalizeTemperatureRanges(value: string): string {
     }).join("");
   }).join("\n");
 }
+
+/** Provider punctuation fragments are not progress updates; preserve final answers. */
+export function isProgressNoise(value: string): boolean {
+  const text = normalizeMessageText(value);
+  return !text || (text.length <= 8 && /^[\p{P}\p{Z}\s]+$/u.test(text));
+}

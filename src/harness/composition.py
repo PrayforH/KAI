@@ -89,6 +89,7 @@ from harness.policy.profiles import default_policy_profiles
 from harness.policy.runtime import ResolvedPolicy
 from harness.presentation.intent import UIIntentSelector
 from harness.presentation.models import ActionRequest, Publication
+from harness.presentation.planner import InteractionPlanner
 from harness.presentation.service import PresentationService
 from harness.projects.pg_repositories import PostgresProjectRepository
 from harness.projects.service import ProjectService
@@ -1530,6 +1531,7 @@ def build_production_container(
         artifacts=artifact_service,
         input_artifacts=input_service,
         memory=memory_service,
+        interaction_planner=InteractionPlanner.from_settings(settings),
         workspace_policy_resolver=workspace_policy,
         runtime_asset_stager=stage_runtime_assets if execution_enabled else None,
         policy_resolver=resolve_policy,

@@ -5,8 +5,8 @@ import {
   terminalExecution,
   uiJson,
   uiPath,
+  loadUiSnapshot,
   type UiExecution,
-  type UiSnapshot,
   type UiViewState,
 } from "./client";
 import type { Presentation } from "./schema";
@@ -21,6 +21,7 @@ export function usePresentation(
   const [requests, setRequests] = useState<UiExecution[]>([]);
   const [loaded, setLoaded] = useState(!connected);
   const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0);
   const stateVersion = useRef(0);
   const saveQueue = useRef<UiViewState | null>(null);
   const saving = useRef(false);
@@ -39,9 +40,12 @@ export function usePresentation(
         alive.current = false;
       };
     let cancelled = false;
-    void uiJson<UiSnapshot>(`${base}?revision=${p.revision}`)
+    const controller = new AbortController();
+    setLoaded(false);
+    setError("");
+    void loadUiSnapshot(p, controller.signal)
       .then((snapshot) => {
-        if (cancelled) return;
+        if (cancelled || !snapshot) return;
         stateVersion.current = snapshot.view_state.version;
         const submitted = snapshot.action_requests.find(
           (r) =>
@@ -66,9 +70,10 @@ export function usePresentation(
       });
     return () => {
       cancelled = true;
+      controller.abort();
       alive.current = false;
     };
-  }, [base, connected, p.revision]);
+  }, [base, connected, p.revision, p.run_id, attempt]);
 
   const activeIds = requests
     .filter((r) => !terminalExecution(r.execution_status))
@@ -175,5 +180,5 @@ export function usePresentation(
     if (request.run_id && terminalExecution(request.execution_status))
       settled.current?.(request.run_id);
   }
-  return { view, changeView, requests, accept, loaded, error };
+  return { view, changeView, requests, accept, loaded, error, retry: () => setAttempt(n => n + 1) };
 }

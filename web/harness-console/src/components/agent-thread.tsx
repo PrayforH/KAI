@@ -1320,13 +1320,21 @@ export function ownsLiveResponse(
   return isLast && Boolean(liveMessageId) && messageId === liveMessageId;
 }
 
+/** Both streams must settle before presenting this turn's deliverables. */
+export function turnDeliverablesReady(messageStatus: string | undefined, ownedRunPhase?: string) {
+  return messageStatus !== "running" && (
+    !ownedRunPhase || ["completed", "failed", "rejected", "cancelled"].includes(ownedRunPhase)
+  );
+}
+
 export function shouldSuppressNativeAssistantText(
   ownsLive: boolean,
   live: Pick<LiveResponseSnapshot, "status" | "visible" | "text">,
+  awaitingMessage = false,
 ) {
   // Retain ownership of hidden progress until the durable history hand-off.
   // Only an empty stream can fall back to native text without duplicating prose.
-  return ownsLive && (live.status === "streaming" || Boolean(live.text.trim()));
+  return awaitingMessage || (ownsLive && (live.status === "streaming" || Boolean(live.text.trim())));
 }
 
 export function messageOwnsRun(messageId: string, runId: string) {
@@ -1386,7 +1394,9 @@ export function HarnessAssistantMessage() {
   // text may still be waiting to see whether a tool call follows, so basing
   // this only on visible text lets assistant-ui paint the same preface once.
   const ownsLive = ownsLiveResponse(isLast, messageId, live.messageId);
-  const directStream = shouldSuppressNativeAssistantText(ownsLive, live);
+  const pendingLive = isLast && messageStatus?.type === "running" &&
+    live.status === "streaming" && !live.messageId;
+  const directStream = shouldSuppressNativeAssistantText(ownsLive, live, pendingLive);
   const capturedResponse = useRef<CapturedTurnResponse | undefined>(undefined);
   const nativeText = normalizeMessageText(
     content.flatMap((part, index) => (
@@ -1409,13 +1419,15 @@ export function HarnessAssistantMessage() {
   const turnCitations = citationsForTurn(messageId, isLast, runView, durable?.success ? durable.data : undefined);
   if (turnCitations) capturedCitations.current = { messageId, citations: turnCitations };
   const answerCitations = !hasVideoGeneration && capturedCitations.current.messageId === messageId ? capturedCitations.current.citations : [];
+  const ownsActiveRun = Boolean(runView && turnOwnsRun(messageId, runView.runId, isLast, runView.runId));
+  const turnSettled = turnDeliverablesReady(messageStatus?.type, ownsActiveRun ? runView?.phase : undefined);
   const turnArtifacts = useMemo(
-    () => artifactsForTurn(content, runView?.runId, isLast),
-    [content, runView?.runId, isLast],
+    () => turnSettled ? artifactsForTurn(content, runView?.runId, isLast) : [],
+    [content, runView?.runId, isLast, turnSettled],
   );
   // Interactive answer blocks arrive on the same tool-call channel artifacts do,
   // so they are present live and after a reload without a second code path.
-  const turnPresentations = useMemo(() => presentationsForMessage(content), [content]);
+  const turnPresentations = useMemo(() => turnSettled ? presentationsForMessage(content) : [], [content, turnSettled]);
   // Only blocks the model authored came from a fence in this answer, so only that
   // many fences may be hidden from the rendered Markdown.
   const publishedBlocks = useMemo(() => modelBlockSources(turnPresentations), [turnPresentations]);

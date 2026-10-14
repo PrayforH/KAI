@@ -17,6 +17,7 @@ from harness.api.dependencies import (
     require_identity,
     require_owned_run,
 )
+from harness.core.errors import NotFoundError
 from harness.core.models import ArtifactStatus
 from harness.presentation import default_catalog
 from harness.presentation.models import Publication
@@ -90,8 +91,21 @@ async def get_presentation(
     actor: Actor,
     container: Container,
     revision: int | None = Query(default=None, ge=1),
+    run_id: str | None = Query(default=None, min_length=1, max_length=160),
 ) -> dict[str, Any]:
-    _, p = await owned(container, actor, presentation_id, revision)
+    try:
+        _, p = await owned(container, actor, presentation_id, revision)
+    except NotFoundError:
+        if run_id is None:
+            raise
+        # Older histories can contain a block before its publication was saved.
+        # Rebuild only from a terminal run owned by this actor, then recheck the
+        # exact requested identity/revision through the normal ownership path.
+        run = await require_owned_run(container, actor, run_id)
+        if not run.status.is_terminal:
+            raise HTTPException(425, "交互工具正在准备，请稍后重试") from None
+        await container.presentations.materialize(run)
+        _, p = await owned(container, actor, presentation_id, revision)
     view = await container.presentations.repository.view(
         actor.tenant_id, actor.user_id, presentation_id, p.revision
     )

@@ -549,6 +549,7 @@ async def arrange(
     context_service: ContextService | None = None,
     sandbox_leases: SandboxLeaseService | None = None,
     sandbox_resolver: SandboxResolver | None = None,
+    interaction_planner=None,
     output_artifact_max_bytes: int = 50 * 1024 * 1024,
 ):
     sessions = InMemorySessionRepository()
@@ -596,6 +597,7 @@ async def arrange(
             id_generator=ids(),
         ),
         runtime=runtime,
+        interaction_planner=interaction_planner,
         sandbox=sandbox,
         clock=clock,
         policy=policy,
@@ -2314,3 +2316,76 @@ async def test_a_refused_run_reports_the_governance_code(tmp_path: Path) -> None
     failed = next(event for event in events if event.type == "run.failed")
     assert failed.payload["error_code"] == "sandbox_governance"
     assert "trust floor" in failed.payload["message"]
+
+
+@pytest.mark.asyncio
+async def test_interaction_plan_is_private_and_precedes_runtime_without_rewriting_request(tmp_path):
+    import json
+
+    import httpx
+    from pydantic import SecretStr
+
+    from harness.presentation.planner import InteractionPlanner
+
+    upstream = httpx.MockTransport(lambda _: httpx.Response(200, json={"choices": [{
+        "finish_reason": "stop", "message": {"content": json.dumps({
+            "interactive": True, "images": False})}}]}))
+    planner = InteractionPlanner("http://gateway/v1", SecretStr("private"), "d1-3B",
+                                 transport=upstream)
+    runtime = CapturingRuntime()
+    orchestrator, _, runs, events = await arrange(tmp_path, runtime_override=runtime,
+                                                interaction_planner=planner)
+    completed = await orchestrator.execute("tenant-a", "run-1")
+    assert completed.status is RunStatus.SUCCEEDED
+    context = runtime.contexts[0]
+    assert context.run.input["prompt"] == "hello harness"
+    assert "改变什么、观察什么" in context.interaction_projection
+    assert "interaction_projection" not in context.model_dump()
+    records = await events.list_after("tenant-a", "run-1", 0)
+    plan_event = next(e for e in records if e.type == "presentation.intent")
+    message_event = next(e for e in records if e.type == "message.start")
+    assert plan_event.sequence < message_event.sequence
+    assert plan_event.payload["interactive"] is True
+
+
+@pytest.mark.asyncio
+async def test_builder_runs_skip_interaction_planning(tmp_path):
+    import httpx
+    from pydantic import SecretStr
+
+    from harness.presentation.planner import InteractionPlanner
+
+    def unexpected(_):
+        raise AssertionError("builder routing must not call the UI planner")
+    planner = InteractionPlanner("http://gateway/v1", SecretStr("private"), "d1-3B",
+                                 transport=httpx.MockTransport(unexpected))
+    orchestrator, _, runs, events = await arrange(tmp_path, interaction_planner=planner)
+    run = await runs.get("tenant-a", "run-1")
+    builder = run.model_copy(update={
+        "input": {"prompt": "修改智能体", "studio_builder": {"draft_id": "draft"}}
+    })
+    assert await orchestrator._interaction_guidance(builder) == ""
+    assert not any(
+        e.type == "presentation.intent" for e in await events.list_after("tenant-a", "run-1", 0)
+    )
+
+
+@pytest.mark.asyncio
+async def test_planner_provider_failure_preserves_runtime_execution(tmp_path):
+    import httpx
+    from pydantic import SecretStr
+
+    from harness.presentation.planner import InteractionPlanner
+
+    planner = InteractionPlanner("http://gateway/v1", SecretStr("private"), "d1-3B",
+                                 transport=httpx.MockTransport(lambda _: httpx.Response(503)))
+    runtime = CapturingRuntime()
+    orchestrator, _, _, events = await arrange(tmp_path, runtime_override=runtime,
+                                             interaction_planner=planner)
+    assert (await orchestrator.execute("tenant-a", "run-1")).status is RunStatus.SUCCEEDED
+    assert runtime.contexts[0].interaction_projection == ""
+    event = next(
+        e for e in await events.list_after("tenant-a", "run-1", 0)
+        if e.type == "presentation.intent"
+    )
+    assert event.payload["status"] == "fallback"

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 import logging
@@ -16,6 +15,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, SecretStr
 
 from harness.config import Settings
+from harness.presentation.completion import UICompletionClient
 from harness.presentation.schema import Presentation, validate_block
 
 _LOGGER = logging.getLogger(__name__)
@@ -144,11 +144,9 @@ class UIIntentSelector:
         timeout_seconds: float = 3,
         transport: httpx.AsyncBaseTransport | None = None,
     ):
-        self._url = base_url.rstrip("/") + "/chat/completions"
-        self._key = api_key
-        self._model = model
-        self._timeout_seconds = timeout_seconds
-        self._transport = transport
+        self._client = UICompletionClient(
+            base_url, api_key, model, timeout_seconds=timeout_seconds, transport=transport
+        )
 
     @classmethod
     def from_settings(cls, settings: Settings) -> UIIntentSelector | None:
@@ -183,65 +181,37 @@ class UIIntentSelector:
             return None
         started = monotonic()
         try:
-            async with (
-                asyncio.timeout(self._timeout_seconds),
-                httpx.AsyncClient(
-                    timeout=httpx.Timeout(
-                        self._timeout_seconds, connect=min(3, self._timeout_seconds)
-                    ),
-                    transport=self._transport,
-                    trust_env=False,
-                    follow_redirects=False,
-                ) as client,
-            ):
-                response = await client.post(
-                    self._url,
-                    headers={"Authorization": f"Bearer {self._key.get_secret_value()}"},
-                    json={
-                        "model": self._model,
-                        "temperature": 0,
-                        "max_tokens": 64,
-                        "stream": False,
-                        "response_format": {"type": "json_object"},
-                        "messages": [
-                            {"role": "system", "content": UI_INTENT_SYSTEM_PROMPT},
-                            {
-                                "role": "user",
-                                "content": json.dumps(
-                                    {
-                                        "answer_summary": answer_summary[:2_000],
-                                        "available_kinds": choices,
-                                        "preferences": list(preferences[:4]),
-                                        "result_summary": {
-                                            "row_count": len(presentation.data["rows"]),
-                                            "columns": presentation.data["columns"],
-                                            "sample_rows": presentation.data["rows"][:4],
-                                        },
-                                        "request": request[:4_000],
-                                    },
-                                    ensure_ascii=False,
-                                ),
-                            },
-                        ],
+            content = await self._client.classify(
+                UI_INTENT_SYSTEM_PROMPT,
+                {
+                    "answer_summary": answer_summary[:2000],
+                    "available_kinds": choices,
+                    "preferences": list(preferences[:4]),
+                    "result_summary": {
+                        "row_count": len(presentation.data["rows"]),
+                        "columns": presentation.data["columns"],
+                        "sample_rows": presentation.data["rows"][:4],
                     },
-                )
-                response.raise_for_status()
-                decision = self._parse_response(response.json())
-                if decision.kind == "unknown":
-                    return fallback
-                if decision.kind not in choices:
-                    raise ValueError("selection is outside allowed data-backed kinds")
+                    "request": request[:4000],
+                },
+                max_tokens=64,
+            )
+            decision = UIIntentDecision.model_validate_json(content)
+            if decision.kind == "unknown":
+                return fallback
+            if decision.kind not in choices:
+                raise ValueError("selection is outside allowed data-backed kinds")
         except (httpx.HTTPError, TimeoutError, ValueError, TypeError):
             _LOGGER.info(
                 "ui_intent fallback model=%s elapsed_ms=%d",
-                self._model,
+                self._client.model,
                 (monotonic() - started) * 1000,
             )
             return fallback
         _LOGGER.info(
             "ui_intent kind=%s model=%s elapsed_ms=%d",
             decision.kind,
-            self._model,
+            self._client.model,
             (monotonic() - started) * 1000,
         )
         if decision.kind == "text":
@@ -252,28 +222,7 @@ class UIIntentSelector:
                 "decision": {
                     **selected.decision,
                     "reason_code": "d1_selected",
-                    "selector_model": self._model,
+                    "selector_model": self._client.model,
                 }
             }
         )
-
-    @staticmethod
-    def _parse_response(payload: object) -> UIIntentDecision:
-        if not isinstance(payload, dict):
-            raise ValueError("invalid completion")
-        choices = cast(dict[str, object], payload).get("choices")
-        if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
-            raise ValueError("invalid choices")
-        choice = cast(dict[str, object], choices[0])
-        if choice.get("finish_reason") != "stop":
-            raise ValueError("incomplete choice")
-        message = choice.get("message")
-        if not isinstance(message, dict):
-            raise ValueError("invalid message")
-        text = cast(dict[str, object], message).get("content")
-        if not isinstance(text, str):
-            raise ValueError("invalid content")
-        text = text.strip()
-        if text.startswith("```") and text.endswith("```"):
-            text = "\n".join(text.splitlines()[1:-1])
-        return UIIntentDecision.model_validate_json(text)
