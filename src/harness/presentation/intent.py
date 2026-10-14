@@ -297,7 +297,10 @@ class UIIntentSelector:
             (monotonic() - started) * 1000,
         )
         if decision.kind == "text":
-            if presentation.decision.get("reason_code") == "answer_table_shape":
+            if presentation.decision.get("reason_code") in {
+                "answer_table_shape",
+                "answer_facts_shape",
+            }:
                 return None
             return (
                 text_fallback.model_copy(

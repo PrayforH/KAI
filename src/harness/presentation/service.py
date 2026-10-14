@@ -28,6 +28,7 @@ from harness.presentation.catalog import default_catalog
 from harness.presentation.intent import UIIntentSelector
 from harness.presentation.models import ActionRequest, Publication, ViewState
 from harness.presentation.projection import (
+    answer_facts,
     answer_tables,
     presentations_for_events,
     tool_result_evidence,
@@ -152,7 +153,7 @@ class PresentationService:
             if self._intent_selector is not None:
                 evidence = tool_result_evidence(visible)
                 if evidence and not any(p.decision.get("origin") == "model" for p in proposed):
-                    proposed = answer_tables(visible) or proposed
+                    proposed = answer_tables(visible) or answer_facts(visible) or proposed
                 mode = run.input.get("ui_presentation_mode")
                 if mode == "text":
                     proposed = []

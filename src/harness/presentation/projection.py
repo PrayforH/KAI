@@ -356,6 +356,59 @@ def answer_tables(events: Sequence[RunEvent]) -> list[Presentation]:
     return found
 
 
+def answer_facts(events: Sequence[RunEvent]) -> list[Presentation]:
+    """Consecutive labelled facts are a snapshot, regardless of their subject."""
+    from harness.agui.response import final_response_text
+
+    text = final_response_text(list(events))
+    scope = next((e for e in reversed(events) if e.type == "message.delta"), None)
+    if scope is None or len(text) > MAX_BLOCK_CHARS:
+        return []
+    text = _FENCE.sub(lambda match: "\n" * match.group(0).count("\n"), text)
+    groups = re.finditer(r"(?:^[ \t]*[-*][ \t]+[^\n]+[\n]?){2,8}", text, re.MULTILINE)
+    for group in groups:
+        items: list[dict[str, str]] = []
+        for line in group[0].splitlines():
+            match = re.fullmatch(r"\s*[-*]\s+(.{1,60}?)[:：]\s*(.{1,600})", line)
+            if match is None:
+                break
+            label = match[1].strip().strip("*")
+            value = re.sub(r"\*\*([^*]+)\*\*", r"\1", match[2].strip())
+            items.append({"label": label, "value": value})
+        else:
+            if len({i["label"] for i in items}) != len(items):
+                continue
+            p = validate_block(
+                {
+                    "version": 1,
+                    "kind": "summary",
+                    "fallback_text": group[0][:MAX_STRING],
+                    "data": {"items": items},
+                },
+                run_id=scope.run_id,
+                message_id=_message_id(scope, scope.run_id),
+                index=0,
+                origin="model",
+                reason_code="answer_facts_shape",
+            )
+            if p is not None:
+                return [
+                    p.model_copy(
+                        update={
+                            "source_text": group[0].rstrip("\n"),
+                            "source_refs": (
+                                {
+                                    "run_id": scope.run_id,
+                                    "sequence": scope.sequence,
+                                    "origin": "model",
+                                },
+                            ),
+                        }
+                    )
+                ]
+    return []
+
+
 def _candidates(
     events: Sequence[RunEvent], run_id: str, *, include_summaries: bool = False
 ) -> Iterator[_Candidate]:

@@ -267,3 +267,16 @@ def test_unit_bearing_series_preserve_the_table_and_offer_numeric_chart_data():
     assert variants["chart"].data["rows"][0]["数值"] == 25
     assert variants["chart"].config["chart_type"] == "line"
     assert variants["chart"].config["y_labels"] == ["数值 (℃)"]
+
+
+def test_labelled_answer_facts_keep_values_and_ignore_unstructured_or_code_lists():
+    from harness.presentation.projection import answer_facts
+
+    text = "概况。\n- 状态：**已完成**\n- 数值：25℃\n- 时间：18:00\n\n补充说明。"
+    p = answer_facts(_answer(text))[0]
+    assert p.kind == "summary"
+    assert p.data["items"][0]["value"] == "已完成"
+    assert p.data["items"][1]["value"] == "25℃"
+    assert p.source_text in text
+    assert answer_facts(_answer("- 一句解释\n- 另一句解释\n")) == []
+    assert answer_facts(_answer("```text\n" + text + "\n```")) == []

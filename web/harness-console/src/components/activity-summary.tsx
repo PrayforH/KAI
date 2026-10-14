@@ -2,7 +2,10 @@
 import { isProgressNoise } from "../lib/message-text";
 
 import { TextMessagePartProvider } from "@assistant-ui/react";
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { useDialogFocus } from "../lib/use-dialog-focus";
+import { formatToolResult, queryResultTable } from "../lib/tool-result-format";
 import type { RunActivity } from "../lib/activity-schema";
 import { useRunViewModel } from "../lib/activity-store";
 import { activeElapsedMs, elapsedAnchorFor, type ElapsedAnchor } from "../lib/run-elapsed";
@@ -642,16 +645,18 @@ function ActionIcon({ kind }: { kind: ActionIconKind }) {
   return <CodexResponseIcon name={names[kind]} />;
 }
 
-export function formatResultPreview(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed || (!trimmed.startsWith("{") && !trimmed.startsWith("["))) {
-    return value;
-  }
-  try {
-    return JSON.stringify(JSON.parse(trimmed), null, 2);
-  } catch {
-    return value;
-  }
+export const formatResultPreview = formatToolResult;
+
+function ToolDetailsDialog({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  const panel = useRef<HTMLDivElement>(null);
+  const close = useRef<HTMLButtonElement>(null);
+  useDialogFocus({ open: true, panelRef: panel, initialFocusRef: close, onEscape: onClose });
+  return createPortal(<div className="tool-details-backdrop" onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
+    <div className="tool-details-dialog" role="dialog" aria-modal="true" aria-label={title} ref={panel}>
+      <header className="tool-details-header"><h2>{title}</h2><button ref={close} onClick={onClose} aria-label="关闭工具详情">×</button></header>
+      <div className="tool-details-scroll">{children}</div>
+    </div>
+  </div>, document.body);
 }
 
 function ResultPreview({
@@ -661,19 +666,20 @@ function ResultPreview({
   children: string;
   label: string;
 }) {
-  return (
-    <pre
-      className="execution-action-result"
-      role="region"
-      aria-label={label}
-      tabIndex={0}
-    >
-      <code>{formatResultPreview(children)}</code>
-    </pre>
-  );
+  const [raw, setRaw] = useState(false);
+  const table = queryResultTable(children);
+  return <section className="tool-result-section" aria-label={label}>
+    <div className="tool-result-toolbar"><span>{label}</span><button onClick={() => setRaw(!raw)} aria-pressed={raw}>{raw ? "查看解析结果" : "查看原始内容"}</button></div>
+    {!raw && table ? <>
+      <div className="tool-result-table-wrap" tabIndex={0} role="region" aria-label="查询结果表格"><table className="tool-result-table"><thead><tr>{table.columns.map((column,index) => <th key={index}>{column}</th>)}</tr></thead><tbody>{table.rows.map((row,index) => <tr key={index}>{row.map((cell,column) => <td key={column}>{cell === null ? "NULL" : typeof cell === "object" ? JSON.stringify(cell) : String(cell)}</td>)}</tr>)}</tbody></table></div>
+      <p className="tool-result-count">返回 {table.returnedRows} 行{table.truncated ? " · 结果已截断" : ""}</p>
+    </> : <pre className="execution-action-result" role="region" aria-label={label} tabIndex={0}><code>{raw ? children : formatResultPreview(children)}</code></pre>}
+  </section>;
+
 }
 
 function ActionRow({ action, active = false }: { action: ActionNode; active?: boolean }) {
+  const [open, setOpen] = useState(false);
   const hasResult = Boolean(action.resultPreview || action.entries?.length);
   const heading = (
     <>
@@ -725,9 +731,11 @@ function ActionRow({ action, active = false }: { action: ActionNode; active?: bo
   // A tool request, its result and subsequent grouped reads share one DOM node.
   // Replacing div with details (or changing the group key) restarts disclosure.
   return (
-    <details className={`execution-action action-${action.status}`} data-active={active}>
+    <details className={`execution-action action-${action.status}`} data-active={active} open={open}
+      onToggle={event => setOpen(event.currentTarget.open)}>
       <summary
         className="execution-action-summary"
+        aria-haspopup={hasResult ? "dialog" : undefined}
         aria-disabled={!hasResult || undefined}
         tabIndex={hasResult ? 0 : -1}
         onClick={hasResult ? undefined : (event) => event.preventDefault()}
@@ -735,7 +743,7 @@ function ActionRow({ action, active = false }: { action: ActionNode; active?: bo
         {heading}
         {hasResult && <span className="execution-action-chevron"><CodexResponseIcon name="chevronDown" /></span>}
       </summary>
-      {hasResult && result}
+      {hasResult && open && <ToolDetailsDialog title={action.label} onClose={() => setOpen(false)}>{result}</ToolDetailsDialog>}
     </details>
   );
 }

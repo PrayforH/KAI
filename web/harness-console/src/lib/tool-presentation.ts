@@ -11,6 +11,13 @@ const toolTitles: Record<string, string> = {
   WebFetch: "读取网页",
 };
 
+const databaseTitles: Record<string, string> = {
+  list_sources: "列出数据源", connect_database: "连接数据库", close_connection: "关闭数据库连接",
+  test_connection: "检查数据库连接", list_schemas: "列出数据库模式", list_tables: "列出数据表",
+  describe_table: "查看表结构", query: "查询数据库",
+};
+function databaseTitle(name: string) { return name.startsWith("mcp__database__") ? databaseTitles[name.slice("mcp__database__".length)] : undefined; }
+
 const argumentLabels: Record<string, string> = {
   file_path: "文件",
   path: "范围",
@@ -41,6 +48,10 @@ const hiddenArgumentKeys = new Set([
   "content",
   "old_string",
   "new_string",
+  "password",
+  "passwd",
+  "secret",
+  "token",
 ]);
 
 function compactText(value: unknown): string | undefined {
@@ -63,6 +74,7 @@ function compactText(value: unknown): string | undefined {
 
 export function toolTitle(name: string) {
   if (toolTitles[name]) return toolTitles[name];
+  if (databaseTitle(name)) return databaseTitle(name)!;
   if (name.endsWith("__tavily_search")) return "搜索网页";
   if (name.endsWith("__tavily_extract")) return "提取网页";
   return `调用 ${name}`;
@@ -108,6 +120,8 @@ export function toolActivitySentence(
   const path = argumentText(tool, "file_path", "path");
   const pattern = argumentText(tool, "pattern", "glob");
   const active = tool.status === "running" || tool.status === "waiting";
+  const database = databaseTitle(tool.name);
+  if (database) return `${active ? "正在" : "已"}${database}${argumentText(tool, "table") ? ` · ${argumentText(tool, "table")}` : ""}`;
   switch (tool.name) {
     case "Glob":
       return pattern
