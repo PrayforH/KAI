@@ -13,7 +13,7 @@ it("keeps malformed and ordinary strings intact and prefers structured output",(
  expect(decodeToolResult({structuredContent:{ok:true},content:[{type:"text",text:"preview"}]})).toEqual({ok:true});
  expect(queryResultTable('{"columns":["a"],"rows":[[1,2]]}')).toBeNull();
 });
-it("uses a readable database operation instead of opaque IDs and credentials",()=>{
- expect(toolActivitySentence({name:"mcp__database__query",status:"completed",arguments:{source_id:"connection-secret-id",sql:"SELECT 1"}})).toBe("已查询数据库");
+it("keeps the original tool identity and hides credential arguments",()=>{
+ expect(toolActivitySentence({name:"mcp__database__query",status:"completed",arguments:{source_id:"connection-secret-id",sql:"SELECT 1"}})).toContain("mcp__database__query");
  expect(toolArgumentFacts({name:"unknown",arguments:{password:"private",token:"private",host:"db"}})).toEqual(["host db"]);
 });

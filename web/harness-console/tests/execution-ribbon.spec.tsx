@@ -308,7 +308,7 @@ describe("execution ribbon", () => {
     expect(html).toContain("我先读取 <strong>设计文档</strong>，再检查发布边界。");
     expect(html).not.toContain('<strong>进展</strong>');
     expect(html).toContain('data-active="false"');
-    expect(html).not.toContain("最终结论已经整理完成。");
+    expect(html).toContain("最终结论已经整理完成。");
     expect(completedHtml).not.toContain("最终结论已经整理完成。");
     expect(html.indexOf("我先读取")).toBeLessThan(
       html.indexOf("搜索了 1 次内容 · 读取了 1 个文件"),
@@ -648,8 +648,10 @@ describe("execution ribbon", () => {
 
     expect(html).toContain('data-run-id="run-ribbon"');
     expect(html).toContain("查找了 1 次文件 · 搜索了 1 次内容 · 读取了 1 个文件");
-    expect(html).toContain('aria-haspopup="dialog"');
-    expect(html).not.toContain("execution-action-detail action-completed");
+    expect(html).toContain("已读取 docs/agent-production-platform-design.md");
+    expect(html).toContain("已在 web/harness-console 中搜索“publishDraft|promote”");
+    expect(html).toContain("已查找文件 src/**/*.py，范围 src/harness");
+    expect(html.match(/execution-action-detail action-completed/g)).toHaveLength(3);
     expect(html).not.toContain('class="execution-tool-batch"');
     expect(html).not.toContain("execution-tool");
   });
@@ -722,11 +724,25 @@ describe("execution ribbon", () => {
     const html = renderToStaticMarkup(<ActivitySummary activity={withCommand} />);
 
     expect(html).toContain("查找了 1 次文件 · 运行了 1 个命令");
-    expect(html).toContain('aria-haspopup="dialog"');
+    expect(html).toContain("已查找文件 inputs/original/*");
+    expect(html).toContain(`已运行 ${command.replace("&&", "&amp;&amp;")}`);
+    expect(html).toContain("返回 1 个文件");
+    expect(html).toContain("退出码 0");
+    expect(html).toContain("inputs/original/sample.jpg");
+    expect(html).toContain("grid image ready");
+    expect(html).toContain('<pre class="execution-action-result"');
+    expect(html).toContain("<code>inputs/original/sample.jpg</code>");
     expect(html).toContain('<details class="execution-action action-completed" data-active="false">');
-    expect(html).not.toContain('class="execution-action-body"');
-    expect(html).not.toContain('class="execution-action-result"');
-    expect(html).not.toContain('grid image ready');
+    expect(html).not.toContain(
+      '<details class="execution-action action-completed" open',
+    );
+    expect(html).toContain(
+      '<summary class="execution-action-summary', 
+    );
+    expect(html).toContain('<div class="execution-action-body">');
+    expect(html).toContain('role="region"');
+    expect(html).toContain('aria-label="已运行 ');
+    expect(html).toContain('结果预览"');
     expect(html.match(/<section class="execution-ribbon/g)).toHaveLength(1);
   });
 

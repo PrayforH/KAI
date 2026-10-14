@@ -127,12 +127,12 @@ it("keeps one disclosure through four streamed file requests and results", async
         expect(host.querySelector(".execution-phase")?.textContent).toBe("正在处理");
         expect(host.querySelector(".execution-phase")?.hasAttribute("data-running")).toBe(false);
         expect(next.querySelector(".execution-row-sweep")).toBeNull();
-        if (index === 1 && completed) await act(async () => { row!.open = true; row!.dispatchEvent(new Event("toggle")); });
+        if (index === 1 && completed) row.open = true;
         if (index > 1) expect(row.open).toBe(true);
       }
     }
     expect(row?.textContent).toContain("读取了 4 个文件");
-    expect(document.querySelectorAll(".tool-details-dialog .execution-action-detail")).toHaveLength(4);
+    expect(host.querySelectorAll(".execution-action-detail")).toHaveLength(4);
     await act(async () => root.render(<ActivitySummary activity={{ ...activity(events), status: "succeeded", items: [...events, item("done", 9, "", "run.succeeded")] }} />));
     expect(host.querySelector(".execution-action")).toBe(row);
     expect(host.querySelector('[data-running="true"]')).toBeNull();
@@ -210,12 +210,13 @@ it("preserves mixed thinking, tools and commentary order without duplicating the
       const rows = Array.from(host.querySelectorAll(".execution-reasoning, .execution-action, .execution-commentary"));
       expect(rows.map(row => row.classList.contains("execution-reasoning") ? "thinking" :
         row.classList.contains("execution-action") ? "tool" : "commentary")).toEqual([
-        "thinking", "tool", "commentary", "thinking", "tool",
+        "thinking", "tool", "commentary", "thinking", "tool", ...(status === "running" ? ["commentary"] : []),
       ]);
       expect(rows[0].textContent).toContain("Check source.");
       expect(rows[2].textContent).toContain("继续核验来源。");
       expect(rows[3].textContent).toContain("Validate result.");
-      expect(host.textContent).not.toContain("这是最终正文。");
+      if (status === "running") expect(host.textContent).toContain("这是最终正文。");
+      else expect(host.textContent).not.toContain("这是最终正文。");
     }
   } finally { await act(async () => root.unmount()); host.remove(); }
 });

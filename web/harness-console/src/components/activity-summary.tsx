@@ -1,11 +1,10 @@
 "use client";
+import { hasPendingProcessProse } from "../lib/process-response";
 import { isProgressNoise } from "../lib/message-text";
 
 import { TextMessagePartProvider } from "@assistant-ui/react";
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { createPortal } from "react-dom";
-import { useDialogFocus } from "../lib/use-dialog-focus";
-import { formatToolResult, queryResultTable } from "../lib/tool-result-format";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { formatToolResult } from "../lib/tool-result-format";
 import type { RunActivity } from "../lib/activity-schema";
 import { useRunViewModel } from "../lib/activity-store";
 import { activeElapsedMs, elapsedAnchorFor, type ElapsedAnchor } from "../lib/run-elapsed";
@@ -203,7 +202,7 @@ function processNodes(view: RunViewModel): ProcessNode[] {
   });
 }
 
-function commentaryNodes(view: RunViewModel): CommentaryNode[] {
+function commentaryNodes(view: RunViewModel, includePending: boolean): CommentaryNode[] {
   const actionSequences = view.items
     .filter(
       (item) =>
@@ -250,11 +249,11 @@ function commentaryNodes(view: RunViewModel): CommentaryNode[] {
     }
     if (item.event_type !== "message.delta") continue;
     const nextAction = actionSequences.find((sequence) => sequence > item.sequence);
-    // A trailing message is still ambiguous while the Run is active: the
-    // live response owns it so Markdown can stream without duplication. Only
-    // text followed by a new thinking block or action belongs in the process log.
-    if (nextAction === undefined) continue;
-    const groupKey = `progress:${nextAction}`;
+    // Before a terminal event the provider has not identified this prose as
+    // final. Keep it in the process at its original position while streaming;
+    // a following tool retains the same row instead of retracting an answer.
+    if (nextAction === undefined && !includePending) continue;
+    const groupKey = `progress:${nextAction ?? "pending"}`;
     const existing = grouped.get(groupKey);
     grouped.set(groupKey, {
       id: existing?.id ?? item.id,
@@ -328,7 +327,7 @@ const ExecutionCommentary = memo(function ExecutionCommentary({
   );
 }, (previous, next) => previous.active === next.active && previous.commentary.id === next.commentary.id && previous.commentary.source === next.commentary.source && previous.commentary.text === next.commentary.text && previous.commentary.steeringStatus === next.commentary.steeringStatus);
 
-function rawTimeline(view: RunViewModel): RawTimelineNode[] {
+function rawTimeline(view: RunViewModel, includePending: boolean): RawTimelineNode[] {
   return [
     ...processNodes(view).map(
       (process): RawTimelineNode => ({
@@ -337,7 +336,7 @@ function rawTimeline(view: RunViewModel): RawTimelineNode[] {
         process,
       }),
     ),
-    ...commentaryNodes(view).map(
+    ...commentaryNodes(view, includePending).map(
       (commentary): RawTimelineNode => ({
         kind: "commentary",
         sequence: commentary.sequence,
@@ -567,8 +566,8 @@ function failureDetails(view: RunViewModel) {
   };
 }
 
-function displayTimeline(view: RunViewModel, detailed = false): DisplayTimelineNode[] {
-  const raw = rawTimeline(view).filter((entry) =>
+function displayTimeline(view: RunViewModel, detailed = false, includePending = false): DisplayTimelineNode[] {
+  const raw = rawTimeline(view, includePending).filter((entry) =>
     entry.kind !== "process" || entry.process.status === "failed" ||
     entry.process.eventType === "tool.directory.degraded",
   );
@@ -647,18 +646,6 @@ function ActionIcon({ kind }: { kind: ActionIconKind }) {
 
 export const formatResultPreview = formatToolResult;
 
-function ToolDetailsDialog({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
-  const panel = useRef<HTMLDivElement>(null);
-  const close = useRef<HTMLButtonElement>(null);
-  useDialogFocus({ open: true, panelRef: panel, initialFocusRef: close, onEscape: onClose });
-  return createPortal(<div className="tool-details-backdrop" onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
-    <div className="tool-details-dialog" role="dialog" aria-modal="true" aria-label={title} ref={panel}>
-      <header className="tool-details-header"><h2>{title}</h2><button ref={close} onClick={onClose} aria-label="关闭工具详情">×</button></header>
-      <div className="tool-details-scroll">{children}</div>
-    </div>
-  </div>, document.body);
-}
-
 function ResultPreview({
   children,
   label,
@@ -666,20 +653,19 @@ function ResultPreview({
   children: string;
   label: string;
 }) {
-  const [raw, setRaw] = useState(false);
-  const table = queryResultTable(children);
-  return <section className="tool-result-section" aria-label={label}>
-    <div className="tool-result-toolbar"><span>{label}</span><button onClick={() => setRaw(!raw)} aria-pressed={raw}>{raw ? "查看解析结果" : "查看原始内容"}</button></div>
-    {!raw && table ? <>
-      <div className="tool-result-table-wrap" tabIndex={0} role="region" aria-label="查询结果表格"><table className="tool-result-table"><thead><tr>{table.columns.map((column,index) => <th key={index}>{column}</th>)}</tr></thead><tbody>{table.rows.map((row,index) => <tr key={index}>{row.map((cell,column) => <td key={column}>{cell === null ? "NULL" : typeof cell === "object" ? JSON.stringify(cell) : String(cell)}</td>)}</tr>)}</tbody></table></div>
-      <p className="tool-result-count">返回 {table.returnedRows} 行{table.truncated ? " · 结果已截断" : ""}</p>
-    </> : <pre className="execution-action-result" role="region" aria-label={label} tabIndex={0}><code>{raw ? children : formatResultPreview(children)}</code></pre>}
-  </section>;
-
+  return (
+    <pre
+      className="execution-action-result"
+      role="region"
+      aria-label={label}
+      tabIndex={0}
+    >
+      <code>{formatResultPreview(children)}</code>
+    </pre>
+  );
 }
 
 function ActionRow({ action, active = false }: { action: ActionNode; active?: boolean }) {
-  const [open, setOpen] = useState(false);
   const hasResult = Boolean(action.resultPreview || action.entries?.length);
   const heading = (
     <>
@@ -731,11 +717,9 @@ function ActionRow({ action, active = false }: { action: ActionNode; active?: bo
   // A tool request, its result and subsequent grouped reads share one DOM node.
   // Replacing div with details (or changing the group key) restarts disclosure.
   return (
-    <details className={`execution-action action-${action.status}`} data-active={active} open={open}
-      onToggle={event => setOpen(event.currentTarget.open)}>
+    <details className={`execution-action action-${action.status}`} data-active={active}>
       <summary
         className="execution-action-summary"
-        aria-haspopup={hasResult ? "dialog" : undefined}
         aria-disabled={!hasResult || undefined}
         tabIndex={hasResult ? 0 : -1}
         onClick={hasResult ? undefined : (event) => event.preventDefault()}
@@ -743,7 +727,7 @@ function ActionRow({ action, active = false }: { action: ActionNode; active?: bo
         {heading}
         {hasResult && <span className="execution-action-chevron"><CodexResponseIcon name="chevronDown" /></span>}
       </summary>
-      {hasResult && open && <ToolDetailsDialog title={action.label} onClose={() => setOpen(false)}>{result}</ToolDetailsDialog>}
+      {hasResult && result}
     </details>
   );
 }
@@ -810,7 +794,8 @@ export function ActivitySummary({
   const elapsed = elapsedAnchor.current
     ? activeElapsedMs(view, now, elapsedAnchor.current)
     : view.elapsedMs;
-  const timeline = useMemo(() => displayTimeline(view, detailed), [view, detailed]);
+  const pendingProse = hasPendingProcessProse(activity);
+  const timeline = useMemo(() => displayTimeline(view, detailed, pendingProse), [view, detailed, pendingProse]);
   const latestTimelineEntry = timeline.at(-1);
   const activeCommentaryId =
     thinkingActive &&

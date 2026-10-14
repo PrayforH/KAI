@@ -1249,7 +1249,7 @@ html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md p
 html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md pre code { white-space: pre; }
 
 /* A collapsed tool and a collapsed thought occupy the same row box. The log
-   owns vertical spacing; hidden result bodies are mounted only in a dialog. */
+   owns vertical spacing; collapsed result bodies remain hidden in the inline disclosure. */
 html body.codex-theme-v1 .execution-log-segment { gap: 10px; }
 html body.codex-theme-v1 :is(.execution-action, .execution-reasoning) { margin: 0; padding: 0; min-height: 0; }
 html body.codex-theme-v1 :is(.execution-action-summary, .execution-reasoning-summary) { min-height: 24px; height: 24px; margin: 0; padding: 0; align-items: center; line-height: 20px; box-sizing: border-box; }
@@ -1257,25 +1257,11 @@ html body.codex-theme-v1 .execution-action-icon { margin-top: 0; }
 html body.codex-theme-v1 :is(.execution-action-copy strong, .execution-action-copy small, .execution-reasoning-label, .execution-reasoning-preview) { line-height: 20px; }
 html body.codex-theme-v1 .execution-action-copy { gap: 0; }
 
-.tool-details-backdrop { position: fixed; inset: 0; z-index: 1200; display: grid; place-items: center; padding: 24px; background: rgba(0,0,0,.25); }
-.tool-details-dialog { width: min(860px,100%); max-height: min(80vh,850px); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--codex-line,#ddd); border-radius: 16px; background: var(--codex-surface,#fff); color: var(--codex-ink,#222); box-shadow: 0 20px 70px rgba(0,0,0,.2); }
-.tool-details-header { display: flex; align-items: center; gap: 16px; padding: 18px 20px; border-bottom: 1px solid var(--codex-line,#ddd); }
-.tool-details-header h2 { flex: 1; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 600; line-height: 22px; }
-.tool-details-header button { flex: 0 0 28px; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--codex-muted,#666); font-size: 22px; cursor: pointer; }
-.tool-details-header button:hover { background: var(--codex-surface-hover,#f3f3f3); }
-.tool-details-scroll { min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 20px; }
-html body.codex-theme-v1 .tool-details-dialog .execution-action-body { width: 100%; margin: 0; }
-html body.codex-theme-v1 .tool-details-dialog .execution-action-details { gap: 20px; }
-html body.codex-theme-v1 .tool-details-dialog .execution-action-detail { display: block; padding: 0; border: 0; }
-html body.codex-theme-v1 .tool-details-dialog .execution-action-detail-heading { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; font-size: 12px; overflow-wrap: anywhere; }
-.tool-result-section { min-width: 0; }
-.tool-result-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px; font-size: 11px; color: var(--codex-muted,#666); }
-.tool-result-toolbar button { padding: 4px 8px; font: inherit; color: inherit; border: 1px solid var(--codex-line,#ddd); border-radius: 6px; background: transparent; cursor: pointer; }
-html body.codex-theme-v1 .tool-details-dialog .execution-action-result { max-height: none; margin: 0; padding: 12px; border: 1px solid var(--codex-line,#ddd); border-radius: 8px; background: var(--codex-surface-hover,#f6f6f6); white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.65 ui-monospace,monospace; }
-.tool-result-table-wrap { overflow: auto; border: 1px solid var(--codex-line,#ddd); border-radius: 8px; }
-.tool-result-table { width: 100%; border-collapse: collapse; font: 12px/1.6 ui-monospace,monospace; }
-.tool-result-table th, .tool-result-table td { padding: 8px 12px; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--codex-line,#ddd); }
-.tool-result-table th { font-weight: 600; background: var(--codex-surface-hover,#f6f6f6); }
-.tool-result-table tr:last-child td { border-bottom: 0; }
-.tool-result-count { margin: 8px 0 0; color: var(--codex-muted,#666); font-size: 11px; }
-@media (max-width: 600px) { .tool-details-backdrop { padding: 12px; } .tool-details-scroll { padding: 14px; } }
+
+/* Prose stays bright from its first token through the tool hand-off. Status
+   rows stay muted, with no highlight sweep or remount fade. */
+html body.codex-theme-v1 .execution-commentary,
+html body.codex-theme-v1 .execution-commentary .aui-md { color: var(--codex-ink); }
+html body.codex-theme-v1 :is(.execution-action-copy strong, .execution-reasoning-label, .execution-reasoning-preview) { color: var(--codex-muted); }
+html body.codex-theme-v1 :is(.execution-action, .execution-reasoning) .execution-state-sweep { color: var(--codex-muted); background: none; animation: none; }
+html body.codex-theme-v1 .execution-log > * { animation: none; }

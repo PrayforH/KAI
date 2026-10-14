@@ -1,4 +1,5 @@
 "use client";
+import { responseTextForDisplay } from "../lib/process-response";
 import { sendComposerWithRecovery } from "../lib/composer-send";
 import { TerminalResponseNotice } from "./terminal-response-notice";
 import { ConversationInputCard } from "./conversation-input-card";
@@ -1409,7 +1410,7 @@ export function HarnessAssistantMessage() {
       part.type === "text" && !isIntermediateAssistantTextPart(content, index) ? [part.text] : []
     )).join("\n"),
   );
-  const copyText = responseTextForTurn(messageId, nativeText, directStream, live, capturedResponse, pendingLive);
+  const responseCandidate = responseTextForTurn(messageId, nativeText, directStream, live, capturedResponse, pendingLive);
   const feedbackRun = feedbackRunId(messageId, isLast, runView?.runId);
   // Requirement: citations must be reachable from the reply itself, not only
   // from the collapsed execution summary. Deduplicate by chunk so repeated
@@ -1421,6 +1422,7 @@ export function HarnessAssistantMessage() {
     ? currentActivity : undefined;
   const terminalActivity = ownedActivity && (!durable?.success || durable.data.run_id === ownedActivity.run_id)
     ? ownedActivity : durable?.success ? durable.data : undefined;
+  const copyText = responseTextForDisplay(responseCandidate, terminalActivity);
   const capturedCitations = useRef<{ messageId: string; citations: RunCitation[] }>({ messageId, citations: [] });
   const turnCitations = citationsForTurn(messageId, isLast, runView, durable?.success ? durable.data : undefined);
   if (turnCitations) capturedCitations.current = { messageId, citations: turnCitations };

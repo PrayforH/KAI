@@ -28,27 +28,97 @@
 }
 
 .intelligent-ui-summary-headline {
-  margin: 14px 14px 0;
+  margin: 20px 24px 0;
   color: var(--codex-ink);
-  font-size: 15px;
-  font-weight: 500;
+  font-size: 18px;
+  font-weight: 600;
 }
 
 .intelligent-ui-summary-subtitle {
-  margin: 6px 14px 0;
+  margin: 6px 24px 0;
   color: var(--codex-muted);
-  font-size: 12px;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
-.intelligent-ui-summary .intelligent-ui-metric-item:first-child .intelligent-ui-metric-value {
-  font-size: 30px;
+.intelligent-ui[data-kind="summary"] {
+  max-width: 600px;
+  width: 100%;
+  background: var(--codex-surface);
+  border-radius: 18px;
+}
+
+.intelligent-ui-summary-facts {
+  margin: 0;
+  padding: 22px 24px;
+}
+
+.intelligent-ui-summary-fact {
+  min-width: 0;
+}
+
+.intelligent-ui-summary-fact dt {
+  color: var(--codex-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.intelligent-ui-summary-fact dd {
+  margin: 6px 0 0;
+  color: var(--codex-ink);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+.intelligent-ui-summary-primary dd {
+  font-size: 22px;
+  line-height: 1.45;
+  font-weight: 600;
+}
+
+.intelligent-ui-summary-primary .intelligent-ui-summary-scalar {
+  font-size: 44px;
+  line-height: 1.1;
+  letter-spacing: -1.5px;
+}
+
+.intelligent-ui-summary-fact small {
+  margin-left: 4px;
+  font-size: 0.6em;
+  color: var(--codex-muted);
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+.intelligent-ui-summary-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px 24px;
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--codex-line);
+}
+
+.intelligent-ui-summary-hint {
+  margin: 4px 0 0;
+  color: var(--codex-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+@media (max-width: 420px) {
+  .intelligent-ui-summary-details { grid-template-columns: 1fr; gap: 14px; }
+  .intelligent-ui-summary-facts { padding: 18px; }
 }
 
 .intelligent-ui-summary-provenance {
   display: flex;
   flex-wrap: wrap;
   gap: 6px 12px;
-  padding: 0 14px 14px;
+  padding: 0 24px 18px;
   color: var(--codex-muted);
   font-size: 12px;
 }

@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { ActivitySummary } from "../src/components/activity-summary";
 import { runActivitySchema } from "../src/lib/activity-schema";
 (globalThis as Record<string,unknown>).IS_REACT_ACT_ENVIRONMENT=true;
-it("opens decoded query output in a centered accessible dialog and restores the compact row on Escape",async()=>{
+it("keeps compact tool rows aligned and expands decoded output inline",async()=>{
  vi.stubGlobal("ResizeObserver",class {observe(){}disconnect(){}});vi.stubGlobal("requestAnimationFrame",()=>1);vi.stubGlobal("cancelAnimationFrame",()=>{});
  vi.stubGlobal("matchMedia",()=>({matches:true,addEventListener(){},removeEventListener(){}}));
  document.body.className="codex-theme-v1";
@@ -23,12 +23,10 @@ it("opens decoded query output in a centered accessible dialog and restores the 
   expect(getComputedStyle(tool.querySelector("summary")!).height).toBe(getComputedStyle(thought).height);
   expect(getComputedStyle(tool.querySelector("summary")!).height).toBe("24px");
   await act(async()=>{tool.open=true;tool.dispatchEvent(new Event("toggle"));});
-  expect(document.querySelector('[role="dialog"]')?.getAttribute("aria-modal")).toBe("true");
-  expect(document.querySelector(".tool-result-table")?.textContent).toContain("OTHER9809");
-  expect(host.querySelector(".execution-action-body")).toBeNull();
-  const raw=[...document.querySelectorAll<HTMLButtonElement>("button")].find(b=>b.textContent==="查看原始内容")!;
-  await act(async()=>raw.click());expect(document.querySelector(".execution-action-result")?.textContent).toBe(output);
-  await act(async()=>document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true})));
-  expect(document.querySelector('[role="dialog"]')).toBeNull();expect(tool.open).toBe(false);
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(tool.querySelector("pre code")?.textContent).toContain('"OTHER"');
+  expect(tool.querySelector(".execution-action-body")).not.toBeNull();
+  await act(async()=>{tool.open=false;tool.dispatchEvent(new Event("toggle"));});
+  expect(tool.open).toBe(false);
  } finally {await act(async()=>root.unmount());host.remove();style.remove();document.body.className="";vi.unstubAllGlobals();}
 });
