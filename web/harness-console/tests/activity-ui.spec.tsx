@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { ActivitySummary } from "../src/components/activity-summary";
 import { ApprovalCard } from "../src/components/approval-card";
 import { ArtifactCard } from "../src/components/artifact-list";
+import { ReplyArtifactVideos } from "../src/components/reply-artifact-videos";
 import { FileUploadStatus } from "../src/components/composer-attachment";
 import { SubagentCard } from "../src/components/subagent-card";
 import { ToolCard } from "../src/components/tool-card";
@@ -366,5 +367,14 @@ describe("artifact summary row", () => {
   it("leaves out files from another run and turns without any", () => {
     expect(artifactsForTurn([artifact("run_0")], "run_1", true)).toEqual([]);
     expect(artifactsForTurn([artifact("run_0")], "run_0", true)).toHaveLength(1);
+  });
+
+  it("replays historical published videos in their own answer without leaking them into a new run", () => {
+    const history = [artifact("run_0", "ocean_sunrise_20s.mp4", "video/mp4")];
+    const html = renderToStaticMarkup(<ReplyArtifactVideos artifacts={artifactsForTurn(history, "run_1", false)} />);
+    expect(html).toContain("<video");
+    expect(html).toContain("播放 ocean_sunrise_20s.mp4");
+    expect(html).toContain('download="ocean_sunrise_20s.mp4"');
+    expect(renderToStaticMarkup(<ReplyArtifactVideos artifacts={artifactsForTurn(history, "run_1", true)} />)).toBe("");
   });
 });

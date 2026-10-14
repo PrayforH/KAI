@@ -59,6 +59,7 @@ import { TaskAgentSwitcher } from "./task-agent-switcher";
 import { ApprovalCard, type ApprovalDetails } from "./approval-card";
 import { ArtifactCard, isImageArtifact, type ArtifactDetails } from "./artifact-list";
 import { ReplyArtifactImages } from "./reply-artifact-images";
+import { ReplyArtifactVideos } from "./reply-artifact-videos";
 import { AnswerCitationProvider } from "./knowledge/answer-citation-context";
 import { citationsForTurn, parseWikiTarget } from "../lib/knowledge-links";
 import { KnowledgeCitations } from "./knowledge/knowledge-citations";
@@ -1475,6 +1476,7 @@ export function HarnessAssistantMessage() {
       ) : null}
       <ReplyArtifactImages artifacts={turnArtifacts} answer={copyText}
         onPreview={conversationScope ? () => conversationScope.onOpenFiles() : undefined} />
+      {!hasVideoGeneration ? <ReplyArtifactVideos artifacts={turnArtifacts} /> : null}
       {answerCitations.length > 0 ? (
         <KnowledgeCitations citations={answerCitations} showSources={false} />
       ) : null}

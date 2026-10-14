@@ -1042,6 +1042,7 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .rail-prev
    rule that flattens every button in the message controls. */
 body.codex-theme-v1 .harness-assistant-message > .artifact-summary-line { order: 2; margin-top: 8px; opacity: 1; }
 body.codex-theme-v1 .harness-assistant-message > .reply-artifact-images { order: 2; display: grid; gap: 16px; min-width: 0; max-width: 100%; margin-top: 12px; }
+body.codex-theme-v1 .harness-assistant-message > .reply-artifact-videos { order: 2; display: grid; gap: 16px; min-width: 0; max-width: 100%; margin-top: 12px; }
 .reply-artifact-image { min-width: 0; max-width: 100%; margin: 0; }
 .reply-artifact-image-preview { display: block; width: fit-content; max-width: 100%; padding: 0; border: 0; border-radius: 12px; background: transparent; overflow: hidden; cursor: zoom-in; }
 .reply-artifact-image-preview img { display: block; width: auto; height: auto; max-width: 100%; max-height: 520px; object-fit: contain; border-radius: inherit; }
