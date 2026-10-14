@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>每月存钱 · 长期复利计算器</title>
+<style>
+  :root{
+    --bg:#0f1420; --card:#171e2e; --card2:#1e2738; --line:#2a3448;
+    --ink:#e8edf6; --muted:#93a0b8; --accent:#4ea1ff; --accent2:#38d39f;
+    --warn:#ffb84d; --shadow:0 10px 30px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 600px at 20% -10%,#1b2942 0%,var(--bg) 55%);
+    color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    padding:22px 16px 40px;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:920px;margin:0 auto}
+  h1{font-size:20px;margin:0 0 4px;letter-spacing:.3px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:18px}
+  .grid{display:grid;grid-template-columns:1.05fr .95fr;gap:16px}
+  @media(max-width:720px){.grid{grid-template-columns:1fr}}
+  .card{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--line);
+    border-radius:14px;padding:16px 16px 18px;box-shadow:var(--shadow)}
+  label{display:block;font-size:12.5px;color:var(--muted);margin:12px 0 6px}
+  label:first-child{margin-top:0}
+  .row{display:flex;gap:10px;align-items:center}
+  input[type=number]{width:100%;background:#0d1320;border:1px solid var(--line);color:var(--ink);
+    border-radius:9px;padding:9px 11px;font-size:15px;outline:none}
+  input[type=number]:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(78,161,255,.15)}
+  input[type=range]{width:100%;accent-color:var(--accent);margin-top:8px}
+  .seg{display:flex;background:#0d1320;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+  .seg button{flex:1;background:transparent;border:0;color:var(--muted);padding:9px 6px;font-size:13px;cursor:pointer}
+  .seg button.on{background:var(--accent);color:#05101f;font-weight:600}
+  .out{margin-top:4px}
+  .big{font-size:30px;font-weight:700;letter-spacing:.5px;color:#fff;line-height:1.2}
+  .big span{font-size:15px;color:var(--muted);font-weight:400}
+  .break{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+  .cell{background:#0d1320;border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+  .cell .k{font-size:11.5px;color:var(--muted)}
+  .cell .v{font-size:17px;font-weight:600;margin-top:3px}
+  .v.g{color:var(--accent2)} .v.b{color:var(--accent)} .v.w{color:var(--warn)}
+  .bar{height:12px;border-radius:6px;overflow:hidden;display:flex;margin-top:16px;border:1px solid var(--line)}
+  .bar i{display:block;height:100%}
+  .legend{display:flex;gap:14px;font-size:11.5px;color:var(--muted);margin-top:7px;flex-wrap:wrap}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:middle}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
+  th,td{padding:6px 6px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+  th:first-child,td:first-child{text-align:left}
+  th{color:var(--muted);font-weight:500}
+  .tblwrap{max-height:210px;overflow:auto;margin-top:6px}
+  .note{font-size:11.5px;color:var(--muted);margin-top:12px;line-height:1.5}
+  .hint{font-size:11.5px;color:var(--muted);margin-top:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>每月存钱，长期能攒多少？</h1>
+  <div class="sub">按复利逐月累积估算：本金 + 利息。改任意输入即时重算。</div>
+
+  <div class="grid">
+    <div class="card">
+      <label>每月存入金额（元）</label>
+      <input id="pmt" type="number" min="0" step="100" value="2000">
+
+      <label>年化利率（%）· 0 表示只放现金不生息</label>
+      <input id="rate" type="number" min="0" max="30" step="0.1" value="3">
+      <input id="rateR" type="range" min="0" max="12" step="0.1" value="3">
+
+      <label>持续年限：<b id="yrLbl">20</b> 年</label>
+      <input id="years" type="range" min="1" max="50" step="1" value="20">
+
+      <label>期初已有本金（元，可选）</label>
+      <input id="init" type="number" min="0" step="1000" value="0">
+
+      <label>每月存入时点</label>
+      <div class="seg" id="timing">
+        <button data-t="end" class="on">月末存</button>
+        <button data-t="begin">月初存</button>
+      </div>
+      <div class="hint">月初存比月末存多赚约 1 个月利息，长期差距不大。</div>
+    </div>
+
+    <div class="card">
+      <div class="out">
+        <div class="k" style="font-size:12px;color:var(--muted)">期末总额</div>
+        <div class="big" id="fv">—</div>
+      </div>
+      <div class="break">
+        <div class="cell"><div class="k">累计投入本金</div><div class="v b" id="principal">—</div></div>
+        <div class="cell"><div class="k">累计利息收益</div><div class="v g" id="interest">—</div></div>
+      </div>
+      <div class="bar"><i id="barP" style="background:var(--accent)"></i><i id="barI" style="background:var(--accent2)"></i></div>
+      <div class="legend">
+        <span><span class="dot" style="background:var(--accent)"></span>本金</span>
+        <span><span class="dot" style="background:var(--accent2)"></span>利息</span>
+        <span id="ratio" style="margin-left:auto"></span>
+      </div>
+      <div class="note">等额月存、月复利（年利率 ÷ 12），不考虑通胀、税费与利率变动。实际收益随产品与市场波动。</div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div style="font-size:13px;color:var(--muted)">逐年末明细</div>
+    <div class="tblwrap">
+      <table>
+        <thead><tr><th>年末</th><th>累计本金</th><th>累计利息</th><th>账户总额</th></tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var token = new URLSearchParams(location.hash.slice(1)).get("harness_ui_token");
+  var $ = function(id){return document.getElementById(id)};
+  var amt = function(n){return "¥"+Math.round(n).toLocaleString("zh-CN")};
+
+  function fmtBig(n){
+    if(n>=1e8) return "¥"+(n/1e8).toFixed(2)+" 亿";
+    if(n>=1e4) return "¥"+(n/1e4).toFixed(1)+" 万";
+    return amt(n);
+  }
+
+  function calc(){
+    var P = Math.max(0,+$("pmt").value||0);
+    var r = Math.max(0,Math.min(30,+$("rate").value||0))/100;
+    var y = +$("years").value;
+    var P0 = Math.max(0,+$("init").value||0);
+    var begin = $("timing").querySelector(".on").dataset.t === "begin";
+    var i = r/12, n = y*12;
+
+    function fvAt(m, principalBase){
+      var g0 = principalBase*Math.pow(1+i,m);
+      var annuity;
+      if(i===0) annuity = P*m;
+      else annuity = P*((Math.pow(1+i,m)-1)/i)*(begin?(1+i):1);
+      return g0+annuity;
+    }
+
+    var total = fvAt(n, P0);
+    var principal = P0 + P*n;
+    var interest = total - principal;
+
+    $("fv").innerHTML = fmtBig(total) + ' <span>' + amt(total) + '</span>';
+    $("principal").textContent = amt(principal);
+    $("interest").textContent = amt(interest);
+    $("ratio").textContent = principal>0 ? ("利息占 "+(interest/total*100).toFixed(0)+"%") : "";
+    var pShare = total>0 ? principal/total*100 : 0;
+    $("barP").style.width = pShare+"%";
+    $("barI").style.width = (100-pShare)+"%";
+
+    var rows="", step = y<=25?1:(y<=40?2:5);
+    for(var yr=1; yr<=y; yr++){
+      if(yr%step!==0 && yr!==y) continue;
+      var m=yr*12;
+      var t=fvAt(m,P0), pr=P0+P*m;
+      rows += "<tr><td>第 "+yr+" 年</td><td>"+amt(pr)+"</td><td>"+amt(t-pr)+"</td><td><b>"+amt(t)+"</b></td></tr>";
+    }
+    $("tbody").innerHTML = rows;
+    return {P:P,r:$("rate").value,y:y,P0:P0,begin:begin};
+  }
+
+  var save;
+  function state(){return {P:$("pmt").value,r:$("rate").value,y:$("years").value,P0:$("init").value,t:$("timing").querySelector(".on").dataset.t}}
+  function schedule(){clearTimeout(save);save=setTimeout(function(){
+    try{if(token) window.parent.postMessage({type:"harness.ui.state",token:token,state:state()},"*")}catch(e){}
+  },200)}
+
+  function syncRate(src){
+    if(src==="num"){$("rateR").value=Math.min(12,+$("rate").value||0)}
+    else{$("rate").value=$("rateR").value}
+    $("yrLbl").textContent=$("years").value;
+    calc();schedule();
+  }
+
+  ["pmt","rate","years","init"].forEach(function(id){
+    $(id).addEventListener("input",function(){syncRate(id==="rate"?"num":null)});
+  });
+  $("rateR").addEventListener("input",function(){syncRate("range")});
+  $("timing").querySelectorAll("button").forEach(function(b){
+    b.addEventListener("click",function(){
+      $("timing").querySelectorAll("button").forEach(function(x){x.classList.remove("on")});
+      b.classList.add("on");calc();schedule();
+    });
+  });
+
+  // restore
+  window.addEventListener("message",function(ev){
+    if(ev.source!==window.parent) return;
+    var d=ev.data; if(!d||d.type!=="harness.ui.init") return;
+    if(token && d.token!==token) return;
+    var s=d.state; if(!s||typeof s!=="object") return;
+    if(s.P!==undefined)$("pmt").value=s.P;
+    if(s.r!==undefined)$("rate").value=s.r;
+    if(s.y!==undefined)$("years").value=s.y;
+    if(s.P0!==undefined)$("init").value=s.P0;
+    if(s.t){$("timing").querySelectorAll("button").forEach(function(x){x.classList.toggle("on",x.dataset.t===s.t)})}
+    $("rateR").value=Math.min(12,+$("rate").value||0);
+    $("yrLbl").textContent=$("years").value;
+    calc();
+  });
+
+  syncRate(null);
+  try{if(token) window.parent.postMessage({type:"harness.ui.ready",token:token},"*")}catch(e){}
+})();
+</script>
+</body>
+</html>

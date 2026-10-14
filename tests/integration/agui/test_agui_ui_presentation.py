@@ -248,3 +248,82 @@ async def test_capabilities_endpoint_describes_the_catalog() -> None:
         "form",
         "html",
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["text", "chart", "comparison"])
+async def test_d1_auto_choice_is_published_before_terminal_and_replayed_identically(
+    monkeypatch: pytest.MonkeyPatch, kind: str
+) -> None:
+    from collections.abc import AsyncIterator
+
+    import httpx
+    from pydantic import SecretStr
+
+    from harness.presentation.intent import UIIntentSelector
+    from harness.runtime.base import RuntimeContext, RuntimeEvent
+    from harness.runtime.fake import FakeRuntime
+
+    rows = [{"month": f"2026-{i:02d}", "count": 10 * i} for i in range(1, 7)]
+
+    async def execute(self: FakeRuntime, context: RuntimeContext) -> AsyncIterator[RuntimeEvent]:
+        # Synthetic result fixture: no external tools or business writes execute.
+        yield RuntimeEvent(
+            type="tool.result",
+            payload={
+                "tool_call_id": "fixture-data",
+                "content": json.dumps({"rows": rows}),
+                "is_error": False,
+            },
+        )
+        yield RuntimeEvent(type="message.start", payload={"role": "assistant"})
+        yield RuntimeEvent(type="message.delta", payload={"text": "查询完成。"})
+        yield RuntimeEvent(type="message.completed", payload={"role": "assistant"})
+
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {"finish_reason": "stop", "message": {"content": json.dumps({"kind": kind})}}
+                ]
+            },
+        )
+
+    monkeypatch.setattr(FakeRuntime, "execute", execute)
+    app = create_memory_app(auto_execute=True)
+    app.state.container.presentations._intent_selector = UIIntentSelector(
+        "http://gateway/v1", SecretStr("private"), "d1-3B", transport=httpx.MockTransport(handler)
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS)
+        response = await client.post(
+            "/v1/agui?agent_name=echo-agent&agent_version=0.1.0",
+            json=_request(thread_id="thread-d1", run_id="client-d1", prompt="展示统计"),
+            headers=HEADERS,
+        )
+        history = await client.get("/v1/agui/threads/thread-d1/history", headers=HEADERS)
+        second_history = await client.get("/v1/agui/threads/thread-d1/history", headers=HEADERS)
+
+    assert response.status_code == history.status_code == second_history.status_code == 200
+    events = _events(response.text)
+    custom = [e for e in events if e.get("name") == "harness.ui.v1"]
+    restored = [
+        json.loads(call["function"]["arguments"])
+        for message in history.json()["messages"]
+        for call in message.get("toolCalls") or []
+        if call["function"]["name"] == "harness_present_ui"
+    ]
+    assert len(calls) == 1
+    assert history.json() == second_history.json()
+    assert events[-1]["type"] == "RUN_FINISHED"
+    if kind == "text":
+        assert custom == restored == []
+    else:
+        assert len(custom) == 1 and custom[0]["value"]["kind"] == kind
+        assert restored == [custom[0]["value"]]
+        assert events.index(custom[0]) < len(events) - 1
+        assert restored[0]["decision"]["selector_model"] == "d1-3B"

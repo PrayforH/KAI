@@ -1,0 +1,236 @@
+{
+  "release": "kai/axis-api:d1-ui-intent-20261014-r1",
+  "image_sha256": "1fa24655743fb4a2bca649a151b7a4852269a792c72a942d9aa8c0b085f92551",
+  "date": "2026-10-14",
+  "host": "172.20.109.174",
+  "model": "d1-3B",
+  "local_validation": {
+    "presentation_unit_and_agui_integration_passed": 126,
+    "config_composition_builder_memory_regression_passed": 90,
+    "ruff": "passed",
+    "pyright": "0 errors"
+  },
+  "calibration": {
+    "matched": 10,
+    "total": 10,
+    "cases": [
+      {
+        "request": "只要一句文字结论，不要图表或表格",
+        "expected": "text",
+        "actual": "text",
+        "matched": true,
+        "elapsed_ms": 167,
+        "finish_reason": "stop"
+      },
+      {
+        "request": "展示每月处理数量的变化趋势",
+        "expected": "chart",
+        "actual": "chart",
+        "matched": true,
+        "elapsed_ms": 94,
+        "finish_reason": "stop"
+      },
+      {
+        "request": "列出每个月的明细供我逐条核对",
+        "expected": "table",
+        "actual": "table",
+        "matched": true,
+        "elapsed_ms": 73,
+        "finish_reason": "stop"
+      },
+      {
+        "request": "比较这些方案的价格和速度",
+        "expected": "comparison",
+        "actual": "comparison",
+        "matched": true,
+        "elapsed_ms": 79,
+        "finish_reason": "stop"
+      },
+      {
+        "request": "我只问任务是否完成，这些统计明细不用展示",
+        "expected": "text",
+        "actual": "text",
+        "matched": true,
+        "elapsed_ms": 75,
+        "finish_reason": "stop"
+      },
+      {
+        "request": "给我可排序的记录表",
+        "expected": "table",
+        "actual": "table",
+        "matched": true,
+        "elapsed_ms": 74,
+        "finish_reason": "stop"
+      },
+      {
+        "request": "比较这几个候选方案的优缺点和指标",
+        "expected": "comparison",
+        "actual": "comparison",
+        "matched": true,
+        "elapsed_ms": 78,
+        "finish_reason": "stop"
+      },
+      {
+        "request": "用图展示这几个月数量是怎样变化的",
+        "expected": "chart",
+        "actual": "chart",
+        "matched": true,
+        "elapsed_ms": 73,
+        "finish_reason": "stop"
+      },
+      {
+        "request": "本次只要文字",
+        "expected": "text",
+        "actual": "text",
+        "matched": true,
+        "elapsed_ms": 74,
+        "finish_reason": "stop"
+      },
+      {
+        "request": "展示这些月度统计，遵循我之前的展示偏好",
+        "expected": "chart",
+        "actual": "chart",
+        "matched": true,
+        "elapsed_ms": 72,
+        "finish_reason": "stop"
+      }
+    ]
+  },
+  "holdout": {
+    "matched": 7,
+    "total": 8,
+    "cases": [
+      {
+        "request": "给我看下月度量的走势，用折线图",
+        "expected": "chart",
+        "actual": "chart",
+        "matched": true,
+        "elapsed_ms": 140,
+        "finish_reason": "stop"
+      },
+      {
+        "request": "不要任何组件，只告诉我有没有完成",
+        "expected": "text",
+        "actual": "text",
+        "matched": true,
+        "elapsed_ms": 78,
+        "finish_reason": "stop"
+      },
+      {
+        "request": "把每条结果列出来，我要检查字段",
+        "expected": "table",
+        "actual": "table",
+        "matched": true,
+        "elapsed_ms": 73,
+        "finish_reason": "stop"
+      },
+      {
+        "request": "横向对比五个候选供应商，帮助我选择",
+        "expected": "comparison",
+        "actual": "comparison",
+        "matched": true,
+        "elapsed_ms": 78,
+        "finish_reason": "stop"
+      },
+      {
+        "request": "有哪家性价比好？把候选的费用和性能并排比较",
+        "expected": "comparison",
+        "actual": "comparison",
+        "matched": true,
+        "elapsed_ms": 80,
+        "finish_reason": "stop"
+      },
+      {
+        "request": "我这次需要明细表，不用之前喜欢的趋势图",
+        "expected": "table",
+        "actual": "table",
+        "matched": true,
+        "elapsed_ms": 72,
+        "finish_reason": "stop"
+      },
+      {
+        "request": "不要明细，我只需要一句最终结论",
+        "expected": "text",
+        "actual": "text",
+        "matched": true,
+        "elapsed_ms": 73,
+        "finish_reason": "stop"
+      },
+      {
+        "request": "这些月度统计按之前的习惯展示即可",
+        "expected": "chart",
+        "actual": "text",
+        "matched": false,
+        "elapsed_ms": 73,
+        "finish_reason": "stop"
+      }
+    ]
+  },
+  "image_smoke": {
+    "passed": 4,
+    "cases": [
+      {
+        "kind": "chart",
+        "elapsed_ms": 115,
+        "history_identical": true,
+        "model_calls": 1,
+        "original_data_preserved": true
+      },
+      {
+        "kind": "table",
+        "elapsed_ms": 80,
+        "history_identical": true,
+        "model_calls": 1,
+        "original_data_preserved": true
+      },
+      {
+        "kind": "comparison",
+        "elapsed_ms": 82,
+        "history_identical": true,
+        "model_calls": 1,
+        "original_data_preserved": true
+      },
+      {
+        "kind": "text",
+        "elapsed_ms": 72,
+        "history_identical": true,
+        "model_calls": 1,
+        "original_data_preserved": true
+      }
+    ],
+    "isolated_repository": true,
+    "database_writes": false,
+    "previous_builder_model": "d1-3B"
+  },
+  "deployment": {
+    "api": "healthy",
+    "worker_1": "healthy",
+    "worker_2": "healthy",
+    "worker_3": "healthy",
+    "api_healthz": "ok",
+    "https_frontend_http_status": 200,
+    "api_production_factory_selector_enabled": true,
+    "api_production_factory_scoped_memory_wired": true,
+    "api_builder_intent_model": "d1-3B",
+    "memory_intent_model": "d1-3B",
+    "memory_extraction_model": "deepseek-flash",
+    "deployed_isolated_smoke": {
+      "passed": 4,
+      "kinds": [
+        "chart",
+        "table",
+        "comparison",
+        "text"
+      ],
+      "elapsed_ms": [
+        100,
+        79,
+        79,
+        72
+      ],
+      "history_identical": true,
+      "model_calls_per_case": 1,
+      "business_database_writes": false
+    }
+  }
+}

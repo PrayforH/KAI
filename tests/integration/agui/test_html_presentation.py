@@ -131,3 +131,58 @@ async def test_html_state_is_scoped_bounded_and_uses_existing_cas(
             assert r.status_code == 422
         restored = await client.get(f"/v1/ui/presentations/{p.presentation_id}", headers=H)
         assert restored.json()["view_state"]["state"] == {"html_state": {"people": 8}}
+
+
+@pytest.mark.asyncio
+async def test_restores_missing_publication_from_only_the_owned_terminal_run(
+    html_fixture: tuple[ApiContainer, Presentation],
+) -> None:
+    from harness.presentation.repositories import InMemoryPresentationRepository
+
+    container, p = html_fixture
+    container.presentations.repository = InMemoryPresentationRepository()
+    url = f"/v1/ui/presentations/{p.presentation_id}?revision=1&run_id={p.run_id}"
+    async with AsyncClient(
+        transport=ASGITransport(app=create_app(container)), base_url="http://test"
+    ) as client:
+        denied = await client.get(url, headers={**H, "X-User-ID": "other"})
+        assert denied.status_code == 404
+        assert await container.presentations.repository.for_run("tenant-a", p.run_id) is None
+        recovered = await client.get(url, headers=H)
+        assert recovered.status_code == 200
+        assert recovered.json()["presentation_id"] == p.presentation_id
+        document = await client.get(
+            f"/v1/ui/presentations/{p.presentation_id}/html?revision=1", headers=H
+        )
+        assert document.content == CONTENT
+        unrelated = await client.get(
+            f"/v1/ui/presentations/ui_unknown?run_id={p.run_id}", headers=H
+        )
+        assert unrelated.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_does_not_publish_or_advertise_an_unfinished_run(
+    html_fixture: tuple[ApiContainer, Presentation],
+) -> None:
+    from harness.agui.routes import _run_projection
+    from harness.core.models import RunStatus
+
+    container, p = html_fixture
+    run = await container.runs.get("tenant-a", p.run_id)
+    queued = await container.runs.create(
+        "tenant-a", run.session_id, "pending-ui", input={"prompt": "pending"}
+    )
+    async with AsyncClient(
+        transport=ASGITransport(app=create_app(container)), base_url="http://test"
+    ) as client:
+        pending = await client.get(
+            f"/v1/ui/presentations/ui_pending?run_id={queued.run_id}", headers=H
+        )
+        assert pending.status_code == 425
+        assert await container.presentations.repository.for_run("tenant-a", queued.run_id) is None
+    # Even a complete model block and ready file are not advertised by an active
+    # history until publication has finished for that run.
+    active = run.model_copy(update={"status": RunStatus.RUNNING})
+    projection = await _run_projection(container, "tenant-a", active, write_snapshot=False)
+    assert projection.ui_blocks == []

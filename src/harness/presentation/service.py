@@ -7,19 +7,26 @@ the authority. Form input is validated before durable admission.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
+import logging
 import math
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, date, datetime
 from typing import Any, cast
 
+from harness.agui.response import final_response_text
 from harness.application.events import EventService
 from harness.application.runs import RunService
 from harness.core.errors import ConflictError, NotFoundError, PermissionDeniedError
 from harness.core.events import RunEvent
 from harness.core.models import Run
 from harness.core.ports import RunTask, SessionRepository, TaskQueue
+from harness.memory_bank.models import MemoryStatus, MemoryType
+from harness.memory_bank.service import MemoryBankService
+from harness.presentation.catalog import default_catalog
+from harness.presentation.intent import UIIntentSelector
 from harness.presentation.models import ActionRequest, Publication, ViewState
 from harness.presentation.projection import presentations_for_events
 from harness.presentation.repositories import PresentationRepository
@@ -102,6 +109,8 @@ class PresentationService:
         events: EventService,
         queue: TaskQueue,
         authorize: Authorizer | None = None,
+        intent_selector: UIIntentSelector | None = None,
+        memory: MemoryBankService | None = None,
     ) -> None:
         self.repository = repository
         self._sessions = sessions
@@ -109,6 +118,12 @@ class PresentationService:
         self._events = events
         self._queue = queue
         self._authorize = authorize
+        self._intent_selector = intent_selector
+        self._memory = memory
+
+    @property
+    def automatic_selection_enabled(self) -> bool:
+        return self._intent_selector is not None
 
     async def materialize(
         self, run: Run, events: Sequence[RunEvent] | None = None
@@ -128,6 +143,73 @@ class PresentationService:
                 for e in visible
             ):
                 raise ConflictError("presentation events are outside the owning run")
+            proposed = presentations_for_events(visible)
+            if self._intent_selector is not None:
+                mode = run.input.get("ui_presentation_mode")
+                if mode == "text":
+                    proposed = []
+                elif any(p.decision.get("origin") == "shape" for p in proposed):
+                    allowed = set(default_catalog().kinds)
+                    client_kinds = run.input.get("ui_presentation_kinds")
+                    if isinstance(client_kinds, list):
+                        allowed.intersection_update(
+                            k for k in cast(list[object], client_kinds) if isinstance(k, str)
+                        )
+                    preferences: list[dict[str, str]] = []
+                    if self._memory is not None:
+                        try:
+                            entries = await self._memory.repository.list_entries(
+                                run.tenant_id,
+                                session.user_id,
+                                agent_name=session.agent_name,
+                                owner_id=session.resolved_agent_owner_user_id,
+                                statuses=frozenset({MemoryStatus.ACTIVE}),
+                                limit=200,
+                                active_at=datetime.now(UTC),
+                            )
+                            markers = (
+                                "表格",
+                                "图表",
+                                "流程图",
+                                "可视",
+                                "图解",
+                                "时间线",
+                                "纯文字",
+                                "交互",
+                                "chart",
+                                "table",
+                                "diagram",
+                            )
+                            for e in sorted(entries, key=lambda e: e.updated_at, reverse=True):
+                                if e.memory_type is MemoryType.PREFERENCE and (
+                                    e.topic == "ui.presentation"
+                                    or any(m in e.content.lower() for m in markers)
+                                ):
+                                    preferences.append(
+                                        {
+                                            "content": e.content[:800],
+                                            "conditions": e.conditions[:500],
+                                        }
+                                    )
+                                    if len(preferences) == 4:
+                                        break
+                        except Exception:
+                            logging.getLogger(__name__).info("ui_intent preference_unavailable")
+                    answer = final_response_text(visible)
+                    selector = self._intent_selector
+                    selected = await asyncio.gather(
+                        *[
+                            selector.select(
+                                p,
+                                request=str(run.input.get("prompt", "")),
+                                allowed_kinds=tuple(sorted(allowed)),
+                                preferences=preferences,
+                                answer_summary=answer,
+                            )
+                            for p in proposed
+                        ]
+                    )
+                    proposed = [p for p in selected if p is not None]
             stored = await self.repository.publish(
                 Publication(
                     tenant_id=run.tenant_id,
@@ -138,7 +220,7 @@ class PresentationService:
                     run_id=run.run_id,
                     fencing_token=run.fencing_token,
                     created_at=run.updated_at,
-                    presentations=tuple(presentations_for_events(visible)),
+                    presentations=tuple(proposed),
                 )
             )
         return [
@@ -349,7 +431,10 @@ class PresentationService:
         if len(encoded) > 16_000:
             raise ValueError("view state is too large")
         allowed = {
-            "table": "sort", "chart": "show_data", "form": "values", "html": "html_state"
+            "table": "sort",
+            "chart": "show_data",
+            "form": "values",
+            "html": "html_state",
         }.get(p.kind)
         if set(state) - ({allowed} if allowed else set()):
             raise ValueError("unknown view state")
