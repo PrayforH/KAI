@@ -34,6 +34,12 @@
   font-weight: 500;
 }
 
+.intelligent-ui-summary-subtitle {
+  margin: 6px 14px 0;
+  color: var(--codex-muted);
+  font-size: 12px;
+}
+
 .intelligent-ui-summary .intelligent-ui-metric-item:first-child .intelligent-ui-metric-value {
   font-size: 30px;
 }

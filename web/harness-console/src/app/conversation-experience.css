@@ -1225,3 +1225,25 @@ html[data-color-mode="light"] .steering-user-message-bubble { background: #f3f3f
 body.codex-theme-v1 .harness-thread-frame .aui-thread-viewport > * {
   flex-shrink: 0;
 }
+
+/* The same prose can move from the answer candidate into the process log.
+   Keep its typography identical across that hand-off; parser whitespace is
+   structural, never an extra pre-wrapped blank line. */
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md {
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.74;
+  white-space: normal;
+}
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md > * { margin-block: 0; }
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md > * + * { margin-top: 8px; }
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md p { margin-block: 0 8px; }
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md :is(h1,h2,h3) { margin-block: 18px 7px; }
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md :is(ul,ol) { margin-block: 7px 9px; }
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md li > p { margin-block: 0 3px; }
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md li > :is(ul,ol) { margin-block: 4px; }
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md strong { font-weight: 600; }
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md > :first-child { margin-top: 0; }
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md > :last-child { margin-bottom: 0; }
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md pre,
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md pre code { white-space: pre; }

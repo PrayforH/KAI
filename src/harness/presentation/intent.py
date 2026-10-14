@@ -20,6 +20,7 @@ from harness.presentation.completion import UICompletionClient
 from harness.presentation.schema import Presentation, validate_block
 
 _LOGGER = logging.getLogger(__name__)
+_TIME_KEYS = frozenset({"date", "month", "year", "time", "日期", "月份", "年份", "时间"})
 
 UI_INTENT_SYSTEM_PROMPT = "明确只要一个数值、是非结论或一句话用text。只分类，不回答问题。"
 
@@ -43,6 +44,7 @@ def _result_summary(presentation: Presentation) -> dict[str, Any]:
     data = presentation.data
     if presentation.kind == "table":
         return {
+            "time_series": any(c["key"].lower() in _TIME_KEYS for c in data["columns"]),
             "rows": data["rows"][:4],
         }
     if presentation.kind == "summary":
@@ -81,11 +83,7 @@ def presentation_variants(presentation: Presentation) -> dict[str, Presentation]
     if not label_keys:
         return variants
     x_field = next(
-        (
-            key
-            for key in label_keys
-            if key.lower() in {"date", "month", "year", "time", "日期", "月份", "年份"}
-        ),
+        (key for key in label_keys if key.lower() in _TIME_KEYS),
         label_keys[0],
     )
     numeric = [
@@ -101,7 +99,9 @@ def presentation_variants(presentation: Presentation) -> dict[str, Presentation]
     ]
     blocks: dict[str, dict[str, Any]] = {}
     if numeric:
-        times = all(re.fullmatch(r"\d{4}(?:-\d{2}(?:-\d{2})?)?", row[x_field]) for row in rows)
+        times = x_field.lower() in _TIME_KEYS or all(
+            re.fullmatch(r"\d{4}(?:-\d{2}(?:-\d{2})?)?", row[x_field]) for row in rows
+        )
         blocks["chart"] = {
             "version": 1,
             "kind": "chart",
@@ -231,7 +231,16 @@ class UIIntentSelector:
                     "request": request[:4000],
                     "available_kinds": choices,
                     "result_summary": _result_summary(presentation),
-                    **({"result_evidence": list(result_evidence[:4])} if result_evidence else {}),
+                    **(
+                        {
+                            "query_sources": [
+                                {"tool_name": e.get("tool_name", ""), "sequence": e.get("sequence")}
+                                for e in result_evidence[:4]
+                            ]
+                        }
+                        if result_evidence
+                        else {}
+                    ),
                     **({"preferences": list(preferences[:4])} if preferences else {}),
                 },
                 max_tokens=64,

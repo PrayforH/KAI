@@ -44,7 +44,7 @@ _RENDERERS: tuple[Renderer, ...] = (
         version="summary/1",
         summary="查看概况",
         data_shape=(
-            '{"headline":"状态或结论","items":[{"label":"关键指标","value":23,"unit":"单位"}],'
+            '{"headline":"状态或结论","subtitle":"可选对象或范围说明","items":[{"label":"关键指标","value":23,"unit":"单位"}],'
             '"sources":[{"label":"查询来源","url":"真实 HTTP(S) 来源地址"}],'
             '"updated_at":"来源明确提供的时间，可省略"}'
         ),
@@ -137,8 +137,10 @@ interaction in this turn; do not merely offer to build it next. A single fact,
 ordinary writing and requests for plain text use prose. A compact snapshot of
 one entity's status or several key facts uses summary, even without interaction
 or photos. Use actual query results, units, sources and source-provided times;
-never invent missing facts or freshness. Time series may use chart and multiple
-entities may use comparison. Keep accompanying prose brief without repeating
+never invent missing facts or freshness. Use chart when the user wants to see
+numeric changes or trends; use table when they want to inspect record details.
+Multiple entities may use comparison. Do not duplicate the widget's data in a
+Markdown table. Keep accompanying prose brief without repeating
 the card. The platform shows at most
 {MAX_PRESENTATIONS_PER_TURN} per turn, and a wrong widget costs the user more than
 plain text.

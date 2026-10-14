@@ -6,9 +6,8 @@ export function TerminalResponseNotice({ activity, hasResponse }: {
   activity?: RunActivity;
   hasResponse: boolean;
 }) {
-  if (!activity || hasResponse) return null;
+  if (!activity || hasResponse || activity.status === "cancelled") return null;
   const titles: Record<string, string> = {
-    cancelled: "本次运行已停止，未生成最终回答。",
     failed: "本次运行失败，未生成最终回答。",
     timed_out: "本次运行超时，未生成最终回答。",
     rejected: "本次运行被拒绝，未生成最终回答。",

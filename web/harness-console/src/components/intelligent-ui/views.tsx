@@ -9,6 +9,7 @@ export function SummaryView({ summary }: { summary: SummaryData }) {
   return (
     <div className="intelligent-ui-block intelligent-ui-summary">
       {summary.headline && <p className="intelligent-ui-summary-headline">{summary.headline}</p>}
+      {summary.subtitle && <p className="intelligent-ui-summary-subtitle">{summary.subtitle}</p>}
       <MetricView metrics={summary} />
       {(summary.updated_at || summary.sources.length > 0) && (
         <footer className="intelligent-ui-summary-provenance">

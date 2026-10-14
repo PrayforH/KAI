@@ -112,6 +112,7 @@ const metricDataSchema = z.object({
 const summaryDataSchema = metricDataSchema.extend({
   items: metricDataSchema.shape.items.max(8),
   headline: z.string().max(600).default(""),
+  subtitle: z.string().max(600).default(""),
   updated_at: z.string().max(120).default(""),
   sources: z.array(z.object({
     label: z.string().min(1).max(120),

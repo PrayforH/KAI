@@ -274,6 +274,8 @@ export class HarnessHttpAgent extends HttpAgent {
       this.activeInput = activeInput;
     }
     const runtimeThreadId = activeInput?.threadId ?? this.threadId;
+    // Retire the previous run projection before a new optimistic turn can adopt it.
+    activityStore.clear(runtimeThreadId);
     // Release the previous response before the network delivers RUN_STARTED.
     if (activeInput) liveResponseStore.startRun(activeInput.runId, runtimeThreadId);
     else liveResponseStore.startRun(undefined, runtimeThreadId);

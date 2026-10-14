@@ -476,9 +476,17 @@ def _metric(data: dict[str, Any], config: dict[str, Any]) -> tuple[dict[str, Any
 
 def _summary(data: dict[str, Any], config: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     """A compact factual snapshot; metrics retain their existing scalar contract."""
-    if config or set(data) - {"items", "headline", "sources", "updated_at"}:
+    if config or set(data) - {
+        "items",
+        "metrics",
+        "headline",
+        "subtitle",
+        "subheadline",
+        "sources",
+        "updated_at",
+    }:
         raise ValueError("unknown summary fields")
-    metrics, _ = _metric(data, {})
+    metrics, _ = _metric({"items": _field_alias(data, "items", "metrics")}, {})
     raw_sources = data.get("sources", [])
     if not isinstance(raw_sources, list) or len(cast(list[Any], raw_sources)) > 4:
         raise ValueError("summary supports at most four sources")
@@ -503,6 +511,12 @@ def _summary(data: dict[str, Any], config: dict[str, Any]) -> tuple[dict[str, An
         **metrics,
         "headline": _text(
             data.get("headline"), maximum=MAX_STRING, field_name="headline", required=False
+        ),
+        "subtitle": _text(
+            _field_alias(data, "subtitle", "subheadline"),
+            maximum=MAX_STRING,
+            field_name="subtitle",
+            required=False,
         ),
         "updated_at": _text(
             data.get("updated_at"), maximum=120, field_name="updated_at", required=False

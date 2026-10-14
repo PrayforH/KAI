@@ -213,7 +213,7 @@ function markdownUrlTransform(url: string) {
   return url === "streamdown:incomplete-link" ? url : knowledgeUrlTransform(url);
 }
 
-function MarkdownTextImpl() {
+function MarkdownTextImpl({ stabilizeFormatting = false }: { stabilizeFormatting?: boolean }) {
   const part = useMessagePartText();
   const published = usePublishedBlocks();
   const normalized = useMemo(
@@ -234,9 +234,9 @@ function MarkdownTextImpl() {
   const displayText = useMemo(
     () => {
       const text = normalizeTemperatureRanges(normalized.text);
-      return running ? remend(text, { katex: false }) : text;
+      return running || stabilizeFormatting ? remend(text, { katex: false }) : text;
     },
-    [running, normalized.text],
+    [running, stabilizeFormatting, normalized.text],
   );
   const oversized = !running && !expanded && displayText.length > MESSAGE_TEXT_CLAMP_CHARS;
   const renderedText = oversized

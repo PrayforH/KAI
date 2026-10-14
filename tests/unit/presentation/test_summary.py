@@ -126,7 +126,7 @@ async def test_terminal_selection_uses_request_and_actual_evidence_and_restores_
         calls.append(data)
         assert data["request"] == "上海今天的天气怎么样？"
         assert data["result_summary"] == {"气温": "23 °C"}
-        assert "23" in data["result_evidence"][0]["content"]
+        assert data["query_sources"][0]["sequence"] == 3
         assert data["available_kinds"] == ["text", "summary"]
         return response({"kind": kind})
 
@@ -217,3 +217,28 @@ async def test_selection_preserves_application_actions_instead_of_dropping_the_b
         result_evidence=[{"content": "查询结果"}],
     )
     assert chosen == original and chosen.actions
+
+
+def test_observed_summary_aliases_normalize_without_business_specific_fields():
+    p = validate(
+        {
+            **SNAPSHOT,
+            "data": {
+                "headline": "状态",
+                "subheadline": "对象与范围",
+                "metrics": [{"label": "指标", "value": "25℃"}],
+            },
+        }
+    )
+    assert p is not None and p.data["subtitle"] == "对象与范围"
+    assert p.data["items"][0]["value"] == "25℃"
+    assert (
+        validate(
+            {**SNAPSHOT, "data": {**SNAPSHOT["data"], "metrics": [{"label": "x", "value": 99}]}}
+        )
+        is None
+    )
+    assert (
+        validate({**SNAPSHOT, "data": {**SNAPSHOT["data"], "subtitle": "a", "subheadline": "b"}})
+        is None
+    )

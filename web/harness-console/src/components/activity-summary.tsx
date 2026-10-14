@@ -318,7 +318,7 @@ const ExecutionCommentary = memo(function ExecutionCommentary({
     >
       <div className="execution-commentary-content">
         <TextMessagePartProvider text={commentary.text} isRunning={false}>
-          <MarkdownText />
+          <MarkdownText stabilizeFormatting />
         </TextMessagePartProvider>
       </div>
     </article>
