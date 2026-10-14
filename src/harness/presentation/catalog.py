@@ -52,14 +52,14 @@ _RENDERERS: tuple[Renderer, ...] = (
     Renderer(
         kind="table",
         version="table/1",
-        summary="逐条查看或核对记录明细",
+        summary="逐条明细",
         data_shape='{"columns":[{"key":"a","label":"名称"}],"rows":[{"a":"值"}]}',
         config_shape='{"caption":"可选说明"}',
     ),
     Renderer(
         kind="comparison",
         version="comparison/1",
-        summary="横向比较多个对象或方案",
+        summary="横向比较",
         data_shape=(
             '{"dimensions":[{"key":"price","label":"价格"}],'
             '"items":[{"label":"方案甲","values":{"price":"120"}},'
@@ -69,7 +69,7 @@ _RENDERERS: tuple[Renderer, ...] = (
     Renderer(
         kind="chart",
         version="chart/1",
-        summary="观察数值变化、趋势或分布",
+        summary="数值变化或趋势",
         data_shape='{"rows":[{"q":"第一季度","count":120}]}',
         config_shape=(
             '{"chart_type":"bar|line|area|pie","x_field":"q","y_fields":["count"],'

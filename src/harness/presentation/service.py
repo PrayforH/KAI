@@ -16,7 +16,6 @@ from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, date, datetime
 from typing import Any, cast
 
-from harness.agui.response import final_response_text
 from harness.application.events import EventService
 from harness.application.runs import RunService
 from harness.core.errors import ConflictError, NotFoundError, PermissionDeniedError
@@ -203,7 +202,6 @@ class PresentationService:
                                         break
                         except Exception:
                             logging.getLogger(__name__).info("ui_intent preference_unavailable")
-                    answer = final_response_text(visible)
                     selector = self._intent_selector
                     selected = await asyncio.gather(
                         *[
@@ -212,7 +210,6 @@ class PresentationService:
                                 request=str(run.input.get("prompt", "")),
                                 allowed_kinds=tuple(sorted(allowed)),
                                 preferences=preferences,
-                                answer_summary=answer,
                                 result_evidence=evidence,
                             )
                             for p in proposed

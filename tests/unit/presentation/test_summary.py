@@ -125,7 +125,7 @@ async def test_terminal_selection_uses_request_and_actual_evidence_and_restores_
         data = json.loads(json.loads(request.content)["messages"][1]["content"])
         calls.append(data)
         assert data["request"] == "上海今天的天气怎么样？"
-        assert data["result_summary"]["facts"] == ["气温：23 °C"]
+        assert data["result_summary"] == {"气温": "23 °C"}
         assert "23" in data["result_evidence"][0]["content"]
         assert data["available_kinds"] == ["text", "summary"]
         return response({"kind": kind})
@@ -199,3 +199,21 @@ async def test_converting_a_queried_model_table_keeps_its_source_for_fence_repla
     assert selected.kind == "chart" and selected.source_text == source
     assert selected.decision["origin"] == "model"
     assert selected.data["rows"] == original.data["rows"]
+
+
+@pytest.mark.asyncio
+async def test_selection_preserves_application_actions_instead_of_dropping_the_block():
+    original = validate(
+        {**SNAPSHOT, "actions": [{"kind": "read", "label": "查看明天", "prompt": "查询明天的天气"}]}
+    )
+
+    def unexpected(_):
+        raise AssertionError("action-bearing blocks remain authoritative")
+
+    chosen = await selector(httpx.MockTransport(unexpected)).select(
+        original,
+        request="查看天气",
+        allowed_kinds=("summary",),
+        result_evidence=[{"content": "查询结果"}],
+    )
+    assert chosen == original and chosen.actions
