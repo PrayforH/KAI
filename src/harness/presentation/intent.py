@@ -39,6 +39,18 @@ class UIIntentDecision(BaseModel):
     kind: Literal["text", "summary", "table", "chart", "comparison", "unknown"]
 
 
+def _number(value: Any) -> tuple[int | float, str] | None:
+    if isinstance(value, int | float) and not isinstance(value, bool) and math.isfinite(value):
+        return value, ""
+    if isinstance(value, str):
+        match = re.fullmatch(r"\s*([-+]?(?:\d+(?:\.\d+)?|\.\d+))\s*([^\d\s|]*)\s*", value)
+        if match and len(match[2]) <= 32:
+            number = float(match[1])
+            if math.isfinite(number):
+                return int(number) if number.is_integer() else number, match[2]
+    return None
+
+
 def _result_summary(presentation: Presentation) -> dict[str, Any]:
     """Describe information shape explicitly instead of asking a small model to infer it."""
     data = presentation.data
@@ -86,18 +98,33 @@ def presentation_variants(presentation: Presentation) -> dict[str, Presentation]
         (key for key in label_keys if key.lower() in _TIME_KEYS),
         label_keys[0],
     )
-    numeric = [
-        key
-        for key in keys
-        if key.lower() not in {"id", "uuid", "identifier", "code", "编号", "序号"}
-        and all(
-            isinstance(row[key], int | float)
-            and not isinstance(row[key], bool)
-            and math.isfinite(row[key])
-            for row in rows
-        )
-    ]
+    numeric: list[str] = []
+    chart_rows = [dict(row) for row in rows]
+    for key in keys:
+        if key == x_field or key.lower() in {"id", "uuid", "identifier", "code", "编号", "序号"}:
+            continue
+        values = [_number(row[key]) for row in rows]
+        if not all(value is not None for value in values):
+            continue
+        resolved = cast(list[tuple[int | float, str]], values)
+        if len({unit for _, unit in resolved}) != 1:
+            continue
+        numeric.append(key)
+        if resolved[0][1]:
+            labels[key] = f"{labels[key]} ({resolved[0][1]})"
+        for row, (value, _) in zip(chart_rows, resolved, strict=True):
+            row[key] = value
     blocks: dict[str, dict[str, Any]] = {}
+    if len(keys) == 2 and 2 <= len(rows) <= 8:
+        blocks["summary"] = {
+            "version": 1,
+            "kind": "summary",
+            "title": presentation.title,
+            "fallback_text": presentation.fallback_text,
+            "data": {
+                "items": [{"label": str(row[keys[0]]), "value": row[keys[1]]} for row in rows]
+            },
+        }
     if numeric:
         times = x_field.lower() in _TIME_KEYS or all(
             re.fullmatch(r"\d{4}(?:-\d{2}(?:-\d{2})?)?", row[x_field]) for row in rows
@@ -107,7 +134,7 @@ def presentation_variants(presentation: Presentation) -> dict[str, Presentation]
             "kind": "chart",
             "title": presentation.title,
             "fallback_text": presentation.fallback_text,
-            "data": {"rows": rows},
+            "data": {"rows": chart_rows},
             "config": {
                 "chart_type": "line" if times else "bar",
                 "x_field": x_field,
@@ -270,6 +297,8 @@ class UIIntentSelector:
             (monotonic() - started) * 1000,
         )
         if decision.kind == "text":
+            if presentation.decision.get("reason_code") == "answer_table_shape":
+                return None
             return (
                 text_fallback.model_copy(
                     update={

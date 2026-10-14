@@ -242,3 +242,28 @@ def test_observed_summary_aliases_normalize_without_business_specific_fields():
         validate({**SNAPSHOT, "data": {**SNAPSHOT["data"], "subtitle": "a", "subheadline": "b"}})
         is None
     )
+
+
+def test_markdown_answer_records_are_not_dependent_on_widget_protocol():
+    from harness.presentation.projection import answer_tables
+
+    text = "概况如下。\n\n| 项目 | 情况 |\n|---|---|\n| 温度 | 25℃ |\n| 状态 | 阴 |\n"
+    found = answer_tables(_answer(text))
+    assert len(found) == 1 and found[0].data["rows"][0] == {"项目": "温度", "情况": "25℃"}
+    assert found[0].source_text in text
+    from harness.presentation.intent import presentation_variants
+
+    assert presentation_variants(found[0])["summary"].data["items"][0]["value"] == "25℃"
+    assert answer_tables(_answer("```markdown\n" + text + "```")) == []
+
+
+def test_unit_bearing_series_preserve_the_table_and_offer_numeric_chart_data():
+    from harness.presentation.intent import presentation_variants
+    from harness.presentation.projection import answer_tables
+
+    p = answer_tables(_answer("| 日期 | 数值 |\n|---|---|\n| 10-14 | 25℃ |\n| 10-15 | 23℃ |\n"))[0]
+    variants = presentation_variants(p)
+    assert p.data["rows"][0]["数值"] == "25℃"
+    assert variants["chart"].data["rows"][0]["数值"] == 25
+    assert variants["chart"].config["chart_type"] == "line"
+    assert variants["chart"].config["y_labels"] == ["数值 (℃)"]

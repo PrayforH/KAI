@@ -27,7 +27,11 @@ from harness.memory_bank.service import MemoryBankService
 from harness.presentation.catalog import default_catalog
 from harness.presentation.intent import UIIntentSelector
 from harness.presentation.models import ActionRequest, Publication, ViewState
-from harness.presentation.projection import presentations_for_events, tool_result_evidence
+from harness.presentation.projection import (
+    answer_tables,
+    presentations_for_events,
+    tool_result_evidence,
+)
 from harness.presentation.repositories import PresentationRepository
 from harness.presentation.schema import Presentation
 from harness.runtime.input_redaction import redact_internal_agent_asset_events
@@ -147,6 +151,8 @@ class PresentationService:
             )
             if self._intent_selector is not None:
                 evidence = tool_result_evidence(visible)
+                if evidence and not any(p.decision.get("origin") == "model" for p in proposed):
+                    proposed = answer_tables(visible) or proposed
                 mode = run.input.get("ui_presentation_mode")
                 if mode == "text":
                     proposed = []

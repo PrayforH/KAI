@@ -293,6 +293,69 @@ def tool_result_evidence(events: Sequence[RunEvent]) -> list[dict[str, Any]]:
     return evidence[-4:]
 
 
+def answer_tables(events: Sequence[RunEvent]) -> list[Presentation]:
+    """Query-backed Markdown records are data too, without a widget declaration."""
+    from harness.agui.response import final_response_text
+
+    text = final_response_text(list(events))
+    scope = next((e for e in reversed(events) if e.type == "message.delta"), None)
+    if scope is None or len(text) > MAX_BLOCK_CHARS:
+        return []
+    # Code examples must never become answer data.
+    text = _FENCE.sub(lambda match: "\n" * match.group(0).count("\n"), text)
+    lines = text.splitlines(keepends=True)
+    found: list[Presentation] = []
+
+    def cells(line: str) -> list[str]:
+        return [cell.strip() for cell in re.split(r"(?<!\\)\|", line.strip().strip("|"))]
+
+    for index in range(len(lines) - 2):
+        if "|" not in lines[index] or "|" not in lines[index + 1]:
+            continue
+        headers, divider = cells(lines[index]), cells(lines[index + 1])
+        if not 2 <= len(headers) <= MAX_COLUMNS or len(set(headers)) != len(headers):
+            continue
+        if len(divider) != len(headers) or not all(re.fullmatch(r":?-{3,}:?", c) for c in divider):
+            continue
+        rows: list[dict[str, Any]] = []
+        end = index + 2
+        while end < len(lines) and lines[end].strip().startswith("|"):
+            values = cells(lines[end])
+            if len(values) != len(headers):
+                break
+            rows.append(dict(zip(headers, values, strict=True)))
+            end += 1
+        if not 2 <= len(rows) <= MAX_ROWS:
+            continue
+        p = validate_block(
+            {
+                "version": 1,
+                "kind": "table",
+                "fallback_text": f"共 {len(rows)} 条记录。",
+                "data": {"columns": headers, "rows": rows},
+            },
+            run_id=scope.run_id,
+            message_id=_message_id(scope, scope.run_id),
+            index=len(found),
+            origin="model",
+            reason_code="answer_table_shape",
+        )
+        if p is not None:
+            found.append(
+                p.model_copy(
+                    update={
+                        "source_text": "".join(lines[index:end]).rstrip("\n"),
+                        "source_refs": (
+                            {"run_id": scope.run_id, "sequence": scope.sequence, "origin": "model"},
+                        ),
+                    }
+                )
+            )
+        if len(found) == MAX_PRESENTATIONS_PER_TURN:
+            break
+    return found
+
+
 def _candidates(
     events: Sequence[RunEvent], run_id: str, *, include_summaries: bool = False
 ) -> Iterator[_Candidate]:
