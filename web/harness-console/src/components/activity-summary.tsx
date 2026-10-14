@@ -1,4 +1,5 @@
 "use client";
+import { isProgressNoise } from "../lib/message-text";
 
 import { TextMessagePartProvider } from "@assistant-ui/react";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -307,6 +308,7 @@ const ExecutionCommentary = memo(function ExecutionCommentary({
       </details>
     );
   }
+  if (commentary.source === "progress" && isProgressNoise(commentary.text)) return null;
   if (commentary.source === "guidance") return <SteeringUserMessage text={commentary.text} status={commentary.steeringStatus ?? "accepted"} />;
   return (
     <article

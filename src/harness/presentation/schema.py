@@ -21,7 +21,7 @@ from typing import Any, Literal, cast
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 UI_SCHEMA_VERSION = "harness.ui/v1"
-PRESENTATION_POLICY_VERSION = "presentation-policy/6"
+PRESENTATION_POLICY_VERSION = "presentation-policy/7"
 
 # Resource limits. These are the numbers the catalog advertises to the model and
 # the numbers validation enforces; they live here once so the two cannot drift.
@@ -156,8 +156,23 @@ def _sorted_columns(rows: list[dict[str, Any]]) -> list[_Column]:
 
 
 def _table(data: dict[str, Any], config: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
-    rows = _rows(data.get("rows"), maximum=MAX_ROWS)
-    columns = _columns(data["columns"]) if data.get("columns") else _sorted_columns(rows)
+    raw_rows = data.get("rows")
+    columns = _columns(data["columns"]) if data.get("columns") else None
+    entries = cast(list[Any], raw_rows) if isinstance(raw_rows, list) else []
+    if any(isinstance(row, list) for row in entries):
+        if columns is None or not 1 <= len(entries) <= MAX_ROWS:
+            raise ValueError("positional rows require explicit columns and bounded rows")
+        if not all(
+            isinstance(row, list) and len(cast(list[Any], row)) == len(columns)
+            for row in entries
+        ):
+            raise ValueError("positional rows must all match the declared columns")
+        raw_rows = [
+            dict(zip((column.key for column in columns), cast(list[Any], row), strict=True))
+            for row in entries
+        ]
+    rows = _rows(raw_rows, maximum=MAX_ROWS)
+    columns = columns if columns is not None else _sorted_columns(rows)
     if len(rows) * len(columns) > MAX_CELLS:
         raise ValueError(f"table exceeds {MAX_CELLS} cells")
     for row in rows:

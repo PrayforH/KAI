@@ -120,9 +120,11 @@ def _renderers_text() -> str:
 
 UI_BLOCK_CONTRACT = f"""## Interactive answer blocks
 
-Text is the default. Answer directly in prose and Markdown unless a structured
-answer genuinely helps the user read, compare or verify the result. Do not add a
-block to make a reply look richer: the platform shows at most
+Choose the answer form from what the user needs to understand or do. Parameter
+changes, experiments, component exploration, editable plans and games benefit
+from interaction even when the user never names a UI component. Deliver useful
+interaction in this turn; do not merely offer to build it next. Short facts,
+ordinary writing and requests for plain text use prose. The platform shows at most
 {MAX_PRESENTATIONS_PER_TURN} per turn, and a wrong widget costs the user more than
 plain text.
 
@@ -160,6 +162,8 @@ Rules:
   string when its name is all it has. A `comparison` item may name itself
   `label`, `key` or `name`, and its `values` may be an object keyed by dimension
   or a list in dimension order. Nothing else is inferred.
+- Table rows may be scalar arrays only with explicit columns and exactly one
+  cell per column in that order. Do not mix object and array rows.
 - `data.rows`/`items`/`events` must be complete; the platform never fetches data
   for a block and never edits business state from one.
 - Keep every cell a JSON string, number, boolean or null. Never nest objects in a
@@ -179,13 +183,19 @@ Rules:
 - Publish the actual file in this run before referring to it. Never invent an
   artifact_id, use another run's file, or place HTML, scripts, paths or URLs in
   `data`. Only ready `text/html` artifacts up to {MAX_HTML_BYTES} bytes render.
+  Copy the publication tool's artifact_id verbatim into the JSON block. If you
+  correct it, replace the block itself; a correction in prose does not publish it.
 - Use inline CSS/JavaScript without CDN scripts, imports, API calls, authentication
   or navigation. The sandbox has no console origin or network API access. Images
   may use obtained public HTTPS image URLs; preserve their page sources and do
   not claim unseen images were verified. Do not invent sources when search lacks
-  image support. Do not put secrets or private context in the file.
+  image support. Place useful retrieved pictures inside the HTML tool as actual
+  img elements with captions and source links. Pictures shown only in tool-time
+  progress are not a delivered visual answer. Put standalone Markdown images in
+  the final visible answer. Do not put secrets or private context in the file.
 - Buttons, inputs, sliders and games must implement the requested operation now.
-  Verify supplied input/output examples and boundaries. For currency, calculate
+  Run executable checks of core logic, boundaries, reset and state branches
+  with available tools before publication; fix failed checks first. For currency, calculate
   in integer minor units and allocate rounding remainders deterministically so
   displayed person totals add up to the displayed bill. Preserve the user's
   scientific data and assumptions; label an adapted test distribution explicitly.

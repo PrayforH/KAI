@@ -446,6 +446,8 @@ class DeepagentsRuntime:
         """
 
         prompt = str(context.run.input.get("prompt", ""))
+        if context.interaction_projection:
+            prompt = f"{context.interaction_projection}\n\n{prompt}"
         if context.context_projection:
             prompt = (
                 f"{context.context_projection}\n\n"

@@ -1,4 +1,5 @@
 "use client";
+import { isProgressNoise } from "./message-text";
 import { useConversationScope } from "./conversation-scope";
 
 import { useSyncExternalStore } from "react";
@@ -63,6 +64,7 @@ function scheduleCandidatePromotion() {
 
 function publish(next: LiveResponseSnapshot) {
   if (
+    snapshot.threadId === next.threadId &&
     snapshot.runId === next.runId &&
     snapshot.messageId === next.messageId &&
     snapshot.text === next.text &&
@@ -102,12 +104,12 @@ function flushPendingDelta(visible = true) {
     messageId: snapshot.messageId ?? messageId,
     text,
     status: snapshot.status === "complete" ? "complete" : "streaming",
-    visible: visible && candidateReady,
+    visible: visible && candidateReady && (disposition !== "candidate" || !isProgressNoise(text)),
   });
 }
 
 function promoteCandidate() {
-  if (disposition !== "candidate") return;
+  if (disposition !== "candidate" || isProgressNoise(snapshot.text + pendingDelta)) return;
   cancelCandidateTimer();
   disposition = "response";
   flushPendingDelta(true);
@@ -247,7 +249,11 @@ export const liveResponseStore = {
   completeRun(threadId?: string) {
     if (!isActiveRuntimeThread(threadId)) return;
     cancelScheduledFrame();
-    if (disposition === "candidate") promoteCandidate();
+    if (disposition === "candidate") {
+      disposition = "response";
+      flushPendingDelta(true);
+      if (snapshot.text.trim()) publish({ ...snapshot, visible: true });
+    }
     else flushPendingDelta(disposition === "response");
     publish({
       ...snapshot,
@@ -262,7 +268,11 @@ export const liveResponseStore = {
     // A complete provider answer can be followed by a post-processing error
     // (for example, workspace snapshot persistence). Treat that terminal text
     // as a response before marking the Run error so it remains visible.
-    if (disposition === "candidate") promoteCandidate();
+    if (disposition === "candidate") {
+      disposition = "response";
+      flushPendingDelta(true);
+      if (snapshot.text.trim()) publish({ ...snapshot, visible: true });
+    }
     else flushPendingDelta(disposition === "response");
     publish({
       ...snapshot,

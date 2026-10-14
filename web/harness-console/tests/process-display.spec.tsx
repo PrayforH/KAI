@@ -166,3 +166,15 @@ it("does not parse hidden Markdown and bounds the preview while retaining expand
   act(() => { row.open = false; row.dispatchEvent(new Event("toggle")); });
   expect(row.querySelector(".execution-reasoning-body")).toBeNull();
 });
+
+it("omits punctuation-only tool prefaces without hiding useful progress", () => {
+  const activity = runActivitySchema.parse({ ...completed, items: [
+    item("message.delta", 1, "说明", "。"),
+    { ...item("tool.request", 2, "读取"), kind:"tool", metadata:{tool_call_id:"read", name:"Read", arguments:{file_path:"notes.txt"}} },
+    item("message.delta", 3, "说明", "核验完成，继续构建。"),
+    { ...item("tool.request", 4, "构建"), kind:"tool", metadata:{tool_call_id:"write", name:"Write", arguments:{file_path:"tool.html"}} },
+  ] });
+  render(activity); expand();
+  const progress = [...host.querySelectorAll('[data-commentary-source="progress"]')].map(n => n.textContent);
+  expect(progress).toEqual([expect.stringContaining("核验完成，继续构建。")]);
+});

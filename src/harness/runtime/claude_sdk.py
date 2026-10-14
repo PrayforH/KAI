@@ -1042,6 +1042,7 @@ class ClaudeSdkRuntime:
                 f"{delegation_contract}{_knowledge_mode_contract(context)}"
                 f"{_sandbox_tool_contract(allowed_tools)}"
                 f"\n{context.platform_tools.instructions}"
+                f"\n{context.interaction_projection}"
             ),
             model=route.model,
             fallback_model=None,

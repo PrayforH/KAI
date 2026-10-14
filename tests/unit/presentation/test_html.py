@@ -64,7 +64,7 @@ def test_joins_the_model_reference_to_the_owning_artifact_and_freezes_its_hash()
         "size_bytes": len(CONTENT),
     }
     assert p.source_refs[-1] == {"run_id": "run-1", "sequence": 2, "origin": "artifact"}
-    assert p.snapshot_hash and p.decision["rule_version"] == "presentation-policy/6"
+    assert p.snapshot_hash and p.decision["rule_version"] == "presentation-policy/7"
     assert presentations_for_events(events())[0] == p
 
 

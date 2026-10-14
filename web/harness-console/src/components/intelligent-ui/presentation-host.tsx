@@ -269,7 +269,7 @@ function PublishedPresentation({
           {presentation.title}
         </figcaption>
       ) : null}
-      <PresentationBodyView
+      {!state.loaded && state.error ? <button type="button" onClick={state.retry}>重新加载交互工具</button> : <PresentationBodyView
         body={body}
         presentation={presentation}
         onAction={handle}
@@ -277,7 +277,7 @@ function PublishedPresentation({
         loaded={state.loaded}
         view={state.view}
         onView={state.changeView}
-      />
+      />}
       <ActionBar
         presentation={presentation}
         onAction={handle}

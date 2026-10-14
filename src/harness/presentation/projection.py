@@ -318,6 +318,7 @@ def presentations_for_events(
     events: Sequence[RunEvent],
     *,
     limit: int = MAX_PRESENTATIONS_PER_TURN,
+    include_shapes: bool = True,
 ) -> list[Presentation]:
     """Every presentation the run's events justify, in durable sequence order.
 
@@ -336,6 +337,8 @@ def presentations_for_events(
         _candidates(events, run_id), key=lambda c: (c.origin != "model", c.sequence)
     )
     for candidate in candidates:
+        if not include_shapes and candidate.origin == "shape":
+            continue
         if len(presentations) >= limit:
             break
         presentation = validate_block(

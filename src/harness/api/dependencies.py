@@ -112,7 +112,9 @@ from harness.platform_mcp.workload import (
 )
 from harness.policy.profiles import PolicyProfileRegistry, default_policy_profiles
 from harness.policy.runtime import ResolvedPolicy
+from harness.presentation.intent import UIIntentSelector
 from harness.presentation.models import ActionRequest, Publication
+from harness.presentation.planner import InteractionPlanner
 from harness.presentation.repositories import InMemoryPresentationRepository
 from harness.presentation.service import PresentationService
 from harness.projects.repositories import InMemoryProjectRepository
@@ -989,6 +991,7 @@ def build_memory_container(
         artifacts=artifact_service,
         input_artifacts=input_artifact_service,
         memory=memory_service,
+        interaction_planner=InteractionPlanner.from_settings(resolved_settings),
         workspace_policy_resolver=workspace_policy_resolver,
         runtime_asset_stager=(
             stage_runtime_assets if resolved_settings.runtime != "fake" else None
@@ -1109,6 +1112,8 @@ def build_memory_container(
         events=event_service,
         queue=queue,
         authorize=authorize_ui_action,
+        intent_selector=UIIntentSelector.from_settings(resolved_settings),
+        memory=memory_bank,
     )
     container = ApiContainer(
         presentations=presentations,

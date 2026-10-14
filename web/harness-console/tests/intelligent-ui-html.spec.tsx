@@ -2,6 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { IntelligentUiBlock } from "../src/components/intelligent-ui/presentation-host";
 import { HtmlView } from "../src/components/intelligent-ui/html-view";
 import { parsePresentation, parsePresentationBody, type Presentation } from "../src/components/intelligent-ui/schema";
 
@@ -91,4 +92,50 @@ it("does not render model-authored markup or navigation in HTML data", () => {
   expect(parsePresentationBody(p)?.kind).toBe("html");
   expect(parsePresentationBody({ ...p, data: { ...p.data, url: "https://example.com" } })).toBeNull();
   expect(parsePresentationBody({ ...p, data: { artifact_id: "artifact_html", html: "<script/>" } })).toBeNull();
+});
+
+it("recovers a transient missing snapshot, then mounts the published HTML", async () => {
+  vi.useFakeTimers();
+  const fetcher = vi.spyOn(globalThis, "fetch")
+    .mockResolvedValueOnce(Response.json({detail:"presentation not found"}, {status:404}))
+    .mockResolvedValueOnce(Response.json({...p, view_state:{version:0, state:{}}, action_requests:[]}));
+  try {
+    await act(async () => root.render(<IntelligentUiBlock value={p} connected />));
+    expect(host.querySelector("iframe")).toBeNull();
+    await act(async () => vi.advanceTimersByTimeAsync(250));
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(host.querySelector("iframe")).not.toBeNull();
+    expect(host.textContent).not.toContain("presentation not found");
+  } finally { fetcher.mockRestore(); vi.useRealTimers(); }
+});
+it("ends bounded recovery with a readable error and permits an explicit retry", async () => {
+  vi.useFakeTimers();
+  const fetcher = vi.spyOn(globalThis, "fetch")
+    .mockResolvedValue(Response.json({detail:"presentation not found"}, {status:404}));
+  try {
+    await act(async () => root.render(<IntelligentUiBlock value={p} connected />));
+    await act(async () => vi.advanceTimersByTimeAsync(1000));
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(host.querySelector("iframe")).toBeNull();
+    expect(host.textContent).not.toContain("正在恢复工具");
+    expect(host.textContent).not.toContain("presentation not found");
+    expect(host.textContent).toContain("交互工具暂时无法恢复");
+    fetcher.mockResolvedValue(Response.json({...p, view_state:{version:0, state:{}}, action_requests:[]}));
+    await act(async () => [...host.querySelectorAll<HTMLButtonElement>("button")].find(b => b.textContent === "重新加载交互工具")!.click());
+    expect(host.querySelector("iframe")).not.toBeNull();
+  } finally { fetcher.mockRestore(); vi.useRealTimers(); }
+});
+
+it("automatically recovers a transport interruption without printing browser errors", async () => {
+  vi.useFakeTimers();
+  const fetcher = vi.spyOn(globalThis, "fetch")
+    .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+    .mockResolvedValueOnce(Response.json({...p, view_state:{version:0, state:{}}, action_requests:[]}));
+  try {
+    await act(async () => root.render(<IntelligentUiBlock value={p} connected />));
+    expect(host.textContent).not.toContain("Failed to fetch");
+    await act(async () => vi.advanceTimersByTimeAsync(250));
+    expect(host.querySelector("iframe")).not.toBeNull();
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  } finally { fetcher.mockRestore(); vi.useRealTimers(); }
 });

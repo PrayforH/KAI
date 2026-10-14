@@ -651,7 +651,7 @@ it("restores a submitted write and its inputs without offering a second submit",
     expect(host!.querySelector("input")!.disabled).toBe(true);
     expect(host!.textContent).toContain("执行完成");
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/ui/presentations/ui_1?revision=1",
+      "/api/ui/presentations/ui_1?revision=1&run_id=run-1",
       expect.anything(),
     );
   } finally {
