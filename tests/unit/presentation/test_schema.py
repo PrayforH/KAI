@@ -576,5 +576,5 @@ def test_positional_table_rows_observed_on_79_are_normalized_in_explicit_order()
     (["名称"], [[{"nested": 3}]]),
     (["名称", "名称"], [["甲", 3]]),
 ])
-def test_ambiguous_or_unsafe_positional_rows_remain_rejected(columns, rows):
+def test_ambiguous_or_unsafe_positional_rows_remain_rejected(columns: object, rows: object):
     assert _validate(_block(data={"columns": columns, "rows": rows})) is None

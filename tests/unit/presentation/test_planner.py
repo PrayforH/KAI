@@ -1,5 +1,7 @@
 import asyncio
 import json
+from collections.abc import Callable, Coroutine
+from typing import Any
 
 import httpx
 import pytest
@@ -9,17 +11,24 @@ from harness.config import Settings
 from harness.presentation.planner import InteractionDecision, InteractionPlanner
 
 
-def planner(handler, **kwargs):
+def planner(
+    handler: (
+        Callable[[httpx.Request], httpx.Response]
+        | Callable[[httpx.Request], Coroutine[None, None, httpx.Response]]
+    ),
+    *,
+    timeout_seconds: float = 3,
+) -> InteractionPlanner:
     return InteractionPlanner(
         "http://gateway/v1",
         SecretStr("private"),
         "d1-3B",
         transport=httpx.MockTransport(handler),
-        **kwargs,
+        timeout_seconds=timeout_seconds,
     )
 
 
-def response(decision, finish="stop"):
+def response(decision: dict[str, Any], finish: str = "stop") -> httpx.Response:
     return httpx.Response(
         200,
         json={"choices": [{"finish_reason": finish, "message": {"content": json.dumps(decision)}}]},
@@ -28,7 +37,7 @@ def response(decision, finish="stop"):
 
 @pytest.mark.asyncio
 async def test_classification_uses_natural_request_and_only_emits_server_guidance():
-    def upstream(request):
+    def upstream(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
         assert payload["model"] == "d1-3B"
         assert json.loads(payload["messages"][1]["content"])["request"] == "解释一下概率"
@@ -53,13 +62,13 @@ async def test_classification_uses_natural_request_and_only_emits_server_guidanc
         httpx.Response(503, json={"error": "provider"}),
     ],
 )
-async def test_untrusted_or_unavailable_classification_falls_back(bad):
+async def test_untrusted_or_unavailable_classification_falls_back(bad: httpx.Response):
     assert await planner(lambda _: bad).plan("任意问题") is None
 
 
 @pytest.mark.asyncio
 async def test_timeout_is_bounded_and_cancellation_is_not_swallowed():
-    async def slow(_):
+    async def slow(_: httpx.Request) -> httpx.Response:
         await asyncio.sleep(1)
         return response({"interactive": True, "images": False})
 

@@ -165,7 +165,9 @@ async def test_restores_missing_publication_from_only_the_owned_terminal_run(
 async def test_does_not_publish_or_advertise_an_unfinished_run(
     html_fixture: tuple[ApiContainer, Presentation],
 ) -> None:
-    from harness.agui.routes import _run_projection
+    from harness.agui.routes import (
+        _run_projection,  # pyright: ignore[reportPrivateUsage] - exercise unfinished history projection
+    )
     from harness.core.models import RunStatus
 
     container, p = html_fixture

@@ -2,6 +2,7 @@
 
 import asyncio
 import shutil
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -28,7 +29,7 @@ async def test_catches_the_live_image_template_quoting_failure() -> None:
 async def test_keeps_json_data_and_static_html_independent_of_node(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("harness.presentation.document.shutil.which", lambda _: None)
+    monkeypatch.setattr("harness.presentation.document.shutil.which", Mock(return_value=None))
     await validate_html_document(
         b'<script type="application/ld+json">{"description":"not JS"}</script><p>static</p>'
     )
@@ -55,12 +56,10 @@ async def test_rejects_unusable_inline_documents(content: bytes, message: str) -
 async def test_stops_the_parser_process_on_timeout_or_cancellation(
     monkeypatch: pytest.MonkeyPatch, failure: type[BaseException]
 ) -> None:
-    from unittest.mock import AsyncMock, Mock
-
     process = Mock(returncode=None)
     process.communicate = AsyncMock(side_effect=failure())
     process.wait = AsyncMock()
-    monkeypatch.setattr("harness.presentation.document.shutil.which", lambda _: "/node")
+    monkeypatch.setattr("harness.presentation.document.shutil.which", Mock(return_value="/node"))
     monkeypatch.setattr(
         "harness.presentation.document.asyncio.create_subprocess_exec",
         AsyncMock(return_value=process),

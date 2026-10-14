@@ -43,6 +43,7 @@ from harness.policy.profiles import default_policy_profiles
 from harness.policy.results import ResultPolicyEngine
 from harness.policy.rules import PolicyEngine, default_policy_rules
 from harness.policy.runtime import ResolvedPolicy
+from harness.presentation.planner import InteractionPlanner
 from harness.quota.models import QuotaResource, ReplaceQuotaPolicyRequest
 from harness.quota.repositories import InMemoryQuotaRepository
 from harness.quota.service import QuotaService
@@ -549,7 +550,7 @@ async def arrange(
     context_service: ContextService | None = None,
     sandbox_leases: SandboxLeaseService | None = None,
     sandbox_resolver: SandboxResolver | None = None,
-    interaction_planner=None,
+    interaction_planner: InteractionPlanner | None = None,
     output_artifact_max_bytes: int = 50 * 1024 * 1024,
 ):
     sessions = InMemorySessionRepository()
@@ -2319,7 +2320,9 @@ async def test_a_refused_run_reports_the_governance_code(tmp_path: Path) -> None
 
 
 @pytest.mark.asyncio
-async def test_interaction_plan_is_private_and_precedes_runtime_without_rewriting_request(tmp_path):
+async def test_interaction_plan_is_private_and_precedes_runtime_without_rewriting_request(
+    tmp_path: Path,
+):
     import json
 
     import httpx
@@ -2333,7 +2336,7 @@ async def test_interaction_plan_is_private_and_precedes_runtime_without_rewritin
     planner = InteractionPlanner("http://gateway/v1", SecretStr("private"), "d1-3B",
                                  transport=upstream)
     runtime = CapturingRuntime()
-    orchestrator, _, runs, events = await arrange(tmp_path, runtime_override=runtime,
+    orchestrator, _, _, events = await arrange(tmp_path, runtime_override=runtime,
                                                 interaction_planner=planner)
     completed = await orchestrator.execute("tenant-a", "run-1")
     assert completed.status is RunStatus.SUCCEEDED
@@ -2349,13 +2352,13 @@ async def test_interaction_plan_is_private_and_precedes_runtime_without_rewritin
 
 
 @pytest.mark.asyncio
-async def test_builder_runs_skip_interaction_planning(tmp_path):
+async def test_builder_runs_skip_interaction_planning(tmp_path: Path):
     import httpx
     from pydantic import SecretStr
 
     from harness.presentation.planner import InteractionPlanner
 
-    def unexpected(_):
+    def unexpected(_: httpx.Request) -> httpx.Response:
         raise AssertionError("builder routing must not call the UI planner")
     planner = InteractionPlanner("http://gateway/v1", SecretStr("private"), "d1-3B",
                                  transport=httpx.MockTransport(unexpected))
@@ -2364,14 +2367,14 @@ async def test_builder_runs_skip_interaction_planning(tmp_path):
     builder = run.model_copy(update={
         "input": {"prompt": "修改智能体", "studio_builder": {"draft_id": "draft"}}
     })
-    assert await orchestrator._interaction_guidance(builder) == ""
+    assert await orchestrator._interaction_guidance(builder) == ""  # pyright: ignore[reportPrivateUsage] - unit probe of builder advice exclusion
     assert not any(
         e.type == "presentation.intent" for e in await events.list_after("tenant-a", "run-1", 0)
     )
 
 
 @pytest.mark.asyncio
-async def test_planner_provider_failure_preserves_runtime_execution(tmp_path):
+async def test_planner_provider_failure_preserves_runtime_execution(tmp_path: Path):
     import httpx
     from pydantic import SecretStr
 

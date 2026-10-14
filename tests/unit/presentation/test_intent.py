@@ -1,6 +1,7 @@
 import asyncio
 import json
 from datetime import UTC, datetime
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import httpx
@@ -10,14 +11,20 @@ from pydantic import SecretStr
 from harness.adapters.memory import InMemorySessionRepository
 from harness.config import Settings
 from harness.core.models import Run, RunStatus, Session
+from harness.memory_bank.service import MemoryBankService
 from harness.presentation.intent import UIIntentSelector, presentation_variants
 from harness.presentation.projection import presentations_for_events
 from harness.presentation.repositories import InMemoryPresentationRepository
 from harness.presentation.service import PresentationService
-from tests.unit.presentation.test_projection import TABLE, _answer, _fence, _tool_result
+from tests.unit.presentation.test_projection import (
+    TABLE,
+    _answer,  # pyright: ignore[reportPrivateUsage] - shared event fixture
+    _fence,  # pyright: ignore[reportPrivateUsage] - shared event fixture
+    _tool_result,  # pyright: ignore[reportPrivateUsage] - shared event fixture
+)
 
 
-def table(rows=None):
+def table(rows: list[dict[str, Any]] | None = None):
     rows = (
         rows
         if rows is not None
@@ -26,24 +33,24 @@ def table(rows=None):
     return presentations_for_events(_tool_result({"rows": rows}))[0]
 
 
-def response(payload, finish="stop"):
+def response(payload: dict[str, Any], finish: str = "stop") -> httpx.Response:
     return httpx.Response(
         200,
         json={"choices": [{"finish_reason": finish, "message": {"content": json.dumps(payload)}}]},
     )
 
 
-def selector(transport):
+def selector(transport: httpx.AsyncBaseTransport) -> UIIntentSelector:
     return UIIntentSelector("http://gateway/v1", SecretStr("private"), "d1-3B", transport=transport)
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("kind", ["text", "table", "chart", "comparison"])
-async def test_selects_validated_original_data_and_never_creates_actions(kind):
+async def test_selects_validated_original_data_and_never_creates_actions(kind: str):
     original = table()
-    calls = []
+    calls: list[dict[str, Any]] = []
 
-    def handler(request):
+    def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
         calls.append(payload)
         user = json.loads(payload["messages"][1]["content"])
@@ -59,6 +66,7 @@ async def test_selects_validated_original_data_and_never_creates_actions(kind):
     if kind == "text":
         assert chosen is None
     else:
+        assert chosen is not None
         assert chosen.kind == kind
         assert chosen.presentation_id == original.presentation_id
         assert chosen.source_refs == original.source_refs
@@ -99,7 +107,7 @@ def test_chart_requires_complete_numeric_data_and_identifiers_are_not_metrics():
         httpx.Response(200, text="bad json"),
     ],
 )
-async def test_protocol_and_upstream_failures_preserve_legacy_table(upstream):
+async def test_protocol_and_upstream_failures_preserve_legacy_table(upstream: httpx.Response):
     original = table()
     chosen = await selector(httpx.MockTransport(lambda _: upstream)).select(
         original, request="分析", allowed_kinds=("table", "chart", "comparison")
@@ -119,9 +127,9 @@ async def test_disallowed_renderer_cannot_bypass_client_capabilities():
 @pytest.mark.asyncio
 async def test_explicit_model_blocks_bypass_selector():
     original = presentations_for_events(_answer(_fence(TABLE)))[0]
-    calls = []
+    calls: list[httpx.Request] = []
 
-    def handler(request):
+    def handler(request: httpx.Request) -> httpx.Response:
         calls.append(request)
         return response({"kind": "text"})
 
@@ -136,7 +144,7 @@ async def test_explicit_model_blocks_bypass_selector():
 
 @pytest.mark.asyncio
 async def test_timeout_fallback_and_cancellation():
-    async def wait(_):
+    async def wait(_: httpx.Request) -> httpx.Response:
         await asyncio.sleep(1)
         return response({"kind": "chart"})
 
@@ -160,9 +168,9 @@ async def test_timeout_fallback_and_cancellation():
 
 @pytest.mark.asyncio
 async def test_snapshot_freezes_choice_and_history_does_not_call_model_again():
-    calls = []
+    calls: list[httpx.Request] = []
 
-    def handler(request):
+    def handler(request: httpx.Request) -> httpx.Response:
         calls.append(request)
         return response({"kind": "chart"})
 
@@ -205,9 +213,9 @@ async def test_snapshot_freezes_choice_and_history_does_not_call_model_again():
 
 @pytest.mark.asyncio
 async def test_text_only_mode_does_not_call_selector_or_emit_widgets():
-    calls = []
+    calls: list[httpx.Request] = []
 
-    def handler(request):
+    def handler(request: httpx.Request) -> httpx.Response:
         calls.append(request)
         return response({"kind": "chart"})
 
@@ -302,9 +310,9 @@ async def test_only_scoped_active_presentation_preferences_are_sent():
             list_entries=AsyncMock(return_value=[preference, unrelated, fact])
         )
     )
-    calls = []
+    calls: list[dict[str, Any]] = []
 
-    def handler(request):
+    def handler(request: httpx.Request) -> httpx.Response:
         user = json.loads(json.loads(request.content)["messages"][1]["content"])
         calls.append(user)
         return response({"kind": "chart"})
@@ -315,7 +323,7 @@ async def test_only_scoped_active_presentation_preferences_are_sent():
         runs=AsyncMock(),
         events=AsyncMock(),
         queue=AsyncMock(),
-        memory=memory,
+        memory=cast(MemoryBankService, memory),
         intent_selector=selector(httpx.MockTransport(handler)),
     )
     run = Run(
@@ -370,7 +378,7 @@ async def test_memory_unavailable_does_not_break_presentation_selection():
         runs=AsyncMock(),
         events=AsyncMock(),
         queue=AsyncMock(),
-        memory=memory,
+        memory=cast(MemoryBankService, memory),
         intent_selector=selector(httpx.MockTransport(lambda _: response({"kind": "table"}))),
     )
     run = Run(

@@ -280,9 +280,9 @@ async def test_d1_auto_choice_is_published_before_terminal_and_replayed_identica
         yield RuntimeEvent(type="message.delta", payload={"text": "查询完成。"})
         yield RuntimeEvent(type="message.completed", payload={"role": "assistant"})
 
-    calls = []
+    calls: list[httpx.Request] = []
 
-    def handler(request):
+    def handler(request: httpx.Request) -> httpx.Response:
         calls.append(request)
         return httpx.Response(
             200,
@@ -311,12 +311,14 @@ async def test_d1_auto_choice_is_published_before_terminal_and_replayed_identica
     assert response.status_code == history.status_code == second_history.status_code == 200
     events = _events(response.text)
     custom = [e for e in events if e.get("name") == "harness.ui.v1"]
-    restored = [
-        json.loads(call["function"]["arguments"])
-        for message in history.json()["messages"]
-        for call in message.get("toolCalls") or []
-        if call["function"]["name"] == "harness_present_ui"
-    ]
+    messages: list[dict[str, Any]] = history.json()["messages"]
+    restored: list[dict[str, Any]] = []
+    for message in messages:
+        tool_calls: list[dict[str, Any]] = message.get("toolCalls") or []
+        for call in tool_calls:
+            if call["function"]["name"] == "harness_present_ui":
+                restored.append(json.loads(call["function"]["arguments"]))
+
     assert len(calls) == 1
     assert history.json() == second_history.json()
     assert events[-1]["type"] == "RUN_FINISHED"
