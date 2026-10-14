@@ -1,0 +1,1638 @@
+{
+  "date": "2026-10-14",
+  "reference_file": "/Users/xiaokai/Downloads/ChatGPT 上线【交互 UI】，让每个回答都能交互.html",
+  "request_policy": "Business-natural requests; no appended HTML/component/slider/renderer instructions. Explicit game/splitter requests remain as in article.",
+  "actual_default_versions": {
+    "174": "1.0.0",
+    "79": "1.0.1"
+  },
+  "note": "First group attempted a model override in a wrong wrapper and actually ran shdata-model. Actual runtime events are authoritative. Corrected Flash groups are retained separately.",
+  "cases": [
+    {
+      "group": "174_shdata",
+      "id": "bill-split",
+      "host": "174",
+      "prompt": "五个人吃饭，按我们点的菜做个分账器，做成写字板的样子。菜品是披萨30元、意面20元、沙拉10元。",
+      "expected_interaction": "金额与参与者可改，个人份额实时重算",
+      "thread_id": "ui-natural-bill-split-55f8bfe8aeb9",
+      "run_id": "run_cd73f9924be043aa840bdd64317f7b5e",
+      "session_id": "session_a2b1fe031d664f7fa31152b440ec98a6",
+      "agent_version": "1.0.0",
+      "actual_runtime": {
+        "route_id": "shdata-model",
+        "provider": "anthropic",
+        "model": "shdata-model",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use",
+          "vision"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "status": "succeeded",
+      "accepted_ui_kinds": [
+        "html"
+      ],
+      "accepted_ui_decisions": [
+        {
+          "reason_code": "model_selected",
+          "rule_version": "presentation-policy/6",
+          "origin": "model"
+        }
+      ],
+      "html_artifacts": [
+        {
+          "id": "artifact_175d9331980b4544b7a6bde3d585f475",
+          "name": "bill-splitter.html",
+          "sha256": "51ff46c60fdbf10f4e53b0ff8b58c3f27d2083c41193644108857fc13bd1da24",
+          "bytes": 10912
+        }
+      ],
+      "markdown_image_count": 0,
+      "has_user_input_questions": false,
+      "emitted_ui_protocol": [
+        {
+          "kind": "html",
+          "rows_element_type": null
+        }
+      ],
+      "tool_call_names": [
+        "Write",
+        "harness_present_artifact",
+        "harness_present_ui",
+        "mcp__harness-artifacts__publish_artifact"
+      ],
+      "live_history_same": true,
+      "elapsed_seconds": 63.99
+    },
+    {
+      "group": "174_shdata",
+      "id": "monty-hall",
+      "host": "174",
+      "prompt": "讲讲三门问题，为什么换门更容易赢？",
+      "expected_interaction": "门可选，开门和坚持/换门结果可演示",
+      "thread_id": "ui-natural-monty-hall-85c3bc9c7881",
+      "run_id": "run_eab52dc87c6f44339dae46deeda8786a",
+      "session_id": "session_c7a8537dfcd3405a8b91b3536e70248e",
+      "agent_version": "1.0.0",
+      "actual_runtime": {
+        "route_id": "shdata-model",
+        "provider": "anthropic",
+        "model": "shdata-model",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use",
+          "vision"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "status": "succeeded",
+      "accepted_ui_kinds": [],
+      "accepted_ui_decisions": [],
+      "html_artifacts": [],
+      "markdown_image_count": 0,
+      "has_user_input_questions": false,
+      "emitted_ui_protocol": [],
+      "tool_call_names": [],
+      "live_history_same": true,
+      "elapsed_seconds": 12.03
+    },
+    {
+      "group": "174_shdata",
+      "id": "gdp",
+      "host": "174",
+      "prompt": "GDP 是怎么算的？",
+      "expected_interaction": "四项可变，GDP 实时重算",
+      "thread_id": "ui-natural-gdp-ffbc68fe2df0",
+      "run_id": "run_bf1f7984dc624a8f8a846cfb6fce0134",
+      "session_id": "session_311724aa960c45cc8b60283c2fbb7153",
+      "agent_version": "1.0.0",
+      "actual_runtime": {
+        "route_id": "shdata-model",
+        "provider": "anthropic",
+        "model": "shdata-model",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use",
+          "vision"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "status": "succeeded",
+      "accepted_ui_kinds": [],
+      "accepted_ui_decisions": [],
+      "html_artifacts": [],
+      "markdown_image_count": 0,
+      "has_user_input_questions": false,
+      "emitted_ui_protocol": [],
+      "tool_call_names": [],
+      "live_history_same": true,
+      "elapsed_seconds": 14.79
+    },
+    {
+      "group": "174_shdata",
+      "id": "savings",
+      "host": "174",
+      "prompt": "每个月存一笔钱，长期下来能攒多少？",
+      "expected_interaction": "月存款、年数与假设收益可调",
+      "thread_id": "ui-natural-savings-8be252e3b286",
+      "run_id": "run_d04c25b93be74761a80e66580a5af2be",
+      "session_id": "session_3bcbe06f1435497aa3250c32f4702596",
+      "agent_version": "1.0.0",
+      "actual_runtime": {
+        "route_id": "shdata-model",
+        "provider": "anthropic",
+        "model": "shdata-model",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use",
+          "vision"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "status": "succeeded",
+      "accepted_ui_kinds": [
+        "html"
+      ],
+      "accepted_ui_decisions": [
+        {
+          "reason_code": "model_selected",
+          "rule_version": "presentation-policy/6",
+          "origin": "model"
+        }
+      ],
+      "html_artifacts": [
+        {
+          "id": "artifact_40da82a4149c4885b6ec77e0c3be002a",
+          "name": "monthly-savings-calculator.html",
+          "sha256": "d3f56d332c2880f6f69487b1a35f69a676afa31e1a37b8405a18d8873bb2a2f7",
+          "bytes": 9531
+        }
+      ],
+      "markdown_image_count": 0,
+      "has_user_input_questions": false,
+      "emitted_ui_protocol": [
+        {
+          "kind": "html",
+          "rows_element_type": null
+        }
+      ],
+      "tool_call_names": [
+        "Bash",
+        "Edit",
+        "Write",
+        "harness_present_artifact",
+        "harness_present_ui",
+        "mcp__harness-artifacts__publish_artifact"
+      ],
+      "live_history_same": true,
+      "elapsed_seconds": 105.17
+    },
+    {
+      "group": "174_shdata",
+      "id": "clt",
+      "host": "174",
+      "prompt": "用咖啡店消费的例子解释一下中心极限定理。",
+      "expected_interaction": "样本量可变，模拟分布随之变化",
+      "thread_id": "ui-natural-clt-d34a9567df78",
+      "run_id": "run_1ebf38b18cf948adb96851e832dba4b8",
+      "session_id": "session_25b6ec950cdd403c9dd9fe29af948218",
+      "agent_version": "1.0.0",
+      "actual_runtime": {
+        "route_id": "shdata-model",
+        "provider": "anthropic",
+        "model": "shdata-model",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use",
+          "vision"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "status": "succeeded",
+      "accepted_ui_kinds": [
+        "html"
+      ],
+      "accepted_ui_decisions": [
+        {
+          "reason_code": "model_selected",
+          "rule_version": "presentation-policy/6",
+          "origin": "model"
+        }
+      ],
+      "html_artifacts": [
+        {
+          "id": "artifact_dcc8aac71de54b8cb74c25634e2f6a84",
+          "name": "中心极限定理 · 咖啡店消费模拟.html",
+          "sha256": "ac06cc0a0c674c1c1ec184c2755227c14e93891dd006d3bfce1b6da675c53492",
+          "bytes": 10669
+        }
+      ],
+      "markdown_image_count": 0,
+      "has_user_input_questions": false,
+      "emitted_ui_protocol": [
+        {
+          "kind": "html",
+          "rows_element_type": null
+        }
+      ],
+      "tool_call_names": [
+        "Write",
+        "harness_present_artifact",
+        "harness_present_ui",
+        "mcp__harness-artifacts__publish_artifact"
+      ],
+      "live_history_same": true,
+      "elapsed_seconds": 58.55
+    },
+    {
+      "group": "174_shdata",
+      "id": "lamb",
+      "host": "174",
+      "prompt": "周日想做烤羊腿招待朋友，人数还没定。",
+      "expected_interaction": "人数可变，购物清单跟随重算",
+      "thread_id": "ui-natural-lamb-363ee346e05f",
+      "run_id": "run_b65cb79eb6504e52b3fdf4dfb0427301",
+      "session_id": "session_b968e1925ae4410385294823495526fa",
+      "agent_version": "1.0.0",
+      "actual_runtime": {
+        "route_id": "shdata-model",
+        "provider": "anthropic",
+        "model": "shdata-model",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use",
+          "vision"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "status": "succeeded",
+      "accepted_ui_kinds": [],
+      "accepted_ui_decisions": [],
+      "html_artifacts": [],
+      "markdown_image_count": 0,
+      "has_user_input_questions": true,
+      "emitted_ui_protocol": [],
+      "tool_call_names": [],
+      "live_history_same": true,
+      "elapsed_seconds": 36.76
+    },
+    {
+      "group": "174_shdata",
+      "id": "bike",
+      "host": "174",
+      "prompt": "拆解一下 7 速自行车的设计。",
+      "expected_interaction": "部件可选，图与说明联动",
+      "thread_id": "ui-natural-bike-833cee1d1dba",
+      "run_id": "run_3ef3ede8e2c14fb986914acfdbd90850",
+      "session_id": "session_681fe64884b6495da8cdf65c258f3e63",
+      "agent_version": "1.0.0",
+      "actual_runtime": {
+        "route_id": "shdata-model",
+        "provider": "anthropic",
+        "model": "shdata-model",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use",
+          "vision"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "status": "succeeded",
+      "accepted_ui_kinds": [],
+      "accepted_ui_decisions": [],
+      "html_artifacts": [],
+      "markdown_image_count": 0,
+      "has_user_input_questions": false,
+      "emitted_ui_protocol": [],
+      "tool_call_names": [],
+      "live_history_same": true,
+      "elapsed_seconds": 23.94
+    },
+    {
+      "group": "174_shdata",
+      "id": "retro-game",
+      "host": "174",
+      "prompt": "做一个我能玩的复古游戏机。",
+      "expected_interaction": "可开始、控制、计分与重玩",
+      "thread_id": "ui-natural-retro-game-53805a696a2a",
+      "run_id": "run_1d60c6a9372c432db2ea15fc5f7a5702",
+      "session_id": "session_f54a06f3a93c46dc8885fabd71090826",
+      "agent_version": "1.0.0",
+      "actual_runtime": {
+        "route_id": "shdata-model",
+        "provider": "anthropic",
+        "model": "shdata-model",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use",
+          "vision"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "status": "succeeded",
+      "accepted_ui_kinds": [
+        "html"
+      ],
+      "accepted_ui_decisions": [
+        {
+          "reason_code": "model_selected",
+          "rule_version": "presentation-policy/6",
+          "origin": "model"
+        }
+      ],
+      "html_artifacts": [
+        {
+          "id": "artifact_d2bd12cae1734c59b5c91634f7ceabfc",
+          "name": "retro-console.html",
+          "sha256": "ba792cc634a6c5d357bab222de855531444f8ac8a4bce383de2e9ef4f2e3884d",
+          "bytes": 23038
+        }
+      ],
+      "markdown_image_count": 0,
+      "has_user_input_questions": false,
+      "emitted_ui_protocol": [
+        {
+          "kind": "html",
+          "rows_element_type": null
+        }
+      ],
+      "tool_call_names": [
+        "Bash",
+        "Write",
+        "harness_present_artifact",
+        "harness_present_ui",
+        "mcp__harness-artifacts__publish_artifact"
+      ],
+      "live_history_same": true,
+      "elapsed_seconds": 225.7
+    },
+    {
+      "group": "174_flash",
+      "id": "monty-hall",
+      "host": "174",
+      "prompt": "讲讲三门问题，为什么换门更容易赢？",
+      "expected_interaction": "门可选，开门和坚持/换门结果可演示",
+      "thread_id": "ui-natural-monty-hall-9dad21690186",
+      "run_id": "run_78919feadfcf452090e8a85a88b9bdc4",
+      "session_id": "session_b804ec717ea043e3acde928a76f8c7eb",
+      "agent_version": "1.0.0",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use",
+          "vision"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "status": "succeeded",
+      "accepted_ui_kinds": [],
+      "accepted_ui_decisions": [],
+      "html_artifacts": [],
+      "markdown_image_count": 0,
+      "has_user_input_questions": false,
+      "emitted_ui_protocol": [],
+      "tool_call_names": [],
+      "live_history_same": true,
+      "elapsed_seconds": 21.08
+    },
+    {
+      "group": "174_flash",
+      "id": "gdp",
+      "host": "174",
+      "prompt": "GDP 是怎么算的？",
+      "expected_interaction": "四项可变，GDP 实时重算",
+      "thread_id": "ui-natural-gdp-f2d57dedb948",
+      "run_id": "run_5ce6a494713e43a9a32b248414d98605",
+      "session_id": "session_84e052dc582b4e019428461780794da0",
+      "agent_version": "1.0.0",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use",
+          "vision"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "status": "succeeded",
+      "accepted_ui_kinds": [],
+      "accepted_ui_decisions": [],
+      "html_artifacts": [],
+      "markdown_image_count": 0,
+      "has_user_input_questions": false,
+      "emitted_ui_protocol": [],
+      "tool_call_names": [],
+      "live_history_same": true,
+      "elapsed_seconds": 14.65
+    },
+    {
+      "group": "174_flash",
+      "id": "clt",
+      "host": "174",
+      "prompt": "用咖啡店消费的例子解释一下中心极限定理。",
+      "expected_interaction": "样本量可变，模拟分布随之变化",
+      "thread_id": "ui-natural-clt-d1e04885e215",
+      "run_id": "run_ace41b6a90954c12811f33d3d7437efd",
+      "session_id": "session_ed3b9548460040d5b5613bd19e9b00d4",
+      "agent_version": "1.0.0",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use",
+          "vision"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "status": "succeeded",
+      "accepted_ui_kinds": [],
+      "accepted_ui_decisions": [],
+      "html_artifacts": [],
+      "markdown_image_count": 0,
+      "has_user_input_questions": false,
+      "emitted_ui_protocol": [],
+      "tool_call_names": [],
+      "live_history_same": true,
+      "elapsed_seconds": 23.69
+    },
+    {
+      "group": "174_flash",
+      "id": "lamb",
+      "host": "174",
+      "prompt": "周日想做烤羊腿招待朋友，人数还没定。",
+      "expected_interaction": "人数可变，购物清单跟随重算",
+      "thread_id": "ui-natural-lamb-99cc576a2724",
+      "run_id": "run_ad2efea0d34740eda28f21861c435d8d",
+      "session_id": "session_7004f3c6de6442a5888bb52d34cbb58d",
+      "agent_version": "1.0.0",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use",
+          "vision"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "status": "succeeded",
+      "accepted_ui_kinds": [],
+      "accepted_ui_decisions": [],
+      "html_artifacts": [],
+      "markdown_image_count": 0,
+      "has_user_input_questions": true,
+      "emitted_ui_protocol": [],
+      "tool_call_names": [],
+      "live_history_same": true,
+      "elapsed_seconds": 25.46
+    },
+    {
+      "group": "174_flash",
+      "id": "bike",
+      "host": "174",
+      "prompt": "拆解一下 7 速自行车的设计。",
+      "expected_interaction": "部件可选，图与说明联动",
+      "thread_id": "ui-natural-bike-26df739e6493",
+      "run_id": "run_177c4ec5225b41889e68bd121d1d896d",
+      "session_id": "session_9851d0ea7a5c4bbd95de5b599add6b12",
+      "agent_version": "1.0.0",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use",
+          "vision"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "status": "succeeded",
+      "accepted_ui_kinds": [
+        "table"
+      ],
+      "accepted_ui_decisions": [
+        {
+          "reason_code": "model_selected",
+          "rule_version": "presentation-policy/6",
+          "origin": "model"
+        }
+      ],
+      "html_artifacts": [],
+      "markdown_image_count": 0,
+      "has_user_input_questions": false,
+      "emitted_ui_protocol": [
+        {
+          "kind": "table",
+          "rows_element_type": "dict"
+        }
+      ],
+      "tool_call_names": [
+        "harness_present_ui"
+      ],
+      "live_history_same": true,
+      "elapsed_seconds": 92.59
+    },
+    {
+      "group": "79_legacy_flash",
+      "id": "italy-wedding",
+      "host": "79",
+      "prompt": "要去意大利参加婚礼，帮我规划一周穿什么。",
+      "expected_interaction": "来源图片、七天搭配与可勾选行李清单",
+      "thread_id": "ui-natural-italy-wedding-311b64a5fe20",
+      "run_id": "run_4b4ee094ed9f4400a9bef8398cece297",
+      "session_id": "session_76371c0b1a424694a859ee6de0efbb2d",
+      "agent_version": "1.0.0",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "status": "succeeded",
+      "accepted_ui_kinds": [],
+      "accepted_ui_decisions": [],
+      "html_artifacts": [],
+      "markdown_image_count": 0,
+      "has_user_input_questions": true,
+      "emitted_ui_protocol": [],
+      "tool_call_names": [
+        "Bash",
+        "Skill"
+      ],
+      "live_history_same": true,
+      "elapsed_seconds": 71.39
+    },
+    {
+      "group": "79_legacy_flash",
+      "id": "drone-market",
+      "host": "79",
+      "prompt": "美国无人机航拍市场怎么样？",
+      "expected_interaction": "三类业务配图、来源与预测图",
+      "thread_id": "ui-natural-drone-market-4d81b1f22c18",
+      "run_id": "run_289d245eeb174f1e81cdd433cf6caca8",
+      "session_id": "session_902b5cbb3b224178af95a1d0996adf17",
+      "agent_version": "1.0.0",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "status": "succeeded",
+      "accepted_ui_kinds": [],
+      "accepted_ui_decisions": [],
+      "html_artifacts": [],
+      "markdown_image_count": 0,
+      "has_user_input_questions": false,
+      "emitted_ui_protocol": [],
+      "tool_call_names": [
+        "Bash",
+        "Glob",
+        "Skill"
+      ],
+      "live_history_same": true,
+      "elapsed_seconds": 154.71
+    },
+    {
+      "group": "79_legacy_flash",
+      "id": "pnw-roadtrip",
+      "host": "79",
+      "prompt": "规划一趟太平洋西北部10天的自驾。",
+      "expected_interaction": "来源图片、每日行程与预算、可选偏好",
+      "thread_id": "ui-natural-pnw-roadtrip-8c2115847df7",
+      "run_id": "run_911a13aae2474c03926d9f0fdab3183a",
+      "session_id": "session_daa64c7adda04e4e90f415a77edd0cf0",
+      "agent_version": "1.0.0",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "status": "succeeded",
+      "accepted_ui_kinds": [],
+      "accepted_ui_decisions": [],
+      "html_artifacts": [],
+      "markdown_image_count": 0,
+      "has_user_input_questions": true,
+      "emitted_ui_protocol": [],
+      "tool_call_names": [
+        "Skill",
+        "mcp__harness-memory__search_memory"
+      ],
+      "live_history_same": true,
+      "elapsed_seconds": 129.97
+    },
+    {
+      "group": "79_default_flash",
+      "id": "italy-wedding",
+      "host": "79",
+      "prompt": "要去意大利参加婚礼，帮我规划一周穿什么。",
+      "expected_interaction": "来源图片、七天搭配与可勾选行李清单",
+      "thread_id": "ui-natural-italy-wedding-8797ab4ddd85",
+      "run_id": "run_d724c4b10bb546b681105586eda93928",
+      "session_id": "session_a57f97309e0641cca7987d82e5aa870a",
+      "agent_version": "1.0.1",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "status": "succeeded",
+      "accepted_ui_kinds": [],
+      "accepted_ui_decisions": [],
+      "html_artifacts": [],
+      "markdown_image_count": 0,
+      "has_user_input_questions": true,
+      "emitted_ui_protocol": [],
+      "tool_call_names": [
+        "mcp__harness-memory__search_memory"
+      ],
+      "live_history_same": true,
+      "elapsed_seconds": 84.79
+    },
+    {
+      "group": "79_default_flash",
+      "id": "drone-market",
+      "host": "79",
+      "prompt": "美国无人机航拍市场怎么样？",
+      "expected_interaction": "三类业务配图、来源与预测图",
+      "thread_id": "ui-natural-drone-market-dc7ba8432905",
+      "run_id": "run_ae548216192947d59c8c9bf0bc3ff61e",
+      "session_id": "session_9d6903c2ae284517ac068077634295f0",
+      "agent_version": "1.0.1",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "status": "succeeded",
+      "accepted_ui_kinds": [],
+      "accepted_ui_decisions": [],
+      "html_artifacts": [],
+      "markdown_image_count": 0,
+      "has_user_input_questions": false,
+      "emitted_ui_protocol": [],
+      "tool_call_names": [
+        "Skill",
+        "WebSearch"
+      ],
+      "live_history_same": true,
+      "elapsed_seconds": 262.42
+    },
+    {
+      "group": "79_default_flash",
+      "id": "pnw-roadtrip",
+      "host": "79",
+      "prompt": "规划一趟太平洋西北部10天的自驾。",
+      "expected_interaction": "来源图片、每日行程与预算、可选偏好",
+      "thread_id": "ui-natural-pnw-roadtrip-7f55ff075e44",
+      "run_id": "run_59a0db05cb344912aac01af4e69a6c77",
+      "session_id": "session_42844d2d0aa4468e9211b74b6943ff62",
+      "agent_version": "1.0.1",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "status": "succeeded",
+      "accepted_ui_kinds": [],
+      "accepted_ui_decisions": [],
+      "html_artifacts": [],
+      "markdown_image_count": 0,
+      "has_user_input_questions": true,
+      "emitted_ui_protocol": [],
+      "tool_call_names": [
+        "Skill",
+        "WebSearch"
+      ],
+      "live_history_same": true,
+      "elapsed_seconds": 289.05
+    },
+    {
+      "group": "79_platform_flash",
+      "id": "italy-wedding",
+      "host": "79",
+      "prompt": "要去意大利参加婚礼，帮我规划一周穿什么。",
+      "expected_interaction": "来源图片、七天搭配与可勾选行李清单",
+      "thread_id": "ui-natural-italy-wedding-4baef7b1f413",
+      "run_id": "run_76128480fea2471a9d82b8adc5ed9ec3",
+      "session_id": "session_c8f327ba68d94da48405f260182dee30",
+      "agent_version": "1.0.3+platform.99dfe677",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "status": "succeeded",
+      "accepted_ui_kinds": [],
+      "accepted_ui_decisions": [],
+      "html_artifacts": [],
+      "markdown_image_count": 0,
+      "has_user_input_questions": true,
+      "emitted_ui_protocol": [],
+      "tool_call_names": [
+        "mcp__harness-memory__search_memory"
+      ],
+      "live_history_same": true,
+      "elapsed_seconds": 46.88
+    },
+    {
+      "group": "79_platform_flash",
+      "id": "drone-market",
+      "host": "79",
+      "prompt": "美国无人机航拍市场怎么样？",
+      "expected_interaction": "三类业务配图、来源与预测图",
+      "thread_id": "ui-natural-drone-market-2dfa81fde269",
+      "run_id": "run_4e14da82e6644174b7ecc507e330677d",
+      "session_id": "session_13b4817c4cb34a999657ca3ec6ae1a65",
+      "agent_version": "1.0.3+platform.99dfe677",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "status": "succeeded",
+      "accepted_ui_kinds": [],
+      "accepted_ui_decisions": [],
+      "html_artifacts": [],
+      "markdown_image_count": 0,
+      "has_user_input_questions": false,
+      "emitted_ui_protocol": [
+        {
+          "kind": "table",
+          "rows_element_type": "list"
+        }
+      ],
+      "tool_call_names": [
+        "WebSearch"
+      ],
+      "live_history_same": true,
+      "elapsed_seconds": 178.3
+    },
+    {
+      "group": "79_platform_flash",
+      "id": "pnw-roadtrip",
+      "host": "79",
+      "prompt": "规划一趟太平洋西北部10天的自驾。",
+      "expected_interaction": "来源图片、每日行程与预算、可选偏好",
+      "thread_id": "ui-natural-pnw-roadtrip-1d85ca784348",
+      "run_id": "run_6d478d2fbadf4ef4a3b8a064543b0327",
+      "session_id": "session_20db18c56a8c4ae1ab0f588a4c5d3727",
+      "agent_version": "1.0.3+platform.99dfe677",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "status": "succeeded",
+      "accepted_ui_kinds": [],
+      "accepted_ui_decisions": [],
+      "html_artifacts": [],
+      "markdown_image_count": 0,
+      "has_user_input_questions": true,
+      "emitted_ui_protocol": [],
+      "tool_call_names": [],
+      "live_history_same": true,
+      "elapsed_seconds": 145.67
+    },
+    {
+      "group": "79_default_flash_followup",
+      "id": "pnw-roadtrip-followup",
+      "host": "79",
+      "prompt": "按这个示例安排：西雅图进出，六月，两位朋友同行，偏户外徒步，每天驾驶尽量不超过三小时。",
+      "expected_interaction": "来源图片、每日行程与预算、可选偏好",
+      "thread_id": "ui-natural-pnw-roadtrip-7f55ff075e44",
+      "parent_run_id": "run_59a0db05cb344912aac01af4e69a6c77",
+      "run_id": "run_3038d08825464ff39b20b5a03582dd2d",
+      "session_id": "session_42844d2d0aa4468e9211b74b6943ff62",
+      "agent_version": "1.0.1",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "status": "succeeded",
+      "accepted_ui_kinds": [],
+      "accepted_ui_decisions": [],
+      "html_artifacts": [],
+      "markdown_image_count": 0,
+      "has_user_input_questions": true,
+      "emitted_ui_protocol": [],
+      "tool_call_names": [
+        "WebSearch"
+      ],
+      "live_history_same": true,
+      "elapsed_seconds": 163.08
+    },
+    {
+      "group": "79_default_flash_followup",
+      "id": "italy-wedding-followup",
+      "host": "79",
+      "prompt": "按这个示例安排：七月去佛罗伦萨，半正式婚礼，按女装；另外几天城市观光，只带随身行李。",
+      "expected_interaction": "来源图片、七天搭配与可勾选行李清单",
+      "thread_id": "ui-natural-italy-wedding-8797ab4ddd85",
+      "parent_run_id": "run_d724c4b10bb546b681105586eda93928",
+      "run_id": "run_f02265c79006451eaddf48176ab802a8",
+      "session_id": "session_a57f97309e0641cca7987d82e5aa870a",
+      "agent_version": "1.0.1",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "status": "succeeded",
+      "accepted_ui_kinds": [],
+      "accepted_ui_decisions": [],
+      "html_artifacts": [],
+      "markdown_image_count": 0,
+      "has_user_input_questions": false,
+      "emitted_ui_protocol": [],
+      "tool_call_names": [],
+      "live_history_same": true,
+      "elapsed_seconds": 75.41
+    }
+  ],
+  "image_retrieval_probe": {
+    "host": "79",
+    "scope": "actual configured platform Tavily plus real image GET; not main-chat end-to-end",
+    "cases": [
+      {
+        "id": "italy-wedding",
+        "host": "79",
+        "query": "Italy summer wedding guest outfits capsule wardrobe",
+        "stage": "platform_search_image_retrieval",
+        "main_chat_acceptance": "completed separately; no automatic answer images or rich UI",
+        "results": [
+          {
+            "url": "https://www.reddit.com/r/capsulewardrobe/comments/1jfowo9/italian_summer_inspired_capsule_wadrobe",
+            "title": "Italian summer inspired capsule wadrobe",
+            "content": "I especially like the collared shirt and blouse to wear with your linen trousers. I love the sage green — it definitely will look good in Italy",
+            "truncated": false,
+            "images": []
+          },
+          {
+            "url": "https://www.youtube.com/watch?v=RasmFCN4864",
+            "title": "She Packs 15 Pieces for ENTIRE Summer | Italian Capsule",
+            "content": "Italian women pack just 15 pieces and create 50+ elegant outfits all summer. I'm revealing the complete Italian summer capsule wardrobe with",
+            "truncated": false,
+            "images": []
+          },
+          {
+            "url": "https://bygabrielarose.substack.com/p/the-italian-summer-wardrobe-you-probably",
+            "title": "The Italian Summer Wardrobe You Probably Already Own",
+            "content": "What to actually wear in Italy this summer, Ankle-length silk gowns? The goal is simple: keep it light—both in color and in fabric. second-hand",
+            "truncated": false,
+            "images": []
+          },
+          {
+            "url": "https://www.tiktok.com/@domenica.formulations/video/7474374184924122373",
+            "title": "Italy Summer Capsule Wardrobe Preparation",
+            "content": "For this once-in-a-lifetime trip, I'm zeroing in on three key words to guide my fashion choices: **feminine, put together**, and **comfortable**",
+            "truncated": false,
+            "images": []
+          },
+          {
+            "url": "https://www.facebook.com/groups/947294370748901/posts/1422051956606471",
+            "title": "Italy travel capsule wardrobe for 12 days",
+            "content": "Here are the clothes I'm taking to Italy May 7-18. ... Ever since, I have gradually increased the dress component of my travel wardrobe.",
+            "truncated": false,
+            "images": []
+          }
+        ],
+        "images": [
+          {
+            "url": "https://images.squarespace-cdn.com/content/v1/5f90a0d90565905e22971c80/7519f444-d99b-49ae-bbb2-361b2e6d0b85/IMG_6934.jpeg",
+            "description": "A group of women in colorful, summery, linen dresses celebrating outdoors with drinks, dressed in stylish and light summer outfits suitable for a wedding in Italy."
+          },
+          {
+            "url": "https://farahfsalem.com/wp-content/uploads/2024/06/what-to-wear-to-a-wedding-in-italy-2-826x1024.jpg",
+            "description": "None"
+          },
+          {
+            "url": "https://thelane.com/wp-content/uploads/2024/05/Tove-Studio-667x1000.jpg",
+            "description": "A woman in a black lace top and wide-leg black satin pants, accessorized with a black headscarf, strappy heels, and a clutch, stands on a parking lot marked with yellow lines, suggesting an elegant summer wedding guest outfit in Italy."
+          },
+          {
+            "url": "https://maryandcrew.com/wp-content/uploads/2025/04/Italy-spring-2025.png",
+            "description": "A curated collection of spring wardrobe essentials for a wedding guest capsule, featuring tops, sweaters, jeans, dresses, skirts, pajamas, accessories, shoes, and a raincoat, all designed for a stylish summer wedding in Italy."
+          },
+          {
+            "url": "https://thelane.com/wp-content/uploads/2024/05/00030-schiaparelli-fall-2024-ready-to-wear-credit-brand-667x1000.jpeg",
+            "description": "A tall model with dark skin walks down the runway in a shimmering gold dress with shoulder embellishments, accessorized with gold bangles, earrings, and a small clutch, while an audience watches attentively behind her."
+          }
+        ],
+        "result_count": 5,
+        "image_count": 5,
+        "image_reads": [
+          {
+            "url": "https://images.squarespace-cdn.com/content/v1/5f90a0d90565905e22971c80/7519f444-d99b-49ae-bbb2-361b2e6d0b85/IMG_6934.jpeg",
+            "status": 200,
+            "content_type": "image/jpeg",
+            "bytes": 461048,
+            "sha256": "e06b5d42fe262c2073cfb75f70dfe2094c2ace6e04cd383c09efcf388c4e7d7f",
+            "dimensions": [
+              2048,
+              1365
+            ]
+          }
+        ],
+        "image_fetch_passed": true,
+        "elapsed_seconds": 5.05
+      },
+      {
+        "id": "pnw-roadtrip",
+        "host": "79",
+        "query": "Pacific Northwest road trip Oregon Washington national parks",
+        "stage": "platform_search_image_retrieval",
+        "main_chat_acceptance": "completed separately; no automatic answer images or rich UI",
+        "results": [
+          {
+            "url": "https://www.travel-experience-live.com/best-pacific-northwest-national-parks-road-trip",
+            "title": "Pacific Northwest National Parks Road Trip: 14 National Parks, Monuments & Forests in the PNW",
+            "content": "For the purpose of this Pacific Northwest national parks road trip post, I chose the following states as making up the Pacific Northwest: Washington, Oregon and northern California.\n\nThis is basically the span of the Cascade Mountains in the United States—the Pacific Northwest is sometimes also referred to as “Cascadia”—and makes for the most convenient road trip opportunities. Washington, Oregon and northern California also have similar landscapes, natural features and ecosystems. [...] The vast majority of the national parks in the Pacific Northwest are either in the Cascade Range or along the Pacific Coasts of Washington, Oregon and northern California. This offers amazing opportunities for one-way road trips or longer loops.\n\nNo matter how much time you have—whether it’s a week or a month—you can explore several, if not all, of the Pacific Northwest national parks on a world-class road trip. [...] 1. Fort Vancouver National Historic Site, WA\n2. Mount St. Helens National Volcanic Monument, WA \\\n3. Mount Rainier National Park, WA\n4. North Cascades National Park, WA\n5. San Juan Island National Historical Park, WA\n6. Olympic National Park, WA\n7. (Pacific Coast Highway 101 south through Washington and Oregon)\n8. Oregon Caves National Monument, OR\n9. Redwood National Park, CA\n10. Lassen Volcanic National Park, CA\n11. Lava Beds National Monument, CA\n12. Crater Lake National Park, OR",
+            "truncated": false,
+            "images": [
+              {
+                "url": "https://www.travel-experience-live.com/wp-content/uploads/2018/08/Wizard-Island-in-Crater-Lake-National-Park-Oregon-USA.jpg",
+                "description": "None",
+                "source_url": "https://www.travel-experience-live.com/best-pacific-northwest-national-parks-road-trip"
+              },
+              {
+                "url": "https://www.travel-experience-live.com/wp-content/uploads/2018/08/Wizard-Island-in-Crater-Lake-National-Park-Oregon-USA.jpg?x99895",
+                "description": "Wizard Island in Crater Lake, Oregon",
+                "source_url": "https://www.travel-experience-live.com/best-pacific-northwest-national-parks-road-trip"
+              },
+              {
+                "url": "https://www.travel-experience-live.com/wp-content/uploads/2023/05/Grizzly-bear-399-with-her-cub-of-the-year-in-2023-Image-credit-NPS-C.-Adams-768x512.jpg?x99895",
+                "description": "Grizzly bear 399 with her cub of the year in 2023 - Image credit NPS C. Adams",
+                "source_url": "https://www.travel-experience-live.com/best-pacific-northwest-national-parks-road-trip"
+              },
+              {
+                "url": "https://www.travel-experience-live.com/wp-content/uploads/2022/02/Virgin-Islands-banana-fritters-recipe-with-coconut-and-honey-768x576.jpg?x99895",
+                "description": "Virgin Islands banana fritters recipe with coconut and honey",
+                "source_url": "https://www.travel-experience-live.com/best-pacific-northwest-national-parks-road-trip"
+              },
+              {
+                "url": "https://www.travel-experience-live.com/wp-content/uploads/2018/01/Badwater-Basin-in-Death-Valley-National-Park-California-768x512.jpg?x99895",
+                "description": "Badwater Basin in Death Valley National Park, California",
+                "source_url": "https://www.travel-experience-live.com/best-pacific-northwest-national-parks-road-trip"
+              }
+            ]
+          },
+          {
+            "url": "https://ohwhataknight.co.uk/blog/pacific-northwest-road-trip-guide",
+            "title": "A complete Pacific Northwest Road Trip Itinerary | 2 Weeks exploring Washington & Oregon — Oh What A Knight",
+            "content": "1. Olympic National Park, Washington\n2. Olympic National Park, Washington\n3. Northern Oregon Coast\n4. Silver State Park, Oregon\n5. Columbia River Gorge, Oregon\n6. Paradise, Mount Rainier National Park, Washington\n7. Sunrise, Mount Rainier National Park, Washington\n8. Okanogan–Wenatchee National Forest, Washington\n9. North Cascades, Washington\n10. North Cascades, Washington\n11. Mount Baker, Washington\n12. Mount Baker, Washington\n13. Snoqualmie National Forest, Washington\n14. Seattle, Washington [...] Olympic National Park, Washington\n Northern Oregon Coast\n Silver Falls State Park, Oregon\n Mount Hood & Columbia River Gorge, Oregon\n Mount Rainier National Park, Washington\n Okanogan –Wenatchee National Forest / Leavenworth, Washington\n North Cascades National Park, Washington\n Mount Baker, Washington\n Mount Baker–Snoqualmie National Forest / Snoqualmie, Washington\n Seattle, Washington [...] Days 1–3: Olympic National Park, WA\n Day 4: Northern Oregon Coast, OR\n Days 5–6: Northern & Southern Oregon Coast\n Day 7: Southern Oregon Coast\n Days 8: Crater Lake NP, OR\n Day 9: Bend, OR\n Day 10: Silver Falls State Park, OR\n Day 11: Mount Hood & Columbia River Gorge, OR\n Day 12: Columbia River Gorge\n Days 13- 14: Mount Rainier National Park, WA\n Day 15 : Okanogan–Wenatchee National Forest, WA\n Days 16-17: North Cascades, WA\n Days 18–19: Mount Baker, WA\n Day 20 Mount Baker–Snoqualmie NF, WA",
+            "truncated": false,
+            "images": [
+              {
+                "url": "https://images.squarespace-cdn.com/content/v1/5eabefd1b259fc1e715e7e3b/bdf0a3b0-8181-44c0-a9de-db58d1d4f397/multnomah+falls%2C+Columbia+River+Gorge+-1.jpg",
+                "description": "falls, Columbia River Gorge -Pacific Northwest Road Trip",
+                "source_url": "https://ohwhataknight.co.uk/blog/pacific-northwest-road-trip-guide"
+              },
+              {
+                "url": "https://images.squarespace-cdn.com/content/v1/5eabefd1b259fc1e715e7e3b/e89ff871-c6b3-4509-b420-5e8609af4d88/Colchuck+Lake%2C+Pacific+Northwest+Road+Trip",
+                "description": "Colchuck Lake, Washington, a must visit stop on a Pacific Northwest road trip itinerary.",
+                "source_url": "https://ohwhataknight.co.uk/blog/pacific-northwest-road-trip-guide"
+              },
+              {
+                "url": "https://images.squarespace-cdn.com/content/v1/5eabefd1b259fc1e715e7e3b/dfcd59de-d762-4437-8e88-3c1e6a4eccf5/PNW+Route+1.JPG",
+                "description": "None",
+                "source_url": "https://ohwhataknight.co.uk/blog/pacific-northwest-road-trip-guide"
+              },
+              {
+                "url": "https://images.squarespace-cdn.com/content/v1/5eabefd1b259fc1e715e7e3b/96fd21e0-3c5e-4690-a93b-7ad47a9b403c/Skyline+loop+%2C+Paradise%2C+Mount+Rainier-3.jpg",
+                "description": "Skyline loop - Washington, a must visit stop on a Pacific Northwest road trip",
+                "source_url": "https://ohwhataknight.co.uk/blog/pacific-northwest-road-trip-guide"
+              },
+              {
+                "url": "https://images.squarespace-cdn.com/content/v1/5eabefd1b259fc1e715e7e3b/d3cbe0d5-c146-40a4-8f14-2ff200f27852/Freemont+lookout+-23.jpg",
+                "description": "Freemont lookout sunset, Washington, a must visit stop on a Pacific Northwest road trip",
+                "source_url": "https://ohwhataknight.co.uk/blog/pacific-northwest-road-trip-guide"
+              },
+              {
+                "url": "https://images.squarespace-cdn.com/content/v1/5eabefd1b259fc1e715e7e3b/09bb6154-7eaa-4767-b9b6-6b87a5e4e56c/Hurricane+Hill-05.jpg",
+                "description": "Hurricane Hill, Olympic national Park, Washington, a must visit stop on a Pacific Northwest road trip",
+                "source_url": "https://ohwhataknight.co.uk/blog/pacific-northwest-road-trip-guide"
+              },
+              {
+                "url": "https://images.squarespace-cdn.com/content/v1/5eabefd1b259fc1e715e7e3b/0dafc991-abb3-4c2b-8bb7-3f3c61d47dde/Hurricane+Hill",
+                "description": "Hurricane Hill, Olympic national Park, Washington, a must visit stop on a Pacific Northwest road trip",
+                "source_url": "https://ohwhataknight.co.uk/blog/pacific-northwest-road-trip-guide"
+              },
+              {
+                "url": "https://images.squarespace-cdn.com/content/v1/5eabefd1b259fc1e715e7e3b/7885d037-efb7-4842-b7ac-958961255992/Hurricane+Hill-03.jpg",
+                "description": "Hurricane Hill, Olympic national Park, Washington, a must visit stop on a Pacific Northwest road trip",
+                "source_url": "https://ohwhataknight.co.uk/blog/pacific-northwest-road-trip-guide"
+              }
+            ]
+          },
+          {
+            "url": "https://www.paradoxtravels.com/post/pacnw-national-parks-road-trip",
+            "title": "The Ultimate Pacific Northwest National Parks road trip",
+            "content": "Stop 3 – Crater Lake National Park, Oregon ... With three diverse ecosystems and covering over one million acres of Washington state, this massive",
+            "truncated": false,
+            "images": []
+          },
+          {
+            "url": "https://www.emeraldpalate.com/national-parks-in-the-pacific-northwest",
+            "title": "5 National Parks in the Pacific Northwest to Visit in Your Lifetime - The Emerald Palate",
+            "content": "Now that we got the area out of the way, let’s dive into the different types of national parks. If you mean capital letter “National Parks”, there are 5 official national parks in the Pacific Northwest: Mount Rainier (WA), North Cascades (WA), Olympic (WA), Crater Lake (OR), and Glacier National Park (MT). Yellowstone and Grand Teton National Park are nearby-ish in the western part of Wyoming and Montana, but they’re just east of the Continental Divide. [...] The Emerald Palate\n\nSeattle food tours & retreats\n\nOregon, Travel Guides, Washington ·\n\n# 5 National Parks in the Pacific Northwest to Visit in Your Lifetime\n\nThe national parks in the Pacific Northwest are one of the biggest reasons to visit the region. The area is vast and full of stunning landscapes, diverse wildlife, and breathtaking viewpoints. There are plenty of ways to explore it all, the most popular being visiting the many national parks in Washington, Oregon, and British Columbia. [...] Assuming you’re leaving from Seattle, I’d explore the parks in this order: Olympic, North Cascades, Rainier, Crater Lake, and Glacier. This route will pass by national areas like San Juan Island, Fort Vancouver, Columbia River Gorge, Mt. Hood, and Newberry Volcanic Monument, so you can add a lot of stops along the way! You’ll also pass through Spokane, one of the underrated cities in eastern Washington.",
+            "truncated": false,
+            "images": [
+              {
+                "url": "https://www.emeraldpalate.com/wp-content/uploads/2025/06/National-Parks-in-the-Pacific-Northwest-FACEBOOK.jpg",
+                "description": "None",
+                "source_url": "https://www.emeraldpalate.com/national-parks-in-the-pacific-northwest"
+              },
+              {
+                "url": "https://www.emeraldpalate.com/wp-content/uploads/2025/06/Best-Washington-Coast-Attractions-Hurricane-Ridge.jpg",
+                "description": "Hurricane Ridge in one of the best national parks in the Pacific Northwest",
+                "source_url": "https://www.emeraldpalate.com/national-parks-in-the-pacific-northwest"
+              },
+              {
+                "url": "https://www.emeraldpalate.com/wp-content/uploads/2023/03/Best-Things-to-Do-in-Bend-Oregon-in-Winter-Crater-Lake.jpg",
+                "description": "Crater Lake National Park | National Parks in the Pacific Northwest",
+                "source_url": "https://www.emeraldpalate.com/national-parks-in-the-pacific-northwest"
+              },
+              {
+                "url": "https://www.emeraldpalate.com/wp-content/uploads/2026/05/Free-Things-to-Do-in-Los-Angeles-HERO-800x800.jpg",
+                "description": "Santa Monica Boardwalk Pier at sunset, one of the best free things to do in Los Angeles, CA",
+                "source_url": "https://www.emeraldpalate.com/national-parks-in-the-pacific-northwest"
+              },
+              {
+                "url": "https://www.emeraldpalate.com/wp-content/uploads/2024/05/Best-Summer-Vacations-in-Washington-State-HERO-800x800.jpg",
+                "description": "Best Summer Vacations in Washington State",
+                "source_url": "https://www.emeraldpalate.com/national-parks-in-the-pacific-northwest"
+              },
+              {
+                "url": "https://www.emeraldpalate.com/wp-content/uploads/2022/05/Best-Hiking-Spots-in-Seattle_FEATURE-IMAGE-800x768.jpg",
+                "description": "person passing over a bridge on one of the best hiking spots in Seattle",
+                "source_url": "https://www.emeraldpalate.com/national-parks-in-the-pacific-northwest"
+              },
+              {
+                "url": "https://www.emeraldpalate.com/wp-content/uploads/2025/06/What-to-Do-at-Pike-Place-Market-HERO-300x300.jpg",
+                "description": "None",
+                "source_url": "https://www.emeraldpalate.com/national-parks-in-the-pacific-northwest"
+              }
+            ]
+          },
+          {
+            "url": "https://alwaysupforanadventure.com/pacific-northwest-road-trip-in-10-days",
+            "title": "Pacific Northwest Road Trip in 10 Days - Always Up For An Adventure",
+            "content": "Forks Washington- Home of the Twilight series! Yes, I was a Twilight fan and you can click here for more details on Forks.\n\nOlympic National Park is huge! There are many different areas of the park with a lot of diversity. I only hit a tiny portion, but I plan on coming back to see the rest. This park should be on your Pacific Northwest road trip agenda!\n\nI got up early to take a hike solo in Hoh Rain Forest. The hubby’s ankle was still bothering him. This place was amazing! [...] Anyways, my son had a few free hours and we were going to make the most of it. We drove to Deception Pass and hiked down to the coast. Beautiful area!!! It was still kinda foggy, but it made for some cool pictures with the bridge.\n\nNorth Cascades National Park was my main goal today after I dropped him back off.  It was AMAZING!! Enough to have its own post as well. This is a must do on a Pacific Northwest road trip! [...] Last summer, we spent 10 days seeing the Pacific Northwest on a road trip. I was able to visit Washington, Oregon, Idaho, Montana and a little bit of California in 10 days! The Pacific Northwest is a beautiful area that you MUST visit! If you are short on time, I’ve detailed my trip so you can get ideas on what is possible. My philosophy for travel is fit in as much as I can, because I never know if I’ll get back to the area. I can always sleep when I get home, lol.  I know that doesn’t work",
+            "truncated": false,
+            "images": [
+              {
+                "url": "https://alwaysupforanadventure.com/wp-content/uploads/2019/02/Copy-of-Alwaysupforanadventure.com-2.png",
+                "description": "None",
+                "source_url": "https://alwaysupforanadventure.com/pacific-northwest-road-trip-in-10-days"
+              }
+            ]
+          }
+        ],
+        "images": [
+          {
+            "url": "https://www.travel-experience-live.com/wp-content/uploads/2020/05/Best-Pacific-Northwest-National-Parks-Monuments-and-Forests-Map.jpg?x99895",
+            "description": "The image shows a map highlighting the best Pacific Northwest national parks with photos of each location, including Olympic National Park, Mount Rainier, North Cascades, and Crater Lake, among others, linked to their respective numbered labels."
+          },
+          {
+            "url": "https://images.squarespace-cdn.com/content/v1/627527b3cbb8af69cc61a944/0f4a0e12-1b47-4226-8182-ba0996de2ba2/PNW-Road-Trip-Map.jpg",
+            "description": "A winding road through scenic national parks and forested areas from Denver to Vancouver, passing iconic landmarks like Craters of the Moon National Monument and Glacier National Park."
+          },
+          {
+            "url": "https://www.mattandkaren.com/wp-content/uploads/2025/11/washington-and-oregon-road-trip-feature-image.jpeg",
+            "description": "A rugged coastal landscape with towering sea stacks, a dramatic sunset casting warm light, and a shoreline scattered with rocks and driftwood, exemplifying the beauty of the Oregon coast near Mount Hood."
+          },
+          {
+            "url": "https://static.wixstatic.com/media/23ad70_ab4701701daa44ab8e18b7db4a90e7c1~mv2.png/v1/fill/w_600,h_651,al_c,q_90,enc_avif,quality_auto/23ad70_ab4701701daa44ab8e18b7db4a90e7c1~mv2.png",
+            "description": "A detailed map of a Pacific Northwest road trip showcases key landmarks such as Crater Lake National Park, Mount Rainier, and Olympic National Park, with a route passing through Portland, Bend, Redding, Lassen Volcanic National Park, Sacramento, and ending in San Luis Obispo."
+          },
+          {
+            "url": "https://ralphdeal.s3.amazonaws.com/wp-content/uploads/2024/03/Pacific_Northwest_2024_Blog-26.jpg",
+            "description": "A lush forest with tall redwood trees lining a muddy, damp trail bordered by a simple wooden fence."
+          }
+        ],
+        "result_count": 5,
+        "image_count": 5,
+        "image_reads": [
+          {
+            "url": "https://www.travel-experience-live.com/wp-content/uploads/2020/05/Best-Pacific-Northwest-National-Parks-Monuments-and-Forests-Map.jpg?x99895",
+            "status": 200,
+            "content_type": "image/jpeg",
+            "bytes": 296632,
+            "sha256": "213bd84fe3aebf79ab96363fc70d7a3bd5fb647a280181f8eb7c8b0d6a6c3af3",
+            "dimensions": [
+              1200,
+              1500
+            ]
+          }
+        ],
+        "image_fetch_passed": true,
+        "elapsed_seconds": 25.76
+      },
+      {
+        "id": "drone-market",
+        "host": "79",
+        "query": "United States drone aerial photography commercial industrial inspection market",
+        "stage": "platform_search_image_retrieval",
+        "main_chat_acceptance": "completed separately; no automatic answer images or rich UI",
+        "results": [
+          {
+            "url": "https://www.marketdataforecast.com/market-reports/united-states-small-unmanned-aerial-vehicle-market",
+            "title": "U.S. Small Unmanned Aerial Vehicle Market Size, Share, 2034",
+            "content": "Growing adoption of drones for commercial and industrial operations is driving market growth.\n Increasing demand for aerial imaging, mapping, and inspection services is boosting market expansion.\n Rising integration of artificial intelligence and autonomous navigation systems is supporting industry development.\n Expansion of drone applications in agriculture, infrastructure monitoring, and public safety is enhancing market opportunities. [...] Skydio Inc has established itself as a leading innovator in the United States small unmanned aerial vehicle market by focusing on autonomous flight technology and advanced obstacle avoidance systems. The company specializes in producing drones that require minimal pilot input, making them ideal for public safety and industrial inspection applications. Skydio recently strengthened its market position by securing significant contracts with federal agencies and law enforcement departments across [...] The rotary wing small unmanned aerial vehicles segment held a dominant share of the United States small UAV market in 2025 due to their vertical takeoff and landing capabilities and ability to hover, which are essential for many commercial and inspection tasks. The ability to hover and maneuver precisely by making them ideal for detailed inspection and surveillance tasks that require stationary observation. This flexibility allows operators to capture high resolution images and videos from",
+            "truncated": false,
+            "images": [
+              {
+                "url": "https://www.marketdataforecast.com/images/download.png",
+                "description": "None",
+                "source_url": "https://www.marketdataforecast.com/market-reports/united-states-small-unmanned-aerial-vehicle-market"
+              },
+              {
+                "url": "https://www.marketdataforecast.com/images/logo.png",
+                "description": "Market Data Forecast logo",
+                "source_url": "https://www.marketdataforecast.com/market-reports/united-states-small-unmanned-aerial-vehicle-market"
+              },
+              {
+                "url": "https://www.marketdataforecast.com/images/pdf_icon.svg",
+                "description": "icon",
+                "source_url": "https://www.marketdataforecast.com/market-reports/united-states-small-unmanned-aerial-vehicle-market"
+              }
+            ]
+          },
+          {
+            "url": "https://www.factmr.com/report/uav-inspection-drones-market",
+            "title": "UAV Inspection Drones Market Size, Value & Growth Outlook",
+            "content": "China is projected to lead with 18.8% CAGR through 2036 as civil drone activity and utility inspection use increase. India follows at 18.1% CAGR as drone registration growth supports commercial inspection work. Saudi Arabia records 17.3% CAGR because oil and gas operators expand plant and offshore inspections. The United States grows at 15.9% CAGR with support from Part 107 rules and commercial drone fleet expansion. Japan expands at 15.4% CAGR as regulated drone use supports inspection and [...] ### North America UAV Inspection Drones Market Analysis\n\nNorth America has a large commercial drone fleet and a deep inspection service base. Energy firms and telecom operators use drones to inspect difficult assets faster. Public infrastructure agencies use drones for similar survey work. Pilot certification systems and clear commercial UAS rules support regional demand. [...] United States: The United States is expected to advance at 15.9% CAGR by 2036. Part 107 rules give commercial operators a clear path for inspection work. A large certified drone base supports tower surveys and roof checks. Energy firms use flight-based records for maintenance planning.\n\n### Europe UAV Inspection Drones Market Analysis",
+            "truncated": false,
+            "images": [
+              {
+                "url": "https://www.factmr.com/images/reports/uav-inspection-drones-market-value-analysis.webp",
+                "description": "None",
+                "source_url": "https://www.factmr.com/report/uav-inspection-drones-market"
+              },
+              {
+                "url": "https://www.factmr.com/images/reports/uav-inspection-drones-market-analysis-by-type.webp",
+                "description": "Uav Inspection Drones Market Analysis By Type",
+                "source_url": "https://www.factmr.com/report/uav-inspection-drones-market"
+              },
+              {
+                "url": "https://www.factmr.com/images/reports/uav-inspection-drones-market-analysis-by-operation-mode.webp",
+                "description": "Uav Inspection Drones Market Analysis By Operation Mode",
+                "source_url": "https://www.factmr.com/report/uav-inspection-drones-market"
+              },
+              {
+                "url": "https://www.factmr.com/images/reports/uav-inspection-drones-market-analysis-by-payload.webp",
+                "description": "Uav Inspection Drones Market Analysis By Payload",
+                "source_url": "https://www.factmr.com/report/uav-inspection-drones-market"
+              },
+              {
+                "url": "https://www.factmr.com/images/reports/uav-inspection-drones-market-analysis-by-end-use.webp",
+                "description": "Uav Inspection Drones Market Analysis By End Use",
+                "source_url": "https://www.factmr.com/report/uav-inspection-drones-market"
+              },
+              {
+                "url": "https://www.factmr.com/images/reports/uav-inspection-drones-market-analysis-by-service-model.webp",
+                "description": "Uav Inspection Drones Market Analysis By Service Model",
+                "source_url": "https://www.factmr.com/report/uav-inspection-drones-market"
+              },
+              {
+                "url": "https://www.factmr.com/images/reports/uav-inspection-drones-market-analysis-by-inspection-asset.webp",
+                "description": "Uav Inspection Drones Market Analysis By Inspection Asset",
+                "source_url": "https://www.factmr.com/report/uav-inspection-drones-market"
+              },
+              {
+                "url": "https://www.factmr.com/images/reports/uav-inspection-drones-market-cagr-analysis-by-country.webp",
+                "description": "Uav Inspection Drones Market Cagr Analysis By Country",
+                "source_url": "https://www.factmr.com/report/uav-inspection-drones-market"
+              }
+            ]
+          },
+          {
+            "url": "https://birdseyeaerialdrones.com/rising-demand-commercial-aerial-photography-usa",
+            "title": "The Rising Demand for Commercial Aerial Photography Services in the USA",
+            "content": "When compliance and conservation intersect, accuracy matters. Commercial drone photography helps monitor wetland restoration, buffer zones, and environmental impact without disturbing sensitive ecosystems.\n\n### Infrastructure & Utilities\n\nOur clients in utilities and transportation use drones for safety verification, asset inspection, and project documentation. It’s not just faster it’s safer, with up to 80% fewer worker exposure hours in hazardous zones. [...] With resolutions down to 1 cm/pixel and flight accuracies of ±2 cm, our aerial photography drone services give engineers, developers, and planners the confidence to design, monitor, and present with precision.\n\nAnd with 25,000+ missions completed and 500,000+ infrastructure assets documented, we’ve seen firsthand how industries are using drone imagery to elevate both vision and value.\n\nAlso Read: 5 Ways Drone Surveys Are Changing Real Estate Listings [...] A photograph has the power to stop time, but when that photograph is taken from above, it can also tell a story no ground-level lens ever could.\n\nAcross the United States, the demand for commercial aerial photography services is taking flight literally. From commercial real estate and construction to environmental monitoring, logistics, and marketing, organizations are realizing that the bird’s-eye view doesn’t just look impressive it informs smarter decisions.",
+            "truncated": false,
+            "images": [
+              {
+                "url": "https://birdseyeaerialdrones.com/wp-content/uploads/2025/10/Birds-Eye-Aerial-Drones_38_.jpg",
+                "description": "None",
+                "source_url": "https://birdseyeaerialdrones.com/rising-demand-commercial-aerial-photography-usa"
+              },
+              {
+                "url": "https://birdseyeaerialdrones.com/wp-content/uploads/2025/10/Birds-Eye-Aerial-Drones_38-jpg.webp",
+                "description": "Commercial Aerial Photography Services in the USA",
+                "source_url": "https://birdseyeaerialdrones.com/rising-demand-commercial-aerial-photography-usa"
+              },
+              {
+                "url": "https://birdseyeaerialdrones.com/wp-content/uploads/2025/09/BEAD-logo_original-menu-1.svg",
+                "description": "None",
+                "source_url": "https://birdseyeaerialdrones.com/rising-demand-commercial-aerial-photography-usa"
+              },
+              {
+                "url": "https://secure.gravatar.com/avatar/b9c99c808afd0b5982c86a8350188b8b393f81709f0ab36eb5d61d870a120afa?s=80&d=mm&r=g",
+                "description": "Birds Eye Aerial Drones",
+                "source_url": "https://birdseyeaerialdrones.com/rising-demand-commercial-aerial-photography-usa"
+              }
+            ]
+          },
+          {
+            "url": "https://www.auav-us.com/services/aerial-photography-video",
+            "title": "Aerial Photography & 4K Drone Video Services USA | FAA-Cert.",
+            "content": "Every project starts with understanding your objectives, location, and intended use of the final content. We then plan the flight, camera angles, and capture requirements to deliver drone photography or video that best supports your project goals.\n\nYes. In addition to marketing applications, industrial aerial photography is commonly used to document infrastructure, monitor construction progress, support inspections, and create visual records for planning and asset management. [...] Aerial photography and drone video services are widely used for construction progress, infrastructure documentation, property marketing, industrial facilities, tourism, events, and promotional campaigns. The right approach depends on the purpose of the imagery and the audience you want to reach.",
+            "truncated": false,
+            "images": [
+              {
+                "url": "https://www.auav-us.com/wp-content/uploads/sites/15/Oil-rig-sunset-2000x1032.jpg",
+                "description": "None",
+                "source_url": "https://www.auav-us.com/services/aerial-photography-video"
+              },
+              {
+                "url": "https://www.auav-us.com/wp-content/uploads/sites/15/Oil-rig-sunset-500x258.jpg",
+                "description": "None",
+                "source_url": "https://www.auav-us.com/services/aerial-photography-video"
+              },
+              {
+                "url": "https://www.auav-us.com/wp-content/uploads/sites/15/auav-Sydney-Harbour-min-500x167.jpg",
+                "description": "None",
+                "source_url": "https://www.auav-us.com/services/aerial-photography-video"
+              },
+              {
+                "url": "https://www.auav-us.com/wp-content/uploads/sites/15/Marketing-and-Sales-01-500x500.png",
+                "description": "None",
+                "source_url": "https://www.auav-us.com/services/aerial-photography-video"
+              },
+              {
+                "url": "https://www.auav-us.com/wp-content/uploads/sites/15/Customers-01-500x500.png",
+                "description": "None",
+                "source_url": "https://www.auav-us.com/services/aerial-photography-video"
+              },
+              {
+                "url": "https://www.auav-us.com/wp-content/uploads/sites/15/Competitive-01-500x500.png",
+                "description": "None",
+                "source_url": "https://www.auav-us.com/services/aerial-photography-video"
+              },
+              {
+                "url": "https://www.auav-us.com/wp-content/uploads/sites/15/Social-01-500x500.png",
+                "description": "None",
+                "source_url": "https://www.auav-us.com/services/aerial-photography-video"
+              },
+              {
+                "url": "https://www.auav-us.com/wp-content/uploads/sites/15/auav-drone-photo-3-500x123.png",
+                "description": "An image of a runway taken from an AUAV drone",
+                "source_url": "https://www.auav-us.com/services/aerial-photography-video"
+              }
+            ]
+          },
+          {
+            "url": "https://www.dronepilotgroundschool.com/drone-business",
+            "title": "Drone Business 101: An Introductory Guide",
+            "content": "Drone photography business: $200–$600 per shoot (real estate, events); $600–$1,200 day rates for commercial content.\n Construction mapping: $800–$2,000 per billable day; multi-week progress programs scale higher.\n Roof/solar/thermal inspections: $300–$1,200 per site; $1,000–$3,000 per day for larger portfolios.\n Utilities & infrastructure inspections: $1,500–$4,000 per day depending on sensor and site risk.\n Drone light shows: ~$15,000–$150,000+ per event based on fleet size and choreography. [...] Drone photography business: $2,500–$10,000 all-in to launch.\n Construction mapping / surveying support: $8,000–$18,000 starter RTK setup; $12,000–$25,000 with advanced software and GNSS base.\n Industrial/thermal inspections: $7,500–$20,000 depending on thermal payload and training.\n Drone light show business: $75,000–$250,000+ for a small fleet, control system, spares, and permits.\n\n## How to Start a Drone Business\n\nTurn your idea into a real company with a simple, repeatable process. [...] To ballpark your potential costs, most drone pilots spend around $2,500–$10,000 to launch a drone photography business, $8,000–$25,000 for mapping or industrial inspection businesses, and $75,000–$250,000+ for a small drone light show operation.\n\nImage source\n\nThese costs mainly go to hardware and software. The simpler your product, the simpler—and less expensive—your startup costs will be.\n\n### Equipment",
+            "truncated": false,
+            "images": [
+              {
+                "url": "https://www.dronepilotgroundschool.com/wp-content/uploads/2025/10/drone-business-hero.jpg",
+                "description": "None",
+                "source_url": "https://www.dronepilotgroundschool.com/drone-business"
+              },
+              {
+                "url": "https://www.dronepilotgroundschool.com/wp-content/uploads/2026/06/DPGS-Powered-by-logo-white-e1778132444441.png",
+                "description": "None",
+                "source_url": "https://www.dronepilotgroundschool.com/drone-business"
+              }
+            ]
+          }
+        ],
+        "images": [
+          {
+            "url": "https://www.grandviewresearch.com/static/img/research/us-commercial-drone-market-product.png",
+            "description": "A stacked bar chart illustrates the projected growth of the U.S. commercial drone market from 2020 to 2030, highlighting total market value, application segments such as rotary blade, fixed-wing, and hybrid drones, with a forecasted compound annual growth rate (CAGR) of 9.1% between 2024 and 2030."
+          },
+          {
+            "url": "https://birdseyeaerialdrones.com/wp-content/uploads/2025/10/Birds-Eye-Aerial-Drones_38-jpg.webp",
+            "description": "An aerial view of a modern building with solar panels, with a drone flying nearby and illuminated city streets at night, highlighting the increasing demand for commercial aerial photography services in the USA."
+          },
+          {
+            "url": "https://www.factmr.com/images/reports/industrial-drone-inspection-market-country-value-analysis.webp",
+            "description": "A bar and line graph illustrates the projected growth of the United States industrial drone inspection market from 2025 to 2036, showing increasing market value in USD billion and a compound annual growth rate of 13.6%."
+          },
+          {
+            "url": "https://i.insider.com/57336e19dd0895f9788b4874?width=800&format=jpeg&auto=webp",
+            "description": "A commercial drone equipped with an attached camera hovers over a bar graph illustrating the predicted value of drones across various industries in the United States, such as infrastructure, agriculture, transport, and security."
+          },
+          {
+            "url": "https://www.transparencymarketresearch.com/images/drone-services-market.jpg",
+            "description": "Aerial view of an industrial area with multiple large buildings and open spaces, possibly including a drone flying overhead."
+          }
+        ],
+        "result_count": 5,
+        "image_count": 5,
+        "image_reads": [
+          {
+            "url": "https://www.grandviewresearch.com/static/img/research/us-commercial-drone-market-product.png",
+            "status": 200,
+            "content_type": "image/png",
+            "bytes": 43587,
+            "sha256": "f69d471af7e92960f8b77c47f7e58da9405c0097d153731c716df93ab7cd0a95",
+            "dimensions": [
+              671,
+              350
+            ]
+          }
+        ],
+        "image_fetch_passed": true,
+        "elapsed_seconds": 5.04
+      }
+    ]
+  },
+  "browser_checks": [
+    {
+      "id": "clt",
+      "origin": "actual generated artifact in local Chrome; inline placement also observed in real main chat",
+      "input_before": {
+        "n": 5,
+        "M": 3000
+      },
+      "input_after": {
+        "n": 16,
+        "M": 3000
+      },
+      "theoretical_sd_before": 5.57,
+      "theoretical_sd_after": 3.11,
+      "simulated_sd_after": 3.18,
+      "passed": true,
+      "full_article_match": false,
+      "missing": [
+        "quiz",
+        "same source distribution and currency"
+      ]
+    },
+    {
+      "id": "bill-split",
+      "origin": "actual generated artifact in local Chrome",
+      "total_before": 60,
+      "per_person_before": [
+        12,
+        12,
+        12,
+        12,
+        12
+      ],
+      "action": "remove first person from pizza",
+      "total_after": 60,
+      "per_person_after": [
+        6,
+        13.5,
+        13.5,
+        13.5,
+        13.5
+      ],
+      "passed": true,
+      "full_article_match": false,
+      "missing": [
+        "receipt photo extraction",
+        "editable item amounts",
+        "18 percent tip"
+      ]
+    },
+    {
+      "id": "savings",
+      "origin": "actual generated artifact in local Chrome",
+      "inputs": {
+        "monthly": 2000,
+        "years": 20,
+        "initial_principal": 0
+      },
+      "annual_rate_before": 3,
+      "annual_rate_after": 0,
+      "balance_before": 656604,
+      "balance_after": 480000,
+      "interest_after": 0,
+      "passed": true,
+      "full_article_match": false,
+      "note": "Adapted to generic monthly savings; account/tax guidance not evaluated"
+    },
+    {
+      "id": "retro-game",
+      "artifact_generated": true,
+      "inline_publication": true,
+      "gameplay_acceptance": "not_completed",
+      "observed_game_list": [
+        "snake",
+        "tetris",
+        "breakout"
+      ],
+      "full_article_match": false
+    }
+  ],
+  "known_protocol_rejection": {
+    "run_id": "run_4e14da82e6644174b7ecc507e330677d",
+    "kind": "table",
+    "row_type": "list",
+    "validator_accepted": false
+  },
+  "79_storage": {
+    "initial_data_disk_full": true,
+    "old_project_build_source_moved_to_system_disk_mb": 210,
+    "original_paths_preserved_with_symlinks": true,
+    "builder_prune_filter": "until=24h",
+    "reported_cache_reclaimed_gb": 1.23,
+    "final_data_disk_available_tb": 1.5,
+    "note": "Do not attribute the entire 1.5 TB change to the reported 1.23 GB cache pruning; shared-host changes may be concurrent."
+  },
+  "code_policy_changes_in_this_comparison": "none",
+  "actual_web_tool_image_counts": {
+    "run_59a0db05cb344912aac01af4e69a6c77": [
+      4,
+      2,
+      0,
+      0,
+      5
+    ],
+    "run_ae548216192947d59c8c9bf0bc3ff61e": [
+      4,
+      5,
+      5,
+      5,
+      4,
+      5,
+      0
+    ],
+    "run_4e14da82e6644174b7ecc507e330677d": [
+      0,
+      5,
+      0,
+      4,
+      4
+    ]
+  },
+  "effective_79_user_web_configuration": {
+    "enabled": true,
+    "effectiveEnabled": true,
+    "platformEnabled": true,
+    "provider": "platform",
+    "platformProvider": "tavily",
+    "credentialConfigured": true,
+    "personalKeyConfigured": false
+  }
+}

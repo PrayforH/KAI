@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>中心极限定理 · 咖啡店消费模拟</title>
+<style>
+  :root{
+    --bg:#1b1613; --panel:#26201c; --line:#3a312b;
+    --ink:#f2ece6; --muted:#b7a99d; --accent:#e0863b; --accent2:#e8c07a;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    padding:18px; line-height:1.5;
+  }
+  h1{font-size:17px; margin:0 0 4px; font-weight:650; letter-spacing:.3px}
+  .sub{color:var(--muted); font-size:12.5px; margin-bottom:14px}
+  .panel{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px}
+  .grid{display:grid; grid-template-columns:1fr 1fr; gap:14px}
+  @media(max-width:640px){.grid{grid-template-columns:1fr}}
+  .ctl{margin-bottom:14px}
+  .ctl.head{display:flex; justify-content:space-between; align-items:baseline}
+  .lab{font-size:13px; color:var(--muted)}
+  .val{font-variant-numeric:tabular-nums; font-weight:650; color:var(--accent2)}
+  input[type=range]{width:100%; accent-color:var(--accent); margin-top:6px}
+  button{
+    width:100%; padding:10px 12px; border-radius:10px; cursor:pointer;
+    border:1px solid #6a4a25; background:linear-gradient(180deg,#c9762f,#a95f22);
+    color:#fff; font-size:13.5px; font-weight:600; letter-spacing:.3px;
+  }
+  button:active{transform:translateY(1px)}
+  canvas{width:100%; height:auto; display:block; border-radius:10px; background:#201b17}
+  .stats{display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; font-size:12.5px}
+  .stat{background:#201b17; border:1px solid var(--line); border-radius:9px; padding:7px 10px; flex:1; min-width:120px}
+  .stat b{display:block; font-size:15px; color:var(--accent2); font-variant-numeric:tabular-nums; margin-top:2px}
+  .note{font-size:11.5px; color:var(--muted); margin-top:9px}
+  .legend{display:flex; gap:14px; font-size:11.5px; color:var(--muted); margin-top:8px; align-items:center; flex-wrap:wrap}
+  .dot{display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:middle}
+  .basebar{display:flex; align-items:flex-end; gap:8px; height:92px; margin-top:6px}
+  .basebar .col{flex:1; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; gap:5px}
+  .basebar .bar{width:100%; border-radius:5px 5px 0 0; background:linear-gradient(180deg,#8aa89a,#5d7c6e)}
+  .basebar .pl{font-size:10.5px; color:var(--muted)}
+  .basebar .vv{font-size:11px; color:var(--ink); font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+  <h1>中心极限定理 · 咖啡店消费模拟</h1>
+  <div class="sub">每位顾客消费额是一个"不规则"的随机变量;看它的<strong>样本均值</strong>如何随样本量 n 变成钟形。</div>
+
+  <div class="grid">
+    <div class="panel">
+      <div class="ctl">
+        <div class="ctl head"><span class="lab">每位顾客消费的可能分布(原始分布,明显偏斜)</span></div>
+        <div class="basebar" id="basebar"></div>
+      </div>
+      <div class="ctl">
+        <div class="ctl head"><span class="lab">样本量 n(每次抽多少位顾客求平均)</span><span class="val" id="nVal">5</span></div>
+        <input type="range" id="nRange" min="1" max="50" value="5">
+      </div>
+      <div class="ctl">
+        <div class="ctl head"><span class="lab">重复次数(抽多少组样本)</span><span class="val" id="mVal">3000</span></div>
+        <input type="range" id="mRange" min="500" max="5000" step="500" value="3000">
+      </div>
+      <button id="roll">重新抽样 ↻</button>
+      <div class="note">模拟逻辑:每次抽取 n 位顾客 → 算这一组的平均消费 → 重复 M 次 → 把 M 个"平均值"画成直方图。</div>
+    </div>
+
+    <div class="panel">
+      <div class="ctl head"><span class="lab">M 个"样本均值"的分布直方图</span></div>
+      <canvas id="cv" width="640" height="360"></canvas>
+      <div class="legend">
+        <span><span class="dot" style="background:#e0863b"></span>样本均值的实际直方图</span>
+        <span><span class="dot" style="background:#e8c07a"></span>理论正态曲线 N(μ, σ/√n)</span>
+      </div>
+      <div class="stats">
+        <div class="stat">均值的平均<b id="sMean">—</b></div>
+        <div class="stat">均值的标准差<b id="sSd">—</b></div>
+        <div class="stat">理论 μ<b id="tMu">19.50</b></div>
+        <div class="stat">理论 σ/√n<b id="tSd">—</b></div>
+      </div>
+      <div class="note" id="verdict">—</div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  // 基础分布:顾客消费额(元)与概率
+  const K = [
+    {v:12, p:0.50},  // 只点一杯黑咖啡
+    {v:18, p:0.25},  // 拿铁
+    {v:25, p:0.15},  // 拿铁 + 饼干
+    {v:45, p:0.07},  // 咖啡 + 蛋糕
+    {v:70, p:0.03}   // 请客,一桌好几杯
+  ];
+  const mu = K.reduce((s,k)=>s+k.v*k.p,0);
+  const ex2 = K.reduce((s,k)=>s+k.v*k.v*k.p,0);
+  const sigma = Math.sqrt(ex2 - mu*mu);
+  const cum = []; let c=0;
+  for(const k of K){ c+=k.p; cum.push(c); }
+
+  function drawBase(){
+    const el = document.getElementById('basebar');
+    const pmax = Math.max(...K.map(k=>k.p));
+    el.innerHTML = K.map(k=>`
+      <div class="col">
+        <div class="vv">${k.v}</div>
+        <div class="bar" style="height:${Math.max(4,(k.p/pmax)*60)}px"></div>
+        <div class="pl">${(k.p*100).toFixed(0)}%</div>
+      </div>`).join('');
+  }
+
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+
+  function sampleOne(){
+    const r = Math.random();
+    for(let i=0;i<cum.length;i++) if(r<=cum[i]) return K[i].v;
+    return K[K.length-1].v;
+  }
+
+  const BINS = 42;
+
+  function simulate(){
+    const n = +document.getElementById('nRange').value;
+    const M = +document.getElementById('mRange').value;
+    document.getElementById('nVal').textContent = n;
+    document.getElementById('mVal').textContent = M;
+
+    const sdN = sigma/Math.sqrt(n);
+    const lo = mu - 4.2*sdN, hi = mu + 4.2*sdN;
+    const w = (hi-lo)/BINS;
+    const bins = new Array(BINS).fill(0);
+
+    let sum=0, sum2=0;
+    for(let m=0;m<M;m++){
+      let s=0;
+      for(let i=0;i<n;i++) s+=sampleOne();
+      const mean = s/n;
+      sum+=mean; sum2+=mean*mean;
+      let b = Math.floor((mean-lo)/w);
+      if(b<0) b=0; if(b>=BINS) b=BINS-1;
+      bins[b]++;
+    }
+    const obsMean = sum/M;
+    const obsSd = Math.sqrt(Math.max(0,sum2/M - obsMean*obsMean));
+
+    // 密度
+    const dens = bins.map(c => c/(M*w));
+    const maxD = Math.max(...dens, 1e-9);
+    const topD = Math.max(maxD, 1/(sdN*Math.sqrt(2*Math.PI))*1.05);
+
+    // 绘制
+    ctx.clearRect(0,0,W,H);
+    const padL=40, padR=14, padT=16, padB=34;
+    const plotW = W-padL-padR, plotH = H-padT-padB;
+
+    // 网格 + 坐标轴
+    ctx.strokeStyle = '#3a312b'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(padL,H-padB); ctx.lineTo(W-padR,H-padB); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(padL,padT); ctx.lineTo(padL,H-padB); ctx.stroke();
+
+    // 直方图
+    for(let i=0;i<BINS;i++){
+      const x = padL + i*(plotW/BINS);
+      const h = (dens[i]/topD)*plotH;
+      ctx.fillStyle = '#e0863b';
+      ctx.globalAlpha = 0.82;
+      ctx.fillRect(x+0.5, H-padB-h, (plotW/BINS)-1, h);
+      ctx.globalAlpha = 1;
+    }
+
+    // 理论正态曲线
+    ctx.strokeStyle = '#e8c07a'; ctx.lineWidth=2.2;
+    ctx.beginPath();
+    for(let px=0; px<=plotW; px++){
+      const xv = lo + (px/plotW)*(hi-lo);
+      const yv = (1/(sdN*Math.sqrt(2*Math.PI)))*Math.exp(-((xv-mu)**2)/(2*sdN*sdN));
+      const py = H-padB - (yv/topD)*plotH;
+      if(px===0) ctx.moveTo(padL+px,py); else ctx.lineTo(padL+px,py);
+    }
+    ctx.stroke();
+
+    // 均值竖线
+    const xMu = padL + ((mu-lo)/(hi-lo))*plotW;
+    ctx.strokeStyle='#8aa89a'; ctx.setLineDash([5,4]); ctx.lineWidth=1.4;
+    ctx.beginPath(); ctx.moveTo(xMu,padT); ctx.lineTo(xMu,H-padB); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // x 轴刻度
+    ctx.fillStyle='#b7a99d'; ctx.font='11px -apple-system,sans-serif'; ctx.textAlign='center';
+    for(let t=0;t<=4;t++){
+      const xv = lo + t/4*(hi-lo);
+      const px = padL + t/4*plotW;
+      ctx.fillText(xv.toFixed(0), px, H-padB+16);
+    }
+    ctx.textAlign='right';
+    ctx.fillText('密度', padL-6, padT+8);
+
+    // 统计
+    document.getElementById('sMean').textContent = obsMean.toFixed(2);
+    document.getElementById('sSd').textContent = obsSd.toFixed(2);
+    document.getElementById('tMu').textContent = mu.toFixed(2);
+    document.getElementById('tSd').textContent = sdN.toFixed(2);
+
+    const v = document.getElementById('verdict');
+    if(n===1){
+      v.textContent = 'n = 1:这里画的就是"单个顾客消费"的原始分布——偏斜、右侧拖长,完全不像正态。';
+    } else if(n<=3){
+      v.textContent = 'n 还很小:直方图开始向中间聚拢,但仍有偏斜和毛刺,正态曲线只是粗略贴合。';
+    } else if(n<=10){
+      v.textContent = '样本量增大:样本均值已经明显钟形,和理论正态曲线贴合得相当好。';
+    } else {
+      v.textContent = '样本量足够大:无论原始分布多"歪",样本均值的分布几乎就是正态分布——这就是中心极限定理。';
+    }
+  }
+
+  document.getElementById('nRange').addEventListener('input', simulate);
+  document.getElementById('mRange').addEventListener('input', simulate);
+  document.getElementById('roll').addEventListener('click', simulate);
+
+  // 与宿主的状态同步(独立打开时也能用)
+  const params = new URLSearchParams(location.hash.slice(1));
+  const token = params.get('harness_ui_token');
+  function saveState(){
+    if(!token) return;
+    try{
+      window.parent.postMessage({type:'harness.ui.state', token, state:{
+        n: +document.getElementById('nRange').value,
+        m: +document.getElementById('mRange').value
+      }}, '*');
+    }catch(e){}
+  }
+  window.addEventListener('message', function(ev){
+    if(ev.source!==window.parent) return;
+    const d = ev.data;
+    if(!d || d.type!=='harness.ui.init' || d.token!==token) return;
+    const st = d.state||{};
+    if(st.n) document.getElementById('nRange').value = st.n;
+    if(st.m) document.getElementById('mRange').value = st.m;
+    simulate();
+  });
+  document.getElementById('nRange').addEventListener('input', saveState);
+  document.getElementById('mRange').addEventListener('input', saveState);
+
+  drawBase();
+  simulate();
+  if(token){ try{ window.parent.postMessage({type:'harness.ui.ready', token}, '*'); }catch(e){} }
+})();
+</script>
+</body>
+</html>
