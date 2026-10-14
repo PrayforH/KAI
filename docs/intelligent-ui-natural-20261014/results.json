@@ -1634,5 +1634,27 @@
     "platformProvider": "tavily",
     "credentialConfigured": true,
     "personalKeyConfigured": false
+  },
+  "benchmark_memory_hygiene": {
+    "174": {
+      "active_entries_from_benchmark": 0,
+      "completed_extraction_jobs": 13
+    },
+    "79": {
+      "completed_extraction_jobs": 11,
+      "new_entries_from_example_followup": 3,
+      "maintenance": "quarantine exact three benchmark-created v1 entries to pending v2, preserving content/evidence; no deletion",
+      "source_run_id": "run_3038d08825464ff39b20b5a03582dd2d",
+      "entry_ids": [
+        "memory_780188bd0ed5488cae465b48705e5ec8",
+        "memory_109372ee1e1d418480c43be265901391",
+        "memory_be18b3343f6b4a30965e86a777c27e83"
+      ],
+      "source_label": "会话自动提取（Intelligent UI 示例测试）",
+      "active_entries_after_cleanup": 0,
+      "pending_entries_after_cleanup": 3,
+      "content_and_evidence_preserved": true,
+      "audit_recorded": true
+    }
   }
 }
