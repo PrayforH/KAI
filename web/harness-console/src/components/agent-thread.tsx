@@ -1,7 +1,8 @@
 "use client";
+import { responseTextForDisplay } from "../lib/process-response";
 import { sendComposerWithRecovery } from "../lib/composer-send";
 import { TerminalResponseNotice } from "./terminal-response-notice";
-import { ConversationInputCard } from "./conversation-input-card";
+import { FollowupInputPlacement } from "./followup-input-placement";
 import { latestConversationInput } from "../lib/conversation-input";
 import { useConversationScope } from "../lib/conversation-scope";
 import { createThreadHistoryAdapter, useAutoLoadEarlierMessages, useThreadHistoryPagination } from "../lib/task-history";
@@ -51,6 +52,7 @@ import { ConversationIndex } from "./conversation-index";
 import { useRunCancel } from "./run-cancel-context";
 import { PromptQueue } from "./prompt-queue";
 import { useFollowUpPreference } from "../lib/interface-preferences";
+import { useConversationRedactor } from "./conversation-redaction";
 import { SentUserContent } from "./sent-user-content";
 import { ConversationInput } from "./conversation-input";
 import { groupWorkspaceFiles } from "../lib/workspace-file-groups";
@@ -188,8 +190,9 @@ function MessageCopyButton({
     if (resetTimer.current) clearTimeout(resetTimer.current);
   }, []);
 
+  const redact = useConversationRedactor();
   async function copy() {
-    const copied = await writeMessageToClipboard(text);
+    const copied = await writeMessageToClipboard(redact(text));
     setCopyState(copied ? "copied" : "failed");
     if (resetTimer.current) clearTimeout(resetTimer.current);
     resetTimer.current = setTimeout(() => setCopyState("idle"), 1800);
@@ -685,7 +688,7 @@ function HarnessComposer() {
       aria-busy={runLocked}
     >
       {conversationScope?.composerAccessory}
-      {requestedInput && !conversationScope?.composerAccessory && <ConversationInputCard key={requestedInput.messageId} input={requestedInput.input} modelRoute={overrideRouteId || ""} onVoiceActive={setFollowupVoiceActive} disabled={runLocked || busy || threadRunning || voiceActive} onSubmit={answer => {
+      {requestedInput && !conversationScope?.composerAccessory && <FollowupInputPlacement key={requestedInput.messageId} messageId={requestedInput.messageId} input={requestedInput.input} modelRoute={overrideRouteId || ""} onVoiceActive={setFollowupVoiceActive} disabled={runLocked || busy || threadRunning || voiceActive} onSubmit={answer => {
         threadRuntime.append({ role: "user", content: [{type: "text", text: answer}] });
       }} />}
       {reuseNotice ? (
@@ -1363,22 +1366,28 @@ type CapturedTurnResponse = { messageId: string; text: string };
  * The native stream may still contain pre-tool prose until history commits. */
 export function responseTextForTurn(messageId: string, nativeText: string, directStream: boolean,
   live: Pick<LiveResponseSnapshot, "text" | "visible" | "status">,
-  captured: { current: CapturedTurnResponse | undefined }) {
+  captured: { current: CapturedTurnResponse | undefined }, awaitingMessage = false) {
   if (captured.current?.messageId !== messageId) captured.current = undefined;
+  // A new optimistic turn may mount before runAgent resets the global store.
+  // Never borrow the previous turn's visible text during that interval.
+  if (awaitingMessage) {
+    captured.current = { messageId, text: "" };
+    return "";
+  }
   if (directStream) {
     const text = normalizeMessageText(live.visible ? live.text : "");
     captured.current = { messageId, text };
     return text;
   }
   if (captured.current) {
-    if (live.status === "idle") captured.current = undefined;
-    else if (nativeText === captured.current.text) captured.current = undefined;
+    if (nativeText === captured.current.text || (live.status === "idle" && !captured.current.text)) captured.current = undefined;
     else return captured.current.text;
   }
   return nativeText;
 }
 
 export function HarnessAssistantMessage() {
+  const redact = useConversationRedactor();
   const conversationScope = useConversationScope();
   const live = useLiveResponse();
   const isLast = useAuiState((state) => state.message.isLast);
@@ -1396,7 +1405,7 @@ export function HarnessAssistantMessage() {
   // this only on visible text lets assistant-ui paint the same preface once.
   const ownsLive = ownsLiveResponse(isLast, messageId, live.messageId);
   const pendingLive = isLast && messageStatus?.type === "running" &&
-    live.status === "streaming" && !live.messageId;
+    live.status !== "idle" && !ownsLive;
   const directStream = shouldSuppressNativeAssistantText(ownsLive, live, pendingLive);
   const capturedResponse = useRef<CapturedTurnResponse | undefined>(undefined);
   const nativeText = normalizeMessageText(
@@ -1404,7 +1413,7 @@ export function HarnessAssistantMessage() {
       part.type === "text" && !isIntermediateAssistantTextPart(content, index) ? [part.text] : []
     )).join("\n"),
   );
-  const copyText = responseTextForTurn(messageId, nativeText, directStream, live, capturedResponse);
+  const responseCandidate = responseTextForTurn(messageId, nativeText, directStream, live, capturedResponse, pendingLive);
   const feedbackRun = feedbackRunId(messageId, isLast, runView?.runId);
   // Requirement: citations must be reachable from the reply itself, not only
   // from the collapsed execution summary. Deduplicate by chunk so repeated
@@ -1416,6 +1425,7 @@ export function HarnessAssistantMessage() {
     ? currentActivity : undefined;
   const terminalActivity = ownedActivity && (!durable?.success || durable.data.run_id === ownedActivity.run_id)
     ? ownedActivity : durable?.success ? durable.data : undefined;
+  const copyText = redact(responseTextForDisplay(responseCandidate, terminalActivity));
   const capturedCitations = useRef<{ messageId: string; citations: RunCitation[] }>({ messageId, citations: [] });
   const turnCitations = citationsForTurn(messageId, isLast, runView, durable?.success ? durable.data : undefined);
   if (turnCitations) capturedCitations.current = { messageId, citations: turnCitations };
@@ -1470,6 +1480,7 @@ export function HarnessAssistantMessage() {
         }}
       />
       <AssistantResponse key={messageId} text={copyText} streaming={directStream ? live.status === "streaming" && !live.textComplete : messageStatus?.type === "running"} />
+      <div className="followup-input-anchor" data-followup-for={messageId} />
       {!hasVideoGeneration && <TerminalResponseNotice activity={terminalActivity}
         hasResponse={Boolean(copyText.trim()) || turnPresentations.length > 0 || turnArtifacts.length > 0} />}
       {turnPresentations.length > 0 ? (
@@ -1614,6 +1625,7 @@ function useMessageEditor() {
 }
 
 function HarnessUserMessage() {
+  const redact = useConversationRedactor();
   const message = useAuiState((state) => state.message);
   const isLastMessage = useAuiState((state) => state.message.isLast);
   const threadRunning = useAuiState((state) => state.thread.isRunning);
@@ -1634,11 +1646,14 @@ function HarnessUserMessage() {
       .map((part) => part.text)
       .join("\n"),
   );
-  const editing = editor?.messageId === message.id;
-  const draft = editing ? editor.draft : originalText;
+  const displayText = redact(originalText);
+  const sensitive = displayText !== originalText;
+  const editing = !sensitive && editor?.messageId === message.id;
+  const draft = editing && editor ? editor.draft : displayText;
 
   function beginEdit() {
-    setEditor({ messageId: message.id, draft: originalText });
+    if (sensitive) return;
+    setEditor({ messageId: message.id, draft: displayText });
   }
 
   function submitEdit(event: FormEvent<HTMLFormElement>) {
@@ -1667,7 +1682,7 @@ function HarnessUserMessage() {
 
   return (
     <>
-      <UserMessage.Root className="harness-user-message" data-turn-id={message.id} data-turn-label={(originalText || message.attachments?.map(item => item.name).join("、") || "附件消息").replace(/\s+/g, " ").slice(0, 180)} tabIndex={-1}>
+      <UserMessage.Root className="harness-user-message" data-turn-id={message.id} data-turn-label={(displayText || message.attachments?.map(item => item.name).join("、") || "附件消息").replace(/\s+/g, " ").slice(0, 180)} tabIndex={-1}>
         <UserMessage.Attachments
           components={{ Attachment: HarnessMessageAttachment }}
         />
@@ -1698,7 +1713,7 @@ function HarnessUserMessage() {
             </div>
           ) : (
             <>
-              <SentUserContent key={message.id} />
+              <SentUserContent key={message.id} text={sensitive ? displayText : undefined} />
               <ActionBarPrimitive.Root
                 className="harness-user-action-bar"
                 autohide="never"
@@ -1706,9 +1721,9 @@ function HarnessUserMessage() {
                 <MessageCopyButton
                   className="user-message-action"
                   label="复制消息"
-                  text={originalText}
+                  text={displayText}
                 />
-                {isLatestUserMessage && !threadRunning ? (
+                {isLatestUserMessage && !threadRunning && !sensitive ? (
                   <button
                     className="user-message-action"
                     type="button"

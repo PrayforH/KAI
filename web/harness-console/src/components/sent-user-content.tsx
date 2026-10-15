@@ -6,7 +6,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { CodexResponseIcon } from "./codex-response-icon";
 
 /** Folding belongs to submitted messages; the composer always remains editable. */
-export function SentUserContent() {
+export function SentUserContent({ text }: { text?: string }) {
   const contentId = useId();
   const content = useRef<HTMLDivElement>(null);
   const [long, setLong] = useState(false);
@@ -21,7 +21,7 @@ export function SentUserContent() {
     return () => resize.disconnect();
   }, []);
   return <div className="sent-user-bubble" data-long={long}>
-    <UserMessage.Content id={contentId} ref={content} className="sent-user-content" data-collapsed={long && !expanded} />
+    {text === undefined ? <UserMessage.Content id={contentId} ref={content} className="sent-user-content" data-collapsed={long && !expanded} /> : <div id={contentId} ref={content} className="sent-user-content" data-collapsed={long && !expanded}>{text}</div>}
     {long && <button type="button" className="sent-user-expand" aria-expanded={expanded} aria-controls={contentId}
       aria-label={expanded ? "收起全文" : "展开全文"} title={expanded ? "收起全文" : "展开全文"}
       onClick={() => setExpanded(value => !value)}><CodexResponseIcon name="chevronDown" /></button>}

@@ -1,4 +1,5 @@
 "use client";
+import { CodexResponseIcon } from "./codex-response-icon";
 
 import { useEffect, useState, type ReactNode } from "react";
 import { groupWorkspaceFiles } from "../lib/workspace-file-groups";
@@ -257,7 +258,7 @@ export function WorkbenchRail({
           <span className="workbench-rail-file-name">{query.trim() ? file.name : file.name.split("/").at(-1)}</span>
           <span className="workbench-rail-file-size" data-change={file.change}>{file.change || formatFileSize(file.size_bytes)}</span>
         </button>
-        {(!workspace || file.downloadHref) && <a className="rail-download" href={file.downloadHref ?? `/api/harness/artifacts/${encodeURIComponent(file.artifact_id)}?thread_id=${encodeURIComponent(threadId)}`} download={file.name} title={`下载 ${file.name}`} aria-label={`下载 ${file.name}`}>↓</a>}
+        {(!workspace || file.downloadHref) && <a className="rail-download" href={file.downloadHref ?? `/api/harness/artifacts/${encodeURIComponent(file.artifact_id)}?thread_id=${encodeURIComponent(threadId)}`} download={file.name} title={`下载 ${file.name}`} aria-label={`下载 ${file.name}`}><CodexResponseIcon name="download" /></a>}
       </div>
     );
 

@@ -1,4 +1,6 @@
 "use client";
+import { CardActionButton } from "./card-action-button";
+import { useConversationRedactor } from "./conversation-redaction";
 
 import {
   MarkdownTextPrimitive,
@@ -51,16 +53,11 @@ function CodeHeader({ language, code }: CodeHeaderProps) {
       }
     }
   }
-  const feedback = copyState === "copied" ? "已复制" : copyState === "failed" ? "复制失败" : "复制";
 
   return (
     <div className="aui-code-header">
       <span>{language || "text"}</span>
-      <button type="button" onClick={() => void copy()} disabled={busy} aria-label="复制代码"
-        title={copyState === "failed" ? "复制失败，请手动选择代码" : "复制代码"} data-copy-state={copyState}>
-        <CodexResponseIcon name={copyState === "copied" ? "check" : "copy"} />
-        <span role="status" aria-live="polite">{feedback}</span>
-      </button>
+      <CardActionButton action="copy" label="复制代码" copyState={copyState} copied={copyState === "copied"} onClick={() => void copy()} disabled={busy} />
     </div>
   );
 }
@@ -213,18 +210,19 @@ function markdownUrlTransform(url: string) {
   return url === "streamdown:incomplete-link" ? url : knowledgeUrlTransform(url);
 }
 
-function MarkdownTextImpl() {
+function MarkdownTextImpl({ stabilizeFormatting = false }: { stabilizeFormatting?: boolean }) {
   const part = useMessagePartText();
+  const redact = useConversationRedactor();
   const published = usePublishedBlocks();
   const normalized = useMemo(
     () => ({
       ...part,
-      text: conversationInputDisplay(
+      text: redact(conversationInputDisplay(
         normalizeMessageText(stripHarnessUiFences(part.text, published)),
         part.status.type === "running",
-      ),
+      )),
     }),
-    [part, published],
+    [part, published, redact],
   );
   // Render the actual stream; do not queue a second typewriter animation.
   const running = normalized.status.type === "running";
@@ -234,9 +232,9 @@ function MarkdownTextImpl() {
   const displayText = useMemo(
     () => {
       const text = normalizeTemperatureRanges(normalized.text);
-      return running ? remend(text, { katex: false }) : text;
+      return running || stabilizeFormatting ? remend(text, { katex: false }) : text;
     },
-    [running, normalized.text],
+    [running, stabilizeFormatting, normalized.text],
   );
   const oversized = !running && !expanded && displayText.length > MESSAGE_TEXT_CLAMP_CHARS;
   const renderedText = oversized

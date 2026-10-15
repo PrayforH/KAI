@@ -200,3 +200,25 @@ it("collapses project and task sections independently and persists them across r
     expect(container.querySelectorAll(".task-list-row")).toHaveLength(8);
   } finally { await act(async () => root.unmount()); container.remove(); }
 });
+
+
+it("keeps a needs-input chip for read and background tasks, then clears it on reply", async () => {
+  const pending = { ...task("succeeded", "input"), pending_input: true, last_read_at: "2026-09-07T00:00:00Z" };
+  loadTasks.mockResolvedValue([pending, { ...task("succeeded", "background"), pending_input: true }]);
+  const container = document.createElement("div"); document.body.appendChild(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(<TaskSidebar currentThreadId="input" collapsed={false} onToggle={() => {}} onSelect={() => {}} onNewTask={() => {}} />));
+    expect(container.querySelectorAll(".task-input-badge")).toHaveLength(2);
+    expect(container.querySelector('[aria-label="任务 input，需要输入"]')).not.toBeNull();
+    expect(container.querySelectorAll(".status-unread")).toHaveLength(0);
+    await act(async () => activityStore.publish(runActivitySchema.parse({
+      run_id: "run-input", status: "running", started_at: "2026-09-07T00:01:00Z", items: [],
+    })));
+    expect(container.querySelector('[aria-label="任务 input，运行中"]')).not.toBeNull();
+    expect(container.querySelectorAll(".task-input-badge")).toHaveLength(1);
+    loadTasks.mockResolvedValue([{ ...pending, pending_input: false, run_id: "run-reply" }]);
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(container.querySelectorAll(".task-input-badge")).toHaveLength(0);
+  } finally { await act(async () => root.unmount()); container.remove(); }
+});

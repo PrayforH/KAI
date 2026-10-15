@@ -30,6 +30,7 @@ class UICompletionClient:
         data: dict[str, Any],
         *,
         max_tokens: int,
+        response_schema: dict[str, Any] | None = None,
     ) -> str:
         async with (
             asyncio.timeout(self._timeout),
@@ -48,7 +49,18 @@ class UICompletionClient:
                     "temperature": 0,
                     "max_tokens": max_tokens,
                     "stream": False,
-                    "response_format": {"type": "json_object"},
+                    "response_format": (
+                        {
+                            "type": "json_schema",
+                            "json_schema": {
+                                "name": "presentation_intent",
+                                "strict": True,
+                                "schema": response_schema,
+                            },
+                        }
+                        if response_schema is not None
+                        else {"type": "json_object"}
+                    ),
                     "messages": [
                         {"role": "system", "content": prompt},
                         {"role": "user", "content": json.dumps(data, ensure_ascii=False)},

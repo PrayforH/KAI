@@ -1,8 +1,11 @@
 "use client";
+import { useConversationRedactor } from "./conversation-redaction";
+import { hasPendingProcessProse } from "../lib/process-response";
 import { isProgressNoise } from "../lib/message-text";
 
 import { TextMessagePartProvider } from "@assistant-ui/react";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { formatToolResult } from "../lib/tool-result-format";
 import type { RunActivity } from "../lib/activity-schema";
 import { useRunViewModel } from "../lib/activity-store";
 import { activeElapsedMs, elapsedAnchorFor, type ElapsedAnchor } from "../lib/run-elapsed";
@@ -200,7 +203,7 @@ function processNodes(view: RunViewModel): ProcessNode[] {
   });
 }
 
-function commentaryNodes(view: RunViewModel): CommentaryNode[] {
+function commentaryNodes(view: RunViewModel, includePending: boolean): CommentaryNode[] {
   const actionSequences = view.items
     .filter(
       (item) =>
@@ -247,11 +250,11 @@ function commentaryNodes(view: RunViewModel): CommentaryNode[] {
     }
     if (item.event_type !== "message.delta") continue;
     const nextAction = actionSequences.find((sequence) => sequence > item.sequence);
-    // A trailing message is still ambiguous while the Run is active: the
-    // live response owns it so Markdown can stream without duplication. Only
-    // text followed by a new thinking block or action belongs in the process log.
-    if (nextAction === undefined) continue;
-    const groupKey = `progress:${nextAction}`;
+    // Before a terminal event the provider has not identified this prose as
+    // final. Keep it in the process at its original position while streaming;
+    // a following tool retains the same row instead of retracting an answer.
+    if (nextAction === undefined && !includePending) continue;
+    const groupKey = `progress:${nextAction ?? "pending"}`;
     const existing = grouped.get(groupKey);
     grouped.set(groupKey, {
       id: existing?.id ?? item.id,
@@ -291,7 +294,9 @@ const ExecutionCommentary = memo(function ExecutionCommentary({
   }, [active, commentary.text, expanded]);
   // The collapsed row is a status, not a token ticker. Completed rows show a
   // bounded prefix; the full trace is only mounted on explicit expansion.
-  const preview = active ? "进行中" : commentary.text.slice(0, 160).replaceAll("**", "").replace(/\s+/g, " ").trim();
+  const redact = useConversationRedactor();
+  const visibleText = redact(commentary.text);
+  const preview = active ? "进行中" : visibleText.slice(0, 160).replaceAll("**", "").replace(/\s+/g, " ").trim();
   if (commentary.source === "reasoning" || commentary.source === "reasoning_summary") {
     return (
       <details className="execution-reasoning" open={expanded} onToggle={event => setExpanded(event.currentTarget.open)}
@@ -303,7 +308,7 @@ const ExecutionCommentary = memo(function ExecutionCommentary({
           <span className="execution-reasoning-chevron"><CodexResponseIcon name="chevronDown" /></span>
         </summary>
         {expanded && <div className="execution-reasoning-body" ref={body} tabIndex={0} aria-label="思考内容">
-          <div className="execution-reasoning-text">{commentary.text}</div>
+          <div className="execution-reasoning-text">{visibleText}</div>
         </div>}
       </details>
     );
@@ -318,14 +323,14 @@ const ExecutionCommentary = memo(function ExecutionCommentary({
     >
       <div className="execution-commentary-content">
         <TextMessagePartProvider text={commentary.text} isRunning={false}>
-          <MarkdownText />
+          <MarkdownText stabilizeFormatting />
         </TextMessagePartProvider>
       </div>
     </article>
   );
 }, (previous, next) => previous.active === next.active && previous.commentary.id === next.commentary.id && previous.commentary.source === next.commentary.source && previous.commentary.text === next.commentary.text && previous.commentary.steeringStatus === next.commentary.steeringStatus);
 
-function rawTimeline(view: RunViewModel): RawTimelineNode[] {
+function rawTimeline(view: RunViewModel, includePending: boolean): RawTimelineNode[] {
   return [
     ...processNodes(view).map(
       (process): RawTimelineNode => ({
@@ -334,7 +339,7 @@ function rawTimeline(view: RunViewModel): RawTimelineNode[] {
         process,
       }),
     ),
-    ...commentaryNodes(view).map(
+    ...commentaryNodes(view, includePending).map(
       (commentary): RawTimelineNode => ({
         kind: "commentary",
         sequence: commentary.sequence,
@@ -564,8 +569,8 @@ function failureDetails(view: RunViewModel) {
   };
 }
 
-function displayTimeline(view: RunViewModel, detailed = false): DisplayTimelineNode[] {
-  const raw = rawTimeline(view).filter((entry) =>
+function displayTimeline(view: RunViewModel, detailed = false, includePending = false): DisplayTimelineNode[] {
+  const raw = rawTimeline(view, includePending).filter((entry) =>
     entry.kind !== "process" || entry.process.status === "failed" ||
     entry.process.eventType === "tool.directory.degraded",
   );
@@ -642,17 +647,7 @@ function ActionIcon({ kind }: { kind: ActionIconKind }) {
   return <CodexResponseIcon name={names[kind]} />;
 }
 
-export function formatResultPreview(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed || (!trimmed.startsWith("{") && !trimmed.startsWith("["))) {
-    return value;
-  }
-  try {
-    return JSON.stringify(JSON.parse(trimmed), null, 2);
-  } catch {
-    return value;
-  }
-}
+export const formatResultPreview = formatToolResult;
 
 function ResultPreview({
   children,
@@ -661,27 +656,29 @@ function ResultPreview({
   children: string;
   label: string;
 }) {
+  const redact = useConversationRedactor();
   return (
     <pre
       className="execution-action-result"
       role="region"
-      aria-label={label}
+      aria-label={redact(label)}
       tabIndex={0}
     >
-      <code>{formatResultPreview(children)}</code>
+      <code>{redact(formatResultPreview(children))}</code>
     </pre>
   );
 }
 
 function ActionRow({ action, active = false }: { action: ActionNode; active?: boolean }) {
+  const redact = useConversationRedactor();
   const hasResult = Boolean(action.resultPreview || action.entries?.length);
   const heading = (
     <>
       <span className="execution-action-icon"><ActionIcon kind={action.icon} /></span>
       <span className="execution-action-copy">
         <span className="execution-action-heading">
-          <strong className="execution-state-sweep" data-running={active}>{action.label}</strong>
-          {action.detail && <small>{action.detail}</small>}
+          <strong className="execution-state-sweep" data-running={active}>{redact(action.label)}</strong>
+          {action.detail && <small>{redact(action.detail)}</small>}
         </span>
       </span>
     </>
@@ -704,8 +701,8 @@ function ActionRow({ action, active = false }: { action: ActionNode; active?: bo
               key={entry.id}
             >
               <div className="execution-action-detail-heading">
-                <span>{entry.label}</span>
-                <small>{entry.result}</small>
+                <span>{redact(entry.label)}</span>
+                <small>{redact(entry.result)}</small>
               </div>
               {entry.preview && (
                 <ResultPreview label={`${entry.label} 结果预览`}>
@@ -802,7 +799,8 @@ export function ActivitySummary({
   const elapsed = elapsedAnchor.current
     ? activeElapsedMs(view, now, elapsedAnchor.current)
     : view.elapsedMs;
-  const timeline = useMemo(() => displayTimeline(view, detailed), [view, detailed]);
+  const pendingProse = hasPendingProcessProse(activity);
+  const timeline = useMemo(() => displayTimeline(view, detailed, pendingProse), [view, detailed, pendingProse]);
   const latestTimelineEntry = timeline.at(-1);
   const activeCommentaryId =
     thinkingActive &&

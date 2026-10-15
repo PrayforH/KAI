@@ -28,6 +28,7 @@ export interface TaskSummary {
   last_read_at?: string | null;
   project_id?: string | null;
   pending_approval?: (ApprovalDetails & { status: string }) | null;
+  pending_input?: boolean;
 }
 
 const taskListRequests = new Map<boolean, Promise<TaskSummary[]>>();

@@ -1,4 +1,5 @@
 "use client";
+import { CodexResponseIcon } from "./codex-response-icon";
 
 import { OfficeFilePreview } from "./office-file-preview";
 import { officeKindFor, type OfficeKind } from "../lib/office-preview";
@@ -176,7 +177,7 @@ export function RailFilePreview({ target }: { target: PreviewTarget }) {
             aria-label={`下载 ${target.name}`}
             title={`下载 ${target.name}`}
           >
-            ↓
+            <CodexResponseIcon name="download" />
           </a>
         </div>
       </header>

@@ -41,6 +41,10 @@ const hiddenArgumentKeys = new Set([
   "content",
   "old_string",
   "new_string",
+  "password",
+  "passwd",
+  "secret",
+  "token",
 ]);
 
 function compactText(value: unknown): string | undefined {

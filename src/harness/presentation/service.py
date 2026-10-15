@@ -16,7 +16,6 @@ from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, date, datetime
 from typing import Any, cast
 
-from harness.agui.response import final_response_text
 from harness.application.events import EventService
 from harness.application.runs import RunService
 from harness.core.errors import ConflictError, NotFoundError, PermissionDeniedError
@@ -28,7 +27,12 @@ from harness.memory_bank.service import MemoryBankService
 from harness.presentation.catalog import default_catalog
 from harness.presentation.intent import UIIntentSelector
 from harness.presentation.models import ActionRequest, Publication, ViewState
-from harness.presentation.projection import presentations_for_events
+from harness.presentation.projection import (
+    answer_facts,
+    answer_tables,
+    presentations_for_events,
+    tool_result_evidence,
+)
 from harness.presentation.repositories import PresentationRepository
 from harness.presentation.schema import Presentation
 from harness.runtime.input_redaction import redact_internal_agent_asset_events
@@ -143,12 +147,22 @@ class PresentationService:
                 for e in visible
             ):
                 raise ConflictError("presentation events are outside the owning run")
-            proposed = presentations_for_events(visible)
+            proposed = presentations_for_events(
+                visible, include_summaries=self._intent_selector is not None
+            )
             if self._intent_selector is not None:
+                evidence = tool_result_evidence(visible)
+                if evidence and not any(p.decision.get("origin") == "model" for p in proposed):
+                    proposed = answer_tables(visible) or answer_facts(visible) or proposed
                 mode = run.input.get("ui_presentation_mode")
                 if mode == "text":
                     proposed = []
-                elif any(p.decision.get("origin") == "shape" for p in proposed):
+                elif any(
+                    p.decision.get("origin") == "shape"
+                    or p.kind == "summary"
+                    or (evidence and p.kind in {"table", "chart", "comparison"})
+                    for p in proposed
+                ):
                     allowed = set(default_catalog().kinds)
                     client_kinds = run.input.get("ui_presentation_kinds")
                     if isinstance(client_kinds, list):
@@ -195,7 +209,6 @@ class PresentationService:
                                         break
                         except Exception:
                             logging.getLogger(__name__).info("ui_intent preference_unavailable")
-                    answer = final_response_text(visible)
                     selector = self._intent_selector
                     selected = await asyncio.gather(
                         *[
@@ -204,7 +217,7 @@ class PresentationService:
                                 request=str(run.input.get("prompt", "")),
                                 allowed_kinds=tuple(sorted(allowed)),
                                 preferences=preferences,
-                                answer_summary=answer,
+                                result_evidence=evidence,
                             )
                             for p in proposed
                         ]

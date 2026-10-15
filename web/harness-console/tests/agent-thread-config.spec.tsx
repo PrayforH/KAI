@@ -219,8 +219,8 @@ it("only edits the latest user turn and allows unchanged text to start a new run
   expect(agentThreadSource).toContain('className="user-message-editor"');
   expect(agentThreadSource).toContain("MessageEditorContext.Provider");
   expect(agentThreadSource).toContain("isLatestUserMessage");
-  expect(agentThreadSource).toContain("{isLatestUserMessage && !threadRunning ? (");
-  expect(agentThreadSource).toContain("setEditor({ messageId: message.id, draft: originalText })");
+  expect(agentThreadSource).toContain("{isLatestUserMessage && !threadRunning && !sensitive ? (");
+  expect(agentThreadSource).toContain("setEditor({ messageId: message.id, draft: displayText })");
   expect(agentThreadSource).toContain("sourceId: message.id");
   expect(agentThreadSource).toContain("startRun: true");
   expect(agentThreadSource).not.toContain("text === originalText.trim()");

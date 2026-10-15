@@ -55,7 +55,7 @@ async def test_selects_validated_original_data_and_never_creates_actions(kind: s
         calls.append(payload)
         user = json.loads(payload["messages"][1]["content"])
         assert set(user["available_kinds"]) == {"text", "table", "chart", "comparison"}
-        assert len(user["result_summary"]["sample_rows"]) == 4
+        assert len(user["result_summary"]["rows"]) == 4
         assert "tools" not in payload
         return response({"kind": kind})
 

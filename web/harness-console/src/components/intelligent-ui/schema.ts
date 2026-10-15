@@ -9,6 +9,7 @@ export const SUPPORTED_RENDERER_VERSIONS: Record<string, string> = {
   diagram: "diagram/1",
   timeline: "timeline/1",
   metric: "metric/1",
+  summary: "summary/1",
   form: "form/1",
   html: "html/1",
 };
@@ -108,6 +109,20 @@ const metricDataSchema = z.object({
     .min(1),
 });
 
+const summaryDataSchema = metricDataSchema.extend({
+  items: metricDataSchema.shape.items.max(8),
+  headline: z.string().max(600).default(""),
+  subtitle: z.string().max(600).default(""),
+  updated_at: z.string().max(120).default(""),
+  sources: z.array(z.object({
+    label: z.string().min(1).max(120),
+    url: z.url().refine((value) => {
+      const url = new URL(value);
+      return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password;
+    }),
+  }).strict()).max(4).default([]),
+}).strict();
+
 const formFieldSchema = z.object({
   key: z.string().min(1),
   label: z.string(),
@@ -135,6 +150,7 @@ export type ComparisonData = z.infer<typeof comparisonDataSchema>;
 export type ChartConfig = z.infer<typeof chartConfigSchema>;
 export type TimelineData = z.infer<typeof timelineDataSchema>;
 export type MetricData = z.infer<typeof metricDataSchema>;
+export type SummaryData = z.infer<typeof summaryDataSchema>;
 export type ChartRow = Record<string, PresentationCell>;
 
 /** The kind-specific payload, parsed once. A block whose body does not survive
@@ -148,6 +164,7 @@ export type PresentationBody =
   | { kind: "diagram"; source: string }
   | { kind: "timeline"; timeline: TimelineData }
   | { kind: "metric"; metrics: MetricData }
+  | { kind: "summary"; summary: SummaryData }
   | { kind: "form"; form: FormData; submitLabel: string };
 
 function configText(presentation: Presentation, key: string): string {
@@ -173,6 +190,10 @@ export function parsePresentationBody(
   presentation: Presentation,
 ): PresentationBody | null {
   switch (presentation.kind) {
+    case "summary": {
+      const summary = summaryDataSchema.safeParse(presentation.data);
+      return summary.success ? { kind: "summary", summary: summary.data } : null;
+    }
     case "html": {
       const data = htmlDataSchema.safeParse(presentation.data);
       const config = htmlConfigSchema.safeParse(presentation.config);

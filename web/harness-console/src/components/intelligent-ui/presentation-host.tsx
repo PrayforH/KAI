@@ -21,7 +21,7 @@ import {
   parsePresentationBody,
 } from "./schema";
 import { TableView } from "./table-view";
-import { ComparisonView, DiagramView, MetricView, TimelineView } from "./views";
+import { ComparisonView, DiagramView, MetricView, SummaryView, TimelineView } from "./views";
 
 /** What a block hands back to the turn when the user acts on it. */
 export type PresentationActionHandler = (
@@ -49,6 +49,8 @@ function PresentationBodyView({
   loaded: boolean;
 }) {
   switch (body.kind) {
+    case "summary":
+      return <SummaryView summary={body.summary} />;
     case "html":
       return <HtmlView key={`${presentation.presentation_id}:${presentation.revision}`}
         presentation={presentation} height={body.height} initialState={view.html_state}
@@ -197,6 +199,9 @@ export function IntelligentUiBlock({
 }) {
   const presentation = parsePresentation(value);
   const body = presentation ? parsePresentationBody(presentation) : null;
+  if (presentation?.decision.display === "text") {
+    return <p>{presentation.fallback_text}</p>;
+  }
   if (!presentation || !body) {
     const text = fallbackText(value);
     return text ? (
@@ -305,21 +310,6 @@ function PublishedPresentation({
           ) : null}
         </div>
       ))}
-      {body.kind !== "html" && <details className="intelligent-ui-note">
-        <summary>数据与来源</summary>
-        <p>{presentation.fallback_text}</p>
-        <p>
-          {presentation.decision.origin === "shape"
-            ? "基于本轮工具返回的数据"
-            : "基于本轮回答中的数据"}{" "}
-          · 版本 {presentation.revision}
-        </p>
-        {presentation.snapshot_hash ? (
-          <p title={presentation.snapshot_hash}>
-            数据快照 {presentation.snapshot_hash.slice(0, 12)}
-          </p>
-        ) : null}
-      </details>}
     </figure>
   );
 }

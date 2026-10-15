@@ -357,8 +357,8 @@ describe("full-page agent workbench", () => {
   });
 
   it("keeps an active task pinned while allowing another Agent to start a new task", () => {
-    expect(page).toContain('runStream.status === "running"');
-    expect(page).toContain('runView?.phase === "waiting_approval"');
+    expect(page).toContain('taskVersionBusy(runStream, runView)');
+    expect(readFileSync(join(process.cwd(), "src/lib/task-version.ts"), "utf8")).toContain('"waiting_approval"');
     expect(page).toContain("taskAgentSwitchMode(selectedAgent, nextAgent)");
     expect(page).toContain('mode === "version" && currentTaskBusy');
     expect(page).toContain("currentTaskBusy={currentTaskBusy}");
@@ -508,14 +508,16 @@ describe("full-page agent workbench", () => {
     expect(agentThread).not.toContain("未发送内容已保存在当前浏览器");
   });
 
-  it("uses Codex neutrals and keeps the workbench strictly black, white and gray", () => {
+  it("uses neutral workbench surfaces and reserves Codex blue for the needs-input chip", () => {
     expect(webCodexStyles).toContain("body.codex-theme-v1:has(.console-shell)");
     expect(webCodexStyles).toContain("--codex-accent: #ececec");
     expect(webCodexStyles).toContain(".harness-composer-shell .task-agent-switcher");
     expect(webCodexStyles).toContain(".aui-thread-viewport:has(.user-task-welcome)");
     expect(webCodexStyles).toContain("width: 100%;\n  height: 100dvh;");
     expect(webCodexStyles).not.toContain("background-image: radial-gradient");
-    expect(webCodexStyles).not.toContain("#339cff");
+    const neutralStyles = webCodexStyles.replace(/body\.codex-theme-v1 \.task-input-badge \{[^}]*\}/g, "");
+    expect(neutralStyles).not.toContain("#339cff");
+    expect(webCodexStyles).toContain("background: #339cff26");
     expect(webCodexStyles).not.toContain("#16b364");
     expect(webCodexStyles).not.toContain("#f36d21");
     expect(webCodexStyles).not.toContain("#ff7d32");
