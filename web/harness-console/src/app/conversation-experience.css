@@ -1265,3 +1265,9 @@ html body.codex-theme-v1 .execution-commentary .aui-md { color: var(--codex-ink)
 html body.codex-theme-v1 :is(.execution-action-copy strong, .execution-reasoning-label, .execution-reasoning-preview) { color: var(--codex-muted); }
 html body.codex-theme-v1 :is(.execution-action, .execution-reasoning) .execution-state-sweep { color: var(--codex-muted); background: none; animation: none; }
 html body.codex-theme-v1 .execution-log > * { animation: none; }
+
+
+/* Dormant questions belong to their authored turn, with no empty composer row. */
+.followup-input-holder:empty, .followup-input-anchor:empty { display: none; }
+body.codex-theme-v1 .harness-assistant-message > .followup-input-anchor { order: 2; width: 100%; min-width: 0; }
+.followup-input-anchor .followup-input-container { margin-top: 8px; }

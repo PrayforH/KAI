@@ -1,7 +1,9 @@
+# pyright: reportPrivateUsage=false
 """Snapshots choose presentation, not facts, from successful run-owned evidence."""
 
 import json
 from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import AsyncMock
 
 import httpx
@@ -11,12 +13,12 @@ from harness.adapters.memory import InMemorySessionRepository
 from harness.core.models import Run, RunStatus, Session
 from harness.presentation.projection import presentations_for_events, tool_result_evidence
 from harness.presentation.repositories import InMemoryPresentationRepository
-from harness.presentation.schema import validate_block
+from harness.presentation.schema import Presentation, validate_block
 from harness.presentation.service import PresentationService
 from tests.unit.presentation.test_intent import response, selector
 from tests.unit.presentation.test_projection import TABLE, _answer, _event, _fence, _tool_result
 
-SNAPSHOT = {
+SNAPSHOT: dict[str, Any] = {
     "version": 1,
     "kind": "summary",
     "title": "上海天气",
@@ -30,7 +32,7 @@ SNAPSHOT = {
 }
 
 
-def validate(block):
+def validate(block: dict[str, Any]) -> Presentation | None:
     return validate_block(
         block,
         run_id="run-1",
@@ -45,7 +47,7 @@ def validate(block):
     "url",
     ["javascript:alert(1)", "data:text/html,x", "https://user:pass@example.org/", "/forecast"],
 )
-def test_summary_rejects_executable_or_credentialed_sources(url):
+def test_summary_rejects_executable_or_credentialed_sources(url: str) -> None:
     assert (
         validate(
             {**SNAPSHOT, "data": {**SNAPSHOT["data"], "sources": [{"label": "x", "url": url}]}}
@@ -118,10 +120,12 @@ def test_evidence_is_bounded_and_omits_errors_redacted_results_and_memory():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("kind", ["summary", "text", "unknown"])
-async def test_terminal_selection_uses_request_and_actual_evidence_and_restores_exactly(kind):
-    calls = []
+async def test_terminal_selection_uses_request_and_actual_evidence_and_restores_exactly(
+    kind: str,
+) -> None:
+    calls: list[dict[str, Any]] = []
 
-    def upstream(request):
+    def upstream(request: httpx.Request) -> httpx.Response:
         data = json.loads(json.loads(request.content)["messages"][1]["content"])
         calls.append(data)
         assert data["request"] == "上海今天的天气怎么样？"
@@ -196,6 +200,7 @@ async def test_converting_a_queried_model_table_keeps_its_source_for_fence_repla
         allowed_kinds=("chart", "table"),
         result_evidence=[{"content": "真实预报 23、21"}],
     )
+    assert selected is not None
     assert selected.kind == "chart" and selected.source_text == source
     assert selected.decision["origin"] == "model"
     assert selected.data["rows"] == original.data["rows"]
@@ -207,7 +212,9 @@ async def test_selection_preserves_application_actions_instead_of_dropping_the_b
         {**SNAPSHOT, "actions": [{"kind": "read", "label": "查看明天", "prompt": "查询明天的天气"}]}
     )
 
-    def unexpected(_):
+    assert original is not None
+
+    def unexpected(_: httpx.Request) -> httpx.Response:
         raise AssertionError("action-bearing blocks remain authoritative")
 
     chosen = await selector(httpx.MockTransport(unexpected)).select(
@@ -216,7 +223,7 @@ async def test_selection_preserves_application_actions_instead_of_dropping_the_b
         allowed_kinds=("summary",),
         result_evidence=[{"content": "查询结果"}],
     )
-    assert chosen == original and chosen.actions
+    assert chosen is not None and chosen == original and chosen.actions
 
 
 def test_observed_summary_aliases_normalize_without_business_specific_fields():
@@ -250,7 +257,7 @@ def test_markdown_answer_records_are_not_dependent_on_widget_protocol():
     text = "概况如下。\n\n| 项目 | 情况 |\n|---|---|\n| 温度 | 25℃ |\n| 状态 | 阴 |\n"
     found = answer_tables(_answer(text))
     assert len(found) == 1 and found[0].data["rows"][0] == {"项目": "温度", "情况": "25℃"}
-    assert found[0].source_text in text
+    assert found[0].source_text is not None and found[0].source_text in text
     from harness.presentation.intent import presentation_variants
 
     assert presentation_variants(found[0])["summary"].data["items"][0]["value"] == "25℃"
@@ -277,6 +284,6 @@ def test_labelled_answer_facts_keep_values_and_ignore_unstructured_or_code_lists
     assert p.kind == "summary"
     assert p.data["items"][0]["value"] == "已完成"
     assert p.data["items"][1]["value"] == "25℃"
-    assert p.source_text in text
+    assert p.source_text is not None and p.source_text in text
     assert answer_facts(_answer("- 一句解释\n- 另一句解释\n")) == []
     assert answer_facts(_answer("```text\n" + text + "\n```")) == []

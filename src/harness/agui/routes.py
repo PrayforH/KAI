@@ -5,6 +5,7 @@ import base64
 import json
 import logging
 import time
+from collections import OrderedDict
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal, NamedTuple, cast
@@ -23,6 +24,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from harness.agui.activity import build_run_activity
+from harness.agui.conversation_input import has_conversation_input
 from harness.agui.mapper import (
     PRESENTATION_TOOL_NAME,
     map_harness_event,
@@ -230,6 +232,7 @@ class AguiThreadSummary(BaseModel):
     last_read_at: datetime | None = None
     project_id: str | None = None
     pending_approval: ApprovalRequest | None = None
+    pending_input: bool = False
 
 
 class AguiProjectThreadCreateInput(BaseModel):
@@ -732,6 +735,8 @@ async def list_agui_threads(
         if approval.status is ApprovalStatus.PENDING and approval.expires_at > now
     }
 
+    input_reads = asyncio.Semaphore(_HISTORY_RUN_CONCURRENCY)
+
     async def summarize(binding: AguiThreadBinding) -> AguiThreadSummary:
         thread_runs = [
             run for session_id in binding.session_ids for run in runs_by_session.get(session_id, [])
@@ -779,6 +784,11 @@ async def list_agui_threads(
             last_read_at=binding.last_read_at,
             project_id=binding.project_id,
             pending_approval=pending,
+            pending_input=(
+                await _thread_pending_input(container, identity.tenant_id, latest, input_reads)
+                if pending is None and latest is not None
+                else False
+            ),
         )
 
     summaries = await asyncio.gather(*(summarize(binding) for binding in bindings))
@@ -808,23 +818,30 @@ async def set_agui_thread_version(
     """Persist a version choice without submitting a prompt or losing task history."""
     ensure_permission(identity, "tasks:write")
     binding = await container.agui.get_binding(
-        tenant_id=identity.tenant_id, user_id=identity.user_id, thread_id=thread_id,
+        tenant_id=identity.tenant_id,
+        user_id=identity.user_id,
+        thread_id=thread_id,
     )
     connection_mode: Literal["caller_owned", "service_owned"] = "caller_owned"
     if binding.space_id is not None:
         release = await container.team_spaces.require_agent_access(
-            identity.tenant_id, identity.user_id, binding.space_id,
-            binding.agent_owner_user_id, binding.agent_name, body.agent_version,
+            identity.tenant_id,
+            identity.user_id,
+            binding.space_id,
+            binding.agent_owner_user_id,
+            binding.agent_name,
+            body.agent_version,
         )
         connection_mode = release.connection_mode.value
     elif binding.agent_owner_user_id != identity.user_id:
         raise ConflictError("agent_owner_user_id requires a team space grant")
     # Use the same active-run guard, identity check and history-preserving rebind
     # as the normal run submission path. Only the version may change here.
-    updated = await container.agui._resolve_binding(
-        tenant_id=identity.tenant_id, user_id=identity.user_id, thread_id=thread_id,
-        agent_name=binding.agent_name, agent_version=body.agent_version,
-        agent_owner_user_id=binding.agent_owner_user_id, space_id=binding.space_id,
+    updated = await container.agui.change_thread_version(
+        tenant_id=identity.tenant_id,
+        user_id=identity.user_id,
+        thread_id=thread_id,
+        agent_version=body.agent_version,
         connection_mode=connection_mode,
     )
     return {"thread_id": thread_id, "agent_version": updated.agent_version}
@@ -1045,6 +1062,54 @@ class RunProjection(NamedTuple):
     ui_blocks: list[dict[str, Any]]
 
 
+# Cache booleans only; user answers and credentials never enter this cache.
+_PENDING_INPUT_CACHE: OrderedDict[tuple[str, str, datetime], bool] = OrderedDict()
+
+
+async def _pending_input_response(container: ApiContainer, tenant_id: str, run: Run) -> str:
+    # Task indicators need only text; do not materialize UI blocks or activity.
+    markers = await container.observed_events.list_after(
+        tenant_id,
+        run.run_id,
+        0,
+        types=(_HISTORY_SNAPSHOT_EVENT_TYPE,),
+    )
+    for event in reversed(markers):
+        if (
+            event.type == _HISTORY_SNAPSHOT_EVENT_TYPE
+            and event.payload.get("version") == _HISTORY_SNAPSHOT_VERSION
+        ):
+            return str(event.payload.get("response_text", ""))
+    events = await container.observed_events.list_after(tenant_id, run.run_id, 0)
+    return final_response_text(redact_internal_agent_asset_events(events))
+
+
+async def _thread_pending_input(
+    container: ApiContainer,
+    tenant_id: str,
+    run: Run,
+    semaphore: asyncio.Semaphore,
+) -> bool:
+    if run.status.value != "succeeded":
+        return False
+    key = (tenant_id, run.run_id, run.updated_at)
+    if key in _PENDING_INPUT_CACHE:
+        _PENDING_INPUT_CACHE.move_to_end(key)
+        return _PENDING_INPUT_CACHE[key]
+    try:
+        async with semaphore:
+            text = await _pending_input_response(container, tenant_id, run)
+    except Exception:  # A secondary indicator must not break the task list.
+        logger.warning("Could not resolve task input indicator")
+        return False
+    pending = has_conversation_input(text)
+    if text:  # Retry when terminal output has not been persisted yet.
+        _PENDING_INPUT_CACHE[key] = pending
+        while len(_PENDING_INPUT_CACHE) > 1024:
+            _PENDING_INPUT_CACHE.popitem(last=False)
+    return pending
+
+
 async def _run_projection(
     container: ApiContainer,
     tenant_id: str,
@@ -1091,9 +1156,7 @@ async def _run_projection(
     ui = [
         item.model_dump(mode="json")
         for item in (
-            await container.presentations.materialize(run, events)
-            if run.status.is_terminal
-            else []
+            await container.presentations.materialize(run, events) if run.status.is_terminal else []
         )
     ]
     steer_events = [event for event in events if event.type == "run.steer.accepted"]
@@ -1166,7 +1229,8 @@ async def _history_messages_for_run(
         prompt = run.input["ui_action_display"]
     if isinstance(prompt, str) and prompt:
         raw_input_ids: Any = (
-            [] if run.input.get("inherited_input_artifact_ids")
+            []
+            if run.input.get("inherited_input_artifact_ids")
             else run.input.get("input_artifact_ids", [])
         )
         input_ids = (

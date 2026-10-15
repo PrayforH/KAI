@@ -41,7 +41,7 @@ afterEach(() => {
 
 function copyButton() {
   return [...host.querySelectorAll("button")].find(
-    (button) => button.textContent === "复制",
+    (button) => button.getAttribute("aria-label") === "复制图表源码",
   )!;
 }
 
@@ -77,7 +77,7 @@ it("keeps readable source when Mermaid rejects the diagram", async () => {
   engine.render.mockRejectedValue(new Error("Invalid syntax"));
   await act(async () => vi.advanceTimersByTimeAsync(420));
   expect(host.querySelector("pre code")?.textContent).toBe(source);
-  expect(host.querySelector('[role="status"]')?.textContent).toContain(
+  expect([...host.querySelectorAll('[role="status"]')].map(node => node.textContent).join(" ")).toContain(
     "图表语法暂时无法渲染",
   );
 });

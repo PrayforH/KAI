@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { CardDownloadLink } from "../card-action-button";
 import { useEffect, useMemo, useState } from "react";
 import { requireAuthenticatedResponse } from "../../lib/client-auth";
 import styles from "./my-files.module.css";
@@ -175,7 +176,7 @@ export function MyFiles() {
                 <time dateTime={file.created_at}>{formatDate(file.created_at)}</time>
                 <div className={styles.actions}>
                   <Link href={`/?thread=${encodeURIComponent(file.thread_id)}`}>打开任务</Link>
-                  <a href={`/api/harness/artifacts/${encodeURIComponent(file.artifact_id)}`} download>下载</a>
+                  <CardDownloadLink href={`/api/harness/artifacts/${encodeURIComponent(file.artifact_id)}`} download label={`下载 ${file.name}`} />
                 </div>
               </article>
             );

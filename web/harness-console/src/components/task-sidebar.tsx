@@ -37,6 +37,7 @@ const statusLabels: Record<string, string> = {
   queued: "排队中",
   running: "运行中",
   waiting_approval: "待审批",
+  waiting_input: "需要输入",
   cancelling: "取消中",
   cancelled: "已取消",
   succeeded: "已完成",
@@ -351,13 +352,15 @@ export function TaskSidebar({
       else if (runView.phase === "failed") status = task.status === "timed_out" ? "timed_out" : "failed";
       else if (task.status !== "cancelling" || !activeStatuses.has(runView.phase)) status = runView.phase;
     }
+    if (task.pending_input && ["succeeded", "completed"].includes(status)) status = "waiting_input";
+    const needsInput = status === "waiting_input";
     const hasError = isFailedRunStatus(status);
     const statusLabel = statusLabels[status] ?? status;
     const unreadResult =
       status === "succeeded" &&
       task.thread_id !== currentThreadId &&
       !isTaskRead(task);
-    const showStatusDot = activeStatuses.has(status) || hasError || unreadResult;
+    const showStatusDot = !needsInput && (activeStatuses.has(status) || hasError || unreadResult);
     return (
       <div
         role="listitem"
@@ -368,7 +371,7 @@ export function TaskSidebar({
           type="button"
           className={`task-list-item ${task.thread_id === currentThreadId ? "is-active" : ""} ${task.pending_approval ? "needs-approval" : ""}`}
           aria-label={`${task.title}，${statusLabel}`}
-          title={hasError ? `${statusLabel}，点击查看详情` : undefined}
+          title={needsInput ? "需要你补充信息，点击任务继续回答" : hasError ? `${statusLabel}，点击查看详情` : undefined}
           onPointerEnter={() => {
             void prefetchThreadHistory(task.thread_id).catch(() => {});
           }}
@@ -386,6 +389,7 @@ export function TaskSidebar({
             </span>
           )}
           <ScrollingTaskTitle title={task.title} />
+          {needsInput && <span className="task-input-badge">需要输入</span>}
           {hasError && <span className="task-error-label">{statusLabel}</span>}
           <span className="task-list-meta">
             <time dateTime={task.updated_at}>{formatTaskAge(task.updated_at)}</time>

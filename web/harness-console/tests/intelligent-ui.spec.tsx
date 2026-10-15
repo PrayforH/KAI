@@ -455,7 +455,7 @@ it("reports a clipboard failure instead of claiming success", async () => {
   });
   render(presentation());
   const button = [...host!.querySelectorAll("button")].find(
-    (b) => b.textContent === "复制",
+    (b) => b.getAttribute("aria-label") === "复制表格",
   )!;
   await act(async () => {
     button.click();
@@ -477,7 +477,7 @@ it("copies successfully through the HTTP selection fallback", async () => {
   });
   render(presentation());
   const button = [...host!.querySelectorAll("button")].find(
-    (b) => b.textContent === "复制",
+    (b) => b.getAttribute("aria-label") === "复制表格",
   )!;
   await act(async () => {
     button.click();

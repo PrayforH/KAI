@@ -310,21 +310,6 @@ function PublishedPresentation({
           ) : null}
         </div>
       ))}
-      {body.kind !== "html" && <details className="intelligent-ui-note">
-        <summary>数据与来源</summary>
-        <p>{presentation.fallback_text}</p>
-        <p>
-          {presentation.decision.origin === "shape"
-            ? "基于本轮工具返回的数据"
-            : "基于本轮回答中的数据"}{" "}
-          · 版本 {presentation.revision}
-        </p>
-        {presentation.snapshot_hash ? (
-          <p title={presentation.snapshot_hash}>
-            数据快照 {presentation.snapshot_hash.slice(0, 12)}
-          </p>
-        ) : null}
-      </details>}
     </figure>
   );
 }

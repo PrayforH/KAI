@@ -1,4 +1,5 @@
 "use client";
+import { CodexResponseIcon } from "./codex-response-icon";
 
 import { useState } from "react";
 import { groupWorkspaceFiles } from "../lib/workspace-file-groups";
@@ -41,9 +42,7 @@ export function ReplyArtifactVideos({ artifacts }: { artifacts: ArtifactDetails[
           <span className={styles.metadata} style={{ overflowWrap: "anywhere", minWidth: 0 }}>{name}</span>
           <a className={styles.action} href={`${downloadUrl.pathname}${downloadUrl.search}`} download={name}
             aria-label={`下载 ${name}`} title={`下载 ${name}`}>
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M10 3v9m-3-3 3 3 3-3M4 13v3h12v-3" />
-            </svg>
+            <CodexResponseIcon name="download" />
           </a>
         </figcaption>
         {failed.includes(file.artifact_id) ? <p className={styles.error} role="status">暂时无法播放，可下载视频后查看。</p> : null}

@@ -198,6 +198,7 @@ function HeaderUtilities({
 function TaskContextBar({
   taskTitle,
   task,
+  needsInput = false,
   switcher,
   observabilityHref,
   onOpenTrace,
@@ -208,6 +209,7 @@ function TaskContextBar({
 }: {
   taskTitle: string;
   task: TaskSummary | null;
+  needsInput?: boolean;
   /** Version switcher for switchable agents, folded into the folder popover. */
   switcher?: ReactNode;
   observabilityHref?: string | null;
@@ -229,6 +231,7 @@ function TaskContextBar({
         </span>
       )}
       <strong className="task-context-title">{taskTitle}</strong>
+      {needsInput && <span className="task-input-badge" role="status">需要输入</span>}
       {task && (
         <TaskHeaderActions
           task={task}
@@ -778,6 +781,7 @@ function AuthenticatedHome() {
               <TaskContextBar
                 taskTitle={currentTaskTitle}
                 task={currentTask}
+                needsInput={Boolean(currentTask?.pending_input && !currentTaskBusy)}
                 observabilityHref={observabilityHref}
                 onOpenTrace={() => setStageView("trace")}
                 projects={projects}

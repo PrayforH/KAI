@@ -1,4 +1,5 @@
 "use client";
+import { CodexResponseIcon } from "./codex-response-icon";
 
 import { useRef, useState } from "react";
 import styles from "./video-generation-result.module.css";
@@ -22,9 +23,9 @@ export interface VideoResult {
 }
 
 function Icon({ name }: { name: "open" | "download" | "retry" | "reuse" | "stop" }) {
+  if (name === "download") return <CodexResponseIcon name="download" />;
   return <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     {name === "open" ? <><path d="M11 3.5h5.5V9M16 4l-7 7" /><path d="M8 4H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-3" /></> : null}
-    {name === "download" ? <><path d="M10 3v9m-3-3 3 3 3-3M4 13v3h12v-3" /></> : null}
     {name === "retry" ? <><path d="M4.5 7a6 6 0 1 1-.2 5M4 3.5V8h4.5" /></> : null}
     {name === "reuse" ? <><rect x="6.5" y="6.5" width="10" height="10" rx="2" /><path d="M13.5 6.5V5a1.5 1.5 0 0 0-1.5-1.5H5A1.5 1.5 0 0 0 3.5 5v7A1.5 1.5 0 0 0 5 13.5h1.5" /></> : null}
     {name === "stop" ? <rect x="5" y="5" width="10" height="10" rx="2" /> : null}
