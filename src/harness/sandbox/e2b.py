@@ -423,8 +423,41 @@ class SdkE2BRemoteSandbox:
         await self._sandbox.files.make_dir(path)
 
     async def upload(self, remote_path: str, content: bytes) -> None:
+        if len(content) > _UPLOAD_BATCH_BYTES:
+            await self._upload_large_file(remote_path, content)
+            return
         filesystem = cast(_WritableFilesystem, self._sandbox.files)
         await filesystem.write(remote_path, content)
+
+    async def _upload_large_file(self, remote_path: str, content: bytes) -> None:
+        """Keep each HTTP body bounded, then atomically assemble inside the sandbox."""
+
+        directory = str(PurePosixPath(remote_path).parent / f".harness-upload-{uuid4().hex}")
+        filesystem = cast(_WritableFilesystem, self._sandbox.files)
+        await self._sandbox.files.make_dir(directory)
+        try:
+            parts: list[str] = []
+            for index, offset in enumerate(range(0, len(content), _UPLOAD_BATCH_BYTES)):
+                path = f"{directory}/part-{index:06d}"
+                await filesystem.write_files(
+                    [{"path": path, "data": content[offset:offset + _UPLOAD_BATCH_BYTES]}],
+                    request_timeout=_UPLOAD_BATCH_TIMEOUT_SECONDS,
+                )
+                parts.append(shlex.quote(path))
+            assembled = shlex.quote(f"{directory}/complete")
+            result = await self._sandbox.commands.run(
+                f"cat -- {' '.join(parts)} > {assembled} && "
+                f'test "$(wc -c < {assembled})" -eq {len(content)} && '
+                f"mv -f -- {assembled} {shlex.quote(remote_path)}",
+                timeout=_UPLOAD_BATCH_TIMEOUT_SECONDS,
+            )
+            if result.exit_code != 0:
+                raise RuntimeError("sandbox could not assemble the uploaded file")
+        finally:
+            # Never replace the destination with partial bytes; remove only our
+            # unique staging directory on success, cancellation or upload failure.
+            with suppress(Exception):
+                await self._sandbox.files.remove(directory)
 
     async def upload_many(self, entries: Sequence[tuple[str, bytes]]) -> None:
         """Write files in bounded multipart batches.
@@ -449,9 +482,12 @@ class SdkE2BRemoteSandbox:
             batch_bytes = 0
 
         for remote_path, content in entries:
+            if len(content) > _UPLOAD_BATCH_BYTES:
+                await flush()
+                await self.upload(remote_path, content)
+                continue
             if (
-                len(content) > _UPLOAD_BATCH_BYTES
-                or (batch and batch_bytes + len(content) > _UPLOAD_BATCH_BYTES)
+                (batch and batch_bytes + len(content) > _UPLOAD_BATCH_BYTES)
                 or len(batch) >= _UPLOAD_BATCH_FILES
             ):
                 await flush()
