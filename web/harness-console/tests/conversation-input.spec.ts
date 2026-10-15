@@ -23,12 +23,12 @@ describe("model-driven input display protocol", () => {
     expect(latestConversationInput([{...message, status: {type: "incomplete"}}])).toBeNull();
     expect(latestConversationInput([])).toBeNull();
   });
-  it("keeps readable history and hides partial JSON only while streaming", () => {
+  it("keeps readable history and falls back safely after interrupted streaming", () => {
     expect(conversationInputDisplay("请确认\n" + fence(payload))).toContain("选择内容（UI / 接口）");
     expect(conversationInputDisplay(fence(payload))).not.toContain("harness-input");
     const partial = '正在整理\n```harness-input\n{"version":';
     expect(conversationInputDisplay(partial, true)).toBe("正在整理");
-    expect(conversationInputDisplay(partial)).toBe(partial);
+    expect(conversationInputDisplay(partial)).toContain("请直接输入");
   });
 });
 
@@ -61,3 +61,36 @@ it("handles quoted braces, refuses ambiguous or non-protocol JSON and suppresses
  expect(conversationInputDisplay('请确认\n```harness\n{"version":1',true)).toBe("请确认");
  expect(parseConversationInput('```harness\n{"version":1,"execute":"shell"}\n```')).toBeNull();
  });
+
+it("keeps all over-limit choices readable without exposing protocol or accepting an invalid card", () => {
+ const data={version:1,title:"确认查询范围",questions:[{id:"scope",label:"查询哪些维度",type:"multi",options:Array.from({length:9},(_,i)=>`维度 ${i+1}`)}]};
+ for (const language of ["harness-input","harness","json"]) {
+  const text=`请确认。\n\n\`\`\`${language}\n${JSON.stringify(data)}\n\`\`\`\n\n后续说明。`;
+  expect(parseConversationInput(text)).toBeNull();
+  const display=conversationInputDisplay(text);
+  expect(display).toContain("维度 9");expect(display).toContain("后续说明。");
+  expect(display).not.toMatch(/```|"questions"|"version"/);
+ }
+});
+
+it("consumes the complete form envelope even when the closing fence is missing or indented", () => {
+ for(const text of [fence(payload).slice(0,-4),fence(payload).replace(/```$/,"  ```"),fence(payload).replaceAll("```","~~~")]) {
+  expect(parseConversationInput(text)?.title).toBe(payload.title);
+  expect(conversationInputDisplay(text)).not.toMatch(/```|~~~|harness-input|"questions"/);
+ }
+});
+
+it("degrades malformed internal forms without hiding ordinary code or JSON", () => {
+ const malformed='说明。\n```harness-input\n{"version":1,"questions":';
+ expect(conversationInputDisplay(malformed,true)).toBe("说明。");
+ expect(conversationInputDisplay(malformed)).toContain("请直接输入");
+ expect(conversationInputDisplay(malformed)).not.toContain('"questions"');
+ const ordinary='```json\n{"version":1,"items":[1,2]}\n```';
+ expect(conversationInputDisplay(ordinary)).toBe(ordinary);
+ expect(conversationInputDisplay('```python\nprint("hello")\n```')).toContain('print("hello")');
+});
+
+it("preserves an internal protocol shown literally inside an outer code example", () => {
+ const example="````markdown\n```harness-input\n{invalid}\n```\n````";
+ expect(conversationInputDisplay(example)).toBe(example);
+});
