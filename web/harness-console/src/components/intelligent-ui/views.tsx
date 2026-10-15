@@ -2,7 +2,47 @@
 
 import { MermaidDiagram } from "../mermaid-diagram";
 import { cellText } from "./cells";
-import type { ComparisonData, MetricData, TimelineData } from "./schema";
+import type { ComparisonData, MetricData, SummaryData, TimelineData } from "./schema";
+
+/** Short scalars can carry display type; sentences need room to read. */
+function SummaryFact({ item, primary = false }: { item: MetricData["items"][number]; primary?: boolean }) {
+  const value = cellText(item.value);
+  const compact = value.length <= 16 && /\d/.test(value) && !/[，,;；\n]/.test(value);
+  return (
+    <div className={`intelligent-ui-summary-fact${primary ? " intelligent-ui-summary-primary" : ""}`}>
+      <dt>{item.label}</dt>
+      <dd className={primary && compact ? "intelligent-ui-summary-scalar" : undefined}>
+        {value}{item.unit && <small>{item.unit}</small>}
+      </dd>
+      {item.hint && <p className="intelligent-ui-summary-hint">{item.hint}</p>}
+    </div>
+  );
+}
+
+/** A readable overview, rather than a dashboard of equally weighted tiles. */
+export function SummaryView({ summary }: { summary: SummaryData }) {
+  const [primary, ...details] = summary.items;
+  return (
+    <div className="intelligent-ui-block intelligent-ui-summary">
+      {summary.headline && <p className="intelligent-ui-summary-headline">{summary.headline}</p>}
+      {summary.subtitle && <p className="intelligent-ui-summary-subtitle">{summary.subtitle}</p>}
+      <dl className="intelligent-ui-summary-facts">
+        <SummaryFact item={primary} primary />
+        {details.length > 0 && <div className="intelligent-ui-summary-details">
+          {details.map((item, index) => <SummaryFact key={index} item={item} />)}
+        </div>}
+      </dl>
+      {(summary.updated_at || summary.sources.length > 0) && (
+        <footer className="intelligent-ui-summary-provenance">
+          {summary.updated_at && <span>资料时间：{summary.updated_at}</span>}
+          {summary.sources.map((source, index) => (
+            <a key={index} href={source.url} target="_blank" rel="noopener noreferrer">{source.label}</a>
+          ))}
+        </footer>
+      )}
+    </div>
+  );
+}
 
 /** The same dimensions, one column per option: the shape a decision has. */
 export function ComparisonView({

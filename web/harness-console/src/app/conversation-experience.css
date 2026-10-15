@@ -1225,3 +1225,43 @@ html[data-color-mode="light"] .steering-user-message-bubble { background: #f3f3f
 body.codex-theme-v1 .harness-thread-frame .aui-thread-viewport > * {
   flex-shrink: 0;
 }
+
+/* The same prose can move from the answer candidate into the process log.
+   Keep its typography identical across that hand-off; parser whitespace is
+   structural, never an extra pre-wrapped blank line. */
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md {
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.74;
+  white-space: normal;
+}
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md > * { margin-block: 0; }
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md > * + * { margin-top: 8px; }
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md p { margin-block: 0 8px; }
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md :is(h1,h2,h3) { margin-block: 18px 7px; }
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md :is(ul,ol) { margin-block: 7px 9px; }
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md li > p { margin-block: 0 3px; }
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md li > :is(ul,ol) { margin-block: 4px; }
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md strong { font-weight: 600; }
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md > :first-child { margin-top: 0; }
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md > :last-child { margin-bottom: 0; }
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md pre,
+html body.codex-theme-v1 :is(.assistant-answer, .execution-commentary) .aui-md pre code { white-space: pre; }
+
+/* A collapsed tool and a collapsed thought occupy the same row box. The log
+   owns vertical spacing; collapsed result bodies remain hidden in the inline disclosure. */
+html body.codex-theme-v1 .execution-log-segment { gap: 10px; }
+html body.codex-theme-v1 :is(.execution-action, .execution-reasoning) { margin: 0; padding: 0; min-height: 0; }
+html body.codex-theme-v1 :is(.execution-action-summary, .execution-reasoning-summary) { min-height: 24px; height: 24px; margin: 0; padding: 0; align-items: center; line-height: 20px; box-sizing: border-box; }
+html body.codex-theme-v1 .execution-action-icon { margin-top: 0; }
+html body.codex-theme-v1 :is(.execution-action-copy strong, .execution-action-copy small, .execution-reasoning-label, .execution-reasoning-preview) { line-height: 20px; }
+html body.codex-theme-v1 .execution-action-copy { gap: 0; }
+
+
+/* Prose stays bright from its first token through the tool hand-off. Status
+   rows stay muted, with no highlight sweep or remount fade. */
+html body.codex-theme-v1 .execution-commentary,
+html body.codex-theme-v1 .execution-commentary .aui-md { color: var(--codex-ink); }
+html body.codex-theme-v1 :is(.execution-action-copy strong, .execution-reasoning-label, .execution-reasoning-preview) { color: var(--codex-muted); }
+html body.codex-theme-v1 :is(.execution-action, .execution-reasoning) .execution-state-sweep { color: var(--codex-muted); background: none; animation: none; }
+html body.codex-theme-v1 .execution-log > * { animation: none; }

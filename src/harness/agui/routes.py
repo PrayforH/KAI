@@ -794,6 +794,42 @@ async def list_agui_threads(
     )[:limit]
 
 
+class AguiThreadVersionInput(BaseModel):
+    agent_version: Annotated[str, Field(min_length=1, max_length=64)]
+
+
+@router.put("/threads/{thread_id}/version")
+async def set_agui_thread_version(
+    thread_id: str,
+    body: AguiThreadVersionInput,
+    identity: Annotated[Identity, Depends(require_identity)],
+    container: Annotated[ApiContainer, Depends(get_container)],
+) -> dict[str, str]:
+    """Persist a version choice without submitting a prompt or losing task history."""
+    ensure_permission(identity, "tasks:write")
+    binding = await container.agui.get_binding(
+        tenant_id=identity.tenant_id, user_id=identity.user_id, thread_id=thread_id,
+    )
+    connection_mode: Literal["caller_owned", "service_owned"] = "caller_owned"
+    if binding.space_id is not None:
+        release = await container.team_spaces.require_agent_access(
+            identity.tenant_id, identity.user_id, binding.space_id,
+            binding.agent_owner_user_id, binding.agent_name, body.agent_version,
+        )
+        connection_mode = release.connection_mode.value
+    elif binding.agent_owner_user_id != identity.user_id:
+        raise ConflictError("agent_owner_user_id requires a team space grant")
+    # Use the same active-run guard, identity check and history-preserving rebind
+    # as the normal run submission path. Only the version may change here.
+    updated = await container.agui._resolve_binding(
+        tenant_id=identity.tenant_id, user_id=identity.user_id, thread_id=thread_id,
+        agent_name=binding.agent_name, agent_version=body.agent_version,
+        agent_owner_user_id=binding.agent_owner_user_id, space_id=binding.space_id,
+        connection_mode=connection_mode,
+    )
+    return {"thread_id": thread_id, "agent_version": updated.agent_version}
+
+
 @router.put("/threads/{thread_id}/read", response_model=AguiThreadReadResult)
 async def mark_agui_thread_read(
     thread_id: str,

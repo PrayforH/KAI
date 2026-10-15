@@ -33,6 +33,7 @@ import { SidebarPanelIcon } from "../components/panel-icons";
 import { WorkbenchRail } from "../components/workbench-rail";
 import type { PreviewTarget } from "../components/rail-file-preview";
 import { useRunActivity, useRunViewModel } from "../lib/activity-store";
+import { persistTaskVersion, taskVersionBusy } from "../lib/task-version";
 import { useRunStream } from "../lib/run-stream-store";
 import {
   bindThreadAgent,
@@ -262,6 +263,11 @@ function AuthenticatedHome() {
   const [modelRouteOverride, setModelRouteOverride] = useState<string | null>(null);
   const [agentsLoading, setAgentsLoading] = useState(true);
   const [agentsError, setAgentsError] = useState("");
+  const [versionSwitchPending, setVersionSwitchPending] = useState(false);
+  const [versionSwitchError, setVersionSwitchError] = useState("");
+  const versionSwitchInFlight = useRef(false);
+  const visibleThreadRef = useRef(threadId);
+  visibleThreadRef.current = threadId;
   const [catalogRefreshKey, setCatalogRefreshKey] = useState(0);
   const [taskSidebarOpen, setTaskSidebarOpen] = useState(true);
   const [taskRailOpen, setTaskRailOpen] = useState(false);
@@ -309,11 +315,7 @@ function AuthenticatedHome() {
     ? `/api/harness/observability?run_id=${encodeURIComponent(runActivity.run_id)}&trace_id=${encodeURIComponent(runActivity.trace_id ?? "")}`
     : null;
   const runStream = useRunStream();
-  const currentTaskBusy = runStream.status === "running" || (
-    runView?.phase === "queued" ||
-    runView?.phase === "running" ||
-    runView?.phase === "waiting_approval"
-  );
+  const currentTaskBusy = versionSwitchPending || taskVersionBusy(runStream, runView);
 
   useEffect(() => {
     const compactViewport = window.matchMedia(TASK_SIDEBAR_COMPACT_QUERY);
@@ -686,12 +688,28 @@ function AuthenticatedHome() {
     closeCompactTaskSidebar();
   }
 
-  function switchAgent(nextAgent: TaskAgent) {
+  async function switchAgent(nextAgent: TaskAgent) {
     const mode = taskAgentSwitchMode(selectedAgent, nextAgent);
-    if (mode === "current" || (mode === "version" && currentTaskBusy)) return;
+    if (versionSwitchInFlight.current || mode === "current" || (mode === "version" && currentTaskBusy)) return;
+    setVersionSwitchError("");
     if (mode === "version") {
-      bindThreadAgent(taskStorage(), threadId, nextAgent);
-      setSelectedAgent(nextAgent);
+      versionSwitchInFlight.current = true;
+      setVersionSwitchPending(true);
+      const switchingThreadId = threadId;
+      try {
+        if (currentThreadState !== "empty") {
+          await persistTaskVersion(switchingThreadId, nextAgent.version);
+        }
+        bindThreadAgent(taskStorage(), switchingThreadId, nextAgent);
+        if (visibleThreadRef.current === switchingThreadId) setSelectedAgent(nextAgent);
+      } catch (error) {
+        if (visibleThreadRef.current === switchingThreadId) {
+          setVersionSwitchError(error instanceof Error ? error.message : "版本切换失败，请重试");
+        }
+      } finally {
+        versionSwitchInFlight.current = false;
+        setVersionSwitchPending(false);
+      }
       return;
     }
     startTaskWithAgent(nextAgent);
@@ -774,7 +792,7 @@ function AuthenticatedHome() {
                     kind="version"
                     agents={availableTaskAgents}
                     selected={selectedAgent}
-                    loading={agentsLoading}
+                    loading={agentsLoading || versionSwitchPending}
                     currentTaskBusy={currentTaskBusy}
                     onChange={switchAgent}
                     onRefresh={refreshAgentCatalog}
@@ -809,6 +827,7 @@ function AuthenticatedHome() {
               />
             ) : (
             <div className="chat-surface">
+              {versionSwitchError && <p role="alert">{versionSwitchError}</p>}
               {threadId && selectedAgent ? (
                 <AssistantRuntimeShell
                   key={`${threadId}:${runtimeAgentKey(selectedAgent)}`}
@@ -831,7 +850,7 @@ function AuthenticatedHome() {
                     threadId={threadId}
                     agents={availableTaskAgents}
                     selectedAgent={selectedAgent}
-                    agentsLoading={agentsLoading}
+                    agentsLoading={agentsLoading || versionSwitchPending}
                     currentTaskBusy={currentTaskBusy}
                     activeSkillLaunch={activeSkillLaunch}
                     onDismissSkillLaunch={() => setActiveSkillLaunch(null)}

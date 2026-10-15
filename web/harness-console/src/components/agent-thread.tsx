@@ -1,4 +1,5 @@
 "use client";
+import { responseTextForDisplay } from "../lib/process-response";
 import { sendComposerWithRecovery } from "../lib/composer-send";
 import { TerminalResponseNotice } from "./terminal-response-notice";
 import { ConversationInputCard } from "./conversation-input-card";
@@ -1363,16 +1364,21 @@ type CapturedTurnResponse = { messageId: string; text: string };
  * The native stream may still contain pre-tool prose until history commits. */
 export function responseTextForTurn(messageId: string, nativeText: string, directStream: boolean,
   live: Pick<LiveResponseSnapshot, "text" | "visible" | "status">,
-  captured: { current: CapturedTurnResponse | undefined }) {
+  captured: { current: CapturedTurnResponse | undefined }, awaitingMessage = false) {
   if (captured.current?.messageId !== messageId) captured.current = undefined;
+  // A new optimistic turn may mount before runAgent resets the global store.
+  // Never borrow the previous turn's visible text during that interval.
+  if (awaitingMessage) {
+    captured.current = { messageId, text: "" };
+    return "";
+  }
   if (directStream) {
     const text = normalizeMessageText(live.visible ? live.text : "");
     captured.current = { messageId, text };
     return text;
   }
   if (captured.current) {
-    if (live.status === "idle") captured.current = undefined;
-    else if (nativeText === captured.current.text) captured.current = undefined;
+    if (nativeText === captured.current.text || (live.status === "idle" && !captured.current.text)) captured.current = undefined;
     else return captured.current.text;
   }
   return nativeText;
@@ -1396,7 +1402,7 @@ export function HarnessAssistantMessage() {
   // this only on visible text lets assistant-ui paint the same preface once.
   const ownsLive = ownsLiveResponse(isLast, messageId, live.messageId);
   const pendingLive = isLast && messageStatus?.type === "running" &&
-    live.status === "streaming" && !live.messageId;
+    live.status !== "idle" && !ownsLive;
   const directStream = shouldSuppressNativeAssistantText(ownsLive, live, pendingLive);
   const capturedResponse = useRef<CapturedTurnResponse | undefined>(undefined);
   const nativeText = normalizeMessageText(
@@ -1404,7 +1410,7 @@ export function HarnessAssistantMessage() {
       part.type === "text" && !isIntermediateAssistantTextPart(content, index) ? [part.text] : []
     )).join("\n"),
   );
-  const copyText = responseTextForTurn(messageId, nativeText, directStream, live, capturedResponse);
+  const responseCandidate = responseTextForTurn(messageId, nativeText, directStream, live, capturedResponse, pendingLive);
   const feedbackRun = feedbackRunId(messageId, isLast, runView?.runId);
   // Requirement: citations must be reachable from the reply itself, not only
   // from the collapsed execution summary. Deduplicate by chunk so repeated
@@ -1416,6 +1422,7 @@ export function HarnessAssistantMessage() {
     ? currentActivity : undefined;
   const terminalActivity = ownedActivity && (!durable?.success || durable.data.run_id === ownedActivity.run_id)
     ? ownedActivity : durable?.success ? durable.data : undefined;
+  const copyText = responseTextForDisplay(responseCandidate, terminalActivity);
   const capturedCitations = useRef<{ messageId: string; citations: RunCitation[] }>({ messageId, citations: [] });
   const turnCitations = citationsForTurn(messageId, isLast, runView, durable?.success ? durable.data : undefined);
   if (turnCitations) capturedCitations.current = { messageId, citations: turnCitations };

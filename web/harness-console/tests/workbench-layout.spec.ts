@@ -357,8 +357,8 @@ describe("full-page agent workbench", () => {
   });
 
   it("keeps an active task pinned while allowing another Agent to start a new task", () => {
-    expect(page).toContain('runStream.status === "running"');
-    expect(page).toContain('runView?.phase === "waiting_approval"');
+    expect(page).toContain('taskVersionBusy(runStream, runView)');
+    expect(readFileSync(join(process.cwd(), "src/lib/task-version.ts"), "utf8")).toContain('"waiting_approval"');
     expect(page).toContain("taskAgentSwitchMode(selectedAgent, nextAgent)");
     expect(page).toContain('mode === "version" && currentTaskBusy');
     expect(page).toContain("currentTaskBusy={currentTaskBusy}");
