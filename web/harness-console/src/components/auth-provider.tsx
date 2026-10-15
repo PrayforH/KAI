@@ -96,7 +96,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       const currentUserId = profileRef.current?.user.user_id;
       if (currentUserId) {
-        invalidate(event.userId === currentUserId ? "session_replaced" : "account_changed");
+        if (event.userId !== currentUserId) invalidate("account_changed");
+        else { invalidateClientReads(); void verify(); }
       }
     });
     const onFocus = () => { void verify(); };

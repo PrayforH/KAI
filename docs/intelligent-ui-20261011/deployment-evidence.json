@@ -1,0 +1,44 @@
+{
+  "deployed_at_verified": "2026-10-11T15:30:54.877907+00:00",
+  "branch": "auto/intelligent-ui-v1",
+  "image_tag": "intelligent-ui-20261011g",
+  "api_image_id": "sha256:04f7027cdb28b868d4be8efbc1c7ab7dde5a55f0069935f8ef5e98679c30ef30",
+  "web_image_id": "sha256:e406ea7ebdab2fa1cf923e3153dd0af9ceb3f184348710fb128a9629439bc9a3",
+  "api_source_archive_sha256": "7762cad3551e4c59862efc6ba57cabc84a473f91121c13806d3d0a3c7b1fdffb",
+  "compose_project": "agent-evolution-173",
+  "web_entry": "http://172.20.109.173:3302/",
+  "api_entry": "http://172.20.109.173:8802/",
+  "migration": "0039",
+  "containers": {
+    "api": "healthy",
+    "worker": "healthy",
+    "web": "healthy"
+  },
+  "qa": {
+    "backend_regression_passed": 1877,
+    "web_regression_passed": 1083,
+    "web_regression_skipped": 1,
+    "final_ui_event_agui_passed": 95,
+    "postgres_concurrency_passed": 4,
+    "web_ui_targeted_passed": 35,
+    "type_baseline_new_errors": 0,
+    "tsc": "passed",
+    "ruff": "passed",
+    "actual_mermaid_parser_samples_passed": 3
+  },
+  "browser_final_chart_run_id": "run_66d42dd2715340ccbb9c3c7a47dad58d",
+  "feishu_document_url": "https://my.feishu.cn/docx/TCHHdVB3Oob3Rtxk3dIcQsa6nVg",
+  "supplementary_renderer_g_run_ids": [
+    "run_1c17a7bfb4e745f987c11496b1873381",
+    "run_8c1f3dd613b94460ad8d457361ba745e"
+  ],
+  "remaining_acceptance": [
+    "New timeline/diagram browser visual review: IAB screenshot works, DOM controls time out",
+    "Article examples: source read and generation probes complete; full interactive, image and fidelity acceptance pending"
+  ],
+  "web_build_provenance": "Built from feature source as intelligent-ui-20261011f; g aliases the identical image because subsequent changes are backend-only",
+  "feishu_document_revision": 31,
+  "article_case_matrix": "article-case-matrix.json",
+  "article_generation_probes": "article-generation-probes.json",
+  "article_images_local_evidence": "article-images-local-evidence.json"
+}

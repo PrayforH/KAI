@@ -1,8 +1,12 @@
+import { isSensitiveLabel, isSecretFieldLabel } from "./conversation-secrets";
 /** A display protocol only: submitted answers are ordinary user messages, never tool calls. */
-export type ConversationQuestion = { id: string; label: string; type: "single" | "multi" | "text"; options: string[] };
+export type ConversationQuestion = { id: string; label: string; type: "single" | "multi" | "text" | "password"; options: string[]; sensitive?: boolean };
 export type ConversationInput = { version: 1; title: string; questions: ConversationQuestion[] };
 function shortText(value: unknown, maximum: number): value is string {
   return typeof value === "string" && value.trim().length > 0 && value.length <= maximum;
+}
+export function isSensitiveQuestion(question: ConversationQuestion) {
+  return question.type === "password" || question.sensitive === true || (question.type === "text" && isSensitiveLabel(question.label + " " + question.id));
 }
 type InputBlock = { start: number; end: number; input: ConversationInput };
 function validateInput(raw: string): ConversationInput | null {
@@ -14,11 +18,12 @@ function validateInput(raw: string): ConversationInput | null {
     const ids = new Set<string>();
     const questions: ConversationQuestion[] = [];
     for (const item of data.questions) {
-      if (!item || !shortText(item.id, 64) || !/^[\w-]+$/.test(item.id) || ids.has(item.id) || !shortText(item.label, 500) || !["single", "multi", "text"].includes(item.type)) return null;
+      if (!item || !shortText(item.id, 64) || !/^[\w-]+$/.test(item.id) || ids.has(item.id) || !shortText(item.label, 500) || !["single", "multi", "text", "password"].includes(item.type)) return null;
       const options = item.options ?? [];
-      if (!Array.isArray(options) || options.length > 8 || !options.every(value => shortText(value, 300)) || new Set(options).size !== options.length || (item.type !== "text" && options.length < 2) || (item.type === "text" && options.length)) return null;
+      if (!Array.isArray(options) || options.length > 8 || !options.every(value => shortText(value, 300)) || new Set(options).size !== options.length || (!["text", "password"].includes(item.type) && options.length < 2) || (["text", "password"].includes(item.type) && options.length)) return null;
+      if (item.sensitive !== undefined && typeof item.sensitive !== "boolean") return null;
       ids.add(item.id);
-      questions.push({ id: item.id, label: item.label, type: item.type, options });
+      questions.push({ id: item.id, label: item.label, type: item.type, options, ...(item.sensitive === true ? {sensitive: true} : {}) });
     }
     return { version: 1, title: data.title, questions };
   } catch { return null; }
@@ -27,7 +32,7 @@ function inputBlock(text: string): InputBlock | null {
   const blocks: InputBlock[] = [];
   const codeBlocks = [...text.matchAll(/```([^\n]*)\n([\s\S]*?)\n```/g)];
   for (const match of codeBlocks) {
-    if (!["harness-input", "json", ""].includes(match[1].trim().toLowerCase())) continue;
+    if (!["harness-input", "harness", "json", ""].includes(match[1].trim().toLowerCase())) continue;
     const input = validateInput(match[2]);
     if (input) blocks.push({start: match.index!, end: match.index! + match[0].length, input});
   }
@@ -65,7 +70,7 @@ export function conversationInputDisplay(text: string, streaming = false): strin
   const block = inputBlock(text);
   if (block) return text.slice(0, block.start) + [block.input.title, ...block.input.questions.map(q => `${q.label}${q.options.length ? `（${q.options.join(" / ")}）` : ""}`)].join("\n\n") + text.slice(block.end);
   if (streaming) {
-    const start = /(?:^|\n)```harness-input(?:\s|$)/.exec(text)
+    const start = /(?:^|\n)```harness(?:-input)?(?:\s|$)/.exec(text)
       ?? /(?:^|\n)[ \t]*\{\s*"version"\s*:\s*1\s*,\s*"title"\s*:\s*"[^"\n]*"\s*,\s*"questions"\s*:\s*\[/.exec(text);
     if (start) return text.slice(0, start.index);
   }
@@ -77,14 +82,18 @@ export function latestConversationInput(messages: readonly { id: string; role: s
   const input = parseConversationInput(last.content.filter(p => p.type === "text").map(p => p.text ?? "").join("\n"));
   return input ? { messageId: last.id, input } : null;
 }
-export function formatConversationAnswers(input: ConversationInput, answers: Record<string, { selected: string[]; text: string }>): string | null {
+export function formatConversationAnswers(input: ConversationInput, answers: Record<string, { selected: string[]; text: string }>, skipMissing = false): string | null {
   const lines: string[] = [];
   for (const question of input.questions) {
     const answer = answers[question.id];
     const selected = answer?.selected.filter(value => question.options.includes(value)) ?? [];
-    const values = [...(question.type === "text" ? [] : selected.slice(0, question.type === "single" ? 1 : 8)), answer?.text.trim().slice(0, 4000)].filter(Boolean);
-    if (!values.length) return null;
-    lines.push(`${question.label}\n${values.join("；")}`);
+    const secret = isSensitiveQuestion(question);
+    const text = secret ? answer?.text.slice(0, 4000) : answer?.text.trim().slice(0, 4000);
+    const values = [...(["text", "password"].includes(question.type) ? [] : selected.slice(0, question.type === "single" ? 1 : 8)), text].filter(Boolean);
+    if (!values.length && !skipMissing) return null;
+    const sourceLabel = secret ? question.label.replace(/\s*\n\s*/g, " ") : question.label;
+    const label = secret && !isSecretFieldLabel(sourceLabel) ? `${sourceLabel}（敏感信息）` : sourceLabel;
+    lines.push(`${label}\n${values.join("；") || "已跳过"}`);
   }
-  return `${input.title}\n\n${lines.join("\n\n")}`;
+  return `${input.title}\n\n${lines.join("\n\n")}${skipMissing ? "\n\n跳过未回答的问题，请基于已有信息继续；必要信息缺失时说明限制。" : ""}`;
 }

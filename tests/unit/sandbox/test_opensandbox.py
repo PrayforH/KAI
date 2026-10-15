@@ -663,3 +663,21 @@ async def test_matching_cli_in_the_sandbox_skips_provisioning(tmp_path: Path) ->
     await remote._ensure_binary(bundle, "/root/.local/bin/claude", "2.1.259")
     assert len(calls) == 1
     assert uploads == []
+
+
+@pytest.mark.asyncio
+async def test_explicit_unauthenticated_existing_service_omits_key_header() -> None:
+    seen: list[httpx.Request] = []
+    def handle(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"status": {"state": "Running"}})
+    client = OpenSandboxClient(api_url="http://sandbox:8090", api_key="",
+        auth_mode="none", transport=httpx.MockTransport(handle))
+    try:
+        assert await client.sandbox_state("probe") == "Running"
+        assert "OPEN-SANDBOX-API-KEY" not in seen[0].headers
+    finally:
+        await client.aclose()
+    backend = build_opensandbox_provider(Settings(opensandbox_api_url="http://sandbox:8090",
+        opensandbox_auth_mode="none"))
+    assert isinstance(backend, OpenSandboxSandboxProvider)

@@ -19,6 +19,7 @@ from harness.core.models import (
 )
 from harness.core.ports import ArtifactStore, InputArtifactRepository
 from harness.inputs.base import InputProcessingResult, InputProcessor
+from harness.inputs.limits import DEFAULT_ARCHIVE_UPLOAD_BYTES, is_archive_attachment
 
 
 def _replace_read_only_file(target: Path, content: bytes) -> None:
@@ -56,6 +57,7 @@ class InputArtifactService:
         max_file_bytes: int = 50 * 1024 * 1024,
         max_files_per_run: int = 10,
         max_total_bytes: int = 100 * 1024 * 1024,
+        max_archive_file_bytes: int = DEFAULT_ARCHIVE_UPLOAD_BYTES,
         processor: InputProcessor | None = None,
         file_catalog: FileCatalogService | None = None,
     ) -> None:
@@ -66,8 +68,17 @@ class InputArtifactService:
         self.max_file_bytes = max_file_bytes
         self.max_files_per_run = max_files_per_run
         self.max_total_bytes = max_total_bytes
+        self.max_archive_file_bytes = max_archive_file_bytes
         self._processor = processor
         self._file_catalog = file_catalog
+
+    def file_size_limit(self, name: str) -> int:
+        return self.max_archive_file_bytes if is_archive_attachment(name) else self.max_file_bytes
+
+    def total_size_limit(self, names: Sequence[str]) -> int:
+        if any(is_archive_attachment(name) for name in names):
+            return max(self.max_total_bytes, self.max_archive_file_bytes)
+        return self.max_total_bytes
 
     async def upload(
         self,
@@ -78,9 +89,10 @@ class InputArtifactService:
         media_type: str,
         content: bytes,
     ) -> InputArtifact:
-        if len(content) > self.max_file_bytes:
+        maximum = self.file_size_limit(name)
+        if len(content) > maximum:
             raise ConflictError(
-                f"input artifact exceeds maximum size of {self.max_file_bytes} bytes"
+                f"input artifact exceeds maximum size of {maximum} bytes"
             )
         input_artifact_id = self._id_generator("input_artifact")
         pending = InputArtifact(
@@ -134,9 +146,10 @@ class InputArtifactService:
             total_size += artifact.size_bytes or 0
             resolved.append(artifact)
 
-        if total_size > self.max_total_bytes:
+        maximum = self.total_size_limit([artifact.name for artifact in resolved])
+        if total_size > maximum:
             raise ConflictError(
-                f"input artifact total size exceeds {self.max_total_bytes} bytes"
+                f"input artifact total size exceeds {maximum} bytes"
             )
         return resolved
 

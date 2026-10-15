@@ -3,11 +3,11 @@
 import { useLayoutEffect, useRef, type RefObject } from "react";
 import { DictationEdit, dictationCaret, type DictationPatch } from "../lib/dictation-edit";
 
-export function useDictationComposer(input: RefObject<HTMLTextAreaElement | null>, read: () => string,
+export function useDictationComposer(input: RefObject<HTMLTextAreaElement | HTMLInputElement | null>, read: () => string,
   write: (text: string) => void, composing: RefObject<boolean>) {
   const edit = useRef<DictationEdit | undefined>(undefined);
   const pending = useRef<{
-    element: HTMLTextAreaElement; text: string; start: number; end: number;
+    element: HTMLTextAreaElement | HTMLInputElement; text: string; start: number; end: number;
     direction: "forward" | "backward" | "none"; top: number; follow: boolean; focus: boolean;
   } | undefined>(undefined);
 
@@ -28,12 +28,12 @@ export function useDictationComposer(input: RefObject<HTMLTextAreaElement | null
     if (element) {
       const queued = pending.current;
       const before = queued?.element === element ? queued : undefined;
-      const start = before?.start ?? element.selectionStart;
-      const end = before?.end ?? element.selectionEnd;
+      const start = before?.start ?? element.selectionStart ?? read().length;
+      const end = before?.end ?? element.selectionEnd ?? read().length;
       pending.current = {
         element, text: patch.text,
         start: dictationCaret(start, patch), end: dictationCaret(end, patch),
-        direction: before?.direction ?? element.selectionDirection,
+        direction: before?.direction ?? element.selectionDirection ?? "none",
         top: before?.top ?? element.scrollTop,
         follow: before?.follow ?? (start === end && end >= patch.start
           && element.scrollHeight - element.clientHeight - element.scrollTop <= 24),

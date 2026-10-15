@@ -259,6 +259,54 @@ class AguiRunService:
             generated_at=datetime.now(UTC),
         )
 
+    async def change_thread_version(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        thread_id: str,
+        agent_version: str,
+        connection_mode: Literal["caller_owned", "service_owned"] = "caller_owned",
+    ) -> AguiThreadBinding:
+        """Select a version without creating a run or losing the existing history."""
+        binding = await self.get_binding(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            thread_id=thread_id,
+        )
+        return await self._resolve_binding(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            thread_id=thread_id,
+            agent_name=binding.agent_name,
+            agent_version=agent_version,
+            agent_owner_user_id=binding.agent_owner_user_id,
+            space_id=binding.space_id,
+            connection_mode=connection_mode,
+        )
+
+    async def resolve_media_thread(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        thread_id: str,
+        agent_name: str,
+        agent_version: str,
+        agent_owner_user_id: str | None = None,
+        space_id: str | None = None,
+    ) -> AguiThreadBinding:
+        """Authorize and bind a media task without queuing a language-model run."""
+        return await self._resolve_binding(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            thread_id=thread_id,
+            agent_name=agent_name,
+            agent_version=agent_version,
+            agent_owner_user_id=agent_owner_user_id,
+            space_id=space_id,
+        )
+
     async def create_run(
         self,
         *,
@@ -739,10 +787,15 @@ class AguiRunService:
     ) -> StoredAguiThreadBinding:
         """Persist an empty task and its project without starting a model run."""
         await self._resolve_binding(
-            tenant_id=tenant_id, user_id=user_id, thread_id=thread_id,
-            agent_name=agent_name, agent_version=agent_version,
-            agent_owner_user_id=agent_owner_user_id, space_id=space_id,
-            connection_mode=connection_mode, project_id=project_id,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            thread_id=thread_id,
+            agent_name=agent_name,
+            agent_version=agent_version,
+            agent_owner_user_id=agent_owner_user_id,
+            space_id=space_id,
+            connection_mode=connection_mode,
+            project_id=project_id,
         )
         return await self._bindings.get_by_thread(tenant_id, user_id, thread_id)
 

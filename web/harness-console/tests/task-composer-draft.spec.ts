@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   loadTaskComposerDraft,
+  pendingNewTaskDraft,
   persistTaskComposerDraft,
   taskComposerDraftKey,
   type ComposerDraftStorage,
@@ -45,4 +46,14 @@ describe("task composer draft persistence", () => {
     expect(loadTaskComposerDraft(unavailable, "user-1", "thread-1")).toBe("");
     expect(() => persistTaskComposerDraft(unavailable, "user-1", "thread-1", "text")).not.toThrow();
   });
+});
+
+
+it("recovers a legacy orphaned new-task draft without restoring a historical task's draft", () => {
+  const storage = memoryStorage();
+  persistTaskComposerDraft(storage, "legacy-user", "orphan", "之前没发送的文字");
+  persistTaskComposerDraft(storage, "legacy-user", "history", "历史任务的跟进");
+  const enumerable = { ...storage, length: storage.values.size,
+    key: (index: number) => [...storage.values.keys()][index] ?? null };
+  expect(pendingNewTaskDraft(enumerable, "legacy-user", new Set(["history"]))).toBe("orphan");
 });

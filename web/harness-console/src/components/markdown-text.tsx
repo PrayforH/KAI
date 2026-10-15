@@ -1,4 +1,6 @@
 "use client";
+import { CardActionButton } from "./card-action-button";
+import { useConversationRedactor } from "./conversation-redaction";
 
 import {
   MarkdownTextPrimitive,
@@ -7,31 +9,55 @@ import {
 import { TextMessagePartProvider, useMessagePartText } from "@assistant-ui/react";
 import remend from "remend";
 import remarkGfm from "remark-gfm";
-import { Children, memo, useMemo, useState, type ComponentPropsWithoutRef, type ReactElement, type ReactNode } from "react";
+import { Children, memo, useEffect, useMemo, useRef, useState, type ComponentPropsWithoutRef, type ReactElement, type ReactNode } from "react";
+import { writeTextToClipboard } from "../lib/clipboard";
+import { CodexResponseIcon } from "./codex-response-icon";
 import { conversationInputDisplay } from "../lib/conversation-input";
 import { normalizeMessageText, normalizeTemperatureRanges } from "../lib/message-text";
+import { stripHarnessUiFences } from "./intelligent-ui/schema";
+import { usePublishedBlocks } from "./intelligent-ui/turn-context";
 import { MermaidCodeHeader, MermaidDiagram } from "./mermaid-diagram";
 import { citationTarget, knowledgeUrlTransform, remarkWikiLinks } from "../lib/knowledge-links";
 import { useAnswerCitations } from "./knowledge/answer-citation-context";
 import { CitationLink } from "./knowledge/citation-link";
 import { WikiEntityLink } from "./knowledge/wiki-entity-link";
 import { SourceLink } from "./source-link";
+import { WebSourceImage } from "./web-source-image";
 
 function CodeHeader({ language, code }: CodeHeaderProps) {
-  const [copied, setCopied] = useState(false);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const [busy, setBusy] = useState(false);
+  const pending = useRef(false);
+  const alive = useRef(true);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => {
+    alive.current = true;
+    return () => { alive.current = false; clearTimeout(timer.current); };
+  }, []);
 
   async function copy() {
-    await navigator.clipboard?.writeText(code);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1400);
+    if (pending.current) return;
+    pending.current = true;
+    setBusy(true);
+    try {
+      const copied = await writeTextToClipboard(code);
+      if (alive.current) setCopyState(copied ? "copied" : "failed");
+    } catch {
+      if (alive.current) setCopyState("failed");
+    } finally {
+      pending.current = false;
+      if (alive.current) {
+        setBusy(false);
+        clearTimeout(timer.current);
+        timer.current = setTimeout(() => setCopyState("idle"), 1800);
+      }
+    }
   }
 
   return (
     <div className="aui-code-header">
       <span>{language || "text"}</span>
-      <button type="button" onClick={copy} aria-label="复制代码">
-        {copied ? "已复制" : "复制"}
-      </button>
+      <CardActionButton action="copy" label="复制代码" copyState={copyState} copied={copyState === "copied"} onClick={() => void copy()} disabled={busy} />
     </div>
   );
 }
@@ -75,8 +101,9 @@ function ClampFooter({ total, preview, unit, open, onToggle }: {
           ? `已展开全部 ${total} ${unit}`
           : `共 ${total} ${unit}，另有 ${Math.max(total - preview, 0)} ${unit}未显示`}
       </span>
-      <button type="button" onClick={onToggle}>
+      <button type="button" aria-expanded={open} onClick={onToggle}>
         {open ? "收起" : `展开全部（${total} ${unit}）`}
+        <CodexResponseIcon name="chevronDown" />
       </button>
     </div>
   );
@@ -183,9 +210,20 @@ function markdownUrlTransform(url: string) {
   return url === "streamdown:incomplete-link" ? url : knowledgeUrlTransform(url);
 }
 
-function MarkdownTextImpl() {
+function MarkdownTextImpl({ stabilizeFormatting = false }: { stabilizeFormatting?: boolean }) {
   const part = useMessagePartText();
-  const normalized = useMemo(() => ({ ...part, text: conversationInputDisplay(normalizeMessageText(part.text), part.status.type === "running") }), [part]);
+  const redact = useConversationRedactor();
+  const published = usePublishedBlocks();
+  const normalized = useMemo(
+    () => ({
+      ...part,
+      text: redact(conversationInputDisplay(
+        normalizeMessageText(stripHarnessUiFences(part.text, published)),
+        part.status.type === "running",
+      )),
+    }),
+    [part, published, redact],
+  );
   // Render the actual stream; do not queue a second typewriter animation.
   const running = normalized.status.type === "running";
   const [expanded, setExpanded] = useState(false);
@@ -194,9 +232,9 @@ function MarkdownTextImpl() {
   const displayText = useMemo(
     () => {
       const text = normalizeTemperatureRanges(normalized.text);
-      return running ? remend(text, { katex: false }) : text;
+      return running || stabilizeFormatting ? remend(text, { katex: false }) : text;
     },
-    [running, normalized.text],
+    [running, stabilizeFormatting, normalized.text],
   );
   const oversized = !running && !expanded && displayText.length > MESSAGE_TEXT_CLAMP_CHARS;
   const renderedText = oversized
@@ -215,6 +253,7 @@ function MarkdownTextImpl() {
         components={{
           CodeHeader,
           a: WikiLink,
+          img: WebSourceImage,
           table: CollapsibleTable,
           ul: CollapsibleUnorderedList,
           ol: CollapsibleOrderedList,

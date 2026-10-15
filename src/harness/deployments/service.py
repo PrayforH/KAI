@@ -75,6 +75,7 @@ class DeploymentService:
         knowledge_reference_validator: KnowledgeReferenceValidator | None = None,
         policy_resolver: PolicyRuntimeResolver | None = None,
         quotas: QuotaService | None = None,
+        default_execution_profile: str = "isolated-default",
     ) -> None:
         self._environments = environments
         self._deployments = deployments
@@ -91,6 +92,7 @@ class DeploymentService:
         self._knowledge_reference_validator = knowledge_reference_validator
         self._policy_resolver = policy_resolver
         self._quotas = quotas
+        self._default_execution_profile = default_execution_profile
 
     async def _catalog(self, tenant_id: str) -> CapabilityCatalogRecord:
         if self._capability_catalog_resolver is not None:
@@ -152,6 +154,7 @@ class DeploymentService:
     def _default_policy(
         name: EnvironmentName,
         catalog: CapabilityCatalogRecord,
+        preferred_profile_id: str = "isolated-default",
     ) -> EnvironmentResourcePolicy:
         eligible_profiles = [
             item
@@ -159,7 +162,7 @@ class DeploymentService:
             if item.enabled and (name is not EnvironmentName.PRODUCTION or item.production_allowed)
         ]
         preferred = next(
-            (item for item in eligible_profiles if item.profile_id == "isolated-default"),
+            (item for item in eligible_profiles if item.profile_id == preferred_profile_id),
             eligible_profiles[0] if eligible_profiles else None,
         )
         if preferred is None:
@@ -339,7 +342,7 @@ class DeploymentService:
                 name=name,
                 revision=0,
                 policyRevision=1,
-                resourcePolicy=self._default_policy(name, catalog),
+                resourcePolicy=self._default_policy(name, catalog, self._default_execution_profile),
                 updatedAt=self._clock(),
             )
             try:

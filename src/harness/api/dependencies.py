@@ -57,7 +57,7 @@ from harness.automations.service import AutomationService
 from harness.config import Settings
 from harness.context.repositories import InMemoryContextRepository
 from harness.context.service import ContextService
-from harness.core.errors import NotFoundError
+from harness.core.errors import NotFoundError, PermissionDeniedError
 from harness.core.manifest import AgentManifestSnapshot
 from harness.core.models import Run, RunStatus, Session
 from harness.core.ports import EventRepository, EventWakeup, TaskQueue
@@ -112,6 +112,11 @@ from harness.platform_mcp.workload import (
 )
 from harness.policy.profiles import PolicyProfileRegistry, default_policy_profiles
 from harness.policy.runtime import ResolvedPolicy
+from harness.presentation.intent import UIIntentSelector
+from harness.presentation.models import ActionRequest, Publication
+from harness.presentation.planner import InteractionPlanner
+from harness.presentation.repositories import InMemoryPresentationRepository
+from harness.presentation.service import PresentationService
 from harness.projects.repositories import InMemoryProjectRepository
 from harness.projects.service import ProjectService
 from harness.quality.controller import QualitySyncController
@@ -157,6 +162,7 @@ from harness.sharing.workspace_repositories import (
 )
 from harness.studio.catalog_repository import InMemoryCapabilityCatalogRepository
 from harness.studio.catalog_service import CapabilityCatalogService
+from harness.studio.intent_router import BuilderIntentRouter
 from harness.studio.mcp_credential_store import (
     InMemoryMcpCredentialRepository,
     McpCredentialCipher,
@@ -274,6 +280,7 @@ class ApiContainer:
     worker: RunOrchestrator
     agui: AguiRunService
     auto_execute: bool
+    presentations: PresentationService
     event_wakeup: EventWakeup | None = None
     skill_conversation: SkillConversationService | None = None
     sandbox_maintenance: Callable[[], Awaitable[object]] | None = None
@@ -439,6 +446,8 @@ def build_memory_container(
         capability_catalog_repository,
         agent_drafts,
         clock=clock,
+        sandbox_network_access={
+            str(k): v for k, v in resolved_settings.sandbox_network_access.items()},
     )
     environment_mcp_credentials = server_secret_credential_provider(
         references_json=resolved_settings.mcp_secret_references_json,
@@ -459,6 +468,8 @@ def build_memory_container(
         capability_catalogs,
         mcp_credential_service,
         environment=resolved_settings.environment,
+        runs=runs,
+        sessions=sessions,
     )
     mcp_credentials = StoredMcpCredentialProvider(
         mcp_credential_service,
@@ -479,6 +490,7 @@ def build_memory_container(
         audit=audit,
         agent_ids=agent_ids,
         draft_permissions=team_spaces,
+        intent_router=BuilderIntentRouter.from_settings(resolved_settings),
         clock=clock,
         id_generator=lambda: id_generator("draft"),
     )
@@ -490,7 +502,7 @@ def build_memory_container(
         clock=clock,
         id_generator=lambda: id_generator("preview"),
         quotas=enforced_quotas,
-        catalog_resolver=capability_catalogs.get,
+        catalog_resolver=capability_catalogs.get_for_deployment,
     )
     event_service = EventService(
         raw_events,
@@ -589,6 +601,7 @@ def build_memory_container(
         id_generator=id_generator,
         clock=clock,
         max_file_bytes=resolved_settings.input_artifact_max_file_bytes,
+        max_archive_file_bytes=resolved_settings.input_artifact_max_archive_file_bytes,
         max_files_per_run=resolved_settings.input_artifact_max_files_per_run,
         max_total_bytes=resolved_settings.input_artifact_max_total_bytes,
         processor=DefaultInputProcessor(),
@@ -643,7 +656,7 @@ def build_memory_container(
         clock=clock,
         id_generator=id_generator,
         quality_gate=quality_service.require_promotion_allowed,
-        capability_catalog_resolver=capability_catalogs.get,
+        capability_catalog_resolver=capability_catalogs.get_for_deployment,
         knowledge_reference_validator=knowledge.require_bases,
         policy_resolver=governance.resolve_runtime,
         quotas=enforced_quotas,
@@ -940,7 +953,7 @@ def build_memory_container(
         mcp_probe=mcp_probe,
         policies=active_policy_profiles,
         policy_resolver=governance.resolve_runtime,
-        catalog_resolver=capability_catalogs.get,
+        catalog_resolver=capability_catalogs.get_for_deployment,
         observability=observability,
         timeout_seconds=resolved_settings.preflight_timeout_seconds,
         clock=clock,
@@ -957,8 +970,10 @@ def build_memory_container(
         clock=clock,
         quotas=enforced_quotas,
     )
+
     async def runtime_builder_tools(run, session):
         from harness.studio.runtime_builder import builder_overlay
+
         return await builder_overlay(container, event_service, run, session)
 
     worker = RunOrchestrator(
@@ -976,6 +991,7 @@ def build_memory_container(
         artifacts=artifact_service,
         input_artifacts=input_artifact_service,
         memory=memory_service,
+        interaction_planner=InteractionPlanner.from_settings(resolved_settings),
         workspace_policy_resolver=workspace_policy_resolver,
         runtime_asset_stager=(
             stage_runtime_assets if resolved_settings.runtime != "fake" else None
@@ -1068,7 +1084,39 @@ def build_memory_container(
         clock=clock,
         id_generator=id_generator,
     )
+
+    async def authorize_ui_action(publication: Publication, request: ActionRequest) -> None:
+        session = await session_service.get(publication.tenant_id, publication.session_id)
+        if session.user_id != request.actor_user_id:
+            raise PermissionDeniedError("task owner changed")
+        if request.authentication_method == "jwt":
+            user, membership = await auth.profile(publication.tenant_id, request.actor_user_id)
+            if user.disabled or membership.role not in {"owner", "admin", "member"}:
+                raise PermissionDeniedError("task write permission was revoked")
+        elif request.authentication_method != "service":
+            raise PermissionDeniedError("UI actions require an interactive user identity")
+        if session.team_ids:
+            await team_spaces.require_agent_access(
+                publication.tenant_id,
+                request.actor_user_id,
+                session.team_ids[0],
+                session.resolved_agent_owner_user_id,
+                session.agent_name,
+                session.agent_version,
+            )
+
+    presentations = PresentationService(
+        InMemoryPresentationRepository(),
+        sessions=sessions,
+        runs=run_service,
+        events=event_service,
+        queue=queue,
+        authorize=authorize_ui_action,
+        intent_selector=UIIntentSelector.from_settings(resolved_settings),
+        memory=memory_bank,
+    )
     container = ApiContainer(
+        presentations=presentations,
         evolution=evolution,
         environment=resolved_settings.environment,
         api_bearer_token=resolved_settings.api_bearer_token,

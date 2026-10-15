@@ -23,15 +23,17 @@ import {
   TaskDetailsPopover,
   TaskHeaderActions,
 } from "../components/task-header-actions";
+import { SidebarIcon } from "../components/sidebar-icon";
 import { TaskSidebar } from "../components/task-sidebar";
 import { createProjectTask } from "../lib/project-task";
 import { ApiProject } from "../lib/studio-client";
 import { useSidebarProjects } from "../lib/sidebar-state";
 import { ProductBrandMark, ProductLoading, PRODUCT_NAME } from "../components/product-brand";
-import { SidebarLeftIcon, SidebarPanelIcon } from "../components/panel-icons";
+import { SidebarPanelIcon } from "../components/panel-icons";
 import { WorkbenchRail } from "../components/workbench-rail";
 import type { PreviewTarget } from "../components/rail-file-preview";
 import { useRunActivity, useRunViewModel } from "../lib/activity-store";
+import { persistTaskVersion, taskVersionBusy } from "../lib/task-version";
 import { useRunStream } from "../lib/run-stream-store";
 import {
   bindThreadAgent,
@@ -52,7 +54,7 @@ import {
   loadTaskAgentCatalog,
   type TaskAgent,
 } from "../lib/task-agent-catalog";
-import { loadTasks, type TaskSummary } from "../lib/task-history";
+import { loadTasks, peekCachedTasks, type TaskSummary } from "../lib/task-history";
 import {
   loadTaskModelOverride,
   loadTaskModelRoutes,
@@ -63,7 +65,7 @@ import {
   resolveTaskLaunchMode,
   type TaskThreadState,
 } from "../lib/task-launch";
-import { persistTaskComposerDraft } from "../lib/task-composer-draft";
+import { persistTaskComposerDraft, rememberNewTaskDraft, pendingNewTaskDraft } from "../lib/task-composer-draft";
 import {
   parseSkillCreatorLaunch,
   skillCreatorPrompt,
@@ -124,7 +126,7 @@ function SidebarExpandToggle({ onToggle }: { onToggle: () => void }) {
       title="展开任务列表"
       onClick={onToggle}
     >
-      <SidebarLeftIcon />
+      <SidebarIcon name="panel" />
     </button>
   );
 }
@@ -196,6 +198,7 @@ function HeaderUtilities({
 function TaskContextBar({
   taskTitle,
   task,
+  needsInput = false,
   switcher,
   observabilityHref,
   onOpenTrace,
@@ -206,6 +209,7 @@ function TaskContextBar({
 }: {
   taskTitle: string;
   task: TaskSummary | null;
+  needsInput?: boolean;
   /** Version switcher for switchable agents, folded into the folder popover. */
   switcher?: ReactNode;
   observabilityHref?: string | null;
@@ -227,6 +231,7 @@ function TaskContextBar({
         </span>
       )}
       <strong className="task-context-title">{taskTitle}</strong>
+      {needsInput && <span className="task-input-badge" role="status">需要输入</span>}
       {task && (
         <TaskHeaderActions
           task={task}
@@ -261,6 +266,11 @@ function AuthenticatedHome() {
   const [modelRouteOverride, setModelRouteOverride] = useState<string | null>(null);
   const [agentsLoading, setAgentsLoading] = useState(true);
   const [agentsError, setAgentsError] = useState("");
+  const [versionSwitchPending, setVersionSwitchPending] = useState(false);
+  const [versionSwitchError, setVersionSwitchError] = useState("");
+  const versionSwitchInFlight = useRef(false);
+  const visibleThreadRef = useRef(threadId);
+  visibleThreadRef.current = threadId;
   const [catalogRefreshKey, setCatalogRefreshKey] = useState(0);
   const [taskSidebarOpen, setTaskSidebarOpen] = useState(true);
   const [taskRailOpen, setTaskRailOpen] = useState(false);
@@ -308,11 +318,7 @@ function AuthenticatedHome() {
     ? `/api/harness/observability?run_id=${encodeURIComponent(runActivity.run_id)}&trace_id=${encodeURIComponent(runActivity.trace_id ?? "")}`
     : null;
   const runStream = useRunStream();
-  const currentTaskBusy = runStream.status === "running" || (
-    runView?.phase === "queued" ||
-    runView?.phase === "running" ||
-    runView?.phase === "waiting_approval"
-  );
+  const currentTaskBusy = versionSwitchPending || taskVersionBusy(runStream, runView);
 
   useEffect(() => {
     const compactViewport = window.matchMedia(TASK_SIDEBAR_COMPACT_QUERY);
@@ -550,6 +556,7 @@ function AuthenticatedHome() {
     const storage = createUserScopedStorage(window.localStorage, user.user_id);
     const nextThreadId = createNewThread(storage);
     window.history.replaceState(window.history.state, "", `/?thread=${encodeURIComponent(nextThreadId)}`);
+    rememberNewTaskDraft(window.localStorage, user.user_id, nextThreadId);
     bindThreadAgent(storage, nextThreadId, nextAgent);
     setSelectedAgent(nextAgent);
     setLocalThreadId(nextThreadId);
@@ -586,7 +593,7 @@ function AuthenticatedHome() {
         if (!active) return;
         const current = tasks.find((task) => task.thread_id === threadId) ?? null;
         setCurrentTask(current);
-        if (current) setCurrentTaskTitle(current.title);
+        if (current) { markThreadPersisted(taskStorage(), threadId); setLocalThreadId(null); setCurrentTaskTitle(current.title); setCurrentThreadState("durable"); }
       }).catch(() => undefined);
     };
     sync();
@@ -613,8 +620,33 @@ function AuthenticatedHome() {
       : taskAgents[0];
     const nextAgent = currentSystemAssistant(candidate ?? null, systemAssistant);
     if (!nextAgent) return;
+    if (currentThreadState === "empty") {
+      if (selectedAgent && nextAgent.version !== selectedAgent.version) {
+        bindThreadAgent(taskStorage(), threadId, nextAgent);
+        setSelectedAgent(nextAgent);
+      }
+      focusTaskComposer();
+      return;
+    }
+    const pendingThreadId = pendingNewTaskDraft(window.localStorage, user.user_id, new Set(peekCachedTasks()?.map(task => task.thread_id)));
+    if (pendingThreadId) {
+      const storedAgent = loadThreadAgent(taskStorage(), pendingThreadId);
+      if (storedAgent) {
+        const draftAgent = findTaskAgent(taskAgents, storedAgent);
+        if (draftAgent) {
+          taskSelectionRevision.current += 1;
+          window.history.replaceState(window.history.state, "", `/?thread=${encodeURIComponent(pendingThreadId)}`);
+          setSelectedAgent(draftAgent);
+          setLocalThreadId(pendingThreadId);
+          setThreadId(selectThread(taskStorage(), pendingThreadId));
+          setCurrentTask(null); setCurrentTaskTitle("新任务"); setCurrentThreadState("empty");
+          setModelRouteOverride(loadTaskModelOverride(taskStorage(), pendingThreadId));
+          setActiveSkillLaunch(null); focusTaskComposer(); return;
+        }
+      }
+    }
     createTaskWithAgent(nextAgent);
-  }, [createTaskWithAgent, selectedAgent, taskAgents, systemAssistant]);
+  }, [createTaskWithAgent, currentThreadState, focusTaskComposer, selectedAgent, taskAgents, systemAssistant, threadId]);
 
   function switchTask(task: TaskSummary) {
     taskSelectionRevision.current += 1;
@@ -634,6 +666,7 @@ function AuthenticatedHome() {
         scope: task.space_id ? "team" : "personal",
         spaceId: task.space_id ?? undefined,
       };
+    if (currentThreadState === "empty") rememberNewTaskDraft(window.localStorage, user.user_id, threadId);
     const storage = taskStorage();
     bindThreadAgent(storage, task.thread_id, nextAgent);
     setSelectedAgent(nextAgent);
@@ -658,12 +691,28 @@ function AuthenticatedHome() {
     closeCompactTaskSidebar();
   }
 
-  function switchAgent(nextAgent: TaskAgent) {
+  async function switchAgent(nextAgent: TaskAgent) {
     const mode = taskAgentSwitchMode(selectedAgent, nextAgent);
-    if (mode === "current" || (mode === "version" && currentTaskBusy)) return;
+    if (versionSwitchInFlight.current || mode === "current" || (mode === "version" && currentTaskBusy)) return;
+    setVersionSwitchError("");
     if (mode === "version") {
-      bindThreadAgent(taskStorage(), threadId, nextAgent);
-      setSelectedAgent(nextAgent);
+      versionSwitchInFlight.current = true;
+      setVersionSwitchPending(true);
+      const switchingThreadId = threadId;
+      try {
+        if (currentThreadState !== "empty") {
+          await persistTaskVersion(switchingThreadId, nextAgent.version);
+        }
+        bindThreadAgent(taskStorage(), switchingThreadId, nextAgent);
+        if (visibleThreadRef.current === switchingThreadId) setSelectedAgent(nextAgent);
+      } catch (error) {
+        if (visibleThreadRef.current === switchingThreadId) {
+          setVersionSwitchError(error instanceof Error ? error.message : "版本切换失败，请重试");
+        }
+      } finally {
+        versionSwitchInFlight.current = false;
+        setVersionSwitchPending(false);
+      }
       return;
     }
     startTaskWithAgent(nextAgent);
@@ -732,6 +781,7 @@ function AuthenticatedHome() {
               <TaskContextBar
                 taskTitle={currentTaskTitle}
                 task={currentTask}
+                needsInput={Boolean(currentTask?.pending_input && !currentTaskBusy)}
                 observabilityHref={observabilityHref}
                 onOpenTrace={() => setStageView("trace")}
                 projects={projects}
@@ -746,7 +796,7 @@ function AuthenticatedHome() {
                     kind="version"
                     agents={availableTaskAgents}
                     selected={selectedAgent}
-                    loading={agentsLoading}
+                    loading={agentsLoading || versionSwitchPending}
                     currentTaskBusy={currentTaskBusy}
                     onChange={switchAgent}
                     onRefresh={refreshAgentCatalog}
@@ -781,6 +831,7 @@ function AuthenticatedHome() {
               />
             ) : (
             <div className="chat-surface">
+              {versionSwitchError && <p role="alert">{versionSwitchError}</p>}
               {threadId && selectedAgent ? (
                 <AssistantRuntimeShell
                   key={`${threadId}:${runtimeAgentKey(selectedAgent)}`}
@@ -803,7 +854,7 @@ function AuthenticatedHome() {
                     threadId={threadId}
                     agents={availableTaskAgents}
                     selectedAgent={selectedAgent}
-                    agentsLoading={agentsLoading}
+                    agentsLoading={agentsLoading || versionSwitchPending}
                     currentTaskBusy={currentTaskBusy}
                     activeSkillLaunch={activeSkillLaunch}
                     onDismissSkillLaunch={() => setActiveSkillLaunch(null)}

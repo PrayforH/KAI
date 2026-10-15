@@ -8,9 +8,10 @@ import styles from "./voice-input.module.css";
 
 type Phase = "idle" | "starting" | "recording" | "finishing";
 
-export function VoiceInput({ disabled, modelRoute, onInsert, onActive, onDraft }: {
+export function VoiceInput({ disabled, modelRoute, onInsert, onActive, onDraft, placement = "composer" }: {
   disabled: boolean; modelRoute: string; onInsert: (text: string) => void; onActive: (active: boolean) => void;
   onDraft?: (text: string) => void;
+  placement?: "composer" | "inline";
 }) {
   const [enabled, setEnabled] = useState(false);
   const mic = useRef<HTMLButtonElement | null>(null);
@@ -48,11 +49,11 @@ export function VoiceInput({ disabled, modelRoute, onInsert, onActive, onDraft }
   }, []);
 
   useEffect(() => {
-    if (enabled) {
+    if (enabled && placement === "composer") {
       const composer = mic.current?.closest(".aui-composer-root");
       setControlsHost(composer?.querySelector(".composer-footer") ?? null);
     }
-  }, [enabled]);
+  }, [enabled, placement]);
 
   function flush() {
     if (!count.current) return;
@@ -159,7 +160,7 @@ export function VoiceInput({ disabled, modelRoute, onInsert, onActive, onDraft }
       <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="6" y="6" width="8" height="8" rx="1.2"/></svg>
     </button>
   </div>;
-  return <div className={styles.root}>
+  return <div className={styles.root} data-placement={placement} data-active={working}>
     <button ref={mic} type="button" className={styles.mic} disabled={disabled || phase !== "idle"}
       title="语音输入" aria-label="语音输入" aria-expanded={phase !== "idle"} onClick={() => void start()}>
       <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><rect x="7" y="2" width="6" height="10" rx="3"/><path d="M4 9v1a6 6 0 0 0 12 0V9M10 16v3M7 19h6"/></svg>

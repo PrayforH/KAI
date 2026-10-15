@@ -166,3 +166,59 @@ it("preserves a deliberately collapsed current project across remounts", async (
     expect(container.querySelector('[aria-label="展开项目 研究"]')).not.toBeNull();
   } finally { await act(async () => root.unmount()); }
 });
+
+
+it("collapses project and task sections independently and persists them across remounts", async () => {
+  const projects = [{ projectId: "p1", tenantId: "test", userId: "test", name: "示例项目", description: "", createdAt: "2026-09-07T00:00:00Z", updatedAt: "2026-09-07T00:00:00Z" }];
+  loadTasks.mockResolvedValue([{ ...task("succeeded", "project-task"), project_id: "p1" },
+    ...Array.from({ length: 7 }, (_, i) => task("succeeded", `loose-${i}`))]);
+  const container = document.createElement("div"); document.body.appendChild(container);
+  let root = createRoot(container);
+  const render = () => root.render(<TaskSidebar currentThreadId="project-task" collapsed={false} projects={projects}
+    onToggle={() => {}} onSelect={() => {}} onNewTask={() => {}} />);
+  const button = (label: string) => container.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!;
+  try {
+    await act(async () => render());
+    expect([...container.querySelectorAll(".task-section-toggle")].map((item) => item.textContent)).toEqual(["项目", "任务"]);
+    expect(container.querySelectorAll(".task-list-row")).toHaveLength(6);
+    await act(async () => button("展开任务").click());
+    expect(container.querySelectorAll(".task-list-row")).toHaveLength(8);
+    await act(async () => button("收起项目分组").click());
+    expect(container.querySelector('[data-project-id="p1"]')).toBeNull();
+    expect(container.querySelectorAll(".task-list-row")).toHaveLength(7);
+    await act(async () => button("收起任务分组").click());
+    expect(container.querySelectorAll(".task-list-row")).toHaveLength(0);
+    expect(button("展开任务分组").getAttribute("aria-expanded")).toBe("false");
+    expect(button("新建项目")).not.toBeNull();
+    await act(async () => root.unmount()); root = createRoot(container);
+    await act(async () => render());
+    expect(button("展开项目分组").getAttribute("aria-expanded")).toBe("false");
+    expect(container.querySelectorAll(".task-list-row")).toHaveLength(0);
+    await act(async () => button("展开任务分组").click());
+    expect(container.querySelectorAll(".task-list-row")).toHaveLength(7);
+    await act(async () => button("展开项目分组").click());
+    expect(container.querySelectorAll(".task-list-row")).toHaveLength(8);
+  } finally { await act(async () => root.unmount()); container.remove(); }
+});
+
+
+it("keeps a needs-input chip for read and background tasks, then clears it on reply", async () => {
+  const pending = { ...task("succeeded", "input"), pending_input: true, last_read_at: "2026-09-07T00:00:00Z" };
+  loadTasks.mockResolvedValue([pending, { ...task("succeeded", "background"), pending_input: true }]);
+  const container = document.createElement("div"); document.body.appendChild(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(<TaskSidebar currentThreadId="input" collapsed={false} onToggle={() => {}} onSelect={() => {}} onNewTask={() => {}} />));
+    expect(container.querySelectorAll(".task-input-badge")).toHaveLength(2);
+    expect(container.querySelector('[aria-label="任务 input，需要输入"]')).not.toBeNull();
+    expect(container.querySelectorAll(".status-unread")).toHaveLength(0);
+    await act(async () => activityStore.publish(runActivitySchema.parse({
+      run_id: "run-input", status: "running", started_at: "2026-09-07T00:01:00Z", items: [],
+    })));
+    expect(container.querySelector('[aria-label="任务 input，运行中"]')).not.toBeNull();
+    expect(container.querySelectorAll(".task-input-badge")).toHaveLength(1);
+    loadTasks.mockResolvedValue([{ ...pending, pending_input: false, run_id: "run-reply" }]);
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    expect(container.querySelectorAll(".task-input-badge")).toHaveLength(0);
+  } finally { await act(async () => root.unmount()); container.remove(); }
+});

@@ -143,6 +143,37 @@ describe("Harness input attachment adapter", () => {
 });
 
 describe("attachment preflight", () => {
+  it("admits a 500 MiB archive, rejects another byte, and keeps ordinary limits", async () => {
+    const archiveLimit = 500 * 1024 * 1024;
+    let uploads = 0;
+    const adapter = createAdapter(async (url, init) => {
+      if (String(url).endsWith("/limits")) return Response.json({ ...defaultLimits,
+        max_archive_file_bytes: archiveLimit, archive_extensions: [".zip", ".rar", ".7z"] });
+      uploads++;
+      expect(new Headers(init?.headers).get("x-upload-size")).toBe(String(archiveLimit));
+      expect(decodeURIComponent(new Headers(init?.headers).get("x-upload-name")!)).toBe("资料.ZIP");
+      return Response.json({ input_artifact_id: "input_archive", name: "资料.ZIP",
+        media_type: "application/zip", status: "ready", size_bytes: archiveLimit });
+    });
+    const add = (name: string, size: number) => {
+      const file = new File(["test"], name);
+      Object.defineProperty(file, "size", { value: size });
+      return adapter.add({ file }) as AsyncGenerator<PendingAttachment>;
+    };
+    const accepted = add("资料.ZIP", archiveLimit);
+    await accepted.next();
+    const ready = (await accepted.next()).value!;
+    const extra = add("more.txt", 1);
+    await extra.next();
+    await expect(extra.next()).rejects.toThrow("合计不能超过 500 MB");
+    await adapter.remove(ready);
+    for (const [name, size] of [["too-big.rar", archiveLimit + 1], ["office.docx", 51 * 1024 * 1024]] as const) {
+      const rejected = add(name, size);
+      await rejected.next();
+      await expect(rejected.next()).rejects.toThrow("超过单文件");
+    }
+    expect(uploads).toBe(1);
+  });
   it("rejects a file against the server's configured limit before sending bytes", async () => {
     const calls: string[] = [];
     const adapter = createAdapter(async (url) => {

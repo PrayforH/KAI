@@ -27,3 +27,20 @@ it("shares StrictMode verification, sends no idle polls, tolerates 503, and bloc
     expect(fetcher).toHaveBeenCalledTimes(3);
   } finally { act(() => root.unmount()); host.remove(); vi.useRealTimers(); vi.unstubAllGlobals(); }
 });
+
+
+it("keeps the workspace after a same-user login and blocks a different account", async () => {
+  invalidateClientReads();
+  const profile = {user: {user_id: "u1", display_name: "User"}, membership: {tenant_id: "t1",user_id: "u1",role: "member"},password_enabled: true};
+  const fetcher = vi.fn(async () => new Response(JSON.stringify(profile)));
+  vi.stubGlobal("fetch", fetcher);
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+  try {
+    await act(async () => root.render(<AuthProvider><span>Workspace</span></AuthProvider>));
+    await act(async () => { window.dispatchEvent(new CustomEvent("harness:auth-coordination", {detail: {type: "signed_in", userId: "u1", nonce: "same"}})); });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(host.querySelector('[role="alertdialog"]')).toBeNull();
+    await act(async () => { window.dispatchEvent(new CustomEvent("harness:auth-coordination", {detail: {type: "signed_in", userId: "u2", nonce: "different"}})); });
+    expect(host.querySelector('[role="alertdialog"]')).not.toBeNull();
+  } finally { act(() => root.unmount()); host.remove(); vi.unstubAllGlobals(); }
+});

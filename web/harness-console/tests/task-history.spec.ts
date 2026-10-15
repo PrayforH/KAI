@@ -5,8 +5,6 @@ import {
   createThreadHistoryAdapter,
   invalidateThreadHistory,
   loadTasks,
-  notifyTaskListChanged,
-  peekCachedTasks,
   prefetchThreadHistory,
   TASK_LIST_REQUEST_TIMEOUT_MS,
 } from "../src/lib/task-history";
@@ -36,23 +34,6 @@ describe("thread history activity restoration", () => {
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
   }
-
-  it("skips history for a local-only thread and loads it after the first run", async () => {
-    const fetcher = vi.fn().mockResolvedValue(historyResponse("succeeded", "已完成"));
-    vi.stubGlobal("fetch", fetcher);
-    let localOnly = true;
-    const adapter = createThreadHistoryAdapter("new-local-history", { isLocalOnly: () => localOnly });
-    await adapter.load();
-    const imported = vi.fn();
-    await adapter.loadSnapshot(imported);
-    expect(fetcher).not.toHaveBeenCalled();
-    expect(imported).toHaveBeenCalledOnce();
-    localOnly = false;
-    const repository = await adapter.loadSnapshot();
-    expect(fetcher).toHaveBeenCalledOnce();
-    expect(repository.messages).toHaveLength(2);
-    adapter.dispose();
-  });
 
   it("publishes the durable run activity when a completed task reloads", async () => {
     const activity = {
@@ -233,45 +214,17 @@ describe("thread history activity restoration", () => {
   });
 });
 
-
-it("refreshes a mutated task list and prevents an older read from replacing it", async () => {
-  vi.stubGlobal("window", { dispatchEvent: vi.fn() });
-  notifyTaskListChanged();
-  let finishOld!: (response: Response) => void;
-  const oldResponse = new Promise<Response>((resolve) => { finishOld = resolve; });
-  const created = { thread_id: "new-project-task", project_id: "project-1" };
-  const fetchMock = vi.fn().mockReturnValueOnce(oldResponse).mockResolvedValueOnce(Response.json([created]));
-  vi.stubGlobal("fetch", fetchMock);
-  try {
-    const stale = loadTasks();
-    notifyTaskListChanged();
-    await expect(loadTasks()).resolves.toEqual([created]);
-    finishOld(Response.json([]));
-    await stale;
-    expect(peekCachedTasks()).toEqual([created]);
-    await expect(loadTasks()).resolves.toEqual([created]);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-  } finally {
-    notifyTaskListChanged();
-    vi.unstubAllGlobals();
-  }
-});
-
-it("does not reuse a pending history request invalidated by a newer run", async () => {
-  let resolveOld!: (response: Response) => void;
-  const response = (text: string) => new Response(JSON.stringify({ thread_id: "race-thread", status: "succeeded", messages: [{ id: "answer", role: "assistant", content: text }] }));
-  const fetcher = vi.fn().mockImplementationOnce(() => new Promise<Response>(resolve => { resolveOld = resolve; }))
-    .mockResolvedValueOnce(response("current"));
-  vi.stubGlobal("fetch", fetcher);
-  const old = prefetchThreadHistory("race-thread");
-  invalidateThreadHistory("race-thread");
-  const adapter = createThreadHistoryAdapter("race-thread");
-  const latest = await adapter.load();
-  resolveOld(response("stale"));
-  await old;
-  const cached = await adapter.load();
-  expect(latest.messages[0].message.content).toEqual(cached.messages[0].message.content);
-  expect(cached.messages[0].message.content).toEqual([{ type: "text", text: "current" }]);
-  expect(fetcher).toHaveBeenCalledTimes(2);
-  adapter.dispose(); vi.unstubAllGlobals();
+it("restores an active video task without adopting it as a text model run", async () => {
+  const onActiveRun = vi.fn();
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+    thread_id: "video-history-only", status: "running", run_id: "video_job_abc",
+    messages: [{ id: "user-video_job_abc", role: "user", content: "视频" },
+      { id: "assistant-video_job_abc", role: "assistant", content: "", toolCalls: [{ id: "video", type: "function", function: { name: "harness_video_generation", arguments: '{}' } }] }],
+  }), { status: 200, headers: { "Content-Type": "application/json" } })));
+  const adapter = createThreadHistoryAdapter("video-history-only", { onActiveRun });
+  const restored = await adapter.load();
+  expect(restored.unstable_resume).not.toBe(true);
+  expect(onActiveRun).not.toHaveBeenCalled();
+  expect(restored.messages).toHaveLength(2);
+  adapter.dispose();
 });

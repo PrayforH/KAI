@@ -1,0 +1,160 @@
+{
+  "environment": "local Mac; existing feature PublicWebClient; no changes to 173/174 configuration",
+  "image_content_downloaded": false,
+  "image_content_verified": false,
+  "cases": [
+    {
+      "id": "wardrobe",
+      "query": "Italy wedding guest outfit linen summer style",
+      "retrieved_at": "2026-10-11T15:50:19.119552+00:00",
+      "results": [
+        {
+          "title": "What to Wear to an Italian Destination Wedding in Tuscany as a Guest — Castello di Ristonchi",
+          "url": "https://www.ristonchi.com/blog/what-to-wear-to-an-italian-destination-wedding-in-tuscany-as-a-guest"
+        },
+        {
+          "title": "1 Suit 14 Looks Day 4 Today we're going full Italian mens style. ...",
+          "url": "https://www.instagram.com/reel/DJjqTr4Mg-B?hl=en"
+        },
+        {
+          "title": "Italian Summer Wedding Outfit Men",
+          "url": "https://www.pinterest.com/ideas/italian-summer-wedding-outfit-men/904621234871"
+        },
+        {
+          "title": "What to wear to a Destination Wedding in Italy | Style Guide",
+          "url": "https://www.oliviasodi.com/what-to-wear-to-a-destination-wedding-in-italy-style-guide"
+        },
+        {
+          "title": "Wedding Style for Men with Italian Elegance: 8 Essential ...",
+          "url": "https://isuit.it/en/blog/wedding-style-for-men-with-italian-elegance-8-essential-rules-to-dress-with-grace"
+        }
+      ],
+      "images": [
+        {
+          "url": "https://images.squarespace-cdn.com/content/v1/5f90a0d90565905e22971c80/7519f444-d99b-49ae-bbb2-361b2e6d0b85/IMG_6934.jpeg",
+          "description": "A group of women in colorful, summery, linen dresses celebrating outdoors with drinks, dressed in stylish and light summer outfits suitable for a wedding in Italy."
+        },
+        {
+          "url": "https://ceesbridal.com/wp-content/uploads/2026/03/summer-wedding-in-italy-what-to-wear-4jphd.jpg",
+          "description": "A woman wearing a floral linen summer dress, straw hat, and scarf, and a man in a light blue linen suit with a white shirt, walk together on a sunny terrace with the sea and trees in the background."
+        },
+        {
+          "url": "https://www.oliviasodi.com/wp-content/uploads/2025/11/Destination-wedding-in-Tuscany-colorful-outfit-682x1024.webp",
+          "description": "A joyful group of wedding guests in elegant linen dresses celebrate outdoors in Italy, holding champagne flutes and bouquets under the summer sun."
+        },
+        {
+          "url": "https://i.pinimg.com/736x/0d/8b/f0/0d8bf0a1df6270eabe30b9c67f1855e0.jpg",
+          "description": "A man wearing a light-colored linen suit and white shirt stands casually on a stone pathway surrounded by greenery at an outdoor setting, suitable for a summer wedding in Italy."
+        },
+        {
+          "url": "https://www.lindsaysilberman.com/wp-content/uploads/2024/05/what-to-wear-to-a-beach-wedding-as-a-guest-1140x1425.jpg",
+          "description": "A woman dressed in a light blue, floral linen summer dress with cut-out shoulders, accessorized with a wide-brimmed straw hat, sunglasses, and a small handbag, standing outdoors on a pathway surrounded by lush green plants against a bright blue sky."
+        }
+      ],
+      "image_urls_returned": 5,
+      "interaction_acceptance": "pending_local_model_generation_and_browser_review"
+    },
+    {
+      "id": "road-trip",
+      "query": "Pacific Northwest road trip Olympic Oregon coast Mount Hood",
+      "retrieved_at": "2026-10-11T15:50:29.231891+00:00",
+      "results": [
+        {
+          "title": "Pacific Northwest Loop Road Trip Starting in Portland",
+          "url": "https://www.myolympicpark.com/road-trips/road-trip-itineraries/portland-to-olympic-national-park-road-trip"
+        },
+        {
+          "title": "A complete Pacific Northwest Road Trip Itinerary | 2 Weeks exploring Washington & Oregon — Oh What A Knight",
+          "url": "https://ohwhataknight.co.uk/blog/pacific-northwest-road-trip-guide"
+        },
+        {
+          "title": "Epic 10-Day Road Trip through the Pacific Northwest! (Olympic, Mount Rainier, Seattle, Beaches)",
+          "url": "https://www.youtube.com/watch?v=s_DbQKG82lY"
+        },
+        {
+          "title": "14 day itinerary for a Pacific Northwest road trip Oregon to Washington",
+          "url": "https://www.we12travel.com/pacific-northwest-road-trip-itinerary"
+        },
+        {
+          "title": "Instagram",
+          "url": "https://www.instagram.com/reel/DXtslKjDBwZ"
+        }
+      ],
+      "images": [
+        {
+          "url": "https://www.mattandkaren.com/wp-content/uploads/2025/11/washington-and-oregon-road-trip-feature-image.jpeg",
+          "description": "A rugged coastal landscape with towering sea stacks, a dramatic sunset casting warm light, and a shoreline scattered with rocks and driftwood, exemplifying the beauty of the Oregon coast near Mount Hood."
+        },
+        {
+          "url": "https://www.ytravelblog.com/wp-content/uploads/2020/09/pacific-northwest-road-trip-1.jpg",
+          "description": "None"
+        },
+        {
+          "url": "https://www.we12travel.com/blog/wp-content/uploads/2018/06/pacific-northwest-roadtrip-mount-rainier-national-park.jpg.webp",
+          "description": "A winding Pacific Northwest road curves past lush green trees with Mount Hood snow-capped in the background under a clear blue sky."
+        },
+        {
+          "url": "https://lookaside.instagram.com/seo/google_widget/crawler/?media_id=3938310562521922824",
+          "description": "None"
+        },
+        {
+          "url": "https://www.jasminealley.com/wp-content/uploads/2023/08/rowena-crest-pacific-northwest-road-trip.jpg",
+          "description": "A winding mountain road with numerous hairpin turns traverses a lush, forested landscape under a hazy sky, suggesting a scenic Pacific Northwest drive."
+        }
+      ],
+      "image_urls_returned": 5,
+      "interaction_acceptance": "pending_local_model_generation_and_browser_review"
+    },
+    {
+      "id": "drone-market",
+      "query": "US drone photography services market Deep Market Insights Grand View Research",
+      "retrieved_at": "2026-10-11T15:50:51.745589+00:00",
+      "results": [
+        {
+          "title": "Drone Photography Services Market Size, Share & Forecast 2036",
+          "url": "https://www.factmr.com/report/drone-photography-services-market"
+        },
+        {
+          "title": "The Rise of Aerial Photography Companies",
+          "url": "https://www.vsiaerial.com/post/the-rise-of-aerial-photography-companies"
+        },
+        {
+          "title": "Drone Photography Service Market Size, Share, Trends | 2035",
+          "url": "https://www.marketresearchfuture.com/reports/drone-photography-service-market-30698"
+        },
+        {
+          "title": "Drone Industry Insights | Global Drone Market Research",
+          "url": "https://droneii.com/"
+        },
+        {
+          "title": "Drone Services Market Size, Share, Industry Report, Revenue Trends and Growth Drivers",
+          "url": "https://www.marketsandmarkets.com/Market-Reports/drone-services-market-80726041.html"
+        }
+      ],
+      "images": [
+        {
+          "url": "https://www.grandviewresearch.com/static/img/research/us-drone-market-size.webp",
+          "description": "A stacked bar chart illustrating the projected growth of the U.S. drone market from 2023 to 2033, segmented by product types such as multi-rotor, fixed-wing, single-rotor, and hybrid, with market size increasing annually to reach 58.5 billion USD in 2033."
+        },
+        {
+          "url": "https://www.grandviewresearch.com/static/img/research/us-drone-market-share.webp",
+          "description": "A pie chart displays the market share distribution of the U.S. drone industry in 2025, highlighting that remotely operated drones hold the largest portion, followed by semi-autonomous and fully autonomous drones, alongside a sidebar showing the total market value of $29.3 billion."
+        },
+        {
+          "url": "https://www.grandviewresearch.com/static/img/research/drone-market-snapshot.webp",
+          "description": "None"
+        },
+        {
+          "url": "https://www.grandviewresearch.com/static/img/research/drone-analytics-market.png",
+          "description": "A bar chart illustrates the projected growth of the drone analytics market from 2020 to 2030, segmented into categories like power & utility, construction & infrastructure, oil & gas, agriculture, transportation & logistics, and others, with a compound annual growth rate of 22%."
+        },
+        {
+          "url": "https://www.grandviewresearch.com/static/img/research/us-commercial-drone-market-size-growth.png",
+          "description": "A bar graph illustrating the U.S. commercial drone market's projected growth from 2020 to 2030, segmented by propulsion type—gasoline, electric, and hybrid—indicating a total market size of $4.8 billion and a compound annual growth rate of 9.1%."
+        }
+      ],
+      "image_urls_returned": 5,
+      "interaction_acceptance": "pending_local_model_generation_and_browser_review"
+    }
+  ]
+}

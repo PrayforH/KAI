@@ -31,6 +31,8 @@ export function compactActivityStream(source: Observable<BaseEvent>): Observable
     let current: RunActivity | undefined;
     let envelope: ActivitySnapshotEvent | undefined;
     let pending = false;
+    const seenEvents = new Set<string>();
+    let lastSequence = -1;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const flush = () => {
       if (timer !== undefined) clearTimeout(timer);
@@ -48,10 +50,15 @@ export function compactActivityStream(source: Observable<BaseEvent>): Observable
             ? runActivitySchema.safeParse(snapshot.content) : undefined;
           if (parsed?.success) {
             const items: ActivityItem[] = [];
-            for (const item of parsed.data.items) appendItem(items, item);
+            seenEvents.clear(); lastSequence = -1;
+            for (const item of parsed.data.items) {
+              if (seenEvents.has(item.id)) continue;
+              seenEvents.add(item.id); lastSequence = Math.max(lastSequence, item.sequence);
+              appendItem(items, item);
+            }
             current = { ...parsed.data, items };
             envelope = snapshot;
-            subscriber.next({ ...snapshot, content: current });
+            subscriber.next({ ...snapshot, replace: true, content: current });
           } else {
             if (snapshot.activityType === "harness.run.v1") { current = undefined; envelope = undefined; }
             subscriber.next(event);
@@ -68,6 +75,11 @@ export function compactActivityStream(source: Observable<BaseEvent>): Observable
               if (patch.op === "add" && patch.path === "/items/-") {
                 const parsed = activityItemSchema.safeParse(patch.value);
                 if (!parsed.success) { supported = false; break; }
+                // A reconnect may replay events already folded into a compact
+                // row. Their original IDs no longer exist in items, so track
+                // the transport identity before concatenating text.
+                if (seenEvents.has(parsed.data.id) || parsed.data.sequence <= lastSequence) continue;
+                seenEvents.add(parsed.data.id); lastSequence = parsed.data.sequence;
                 appendItem(next.items, parsed.data);
                 urgent ||= !STREAM_KEYS[parsed.data.event_type];
               } else if (["add", "replace"].includes(patch.op) && patch.path === "/status" && typeof patch.value === "string") {

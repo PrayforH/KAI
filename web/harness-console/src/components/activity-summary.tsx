@@ -1,7 +1,11 @@
 "use client";
+import { useConversationRedactor } from "./conversation-redaction";
+import { hasPendingProcessProse } from "../lib/process-response";
+import { isProgressNoise } from "../lib/message-text";
 
 import { TextMessagePartProvider } from "@assistant-ui/react";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { formatToolResult } from "../lib/tool-result-format";
 import type { RunActivity } from "../lib/activity-schema";
 import { useRunViewModel } from "../lib/activity-store";
 import { activeElapsedMs, elapsedAnchorFor, type ElapsedAnchor } from "../lib/run-elapsed";
@@ -20,16 +24,18 @@ import { KnowledgeCitations } from "./knowledge/knowledge-citations";
 import { MarkdownText } from "./markdown-text";
 import { useRunDetails } from "./run-details-context";
 import { isResponseBoundary, isStableReasoningBlockId } from "../lib/process-boundary";
+import { SteeringUserMessage } from "./steering-user-message";
 import { ProcessDisclosure } from "./process-disclosure";
 import { CompactionProgressIndicator } from "./compaction-progress";
 import { useDetailedProcess } from "../lib/process-display-preference";
 import { attachConversationScroll } from "../lib/conversation-scroll";
+import { CodexResponseIcon } from "./codex-response-icon";
 
 const phaseLabels: Record<RunPhase, string> = {
   queued: "等待处理",
   running: "正在处理",
   waiting_approval: "等待审批",
-  completed: "处理完成",
+  completed: "已完成",
   failed: "处理失败",
   rejected: "已拒绝",
   cancelled: "已停止",
@@ -69,18 +75,19 @@ function rememberDisclosure(runId: string, open: boolean) {
 }
 
 export function durationLabel(elapsedMs: number) {
-  if (elapsedMs < 1_000) return `${elapsedMs}ms`;
-  if (elapsedMs < 60_000) return `${Math.round(elapsedMs / 1_000)}s`;
+  if (elapsedMs < 1_000) return `${elapsedMs}毫秒`;
+  if (elapsedMs < 60_000) return `${Math.round(elapsedMs / 1_000)}秒`;
   const minutes = Math.floor(elapsedMs / 60_000);
   const seconds = Math.floor((elapsedMs % 60_000) / 1_000);
-  return `${minutes}m ${seconds}s`;
+  return `${minutes}分${seconds ? `${seconds}秒` : ""}`;
 }
 
 interface CommentaryNode {
   id: string;
   text: string;
   sequence: number;
-  source: "progress" | "reasoning_summary" | "reasoning";
+  source: "progress" | "reasoning_summary" | "reasoning" | "guidance";
+  steeringStatus?: "pending" | "accepted";
 }
 
 type ProcessCategory = "setup" | "model" | "result";
@@ -196,7 +203,7 @@ function processNodes(view: RunViewModel): ProcessNode[] {
   });
 }
 
-function commentaryNodes(view: RunViewModel): CommentaryNode[] {
+function commentaryNodes(view: RunViewModel, includePending: boolean): CommentaryNode[] {
   const actionSequences = view.items
     .filter(
       (item) =>
@@ -211,6 +218,16 @@ function commentaryNodes(view: RunViewModel): CommentaryNode[] {
     // Some providers omit/reuse item_id across tool rounds. A new step must
     // never append its thinking into an earlier, already completed row.
     if (isResponseBoundary(item.event_type) || item.event_type === "message.delta") reasoningSegment += 1;
+    if (item.event_type.startsWith("run.steer.")) {
+      const key = `guidance:${String(item.metadata.request_id ?? item.id)}`;
+      if (item.event_type === "run.steer.failed") grouped.delete(key);
+      else if (item.summary && (item.event_type === "run.steer.accepted" ||
+        (item.event_type === "run.steer.requested" && ["queued", "running", "waiting_approval"].includes(view.phase)))) {
+        grouped.set(key, { id: key, sequence: item.sequence, text: item.summary, source: "guidance",
+          steeringStatus: item.event_type === "run.steer.accepted" ? "accepted" : "pending" });
+      }
+      continue;
+    }
     if (!item.summary) continue;
     if (item.event_type === "reasoning.summary.delta" || item.event_type === "reasoning.delta") {
       const itemId = typeof item.metadata.item_id === "string"
@@ -233,11 +250,11 @@ function commentaryNodes(view: RunViewModel): CommentaryNode[] {
     }
     if (item.event_type !== "message.delta") continue;
     const nextAction = actionSequences.find((sequence) => sequence > item.sequence);
-    // A trailing message is still ambiguous while the Run is active: the
-    // live response owns it so Markdown can stream without duplication. Only
-    // text followed by a new thinking block or action belongs in the process log.
-    if (nextAction === undefined) continue;
-    const groupKey = `progress:${nextAction}`;
+    // Before a terminal event the provider has not identified this prose as
+    // final. Keep it in the process at its original position while streaming;
+    // a following tool retains the same row instead of retracting an answer.
+    if (nextAction === undefined && !includePending) continue;
+    const groupKey = `progress:${nextAction ?? "pending"}`;
     const existing = grouped.get(groupKey);
     grouped.set(groupKey, {
       id: existing?.id ?? item.id,
@@ -277,20 +294,27 @@ const ExecutionCommentary = memo(function ExecutionCommentary({
   }, [active, commentary.text, expanded]);
   // The collapsed row is a status, not a token ticker. Completed rows show a
   // bounded prefix; the full trace is only mounted on explicit expansion.
-  const preview = active ? "进行中" : commentary.text.slice(0, 160).replaceAll("**", "").replace(/\s+/g, " ").trim();
-  if (commentary.source !== "progress") {
+  const redact = useConversationRedactor();
+  const visibleText = redact(commentary.text);
+  const preview = active ? "进行中" : visibleText.slice(0, 160).replaceAll("**", "").replace(/\s+/g, " ").trim();
+  if (commentary.source === "reasoning" || commentary.source === "reasoning_summary") {
     return (
       <details className="execution-reasoning" open={expanded} onToggle={event => setExpanded(event.currentTarget.open)}
         data-commentary-source={commentary.source} data-active={active ? "true" : "false"}>
         <summary className="execution-reasoning-summary">
-          <span className="execution-reasoning-icon"><ThinkingIcon /></span><span className="execution-reasoning-label execution-state-sweep" data-running={active}>思考</span><span className="execution-reasoning-separator" aria-hidden="true">·</span><span className="execution-reasoning-preview">{preview}</span><span className="execution-reasoning-chevron" aria-hidden="true" />
+          <span className="execution-reasoning-icon"><CodexResponseIcon name="brain" /></span>
+          <span className="execution-reasoning-label execution-state-sweep" data-running={active}>思考</span>
+          <span className="execution-reasoning-preview">{preview}</span>
+          <span className="execution-reasoning-chevron"><CodexResponseIcon name="chevronDown" /></span>
         </summary>
         {expanded && <div className="execution-reasoning-body" ref={body} tabIndex={0} aria-label="思考内容">
-          <div className="execution-reasoning-text">{commentary.text}</div>
+          <div className="execution-reasoning-text">{visibleText}</div>
         </div>}
       </details>
     );
   }
+  if (commentary.source === "progress" && isProgressNoise(commentary.text)) return null;
+  if (commentary.source === "guidance") return <SteeringUserMessage text={commentary.text} status={commentary.steeringStatus ?? "accepted"} />;
   return (
     <article
       className="execution-commentary"
@@ -299,14 +323,14 @@ const ExecutionCommentary = memo(function ExecutionCommentary({
     >
       <div className="execution-commentary-content">
         <TextMessagePartProvider text={commentary.text} isRunning={false}>
-          <MarkdownText />
+          <MarkdownText stabilizeFormatting />
         </TextMessagePartProvider>
       </div>
     </article>
   );
-}, (previous, next) => previous.active === next.active && previous.commentary.id === next.commentary.id && previous.commentary.source === next.commentary.source && previous.commentary.text === next.commentary.text);
+}, (previous, next) => previous.active === next.active && previous.commentary.id === next.commentary.id && previous.commentary.source === next.commentary.source && previous.commentary.text === next.commentary.text && previous.commentary.steeringStatus === next.commentary.steeringStatus);
 
-function rawTimeline(view: RunViewModel): RawTimelineNode[] {
+function rawTimeline(view: RunViewModel, includePending: boolean): RawTimelineNode[] {
   return [
     ...processNodes(view).map(
       (process): RawTimelineNode => ({
@@ -315,7 +339,7 @@ function rawTimeline(view: RunViewModel): RawTimelineNode[] {
         process,
       }),
     ),
-    ...commentaryNodes(view).map(
+    ...commentaryNodes(view, includePending).map(
       (commentary): RawTimelineNode => ({
         kind: "commentary",
         sequence: commentary.sequence,
@@ -329,6 +353,21 @@ function rawTimeline(view: RunViewModel): RawTimelineNode[] {
       (tool): RawTimelineNode => ({ kind: "tool", sequence: tool.sequence, tool }),
     ),
   ].sort((left, right) => left.sequence - right.sequence);
+}
+
+/** Steering is authored user content, so folding agent work must never hide it. */
+function transcriptSegments(timeline: DisplayTimelineNode[]) {
+  const segments: { key: string; guidance?: CommentaryNode; entries: DisplayTimelineNode[] }[] = [];
+  for (const entry of timeline) {
+    if (entry.kind === "commentary" && entry.commentary.source === "guidance") {
+      segments.push({ key: entry.commentary.id, guidance: entry.commentary, entries: [] });
+    } else {
+      let segment = segments.at(-1);
+      if (!segment || segment.guidance) { segment = { key: `process:${entry.sequence}`, entries: [] }; segments.push(segment); }
+      segment.entries.push(entry);
+    }
+  }
+  return segments;
 }
 
 function combinedStatus(statuses: readonly WorkStatus[]): WorkStatus {
@@ -530,8 +569,8 @@ function failureDetails(view: RunViewModel) {
   };
 }
 
-function displayTimeline(view: RunViewModel, detailed = false): DisplayTimelineNode[] {
-  const raw = rawTimeline(view).filter((entry) =>
+function displayTimeline(view: RunViewModel, detailed = false, includePending = false): DisplayTimelineNode[] {
+  const raw = rawTimeline(view, includePending).filter((entry) =>
     entry.kind !== "process" || entry.process.status === "failed" ||
     entry.process.eventType === "tool.directory.degraded",
   );
@@ -603,49 +642,12 @@ function displayTimeline(view: RunViewModel, detailed = false): DisplayTimelineN
   return display;
 }
 
-function ThinkingIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path d="M10 2.8v14.4" />
-      <path d="M3.8 6.4l12.4 7.2" />
-      <path d="M16.2 6.4L3.8 13.6" />
-    </svg>
-  );
-}
-
 function ActionIcon({ kind }: { kind: ActionIconKind }) {
-  if (kind === "terminal") {
-    return <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="3" width="15" height="14" rx="3" /><path d="m6 8 2 2-2 2m4.5 0h3" /></svg>;
-  }
-  if (kind === "edit") {
-    return <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 14.8.8-3.8L13 2.8a2 2 0 0 1 2.8 2.8l-8.2 8.2-3.6 1Z" /><path d="m11.8 4 3 3" /></svg>;
-  }
-  if (kind === "search") {
-    return <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.8" cy="8.8" r="5.2" /><path d="m12.7 12.7 4 4" /></svg>;
-  }
-  if (kind === "agent") {
-    return <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="6" r="3" /><path d="M4 17c.5-3.5 2.5-5.3 6-5.3s5.5 1.8 6 5.3" /></svg>;
-  }
-  if (kind === "result") {
-    return <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 3.5h9l3 3V17H4Z" /><path d="M13 3.5V7h3M7 11l2 2 4-4" /></svg>;
-  }
-  if (kind === "model") {
-    return <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5v3M10 14.5v3M2.5 10h3M14.5 10h3M4.7 4.7l2.1 2.1M13.2 13.2l2.1 2.1M15.3 4.7l-2.1 2.1M6.8 13.2l-2.1 2.1" /><circle cx="10" cy="10" r="3.2" /></svg>;
-  }
-  return <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 6.5h14M5 3v3.5M15 3v3.5M4 6.5V17h12V6.5M7 10h6M7 13h4" /></svg>;
+  const names = { system: "settings", model: "brain", terminal: "terminal", edit: "pencil", search: "search", agent: "person", result: "document" } as const;
+  return <CodexResponseIcon name={names[kind]} />;
 }
 
-export function formatResultPreview(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed || (!trimmed.startsWith("{") && !trimmed.startsWith("["))) {
-    return value;
-  }
-  try {
-    return JSON.stringify(JSON.parse(trimmed), null, 2);
-  } catch {
-    return value;
-  }
-}
+export const formatResultPreview = formatToolResult;
 
 function ResultPreview({
   children,
@@ -654,27 +656,29 @@ function ResultPreview({
   children: string;
   label: string;
 }) {
+  const redact = useConversationRedactor();
   return (
     <pre
       className="execution-action-result"
       role="region"
-      aria-label={label}
+      aria-label={redact(label)}
       tabIndex={0}
     >
-      <code>{formatResultPreview(children)}</code>
+      <code>{redact(formatResultPreview(children))}</code>
     </pre>
   );
 }
 
 function ActionRow({ action, active = false }: { action: ActionNode; active?: boolean }) {
+  const redact = useConversationRedactor();
   const hasResult = Boolean(action.resultPreview || action.entries?.length);
   const heading = (
     <>
       <span className="execution-action-icon"><ActionIcon kind={action.icon} /></span>
       <span className="execution-action-copy">
         <span className="execution-action-heading">
-          <strong className="execution-state-sweep" data-running={active}>{action.label}</strong>
-          {action.detail && <small>{action.detail}</small>}
+          <strong className="execution-state-sweep" data-running={active}>{redact(action.label)}</strong>
+          {action.detail && <small>{redact(action.detail)}</small>}
         </span>
       </span>
     </>
@@ -697,8 +701,8 @@ function ActionRow({ action, active = false }: { action: ActionNode; active?: bo
               key={entry.id}
             >
               <div className="execution-action-detail-heading">
-                <span>{entry.label}</span>
-                <small>{entry.result}</small>
+                <span>{redact(entry.label)}</span>
+                <small>{redact(entry.result)}</small>
               </div>
               {entry.preview && (
                 <ResultPreview label={`${entry.label} 结果预览`}>
@@ -726,7 +730,7 @@ function ActionRow({ action, active = false }: { action: ActionNode; active?: bo
         onClick={hasResult ? undefined : (event) => event.preventDefault()}
       >
         {heading}
-        {hasResult && <span className="execution-action-chevron" aria-hidden="true" />}
+        {hasResult && <span className="execution-action-chevron"><CodexResponseIcon name="chevronDown" /></span>}
       </summary>
       {hasResult && result}
     </details>
@@ -795,7 +799,8 @@ export function ActivitySummary({
   const elapsed = elapsedAnchor.current
     ? activeElapsedMs(view, now, elapsedAnchor.current)
     : view.elapsedMs;
-  const timeline = useMemo(() => displayTimeline(view, detailed), [view, detailed]);
+  const pendingProse = hasPendingProcessProse(activity);
+  const timeline = useMemo(() => displayTimeline(view, detailed, pendingProse), [view, detailed, pendingProse]);
   const latestTimelineEntry = timeline.at(-1);
   const activeCommentaryId =
     thinkingActive &&
@@ -805,11 +810,12 @@ export function ActivitySummary({
       : null;
   const heading = activityHeading(view);
   const elapsedCopy = active
-    ? `已持续 ${elapsed < 1_000 ? "0s" : durationLabel(elapsed)}`
-    : `持续了 ${durationLabel(elapsed)}`;
+    ? `已用时 ${elapsed < 1_000 ? "0秒" : durationLabel(elapsed)}`
+    : `耗时 ${durationLabel(elapsed)}`;
   const failure = view.phase === "failed" ? failureDetails(view) : null;
   const publicationNotice = view.items.findLast(item => item.event_type === "artifact.publication_limited");
-  const hasContent = timeline.length > 0 || Boolean(failure);
+  const hasContent = timeline.some(entry => entry.kind !== "commentary" || entry.commentary.source !== "guidance") || Boolean(failure);
+  const segments = transcriptSegments(timeline);
   const Disclosure = hasContent ? "button" : "div";
   const runDetails = useRunDetails();
 
@@ -835,7 +841,7 @@ export function ActivitySummary({
       >
         <span className="execution-phase">{heading}</span>
         <span className="execution-duration">· {elapsedCopy}</span>
-        {hasContent && <span className="execution-chevron" aria-hidden="true" />}
+        {hasContent && <span className="execution-chevron"><CodexResponseIcon name="chevronDown" /></span>}
       </Disclosure>
       <CompactionProgressIndicator view={view} />
       {publicationNotice?.summary && <p className="execution-publication-notice" role="status">{publicationNotice.summary}</p>}
@@ -852,8 +858,8 @@ export function ActivitySummary({
           运行详情
         </button>
       ) : null}
-      <ProcessDisclosure open={open && hasContent}>
       <div className="execution-tree">
+        <ProcessDisclosure open={open && Boolean(failure)}>
         {failure ? (
           <section className="execution-failure-diagnostic" aria-label="失败定位">
             <span>失败定位</span>
@@ -871,23 +877,25 @@ export function ActivitySummary({
             </small>
           </section>
         ) : null}
+        </ProcessDisclosure>
         {timeline.length > 0 ? (
           <section className="execution-log" aria-label="运行过程，仅展示可观察事件">
-            {timeline.map((entry) =>
-              entry.kind === "commentary" ? (
-                <ExecutionCommentary
-                  key={entry.commentary.id}
-                  commentary={entry.commentary}
-                  active={entry.commentary.id === activeCommentaryId}
-                />
-              ) : (
-                <ActionRow key={entry.action.id} action={entry.action} active={thinkingActive && entry.action.status === "running"} />
-              ),
-            )}
+            {segments.map(segment => segment.guidance ? (
+              <SteeringUserMessage key={segment.key} text={segment.guidance.text} status={segment.guidance.steeringStatus ?? "accepted"} />
+            ) : (
+              <ProcessDisclosure key={segment.key} open={open}>
+                <div className="execution-log-segment">
+                  {segment.entries.map(entry => entry.kind === "commentary" ? (
+                    <ExecutionCommentary key={entry.commentary.id} commentary={entry.commentary} active={entry.commentary.id === activeCommentaryId} />
+                  ) : (
+                    <ActionRow key={entry.action.id} action={entry.action} active={thinkingActive && entry.action.status === "running"} />
+                  ))}
+                </div>
+              </ProcessDisclosure>
+            ))}
           </section>
         ) : null}
       </div>
-      </ProcessDisclosure>
     </section>
   );
 }

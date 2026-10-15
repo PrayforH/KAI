@@ -1,0 +1,86 @@
+{
+  "verified_at": "2026-10-12T06:33:20.724443+00:00",
+  "branch": "auto/intelligent-ui-v1",
+  "release": "intelligent-ui-20261012d",
+  "web_entry": "http://172.20.109.173:3302/",
+  "http_status": 200,
+  "containers": {
+    "web": {
+      "image": "kai/axis-web:intelligent-ui-20261012d",
+      "sha256": "sha256:1c909c0e5228de5d042dd43c2973c290cae234369433b70b71215b18323692c7",
+      "health": "healthy"
+    },
+    "api": {
+      "image": "kai/axis-api:intelligent-ui-20261012b",
+      "sha256": "sha256:82f2f2f53c0b30c21a3d6b69692deb8fda12353e94f53c8dfd0432e0c8591603",
+      "health": "healthy"
+    },
+    "worker": {
+      "image": "kai/axis-api:intelligent-ui-20261012b",
+      "sha256": "sha256:82f2f2f53c0b30c21a3d6b69692deb8fda12353e94f53c8dfd0432e0c8591603",
+      "health": "healthy"
+    }
+  },
+  "qa": {
+    "frontend_files": 168,
+    "frontend_passed": 1106,
+    "frontend_skipped": 1,
+    "tsc": "passed",
+    "production_build": "passed",
+    "backend_changed": false
+  },
+  "cookie_prefix": "harness_ui_173",
+  "rollback_config": "/data/agent-studio-evolution-20260920/backups/compose.pre-intelligent-ui-20261012d.json",
+  "browser": {
+    "surface": "native Chrome, ordinary window",
+    "passed": [
+      "old HTML footer entries absent",
+      "ellipsis opens information overlay",
+      "Escape closes and returns trigger focus",
+      "ArrowDown opens and focuses link",
+      "owned protected HTML opens in new tab",
+      "history process overall disclosure opens with Codex icons and new duration/copy layout"
+    ],
+    "pending": [
+      "individual thought/tool expansion real browser (covered by behavior tests)",
+      "frame-level live shimmer/disclosure capture",
+      "mobile/touch/reduced-motion browser scenarios",
+      "all11 article fidelity cases"
+    ]
+  },
+  "source_sha256": {
+    "web/harness-console/src/app/process-design.css": "5bdf4f2bfbe6297ff9d0959628c79db6b5566dff74fa0037182ce2ad65ad44cb",
+    "web/harness-console/src/app/intelligent-ui.css": "255d850432a076b77257757484b42a326831c1a678e6b4fb4763ea8d69dd4bce",
+    "web/harness-console/src/app/codex-theme.css": "f037c50eb0b58242efff6e8067e47e10e1920c69dc5c13e040478e61ed6d131b",
+    "web/harness-console/src/components/activity-summary.tsx": "5a3a866f3b885af95afc61a173616a0662e25029aaca2bdbf5ad1870e28d3ffc",
+    "web/harness-console/src/components/process-disclosure.tsx": "114bb6c403d1e75888a7f6644d3326954b26e11843e5482e47e10c0b09a17898",
+    "web/harness-console/src/components/codex-response-icon.tsx": "854a509998a9e17eae4f3464e79840651a30e7e85fb6a4717ff84162dcab7de4",
+    "web/harness-console/src/components/intelligent-ui/presentation-menu.tsx": "74533873093808bf57e179a94f2939288a3b1562c63b47f920f4e587228b4879",
+    "web/harness-console/src/components/intelligent-ui/html-view.tsx": "53ee48fbdefaf421f88932bda308ca90b8eea1e7901d549c295d4ddf56337074",
+    "web/harness-console/src/components/intelligent-ui/presentation-host.tsx": "6662831f93bf3d651e364ed10373170e26d83fc02a375d14e9a3791dc389b545"
+  },
+  "screenshots": {
+    "intelligent-ui-chrome-process-history-d.png": {
+      "bytes": 454472,
+      "sha256": "e13f34cf6530b730ea58f286cdaea23b415b5b9af0ff4a167e5db8415a4f1bdc"
+    },
+    "intelligent-ui-chrome-html-menu-d.png": {
+      "bytes": 550754,
+      "sha256": "1111de13e4c226b891a5b6e3caba4c5176da5df09a2d3361de511ee94bd07b19"
+    }
+  },
+  "feishu_url": "https://my.feishu.cn/docx/TCHHdVB3Oob3Rtxk3dIcQsa6nVg",
+  "feishu_revision": 45,
+  "feishu_images": [
+    {
+      "block_id": "doxcnzJNLh693uhYUbDMQr8on1f",
+      "file_token": "PqnCbVW9VozDMixTtvxcgNtmnwd",
+      "screenshot": "intelligent-ui-chrome-html-menu-d.png"
+    },
+    {
+      "block_id": "doxcnyXFdIt6N5IgZXZ8Ao5YZsf",
+      "file_token": "ZZZnbLFuBoEH6hxFF9ocu80NnHf",
+      "screenshot": "intelligent-ui-chrome-process-history-d.png"
+    }
+  ]
+}

@@ -52,3 +52,12 @@ it("handles quoted braces, refuses ambiguous or non-protocol JSON and suppresses
   expect(conversationInputDisplay(partial,true)).toBe('请补充');
   expect(parseConversationInput(partial)).toBeNull();
 });
+
+ it("renders the reported harness alias as a form and keeps unfinished protocol out of the stream", () => {
+ const block = "```harness\n" + JSON.stringify(payload) + "\n```";
+ expect(parseConversationInput(block)?.questions).toHaveLength(2);
+ expect(latestConversationInput([{id:"alias",role:"assistant",status:{type:"complete"},content:[{type:"text",text:block}]}])?.messageId).toBe("alias");
+ expect(conversationInputDisplay(block)).not.toContain('"questions"');
+ expect(conversationInputDisplay('请确认\n```harness\n{"version":1',true)).toBe("请确认");
+ expect(parseConversationInput('```harness\n{"version":1,"execute":"shell"}\n```')).toBeNull();
+ });

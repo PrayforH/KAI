@@ -1,4 +1,5 @@
 "use client";
+import { CardActionButton } from "./card-action-button";
 
 import { useMemo, useState } from "react";
 import { classifyContent, toSafeValue } from "../lib/content-format";
@@ -67,7 +68,7 @@ export function StructuredValue({ value, label = "JSON" }: StructuredValueProps)
         <div>
           <button type="button" aria-pressed={!raw} onClick={() => setRaw(false)}>树</button>
           <button type="button" aria-pressed={raw} onClick={() => setRaw(true)}>原始</button>
-          <button type="button" onClick={copy}>{copied ? "已复制" : "复制"}</button>
+          <CardActionButton action="copy" label="复制 JSON" copied={copied} onClick={copy} />
         </div>
       </header>
       {raw ? <CodeBlock code={serialized} language="json" /> : <JsonTree value={safeValue} />}

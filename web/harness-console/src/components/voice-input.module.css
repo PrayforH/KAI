@@ -1,5 +1,6 @@
 /* Dictation replaces the existing toolbar without changing the composer surface. */
 .root { display: inline-flex; color: inherit; }
+.root[data-placement="composer"] { margin-left: auto; flex-shrink: 0; }
 .mic { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
 .mic:hover { background: var(--codex-surface-hover, #7772); }
 .mic:disabled { opacity: .4; cursor: default; }
@@ -21,3 +22,7 @@
 :global(.composer-footer):has(.recordingBar) > .recordingBar { width: 100%; }
 @media (prefers-reduced-motion: reduce) { .signal rect { transition: none; } .waiting { animation: none; } }
 @media (max-width: 480px) { .recordingBar { gap: 10px; } }
+
+.root[data-placement="inline"] { flex-shrink: 0; }
+.root[data-placement="inline"][data-active="true"] > .mic { display: none; }
+.root[data-placement="inline"] .recordingBar { width: 144px; gap: 8px; }

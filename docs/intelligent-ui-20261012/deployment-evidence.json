@@ -1,0 +1,51 @@
+{
+  "verified_at": "2026-10-12T03:49:29.588367+00:00",
+  "branch": "auto/intelligent-ui-v1",
+  "image_tag": "intelligent-ui-20261012b",
+  "compose_project": "agent-evolution-173",
+  "web_entry": "http://172.20.109.173:3302/",
+  "api_entry": "http://172.20.109.173:8802/",
+  "migration": "0039",
+  "containers": {
+    "api": {
+      "image": "kai/axis-api:intelligent-ui-20261012b",
+      "sha256": "sha256:82f2f2f53c0b30c21a3d6b69692deb8fda12353e94f53c8dfd0432e0c8591603",
+      "health": "healthy"
+    },
+    "worker": {
+      "image": "kai/axis-api:intelligent-ui-20261012b",
+      "sha256": "sha256:82f2f2f53c0b30c21a3d6b69692deb8fda12353e94f53c8dfd0432e0c8591603",
+      "health": "healthy"
+    },
+    "web": {
+      "image": "kai/axis-web:intelligent-ui-20261012b",
+      "sha256": "sha256:5d3d2fe5343a65005f7e41351e8308d38840b9dfeee797a6abe76c48f8d8635f",
+      "health": "healthy"
+    }
+  },
+  "api_source_archive_sha256": "6830dbcd72699e1f9a72e957d4b06c5685d87364b040b3f9adf4df753351e59d",
+  "qa": {
+    "frontend_passed": 1092,
+    "frontend_skipped": 1,
+    "frontend_files": 164,
+    "backend_related_passed": 115,
+    "tsc": "passed",
+    "ruff": "passed",
+    "type_existing": 1522,
+    "type_new": 0,
+    "type_resolved": 1,
+    "web_production_build": "passed"
+  },
+  "rollback_config": "/data/agent-studio-evolution-20260920/backups/compose.pre-intelligent-ui-20261012a.json",
+  "browser_acceptance": "pending: Codex IAB navigation and inventory time out; no screenshots or click acceptance in this iteration",
+  "feishu_url": "https://my.feishu.cn/docx/TCHHdVB3Oob3Rtxk3dIcQsa6nVg",
+  "web_build_provenance": "Built from feature source as intelligent-ui-20261012a; b aliases the identical image because the subsequent fix changes backend authoring normalization only",
+  "presentation_policy": "presentation-policy/6",
+  "api_checks": {
+    "html_projection_cases": 3,
+    "html_authentication_hash_state_cas": "passed",
+    "capability_negotiation": "passed",
+    "old_frozen_snapshot_replay": "passed"
+  },
+  "feishu_revision": 34
+}

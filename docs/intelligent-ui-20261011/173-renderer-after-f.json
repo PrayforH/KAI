@@ -1,0 +1,129 @@
+{
+  "image_tag": "intelligent-ui-20261011f",
+  "scope": "A/B supplementary renderer acceptance; not WeChat article reproduction",
+  "cases": [
+    {
+      "expected_kind": "comparison",
+      "prompt": "请在聊天里用横向对比组件比较两个虚构部署方案。维度是每月成本、部署方式、适用场景：方案甲成本120元，单机，开发测试；方案乙成本300元，双机，内部试运行。只能使用这些给定信息，不联网、不生成文件。",
+      "session_id": "session_f7ce2970b49a4c7bb545e8e68ffbf659",
+      "run_id": "run_7b25e818a3b442c3801ea652e0aa0355",
+      "status": "succeeded",
+      "published": [
+        {
+          "presentation_id": "ui_0894ea234d562cd83c2059e4",
+          "kind": "comparison",
+          "snapshot_hash": "0c9e66fa914bd8fc152ed13835b5c399283a978010633977f5f3c7ff100c5a80",
+          "replay_matches_snapshot": true,
+          "repeat_read_unchanged": true,
+          "data": {
+            "dimensions": [
+              {
+                "key": "每月成本",
+                "label": "每月成本",
+                "align": null
+              },
+              {
+                "key": "部署方式",
+                "label": "部署方式",
+                "align": null
+              },
+              {
+                "key": "适用场景",
+                "label": "适用场景",
+                "align": null
+              }
+            ],
+            "items": [
+              {
+                "label": "方案甲",
+                "values": {
+                  "每月成本": "120元",
+                  "部署方式": "单机",
+                  "适用场景": "开发测试"
+                }
+              },
+              {
+                "label": "方案乙",
+                "values": {
+                  "每月成本": "300元",
+                  "部署方式": "双机",
+                  "适用场景": "内部试运行"
+                }
+              }
+            ]
+          },
+          "config": {
+            "highlight": ""
+          }
+        }
+      ],
+      "answer_text": "横向对比组件如下（仅使用你给定的信息）：\n\n**核心结论**：方案甲成本更低（120元/月）、单机部署，适合开发测试；方案乙成本较高（300元/月）、双机部署，适合内部试运行。两个方案的差异集中在成本与部署规模上，适用场景随之不同。\n\n```harness-ui\n{\"version\":1,\"kind\":\"comparison\",\"title\":\"两个虚构部署方案横向对比\",\"fallback_text\":\"方案甲：每月成本120元，单机部署，适用开发测试；方案乙：每月成本300元，双机部署，适用内部试运行。\",\"data\":{\"dimensions\":[\"每月成本\",\"部署方式\",\"适用场景\"],\"items\":[{\"label\":\"方案甲\",\"values\":{\"每月成本\":\"120元\",\"部署方式\":\"单机\",\"适用场景\":\"开发测试\"}},{\"label\":\"方案乙\",\"values\":{\"每月成本\":\"300元\",\"部署方式\":\"双机\",\"适用场景\":\"内部试运行\"}}]}}\n```",
+      "passed": true
+    },
+    {
+      "expected_kind": "timeline",
+      "prompt": "请在聊天里展示项目时间线：2026-10-01 需求确认，2026-10-05 协议冻结，2026-10-10 内部试运行。每个节点带一句说明，只使用给定日期，不联网、不生成文件。",
+      "session_id": "session_6f99f56427e54056a991781e8a4c7475",
+      "run_id": "run_7aaddc0a02114603add75261f91a852a",
+      "status": "succeeded",
+      "published": [],
+      "answer_text": "项目三个关键节点按时间顺序如下：\n\n- 2026-10-01 需求确认\n- 2026-10-05 协议冻结\n- 2026-10-10 内部试运行\n\n```harness-ui\n{\"version\":1,\"kind\":\"timeline\",\"title\":\"项目时间线\",\"fallback_text\":\"项目时间线：2026-10-01 需求确认，2026-10-05 协议冻结，2026-10-10 内部试运行。\",\"data\":{\"events\":[{\"date\":\"2026-10-01\",\"title\":\"需求确认\",\"description\":\"完成需求的确认，作为项目后续工作的起点。\"},{\"date\":\"2026-10-05\",\"title\":\"协议冻结\",\"description\":\"协议内容在此节点冻结，不再变更。\"},{\"date\":\"2026-10-10\",\"title\":\"内部试运行\",\"description\":\"进入内部试运行，验证前期成果。\"}]}}\n```\n\n以上仅使用你给出的三个日期与节点名称，未做联网查询，也未生成任何文件。",
+      "passed": false
+    },
+    {
+      "expected_kind": "diagram",
+      "prompt": "请在聊天里用流程图说明这个简单流程：提交任务→排队→执行→返回结果；执行失败则重试，然后再次执行。只绘制这个流程，不联网、不生成文件。",
+      "session_id": "session_f81cd56262634ba2ac68f9b792cb6010",
+      "run_id": "run_02aa948094234f2e865997906d6ab648",
+      "status": "succeeded",
+      "published": [],
+      "answer_text": "流程图如下（Mermaid，可直接在支持 Mermaid 的渲染器中查看）：\n\n```mermaid\nflowchart TD\n    A[提交任务] --> B[排队]\n    B --> C[执行]\n    C --> D{执行是否成功}\n    D -- 成功 --> E[返回结果]\n    D -- 失败 --> F[重试]\n    F --> C\n```\n\n文字说明：\n\n1. **提交任务**：任务进入系统。\n2. **排队**：等待调度、按序进入执行阶段。\n3. **执行**：实际运行业务逻辑。\n4. **判断**：执行是否成功。\n   - 成功 → **返回结果**，流程结束。\n   - 失败 → **重试**，重试后回到“执行”再次运行（循环）。\n5. 重试仍走“执行 → 判断”这一步，因此可能反复重试，直到成功或达到外部设定的重试上限。\n\n需要的话，我可以把它改成带“超过重试次数则报错”分支的版本，或换成纵向/泳道样式。",
+      "passed": false
+    },
+    {
+      "expected_kind": "metric",
+      "prompt": "请在聊天里展示两个指标卡：本周任务数120件，成功率98%。仅展示给定数值，不联网、不生成文件。",
+      "session_id": "session_35777bf7ad564a93abace9134063a628",
+      "run_id": "run_66dc63911a974eabae000ee88186adf2",
+      "status": "succeeded",
+      "published": [
+        {
+          "presentation_id": "ui_2f2ff8e6943a2df6ecd67f0a",
+          "kind": "metric",
+          "snapshot_hash": "6a5226d0eda6f39f58a1a099d6c72606cef3a09e8dc17dd3bd3bddef7bbf415a",
+          "replay_matches_snapshot": true,
+          "repeat_read_unchanged": true,
+          "data": {
+            "items": [
+              {
+                "label": "本周任务数",
+                "value": "120",
+                "unit": "件",
+                "hint": ""
+              },
+              {
+                "label": "成功率",
+                "value": "98%",
+                "unit": "",
+                "hint": ""
+              }
+            ]
+          },
+          "config": {}
+        }
+      ],
+      "answer_text": "本周两项指标如下：\n\n- **本周任务数**：120 件\n- **成功率**：98%\n\n```harness-ui\n{\"version\":1,\"kind\":\"metric\",\"title\":\"本周指标\",\"fallback_text\":\"本周任务数 120 件；成功率 98%。\",\"data\":{\"items\":[{\"label\":\"本周任务数\",\"value\":\"120\",\"unit\":\"件\"},{\"label\":\"成功率\",\"value\":\"98%\"}]}}\n```",
+      "passed": true
+    },
+    {
+      "expected_kind": "text",
+      "prompt": "1+1等于几？这次仅用一句纯文字回答，不要图表、表单或其他界面，不联网。",
+      "session_id": "session_d2559e9059a54320bc50a621e8beede3",
+      "run_id": "run_99651e249ac341c98e3f675e59669713",
+      "status": "succeeded",
+      "published": [],
+      "answer_text": "1+1 等于 2。",
+      "passed": true
+    }
+  ]
+}

@@ -28,6 +28,7 @@ export interface TaskSummary {
   last_read_at?: string | null;
   project_id?: string | null;
   pending_approval?: (ApprovalDetails & { status: string }) | null;
+  pending_input?: boolean;
 }
 
 const taskListRequests = new Map<boolean, Promise<TaskSummary[]>>();
@@ -424,6 +425,7 @@ export function peekCachedTasks(archived = false): TaskSummary[] | null {
 /** Ask every mounted task sidebar to refresh immediately. */
 export function notifyTaskListChanged(): void {
   taskListSnapshots.clear();
+  taskListSnapshots.clear();
   taskListRequests.clear();
   window.dispatchEvent(new CustomEvent("harness:task-list-changed"));
 }
@@ -538,7 +540,7 @@ export function createThreadHistoryAdapter(
       const repository = ExportedMessageRepository.fromArray(
         fromAgUiMessages(history.messages, { showThinking: true }),
       );
-      if (!history.run_id || !activeStatuses.has(history.status)) {
+      if (!history.run_id || history.run_id.startsWith("video_job_") || !activeStatuses.has(history.status)) {
         return repository;
       }
 

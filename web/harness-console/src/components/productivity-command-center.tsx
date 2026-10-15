@@ -1,5 +1,7 @@
 "use client";
 
+import { SidebarIcon } from "./sidebar-icon";
+
 import { useRouter } from "next/navigation";
 import {
   useEffect,
@@ -29,14 +31,7 @@ const groupLabels: Record<ProductivityCommandResult["kind"], string> = {
   agent: "可用智能体",
 };
 
-function SearchGlyph() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <circle cx="8.5" cy="8.5" r="5.25" />
-      <path d="m12.5 12.5 4 4" />
-    </svg>
-  );
-}
+function SearchGlyph() { return <SidebarIcon name="search" />; }
 
 export function ProductivityCommandCenter({
   agents,

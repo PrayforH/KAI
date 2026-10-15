@@ -40,7 +40,7 @@ from harness.automations.service import AutomationService
 from harness.config import Settings
 from harness.context.checkpoint import ContextCheckpointService
 from harness.context.service import ContextService
-from harness.core.errors import NotFoundError, SandboxGovernanceError
+from harness.core.errors import NotFoundError, PermissionDeniedError, SandboxGovernanceError
 from harness.core.manifest import AgentManifest, AgentManifestSnapshot
 from harness.core.models import ModelCompatibility, RunStatus, Session
 from harness.core.ports import ArtifactStore, TaskQueue
@@ -87,6 +87,10 @@ from harness.platform_mcp.workload import (
 )
 from harness.policy.profiles import default_policy_profiles
 from harness.policy.runtime import ResolvedPolicy
+from harness.presentation.intent import UIIntentSelector
+from harness.presentation.models import ActionRequest, Publication
+from harness.presentation.planner import InteractionPlanner
+from harness.presentation.service import PresentationService
 from harness.projects.pg_repositories import PostgresProjectRepository
 from harness.projects.service import ProjectService
 from harness.quality.controller import QualitySyncController
@@ -195,9 +199,11 @@ from harness.storage.skill_blobs import SkillBlobStore
 from harness.storage.studio_repository import PostgresAgentDraftRepository
 from harness.storage.transcript_checkpoint import PostgresTranscriptCheckpointProvider
 from harness.storage.trigger_repository import PostgresAgentTriggerRepository
+from harness.storage.ui_repository import PostgresPresentationRepository
 from harness.storage.workspace_repository import PostgresWorkspaceAgentRepository
 from harness.studio.catalog import default_capability_catalog
 from harness.studio.catalog_service import CapabilityCatalogService
+from harness.studio.intent_router import BuilderIntentRouter
 from harness.studio.mcp_credential_store import (
     McpCredentialCipher,
     McpCredentialService,
@@ -542,9 +548,11 @@ def _manifests_require_remote_cli(
 
     for manifest in manifests:
         for tool in manifest.spec.tools:
-            if tool.python_entry is not None and (
-                manifest.metadata.name, manifest.metadata.version, tool.python_entry
-            ) not in sandboxed_python_tools:
+            if (
+                tool.python_entry is not None
+                and (manifest.metadata.name, manifest.metadata.version, tool.python_entry)
+                not in sandboxed_python_tools
+            ):
                 return True
             if tool.mcp is not None and tool.mcp not in read_only_mcp_references:
                 return True
@@ -732,6 +740,7 @@ def build_production_container(
 
     def ids(prefix: str) -> str:
         return f"{prefix}_{uuid4().hex}"
+
     sandbox_governance: SandboxGovernanceService | None = None
     sandbox_leases = SandboxLeaseService(
         PostgresSandboxLeaseRepository(sessions),
@@ -853,6 +862,9 @@ def build_production_container(
         agent_drafts,
         published_route_references=registry.route_references,
         clock=clock,
+        sandbox_network_access={str(k): v for k, v in settings.sandbox_network_access.items()},
+        sandbox_providers=frozenset(profile_provider_name(name)
+                                    for name in _enabled_providers(settings)),
     )
     environment_mcp_credentials = server_secret_credential_provider(
         references_json=settings.mcp_secret_references_json,
@@ -863,14 +875,19 @@ def build_production_container(
         McpCredentialCipher(settings.auth_jwt_secret),
         audit=audit,
     )
-    web_configurations = WebConfigurationService(mcp_credential_service,
-        enabled=settings.web_tools_enabled, provider=settings.web_search_provider,
-        api_key=settings.web_search_api_key.get_secret_value())
+    web_configurations = WebConfigurationService(
+        mcp_credential_service,
+        enabled=settings.web_tools_enabled,
+        provider=settings.web_search_provider,
+        api_key=settings.web_search_api_key.get_secret_value(),
+    )
     model_configurations = ModelConfigurationService(
         capability_catalogs,
         mcp_credential_service,
         environment="production",
         server_routes=_deployment_model_routes(settings),
+        runs=runs,
+        sessions=session_repository,
     )
     discovery_credentials = StoredMcpCredentialProvider(
         mcp_credential_service,
@@ -891,6 +908,9 @@ def build_production_container(
         audit=audit,
         agent_ids=agent_ids,
         draft_permissions=team_spaces,
+        intent_router=BuilderIntentRouter.from_settings(settings),
+        default_execution_profile=("opensandbox-gvisor"
+                                   if settings.sandbox_provider == "opensandbox" else None),
         clock=clock,
         id_generator=lambda: ids("draft"),
     )
@@ -1044,6 +1064,7 @@ def build_production_container(
         id_generator=ids,
         clock=clock,
         max_file_bytes=settings.input_artifact_max_file_bytes,
+        max_archive_file_bytes=settings.input_artifact_max_archive_file_bytes,
         max_files_per_run=settings.input_artifact_max_files_per_run,
         max_total_bytes=settings.input_artifact_max_total_bytes,
         processor=DefaultInputProcessor(),
@@ -1109,7 +1130,10 @@ def build_production_container(
         clock=clock,
         id_generator=ids,
         quality_gate=quality_service.require_promotion_allowed,
-        capability_catalog_resolver=capability_catalogs.get,
+        capability_catalog_resolver=capability_catalogs.get_for_deployment,
+        default_execution_profile=("opensandbox-gvisor"
+                                   if settings.sandbox_provider == "opensandbox"
+                                   else "isolated-default"),
         knowledge_reference_validator=knowledge.require_bases,
         quotas=enforced_quotas,
     )
@@ -1123,6 +1147,7 @@ def build_production_container(
     )
     memory_bank = MemoryBankService(
         memory_bank_repository,
+        default_allow_agent_personal=settings.memory_auto_save_personal_default,
         embedder=embedding_client(settings),
         semantic_threshold=settings.memory_semantic_threshold,
         audit=audit,
@@ -1339,9 +1364,7 @@ def build_production_container(
                 pinned_egress_enforcement = profile.egress_enforcement == "enforced"
                 # The profile declares the weakest enforcement it accepts; a Run
                 # is refused rather than silently executing weaker than declared.
-                if not provider_meets_enforcement_floor(
-                    provider_id, profile.minimum_enforcement
-                ):
+                if not provider_meets_enforcement_floor(provider_id, profile.minimum_enforcement):
                     raise RuntimeError("execution_profile_enforcement_below_minimum")
 
             # A Session's trust high-watermark sets the weakest backend it still
@@ -1364,11 +1387,9 @@ def build_production_container(
                 # Session may demand a stronger one.
                 trust_floor = profile.minimum_enforcement
             enforcement = sandbox_enforcement(provider_id, SandboxIsolation.CONTAINER)
-            if (
-                settings.sandbox_trust_floor_mode == "enforce"
-                and sandbox_enforcement_rank(enforcement)
-                < sandbox_enforcement_rank(trust_floor)
-            ):
+            if settings.sandbox_trust_floor_mode == "enforce" and sandbox_enforcement_rank(
+                enforcement
+            ) < sandbox_enforcement_rank(trust_floor):
                 raise SandboxGovernanceError(
                     "sandbox provider is weaker than this Run requires: "
                     f"requires {trust_floor.value} enforcement, "
@@ -1402,10 +1423,7 @@ def build_production_container(
                 for version in (root, *children.values())
             )
             manifests = tuple(snapshot.manifest for snapshot in snapshots)
-            if (
-                settings.sandbox_egress_enforcement == "enforced"
-                or pinned_egress_enforcement
-            ):
+            if settings.sandbox_egress_enforcement == "enforced" or pinned_egress_enforcement:
                 catalog_mcp = (await capability_catalogs.get(tenant_id)).catalog.mcp_servers
                 egress = sandbox_egress_policy(
                     manifests,
@@ -1432,9 +1450,13 @@ def build_production_container(
                 manifests,
                 read_only_mcp_references=read_only_mcp_references,
                 sandboxed_python_tools=frozenset(
-                    (snapshot.manifest.metadata.name,
-                     snapshot.manifest.metadata.version, tool.reference)
-                    for snapshot in snapshots for tool in snapshot.python_tool_snapshots
+                    (
+                        snapshot.manifest.metadata.name,
+                        snapshot.manifest.metadata.version,
+                        tool.reference,
+                    )
+                    for snapshot in snapshots
+                    for tool in snapshot.python_tool_snapshots
                 ),
             ):
                 return scoped(run_backend)
@@ -1455,6 +1477,7 @@ def build_production_container(
         model_probe = FakeModelPreflightProbe()
         mcp_probe = FakeMcpPreflightProbe()
     assert preflight_sandbox is not None
+
     def sandbox_for_profile(profile_name: str) -> SandboxProvider:
         try:
             return sandbox_backends[profile_name]
@@ -1465,6 +1488,7 @@ def build_production_container(
         studio=studio_service,
         sandbox=preflight_sandbox,
         sandbox_for_profile=sandbox_for_profile,
+        catalog_resolver=capability_catalogs.get_for_deployment,
         model_probe=model_probe,
         mcp_probe=mcp_probe,
         policies=policy_profiles,
@@ -1486,8 +1510,10 @@ def build_production_container(
         clock=clock,
         quotas=enforced_quotas,
     )
+
     async def runtime_builder_tools(run, session):
         from harness.studio.runtime_builder import builder_overlay
+
         return await builder_overlay(container, events, run, session)
 
     worker = RunOrchestrator(
@@ -1505,6 +1531,7 @@ def build_production_container(
         artifacts=artifact_service,
         input_artifacts=input_service,
         memory=memory_service,
+        interaction_planner=InteractionPlanner.from_settings(settings),
         workspace_policy_resolver=workspace_policy,
         runtime_asset_stager=stage_runtime_assets if execution_enabled else None,
         policy_resolver=resolve_policy,
@@ -1627,18 +1654,17 @@ def build_production_container(
             )
         )
     for backend_name, reaper in sandbox_reapers:
-        maintenance.append(
-            MaintenanceReaper(f"sandbox-expiry:{backend_name}", "sandbox", reaper)
-        )
+        maintenance.append(MaintenanceReaper(f"sandbox-expiry:{backend_name}", "sandbox", reaper))
     if sandbox_governance is not None and sandbox_governance.can_reconcile:
         maintenance.append(
-            MaintenanceReaper(
-                "sandbox-orphans", "sandbox", sandbox_governance.reclaim_orphans
-            )
+            MaintenanceReaper("sandbox-orphans", "sandbox", sandbox_governance.reclaim_orphans)
         )
     evolution = EvolutionService(
-        PostgresEvolutionRepository(sessions), studio_service, eval_service,
-        agent_service, quality_service
+        PostgresEvolutionRepository(sessions),
+        studio_service,
+        eval_service,
+        agent_service,
+        quality_service,
     )
     agent_service.publication_guard = evolution.publication_guard
     maintenance.append(MaintenanceReaper("evolution", "evolution", evolution.reconcile_pending))
@@ -1667,7 +1693,38 @@ def build_production_container(
         await redis.aclose()
         await engine.dispose()
 
+    async def authorize_ui_action(publication: Publication, request: ActionRequest) -> None:
+        session = await session_service.get(publication.tenant_id, publication.session_id)
+        if session.user_id != request.actor_user_id:
+            raise PermissionDeniedError("task owner changed")
+        if request.authentication_method == "jwt":
+            user, membership = await auth.profile(publication.tenant_id, request.actor_user_id)
+            if user.disabled or membership.role not in {"owner", "admin", "member"}:
+                raise PermissionDeniedError("task write permission was revoked")
+        elif request.authentication_method != "service":
+            raise PermissionDeniedError("UI actions require an interactive user identity")
+        if session.team_ids:
+            await team_spaces.require_agent_access(
+                publication.tenant_id,
+                request.actor_user_id,
+                session.team_ids[0],
+                session.resolved_agent_owner_user_id,
+                session.agent_name,
+                session.agent_version,
+            )
+
+    presentations = PresentationService(
+        PostgresPresentationRepository(sessions),
+        sessions=session_repository,
+        runs=run_service,
+        events=events,
+        queue=queue,
+        authorize=authorize_ui_action,
+        intent_selector=UIIntentSelector.from_settings(settings),
+        memory=memory_bank,
+    )
     container = ApiContainer(
+        presentations=presentations,
         evolution=evolution,
         environment="production",
         api_bearer_token=settings.api_bearer_token,

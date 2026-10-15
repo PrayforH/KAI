@@ -233,6 +233,7 @@ async def test_runtime_builds_new_api_options_and_maps_fake_sdk_messages(
         assert "WebFetch" not in (options.tools or [])
     else:
         assert "harness-web" not in options.mcp_servers
+    assert options.max_turns is None  # Legacy maxTurns=5 must not cap a task.
     assert options.max_budget_usd is None  # Fixture retains maxBudgetUsd=1.
     assert options.env["ANTHROPIC_BASE_URL"] == "https://new-api.example/v1"
     assert options.env["ANTHROPIC_AUTH_TOKEN"] == "super-secret"
@@ -1150,6 +1151,7 @@ async def test_runtime_wires_custom_tools_declared_by_subagents(tmp_path: Path) 
     options = captured[0]
     assert options.agents is not None
     helper = options.agents["helper"]
+    assert helper.maxTurns is None  # Published child limits are also disabled.
     assert isinstance(options.system_prompt, str)
     assert "subagent_type=helper" in options.system_prompt
     assert "children do not inherit" in options.system_prompt

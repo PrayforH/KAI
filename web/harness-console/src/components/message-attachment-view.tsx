@@ -1,4 +1,5 @@
 "use client";
+import { CardDownloadLink } from "./card-action-button";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { CompleteAttachment } from "@assistant-ui/react";
@@ -100,9 +101,7 @@ export function MessageAttachmentView({ attachment }: { attachment: Pick<Complet
             </span>
             <span className="image-lightbox-actions">
               {href ? (
-                <a href={href} download={attachment.name}>
-                  下载原图
-                </a>
+                <CardDownloadLink href={href} download={attachment.name} label="下载原图" />
               ) : null}
               <button
                 type="button"

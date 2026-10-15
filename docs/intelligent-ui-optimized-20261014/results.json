@@ -1,0 +1,908 @@
+{
+  "prompt_policy": "Natural business requests only; no HTML or component instructions appended to user input.",
+  "runtime_model": "deepseek-flash; route verified from harness.runtime.v1",
+  "runs": [
+    {
+      "id": "bike",
+      "host": "174",
+      "prompt": "拆解一下 7 速自行车的设计。",
+      "thread_id": "ui-natural-bike-416ead562127",
+      "run_id": "run_bccdf5abc9d6459f83761749641f9459",
+      "status": "succeeded",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use",
+          "vision"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "requested_route_matched": true,
+      "elapsed_seconds": 73.36,
+      "interaction_plan": [
+        {
+          "version": 1,
+          "origin": "intent_model",
+          "selector_model": "d1-3B",
+          "status": "selected",
+          "interactive": true,
+          "images": true
+        }
+      ],
+      "live_history_same": true,
+      "revision": "r1",
+      "presentation_kinds": [
+        "html"
+      ],
+      "html_files": [
+        "7速自行车传动设计·齿比拆解器.html"
+      ]
+    },
+    {
+      "id": "bill-split",
+      "host": "174",
+      "prompt": "五个人吃饭，按我们点的菜做个分账器，做成写字板的样子。菜品是披萨30元、意面20元、沙拉10元。",
+      "thread_id": "ui-natural-bill-split-6580d4b96cfe",
+      "run_id": "run_36aaf1ada182415fa9d8fc64d79bda58",
+      "status": "succeeded",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use",
+          "vision"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "requested_route_matched": true,
+      "elapsed_seconds": 102.09,
+      "interaction_plan": [
+        {
+          "version": 1,
+          "origin": "intent_model",
+          "selector_model": "d1-3B",
+          "status": "selected",
+          "interactive": false,
+          "images": true
+        }
+      ],
+      "live_history_same": true,
+      "revision": "r1",
+      "presentation_kinds": [
+        "html"
+      ],
+      "html_files": [
+        "分账写字板.html"
+      ]
+    },
+    {
+      "id": "clt",
+      "host": "174",
+      "prompt": "用咖啡店消费的例子解释一下中心极限定理。",
+      "thread_id": "ui-natural-clt-0c8ab7865eed",
+      "run_id": "run_b56f4dda3dad45a5ad67773deb6dc011",
+      "status": "succeeded",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use",
+          "vision"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "requested_route_matched": true,
+      "elapsed_seconds": 139.74,
+      "interaction_plan": [
+        {
+          "version": 1,
+          "origin": "intent_model",
+          "selector_model": "d1-3B",
+          "status": "selected",
+          "interactive": true,
+          "images": false
+        }
+      ],
+      "live_history_same": true,
+      "revision": "r1",
+      "presentation_kinds": [
+        "html"
+      ],
+      "html_files": [
+        "咖啡店消费：中心极限定理模拟器.html"
+      ]
+    },
+    {
+      "id": "gdp",
+      "host": "174",
+      "prompt": "GDP 是怎么算的？",
+      "thread_id": "ui-natural-gdp-0ab1085fcf71",
+      "run_id": "run_87cd420530354e338b3bde260d32e73b",
+      "status": "succeeded",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use",
+          "vision"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "requested_route_matched": true,
+      "elapsed_seconds": 77.59,
+      "interaction_plan": [
+        {
+          "version": 1,
+          "origin": "intent_model",
+          "selector_model": "d1-3B",
+          "status": "selected",
+          "interactive": true,
+          "images": false
+        }
+      ],
+      "live_history_same": true,
+      "revision": "r1",
+      "presentation_kinds": [
+        "html"
+      ],
+      "html_files": [
+        "GDP 三种核算方法 · 互动演示.html"
+      ]
+    },
+    {
+      "id": "greeting",
+      "host": "174",
+      "prompt": "早上好",
+      "thread_id": "ui-natural-greeting-918adee69bbf",
+      "run_id": "run_867f67a8b8814cd495112659fa205064",
+      "status": "succeeded",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use",
+          "vision"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "requested_route_matched": true,
+      "elapsed_seconds": 4.37,
+      "interaction_plan": [
+        {
+          "version": 1,
+          "origin": "intent_model",
+          "selector_model": "d1-3B",
+          "status": "selected",
+          "interactive": false,
+          "images": false
+        }
+      ],
+      "live_history_same": true,
+      "revision": "r1",
+      "presentation_kinds": [],
+      "html_files": []
+    },
+    {
+      "id": "lamb",
+      "host": "174",
+      "prompt": "周日想做烤羊腿招待朋友，人数还没定。",
+      "thread_id": "ui-natural-lamb-dfbced9c636f",
+      "run_id": "run_282c02c203c14817873aeddca784fef8",
+      "status": "succeeded",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use",
+          "vision"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "requested_route_matched": true,
+      "elapsed_seconds": 68.86,
+      "interaction_plan": [
+        {
+          "version": 1,
+          "origin": "intent_model",
+          "selector_model": "d1-3B",
+          "status": "selected",
+          "interactive": true,
+          "images": false
+        }
+      ],
+      "live_history_same": true,
+      "revision": "r1",
+      "presentation_kinds": [
+        "html",
+        "table"
+      ],
+      "html_files": [
+        "lamb-leg-calculator.html"
+      ]
+    },
+    {
+      "id": "monty-hall",
+      "host": "174",
+      "prompt": "讲讲三门问题，为什么换门更容易赢？",
+      "thread_id": "ui-natural-monty-hall-0661a4a19b38",
+      "run_id": "run_c23e94cae4e748f6b575e283334347ac",
+      "status": "succeeded",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use",
+          "vision"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "requested_route_matched": true,
+      "elapsed_seconds": 59.27,
+      "interaction_plan": [
+        {
+          "version": 1,
+          "origin": "intent_model",
+          "selector_model": "d1-3B",
+          "status": "selected",
+          "interactive": true,
+          "images": false
+        }
+      ],
+      "live_history_same": true,
+      "revision": "r1",
+      "presentation_kinds": [
+        "html"
+      ],
+      "html_files": [
+        "monty-hall-lab.html"
+      ]
+    },
+    {
+      "id": "plain-text",
+      "host": "174",
+      "prompt": "只用文字解释中心极限定理，不要任何互动。",
+      "thread_id": "ui-natural-plain-text-116b66c3271f",
+      "run_id": "run_09335edce7a54371ad5f8e7165afcc26",
+      "status": "succeeded",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use",
+          "vision"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "requested_route_matched": true,
+      "elapsed_seconds": 8.1,
+      "interaction_plan": [
+        {
+          "version": 1,
+          "origin": "intent_model",
+          "selector_model": "d1-3B",
+          "status": "selected",
+          "interactive": false,
+          "images": false
+        }
+      ],
+      "live_history_same": true,
+      "revision": "r1",
+      "presentation_kinds": [],
+      "html_files": []
+    },
+    {
+      "id": "retro-game",
+      "host": "174",
+      "prompt": "做一个我能玩的复古游戏机。",
+      "thread_id": "ui-natural-retro-game-2b1353e171dc",
+      "run_id": "run_e9da0c75509e41758e8181acb403959a",
+      "status": "succeeded",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use",
+          "vision"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "requested_route_matched": true,
+      "elapsed_seconds": 368.29,
+      "interaction_plan": [
+        {
+          "version": 1,
+          "origin": "intent_model",
+          "selector_model": "d1-3B",
+          "status": "selected",
+          "interactive": true,
+          "images": true
+        }
+      ],
+      "live_history_same": true,
+      "revision": "r1",
+      "presentation_kinds": [
+        "html"
+      ],
+      "html_files": [
+        "PIXEL·8 复古掌机.html"
+      ]
+    },
+    {
+      "id": "savings",
+      "host": "174",
+      "prompt": "每个月存一笔钱，长期下来能攒多少？",
+      "thread_id": "ui-natural-savings-5073816e28c5",
+      "run_id": "run_a7fb7423f26f4af4a2f696b0b1a21394",
+      "status": "succeeded",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use",
+          "vision"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "requested_route_matched": true,
+      "elapsed_seconds": 42.46,
+      "interaction_plan": [
+        {
+          "version": 1,
+          "origin": "intent_model",
+          "selector_model": "d1-3B",
+          "status": "selected",
+          "interactive": true,
+          "images": false
+        }
+      ],
+      "live_history_same": true,
+      "revision": "r1",
+      "presentation_kinds": [
+        "html"
+      ],
+      "html_files": [
+        "monthly-savings-calculator.html"
+      ]
+    },
+    {
+      "id": "drone-market",
+      "host": "79",
+      "prompt": "美国无人机航拍市场怎么样？",
+      "thread_id": "ui-natural-drone-market-fec78c536216",
+      "run_id": "run_064764c1517c4aedbeff9a4daaa9ed45",
+      "status": "succeeded",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "requested_route_matched": true,
+      "elapsed_seconds": 82.79,
+      "interaction_plan": [
+        {
+          "version": 1,
+          "origin": "intent_model",
+          "selector_model": "d1-3B",
+          "status": "selected",
+          "interactive": true,
+          "images": false
+        }
+      ],
+      "live_history_same": true,
+      "revision": "r1",
+      "presentation_kinds": [
+        "table"
+      ],
+      "html_files": []
+    },
+    {
+      "id": "italy-wedding",
+      "host": "79",
+      "prompt": "要去意大利参加婚礼，帮我规划一周穿什么。",
+      "thread_id": "ui-natural-italy-wedding-b0e2864c74ea",
+      "run_id": "run_79f23c58836e4214b5b6bc924d110521",
+      "status": "succeeded",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "requested_route_matched": true,
+      "elapsed_seconds": 396.05,
+      "interaction_plan": [
+        {
+          "version": 1,
+          "origin": "intent_model",
+          "selector_model": "d1-3B",
+          "status": "selected",
+          "interactive": true,
+          "images": true
+        }
+      ],
+      "live_history_same": true,
+      "revision": "r1",
+      "presentation_kinds": [
+        "html"
+      ],
+      "html_files": [
+        "italy-wedding-week-planner.html"
+      ]
+    },
+    {
+      "id": "pnw-roadtrip",
+      "host": "79",
+      "prompt": "规划一趟太平洋西北部10天的自驾。",
+      "thread_id": "ui-natural-pnw-roadtrip-f6b52d725420",
+      "run_id": "run_1b8fa60c86fc406780188b025d45dca6",
+      "status": "succeeded",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "requested_route_matched": true,
+      "elapsed_seconds": 352.45,
+      "interaction_plan": [
+        {
+          "version": 1,
+          "origin": "intent_model",
+          "selector_model": "d1-3B",
+          "status": "selected",
+          "interactive": true,
+          "images": true
+        }
+      ],
+      "live_history_same": true,
+      "revision": "r1",
+      "presentation_kinds": [
+        "table",
+        "html"
+      ],
+      "html_files": [
+        "太平洋西北 10 天自驾规划器.html"
+      ]
+    },
+    {
+      "id": "lamb",
+      "host": "174",
+      "prompt": "周日想做烤羊腿招待朋友，人数还没定。",
+      "thread_id": "ui-natural-lamb-c2e11228bb19",
+      "run_id": "run_7da1f78a19294e2eabed87e4337f5cfc",
+      "status": "succeeded",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use",
+          "vision"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "requested_route_matched": true,
+      "elapsed_seconds": 123.09,
+      "interaction_plan": [
+        {
+          "version": 1,
+          "origin": "intent_model",
+          "selector_model": "d1-3B",
+          "status": "selected",
+          "interactive": true,
+          "images": false
+        }
+      ],
+      "live_history_same": true,
+      "revision": "r2",
+      "presentation_kinds": [
+        "html"
+      ],
+      "html_files": [
+        "roast-lamb-planner.html"
+      ]
+    },
+    {
+      "id": "monty-hall",
+      "host": "174",
+      "prompt": "讲讲三门问题，为什么换门更容易赢？",
+      "thread_id": "ui-natural-monty-hall-ce04d81fbc04",
+      "run_id": "run_b64c986d54db4785ae3b3825a2e2ce47",
+      "status": "succeeded",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use",
+          "vision"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "requested_route_matched": true,
+      "elapsed_seconds": 154.37,
+      "interaction_plan": [
+        {
+          "version": 1,
+          "origin": "intent_model",
+          "selector_model": "d1-3B",
+          "status": "selected",
+          "interactive": true,
+          "images": false
+        }
+      ],
+      "live_history_same": true,
+      "revision": "r2",
+      "presentation_kinds": [
+        "html",
+        "table"
+      ],
+      "html_files": [
+        "三门问题交互实验.html"
+      ]
+    },
+    {
+      "id": "drone-market",
+      "host": "79",
+      "prompt": "美国无人机航拍市场怎么样？",
+      "thread_id": "ui-natural-drone-market-205a4102e578",
+      "run_id": "run_717f89679bcc49c8ac84833d4950a5cd",
+      "status": "succeeded",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "requested_route_matched": true,
+      "elapsed_seconds": 180.72,
+      "interaction_plan": [
+        {
+          "version": 1,
+          "origin": "intent_model",
+          "selector_model": "d1-3B",
+          "status": "selected",
+          "interactive": true,
+          "images": false
+        }
+      ],
+      "live_history_same": true,
+      "revision": "r2",
+      "presentation_kinds": [
+        "table",
+        "html"
+      ],
+      "html_files": [
+        "美国无人机航拍市场-规模预测试算.html"
+      ]
+    },
+    {
+      "id": "italy-wedding",
+      "host": "79",
+      "prompt": "要去意大利参加婚礼，帮我规划一周穿什么。",
+      "thread_id": "ui-natural-italy-wedding-929f2a97cfc8",
+      "run_id": "run_85c463679fe94cbd9b1cf313f629cab2",
+      "status": "succeeded",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "requested_route_matched": true,
+      "elapsed_seconds": 676.11,
+      "interaction_plan": [
+        {
+          "version": 1,
+          "origin": "intent_model",
+          "selector_model": "d1-3B",
+          "status": "selected",
+          "interactive": true,
+          "images": true
+        }
+      ],
+      "live_history_same": true,
+      "revision": "r3",
+      "presentation_kinds": [],
+      "html_files": [
+        "italy-wedding-week.html"
+      ]
+    },
+    {
+      "id": "pnw-roadtrip",
+      "host": "79",
+      "prompt": "规划一趟太平洋西北部10天的自驾。",
+      "thread_id": "ui-natural-pnw-roadtrip-99bee5221f57",
+      "run_id": "run_1f9a4cb24e9944ef9e3e26c78600be2d",
+      "status": "succeeded",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "requested_route_matched": true,
+      "elapsed_seconds": 461.95,
+      "interaction_plan": [
+        {
+          "version": 1,
+          "origin": "intent_model",
+          "selector_model": "d1-3B",
+          "status": "selected",
+          "interactive": true,
+          "images": true
+        }
+      ],
+      "live_history_same": true,
+      "revision": "r3",
+      "presentation_kinds": [
+        "html"
+      ],
+      "html_files": [
+        "太平洋西北部 10 天自驾规划器.html"
+      ]
+    },
+    {
+      "id": "italy-wedding",
+      "host": "79",
+      "prompt": "要去意大利参加婚礼，帮我规划一周穿什么。",
+      "thread_id": "ui-natural-italy-wedding-1061f5bb18a8",
+      "run_id": "run_b90b7d4dbd0f491b9087802c32c876f3",
+      "status": "succeeded",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "requested_route_matched": true,
+      "elapsed_seconds": 553.62,
+      "interaction_plan": [
+        {
+          "version": 1,
+          "origin": "intent_model",
+          "selector_model": "d1-3B",
+          "status": "selected",
+          "interactive": true,
+          "images": true
+        }
+      ],
+      "live_history_same": true,
+      "revision": "r4",
+      "presentation_kinds": [
+        "html"
+      ],
+      "html_files": [
+        "意大利一周穿搭规划器.html"
+      ]
+    },
+    {
+      "id": "pnw-roadtrip",
+      "host": "79",
+      "prompt": "规划一趟太平洋西北部10天的自驾。",
+      "thread_id": "ui-natural-pnw-roadtrip-4e6112a245e6",
+      "run_id": "run_2e69b0ba59034c91a48fad64b057b282",
+      "status": "succeeded",
+      "actual_runtime": {
+        "route_id": "deepseek-v4-flash",
+        "provider": "new-api",
+        "model": "deepseek-flash",
+        "compatibility": "full",
+        "capabilities": [
+          "streaming",
+          "tool_use"
+        ],
+        "used_fallback": false,
+        "permission_mode": "dontAsk",
+        "selection_source": "task_override",
+        "agent_default_route": "deepseek-v4-pro"
+      },
+      "requested_route_matched": true,
+      "elapsed_seconds": 487.38,
+      "interaction_plan": [
+        {
+          "version": 1,
+          "origin": "intent_model",
+          "selector_model": "d1-3B",
+          "status": "selected",
+          "interactive": true,
+          "images": true
+        }
+      ],
+      "live_history_same": true,
+      "revision": "r4",
+      "presentation_kinds": [
+        "html"
+      ],
+      "html_files": [
+        "太平洋西北部10天自驾路书（可交互）.html"
+      ]
+    }
+  ],
+  "browser_checks": {
+    "roadtrip": {
+      "actual_inline_photo_seen": "Rainier Paradise / Skyline Trail",
+      "addon_toggle": {
+        "days": [
+          10,
+          12
+        ],
+        "miles": [
+          1119,
+          1589
+        ],
+        "hours": [
+          28.3,
+          37.8
+        ]
+      },
+      "reload_preserved_state": true
+    },
+    "wedding": {
+      "actual_inline_photos_seen": 3,
+      "source_images_in_gallery": 6,
+      "one_network_failure_manually_recovered": true,
+      "final_reload_recovered": true
+    }
+  },
+  "benchmark_memory_cleanup": {
+    "174": {
+      "runs": 12,
+      "entries": 0,
+      "jobs_completed": 12
+    },
+    "79": {
+      "runs": 9,
+      "entries": 2,
+      "quarantined_pending": 2,
+      "jobs_completed": 9
+    },
+    "only_exact_test_run_sources_changed": true
+  },
+  "followup": {
+    "run_id": "run_ff9d968728a74500857b0258f657edd1",
+    "status": "succeeded",
+    "interaction_plan": [
+      {
+        "version": 1,
+        "origin": "intent_model",
+        "selector_model": "d1-3B",
+        "status": "selected",
+        "interactive": false,
+        "images": false
+      }
+    ],
+    "prompt": "请只用一句话概括上面的穿搭方案。",
+    "live_browser_verified": true,
+    "prior_prose_not_replayed": true,
+    "no_new_deliverable_row": true
+  }
+}

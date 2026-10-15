@@ -1,0 +1,73 @@
+{
+  "verified_at": "2026-10-12T05:30:34.193677+00:00",
+  "browser": "Google Chrome, native CUA, incognito",
+  "entry": "http://172.20.109.173:3302/",
+  "thread_id": "f67a4ad6-538c-4e36-85e1-0850b67b4ca2",
+  "release": "intelligent-ui-20261012c",
+  "runs": {
+    "markdown": "run_62a2c9aec8f047b6b847c5c74e387adf",
+    "question": "run_48133548a1444a63aed4a6fa8995431e",
+    "question_answer": "run_b47d74abc6c4415b933a18d7d1d31a1e",
+    "lamb": "run_85229cb083444f51a8be546a93508081",
+    "bill": "run_7b966f5ce0024b0292300e9aa07541c8"
+  },
+  "model_observation": {
+    "initial_ui": "shdata-model",
+    "after_reload_ui": "DeepSeek-V4.1-Flash",
+    "actual_resolved_model": "not inferred from dropdown display"
+  },
+  "passed": [
+    "response light and dark appearance, icons, quote and link",
+    "14-row table and 18-item list expand/collapse",
+    "HTTP code clipboard, full raw indentation verified by paste into unsent composer",
+    "response clipboard includes hidden table/list content and code indentation",
+    "questions initial unselected, no automatic send on choice",
+    "single/multi/text; number shortcuts; text entry 123 not intercepted",
+    "answers retained across previous/next and collapse/reopen",
+    "last missing text answer disables submit; complete answer submits one observed user message",
+    "HTML lamb reset5, increment8, values3.2kg/1.6kg/16cloves/32g",
+    "HTML clipboard exact current shopping list",
+    "HTML reload restores8 after new nonce",
+    "HTML bill1 yuan3 people=0.34/0.33/0.33, exact1.00; real clipboard verified",
+    "HTML bill60 yuan5 people18%tip=70.80, each14.16",
+    "HTML billexclude5th=4 people17.70 each; add10%tax=19.20 each,total76.80",
+    "HTML billreload restores60.00,18%tip,10%tax,5th excluded,total76.80",
+    "ordinary Chrome login after isolated cookie namespace configuration"
+  ],
+  "lamb_presentation": "ui_ae9db85f32a183f331f9b1a8",
+  "lamb_article_fidelity": "partial: test uses potato1kg base; article uses1.5kg. This validates platform interaction, not full original-case acceptance. Initial observed value4 before manual reset; fresh initialization was not confirmed.",
+  "pending": [
+    "frame-level streaming fade visual capture",
+    "mobile/touch",
+    "system reduced-motion real browser",
+    "11 article cases full fidelity and image cases"
+  ],
+  "login_observation": "Regular profile returned to session_expired, while incognito login succeeded. Changed the isolated 3302 web AUTH_COOKIE_PREFIX to harness_ui_173; ordinary Chrome login then succeeded. Previous effective cookie prefix was not captured (compose also uses web.env), so the specific original cause is not confirmed. Security flags and API/Worker unchanged.",
+  "screenshots": {
+    "intelligent-ui-chrome-bill-participants-tax.png": {
+      "sha256": "df47751803f8a0838187a33962d273077c69fcb9052473d7113d221408ed1965",
+      "bytes": 370372
+    },
+    "intelligent-ui-chrome-question-dark.png": {
+      "sha256": "568cad37d64a4b12857a30d86d32e22c98fd1753499dbaf390ccfbae402dddbe",
+      "bytes": 286527
+    },
+    "intelligent-ui-chrome-bill-one-yuan.png": {
+      "sha256": "fa31d5a48439b138d80bdd549d358698e07a256cd1d0087a213b712d6a78ff14",
+      "bytes": 335343
+    },
+    "intelligent-ui-chrome-response-light.png": {
+      "sha256": "c9b16577b3a8df85c8496f4cfc91cadf995df13ee1d2324c91e1e67b4d099971",
+      "bytes": 415743
+    },
+    "intelligent-ui-chrome-response-dark.png": {
+      "sha256": "ad75cdf94d37f8bbc5b265a024cc50a4da5ffcb7e2e0777a5ff5dd9cedae0a1e",
+      "bytes": 405423
+    },
+    "intelligent-ui-chrome-lamb-restored.png": {
+      "sha256": "2c3a504951db9e44e2e3a2506bc96f8a2d7e49d101a00d80ae3c612aaceac8a2",
+      "bytes": 323341
+    }
+  },
+  "bill_presentation": "ui_7d730c3a1fe46aa2d7311aa4"
+}

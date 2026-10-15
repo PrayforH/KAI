@@ -556,6 +556,7 @@ class CodexAppServerRuntime:
             value.strip()
             for value in (
                 context.memory_projection,
+                context.interaction_projection,
                 (context.context_projection if include_context_projection else ""),
                 history_projection,
             )
