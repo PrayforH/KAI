@@ -1,0 +1,9 @@
+{
+  "tokens": [{"sha256": "REPLACE_WITH_SHA256_OF_RANDOM_TOKEN", "sources": ["orders-sqlite"]}],
+  "sources": [
+    {"id": "orders-sqlite", "label": "本地订单分析副本", "engine": "sqlite", "connection": {"path": "/data/sqlite/orders.sqlite"}},
+    {"id": "sales-pg", "label": "销售只读库", "engine": "postgresql", "read_only_role": true, "connection": {"host": "postgres.example.internal", "port": 5432, "database": "sales", "user": "kai_reader", "password_env": "SALES_PG_PASSWORD", "sslmode": "verify-full"}},
+    {"id": "sales-mysql", "label": "MySQL 只读库", "engine": "mysql", "read_only_role": true, "connection": {"host": "mysql.example.internal", "port": 3306, "database": "sales", "user": "kai_reader", "password_env": "SALES_MYSQL_PASSWORD", "ssl_ca": "/config/mysql-ca.pem"}},
+    {"id": "sales-dm", "label": "达梦只读库", "engine": "dameng", "read_only_role": true, "connection": {"host": "dm.example.internal", "port": 5236, "user": "KAI_READER", "password_env": "SALES_DM_PASSWORD"}}
+  ]
+}
