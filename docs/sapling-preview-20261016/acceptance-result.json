@@ -1,0 +1,12 @@
+{
+  "prompt": "请先让我从以下12个验证维度中多选，等我选择之后再做计划，不要替我选择，也不要省略候选项：界面布局、键盘操作、移动端、深色模式、长列表、空状态、错误恢复、权限边界、历史恢复、导出、响应速度、无障碍。",
+  "thread_id": "sapling-pagination-2870ab4e0bae",
+  "run_id": "run_a569cf4681164828807dcb4d1a07df5e",
+  "recognized_form": true,
+  "status": "succeeded",
+  "question_option_counts": [
+    12
+  ],
+  "no_artifacts": true,
+  "passed": true
+}
