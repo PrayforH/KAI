@@ -241,3 +241,33 @@ class StatusTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PaginatedInputTests(unittest.TestCase):
+    def test_large_option_lists_still_request_input(self):
+        for count in (9, 32, 128):
+            form = {
+                "version": 1,
+                "title": "候选确认",
+                "questions": [
+                    {
+                        "id": "scope",
+                        "label": "选择范围",
+                        "type": "multi",
+                        "options": [f"候选 {i}" for i in range(count)],
+                    }
+                ],
+            }
+            self.assertTrue(
+                has_conversation_input("```harness-input\n" + json.dumps(form) + "\n```")
+            )
+        form["questions"][0]["options"].append("超出传输边界")
+        self.assertFalse(has_conversation_input(json.dumps(form)))
+
+    def test_question_count_is_independent_of_a_screen(self):
+        form = {
+            "version": 1,
+            "title": "补充信息",
+            "questions": [{"id": f"q{i}", "label": f"问题 {i}", "type": "text"} for i in range(5)],
+        }
+        self.assertTrue(has_conversation_input(json.dumps(form)))

@@ -286,7 +286,7 @@ describe("Agent Studio management page", () => {
     expect(workbench).toContain("阶段有 {activeStageBlocked.length} 项阻塞");
     expect(sidebar).toContain("<ProductBrandMark");
     expect(sidebar).toContain("<ProductBrandCopy");
-    expect(productBrand).toContain('PRODUCT_NAME = "KAI WORKBENCH"');
+    expect(productBrand).toContain('PRODUCT_NAME = "sapling preview"');
     expect(sidebar).toContain("<WorkspaceNavigation");
     expect(workspaceNavigation).toContain('aria-label="工作区"');
     expect(workspaceNavigation).toContain('href: "/"');
