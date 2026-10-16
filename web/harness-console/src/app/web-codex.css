@@ -1430,6 +1430,7 @@ body.codex-theme-v1:has(.console-shell) .aui-user-message-content {
 }
 
 body.codex-theme-v1:has(.console-shell) .aui-thread-viewport-footer {
+  isolation: isolate;
   width: min(800px, 100%);
   max-width: 800px;
   margin-top: 0;
@@ -1438,9 +1439,27 @@ body.codex-theme-v1:has(.console-shell) .aui-thread-viewport-footer {
   backdrop-filter: none;
 }
 
+/* Paint across the scroll gutter without widening the scroll area or clipping
+   composer menus. The sticky footer keeps this cover above older messages. */
+body.codex-theme-v1:has(.console-shell) .aui-thread-viewport-footer::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--codex-thread-bg);
+  box-shadow: 0 0 0 100vmax var(--codex-thread-bg);
+  clip-path: inset(0 -100vmax);
+}
+
 body.codex-theme-v1:has(.console-shell) .harness-composer-shell {
+  --composer-shadow: 0 2px 12px rgb(0 0 0 / 18%);
   width: 100%;
   max-width: 800px;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell {
+  --composer-shadow: 0 2px 12px rgb(27 27 34 / 7%);
 }
 
 body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-root,
@@ -1452,20 +1471,20 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-c
   border-radius: 16px;
   color: #ededed;
   background: #1f1f1f;
-  box-shadow: 0 14px 44px rgb(0 0 0 / 20%);
+  box-shadow: var(--composer-shadow);
 }
 
 body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-root:focus-within,
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-root:focus-within {
   border-color: #616161;
-  box-shadow: 0 16px 48px rgb(0 0 0 / 24%);
+  box-shadow: var(--composer-shadow);
 }
 
 body.codex-theme-v1:has(.console-shell) .harness-composer-shell[data-run-locked="true"] .aui-composer-root,
 body.codex-theme-v1:has(.console-shell) .harness-composer-shell[data-run-locked="true"] .aui-composer-root:focus-within {
   border-color: #333333;
   background: #1b1b1b;
-  box-shadow: none;
+  box-shadow: var(--composer-shadow);
 }
 
 body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-input {
@@ -2365,12 +2384,12 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-c
   border-radius: 16px;
   color: #202024;
   background: #ffffff;
-  box-shadow: 0 10px 34px rgb(27 27 34 / 10%), 0 1px 2px rgb(27 27 34 / 5%);
+  box-shadow: var(--composer-shadow);
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-root:focus-within {
   border-color: #c8d6ed;
-  box-shadow: 0 0 0 2px rgb(26 28 31 / 8%), 0 12px 38px rgb(27 27 34 / 11%);
+  box-shadow: 0 0 0 2px rgb(26 28 31 / 8%), var(--composer-shadow);
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell[data-run-locked="true"] .aui-composer-root,
