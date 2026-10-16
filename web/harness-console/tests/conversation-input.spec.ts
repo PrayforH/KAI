@@ -62,11 +62,11 @@ it("handles quoted braces, refuses ambiguous or non-protocol JSON and suppresses
  expect(parseConversationInput('```harness\n{"version":1,"execute":"shell"}\n```')).toBeNull();
  });
 
-it("keeps all over-limit choices readable without exposing protocol or accepting an invalid card", () => {
+it("accepts a paginated choice list without exposing protocol", () => {
  const data={version:1,title:"确认查询范围",questions:[{id:"scope",label:"查询哪些维度",type:"multi",options:Array.from({length:9},(_,i)=>`维度 ${i+1}`)}]};
  for (const language of ["harness-input","harness","json"]) {
   const text=`请确认。\n\n\`\`\`${language}\n${JSON.stringify(data)}\n\`\`\`\n\n后续说明。`;
-  expect(parseConversationInput(text)).toBeNull();
+  expect(parseConversationInput(text)?.questions[0].options).toHaveLength(9);
   const display=conversationInputDisplay(text);
   expect(display).toContain("维度 9");expect(display).toContain("后续说明。");
   expect(display).not.toMatch(/```|"questions"|"version"/);
@@ -93,4 +93,15 @@ it("degrades malformed internal forms without hiding ordinary code or JSON", () 
 it("preserves an internal protocol shown literally inside an outer code example", () => {
  const example="````markdown\n```harness-input\n{invalid}\n```\n````";
  expect(conversationInputDisplay(example)).toBe(example);
+});
+
+it("accepts longer generic forms within transport bounds and never truncates multi-selection", () => {
+ const options=Array.from({length:128},(_,i)=>`选项${i+1}`);
+ const data={version:1 as const,title:"查询范围",questions:[{id:"scope",label:"选择范围",type:"multi" as const,options}]};
+ const input=parseConversationInput(fence(data))!;
+ expect(input.questions[0].options).toHaveLength(128);
+ expect(formatConversationAnswers(input,{scope:{selected:options.slice(0,20),text:""}})).toContain("选项20");
+ expect(parseConversationInput(fence({...data,questions:[{...data.questions[0],options:[...options,"额外选项"]}]}))).toBeNull();
+ const questions=Array.from({length:5},(_,i)=>({id:`q${i}`,label:`问题${i}`,type:"text"}));
+ expect(parseConversationInput(fence({version:1,title:"补充信息",questions}))?.questions).toHaveLength(5);
 });
