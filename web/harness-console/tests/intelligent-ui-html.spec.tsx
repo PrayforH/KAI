@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { IntelligentUiBlock } from "../src/components/intelligent-ui/presentation-host";
+import { ExpandablePreview } from "../src/components/intelligent-ui/expandable-preview";
 import { HtmlView } from "../src/components/intelligent-ui/html-view";
 import { parsePresentation, parsePresentationBody, type Presentation } from "../src/components/intelligent-ui/schema";
 
@@ -138,4 +139,39 @@ it("automatically recovers a transport interruption without printing browser err
     expect(host.querySelector("iframe")).not.toBeNull();
     expect(fetcher).toHaveBeenCalledTimes(2);
   } finally { fetcher.mockRestore(); vi.useRealTimers(); }
+});
+
+
+it("expands and collapses the same live document, preserving its state channel and focus", () => {
+  const close = vi.fn(function (this: HTMLDialogElement) { this.open = false; });
+  const show = vi.fn(function (this: HTMLDialogElement) { this.open = true; });
+  const modal = vi.fn(function (this: HTMLDialogElement) { this.open = true; });
+  Object.assign(HTMLDialogElement.prototype, { close, show, showModal: modal });
+  const changed = vi.fn();
+  try {
+    act(() => root.render(<ExpandablePreview title="地图">{control => <>{control}
+      <HtmlView presentation={p} height={560} ready onState={changed} />
+    </>}</ExpandablePreview>));
+    const original = frame();
+    const nonce = token();
+    message({ type: "harness.ui.ready", token: nonce });
+    const button = host.querySelector<HTMLButtonElement>("button")!;
+    act(() => button.click());
+    expect(modal).toHaveBeenCalledOnce();
+    expect(host.querySelector("dialog")?.getAttribute("aria-modal")).toBe("true");
+    expect(frame()).toBe(original);
+    expect(token()).toBe(nonce);
+    message({ type: "harness.ui.state", token: nonce, state: { selected: 2 } });
+    expect(changed).toHaveBeenCalledWith({ selected: 2 });
+    act(() => host.querySelector("dialog")!.dispatchEvent(new Event("cancel", { cancelable: true })));
+    expect(show).toHaveBeenCalledOnce();
+    expect(frame()).toBe(original);
+    expect(frame().getAttribute("sandbox")).toBe("allow-scripts");
+    expect(document.activeElement).toBe(button);
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+  } finally {
+    Reflect.deleteProperty(HTMLDialogElement.prototype, "close");
+    Reflect.deleteProperty(HTMLDialogElement.prototype, "show");
+    Reflect.deleteProperty(HTMLDialogElement.prototype, "showModal");
+  }
 });

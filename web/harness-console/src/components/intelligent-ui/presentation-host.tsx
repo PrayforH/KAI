@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
+import { ExpandablePreview } from "./expandable-preview";
 import {
   executionLabel,
   terminalExecution,
@@ -264,11 +265,11 @@ function PublishedPresentation({
   const formSubmitted =
     form?.kind === "write" &&
     state.requests.some((r) => r.action_id === form.action_id);
-  return (
+  const render = (expandControl?: ReactNode) => (
     <figure className="intelligent-ui" data-kind={presentation.kind}>
       {body.kind === "html" ? <figcaption className="intelligent-ui-title intelligent-ui-html-title">
         <span>{presentation.title || "交互工具"}</span>
-        <PresentationMenu presentation={presentation} />
+        <div className="intelligent-ui-header-actions">{expandControl}<PresentationMenu presentation={presentation} /></div>
       </figcaption> : presentation.title ? (
         <figcaption className="intelligent-ui-title">
           {presentation.title}
@@ -312,6 +313,9 @@ function PublishedPresentation({
       ))}
     </figure>
   );
+  return body.kind === "html"
+    ? <ExpandablePreview title={presentation.title || "交互工具"}>{render}</ExpandablePreview>
+    : render();
 }
 
 function fallbackText(value: unknown): string | null {

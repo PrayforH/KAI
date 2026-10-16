@@ -9,7 +9,7 @@ let host: HTMLDivElement, root: Root;
 const presentation: Presentation = {
   schema_version: "harness.ui/v1", presentation_id: "ui_owned", revision: 3,
   run_id: "run-1", message_id: "message-1", placement: "inline", kind: "html",
-  renderer_version: "html/1", fallback_text: "按人数调整采购清单", data: { artifact_id: "artifact-1" },
+  renderer_version: "html/1", fallback_text: "按人数调整采购清单", data: { artifact_id: "artifact-1", name: "map.html" },
   config: {}, actions: [], decision: { origin: "model" }, source_refs: [], snapshot_hash: "abcdef",
 };
 beforeEach(() => {
@@ -17,30 +17,17 @@ beforeEach(() => {
   act(() => root.render(<PresentationMenu presentation={presentation} />));
 });
 afterEach(() => { act(() => root.unmount()); host.remove(); });
-const trigger = () => host.querySelector("button")!;
-const panel = () => document.querySelector('[role="dialog"][aria-label="工具信息"]')!;
-it("keeps secondary metadata out of the card until opened, with the owning document revision", () => {
-  expect(document.querySelector('[aria-label="工具信息"]')).toBeNull();
-  expect(host.querySelector("a")).toBeNull();
-  act(() => trigger().click());
-  expect(panel().textContent).toContain("按人数调整采购清单");
-  const link = panel().querySelector("a")!;
+it("opens the owning revision in an isolated tab without a hidden menu", () => {
+  expect(host.querySelector("button")).toBeNull();
+  const link = host.querySelector<HTMLAnchorElement>('[aria-label="在新标签页打开"]')!;
   expect(link.getAttribute("href")).toBe("/api/ui/presentations/ui_owned/html?revision=3");
+  expect(link.target).toBe("_blank");
   expect(link.rel).toBe("noopener noreferrer");
-  act(() => link.click());
-  expect(document.querySelector('[aria-label="工具信息"]')).toBeNull();
 });
-it("supports keyboard entry and Escape returns focus to its trigger", () => {
-  act(() => trigger().dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })));
-  expect(document.activeElement).toBe(panel().querySelector("a"));
-  act(() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
-  expect(trigger().getAttribute("aria-expanded")).toBe("false");
-  expect(document.activeElement).toBe(trigger());
-});
-it("keeps internal scrolling open and dismisses outside clicks", () => {
-  act(() => trigger().click());
-  act(() => panel().dispatchEvent(new Event("scroll", { bubbles: true })));
-  expect(trigger().getAttribute("aria-expanded")).toBe("true");
-  act(() => document.body.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true })));
-  expect(trigger().getAttribute("aria-expanded")).toBe("false");
+it("downloads the published artifact through the authenticated attachment route", () => {
+  const link = host.querySelector<HTMLAnchorElement>('[aria-label="下载 HTML"]')!;
+  expect(link.getAttribute("href")).toBe("/api/harness/artifacts/artifact-1");
+  expect(link.download).toBe("map.html");
+  expect(link.hasAttribute("target")).toBe(false);
+  expect(host.textContent).not.toContain("abcdef");
 });
