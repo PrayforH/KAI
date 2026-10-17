@@ -1321,3 +1321,34 @@ async def require_owned_run(container: ApiContainer, identity: Identity, run_id:
     run = await container.runs.get(identity.tenant_id, run_id)
     await require_owned_session(container, identity, run.session_id)
     return run
+
+
+def is_automation_session(session: Session) -> bool:
+    """An automation execution runs under its task's workload identity."""
+
+    return bool(session.api_key_id) and session.user_id == f"automation:{session.api_key_id}"
+
+
+async def require_readable_run(
+    container: ApiContainer, identity: Identity, run_id: str
+) -> tuple[Run, Session]:
+    """Read one run the actor owns, or one bound to the actor's automation thread.
+
+    Automation runs belong to ``automation:{task}``, so their session never
+    matches the viewing user. The user-scoped thread binding that already
+    exposes the task and its files is the read authority. Write and cancel
+    guards keep using ``require_owned_run``.
+    """
+
+    run = await container.runs.get(identity.tenant_id, run_id)
+    session = await container.sessions.get(identity.tenant_id, run.session_id)
+    if session.user_id == identity.user_id:
+        return run, session
+    if is_automation_session(session):
+        await container.agui.get_thread_record_for_session(
+            tenant_id=identity.tenant_id,
+            user_id=identity.user_id,
+            session_id=session.session_id,
+        )
+        return run, session
+    raise NotFoundError(f"run not found: {run_id}")

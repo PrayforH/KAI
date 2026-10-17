@@ -433,9 +433,10 @@ class PresentationService:
         revision: int,
         expected_version: int,
         state: dict[str, Any],
+        allow_foreign_owner: bool = False,
     ) -> ViewState:
         owner, p = await self.repository.get(tenant_id, presentation_id, revision)
-        if owner.owner_user_id != actor_user_id:
+        if owner.owner_user_id != actor_user_id and not allow_foreign_owner:
             raise NotFoundError("presentation not found")
         try:
             encoded = json.dumps(state, ensure_ascii=False, allow_nan=False)
