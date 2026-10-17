@@ -653,6 +653,7 @@ body.codex-theme-v1:has(.console-shell) .task-list-scroll .task-list {
   background: transparent;
   cursor: pointer;
   opacity: 0;
+  text-decoration: none;
   transform: translateY(-50%);
   transition: opacity 120ms ease, color 120ms ease, background-color 120ms ease;
 }

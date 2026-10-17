@@ -3,7 +3,6 @@
 import { isFailedRunStatus } from "../lib/run-status";
 import { SidebarIcon } from "./sidebar-icon";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { ProjectCreateDialog } from "./project-create-dialog";
 import { PanelResizeHandle } from "./panel-resize-handle";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
@@ -145,7 +144,6 @@ export function TaskSidebar({
   const wasOverlayOpenRef = useRef(false);
   const runView = useRunViewModel();
   const { user } = useAuth();
-  const router = useRouter();
   const [expandedTaskGroups, setExpandedTaskGroups] = useSidebarGroups(user.user_id);
   const sectionId = useId();
   const projectsCollapsed = expandedTaskGroups.has("section:projects:collapsed");
@@ -562,15 +560,14 @@ export function TaskSidebar({
                         </span>
                       </strong>
                     </button>
-                    <button
-                      type="button"
+                    <Link
                       className="task-project-settings"
+                      href={`/studio/projects/${encodeURIComponent(project.projectId)}`}
                       aria-label={`打开项目 ${project.name}`}
                       title={`打开项目 ${project.name}`}
-                      onClick={() => router.push(`/studio/projects/${encodeURIComponent(project.projectId)}`)}
                     >
                       <MoreIcon />
-                    </button>
+                    </Link>
                     <button
                         type="button"
                         className="task-project-add"
