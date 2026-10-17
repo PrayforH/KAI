@@ -270,7 +270,7 @@ export function ProjectHome({ projectId }: { projectId: string }) {
       {settingsOpen && (
         <ProjectSettingsDialog
           project={project}
-          onClose={() => setSettingsOpen(false)}
+          onClose={() => { setSettingsOpen(false); void reload(); }}
           onChanged={() => { void reload(); }}
           onRemoved={() => router.push("/")}
         />
