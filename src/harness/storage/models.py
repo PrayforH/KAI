@@ -1229,6 +1229,41 @@ class ProjectRow(Base):
     payload: Mapped[dict[str, Any]] = mapped_column(JSON)
 
 
+class ProjectMemoryRow(Base):
+    """One user-authored fact that every Run in a project receives."""
+
+    __tablename__ = "project_memories"
+    __table_args__ = (
+        Index("ix_project_memories_project", "tenant_id", "project_id", "created_at"),
+    )
+
+    memory_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(128), index=True)
+    user_id: Mapped[str] = mapped_column(String(128))
+    project_id: Mapped[str] = mapped_column(String(128))
+    content: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ProjectDocumentRow(Base):
+    """An uploaded input artifact attached to every Run in a project."""
+
+    __tablename__ = "project_documents"
+    __table_args__ = (
+        Index("ix_project_documents_project", "tenant_id", "project_id", "created_at"),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    project_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    input_artifact_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(128))
+    name: Mapped[str] = mapped_column(String(500))
+    media_type: Mapped[str] = mapped_column(String(255))
+    size_bytes: Mapped[int] = mapped_column(BigInteger)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class SandboxLeaseRow(Base):
     """Durable ownership record for one provisioned remote sandbox."""
 

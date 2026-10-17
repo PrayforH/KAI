@@ -34,6 +34,7 @@ from harness.core.errors import ConflictError, NotFoundError
 from harness.core.models import AguiThreadBinding as StoredAguiThreadBinding
 from harness.core.models import Run
 from harness.core.ports import AguiThreadBindingRepository
+from harness.projects.models import ProjectRunContext
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,7 @@ class AguiThreadBinding:
     agent_version: str
     agent_owner_user_id: str
     space_id: str | None = None
+    project_id: str | None = None
     previous_session_ids: tuple[str, ...] = ()
 
     @property
@@ -70,6 +72,7 @@ KnowledgeBindingResolver = Callable[
     [str, str, Sequence[str], tuple[str, ...]],
     Awaitable[Sequence[object]],
 ]
+ProjectContextResolver = Callable[[str, str, str], Awaitable[ProjectRunContext | None]]
 
 
 def _knowledge_references_override(request: RunAgentInput) -> list[str] | None:
@@ -113,6 +116,7 @@ class AguiRunService:
         title_generator: TaskTitleGenerator | None = None,
         contexts: ContextService | None = None,
         knowledge_bindings: KnowledgeBindingResolver | None = None,
+        project_context: ProjectContextResolver | None = None,
     ) -> None:
         self._sessions = sessions
         self._run_service = runs
@@ -121,6 +125,7 @@ class AguiRunService:
         self._title_generator = title_generator
         self._contexts = contexts
         self._knowledge_bindings = knowledge_bindings
+        self._project_context = project_context
         self._title_tasks: set[asyncio.Task[None]] = set()
         self._title_task_keys: set[tuple[str, str, str, datetime]] = set()
         # A generator failure leaves the deterministic title in place, so nothing
@@ -129,6 +134,11 @@ class AguiRunService:
         self._title_retry_at: dict[tuple[str, str, str], float] = {}
         self._run_bindings: dict[tuple[str, str, str, str], str] = {}
         self._lock = asyncio.Lock()
+
+    def configure_project_context(self, resolver: ProjectContextResolver) -> None:
+        if self._project_context is not None:
+            raise RuntimeError("project context resolver is already configured")
+        self._project_context = resolver
 
     async def get_binding(
         self, *, tenant_id: str, user_id: str, thread_id: str
@@ -141,6 +151,7 @@ class AguiRunService:
             agent_version=session.agent_version,
             agent_owner_user_id=session.resolved_agent_owner_user_id,
             space_id=session.team_ids[0] if session.team_ids else None,
+            project_id=stored.project_id,
             previous_session_ids=stored.previous_session_ids,
         )
 
@@ -296,11 +307,6 @@ class AguiRunService:
     ) -> AguiRunCreation:
         prompt, input_artifact_ids = _latest_user_input(request)
         conversation_prompts = _user_prompts(request)
-        resolved = await self._input_artifacts.resolve_for_run(
-            tenant_id=tenant_id,
-            user_id=user_id,
-            input_artifact_ids=input_artifact_ids,
-        )
         model_route_override = _model_route_override(request)
         requested_knowledge = _knowledge_references_override(request)
         creation = None
@@ -315,6 +321,36 @@ class AguiRunService:
                 space_id=space_id,
                 connection_mode=connection_mode,
             )
+            project_context = (
+                await self._project_context(tenant_id, user_id, binding.project_id)
+                if self._project_context is not None and binding.project_id
+                else None
+            )
+            effective_input_ids = list(
+                dict.fromkeys(
+                    (
+                        *input_artifact_ids,
+                        *(
+                            project_context.document_ids
+                            if project_context is not None
+                            else ()
+                        ),
+                    )
+                )
+            )
+            resolved = await self._input_artifacts.resolve_for_run(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                input_artifact_ids=effective_input_ids,
+            )
+            user_input_ids = list(dict.fromkeys(input_artifact_ids))
+            project_document_ids = [
+                item
+                for item in dict.fromkeys(
+                    project_context.document_ids if project_context is not None else ()
+                )
+                if item not in user_input_ids
+            ]
             knowledge_override = await self._resolve_knowledge_override(
                 tenant_id=tenant_id,
                 user_id=user_id,
@@ -328,7 +364,12 @@ class AguiRunService:
             run_input: dict[str, object] = {
                 "prompt": prompt,
                 "conversation_prompts": conversation_prompts,
-                "input_artifact_ids": [item.input_artifact_id for item in resolved],
+                "input_artifact_ids": user_input_ids,
+                **(
+                    {"project_document_ids": project_document_ids}
+                    if project_document_ids
+                    else {}
+                ),
                 **(
                     {"required_model_capabilities": ["vision"]}
                     if any(item.media_type.startswith("image/") for item in resolved)
@@ -341,6 +382,23 @@ class AguiRunService:
                 ),
                 **(
                     {"knowledge_binding_override": knowledge_override} if knowledge_override else {}
+                ),
+                **(
+                    {"project_context": project_context.text}
+                    if project_context is not None and project_context.text
+                    else {}
+                ),
+                **(
+                    {
+                        "project_context_meta": {
+                            "projectId": project_context.project_id,
+                            "memories": project_context.memory_count,
+                            "documents": project_context.document_count,
+                        }
+                    }
+                    if project_context is not None
+                    and (project_context.text or project_context.document_ids)
+                    else {}
                 ),
             }
             creation = await self._run_service.create_with_result(
@@ -774,6 +832,7 @@ class AguiRunService:
                     agent_version=session.agent_version,
                     agent_owner_user_id=session.resolved_agent_owner_user_id,
                     space_id=session.team_ids[0] if session.team_ids else None,
+                    project_id=stored.project_id,
                 )
                 resolved_owner = agent_owner_user_id or user_id
                 same_agent = (
@@ -819,6 +878,7 @@ class AguiRunService:
                         agent_version=agent_version,
                         agent_owner_user_id=next_session.resolved_agent_owner_user_id,
                         space_id=space_id,
+                        project_id=stored.project_id,
                     )
                 if stored.archived_at is not None:
                     await self._bindings.set_archived(
@@ -843,6 +903,7 @@ class AguiRunService:
                 agent_version=agent_version,
                 agent_owner_user_id=session.resolved_agent_owner_user_id,
                 space_id=space_id,
+                project_id=project_id,
             )
             timestamp = datetime.now(UTC)
             await self._bindings.add(

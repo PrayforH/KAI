@@ -561,7 +561,7 @@ body.codex-theme-v1:has(.console-shell) .task-list-scroll .task-list {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 30px;
-  padding: 4px 30px 4px 8px;
+  padding: 4px 62px 4px 8px;
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr);
   align-items: center;
@@ -637,6 +637,48 @@ body.codex-theme-v1:has(.console-shell) .task-list-scroll .task-list {
 
 .task-project-add:disabled {
   display: none;
+}
+
+.task-project-settings {
+  position: absolute;
+  top: 50%;
+  right: 34px;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  color: #c4c4c4;
+  background: transparent;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity 120ms ease, color 120ms ease, background-color 120ms ease;
+}
+
+.task-project-head:hover .task-project-settings,
+.task-project-head:focus-within .task-project-settings {
+  opacity: 1;
+}
+
+.task-project-settings:hover {
+  color: #ffffff;
+  background: #454545;
+}
+
+.task-project-settings svg {
+  width: 15px;
+  height: 15px;
+  fill: currentColor;
+  stroke: none;
+}
+
+@media (hover: none) {
+  .task-project-add,
+  .task-project-settings {
+    opacity: 1;
+  }
 }
 
 .task-project-add svg {
@@ -2114,6 +2156,15 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-proj
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-add:hover {
   color: #171719;
   background: #dedee1;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-settings {
+  color: #606066;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-settings:hover {
+  color: #171719;
+  background: #e9e9eb;
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-list-item:hover {

@@ -3,6 +3,7 @@
 import { isFailedRunStatus } from "../lib/run-status";
 import Link from "next/link";
 import { ProjectCreateDialog } from "./project-create-dialog";
+import { ProjectSettingsDialog } from "./project-settings-dialog";
 import { PanelResizeHandle } from "./panel-resize-handle";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AccountMenu } from "./account-menu";
@@ -89,6 +90,16 @@ function ProjectFolderIcon() {
   );
 }
 
+function MoreIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <circle cx="3.5" cy="8" r="1" />
+      <circle cx="8" cy="8" r="1" />
+      <circle cx="12.5" cy="8" r="1" />
+    </svg>
+  );
+}
+
 function ScrollingTaskTitle({ title }: { title: string }) {
   const viewportRef = useRef<HTMLSpanElement>(null);
   useEffect(() => {
@@ -164,6 +175,7 @@ export function TaskSidebar({
   const [creatingProjectId, setCreatingProjectId] = useState<string | null>(null);
   const [projectCreateError, setProjectCreateError] = useState("");
   const [projectDialogOpen, setProjectDialogOpen] = useState(false);
+  const [settingsProject, setSettingsProject] = useState<ApiProject | null>(null);
   const projectCreationPending = useRef(false);
   const sidebarRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -569,6 +581,15 @@ export function TaskSidebar({
                       </strong>
                     </button>
                     <button
+                      type="button"
+                      className="task-project-settings"
+                      aria-label={`设置项目 ${project.name}`}
+                      title={`设置项目 ${project.name}`}
+                      onClick={() => setSettingsProject(project)}
+                    >
+                      <MoreIcon />
+                    </button>
+                    <button
                         type="button"
                         className="task-project-add"
                         aria-label={`在 ${project.name} 下新建任务`}
@@ -679,6 +700,16 @@ export function TaskSidebar({
         onCreated={(project) => {
           setExpandedTaskGroups((current) => new Set(current).add(`project:${project.projectId}`));
           onProjectsChanged?.();
+        }}
+      />}
+      {settingsProject && <ProjectSettingsDialog
+        project={settingsProject}
+        onClose={() => setSettingsProject(null)}
+        onChanged={() => onProjectsChanged?.()}
+        onRemoved={() => {
+          setExpandedTaskGroups((current) => new Set(current));
+          onProjectsChanged?.();
+          notifyTaskListChanged();
         }}
       />}
     </aside>

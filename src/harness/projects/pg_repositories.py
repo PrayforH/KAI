@@ -7,9 +7,9 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from harness.core.errors import ConflictError, NotFoundError
-from harness.projects.models import Project
+from harness.projects.models import Project, ProjectDocument, ProjectMemory
 from harness.storage.database import SessionFactory
-from harness.storage.models import ProjectRow
+from harness.storage.models import ProjectDocumentRow, ProjectMemoryRow, ProjectRow
 
 
 def _payload(project: Project) -> dict[str, object]:
@@ -94,4 +94,183 @@ class PostgresProjectRepository:
             if not result.rowcount:
                 await session.rollback()
                 raise NotFoundError(f"Project not found: {project_id}")
+            await session.commit()
+
+
+def _memory(row: ProjectMemoryRow) -> ProjectMemory:
+    return ProjectMemory(
+        tenantId=row.tenant_id,
+        userId=row.user_id,
+        projectId=row.project_id,
+        memoryId=row.memory_id,
+        content=row.content,
+        createdAt=row.created_at,
+        updatedAt=row.updated_at,
+    )
+
+
+def _document(row: ProjectDocumentRow) -> ProjectDocument:
+    return ProjectDocument(
+        tenantId=row.tenant_id,
+        userId=row.user_id,
+        projectId=row.project_id,
+        inputArtifactId=row.input_artifact_id,
+        name=row.name,
+        mediaType=row.media_type,
+        sizeBytes=row.size_bytes,
+        createdAt=row.created_at,
+    )
+
+
+class PostgresProjectResourceRepository:
+    def __init__(self, sessions: SessionFactory) -> None:
+        self._sessions = sessions
+
+    async def list_memories(
+        self, tenant_id: str, project_id: str
+    ) -> list[ProjectMemory]:
+        statement = (
+            select(ProjectMemoryRow)
+            .where(
+                ProjectMemoryRow.tenant_id == tenant_id,
+                ProjectMemoryRow.project_id == project_id,
+            )
+            .order_by(ProjectMemoryRow.created_at, ProjectMemoryRow.memory_id)
+        )
+        async with self._sessions() as session:
+            rows = (await session.scalars(statement)).all()
+        return [_memory(row) for row in rows]
+
+    async def add_memory(self, memory: ProjectMemory) -> None:
+        async with self._sessions() as session:
+            session.add(
+                ProjectMemoryRow(
+                    memory_id=memory.memory_id,
+                    tenant_id=memory.tenant_id,
+                    user_id=memory.user_id,
+                    project_id=memory.project_id,
+                    content=memory.content,
+                    created_at=memory.created_at,
+                    updated_at=memory.updated_at,
+                )
+            )
+            try:
+                await session.commit()
+            except IntegrityError as error:
+                await session.rollback()
+                raise ConflictError(
+                    f"project memory already exists: {memory.memory_id}"
+                ) from error
+
+    async def get_memory(
+        self, tenant_id: str, project_id: str, memory_id: str
+    ) -> ProjectMemory:
+        async with self._sessions() as session:
+            row = await session.get(ProjectMemoryRow, memory_id)
+            if (
+                row is None
+                or row.tenant_id != tenant_id
+                or row.project_id != project_id
+            ):
+                raise NotFoundError(f"project memory not found: {memory_id}")
+            return _memory(row)
+
+    async def replace_memory(self, memory: ProjectMemory) -> None:
+        async with self._sessions() as session:
+            row = await session.get(ProjectMemoryRow, memory.memory_id)
+            if (
+                row is None
+                or row.tenant_id != memory.tenant_id
+                or row.project_id != memory.project_id
+            ):
+                raise NotFoundError(f"project memory not found: {memory.memory_id}")
+            row.content = memory.content
+            row.updated_at = memory.updated_at
+            await session.commit()
+
+    async def delete_memory(
+        self, tenant_id: str, project_id: str, memory_id: str
+    ) -> None:
+        statement = sql_delete(ProjectMemoryRow).where(
+            ProjectMemoryRow.tenant_id == tenant_id,
+            ProjectMemoryRow.project_id == project_id,
+            ProjectMemoryRow.memory_id == memory_id,
+        )
+        async with self._sessions() as session:
+            result = await session.execute(statement)
+            if not result.rowcount:
+                await session.rollback()
+                raise NotFoundError(f"project memory not found: {memory_id}")
+            await session.commit()
+
+    async def list_documents(
+        self, tenant_id: str, project_id: str
+    ) -> list[ProjectDocument]:
+        statement = (
+            select(ProjectDocumentRow)
+            .where(
+                ProjectDocumentRow.tenant_id == tenant_id,
+                ProjectDocumentRow.project_id == project_id,
+            )
+            .order_by(
+                ProjectDocumentRow.created_at, ProjectDocumentRow.input_artifact_id
+            )
+        )
+        async with self._sessions() as session:
+            rows = (await session.scalars(statement)).all()
+        return [_document(row) for row in rows]
+
+    async def add_document(self, document: ProjectDocument) -> None:
+        async with self._sessions() as session:
+            session.add(
+                ProjectDocumentRow(
+                    tenant_id=document.tenant_id,
+                    project_id=document.project_id,
+                    input_artifact_id=document.input_artifact_id,
+                    user_id=document.user_id,
+                    name=document.name,
+                    media_type=document.media_type,
+                    size_bytes=document.size_bytes,
+                    created_at=document.created_at,
+                )
+            )
+            try:
+                await session.commit()
+            except IntegrityError as error:
+                await session.rollback()
+                raise ConflictError(
+                    f"document already attached: {document.input_artifact_id}"
+                ) from error
+
+    async def delete_document(
+        self, tenant_id: str, project_id: str, input_artifact_id: str
+    ) -> None:
+        statement = sql_delete(ProjectDocumentRow).where(
+            ProjectDocumentRow.tenant_id == tenant_id,
+            ProjectDocumentRow.project_id == project_id,
+            ProjectDocumentRow.input_artifact_id == input_artifact_id,
+        )
+        async with self._sessions() as session:
+            result = await session.execute(statement)
+            if not result.rowcount:
+                await session.rollback()
+                raise NotFoundError(
+                    f"project document not found: {input_artifact_id}"
+                )
+            await session.commit()
+
+    async def delete_for_project(self, tenant_id: str, project_id: str) -> None:
+        async with self._sessions() as session:
+            await session.execute(
+                sql_delete(ProjectMemoryRow).where(
+                    ProjectMemoryRow.tenant_id == tenant_id,
+                    ProjectMemoryRow.project_id == project_id,
+                )
+            )
+            await session.execute(
+                sql_delete(ProjectDocumentRow).where(
+                    ProjectDocumentRow.tenant_id == tenant_id,
+                    ProjectDocumentRow.project_id == project_id,
+                )
+            )
             await session.commit()

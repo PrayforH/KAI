@@ -1321,6 +1321,14 @@ class RunOrchestrator:
                 if not isinstance(item, str):
                     raise ValueError("run input_artifact_ids must be a list of strings")
                 input_artifact_ids.append(item)
+            raw_project_document_ids: object = run.input.get("project_document_ids", [])
+            if not isinstance(raw_project_document_ids, list):
+                raise ValueError("run project_document_ids must be a list of strings")
+            for item in cast(list[object], raw_project_document_ids):
+                if not isinstance(item, str):
+                    raise ValueError("run project_document_ids must be a list of strings")
+                if item not in input_artifact_ids:
+                    input_artifact_ids.append(item)
             if input_artifact_ids and self._input_artifacts is None:
                 raise RuntimeError("input artifact service is not configured")
             with self._stage(
@@ -1410,7 +1418,7 @@ class RunOrchestrator:
                 else None
             )
 
-            context_projection = (
+            recovery_projection = (
                 await self._context_service.recovery_projection(
                     tenant_id,
                     session.user_id,
@@ -1425,13 +1433,43 @@ class RunOrchestrator:
                 )
                 else ""
             )
-            if context_projection:
+            raw_project_projection = run.input.get("project_context")
+            project_projection = (
+                raw_project_projection
+                if isinstance(raw_project_projection, str)
+                else ""
+            )
+            context_projection = "\n\n".join(
+                section
+                for section in (project_projection, recovery_projection)
+                if section.strip()
+            )
+            if recovery_projection:
                 await self._events.append(
                     tenant_id=tenant_id,
                     run_id=run_id,
                     session_id=run.session_id,
                     event_type="context.recovery.loaded",
                     payload={"mode": "durable_digest"},
+                )
+            if project_projection.strip() or (
+                isinstance(raw_project_document_ids, list)
+                and raw_project_document_ids
+            ):
+                raw_project_meta = run.input.get("project_context_meta")
+                project_meta = (
+                    raw_project_meta if isinstance(raw_project_meta, dict) else {}
+                )
+                await self._events.append(
+                    tenant_id=tenant_id,
+                    run_id=run_id,
+                    session_id=run.session_id,
+                    event_type="context.project.loaded",
+                    payload={
+                        "project_id": project_meta.get("projectId"),
+                        "memories": project_meta.get("memories", 0),
+                        "documents": project_meta.get("documents", 0),
+                    },
                 )
             context = RuntimeContext(
                 platform_tools=(await self._platform_tools_factory(run, session)

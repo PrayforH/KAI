@@ -31,6 +31,15 @@ describe("project-grouped task list", () => {
     expect(sidebar).toContain('aria-label="任务"');
   });
 
+  it("offers project settings and removal from the sidebar", () => {
+    expect(sidebar).toContain("<ProjectSettingsDialog");
+    expect(sidebar).toContain('aria-label={`设置项目 ${project.name}`}');
+    expect(sidebar).toContain("task-project-settings");
+    expect(client).toContain("resources(projectId: string)");
+    expect(client).toContain("addMemory(projectId: string");
+    expect(client).toContain("attachDocument(");
+  });
+
   it("keeps tasks visible when their project disappears", () => {
     // A deleted project must not hide its tasks from both sections.
     expect(sidebar).toContain("const known = new Set(projects.map((project) => project.projectId))");
@@ -70,7 +79,7 @@ describe("project and task sections share one column", () => {
   });
 
   it("uses compact project padding and a small indent for child tasks", () => {
-    expect(css).toMatch(/\.task-project-heading\s*\{[^}]*padding:\s*4px 30px 4px 8px;/);
+    expect(css).toMatch(/\.task-project-heading\s*\{[^}]*padding:\s*4px 62px 4px 8px;/);
     expect(css).toMatch(/\.task-list-item,\s*[\s\S]*?\.task-list-item\.is-active\s*\{[^}]*padding:\s*4px 6px 4px 34px;/);
   });
 });

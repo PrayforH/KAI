@@ -7,7 +7,15 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 
 from harness.core.errors import ConflictError, NotFoundError
-from harness.projects.models import Project
+from harness.projects.models import (
+    MAX_PROJECT_DOCUMENTS,
+    MAX_PROJECT_MEMORIES,
+    Project,
+    ProjectDocument,
+    ProjectMemory,
+    ProjectResources,
+    ProjectRunContext,
+)
 
 
 def _default_id(prefix: str) -> str:
@@ -23,14 +31,21 @@ class ProjectService:
         id_generator: Callable[[str], str] | None = None,
         task_project_writer=None,
         task_project_clearer=None,
+        resources=None,
+        document_resolver=None,
     ) -> None:
         self._repository = repository
+        self._resources = resources
         self._clock = clock or (lambda: datetime.now(UTC))
         self._ids = id_generator or _default_id
         # Moves a task into (or out of) a project; supplied by the composition
         # root because the binding lives with the AG-UI thread record.
         self._task_project_writer = task_project_writer
         self._task_project_clearer = task_project_clearer
+        self._document_resolver = document_resolver
+
+    def configure_document_resolver(self, resolver) -> None:
+        self._document_resolver = resolver
 
     def configure_task_project_clearer(self, clearer) -> None:
         self._task_project_clearer = clearer
@@ -41,7 +56,7 @@ class ProjectService:
         self._task_project_writer = writer
 
     async def create(
-        self, *, tenant_id: str, user_id: str, name: str
+        self, *, tenant_id: str, user_id: str, name: str, instructions: str = ""
     ) -> Project:
         trimmed = name.strip()
         if not trimmed:
@@ -52,6 +67,7 @@ class ProjectService:
             projectId=self._ids("project"),
             userId=user_id,
             name=trimmed,
+            instructions=instructions.strip(),
             createdAt=now,
             updatedAt=now,
         )
@@ -78,6 +94,7 @@ class ProjectService:
         user_id: str,
         project_id: str,
         name: str | None = None,
+        instructions: str | None = None,
         archived: bool | None = None,
     ) -> Project:
         current = await self.get(
@@ -89,11 +106,27 @@ class ProjectService:
             if not trimmed:
                 raise ConflictError("Project name cannot be empty")
             updates["name"] = trimmed
+        if instructions is not None:
+            updates["instructions"] = instructions.strip()
         if archived is not None:
             updates["archived_at"] = self._clock() if archived else None
         updated = current.model_copy(update=updates)
         await self._repository.replace(updated)
         return updated
+
+    async def instructions_for(
+        self, *, tenant_id: str, user_id: str, project_id: str
+    ) -> str:
+        """Return the project's instructions after checking ownership.
+
+        A Run resolves this once at creation time; callers treat the returned
+        text as an immutable snapshot rather than re-reading it later.
+        """
+
+        project = await self.get(
+            tenant_id=tenant_id, user_id=user_id, project_id=project_id
+        )
+        return project.instructions
 
     async def delete(self, *, tenant_id: str, user_id: str, project_id: str) -> None:
         await self.get(tenant_id=tenant_id, user_id=user_id, project_id=project_id)
@@ -101,7 +134,192 @@ class ProjectService:
         # the 项目 and 任务 sections.
         if self._task_project_clearer is not None:
             await self._task_project_clearer(tenant_id, project_id)
+        if self._resources is not None:
+            await self._resources.delete_for_project(tenant_id, project_id)
         await self._repository.delete(tenant_id, project_id)
+
+    async def resources(
+        self, *, tenant_id: str, user_id: str, project_id: str
+    ) -> ProjectResources:
+        project = await self.get(
+            tenant_id=tenant_id, user_id=user_id, project_id=project_id
+        )
+        if self._resources is None:
+            return ProjectResources(project=project)
+        return ProjectResources(
+            project=project,
+            memories=tuple(
+                await self._resources.list_memories(tenant_id, project_id)
+            ),
+            documents=tuple(
+                await self._resources.list_documents(tenant_id, project_id)
+            ),
+        )
+
+    async def add_memory(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        project_id: str,
+        content: str,
+    ) -> ProjectMemory:
+        await self.get(tenant_id=tenant_id, user_id=user_id, project_id=project_id)
+        if self._resources is None:
+            raise ConflictError("Project resource store is unavailable")
+        trimmed = content.strip()
+        if not trimmed:
+            raise ConflictError("Project memory cannot be empty")
+        existing = await self._resources.list_memories(tenant_id, project_id)
+        if len(existing) >= MAX_PROJECT_MEMORIES:
+            raise ConflictError(
+                f"a project accepts at most {MAX_PROJECT_MEMORIES} memories"
+            )
+        now = self._clock()
+        memory = ProjectMemory(
+            tenantId=tenant_id,
+            userId=user_id,
+            projectId=project_id,
+            memoryId=self._ids("project_memory"),
+            content=trimmed,
+            createdAt=now,
+            updatedAt=now,
+        )
+        await self._resources.add_memory(memory)
+        return memory
+
+    async def update_memory(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        project_id: str,
+        memory_id: str,
+        content: str,
+    ) -> ProjectMemory:
+        await self.get(tenant_id=tenant_id, user_id=user_id, project_id=project_id)
+        if self._resources is None:
+            raise ConflictError("Project resource store is unavailable")
+        trimmed = content.strip()
+        if not trimmed:
+            raise ConflictError("Project memory cannot be empty")
+        current = await self._resources.get_memory(
+            tenant_id, project_id, memory_id
+        )
+        updated = current.model_copy(
+            update={"content": trimmed, "updated_at": self._clock()}
+        )
+        await self._resources.replace_memory(updated)
+        return updated
+
+    async def delete_memory(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        project_id: str,
+        memory_id: str,
+    ) -> None:
+        await self.get(tenant_id=tenant_id, user_id=user_id, project_id=project_id)
+        if self._resources is None:
+            raise ConflictError("Project resource store is unavailable")
+        await self._resources.delete_memory(tenant_id, project_id, memory_id)
+
+    async def attach_document(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        project_id: str,
+        input_artifact_id: str,
+    ) -> ProjectDocument:
+        await self.get(tenant_id=tenant_id, user_id=user_id, project_id=project_id)
+        if self._resources is None:
+            raise ConflictError("Project resource store is unavailable")
+        if self._document_resolver is None:
+            raise ConflictError("Project document verification is unavailable")
+        existing = await self._resources.list_documents(tenant_id, project_id)
+        if len(existing) >= MAX_PROJECT_DOCUMENTS:
+            raise ConflictError(
+                f"a project accepts at most {MAX_PROJECT_DOCUMENTS} documents"
+            )
+        artifact = await self._document_resolver(
+            tenant_id, user_id, input_artifact_id
+        )
+        document = ProjectDocument(
+            tenantId=tenant_id,
+            userId=user_id,
+            projectId=project_id,
+            inputArtifactId=input_artifact_id,
+            name=artifact.name,
+            mediaType=artifact.media_type,
+            sizeBytes=artifact.size_bytes or 0,
+            createdAt=self._clock(),
+        )
+        await self._resources.add_document(document)
+        return document
+
+    async def detach_document(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        project_id: str,
+        input_artifact_id: str,
+    ) -> None:
+        await self.get(tenant_id=tenant_id, user_id=user_id, project_id=project_id)
+        if self._resources is None:
+            raise ConflictError("Project resource store is unavailable")
+        await self._resources.delete_document(
+            tenant_id, project_id, input_artifact_id
+        )
+
+    async def context_for_run(
+        self, tenant_id: str, user_id: str, project_id: str
+    ) -> ProjectRunContext | None:
+        """Capture the project's context for one Run.
+
+        A task can outlive its project (the project is a container, not a
+        dependency), so a missing project simply yields no context.
+        """
+
+        try:
+            project = await self.get(
+                tenant_id=tenant_id, user_id=user_id, project_id=project_id
+            )
+        except NotFoundError:
+            return None
+        memories: tuple[ProjectMemory, ...] = ()
+        documents: tuple[ProjectDocument, ...] = ()
+        if self._resources is not None:
+            memories = tuple(
+                await self._resources.list_memories(tenant_id, project_id)
+            )
+            documents = tuple(
+                await self._resources.list_documents(tenant_id, project_id)
+            )
+        sections: list[str] = []
+        if project.instructions.strip():
+            sections.append(f"## 项目说明\n{project.instructions.strip()}")
+        if memories:
+            sections.append(
+                "## 项目记忆\n"
+                + "\n".join(f"- {item.content}" for item in memories)
+            )
+        text = (
+            f'<project_context project="{project.name}">\n'
+            + "\n\n".join(sections)
+            + "\n</project_context>"
+            if sections
+            else ""
+        )
+        return ProjectRunContext(
+            projectId=project_id,
+            text=text,
+            documentIds=tuple(item.input_artifact_id for item in documents),
+            memoryCount=len(memories),
+            documentCount=len(documents),
+        )
 
     async def assign_task(
         self,

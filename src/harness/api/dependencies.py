@@ -115,7 +115,10 @@ from harness.policy.runtime import ResolvedPolicy
 from harness.presentation.models import ActionRequest, Publication
 from harness.presentation.repositories import InMemoryPresentationRepository
 from harness.presentation.service import PresentationService
-from harness.projects.repositories import InMemoryProjectRepository
+from harness.projects.repositories import (
+    InMemoryProjectRepository,
+    InMemoryProjectResourceRepository,
+)
 from harness.projects.service import ProjectService
 from harness.quality.controller import QualitySyncController
 from harness.quality.langfuse import DisabledQualityExporter
@@ -1010,6 +1013,7 @@ def build_memory_container(
     )
     project_service = ProjectService(
         InMemoryProjectRepository(),
+        resources=InMemoryProjectResourceRepository(),
         clock=clock,
         id_generator=id_generator,
     )
@@ -1022,6 +1026,19 @@ def build_memory_container(
             project_id=project_id,
         )
     )
+
+    async def resolve_project_document(
+        tenant_id: str, user_id: str, input_artifact_id: str
+    ):
+        resolved = await input_artifact_service.resolve_for_run(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            input_artifact_ids=[input_artifact_id],
+        )
+        return resolved[0]
+
+    project_service.configure_document_resolver(resolve_project_document)
+    agui.configure_project_context(project_service.context_for_run)
 
     async def lifecycle_reap() -> int:
         await lifecycle.enqueue_due_retention_jobs()

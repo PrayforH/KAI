@@ -142,3 +142,146 @@ async def test_delete_detaches_the_projects_tasks_first() -> None:
     project = await service.create(tenant_id="t", user_id="u", name="金融办")
     await service.delete(tenant_id="t", user_id="u", project_id=project.project_id)
     assert cleared == [("t", project.project_id)]
+
+
+def build_resource_service():
+    from types import SimpleNamespace
+
+    from harness.projects.repositories import InMemoryProjectResourceRepository
+
+    resources = InMemoryProjectResourceRepository()
+    service = ProjectService(
+        InMemoryProjectRepository(),
+        resources=resources,
+        clock=lambda: datetime(2026, 10, 17, 9, 0, tzinfo=UTC),
+        id_generator=lambda prefix: f"{prefix}-1",
+    )
+    seen: list[tuple[str, str, str]] = []
+
+    async def resolver(tenant_id: str, user_id: str, artifact_id: str):
+        seen.append((tenant_id, user_id, artifact_id))
+        return SimpleNamespace(
+            name="brief.md", media_type="text/markdown", size_bytes=12
+        )
+
+    service.configure_document_resolver(resolver)
+    return service, resources, seen
+
+
+@pytest.mark.asyncio
+async def test_project_instructions_round_trip_and_reach_run_context() -> None:
+    service, _resources, _seen = build_resource_service()
+    project = await service.create(
+        tenant_id="t",
+        user_id="u",
+        name="金融办",
+        instructions="  只输出结论  ",
+    )
+    assert project.instructions == "只输出结论"
+    updated = await service.update(
+        tenant_id="t",
+        user_id="u",
+        project_id=project.project_id,
+        instructions="先给证据，再给结论",
+    )
+    assert updated.instructions == "先给证据，再给结论"
+    context = await service.context_for_run(
+        tenant_id="t", user_id="u", project_id=project.project_id
+    )
+    assert context is not None
+    assert "先给证据，再给结论" in context.text
+    assert context.document_ids == ()
+
+
+@pytest.mark.asyncio
+async def test_project_memories_are_listed_and_injected() -> None:
+    service, _resources, _seen = build_resource_service()
+    project = await service.create(tenant_id="t", user_id="u", name="金融办")
+    memory = await service.add_memory(
+        tenant_id="t",
+        user_id="u",
+        project_id=project.project_id,
+        content=" 口径以 2026 版为准 ",
+    )
+    assert memory.content == "口径以 2026 版为准"
+    updated = await service.update_memory(
+        tenant_id="t",
+        user_id="u",
+        project_id=project.project_id,
+        memory_id=memory.memory_id,
+        content="口径以 2026 版为准，旧版作废",
+    )
+    assert updated.content.endswith("旧版作废")
+    context = await service.context_for_run(
+        tenant_id="t", user_id="u", project_id=project.project_id
+    )
+    assert context is not None
+    assert "## 项目记忆" in context.text
+    assert "旧版作废" in context.text
+    assert context.memory_count == 1
+    await service.delete_memory(
+        tenant_id="t",
+        user_id="u",
+        project_id=project.project_id,
+        memory_id=memory.memory_id,
+    )
+    context = await service.context_for_run(
+        tenant_id="t", user_id="u", project_id=project.project_id
+    )
+    assert context is not None
+    assert context.memory_count == 0
+
+
+@pytest.mark.asyncio
+async def test_project_documents_are_verified_and_injected_into_every_run() -> None:
+    service, _resources, seen = build_resource_service()
+    project = await service.create(tenant_id="t", user_id="u", name="金融办")
+    document = await service.attach_document(
+        tenant_id="t",
+        user_id="u",
+        project_id=project.project_id,
+        input_artifact_id="input_artifact-1",
+    )
+    assert document.name == "brief.md"
+    assert seen == [("t", "u", "input_artifact-1")]
+    context = await service.context_for_run(
+        tenant_id="t", user_id="u", project_id=project.project_id
+    )
+    assert context is not None
+    assert context.document_ids == ("input_artifact-1",)
+    assert context.document_count == 1
+    await service.detach_document(
+        tenant_id="t",
+        user_id="u",
+        project_id=project.project_id,
+        input_artifact_id="input_artifact-1",
+    )
+    context = await service.context_for_run(
+        tenant_id="t", user_id="u", project_id=project.project_id
+    )
+    assert context is not None
+    assert context.document_ids == ()
+
+
+@pytest.mark.asyncio
+async def test_deleting_a_project_removes_its_resources() -> None:
+    service, resources, _seen = build_resource_service()
+    project = await service.create(tenant_id="t", user_id="u", name="金融办")
+    await service.add_memory(
+        tenant_id="t", user_id="u", project_id=project.project_id, content="记忆"
+    )
+    await service.attach_document(
+        tenant_id="t",
+        user_id="u",
+        project_id=project.project_id,
+        input_artifact_id="input_artifact-1",
+    )
+    await service.delete(tenant_id="t", user_id="u", project_id=project.project_id)
+    assert await resources.list_memories("t", project.project_id) == []
+    assert await resources.list_documents("t", project.project_id) == []
+    assert (
+        await service.context_for_run(
+            tenant_id="t", user_id="u", project_id=project.project_id
+        )
+        is None
+    )

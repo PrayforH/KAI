@@ -89,7 +89,10 @@ from harness.policy.profiles import default_policy_profiles
 from harness.policy.runtime import ResolvedPolicy
 from harness.presentation.models import ActionRequest, Publication
 from harness.presentation.service import PresentationService
-from harness.projects.pg_repositories import PostgresProjectRepository
+from harness.projects.pg_repositories import (
+    PostgresProjectRepository,
+    PostgresProjectResourceRepository,
+)
 from harness.projects.service import ProjectService
 from harness.quality.controller import QualitySyncController
 from harness.quality.langfuse import DisabledQualityExporter, LangfuseQualityExporter
@@ -1010,6 +1013,7 @@ def build_production_container(
     )
     project_service = ProjectService(
         PostgresProjectRepository(sessions),
+        resources=PostgresProjectResourceRepository(sessions),
         clock=clock,
         id_generator=ids,
     )
@@ -1059,6 +1063,18 @@ def build_production_container(
         processor=DefaultInputProcessor(),
         file_catalog=file_service,
     )
+
+    async def resolve_project_document(
+        tenant_id: str, user_id: str, input_artifact_id: str
+    ):
+        resolved = await input_service.resolve_for_run(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            input_artifact_ids=[input_artifact_id],
+        )
+        return resolved[0]
+
+    project_service.configure_document_resolver(resolve_project_document)
     eval_service = EvalControlPlaneService(
         datasets=eval_dataset_repository,
         runs=eval_run_repository,
@@ -1540,6 +1556,7 @@ def build_production_container(
         contexts=context_service,
         title_generator=ControlPlaneTaskTitleGenerator(model_configurations),
         knowledge_bindings=knowledge.resolve_bindings,
+        project_context=project_service.context_for_run,
     )
     project_service.configure_task_project_clearer(binding_repository.clear_project)
     project_service.configure_task_project_writer(
