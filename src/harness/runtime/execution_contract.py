@@ -23,9 +23,11 @@ _BASE_CONTRACT = """
   renders it as a card above the composer. Schema:
   {"version":1,"title":"需要你补充","questions":[{"id":"direction","label":"选择方向",
   "type":"single","options":["选项一","选项二"]}]}
-  Use 1–4 questions, unique ASCII IDs, types single/multi/text. Choice questions have 2–8 distinct
-  concise options; text questions omit options. All questions allow a free-text answer. No default
-  selection or automatic submission. Use the user's language. Put nothing after the closing fence.
+  Ask only necessary questions, with unique ASCII IDs and types single/multi/text. Choice questions
+  have at least 2 distinct concise options; preserve all relevant candidates instead of truncating
+  them to fit a screen. The UI paginates longer lists. Text questions omit options. All questions
+  allow a free-text answer. No default selection or automatic submission. Use the user's language.
+  Put nothing after the closing fence.
   Emit this block only for a real question awaiting a reply, never examples, progress or completed
   work. It requests information only, not tool approval; existing tool approvals remain separate.
   The user's selected/typed answers arrive as a normal next user message. Wait for that message.

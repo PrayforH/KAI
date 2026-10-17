@@ -1,0 +1,68 @@
+.shell {
+  position: static;
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  background: transparent;
+  overflow: visible;
+}
+.shell[data-expanded="true"] {
+  position: fixed;
+  inset: 16px;
+  width: calc(100vw - 32px);
+  height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 0 16px 16px;
+  border: 1px solid var(--codex-line, #ddd);
+  border-radius: 16px;
+  background: var(--codex-surface-raised, #fff);
+  color: var(--codex-ink, #222);
+  overflow: auto;
+  overscroll-behavior: contain;
+  box-shadow: 0 20px 80px #0004;
+}
+.shell::backdrop { background: #0008; }
+.shell[data-expanded="true"] > figure {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.shell[data-expanded="true"] :global(.intelligent-ui-html) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.shell[data-expanded="true"] iframe { flex: 1; min-height: 180px; height: 100%; }
+.shell[data-expanded="true"] :global(.intelligent-ui-html-title) { flex: 0 0 auto; }
+.toggle {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 5px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--codex-muted, #666);
+  background: transparent;
+  cursor: pointer;
+}
+.toggle:hover { background: var(--codex-surface-hover, #eee); color: var(--codex-ink, #222); }
+.toggle:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.toggle svg { width: 18px; height: 18px; }
+@media (max-width: 600px) {
+  .shell[data-expanded="true"] { inset: 0; width: 100vw; height: 100dvh; padding: 0 8px 8px; border: 0; border-radius: 0; }
+}

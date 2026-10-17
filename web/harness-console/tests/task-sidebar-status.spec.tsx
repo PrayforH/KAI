@@ -12,7 +12,7 @@ vi.mock("../src/lib/task-history", () => ({ loadTasks, markTaskRead, isTaskRead:
 vi.mock("../src/components/auth-provider", () => ({ useAuth: () => ({ user: { user_id: "test" } }) }));
 vi.mock("../src/components/account-menu", () => ({ AccountMenu: () => null }));
 vi.mock("../src/components/workspace-navigation", () => ({ WorkspaceNavigation: () => null }));
-vi.mock("../src/components/product-brand", () => ({ ProductBrandMark: () => null, PRODUCT_NAME: "KAI" }));
+vi.mock("../src/components/product-brand", () => ({ ProductBrandMark: () => null, ProductWordmark: () => <strong>KAI</strong>, PRODUCT_NAME: "KAI" }));
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
 function task(status: string, id = status): TaskSummary {

@@ -13,6 +13,7 @@ import { useDictationComposer } from "./use-dictation-composer";
 type Answer = { selected: string[]; text: string };
 export const FOLLOWUP_IDLE_MS = 5 * 60 * 1000;
 const emptyAnswer: Answer = { selected: [], text: "" };
+const OPTIONS_PER_PAGE = 8;
 
 export function ConversationInputCard({ input, disabled, onSubmit, modelRoute = "", onVoiceActive, onDormant }: {
   input: ConversationInput;
@@ -25,6 +26,7 @@ export function ConversationInputCard({ input, disabled, onSubmit, modelRoute = 
   const redact = useConversationRedactor();
   const [answers, setAnswers] = useState<Record<string, Answer>>({});
   const [questionIndex, setQuestionIndex] = useState(0);
+  const [optionPages, setOptionPages] = useState<Record<string, number>>({});
   const [collapsed, setCollapsed] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
@@ -36,6 +38,10 @@ export function ConversationInputCard({ input, disabled, onSubmit, modelRoute = 
   const card = useRef<HTMLElement>(null);
   const question = input.questions[questionIndex];
   const value = answers[question.id] ?? emptyAnswer;
+  const pageCount = Math.ceil(question.options.length / OPTIONS_PER_PAGE);
+  const optionPage = Math.min(optionPages[question.id] ?? 0, Math.max(0, pageCount - 1));
+  const optionOffset = optionPage * OPTIONS_PER_PAGE;
+  const visibleOptions = question.options.slice(optionOffset, optionOffset + OPTIONS_PER_PAGE);
   const sensitive = isSensitiveQuestion(question);
   function writeText(text: string) {
     setAnswers(previous => ({ ...previous, [question.id]: { ...(previous[question.id] ?? emptyAnswer), text: text.slice(0, 4000) } }));
@@ -72,6 +78,12 @@ export function ConversationInputCard({ input, disabled, onSubmit, modelRoute = 
     card.current?.focus();
   }
 
+  function navigateOptions(page: number) {
+    if (locked || voiceActive || page < 0 || page >= pageCount) return;
+    setOptionPages(previous => ({ ...previous, [question.id]: page }));
+    card.current?.focus();
+  }
+
   async function submit(skip = false) {
     const response = skip ? formatConversationAnswers(input, answers, true) : answer;
     if (locked || voiceActive || !response || pending.current) return;
@@ -100,8 +112,11 @@ export function ConversationInputCard({ input, disabled, onSubmit, modelRoute = 
     if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
       event.preventDefault();
       navigate(questionIndex + (event.key === "ArrowRight" ? 1 : -1));
+    } else if (event.key === "PageUp" || event.key === "PageDown") {
+      event.preventDefault();
+      navigateOptions(optionPage + (event.key === "PageDown" ? 1 : -1));
     } else if (!locked && /^[1-8]$/.test(event.key)) {
-      const option = question.options[Number(event.key) - 1];
+      const option = visibleOptions[Number(event.key) - 1];
       if (option) { event.preventDefault(); select(option); }
     } else if (event.key === "Enter" && event.target === event.currentTarget) {
       event.preventDefault();
@@ -129,13 +144,21 @@ export function ConversationInputCard({ input, disabled, onSubmit, modelRoute = 
       <fieldset disabled={locked}>
         <legend>{redact(question.label)}</legend>
         {question.options.length > 0 && <div className={styles.options}>
-          {question.options.map((option, index) => <label key={option} className={styles.option}>
+          {visibleOptions.map((option, index) => <label key={option} className={styles.option}>
             <input type={question.type === "multi" ? "checkbox" : "radio"} name={question.id}
               disabled={voiceActive} checked={value.selected.includes(option)} onChange={() => select(option)} />
             <span className={styles.marker} aria-hidden="true">{value.selected.includes(option) ? <CodexResponseIcon name="check" /> : index + 1}</span>
             <span className={styles.optionText}>{redact(option)}</span>
           </label>)}
         </div>}
+        {pageCount > 1 && <nav className={styles.optionPagination} aria-label="选项分页">
+          <span aria-live="polite">选项 {optionOffset + 1}–{optionOffset + visibleOptions.length} / {question.options.length}
+            {value.selected.length > 0 && ` · 已选 ${value.selected.length} 项`}</span>
+          <div>
+            <button type="button" aria-label="上一组选项" disabled={locked || voiceActive || optionPage === 0} onClick={() => navigateOptions(optionPage - 1)}>上一页</button>
+            <button type="button" aria-label="下一组选项" disabled={locked || voiceActive || optionPage + 1 >= pageCount} onClick={() => navigateOptions(optionPage + 1)}>下一页</button>
+          </div>
+        </nav>}
         <div className={styles.freeform}>
           <CodexResponseIcon name="pencil" />
           <input ref={textInput} className={styles.text} type={sensitive ? "password" : "text"}

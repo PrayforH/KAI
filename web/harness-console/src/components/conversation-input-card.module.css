@@ -25,6 +25,10 @@
 .body fieldset { min-width: 0; border: 0; padding: 0; margin: 0; }
 .body legend { width: 100%; padding: 0 8px; margin-bottom: 12px; font-weight: 500; overflow-wrap: anywhere; white-space: pre-wrap; }
 .options { display: flex; flex-direction: column; gap: 4px; max-height: 280px; overflow-y: auto; overscroll-behavior: contain; }
+.optionPagination { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 10px 8px 8px; color: var(--codex-muted); font-size: 12px; }
+.optionPagination > div { display: flex; gap: 6px; }
+.optionPagination button { border: 1px solid var(--codex-line); border-radius: 8px; padding: 5px 9px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.optionPagination button:hover:not(:disabled) { background: var(--codex-surface-hover); color: var(--codex-ink); }
 .option { position: relative; display: flex; align-items: center; gap: 8px; min-height: 36px; border-radius: 12px; padding: 7px 8px; cursor: pointer; transition: background 120ms ease; }
 .option:hover, .option:has(input:checked), .option:focus-within { background: var(--codex-surface-hover); }
 .option input { position: absolute; width: 1px; height: 1px; min-height: 0; opacity: 0; }

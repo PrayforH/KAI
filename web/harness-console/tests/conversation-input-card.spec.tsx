@@ -127,3 +127,33 @@ it('redacts password echoes in failed submission errors while retaining a masked
  await act(async()=>submit().click());expect(send).toHaveBeenCalledOnce();
  expect(host.querySelector('[role=alert]')?.textContent).toBe('无法连接：••••••••');expect(field.type).toBe('password');expect(field.value).toBe(password);
 });
+
+it("paginates long option lists and submits every selection across pages", async () => {
+ const options=Array.from({length:17},(_,i)=>`候选 ${i+1}`);
+ const send=mount(vi.fn(),false,{version:1,title:"候选确认",questions:[{id:"scope",label:"选择候选",type:"multi",options}]});
+ expect(host.querySelectorAll('input[type="checkbox"]')).toHaveLength(8);
+ act(()=>host.querySelectorAll<HTMLInputElement>('input[type="checkbox"]').forEach(el=>el.click()));
+ act(()=>host.querySelector<HTMLButtonElement>('[aria-label="下一组选项"]')!.click());
+ expect(host.textContent).toContain("选项 9–16 / 17");
+ act(()=>host.querySelectorAll<HTMLInputElement>('input[type="checkbox"]').forEach(el=>el.click()));
+ key(host.querySelector('section')!,"PageDown");
+ key(host.querySelector('section')!,"1");
+ expect(host.textContent).toContain("已选 17 项");
+ key(host.querySelector('section')!,"PageUp");
+ expect(host.querySelectorAll('input:checked')).toHaveLength(8);
+ await act(async()=>submit().click());
+ expect(send).toHaveBeenCalledWith(`候选确认\n\n选择候选\n${options.join("；")}`);
+});
+
+it("keeps page position and a single choice when navigating between questions", () => {
+ const options=Array.from({length:9},(_,i)=>`候选 ${i+1}`);
+ const send=mount(vi.fn(),false,{...pagedInput,questions:[{...pagedInput.questions[0],options},pagedInput.questions[1]]});
+ act(()=>host.querySelector<HTMLButtonElement>('[aria-label="下一组选项"]')!.click());
+ key(host.querySelector('section')!,"1");
+ expect(host.querySelector<HTMLInputElement>('input[type="radio"]')!.checked).toBe(true);
+ act(()=>host.querySelector<HTMLButtonElement>('[aria-label="下一题"]')!.click());
+ act(()=>host.querySelector<HTMLButtonElement>('[aria-label="上一题"]')!.click());
+ expect(host.textContent).toContain("选项 9–9 / 9");
+ expect(host.querySelector<HTMLInputElement>('input[type="radio"]')!.checked).toBe(true);
+ expect(send).not.toHaveBeenCalled();
+});

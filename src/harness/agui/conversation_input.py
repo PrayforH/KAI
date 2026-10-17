@@ -4,6 +4,10 @@ import json
 import re
 from typing import Any, TypeGuard, cast
 
+MAX_INPUT_CHARACTERS = 64_000
+MAX_QUESTIONS = 32
+MAX_OPTIONS = 128
+
 
 def _text(value: object, maximum: int) -> TypeGuard[str]:
     return isinstance(value, str) and bool(value.strip()) and len(value) <= maximum
@@ -21,7 +25,7 @@ def _valid_input(data: object) -> bool:
     if not isinstance(questions, list):
         return False
     questions = cast(list[Any], questions)
-    if not 1 <= len(questions) <= 4:
+    if not 1 <= len(questions) <= MAX_QUESTIONS:
         return False
     ids: set[str] = set()
     for question in questions:
@@ -49,7 +53,7 @@ def _valid_input(data: object) -> bool:
         if not isinstance(options, list):
             return False
         options = cast(list[Any], options)
-        if len(options) > 8 or not all(_text(option, 300) for option in options):
+        if len(options) > MAX_OPTIONS or not all(_text(option, 300) for option in options):
             return False
         if len(set(cast(list[str], options))) != len(options):
             return False
@@ -64,16 +68,22 @@ def _valid_input(data: object) -> bool:
 
 
 def has_conversation_input(text: str) -> bool:
-    blocks = list(re.finditer(r"```([^\n]*)\n([\s\S]*?)\n```", text))
+    blocks = list(
+        re.finditer(
+            r"(?:^|\n)[ \t]*(`{3,}|~{3,})([^\n]*)\n([\s\S]*?)"
+            r"(?:\n[ \t]*\1[ \t]*(?=\n|$)|$)",
+            text,
+        )
+    )
     found = 0
     for block in blocks:
         if (
-            block[1].strip().lower() not in ("harness-input", "harness", "json", "")
-            or len(block[2]) > 16_000
+            block[2].strip().lower() not in ("harness-input", "harness", "json", "")
+            or len(block[3]) > MAX_INPUT_CHARACTERS
         ):
             continue
         try:
-            found += int(_valid_input(json.loads(block[2])))
+            found += int(_valid_input(json.loads(block[3])))
         except (ValueError, TypeError, RecursionError):
             pass
     decoder = json.JSONDecoder()
@@ -83,7 +93,7 @@ def has_conversation_input(text: str) -> bool:
         if offset < end or any(block.start() <= offset < block.end() for block in blocks):
             continue
         try:
-            data, length = decoder.raw_decode(text[offset : offset + 16_000])
+            data, length = decoder.raw_decode(text[offset : offset + MAX_INPUT_CHARACTERS])
         except (ValueError, TypeError, RecursionError):
             continue
         end = offset + length

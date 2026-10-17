@@ -143,7 +143,7 @@ describe("full-page agent workbench", () => {
 
   it("presents a user task workspace instead of an internal validation console", () => {
     expect(taskSidebar).toContain("<ProductBrandMark");
-    expect(taskSidebar).toContain("{PRODUCT_NAME}");
+    expect(taskSidebar).toContain("<ProductWordmark />");
     expect(taskSidebar).toContain('className="task-sidebar-collapse"');
     expect(taskSidebar).not.toContain('className="task-rail-brand-text"');
     expect(page).toContain("<TaskAgentSwitcher");
