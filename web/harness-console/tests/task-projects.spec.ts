@@ -12,6 +12,14 @@ const headerActions = readFileSync(
 );
 const page = readFileSync(join(process.cwd(), "src/app/page.tsx"), "utf8");
 const client = readFileSync(join(process.cwd(), "src/lib/studio-client.ts"), "utf8");
+const projectHome = readFileSync(
+  join(process.cwd(), "src/components/project-home.tsx"),
+  "utf8",
+);
+const projectRoute = readFileSync(
+  join(process.cwd(), "src/app/studio/projects/[projectId]/page.tsx"),
+  "utf8",
+);
 
 describe("project-grouped task list", () => {
   it("renders 项目 above 任务 and drops the recency view", () => {
@@ -31,13 +39,17 @@ describe("project-grouped task list", () => {
     expect(sidebar).toContain('aria-label="任务"');
   });
 
-  it("offers project settings and removal from the sidebar", () => {
-    expect(sidebar).toContain("<ProjectSettingsDialog");
-    expect(sidebar).toContain('aria-label={`设置项目 ${project.name}`}');
-    expect(sidebar).toContain("task-project-settings");
-    expect(client).toContain("resources(projectId: string)");
-    expect(client).toContain("addMemory(projectId: string");
-    expect(client).toContain("attachDocument(");
+  it("opens a project home from the sidebar", () => {
+    expect(sidebar).toContain('aria-label={`打开项目 ${project.name}`}');
+    expect(sidebar).toContain("/studio/projects/${encodeURIComponent(project.projectId)}");
+    expect(sidebar).not.toContain("<ProjectSettingsDialog");
+    expect(projectRoute).toContain("<ProjectHome projectId={projectId} />");
+    expect(projectHome).toContain("新建任务");
+    expect(projectHome).toContain("项目说明");
+    expect(projectHome).toContain("项目文件");
+    expect(projectHome).toContain("项目技能");
+    expect(projectHome).toContain("项目记忆");
+    expect(projectHome).toContain("<ProjectSettingsDialog");
   });
 
   it("exposes project files, skills, memories and documents in settings", () => {

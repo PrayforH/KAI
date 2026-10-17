@@ -2,8 +2,8 @@
 
 import { isFailedRunStatus } from "../lib/run-status";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ProjectCreateDialog } from "./project-create-dialog";
-import { ProjectSettingsDialog } from "./project-settings-dialog";
 import { PanelResizeHandle } from "./panel-resize-handle";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AccountMenu } from "./account-menu";
@@ -175,7 +175,6 @@ export function TaskSidebar({
   const [creatingProjectId, setCreatingProjectId] = useState<string | null>(null);
   const [projectCreateError, setProjectCreateError] = useState("");
   const [projectDialogOpen, setProjectDialogOpen] = useState(false);
-  const [settingsProject, setSettingsProject] = useState<ApiProject | null>(null);
   const projectCreationPending = useRef(false);
   const sidebarRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -183,6 +182,7 @@ export function TaskSidebar({
   const wasOverlayOpenRef = useRef(false);
   const runView = useRunViewModel();
   const { user } = useAuth();
+  const router = useRouter();
   const [expandedTaskGroups, setExpandedTaskGroups] = useSidebarGroups(user.user_id);
 
   // Acknowledge only the version displayed on a visible task page. Server
@@ -583,9 +583,9 @@ export function TaskSidebar({
                     <button
                       type="button"
                       className="task-project-settings"
-                      aria-label={`设置项目 ${project.name}`}
-                      title={`设置项目 ${project.name}`}
-                      onClick={() => setSettingsProject(project)}
+                      aria-label={`打开项目 ${project.name}`}
+                      title={`打开项目 ${project.name}`}
+                      onClick={() => router.push(`/studio/projects/${encodeURIComponent(project.projectId)}`)}
                     >
                       <MoreIcon />
                     </button>
@@ -700,16 +700,6 @@ export function TaskSidebar({
         onCreated={(project) => {
           setExpandedTaskGroups((current) => new Set(current).add(`project:${project.projectId}`));
           onProjectsChanged?.();
-        }}
-      />}
-      {settingsProject && <ProjectSettingsDialog
-        project={settingsProject}
-        onClose={() => setSettingsProject(null)}
-        onChanged={() => onProjectsChanged?.()}
-        onRemoved={() => {
-          setExpandedTaskGroups((current) => new Set(current));
-          onProjectsChanged?.();
-          notifyTaskListChanged();
         }}
       />}
     </aside>

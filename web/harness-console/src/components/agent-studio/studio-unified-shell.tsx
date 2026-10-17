@@ -59,7 +59,9 @@ export function StudioUnifiedShell({
     const id = createNewThread(createUserScopedStorage(window.localStorage, user.user_id));
     router.push(`/?thread=${encodeURIComponent(id)}`);
   };
-  const routeWorkspace: WorkspaceId = pathname.startsWith("/studio/files")
+  const routeWorkspace: WorkspaceId = pathname.startsWith("/studio/projects")
+    ? "tasks"
+    : pathname.startsWith("/studio/files")
     ? "files"
     : pathname.startsWith("/studio/automation")
       ? "automation"
