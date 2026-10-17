@@ -101,7 +101,9 @@ KAI 当前（develop `dc452ba2`）已有真实项目实体：`projects` 表、`a
 | 项目记忆 | 无 | `project_memories` 表，用户维护，每个新 Run 注入 |
 | 项目文档 | 无 | `project_documents` 表，引用已上传的 input artifact；每个新 Run 自动 stage 到 workspace |
 | 项目设置 / 移除 | API 有 rename/archive/remove，无 UI | 项目行「⋯」→ 项目设置；移除保留任务历史 |
-| 项目级技能 / MCP / 工作流 | 无 | 未在本次范围（见 §5） |
+| 项目级技能 | 无 | 平台 Skill 包 → 项目引用 → Run 时 staging（见 §7.2） |
+| 项目文件查看 | 无 | 文档列表 + 安全 inline 查看（见 §7.1） |
+| 项目级 MCP / 工作流 | 无 | MCP 先做 Agent 可见性（§7.3）；项目级 MCP、工作流未做 |
 
 ### 3.1 为什么用「附件」承载项目文档
 
@@ -187,6 +189,58 @@ npx tsc --noEmit                                                         # 仅�
   user+agent 维度，扩到 project 维度需要改检索、工具与 consent。
 - **项目文档上限 10 个**：与单次任务附件共用 `max_files_per_run`；项目文档 + 本轮附件超过上限时，
   Run 创建阶段会失败并给出附件数量错误，而不是静默丢弃。
-- **项目级技能 / MCP / 工作流 / 自动化**未复刻；它们需要把现有资源作用域从 agent 扩展到 project，
-  与 ZCode 的 workspace 配置目录不是同一层改造。
+- **项目技能已支持**（见 §7.2），但只接平台 Skill 包；项目级工作流 / 自动化仍未复刻。
+- **MCP 改为 Agent 可见性**（见 §7.3），不是项目级 MCP；项目级 MCP 需要运行时叠加服务器，未在本次范围。
 - 项目说明与记忆是用户提供的内容，按用户指令对待；文档内容仍走现有输入处理与信任边界，不因来自项目而升级为指令。
+
+## 7. 第二批：项目文件查看、项目技能、MCP 可见性
+
+按“先按 ZCode 的交互形式，不扩大成 Manus 项目空间”的范围追加：
+
+### 7.1 项目文件可查看
+
+- 项目设置里的文档行新增「查看」：`/api/input-artifacts/{id}/content?inline=1`。
+- 服务端只对 `text/*`、`image/*`、`application/pdf` 使用 `inline`，其余（HTML/SVG 等）仍强制下载；同时返回
+  `X-Content-Type-Options: nosniff`，避免用户上传内容以同源页面执行。
+- 文件仍以 input artifact 为唯一内容源，项目只保存引用，不在项目表里复制字节。
+
+### 7.2 项目技能
+
+- `Project.skillReferences` 保存 `packageId@revision`，指向平台 Skill 包；写入时校验包存在、修订号一致，并限制 20 个。
+- Run 创建时把引用写进 `run.input["project_skill_references"]`；Orchestrator 在 Agent 自带 Skill 之后通过
+  `stage_project_skill_snapshots` 把项目 Skill 写进 `.claude/skills`，Codex 再镜像到 `.agents/skills/harness-*`。
+- 同名冲突时 Agent 自带 Skill 优先，项目副本记为 `skipped`，并发出 `project.skills.staged` 事件；不静默替换。
+- Skill 文件使用与编译器相同的 `SKILL.md` frontmatter 和哈希算法，保证同一平台包在 Agent 和项目两条路径上指纹一致。
+- 项目设置里新增「项目技能」多选，直接列平台 Skill 目录（显示名称、摘要、兼容运行时、`packageId@revision`）。
+
+### 7.3 MCP 可见性
+
+问题：构建器里的 `options.mcp` 来自整个能力目录，所以所有智能体都能看到所有 MCP。
+
+改动：
+
+- `McpCapability` 新增 `visibility`（`all` / `selected`）和 `visibleAgentIds`；
+- 构建器与集成抽屉都按当前草稿的稳定 `agentId` 过滤：`selected` 时只有被授权的智能体能看到；
+- 编译器在 `mcpServers` 校验里新增 `mcp_server_not_visible`，即使绕过 UI 也不能把未授权 MCP 发布出去；
+- MCP 注册/编辑表单新增「可见智能体」：默认 `selected`，从智能体打开时预选当前智能体；管理页可显式改成「全部智能体」；
+- MCP 详情显示「可见智能体：N 个已授权 / 全部智能体」；
+- 旧数据与平台内置 MCP 的模型默认仍是 `all`，避免升级后现有智能体突然失去工具；新建 MCP 默认 `selected`。
+
+边界：这是**构建期可见性与发布校验**，不是运行时网络隔离；运行时仍按 Execution Profile、凭据和 MCP 允许清单执行。
+
+### 7.4 验证补充
+
+```bash
+PYTHONPATH=src pytest \
+  tests/unit/projects tests/unit/agui/test_project_context.py \
+  tests/unit/studio/test_project_skills.py tests/unit/studio/test_compiler.py \
+  tests/unit/worker/test_orchestrator.py tests/unit/worker/test_input_staging.py -q
+# 121 passed
+
+npx vitest run tests/task-projects.spec.ts tests/mcp-visibility.spec.ts \
+  tests/sidebar-state.spec.tsx tests/studio-client.spec.ts
+# 39 passed, 1 skipped
+
+npx tsc --noEmit
+# 仅既有 docx-preview / pptx-preview 缺模块
+```

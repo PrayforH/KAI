@@ -61,6 +61,7 @@ async def test_run_captures_instructions_memories_and_documents(tmp_path: Path) 
         user_id=user_id,
         name="金融办",
         instructions="先给证据，再给结论",
+        skill_references=("pptx-generator@1",),
     )
     await container.projects.add_memory(
         tenant_id=tenant_id,
@@ -104,10 +105,13 @@ async def test_run_captures_instructions_memories_and_documents(tmp_path: Path) 
     run_input = creation.run.input
     assert "先给证据，再给结论" in str(run_input["project_context"])
     assert "口径以 2026 版为准" in str(run_input["project_context"])
+    assert "## 项目技能" in str(run_input["project_context"])
+    assert run_input["project_skill_references"] == ["pptx-generator@1"]
     assert run_input["project_context_meta"] == {
         "projectId": project.project_id,
         "memories": 1,
         "documents": 1,
+        "skills": 1,
     }
     assert run_input["input_artifact_ids"] == []
     assert run_input["project_document_ids"] == [artifact.input_artifact_id]

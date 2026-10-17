@@ -10,16 +10,40 @@ from harness.core.errors import ConflictError, NotFoundError
 from harness.projects.models import (
     MAX_PROJECT_DOCUMENTS,
     MAX_PROJECT_MEMORIES,
+    MAX_PROJECT_SKILLS,
     Project,
     ProjectDocument,
     ProjectMemory,
     ProjectResources,
     ProjectRunContext,
 )
+from harness.studio.platform_skills import platform_skill_package
 
 
 def _default_id(prefix: str) -> str:
     return f"{prefix}_{secrets.token_hex(16)}"
+
+
+def _normalize_skill_references(references: tuple[str, ...]) -> tuple[str, ...]:
+    if len(set(references)) != len(references):
+        raise ConflictError("duplicate project Skill reference")
+    if len(references) > MAX_PROJECT_SKILLS:
+        raise ConflictError(
+            f"a project accepts at most {MAX_PROJECT_SKILLS} Skill references"
+        )
+    normalized: list[str] = []
+    for reference in references:
+        package_id, separator, revision = reference.partition("@")
+        if not separator or not revision.isdigit():
+            raise ConflictError(
+                f"project Skill reference must be packageId@revision: {reference}"
+            )
+        try:
+            package = platform_skill_package(package_id, int(revision))
+        except (ConflictError, NotFoundError) as error:
+            raise ConflictError(str(error)) from error
+        normalized.append(f"{package.package_id}@{package.revision}")
+    return tuple(normalized)
 
 
 class ProjectService:
@@ -56,7 +80,13 @@ class ProjectService:
         self._task_project_writer = writer
 
     async def create(
-        self, *, tenant_id: str, user_id: str, name: str, instructions: str = ""
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        name: str,
+        instructions: str = "",
+        skill_references: tuple[str, ...] = (),
     ) -> Project:
         trimmed = name.strip()
         if not trimmed:
@@ -68,6 +98,7 @@ class ProjectService:
             userId=user_id,
             name=trimmed,
             instructions=instructions.strip(),
+            skillReferences=_normalize_skill_references(skill_references),
             createdAt=now,
             updatedAt=now,
         )
@@ -95,6 +126,7 @@ class ProjectService:
         project_id: str,
         name: str | None = None,
         instructions: str | None = None,
+        skill_references: tuple[str, ...] | None = None,
         archived: bool | None = None,
     ) -> Project:
         current = await self.get(
@@ -108,6 +140,10 @@ class ProjectService:
             updates["name"] = trimmed
         if instructions is not None:
             updates["instructions"] = instructions.strip()
+        if skill_references is not None:
+            updates["skill_references"] = _normalize_skill_references(
+                skill_references
+            )
         if archived is not None:
             updates["archived_at"] = self._clock() if archived else None
         updated = current.model_copy(update=updates)
@@ -306,6 +342,16 @@ class ProjectService:
                 "## 项目记忆\n"
                 + "\n".join(f"- {item.content}" for item in memories)
             )
+        if project.skill_references:
+            labels: list[str] = []
+            for reference in project.skill_references:
+                package_id, _, revision = reference.partition("@")
+                try:
+                    package = platform_skill_package(package_id, int(revision))
+                    labels.append(f"- {package.display_name}（{reference}）")
+                except (ConflictError, NotFoundError, ValueError):
+                    labels.append(f"- {reference}")
+            sections.append("## 项目技能\n" + "\n".join(labels))
         text = (
             f'<project_context project="{project.name}">\n'
             + "\n\n".join(sections)
@@ -317,8 +363,10 @@ class ProjectService:
             projectId=project_id,
             text=text,
             documentIds=tuple(item.input_artifact_id for item in documents),
+            skillReferences=project.skill_references,
             memoryCount=len(memories),
             documentCount=len(documents),
+            skillCount=len(project.skill_references),
         )
 
     async def assign_task(

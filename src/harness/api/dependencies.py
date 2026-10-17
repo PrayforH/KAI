@@ -174,6 +174,7 @@ from harness.studio.mcp_discovery import (
     McpDiscoveryService,
 )
 from harness.studio.model_configuration import ModelConfigurationService
+from harness.studio.platform_skills import skill_snapshots_for_references
 from harness.studio.preflight import LivePreflightProvisioner, LivePreflightRunner
 from harness.studio.preflight_probes import (
     AnthropicSandboxModelProbe,
@@ -990,6 +991,7 @@ def build_memory_container(
         runtime_asset_stager=(
             stage_runtime_assets if resolved_settings.runtime != "fake" else None
         ),
+        project_skills=skill_snapshots_for_references,
         policy_resolver=resolve_policy,
         output_artifact_max_bytes=resolved_settings.output_artifact_max_bytes,
         quality_hook=quality_service.record_terminal_run,

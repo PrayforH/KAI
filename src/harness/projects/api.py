@@ -79,6 +79,7 @@ async def create_project(
             user_id=identity.user_id,
             name=body.name,
             instructions=body.instructions or "",
+            skill_references=body.skill_references or (),
         )
     except ConflictError as error:
         raise _conflict(error) from error
@@ -92,7 +93,12 @@ async def update_project(
     service: Annotated[ProjectService, Depends(get_project_service)],
 ) -> Project:
     ensure_permission(identity, "tasks:write")
-    if body.name is None and body.instructions is None and body.archived is None:
+    if (
+        body.name is None
+        and body.instructions is None
+        and body.skill_references is None
+        and body.archived is None
+    ):
         raise ConflictError("No project update was requested")
     try:
         return await service.update(
@@ -101,6 +107,7 @@ async def update_project(
             project_id=project_id,
             name=body.name,
             instructions=body.instructions,
+            skill_references=body.skill_references,
             archived=body.archived,
         )
     except NotFoundError as error:

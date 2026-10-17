@@ -389,15 +389,25 @@ class AguiRunService:
                     else {}
                 ),
                 **(
+                    {"project_skill_references": list(project_context.skill_references)}
+                    if project_context is not None and project_context.skill_references
+                    else {}
+                ),
+                **(
                     {
                         "project_context_meta": {
                             "projectId": project_context.project_id,
                             "memories": project_context.memory_count,
                             "documents": project_context.document_count,
+                            "skills": project_context.skill_count,
                         }
                     }
                     if project_context is not None
-                    and (project_context.text or project_context.document_ids)
+                    and (
+                        project_context.text
+                        or project_context.document_ids
+                        or project_context.skill_references
+                    )
                     else {}
                 ),
             }

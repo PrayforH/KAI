@@ -18,8 +18,12 @@ export function AgentIntegrations({ draftId }: { draftId: string }) {
   }, [draftId, revision]);
   if (error) return <div role="alert"><p>集成目录读取失败：{error}</p><button onClick={() => refresh(v => v + 1)}>重新加载</button></div>;
   if (!draft || !catalog) return <p role="status">正在读取智能体配置和可用能力…</p>;
+  const visibleMcp = catalog.mcpServers.filter(
+    item => item.visibility !== "selected"
+      || Boolean(draft.agentId && item.visibleAgentIds?.includes(draft.agentId)),
+  );
   const items = [
-    ...catalog.mcpServers.map(item => ({ id: item.reference, label: item.label, description: item.description, type: "MCP", attached: draft.spec.mcpServers.includes(item.reference), enabled: item.enabled, tools: item.tools, risk: item.risk, permission: item.readOnly ? "只读能力" : "包含写操作", credential: item.authMode === "none" ? "无需认证" : "需在连接管理中检查授权" })),
+    ...visibleMcp.map(item => ({ id: item.reference, label: item.label, description: item.description, type: "MCP", attached: draft.spec.mcpServers.includes(item.reference), enabled: item.enabled, tools: item.tools, risk: item.risk, permission: item.readOnly ? "只读能力" : "包含写操作", credential: item.authMode === "none" ? "无需认证" : "需在连接管理中检查授权" })),
     ...catalog.builtinTools.map(item => ({ id: item.name, label: item.label, description: item.description, type: "内置工具", attached: draft.spec.builtinTools.includes(item.name), enabled: true, tools: [item.name], risk: item.risk, permission: item.approvalBehavior, credential: "沿用运行环境" })),
   ];
   const missing = draft.spec.mcpServers.filter(id => !catalog.mcpServers.some(item => item.reference === id));

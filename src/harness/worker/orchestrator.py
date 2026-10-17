@@ -25,6 +25,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, TypeVar, cast
 from uuid import uuid4
 
+from harness.application.agent_assets import stage_project_skill_snapshots
 from harness.application.approvals import ApprovalService
 from harness.application.artifacts import ArtifactService
 from harness.application.events import EventService
@@ -44,6 +45,7 @@ from harness.application.workspaces import (
 from harness.context.checkpoint import ContextCheckpointService
 from harness.context.service import ContextService
 from harness.core.errors import ConflictError, SandboxGovernanceError
+from harness.core.manifest import SkillSnapshot
 from harness.core.models import AgentRuntimeType, ExecutionIdentity, Run, RunStatus, Session
 from harness.core.ports import CancellationWakeup, RunRepository, SessionRepository
 from harness.core.state_machine import transition
@@ -96,6 +98,7 @@ from harness.sandbox.base import (
 from harness.sandbox.lease import SandboxLease, SandboxLeaseService
 
 RuntimeAssetStager = Callable[[str, str, str, str, Path, bool], Awaitable[tuple[str, ...]]]
+ProjectSkillResolver = Callable[[tuple[str, ...], AgentRuntimeType], tuple[SkillSnapshot, ...]]
 PolicyResolver = Callable[
     [str, str, str, str],
     Awaitable[PolicyEngine | ResolvedPolicy],
@@ -261,6 +264,7 @@ class RunOrchestrator:
         memory: UserMemoryService | None = None,
         workspace_policy_resolver: WorkspacePolicyResolver | None = None,
         runtime_asset_stager: RuntimeAssetStager | None = None,
+        project_skills: ProjectSkillResolver | None = None,
         policy_resolver: PolicyResolver | None = None,
         output_artifact_max_bytes: int = 50 * 1024 * 1024,
         cancellation_poll_interval_seconds: float = 0.25,
@@ -299,6 +303,7 @@ class RunOrchestrator:
         self._memory = memory
         self._workspace_policy_resolver = workspace_policy_resolver
         self._runtime_asset_stager = runtime_asset_stager
+        self._project_skills = project_skills
         self._policy_resolver = policy_resolver
         self._output_artifact_max_bytes = output_artifact_max_bytes
         self._cancellation_poll_interval_seconds = cancellation_poll_interval_seconds
@@ -1374,6 +1379,41 @@ class RunOrchestrator:
                     session_id=run.session_id,
                     event_type="agent.assets.staged",
                     payload={"skills": list(staged_skills)},
+                )
+            raw_project_skill_references = run.input.get("project_skill_references")
+            if (
+                isinstance(raw_project_skill_references, list)
+                and raw_project_skill_references
+                and self._project_skills is not None
+            ):
+                requested_project_skills = tuple(
+                    reference
+                    for reference in raw_project_skill_references
+                    if isinstance(reference, str)
+                )
+                with self._stage(
+                    "harness.project.skills.stage", {"run.id": run_id}
+                ):
+                    project_skill_snapshots = self._project_skills(
+                        requested_project_skills, session.runtime_type
+                    )
+                    staged_project_skills, skipped_project_skills = (
+                        stage_project_skill_snapshots(
+                            project_skill_snapshots,
+                            workspace=handle.path,
+                            runtime=session.runtime_type,
+                        )
+                    )
+                await self._events.append(
+                    tenant_id=tenant_id,
+                    run_id=run_id,
+                    session_id=run.session_id,
+                    event_type="project.skills.staged",
+                    payload={
+                        "requested": len(requested_project_skills),
+                        "skills": list(staged_project_skills),
+                        "skipped": list(skipped_project_skills),
+                    },
                 )
             with self._stage("harness.sandbox.prepare", {"run.id": run_id}):
                 await self._await_cancellable(

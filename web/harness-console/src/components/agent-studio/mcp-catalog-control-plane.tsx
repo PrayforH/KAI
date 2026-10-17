@@ -52,6 +52,8 @@ const EMPTY_MCP: McpCapability = {
   reference: "",
   ownerUserId: null,
   allowedExecutionProfileIds: [],
+  visibility: "selected",
+  visibleAgentIds: [],
   category: "tool",
   serverName: "",
   label: "",
@@ -126,12 +128,15 @@ function derivedStatus(
 export function McpCatalogControlPlane({
   mode = "mcp",
   startInForm = false,
+  defaultAgentId,
   onClose,
   onRegistered,
 }: {
   mode?: "mcp" | "knowledge";
   /** Open the registration form straight away: the form is itself the drawer. */
   startInForm?: boolean;
+  /** Preselect the Agent that opened the form, so a new MCP is usable there. */
+  defaultAgentId?: string;
   /** Called when the form is dismissed, so the caller can unmount the surface. */
   onClose?: () => void;
   onRegistered?: (reference: string) => void;
@@ -144,8 +149,16 @@ export function McpCatalogControlPlane({
   const [record, setRecord] = useState<StudioCapabilityCatalogRecord | null>(
     null,
   );
-  const [draft, setDraft] = useState<McpCapability>(() => ({...EMPTY_MCP, reference: newMcpReference(), category, readOnly: knowledgeMode, networkAccess: knowledgeMode ? "internal" : "external"}));
+  const [draft, setDraft] = useState<McpCapability>(() => ({
+    ...EMPTY_MCP,
+    reference: newMcpReference(),
+    category,
+    readOnly: knowledgeMode,
+    networkAccess: knowledgeMode ? "internal" : "external",
+    visibleAgentIds: defaultAgentId ? [defaultAgentId] : [],
+  }));
   const [allowedProfileIds, setAllowedProfileIds] = useState<string[]>([]);
+  const [agentOptions, setAgentOptions] = useState<StudioDraftSummary[]>([]);
   const [discovery, setDiscovery] =
     useState<StudioMcpDiscoveryResult | null>(null);
   const [toolQuery, setToolQuery] = useState("");
@@ -186,11 +199,13 @@ export function McpCatalogControlPlane({
 
   const load = useCallback(async () => {
     try {
-      const [next, credentials] = await Promise.all([
+      const [next, credentials, agents] = await Promise.all([
         studioClient.catalog(),
         studioClient.listMcpCredentials(),
+        studioClient.listAccessibleDrafts().catch(() => []),
       ]);
       setRecord(next);
+      setAgentOptions(agents);
       if (startInForm) setAllowedProfileIds(next.catalog.executionProfiles.filter(profile => profile.enabled && profile.sandboxProvider === "local" && profile.networkAccess.includes(knowledgeMode ? "internal" : "external")).map(profile => profile.profileId));
       setCredentialStatuses(
         Object.fromEntries(credentials.map((item) => [item.reference, item])),
@@ -214,6 +229,25 @@ export function McpCatalogControlPlane({
   const closeSync = useCallback(() => setPendingSync(null), []);
   const closeDelete = useCallback(() => setPendingDelete(null), []);
   const closeDetail = useCallback(() => setDetailReference(null), []);
+  const visibilityAgents = useMemo(() => {
+    const unique = new Map<string, StudioDraftSummary>();
+    for (const agent of agentOptions) {
+      if (agent.agentId && !unique.has(agent.agentId)) unique.set(agent.agentId, agent);
+    }
+    return [...unique.values()];
+  }, [agentOptions]);
+
+  function toggleVisibleAgent(agentId: string) {
+    setDraft((current) => {
+      const visible = current.visibleAgentIds ?? [];
+      return {
+        ...current,
+        visibleAgentIds: visible.includes(agentId)
+          ? visible.filter((item) => item !== agentId)
+          : [...visible, agentId],
+      };
+    });
+  }
 
   useDialogFocus({
     open: Boolean(showForm && canManage),
@@ -294,6 +328,7 @@ export function McpCatalogControlPlane({
       category,
       networkAccess,
       readOnly: knowledgeMode,
+      visibleAgentIds: defaultAgentId ? [defaultAgentId] : [],
     });
     setAllowedProfileIds(
       record?.catalog.executionProfiles
@@ -319,7 +354,11 @@ export function McpCatalogControlPlane({
   }
 
   function startEdit(item: McpCapability) {
-    setDraft({ ...item });
+    setDraft({
+      ...item,
+      visibility: item.visibility ?? "all",
+      visibleAgentIds: item.visibleAgentIds ?? [],
+    });
     setAllowedProfileIds([...item.allowedExecutionProfileIds]);
     setDiscovery({
       endpointUrl: item.endpointUrl ?? "",
@@ -792,6 +831,52 @@ export function McpCatalogControlPlane({
                 </label>
               )}
 
+              </section>
+              <section className={styles.formSection}>
+                <label>
+                  <span>可见智能体</span>
+                  <select
+                    value={draft.visibility}
+                    onChange={(event) => {
+                      const visibility = event.target.value as "all" | "selected";
+                      setDraft((current) => ({
+                        ...current,
+                        visibility,
+                        visibleAgentIds:
+                          visibility === "all" ? [] : current.visibleAgentIds,
+                      }));
+                    }}
+                  >
+                    <option value="all">全部智能体</option>
+                    <option value="selected">仅所选智能体</option>
+                  </select>
+                  <small>
+                    {draft.visibility === "all"
+                      ? "目录内所有智能体都能在构建器里看到这个 MCP。"
+                      : "只有勾选的智能体能在构建器里看到并绑定这个 MCP。"}
+                  </small>
+                </label>
+                {draft.visibility === "selected" && (
+                  <div className={styles.visibilityList} role="group" aria-label="可见智能体">
+                    {visibilityAgents.map((agent) => (
+                      <label key={agent.agentId} className={styles.visibilityItem}>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(
+                            agent.agentId
+                            && (draft.visibleAgentIds ?? []).includes(agent.agentId),
+                          )}
+                          onChange={() => agent.agentId && toggleVisibleAgent(agent.agentId)}
+                        />
+                        <span>{agent.displayName}</span>
+                        <small>{agent.name}</small>
+                      </label>
+                    ))}
+                    {!visibilityAgents.length && (
+                      <p className={styles.visibilityEmpty}>暂无可授权的智能体。</p>
+                    )}
+                  </div>
+                )}
               </section>
               <section className={styles.formSection}>
               <details className={styles.formAdvanced}>
@@ -1354,6 +1439,14 @@ export function McpCatalogControlPlane({
               <div><dt>风险</dt><dd>{RISK_LABELS[selectedDetail.risk]}</dd></div>
               <div><dt>版本</dt><dd>v{selectedDetail.version}</dd></div>
               <div><dt>来源</dt><dd>{selectedDetail.ownerUserId ? "个人" : "平台内置"}</dd></div>
+              <div>
+                <dt>可见智能体</dt>
+                <dd>
+                  {selectedDetail.visibility === "selected"
+                    ? `${selectedDetail.visibleAgentIds?.length ?? 0} 个已授权`
+                    : "全部智能体"}
+                </dd>
+              </div>
               <div>
                 <dt>认证</dt>
                 <dd>

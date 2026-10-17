@@ -73,6 +73,32 @@
   text-align: center;
 }
 .list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.skillList {
+  display: grid;
+  gap: 6px;
+  max-height: 260px;
+  margin: 0;
+  padding: 2px;
+  list-style: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.skillItem {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 9px 10px;
+  border: 1px solid var(--codex-line, #363636);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.skillItem:has(input:checked) { border-color: #6099bd; background: var(--codex-surface-hover); }
+.skillItem input { margin-top: 2px; accent-color: #6099bd; }
+.skillCopy { display: grid; gap: 3px; min-width: 0; }
+.skillCopy strong { font-size: 13px; font-weight: 600; }
+.skillCopy small { color: var(--codex-muted); font-size: 12px; line-height: 1.45; }
+.skillMeta { opacity: .8; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px !important; }
 .item,
 .document {
   display: grid;
@@ -101,6 +127,14 @@
 .documentIcon { display: grid; place-items: center; color: var(--codex-muted); }
 .documentName { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .documentSize { color: var(--codex-muted); font-size: 11px; white-space: nowrap; }
+.documentActions { display: flex; align-items: center; gap: 8px; }
+.documentOpen {
+  color: var(--codex-ink, #ececec);
+  font-size: 12px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.documentOpen:hover { text-decoration: underline; }
 .document .dangerSmall { border: 0; background: transparent; }
 .empty {
   margin: 0;

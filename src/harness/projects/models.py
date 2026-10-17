@@ -13,6 +13,7 @@ MAX_PROJECT_INSTRUCTIONS = 20_000
 MAX_PROJECT_MEMORY_CONTENT = 4_000
 MAX_PROJECT_MEMORIES = 200
 MAX_PROJECT_DOCUMENTS = 10
+MAX_PROJECT_SKILLS = 20
 
 
 class Project(StudioModel):
@@ -24,6 +25,10 @@ class Project(StudioModel):
     # captures it when the Run is created, so editing the project later never
     # rewrites the instructions an older Run already executed with.
     instructions: str = Field(default="", max_length=MAX_PROJECT_INSTRUCTIONS)
+    # Platform Skill packages selected for this project, pinned as
+    # ``packageId@revision`` so a later catalog revision cannot change an
+    # already-created Run. Files are staged per Run, not copied into the Agent.
+    skill_references: tuple[str, ...] = Field(default=(), alias="skillReferences")
     archived_at: datetime | None = Field(default=None, alias="archivedAt")
     created_at: datetime = Field(alias="createdAt")
     updated_at: datetime = Field(alias="updatedAt")
@@ -59,11 +64,17 @@ class ProjectResources(StudioModel):
 class CreateProjectRequest(StudioModel):
     name: str = Field(min_length=1, max_length=MAX_PROJECT_NAME)
     instructions: str | None = Field(default=None, max_length=MAX_PROJECT_INSTRUCTIONS)
+    skill_references: tuple[str, ...] | None = Field(
+        default=None, alias="skillReferences", max_length=MAX_PROJECT_SKILLS
+    )
 
 
 class UpdateProjectRequest(StudioModel):
     name: str | None = Field(default=None, min_length=1, max_length=MAX_PROJECT_NAME)
     instructions: str | None = Field(default=None, max_length=MAX_PROJECT_INSTRUCTIONS)
+    skill_references: tuple[str, ...] | None = Field(
+        default=None, alias="skillReferences", max_length=MAX_PROJECT_SKILLS
+    )
     archived: bool | None = None
 
 
@@ -85,5 +96,7 @@ class ProjectRunContext(StudioModel):
     project_id: str = Field(alias="projectId")
     text: str = ""
     document_ids: tuple[str, ...] = Field(default=(), alias="documentIds")
+    skill_references: tuple[str, ...] = Field(default=(), alias="skillReferences")
     memory_count: int = Field(default=0, alias="memoryCount")
     document_count: int = Field(default=0, alias="documentCount")
+    skill_count: int = Field(default=0, alias="skillCount")

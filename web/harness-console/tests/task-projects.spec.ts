@@ -40,6 +40,19 @@ describe("project-grouped task list", () => {
     expect(client).toContain("attachDocument(");
   });
 
+  it("exposes project files, skills, memories and documents in settings", () => {
+    const dialog = readFileSync(
+      join(process.cwd(), "src/components/project-settings-dialog.tsx"),
+      "utf8",
+    );
+    expect(dialog).toContain('aria-label="项目技能"');
+    expect(dialog).toContain("listPlatformSkills");
+    expect(dialog).toContain("skillReferences");
+    expect(dialog).toContain("查看");
+    expect(dialog).toContain("/content?inline=1");
+    expect(client).toContain("skillReferences?: string[]");
+  });
+
   it("keeps tasks visible when their project disappears", () => {
     // A deleted project must not hide its tasks from both sections.
     expect(sidebar).toContain("const known = new Set(projects.map((project) => project.projectId))");

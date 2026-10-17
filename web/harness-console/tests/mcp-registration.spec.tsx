@@ -6,7 +6,7 @@ import { McpCatalogControlPlane } from "../src/components/agent-studio/mcp-catal
 import { studioClient } from "../src/lib/studio-client";
 
 vi.mock("../src/components/auth-provider", () => ({ useAuth: () => ({ membership: { role: "owner" } }) }));
-vi.mock("../src/lib/studio-client", () => ({ studioClient: { catalog: vi.fn(), listMcpCredentials: vi.fn(), discoverMcp: vi.fn(), upsertMcp: vi.fn() } }));
+vi.mock("../src/lib/studio-client", () => ({ studioClient: { catalog: vi.fn(), listMcpCredentials: vi.fn(), listAccessibleDrafts: vi.fn(), discoverMcp: vi.fn(), upsertMcp: vi.fn() } }));
 let root: Root; let host: HTMLDivElement;
 const record = { revision: 3, catalog: { mcpServers: [], executionProfiles: [{ profileId: "local", enabled: true, sandboxProvider: "local", networkAccess: ["external"] }] } };
 const close = vi.fn(); const registered = vi.fn();
@@ -18,6 +18,7 @@ beforeEach(async () => {
   vi.stubGlobal("crypto", { getRandomValues: browserCrypto.getRandomValues.bind(browserCrypto) });
   vi.mocked(studioClient.catalog).mockResolvedValue(record as never);
   vi.mocked(studioClient.listMcpCredentials).mockResolvedValue([]);
+  vi.mocked(studioClient.listAccessibleDrafts).mockResolvedValue([]);
   host = document.createElement("div"); document.body.append(host); root = createRoot(host);
   await act(async () => root.render(<McpCatalogControlPlane startInForm onClose={close} onRegistered={registered} />));
 });

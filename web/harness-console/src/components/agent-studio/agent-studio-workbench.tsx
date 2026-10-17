@@ -429,7 +429,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
   useDialogFocus({open: mcpManagerOpen && !mcpStartInForm, panelRef: mcpManagerRef, initialFocusRef: mcpManagerCloseRef, onEscape: () => setMcpManagerOpen(false)});
   const visibleMcpOptions = useMemo(
     () => mcpOptionsForDraft(draft, options.mcp),
-    [draft.name, draft.domain, options.mcp],
+    [draft.name, draft.domain, draft.agentId, options.mcp],
   );
   const contract = useMemo(
     () => evaluateStudioDraft(draft, { routes: options.routes, mcp: options.mcp }),
@@ -4049,7 +4049,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
       <FeedbackToast message={!importFeedback && !/^(正在读取控制面草稿|已从控制面(?:加载|切换)草稿|已保存到控制面|已通过对话更新)/.test(notice) ? notice : ""} tone={/失败|错误|冲突|无法/.test(notice) ? "error" : "info"} onDismiss={() => setNotice("")} />
       <FeedbackToast message={importFeedback?.message} tone={importFeedback?.error ? "error" : "info"} duration={importingBundle ? 0 : undefined} onDismiss={() => setImportFeedback(null)} />
       {mcpManagerOpen && mcpStartInForm && (
-        <McpCatalogControlPlane startInForm onClose={() => setMcpManagerOpen(false)} onRegistered={() => {
+        <McpCatalogControlPlane startInForm defaultAgentId={draft.agentId ?? undefined} onClose={() => setMcpManagerOpen(false)} onRegistered={() => {
           void studioClient.capabilities().then(setCapabilities).catch(() => setNotice("MCP 已注册，刷新页面后可绑定"));
           openConfiguration("capabilities", "mcp");
         }} />

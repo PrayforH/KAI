@@ -1142,6 +1142,8 @@ export type StudioCapabilities = {
     reference: string;
     ownerUserId: string | null;
     allowedExecutionProfileIds: string[];
+    visibility?: "all" | "selected";
+    visibleAgentIds?: string[];
     category: "tool" | "knowledge";
     serverName: string | null;
     label: string;
@@ -2685,6 +2687,8 @@ export function capabilityOptions(catalog: StudioCapabilities): {
       tools: item.tools,
       network: item.networkAccess,
       sendsUserData: item.sendsUserData,
+      visibility: item.visibility,
+      visibleAgentIds: item.visibleAgentIds,
     })),
     profiles: catalog.executionProfiles.filter((item) => item.enabled),
     templates: catalog.templates ?? [],
@@ -2825,6 +2829,7 @@ export interface ApiProject {
   userId: string;
   name: string;
   instructions?: string;
+  skillReferences?: string[];
   archivedAt?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -2873,7 +2878,7 @@ export const projectClient = {
   },
   update(
     projectId: string,
-    update: { name?: string; instructions?: string },
+    update: { name?: string; instructions?: string; skillReferences?: string[] },
   ): Promise<ApiProject> {
     return request<ApiProject>(`projects/${encodeURIComponent(projectId)}`, {
       method: "PATCH",

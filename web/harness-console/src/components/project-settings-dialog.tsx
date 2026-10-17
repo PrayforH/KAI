@@ -4,9 +4,11 @@ import { useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent } 
 import { createPortal } from "react-dom";
 import {
   projectClient,
+  studioClient,
   type ApiProject,
   type ApiProjectDocument,
   type ApiProjectMemory,
+  type StudioPlatformSkillPackage,
 } from "../lib/studio-client";
 import styles from "./project-settings-dialog.module.css";
 
@@ -54,6 +56,10 @@ export function ProjectSettingsDialog({
   const titleId = useId();
   const [name, setName] = useState(project.name);
   const [instructions, setInstructions] = useState(project.instructions ?? "");
+  const [skillReferences, setSkillReferences] = useState<string[]>(
+    project.skillReferences ?? [],
+  );
+  const [platformSkills, setPlatformSkills] = useState<StudioPlatformSkillPackage[]>([]);
   const [memories, setMemories] = useState<ApiProjectMemory[]>([]);
   const [documents, setDocuments] = useState<ApiProjectDocument[]>([]);
   const [memoryDraft, setMemoryDraft] = useState("");
@@ -74,10 +80,15 @@ export function ProjectSettingsDialog({
 
   useEffect(() => {
     let active = true;
-    projectClient.resources(project.projectId).then((value) => {
+    Promise.all([
+      projectClient.resources(project.projectId),
+      studioClient.listPlatformSkills().catch(() => ({ revision: 0, packages: [] })),
+    ]).then(([value, catalog]) => {
       if (!active) return;
       setName(value.project.name);
       setInstructions(value.project.instructions ?? "");
+      setSkillReferences(value.project.skillReferences ?? []);
+      setPlatformSkills(catalog.packages);
       setMemories(value.memories);
       setDocuments(value.documents);
     }).catch((cause: unknown) => {
@@ -92,6 +103,20 @@ export function ProjectSettingsDialog({
     if (!pending) onClose();
   }
 
+  function skillReference(pkg: StudioPlatformSkillPackage) {
+    return `${pkg.packageId}@${pkg.revision}`;
+  }
+
+  function toggleSkill(pkg: StudioPlatformSkillPackage) {
+    const reference = skillReference(pkg);
+    setSkillReferences((current) =>
+      current.includes(reference)
+        ? current.filter((item) => item !== reference)
+        : [...current, reference],
+    );
+    setNotice(null);
+  }
+
   async function save(event: FormEvent) {
     event.preventDefault();
     const trimmed = name.trim();
@@ -102,6 +127,7 @@ export function ProjectSettingsDialog({
       const updated = await projectClient.update(project.projectId, {
         name: trimmed,
         instructions,
+        skillReferences,
       });
       onChanged(updated);
       setNotice({ tone: "info", text: "已保存。新的任务会使用这份项目说明；已有任务的历史不变。" });
@@ -262,6 +288,44 @@ export function ProjectSettingsDialog({
           <small>会作为项目上下文附加到该项目下所有任务。</small>
         </label>
 
+        <section className={styles.section} aria-label="项目技能">
+          <div className={styles.sectionHead}>
+            <div>
+              <h3>项目技能</h3>
+              <p>选中的技能会随项目带到每个新任务；Agent 自带的同名技能优先。</p>
+            </div>
+            <span className={styles.count}>{skillReferences.length}</span>
+          </div>
+          {loading ? <p className={styles.empty}>正在读取…</p> : (
+            <ul className={styles.skillList}>
+              {platformSkills.map((pkg) => {
+                const reference = skillReference(pkg);
+                const checked = skillReferences.includes(reference);
+                return (
+                  <li key={reference}>
+                    <label className={styles.skillItem}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={pending}
+                        onChange={() => toggleSkill(pkg)}
+                      />
+                      <span className={styles.skillCopy}>
+                        <strong>{pkg.displayName}</strong>
+                        <small>{pkg.summary}</small>
+                        <small className={styles.skillMeta}>
+                          {pkg.compatibleRuntimes.join(" / ")} · {reference}
+                        </small>
+                      </span>
+                    </label>
+                  </li>
+                );
+              })}
+              {!platformSkills.length && <li className={styles.empty}>平台技能目录为空。</li>}
+            </ul>
+          )}
+        </section>
+
         <section className={styles.section} aria-label="项目记忆">
           <div className={styles.sectionHead}>
             <div>
@@ -335,7 +399,17 @@ export function ProjectSettingsDialog({
                   </span>
                   <span className={styles.documentName} title={document.name}>{document.name}</span>
                   <span className={styles.documentSize}>{Math.max(1, Math.round(document.sizeBytes / 1024))} KB</span>
-                  <button type="button" className={styles.dangerSmall} disabled={pending} onClick={() => void detachDocument(document)}>移除</button>
+                  <span className={styles.documentActions}>
+                    <a
+                      className={styles.documentOpen}
+                      href={`/api/input-artifacts/${encodeURIComponent(document.inputArtifactId)}/content?inline=1`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      查看
+                    </a>
+                    <button type="button" className={styles.dangerSmall} disabled={pending} onClick={() => void detachDocument(document)}>移除</button>
+                  </span>
                 </li>
               ))}
               {!documents.length && <li className={styles.empty}>还没有项目文档。</li>}

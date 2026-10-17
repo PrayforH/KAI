@@ -264,6 +264,51 @@ async def test_project_documents_are_verified_and_injected_into_every_run() -> N
 
 
 @pytest.mark.asyncio
+async def test_project_skills_are_pinned_and_reach_run_context() -> None:
+    service, _resources, _seen = build_resource_service()
+    project = await service.create(
+        tenant_id="t",
+        user_id="u",
+        name="金融办",
+        skill_references=("pptx-generator@1",),
+    )
+    assert project.skill_references == ("pptx-generator@1",)
+    context = await service.context_for_run(
+        tenant_id="t", user_id="u", project_id=project.project_id
+    )
+    assert context is not None
+    assert context.skill_references == ("pptx-generator@1",)
+    assert context.skill_count == 1
+    assert "## 项目技能" in context.text
+    updated = await service.update(
+        tenant_id="t",
+        user_id="u",
+        project_id=project.project_id,
+        skill_references=(),
+    )
+    assert updated.skill_references == ()
+
+
+@pytest.mark.asyncio
+async def test_unknown_project_skill_reference_is_rejected() -> None:
+    service, _resources, _seen = build_resource_service()
+    with pytest.raises(ConflictError):
+        await service.create(
+            tenant_id="t",
+            user_id="u",
+            name="金融办",
+            skill_references=("missing-package@1",),
+        )
+    with pytest.raises(ConflictError):
+        await service.create(
+            tenant_id="t",
+            user_id="u",
+            name="金融办",
+            skill_references=("pptx-generator",),
+        )
+
+
+@pytest.mark.asyncio
 async def test_deleting_a_project_removes_its_resources() -> None:
     service, resources, _seen = build_resource_service()
     project = await service.create(tenant_id="t", user_id="u", name="金融办")

@@ -728,6 +728,14 @@ class McpCapability(StudioModel):
         default=(),
         alias="allowedExecutionProfileIds",
     )
+    # Which agents may select this server in the builder. "all" preserves the
+    # legacy catalog-wide visibility; "selected" restricts it to the stable
+    # Agent identities listed here. Personal ownership is still enforced
+    # separately, so this never widens who can see another user's server.
+    visibility: Literal["all", "selected"] = "all"
+    visible_agent_ids: tuple[str, ...] = Field(
+        default=(), alias="visibleAgentIds"
+    )
     category: Literal["tool", "knowledge"] = "tool"
     server_name: str | None = Field(
         default=None,
@@ -795,6 +803,10 @@ class McpCapability(StudioModel):
             raise ValueError("duplicate MCP tool")
         if len(self.allowed_execution_profile_ids) != len(set(self.allowed_execution_profile_ids)):
             raise ValueError("duplicate MCP Execution Profile")
+        if len(self.visible_agent_ids) != len(set(self.visible_agent_ids)):
+            raise ValueError("duplicate visible Agent")
+        if self.visibility == "all" and self.visible_agent_ids:
+            raise ValueError("MCP visible to all Agents must not list Agent IDs")
         return self
 
 
