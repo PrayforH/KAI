@@ -176,6 +176,7 @@ function recoverInterruptedAguiStream(
 export class HarnessHttpAgent extends HttpAgent {
   private activeInput?: ActiveRun;
   private cancelFetch: typeof fetch;
+  private cancellation?: { key: string; promise: Promise<void> };
   private modelRouteOverride?: string;
   private knowledgeReferences?: readonly string[];
   private onRunSucceeded?: () => void;
@@ -273,8 +274,11 @@ export class HarnessHttpAgent extends HttpAgent {
       this.activeInput = activeInput;
     }
     const runtimeThreadId = activeInput?.threadId ?? this.threadId;
+    // Retire the previous run projection before a new optimistic turn can adopt it.
+    activityStore.clear(runtimeThreadId);
     // Release the previous response before the network delivers RUN_STARTED.
     if (activeInput) liveResponseStore.startRun(activeInput.runId, runtimeThreadId);
+    else liveResponseStore.startRun(undefined, runtimeThreadId);
     const wrapped: AgentSubscriber = {
       ...subscriber,
       onRunStartedEvent: async (params) => {
@@ -359,7 +363,7 @@ export class HarnessHttpAgent extends HttpAgent {
       },
     };
     const signal = options?.signal;
-    const cancelFromSignal = () => this.cancelActiveRun();
+    const cancelFromSignal = () => { void this.cancelActiveRun().catch(() => undefined); };
     if (signal?.aborted) cancelFromSignal();
     else signal?.addEventListener("abort", cancelFromSignal, { once: true });
 
@@ -379,41 +383,51 @@ export class HarnessHttpAgent extends HttpAgent {
         if (
           activeInput &&
           this.activeInput?.threadId === activeInput.threadId &&
-          this.activeInput.runId === activeInput.runId
+          this.activeInput.runId === activeInput.runId &&
+          !this.cancellation
         ) {
           this.activeInput = undefined;
         }
       });
   }
 
-  cancelActiveRun(): void {
+  cancelActiveRun(): Promise<void> {
     const activeInput = this.activeInput;
-    liveResponseStore.completeRun(activeInput?.threadId);
-    runStreamStore.completeRun(activeInput?.runId, activeInput?.threadId);
-    this.activeInput = undefined;
-    if (!activeInput) return;
+    if (!activeInput) return Promise.resolve();
+    const key = `${activeInput.threadId}:${activeInput.runId}`;
+    if (this.cancellation?.key === key) return this.cancellation.promise;
     const relative = this.url.startsWith("/");
     const base = globalThis.location?.origin ?? "http://localhost";
     const url = new URL(this.url, base);
     url.search = "";
     url.pathname = activeInput.idKind === "server"
-      ? `${url.pathname.replace(/\/$/, "")}/runs/${encodeURIComponent(
-          activeInput.runId,
-        )}/cancel`
-      : `${url.pathname.replace(/\/$/, "")}/threads/${encodeURIComponent(
-          activeInput.threadId,
-        )}/runs/${encodeURIComponent(activeInput.runId)}/cancel`;
+      ? `${url.pathname.replace(/\/$/, "")}/runs/${encodeURIComponent(activeInput.runId)}/cancel`
+      : `${url.pathname.replace(/\/$/, "")}/threads/${encodeURIComponent(activeInput.threadId)}/runs/${encodeURIComponent(activeInput.runId)}/cancel`;
     const target = relative ? `${url.pathname}${url.search}` : url.toString();
-    void this.cancelFetch(target, {
-      method: "POST",
-      headers: this.headers,
-    }).catch((error: unknown) => {
+    const promise = (async () => {
+      // A click can arrive before the POST has bound its client Run ID. Keep
+      // that identity and retry this same idempotent stop, never a newer Run.
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        const response = await this.cancelFetch(target, { method: "POST", headers: this.headers });
+        if (response.ok) {
+          if (this.activeInput?.threadId === activeInput.threadId && this.activeInput.runId === activeInput.runId) this.activeInput = undefined;
+          return;
+        }
+        if (![404, 409].includes(response.status) || attempt === 3) throw new Error(`停止请求失败（${response.status}）`);
+        await new Promise(resolve => setTimeout(resolve, 150 * (attempt + 1)));
+      }
+    })().catch((error: unknown) => {
       console.error("[Harness Console] Failed to cancel Harness run", error);
+      throw error;
+    }).finally(() => {
+      if (this.cancellation?.key === key) this.cancellation = undefined;
     });
+    this.cancellation = { key, promise };
+    return promise;
   }
 
   override abortRun(): void {
-    this.cancelActiveRun();
+    void this.cancelActiveRun().catch(() => undefined);
     super.abortRun();
   }
 

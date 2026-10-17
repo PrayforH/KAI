@@ -1,11 +1,12 @@
 "use client";
 
 import { isFailedRunStatus } from "../lib/run-status";
+import { SidebarIcon } from "./sidebar-icon";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ProjectCreateDialog } from "./project-create-dialog";
 import { PanelResizeHandle } from "./panel-resize-handle";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { AccountMenu } from "./account-menu";
 import { useAuth } from "./auth-provider";
 import { ProductBrandMark, PRODUCT_NAME } from "./product-brand";
@@ -37,6 +38,7 @@ const statusLabels: Record<string, string> = {
   queued: "排队中",
   running: "运行中",
   waiting_approval: "待审批",
+  waiting_input: "需要输入",
   cancelling: "取消中",
   cancelled: "已取消",
   succeeded: "已完成",
@@ -45,50 +47,11 @@ const statusLabels: Record<string, string> = {
   timed_out: "已超时",
 };
 
-function NewTaskIcon() {
-  return (
-    <svg className="task-new-icon" viewBox="0 0 20 20" aria-hidden="true">
-      <rect x="3.5" y="5.5" width="11" height="11" rx="2" />
-      <path d="M8 13.2 8.5 11l6.8-6.8a1.4 1.4 0 0 1 2 2L10.5 13Z" />
-    </svg>
-  );
-}
-
-function AddToProjectIcon() {
-  return (
-    <svg viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M8 3.5v9M3.5 8h9" />
-    </svg>
-  );
-}
-
-function SidebarCollapseIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <rect x="2.75" y="4.25" width="14.5" height="11.5" rx="2.5" />
-      <path d="M6.75 4.25v11.5" />
-    </svg>
-  );
-}
-
-function ArchiveIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path d="M3.5 6.5h13v9a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5Z" />
-      <path d="M2.5 3.5h15v3h-15Z" />
-      <path d="M7.5 10h5" />
-    </svg>
-  );
-}
-
-function ProjectFolderIcon() {
-  return (
-    <svg className="task-project-folder" viewBox="0 0 20 20" aria-hidden="true">
-      <path d="M2.75 5.75a2 2 0 0 1 2-2h3.1l1.7 1.9h5.7a2 2 0 0 1 2 2v6.5a2 2 0 0 1-2 2H4.75a2 2 0 0 1-2-2Z" />
-      <path d="M2.75 8h14.5" />
-    </svg>
-  );
-}
+function NewTaskIcon() { return <SidebarIcon name="compose" className="task-new-icon" />; }
+function AddToProjectIcon() { return <SidebarIcon name="plus" />; }
+function SidebarCollapseIcon() { return <SidebarIcon name="panel" />; }
+function ArchiveIcon() { return <SidebarIcon name="archive" />; }
+function ProjectFolderIcon() { return <SidebarIcon name="folder" className="task-project-folder" />; }
 
 function MoreIcon() {
   return (
@@ -184,6 +147,19 @@ export function TaskSidebar({
   const { user } = useAuth();
   const router = useRouter();
   const [expandedTaskGroups, setExpandedTaskGroups] = useSidebarGroups(user.user_id);
+  const sectionId = useId();
+  const projectsCollapsed = expandedTaskGroups.has("section:projects:collapsed");
+  const tasksCollapsed = expandedTaskGroups.has("section:tasks:collapsed");
+  function toggleSection(section: "projects" | "tasks") {
+    setExpandedTaskGroups((current) => {
+      const next = new Set(current);
+      const key = `section:${section}:collapsed`;
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
 
   // Acknowledge only the version displayed on a visible task page. Server
   // watermarks are shared across devices; failed writes retry on list refresh.
@@ -388,13 +364,15 @@ export function TaskSidebar({
       else if (runView.phase === "failed") status = task.status === "timed_out" ? "timed_out" : "failed";
       else if (task.status !== "cancelling" || !activeStatuses.has(runView.phase)) status = runView.phase;
     }
+    if (task.pending_input && ["succeeded", "completed"].includes(status)) status = "waiting_input";
+    const needsInput = status === "waiting_input";
     const hasError = isFailedRunStatus(status);
     const statusLabel = statusLabels[status] ?? status;
     const unreadResult =
       status === "succeeded" &&
       task.thread_id !== currentThreadId &&
       !isTaskRead(task);
-    const showStatusDot = activeStatuses.has(status) || hasError || unreadResult;
+    const showStatusDot = !needsInput && (activeStatuses.has(status) || hasError || unreadResult);
     return (
       <div
         role="listitem"
@@ -405,7 +383,7 @@ export function TaskSidebar({
           type="button"
           className={`task-list-item ${task.thread_id === currentThreadId ? "is-active" : ""} ${task.pending_approval ? "needs-approval" : ""}`}
           aria-label={`${task.title}，${statusLabel}`}
-          title={hasError ? `${statusLabel}，点击查看详情` : undefined}
+          title={needsInput ? "需要你补充信息，点击任务继续回答" : hasError ? `${statusLabel}，点击查看详情` : undefined}
           onPointerEnter={() => {
             void prefetchThreadHistory(task.thread_id).catch(() => {});
           }}
@@ -423,6 +401,7 @@ export function TaskSidebar({
             </span>
           )}
           <ScrollingTaskTitle title={task.title} />
+          {needsInput && <span className="task-input-badge">需要输入</span>}
           {hasError && <span className="task-error-label">{statusLabel}</span>}
           <span className="task-list-meta">
             <time dateTime={task.updated_at}>{formatTaskAge(task.updated_at)}</time>
@@ -516,10 +495,13 @@ export function TaskSidebar({
           <div className="task-list-scroll">
           <div className="task-list-toolbar task-project-toolbar">
             <div className="task-list-heading">
-              <span className="task-list-heading-copy">
-                <ProjectFolderIcon />
-                项目
-              </span>
+              <button type="button" className="task-section-toggle"
+                aria-label={`${projectsCollapsed ? "展开" : "收起"}项目分组`}
+                aria-expanded={!projectsCollapsed} aria-controls={`${sectionId}-projects`}
+                onClick={() => toggleSection("projects")}>
+                <span>项目</span>
+                <SidebarIcon name="chevronDown" size={12} className="task-group-chevron" />
+              </button>
             </div>
             <button
               type="button"
@@ -531,7 +513,7 @@ export function TaskSidebar({
               <AddToProjectIcon />
             </button>
           </div>
-          <div className="task-list" role="list">
+          {!projectsCollapsed && <div className="task-list" role="list" id={`${sectionId}-projects`}>
             {projectCreateError && <p className="task-project-create-error" role="alert">{projectCreateError}</p>}
             {projectGroups.map(({ project, tasks: projectTasks }) => {
               const collapsed = !expandedTaskGroups.has(`project:${project.projectId}`);
@@ -632,13 +614,19 @@ export function TaskSidebar({
                 </section>
               );
             })}
-          </div>
+          </div>}
           <div className="task-list-toolbar task-agent-section-heading">
             <div className="task-list-heading">
-              <span className="task-list-heading-copy">任务</span>
+              <button type="button" className="task-section-toggle"
+                aria-label={`${tasksCollapsed ? "展开" : "收起"}任务分组`}
+                aria-expanded={!tasksCollapsed} aria-controls={`${sectionId}-tasks`}
+                onClick={() => toggleSection("tasks")}>
+                <span>任务</span>
+                <SidebarIcon name="chevronDown" size={12} className="task-group-chevron" />
+              </button>
             </div>
           </div>
-          <div className="task-list" role="list">
+          {!tasksCollapsed && <div className="task-list" role="list" id={`${sectionId}-tasks`}>
             {looseTasks.length === 0 && tasks.length > 0 && (
               <p className="task-project-empty">所有任务都在项目中</p>
             )}
@@ -688,7 +676,7 @@ export function TaskSidebar({
                 <button type="button" onClick={retryTasks}>重新加载</button>
               </div>
             )}
-          </div>
+          </div>}
           </div>
           <div className="task-sidebar-account">
             <AccountMenu />

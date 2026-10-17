@@ -41,6 +41,14 @@ class Settings(BaseSettings):
     # silently unavailable. A profile naming a backend that is not enabled is
     # refused instead of falling back to the default.
     sandbox_extra_providers: str = ""
+    # Reachability of each service deployment, independently of Agent tool grants.
+    sandbox_network_access: dict[
+        Literal["opensandbox", "cubesandbox"],
+        tuple[Literal["none", "internal", "external"], ...],
+    ] = Field(default_factory=lambda: {
+        "opensandbox": ("none", "internal", "external"),
+        "cubesandbox": ("none",),
+    })
     # "declared" keeps the historical behaviour: profiles state a network level
     # but no backend applies it. "enforced" derives a host allow list per Run and
     # refuses the Run when the backend cannot apply it.
@@ -126,6 +134,18 @@ class Settings(BaseSettings):
     new_api_compatibility: Literal["full", "degraded", "unsupported"] = "full"
     new_api_capabilities: str = "streaming,tool_use"
 
+    ui_intent_base_url: str = ""
+    ui_intent_api_key: SecretStr = SecretStr("")
+    ui_intent_model: str = ""
+    ui_intent_timeout_seconds: float = Field(default=3, ge=1, le=15)
+
+    # Purpose-specific OpenAI text endpoint; does not change any Agent model binding.
+    studio_builder_intent_base_url: str = ""
+    studio_builder_intent_api_key: SecretStr = SecretStr("")
+    studio_builder_intent_model: str = ""
+    studio_builder_intent_timeout_seconds: float = Field(default=12, ge=1, le=60)
+
+
     minimax_m3_base_url: str = ""
     minimax_m3_api_key: SecretStr = SecretStr("")
     minimax_m3_model: str = "MiniMax-M3"
@@ -187,7 +207,7 @@ class Settings(BaseSettings):
     cubesandbox_domain: str = "cube.app"
     cubesandbox_template: str = ""
     cubesandbox_timeout_seconds: int = Field(default=3600, ge=60, le=86_400)
-    cubesandbox_allow_internet_access: bool = True
+    cubesandbox_allow_internet_access: bool = False
     cubesandbox_remote_workspace_root: str = "/home/user/harness"
     cubesandbox_claude_cli_path: str = "/home/user/.local/bin/claude"
     # Empty means "follow the CLI bundled with claude-agent-sdk"; set a value
@@ -213,6 +233,7 @@ class Settings(BaseSettings):
     # discovering it when the first Run tries to start.
     cubesandbox_validate_template: bool = True
     opensandbox_api_key: SecretStr = SecretStr("")
+    opensandbox_auth_mode: Literal["api_key", "none"] = "api_key"
     opensandbox_api_url: str = ""
     opensandbox_image: str = "python:3.12-slim"
     opensandbox_timeout_seconds: int = Field(default=3600, ge=60, le=86_400)
@@ -291,6 +312,7 @@ class Settings(BaseSettings):
     memory_embedding_model: str = "shdata-bge-m3"
     memory_embedding_dimensions: int = Field(default=1024, ge=1024, le=1024)
     memory_semantic_threshold: float = Field(default=0.5, ge=0, le=1)
+    memory_auto_save_personal_default: bool = False
     memory_extraction_enabled: bool = False
     memory_extraction_since: str = ""
     memory_extraction_base_url: str = ""

@@ -56,6 +56,7 @@ from harness.observability.redaction import correlation_hash
 from harness.policy.models import PolicyContext, PolicyDecision
 from harness.policy.rules import PolicyEngine
 from harness.policy.runtime import ResolvedPolicy
+from harness.presentation.planner import InteractionPlanner
 from harness.presentation.policy import action_policy
 from harness.quota.repositories import QuotaExceededError
 from harness.quota.service import QuotaService
@@ -262,6 +263,7 @@ class RunOrchestrator:
         artifacts: ArtifactService | None = None,
         input_artifacts: InputArtifactService | None = None,
         memory: UserMemoryService | None = None,
+        interaction_planner: InteractionPlanner | None = None,
         workspace_policy_resolver: WorkspacePolicyResolver | None = None,
         runtime_asset_stager: RuntimeAssetStager | None = None,
         project_skills: ProjectSkillResolver | None = None,
@@ -301,6 +303,7 @@ class RunOrchestrator:
         self._artifacts = artifacts
         self._input_artifacts = input_artifacts
         self._memory = memory
+        self._interaction_planner = interaction_planner
         self._workspace_policy_resolver = workspace_policy_resolver
         self._runtime_asset_stager = runtime_asset_stager
         self._project_skills = project_skills
@@ -348,6 +351,26 @@ class RunOrchestrator:
             },
         ):
             self._observability.annotate_current_io(output_value=text)
+
+    async def _interaction_guidance(self, run: Run) -> str:
+        if self._interaction_planner is None or run.input.get("studio_builder"):
+            return ""
+        with self._stage("harness.presentation.plan", {"run.id": run.run_id}):
+            decision = await self._interaction_planner.plan(str(run.input.get("prompt", "")))
+        await self._events.append(
+            tenant_id=run.tenant_id,
+            run_id=run.run_id,
+            session_id=run.session_id,
+            event_type="presentation.intent",
+            payload={
+                "version": 1,
+                "origin": "intent_model",
+                "selector_model": self._interaction_planner.model,
+                "status": "selected" if decision is not None else "fallback",
+                **(decision.model_dump() if decision is not None else {}),
+            },
+        )
+        return decision.guidance() if decision is not None else ""
 
     async def _runtime_events(self, context: RuntimeContext) -> AsyncIterator[Any]:
         with self._stage(
@@ -1442,6 +1465,7 @@ class RunOrchestrator:
             async def sync_workspace() -> None:
                 await active_sandbox.collect(handle)
 
+            interaction_guidance = await self._interaction_guidance(run)
             artifact_publisher = (
                 ArtifactPublisher(
                     workspace=handle.path,
@@ -1453,6 +1477,7 @@ class RunOrchestrator:
                     sync_workspace=sync_workspace,
                     max_file_bytes=self._output_artifact_max_bytes,
                     observability=self._observability,
+                    validate_generated_html=bool(interaction_guidance),
                 )
                 if self._artifacts is not None
                 else None
@@ -1532,6 +1557,7 @@ class RunOrchestrator:
                 identity=identity,
                 memory_projection=memory_projection,
                 context_projection=context_projection,
+                interaction_projection=interaction_guidance,
                 conversation_history=await self._conversation_history(session, run),
                 processed_input_paths=tuple(
                     path for item in staged_inputs for path in item.processed_paths

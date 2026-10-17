@@ -1,4 +1,5 @@
 "use client";
+import { CardActionButton } from "../card-action-button";
 
 import { useEffect, useMemo, useState } from "react";
 import { writeTextToClipboard } from "../../lib/clipboard";
@@ -96,17 +97,8 @@ export function TableView({
           {rows.length} 行{caption ? ` · ${caption}` : ""}
         </span>
         <span className="intelligent-ui-toolbar-actions">
-          <button type="button" onClick={() => void copy()}>
-            {copied ? "已复制" : "复制"}
-          </button>
-          <button
-            type="button"
-            onClick={() =>
-              downloadCsv(`${title ?? "数据"}.csv`, toCsv(header, body))
-            }
-          >
-            下载 CSV
-          </button>
+          <CardActionButton action="copy" label="复制表格" copied={copied} onClick={() => void copy()} />
+          <CardActionButton action="download" label="下载 CSV" onClick={() => downloadCsv(`${title ?? "数据"}.csv`, toCsv(header, body))} />
         </span>
       </div>
       {copyError ? (

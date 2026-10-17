@@ -88,3 +88,42 @@ it("preserves answers while collapsed and blocks shortcuts when disabled", () =>
   key(card, "2");
   expect(host.querySelectorAll("input:checked")).toHaveLength(1);
 });
+
+it("skips unanswered questions while preserving answers and preventing duplicate sends", async () => {
+  let finish!: () => void;
+  const send = mount(vi.fn(() => new Promise<void>(resolve => { finish = resolve; })), false, pagedInput);
+  act(() => host.querySelector<HTMLInputElement>('input[type="radio"]')!.click());
+  await act(async () => { button("跳过").click(); button("跳过").click(); });
+  expect(send).toHaveBeenCalledTimes(1);
+  expect(send.mock.calls[0][0]).toContain("修改哪些内容\nUI");
+  expect(send.mock.calls[0][0]).toContain("何时执行\n已跳过");
+  await act(async () => finish());
+  expect(host.textContent).toContain("已提交");
+});
+it("allows skipping an empty form but not while the conversation is locked", async () => {
+  const send = mount(vi.fn(), true);
+  act(() => button("跳过").click());
+  expect(send).not.toHaveBeenCalled();
+  act(() => root.render(<ConversationInputCard input={input} disabled={false} onSubmit={send} />));
+  await act(async () => button("跳过").click());
+  expect(send).toHaveBeenCalledTimes(1);
+});
+it("masks inferred password entry, submits the original value, and clears it after success",async()=>{
+ const send=mount(vi.fn(),false,{version:1,title:'重新授权',questions:[{id:'pwd',label:'数据库密码',type:'text',options:[]}]});
+ const field=host.querySelector<HTMLInputElement>('input[type=password]')!;
+ expect(field).not.toBeNull();expect(field.autocomplete).toBe('off');
+ const password='Example-Pass-42!';
+ act(()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(field,password);field.dispatchEvent(new Event('input',{bubbles:true}));});
+ key(field,'ArrowLeft');expect(field.type).toBe('password');
+ await act(async()=>submit().click());
+ expect(send).toHaveBeenCalledWith('重新授权\n\n数据库密码\n'+password);
+ expect(field.value).toBe('');expect(host.innerHTML).not.toContain(password);
+ expect(field.placeholder).toBe('已提交，内容已隐藏');
+});
+it('redacts password echoes in failed submission errors while retaining a masked retry value',async()=>{
+ const password='Example-Pass-42!';const send=mount(vi.fn().mockRejectedValue(new Error('无法连接：'+password)),false,{version:1,title:'连接',questions:[{id:'pwd',label:'密码',type:'password',options:[]}]});
+ const field=host.querySelector<HTMLInputElement>('input[type=password]')!;
+ act(()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(field,password);field.dispatchEvent(new Event('input',{bubbles:true}));});
+ await act(async()=>submit().click());expect(send).toHaveBeenCalledOnce();
+ expect(host.querySelector('[role=alert]')?.textContent).toBe('无法连接：••••••••');expect(field.type).toBe('password');expect(field.value).toBe(password);
+});

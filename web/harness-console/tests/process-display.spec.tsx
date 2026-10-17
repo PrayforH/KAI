@@ -140,8 +140,9 @@ it("retains intermediate prose and tool nodes across the next action", () => {
   const running = runActivitySchema.parse({ ...completed, run_id: "stable-process", status: "running", items: base });
   render(running);
   const tool = host.querySelector('.execution-action');
-  // No tool follows the prose yet, so it is not logged as progress.
-  expect(host.querySelector('[data-commentary-source="progress"]')).toBeNull();
+  // Unclassified prose streams in place before the tool proves it is progress.
+  const pending = host.querySelector('[data-commentary-source="progress"]');
+  expect(pending?.textContent).toContain("已找到资料，继续核验。");
   render(runActivitySchema.parse({ ...running, items: [...base,
     { ...item("reasoning.delta", 5, "思考", "补充内容"), metadata: { item_id: "next-thought" } },
     { ...item("tool.request", 6, "读取"), kind: "tool", metadata: { tool_call_id: "next-tool", name: "Read", arguments: { file_path: "next.txt" } } },
@@ -149,6 +150,7 @@ it("retains intermediate prose and tool nodes across the next action", () => {
   // A tool now follows: the prose becomes progress commentary in the log.
   const progress = host.querySelector('[data-commentary-source="progress"]');
   expect(progress?.textContent).toContain("已找到资料，继续核验。");
+  expect(progress).toBe(pending);
   expect(host.querySelector('.execution-action')).toBe(tool);
 });
 
@@ -165,4 +167,16 @@ it("does not parse hidden Markdown and bounds the preview while retaining expand
   expect(row.querySelector(".execution-reasoning-body")?.textContent).toBe(text);
   act(() => { row.open = false; row.dispatchEvent(new Event("toggle")); });
   expect(row.querySelector(".execution-reasoning-body")).toBeNull();
+});
+
+it("omits punctuation-only tool prefaces without hiding useful progress", () => {
+  const activity = runActivitySchema.parse({ ...completed, items: [
+    item("message.delta", 1, "说明", "。"),
+    { ...item("tool.request", 2, "读取"), kind:"tool", metadata:{tool_call_id:"read", name:"Read", arguments:{file_path:"notes.txt"}} },
+    item("message.delta", 3, "说明", "核验完成，继续构建。"),
+    { ...item("tool.request", 4, "构建"), kind:"tool", metadata:{tool_call_id:"write", name:"Write", arguments:{file_path:"tool.html"}} },
+  ] });
+  render(activity); expand();
+  const progress = [...host.querySelectorAll('[data-commentary-source="progress"]')].map(n => n.textContent);
+  expect(progress).toEqual([expect.stringContaining("核验完成，继续构建。")]);
 });

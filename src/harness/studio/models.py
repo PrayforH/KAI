@@ -623,7 +623,12 @@ class ModelRouteCapability(StudioModel):
     )
     base_url: str | None = Field(default=None, alias="baseUrl", max_length=2048)
     api_format: Literal[
-        "anthropic_compatible", "openai_compatible", "openai_images", "openai_videos"
+        "anthropic_compatible",
+        "openai_compatible",
+        "openai_images",
+        "openai_videos",
+        "minimax_videos",
+        "minimax_videos_v2",
     ] = Field(default="anthropic_compatible", alias="apiFormat")
     auth_scheme: Literal["bearer", "x-api-key", "none"] = Field(
         default="bearer", alias="authScheme"
@@ -656,10 +661,36 @@ class ModelRouteCapability(StudioModel):
             raise ValueError("image generation models must use the openai_images API format")
         if self.model_type != "image_generation" and self.api_format == "openai_images":
             raise ValueError("openai_images is only valid for image generation models")
-        if self.model_type == "video_generation" and self.api_format != "openai_videos":
-            raise ValueError("video generation models must use the openai_videos API format")
-        if self.model_type != "video_generation" and self.api_format == "openai_videos":
-            raise ValueError("openai_videos is only valid for video generation models")
+        if self.model_type == "video_generation" and self.api_format not in {
+            "openai_videos",
+            "minimax_videos",
+            "minimax_videos_v2",
+        }:
+            raise ValueError("video generation models must use a video API format")
+        if self.model_type != "video_generation" and self.api_format in {
+            "openai_videos",
+            "minimax_videos",
+            "minimax_videos_v2",
+        }:
+            raise ValueError("video API formats are only valid for video generation models")
+        if self.api_format in {"minimax_videos", "minimax_videos_v2"} and self.base_url is not None:
+            parsed = urlsplit(self.base_url or "")
+            if (
+                parsed.scheme != "https"
+                or parsed.hostname
+                not in {
+                    "api.minimaxi.com",
+                    "api.minimax.cn",
+                    "api.minimax.io",
+                }
+                or parsed.path.rstrip("/")
+                != ("/v2" if self.api_format == "minimax_videos_v2" else "/v1")
+                or self.auth_scheme != "bearer"
+            ):
+                raise ValueError(
+                    "MiniMax videos require an official HTTPS endpoint "
+                    "matching the API version and Bearer auth"
+                )
         if self.auth_scheme == "none" and self.model_type != "video_generation":
             raise ValueError(
                 "unauthenticated model connections are only valid for video generation"
@@ -875,9 +906,9 @@ class ExecutionProfileMetadata(StudioModel):
     profile_id: str = Field(alias="profileId", pattern=r"^[a-z][a-z0-9-]*$")
     label: str = Field(min_length=1, max_length=160)
     description: str = Field(min_length=1, max_length=500)
-    sandbox_provider: Literal[
-        "local", "daytona", "e2b", "gvisor", "cubesandbox", "opensandbox"
-    ] = Field(alias="sandboxProvider")
+    sandbox_provider: Literal["local", "daytona", "e2b", "gvisor", "cubesandbox", "opensandbox"] = (
+        Field(alias="sandboxProvider")
+    )
     # The weakest enforcement tier this profile accepts. The deployment has to
     # reach it with a backend that actually delivers that tier, otherwise the
     # run is refused instead of silently running weaker than declared.
@@ -933,6 +964,8 @@ class RuntimeCapability(StudioModel):
             "openai_compatible",
             "openai_images",
             "openai_videos",
+            "minimax_videos",
+            "minimax_videos_v2",
         ],
         ...,
     ] = Field(alias="modelApiFormats")

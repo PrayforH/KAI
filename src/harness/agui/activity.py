@@ -6,6 +6,7 @@ from typing import Any, cast
 
 from ag_ui.core import ActivityDeltaEvent, ActivitySnapshotEvent, BaseEvent
 
+from harness.agui.failure import failure_message
 from harness.core.events import RunEvent
 from harness.runtime.audit_redaction import redact_text, redact_tool_arguments
 from harness.runtime.input_redaction import redact_internal_agent_asset_events
@@ -304,6 +305,25 @@ def _activity_item(event: RunEvent) -> dict[str, Any] | None:
             ),
             metadata=_metadata(retention_seconds=retention_seconds),
         )
+    if event.type in {"run.steer.requested", "run.steer.failed"}:
+        failed = event.type == "run.steer.failed"
+        return _item(
+            event,
+            kind="analysis",
+            status="failed" if failed else "waiting",
+            title="补充说明未送达" if failed else "等待接收补充说明",
+            summary=str(payload.get("text", "")),
+            metadata=_metadata(request_id=payload.get("request_id"), error=payload.get("error")),
+        )
+    if event.type == "run.steer.accepted":
+        return _item(
+            event,
+            kind="analysis",
+            status="succeeded",
+            title="已接收补充说明",
+            summary=str(payload.get("text", "")),
+            metadata=_metadata(request_id=payload.get("request_id")),
+        )
     run_titles = {
         "run.provisioning": ("running", "正在准备运行环境"),
         "run.running": ("running", "Agent 开始执行"),
@@ -321,7 +341,7 @@ def _activity_item(event: RunEvent) -> dict[str, Any] | None:
         error_type = payload.get("error_type")
         subtype = payload.get("subtype")
         raw_message = str(payload["message"]) if isinstance(payload.get("message"), str) else None
-        summary = raw_message
+        summary = failure_message(event.type, payload) if status == "failed" else raw_message
         if error_code == "provider_content_rejected":
             title = "模型服务拒绝了本轮上下文"
         elif error_type in {"CredentialLeaseError", "McpCredentialError"}:
@@ -332,7 +352,7 @@ def _activity_item(event: RunEvent) -> dict[str, Any] | None:
             )
         elif subtype == "error_max_turns":
             title = "达到最大执行回合数"
-            summary = "Agent 多次调用工具后仍未完成任务，请查看处理过程中的失败动作。"
+            summary = failure_message(event.type, payload)
         elif subtype == "error_max_budget_usd":
             title = "达到运行费用上限"
             summary = "此历史运行触发了费用额度上限；平台现已取消费用和 Token 执行限制。"
@@ -377,14 +397,21 @@ def _activity_item(event: RunEvent) -> dict[str, Any] | None:
             ),
         )
     if event.type in {
-        "context.compacted", "context.compaction.completed", "context.compaction.failed",
+        "context.compacted",
+        "context.compaction.completed",
+        "context.compaction.failed",
     }:
         failed = event.type == "context.compaction.failed"
         return _item(
-            event, kind="analysis", status="failed" if failed else "succeeded",
+            event,
+            kind="analysis",
+            status="failed" if failed else "succeeded",
             title="上下文压缩失败" if failed else "上下文已压缩",
-            summary=("摘要未能完成，本轮已停止；可重试。" if failed
-                     else "已保留摘要和近期消息，继续处理当前问题"),
+            summary=(
+                "摘要未能完成，本轮已停止；可重试。"
+                if failed
+                else "已保留摘要和近期消息，继续处理当前问题"
+            ),
             metadata=_metadata(runtime=payload.get("runtime")),
         )
     if event.type == "context.compaction.started":
@@ -516,7 +543,10 @@ def _activity_item(event: RunEvent) -> dict[str, Any] | None:
             ),
         )
     if event.type in {
-        "approval.approved", "approval.rejected", "approval.expired", "approval.cancelled",
+        "approval.approved",
+        "approval.rejected",
+        "approval.expired",
+        "approval.cancelled",
     }:
         approved = event.type.endswith("approved")
         return _item(
@@ -524,8 +554,10 @@ def _activity_item(event: RunEvent) -> dict[str, Any] | None:
             kind="tool",
             status="succeeded" if approved else "failed",
             title={
-                "approval.approved": "审批已通过", "approval.rejected": "审批已拒绝",
-                "approval.expired": "审批已过期", "approval.cancelled": "审批已取消",
+                "approval.approved": "审批已通过",
+                "approval.rejected": "审批已拒绝",
+                "approval.expired": "审批已过期",
+                "approval.cancelled": "审批已取消",
             }[event.type],
             metadata=_metadata(approval_id=payload.get("approval_id")),
         )
@@ -681,7 +713,9 @@ def build_run_activity(events: Sequence[RunEvent]) -> dict[str, Any] | None:
         if _merge_stream_item(items, event, item):
             continue
         items.append(item)
-        if event.type.startswith("run.") or event.type == "runtime.result":
+        if (
+            event.type.startswith("run.") and not event.type.startswith("run.steer.")
+        ) or event.type == "runtime.result":
             status = str(item["status"])
         if event.type == "runtime.result":
             metrics.update(item["metadata"])
@@ -720,7 +754,7 @@ def activity_projection(event: RunEvent) -> list[BaseEvent]:
         ]
 
     patch: list[dict[str, Any]] = [{"op": "add", "path": "/items/-", "value": item}]
-    if event.type.startswith("run."):
+    if event.type.startswith("run.") and not event.type.startswith("run.steer."):
         patch.append({"op": "replace", "path": "/status", "value": item["status"]})
     if event.type == "runtime.result":
         patch.append({"op": "replace", "path": "/status", "value": item["status"]})

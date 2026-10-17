@@ -26,8 +26,20 @@ export type UiSnapshot = Presentation & {
 export const uiPath = (id: string) =>
   `/api/ui/presentations/${encodeURIComponent(id)}`;
 
+export class UiRequestError extends Error {
+  constructor(public readonly status: number, message: string) {
+    super(message);
+  }
+}
+
 export async function uiJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, { cache: "no-store", ...init });
+  let response: Response;
+  try {
+    response = await fetch(url, { cache: "no-store", ...init });
+  } catch (cause) {
+    if (init?.signal?.aborted) throw cause;
+    throw new UiRequestError(0, "网络连接暂时中断，请重试。当前输入仍保留在此页。");
+  }
   if (!response.ok) {
     let detail = "操作失败，请重试";
     try {
@@ -39,11 +51,29 @@ export async function uiJson<T>(url: string, init?: RequestInit): Promise<T> {
     if (response.status === 409)
       detail = "此界面或操作状态已变更。输入已保留，请刷新核对后再操作。";
     if (response.status === 401) detail = "登录已过期，请重新登录。";
-    throw new Error(
+    if (response.status === 404) detail = "交互工具暂时无法恢复，请重试。原始文件仍可从产出中打开。";
+    if (response.status === 425) detail = "交互工具正在准备，请稍后重试。";
+    throw new UiRequestError(response.status,
       typeof detail === "string" ? detail : "请检查填写内容后重试",
     );
   }
   return response.json() as Promise<T>;
+}
+
+/** Retry only snapshot reads; action submissions and state writes stay explicit. */
+export function loadUiSnapshot(p: Presentation, signal: AbortSignal): Promise<UiSnapshot> {
+  const url = `${uiPath(p.presentation_id)}?revision=${p.revision}&run_id=${encodeURIComponent(p.run_id)}`;
+  async function read(attempt = 0): Promise<UiSnapshot> {
+    if (signal.aborted) throw signal.reason;
+    try {
+      return await uiJson<UiSnapshot>(url, { signal });
+    } catch (cause) {
+      if (!(cause instanceof UiRequestError) || ![0, 404, 425, 502, 503, 504].includes(cause.status) || attempt >= 2) throw cause;
+      await new Promise<void>(resolve => setTimeout(resolve, attempt === 0 ? 250 : 750));
+      return read(attempt + 1);
+    }
+  }
+  return read();
 }
 
 export function submitUiAction(

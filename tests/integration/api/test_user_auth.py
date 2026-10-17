@@ -143,33 +143,6 @@ def test_refresh_tokens_rotate_and_reuse_revokes_the_family() -> None:
     assert replacement.status_code == 401
 
 
-def test_new_login_immediately_replaces_the_previous_device_session() -> None:
-    with _client() as client:
-        first = _register(client)
-        second = client.post(
-            "/v1/auth/login",
-            json={"email": "owner@example.com", "password": "SecurePass123"},
-        ).json()
-        old_access = client.get(
-            "/v1/auth/me",
-            headers={"Authorization": f"Bearer {first['access_token']}"},
-        )
-        old_refresh = client.post(
-            "/v1/auth/refresh",
-            json={"refresh_token": first["refresh_token"]},
-        )
-        current_access = client.get(
-            "/v1/auth/me",
-            headers={"Authorization": f"Bearer {second['access_token']}"},
-        )
-
-    assert old_access.status_code == 401
-    assert old_access.json()["error"]["code"] == "session_replaced"
-    assert old_access.headers["x-harness-auth-error"] == "session_replaced"
-    assert old_refresh.status_code == 401
-    assert current_access.status_code == 200
-
-
 def test_registration_can_be_disabled_without_disabling_login_endpoint() -> None:
     with _client(registration=False) as client:
         response = client.post(
@@ -405,3 +378,92 @@ async def test_google_oauth_exchange_uses_verified_profile_and_pkce() -> None:
     assert session.user.email_verified is True
     assert len(requests) == 2
     assert b"code_verifier=" + b"v" * 64 in requests[0].content
+
+
+def test_devices_refresh_and_logout_independently() -> None:
+    with _client() as client:
+        first = _register(client)
+        second = client.post(
+            "/v1/auth/login", json={"email": "owner@example.com", "password": "SecurePass123"}
+        ).json()
+        assert (
+            client.get(
+                "/v1/auth/me", headers={"Authorization": f"Bearer {first['access_token']}"}
+            ).status_code
+            == 200
+        )
+        first_rotated = client.post(
+            "/v1/auth/refresh", json={"refresh_token": first["refresh_token"]}
+        )
+        second_rotated = client.post(
+            "/v1/auth/refresh", json={"refresh_token": second["refresh_token"]}
+        )
+        assert first_rotated.status_code == second_rotated.status_code == 200
+        assert (
+            client.get(
+                "/v1/auth/me",
+                headers={"Authorization": f"Bearer {first_rotated.json()['access_token']}"},
+            ).status_code
+            == 200
+        )
+        assert (
+            client.post(
+                "/v1/auth/logout", json={"refresh_token": first_rotated.json()["refresh_token"]}
+            ).status_code
+            == 204
+        )
+        assert (
+            client.get(
+                "/v1/auth/me",
+                headers={"Authorization": f"Bearer {first_rotated.json()['access_token']}"},
+            ).status_code
+            == 401
+        )
+        assert (
+            client.get(
+                "/v1/auth/me",
+                headers={"Authorization": f"Bearer {second_rotated.json()['access_token']}"},
+            ).status_code
+            == 200
+        )
+        assert (
+            client.post(
+                "/v1/auth/refresh", json={"refresh_token": second_rotated.json()["refresh_token"]}
+            ).status_code
+            == 200
+        )
+
+
+def test_refresh_replay_only_revokes_its_device_family() -> None:
+    with _client() as client:
+        first = _register(client)
+        second = client.post(
+            "/v1/auth/login", json={"email": "owner@example.com", "password": "SecurePass123"}
+        ).json()
+        rotated = client.post(
+            "/v1/auth/refresh", json={"refresh_token": first["refresh_token"]}
+        ).json()
+        assert (
+            client.post(
+                "/v1/auth/refresh", json={"refresh_token": first["refresh_token"]}
+            ).status_code
+            == 401
+        )
+        assert (
+            client.get(
+                "/v1/auth/me", headers={"Authorization": f"Bearer {rotated['access_token']}"}
+            ).status_code
+            == 401
+        )
+        assert (
+            client.get(
+                "/v1/auth/me", headers={"Authorization": f"Bearer {second['access_token']}"}
+            ).status_code
+            == 200
+        )
+        assert (
+            client.post(
+                "/v1/auth/refresh", json={"refresh_token": second["refresh_token"]}
+            ).status_code
+            == 200
+        )

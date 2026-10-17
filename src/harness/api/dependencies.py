@@ -112,7 +112,9 @@ from harness.platform_mcp.workload import (
 )
 from harness.policy.profiles import PolicyProfileRegistry, default_policy_profiles
 from harness.policy.runtime import ResolvedPolicy
+from harness.presentation.intent import UIIntentSelector
 from harness.presentation.models import ActionRequest, Publication
+from harness.presentation.planner import InteractionPlanner
 from harness.presentation.repositories import InMemoryPresentationRepository
 from harness.presentation.service import PresentationService
 from harness.projects.repositories import (
@@ -163,6 +165,7 @@ from harness.sharing.workspace_repositories import (
 )
 from harness.studio.catalog_repository import InMemoryCapabilityCatalogRepository
 from harness.studio.catalog_service import CapabilityCatalogService
+from harness.studio.intent_router import BuilderIntentRouter
 from harness.studio.mcp_credential_store import (
     InMemoryMcpCredentialRepository,
     McpCredentialCipher,
@@ -447,6 +450,8 @@ def build_memory_container(
         capability_catalog_repository,
         agent_drafts,
         clock=clock,
+        sandbox_network_access={
+            str(k): v for k, v in resolved_settings.sandbox_network_access.items()},
     )
     environment_mcp_credentials = server_secret_credential_provider(
         references_json=resolved_settings.mcp_secret_references_json,
@@ -467,6 +472,8 @@ def build_memory_container(
         capability_catalogs,
         mcp_credential_service,
         environment=resolved_settings.environment,
+        runs=runs,
+        sessions=sessions,
     )
     mcp_credentials = StoredMcpCredentialProvider(
         mcp_credential_service,
@@ -487,6 +494,7 @@ def build_memory_container(
         audit=audit,
         agent_ids=agent_ids,
         draft_permissions=team_spaces,
+        intent_router=BuilderIntentRouter.from_settings(resolved_settings),
         clock=clock,
         id_generator=lambda: id_generator("draft"),
     )
@@ -498,7 +506,7 @@ def build_memory_container(
         clock=clock,
         id_generator=lambda: id_generator("preview"),
         quotas=enforced_quotas,
-        catalog_resolver=capability_catalogs.get,
+        catalog_resolver=capability_catalogs.get_for_deployment,
     )
     event_service = EventService(
         raw_events,
@@ -652,7 +660,7 @@ def build_memory_container(
         clock=clock,
         id_generator=id_generator,
         quality_gate=quality_service.require_promotion_allowed,
-        capability_catalog_resolver=capability_catalogs.get,
+        capability_catalog_resolver=capability_catalogs.get_for_deployment,
         knowledge_reference_validator=knowledge.require_bases,
         policy_resolver=governance.resolve_runtime,
         quotas=enforced_quotas,
@@ -949,7 +957,7 @@ def build_memory_container(
         mcp_probe=mcp_probe,
         policies=active_policy_profiles,
         policy_resolver=governance.resolve_runtime,
-        catalog_resolver=capability_catalogs.get,
+        catalog_resolver=capability_catalogs.get_for_deployment,
         observability=observability,
         timeout_seconds=resolved_settings.preflight_timeout_seconds,
         clock=clock,
@@ -987,6 +995,7 @@ def build_memory_container(
         artifacts=artifact_service,
         input_artifacts=input_artifact_service,
         memory=memory_service,
+        interaction_planner=InteractionPlanner.from_settings(resolved_settings),
         workspace_policy_resolver=workspace_policy_resolver,
         runtime_asset_stager=(
             stage_runtime_assets if resolved_settings.runtime != "fake" else None
@@ -1122,6 +1131,8 @@ def build_memory_container(
         events=event_service,
         queue=queue,
         authorize=authorize_ui_action,
+        intent_selector=UIIntentSelector.from_settings(resolved_settings),
+        memory=memory_bank,
     )
     container = ApiContainer(
         presentations=presentations,
@@ -1329,3 +1340,34 @@ async def require_owned_run(container: ApiContainer, identity: Identity, run_id:
     run = await container.runs.get(identity.tenant_id, run_id)
     await require_owned_session(container, identity, run.session_id)
     return run
+
+
+def is_automation_session(session: Session) -> bool:
+    """An automation execution runs under its task's workload identity."""
+
+    return bool(session.api_key_id) and session.user_id == f"automation:{session.api_key_id}"
+
+
+async def require_readable_run(
+    container: ApiContainer, identity: Identity, run_id: str
+) -> tuple[Run, Session]:
+    """Read one run the actor owns, or one bound to the actor's automation thread.
+
+    Automation runs belong to ``automation:{task}``, so their session never
+    matches the viewing user. The user-scoped thread binding that already
+    exposes the task and its files is the read authority. Write and cancel
+    guards keep using ``require_owned_run``.
+    """
+
+    run = await container.runs.get(identity.tenant_id, run_id)
+    session = await container.sessions.get(identity.tenant_id, run.session_id)
+    if session.user_id == identity.user_id:
+        return run, session
+    if is_automation_session(session):
+        await container.agui.get_thread_record_for_session(
+            tenant_id=identity.tenant_id,
+            user_id=identity.user_id,
+            session_id=session.session_id,
+        )
+        return run, session
+    raise NotFoundError(f"run not found: {run_id}")

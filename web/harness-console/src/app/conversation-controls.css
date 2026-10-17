@@ -126,3 +126,37 @@ html[data-theme="codex-theme-v1"] body.codex-theme-v1 .harness-composer-shell .c
 html[data-theme="codex-theme-v1"] body.codex-theme-v1 .harness-composer-shell .composer-footer .task-agent-switcher-chevron {
   right: 4px;
 }
+
+/* The voice control alone consumes spare toolbar width. */
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .harness-composer-shell .composer-footer .task-model-control {
+  margin-left: 0;
+}
+
+/* Keep model and dictation controls together at the send end. */
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .composer-model-voice {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  min-width: 0;
+}
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .composer-model-voice > [data-placement="composer"] { margin-left: 0; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .task-section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .task-section-toggle:hover { color: var(--web-ink); }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .task-section-toggle:focus-visible {
+  outline: 2px solid var(--web-ink-muted);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .task-group-chevron { transition: transform 120ms ease; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 button[aria-expanded="false"] > .task-group-chevron { transform: rotate(-90deg); }

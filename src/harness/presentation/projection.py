@@ -158,6 +158,30 @@ def _shape_block(parsed: Any) -> dict[str, Any] | None:
     }
 
 
+def _summary_shape_block(parsed: Any) -> dict[str, Any] | None:
+    """A small scalar object can be a snapshot; d1 decides whether it is useful."""
+    if not isinstance(parsed, dict):
+        return None
+    fields = cast(dict[str, Any], parsed)
+    if not 2 <= len(fields) <= 8:
+        return None
+    if any(
+        not key.strip()
+        or len(key) > 64
+        or value is None
+        or not isinstance(value, str | int | float | bool)
+        or (isinstance(value, str) and (not value.strip() or len(value) > _SHAPE_TEXT_CELL_LIMIT))
+        for key, value in fields.items()
+    ):
+        return None
+    return {
+        "version": 1,
+        "kind": "summary",
+        "fallback_text": "；".join(f"{key}：{value}" for key, value in fields.items())[:MAX_STRING],
+        "data": {"items": [{"label": key, "value": value} for key, value in fields.items()]},
+    }
+
+
 def _maybe_json(text: str) -> Any:
     try:
         return json.loads(text)
@@ -248,7 +272,146 @@ def _tool_names(events: Sequence[RunEvent]) -> dict[str, str]:
     }
 
 
-def _candidates(events: Sequence[RunEvent], run_id: str) -> Iterator[_Candidate]:
+def tool_result_evidence(events: Sequence[RunEvent]) -> list[dict[str, Any]]:
+    """Bounded, successful results for semantic selection, never instructions."""
+    names = _tool_names(events)
+    evidence: list[dict[str, Any]] = []
+    for event in events:
+        if event.type != "tool.result" or _is_error(event.payload):
+            continue
+        name = names.get(str(event.payload.get("tool_call_id")), "")
+        if name in _SHAPE_EXCLUDED_TOOLS or name.startswith(_SHAPE_EXCLUDED_PREFIXES):
+            continue
+        content = "\n".join(_text_parts(event.payload))
+        parsed = _maybe_json(content)
+        if isinstance(parsed, dict | list):
+            content = json.dumps(parsed, ensure_ascii=False)
+        if content.strip():
+            evidence.append(
+                {"tool_name": name, "sequence": event.sequence, "content": content[:1600]}
+            )
+    return evidence[-4:]
+
+
+def answer_tables(events: Sequence[RunEvent]) -> list[Presentation]:
+    """Query-backed Markdown records are data too, without a widget declaration."""
+    from harness.agui.response import final_response_text
+
+    text = final_response_text(list(events))
+    scope = next((e for e in reversed(events) if e.type == "message.delta"), None)
+    if scope is None or len(text) > MAX_BLOCK_CHARS:
+        return []
+    # Code examples must never become answer data.
+    text = _FENCE.sub(lambda match: "\n" * match.group(0).count("\n"), text)
+    lines = text.splitlines(keepends=True)
+    found: list[Presentation] = []
+
+    def cells(line: str) -> list[str]:
+        return [cell.strip() for cell in re.split(r"(?<!\\)\|", line.strip().strip("|"))]
+
+    for index in range(len(lines) - 2):
+        if "|" not in lines[index] or "|" not in lines[index + 1]:
+            continue
+        headers, divider = cells(lines[index]), cells(lines[index + 1])
+        if not 2 <= len(headers) <= MAX_COLUMNS or len(set(headers)) != len(headers):
+            continue
+        if len(divider) != len(headers) or not all(re.fullmatch(r":?-{3,}:?", c) for c in divider):
+            continue
+        rows: list[dict[str, Any]] = []
+        end = index + 2
+        while end < len(lines) and lines[end].strip().startswith("|"):
+            values = cells(lines[end])
+            if len(values) != len(headers):
+                break
+            rows.append(dict(zip(headers, values, strict=True)))
+            end += 1
+        if not 2 <= len(rows) <= MAX_ROWS:
+            continue
+        p = validate_block(
+            {
+                "version": 1,
+                "kind": "table",
+                "fallback_text": f"共 {len(rows)} 条记录。",
+                "data": {"columns": headers, "rows": rows},
+            },
+            run_id=scope.run_id,
+            message_id=_message_id(scope, scope.run_id),
+            index=len(found),
+            origin="model",
+            reason_code="answer_table_shape",
+        )
+        if p is not None:
+            found.append(
+                p.model_copy(
+                    update={
+                        "source_text": "".join(lines[index:end]).rstrip("\n"),
+                        "source_refs": (
+                            {"run_id": scope.run_id, "sequence": scope.sequence, "origin": "model"},
+                        ),
+                    }
+                )
+            )
+        if len(found) == MAX_PRESENTATIONS_PER_TURN:
+            break
+    return found
+
+
+def answer_facts(events: Sequence[RunEvent]) -> list[Presentation]:
+    """Consecutive labelled facts are a snapshot, regardless of their subject."""
+    from harness.agui.response import final_response_text
+
+    text = final_response_text(list(events))
+    scope = next((e for e in reversed(events) if e.type == "message.delta"), None)
+    if scope is None or len(text) > MAX_BLOCK_CHARS:
+        return []
+    text = _FENCE.sub(lambda match: "\n" * match.group(0).count("\n"), text)
+    groups = re.finditer(r"(?:^[ \t]*[-*][ \t]+[^\n]+[\n]?){2,8}", text, re.MULTILINE)
+    for group in groups:
+        items: list[dict[str, str]] = []
+        for line in group[0].splitlines():
+            match = re.fullmatch(r"\s*[-*]\s+(.{1,60}?)[:：]\s*(.{1,600})", line)
+            if match is None:
+                break
+            label = match[1].strip().strip("*")
+            value = re.sub(r"\*\*([^*]+)\*\*", r"\1", match[2].strip())
+            items.append({"label": label, "value": value})
+        else:
+            if len({i["label"] for i in items}) != len(items):
+                continue
+            p = validate_block(
+                {
+                    "version": 1,
+                    "kind": "summary",
+                    "fallback_text": group[0][:MAX_STRING],
+                    "data": {"items": items},
+                },
+                run_id=scope.run_id,
+                message_id=_message_id(scope, scope.run_id),
+                index=0,
+                origin="model",
+                reason_code="answer_facts_shape",
+            )
+            if p is not None:
+                return [
+                    p.model_copy(
+                        update={
+                            "source_text": group[0].rstrip("\n"),
+                            "source_refs": (
+                                {
+                                    "run_id": scope.run_id,
+                                    "sequence": scope.sequence,
+                                    "origin": "model",
+                                },
+                            ),
+                        }
+                    )
+                ]
+    return []
+
+
+def _candidates(
+    events: Sequence[RunEvent], run_id: str, *, include_summaries: bool = False
+) -> Iterator[_Candidate]:
     """Every block the run's events justify, in durable sequence order."""
 
     tool_names = _tool_names(events)
@@ -271,7 +434,10 @@ def _candidates(events: Sequence[RunEvent], run_id: str) -> Iterator[_Candidate]
         tool_name = tool_names.get(str(event.payload.get("tool_call_id")), "")
         if tool_name in _SHAPE_EXCLUDED_TOOLS or tool_name.startswith(_SHAPE_EXCLUDED_PREFIXES):
             continue
-        block = _shape_block(_loads_structured(event.payload))
+        parsed = _loads_structured(event.payload)
+        block = _shape_block(parsed)
+        if block is None and include_summaries:
+            block = _summary_shape_block(parsed)
         if block is not None:
             yield _Candidate(
                 block, _message_id(event, run_id), "shape", "structured_tool_result", event.sequence
@@ -318,6 +484,8 @@ def presentations_for_events(
     events: Sequence[RunEvent],
     *,
     limit: int = MAX_PRESENTATIONS_PER_TURN,
+    include_shapes: bool = True,
+    include_summaries: bool = False,
 ) -> list[Presentation]:
     """Every presentation the run's events justify, in durable sequence order.
 
@@ -333,9 +501,22 @@ def presentations_for_events(
     # Explicit answer blocks take precedence over incidental tool-result tables.
     # Otherwise two search results can exhaust the turn's budget before its form.
     candidates = sorted(
-        _candidates(events, run_id), key=lambda c: (c.origin != "model", c.sequence)
+        _candidates(events, run_id, include_summaries=include_summaries),
+        key=lambda c: (c.origin != "model", c.sequence),
     )
     for candidate in candidates:
+        candidate_block: Any = candidate.block
+        if not include_shapes and candidate.origin == "shape":
+            continue
+        if (
+            candidate.origin == "shape"
+            and isinstance(candidate_block, dict)
+            and cast(dict[str, Any], candidate_block).get("kind") == "summary"
+            and any(p.decision.get("origin") == "model" for p in presentations)
+        ):
+            # An authored display already represents the answer. Incidental
+            # scalar results must not add a duplicate status card underneath it.
+            continue
         if len(presentations) >= limit:
             break
         presentation = validate_block(

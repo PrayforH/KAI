@@ -1,4 +1,5 @@
 "use client";
+import { CardActionButton } from "./card-action-button";
 
 import type { CodeHeaderProps } from "@assistant-ui/react-markdown";
 import { useEffect, useId, useRef, useState } from "react";
@@ -182,12 +183,8 @@ export function MermaidDiagram({ code }: { code: string }) {
           >
             {showSource ? "图表" : "源码"}
           </button>
-          <button type="button" onClick={copySource}>
-            {copied ? "已复制" : "复制"}
-          </button>
-          <button type="button" onClick={downloadSvg} disabled={!rendered}>
-            下载 SVG
-          </button>
+          <CardActionButton action="copy" label="复制图表源码" copied={copied} onClick={copySource} />
+          <CardActionButton action="download" label="下载 SVG" onClick={downloadSvg} disabled={!rendered} />
         </span>
       </header>
 

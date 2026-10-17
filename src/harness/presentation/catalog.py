@@ -40,16 +40,26 @@ class Renderer:
 
 _RENDERERS: tuple[Renderer, ...] = (
     Renderer(
+        kind="summary",
+        version="summary/1",
+        summary="查看概况",
+        data_shape=(
+            '{"headline":"状态或结论","subtitle":"可选对象或范围说明","items":[{"label":"关键指标","value":23,"unit":"单位"}],'
+            '"sources":[{"label":"查询来源","url":"真实 HTTP(S) 来源地址"}],'
+            '"updated_at":"来源明确提供的时间，可省略"}'
+        ),
+    ),
+    Renderer(
         kind="table",
         version="table/1",
-        summary="逐行可比的结构化记录，用户需要排序或核对具体数值时",
+        summary="逐条明细",
         data_shape='{"columns":[{"key":"a","label":"名称"}],"rows":[{"a":"值"}]}',
         config_shape='{"caption":"可选说明"}',
     ),
     Renderer(
         kind="comparison",
         version="comparison/1",
-        summary="少量对象在同一组维度上的横向对比",
+        summary="横向比较",
         data_shape=(
             '{"dimensions":[{"key":"price","label":"价格"}],'
             '"items":[{"label":"方案甲","values":{"price":"120"}},'
@@ -59,7 +69,7 @@ _RENDERERS: tuple[Renderer, ...] = (
     Renderer(
         kind="chart",
         version="chart/1",
-        summary="带单位或时间维度的数值趋势与分布",
+        summary="数值变化或趋势",
         data_shape='{"rows":[{"q":"第一季度","count":120}]}',
         config_shape=(
             '{"chart_type":"bar|line|area|pie","x_field":"q","y_fields":["count"],'
@@ -120,9 +130,18 @@ def _renderers_text() -> str:
 
 UI_BLOCK_CONTRACT = f"""## Interactive answer blocks
 
-Text is the default. Answer directly in prose and Markdown unless a structured
-answer genuinely helps the user read, compare or verify the result. Do not add a
-block to make a reply look richer: the platform shows at most
+Choose the answer form from what the user needs to understand or do. Parameter
+changes, experiments, component exploration, editable plans and games benefit
+from interaction even when the user never names a UI component. Deliver useful
+interaction in this turn; do not merely offer to build it next. A single fact,
+ordinary writing and requests for plain text use prose. A compact snapshot of
+one entity's status or several key facts uses summary, even without interaction
+or photos. Use actual query results, units, sources and source-provided times;
+never invent missing facts or freshness. Use chart when the user wants to see
+numeric changes or trends; use table when they want to inspect record details.
+Multiple entities may use comparison. Do not duplicate the widget's data in a
+Markdown table. Keep accompanying prose brief without repeating
+the card. The platform shows at most
 {MAX_PRESENTATIONS_PER_TURN} per turn, and a wrong widget costs the user more than
 plain text.
 
@@ -160,6 +179,8 @@ Rules:
   string when its name is all it has. A `comparison` item may name itself
   `label`, `key` or `name`, and its `values` may be an object keyed by dimension
   or a list in dimension order. Nothing else is inferred.
+- Table rows may be scalar arrays only with explicit columns and exactly one
+  cell per column in that order. Do not mix object and array rows.
 - `data.rows`/`items`/`events` must be complete; the platform never fetches data
   for a block and never edits business state from one.
 - Keep every cell a JSON string, number, boolean or null. Never nest objects in a
@@ -179,13 +200,19 @@ Rules:
 - Publish the actual file in this run before referring to it. Never invent an
   artifact_id, use another run's file, or place HTML, scripts, paths or URLs in
   `data`. Only ready `text/html` artifacts up to {MAX_HTML_BYTES} bytes render.
+  Copy the publication tool's artifact_id verbatim into the JSON block. If you
+  correct it, replace the block itself; a correction in prose does not publish it.
 - Use inline CSS/JavaScript without CDN scripts, imports, API calls, authentication
   or navigation. The sandbox has no console origin or network API access. Images
   may use obtained public HTTPS image URLs; preserve their page sources and do
   not claim unseen images were verified. Do not invent sources when search lacks
-  image support. Do not put secrets or private context in the file.
+  image support. Place useful retrieved pictures inside the HTML tool as actual
+  img elements with captions and source links. Pictures shown only in tool-time
+  progress are not a delivered visual answer. Put standalone Markdown images in
+  the final visible answer. Do not put secrets or private context in the file.
 - Buttons, inputs, sliders and games must implement the requested operation now.
-  Verify supplied input/output examples and boundaries. For currency, calculate
+  Run executable checks of core logic, boundaries, reset and state branches
+  with available tools before publication; fix failed checks first. For currency, calculate
   in integer minor units and allocate rounding remainders deterministically so
   displayed person totals add up to the displayed bill. Preserve the user's
   scientific data and assumptions; label an adapted test distribution explicitly.

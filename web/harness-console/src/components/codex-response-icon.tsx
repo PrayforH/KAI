@@ -58,10 +58,10 @@ const paths = {
 } as const;
 
 export function CodexResponseIcon({ name, className }: {
-  name: keyof typeof paths;
+  name: keyof typeof paths | "download";
   className?: string;
 }) {
   return <svg className={`codex-response-icon ${className ?? ""}`} viewBox="0 0 16 16" width="16" height="16" fill="currentColor" stroke="none" aria-hidden="true" focusable="false">
-    {paths[name].map((d, index) => <path key={index} d={d} fillRule="evenodd" clipRule="evenodd" />)}
+    {name === "download" ? <path d="M8 2v8m-3-3 3 3 3-3M3 11v3h10v-3" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" /> : paths[name].map((d, index) => <path key={index} d={d} fillRule="evenodd" clipRule="evenodd" />)}
   </svg>;
 }

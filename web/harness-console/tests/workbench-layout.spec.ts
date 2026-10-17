@@ -50,6 +50,9 @@ const videoGeneration = readFileSync(
   join(process.cwd(), "src/components/video-generation.tsx"),
   "utf8",
 );
+const videoResult = readFileSync(
+  join(process.cwd(), "src/components/video-generation-result.tsx"), "utf8",
+);
 const activitySummary = readFileSync(
   join(process.cwd(), "src/components/activity-summary.tsx"),
   "utf8",
@@ -132,8 +135,7 @@ describe("full-page agent workbench", () => {
   it("uses a compact project icon language in the task tree", () => {
     expect(taskSidebar).toContain("function ProjectFolderIcon()");
     expect(taskSidebar).toContain("<ProjectFolderIcon />");
-    // Keep the Codex-style top seam in both expanded and collapsed states.
-    expect(taskSidebar).toContain('d="M2.75 8h14.5"');
+    expect(taskSidebar).toContain('<SidebarIcon name="folder" className="task-project-folder" />');
     expect(webCodexStyles).toMatch(
       /\.task-project-heading svg,[\s\S]*?stroke-width:\s*1\.6;/s,
     );
@@ -355,8 +357,8 @@ describe("full-page agent workbench", () => {
   });
 
   it("keeps an active task pinned while allowing another Agent to start a new task", () => {
-    expect(page).toContain('runStream.status === "running"');
-    expect(page).toContain('runView?.phase === "waiting_approval"');
+    expect(page).toContain('taskVersionBusy(runStream, runView)');
+    expect(readFileSync(join(process.cwd(), "src/lib/task-version.ts"), "utf8")).toContain('"waiting_approval"');
     expect(page).toContain("taskAgentSwitchMode(selectedAgent, nextAgent)");
     expect(page).toContain('mode === "version" && currentTaskBusy');
     expect(page).toContain("currentTaskBusy={currentTaskBusy}");
@@ -502,20 +504,20 @@ describe("full-page agent workbench", () => {
   it("preserves unsent task text across refreshes and task switches", () => {
     expect(page).toContain("<AgentThread");
     expect(page).toContain("threadId={threadId}");
-    expect(agentThread).toContain("loadTaskComposerDraft");
-    expect(agentThread).toContain("persistTaskComposerDraft");
+    expect(agentThread).toContain("useTaskComposerSnapshot");
     expect(agentThread).not.toContain("未发送内容已保存在当前浏览器");
-    expect(agentThread).toContain("auiRef.current.composer().setText(saved)");
   });
 
-  it("uses Codex neutrals and keeps the workbench strictly black, white and gray", () => {
+  it("uses neutral workbench surfaces and reserves Codex blue for the needs-input chip", () => {
     expect(webCodexStyles).toContain("body.codex-theme-v1:has(.console-shell)");
     expect(webCodexStyles).toContain("--codex-accent: #ececec");
     expect(webCodexStyles).toContain(".harness-composer-shell .task-agent-switcher");
     expect(webCodexStyles).toContain(".aui-thread-viewport:has(.user-task-welcome)");
     expect(webCodexStyles).toContain("width: 100%;\n  height: 100dvh;");
     expect(webCodexStyles).not.toContain("background-image: radial-gradient");
-    expect(webCodexStyles).not.toContain("#339cff");
+    const neutralStyles = webCodexStyles.replace(/body\.codex-theme-v1 \.task-input-badge \{[^}]*\}/g, "");
+    expect(neutralStyles).not.toContain("#339cff");
+    expect(webCodexStyles).toContain("background: #339cff26");
     expect(webCodexStyles).not.toContain("#16b364");
     expect(webCodexStyles).not.toContain("#f36d21");
     expect(webCodexStyles).not.toContain("#ff7d32");
@@ -523,13 +525,13 @@ describe("full-page agent workbench", () => {
 
   it("runs managed video models through a dedicated conversation composer path", () => {
     expect(agentThread).toContain('route.modelType === "video_generation"');
-    expect(videoGeneration).toContain("/videos`");
+    expect(videoGeneration).toContain("/videos${existingJobId");
     expect(videoGeneration).toContain("inputArtifactIds");
     expect(videoGeneration).toContain("自定义时长（4–15 秒）");
-    expect(videoGeneration).toContain("下载 MP4");
-    expect(videoGeneration).toContain("重新生成");
-    expect(videoGeneration).toContain("沿用参数");
-    expect(videoGeneration).toContain("<video");
+    expect(videoResult).toContain("下载 MP4");
+    expect(videoResult).toContain("重新生成");
+    expect(videoResult).toContain("沿用参数");
+    expect(videoResult).toContain("<video");
     expect(styles).toContain(".composer-video-settings");
     expect(styles).toContain(".video-answer-card");
     expect(styles).toContain(".aui-composer-video-send");

@@ -1,4 +1,5 @@
 "use client";
+import { CardActionButton } from "./card-action-button";
 
 import { useState } from "react";
 import { truncateLines } from "../lib/content-format";
@@ -30,7 +31,7 @@ export function DiffBlock({ diff, maxLines = 500 }: DiffBlockProps) {
     <section className="code-block diff-block" aria-label="代码变更">
       <header className="code-block-header">
         <span>diff</span>
-        <button type="button" onClick={copy}>{copied ? "已复制" : "复制"}</button>
+        <CardActionButton action="copy" label="复制变更" copied={copied} onClick={copy} />
       </header>
       <pre><code>
         {visible.value.split("\n").map((line, index) => (

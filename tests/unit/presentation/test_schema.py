@@ -560,3 +560,21 @@ def test_still_rejects_an_item_with_no_name() -> None:
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
 def test_rejects_nonfinite_values(value: float) -> None:
     assert _validate(_block(data={"rows": [{"value": value}]})) is None
+
+
+def test_positional_table_rows_observed_on_79_are_normalized_in_explicit_order():
+    p = _validate(_block(data={"columns": ["名称", "数量"], "rows": [["甲", 3], ["乙", 0]]}))
+    assert p is not None
+    assert p.data["rows"] == [{"名称": "甲", "数量": 3}, {"名称": "乙", "数量": 0}]
+
+
+@pytest.mark.parametrize("columns,rows", [
+    (None, [["甲", 3]]),
+    (["名称", "数量"], [["甲"]]),
+    (["名称"], [["甲", 3]]),
+    (["名称"], [["甲"], {"名称": "乙"}]),
+    (["名称"], [[{"nested": 3}]]),
+    (["名称", "名称"], [["甲", 3]]),
+])
+def test_ambiguous_or_unsafe_positional_rows_remain_rejected(columns: object, rows: object):
+    assert _validate(_block(data={"columns": columns, "rows": rows})) is None

@@ -1,0 +1,11 @@
+.frame { display: block; margin: 12px 0; max-width: 560px; }
+.preview { display: block; padding: 0; border: 1px solid var(--codex-line); border-radius: 10px; overflow: hidden; background: var(--codex-surface); cursor: zoom-in; }
+.preview img { display: block; width: auto; max-width: 100%; max-height: 360px; object-fit: contain; }
+.preview:focus-visible { outline: 2px solid var(--codex-accent); outline-offset: 3px; }
+.backdrop { position: fixed; inset: 0; z-index: 150; display: grid; place-items: center; padding: 20px; background: rgb(0 0 0 / 70%); }
+.dialog { width: min(1040px, 100%); max-height: calc(100dvh - 40px); overflow: auto; border: 1px solid var(--codex-line); border-radius: 14px; background: var(--codex-surface); color: var(--codex-ink); box-shadow: var(--codex-shadow); }
+.toolbar { display: flex; align-items: center; gap: 16px; padding: 14px 16px; font-size: 13px; border-bottom: 1px solid var(--codex-line); }
+.toolbar span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.toolbar a { color: var(--codex-ink-soft); white-space: nowrap; }
+.toolbar button { border: 1px solid var(--codex-line); border-radius: 8px; padding: 5px 12px; background: var(--codex-surface); color: var(--codex-ink); font: inherit; cursor: pointer; }
+.dialog > img { display: block; width: auto; max-width: 100%; max-height: calc(100dvh - 120px); margin: auto; object-fit: contain; }

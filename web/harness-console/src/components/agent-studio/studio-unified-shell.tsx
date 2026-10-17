@@ -1,4 +1,5 @@
 "use client";
+import { SidebarIcon } from "../sidebar-icon";
 import { useInternalAgentsPreference } from "../../lib/interface-preferences";
 
 import { usePathname, useRouter } from "next/navigation";
@@ -114,10 +115,7 @@ export function StudioUnifiedShell({
             title="展开任务列表"
             onClick={() => setCollapsed(false)}
           >
-            <svg viewBox="0 0 20 20" aria-hidden="true">
-              <rect x="2.75" y="4.25" width="14.5" height="11.5" rx="2.5" />
-              <path d="M6.75 4.25v11.5" />
-            </svg>
+            <SidebarIcon name="panel" />
           </button>
         )}
         {children}
