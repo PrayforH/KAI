@@ -9,7 +9,7 @@ import { RailResizeHandle, canSplitRail } from "./rail-resize-handle";
 import { SidebarPanelIcon } from "./panel-icons";
 import { RailFilePreview, previewKindFor, type PreviewKind, type PreviewTarget } from "./rail-file-preview";
 import { SaveProjectResultButton } from "./save-project-result-button";
-import { ProjectResourcesPanel } from "./project-resources-panel";
+import { ProjectWorkspacePanel } from "./project-workspace-panel";
 
 
 function RefreshIcon() {
@@ -48,18 +48,6 @@ function FolderIcon() {
     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"
       strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M3.1 6.2a1.8 1.8 0 0 1 1.8-1.8h2.7l1.5 1.8h6a1.8 1.8 0 0 1 1.8 1.8v6.1a1.8 1.8 0 0 1-1.8 1.8H4.9a1.8 1.8 0 0 1-1.8-1.8z" />
-    </svg>
-  );
-}
-
-function ProjectViewIcon() {
-  return (
-    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5"
-      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="3.2" y="3.2" width="5.6" height="5.6" rx="1.2" />
-      <rect x="11.2" y="3.2" width="5.6" height="5.6" rx="1.2" />
-      <rect x="3.2" y="11.2" width="5.6" height="5.6" rx="1.2" />
-      <rect x="11.2" y="11.2" width="5.6" height="5.6" rx="1.2" />
     </svg>
   );
 }
@@ -164,13 +152,13 @@ export function WorkbenchRail({
   onToggleExpanded: () => void;
   threadId: string;
   projectId?: string | null;
-  viewRequest?: { view: "files" | "project"; nonce: number } | null;
+  viewRequest?: { view: "files" | "project" | "results"; nonce: number } | null;
   onViewRequestHandled?: (nonce: number) => void;
   previewRequest?: (PreviewTarget & { nonce: number }) | null;
   /** A phase change means the run may have written new artifacts. */
   runPhase: string | null;
 }) {
-  const [railView, setRailView] = useState<"files" | "project">(
+  const [railView, setRailView] = useState<"files" | "project" | "results">(
     projectId ? "project" : "files",
   );
   useEffect(() => {
@@ -353,29 +341,32 @@ export function WorkbenchRail({
         <header className="rail-bar">
           <div className="rail-bar-views">
             {projectId ? (
+              <>
               <button
                 type="button"
-                className="rail-bar-button"
-                aria-label="项目资源视图"
-                title="项目资源"
+                className="rail-bar-button rail-view-label"
+                aria-label="项目配置"
+                title="项目配置"
                 aria-current={railView === "project" ? "page" : undefined}
                 onClick={() => setRailView("project")}
               >
-                <ProjectViewIcon />
+                配置
               </button>
+              <button type="button" className="rail-bar-button rail-view-label" aria-label="项目成果" aria-current={railView === "results" ? "page" : undefined} onClick={() => setRailView("results")}>成果</button>
+              </>
             ) : null}
             <button
               type="button"
-              className="rail-bar-button"
+              className={`rail-bar-button${projectId ? " rail-view-label" : ""}`}
               aria-label="文件列表"
-              title="文件列表"
+              title={projectId ? "本次任务文件" : "文件列表"}
               aria-current={railView === "files" && !selected ? "page" : undefined}
               onClick={() => {
                 setRailView("files");
                 show(null);
               }}
             >
-              <FolderIcon />
+              {projectId ? "本次文件" : <FolderIcon />}
             </button>
           </div>
           <div className="rail-bar-actions">
@@ -461,8 +452,8 @@ export function WorkbenchRail({
         </div>
         ) : null}
         <div className="workbench-rail-body">
-          {railView === "project" && projectId ? (
-            <ProjectResourcesPanel projectId={projectId} />
+          {railView !== "files" && projectId ? (
+            <ProjectWorkspacePanel key={projectId} projectId={projectId} view={railView} />
           ) : (
           <section
             className="workbench-rail-section rail-files-section"

@@ -140,6 +140,8 @@ export function TaskSidebar({
   onSelect,
   onNewTask,
   onNewTaskWithProject,
+  activeProjectId,
+  onOpenProjectResults,
   searchControl,
   activeNav = "tasks",
   agentLabels,
@@ -152,7 +154,9 @@ export function TaskSidebar({
   onToggle: () => void;
   onSelect: (task: TaskSummary) => void;
   onNewTask: () => void;
-  /** Persist a new task in this project, including when it has no tasks yet. */
+  activeProjectId?: string | null;
+  onOpenProjectResults?: () => void;
+  /** Open the project draft in the shared Home composer. */
   onNewTaskWithProject?: (project: ApiProject) => Promise<void>;
   searchControl?: ReactNode;
   /** Which workspace nav item is highlighted; defaults to the task page. */
@@ -649,7 +653,7 @@ export function TaskSidebar({
                     >
                       <ProjectFolderIcon />
                     </button>
-                    <Link href={projectHref(project.projectId)} aria-label={`打开项目 ${project.name}`} className="task-project-name">
+                    <Link href={projectHref(project.projectId)} aria-current={activeProjectId === project.projectId ? "page" : undefined} aria-label={`打开项目 ${project.name}`} className="task-project-name">
                       <strong className="project-name-viewport">
                         <span
                           onMouseEnter={(event) => {
@@ -723,6 +727,12 @@ export function TaskSidebar({
                       )}
                     </div>
                     <Link className="task-project-files" href={projectHref(project.projectId, "results")}
+                      onClick={(event) => {
+                        if (activeProjectId === project.projectId && onOpenProjectResults && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey && event.button === 0) {
+                          event.preventDefault();
+                          onOpenProjectResults();
+                        }
+                      }}
                       aria-label={`查看 ${project.name} 的文件`} title="查看项目成果">
                       <FilesIcon />
                     </Link>

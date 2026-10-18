@@ -949,7 +949,10 @@ function ApprovalToolBridge({
   return null;
 }
 
+const ProjectWelcomeContext = createContext<string | undefined>(undefined);
+
 export function UserTaskWelcome() {
+  const projectName = useContext(ProjectWelcomeContext);
   const scope = useConversationScope();
   const { selected } = useContext(AgentSelectionContext);
   // While the stored conversation is loading the thread is empty by definition,
@@ -960,7 +963,8 @@ export function UserTaskWelcome() {
       <ThreadWelcome.Center className="user-task-hero">
         <div className="user-task-intro">
           <ProductBrandMark className="welcome-brand-mark" />
-          <h1>{scope && selected ? <>今天想让<span className="welcome-agent-name">{selected.displayName}</span>帮你做些什么？</> : "今天想一起完成些什么？"}</h1>
+          <h1>{projectName ? projectName : scope && selected ? <>今天想让<span className="welcome-agent-name">{selected.displayName}</span>帮你做些什么？</> : "今天想一起完成些什么？"}</h1>
+          {projectName && <p className="project-welcome-hint">在此项目中开始任务 · 资料与成果在右侧管理</p>}
         </div>
       </ThreadWelcome.Center>
     </ThreadWelcome.Root>
@@ -1762,6 +1766,7 @@ function HarnessUserMessage() {
 }
 
 export function AgentThread({
+  projectName,
   userId,
   threadId,
   agents = [],
@@ -1784,6 +1789,7 @@ export function AgentThread({
   onDismissSkillLaunch?: () => void;
   onAgentChange?: (agent: TaskAgent) => void;
   onRefreshAgents?: () => void;
+  projectName?: string;
   /** Called after the composer successfully starts a run. */
   onComposerSubmitted?: () => void;
 }) {
@@ -1825,6 +1831,7 @@ export function AgentThread({
     [onComposerSubmitted],
   );
   return (
+    <ProjectWelcomeContext.Provider value={projectName}>
     <AgentSelectionContext.Provider value={agentSelection}>
       <SkillLaunchContext.Provider value={skillLaunch}>
         <ComposerDraftContext.Provider value={composerDraftScope}>
@@ -1885,5 +1892,6 @@ export function AgentThread({
         </ComposerDraftContext.Provider>
       </SkillLaunchContext.Provider>
     </AgentSelectionContext.Provider>
+    </ProjectWelcomeContext.Provider>
   );
 }

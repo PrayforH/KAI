@@ -13,190 +13,28 @@ import { errorText } from "./project-space-shared";
 import styles from "./project-home.module.css";
 
 export function ProjectContextRail({ space }: { space: ProjectSpaceState }) {
-  const {
-    project,
-    resources,
-    setDialog,
-    chooseTab,
-    savedResults,
-    savedResultError,
-    knowledgeNames,
-    skillNames,
-  } = space;
+  const { project, resources, setDialog, chooseTab } = space;
   if (!project || !resources) return null;
+  const rows = [
+    { key: "instructions", label: "指令", detail: project.instructions?.trim() || "添加项目背景、要求和交付格式" },
+    { key: "files", label: "文件和资源", detail: `${resources.documents.length} 个文件 · ${resources.links.length} 个链接` },
+    { key: "knowledge", label: "知识库", detail: `已关联 ${project.knowledgeReferences?.length ?? 0} 个知识库` },
+    { key: "connectors", label: "连接器", detail: `已关联 ${project.mcpReferences?.length ?? 0} 个 MCP` },
+    { key: "skills", label: "技能", detail: `已关联 ${project.skillReferences?.length ?? 0} 个技能` },
+  ] as const;
   return (
-    <aside className={styles.contextRail} aria-label="项目配置与成果">
-      <section className={styles.contextCard}>
-        <button
-          className={styles.cardHeading}
-          onClick={() => setDialog("instructions")}
-        >
-          指令 <span aria-hidden="true">›</span>
+    <div className={styles.configuration}>
+      <p className={styles.muted}>这里的配置供本项目任务共同使用。</p>
+      {rows.map((row) => (
+        <button key={row.key} className={styles.configurationRow} onClick={() => setDialog(row.key)}>
+          <span><strong>{row.label}</strong><small>{row.detail}</small></span><span aria-hidden="true">›</span>
         </button>
-        <p className={styles.muted}>适用于本项目的所有任务。</p>
-        {project.instructions?.trim() ? (
-          <p className={styles.instructionPreview}>{project.instructions}</p>
-        ) : null}
-        <button
-          className={styles.button}
-          onClick={() => setDialog("instructions")}
-        >
-          {project.instructions?.trim() ? "编辑指令" : "＋ 添加指令"}
-        </button>
-        <div className={styles.cardDivider} />
-        <div className={styles.sectionHead}>
-          <h2>
-            连接器 <small className={styles.count}>MCP</small>
-          </h2>
-          <button
-            className={styles.textLink}
-            onClick={() => setDialog("connectors")}
-          >
-            ＋ 添加
-          </button>
-        </div>
-        <p className={styles.muted}>
-          {project.mcpReferences?.length
-            ? `已关联 ${project.mcpReferences.length} 个连接器`
-            : "连接外部工具与数据服务。"}
-        </p>
-        {!!project.mcpReferences?.length && (
-          <button
-            className={styles.textLink}
-            onClick={() => setDialog("connectors")}
-          >
-            查看与管理 ›
-          </button>
-        )}
-      </section>
-      <section className={styles.contextCard}>
-        <button
-          className={styles.cardHeading}
-          onClick={() => setDialog("files")}
-        >
-          文件和资源 <span aria-hidden="true">›</span>
-        </button>
-        <p className={styles.muted}>供本项目的所有任务使用。</p>
-        {!!(resources.documents.length + resources.links.length) && (
-          <ul className={styles.compactList}>
-            {resources.documents.slice(0, 2).map((item) => (
-              <li key={item.inputArtifactId}>
-                <a
-                  href={`/api/input-artifacts/${encodeURIComponent(item.inputArtifactId)}/content?inline=1`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  {item.name}
-                </a>
-              </li>
-            ))}
-            {resources.links.slice(0, 1).map((item) => (
-              <li key={item.linkId}>
-                <a href={item.url} target="_blank" rel="noreferrer">
-                  {item.title || item.url}
-                </a>
-              </li>
-            ))}
-          </ul>
-        )}
-        <button className={styles.button} onClick={() => setDialog("files")}>
-          {resources.documents.length + resources.links.length
-            ? "管理文件与链接"
-            : "＋ 上传文件或添加链接"}
-        </button>
-        <div className={styles.cardDivider} />
-        <div className={styles.sectionHead}>
-          <h2>知识库</h2>
-          <button
-            className={styles.textLink}
-            onClick={() => setDialog("knowledge")}
-          >
-            ＋ 关联
-          </button>
-        </div>
-        {project.knowledgeReferences?.length ? (
-          <ul className={styles.compactList}>
-            {project.knowledgeReferences.slice(0, 3).map((ref) => (
-              <li key={ref}>
-                <Link href={`/studio/knowledge/${encodeURIComponent(ref)}`}>
-                  {knowledgeNames.get(ref) ?? ref}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className={styles.muted}>关联已有知识库，供任务检索。</p>
-        )}
-        {(project.knowledgeReferences?.length ?? 0) > 3 && (
-          <button
-            className={styles.textLink}
-            onClick={() => setDialog("knowledge")}
-          >
-            查看全部 {project.knowledgeReferences!.length} 个
-          </button>
-        )}
-      </section>
-      <section className={styles.contextCard}>
-        <button
-          className={styles.cardHeading}
-          onClick={() => setDialog("skills")}
-        >
-          技能 <span aria-hidden="true">›</span>
-        </button>
-        <p className={styles.muted}>为项目任务补充可复用的工作流程。</p>
-        {!!project.skillReferences?.length && (
-          <ul className={styles.compactList}>
-            {project.skillReferences.slice(0, 2).map((ref) => (
-              <li key={ref}>{skillNames.get(ref) ?? ref}</li>
-            ))}
-          </ul>
-        )}
-        <button className={styles.button} onClick={() => setDialog("skills")}>
-          {project.skillReferences?.length ? "管理技能" : "＋ 添加技能"}
-        </button>
-      </section>
-      <section className={styles.contextCard}>
-        <div className={styles.sectionHead}>
-          <h2>
-            项目成果{" "}
-            <small className={styles.count}>{savedResults.length || ""}</small>
-          </h2>
-          <button
-            className={styles.textLink}
-            onClick={() => chooseTab("results")}
-          >
-            查看全部 ›
-          </button>
-        </div>
-        {savedResultError ? (
-          <p role="alert" className={styles.muted}>
-            {savedResultError}
-          </p>
-        ) : savedResults.length ? (
-          <ul className={styles.resultPreviews}>
-            {savedResults.slice(0, 3).map((result) => (
-              <li key={result.resultId}>
-                <button
-                  className={styles.resultPreview}
-                  onClick={() => chooseTab("results")}
-                >
-                  <strong>{result.name}</strong>
-                  <small>
-                    v{result.version} ·{" "}
-                    {result.finalizedAt ? "已定稿" : "已保存"}
-                  </small>
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className={styles.muted}>从任务中保存交付物，在这里集中查看。</p>
-        )}
-        {!!savedResults.length && (
-          <p className={styles.muted}>保留文件快照、来源与版本。</p>
-        )}
-      </section>
-    </aside>
+      ))}
+      <button className={styles.configurationRow} onClick={() => chooseTab("tasks")}>
+        <span><strong>全部项目任务</strong><small>查找历史任务与已归档任务</small></span><span aria-hidden="true">›</span>
+      </button>
+      <p className={styles.boundaryNote}>能力定义和发布在智能体空间维护；这里管理项目所需的关联。</p>
+    </div>
   );
 }
 

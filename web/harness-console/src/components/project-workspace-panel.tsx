@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { useEffect, useRef } from "react";
 import type { ProjectTab } from "../lib/project-space";
 import { useProjectSpace } from "./use-project-space";
 import { ProjectSettings } from "./project-settings";
@@ -13,21 +14,28 @@ import {
   ProjectContextRail,
   ProjectConnectorsDialog,
 } from "./project-context-rail";
-import { ProjectOverview } from "./project-overview";
 import { ProjectTasks } from "./project-tasks";
 import { ProjectResources, ProjectFacts } from "./project-resources";
 import { ProjectResults } from "./project-results";
 import styles from "./project-home.module.css";
 
 /** The shared shell owns the existing sidebar; project work stays on one surface. */
-export function ProjectHome({
+export function ProjectWorkspacePanel({
   projectId,
   initialTab = "overview",
+  view = "project",
 }: {
   projectId: string;
   initialTab?: ProjectTab;
+  view?: "project" | "results";
 }) {
   const space = useProjectSpace(projectId, initialTab);
+  const previousView = useRef(view);
+  useEffect(() => {
+    if (view === "results") space.chooseTab("results");
+    else if (previousView.current !== view) space.chooseTab("overview");
+    previousView.current = view;
+  }, [view]);
   const {
     tab,
     resources,
@@ -49,7 +57,7 @@ export function ProjectHome({
   } = space;
   if (loading)
     return (
-      <div className={styles.page} aria-busy="true">
+      <div className={styles.workspacePanel} aria-busy="true">
         <p className={styles.loading} role="status">
           正在读取项目…
         </p>
@@ -59,7 +67,7 @@ export function ProjectHome({
     );
   if (!project || !resources)
     return (
-      <div className={styles.page}>
+      <div className={styles.workspacePanel}>
         <h1>项目不可用</h1>
         <p role="alert">{error || "项目不存在，或你没有访问权限。"}</p>
         <button
@@ -76,62 +84,14 @@ export function ProjectHome({
     );
   const closePanel = () => chooseTab("overview");
   return (
-    <div className={styles.page}>
-      <div className={styles.workspace}>
-        <main className={styles.projectMain}>
-          <div className={styles.homeToolbar}>
-            <span className={styles.eyebrow}>
-              项目{project.archivedAt ? " · 已归档" : ""}
-            </span>
-            <div className={styles.actions}>
-              <button
-                className={styles.textLink}
-                onClick={() => void reload()}
-                aria-label="刷新项目"
-              >
-                刷新
-              </button>
-              <button
-                className={styles.button}
-                aria-expanded={settingsOpen}
-                onClick={() => setSettingsOpen(true)}
-              >
-                项目设置
-              </button>
-            </div>
-          </div>
-          <header className={styles.header}>
-            <span className={styles.projectMark} aria-hidden="true">
-              <svg viewBox="0 0 24 24">
-                <path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3Z" />
-              </svg>
-            </span>
-            <div>
-              <h1>{project.name}</h1>
-              <p className={styles.subtitle}>整理资料，开始任务，保存成果。</p>
-            </div>
-          </header>
-          {error && (
-            <p className={styles.error} role="alert">
-              {error}
-            </p>
-          )}
-          {notice && (
-            <p className={styles.notice} role="status">
-              {notice}{" "}
-              <button
-                className={styles.textLink}
-                aria-label="关闭提示"
-                onClick={() => setNotice("")}
-              >
-                关闭
-              </button>
-            </p>
-          )}
-          <ProjectOverview space={space} />
-        </main>
-        <ProjectContextRail space={space} />
-      </div>
+    <section className={styles.workspacePanel} aria-label="项目配置与成果">
+      <header className={styles.panelHeader}>
+        <div><strong>{project.name}</strong><small>{project.archivedAt ? "已归档" : "项目工作区"}</small></div>
+        <button className={styles.textLink} onClick={() => setSettingsOpen(true)}>项目设置</button>
+      </header>
+      {error && <p className={styles.error} role="alert">{error}</p>}
+      {notice && <p className={styles.notice} role="status">{notice}<button className={styles.textLink} onClick={() => setNotice("")}>关闭</button></p>}
+      {tab === "results" ? <ProjectResults space={space} /> : <ProjectContextRail space={space} />}
       {settingsOpen && (
         <ProjectModal title="项目设置" onClose={() => setSettingsOpen(false)}>
           <div className={styles.dialogContent}>
@@ -139,14 +99,12 @@ export function ProjectHome({
           </div>
         </ProjectModal>
       )}
-      {tab !== "overview" && (
+      {(tab === "tasks" || tab === "resources") && (
         <ProjectModal
           title={
             tab === "tasks"
               ? "全部项目任务"
-              : tab === "results"
-                ? "项目成果"
-                : "项目资料"
+              : "项目资料"
           }
           className={styles.drawer}
           onClose={closePanel}
@@ -159,7 +117,6 @@ export function ProjectHome({
             )}
             {tab === "tasks" && <ProjectTasks space={space} />}
             {tab === "resources" && <ProjectResources space={space} />}
-            {tab === "results" && <ProjectResults space={space} />}
           </div>
         </ProjectModal>
       )}
@@ -228,6 +185,6 @@ export function ProjectHome({
         />
       )}
       {confirmationDialog}
-    </div>
+    </section>
   );
 }

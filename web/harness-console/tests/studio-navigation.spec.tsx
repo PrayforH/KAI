@@ -34,15 +34,14 @@ it("navigates New Task to a fresh ID instead of restoring the last conversation"
     expect(id).toBeTruthy(); expect(id).not.toBe("old-task"); expect(loadOrCreateThread(storage)).toBe(id);
   } finally { await act(async () => root.unmount()); }
 });
-it("does not let a pending project creation replace a newer New Task click", async () => {
-  let resolve!: (task: { thread_id: string }) => void;
-  createProjectTask.mockReturnValue(new Promise((done) => { resolve = done; }));
+it("opens a project on Home without creating an empty durable task", async () => {
   const host = document.createElement("div"); const root = createRoot(host);
   try {
     await act(async () => root.render(<StudioUnifiedShell>Plugins</StudioUnifiedShell>));
     await act(async () => host.querySelector<HTMLButtonElement>("#project")!.click());
+    expect(push).toHaveBeenLastCalledWith("/?project=p1");
+    expect(createProjectTask).not.toHaveBeenCalled();
     await act(async () => host.querySelector<HTMLButtonElement>("#new")!.click());
-    await act(async () => resolve({ thread_id: "late-project-task" }));
-    expect(push).toHaveBeenCalledTimes(1); expect(push.mock.calls[0][0]).not.toContain("late-project-task");
+    expect(push.mock.calls.at(-1)?.[0]).toMatch(/^\/\?thread=/);
   } finally { await act(async () => root.unmount()); }
 });
