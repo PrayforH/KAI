@@ -934,6 +934,7 @@ function AuthenticatedHome() {
           threadId={threadId}
           projectId={activeProjectId}
           viewRequest={railViewRequest}
+          onViewRequestHandled={() => setRailViewRequest(null)}
           previewRequest={railPreview}
         />
       </div>
