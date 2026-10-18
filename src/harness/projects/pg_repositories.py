@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+from sqlalchemy import and_, select
 from sqlalchemy import delete as sql_delete
-from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from harness.core.errors import ConflictError, NotFoundError
 from harness.projects.models import Project, ProjectDocument, ProjectLink, ProjectMemory
 from harness.storage.database import SessionFactory
 from harness.storage.models import (
+    InputArtifactRow,
     ProjectDocumentRow,
     ProjectLinkRow,
     ProjectMemoryRow,
@@ -120,7 +121,7 @@ def _memory(row: ProjectMemoryRow) -> ProjectMemory:
     )
 
 
-def _document(row: ProjectDocumentRow) -> ProjectDocument:
+def _document(row: ProjectDocumentRow, sha256: str | None = None) -> ProjectDocument:
     return ProjectDocument(
         tenantId=row.tenant_id,
         userId=row.user_id,
@@ -129,6 +130,7 @@ def _document(row: ProjectDocumentRow) -> ProjectDocument:
         name=row.name,
         mediaType=row.media_type,
         sizeBytes=row.size_bytes,
+        sha256=sha256,
         createdAt=row.created_at,
     )
 
@@ -230,7 +232,15 @@ class PostgresProjectResourceRepository:
         self, tenant_id: str, project_id: str
     ) -> list[ProjectDocument]:
         statement = (
-            select(ProjectDocumentRow)
+            select(ProjectDocumentRow, InputArtifactRow.payload["sha256"].as_string())
+            .outerjoin(
+                InputArtifactRow,
+                and_(
+                    InputArtifactRow.tenant_id == ProjectDocumentRow.tenant_id,
+                    InputArtifactRow.user_id == ProjectDocumentRow.user_id,
+                    InputArtifactRow.input_artifact_id == ProjectDocumentRow.input_artifact_id,
+                ),
+            )
             .where(
                 ProjectDocumentRow.tenant_id == tenant_id,
                 ProjectDocumentRow.project_id == project_id,
@@ -240,8 +250,8 @@ class PostgresProjectResourceRepository:
             )
         )
         async with self._sessions() as session:
-            rows = (await session.scalars(statement)).all()
-        return [_document(row) for row in rows]
+            rows = (await session.execute(statement)).all()
+        return [_document(row, sha256) for row, sha256 in rows]
 
     async def add_document(self, document: ProjectDocument) -> None:
         async with self._sessions() as session:
