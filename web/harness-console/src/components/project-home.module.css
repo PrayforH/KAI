@@ -1,6 +1,6 @@
 .page {
   min-height: 100%;
-  padding: 22px clamp(16px, 2.4vw, 36px) 28px;
+  padding: 22px clamp(14px, 1.8vw, 26px) 28px;
   color: var(--codex-ink, #ececec);
   background: var(--codex-surface, #141414);
 }
@@ -69,8 +69,8 @@
 }
 .layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  gap: 28px;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 26px;
   max-width: 1440px;
   margin: 0 auto;
   align-items: stretch;
@@ -94,13 +94,10 @@
   min-width: 0;
   height: 100%;
 }
-/* Keep the project composer anchored to the bottom even before the first
-   message; the shared welcome layout otherwise leaves it right under the
-   heading. */
-.threadHost :global(.aui-thread-viewport:has(.user-task-welcome) .aui-thread-viewport-footer) {
-  margin-top: auto;
-  position: relative;
-  bottom: auto;
+/* Keep the project composer anchored to the bottom before the first message:
+   the welcome block moves to the top and the footer to the end. */
+.threadHost :global(.aui-thread-viewport:has(.user-task-welcome)) {
+  justify-content: space-between;
 }
 .rail { display: grid; gap: 12px; align-content: start; }
 .card {
