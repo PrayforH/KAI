@@ -1539,11 +1539,7 @@ body.codex-theme-v1:has(.console-shell) .aui-thread-root {
   --aui-thread-max-width: 800px;
 }
 
-/* A project task starts as a launcher: keep its composer at the bottom. */
-body.codex-theme-v1:has(.console-shell) [data-project-task] .aui-thread-viewport:has(.user-task-welcome) {
-  justify-content: flex-end;
-  padding-bottom: 18px;
-}
+/* Project tasks keep the shared centered launcher; the rail opens beside it. */
 
 body.codex-theme-v1:has(.console-shell) .aui-thread-root .aui-thread-viewport {
   padding-inline: clamp(24px, 5vw, 72px);

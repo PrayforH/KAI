@@ -13,15 +13,50 @@
   font-size: 12px;
 }
 .card {
+  position: relative;
   display: grid;
   gap: 9px;
+  overflow: hidden;
   padding: 16px;
   border: 1px solid var(--codex-line, #363636);
   border-radius: 14px;
   background: var(--codex-surface-raised, #242424);
+  animation: project-card-in 320ms var(--codex-motion-ease-out, cubic-bezier(.16, 1, .3, 1)) both;
+}
+.card:nth-child(2) { animation-delay: 70ms; }
+.card:nth-child(3) { animation-delay: 140ms; }
+/* One downward sheen per card, staggered with the entrance. It leaves no
+   permanent highlight and is skipped when the user prefers reduced motion. */
+.card::after {
+  position: absolute;
+  inset: -40% 0;
+  z-index: 0;
+  background: linear-gradient(180deg, transparent 20%, rgb(255 255 255 / 6%) 48%, transparent 76%);
+  content: "";
+  pointer-events: none;
+  animation: project-card-sheen 760ms ease-out both;
+}
+.card:nth-child(2)::after { animation-delay: 90ms; }
+.card:nth-child(3)::after { animation-delay: 180ms; }
+.card > * { position: relative; z-index: 1; }
+:global(html[data-color-mode="light"]) .card::after {
+  background: linear-gradient(180deg, transparent 20%, rgb(27 27 34 / 4%) 48%, transparent 76%);
 }
 :global(html[data-color-mode="light"]) .card {
   box-shadow: 0 1px 2px rgb(27 27 34 / 6%);
+}
+@keyframes project-card-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes project-card-sheen {
+  from { transform: translateY(-120%); opacity: 0; }
+  20% { opacity: 1; }
+  to { transform: translateY(120%); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .card::after { animation: none; }
 }
 .cardHead { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .cardTitle { display: flex; align-items: center; gap: 8px; min-width: 0; }
