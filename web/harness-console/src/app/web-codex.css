@@ -1551,6 +1551,14 @@ body.codex-theme-v1:has(.console-shell) [data-project-task] .harness-composer-sh
   max-width: 960px;
 }
 
+body.codex-theme-v1:has(.console-shell) [data-project-task] .aui-thread-root .aui-thread-viewport {
+  padding-inline: clamp(16px, 2vw, 32px);
+}
+
+body.codex-theme-v1:has(.console-shell) [data-project-task] .workspace-stage {
+  --preferred-rail-width: 280px;
+}
+
 body.codex-theme-v1:has(.console-shell) .aui-thread-root .aui-thread-viewport {
   padding-inline: clamp(24px, 5vw, 72px);
   scroll-behavior: auto;
