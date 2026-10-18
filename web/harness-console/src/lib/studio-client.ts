@@ -2830,6 +2830,7 @@ export interface ApiProject {
   name: string;
   instructions?: string;
   skillReferences?: string[];
+  knowledgeReferences?: string[];
   pinnedAt?: string | null;
   archivedAt?: string | null;
   createdAt: string;
@@ -2861,6 +2862,17 @@ export interface ApiProjectResources {
   project: ApiProject;
   memories: ApiProjectMemory[];
   documents: ApiProjectDocument[];
+  links: ApiProjectLink[];
+}
+
+export interface ApiProjectLink {
+  tenantId: string;
+  userId: string;
+  projectId: string;
+  linkId: string;
+  url: string;
+  title: string;
+  createdAt: string;
 }
 
 export const projectClient = {
@@ -2883,6 +2895,7 @@ export const projectClient = {
       name?: string;
       instructions?: string;
       skillReferences?: string[];
+      knowledgeReferences?: string[];
       pinned?: boolean;
     },
   ): Promise<ApiProject> {
@@ -2930,6 +2943,18 @@ export const projectClient = {
   detachDocument(projectId: string, inputArtifactId: string): Promise<void> {
     return request<void>(
       `projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(inputArtifactId)}`,
+      { method: "DELETE" },
+    );
+  },
+  addLink(projectId: string, url: string, title: string): Promise<ApiProjectLink> {
+    return request<ApiProjectLink>(
+      `projects/${encodeURIComponent(projectId)}/links`,
+      { method: "POST", body: JSON.stringify({ url, ...(title ? { title } : {}) }) },
+    );
+  },
+  deleteLink(projectId: string, linkId: string): Promise<void> {
+    return request<void>(
+      `projects/${encodeURIComponent(projectId)}/links/${encodeURIComponent(linkId)}`,
       { method: "DELETE" },
     );
   },

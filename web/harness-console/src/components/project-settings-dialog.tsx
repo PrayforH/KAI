@@ -1,44 +1,11 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent } from "react";
-import { createPortal } from "react-dom";
-import {
-  projectClient,
-  studioClient,
-  type ApiProject,
-  type ApiProjectDocument,
-  type ApiProjectMemory,
-  type StudioPlatformSkillPackage,
-} from "../lib/studio-client";
+import { useState } from "react";
+import { projectClient, type ApiProject } from "../lib/studio-client";
+import { ProjectModal } from "./project-resource-dialogs";
 import styles from "./project-settings-dialog.module.css";
 
 type Notice = { tone: "error" | "info"; text: string } | null;
-
-function uploadFailure(payload: unknown, status: number): string {
-  if (payload && typeof payload === "object") {
-    const record = payload as Record<string, unknown>;
-    const nested = (record.detail ?? record.error) as Record<string, unknown> | undefined;
-    if (nested && typeof nested.message === "string") return nested.message;
-    if (typeof record.message === "string") return record.message;
-  }
-  return `上传失败（HTTP ${status}）`;
-}
-
-async function uploadProjectDocument(file: File): Promise<string> {
-  const form = new FormData();
-  form.append("file", file);
-  const response = await fetch("/api/input-artifacts", { method: "POST", body: form });
-  const payload: unknown = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(uploadFailure(payload, response.status));
-  const inputArtifactId =
-    payload && typeof payload === "object"
-      ? (payload as Record<string, unknown>).input_artifact_id
-      : null;
-  if (typeof inputArtifactId !== "string" || !inputArtifactId) {
-    throw new Error("上传成功但没有返回附件标识，请重试。");
-  }
-  return inputArtifactId;
-}
 
 export function ProjectSettingsDialog({
   project,
@@ -51,395 +18,110 @@ export function ProjectSettingsDialog({
   onChanged: (project: ApiProject) => void;
   onRemoved: (projectId: string) => void;
 }) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
-  const nameRef = useRef<HTMLInputElement>(null);
-  const titleId = useId();
   const [name, setName] = useState(project.name);
-  const [instructions, setInstructions] = useState(project.instructions ?? "");
-  const [skillReferences, setSkillReferences] = useState<string[]>(
-    project.skillReferences ?? [],
-  );
-  const [platformSkills, setPlatformSkills] = useState<StudioPlatformSkillPackage[]>([]);
-  const [memories, setMemories] = useState<ApiProjectMemory[]>([]);
-  const [documents, setDocuments] = useState<ApiProjectDocument[]>([]);
-  const [memoryDraft, setMemoryDraft] = useState("");
-  const [editingMemoryId, setEditingMemoryId] = useState("");
-  const [editingMemory, setEditingMemory] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState("");
-  const [notice, setNotice] = useState<Notice>(null);
+  const [busy, setBusy] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
-  const pending = busy !== "";
+  const [notice, setNotice] = useState<Notice>(null);
 
-  useEffect(() => {
-    const dialog = dialogRef.current!;
-    dialog.showModal();
-    nameRef.current?.focus();
-    return () => dialog.close();
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-    Promise.all([
-      projectClient.resources(project.projectId),
-      studioClient.listPlatformSkills().catch(() => ({ revision: 0, packages: [] })),
-    ]).then(([value, catalog]) => {
-      if (!active) return;
-      setName(value.project.name);
-      setInstructions(value.project.instructions ?? "");
-      setSkillReferences(value.project.skillReferences ?? []);
-      setPlatformSkills(catalog.packages);
-      setMemories(value.memories);
-      setDocuments(value.documents);
-    }).catch((cause: unknown) => {
-      if (active) setNotice({ tone: "error", text: cause instanceof Error ? cause.message : "读取项目失败" });
-    }).finally(() => {
-      if (active) setLoading(false);
-    });
-    return () => { active = false; };
-  }, [project.projectId]);
-
-  function close() {
-    if (!pending) onClose();
-  }
-
-  function skillReference(pkg: StudioPlatformSkillPackage) {
-    return `${pkg.packageId}@${pkg.revision}`;
-  }
-
-  function toggleSkill(pkg: StudioPlatformSkillPackage) {
-    const reference = skillReference(pkg);
-    setSkillReferences((current) =>
-      current.includes(reference)
-        ? current.filter((item) => item !== reference)
-        : [...current, reference],
-    );
-    setNotice(null);
-  }
-
-  async function save(event: FormEvent) {
-    event.preventDefault();
-    const trimmed = name.trim();
-    if (!trimmed || pending) return;
-    setBusy("save");
+  async function save() {
+    if (!name.trim() || busy) return;
+    setBusy(true);
     setNotice(null);
     try {
-      const updated = await projectClient.update(project.projectId, {
-        name: trimmed,
-        instructions,
-        skillReferences,
-      });
+      const updated = await projectClient.rename(project.projectId, name.trim());
       onChanged(updated);
-      setNotice({ tone: "info", text: "已保存。新的任务会使用这份项目说明；已有任务的历史不变。" });
+      onClose();
     } catch (cause) {
-      setNotice({ tone: "error", text: cause instanceof Error ? cause.message : "保存失败，请重试" });
+      setNotice({
+        tone: "error",
+        text: cause instanceof Error ? cause.message : "保存失败，请重试。",
+      });
     } finally {
-      setBusy("");
+      setBusy(false);
     }
   }
 
-  async function addMemory() {
-    const content = memoryDraft.trim();
-    if (!content || pending) return;
-    setBusy("memory");
-    setNotice(null);
-    try {
-      const memory = await projectClient.addMemory(project.projectId, content);
-      setMemories((current) => [...current, memory]);
-      setMemoryDraft("");
-    } catch (cause) {
-      setNotice({ tone: "error", text: cause instanceof Error ? cause.message : "添加记忆失败" });
-    } finally {
-      setBusy("");
-    }
-  }
-
-  async function saveMemory(memory: ApiProjectMemory) {
-    const content = editingMemory.trim();
-    if (!content || pending) return;
-    setBusy(memory.memoryId);
-    setNotice(null);
-    try {
-      const updated = await projectClient.updateMemory(project.projectId, memory.memoryId, content);
-      setMemories((current) => current.map((item) => item.memoryId === updated.memoryId ? updated : item));
-      setEditingMemoryId("");
-      setEditingMemory("");
-    } catch (cause) {
-      setNotice({ tone: "error", text: cause instanceof Error ? cause.message : "保存记忆失败" });
-    } finally {
-      setBusy("");
-    }
-  }
-
-  async function removeMemory(memory: ApiProjectMemory) {
-    if (pending) return;
-    setBusy(memory.memoryId);
-    setNotice(null);
-    try {
-      await projectClient.removeMemory(project.projectId, memory.memoryId);
-      setMemories((current) => current.filter((item) => item.memoryId !== memory.memoryId));
-    } catch (cause) {
-      setNotice({ tone: "error", text: cause instanceof Error ? cause.message : "删除记忆失败" });
-    } finally {
-      setBusy("");
-    }
-  }
-
-  async function attachFiles(event: ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.target.files ?? []);
-    event.target.value = "";
-    if (!files.length || pending) return;
-    setBusy("documents");
-    setNotice(null);
-    try {
-      const attached: ApiProjectDocument[] = [];
-      for (const file of files) {
-        const inputArtifactId = await uploadProjectDocument(file);
-        attached.push(await projectClient.attachDocument(project.projectId, inputArtifactId));
-      }
-      setDocuments((current) => [...current, ...attached]);
-      setNotice({ tone: "info", text: `已附加 ${attached.length} 个文档，之后该项目的新任务都会收到它们。` });
-    } catch (cause) {
-      setNotice({ tone: "error", text: cause instanceof Error ? cause.message : "附加文档失败" });
-    } finally {
-      setBusy("");
-    }
-  }
-
-  async function detachDocument(document: ApiProjectDocument) {
-    if (pending) return;
-    setBusy(document.inputArtifactId);
-    setNotice(null);
-    try {
-      await projectClient.detachDocument(project.projectId, document.inputArtifactId);
-      setDocuments((current) => current.filter((item) => item.inputArtifactId !== document.inputArtifactId));
-    } catch (cause) {
-      setNotice({ tone: "error", text: cause instanceof Error ? cause.message : "移除文档失败" });
-    } finally {
-      setBusy("");
-    }
-  }
-
-  async function removeProject() {
-    if (pending) return;
-    if (!confirmRemove) {
-      setConfirmRemove(true);
-      return;
-    }
-    setBusy("remove");
+  async function remove() {
+    if (busy) return;
+    setBusy(true);
     setNotice(null);
     try {
       await projectClient.remove(project.projectId);
       onRemoved(project.projectId);
       onClose();
     } catch (cause) {
-      setNotice({ tone: "error", text: cause instanceof Error ? cause.message : "移除项目失败" });
-      setBusy("");
+      setNotice({
+        tone: "error",
+        text: cause instanceof Error ? cause.message : "移除失败，请重试。",
+      });
+    } finally {
+      setBusy(false);
     }
   }
 
-  return createPortal(
-    <dialog
-      ref={dialogRef}
-      className={styles.dialog}
-      aria-labelledby={titleId}
-      aria-busy={pending}
-      onCancel={(event) => { event.preventDefault(); close(); }}
-      onClick={(event) => {
-        if (event.target !== event.currentTarget) return;
-        const bounds = event.currentTarget.getBoundingClientRect();
-        if (event.clientX < bounds.left || event.clientX > bounds.right
-          || event.clientY < bounds.top || event.clientY > bounds.bottom) close();
-      }}
-    >
-      <form onSubmit={(event) => void save(event)}>
-        <div className={styles.header}>
-          <div>
-            <h2 id={titleId}>项目设置</h2>
-            <p>说明、记忆和文档会随项目带给它的每个新任务。</p>
-          </div>
-          <button className={styles.close} type="button" aria-label="关闭项目设置" disabled={pending} onClick={close}>
-            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15" /></svg>
+  return (
+    <ProjectModal
+      title="项目设置"
+      subtitle="重命名或移除这个项目。资源与任务记录会随项目一起移除。"
+      onClose={onClose}
+      footer={
+        <>
+          <button
+            type="button"
+            className={styles.danger}
+            disabled={busy}
+            onClick={() => setConfirmRemove(true)}
+          >
+            移除项目
           </button>
-        </div>
-
-        <label className={styles.field}>
-          <span>项目名称</span>
-          <input
-            ref={nameRef}
-            value={name}
-            maxLength={120}
-            required
-            disabled={pending || loading}
-            onChange={(event) => { setName(event.target.value); setNotice(null); }}
-          />
-        </label>
-
-        <label className={styles.field}>
-          <span>项目说明</span>
-          <textarea
-            value={instructions}
-            rows={5}
-            maxLength={20000}
-            disabled={pending || loading}
-            placeholder="例如：目标、术语、输出规范、不可违反的约束。"
-            onChange={(event) => { setInstructions(event.target.value); setNotice(null); }}
-          />
-          <small>会作为项目上下文附加到该项目下所有任务。</small>
-        </label>
-
-        <section className={styles.section} aria-label="项目技能">
-          <div className={styles.sectionHead}>
-            <div>
-              <h3>项目技能</h3>
-              <p>选中的技能会随项目带到每个新任务；Agent 自带的同名技能优先。</p>
-            </div>
-            <span className={styles.count}>{skillReferences.length}</span>
-          </div>
-          {loading ? <p className={styles.empty}>正在读取…</p> : (
-            <ul className={styles.skillList}>
-              {platformSkills.map((pkg) => {
-                const reference = skillReference(pkg);
-                const checked = skillReferences.includes(reference);
-                return (
-                  <li key={reference}>
-                    <label className={styles.skillItem}>
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        disabled={pending}
-                        onChange={() => toggleSkill(pkg)}
-                      />
-                      <span className={styles.skillCopy}>
-                        <strong>{pkg.displayName}</strong>
-                        <small>{pkg.summary}</small>
-                        <small className={styles.skillMeta}>
-                          {pkg.compatibleRuntimes.join(" / ")} · {reference}
-                        </small>
-                      </span>
-                    </label>
-                  </li>
-                );
-              })}
-              {!platformSkills.length && <li className={styles.empty}>平台技能目录为空。</li>}
-            </ul>
-          )}
-        </section>
-
-        <section className={styles.section} aria-label="项目记忆">
-          <div className={styles.sectionHead}>
-            <div>
-              <h3>项目记忆</h3>
-              <p>长期有效的事实和决定。不是每轮对话的临时上下文。</p>
-            </div>
-            <span className={styles.count}>{memories.length}</span>
-          </div>
-          {loading ? <p className={styles.empty}>正在读取…</p> : (
-            <ul className={styles.list}>
-              {memories.map((memory) => (
-                <li key={memory.memoryId} className={styles.item}>
-                  {editingMemoryId === memory.memoryId ? (
-                    <>
-                      <textarea
-                        value={editingMemory}
-                        rows={3}
-                        maxLength={4000}
-                        aria-label="编辑项目记忆"
-                        onChange={(event) => setEditingMemory(event.target.value)}
-                      />
-                      <div className={styles.itemActions}>
-                        <button type="button" disabled={pending} onClick={() => { setEditingMemoryId(""); setEditingMemory(""); }}>取消</button>
-                        <button type="button" className={styles.primarySmall} disabled={pending || !editingMemory.trim()} onClick={() => void saveMemory(memory)}>保存</button>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <p>{memory.content}</p>
-                      <div className={styles.itemActions}>
-                        <button type="button" disabled={pending} onClick={() => { setEditingMemoryId(memory.memoryId); setEditingMemory(memory.content); }}>编辑</button>
-                        <button type="button" className={styles.dangerSmall} disabled={pending} onClick={() => void removeMemory(memory)}>删除</button>
-                      </div>
-                    </>
-                  )}
-                </li>
-              ))}
-              {!memories.length && <li className={styles.empty}>还没有项目记忆。</li>}
-            </ul>
-          )}
-          <div className={styles.composer}>
-            <textarea
-              value={memoryDraft}
-              rows={2}
-              maxLength={4000}
-              placeholder="添加一条项目记忆…"
-              aria-label="新的项目记忆"
-              disabled={pending || loading}
-              onChange={(event) => setMemoryDraft(event.target.value)}
-            />
-            <button type="button" disabled={pending || loading || !memoryDraft.trim()} onClick={() => void addMemory()}>
-              添加记忆
+          <div className={styles.actions}>
+            <button type="button" className={styles.secondary} onClick={onClose}>
+              取消
+            </button>
+            <button
+              type="button"
+              className={styles.primary}
+              disabled={busy || !name.trim()}
+              onClick={() => void save()}
+            >
+              {busy ? "保存中…" : "保存"}
             </button>
           </div>
-        </section>
-
-        <section className={styles.section} aria-label="项目文档">
-          <div className={styles.sectionHead}>
-            <div>
-              <h3>项目文档</h3>
-              <p>附加的文件会出现在该项目每个新任务的输入附件里。</p>
-            </div>
-            <span className={styles.count}>{documents.length}</span>
-          </div>
-          {loading ? <p className={styles.empty}>正在读取…</p> : (
-            <ul className={styles.list}>
-              {documents.map((document) => (
-                <li key={document.inputArtifactId} className={styles.document}>
-                  <span className={styles.documentIcon} aria-hidden="true">
-                    <svg viewBox="0 0 20 20"><path d="M5 2.75h6l4 4v10.5H5Z" /><path d="M11 2.75v4h4" /></svg>
-                  </span>
-                  <span className={styles.documentName} title={document.name}>{document.name}</span>
-                  <span className={styles.documentSize}>{Math.max(1, Math.round(document.sizeBytes / 1024))} KB</span>
-                  <span className={styles.documentActions}>
-                    <a
-                      className={styles.documentOpen}
-                      href={`/api/input-artifacts/${encodeURIComponent(document.inputArtifactId)}/content?inline=1`}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      查看
-                    </a>
-                    <button type="button" className={styles.dangerSmall} disabled={pending} onClick={() => void detachDocument(document)}>移除</button>
-                  </span>
-                </li>
-              ))}
-              {!documents.length && <li className={styles.empty}>还没有项目文档。</li>}
-            </ul>
-          )}
-          <label className={styles.upload}>
-            <input type="file" multiple disabled={pending || loading || documents.length >= 10} onChange={(event) => void attachFiles(event)} />
-            <span>{busy === "documents" ? "正在上传…" : "添加文档"}</span>
-          </label>
-          <small>最多 10 个附件，与单次任务共用附件大小限制。</small>
-        </section>
-
-        {notice && <p className={styles.notice} data-tone={notice.tone} role={notice.tone === "error" ? "alert" : "status"}>{notice.text}</p>}
-
-        <div className={styles.footer}>
-          <div className={styles.removeGroup}>
-            <button type="button" className={styles.remove} disabled={pending} onClick={() => void removeProject()}>
-              {confirmRemove ? "确认移除项目" : "移除项目"}
+        </>
+      }
+    >
+      {notice?.tone === "error" ? <p className={styles.error}>{notice.text}</p> : null}
+      <label className={styles.field}>
+        <span>项目名称</span>
+        <input
+          value={name}
+          maxLength={120}
+          onChange={(event) => setName(event.target.value)}
+          autoFocus
+        />
+      </label>
+      {confirmRemove ? (
+        <div className={styles.confirm} role="alert">
+          <p>确定移除「{project.name}」？项目文件和任务会一并清空，此操作不可撤销。</p>
+          <div className={styles.actions}>
+            <button
+              type="button"
+              className={styles.danger}
+              disabled={busy}
+              onClick={() => void remove()}
+            >
+              {busy ? "移除中…" : "确认移除"}
             </button>
-            {confirmRemove && <small>任务会回到「任务」区，历史不会删除。</small>}
-          </div>
-          <div className={styles.footerActions}>
-            <button type="button" className={styles.cancel} disabled={pending} onClick={close}>取消</button>
-            <button type="submit" className={styles.submit} disabled={pending || loading || !name.trim()}>
-              {busy === "save" ? "保存中…" : "保存"}
+            <button
+              type="button"
+              className={styles.secondary}
+              onClick={() => setConfirmRemove(false)}
+            >
+              取消
             </button>
           </div>
         </div>
-      </form>
-    </dialog>,
-    document.body,
+      ) : null}
+    </ProjectModal>
   );
 }

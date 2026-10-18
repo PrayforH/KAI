@@ -5,14 +5,19 @@ from __future__ import annotations
 import secrets
 from collections.abc import Callable
 from datetime import UTC, datetime
+from urllib.parse import urlsplit
 
 from harness.core.errors import ConflictError, NotFoundError
 from harness.projects.models import (
     MAX_PROJECT_DOCUMENTS,
+    MAX_PROJECT_KNOWLEDGE_BASES,
+    MAX_PROJECT_LINK_TITLE,
+    MAX_PROJECT_LINKS,
     MAX_PROJECT_MEMORIES,
     MAX_PROJECT_SKILLS,
     Project,
     ProjectDocument,
+    ProjectLink,
     ProjectMemory,
     ProjectResources,
     ProjectRunContext,
@@ -46,6 +51,23 @@ def _normalize_skill_references(references: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(normalized)
 
 
+def _normalize_link_url(url: str) -> str:
+    value = url.strip()
+    parts = urlsplit(value)
+    if parts.scheme not in {"http", "https"} or not parts.netloc:
+        raise ConflictError("project link must be an http(s) URL")
+    return value
+
+
+def project_knowledge_resolver(resolve_bindings):
+    """Adapt the knowledge ACL resolver to the project binding signature."""
+
+    async def validate(tenant_id: str, user_id: str, references: tuple[str, ...]) -> None:
+        await resolve_bindings(tenant_id, user_id, references, ())
+
+    return validate
+
+
 class ProjectService:
     def __init__(
         self,
@@ -57,6 +79,7 @@ class ProjectService:
         task_project_clearer=None,
         resources=None,
         document_resolver=None,
+        knowledge_resolver=None,
     ) -> None:
         self._repository = repository
         self._resources = resources
@@ -67,9 +90,33 @@ class ProjectService:
         self._task_project_writer = task_project_writer
         self._task_project_clearer = task_project_clearer
         self._document_resolver = document_resolver
+        self._knowledge_resolver = knowledge_resolver
 
     def configure_document_resolver(self, resolver) -> None:
         self._document_resolver = resolver
+
+    def configure_knowledge_resolver(self, resolver) -> None:
+        self._knowledge_resolver = resolver
+
+    async def _normalize_knowledge_references(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        references: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        if len(set(references)) != len(references):
+            raise ConflictError("duplicate project knowledge base reference")
+        if len(references) > MAX_PROJECT_KNOWLEDGE_BASES:
+            raise ConflictError(
+                f"a project accepts at most {MAX_PROJECT_KNOWLEDGE_BASES} knowledge bases"
+            )
+        if not references:
+            return ()
+        if self._knowledge_resolver is None:
+            raise ConflictError("知识检索服务未配置")
+        await self._knowledge_resolver(tenant_id, user_id, references)
+        return references
 
     def configure_task_project_clearer(self, clearer) -> None:
         self._task_project_clearer = clearer
@@ -87,6 +134,7 @@ class ProjectService:
         name: str,
         instructions: str = "",
         skill_references: tuple[str, ...] = (),
+        knowledge_references: tuple[str, ...] = (),
     ) -> Project:
         trimmed = name.strip()
         if not trimmed:
@@ -99,6 +147,11 @@ class ProjectService:
             name=trimmed,
             instructions=instructions.strip(),
             skillReferences=_normalize_skill_references(skill_references),
+            knowledgeReferences=await self._normalize_knowledge_references(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                references=knowledge_references,
+            ),
             createdAt=now,
             updatedAt=now,
         )
@@ -127,6 +180,7 @@ class ProjectService:
         name: str | None = None,
         instructions: str | None = None,
         skill_references: tuple[str, ...] | None = None,
+        knowledge_references: tuple[str, ...] | None = None,
         pinned: bool | None = None,
         archived: bool | None = None,
     ) -> Project:
@@ -144,6 +198,12 @@ class ProjectService:
         if skill_references is not None:
             updates["skill_references"] = _normalize_skill_references(
                 skill_references
+            )
+        if knowledge_references is not None:
+            updates["knowledge_references"] = await self._normalize_knowledge_references(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                references=knowledge_references,
             )
         if pinned is not None:
             updates["pinned_at"] = self._clock() if pinned else None
@@ -193,6 +253,7 @@ class ProjectService:
             documents=tuple(
                 await self._resources.list_documents(tenant_id, project_id)
             ),
+            links=tuple(await self._resources.list_links(tenant_id, project_id)),
         )
 
     async def add_memory(
@@ -313,6 +374,51 @@ class ProjectService:
             tenant_id, project_id, input_artifact_id
         )
 
+    async def add_link(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        project_id: str,
+        url: str,
+        title: str | None = None,
+    ) -> ProjectLink:
+        await self.get(tenant_id=tenant_id, user_id=user_id, project_id=project_id)
+        if self._resources is None:
+            raise ConflictError("Project resource store is unavailable")
+        existing = await self._resources.list_links(tenant_id, project_id)
+        if len(existing) >= MAX_PROJECT_LINKS:
+            raise ConflictError(
+                f"a project accepts at most {MAX_PROJECT_LINKS} links"
+            )
+        normalized = _normalize_link_url(url)
+        if any(item.url == normalized for item in existing):
+            raise ConflictError("project link already exists")
+        link = ProjectLink(
+            tenantId=tenant_id,
+            userId=user_id,
+            projectId=project_id,
+            linkId=self._ids("project_link"),
+            url=normalized,
+            title=(title or "").strip()[:MAX_PROJECT_LINK_TITLE],
+            createdAt=self._clock(),
+        )
+        await self._resources.add_link(link)
+        return link
+
+    async def delete_link(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        project_id: str,
+        link_id: str,
+    ) -> None:
+        await self.get(tenant_id=tenant_id, user_id=user_id, project_id=project_id)
+        if self._resources is None:
+            raise ConflictError("Project resource store is unavailable")
+        await self._resources.delete_link(tenant_id, project_id, link_id)
+
     async def context_for_run(
         self, tenant_id: str, user_id: str, project_id: str
     ) -> ProjectRunContext | None:
@@ -330,6 +436,7 @@ class ProjectService:
             return None
         memories: tuple[ProjectMemory, ...] = ()
         documents: tuple[ProjectDocument, ...] = ()
+        links: tuple[ProjectLink, ...] = ()
         if self._resources is not None:
             memories = tuple(
                 await self._resources.list_memories(tenant_id, project_id)
@@ -337,6 +444,7 @@ class ProjectService:
             documents = tuple(
                 await self._resources.list_documents(tenant_id, project_id)
             )
+            links = tuple(await self._resources.list_links(tenant_id, project_id))
         sections: list[str] = []
         if project.instructions.strip():
             sections.append(f"## 项目说明\n{project.instructions.strip()}")
@@ -344,6 +452,13 @@ class ProjectService:
             sections.append(
                 "## 项目记忆\n"
                 + "\n".join(f"- {item.content}" for item in memories)
+            )
+        if links:
+            sections.append(
+                "## 项目网页\n"
+                + "\n".join(
+                    f"- {item.title or item.url}：{item.url}" for item in links
+                )
             )
         if project.skill_references:
             labels: list[str] = []
@@ -367,9 +482,12 @@ class ProjectService:
             text=text,
             documentIds=tuple(item.input_artifact_id for item in documents),
             skillReferences=project.skill_references,
+            knowledgeReferences=project.knowledge_references,
             memoryCount=len(memories),
             documentCount=len(documents),
             skillCount=len(project.skill_references),
+            knowledgeCount=len(project.knowledge_references),
+            linkCount=len(links),
         )
 
     async def assign_task(

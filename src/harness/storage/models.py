@@ -1267,6 +1267,23 @@ class ProjectDocumentRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class ProjectLinkRow(Base):
+    """A web page attached to every Run in a project."""
+
+    __tablename__ = "project_links"
+    __table_args__ = (
+        Index("ix_project_links_project", "tenant_id", "project_id", "created_at"),
+    )
+
+    link_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(128), index=True)
+    user_id: Mapped[str] = mapped_column(String(128))
+    project_id: Mapped[str] = mapped_column(String(128))
+    url: Mapped[str] = mapped_column(Text)
+    title: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class SandboxLeaseRow(Base):
     """Durable ownership record for one provisioned remote sandbox."""
 

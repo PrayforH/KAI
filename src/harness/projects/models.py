@@ -14,6 +14,10 @@ MAX_PROJECT_MEMORY_CONTENT = 4_000
 MAX_PROJECT_MEMORIES = 200
 MAX_PROJECT_DOCUMENTS = 10
 MAX_PROJECT_SKILLS = 20
+MAX_PROJECT_KNOWLEDGE_BASES = 10
+MAX_PROJECT_LINKS = 20
+MAX_PROJECT_LINK_URL = 2_048
+MAX_PROJECT_LINK_TITLE = 200
 
 
 class Project(StudioModel):
@@ -29,6 +33,12 @@ class Project(StudioModel):
     # ``packageId@revision`` so a later catalog revision cannot change an
     # already-created Run. Files are staged per Run, not copied into the Agent.
     skill_references: tuple[str, ...] = Field(default=(), alias="skillReferences")
+    # Knowledge bases pinned to the project. Every Run inherits them; a
+    # per-task selection in the composer is added on top rather than replacing
+    # the project's own binding.
+    knowledge_references: tuple[str, ...] = Field(
+        default=(), alias="knowledgeReferences"
+    )
     pinned_at: datetime | None = Field(default=None, alias="pinnedAt")
     archived_at: datetime | None = Field(default=None, alias="archivedAt")
     created_at: datetime = Field(alias="createdAt")
@@ -56,10 +66,21 @@ class ProjectDocument(StudioModel):
     created_at: datetime = Field(alias="createdAt")
 
 
+class ProjectLink(StudioModel):
+    tenant_id: str = Field(alias="tenantId")
+    user_id: str = Field(alias="userId")
+    project_id: str = Field(alias="projectId")
+    link_id: str = Field(alias="linkId")
+    url: str = Field(max_length=MAX_PROJECT_LINK_URL)
+    title: str = Field(default="", max_length=MAX_PROJECT_LINK_TITLE)
+    created_at: datetime = Field(alias="createdAt")
+
+
 class ProjectResources(StudioModel):
     project: Project
     memories: tuple[ProjectMemory, ...] = ()
     documents: tuple[ProjectDocument, ...] = ()
+    links: tuple[ProjectLink, ...] = ()
 
 
 class CreateProjectRequest(StudioModel):
@@ -68,6 +89,9 @@ class CreateProjectRequest(StudioModel):
     skill_references: tuple[str, ...] | None = Field(
         default=None, alias="skillReferences", max_length=MAX_PROJECT_SKILLS
     )
+    knowledge_references: tuple[str, ...] | None = Field(
+        default=None, alias="knowledgeReferences", max_length=MAX_PROJECT_KNOWLEDGE_BASES
+    )
 
 
 class UpdateProjectRequest(StudioModel):
@@ -75,6 +99,9 @@ class UpdateProjectRequest(StudioModel):
     instructions: str | None = Field(default=None, max_length=MAX_PROJECT_INSTRUCTIONS)
     skill_references: tuple[str, ...] | None = Field(
         default=None, alias="skillReferences", max_length=MAX_PROJECT_SKILLS
+    )
+    knowledge_references: tuple[str, ...] | None = Field(
+        default=None, alias="knowledgeReferences", max_length=MAX_PROJECT_KNOWLEDGE_BASES
     )
     pinned: bool | None = None
     archived: bool | None = None
@@ -92,6 +119,11 @@ class AttachProjectDocumentRequest(StudioModel):
     input_artifact_id: str = Field(alias="inputArtifactId", min_length=1, max_length=128)
 
 
+class CreateProjectLinkRequest(StudioModel):
+    url: str = Field(min_length=1, max_length=MAX_PROJECT_LINK_URL)
+    title: str | None = Field(default=None, max_length=MAX_PROJECT_LINK_TITLE)
+
+
 class ProjectRunContext(StudioModel):
     """Snapshot of project resources captured when one Run is created."""
 
@@ -99,6 +131,11 @@ class ProjectRunContext(StudioModel):
     text: str = ""
     document_ids: tuple[str, ...] = Field(default=(), alias="documentIds")
     skill_references: tuple[str, ...] = Field(default=(), alias="skillReferences")
+    knowledge_references: tuple[str, ...] = Field(
+        default=(), alias="knowledgeReferences"
+    )
     memory_count: int = Field(default=0, alias="memoryCount")
     document_count: int = Field(default=0, alias="documentCount")
     skill_count: int = Field(default=0, alias="skillCount")
+    knowledge_count: int = Field(default=0, alias="knowledgeCount")
+    link_count: int = Field(default=0, alias="linkCount")

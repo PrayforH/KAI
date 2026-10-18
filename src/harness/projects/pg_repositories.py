@@ -7,9 +7,14 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from harness.core.errors import ConflictError, NotFoundError
-from harness.projects.models import Project, ProjectDocument, ProjectMemory
+from harness.projects.models import Project, ProjectDocument, ProjectLink, ProjectMemory
 from harness.storage.database import SessionFactory
-from harness.storage.models import ProjectDocumentRow, ProjectMemoryRow, ProjectRow
+from harness.storage.models import (
+    ProjectDocumentRow,
+    ProjectLinkRow,
+    ProjectMemoryRow,
+    ProjectRow,
+)
 
 
 def _payload(project: Project) -> dict[str, object]:
@@ -124,6 +129,18 @@ def _document(row: ProjectDocumentRow) -> ProjectDocument:
         name=row.name,
         mediaType=row.media_type,
         sizeBytes=row.size_bytes,
+        createdAt=row.created_at,
+    )
+
+
+def _link(row: ProjectLinkRow) -> ProjectLink:
+    return ProjectLink(
+        tenantId=row.tenant_id,
+        userId=row.user_id,
+        projectId=row.project_id,
+        linkId=row.link_id,
+        url=row.url,
+        title=row.title,
         createdAt=row.created_at,
     )
 
@@ -279,4 +296,61 @@ class PostgresProjectResourceRepository:
                     ProjectDocumentRow.project_id == project_id,
                 )
             )
+            await session.execute(
+                sql_delete(ProjectLinkRow).where(
+                    ProjectLinkRow.tenant_id == tenant_id,
+                    ProjectLinkRow.project_id == project_id,
+                )
+            )
+            await session.commit()
+
+    async def list_links(
+        self, tenant_id: str, project_id: str
+    ) -> list[ProjectLink]:
+        statement = (
+            select(ProjectLinkRow)
+            .where(
+                ProjectLinkRow.tenant_id == tenant_id,
+                ProjectLinkRow.project_id == project_id,
+            )
+            .order_by(ProjectLinkRow.created_at, ProjectLinkRow.link_id)
+        )
+        async with self._sessions() as session:
+            rows = (await session.scalars(statement)).all()
+        return [_link(row) for row in rows]
+
+    async def add_link(self, link: ProjectLink) -> None:
+        async with self._sessions() as session:
+            session.add(
+                ProjectLinkRow(
+                    link_id=link.link_id,
+                    tenant_id=link.tenant_id,
+                    user_id=link.user_id,
+                    project_id=link.project_id,
+                    url=link.url,
+                    title=link.title,
+                    created_at=link.created_at,
+                )
+            )
+            try:
+                await session.commit()
+            except IntegrityError as error:
+                await session.rollback()
+                raise ConflictError(
+                    f"project link already exists: {link.link_id}"
+                ) from error
+
+    async def delete_link(
+        self, tenant_id: str, project_id: str, link_id: str
+    ) -> None:
+        statement = sql_delete(ProjectLinkRow).where(
+            ProjectLinkRow.tenant_id == tenant_id,
+            ProjectLinkRow.project_id == project_id,
+            ProjectLinkRow.link_id == link_id,
+        )
+        async with self._sessions() as session:
+            result = await session.execute(statement)
+            if not result.rowcount:
+                await session.rollback()
+                raise NotFoundError(f"project link not found: {link_id}")
             await session.commit()

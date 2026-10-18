@@ -404,15 +404,23 @@ class AguiRunService:
                 )
                 if item not in user_input_ids
             ]
+            project_knowledge = (
+                project_context.knowledge_references
+                if project_context is not None
+                else ()
+            )
+            effective_knowledge = list(
+                dict.fromkeys((*(requested_knowledge or ()), *project_knowledge))
+            )
             knowledge_override = await self._resolve_knowledge_override(
                 tenant_id=tenant_id,
                 user_id=user_id,
                 session_id=binding.session_id,
-                references=requested_knowledge,
+                references=effective_knowledge or None,
             )
-            if requested_knowledge:
+            if effective_knowledge:
                 session = await self._sessions.get(tenant_id, binding.session_id)
-                if session.runtime_type != "claude-agent-sdk":
+                if session.runtime_type not in {"claude-agent-sdk", "deepagents"}:
                     raise ConflictError("当前运行时不支持知识问答，请切换支持知识检索的智能体")
             run_input: dict[str, object] = {
                 "prompt": prompt,
@@ -448,11 +456,23 @@ class AguiRunService:
                 ),
                 **(
                     {
+                        "project_knowledge_references": list(
+                            project_context.knowledge_references
+                        )
+                    }
+                    if project_context is not None
+                    and project_context.knowledge_references
+                    else {}
+                ),
+                **(
+                    {
                         "project_context_meta": {
                             "projectId": project_context.project_id,
                             "memories": project_context.memory_count,
                             "documents": project_context.document_count,
                             "skills": project_context.skill_count,
+                            "knowledge": project_context.knowledge_count,
+                            "links": project_context.link_count,
                         }
                     }
                     if project_context is not None
@@ -460,6 +480,7 @@ class AguiRunService:
                         project_context.text
                         or project_context.document_ids
                         or project_context.skill_references
+                        or project_context.knowledge_references
                     )
                     else {}
                 ),

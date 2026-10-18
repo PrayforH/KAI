@@ -675,6 +675,44 @@ body.codex-theme-v1:has(.console-shell) .task-list-scroll .task-list {
   stroke: none;
 }
 
+.task-project-files {
+  position: absolute;
+  top: 50%;
+  right: 62px;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  color: #c4c4c4;
+  background: transparent;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity 120ms ease, color 120ms ease, background-color 120ms ease;
+}
+
+.task-project-head:hover .task-project-files,
+.task-project-head:focus-within .task-project-files {
+  opacity: 1;
+}
+
+.task-project-files:hover {
+  color: #ffffff;
+  background: #454545;
+}
+
+.task-project-files svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .task-project-menu {
   position: absolute;
   top: 34px;
@@ -736,7 +774,8 @@ body.codex-theme-v1:has(.console-shell) .task-list-scroll .task-list {
 
 @media (hover: none) {
   .task-project-add,
-  .task-project-settings {
+  .task-project-settings,
+  .task-project-files {
     opacity: 1;
   }
 }
@@ -2242,6 +2281,15 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-proj
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-settings:hover {
+  color: #171719;
+  background: #e9e9eb;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-files {
+  color: #606066;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-files:hover {
   color: #171719;
   background: #e9e9eb;
 }

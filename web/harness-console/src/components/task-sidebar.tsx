@@ -4,6 +4,7 @@ import { isFailedRunStatus } from "../lib/run-status";
 import { SidebarIcon } from "./sidebar-icon";
 import Link from "next/link";
 import { ProjectCreateDialog } from "./project-create-dialog";
+import { ProjectFilesDialog } from "./project-resource-dialogs";
 import { useConfirmationDialog } from "./confirmation-dialog";
 import { PanelResizeHandle } from "./panel-resize-handle";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
@@ -69,6 +70,15 @@ function PinIcon() {
     <svg viewBox="0 0 16 16" aria-hidden="true">
       <path d="m5 2.5 6 0-1 4 2 2v1H4v-1l2-2z" />
       <path d="M8 9.5V14" />
+    </svg>
+  );
+}
+
+function FilesIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M3 3.5h4l1.4 1.8H13v7.2H3z" />
+      <path d="M5.2 8.2h5.6M5.2 10.4h3.8" />
     </svg>
   );
 }
@@ -166,6 +176,7 @@ export function TaskSidebar({
   const [projectCreateError, setProjectCreateError] = useState("");
   const [projectDialogOpen, setProjectDialogOpen] = useState(false);
   const [projectMenuId, setProjectMenuId] = useState<string | null>(null);
+  const [filesProject, setFilesProject] = useState<ApiProject | null>(null);
   const [pinningProjectId, setPinningProjectId] = useState("");
   const projectCreationPending = useRef(false);
   const { requestConfirmation, confirmationDialog } = useConfirmationDialog();
@@ -703,6 +714,18 @@ export function TaskSidebar({
                       )}
                     </div>
                     <button
+                      type="button"
+                      className="task-project-files"
+                      aria-label={`查看 ${project.name} 的文件`}
+                      title="查看项目文件"
+                      onClick={() => {
+                        setProjectMenuId(null);
+                        setFilesProject(project);
+                      }}
+                    >
+                      <FilesIcon />
+                    </button>
+                    <button
                         type="button"
                         className="task-project-add"
                         aria-label={`在 ${project.name} 下新建任务`}
@@ -821,6 +844,13 @@ export function TaskSidebar({
           onProjectsChanged?.();
         }}
       />}
+      {filesProject && (
+        <ProjectFilesDialog
+          project={filesProject}
+          mode="browse"
+          onClose={() => setFilesProject(null)}
+        />
+      )}
       {confirmationDialog}
     </aside>
   );

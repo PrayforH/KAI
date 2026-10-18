@@ -341,9 +341,101 @@ async def test_deleting_a_project_removes_its_resources() -> None:
     await service.delete(tenant_id="t", user_id="u", project_id=project.project_id)
     assert await resources.list_memories("t", project.project_id) == []
     assert await resources.list_documents("t", project.project_id) == []
+    assert await resources.list_links("t", project.project_id) == []
     assert (
         await service.context_for_run(
             tenant_id="t", user_id="u", project_id=project.project_id
         )
         is None
     )
+
+
+def configure_knowledge(service: ProjectService) -> list[tuple[str, str, tuple[str, ...]]]:
+    seen: list[tuple[str, str, tuple[str, ...]]] = []
+
+    async def resolver(tenant_id: str, user_id: str, references: tuple[str, ...]):
+        seen.append((tenant_id, user_id, references))
+        if "missing-base" in references:
+            raise NotFoundError("knowledge base not found: missing-base")
+
+    service.configure_knowledge_resolver(resolver)
+    return seen
+
+
+@pytest.mark.asyncio
+async def test_project_knowledge_bases_are_validated_and_captured_for_a_run() -> None:
+    service, _resources, _seen = build_resource_service()
+    validated = configure_knowledge(service)
+    with pytest.raises(NotFoundError):
+        await service.create(
+            tenant_id="t",
+            user_id="u",
+            name="金融办",
+            knowledge_references=("missing-base",),
+        )
+    project = await service.create(
+        tenant_id="t",
+        user_id="u",
+        name="金融办",
+        knowledge_references=("kb-1", "kb-2"),
+    )
+    assert project.knowledge_references == ("kb-1", "kb-2")
+    updated = await service.update(
+        tenant_id="t",
+        user_id="u",
+        project_id=project.project_id,
+        knowledge_references=("kb-2",),
+    )
+    assert updated.knowledge_references == ("kb-2",)
+    context = await service.context_for_run(
+        tenant_id="t", user_id="u", project_id=project.project_id
+    )
+    assert context is not None
+    assert context.knowledge_references == ("kb-2",)
+    assert context.knowledge_count == 1
+    assert validated[-1] == ("t", "u", ("kb-2",))
+
+
+@pytest.mark.asyncio
+async def test_project_links_are_normalized_listed_and_injected() -> None:
+    service, resources, _seen = build_resource_service()
+    project = await service.create(tenant_id="t", user_id="u", name="金融办")
+    with pytest.raises(ConflictError):
+        await service.add_link(
+            tenant_id="t",
+            user_id="u",
+            project_id=project.project_id,
+            url="file:///etc/passwd",
+        )
+    link = await service.add_link(
+        tenant_id="t",
+        user_id="u",
+        project_id=project.project_id,
+        url="  https://example.test/brief  ",
+        title=" 项目简报 ",
+    )
+    assert link.url == "https://example.test/brief"
+    assert link.title == "项目简报"
+    with pytest.raises(ConflictError):
+        await service.add_link(
+            tenant_id="t",
+            user_id="u",
+            project_id=project.project_id,
+            url="https://example.test/brief",
+        )
+    listed = await resources.list_links("t", project.project_id)
+    assert [item.link_id for item in listed] == [link.link_id]
+    context = await service.context_for_run(
+        tenant_id="t", user_id="u", project_id=project.project_id
+    )
+    assert context is not None
+    assert "项目网页" in context.text
+    assert "https://example.test/brief" in context.text
+    assert context.link_count == 1
+    await service.delete_link(
+        tenant_id="t",
+        user_id="u",
+        project_id=project.project_id,
+        link_id=link.link_id,
+    )
+    assert await resources.list_links("t", project.project_id) == []

@@ -10,10 +10,12 @@ from harness.api.dependencies import Identity, ensure_permission, require_identi
 from harness.core.errors import ConflictError, NotFoundError
 from harness.projects.models import (
     AttachProjectDocumentRequest,
+    CreateProjectLinkRequest,
     CreateProjectMemoryRequest,
     CreateProjectRequest,
     Project,
     ProjectDocument,
+    ProjectLink,
     ProjectMemory,
     ProjectResources,
     UpdateProjectMemoryRequest,
@@ -80,6 +82,7 @@ async def create_project(
             name=body.name,
             instructions=body.instructions or "",
             skill_references=body.skill_references or (),
+            knowledge_references=body.knowledge_references or (),
         )
     except ConflictError as error:
         raise _conflict(error) from error
@@ -97,6 +100,7 @@ async def update_project(
         body.name is None
         and body.instructions is None
         and body.skill_references is None
+        and body.knowledge_references is None
         and body.pinned is None
         and body.archived is None
     ):
@@ -109,6 +113,7 @@ async def update_project(
             name=body.name,
             instructions=body.instructions,
             skill_references=body.skill_references,
+            knowledge_references=body.knowledge_references,
             pinned=body.pinned,
             archived=body.archived,
         )
@@ -265,6 +270,55 @@ async def detach_project_document(
             user_id=identity.user_id,
             project_id=project_id,
             input_artifact_id=input_artifact_id,
+        )
+    except NotFoundError as error:
+        raise _not_found(error) from error
+    except ConflictError as error:
+        raise _conflict(error) from error
+
+
+@router.post(
+    "/{project_id}/links",
+    response_model=ProjectLink,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_project_link(
+    project_id: str,
+    body: CreateProjectLinkRequest,
+    identity: Annotated[Identity, Depends(require_identity)],
+    service: Annotated[ProjectService, Depends(get_project_service)],
+) -> ProjectLink:
+    ensure_permission(identity, "tasks:write")
+    try:
+        return await service.add_link(
+            tenant_id=identity.tenant_id,
+            user_id=identity.user_id,
+            project_id=project_id,
+            url=body.url,
+            title=body.title,
+        )
+    except NotFoundError as error:
+        raise _not_found(error) from error
+    except ConflictError as error:
+        raise _conflict(error) from error
+
+
+@router.delete(
+    "/{project_id}/links/{link_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+async def delete_project_link(
+    project_id: str,
+    link_id: str,
+    identity: Annotated[Identity, Depends(require_identity)],
+    service: Annotated[ProjectService, Depends(get_project_service)],
+) -> None:
+    ensure_permission(identity, "tasks:write")
+    try:
+        await service.delete_link(
+            tenant_id=identity.tenant_id,
+            user_id=identity.user_id,
+            project_id=project_id,
+            link_id=link_id,
         )
     except NotFoundError as error:
         raise _not_found(error) from error

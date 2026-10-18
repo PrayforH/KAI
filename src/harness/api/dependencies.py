@@ -121,7 +121,7 @@ from harness.projects.repositories import (
     InMemoryProjectRepository,
     InMemoryProjectResourceRepository,
 )
-from harness.projects.service import ProjectService
+from harness.projects.service import ProjectService, project_knowledge_resolver
 from harness.quality.controller import QualitySyncController
 from harness.quality.langfuse import DisabledQualityExporter
 from harness.quality.queue import QualityTaskQueue
@@ -1027,6 +1027,7 @@ def build_memory_container(
         resources=InMemoryProjectResourceRepository(),
         clock=clock,
         id_generator=id_generator,
+        knowledge_resolver=project_knowledge_resolver(knowledge.resolve_bindings),
     )
     project_service.configure_task_project_clearer(thread_bindings.clear_project)
     project_service.configure_task_project_writer(

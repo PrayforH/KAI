@@ -50,24 +50,36 @@ describe("project-grouped task list", () => {
     expect(projectHome).toContain("onComposerSubmitted");
     expect(projectHome).not.toContain("loadTasks");
     expect(projectHome).not.toContain("最近");
-    expect(projectHome).toContain("指令");
+    expect(projectHome).not.toContain('title="指令"');
+    expect(projectHome).toContain('title="知识库"');
     expect(projectHome).toContain("文件和资源");
     expect(projectHome).toContain("技能");
     expect(projectHome).toContain("记忆");
+    expect(projectHome).toContain("展开${title}");
     expect(projectHome).toContain("<ProjectSettingsDialog");
+    expect(sidebar).toContain("查看 ${project.name} 的文件");
+    expect(sidebar).toContain("<ProjectFilesDialog");
   });
 
-  it("exposes project files, skills, memories and documents in settings", () => {
-    const dialog = readFileSync(
-      join(process.cwd(), "src/components/project-settings-dialog.tsx"),
+  it("opens a dedicated dialog for each project resource card", () => {
+    const dialogs = readFileSync(
+      join(process.cwd(), "src/components/project-resource-dialogs.tsx"),
       "utf8",
     );
-    expect(dialog).toContain('aria-label="项目技能"');
-    expect(dialog).toContain("listPlatformSkills");
-    expect(dialog).toContain("skillReferences");
-    expect(dialog).toContain("查看");
-    expect(dialog).toContain("/content?inline=1");
-    expect(client).toContain("skillReferences?: string[]");
+    expect(dialogs).toContain("export function ProjectKnowledgeDialog");
+    expect(dialogs).toContain("export function ProjectSkillsDialog");
+    expect(dialogs).toContain("export function ProjectMemoriesDialog");
+    expect(dialogs).toContain("export function ProjectFilesDialog");
+    expect(dialogs).toContain("搜索文件和资源");
+    expect(dialogs).toContain("搜索技能、标签或来源");
+    expect(dialogs).toContain("搜索记忆");
+    expect(dialogs).toContain("添加网页");
+    expect(dialogs).toContain("project_id=${encodeURIComponent(project.projectId)}");
+    expect(dialogs).toContain("任务产物");
+    expect(dialogs).toContain("/content?inline=1");
+    expect(client).toContain("knowledgeReferences?: string[]");
+    expect(client).toContain("addLink(projectId: string");
+    expect(client).toContain("deleteLink(projectId: string");
   });
 
   it("keeps tasks visible when their project disappears", () => {

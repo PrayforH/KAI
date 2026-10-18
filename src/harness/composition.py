@@ -95,7 +95,7 @@ from harness.projects.pg_repositories import (
     PostgresProjectRepository,
     PostgresProjectResourceRepository,
 )
-from harness.projects.service import ProjectService
+from harness.projects.service import ProjectService, project_knowledge_resolver
 from harness.quality.controller import QualitySyncController
 from harness.quality.langfuse import DisabledQualityExporter, LangfuseQualityExporter
 from harness.quality.queue import QualityTaskQueue
@@ -1028,6 +1028,7 @@ def build_production_container(
         resources=PostgresProjectResourceRepository(sessions),
         clock=clock,
         id_generator=ids,
+        knowledge_resolver=project_knowledge_resolver(knowledge.resolve_bindings),
     )
     automation_service = AutomationService(
         automation_task_repository,

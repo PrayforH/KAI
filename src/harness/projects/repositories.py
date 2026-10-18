@@ -6,7 +6,7 @@ import asyncio
 from typing import Protocol
 
 from harness.core.errors import ConflictError, NotFoundError
-from harness.projects.models import Project, ProjectDocument, ProjectMemory
+from harness.projects.models import Project, ProjectDocument, ProjectLink, ProjectMemory
 
 
 class ProjectRepository(Protocol):
@@ -37,6 +37,13 @@ class ProjectResourceRepository(Protocol):
     async def add_document(self, document: ProjectDocument) -> None: ...
     async def delete_document(
         self, tenant_id: str, project_id: str, input_artifact_id: str
+    ) -> None: ...
+    async def list_links(
+        self, tenant_id: str, project_id: str
+    ) -> list[ProjectLink]: ...
+    async def add_link(self, link: ProjectLink) -> None: ...
+    async def delete_link(
+        self, tenant_id: str, project_id: str, link_id: str
     ) -> None: ...
     async def delete_for_project(self, tenant_id: str, project_id: str) -> None: ...
 
@@ -115,6 +122,7 @@ class InMemoryProjectResourceRepository:
     def __init__(self) -> None:
         self._memories: dict[tuple[str, str], ProjectMemory] = {}
         self._documents: dict[tuple[str, str, str], ProjectDocument] = {}
+        self._links: dict[tuple[str, str], ProjectLink] = {}
         self._lock = asyncio.Lock()
 
     async def list_memories(
@@ -196,6 +204,35 @@ class InMemoryProjectResourceRepository:
                 raise NotFoundError(f"project document not found: {input_artifact_id}")
             del self._documents[key]
 
+    async def list_links(
+        self, tenant_id: str, project_id: str
+    ) -> list[ProjectLink]:
+        return sorted(
+            (
+                item
+                for item in self._links.values()
+                if item.tenant_id == tenant_id and item.project_id == project_id
+            ),
+            key=lambda item: (item.created_at, item.link_id),
+        )
+
+    async def add_link(self, link: ProjectLink) -> None:
+        async with self._lock:
+            key = (link.tenant_id, link.link_id)
+            if key in self._links:
+                raise ConflictError(f"project link already exists: {link.link_id}")
+            self._links[key] = link
+
+    async def delete_link(
+        self, tenant_id: str, project_id: str, link_id: str
+    ) -> None:
+        async with self._lock:
+            key = (tenant_id, link_id)
+            current = self._links.get(key)
+            if current is None or current.project_id != project_id:
+                raise NotFoundError(f"project link not found: {link_id}")
+            del self._links[key]
+
     async def delete_for_project(self, tenant_id: str, project_id: str) -> None:
         async with self._lock:
             for key in [
@@ -210,3 +247,9 @@ class InMemoryProjectResourceRepository:
                 if item.tenant_id == tenant_id and item.project_id == project_id
             ]:
                 del self._documents[key]
+            for key in [
+                key
+                for key, item in self._links.items()
+                if item.tenant_id == tenant_id and item.project_id == project_id
+            ]:
+                del self._links[key]

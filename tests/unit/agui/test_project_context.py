@@ -113,6 +113,8 @@ async def test_run_captures_instructions_memories_and_documents(tmp_path: Path) 
         "memories": 1,
         "documents": 1,
         "skills": 1,
+        "knowledge": 0,
+        "links": 0,
     }
     assert run_input["input_artifact_ids"] == []
     assert run_input["project_document_ids"] == [artifact.input_artifact_id]

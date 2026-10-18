@@ -5,6 +5,12 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAuth } from "./auth-provider";
 import { ProjectSettingsDialog } from "./project-settings-dialog";
+import {
+  ProjectFilesDialog,
+  ProjectKnowledgeDialog,
+  ProjectMemoriesDialog,
+  ProjectSkillsDialog,
+} from "./project-resource-dialogs";
 import { AssistantRuntimeShell } from "./assistant-runtime-shell";
 import { AgentThread } from "./agent-thread";
 import { useRunViewModel } from "../lib/activity-store";
@@ -17,7 +23,9 @@ import {
   studioClient,
   type ApiProject,
   type ApiProjectDocument,
+  type ApiProjectLink,
   type ApiProjectMemory,
+  type StudioKnowledgeBase,
   type StudioPlatformSkillPackage,
 } from "../lib/studio-client";
 import styles from "./project-home.module.css";
@@ -57,6 +65,7 @@ function ResourceCard({
   description,
   action,
   onAction,
+  onExpand,
   count,
   children,
 }: {
@@ -64,14 +73,28 @@ function ResourceCard({
   description: string;
   action: string;
   onAction: () => void;
+  onExpand: () => void;
   count?: number;
   children?: ReactNode;
 }) {
   return (
     <section className={styles.card}>
       <div className={styles.cardHead}>
-        <h2>{title}</h2>
-        {typeof count === "number" && count > 0 ? <span className={styles.count}>{count}</span> : null}
+        <div className={styles.cardTitle}>
+          <h2>{title}</h2>
+          {typeof count === "number" && count > 0 ? <span className={styles.count}>{count}</span> : null}
+        </div>
+        <button
+          type="button"
+          className={styles.expand}
+          aria-label={`展开${title}`}
+          title={`展开${title}`}
+          onClick={onExpand}
+        >
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M6 3h7v7M13 3 8 8M4 5h2M4 8v3h3" />
+          </svg>
+        </button>
       </div>
       <p className={styles.cardDescription}>{description}</p>
       {children}
@@ -89,6 +112,8 @@ export function ProjectHome({ projectId }: { projectId: string }) {
   const [project, setProject] = useState<ApiProject | null>(null);
   const [memories, setMemories] = useState<ApiProjectMemory[]>([]);
   const [documents, setDocuments] = useState<ApiProjectDocument[]>([]);
+  const [links, setLinks] = useState<ApiProjectLink[]>([]);
+  const [knowledgeBases, setKnowledgeBases] = useState<StudioKnowledgeBase[]>([]);
   const [skillCatalog, setSkillCatalog] = useState<StudioPlatformSkillPackage[]>([]);
   const [defaultAgent, setDefaultAgent] = useState<TaskAgent | null>(null);
   const [modelRoutes, setModelRoutes] = useState<TaskModelRoute[]>([]);
@@ -96,20 +121,25 @@ export function ProjectHome({ projectId }: { projectId: string }) {
   const [threadId, setThreadId] = useState<string | null>(null);
   const [threadPersisted, setThreadPersisted] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [activeDialog, setActiveDialog] = useState<
+    "knowledge" | "files" | "skills" | "memories" | "settings" | null
+  >(null);
   const [error, setError] = useState("");
 
   const reload = useCallback(async () => {
     setError("");
     try {
-      const [resources, skillCatalogValue] = await Promise.all([
+      const [resources, skillCatalogValue, knowledgeCatalog] = await Promise.all([
         projectClient.resources(projectId),
         studioClient.listPlatformSkills().catch(() => ({ revision: 0, packages: [] })),
+        studioClient.listKnowledgeBases().catch(() => []),
       ]);
       setProject(resources.project);
       setMemories(resources.memories);
       setDocuments(resources.documents);
+      setLinks(resources.links ?? []);
       setSkillCatalog(skillCatalogValue.packages);
+      setKnowledgeBases(knowledgeCatalog);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "读取项目失败，请稍后重试。");
     } finally {
@@ -151,6 +181,14 @@ export function ProjectHome({ projectId }: { projectId: string }) {
     }));
   }, [project?.skillReferences, skillCatalog]);
 
+  const knowledge = useMemo(() => {
+    const byReference = new Map(knowledgeBases.map((item) => [item.reference, item]));
+    return (project?.knowledgeReferences ?? []).map((reference) => ({
+      reference,
+      base: byReference.get(reference),
+    }));
+  }, [project?.knowledgeReferences, knowledgeBases]);
+
   if (loading) {
     return (
       <div className={styles.page} aria-busy="true">
@@ -185,7 +223,7 @@ export function ProjectHome({ projectId }: { projectId: string }) {
             </p>
           </div>
         </div>
-        <button type="button" className={styles.settingsButton} onClick={() => setSettingsOpen(true)}>
+        <button type="button" className={styles.settingsButton} onClick={() => setActiveDialog("settings")}>
           项目设置
         </button>
       </header>
@@ -229,26 +267,33 @@ export function ProjectHome({ projectId }: { projectId: string }) {
 
         <aside className={styles.rail} aria-label="项目资源">
           <ResourceCard
-            title="指令"
-            description="指导项目中的智能体如何响应该项目的所有任务。"
-            action={project.instructions?.trim() ? "编辑" : "添加"}
-            onAction={() => setSettingsOpen(true)}
+            title="知识库"
+            description="绑定知识库，让项目里的每个任务都能检索同一批资料。"
+            action={knowledge.length ? "配置" : "添加"}
+            count={knowledge.length}
+            onAction={() => setActiveDialog("knowledge")}
+            onExpand={() => setActiveDialog("knowledge")}
           >
-            {project.instructions?.trim()
-              ? <p className={styles.previewText}>{project.instructions}</p>
-              : <p className={styles.muted}>还没有项目指令。</p>}
+            {knowledge.length ? (
+              <ul className={styles.chips}>
+                {knowledge.slice(0, 6).map(({ reference, base }) => (
+                  <li key={reference} title={reference}>{base?.displayName ?? reference}</li>
+                ))}
+              </ul>
+            ) : <p className={styles.muted}>还没有绑定知识库。</p>}
           </ResourceCard>
 
           <ResourceCard
             title="文件和资源"
-            description="附加文件和资料，供项目的所有任务使用。"
-            action="上传"
-            count={documents.length}
-            onAction={() => setSettingsOpen(true)}
+            description="附加文件和网页，供项目的所有任务使用。"
+            action="添加"
+            count={documents.length + links.length}
+            onAction={() => setActiveDialog("files")}
+            onExpand={() => setActiveDialog("files")}
           >
-            {documents.length ? (
+            {documents.length + links.length ? (
               <ul className={styles.fileList}>
-                {documents.slice(0, 4).map((document) => (
+                {documents.slice(0, 3).map((document) => (
                   <li key={document.inputArtifactId}>
                     <span className={styles.fileGlyph} aria-hidden="true">▤</span>
                     <span className={styles.fileName} title={document.name}>{document.name}</span>
@@ -262,9 +307,25 @@ export function ProjectHome({ projectId }: { projectId: string }) {
                     </a>
                   </li>
                 ))}
-                {documents.length > 4 && <li className={styles.moreLine}>还有 {documents.length - 4} 个文件</li>}
+                {links.slice(0, 3).map((link) => (
+                  <li key={link.linkId}>
+                    <span className={styles.fileGlyph} aria-hidden="true">↗</span>
+                    <span className={styles.fileName} title={link.url}>{link.title || link.url}</span>
+                    <a
+                      href={link.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      打开
+                    </a>
+                  </li>
+                ))}
+                {documents.length + links.length > 6 && (
+                  <li className={styles.moreLine}>还有 {documents.length + links.length - 6} 项</li>
+                )}
               </ul>
-            ) : <p className={styles.muted}>还没有附加文件。</p>}
+            ) : <p className={styles.muted}>还没有附加文件或网页。</p>}
           </ResourceCard>
 
           <ResourceCard
@@ -272,7 +333,8 @@ export function ProjectHome({ projectId }: { projectId: string }) {
             description="在相关情况下跨任务复用已经跑通的工作流。"
             action="添加"
             count={skills.length}
-            onAction={() => setSettingsOpen(true)}
+            onAction={() => setActiveDialog("skills")}
+            onExpand={() => setActiveDialog("skills")}
           >
             {skills.length ? (
               <ul className={styles.chips}>
@@ -288,7 +350,8 @@ export function ProjectHome({ projectId }: { projectId: string }) {
             description="长期有效的事实和决定，会随项目带给每个新任务。"
             action="添加"
             count={memories.length}
-            onAction={() => setSettingsOpen(true)}
+            onAction={() => setActiveDialog("memories")}
+            onExpand={() => setActiveDialog("memories")}
           >
             {memories.length ? (
               <ul className={styles.memoryList}>
@@ -300,10 +363,40 @@ export function ProjectHome({ projectId }: { projectId: string }) {
         </aside>
       </div>
 
-      {settingsOpen && (
+      {activeDialog === "knowledge" && (
+        <ProjectKnowledgeDialog
+          project={project}
+          onClose={() => setActiveDialog(null)}
+          onChanged={() => void reload()}
+        />
+      )}
+      {activeDialog === "files" && (
+        <ProjectFilesDialog
+          project={project}
+          mode="manage"
+          onClose={() => setActiveDialog(null)}
+          onChanged={() => void reload()}
+        />
+      )}
+      {activeDialog === "skills" && (
+        <ProjectSkillsDialog
+          project={project}
+          packages={skillCatalog}
+          onClose={() => setActiveDialog(null)}
+          onChanged={() => void reload()}
+        />
+      )}
+      {activeDialog === "memories" && (
+        <ProjectMemoriesDialog
+          project={project}
+          onClose={() => setActiveDialog(null)}
+          onChanged={() => void reload()}
+        />
+      )}
+      {activeDialog === "settings" && (
         <ProjectSettingsDialog
           project={project}
-          onClose={() => { setSettingsOpen(false); void reload(); }}
+          onClose={() => { setActiveDialog(null); void reload(); }}
           onChanged={() => { void reload(); }}
           onRemoved={() => router.push("/")}
         />
