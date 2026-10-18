@@ -4,7 +4,6 @@ import { isFailedRunStatus } from "../lib/run-status";
 import { SidebarIcon } from "./sidebar-icon";
 import Link from "next/link";
 import { ProjectCreateDialog } from "./project-create-dialog";
-import { ProjectSettingsDialog } from "./project-settings-dialog";
 import { useConfirmationDialog } from "./confirmation-dialog";
 import { PanelResizeHandle } from "./panel-resize-handle";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
@@ -70,15 +69,6 @@ function PinIcon() {
     <svg viewBox="0 0 16 16" aria-hidden="true">
       <path d="m5 2.5 6 0-1 4 2 2v1H4v-1l2-2z" />
       <path d="M8 9.5V14" />
-    </svg>
-  );
-}
-
-function EditIcon() {
-  return (
-    <svg viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M3 12.5 4 9l6.7-6.7a1.2 1.2 0 0 1 1.7 1.7L5.7 10.7Z" />
-      <path d="M9.5 3.5 12.5 6.5" />
     </svg>
   );
 }
@@ -176,7 +166,6 @@ export function TaskSidebar({
   const [projectCreateError, setProjectCreateError] = useState("");
   const [projectDialogOpen, setProjectDialogOpen] = useState(false);
   const [projectMenuId, setProjectMenuId] = useState<string | null>(null);
-  const [settingsProject, setSettingsProject] = useState<ApiProject | null>(null);
   const [pinningProjectId, setPinningProjectId] = useState("");
   const projectCreationPending = useRef(false);
   const { requestConfirmation, confirmationDialog } = useConfirmationDialog();
@@ -685,25 +674,6 @@ export function TaskSidebar({
                           aria-label={`项目操作 ${project.name}`}
                           data-project-menu={project.projectId}
                         >
-                          <button
-                            type="button"
-                            role="menuitem"
-                            onClick={() => void toggleProjectPin(project)}
-                          >
-                            <PinIcon />
-                            <span>{project.pinnedAt ? "取消置顶" : "置顶"}</span>
-                          </button>
-                          <button
-                            type="button"
-                            role="menuitem"
-                            onClick={() => {
-                              setProjectMenuId(null);
-                              setSettingsProject(project);
-                            }}
-                          >
-                            <EditIcon />
-                            <span>编辑项目</span>
-                          </button>
                           <Link
                             role="menuitem"
                             href={`/studio/projects/${encodeURIComponent(project.projectId)}`}
@@ -712,6 +682,14 @@ export function TaskSidebar({
                             <EyeIcon />
                             <span>查看项目</span>
                           </Link>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => void toggleProjectPin(project)}
+                          >
+                            <PinIcon />
+                            <span>{project.pinnedAt ? "取消置顶" : "置顶"}</span>
+                          </button>
                           <button
                             type="button"
                             role="menuitem"
@@ -841,16 +819,6 @@ export function TaskSidebar({
         onCreated={(project) => {
           setExpandedTaskGroups((current) => new Set(current).add(`project:${project.projectId}`));
           onProjectsChanged?.();
-        }}
-      />}
-      {settingsProject && <ProjectSettingsDialog
-        project={settingsProject}
-        onClose={() => setSettingsProject(null)}
-        onChanged={() => onProjectsChanged?.()}
-        onRemoved={() => {
-          setSettingsProject(null);
-          onProjectsChanged?.();
-          notifyTaskListChanged();
         }}
       />}
       {confirmationDialog}
