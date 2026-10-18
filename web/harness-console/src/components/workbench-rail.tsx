@@ -341,7 +341,7 @@ export function WorkbenchRail({
               <button
                 type="button"
                 className="rail-bar-button"
-                aria-label="项目资源"
+                aria-label="项目资源视图"
                 title="项目资源"
                 aria-current={railView === "project" ? "page" : undefined}
                 onClick={() => setRailView("project")}
