@@ -1539,30 +1539,10 @@ body.codex-theme-v1:has(.console-shell) .aui-thread-root {
   --aui-thread-max-width: 800px;
 }
 
-/* Project tasks trade the fixed 800px task column for the room left by the
-   project rail, so the conversation and composer grow with the viewport. */
-body.codex-theme-v1:has(.console-shell) [data-project-task] .aui-thread-root {
-  --aui-thread-max-width: 960px;
-}
-
-body.codex-theme-v1:has(.console-shell) [data-project-task] .aui-thread-viewport-footer,
-body.codex-theme-v1:has(.console-shell) [data-project-task] .harness-composer-shell {
-  width: min(960px, 100%);
-  max-width: 960px;
-}
-
-body.codex-theme-v1:has(.console-shell) [data-project-task] .aui-thread-root .aui-thread-viewport {
-  padding-inline: clamp(16px, 2vw, 32px);
-}
-
 /* A project task starts as a launcher: keep its composer at the bottom. */
 body.codex-theme-v1:has(.console-shell) [data-project-task] .aui-thread-viewport:has(.user-task-welcome) {
   justify-content: flex-end;
   padding-bottom: 18px;
-}
-
-body.codex-theme-v1:has(.console-shell) [data-project-task] .workspace-stage {
-  --preferred-rail-width: 280px;
 }
 
 body.codex-theme-v1:has(.console-shell) .aui-thread-root .aui-thread-viewport {

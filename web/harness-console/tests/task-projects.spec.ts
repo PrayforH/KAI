@@ -48,9 +48,12 @@ describe("project-grouped task list", () => {
     expect(sidebar).not.toContain("编辑项目");
     expect(sidebar).toContain("useConfirmationDialog");
     expect(sidebar).toContain("查看 ${project.name} 的文件");
-    expect(sidebar).toContain("<ProjectFilesDialog");
+    expect(sidebar).toContain("onOpenProjectFiles?.(project)");
+    expect(sidebar).not.toContain("<ProjectFilesDialog");
     expect(projectRoute).toContain('redirect("/")');
     expect(page).toContain("projectId={activeProjectId}");
+    expect(page).toContain("onOpenProjectFiles");
+    expect(page).toContain("viewRequest={railViewRequest}");
     expect(workbench).toContain("projectId");
     expect(workbench).toContain("<ProjectResourcesPanel projectId={projectId} />");
   });

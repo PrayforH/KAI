@@ -148,6 +148,7 @@ export function WorkbenchRail({
   onToggleExpanded,
   threadId,
   projectId,
+  viewRequest,
   previewRequest,
   runPhase,
   workspace,
@@ -161,6 +162,7 @@ export function WorkbenchRail({
   onToggleExpanded: () => void;
   threadId: string;
   projectId?: string | null;
+  viewRequest?: { view: "files" | "project"; nonce: number } | null;
   previewRequest?: (PreviewTarget & { nonce: number }) | null;
   /** A phase change means the run may have written new artifacts. */
   runPhase: string | null;
@@ -197,6 +199,14 @@ export function WorkbenchRail({
     ...current,
     index: Math.min(current.items.length - 1, Math.max(0, current.index + delta)),
   }));
+
+  useEffect(() => {
+    if (!viewRequest) return;
+    setRailView(viewRequest.view);
+    if (viewRequest.view === "files") {
+      setTrail({ items: [null], index: 0 });
+    }
+  }, [viewRequest?.nonce]);
 
   // The transcript's artifact cards open their file here instead of a new tab.
   useEffect(() => {

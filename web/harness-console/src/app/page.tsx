@@ -275,6 +275,11 @@ function AuthenticatedHome() {
   const [taskSidebarOpen, setTaskSidebarOpen] = useState(true);
   const [taskRailOpen, setTaskRailOpen] = useState(false);
   const [railExpanded, setRailExpanded] = useState(false);
+  const [railViewRequest, setRailViewRequest] = useState<{
+    view: "files" | "project";
+    nonce: number;
+  } | null>(null);
+  const railViewNonce = useRef(0);
   const [railPreview, setRailPreview] = useState<(PreviewTarget & { nonce: number }) | null>(null);
   const previewNonce = useRef(0);
   // Artifact cards in the transcript ask the rail to show that file.
@@ -623,6 +628,24 @@ function AuthenticatedHome() {
     focusTaskComposer();
   }
 
+  async function openProjectFiles(project: ApiProject) {
+    let target =
+      currentTask?.project_id === project.projectId ? currentTask : null;
+    if (!target) {
+      const tasks = await loadTasks();
+      target =
+        tasks
+          .filter((task) => task.project_id === project.projectId)
+          .sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at))[0] ??
+        null;
+    }
+    if (!target) return;
+    if (target.thread_id !== threadId) switchTask(target);
+    setTaskRailOpen(true);
+    railViewNonce.current += 1;
+    setRailViewRequest({ view: "files", nonce: railViewNonce.current });
+  }
+
   const startNewTask = useCallback(() => {
     const candidate = selectedAgent && taskAgents.some(
       (agent) => agentItemKey(agent) === agentItemKey(selectedAgent),
@@ -766,6 +789,7 @@ function AuthenticatedHome() {
           onSelect={switchTask}
           onNewTask={startNewTask}
           onNewTaskWithProject={startTaskInProject}
+          onOpenProjectFiles={(project) => void openProjectFiles(project)}
           agentLabels={agentDisplayLabels}
           projects={projects}
           onProjectsChanged={refreshProjects}
@@ -909,6 +933,7 @@ function AuthenticatedHome() {
           runPhase={runView?.phase ?? null}
           threadId={threadId}
           projectId={activeProjectId}
+          viewRequest={railViewRequest}
           previewRequest={railPreview}
         />
       </div>

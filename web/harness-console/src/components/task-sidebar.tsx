@@ -4,7 +4,6 @@ import { isFailedRunStatus } from "../lib/run-status";
 import { SidebarIcon } from "./sidebar-icon";
 import Link from "next/link";
 import { ProjectCreateDialog } from "./project-create-dialog";
-import { ProjectFilesDialog } from "./project-resource-dialogs";
 import { useConfirmationDialog } from "./confirmation-dialog";
 import { PanelResizeHandle } from "./panel-resize-handle";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
@@ -140,6 +139,7 @@ export function TaskSidebar({
   onSelect,
   onNewTask,
   onNewTaskWithProject,
+  onOpenProjectFiles,
   searchControl,
   activeNav = "tasks",
   agentLabels,
@@ -154,6 +154,8 @@ export function TaskSidebar({
   onNewTask: () => void;
   /** Persist a new task in this project, including when it has no tasks yet. */
   onNewTaskWithProject?: (project: ApiProject) => Promise<void>;
+  /** Reveal a project's generated files in the existing task artifact rail. */
+  onOpenProjectFiles?: (project: ApiProject) => void;
   searchControl?: ReactNode;
   /** Which workspace nav item is highlighted; defaults to the task page. */
   activeNav?: WorkspaceId;
@@ -175,7 +177,6 @@ export function TaskSidebar({
   const [projectCreateError, setProjectCreateError] = useState("");
   const [projectDialogOpen, setProjectDialogOpen] = useState(false);
   const [projectMenuId, setProjectMenuId] = useState<string | null>(null);
-  const [filesProject, setFilesProject] = useState<ApiProject | null>(null);
   const [pinningProjectId, setPinningProjectId] = useState("");
   const projectCreationPending = useRef(false);
   const { requestConfirmation, confirmationDialog } = useConfirmationDialog();
@@ -723,7 +724,7 @@ export function TaskSidebar({
                       title="查看项目文件"
                       onClick={() => {
                         setProjectMenuId(null);
-                        setFilesProject(project);
+                        onOpenProjectFiles?.(project);
                       }}
                     >
                       <FilesIcon />
@@ -847,13 +848,6 @@ export function TaskSidebar({
           onProjectsChanged?.();
         }}
       />}
-      {filesProject && (
-        <ProjectFilesDialog
-          project={filesProject}
-          mode="browse"
-          onClose={() => setFilesProject(null)}
-        />
-      )}
       {confirmationDialog}
     </aside>
   );
