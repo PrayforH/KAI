@@ -1,13 +1,6 @@
-import type { Metadata } from "next";
-import { ProjectHome } from "../../../../components/project-home";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "项目" };
-
-export default async function ProjectPage({
-  params,
-}: {
-  params: Promise<{ projectId: string }>;
-}) {
-  const { projectId } = await params;
-  return <ProjectHome projectId={projectId} />;
+/** Projects no longer own a page; their tasks run in the main conversation. */
+export default function ProjectPage() {
+  redirect("/");
 }

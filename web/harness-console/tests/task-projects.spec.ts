@@ -12,8 +12,12 @@ const headerActions = readFileSync(
 );
 const page = readFileSync(join(process.cwd(), "src/app/page.tsx"), "utf8");
 const client = readFileSync(join(process.cwd(), "src/lib/studio-client.ts"), "utf8");
-const projectHome = readFileSync(
-  join(process.cwd(), "src/components/project-home.tsx"),
+const workbench = readFileSync(
+  join(process.cwd(), "src/components/workbench-rail.tsx"),
+  "utf8",
+);
+const projectPanel = readFileSync(
+  join(process.cwd(), "src/components/project-resources-panel.tsx"),
   "utf8",
 );
 const projectRoute = readFileSync(
@@ -35,35 +39,31 @@ describe("project-grouped task list", () => {
     expect(sidebar).toContain('aria-label="任务"');
   });
 
-  it("opens a project menu with view, pin and remove", () => {
+  it("triggers a project task, pins and removes from the project menu", () => {
     expect(sidebar).toContain('aria-label={`项目操作 ${project.name}`}');
+    expect(sidebar).toContain("触发任务");
     expect(sidebar).toContain("置顶");
-    expect(sidebar).toContain("查看项目");
     expect(sidebar).toContain("移除项目");
+    expect(sidebar).not.toContain("<span>查看项目</span>");
     expect(sidebar).not.toContain("编辑项目");
     expect(sidebar).toContain("useConfirmationDialog");
-    expect(sidebar).toContain("/studio/projects/${encodeURIComponent(project.projectId)}");
-    expect(projectRoute).toContain("<ProjectHome projectId={projectId} />");
-    expect(projectHome).toContain("<AssistantRuntimeShell");
-    expect(projectHome).toContain("projectId={projectId}");
-    expect(projectHome).toContain("<AgentThread");
-    expect(projectHome).toContain("onComposerSubmitted");
-    expect(projectHome).toContain('data-project-home="true"');
-    expect(readFileSync(join(process.cwd(), "src/app/web-codex.css"), "utf8")).toContain(
-      "[data-project-home] .aui-thread-viewport:has(.user-task-welcome)",
-    );
-    expect(projectHome).not.toContain("loadTasks");
-    expect(projectHome).not.toContain("最近");
-    expect(projectHome).not.toContain('title="指令"');
-    expect(projectHome).toContain('title="知识库"');
-    expect(projectHome).toContain("文件和资源");
-    expect(projectHome).toContain("技能");
-    expect(projectHome).toContain("记忆");
-    expect(projectHome).toContain("展开${title}");
-    expect(projectHome).not.toContain("<ProjectSettingsDialog");
-    expect(projectHome).not.toContain("项目设置");
     expect(sidebar).toContain("查看 ${project.name} 的文件");
     expect(sidebar).toContain("<ProjectFilesDialog");
+    expect(projectRoute).toContain('redirect("/")');
+    expect(page).toContain("projectId={activeProjectId}");
+    expect(workbench).toContain("projectId");
+    expect(workbench).toContain("<ProjectResourcesPanel projectId={projectId} />");
+  });
+
+  it("shows project knowledge, files and skills beside the task conversation", () => {
+    expect(projectPanel).toContain('aria-label="项目资源"');
+    expect(projectPanel).toContain("知识库");
+    expect(projectPanel).toContain("文件和资源");
+    expect(projectPanel).toContain("技能");
+    expect(projectPanel).not.toContain("记忆");
+    expect(projectPanel).toContain("<ProjectKnowledgeDialog");
+    expect(projectPanel).toContain("<ProjectFilesDialog");
+    expect(projectPanel).toContain("<ProjectSkillsDialog");
   });
 
   it("opens a dedicated dialog for each project resource card", () => {
@@ -73,11 +73,9 @@ describe("project-grouped task list", () => {
     );
     expect(dialogs).toContain("export function ProjectKnowledgeDialog");
     expect(dialogs).toContain("export function ProjectSkillsDialog");
-    expect(dialogs).toContain("export function ProjectMemoriesDialog");
     expect(dialogs).toContain("export function ProjectFilesDialog");
     expect(dialogs).toContain("搜索文件和资源");
     expect(dialogs).toContain("搜索技能、标签或来源");
-    expect(dialogs).toContain("搜索记忆");
     expect(dialogs).toContain("添加网页");
     expect(dialogs).toContain("project_id=${encodeURIComponent(project.projectId)}");
     expect(dialogs).toContain("任务产物");

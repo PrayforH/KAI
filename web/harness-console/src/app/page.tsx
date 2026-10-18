@@ -295,6 +295,17 @@ function AuthenticatedHome() {
   const [localThreadId, setLocalThreadId] = useState<string | null>(null);
   const [currentTaskTitle, setCurrentTaskTitle] = useState("新任务");
   const [currentTask, setCurrentTask] = useState<TaskSummary | null>(null);
+  const activeProjectId = currentTask?.project_id ?? null;
+  const openedProjectRail = useRef<string | null>(null);
+  useEffect(() => {
+    if (!activeProjectId) {
+      openedProjectRail.current = null;
+      return;
+    }
+    if (openedProjectRail.current === activeProjectId) return;
+    openedProjectRail.current = activeProjectId;
+    setTaskRailOpen(true);
+  }, [activeProjectId]);
   const [currentThreadState, setCurrentThreadState] =
     useState<TaskThreadState>("unknown");
   const [activeSkillLaunch, setActiveSkillLaunch] =
@@ -731,6 +742,7 @@ function AuthenticatedHome() {
       className={`console-shell${taskRailOpen ? " is-rail-open" : ""}${taskRailOpen && railExpanded ? " is-rail-expanded" : ""}`}
       id="main-content"
       data-task-thread-state={currentThreadState}
+      data-project-task={activeProjectId ? "true" : undefined}
     >
       <div
         className={`workspace-stage ${taskSidebarOpen ? "tasks-open" : ""}`}
@@ -896,6 +908,7 @@ function AuthenticatedHome() {
           onToggleExpanded={() => setRailExpanded((current) => !current)}
           runPhase={runView?.phase ?? null}
           threadId={threadId}
+          projectId={activeProjectId}
           previewRequest={railPreview}
         />
       </div>

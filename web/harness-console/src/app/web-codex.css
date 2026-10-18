@@ -1539,6 +1539,18 @@ body.codex-theme-v1:has(.console-shell) .aui-thread-root {
   --aui-thread-max-width: 800px;
 }
 
+/* Project tasks trade the fixed 800px task column for the room left by the
+   project rail, so the conversation and composer grow with the viewport. */
+body.codex-theme-v1:has(.console-shell) [data-project-task] .aui-thread-root {
+  --aui-thread-max-width: 960px;
+}
+
+body.codex-theme-v1:has(.console-shell) [data-project-task] .aui-thread-viewport-footer,
+body.codex-theme-v1:has(.console-shell) [data-project-task] .harness-composer-shell {
+  width: min(960px, 100%);
+  max-width: 960px;
+}
+
 body.codex-theme-v1:has(.console-shell) .aui-thread-root .aui-thread-viewport {
   padding-inline: clamp(24px, 5vw, 72px);
   scroll-behavior: auto;
@@ -2010,28 +2022,6 @@ body.codex-theme-v1:has(.console-shell) .aui-thread-viewport:has(.user-task-welc
   justify-content: center;
   padding-top: 0;
   padding-bottom: clamp(72px, 14vh, 168px);
-}
-
-/* On a project page the empty task is a launcher: keep the headline above a
-   bottom-anchored composer instead of optically centering the pair. */
-body.codex-theme-v1:has(.console-shell) [data-project-home] .aui-thread-viewport:has(.user-task-welcome) {
-  justify-content: flex-end;
-  padding-bottom: 18px;
-}
-
-/* The project conversation uses the whole center column instead of the
-   800px task column, including its composer. */
-body.codex-theme-v1:has(.console-shell) [data-project-home] .aui-thread-root .aui-thread-viewport {
-  padding-inline: clamp(16px, 2vw, 28px);
-}
-
-body.codex-theme-v1:has(.console-shell) [data-project-home] .aui-thread-viewport-footer {
-  width: 100%;
-  max-width: none;
-}
-
-body.codex-theme-v1:has(.console-shell) [data-project-home] .harness-composer-shell {
-  max-width: none;
 }
 
 body.codex-theme-v1:has(.console-shell) .aui-thread-viewport:has(.user-task-welcome) > :first-child {

@@ -83,11 +83,10 @@ function FilesIcon() {
   );
 }
 
-function EyeIcon() {
+function TriggerIcon() {
   return (
     <svg viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M1.8 8s2.2-3.7 6.2-3.7S14.2 8 14.2 8s-2.2 3.7-6.2 3.7S1.8 8 1.8 8Z" />
-      <circle cx="8" cy="8" r="1.7" />
+      <path d="M5 3.4 12 8l-7 4.6z" />
     </svg>
   );
 }
@@ -685,14 +684,18 @@ export function TaskSidebar({
                           aria-label={`项目操作 ${project.name}`}
                           data-project-menu={project.projectId}
                         >
-                          <Link
+                          <button
+                            type="button"
                             role="menuitem"
-                            href={`/studio/projects/${encodeURIComponent(project.projectId)}`}
-                            onClick={() => setProjectMenuId(null)}
+                            disabled={!onNewTaskWithProject || creatingProjectId !== null}
+                            onClick={() => {
+                              setProjectMenuId(null);
+                              void startProjectTask(project);
+                            }}
                           >
-                            <EyeIcon />
-                            <span>查看项目</span>
-                          </Link>
+                            <TriggerIcon />
+                            <span>触发任务</span>
+                          </button>
                           <button
                             type="button"
                             role="menuitem"
@@ -728,8 +731,8 @@ export function TaskSidebar({
                     <button
                         type="button"
                         className="task-project-add"
-                        aria-label={`在 ${project.name} 下新建任务`}
-                        title={`在 ${project.name} 下新建任务`}
+                        aria-label={`触发 ${project.name} 的项目任务`}
+                        title="触发任务"
                         disabled={!onNewTaskWithProject || creatingProjectId !== null}
                         aria-busy={creatingProjectId === project.projectId}
                         onClick={() => void startProjectTask(project)}

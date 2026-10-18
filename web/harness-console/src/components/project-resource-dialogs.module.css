@@ -304,47 +304,6 @@
   cursor: pointer;
 }
 .remove:hover { background: #3a2626; color: #f0b4b4; }
-.composer { display: flex; align-items: flex-end; gap: 8px; margin-bottom: 12px; }
-.composer textarea {
-  min-height: 42px;
-  flex: 1;
-  resize: vertical;
-  padding: 9px 11px;
-  border: 1px solid var(--codex-line, #3a3a3a);
-  border-radius: 10px;
-  background: transparent;
-  color: var(--codex-ink, #ececec);
-  font: inherit;
-  font-size: 12.5px;
-  line-height: 1.5;
-}
-.memoryList { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
-.memoryList li {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  padding: 11px 12px;
-  border: 1px solid var(--codex-line, #3a3a3a);
-  border-radius: 10px;
-}
-.memoryList li p {
-  margin: 0;
-  color: var(--codex-ink, #ececec);
-  font-size: 12.5px;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.rowActions { display: flex; align-items: center; gap: 8px; }
-.linkButton {
-  border: 0;
-  background: transparent;
-  color: var(--codex-muted, #9a9a9a);
-  font: inherit;
-  font-size: 11px;
-  cursor: pointer;
-}
-.linkButton:hover { color: var(--codex-ink, #ececec); text-decoration: underline; }
 @media (max-width: 640px) {
   .dialog { width: calc(100vw - 20px); max-height: calc(100dvh - 28px); }
   .head, .toolbar, .body, .footer { padding-left: 16px; padding-right: 16px; }
