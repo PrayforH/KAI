@@ -9,6 +9,8 @@ from typing import Any, cast
 import pytest
 from httpx import ASGITransport, AsyncClient, Response
 
+from harness.adapters.memory import InMemoryAguiThreadBindingRepository
+from harness.agui.service import AguiRunService
 from harness.api.app import create_app
 from harness.api.dependencies import ApiContainer, build_memory_container
 from harness.core.errors import PermissionDeniedError
@@ -327,7 +329,15 @@ async def test_automation_thread_reads_and_restores_its_presentation() -> None:
         0
     ].owner_user_id == "automation:daily-news"
     now = datetime.now(UTC)
-    await container.agui._bindings.add(
+    bindings = InMemoryAguiThreadBindingRepository()
+    container.agui = AguiRunService(
+        sessions=container.sessions,
+        runs=container.runs,
+        input_artifacts=container.input_artifacts,
+        contexts=container.context,
+        bindings=bindings,
+    )
+    await bindings.add(
         AguiThreadBinding(
             tenant_id="tenant-a",
             user_id="owner",

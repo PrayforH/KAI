@@ -42,8 +42,11 @@ retained privately under `/data/kai-funasr-restore-20261018`.
 
 - Local targeted backend suite: 204 passed, including presentation reads, actions, HTML,
   conversation-input parsing, artifacts and owner/tenant isolation; Ruff passed.
-- Frontend full suite, TypeScript and production build are being run from an isolated source copy
-  using npm 11.6.2 and the domestic registry. Their final results will be recorded after completion.
+- The frontend full suite passed: 191 files, 1209 tests passed, 1 skipped. TypeScript and the
+  production build passed from an isolated source copy using npm 11.6.2 and the domestic registry.
+- Initial CI identified five new type diagnostics in test fixtures. Typed the pagination fixture
+  and injected an explicit in-memory binding repository into the authorization test; no type
+  baseline or product behavior was changed. The final commit must pass all required CI checks.
 - The existing 79 HTTPS entry responds 200 with its known certificate and title `sapling preview`.
 - At preparation time, 79 rejected the available SSH key and SSH from 174 was refused. The user
   has been asked for an authorized SSH connection. No 79 application deployment is claimed yet.
