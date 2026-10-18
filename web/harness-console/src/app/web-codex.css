@@ -561,7 +561,7 @@ body.codex-theme-v1:has(.console-shell) .task-list-scroll .task-list {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 30px;
-  padding: 4px 62px 4px 8px;
+  padding: 4px 90px 4px 8px;
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr);
   align-items: center;
@@ -2010,6 +2010,13 @@ body.codex-theme-v1:has(.console-shell) .aui-thread-viewport:has(.user-task-welc
   justify-content: center;
   padding-top: 0;
   padding-bottom: clamp(72px, 14vh, 168px);
+}
+
+/* On a project page the empty task is a launcher: keep the headline above a
+   bottom-anchored composer instead of optically centering the pair. */
+body.codex-theme-v1:has(.console-shell) [data-project-home] .aui-thread-viewport:has(.user-task-welcome) {
+  justify-content: flex-end;
+  padding-bottom: 18px;
 }
 
 body.codex-theme-v1:has(.console-shell) .aui-thread-viewport:has(.user-task-welcome) > :first-child {

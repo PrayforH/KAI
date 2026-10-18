@@ -94,11 +94,9 @@
   min-width: 0;
   height: 100%;
 }
-/* Keep the project composer anchored to the bottom before the first message:
-   the welcome block moves to the top and the footer to the end. */
-.threadHost :global(.aui-thread-viewport:has(.user-task-welcome)) {
-  justify-content: space-between;
-}
+/* Keep the project composer anchored to the bottom before the first message.
+   The alignment override lives in web-codex.css next to the shared welcome
+   rule it has to beat. */
 .rail { display: grid; gap: 12px; align-content: start; }
 .card {
   display: grid;

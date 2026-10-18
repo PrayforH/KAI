@@ -48,6 +48,10 @@ describe("project-grouped task list", () => {
     expect(projectHome).toContain("projectId={projectId}");
     expect(projectHome).toContain("<AgentThread");
     expect(projectHome).toContain("onComposerSubmitted");
+    expect(projectHome).toContain('data-project-home="true"');
+    expect(readFileSync(join(process.cwd(), "src/app/web-codex.css"), "utf8")).toContain(
+      "[data-project-home] .aui-thread-viewport:has(.user-task-welcome)",
+    );
     expect(projectHome).not.toContain("loadTasks");
     expect(projectHome).not.toContain("最近");
     expect(projectHome).not.toContain('title="指令"');
@@ -121,7 +125,7 @@ describe("project and task sections share one column", () => {
   });
 
   it("uses compact project padding and a small indent for child tasks", () => {
-    expect(css).toMatch(/\.task-project-heading\s*\{[^}]*padding:\s*4px 62px 4px 8px;/);
+    expect(css).toMatch(/\.task-project-heading\s*\{[^}]*padding:\s*4px 90px 4px 8px;/);
     expect(css).toMatch(/\.task-list-item,\s*[\s\S]*?\.task-list-item\.is-active\s*\{[^}]*padding:\s*4px 6px 4px 34px;/);
   });
 });

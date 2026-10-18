@@ -210,7 +210,7 @@ export function ProjectHome({ projectId }: { projectId: string }) {
   }
 
   return (
-    <div className={styles.page}>
+    <div className={styles.page} data-project-home="true">
       <header className={styles.header}>
         <div className={styles.identity}>
           <span className={styles.projectIcon} aria-hidden="true"><ProjectIcon /></span>
