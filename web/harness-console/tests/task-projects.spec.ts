@@ -60,7 +60,8 @@ describe("project-grouped task list", () => {
     expect(projectHome).toContain("技能");
     expect(projectHome).toContain("记忆");
     expect(projectHome).toContain("展开${title}");
-    expect(projectHome).toContain("<ProjectSettingsDialog");
+    expect(projectHome).not.toContain("<ProjectSettingsDialog");
+    expect(projectHome).not.toContain("项目设置");
     expect(sidebar).toContain("查看 ${project.name} 的文件");
     expect(sidebar).toContain("<ProjectFilesDialog");
   });

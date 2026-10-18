@@ -2019,6 +2019,21 @@ body.codex-theme-v1:has(.console-shell) [data-project-home] .aui-thread-viewport
   padding-bottom: 18px;
 }
 
+/* The project conversation uses the whole center column instead of the
+   800px task column, including its composer. */
+body.codex-theme-v1:has(.console-shell) [data-project-home] .aui-thread-root .aui-thread-viewport {
+  padding-inline: clamp(16px, 2vw, 28px);
+}
+
+body.codex-theme-v1:has(.console-shell) [data-project-home] .aui-thread-viewport-footer {
+  width: 100%;
+  max-width: none;
+}
+
+body.codex-theme-v1:has(.console-shell) [data-project-home] .harness-composer-shell {
+  max-width: none;
+}
+
 body.codex-theme-v1:has(.console-shell) .aui-thread-viewport:has(.user-task-welcome) > :first-child {
   padding-top: 0;
 }

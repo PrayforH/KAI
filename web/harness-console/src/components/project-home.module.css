@@ -1,6 +1,6 @@
 .page {
   min-height: 100%;
-  padding: 22px clamp(14px, 1.8vw, 26px) 28px;
+  padding: 22px clamp(12px, 1.2vw, 18px) 28px;
   color: var(--codex-ink, #ececec);
   background: var(--codex-surface, #141414);
 }
@@ -44,19 +44,6 @@
   white-space: nowrap;
 }
 .identityCopy p { margin: 0; color: var(--codex-muted, #9a9a9a); font-size: 12px; }
-.settingsButton {
-  flex-shrink: 0;
-  min-height: 34px;
-  padding: 7px 13px;
-  border: 1px solid var(--codex-line, #363636);
-  border-radius: 9px;
-  background: transparent;
-  color: var(--codex-ink, #ececec);
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
-.settingsButton:hover { background: var(--codex-surface-hover, #2b2b2b); }
 .error {
   max-width: 1440px;
   margin: 0 auto 16px;
@@ -69,8 +56,8 @@
 }
 .layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
-  gap: 26px;
+  grid-template-columns: minmax(0, 1fr) 240px;
+  gap: 18px;
   max-width: 1440px;
   margin: 0 auto;
   align-items: stretch;
@@ -89,10 +76,11 @@
   justify-content: center;
 }
 .threadHost > * {
-  width: min(800px, 100%);
-  flex: 0 1 800px;
+  width: min(960px, 100%);
+  flex: 0 1 960px;
   min-width: 0;
   height: 100%;
+  --aui-thread-max-width: 960px;
 }
 /* Keep the project composer anchored to the bottom before the first message.
    The alignment override lives in web-codex.css next to the shared welcome
@@ -226,8 +214,6 @@
 }
 @media (max-width: 620px) {
   .page { padding: 18px 14px 28px; }
-  .header { flex-direction: column; gap: 14px; }
-  .settingsButton { width: 100%; }
   .rail { grid-template-columns: minmax(0, 1fr); }
   .main { min-height: 440px; }
 }

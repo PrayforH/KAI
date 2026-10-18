@@ -1,10 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAuth } from "./auth-provider";
-import { ProjectSettingsDialog } from "./project-settings-dialog";
 import {
   ProjectFilesDialog,
   ProjectKnowledgeDialog,
@@ -107,7 +105,6 @@ function ResourceCard({
 }
 
 export function ProjectHome({ projectId }: { projectId: string }) {
-  const router = useRouter();
   const { user } = useAuth();
   const [project, setProject] = useState<ApiProject | null>(null);
   const [memories, setMemories] = useState<ApiProjectMemory[]>([]);
@@ -122,7 +119,7 @@ export function ProjectHome({ projectId }: { projectId: string }) {
   const [threadPersisted, setThreadPersisted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activeDialog, setActiveDialog] = useState<
-    "knowledge" | "files" | "skills" | "memories" | "settings" | null
+    "knowledge" | "files" | "skills" | "memories" | null
   >(null);
   const [error, setError] = useState("");
 
@@ -223,9 +220,6 @@ export function ProjectHome({ projectId }: { projectId: string }) {
             </p>
           </div>
         </div>
-        <button type="button" className={styles.settingsButton} onClick={() => setActiveDialog("settings")}>
-          项目设置
-        </button>
       </header>
 
       {error && <p className={styles.error} role="alert">{error}</p>}
@@ -391,14 +385,6 @@ export function ProjectHome({ projectId }: { projectId: string }) {
           project={project}
           onClose={() => setActiveDialog(null)}
           onChanged={() => void reload()}
-        />
-      )}
-      {activeDialog === "settings" && (
-        <ProjectSettingsDialog
-          project={project}
-          onClose={() => { setActiveDialog(null); void reload(); }}
-          onChanged={() => { void reload(); }}
-          onRemoved={() => router.push("/")}
         />
       )}
     </div>
