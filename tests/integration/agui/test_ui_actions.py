@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
@@ -330,12 +331,15 @@ async def test_automation_thread_reads_and_restores_its_presentation() -> None:
     ].owner_user_id == "automation:daily-news"
     now = datetime.now(UTC)
     bindings = InMemoryAguiThreadBindingRepository()
-    container.agui = AguiRunService(
-        sessions=container.sessions,
-        runs=container.runs,
-        input_artifacts=container.input_artifacts,
-        contexts=container.context,
-        bindings=bindings,
+    container = replace(
+        container,
+        agui=AguiRunService(
+            sessions=container.sessions,
+            runs=container.runs,
+            input_artifacts=container.input_artifacts,
+            contexts=container.context,
+            bindings=bindings,
+        ),
     )
     await bindings.add(
         AguiThreadBinding(
