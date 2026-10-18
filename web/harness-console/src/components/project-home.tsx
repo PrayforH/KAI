@@ -6,10 +6,9 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { useAuth } from "./auth-provider";
 import { ProjectSettingsDialog } from "./project-settings-dialog";
 import { AssistantRuntimeShell } from "./assistant-runtime-shell";
-import { ProjectComposer } from "./agent-thread";
-import { formatTaskAge } from "../lib/task-list-age";
-import { loadTasks, type TaskSummary } from "../lib/task-history";
-import { createProjectTask } from "../lib/project-task";
+import { AgentThread } from "./agent-thread";
+import { notifyTaskListChanged } from "../lib/task-history";
+import { createUserScopedStorage, createNewThread } from "../lib/thread-store";
 import { loadTaskAgentCatalog, type TaskAgent } from "../lib/task-agent-catalog";
 import { loadTaskModelRoutes, type TaskModelRoute } from "../lib/task-model-catalog";
 import {
@@ -21,30 +20,6 @@ import {
   type StudioPlatformSkillPackage,
 } from "../lib/studio-client";
 import styles from "./project-home.module.css";
-
-const STATUS_LABELS: Record<string, string> = {
-  idle: "新任务",
-  queued: "排队中",
-  provisioning: "准备中",
-  running: "运行中",
-  waiting_approval: "待审批",
-  cancelling: "取消中",
-  cancelled: "已取消",
-  succeeded: "已完成",
-  failed: "处理错误",
-  rejected: "已拒绝",
-  timed_out: "已超时",
-  archived: "已归档",
-};
-
-function statusTone(status: string) {
-  if (["queued", "provisioning", "running", "waiting_approval", "cancelling"].includes(status)) {
-    return "active";
-  }
-  if (["failed", "timed_out", "rejected"].includes(status)) return "error";
-  if (status === "succeeded") return "success";
-  return "neutral";
-}
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("zh-CN", {
@@ -100,12 +75,11 @@ export function ProjectHome({ projectId }: { projectId: string }) {
   const [memories, setMemories] = useState<ApiProjectMemory[]>([]);
   const [documents, setDocuments] = useState<ApiProjectDocument[]>([]);
   const [skillCatalog, setSkillCatalog] = useState<StudioPlatformSkillPackage[]>([]);
-  const [tasks, setTasks] = useState<TaskSummary[]>([]);
   const [defaultAgent, setDefaultAgent] = useState<TaskAgent | null>(null);
   const [modelRoutes, setModelRoutes] = useState<TaskModelRoute[]>([]);
   const [modelRouteOverride, setModelRouteOverride] = useState<string | null>(null);
-  const [composerThreadId, setComposerThreadId] = useState<string | null>(null);
-  const [composerCreating, setComposerCreating] = useState(false);
+  const [threadId, setThreadId] = useState<string | null>(null);
+  const [threadPersisted, setThreadPersisted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [error, setError] = useState("");
@@ -113,16 +87,14 @@ export function ProjectHome({ projectId }: { projectId: string }) {
   const reload = useCallback(async () => {
     setError("");
     try {
-      const [resources, skillCatalogValue, taskList] = await Promise.all([
+      const [resources, skillCatalogValue] = await Promise.all([
         projectClient.resources(projectId),
         studioClient.listPlatformSkills().catch(() => ({ revision: 0, packages: [] })),
-        loadTasks().catch(() => []),
       ]);
       setProject(resources.project);
       setMemories(resources.memories);
       setDocuments(resources.documents);
       setSkillCatalog(skillCatalogValue.packages);
-      setTasks(taskList.filter((task) => task.project_id === projectId && !task.archived_at));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "读取项目失败，请稍后重试。");
     } finally {
@@ -135,21 +107,24 @@ export function ProjectHome({ projectId }: { projectId: string }) {
   }, [reload]);
 
   useEffect(() => {
-    const refresh = () => { void reload(); };
-    window.addEventListener("harness:task-list-changed", refresh);
-    return () => window.removeEventListener("harness:task-list-changed", refresh);
-  }, [reload]);
+    setThreadId(createNewThread(createUserScopedStorage(window.localStorage, user.user_id)));
+  }, [user.user_id]);
 
   useEffect(() => {
     let active = true;
     loadTaskAgentCatalog(user.user_id, false)
       .then((catalog) => { if (active) setDefaultAgent(catalog.defaultAgent); })
-      .catch(() => { /* The composer explains the failure when clicked. */ });
+      .catch(() => { /* The composer surfaces the failure on send. */ });
     loadTaskModelRoutes()
       .then((routes) => { if (active) setModelRoutes(routes); })
       .catch(() => { /* TaskModelControl falls back to the agent default. */ });
     return () => { active = false; };
   }, [user.user_id]);
+
+  const handleComposerSubmitted = useCallback(() => {
+    setThreadPersisted(true);
+    notifyTaskListChanged();
+  }, []);
 
   const skills = useMemo(() => {
     const byReference = new Map(
@@ -160,25 +135,6 @@ export function ProjectHome({ projectId }: { projectId: string }) {
       package: byReference.get(reference),
     }));
   }, [project?.skillReferences, skillCatalog]);
-
-  async function openComposer() {
-    if (composerThreadId || composerCreating) return;
-    if (!defaultAgent) {
-      setError("智能体尚未加载，请稍后重试。");
-      return;
-    }
-    setComposerCreating(true);
-    setError("");
-    try {
-      const task = await createProjectTask(projectId, defaultAgent);
-      setComposerThreadId(task.thread_id);
-      setTasks((current) => [task, ...current.filter((item) => item.thread_id !== task.thread_id)]);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "新建任务失败，请稍后重试。");
-    } finally {
-      setComposerCreating(false);
-    }
-  }
 
   if (loading) {
     return (
@@ -223,43 +179,13 @@ export function ProjectHome({ projectId }: { projectId: string }) {
 
       <div className={styles.layout}>
         <main className={styles.main} aria-label="项目任务">
-          <div className={styles.recentHead}>
-            <h2>最近</h2>
-            {tasks.length > 0 && <span>{tasks.length}</span>}
-          </div>
-          {tasks.length ? (
-            <ul className={styles.taskList}>
-              {tasks.map((task) => (
-                <li key={task.thread_id}>
-                  <Link className={styles.task} href={`/?thread=${encodeURIComponent(task.thread_id)}`}>
-                    <span className={styles.taskStatus} data-tone={statusTone(task.status)} aria-hidden="true" />
-                    <span className={styles.taskCopy}>
-                      <strong>{task.title}</strong>
-                      <small>
-                        {STATUS_LABELS[task.status] ?? task.status}
-                        {" · "}
-                        {formatTaskAge(task.updated_at)}
-                        {task.pending_approval ? " · 等待你的确认" : ""}
-                      </small>
-                    </span>
-                    <span className={styles.taskArrow} aria-hidden="true">→</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <div className={styles.emptyState}>
-              <span className={styles.emptyIcon} aria-hidden="true">
-                <svg viewBox="0 0 40 40"><rect x="7" y="9" width="26" height="22" rx="4" /><path d="M13 15h14M13 20h9" /></svg>
-              </span>
-              <p>新建一个任务以开始</p>
-            </div>
-          )}
-          {composerThreadId && defaultAgent ? (
-            <div className={styles.composerHost}>
+          {threadId && defaultAgent ? (
+            <div className={styles.threadHost}>
               <AssistantRuntimeShell
-                key={composerThreadId}
-                threadId={composerThreadId}
+                key={threadId}
+                threadId={threadId}
+                localOnly={!threadPersisted}
+                projectId={projectId}
                 agentName={defaultAgent.name}
                 agentVersion={defaultAgent.version}
                 agentOwnerUserId={defaultAgent.ownerUserId}
@@ -269,30 +195,19 @@ export function ProjectHome({ projectId }: { projectId: string }) {
                 modelRouteOverride={modelRouteOverride}
                 onModelRouteOverrideChange={setModelRouteOverride}
               >
-                <ProjectComposer
+                <AgentThread
                   userId={user.user_id}
-                  threadId={composerThreadId}
+                  threadId={threadId}
                   agents={[defaultAgent]}
                   selectedAgent={defaultAgent}
-                  onSubmitted={() => router.push(`/?thread=${encodeURIComponent(composerThreadId)}`)}
+                  agentsLoading={false}
+                  currentTaskBusy={false}
+                  onComposerSubmitted={handleComposerSubmitted}
                 />
               </AssistantRuntimeShell>
             </div>
           ) : (
-            <button
-              type="button"
-              className={styles.composer}
-              aria-label="在此项目中启动任务"
-              title={defaultAgent ? "在此项目中启动任务" : "智能体尚未加载"}
-              disabled={composerCreating || !defaultAgent}
-              onClick={() => void openComposer()}
-            >
-              <span className={styles.composerPlus} aria-hidden="true">＋</span>
-              <span className={styles.composerPlaceholder}>
-                {composerCreating ? "正在创建任务…" : "在此项目中启动任务"}
-              </span>
-              <span className={styles.composerSend} aria-hidden="true">↑</span>
-            </button>
+            <div className={styles.loading} role="status">正在准备项目输入…</div>
           )}
         </main>
 

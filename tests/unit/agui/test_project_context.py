@@ -8,6 +8,7 @@ import pytest
 from ag_ui.core import RunAgentInput, UserMessage
 
 from harness.api.dependencies import build_memory_container
+from harness.core.errors import NotFoundError
 
 
 async def _publish_agent(container, tenant_id: str, user_id: str, root: Path) -> None:
@@ -155,3 +156,50 @@ async def test_task_outliving_its_project_runs_without_project_context(
 
     assert "project_context" not in creation.run.input
     assert creation.run.input["input_artifact_ids"] == []
+
+
+@pytest.mark.asyncio
+async def test_first_run_binds_the_project_without_an_empty_task(
+    tmp_path: Path,
+) -> None:
+    container = build_memory_container()
+    tenant_id, user_id = "tenant-a", "user-1"
+    await _publish_agent(container, tenant_id, user_id, tmp_path)
+    project = await container.projects.create(
+        tenant_id=tenant_id,
+        user_id=user_id,
+        name="金融办",
+        instructions="项目级指令",
+    )
+
+    creation = await container.agui.create_run_with_result(
+        tenant_id=tenant_id,
+        user_id=user_id,
+        agent_name="echo-agent",
+        agent_version="0.1.0",
+        request=_request("thread-first-run"),
+        project_id=project.project_id,
+    )
+
+    stored = await container.agui.get_thread_record(
+        tenant_id=tenant_id, user_id=user_id, thread_id="thread-first-run"
+    )
+    assert stored.project_id == project.project_id
+    assert "项目级指令" in str(creation.run.input["project_context"])
+
+
+@pytest.mark.asyncio
+async def test_run_rejects_a_project_the_user_cannot_see(tmp_path: Path) -> None:
+    container = build_memory_container()
+    tenant_id, user_id = "tenant-a", "user-1"
+    await _publish_agent(container, tenant_id, user_id, tmp_path)
+
+    with pytest.raises(NotFoundError):
+        await container.agui.create_run_with_result(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            agent_name="echo-agent",
+            agent_version="0.1.0",
+            request=_request("thread-invalid-project"),
+            project_id="project_missing",
+        )

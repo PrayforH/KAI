@@ -538,6 +538,7 @@ async def run_agui_agent(
     agent_version: Annotated[str, Query()],
     agent_owner_user_id: Annotated[str | None, Query()] = None,
     space_id: Annotated[str | None, Query()] = None,
+    project_id: Annotated[str | None, Query(max_length=128)] = None,
 ) -> StreamingResponse:
     ensure_permission(identity, "tasks:write")
     resolved_owner = agent_owner_user_id or identity.user_id
@@ -563,6 +564,7 @@ async def run_agui_agent(
         agent_owner_user_id=resolved_owner,
         space_id=space_id,
         connection_mode=connection_mode,
+        project_id=project_id,
     )
     run = creation.run
     worker_task = (

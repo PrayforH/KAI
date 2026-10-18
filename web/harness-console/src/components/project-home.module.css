@@ -1,6 +1,6 @@
 .page {
   min-height: 100%;
-  padding: 26px clamp(20px, 3vw, 48px) 40px;
+  padding: 26px clamp(20px, 3vw, 48px) 32px;
   color: var(--codex-ink, #ececec);
   background: var(--codex-surface, #141414);
 }
@@ -10,7 +10,7 @@
   justify-content: space-between;
   gap: 24px;
   max-width: 1120px;
-  margin: 0 auto 26px;
+  margin: 0 auto 22px;
 }
 .identity { display: flex; align-items: center; gap: 16px; min-width: 0; }
 .projectIcon {
@@ -73,115 +73,17 @@
   gap: 30px;
   max-width: 1120px;
   margin: 0 auto;
-  align-items: start;
+  align-items: stretch;
 }
 .main {
   display: flex;
   min-width: 0;
-  min-height: 560px;
-  flex-direction: column;
+  min-height: 600px;
+  height: calc(100dvh - 170px);
 }
-.recentHead {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 2px 0 12px;
-}
-.recentHead h2 { margin: 0; font-size: 13px; font-weight: 600; color: var(--codex-muted, #9a9a9a); }
-.recentHead span { color: var(--codex-muted, #9a9a9a); font-size: 11px; }
-.taskList { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
-.task {
-  display: grid;
-  grid-template-columns: 8px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 11px;
-  min-height: 50px;
-  padding: 8px 10px;
-  border-radius: 9px;
-  color: inherit;
-  text-decoration: none;
-}
-.task:hover { background: var(--codex-surface-hover, #2b2b2b); }
-.taskStatus { width: 7px; height: 7px; border-radius: 50%; background: #7d7d7d; }
-.taskStatus[data-tone="active"] { background: #5aa9e6; box-shadow: 0 0 0 3px rgb(90 169 230 / 14%); }
-.taskStatus[data-tone="success"] { background: #62b37a; }
-.taskStatus[data-tone="error"] { background: #e07878; }
-.taskCopy { display: grid; gap: 3px; min-width: 0; }
-.taskCopy strong { overflow: hidden; font-size: 13px; font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
-.taskCopy small { color: var(--codex-muted, #9a9a9a); font-size: 11px; }
-.taskArrow { color: var(--codex-muted, #9a9a9a); font-size: 14px; opacity: 0; transition: opacity 120ms ease; }
-.task:hover .taskArrow, .task:focus-visible .taskArrow { opacity: 1; }
-.emptyState {
-  display: grid;
-  flex: 1;
-  place-content: center;
-  justify-items: center;
-  gap: 12px;
-  min-height: 360px;
-  color: var(--codex-muted, #9a9a9a);
-  font-size: 13px;
-  text-align: center;
-}
-.emptyState p { margin: 0; }
-.emptyIcon { color: #5c5c5c; }
-.emptyIcon svg {
-  width: 54px;
-  height: 54px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.2;
-  stroke-dasharray: 3 4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.composer {
-  display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) 32px;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  min-height: 58px;
-  margin-top: 20px;
-  padding: 10px 12px;
-  border: 1px solid var(--codex-line, #363636);
-  border-radius: 15px;
-  background: var(--codex-surface-raised, #242424);
-  color: var(--codex-muted, #9a9a9a);
-  font: inherit;
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-  transition: border-color 120ms ease, background-color 120ms ease;
-}
-.composerHost { margin-top: 20px; }
-.composer:hover {
-  border-color: #4a4a4a;
-  background: var(--codex-surface-hover, #2b2b2b);
-}
-.composer:disabled { opacity: .6; cursor: default; }
-.composerPlus {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border: 1px solid var(--codex-line, #363636);
-  border-radius: 50%;
-  color: var(--codex-ink, #ececec);
-  font-size: 14px;
-}
-.composerPlaceholder { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.composerSend {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  background: var(--codex-ink, #ececec);
-  color: var(--codex-surface, #141414);
-  font-size: 14px;
-  font-weight: 700;
-}
-.rail { display: grid; gap: 12px; }
+.threadHost { display: flex; flex: 1; min-width: 0; min-height: 0; }
+.threadHost > * { flex: 1; min-width: 0; }
+.rail { display: grid; gap: 12px; align-content: start; }
 .card {
   display: grid;
   gap: 9px;
@@ -280,12 +182,12 @@
 @media (max-width: 940px) {
   .layout { grid-template-columns: minmax(0, 1fr); }
   .rail { grid-row: 1; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
-  .main { min-height: 420px; }
+  .main { height: auto; min-height: 520px; }
 }
 @media (max-width: 620px) {
-  .page { padding: 18px 14px 32px; }
+  .page { padding: 18px 14px 28px; }
   .header { flex-direction: column; gap: 14px; }
   .settingsButton { width: 100%; }
   .rail { grid-template-columns: minmax(0, 1fr); }
-  .emptyState { min-height: 260px; }
+  .main { min-height: 440px; }
 }

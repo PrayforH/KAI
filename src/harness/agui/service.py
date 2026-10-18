@@ -352,11 +352,15 @@ class AguiRunService:
         agent_owner_user_id: str | None = None,
         space_id: str | None = None,
         connection_mode: Literal["caller_owned", "service_owned"] = "caller_owned",
+        project_id: str | None = None,
     ) -> AguiRunCreation:
         prompt, input_artifact_ids = _latest_user_input(request)
         conversation_prompts = _user_prompts(request)
         model_route_override = _model_route_override(request)
         requested_knowledge = _knowledge_references_override(request)
+        if project_id is not None and self._project_context is not None:
+            if await self._project_context(tenant_id, user_id, project_id) is None:
+                raise NotFoundError(f"Project not found: {project_id}")
         creation = None
         for attempt in range(2):
             binding = await self._resolve_binding(
@@ -368,6 +372,7 @@ class AguiRunService:
                 agent_owner_user_id=agent_owner_user_id,
                 space_id=space_id,
                 connection_mode=connection_mode,
+                project_id=project_id,
             )
             project_context = (
                 await self._project_context(tenant_id, user_id, binding.project_id)
@@ -887,7 +892,20 @@ class AguiRunService:
                 stored = None
             if stored is not None:
                 if project_id is not None:
-                    raise ConflictError("Task already exists")
+                    if stored.project_id not in (None, project_id):
+                        raise ConflictError(
+                            "Task already belongs to a different project"
+                        )
+                    if stored.project_id is None:
+                        await self._bindings.set_project(
+                            tenant_id,
+                            user_id,
+                            thread_id,
+                            project_id=project_id,
+                        )
+                        stored = await self._bindings.get_by_thread(
+                            tenant_id, user_id, thread_id
+                        )
                 session = await self._sessions.get(tenant_id, stored.session_id)
                 existing = AguiThreadBinding(
                     session_id=session.session_id,

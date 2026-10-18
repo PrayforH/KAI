@@ -1764,6 +1764,7 @@ export function AgentThread({
   onDismissSkillLaunch = () => undefined,
   onAgentChange = () => undefined,
   onRefreshAgents,
+  onComposerSubmitted,
 }: {
   userId: string;
   threadId: string;
@@ -1775,6 +1776,8 @@ export function AgentThread({
   onDismissSkillLaunch?: () => void;
   onAgentChange?: (agent: TaskAgent) => void;
   onRefreshAgents?: () => void;
+  /** Called after the composer successfully starts a run. */
+  onComposerSubmitted?: () => void;
 }) {
   const frame = useRef<HTMLDivElement>(null);
   const [editor, setEditor] = useState<MessageEditorState>(null);
@@ -1803,6 +1806,15 @@ export function AgentThread({
   const skillLaunch = useMemo(
     () => ({ launch: activeSkillLaunch, onDismiss: onDismissSkillLaunch }),
     [activeSkillLaunch, onDismissSkillLaunch],
+  );
+  const ComposerComponent = useMemo(
+    () =>
+      onComposerSubmitted
+        ? function SubmittedComposer() {
+            return <HarnessComposer onSubmitted={onComposerSubmitted} />;
+          }
+        : HarnessComposer,
+    [onComposerSubmitted],
   );
   return (
     <AgentSelectionContext.Provider value={agentSelection}>
@@ -1835,7 +1847,7 @@ export function AgentThread({
             components={{
               AssistantMessage: HarnessAssistantMessage,
               UserMessage: HarnessUserMessage,
-              Composer: HarnessComposer,
+              Composer: ComposerComponent,
               ThreadWelcome: UserTaskWelcome,
             }}
             strings={{
@@ -1862,66 +1874,6 @@ export function AgentThread({
             </div>
             </VideoGenerationProvider>
           </MessageEditorContext.Provider>
-        </ComposerDraftContext.Provider>
-      </SkillLaunchContext.Provider>
-    </AgentSelectionContext.Provider>
-  );
-}
-
-/**
- * The main task composer, mounted on a project page.
- *
- * The project page creates the durable project task first, then renders this
- * inside AssistantRuntimeShell. It is the same HarnessComposer the task page
- * uses, so attachments, voice, model/knowledge controls and the send/queue
- * behaviour stay identical across both surfaces.
- */
-export function ProjectComposer({
-  userId,
-  threadId,
-  agents,
-  selectedAgent,
-  onSubmitted,
-}: {
-  userId: string;
-  threadId: string;
-  agents: readonly TaskAgent[];
-  selectedAgent: TaskAgent | null;
-  onSubmitted?: () => void;
-}) {
-  const agentSelection = useMemo<AgentSelectionContextValue>(
-    () => ({
-      agents,
-      selected: selectedAgent,
-      loading: false,
-      currentTaskBusy: false,
-      onChange: () => undefined,
-    }),
-    [agents, selectedAgent],
-  );
-  const skillLaunch = useMemo<SkillLaunchContextValue>(
-    () => ({ launch: null, onDismiss: () => undefined }),
-    [],
-  );
-  const composerDraftScope = useMemo(
-    () => ({ userId, threadId }),
-    [threadId, userId],
-  );
-  return (
-    <AgentSelectionContext.Provider value={agentSelection}>
-      <SkillLaunchContext.Provider value={skillLaunch}>
-        <ComposerDraftContext.Provider value={composerDraftScope}>
-          <VideoGenerationProvider
-            task={selectedAgent ? {
-              threadId,
-              agentName: selectedAgent.name,
-              agentVersion: selectedAgent.version,
-              agentOwnerUserId: selectedAgent.ownerUserId,
-              spaceId: selectedAgent.spaceId,
-            } : undefined}
-          >
-            <HarnessComposer onSubmitted={onSubmitted} />
-          </VideoGenerationProvider>
         </ComposerDraftContext.Provider>
       </SkillLaunchContext.Provider>
     </AgentSelectionContext.Provider>
