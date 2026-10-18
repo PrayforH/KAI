@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAuth } from "./auth-provider";
 import { ProjectSettingsDialog } from "./project-settings-dialog";
 import { AssistantRuntimeShell } from "./assistant-runtime-shell";
 import { AgentThread } from "./agent-thread";
+import { useRunViewModel } from "../lib/activity-store";
 import { notifyTaskListChanged } from "../lib/task-history";
 import { createUserScopedStorage, createNewThread } from "../lib/thread-store";
 import { loadTaskAgentCatalog, type TaskAgent } from "../lib/task-agent-catalog";
@@ -26,6 +27,20 @@ function formatDate(value: string) {
     month: "long",
     day: "numeric",
   }).format(new Date(value));
+}
+
+function ProjectRunSync() {
+  const runView = useRunViewModel();
+  const syncedRun = useRef<string | null>(null);
+  useEffect(() => {
+    const runId = runView?.runId;
+    if (!runId || runId === syncedRun.current) return;
+    syncedRun.current = runId;
+    // The task binding lands with the Run, so the sidebar can only group the
+    // new task under its project once the Run is visible.
+    notifyTaskListChanged();
+  }, [runView?.runId]);
+  return null;
 }
 
 function ProjectIcon() {
@@ -195,6 +210,7 @@ export function ProjectHome({ projectId }: { projectId: string }) {
                 modelRouteOverride={modelRouteOverride}
                 onModelRouteOverrideChange={setModelRouteOverride}
               >
+                <ProjectRunSync />
                 <AgentThread
                   userId={user.user_id}
                   threadId={threadId}
