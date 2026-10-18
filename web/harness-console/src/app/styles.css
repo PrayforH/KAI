@@ -9029,7 +9029,3 @@ textarea.user-message-editor-input:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .execution-compaction.is-running .execution-compaction-icon { animation: none; }
 }
-
-.rail-bar-button.rail-view-label { width: auto; min-width: 36px; padding-inline: 8px; font-size: 12px; white-space: nowrap; }
-.project-welcome-hint { margin: 14px 0 0; color: var(--codex-muted); font-size: 13px; line-height: 1.6; }
-.task-project-name[aria-current="page"] { color: var(--codex-ink); background: var(--codex-hover); border-radius: 6px; }

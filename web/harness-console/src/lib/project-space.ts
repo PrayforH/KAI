@@ -8,7 +8,7 @@ export function projectTab(value?: string | null): ProjectTab {
     : "overview";
 }
 export function projectHref(projectId: string, tab: ProjectTab = "overview") {
-  return `/?project=${encodeURIComponent(projectId)}${tab === "overview" ? "" : `&tab=${tab}`}`;
+  return `/studio/projects/${encodeURIComponent(projectId)}${tab === "overview" ? "" : `?tab=${tab}`}`;
 }
 
 export interface ProjectArtifact {

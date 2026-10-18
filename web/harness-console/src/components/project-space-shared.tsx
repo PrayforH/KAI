@@ -40,14 +40,16 @@ export function size(bytes: number | null) {
 export function ProjectTaskRows({
   tasks: items,
   agentLabels,
+  compact = false,
 }: {
   tasks: TaskSummary[];
   agentLabels: ReadonlyMap<string, string>;
+  compact?: boolean;
 }) {
   return (
     <ul className={styles.list}>
       {items.map((task) => (
-        <li className={styles.row} key={task.thread_id}>
+        <li className={compact ? styles.recentRow : styles.row} key={task.thread_id}>
           <span
             className={styles.status}
             data-tone={
@@ -66,7 +68,7 @@ export function ProjectTaskRows({
             href={`/?thread=${encodeURIComponent(task.thread_id)}`}
           >
             <strong>{task.title}</strong>
-            <small>
+            {!compact && <small>
               {task.archived_at ? "已归档 · " : ""}
               {task.pending_input
                 ? "待补充"
@@ -76,14 +78,14 @@ export function ProjectTaskRows({
                 `${task.agent_owner_user_id}:${task.space_id ?? ""}:${task.agent_name}`,
               ) ?? task.agent_name}{" "}
               · {formatTaskAge(task.updated_at)}
-            </small>
+            </small>}
           </Link>
-          <Link
+          {compact ? <time className={styles.taskTime} dateTime={task.updated_at}>{formatTaskAge(task.updated_at)}</time> : <Link
             className={styles.textLink}
             href={`/?thread=${encodeURIComponent(task.thread_id)}`}
           >
             打开任务 →
-          </Link>
+          </Link>}
         </li>
       ))}
     </ul>

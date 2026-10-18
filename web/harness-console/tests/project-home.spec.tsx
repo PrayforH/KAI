@@ -100,7 +100,7 @@ vi.mock("../src/components/project-resource-dialogs", () => ({
   ProjectKnowledgeDialog: () => <div>知识管理</div>,
   ProjectSkillsDialog: () => <div>技能引用</div>,
 }));
-import { ProjectWorkspacePanel } from "../src/components/project-workspace-panel";
+import { ProjectHome } from "../src/components/project-home";
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 let host: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
@@ -182,15 +182,38 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("manages configuration in the rail without creating tasks or adding a second composer", async () => {
-  await act(async () => root.render(<ProjectWorkspacePanel projectId="project-1" />));
-  expect(host.textContent).toContain("季度分析");
-  expect(host.querySelector("textarea")).toBeNull();
+it("opens an independent organizing home without creating a task or mounting a conversation", async () => {
+  await act(async () => root.render(<ProjectHome projectId="project-1" />));
+  expect(host.querySelector("h1")?.textContent).toBe("季度分析");
+  expect(host.querySelector('[role="tablist"]')).toBeNull();
+  expect(host.textContent).toContain("文件和资源");
   expect(host.textContent).toContain("连接器");
+  expect(host.textContent).toContain("项目成果");
+  expect(host.querySelector(".assistant-runtime-shell")).toBeNull();
   expect(mock.createTask).not.toHaveBeenCalled();
-  await click("文件和资源");
+  await click("上传文件或添加链接");
   expect(host.textContent).toContain("资料管理");
   expect(mock.createTask).not.toHaveBeenCalled();
+});
+
+it("passes the chosen published Agent coordinate and project into the shared task entry", async () => {
+  await act(async () => root.render(<ProjectHome projectId="project-1" />));
+  await click("选择分析助手");
+  const textarea = host.querySelector('textarea[aria-label="项目任务需求"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      "value",
+    )!.set!.call(textarea, "分析本季度经营数据");
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () =>
+    textarea
+      .closest("form")!
+      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+  );
+  expect(mock.createTask).toHaveBeenCalledWith("project-1", mock.agents[1]);
+  expect(mock.push).toHaveBeenCalledWith("/?thread=new-project-task");
 });
 
 it("keeps archived task outputs separate from inputs until the user collects one", async () => {
@@ -200,7 +223,7 @@ it("keeps archived task outputs separate from inputs until the user collects one
     "/studio/projects/project-1?tab=results",
   );
   await act(async () =>
-    root.render(<ProjectWorkspacePanel projectId="project-1" initialTab="results" />),
+    root.render(<ProjectHome projectId="project-1" initialTab="results" />),
   );
   await click("从任务产物中保存");
   expect(host.textContent).toContain("历史分析任务 · 任务已归档");
@@ -223,7 +246,7 @@ it("writes project facts through the project service, preserving Agent ownership
     "/studio/projects/project-1?tab=resources",
   );
   await act(async () =>
-    root.render(<ProjectWorkspacePanel projectId="project-1" initialTab="resources" />),
+    root.render(<ProjectHome projectId="project-1" initialTab="resources" />),
   );
   const textarea = host.querySelector('[role="dialog"] textarea')!;
   await act(async () => {
@@ -247,7 +270,7 @@ it("writes project facts through the project service, preserving Agent ownership
 
 it("does not represent a failed project read as an empty valid project", async () => {
   mock.resources.mockRejectedValue(new Error("没有项目访问权限"));
-  await act(async () => root.render(<ProjectWorkspacePanel projectId="project-1" />));
+  await act(async () => root.render(<ProjectHome projectId="project-1" />));
   expect(host.querySelector('[role="alert"]')?.textContent).toBe(
     "没有项目访问权限",
   );
@@ -255,16 +278,22 @@ it("does not represent a failed project read as an empty valid project", async (
   expect(mock.createTask).not.toHaveBeenCalled();
 });
 
-it("switches between inline results and configuration while preserving the thread URL", async () => {
-  window.history.replaceState(null, "", "/?thread=existing-task");
-  await act(async () => root.render(<ProjectWorkspacePanel projectId="project-1" />));
-  await act(async () => root.render(<ProjectWorkspacePanel projectId="project-1" view="results" />));
-  expect(host.textContent).toContain("还没有保存的项目成果");
+it("follows tab navigation within the same project route", async () => {
+  await act(async () => root.render(<ProjectHome projectId="project-1" />));
+  window.history.replaceState(
+    null,
+    "",
+    "/studio/projects/project-1?tab=results",
+  );
+  await act(async () =>
+    root.render(<ProjectHome projectId="project-1" initialTab="results" />),
+  );
+  expect(
+    host.querySelector('[role="dialog"][aria-label="项目成果"]'),
+  ).not.toBeNull();
+  window.history.replaceState(null, "", "/studio/projects/project-1");
+  await act(async () => root.render(<ProjectHome projectId="project-1" />));
   expect(host.querySelector('[role="dialog"]')).toBeNull();
-  expect(window.location.search).toBe("?thread=existing-task");
-  await act(async () => root.render(<ProjectWorkspacePanel projectId="project-1" view="project" />));
-  expect(host.textContent).toContain("连接器");
-  expect(host.textContent).not.toContain("还没有保存的项目成果");
 });
 
 it("restores an archived project without changing the published Agent", async () => {
@@ -275,12 +304,18 @@ it("restores an archived project without changing the published Agent", async ()
     memories: [],
   });
   mock.update.mockResolvedValue(project);
-  await act(async () => root.render(<ProjectWorkspacePanel projectId="project-1" />));
+  await act(async () => root.render(<ProjectHome projectId="project-1" />));
   await click("项目设置");
   await click("恢复项目");
   expect(mock.update).toHaveBeenCalledWith("project-1", { archived: false });
   expect(host.textContent).toContain("项目已恢复");
-
+  expect(
+    (
+      host.querySelector(
+        'textarea[aria-label="项目任务需求"]',
+      ) as HTMLTextAreaElement
+    ).disabled,
+  ).toBe(false);
 });
 
 it("saves project instructions without renaming the project or changing Agent configuration", async () => {
@@ -288,8 +323,8 @@ it("saves project instructions without renaming the project or changing Agent co
     ...project,
     instructions: "先给结论，再标注数据来源",
   });
-  await act(async () => root.render(<ProjectWorkspacePanel projectId="project-1" />));
-  await click("指令");
+  await act(async () => root.render(<ProjectHome projectId="project-1" />));
+  await click("编辑指令");
   const textarea = host.querySelector('textarea[aria-label="项目指令"]')!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(
@@ -307,5 +342,5 @@ it("saves project instructions without renaming the project or changing Agent co
     instructions: "先给结论，再标注数据来源",
   });
   expect(host.querySelector('[role="dialog"]')).toBeNull();
-  expect(host.textContent).toContain("季度分析");
+  expect(host.querySelector("h1")?.textContent).toBe("季度分析");
 });

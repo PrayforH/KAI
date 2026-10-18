@@ -1,13 +1,10 @@
 "use client";
 import Link from "next/link";
-import { useSearchParams, useRouter } from "next/navigation";
-import { projectDraft, draftProject } from "../lib/project-workspace";
 import { loadTaskSummary, projectHref } from "../lib/project-space";
 import { agentDisplayName } from "../lib/agent-display-name";
 import { useInternalAgentsPreference } from "../lib/interface-preferences";
 
 import {
-  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -30,8 +27,8 @@ import {
 } from "../components/task-header-actions";
 import { SidebarIcon } from "../components/sidebar-icon";
 import { TaskSidebar } from "../components/task-sidebar";
-
-import { projectClient, type ApiProject } from "../lib/studio-client";
+import { createProjectTask } from "../lib/project-task";
+import { ApiProject } from "../lib/studio-client";
 import { useSidebarProjects } from "../lib/sidebar-state";
 import { ProductBrandMark, ProductLoading, PRODUCT_NAME } from "../components/product-brand";
 import { SidebarPanelIcon } from "../components/panel-icons";
@@ -76,10 +73,6 @@ import {
   skillCreatorPrompt,
   type SkillCreatorLaunch,
 } from "../lib/skill-creator-launch";
-
-function workspaceNavigationKey(search: URLSearchParams | { get: (key: string) => string | null }) {
-  return ["project", "thread", "agent", "version", "space", "owner", "skillCreator", "skill", "skillScope"].map(key => `${key}=${encodeURIComponent(search.get(key) ?? "")}`).join("&");
-}
 
 const TASK_SIDEBAR_COMPACT_QUERY = "(max-width: 820px)";
 
@@ -259,21 +252,21 @@ function TaskContextBar({
 export default function Home() {
   return (
     <AuthProvider>
-      <Suspense fallback={<ProductLoading label="正在打开工作区…" />}><AuthenticatedHome /></Suspense>
+      <AuthenticatedHome />
     </AuthProvider>
   );
 }
 
 function AuthenticatedHome() {
   const { user } = useAuth();
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  // Panel selection must not remount or reselect the current conversation.
-  const navigationKey = workspaceNavigationKey(searchParams);
-  const handledNavigation = useRef("");
-  const [draftProjectId, setDraftProjectId] = useState<string | null>(null);
-  const [projectState, setProjectState] = useState<{ id: string; project?: ApiProject; error?: string } | null>(null);
-  const [projectRailRequest, setProjectRailRequest] = useState<{ view: "project" | "results"; nonce: number } | null>(null);
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    const projectId = query.get("project");
+    if (projectId && !query.has("thread")) {
+      const tab = query.get("tab");
+      window.location.replace(`${projectHref(projectId)}${tab ? `?tab=${encodeURIComponent(tab)}` : ""}`);
+    }
+  }, []);
   const [showInternalAgents] = useInternalAgentsPreference();
   const [threadId, setThreadId] = useState("");
   const [taskAgents, setTaskAgents] = useState<TaskAgent[]>([]);
@@ -289,8 +282,6 @@ function AuthenticatedHome() {
   const visibleThreadRef = useRef(threadId);
   visibleThreadRef.current = threadId;
   const [catalogRefreshKey, setCatalogRefreshKey] = useState(0);
-  const navigationContext = useRef([catalogRefreshKey, user.user_id, showInternalAgents]);
-  navigationContext.current = [catalogRefreshKey, user.user_id, showInternalAgents];
   const [taskSidebarOpen, setTaskSidebarOpen] = useState(true);
   const [taskRailOpen, setTaskRailOpen] = useState(false);
   const [railExpanded, setRailExpanded] = useState(false);
@@ -314,39 +305,7 @@ function AuthenticatedHome() {
   const [localThreadId, setLocalThreadId] = useState<string | null>(null);
   const [currentTaskTitle, setCurrentTaskTitle] = useState("新任务");
   const [currentTask, setCurrentTask] = useState<TaskSummary | null>(null);
-  const activeProjectId = currentTask ? currentTask.project_id ?? null : draftProjectId;
-  const activeProject = projectState?.id === activeProjectId ? projectState.project : undefined;
-  const projectError = projectState?.id === activeProjectId ? projectState.error : undefined;
-  useEffect(() => {
-    if (!activeProjectId) return;
-    let active = true;
-    const refresh = () => {
-      void projectClient.resources(activeProjectId).then(resources => {
-        if (active) setProjectState({ id: activeProjectId, project: resources.project });
-      }).catch(error => {
-        if (active) setProjectState({ id: activeProjectId, error: error instanceof Error ? error.message : "项目读取失败" });
-      });
-    };
-    refresh();
-    window.addEventListener("harness:projects-changed", refresh);
-    return () => { active = false; window.removeEventListener("harness:projects-changed", refresh); };
-  }, [activeProjectId, catalogRefreshKey]);
-  const requestedPanel = searchParams.get("tab");
-  useEffect(() => {
-    if (!activeProjectId || !requestedPanel) return;
-    setTaskRailOpen(true);
-    setProjectRailRequest({ view: requestedPanel === "results" ? "results" : "project", nonce: Date.now() });
-  }, [activeProjectId, requestedPanel]);
-  const openedProjectRail = useRef<string | null>(null);
-  useEffect(() => {
-    if (!activeProjectId) {
-      openedProjectRail.current = null;
-      return;
-    }
-    if (openedProjectRail.current === activeProjectId) return;
-    openedProjectRail.current = activeProjectId;
-    setTaskRailOpen(true);
-  }, [activeProjectId]);
+  const activeProjectId = currentTask?.project_id ?? null;
   const [currentThreadState, setCurrentThreadState] =
     useState<TaskThreadState>("unknown");
   const [activeSkillLaunch, setActiveSkillLaunch] =
@@ -387,9 +346,6 @@ function AuthenticatedHome() {
   }, []);
 
   useEffect(() => {
-    const requestKey = JSON.stringify([navigationKey, catalogRefreshKey, user.user_id, showInternalAgents]);
-    if (handledNavigation.current === requestKey) return;
-    handledNavigation.current = requestKey;
     let active = true;
     const storage = createUserScopedStorage(window.localStorage, user.user_id);
     const storedThreadId = loadOrCreateThread(storage);
@@ -397,18 +353,9 @@ function AuthenticatedHome() {
     const initialSearch = new URLSearchParams(window.location.search);
     const requestedSkillLaunch = parseSkillCreatorLaunch(initialSearch);
     const requestedThreadId = initialSearch.get("thread");
-    const requestedProjectId = initialSearch.get("project");
     const initialThreadId = requestedThreadId
       ? selectThread(storage, requestedThreadId)
-      : requestedProjectId ? projectDraft(storage, requestedProjectId) : storedThreadId;
-    const initialDraftProjectId = isLocalThread(storage, initialThreadId)
-      ? draftProject(storage, initialThreadId) : null;
-    if (initialThreadId !== visibleThreadRef.current) {
-      setDraftProjectId(initialDraftProjectId);
-      setCurrentTask(null);
-      setCurrentTaskTitle("新任务");
-      setStageView("conversation");
-    }
+      : storedThreadId;
     const hasRequestedAgent = Boolean(
       initialSearch.get("agent") &&
       initialSearch.get("version") &&
@@ -423,7 +370,6 @@ function AuthenticatedHome() {
     const restoredBinding = hasRequestedAgent
       ? null
       : loadThreadAgent(storage, initialThreadId);
-    if (!restoredBinding) setSelectedAgent(null);
     if (restoredBinding) {
       const restoredAgent: TaskAgent = {
         ...restoredBinding,
@@ -487,7 +433,6 @@ function AuthenticatedHome() {
           setActiveSkillLaunch(null);
         }
         if (requestedAgent || requestedSkillLaunch) {
-          setDraftProjectId(null);
           setLocalThreadId(currentThreadId);
           setThreadId(currentThreadId);
           window.history.replaceState({}, "", "/");
@@ -558,11 +503,8 @@ function AuthenticatedHome() {
     void loadAgentBinding();
     return () => {
       active = false;
-      // Strict Mode replays mount effects; only completed internal navigation
-      // should skip restoration, not a cancelled catalog request.
-      if (handledNavigation.current === requestKey) handledNavigation.current = "";
     };
-  }, [catalogRefreshKey, user.user_id, showInternalAgents, navigationKey]);
+  }, [catalogRefreshKey, user.user_id, showInternalAgents]);
 
   const refreshingCatalog = useRef(false);
   const refreshAgentCatalog = useCallback(async () => {
@@ -598,26 +540,9 @@ function AuthenticatedHome() {
     [taskAgents],
   );
 
-  useEffect(() => {
-    if (runStream.threadId === threadId && runStream.runId) {
-      // A client Run ID exists before the server accepts the task. Keep the
-      // project draft recoverable until loadTaskSummary confirms its binding.
-      if (new URLSearchParams(window.location.search).get("thread") !== threadId) {
-        setTaskUrl(threadId, true);
-      }
-    }
-  }, [runStream.runId, runStream.threadId, threadId, user.user_id]);
-
   function taskStorage() {
     return createUserScopedStorage(window.localStorage, user.user_id);
   }
-
-  function setTaskUrl(id: string, replace = false) {
-    const query = new URLSearchParams({ thread: id });
-    handledNavigation.current = JSON.stringify([workspaceNavigationKey(query), ...navigationContext.current]);
-    window.history[replace ? "replaceState" : "pushState"](null, "", `/?${query}`);
-  }
-
 
   const closeCompactTaskSidebar = useCallback(() => {
     if (compactTaskSidebar) setTaskSidebarOpen(false);
@@ -630,16 +555,14 @@ function AuthenticatedHome() {
     });
   }, [closeCompactTaskSidebar]);
 
-  const createTaskWithAgent = useCallback((nextAgent: TaskAgent, projectId?: string) => {
+  const createTaskWithAgent = useCallback((nextAgent: TaskAgent) => {
     taskSelectionRevision.current += 1;
     const storage = createUserScopedStorage(window.localStorage, user.user_id);
-    const nextThreadId = projectId ? projectDraft(storage, projectId, true) : createNewThread(storage);
-    setDraftProjectId(projectId ?? null);
-    setTaskUrl(nextThreadId);
-    if (!projectId) rememberNewTaskDraft(window.localStorage, user.user_id, nextThreadId);
+    const nextThreadId = createNewThread(storage);
+    window.history.replaceState(window.history.state, "", `/?thread=${encodeURIComponent(nextThreadId)}`);
+    rememberNewTaskDraft(window.localStorage, user.user_id, nextThreadId);
     bindThreadAgent(storage, nextThreadId, nextAgent);
     setSelectedAgent(nextAgent);
-    setAgentsLoading(false);
     setLocalThreadId(nextThreadId);
     setThreadId(nextThreadId);
     setCurrentTaskTitle("新任务");
@@ -651,6 +574,22 @@ function AuthenticatedHome() {
   }, [closeCompactTaskSidebar, user.user_id]);
 
   const startTaskWithAgent = useCallback(async (nextAgent: TaskAgent) => {
+    if (currentTask?.project_id) {
+      if (versionSwitchInFlight.current) return;
+      versionSwitchInFlight.current = true;
+      setVersionSwitchPending(true);
+      const revision = ++taskSelectionRevision.current;
+      try {
+        const task = await createProjectTask(currentTask.project_id, nextAgent);
+        if (revision === taskSelectionRevision.current) { switchTask(task); focusTaskComposer(); }
+      } catch (error) {
+        if (revision === taskSelectionRevision.current) setVersionSwitchError(error instanceof Error ? error.message : "新建项目任务失败");
+      } finally {
+        versionSwitchInFlight.current = false;
+        setVersionSwitchPending(false);
+      }
+      return;
+    }
     const launchMode = resolveTaskLaunchMode(currentThreadState, "select-agent");
     if (launchMode === "reuse-current") {
       const storage = createUserScopedStorage(window.localStorage, user.user_id);
@@ -660,8 +599,8 @@ function AuthenticatedHome() {
       focusTaskComposer();
       return;
     }
-    createTaskWithAgent(nextAgent, activeProjectId ?? undefined);
-  }, [createTaskWithAgent, activeProjectId, currentThreadState, focusTaskComposer, threadId, user.user_id, taskAgents, modelRoutes]);
+    createTaskWithAgent(nextAgent);
+  }, [createTaskWithAgent, currentTask?.project_id, currentThreadState, focusTaskComposer, threadId, user.user_id, taskAgents, modelRoutes]);
 
   // Keep the header's task context (title + details popover data) synced with
   // the durable task list: on thread switches, run phase changes, and after
@@ -685,8 +624,10 @@ function AuthenticatedHome() {
   }, [threadId, runView?.runId, runView?.phase]);
 
   async function startTaskInProject(project: ApiProject) {
-    // Reuse the project's unsent draft; no durable task is created by navigation.
-    router.push(projectHref(project.projectId));
+    const selectionRevision = ++taskSelectionRevision.current;
+    const task = await createProjectTask(project.projectId, systemAssistant);
+    if (taskSelectionRevision.current !== selectionRevision) return;
+    switchTask(task);
     focusTaskComposer();
   }
 
@@ -698,7 +639,6 @@ function AuthenticatedHome() {
       : taskAgents[0];
     const nextAgent = currentSystemAssistant(candidate ?? null, systemAssistant);
     if (!nextAgent) return;
-    if (activeProjectId) { createTaskWithAgent(nextAgent); return; }
     if (currentThreadState === "empty") {
       if (selectedAgent && nextAgent.version !== selectedAgent.version) {
         bindThreadAgent(taskStorage(), threadId, nextAgent);
@@ -708,13 +648,13 @@ function AuthenticatedHome() {
       return;
     }
     const pendingThreadId = pendingNewTaskDraft(window.localStorage, user.user_id, new Set(peekCachedTasks()?.map(task => task.thread_id)));
-    if (pendingThreadId && !draftProject(taskStorage(), pendingThreadId)) {
+    if (pendingThreadId) {
       const storedAgent = loadThreadAgent(taskStorage(), pendingThreadId);
       if (storedAgent) {
         const draftAgent = findTaskAgent(taskAgents, storedAgent);
         if (draftAgent) {
           taskSelectionRevision.current += 1;
-          setTaskUrl(pendingThreadId);
+          window.history.replaceState(window.history.state, "", `/?thread=${encodeURIComponent(pendingThreadId)}`);
           setSelectedAgent(draftAgent);
           setLocalThreadId(pendingThreadId);
           setThreadId(selectThread(taskStorage(), pendingThreadId));
@@ -725,12 +665,11 @@ function AuthenticatedHome() {
       }
     }
     createTaskWithAgent(nextAgent);
-  }, [createTaskWithAgent, currentThreadState, focusTaskComposer, selectedAgent, taskAgents, systemAssistant, threadId, activeProjectId]);
+  }, [createTaskWithAgent, currentThreadState, focusTaskComposer, selectedAgent, taskAgents, systemAssistant, threadId]);
 
   function switchTask(task: TaskSummary) {
-    setDraftProjectId(null);
     taskSelectionRevision.current += 1;
-    setTaskUrl(task.thread_id);
+    window.history.replaceState(window.history.state, "", `/?thread=${encodeURIComponent(task.thread_id)}`);
     const nextAgent =
       taskAgents.find(
         (agent) =>
@@ -746,11 +685,10 @@ function AuthenticatedHome() {
         scope: task.space_id ? "team" : "personal",
         spaceId: task.space_id ?? undefined,
       };
-    if (currentThreadState === "empty" && !activeProjectId) rememberNewTaskDraft(window.localStorage, user.user_id, threadId);
+    if (currentThreadState === "empty") rememberNewTaskDraft(window.localStorage, user.user_id, threadId);
     const storage = taskStorage();
     bindThreadAgent(storage, task.thread_id, nextAgent);
     setSelectedAgent(nextAgent);
-    setAgentsLoading(false);
     const storedModelRoute = loadTaskModelOverride(
       storage,
       task.thread_id,
@@ -828,11 +766,6 @@ function AuthenticatedHome() {
         )}
         <TaskSidebar
           currentThreadId={threadId}
-          activeProjectId={activeProjectId}
-          onOpenProjectResults={() => {
-            setTaskRailOpen(true);
-            setProjectRailRequest({ view: "results", nonce: Date.now() });
-          }}
           collapsed={!taskSidebarOpen}
           overlayOpen={compactTaskSidebar && taskSidebarOpen}
           onToggle={() => {
@@ -866,7 +799,7 @@ function AuthenticatedHome() {
                 </>
               )}
               {activeProjectId && <Link className="task-project-breadcrumb" href={projectHref(activeProjectId)}>
-                {activeProject?.name ?? projects.find((project) => project.projectId === activeProjectId)?.name ?? "返回项目"}<span aria-hidden="true"> / </span>
+                {projects.find((project) => project.projectId === activeProjectId)?.name ?? "返回项目"}<span aria-hidden="true"> / </span>
               </Link>}
               <TaskContextBar
                 taskTitle={currentTaskTitle}
@@ -922,15 +855,7 @@ function AuthenticatedHome() {
             ) : (
             <div className="chat-surface">
               {versionSwitchError && <p role="alert">{versionSwitchError}</p>}
-              {activeProjectId && (!activeProject || (activeProject.archivedAt && currentThreadState === "empty")) ? (
-                <div className="chat-loading" role={projectError ? "alert" : "status"}>
-                  <div className="chat-loading-error">
-                    <strong>{projectError ? "项目不可用" : activeProject?.archivedAt ? "项目已归档" : "正在读取项目…"}</strong>
-                    <span>{projectError || (activeProject?.archivedAt ? "在右侧项目设置中恢复后，可以继续开始任务。" : "")}</span>
-                    {projectError && <button onClick={() => setCatalogRefreshKey(value => value + 1)}>重试</button>}
-                  </div>
-                </div>
-              ) : threadId && selectedAgent ? (
+              {threadId && selectedAgent ? (
                 <AssistantRuntimeShell
                   key={`${threadId}:${runtimeAgentKey(selectedAgent)}`}
                   threadId={threadId}
@@ -939,7 +864,6 @@ function AuthenticatedHome() {
                   agentVersion={selectedAgent.version}
                   agentOwnerUserId={selectedAgent.ownerUserId}
                   spaceId={selectedAgent.spaceId}
-                  projectId={activeProjectId ?? undefined}
                   agentDefaultModelRoute={selectedAgent.modelRoute ?? null}
                   modelRoutes={modelRoutes}
                   modelRouteOverride={modelRouteOverride}
@@ -949,7 +873,6 @@ function AuthenticatedHome() {
                   }}
                 >
                   <AgentThread
-                    projectName={activeProject?.name}
                     userId={user.user_id}
                     threadId={threadId}
                     agents={availableTaskAgents}
@@ -998,8 +921,6 @@ function AuthenticatedHome() {
           threadId={threadId}
           projectId={activeProjectId}
           previewRequest={railPreview}
-          viewRequest={projectRailRequest}
-          onViewRequestHandled={() => setProjectRailRequest(null)}
         />
       </div>
     </main>

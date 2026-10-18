@@ -1,6 +1,6 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -10,6 +10,8 @@ import {
 } from "react";
 import { useAuth } from "./auth-provider";
 import { useConfirmationDialog } from "./confirmation-dialog";
+import { armProjectTaskLaunch } from "../lib/project-task-launch";
+import { createProjectTask } from "../lib/project-task";
 import {
   loadTaskAgentCatalog,
   chatUsableAgents,
@@ -20,6 +22,7 @@ import { notifyTaskListChanged, type TaskSummary } from "../lib/task-history";
 import {
   loadProjectArtifacts,
   loadProjectTasks,
+  projectHref,
   projectTab,
   type ProjectArtifact,
   type ProjectTab,
@@ -39,13 +42,15 @@ export function useProjectSpace(
   initialTab: ProjectTab = "overview",
 ) {
   const { user } = useAuth();
+  const router = useRouter();
   const urlTab = useSearchParams().get("tab");
   const [tab, setTab] = useState(initialTab);
-  useEffect(() => { if (urlTab) setTab(projectTab(urlTab)); }, [urlTab]);
+  useEffect(() => setTab(projectTab(urlTab)), [urlTab]);
   const [resources, setResources] = useState<ApiProjectResources | null>(null);
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
   const [savedResults, setSavedResults] = useState<ApiProjectResult[]>([]);
   const [savedResultError, setSavedResultError] = useState("");
+  const [draft, setDraft] = useState("");
   const [artifacts, setArtifacts] = useState<ProjectArtifact[]>([]);
   const [agents, setAgents] = useState<TaskAgent[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<TaskAgent | null>(null);
@@ -56,6 +61,7 @@ export function useProjectSpace(
   const [taskError, setTaskError] = useState("");
   const [resultError, setResultError] = useState("");
   const [notice, setNotice] = useState("");
+  const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
   const [agentFilter, setAgentFilter] = useState("all");
@@ -73,6 +79,7 @@ export function useProjectSpace(
   const [editingMemory, setEditingMemory] = useState<string | null>(null);
   const [memoryPending, setMemoryPending] = useState(false);
   const epoch = useRef(0);
+  const createLock = useRef(false);
   const { requestConfirmation, confirmationDialog } = useConfirmationDialog();
   const preferenceKey = `harness:project-agent:${user.user_id}:${projectId}`;
 
@@ -176,9 +183,38 @@ export function useProjectSpace(
   function chooseTab(next: ProjectTab) {
     setTab(next);
     setQuery("");
-    const url = new URL(window.location.href);
-    url.searchParams.delete("tab");
-    window.history.replaceState(null, "", url.pathname + url.search);
+    if (
+      next === "overview" &&
+      new URLSearchParams(window.location.search).has("tab")
+    ) {
+      window.history.replaceState(
+        null,
+        "",
+        projectHref(projectId),
+      );
+    }
+  }
+  async function startTask(prompt = "") {
+    if (createLock.current || !selectedAgent) return;
+    createLock.current = true;
+    setCreating(true);
+    setError("");
+    try {
+      const task = await createProjectTask(projectId, selectedAgent);
+      try {
+        localStorage.setItem(preferenceKey, agentItemKey(selectedAgent));
+      } catch {
+        /* optional preference */
+      }
+      if (prompt.trim())
+        armProjectTaskLaunch(user.user_id, task.thread_id, prompt.trim());
+      router.push(`/?thread=${encodeURIComponent(task.thread_id)}`);
+    } catch (cause) {
+      setError(errorText(cause));
+    } finally {
+      createLock.current = false;
+      setCreating(false);
+    }
   }
   async function loadMore() {
     if (loadingMore) return;
@@ -370,6 +406,8 @@ export function useProjectSpace(
     savedResults,
     setSavedResults,
     savedResultError,
+    draft,
+    setDraft,
     tab,
     resources,
     tasks,
@@ -386,6 +424,7 @@ export function useProjectSpace(
     resultError,
     notice,
     setNotice,
+    creating,
     query,
     setQuery,
     status,
@@ -414,6 +453,7 @@ export function useProjectSpace(
     reload,
     refreshResources,
     chooseTab,
+    startTask,
     loadMore,
     saveSettings,
     saveMemory,

@@ -8,7 +8,7 @@ import { useAuth } from "../auth-provider";
 import { TaskSidebar } from "../task-sidebar";
 import { ProductivityCommandCenter } from "../productivity-command-center";
 import { loadTaskAgentCatalog, type TaskAgent } from "../../lib/task-agent-catalog";
-import { projectHref } from "../../lib/project-space";
+import { createProjectTask } from "../../lib/project-task";
 import { useSidebarProjects } from "../../lib/sidebar-state";
 import { createNewThread, createUserScopedStorage } from "../../lib/thread-store";
 import type { TaskSummary } from "../../lib/task-history";
@@ -36,6 +36,7 @@ export function StudioUnifiedShell({
   const [collapsed, setCollapsed] = useState(false);
   const [compactProject, setCompactProject] = useState(false);
   const [agents, setAgents] = useState<TaskAgent[]>([]);
+  const [defaultAgent, setDefaultAgent] = useState<TaskAgent | null>(null);
   const [projects, refreshProjects] = useSidebarProjects(user.user_id);
 
   useEffect(() => {
@@ -51,7 +52,7 @@ export function StudioUnifiedShell({
     let active = true;
     loadTaskAgentCatalog(user.user_id, showInternalAgents)
       .then((catalog) => {
-        if (active) { setAgents(catalog.agents); }
+        if (active) { setAgents(catalog.agents); setDefaultAgent(catalog.defaultAgent); }
       })
       .catch(() => {
         if (active) setAgents([]);
@@ -102,8 +103,10 @@ export function StudioUnifiedShell({
         projects={projects}
         onProjectsChanged={refreshProjects}
         onNewTaskWithProject={async (project) => {
-          navigationRevision.current += 1;
-          router.push(projectHref(project.projectId));
+          const revision = ++navigationRevision.current;
+          const task = await createProjectTask(project.projectId, defaultAgent);
+          if (navigationRevision.current !== revision) return;
+          router.push(`/?thread=${encodeURIComponent(task.thread_id)}`);
         }}
         searchControl={
           <ProductivityCommandCenter

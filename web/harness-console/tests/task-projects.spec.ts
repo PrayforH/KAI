@@ -17,7 +17,7 @@ const workbench = readFileSync(
   "utf8",
 );
 const projectPanel = readFileSync(
-  join(process.cwd(), "src/components/project-workspace-panel.tsx"),
+  join(process.cwd(), "src/components/project-resources-panel.tsx"),
   "utf8",
 );
 const projectRoute = readFileSync(
@@ -51,17 +51,21 @@ describe("project-grouped task list", () => {
     expect(sidebar).toContain("查看 ${project.name} 的文件");
     expect(sidebar).toContain('projectHref(project.projectId, "results")');
     expect(sidebar).not.toContain("<ProjectFilesDialog");
-    expect(projectRoute).toContain("redirect(projectHref(projectId, projectTab(query.tab)))");
+    expect(projectRoute).toContain("<ProjectHome");
     expect(projectRoute).not.toContain('redirect("/")');
     expect(page).toContain("projectId={activeProjectId}");
     expect(page).toContain('className="task-project-breadcrumb"');
-    expect(page).toContain("projectDraft(storage, projectId, true)");
+    expect(page).toContain("createProjectTask(currentTask.project_id, nextAgent)");
     expect(workbench).toContain("projectId");
-    expect(workbench).toContain("<ProjectWorkspacePanel");
+    expect(workbench).toContain("<ProjectResourcesPanel projectId={projectId} />");
   });
 
   it("shows project knowledge, files and skills beside the task conversation", () => {
-    expect(projectPanel).toContain('aria-label="项目配置与成果"');
+    expect(projectPanel).toContain('aria-label="项目资源"');
+    expect(projectPanel).toContain("知识库");
+    expect(projectPanel).toContain("文件和资源");
+    expect(projectPanel).toContain("技能");
+    expect(projectPanel).not.toContain("记忆");
     expect(projectPanel).toContain("<ProjectKnowledgeDialog");
     expect(projectPanel).toContain("<ProjectFilesDialog");
     expect(projectPanel).toContain("<ProjectSkillsDialog");

@@ -346,7 +346,7 @@
 .projectMain {
   display: flex;
   min-width: 0;
-  min-height: calc(100dvh - 66px);
+  min-height: calc(100dvh - 144px);
   flex-direction: column;
 }
 .homeToolbar {
@@ -461,6 +461,9 @@
   gap: 16px;
   min-width: 0;
   padding-top: 4px;
+  max-height: calc(100dvh - 126px);
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 .contextCard {
   padding: 20px;
@@ -660,7 +663,7 @@
     gap: 24px;
   }
   .projectMain {
-    min-height: calc(100dvh - 105px);
+    min-height: calc(100dvh - 180px);
   }
 }
 @media (max-width: 760px) {
@@ -681,6 +684,8 @@
   .contextRail {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: start;
+    max-height: none;
+    overflow: visible;
   }
   .composer {
     position: static;
@@ -786,25 +791,24 @@
   width: min(340px, calc(100vw - 80px));
 }
 
-.workspacePanel { min-width: 0; padding: 20px 16px 32px; color: var(--codex-ink); }
-.panelHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
-.panelHeader > div { min-width: 0; display: grid; gap: 5px; }
-.panelHeader strong { overflow-wrap: anywhere; font-size: 15px; }
-.panelHeader small { color: var(--codex-muted); font-size: 11px; }
-.panelHeader > button { flex-shrink: 0; }
-.configuration { display: grid; gap: 0; }
-.configurationRow { display: flex; width: 100%; justify-content: space-between; align-items: center; gap: 12px; padding: 17px 4px; text-align: left; border: 0; border-bottom: 1px solid var(--codex-line); background: transparent; color: inherit; cursor: pointer; }
-.configurationRow:hover { background: var(--surface-hover, rgba(128,128,128,.06)); }
-.configurationRow:focus-visible { outline: 2px solid var(--codex-accent); outline-offset: 2px; }
-.configurationRow > span:first-child { min-width: 0; display: grid; gap: 6px; }
-.configurationRow strong { font-size: 13px; font-weight: 600; }
-.configurationRow small { font-size: 12px; color: var(--codex-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.boundaryNote { font-size: 11px; line-height: 1.7; color: var(--codex-muted); padding-top: 14px; }
-.workspacePanel .toolbar { flex-wrap: wrap; }
-.workspacePanel .toolbar .input { min-width: 0; width: 100%; }
-.workspacePanel .resultRow { flex-wrap: wrap; }
-.workspacePanel .resultRow .copy { min-width: 0; flex-basis: 100%; }
-.workspacePanel .resultActions { flex-wrap: wrap; justify-content: flex-start; }
-.workspacePanel .row { flex-wrap: wrap; }
-.workspacePanel .toolbar { display: grid; grid-template-columns: minmax(0, 1fr); }
-.workspacePanel .toolbar > button { justify-self: start; }
+/* Project landing follows the resource-card layout; execution uses Home. */
+.connectorStrip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--codex-surface-subtle);
+}
+.recentRow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 64px;
+  padding: 12px 4px;
+  border-bottom: 1px solid var(--codex-line);
+}
+.recentRow .rowLink { flex: 1; min-width: 0; }
+.recentRow .rowLink strong { font-size: 14px; font-weight: 500; }
+.taskTime { flex-shrink: 0; font-size: 12px; color: var(--codex-muted); }
