@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
@@ -9,10 +10,12 @@ from typing import Any, cast
 import pytest
 from httpx import ASGITransport, AsyncClient, Response
 
+from harness.adapters.memory import InMemoryAguiThreadBindingRepository
+from harness.agui.service import AguiRunService
 from harness.api.app import create_app
 from harness.api.dependencies import ApiContainer, build_memory_container
 from harness.core.errors import PermissionDeniedError
-from harness.core.models import RunStatus
+from harness.core.models import AguiThreadBinding, RunStatus
 from harness.core.ports import RunTask
 from harness.presentation.models import ActionRequest, Publication
 from harness.presentation.schema import Presentation
@@ -283,3 +286,97 @@ async def test_capabilities_intersect_the_server_catalog() -> None:
         result = await c.get("/v1/ui/capabilities?renderers=table/1,malicious/1", headers=H)
         assert result.status_code == 200
         assert [r["renderer_version"] for r in result.json()["renderers"]] == ["table/1"]
+
+
+@pytest.mark.asyncio
+async def test_automation_thread_reads_and_restores_its_presentation() -> None:
+    """An automation result belongs to ``automation:{task}``, not the reader.
+
+    The user-scoped thread binding that already exposes the task and its files
+    must also authorize the interactive snapshot and per-user view state.
+    """
+
+    container = build_memory_container(policy_profiles=fake_runtime_review_profiles())
+    await container.agents.publish("tenant-a", "owner", FIXTURE)
+    session = await container.sessions.create(
+        "tenant-a",
+        "automation:daily-news",
+        "echo-agent",
+        "0.1.0",
+        api_key_id="daily-news",
+        agent_owner_user_id="owner",
+    )
+    block = {
+        "version": 1,
+        "kind": "table",
+        "title": "今日新闻",
+        "fallback_text": "今日共两条新闻。",
+        "data": {
+            "columns": [{"key": "title", "label": "标题"}],
+            "rows": [{"title": "第一条"}, {"title": "第二条"}],
+        },
+    }
+    run = await container.runs.create(
+        "tenant-a",
+        session.session_id,
+        "automation-ui",
+        input={
+            "prompt": "每日简报\n```harness-ui\n" + json.dumps(block, ensure_ascii=False) + "\n```"
+        },
+    )
+    terminal = await container.worker.execute("tenant-a", run.run_id)
+    p = (await container.presentations.materialize(terminal))[0]
+    assert (await container.presentations.repository.get("tenant-a", p.presentation_id))[
+        0
+    ].owner_user_id == "automation:daily-news"
+    now = datetime.now(UTC)
+    bindings = InMemoryAguiThreadBindingRepository()
+    container = replace(
+        container,
+        agui=AguiRunService(
+            sessions=container.sessions,
+            runs=container.runs,
+            input_artifacts=container.input_artifacts,
+            contexts=container.context,
+            bindings=bindings,
+        ),
+    )
+    await bindings.add(
+        AguiThreadBinding(
+            tenant_id="tenant-a",
+            user_id="owner",
+            thread_id="daily-news",
+            session_id=session.session_id,
+            title="每日 AI 新闻推送",
+            created_at=now,
+            updated_at=now,
+        )
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=create_app(container)), base_url="http://test"
+    ) as c:
+        snapshot = await c.get(f"/v1/ui/presentations/{p.presentation_id}", headers=H)
+        assert snapshot.status_code == 200
+        assert snapshot.json()["presentation_id"] == p.presentation_id
+        assert snapshot.json()["view_state"]["state"] == {}
+        state_url = f"/v1/ui/presentations/{p.presentation_id}/view-state"
+        saved = await c.put(
+            state_url,
+            headers=H,
+            json={"revision": 1, "expected_version": 0, "state": {"sort": None}},
+        )
+        assert saved.status_code == 200 and saved.json()["version"] == 1
+        restored = await c.get(f"/v1/ui/presentations/{p.presentation_id}", headers=H)
+        assert restored.json()["view_state"] == {"version": 1, "state": {"sort": None}}
+        for headers in ({**H, "X-User-ID": "other"}, {**H, "X-Tenant-ID": "other"}):
+            assert (
+                await c.get(f"/v1/ui/presentations/{p.presentation_id}", headers=headers)
+            ).status_code == 404
+            assert (
+                await c.put(
+                    state_url,
+                    headers=headers,
+                    json={"revision": 1, "expected_version": 1, "state": {"sort": None}},
+                )
+            ).status_code == 404

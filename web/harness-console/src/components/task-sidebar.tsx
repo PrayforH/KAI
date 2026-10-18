@@ -8,7 +8,7 @@ import { PanelResizeHandle } from "./panel-resize-handle";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { AccountMenu } from "./account-menu";
 import { useAuth } from "./auth-provider";
-import { ProductBrandMark, PRODUCT_NAME } from "./product-brand";
+import { ProductBrandMark, ProductWordmark, PRODUCT_NAME } from "./product-brand";
 import { WorkspaceNavigation, type WorkspaceId } from "./workspace-navigation";
 import { useRunViewModel } from "../lib/activity-store";
 import { approvalStore } from "../lib/approval-store";
@@ -450,7 +450,7 @@ export function TaskSidebar({
             <Link className="task-sidebar-brand-link" href="/" aria-label={`${PRODUCT_NAME}任务首页`}>
               <ProductBrandMark />
               <span className="task-sidebar-brand-copy task-workbench-name">
-                <strong>{PRODUCT_NAME}</strong>
+                <ProductWordmark />
               </span>
             </Link>
             {searchControl ? (

@@ -16,6 +16,7 @@ from harness.api.dependencies import (
     get_container,
     require_identity,
     require_owned_run,
+    require_readable_run,
 )
 from harness.core.errors import NotFoundError
 from harness.core.models import ArtifactStatus
@@ -50,14 +51,24 @@ class ViewInput(BaseModel):
 
 
 async def owned(
-    container: ApiContainer, actor: Identity, presentation_id: str, revision: int | None = None
+    container: ApiContainer,
+    actor: Identity,
+    presentation_id: str,
+    revision: int | None = None,
+    *,
+    bound_thread_access: bool = False,
 ) -> tuple[Publication, Presentation]:
     ensure_permission(actor, "tasks:read")
     owner, p = await container.presentations.repository.get(
         actor.tenant_id, presentation_id, revision
     )
-    await require_owned_run(container, actor, owner.run_id)
-    session = await container.sessions.get(actor.tenant_id, owner.session_id)
+    if bound_thread_access:
+        # Reads of an automation result follow the user-scoped thread binding,
+        # exactly like its artifacts. Actions still require run ownership.
+        _, session = await require_readable_run(container, actor, owner.run_id)
+    else:
+        await require_owned_run(container, actor, owner.run_id)
+        session = await container.sessions.get(actor.tenant_id, owner.session_id)
     if session.team_ids:
         await container.team_spaces.require_agent_access(
             actor.tenant_id,
@@ -94,18 +105,18 @@ async def get_presentation(
     run_id: str | None = Query(default=None, min_length=1, max_length=160),
 ) -> dict[str, Any]:
     try:
-        _, p = await owned(container, actor, presentation_id, revision)
+        _, p = await owned(container, actor, presentation_id, revision, bound_thread_access=True)
     except NotFoundError:
         if run_id is None:
             raise
         # Older histories can contain a block before its publication was saved.
-        # Rebuild only from a terminal run owned by this actor, then recheck the
+        # Rebuild only from a terminal run this actor may read, then recheck the
         # exact requested identity/revision through the normal ownership path.
-        run = await require_owned_run(container, actor, run_id)
+        run, _ = await require_readable_run(container, actor, run_id)
         if not run.status.is_terminal:
             raise HTTPException(425, "交互工具正在准备，请稍后重试") from None
         await container.presentations.materialize(run)
-        _, p = await owned(container, actor, presentation_id, revision)
+        _, p = await owned(container, actor, presentation_id, revision, bound_thread_access=True)
     view = await container.presentations.repository.view(
         actor.tenant_id, actor.user_id, presentation_id, p.revision
     )
@@ -129,7 +140,7 @@ async def get_html_document(
     container: Container,
     revision: int = Query(ge=1),
 ) -> Response:
-    owner, p = await owned(container, actor, presentation_id, revision)
+    owner, p = await owned(container, actor, presentation_id, revision, bound_thread_access=True)
     if p.kind != "html":
         raise HTTPException(404, "HTML presentation not found")
     artifact = await container.artifacts.get(actor.tenant_id, p.data["artifact_id"])
@@ -199,7 +210,7 @@ async def submit_action(
 async def get_action(
     presentation_id: str, request_id: str, actor: Actor, container: Container
 ) -> dict[str, Any]:
-    await owned(container, actor, presentation_id)
+    await owned(container, actor, presentation_id, bound_thread_access=True)
     request = await container.presentations.repository.request(actor.tenant_id, request_id)
     if request.actor_user_id != actor.user_id or request.presentation_id != presentation_id:
         raise HTTPException(404, "action request not found")
@@ -210,7 +221,7 @@ async def get_action(
 async def save_view(
     presentation_id: str, body: ViewInput, actor: Actor, container: Container
 ) -> dict[str, Any]:
-    await owned(container, actor, presentation_id, body.revision)
+    await owned(container, actor, presentation_id, body.revision, bound_thread_access=True)
     try:
         view = await container.presentations.save_view(
             tenant_id=actor.tenant_id,
@@ -219,6 +230,9 @@ async def save_view(
             revision=body.revision,
             expected_version=body.expected_version,
             state=body.state,
+            # Access was established above; an automation publication carries the
+            # task's workload identity, while this state is per reading user.
+            allow_foreign_owner=True,
         )
     except ValueError as error:
         raise HTTPException(422, str(error)) from error

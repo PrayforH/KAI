@@ -1,4 +1,6 @@
 import { isSensitiveLabel, isSecretFieldLabel } from "./conversation-secrets";
+export const CONVERSATION_INPUT_LIMITS = { characters: 64_000, questions: 32, options: 128 } as const;
+
 /** A display protocol only: submitted answers are ordinary user messages, never tool calls. */
 export type ConversationQuestion = { id: string; label: string; type: "single" | "multi" | "text" | "password"; options: string[]; sensitive?: boolean };
 export type ConversationInput = { version: 1; title: string; questions: ConversationQuestion[] };
@@ -10,17 +12,17 @@ export function isSensitiveQuestion(question: ConversationQuestion) {
 }
 type InputBlock = { start: number; end: number; input: ConversationInput };
 function validateInput(raw: string): ConversationInput | null {
-  if (raw.length > 16_000) return null;
+  if (raw.length > CONVERSATION_INPUT_LIMITS.characters) return null;
   try {
     const data = JSON.parse(raw);
-    if (!data || data.version !== 1 || !shortText(data.title, 160) || !Array.isArray(data.questions) || !data.questions.length || data.questions.length > 4) return null;
+    if (!data || data.version !== 1 || !shortText(data.title, 160) || !Array.isArray(data.questions) || !data.questions.length || data.questions.length > CONVERSATION_INPUT_LIMITS.questions) return null;
     if (Object.keys(data).some(key => !["version", "title", "questions"].includes(key))) return null;
     const ids = new Set<string>();
     const questions: ConversationQuestion[] = [];
     for (const item of data.questions) {
       if (!item || !shortText(item.id, 64) || !/^[\w-]+$/.test(item.id) || ids.has(item.id) || !shortText(item.label, 500) || !["single", "multi", "text", "password"].includes(item.type)) return null;
       const options = item.options ?? [];
-      if (!Array.isArray(options) || options.length > 8 || !options.every(value => shortText(value, 300)) || new Set(options).size !== options.length || (!["text", "password"].includes(item.type) && options.length < 2) || (["text", "password"].includes(item.type) && options.length)) return null;
+      if (!Array.isArray(options) || options.length > CONVERSATION_INPUT_LIMITS.options || !options.every(value => shortText(value, 300)) || new Set(options).size !== options.length || (!["text", "password"].includes(item.type) && options.length < 2) || (["text", "password"].includes(item.type) && options.length)) return null;
       if (item.sensitive !== undefined && typeof item.sensitive !== "boolean") return null;
       ids.add(item.id);
       questions.push({ id: item.id, label: item.label, type: item.type, options, ...(item.sensitive === true ? {sensitive: true} : {}) });
@@ -28,13 +30,20 @@ function validateInput(raw: string): ConversationInput | null {
     return { version: 1, title: data.title, questions };
   } catch { return null; }
 }
+type FencedBlock = { start: number; end: number; language: string; body: string };
+function fencedBlocks(text: string): FencedBlock[] {
+  return [...text.matchAll(/(?:^|\n)[ \t]*(`{3,}|~{3,})([^\n]*)\n([\s\S]*?)(?:\n[ \t]*\1[ \t]*(?=\n|$)|$)/g)].map(match => ({
+    start: match.index!, end: match.index! + match[0].length,
+    language: match[2].trim().toLowerCase(), body: match[3],
+  }));
+}
 function inputBlock(text: string): InputBlock | null {
   const blocks: InputBlock[] = [];
-  const codeBlocks = [...text.matchAll(/```([^\n]*)\n([\s\S]*?)\n```/g)];
-  for (const match of codeBlocks) {
-    if (!["harness-input", "harness", "json", ""].includes(match[1].trim().toLowerCase())) continue;
-    const input = validateInput(match[2]);
-    if (input) blocks.push({start: match.index!, end: match.index! + match[0].length, input});
+  const codeBlocks = fencedBlocks(text);
+  for (const block of codeBlocks) {
+    if (!["harness-input", "harness", "json", ""].includes(block.language)) continue;
+    const input = validateInput(block.body);
+    if (input) blocks.push({start: block.start, end: block.end, input});
   }
   // Models sometimes omit the fence. Only accept a complete, bounded protocol
   // object beginning on its own line, outside other code blocks.
@@ -43,9 +52,9 @@ function inputBlock(text: string): InputBlock | null {
   while ((start = starts.exec(text))) {
     const offset = start.index + start[0].length;
     starts.lastIndex = offset + 1;
-    if (codeBlocks.some(block => offset >= block.index! && offset < block.index! + block[0].length)) continue;
+    if (codeBlocks.some(block => offset >= block.start && offset < block.end)) continue;
     let depth = 0, quoted = false, escaped = false;
-    for (let i = offset; i < Math.min(text.length, offset + 16_000); i++) {
+    for (let i = offset; i < Math.min(text.length, offset + CONVERSATION_INPUT_LIMITS.characters); i++) {
       const char = text[i];
       if (quoted) {
         if (escaped) escaped = false;
@@ -69,6 +78,13 @@ export function parseConversationInput(text: string): ConversationInput | null {
 export function conversationInputDisplay(text: string, streaming = false): string {
   const block = inputBlock(text);
   if (block) return text.slice(0, block.start) + [block.input.title, ...block.input.questions.map(q => `${q.label}${q.options.length ? `（${q.options.join(" / ")}）` : ""}`)].join("\n\n") + text.slice(block.end);
+  // Invalid internal forms must not become code widgets. Keep ordinary code
+  // literal, and retain a readable recovery path after an interrupted response.
+  const internal = fencedBlocks(text).filter(block => ["harness-input", "harness"].includes(block.language));
+  if (internal.length) {
+    const replacement = streaming ? "" : "\n表单信息未能识别，请直接输入你的选择或补充信息。";
+    return internal.reduceRight((value, block) => value.slice(0, block.start) + replacement + value.slice(block.end), text).trimEnd();
+  }
   if (streaming) {
     const start = /(?:^|\n)```harness(?:-input)?(?:\s|$)/.exec(text)
       ?? /(?:^|\n)[ \t]*\{\s*"version"\s*:\s*1\s*,\s*"title"\s*:\s*"[^"\n]*"\s*,\s*"questions"\s*:\s*\[/.exec(text);
@@ -89,7 +105,7 @@ export function formatConversationAnswers(input: ConversationInput, answers: Rec
     const selected = answer?.selected.filter(value => question.options.includes(value)) ?? [];
     const secret = isSensitiveQuestion(question);
     const text = secret ? answer?.text.slice(0, 4000) : answer?.text.trim().slice(0, 4000);
-    const values = [...(["text", "password"].includes(question.type) ? [] : selected.slice(0, question.type === "single" ? 1 : 8)), text].filter(Boolean);
+    const values = [...(["text", "password"].includes(question.type) ? [] : selected.slice(0, question.type === "single" ? 1 : question.options.length)), text].filter(Boolean);
     if (!values.length && !skipMissing) return null;
     const sourceLabel = secret ? question.label.replace(/\s*\n\s*/g, " ") : question.label;
     const label = secret && !isSecretFieldLabel(sourceLabel) ? `${sourceLabel}（敏感信息）` : sourceLabel;

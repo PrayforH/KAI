@@ -11,11 +11,12 @@ from harness.api.dependencies import (
     Identity,
     ensure_permission,
     get_container,
+    is_automation_session,
     require_identity,
     require_owned_run,
+    require_readable_run,
 )
 from harness.api.downloads import attachment_content_disposition
-from harness.core.errors import NotFoundError
 from harness.core.models import Artifact, ArtifactStatus, Run, Session
 
 router = APIRouter(tags=["artifacts"])
@@ -36,27 +37,11 @@ class UserArtifactIndexEntry(BaseModel):
     task_archived: bool = False
 
 
-def _is_automation_session(session: Session) -> bool:
-    return bool(session.api_key_id) and session.user_id == f"automation:{session.api_key_id}"
-
-
 async def _require_readable_artifact_run(
     container: ApiContainer, identity: Identity, run_id: str
 ) -> Run:
-    run = await container.runs.get(identity.tenant_id, run_id)
-    session = await container.sessions.get(identity.tenant_id, run.session_id)
-    if session.user_id == identity.user_id:
-        return run
-    if _is_automation_session(session):
-        # Execution uses a workload identity; the user-scoped thread binding
-        # controls read access. Do not widen the write/cancel ownership guard.
-        await container.agui.get_thread_record_for_session(
-            tenant_id=identity.tenant_id,
-            user_id=identity.user_id,
-            session_id=session.session_id,
-        )
-        return run
-    raise NotFoundError(f"run not found: {run_id}")
+    run, _ = await require_readable_run(container, identity, run_id)
+    return run
 
 
 @router.get("/artifacts", response_model=list[UserArtifactIndexEntry])
@@ -109,7 +94,7 @@ async def list_user_artifacts(
         session.session_id: session
         for session in sessions
         if session.user_id == identity.user_id
-        or (_is_automation_session(session) and session.session_id in binding_by_session)
+        or (is_automation_session(session) and session.session_id in binding_by_session)
     }
     owned_runs: dict[str, Run] = {
         run.run_id: run for run in runs if run.session_id in session_by_id

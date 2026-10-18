@@ -111,7 +111,7 @@ export function VoiceInput({ disabled, modelRoute, onInsert, onActive, onDraft, 
     setPhase("starting"); active.current(true); abort.current = new AbortController();
     try {
       if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
-        throw new Error("麦克风需要 HTTPS 或 localhost 入口。请通过安全入口打开 KAI。");
+        throw new Error("麦克风需要 HTTPS 或 localhost 入口。请通过安全入口打开 sapling preview。");
       }
       stream.current = new DictationStream((value) => {
         if (current !== generation.current) return;
