@@ -1555,6 +1555,12 @@ body.codex-theme-v1:has(.console-shell) [data-project-task] .aui-thread-root .au
   padding-inline: clamp(16px, 2vw, 32px);
 }
 
+/* A project task starts as a launcher: keep its composer at the bottom. */
+body.codex-theme-v1:has(.console-shell) [data-project-task] .aui-thread-viewport:has(.user-task-welcome) {
+  justify-content: flex-end;
+  padding-bottom: 18px;
+}
+
 body.codex-theme-v1:has(.console-shell) [data-project-task] .workspace-stage {
   --preferred-rail-width: 280px;
 }
