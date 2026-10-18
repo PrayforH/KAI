@@ -1221,6 +1221,9 @@ class ProjectRow(Base):
     tenant_id: Mapped[str] = mapped_column(String(128), index=True)
     user_id: Mapped[str] = mapped_column(String(128))
     name: Mapped[str] = mapped_column(String(120))
+    pinned_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     archived_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

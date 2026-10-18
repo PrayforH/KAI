@@ -79,6 +79,23 @@ async def test_rename_and_archive_hide_from_the_default_list() -> None:
 
 
 @pytest.mark.asyncio
+async def test_pinned_projects_sort_first() -> None:
+    service, _moves = build_service()
+    first = await service.create(tenant_id="t", user_id="u", name="金融办")
+    second = await service.create(tenant_id="t", user_id="u", name="数据局")
+    await service.update(
+        tenant_id="t", user_id="u", project_id=second.project_id, pinned=True
+    )
+    listed = await service.list(tenant_id="t", user_id="u")
+    assert [item.project_id for item in listed][0] == second.project_id
+    await service.update(
+        tenant_id="t", user_id="u", project_id=second.project_id, pinned=False
+    )
+    listed = await service.list(tenant_id="t", user_id="u")
+    assert [item.project_id for item in listed][0] == first.project_id
+
+
+@pytest.mark.asyncio
 async def test_other_users_cannot_touch_a_project() -> None:
     service, _moves = build_service()
     project = await service.create(tenant_id="t", user_id="u", name="金融办")

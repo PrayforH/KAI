@@ -97,6 +97,7 @@ async def update_project(
         body.name is None
         and body.instructions is None
         and body.skill_references is None
+        and body.pinned is None
         and body.archived is None
     ):
         raise ConflictError("No project update was requested")
@@ -108,6 +109,7 @@ async def update_project(
             name=body.name,
             instructions=body.instructions,
             skill_references=body.skill_references,
+            pinned=body.pinned,
             archived=body.archived,
         )
     except NotFoundError as error:

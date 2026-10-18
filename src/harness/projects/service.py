@@ -127,6 +127,7 @@ class ProjectService:
         name: str | None = None,
         instructions: str | None = None,
         skill_references: tuple[str, ...] | None = None,
+        pinned: bool | None = None,
         archived: bool | None = None,
     ) -> Project:
         current = await self.get(
@@ -144,6 +145,8 @@ class ProjectService:
             updates["skill_references"] = _normalize_skill_references(
                 skill_references
             )
+        if pinned is not None:
+            updates["pinned_at"] = self._clock() if pinned else None
         if archived is not None:
             updates["archived_at"] = self._clock() if archived else None
         updated = current.model_copy(update=updates)

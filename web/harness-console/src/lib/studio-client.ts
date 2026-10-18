@@ -2830,6 +2830,7 @@ export interface ApiProject {
   name: string;
   instructions?: string;
   skillReferences?: string[];
+  pinnedAt?: string | null;
   archivedAt?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -2878,7 +2879,12 @@ export const projectClient = {
   },
   update(
     projectId: string,
-    update: { name?: string; instructions?: string; skillReferences?: string[] },
+    update: {
+      name?: string;
+      instructions?: string;
+      skillReferences?: string[];
+      pinned?: boolean;
+    },
   ): Promise<ApiProject> {
     return request<ApiProject>(`projects/${encodeURIComponent(projectId)}`, {
       method: "PATCH",

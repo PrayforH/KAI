@@ -4,6 +4,8 @@ import { isFailedRunStatus } from "../lib/run-status";
 import { SidebarIcon } from "./sidebar-icon";
 import Link from "next/link";
 import { ProjectCreateDialog } from "./project-create-dialog";
+import { ProjectSettingsDialog } from "./project-settings-dialog";
+import { useConfirmationDialog } from "./confirmation-dialog";
 import { PanelResizeHandle } from "./panel-resize-handle";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { AccountMenu } from "./account-menu";
@@ -27,6 +29,7 @@ import { formatTaskAge } from "../lib/task-list-age";
 import { agentDisplayName } from "../lib/agent-display-name";
 import {
   ApiProject,
+  projectClient,
 } from "../lib/studio-client";
 import { useSidebarGroups } from "../lib/sidebar-state";
 import { taskListRefreshDelay } from "../lib/task-list-refresh";
@@ -58,6 +61,41 @@ function MoreIcon() {
       <circle cx="3.5" cy="8" r="1" />
       <circle cx="8" cy="8" r="1" />
       <circle cx="12.5" cy="8" r="1" />
+    </svg>
+  );
+}
+
+function PinIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path d="m5 2.5 6 0-1 4 2 2v1H4v-1l2-2z" />
+      <path d="M8 9.5V14" />
+    </svg>
+  );
+}
+
+function EditIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M3 12.5 4 9l6.7-6.7a1.2 1.2 0 0 1 1.7 1.7L5.7 10.7Z" />
+      <path d="M9.5 3.5 12.5 6.5" />
+    </svg>
+  );
+}
+
+function EyeIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M1.8 8s2.2-3.7 6.2-3.7S14.2 8 14.2 8s-2.2 3.7-6.2 3.7S1.8 8 1.8 8Z" />
+      <circle cx="8" cy="8" r="1.7" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M3.5 4.5h9M6 4.5V3h4v1.5M4.5 4.5l.6 8.2h5.8l.6-8.2" />
     </svg>
   );
 }
@@ -137,7 +175,11 @@ export function TaskSidebar({
   const [creatingProjectId, setCreatingProjectId] = useState<string | null>(null);
   const [projectCreateError, setProjectCreateError] = useState("");
   const [projectDialogOpen, setProjectDialogOpen] = useState(false);
+  const [projectMenuId, setProjectMenuId] = useState<string | null>(null);
+  const [settingsProject, setSettingsProject] = useState<ApiProject | null>(null);
+  const [pinningProjectId, setPinningProjectId] = useState("");
   const projectCreationPending = useRef(false);
+  const { requestConfirmation, confirmationDialog } = useConfirmationDialog();
   const sidebarRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const expandButtonRef = useRef<HTMLButtonElement>(null);
@@ -157,6 +199,27 @@ export function TaskSidebar({
       return next;
     });
   }
+
+  useEffect(() => {
+    if (!projectMenuId) return;
+    const dismiss = (event: PointerEvent) => {
+      const target = event.target;
+      if (
+        target instanceof Element
+        && target.closest(`[data-project-menu="${projectMenuId}"]`)
+      ) return;
+      setProjectMenuId(null);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setProjectMenuId(null);
+    };
+    document.addEventListener("pointerdown", dismiss);
+    window.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", dismiss);
+      window.removeEventListener("keydown", escape);
+    };
+  }, [projectMenuId]);
 
 
   // Acknowledge only the version displayed on a visible task page. Server
@@ -426,6 +489,46 @@ export function TaskSidebar({
     );
   }
 
+  async function toggleProjectPin(project: ApiProject) {
+    if (pinningProjectId) return;
+    setProjectMenuId(null);
+    setPinningProjectId(project.projectId);
+    setProjectCreateError("");
+    try {
+      await projectClient.update(project.projectId, {
+        pinned: !project.pinnedAt,
+      });
+      onProjectsChanged?.();
+    } catch (cause) {
+      setProjectCreateError(
+        cause instanceof Error ? cause.message : "更新项目失败，请重试",
+      );
+    } finally {
+      setPinningProjectId("");
+    }
+  }
+
+  async function removeProject(project: ApiProject) {
+    setProjectMenuId(null);
+    const confirmed = await requestConfirmation({
+      title: `移除项目「${project.name}」？`,
+      description:
+        "项目会从侧边栏移除，项目里的任务会回到「任务」区，历史记录不会删除。",
+      confirmLabel: "移除项目",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    try {
+      await projectClient.remove(project.projectId);
+      onProjectsChanged?.();
+      notifyTaskListChanged();
+    } catch (cause) {
+      setProjectCreateError(
+        cause instanceof Error ? cause.message : "移除项目失败，请重试",
+      );
+    }
+  }
+
   async function startProjectTask(project: ApiProject) {
     if (!onNewTaskWithProject || projectCreationPending.current) return;
     projectCreationPending.current = true;
@@ -560,14 +663,67 @@ export function TaskSidebar({
                         </span>
                       </strong>
                     </button>
-                    <Link
-                      className="task-project-settings"
-                      href={`/studio/projects/${encodeURIComponent(project.projectId)}`}
-                      aria-label={`打开项目 ${project.name}`}
-                      title={`打开项目 ${project.name}`}
-                    >
-                      <MoreIcon />
-                    </Link>
+                    <div className="task-project-menu-anchor" data-project-menu={project.projectId}>
+                      <button
+                        type="button"
+                        className="task-project-settings"
+                        aria-label={`项目操作 ${project.name}`}
+                        title={`项目操作 ${project.name}`}
+                        aria-haspopup="menu"
+                        aria-expanded={projectMenuId === project.projectId}
+                        disabled={pinningProjectId === project.projectId}
+                        onClick={() => setProjectMenuId((current) =>
+                          current === project.projectId ? null : project.projectId
+                        )}
+                      >
+                        <MoreIcon />
+                      </button>
+                      {projectMenuId === project.projectId && (
+                        <div
+                          className="task-project-menu"
+                          role="menu"
+                          aria-label={`项目操作 ${project.name}`}
+                          data-project-menu={project.projectId}
+                        >
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => void toggleProjectPin(project)}
+                          >
+                            <PinIcon />
+                            <span>{project.pinnedAt ? "取消置顶" : "置顶"}</span>
+                          </button>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              setProjectMenuId(null);
+                              setSettingsProject(project);
+                            }}
+                          >
+                            <EditIcon />
+                            <span>编辑项目</span>
+                          </button>
+                          <Link
+                            role="menuitem"
+                            href={`/studio/projects/${encodeURIComponent(project.projectId)}`}
+                            onClick={() => setProjectMenuId(null)}
+                          >
+                            <EyeIcon />
+                            <span>查看项目</span>
+                          </Link>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            className="is-danger"
+                            onClick={() => void removeProject(project)}
+                          >
+                            <TrashIcon />
+                            <span>移除项目</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
                     <button
                         type="button"
                         className="task-project-add"
@@ -687,6 +843,17 @@ export function TaskSidebar({
           onProjectsChanged?.();
         }}
       />}
+      {settingsProject && <ProjectSettingsDialog
+        project={settingsProject}
+        onClose={() => setSettingsProject(null)}
+        onChanged={() => onProjectsChanged?.()}
+        onRemoved={() => {
+          setSettingsProject(null);
+          onProjectsChanged?.();
+          notifyTaskListChanged();
+        }}
+      />}
+      {confirmationDialog}
     </aside>
   );
 }

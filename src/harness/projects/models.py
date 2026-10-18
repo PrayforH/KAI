@@ -29,6 +29,7 @@ class Project(StudioModel):
     # ``packageId@revision`` so a later catalog revision cannot change an
     # already-created Run. Files are staged per Run, not copied into the Agent.
     skill_references: tuple[str, ...] = Field(default=(), alias="skillReferences")
+    pinned_at: datetime | None = Field(default=None, alias="pinnedAt")
     archived_at: datetime | None = Field(default=None, alias="archivedAt")
     created_at: datetime = Field(alias="createdAt")
     updated_at: datetime = Field(alias="updatedAt")
@@ -75,6 +76,7 @@ class UpdateProjectRequest(StudioModel):
     skill_references: tuple[str, ...] | None = Field(
         default=None, alias="skillReferences", max_length=MAX_PROJECT_SKILLS
     )
+    pinned: bool | None = None
     archived: bool | None = None
 
 

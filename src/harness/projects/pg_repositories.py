@@ -32,6 +32,7 @@ class PostgresProjectRepository:
                     tenant_id=project.tenant_id,
                     user_id=project.user_id,
                     name=project.name,
+                    pinned_at=project.pinned_at,
                     archived_at=project.archived_at,
                     created_at=project.created_at,
                     updated_at=project.updated_at,
@@ -62,7 +63,11 @@ class PostgresProjectRepository:
         )
         if not include_archived:
             statement = statement.where(ProjectRow.archived_at.is_(None))
-        statement = statement.order_by(ProjectRow.created_at, ProjectRow.project_id)
+        statement = statement.order_by(
+            ProjectRow.pinned_at.desc().nulls_last(),
+            ProjectRow.created_at,
+            ProjectRow.project_id,
+        )
         async with self._sessions() as session:
             rows = (await session.scalars(statement)).all()
         return [_project(row) for row in rows]
@@ -73,6 +78,7 @@ class PostgresProjectRepository:
             if row is None or row.tenant_id != project.tenant_id:
                 raise NotFoundError(f"Project not found: {project.project_id}")
             row.name = project.name
+            row.pinned_at = project.pinned_at
             row.archived_at = project.archived_at
             row.updated_at = project.updated_at
             row.payload = _payload(project)

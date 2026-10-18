@@ -675,6 +675,65 @@ body.codex-theme-v1:has(.console-shell) .task-list-scroll .task-list {
   stroke: none;
 }
 
+.task-project-menu {
+  position: absolute;
+  top: 34px;
+  right: 4px;
+  z-index: 60;
+  display: grid;
+  gap: 1px;
+  width: 178px;
+  padding: 5px;
+  border: 1px solid #414141;
+  border-radius: 11px;
+  background: #262626;
+  box-shadow: 0 14px 34px rgb(0 0 0 / 38%);
+}
+
+.task-project-menu button,
+.task-project-menu a {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #d4d4d4;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.task-project-menu button:hover,
+.task-project-menu a:hover {
+  background: #363636;
+  color: #ffffff;
+}
+
+.task-project-menu button.is-danger {
+  color: #e58b8b;
+}
+
+.task-project-menu button.is-danger:hover {
+  background: #3a2525;
+  color: #ffb4b4;
+}
+
+.task-project-menu svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 @media (hover: none) {
   .task-project-add,
   .task-project-settings {
@@ -2185,6 +2244,27 @@ html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-proj
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-settings:hover {
   color: #171719;
   background: #e9e9eb;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-menu {
+  border-color: #dedee1;
+  background: #ffffff;
+  box-shadow: 0 14px 34px rgb(0 0 0 / 14%);
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-menu button,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-menu a {
+  color: #4b4b50;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-menu button:hover,
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-menu a:hover {
+  background: #f0f0f2;
+  color: #171719;
+}
+
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-project-menu .is-danger {
+  color: #b33a3a;
 }
 
 html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .task-list-item:hover {

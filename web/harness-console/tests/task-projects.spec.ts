@@ -35,16 +35,20 @@ describe("project-grouped task list", () => {
     expect(sidebar).toContain('aria-label="任务"');
   });
 
-  it("opens a project home from the sidebar", () => {
-    expect(sidebar).toContain('aria-label={`打开项目 ${project.name}`}');
+  it("opens a project menu with pin, edit, view and remove", () => {
+    expect(sidebar).toContain('aria-label={`项目操作 ${project.name}`}');
+    expect(sidebar).toContain("置顶");
+    expect(sidebar).toContain("编辑项目");
+    expect(sidebar).toContain("查看项目");
+    expect(sidebar).toContain("移除项目");
+    expect(sidebar).toContain("useConfirmationDialog");
     expect(sidebar).toContain("/studio/projects/${encodeURIComponent(project.projectId)}");
-    expect(sidebar).not.toContain("<ProjectSettingsDialog");
     expect(projectRoute).toContain("<ProjectHome projectId={projectId} />");
-    expect(projectHome).toContain("新建任务");
-    expect(projectHome).toContain("项目说明");
-    expect(projectHome).toContain("项目文件");
-    expect(projectHome).toContain("项目技能");
-    expect(projectHome).toContain("项目记忆");
+    expect(projectHome).toContain("在此项目中启动任务");
+    expect(projectHome).toContain("指令");
+    expect(projectHome).toContain("文件和资源");
+    expect(projectHome).toContain("技能");
+    expect(projectHome).toContain("记忆");
     expect(projectHome).toContain("<ProjectSettingsDialog");
   });
 

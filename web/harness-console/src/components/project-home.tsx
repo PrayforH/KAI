@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useAuth } from "./auth-provider";
 import { ProjectSettingsDialog } from "./project-settings-dialog";
 import { formatTaskAge } from "../lib/task-list-age";
@@ -41,6 +41,53 @@ function statusTone(status: string) {
   if (["failed", "timed_out", "rejected"].includes(status)) return "error";
   if (status === "succeeded") return "success";
   return "neutral";
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "long",
+    day: "numeric",
+  }).format(new Date(value));
+}
+
+function ProjectIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M3.5 7.2A2.7 2.7 0 0 1 6.2 4.5h3.4l2.2 2.4h5.9a2.7 2.7 0 0 1 2.7 2.7v6.7a2.7 2.7 0 0 1-2.7 2.7H6.2a2.7 2.7 0 0 1-2.7-2.7Z" />
+      <path d="M7 12.3h10" />
+    </svg>
+  );
+}
+
+function ResourceCard({
+  title,
+  description,
+  action,
+  onAction,
+  count,
+  children,
+}: {
+  title: string;
+  description: string;
+  action: string;
+  onAction: () => void;
+  count?: number;
+  children?: ReactNode;
+}) {
+  return (
+    <section className={styles.card}>
+      <div className={styles.cardHead}>
+        <h2>{title}</h2>
+        {typeof count === "number" && count > 0 ? <span className={styles.count}>{count}</span> : null}
+      </div>
+      <p className={styles.cardDescription}>{description}</p>
+      {children}
+      <button type="button" className={styles.cardAction} onClick={onAction}>
+        <span aria-hidden="true">＋</span>
+        {action}
+      </button>
+    </section>
+  );
 }
 
 export function ProjectHome({ projectId }: { projectId: string }) {
@@ -91,7 +138,7 @@ export function ProjectHome({ projectId }: { projectId: string }) {
     let active = true;
     loadTaskAgentCatalog(user.user_id, false)
       .then((catalog) => { if (active) setDefaultAgent(catalog.defaultAgent); })
-      .catch(() => { /* The New task button explains the failure. */ });
+      .catch(() => { /* The composer explains the failure when clicked. */ });
     return () => { active = false; };
   }, [user.user_id]);
 
@@ -141,30 +188,29 @@ export function ProjectHome({ projectId }: { projectId: string }) {
   return (
     <div className={styles.page}>
       <header className={styles.header}>
-        <div className={styles.heading}>
-          <span className={styles.eyebrow}>项目</span>
-          <h1>{project.name}</h1>
-          <p>
-            {tasks.length} 个任务 · {documents.length} 个文件 · {memories.length} 条记忆 · {skills.length} 个技能
-          </p>
+        <div className={styles.identity}>
+          <span className={styles.projectIcon} aria-hidden="true"><ProjectIcon /></span>
+          <div className={styles.identityCopy}>
+            <h1>{project.name}</h1>
+            <p>
+              {project.userId === user.user_id ? "由你创建" : "由协作者创建"}
+              {" · "}
+              更新于 {formatDate(project.updatedAt)}
+            </p>
+          </div>
         </div>
-        <div className={styles.actions}>
-          <button type="button" className={styles.secondary} onClick={() => setSettingsOpen(true)}>
-            项目设置
-          </button>
-          <button type="button" className={styles.primary} disabled={creating} onClick={() => void startTask()}>
-            {creating ? "正在创建…" : "新建任务"}
-          </button>
-        </div>
+        <button type="button" className={styles.settingsButton} onClick={() => setSettingsOpen(true)}>
+          项目设置
+        </button>
       </header>
 
       {error && <p className={styles.error} role="alert">{error}</p>}
 
       <div className={styles.layout}>
-        <section className={styles.tasks} aria-label="项目任务">
-          <div className={styles.sectionHead}>
-            <h2>任务</h2>
-            <span>{tasks.length}</span>
+        <main className={styles.main} aria-label="项目任务">
+          <div className={styles.recentHead}>
+            <h2>最近</h2>
+            {tasks.length > 0 && <span>{tasks.length}</span>}
           </div>
           {tasks.length ? (
             <ul className={styles.taskList}>
@@ -188,82 +234,98 @@ export function ProjectHome({ projectId }: { projectId: string }) {
             </ul>
           ) : (
             <div className={styles.emptyState}>
-              <p>这个项目还没有任务。</p>
-              <button type="button" disabled={creating} onClick={() => void startTask()}>
-                在此项目中开始
-              </button>
+              <span className={styles.emptyIcon} aria-hidden="true">
+                <svg viewBox="0 0 40 40"><rect x="7" y="9" width="26" height="22" rx="4" /><path d="M13 15h14M13 20h9" /></svg>
+              </span>
+              <p>新建一个任务以开始</p>
             </div>
           )}
-        </section>
+          <button
+            type="button"
+            className={styles.composer}
+            aria-label="在此项目中启动任务"
+            title="在此项目中启动任务"
+            disabled={creating}
+            onClick={() => void startTask()}
+          >
+            <span className={styles.composerPlus} aria-hidden="true">＋</span>
+            <span className={styles.composerPlaceholder}>
+              {creating ? "正在创建任务…" : "在此项目中启动任务"}
+            </span>
+            <span className={styles.composerSend} aria-hidden="true">↑</span>
+          </button>
+        </main>
 
         <aside className={styles.rail} aria-label="项目资源">
-          <section className={styles.card}>
-            <div className={styles.cardHead}>
-              <h2>项目说明</h2>
-            </div>
-            {project.instructions?.trim() ? (
-              <p className={styles.instructions}>{project.instructions}</p>
-            ) : (
-              <p className={styles.muted}>还没有项目说明。项目设置里可以写目标、术语和输出规范。</p>
-            )}
-          </section>
+          <ResourceCard
+            title="指令"
+            description="指导项目中的智能体如何响应该项目的所有任务。"
+            action={project.instructions?.trim() ? "编辑" : "添加"}
+            onAction={() => setSettingsOpen(true)}
+          >
+            {project.instructions?.trim()
+              ? <p className={styles.previewText}>{project.instructions}</p>
+              : <p className={styles.muted}>还没有项目指令。</p>}
+          </ResourceCard>
 
-          <section className={styles.card}>
-            <div className={styles.cardHead}>
-              <h2>项目文件</h2>
-              <button type="button" onClick={() => setSettingsOpen(true)}>管理</button>
-            </div>
+          <ResourceCard
+            title="文件和资源"
+            description="附加文件和资料，供项目的所有任务使用。"
+            action="上传"
+            count={documents.length}
+            onAction={() => setSettingsOpen(true)}
+          >
             {documents.length ? (
-              <ul className={styles.resourceList}>
-                {documents.map((document) => (
+              <ul className={styles.fileList}>
+                {documents.slice(0, 4).map((document) => (
                   <li key={document.inputArtifactId}>
-                    <span className={styles.fileIcon} aria-hidden="true">▤</span>
-                    <span className={styles.resourceName} title={document.name}>{document.name}</span>
+                    <span className={styles.fileGlyph} aria-hidden="true">▤</span>
+                    <span className={styles.fileName} title={document.name}>{document.name}</span>
                     <a
-                      className={styles.resourceAction}
                       href={`/api/input-artifacts/${encodeURIComponent(document.inputArtifactId)}/content?inline=1`}
                       target="_blank"
                       rel="noreferrer"
+                      onClick={(event) => event.stopPropagation()}
                     >
                       查看
                     </a>
                   </li>
                 ))}
+                {documents.length > 4 && <li className={styles.moreLine}>还有 {documents.length - 4} 个文件</li>}
               </ul>
-            ) : (
-              <p className={styles.muted}>还没有项目文件。可以附加资料，让这个项目的每个新任务都能使用。</p>
-            )}
-          </section>
+            ) : <p className={styles.muted}>还没有附加文件。</p>}
+          </ResourceCard>
 
-          <section className={styles.card}>
-            <div className={styles.cardHead}>
-              <h2>项目技能</h2>
-              <button type="button" onClick={() => setSettingsOpen(true)}>管理</button>
-            </div>
+          <ResourceCard
+            title="技能"
+            description="在相关情况下跨任务复用已经跑通的工作流。"
+            action="添加"
+            count={skills.length}
+            onAction={() => setSettingsOpen(true)}
+          >
             {skills.length ? (
               <ul className={styles.chips}>
-                {skills.map(({ reference, package: pkg }) => (
+                {skills.slice(0, 6).map(({ reference, package: pkg }) => (
                   <li key={reference} title={reference}>{pkg?.displayName ?? reference}</li>
                 ))}
               </ul>
-            ) : (
-              <p className={styles.muted}>还没有项目技能。选中的平台技能会带到每个新任务。</p>
-            )}
-          </section>
+            ) : <p className={styles.muted}>还没有项目技能。</p>}
+          </ResourceCard>
 
-          <section className={styles.card}>
-            <div className={styles.cardHead}>
-              <h2>项目记忆</h2>
-              <button type="button" onClick={() => setSettingsOpen(true)}>管理</button>
-            </div>
+          <ResourceCard
+            title="记忆"
+            description="长期有效的事实和决定，会随项目带给每个新任务。"
+            action="添加"
+            count={memories.length}
+            onAction={() => setSettingsOpen(true)}
+          >
             {memories.length ? (
               <ul className={styles.memoryList}>
-                {memories.map((memory) => <li key={memory.memoryId}>{memory.content}</li>)}
+                {memories.slice(0, 3).map((memory) => <li key={memory.memoryId}>{memory.content}</li>)}
+                {memories.length > 3 && <li className={styles.moreLine}>还有 {memories.length - 3} 条记忆</li>}
               </ul>
-            ) : (
-              <p className={styles.muted}>还没有项目记忆。长期有效的事实和决定可以写在这里。</p>
-            )}
-          </section>
+            ) : <p className={styles.muted}>还没有项目记忆。</p>}
+          </ResourceCard>
         </aside>
       </div>
 

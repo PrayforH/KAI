@@ -78,7 +78,15 @@ class InMemoryProjectRepository:
             and item.user_id == user_id
             and (include_archived or item.archived_at is None)
         ]
-        return sorted(items, key=lambda item: (item.created_at, item.project_id))
+        return sorted(
+            items,
+            key=lambda item: (
+                item.pinned_at is None,
+                -(item.pinned_at.timestamp() if item.pinned_at else 0),
+                item.created_at,
+                item.project_id,
+            ),
+        )
 
     async def replace(self, project: Project) -> None:
         async with self._lock:
