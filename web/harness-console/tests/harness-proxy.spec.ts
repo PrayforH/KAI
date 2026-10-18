@@ -223,6 +223,40 @@ describe("Harness same-origin proxies", () => {
     );
   });
 
+  it("forwards the task's project so the first run binds it", async () => {
+    let upstreamUrl = "";
+    await proxyAguiRequest(
+      new Request(
+        "http://console.test/api/agui?agent_name=lead-agent&agent_version=1.0.0&project_id=project_1",
+        { method: "POST", body: "{}" },
+      ),
+      config,
+      async (input) => {
+        upstreamUrl = String(input);
+        return new Response(null, { status: 200 });
+      },
+    );
+
+    expect(new URL(upstreamUrl).searchParams.get("project_id")).toBe("project_1");
+  });
+
+  it("drops an oversized project coordinate instead of forwarding it", async () => {
+    let upstreamUrl = "";
+    await proxyAguiRequest(
+      new Request(
+        `http://console.test/api/agui?agent_name=lead-agent&agent_version=1.0.0&project_id=${"p".repeat(129)}`,
+        { method: "POST", body: "{}" },
+      ),
+      config,
+      async (input) => {
+        upstreamUrl = String(input);
+        return new Response(null, { status: 200 });
+      },
+    );
+
+    expect(new URL(upstreamUrl).searchParams.has("project_id")).toBe(false);
+  });
+
   it("loads the published runtime catalog through the authenticated BFF", async () => {
     let upstreamUrl = "";
     const response = await proxyAgentCatalogRequest(
