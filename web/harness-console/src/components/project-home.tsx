@@ -5,10 +5,13 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useAuth } from "./auth-provider";
 import { ProjectSettingsDialog } from "./project-settings-dialog";
+import { AssistantRuntimeShell } from "./assistant-runtime-shell";
+import { ProjectComposer } from "./agent-thread";
 import { formatTaskAge } from "../lib/task-list-age";
 import { loadTasks, type TaskSummary } from "../lib/task-history";
 import { createProjectTask } from "../lib/project-task";
 import { loadTaskAgentCatalog, type TaskAgent } from "../lib/task-agent-catalog";
+import { loadTaskModelRoutes, type TaskModelRoute } from "../lib/task-model-catalog";
 import {
   projectClient,
   studioClient,
@@ -99,8 +102,11 @@ export function ProjectHome({ projectId }: { projectId: string }) {
   const [skillCatalog, setSkillCatalog] = useState<StudioPlatformSkillPackage[]>([]);
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
   const [defaultAgent, setDefaultAgent] = useState<TaskAgent | null>(null);
+  const [modelRoutes, setModelRoutes] = useState<TaskModelRoute[]>([]);
+  const [modelRouteOverride, setModelRouteOverride] = useState<string | null>(null);
+  const [composerThreadId, setComposerThreadId] = useState<string | null>(null);
+  const [composerCreating, setComposerCreating] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [creating, setCreating] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [error, setError] = useState("");
 
@@ -139,6 +145,9 @@ export function ProjectHome({ projectId }: { projectId: string }) {
     loadTaskAgentCatalog(user.user_id, false)
       .then((catalog) => { if (active) setDefaultAgent(catalog.defaultAgent); })
       .catch(() => { /* The composer explains the failure when clicked. */ });
+    loadTaskModelRoutes()
+      .then((routes) => { if (active) setModelRoutes(routes); })
+      .catch(() => { /* TaskModelControl falls back to the agent default. */ });
     return () => { active = false; };
   }, [user.user_id]);
 
@@ -152,16 +161,22 @@ export function ProjectHome({ projectId }: { projectId: string }) {
     }));
   }, [project?.skillReferences, skillCatalog]);
 
-  async function startTask() {
-    if (creating) return;
-    setCreating(true);
+  async function openComposer() {
+    if (composerThreadId || composerCreating) return;
+    if (!defaultAgent) {
+      setError("智能体尚未加载，请稍后重试。");
+      return;
+    }
+    setComposerCreating(true);
     setError("");
     try {
       const task = await createProjectTask(projectId, defaultAgent);
-      router.push(`/?thread=${encodeURIComponent(task.thread_id)}`);
+      setComposerThreadId(task.thread_id);
+      setTasks((current) => [task, ...current.filter((item) => item.thread_id !== task.thread_id)]);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "新建任务失败，请稍后重试。");
-      setCreating(false);
+    } finally {
+      setComposerCreating(false);
     }
   }
 
@@ -240,20 +255,45 @@ export function ProjectHome({ projectId }: { projectId: string }) {
               <p>新建一个任务以开始</p>
             </div>
           )}
-          <button
-            type="button"
-            className={styles.composer}
-            aria-label="在此项目中启动任务"
-            title="在此项目中启动任务"
-            disabled={creating}
-            onClick={() => void startTask()}
-          >
-            <span className={styles.composerPlus} aria-hidden="true">＋</span>
-            <span className={styles.composerPlaceholder}>
-              {creating ? "正在创建任务…" : "在此项目中启动任务"}
-            </span>
-            <span className={styles.composerSend} aria-hidden="true">↑</span>
-          </button>
+          {composerThreadId && defaultAgent ? (
+            <div className={styles.composerHost}>
+              <AssistantRuntimeShell
+                key={composerThreadId}
+                threadId={composerThreadId}
+                agentName={defaultAgent.name}
+                agentVersion={defaultAgent.version}
+                agentOwnerUserId={defaultAgent.ownerUserId}
+                spaceId={defaultAgent.spaceId}
+                agentDefaultModelRoute={defaultAgent.modelRoute ?? null}
+                modelRoutes={modelRoutes}
+                modelRouteOverride={modelRouteOverride}
+                onModelRouteOverrideChange={setModelRouteOverride}
+              >
+                <ProjectComposer
+                  userId={user.user_id}
+                  threadId={composerThreadId}
+                  agents={[defaultAgent]}
+                  selectedAgent={defaultAgent}
+                  onSubmitted={() => router.push(`/?thread=${encodeURIComponent(composerThreadId)}`)}
+                />
+              </AssistantRuntimeShell>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className={styles.composer}
+              aria-label="在此项目中启动任务"
+              title={defaultAgent ? "在此项目中启动任务" : "智能体尚未加载"}
+              disabled={composerCreating || !defaultAgent}
+              onClick={() => void openComposer()}
+            >
+              <span className={styles.composerPlus} aria-hidden="true">＋</span>
+              <span className={styles.composerPlaceholder}>
+                {composerCreating ? "正在创建任务…" : "在此项目中启动任务"}
+              </span>
+              <span className={styles.composerSend} aria-hidden="true">↑</span>
+            </button>
+          )}
         </main>
 
         <aside className={styles.rail} aria-label="项目资源">

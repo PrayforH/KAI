@@ -45,6 +45,8 @@ describe("project-grouped task list", () => {
     expect(sidebar).toContain("/studio/projects/${encodeURIComponent(project.projectId)}");
     expect(projectRoute).toContain("<ProjectHome projectId={projectId} />");
     expect(projectHome).toContain("在此项目中启动任务");
+    expect(projectHome).toContain("<AssistantRuntimeShell");
+    expect(projectHome).toContain("<ProjectComposer");
     expect(projectHome).toContain("指令");
     expect(projectHome).toContain("文件和资源");
     expect(projectHome).toContain("技能");

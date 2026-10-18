@@ -303,7 +303,7 @@ function MessageFeedbackButtons({ runId }: { runId?: string }) {
   );
 }
 
-function HarnessComposer() {
+function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   const conversationScope = useConversationScope();
   const aui = useAui();
   const { routes, overrideRouteId } = useTaskModel();
@@ -613,6 +613,7 @@ function HarnessComposer() {
     try {
       const error = await sendComposerWithRecovery(threadRuntime.composer);
       if (error) setInputError(error);
+      else onSubmitted?.();
     } catch (error) {
       setInputError(error instanceof Error ? error.message : "发送失败，请重试。");
     } finally { composerSendLock.current = false; }
@@ -1861,6 +1862,66 @@ export function AgentThread({
             </div>
             </VideoGenerationProvider>
           </MessageEditorContext.Provider>
+        </ComposerDraftContext.Provider>
+      </SkillLaunchContext.Provider>
+    </AgentSelectionContext.Provider>
+  );
+}
+
+/**
+ * The main task composer, mounted on a project page.
+ *
+ * The project page creates the durable project task first, then renders this
+ * inside AssistantRuntimeShell. It is the same HarnessComposer the task page
+ * uses, so attachments, voice, model/knowledge controls and the send/queue
+ * behaviour stay identical across both surfaces.
+ */
+export function ProjectComposer({
+  userId,
+  threadId,
+  agents,
+  selectedAgent,
+  onSubmitted,
+}: {
+  userId: string;
+  threadId: string;
+  agents: readonly TaskAgent[];
+  selectedAgent: TaskAgent | null;
+  onSubmitted?: () => void;
+}) {
+  const agentSelection = useMemo<AgentSelectionContextValue>(
+    () => ({
+      agents,
+      selected: selectedAgent,
+      loading: false,
+      currentTaskBusy: false,
+      onChange: () => undefined,
+    }),
+    [agents, selectedAgent],
+  );
+  const skillLaunch = useMemo<SkillLaunchContextValue>(
+    () => ({ launch: null, onDismiss: () => undefined }),
+    [],
+  );
+  const composerDraftScope = useMemo(
+    () => ({ userId, threadId }),
+    [threadId, userId],
+  );
+  return (
+    <AgentSelectionContext.Provider value={agentSelection}>
+      <SkillLaunchContext.Provider value={skillLaunch}>
+        <ComposerDraftContext.Provider value={composerDraftScope}>
+          <VideoGenerationProvider
+            task={selectedAgent ? {
+              threadId,
+              agentName: selectedAgent.name,
+              agentVersion: selectedAgent.version,
+              agentOwnerUserId: selectedAgent.ownerUserId,
+              spaceId: selectedAgent.spaceId,
+            } : undefined}
+          >
+            <HarnessComposer onSubmitted={onSubmitted} />
+          </VideoGenerationProvider>
         </ComposerDraftContext.Provider>
       </SkillLaunchContext.Provider>
     </AgentSelectionContext.Provider>
