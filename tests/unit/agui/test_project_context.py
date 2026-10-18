@@ -7,8 +7,25 @@ from pathlib import Path
 import pytest
 from ag_ui.core import RunAgentInput, UserMessage
 
+from harness.agui.service import _merge_knowledge_references
 from harness.api.dependencies import build_memory_container
 from harness.core.errors import NotFoundError
+from harness.projects.models import ProjectRunContext
+
+
+def test_project_knowledge_is_added_to_a_task_selection() -> None:
+    context = ProjectRunContext(
+        projectId="project-1",
+        knowledgeReferences=("kb-project", "kb-shared"),
+    )
+    assert _merge_knowledge_references(
+        ["kb-shared", "kb-task"], context
+    ) == ["kb-shared", "kb-task", "kb-project"]
+    assert _merge_knowledge_references(None, context) == [
+        "kb-project",
+        "kb-shared",
+    ]
+    assert _merge_knowledge_references(["kb-task"], None) == ["kb-task"]
 
 
 async def _publish_agent(container, tenant_id: str, user_id: str, root: Path) -> None:

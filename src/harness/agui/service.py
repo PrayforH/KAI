@@ -98,6 +98,20 @@ def _knowledge_references_override(request: RunAgentInput) -> list[str] | None:
     return references or None
 
 
+def _merge_knowledge_references(
+    requested: list[str] | None,
+    project_context: ProjectRunContext | None,
+) -> list[str]:
+    """Project knowledge applies to every Run; a task selection adds to it."""
+
+    project_references = (
+        project_context.knowledge_references if project_context is not None else ()
+    )
+    return list(
+        dict.fromkeys((*(requested or ()), *project_references))
+    )
+
+
 # How long a failed title generation suppresses the next attempt for the same
 # thread. Long enough that browsing the task list cannot amplify one broken model
 # route into a call per refresh, short enough that a transient failure recovers
@@ -404,13 +418,8 @@ class AguiRunService:
                 )
                 if item not in user_input_ids
             ]
-            project_knowledge = (
-                project_context.knowledge_references
-                if project_context is not None
-                else ()
-            )
-            effective_knowledge = list(
-                dict.fromkeys((*(requested_knowledge or ()), *project_knowledge))
+            effective_knowledge = _merge_knowledge_references(
+                requested_knowledge, project_context
             )
             knowledge_override = await self._resolve_knowledge_override(
                 tenant_id=tenant_id,
