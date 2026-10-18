@@ -61,18 +61,24 @@ async def list_user_artifacts(
         )
         bindings = [binding]
     else:
+        if project_id is not None:
+            await container.projects.get(
+                tenant_id=identity.tenant_id, user_id=identity.user_id, project_id=project_id
+            )
         active_bindings, archived_bindings = await asyncio.gather(
             container.agui.list_bindings(
                 tenant_id=identity.tenant_id,
                 user_id=identity.user_id,
                 limit=1_000,
                 archived=False,
+                project_id=project_id,
             ),
             container.agui.list_bindings(
                 tenant_id=identity.tenant_id,
                 user_id=identity.user_id,
                 limit=1_000,
                 archived=True,
+                project_id=project_id,
             ),
         )
         bindings = [*active_bindings, *archived_bindings]

@@ -36,9 +36,7 @@ class Project(StudioModel):
     # Knowledge bases pinned to the project. Every Run inherits them; a
     # per-task selection in the composer is added on top rather than replacing
     # the project's own binding.
-    knowledge_references: tuple[str, ...] = Field(
-        default=(), alias="knowledgeReferences"
-    )
+    knowledge_references: tuple[str, ...] = Field(default=(), alias="knowledgeReferences")
     pinned_at: datetime | None = Field(default=None, alias="pinnedAt")
     archived_at: datetime | None = Field(default=None, alias="archivedAt")
     created_at: datetime = Field(alias="createdAt")
@@ -63,6 +61,7 @@ class ProjectDocument(StudioModel):
     name: str = Field(min_length=1, max_length=500)
     media_type: str = Field(default="application/octet-stream", alias="mediaType")
     size_bytes: int = Field(default=0, alias="sizeBytes", ge=0)
+    sha256: str | None = None
     created_at: datetime = Field(alias="createdAt")
 
 
@@ -129,11 +128,10 @@ class ProjectRunContext(StudioModel):
 
     project_id: str = Field(alias="projectId")
     text: str = ""
+    resource_manifest: dict[str, object] = Field(default_factory=dict, alias="resourceManifest")
     document_ids: tuple[str, ...] = Field(default=(), alias="documentIds")
     skill_references: tuple[str, ...] = Field(default=(), alias="skillReferences")
-    knowledge_references: tuple[str, ...] = Field(
-        default=(), alias="knowledgeReferences"
-    )
+    knowledge_references: tuple[str, ...] = Field(default=(), alias="knowledgeReferences")
     memory_count: int = Field(default=0, alias="memoryCount")
     document_count: int = Field(default=0, alias="documentCount")
     skill_count: int = Field(default=0, alias="skillCount")

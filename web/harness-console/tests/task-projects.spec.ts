@@ -39,21 +39,23 @@ describe("project-grouped task list", () => {
     expect(sidebar).toContain('aria-label="任务"');
   });
 
-  it("triggers a project task, pins and removes from the project menu", () => {
+  it("opens the organizing home while retaining project task creation", () => {
     expect(sidebar).toContain('aria-label={`项目操作 ${project.name}`}');
-    expect(sidebar).toContain("触发任务");
+    expect(sidebar).toContain("新建任务");
+    expect(sidebar).toContain("打开项目");
     expect(sidebar).toContain("置顶");
     expect(sidebar).toContain("移除项目");
     expect(sidebar).not.toContain("<span>查看项目</span>");
     expect(sidebar).not.toContain("编辑项目");
     expect(sidebar).toContain("useConfirmationDialog");
     expect(sidebar).toContain("查看 ${project.name} 的文件");
-    expect(sidebar).toContain("onOpenProjectFiles?.(project)");
+    expect(sidebar).toContain('projectHref(project.projectId, "results")');
     expect(sidebar).not.toContain("<ProjectFilesDialog");
-    expect(projectRoute).toContain('redirect("/")');
+    expect(projectRoute).toContain("<ProjectHome");
+    expect(projectRoute).not.toContain('redirect("/")');
     expect(page).toContain("projectId={activeProjectId}");
-    expect(page).toContain("onOpenProjectFiles");
-    expect(page).toContain("viewRequest={railViewRequest}");
+    expect(page).toContain('className="task-project-breadcrumb"');
+    expect(page).toContain("createProjectTask(currentTask.project_id, nextAgent)");
     expect(workbench).toContain("projectId");
     expect(workbench).toContain("<ProjectResourcesPanel projectId={projectId} />");
   });

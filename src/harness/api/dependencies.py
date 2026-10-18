@@ -122,6 +122,7 @@ from harness.projects.repositories import (
     InMemoryProjectResourceRepository,
 )
 from harness.projects.service import ProjectService, project_knowledge_resolver
+from harness.projects.skill_snapshots import ProjectSkillSnapshots
 from harness.quality.controller import QualitySyncController
 from harness.quality.langfuse import DisabledQualityExporter
 from harness.quality.queue import QualityTaskQueue
@@ -163,6 +164,7 @@ from harness.sharing.workspace_repositories import (
     InMemoryWorkspaceAgentRepository,
     WorkspaceAgentRepository,
 )
+from harness.storage.skill_blobs import SkillBlobStore
 from harness.studio.catalog_repository import InMemoryCapabilityCatalogRepository
 from harness.studio.catalog_service import CapabilityCatalogService
 from harness.studio.intent_router import BuilderIntentRouter
@@ -320,6 +322,7 @@ def build_memory_container(
     thread_file_repository = InMemoryThreadFileRepository()
     workspace_snapshot_repository = InMemoryWorkspaceSnapshotRepository()
     artifact_store = InMemoryArtifactStore()
+    project_skill_snapshots = ProjectSkillSnapshots(SkillBlobStore(artifact_store))
     raw_events = InMemoryEventRepository()
     bus = InMemoryEventBus()
     cancellation_wakeup = InMemoryCancellationWakeup()
@@ -451,7 +454,8 @@ def build_memory_container(
         agent_drafts,
         clock=clock,
         sandbox_network_access={
-            str(k): v for k, v in resolved_settings.sandbox_network_access.items()},
+            str(k): v for k, v in resolved_settings.sandbox_network_access.items()
+        },
     )
     environment_mcp_credentials = server_secret_credential_provider(
         references_json=resolved_settings.mcp_secret_references_json,
@@ -1001,6 +1005,7 @@ def build_memory_container(
             stage_runtime_assets if resolved_settings.runtime != "fake" else None
         ),
         project_skills=skill_snapshots_for_references,
+        project_skill_snapshots=project_skill_snapshots,
         policy_resolver=resolve_policy,
         output_artifact_max_bytes=resolved_settings.output_artifact_max_bytes,
         quality_hook=quality_service.record_terminal_run,
@@ -1015,6 +1020,7 @@ def build_memory_container(
         thread_bindings, observed_events, artifact_repository
     )
     agui = AguiRunService(
+        project_skill_snapshots=project_skill_snapshots,
         sessions=session_service,
         runs=run_service,
         input_artifacts=input_artifact_service,
@@ -1039,9 +1045,7 @@ def build_memory_container(
         )
     )
 
-    async def resolve_project_document(
-        tenant_id: str, user_id: str, input_artifact_id: str
-    ):
+    async def resolve_project_document(tenant_id: str, user_id: str, input_artifact_id: str):
         resolved = await input_artifact_service.resolve_for_run(
             tenant_id=tenant_id,
             user_id=user_id,

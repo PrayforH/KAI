@@ -36,7 +36,8 @@ class UserMemoryService:
         return await self._repository.get(identity.tenant_id, identity.user_id, identity.agent_name)
 
     async def projection(self, identity: ExecutionIdentity, query: str = "") -> str:
-        memory = await self.get(identity)
+        # Unscoped legacy text has no reliable business-project provenance.
+        memory = await self.get(identity) if identity.business_project_id is None else None
         if self._memory_bank is not None:
             # Old whole-text memory becomes explicit import proposals once. Stable
             # IDs also prevent a rejected/deleted import being resurrected next run.

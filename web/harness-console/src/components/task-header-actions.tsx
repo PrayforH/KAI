@@ -1,4 +1,5 @@
 "use client";
+import { RunContextManifest } from "./run-context-manifest";
 import { FeedbackToast } from "./feedback-toast";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
@@ -190,6 +191,7 @@ export function TaskDetailsPopover({
           <div className="task-details-row is-path">
             <span>{task.agent_name}</span>
           </div>
+          {task.project_id && task.run_id && <RunContextManifest runId={task.run_id} />}
           <div className="task-details-row is-activity">
             <RecentActivityIcon />
             <span>最近活动 {age === "刚刚" ? "刚刚" : `${age}前`}</span>

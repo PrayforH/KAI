@@ -9,7 +9,9 @@ from ag_ui.core import RunAgentInput, UserMessage
 
 from harness.agui.service import _merge_knowledge_references
 from harness.api.dependencies import build_memory_container
-from harness.core.errors import NotFoundError
+from harness.core.errors import ConflictError, NotFoundError
+from harness.knowledge.models import KnowledgeSnapshotBinding
+from harness.knowledge.runtime import knowledge_bindings_for_run
 from harness.projects.models import ProjectRunContext
 
 
@@ -18,9 +20,11 @@ def test_project_knowledge_is_added_to_a_task_selection() -> None:
         projectId="project-1",
         knowledgeReferences=("kb-project", "kb-shared"),
     )
-    assert _merge_knowledge_references(
-        ["kb-shared", "kb-task"], context
-    ) == ["kb-shared", "kb-task", "kb-project"]
+    assert _merge_knowledge_references(["kb-shared", "kb-task"], context) == [
+        "kb-shared",
+        "kb-task",
+        "kb-project",
+    ]
     assert _merge_knowledge_references(None, context) == [
         "kb-project",
         "kb-shared",
@@ -222,3 +226,99 @@ async def test_run_rejects_a_project_the_user_cannot_see(tmp_path: Path) -> None
             request=_request("thread-invalid-project"),
             project_id="project_missing",
         )
+
+
+@pytest.mark.asyncio
+async def test_project_knowledge_supplements_agent_pins_and_records_empty_project_scope(
+    tmp_path: Path,
+):
+    container = build_memory_container()
+    await _publish_agent(container, "tenant-a", "user-1", tmp_path)
+    # Republish in a separate in-memory container with an Agent-level knowledge binding.
+    manifest = tmp_path / "echo-agent" / "agent.yaml"
+    manifest.write_text(
+        manifest.read_text().replace(
+            "  permissions:", "  knowledgeReferences: [agent-base]\n  permissions:"
+        )
+    )
+    container = build_memory_container()
+    await container.agents.publish("tenant-a", "user-1", manifest)
+
+    async def resolve(_tenant, _user, references, _teams):
+        return tuple(
+            KnowledgeSnapshotBinding(
+                knowledgeBaseReference=ref,
+                sourceReference=ref,
+                snapshotId=f"snapshot-{ref}",
+                trust="sensitive",
+            )
+            for ref in references
+        )
+
+    async def validate(_tenant, _user, _references):
+        return None
+
+    container.sessions._knowledge_binding_resolver = resolve
+    container.agui._knowledge_bindings = resolve
+    container.projects.configure_knowledge_resolver(validate)
+    project = await container.projects.create(
+        tenant_id="tenant-a",
+        user_id="user-1",
+        name="Project",
+        knowledge_references=("project-base",),
+    )
+    creation = await container.agui.create_run_with_result(
+        tenant_id="tenant-a",
+        user_id="user-1",
+        agent_name="echo-agent",
+        agent_version="0.1.0",
+        request=_request("thread-with-knowledge"),
+        project_id=project.project_id,
+    )
+    session = await container.sessions.get("tenant-a", creation.run.session_id)
+    assert {
+        item.knowledge_base_reference
+        for item in knowledge_bindings_for_run(
+            creation.run.input, session.knowledge_snapshot_bindings
+        )
+    } == {"agent-base", "project-base"}
+    empty = await container.projects.create(tenant_id="tenant-a", user_id="user-1", name="Empty")
+    result = await container.agui.create_run_with_result(
+        tenant_id="tenant-a",
+        user_id="user-1",
+        agent_name="echo-agent",
+        agent_version="0.1.0",
+        request=_request("thread-empty-context"),
+        project_id=empty.project_id,
+    )
+    assert result.run.input["business_project_id"] == empty.project_id
+    assert result.run.input["project_context_meta"]["projectId"] == empty.project_id
+
+
+@pytest.mark.asyncio
+async def test_rejected_request_does_not_move_an_existing_thread(tmp_path: Path):
+    container = build_memory_container()
+    await _publish_agent(container, "tenant-a", "user-1", tmp_path)
+    await container.agui.create_run_with_result(
+        tenant_id="tenant-a",
+        user_id="user-1",
+        agent_name="echo-agent",
+        agent_version="0.1.0",
+        request=_request("thread-original"),
+    )
+    project = await container.projects.create(
+        tenant_id="tenant-a", user_id="user-1", name="Project"
+    )
+    with pytest.raises(ConflictError):
+        await container.agui.create_run_with_result(
+            tenant_id="tenant-a",
+            user_id="user-1",
+            agent_name="another-agent",
+            agent_version="0.1.0",
+            request=_request("thread-original"),
+            project_id=project.project_id,
+        )
+    binding = await container.agui.get_thread_record(
+        tenant_id="tenant-a", user_id="user-1", thread_id="thread-original"
+    )
+    assert binding.project_id is None

@@ -112,6 +112,7 @@ class RuntimeContext(BaseModel):
                     agent_owner_user_id=self.session.resolved_agent_owner_user_id,
                     team_ids=self.session.team_ids,
                     project_id=self.session.agent_name,
+                    business_project_id=self.run.business_project_id,
                     session_id=self.session.session_id,
                     run_id=self.run.run_id,
                     agent_name=self.session.agent_name,

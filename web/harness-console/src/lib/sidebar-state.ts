@@ -42,6 +42,10 @@ export function useSidebarProjects(userId: string) {
     forgetClientRead(key);
     setRevision((value) => value + 1);
   }, [key]);
+  useEffect(() => {
+    window.addEventListener("harness:projects-changed", refresh);
+    return () => window.removeEventListener("harness:projects-changed", refresh);
+  }, [refresh]);
   const projects = snapshot.key === key ? snapshot.projects : peekClientRead<ApiProject[]>(key) ?? [];
   return [projects, refresh] as const;
 }

@@ -2897,6 +2897,7 @@ export const projectClient = {
       skillReferences?: string[];
       knowledgeReferences?: string[];
       pinned?: boolean;
+      archived?: boolean;
     },
   ): Promise<ApiProject> {
     return request<ApiProject>(`projects/${encodeURIComponent(projectId)}`, {

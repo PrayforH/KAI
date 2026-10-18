@@ -3,6 +3,7 @@
 import { isFailedRunStatus } from "../lib/run-status";
 import { SidebarIcon } from "./sidebar-icon";
 import Link from "next/link";
+import { projectHref } from "../lib/project-space";
 import { ProjectCreateDialog } from "./project-create-dialog";
 import { useConfirmationDialog } from "./confirmation-dialog";
 import { PanelResizeHandle } from "./panel-resize-handle";
@@ -139,7 +140,6 @@ export function TaskSidebar({
   onSelect,
   onNewTask,
   onNewTaskWithProject,
-  onOpenProjectFiles,
   searchControl,
   activeNav = "tasks",
   agentLabels,
@@ -154,8 +154,6 @@ export function TaskSidebar({
   onNewTask: () => void;
   /** Persist a new task in this project, including when it has no tasks yet. */
   onNewTaskWithProject?: (project: ApiProject) => Promise<void>;
-  /** Reveal a project's generated files in the existing task artifact rail. */
-  onOpenProjectFiles?: (project: ApiProject) => void;
   searchControl?: ReactNode;
   /** Which workspace nav item is highlighted; defaults to the task page. */
   activeNav?: WorkspaceId;
@@ -627,9 +625,10 @@ export function TaskSidebar({
                   data-project-id={project.projectId}
                 >
                   <div className="task-project-head">
+                    <div className="task-project-heading">
                     <button
                       type="button"
-                      className="task-project-heading"
+                      className="task-project-toggle"
                       aria-expanded={!collapsed}
                       aria-label={`${collapsed ? "展开" : "收起"}项目 ${project.name}`}
                       title={`${collapsed ? "展开" : "收起"}项目 ${project.name}`}
@@ -649,6 +648,8 @@ export function TaskSidebar({
                       }}
                     >
                       <ProjectFolderIcon />
+                    </button>
+                    <Link href={projectHref(project.projectId)} aria-label={`打开项目 ${project.name}`} className="task-project-name">
                       <strong className="project-name-viewport">
                         <span
                           onMouseEnter={(event) => {
@@ -662,7 +663,8 @@ export function TaskSidebar({
                           {project.name}
                         </span>
                       </strong>
-                    </button>
+                    </Link>
+                    </div>
                     <div className="task-project-menu-anchor" data-project-menu={project.projectId}>
                       <button
                         type="button"
@@ -685,6 +687,9 @@ export function TaskSidebar({
                           aria-label={`项目操作 ${project.name}`}
                           data-project-menu={project.projectId}
                         >
+                          <Link role="menuitem" href={projectHref(project.projectId)} onClick={() => setProjectMenuId(null)}>
+                            <ProjectFolderIcon /><span>打开项目</span>
+                          </Link>
                           <button
                             type="button"
                             role="menuitem"
@@ -695,7 +700,7 @@ export function TaskSidebar({
                             }}
                           >
                             <TriggerIcon />
-                            <span>触发任务</span>
+                            <span>新建任务</span>
                           </button>
                           <button
                             type="button"
@@ -717,23 +722,15 @@ export function TaskSidebar({
                         </div>
                       )}
                     </div>
-                    <button
-                      type="button"
-                      className="task-project-files"
-                      aria-label={`查看 ${project.name} 的文件`}
-                      title="查看项目文件"
-                      onClick={() => {
-                        setProjectMenuId(null);
-                        onOpenProjectFiles?.(project);
-                      }}
-                    >
+                    <Link className="task-project-files" href={projectHref(project.projectId, "results")}
+                      aria-label={`查看 ${project.name} 的文件`} title="查看项目成果">
                       <FilesIcon />
-                    </button>
+                    </Link>
                     <button
                         type="button"
                         className="task-project-add"
-                        aria-label={`触发 ${project.name} 的项目任务`}
-                        title="触发任务"
+                        aria-label={`在 ${project.name} 下新建任务`}
+                        title="新建项目任务"
                         disabled={!onNewTaskWithProject || creatingProjectId !== null}
                         aria-busy={creatingProjectId === project.projectId}
                         onClick={() => void startProjectTask(project)}

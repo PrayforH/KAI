@@ -143,3 +143,9 @@
 .fileList a:hover { text-decoration: underline; }
 .moreLine { color: var(--codex-muted, #9a9a9a) !important; font-size: 11px !important; }
 .fileList li.moreLine { grid-column: 1 / -1; }
+
+.projectHome { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 4px 10px; color: var(--codex-ink); text-decoration: none; font-size: 12px; }
+.projectHome span:first-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.projectHome span:last-child { flex-shrink: 0; color: var(--codex-muted); font-size: 11px; }
+.projectHome:hover { text-decoration: underline; }
+.projectHome:focus-visible { outline: 2px solid var(--codex-ink); outline-offset: 3px; }

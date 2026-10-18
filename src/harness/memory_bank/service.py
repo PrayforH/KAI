@@ -80,6 +80,7 @@ class MemoryBankService:
         extraction_job_id: str | None = None,
         extraction_version: int | None = None,
         entry_id: str | None = None,
+        project_id: str | None = None,
     ) -> MemoryEntry:
         normalized = normalize_memory_content(content)
         if not normalized or len(normalized) > 4000:
@@ -102,6 +103,7 @@ class MemoryBankService:
             if (
                 previous.owner_id != owner_id
                 or previous.agent_name != agent_name
+                or previous.project_id != project_id
                 or previous.status is not MemoryStatus.ACTIVE
                 or previous.version != supersedes_version
                 or (previous.expires_at is not None and previous.expires_at <= self._clock())
@@ -116,6 +118,7 @@ class MemoryBankService:
             statuses=frozenset({MemoryStatus.PENDING, MemoryStatus.ACTIVE}),
             limit=None,
             owner_id=owner_id,
+            project_id=project_id,
         )
         for item in existing:
             if item.content == normalized and item.conditions == conditions:
@@ -178,6 +181,7 @@ class MemoryBankService:
             tenantId=tenant_id,
             userId=user_id,
             agentName=agent_name,
+            projectId=project_id,
             entryId=entry_id or self._ids("memory"),
             agentOwnerUserId=owner_id,
             memoryType=memory_type,
@@ -219,6 +223,7 @@ class MemoryBankService:
                 limit=None,
                 owner_id=owner_id,
                 active_at=now,
+                project_id=project_id,
             )
             duplicate = next(
                 (e for e in peers if e.content == normalized and e.conditions == conditions), None
@@ -259,6 +264,7 @@ class MemoryBankService:
             agent_name=identity.agent_name,
             content=content,
             owner_id=identity.resolved_agent_owner_user_id,
+            project_id=identity.business_project_id,
             memory_type=memory_type,
             topic=topic,
             conditions=conditions,
@@ -279,6 +285,8 @@ class MemoryBankService:
         agent_name: str | None = None,
         include_terminal: bool = False,
         limit: int = 200,
+        project_id: str | None = None,
+        include_project_scopes: bool = True,
     ) -> Sequence[MemoryEntry]:
         statuses = (
             None if include_terminal else frozenset({MemoryStatus.PENDING, MemoryStatus.ACTIVE})
@@ -289,6 +297,8 @@ class MemoryBankService:
             agent_name=agent_name,
             statuses=statuses,
             limit=limit,
+            project_id=project_id,
+            include_project_scopes=include_project_scopes,
         )
 
     async def confirm(
@@ -319,6 +329,7 @@ class MemoryBankService:
                 or previous.status is not MemoryStatus.ACTIVE
                 or previous.agent_name != current.agent_name
                 or previous.owner_id != current.owner_id
+                or previous.project_id != current.project_id
                 or (previous.expires_at is not None and previous.expires_at <= now)
             ):
                 raise ConflictError("replacement target changed; review the suggestion again")
@@ -441,6 +452,7 @@ class MemoryBankService:
         *,
         limit: int = 8,
         owner_id: str | None = None,
+        project_id: str | None = None,
     ) -> Sequence[MemorySearchHit]:
         if not query.strip() or len(query) > 4000 or not 1 <= limit <= 50:
             raise ValueError("invalid memory query or limit")
@@ -453,6 +465,7 @@ class MemoryBankService:
             statuses=frozenset({MemoryStatus.ACTIVE}),
             limit=None,
             owner_id=owner_id,
+            project_id=project_id,
             active_at=now,
         )
         lexical = self._search.search(entries, query, limit=limit)
@@ -469,6 +482,7 @@ class MemoryBankService:
                     vector,
                     now,
                     limit=limit,
+                    project_id=project_id,
                 )
                 semantic = tuple(h for h in semantic if h.score >= self._semantic_threshold)
             except Exception as error:
@@ -489,7 +503,7 @@ class MemoryBankService:
             except NotFoundError:
                 continue
             if fresh.version != hit.entry.version or not self._readable(
-                fresh, owner_id, agent_name
+                fresh, owner_id, agent_name, project_id
             ):
                 continue
             output.append(hit.model_copy(update={"entry": fresh}))
@@ -497,9 +511,12 @@ class MemoryBankService:
                 break
         return tuple(output)
 
-    def _readable(self, entry: MemoryEntry, owner_id: str, agent_name: str) -> bool:
+    def _readable(
+        self, entry: MemoryEntry, owner_id: str, agent_name: str, project_id: str | None
+    ) -> bool:
         return (
             entry.owner_id == owner_id
+            and entry.project_id == project_id
             and entry.agent_name == agent_name
             and entry.status is MemoryStatus.ACTIVE
             and (entry.expires_at is None or entry.expires_at > self._clock())
@@ -507,7 +524,12 @@ class MemoryBankService:
 
     async def read(self, identity: ExecutionIdentity, entry_id: str) -> MemoryEntry:
         entry = await self.repository.get_entry(identity.tenant_id, identity.user_id, entry_id)
-        if not self._readable(entry, identity.resolved_agent_owner_user_id, identity.agent_name):
+        if not self._readable(
+            entry,
+            identity.resolved_agent_owner_user_id,
+            identity.agent_name,
+            identity.business_project_id,
+        ):
             raise NotFoundError("memory entry is not available in this Agent scope")
         return entry
 
@@ -527,6 +549,7 @@ class MemoryBankService:
             statuses=frozenset({MemoryStatus.ACTIVE}),
             limit=None,
             owner_id=owner,
+            project_id=identity.business_project_id,
             active_at=self._clock(),
         )
         if query.strip():
@@ -536,6 +559,7 @@ class MemoryBankService:
                 identity.agent_name,
                 query[:4000],
                 owner_id=owner,
+                project_id=identity.business_project_id,
                 limit=min(limit, 8),
             )
             persistent = [
@@ -746,6 +770,7 @@ class MemoryBankService:
             agent_name=None,
             statuses=None,
             limit=10_000,
+            include_project_scopes=True,
         )
         return {
             "schemaVersion": "harness.memory-bank/v1",

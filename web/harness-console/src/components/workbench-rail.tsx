@@ -211,17 +211,18 @@ export function WorkbenchRail({
     onViewRequestHandled?.(viewRequest.nonce);
   }, [viewRequest?.nonce]);
 
-  // The transcript's artifact cards open their file here instead of a new tab.
-  useEffect(() => {
-    if (!previewRequest) return;
-    show(previewRequest);
-  }, [previewRequest]);
-
   // A task switch shows that task's files, never the previous selection.
   useEffect(() => {
     setTrail({ items: [null], index: 0 });
     setExpandedGroups(["最终产出"]);
   }, [threadId]);
+
+  // A new preview takes precedence over the reset when switching to its task.
+  useEffect(() => {
+    if (!previewRequest || (previewRequest.thread_id && previewRequest.thread_id !== threadId)) return;
+    setRailView("files");
+    show(previewRequest);
+  }, [previewRequest, threadId]);
 
   useEffect(() => {
     if (!open || workspace) return;

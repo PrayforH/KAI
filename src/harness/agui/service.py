@@ -35,6 +35,7 @@ from harness.core.models import AguiThreadBinding as StoredAguiThreadBinding
 from harness.core.models import Run
 from harness.core.ports import AguiThreadBindingRepository
 from harness.projects.models import ProjectRunContext
+from harness.projects.skill_snapshots import ProjectSkillSnapshots
 
 
 @dataclass(frozen=True)
@@ -104,12 +105,8 @@ def _merge_knowledge_references(
 ) -> list[str]:
     """Project knowledge applies to every Run; a task selection adds to it."""
 
-    project_references = (
-        project_context.knowledge_references if project_context is not None else ()
-    )
-    return list(
-        dict.fromkeys((*(requested or ()), *project_references))
-    )
+    project_references = project_context.knowledge_references if project_context is not None else ()
+    return list(dict.fromkeys((*(requested or ()), *project_references)))
 
 
 # How long a failed title generation suppresses the next attempt for the same
@@ -131,6 +128,7 @@ class AguiRunService:
         contexts: ContextService | None = None,
         knowledge_bindings: KnowledgeBindingResolver | None = None,
         project_context: ProjectContextResolver | None = None,
+        project_skill_snapshots: ProjectSkillSnapshots | None = None,
     ) -> None:
         self._sessions = sessions
         self._run_service = runs
@@ -140,6 +138,7 @@ class AguiRunService:
         self._contexts = contexts
         self._knowledge_bindings = knowledge_bindings
         self._project_context = project_context
+        self._project_skill_snapshots = project_skill_snapshots
         self._title_tasks: set[asyncio.Task[None]] = set()
         self._title_task_keys: set[tuple[str, str, str, datetime]] = set()
         # A generator failure leaves the deterministic title in place, so nothing
@@ -208,9 +207,16 @@ class AguiRunService:
         user_id: str,
         limit: int = 50,
         archived: bool = False,
+        project_id: str | None = None,
+        offset: int = 0,
     ) -> list[StoredAguiThreadBinding]:
         return await self._bindings.list_for_user(
-            tenant_id, user_id, limit=limit, archived=archived
+            tenant_id,
+            user_id,
+            limit=limit,
+            archived=archived,
+            project_id=project_id,
+            offset=offset,
         )
 
     async def mark_read(
@@ -393,15 +399,19 @@ class AguiRunService:
                 if self._project_context is not None and binding.project_id
                 else None
             )
+            session = await self._sessions.get(tenant_id, binding.session_id)
+            captured_skills = []
+            if project_context is not None and project_context.skill_references:
+                if self._project_skill_snapshots is None:
+                    raise ConflictError("Project Skill snapshot storage is unavailable")
+                captured_skills = await self._project_skill_snapshots.capture(
+                    tenant_id, project_context.skill_references, session.runtime_type
+                )
             effective_input_ids = list(
                 dict.fromkeys(
                     (
                         *input_artifact_ids,
-                        *(
-                            project_context.document_ids
-                            if project_context is not None
-                            else ()
-                        ),
+                        *(project_context.document_ids if project_context is not None else ()),
                     )
                 )
             )
@@ -418,28 +428,28 @@ class AguiRunService:
                 )
                 if item not in user_input_ids
             ]
-            effective_knowledge = _merge_knowledge_references(
-                requested_knowledge, project_context
-            )
+            effective_knowledge = _merge_knowledge_references(requested_knowledge, project_context)
             knowledge_override = await self._resolve_knowledge_override(
                 tenant_id=tenant_id,
                 user_id=user_id,
                 session_id=binding.session_id,
                 references=effective_knowledge or None,
             )
+            if project_context is not None and knowledge_override:
+                merged = {
+                    (item.get("knowledgeBaseReference"), item.get("sourceReference")): item
+                    for item in (*session.knowledge_snapshot_bindings, *knowledge_override)
+                }
+                knowledge_override = list(merged.values())
             if effective_knowledge:
-                session = await self._sessions.get(tenant_id, binding.session_id)
                 if session.runtime_type not in {"claude-agent-sdk", "deepagents"}:
                     raise ConflictError("当前运行时不支持知识问答，请切换支持知识检索的智能体")
             run_input: dict[str, object] = {
                 "prompt": prompt,
                 "conversation_prompts": conversation_prompts,
                 "input_artifact_ids": user_input_ids,
-                **(
-                    {"project_document_ids": project_document_ids}
-                    if project_document_ids
-                    else {}
-                ),
+                **({"project_skill_snapshots": captured_skills} if captured_skills else {}),
+                **({"project_document_ids": project_document_ids} if project_document_ids else {}),
                 **(
                     {"required_model_capabilities": ["vision"]}
                     if any(item.media_type.startswith("image/") for item in resolved)
@@ -464,17 +474,29 @@ class AguiRunService:
                     else {}
                 ),
                 **(
-                    {
-                        "project_knowledge_references": list(
-                            project_context.knowledge_references
-                        )
-                    }
-                    if project_context is not None
-                    and project_context.knowledge_references
+                    {"project_knowledge_references": list(project_context.knowledge_references)}
+                    if project_context is not None and project_context.knowledge_references
                     else {}
                 ),
                 **(
                     {
+                        "business_project_id": project_context.project_id,
+                        "context_manifest": {
+                            "schemaVersion": 1,
+                            "agent": {
+                                "name": session.agent_name,
+                                "version": session.agent_version,
+                                "ownerUserId": session.resolved_agent_owner_user_id,
+                                "runtime": session.runtime_type,
+                            },
+                            "project": project_context.resource_manifest,
+                            "skills": [
+                                {key: skill[key] for key in ("name", "source", "content_hash")}
+                                for skill in captured_skills
+                            ],
+                            "knowledge": knowledge_override
+                            or list(session.knowledge_snapshot_bindings),
+                        },
                         "project_context_meta": {
                             "projectId": project_context.project_id,
                             "memories": project_context.memory_count,
@@ -482,15 +504,9 @@ class AguiRunService:
                             "skills": project_context.skill_count,
                             "knowledge": project_context.knowledge_count,
                             "links": project_context.link_count,
-                        }
+                        },
                     }
                     if project_context is not None
-                    and (
-                        project_context.text
-                        or project_context.document_ids
-                        or project_context.skill_references
-                        or project_context.knowledge_references
-                    )
                     else {}
                 ),
             }
@@ -923,18 +939,10 @@ class AguiRunService:
             if stored is not None:
                 if project_id is not None:
                     if stored.project_id not in (None, project_id):
-                        raise ConflictError(
-                            "Task already belongs to a different project"
-                        )
+                        raise ConflictError("Task already belongs to a different project")
                     if stored.project_id is None:
-                        await self._bindings.set_project(
-                            tenant_id,
-                            user_id,
-                            thread_id,
-                            project_id=project_id,
-                        )
-                        stored = await self._bindings.get_by_thread(
-                            tenant_id, user_id, thread_id
+                        raise ConflictError(
+                            "Move an existing task through the project assignment endpoint"
                         )
                 session = await self._sessions.get(tenant_id, stored.session_id)
                 existing = AguiThreadBinding(

@@ -703,14 +703,29 @@ async def list_agui_threads(
     container: Annotated[ApiContainer, Depends(get_container)],
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     archived: Annotated[bool, Query()] = False,
+    project_id: Annotated[str | None, Query(min_length=1, max_length=128)] = None,
+    thread_id: Annotated[str | None, Query(min_length=1, max_length=256)] = None,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> list[AguiThreadSummary]:
     ensure_permission(identity, "tasks:read")
-    bindings = await container.agui.list_bindings(
-        tenant_id=identity.tenant_id,
-        user_id=identity.user_id,
-        limit=limit,
-        archived=archived,
-    )
+    if project_id is not None:
+        await container.projects.get(
+            tenant_id=identity.tenant_id, user_id=identity.user_id, project_id=project_id
+        )
+    if thread_id is not None:
+        binding = await container.agui.get_thread_record(
+            tenant_id=identity.tenant_id, user_id=identity.user_id, thread_id=thread_id
+        )
+        bindings = [binding] if project_id is None or binding.project_id == project_id else []
+    else:
+        bindings = await container.agui.list_bindings(
+            tenant_id=identity.tenant_id,
+            user_id=identity.user_id,
+            limit=limit,
+            archived=archived,
+            project_id=project_id,
+            offset=offset,
+        )
     all_session_ids = [session_id for binding in bindings for session_id in binding.session_ids]
     resolved_sessions, runs = await asyncio.gather(
         container.sessions.list_for_ids(

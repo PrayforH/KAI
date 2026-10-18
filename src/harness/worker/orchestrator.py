@@ -58,6 +58,7 @@ from harness.policy.rules import PolicyEngine
 from harness.policy.runtime import ResolvedPolicy
 from harness.presentation.planner import InteractionPlanner
 from harness.presentation.policy import action_policy
+from harness.projects.skill_snapshots import ProjectSkillSnapshots
 from harness.quota.repositories import QuotaExceededError
 from harness.quota.service import QuotaService
 from harness.reliability.metrics import ReliabilityMetrics
@@ -267,6 +268,7 @@ class RunOrchestrator:
         workspace_policy_resolver: WorkspacePolicyResolver | None = None,
         runtime_asset_stager: RuntimeAssetStager | None = None,
         project_skills: ProjectSkillResolver | None = None,
+        project_skill_snapshots: ProjectSkillSnapshots | None = None,
         policy_resolver: PolicyResolver | None = None,
         output_artifact_max_bytes: int = 50 * 1024 * 1024,
         cancellation_poll_interval_seconds: float = 0.25,
@@ -307,6 +309,7 @@ class RunOrchestrator:
         self._workspace_policy_resolver = workspace_policy_resolver
         self._runtime_asset_stager = runtime_asset_stager
         self._project_skills = project_skills
+        self._project_skill_snapshots = project_skill_snapshots
         self._policy_resolver = policy_resolver
         self._output_artifact_max_bytes = output_artifact_max_bytes
         self._cancellation_poll_interval_seconds = cancellation_poll_interval_seconds
@@ -1014,9 +1017,8 @@ class RunOrchestrator:
                 if not isinstance(raw_message, dict):
                     raise ValueError("invalid conversation checkpoint message")
                 message = cast(dict[str, Any], raw_message)
-                if (
-                    message.get("role") not in {"user", "assistant"}
-                    or not isinstance(message.get("content"), str)
+                if message.get("role") not in {"user", "assistant"} or not isinstance(
+                    message.get("content"), str
                 ):
                     raise ValueError("invalid conversation checkpoint message")
                 history.append({"role": message["role"], "content": message["content"]})
@@ -1034,7 +1036,9 @@ class RunOrchestrator:
             if isinstance(prompt, str) and prompt:
                 history.append({"role": "user", "content": prompt})
             events = await self._events.list_after(
-                run.tenant_id, previous.run_id, 0,
+                run.tenant_id,
+                previous.run_id,
+                0,
                 types=("message.start", "message.delta", "message.completed"),
             )
             active = ""
@@ -1264,8 +1268,7 @@ class RunOrchestrator:
                         "trust_watermark": trust_state.trust_high_watermark.value,
                         "trust_floor": floor.value,
                         "trust_floor_met": (
-                            sandbox_enforcement_rank(enforcement)
-                            >= sandbox_enforcement_rank(floor)
+                            sandbox_enforcement_rank(enforcement) >= sandbox_enforcement_rank(floor)
                         ),
                     }
                 )
@@ -1330,6 +1333,7 @@ class RunOrchestrator:
                 agent_owner_user_id=session.resolved_agent_owner_user_id,
                 team_ids=session.team_ids,
                 project_id=session.agent_name,
+                business_project_id=run.business_project_id,
                 session_id=session.session_id,
                 run_id=run.run_id,
                 agent_name=session.agent_name,
@@ -1339,7 +1343,8 @@ class RunOrchestrator:
             with self._stage("harness.memory.load", {"run.id": run_id}):
                 memory_projection = (
                     await self._memory.projection(identity, str(run.input.get("prompt", "")))
-                    if self._memory is not None else ""
+                    if self._memory is not None
+                    else ""
                 )
             raw_input_artifact_ids: object = run.input.get("input_artifact_ids", [])
             if not isinstance(raw_input_artifact_ids, list):
@@ -1414,18 +1419,25 @@ class RunOrchestrator:
                     for reference in raw_project_skill_references
                     if isinstance(reference, str)
                 )
-                with self._stage(
-                    "harness.project.skills.stage", {"run.id": run_id}
-                ):
-                    project_skill_snapshots = self._project_skills(
-                        requested_project_skills, session.runtime_type
-                    )
-                    staged_project_skills, skipped_project_skills = (
-                        stage_project_skill_snapshots(
-                            project_skill_snapshots,
-                            workspace=handle.path,
-                            runtime=session.runtime_type,
+                with self._stage("harness.project.skills.stage", {"run.id": run_id}):
+                    captured_skills = run.input.get("project_skill_snapshots")
+                    if captured_skills is not None:
+                        if (
+                            not isinstance(captured_skills, list)
+                            or self._project_skill_snapshots is None
+                        ):
+                            raise ValueError("Project Skill snapshot storage is unavailable")
+                        project_skill_snapshots = await self._project_skill_snapshots.restore(
+                            tenant_id, captured_skills
                         )
+                    else:
+                        project_skill_snapshots = self._project_skills(
+                            requested_project_skills, session.runtime_type
+                        )
+                    staged_project_skills, skipped_project_skills = stage_project_skill_snapshots(
+                        project_skill_snapshots,
+                        workspace=handle.path,
+                        runtime=session.runtime_type,
                     )
                 await self._events.append(
                     tenant_id=tenant_id,
@@ -1436,6 +1448,20 @@ class RunOrchestrator:
                         "requested": len(requested_project_skills),
                         "skills": list(staged_project_skills),
                         "skipped": list(skipped_project_skills),
+                        "snapshotMode": "pinned"
+                        if captured_skills is not None
+                        else "legacy_catalog",
+                        "resources": [
+                            {
+                                "name": skill.name,
+                                "source": skill.source,
+                                "contentHash": skill.content_hash,
+                                "resolution": "agent_precedence"
+                                if skill.name in skipped_project_skills
+                                else "project",
+                            }
+                            for skill in project_skill_snapshots
+                        ],
                     },
                 )
             with self._stage("harness.sandbox.prepare", {"run.id": run_id}):
@@ -1500,14 +1526,10 @@ class RunOrchestrator:
             )
             raw_project_projection = run.input.get("project_context")
             project_projection = (
-                raw_project_projection
-                if isinstance(raw_project_projection, str)
-                else ""
+                raw_project_projection if isinstance(raw_project_projection, str) else ""
             )
             context_projection = "\n\n".join(
-                section
-                for section in (project_projection, recovery_projection)
-                if section.strip()
+                section for section in (project_projection, recovery_projection) if section.strip()
             )
             if recovery_projection:
                 await self._events.append(
@@ -1518,13 +1540,10 @@ class RunOrchestrator:
                     payload={"mode": "durable_digest"},
                 )
             if project_projection.strip() or (
-                isinstance(raw_project_document_ids, list)
-                and raw_project_document_ids
+                isinstance(raw_project_document_ids, list) and raw_project_document_ids
             ):
                 raw_project_meta = run.input.get("project_context_meta")
-                project_meta = (
-                    raw_project_meta if isinstance(raw_project_meta, dict) else {}
-                )
+                project_meta = raw_project_meta if isinstance(raw_project_meta, dict) else {}
                 await self._events.append(
                     tenant_id=tenant_id,
                     run_id=run_id,
@@ -1537,17 +1556,18 @@ class RunOrchestrator:
                     },
                 )
             context = RuntimeContext(
-                platform_tools=(await self._platform_tools_factory(run, session)
-                                if self._platform_tools_factory else PlatformToolOverlay()),
+                platform_tools=(
+                    await self._platform_tools_factory(run, session)
+                    if self._platform_tools_factory
+                    else PlatformToolOverlay()
+                ),
                 run=run,
                 session=session,
                 workspace=handle.path,
                 agent_assets_staged=self._runtime_asset_stager is not None,
                 sandbox_provider=handle.provider,
                 sandbox_isolation=handle.isolation_level,
-                sandbox_enforcement=sandbox_enforcement(
-                    handle.provider, handle.isolation_level
-                ),
+                sandbox_enforcement=sandbox_enforcement(handle.provider, handle.isolation_level),
                 remote_workspace=handle.remote_workspace,
                 assistant_message_id=f"assistant-{run_id}-{uuid4().hex}",
                 steering=SteeringInbox(run, self._runs, self._events),

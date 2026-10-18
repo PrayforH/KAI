@@ -43,6 +43,43 @@ def identity(user: str = "user-a") -> ExecutionIdentity:
 
 
 @pytest.mark.asyncio
+async def test_business_project_scope_is_durable_and_filters_vector_ranking(
+    memory_database: SessionFactory,
+):
+    repository = PostgresMemoryBankRepository(memory_database)
+    bank = MemoryBankService(repository, clock=lambda: NOW)
+    saved = []
+    vector = [1.0] + [0.0] * 1023
+    for project in (None, "project-a", "project-b"):
+        scoped = identity().model_copy(update={"business_project_id": project})
+        proposal = await bank.propose_agent(scoped, "季度经营分析采用含税收入")
+        entry = await bank.confirm("tenant-a", "user-a", proposal.entry_id, proposal.version)
+        await repository.put_embedding(entry, "project-test", vector)
+        saved.append(entry)
+    restarted = MemoryBankService(PostgresMemoryBankRepository(memory_database), clock=lambda: NOW)
+    for project, expected in zip((None, "project-a", "project-b"), saved, strict=True):
+        hits = await restarted.search(
+            "tenant-a", "user-a", "agent-a", "经营分析", project_id=project
+        )
+        assert [hit.entry.entry_id for hit in hits] == [expected.entry_id]
+        semantic = await restarted.repository.semantic_search(
+            "tenant-a",
+            "user-a",
+            "agent-a",
+            "user-a",
+            "project-test",
+            vector,
+            NOW,
+            limit=1,
+            project_id=project,
+        )
+        assert [hit.entry.entry_id for hit in semantic] == [expected.entry_id]
+        foreign = identity().model_copy(update={"business_project_id": "foreign"})
+        with pytest.raises(NotFoundError):
+            await restarted.read(foreign, expected.entry_id)
+
+
+@pytest.mark.asyncio
 async def test_memory_bank_is_durable_scoped_and_fenced(
     memory_database: SessionFactory,
 ) -> None:

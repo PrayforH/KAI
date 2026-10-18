@@ -1,4 +1,6 @@
 "use client";
+import Link from "next/link";
+import { loadTaskSummary, projectHref } from "../lib/project-space";
 import { agentDisplayName } from "../lib/agent-display-name";
 import { useInternalAgentsPreference } from "../lib/interface-preferences";
 
@@ -54,7 +56,7 @@ import {
   loadTaskAgentCatalog,
   type TaskAgent,
 } from "../lib/task-agent-catalog";
-import { loadTasks, peekCachedTasks, type TaskSummary } from "../lib/task-history";
+import { peekCachedTasks, type TaskSummary } from "../lib/task-history";
 import {
   loadTaskModelOverride,
   loadTaskModelRoutes,
@@ -275,11 +277,6 @@ function AuthenticatedHome() {
   const [taskSidebarOpen, setTaskSidebarOpen] = useState(true);
   const [taskRailOpen, setTaskRailOpen] = useState(false);
   const [railExpanded, setRailExpanded] = useState(false);
-  const [railViewRequest, setRailViewRequest] = useState<{
-    view: "files" | "project";
-    nonce: number;
-  } | null>(null);
-  const railViewNonce = useRef(0);
   const [railPreview, setRailPreview] = useState<(PreviewTarget & { nonce: number }) | null>(null);
   const previewNonce = useRef(0);
   // Artifact cards in the transcript ask the rail to show that file.
@@ -391,8 +388,8 @@ function AuthenticatedHome() {
         const [catalog, routes, taskHistory] = await Promise.all([
           loadTaskAgentCatalog(user.user_id, showInternalAgents),
           loadTaskModelRoutes().catch(() => []),
-          loadTasks()
-            .then((tasks) => ({ available: true as const, tasks }))
+          loadTaskSummary(initialThreadId)
+            .then((task) => ({ available: true as const, tasks: task ? [task] : [] }))
             .catch(() => ({ available: false as const, tasks: [] as TaskSummary[] })),
         ]);
         if (!active) return;
@@ -445,6 +442,7 @@ function AuthenticatedHome() {
         const currentTask = taskHistory.tasks.find(
           (task) => task.thread_id === currentThreadId,
         );
+        if (taskHistory.available) setCurrentTask(currentTask ?? null);
         if (currentTask) { markThreadPersisted(storage, currentThreadId); setLocalThreadId(null); }
         setCurrentTaskTitle(currentTask?.title ?? "新任务");
         setCurrentThreadState(
@@ -585,7 +583,23 @@ function AuthenticatedHome() {
     closeCompactTaskSidebar();
   }, [closeCompactTaskSidebar, user.user_id]);
 
-  const startTaskWithAgent = useCallback((nextAgent: TaskAgent) => {
+  const startTaskWithAgent = useCallback(async (nextAgent: TaskAgent) => {
+    if (currentTask?.project_id) {
+      if (versionSwitchInFlight.current) return;
+      versionSwitchInFlight.current = true;
+      setVersionSwitchPending(true);
+      const revision = ++taskSelectionRevision.current;
+      try {
+        const task = await createProjectTask(currentTask.project_id, nextAgent);
+        if (revision === taskSelectionRevision.current) { switchTask(task); focusTaskComposer(); }
+      } catch (error) {
+        if (revision === taskSelectionRevision.current) setVersionSwitchError(error instanceof Error ? error.message : "新建项目任务失败");
+      } finally {
+        versionSwitchInFlight.current = false;
+        setVersionSwitchPending(false);
+      }
+      return;
+    }
     const launchMode = resolveTaskLaunchMode(currentThreadState, "select-agent");
     if (launchMode === "reuse-current") {
       const storage = createUserScopedStorage(window.localStorage, user.user_id);
@@ -596,7 +610,7 @@ function AuthenticatedHome() {
       return;
     }
     createTaskWithAgent(nextAgent);
-  }, [createTaskWithAgent, currentThreadState, focusTaskComposer, threadId, user.user_id]);
+  }, [createTaskWithAgent, currentTask?.project_id, currentThreadState, focusTaskComposer, threadId, user.user_id, taskAgents, modelRoutes]);
 
   // Keep the header's task context (title + details popover data) synced with
   // the durable task list: on thread switches, run phase changes, and after
@@ -605,9 +619,8 @@ function AuthenticatedHome() {
     if (!threadId) return;
     let active = true;
     const sync = () => {
-      void loadTasks().then((tasks) => {
+      void loadTaskSummary(threadId).then((current) => {
         if (!active) return;
-        const current = tasks.find((task) => task.thread_id === threadId) ?? null;
         setCurrentTask(current);
         if (current) { markThreadPersisted(taskStorage(), threadId); setLocalThreadId(null); setCurrentTaskTitle(current.title); setCurrentThreadState("durable"); }
       }).catch(() => undefined);
@@ -626,24 +639,6 @@ function AuthenticatedHome() {
     if (taskSelectionRevision.current !== selectionRevision) return;
     switchTask(task);
     focusTaskComposer();
-  }
-
-  async function openProjectFiles(project: ApiProject) {
-    let target =
-      currentTask?.project_id === project.projectId ? currentTask : null;
-    if (!target) {
-      const tasks = await loadTasks();
-      target =
-        tasks
-          .filter((task) => task.project_id === project.projectId)
-          .sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at))[0] ??
-        null;
-    }
-    if (!target) return;
-    if (target.thread_id !== threadId) switchTask(target);
-    setTaskRailOpen(true);
-    railViewNonce.current += 1;
-    setRailViewRequest({ view: "files", nonce: railViewNonce.current });
   }
 
   const startNewTask = useCallback(() => {
@@ -789,7 +784,6 @@ function AuthenticatedHome() {
           onSelect={switchTask}
           onNewTask={startNewTask}
           onNewTaskWithProject={startTaskInProject}
-          onOpenProjectFiles={(project) => void openProjectFiles(project)}
           agentLabels={agentDisplayLabels}
           projects={projects}
           onProjectsChanged={refreshProjects}
@@ -814,6 +808,9 @@ function AuthenticatedHome() {
                   <SidebarExpandToggle onToggle={() => setTaskSidebarOpen(true)} />
                 </>
               )}
+              {activeProjectId && <Link className="task-project-breadcrumb" href={projectHref(activeProjectId)}>
+                {projects.find((project) => project.projectId === activeProjectId)?.name ?? "返回项目"}<span aria-hidden="true"> / </span>
+              </Link>}
               <TaskContextBar
                 taskTitle={currentTaskTitle}
                 task={currentTask}
@@ -933,8 +930,6 @@ function AuthenticatedHome() {
           runPhase={runView?.phase ?? null}
           threadId={threadId}
           projectId={activeProjectId}
-          viewRequest={railViewRequest}
-          onViewRequestHandled={() => setRailViewRequest(null)}
           previewRequest={railPreview}
         />
       </div>

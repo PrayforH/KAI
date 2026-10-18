@@ -131,6 +131,7 @@ class MemoryProcessingController:
                     job.agent_name,
                     prompt[:4000],
                     owner_id=job.agent_owner_user_id,
+                    project_id=run.business_project_id,
                     limit=12,
                 )
                 pending = await self._bank.repository.list_entries(
@@ -138,6 +139,7 @@ class MemoryProcessingController:
                     job.user_id,
                     agent_name=job.agent_name,
                     owner_id=job.agent_owner_user_id,
+                    project_id=run.business_project_id,
                     statuses=frozenset({MemoryStatus.PENDING}),
                     limit=4,
                 )
@@ -151,6 +153,7 @@ class MemoryProcessingController:
                         user_id=job.user_id,
                         agent_name=job.agent_name,
                         owner_id=job.agent_owner_user_id,
+                        project_id=run.business_project_id,
                         content=candidate.content,
                         memory_type=candidate.memory_type,
                         topic=candidate.topic,

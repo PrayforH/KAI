@@ -1,5 +1,8 @@
 "use client";
 
+import Link from "next/link";
+import { projectHref } from "../lib/project-space";
+
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   projectClient,
@@ -140,6 +143,7 @@ export function ProjectResourcesPanel({ projectId }: { projectId: string }) {
 
   return (
     <section className={styles.panel} aria-label="项目资源">
+      <Link className={styles.projectHome} href={projectHref(projectId)}><span>{project?.name ?? "项目"}</span><span>打开项目 →</span></Link>
       {error ? <p className={styles.error}>{error}</p> : null}
       <ResourceCard
         title="知识库"
@@ -183,8 +187,8 @@ export function ProjectResourcesPanel({ projectId }: { projectId: string }) {
       </ResourceCard>
 
       <ResourceCard
-        title="技能"
-        description="在相关情况下跨任务复用已经跑通的工作流。"
+        title="附加技能"
+        description="补充此项目需要的技能；智能体自带技能随发布版本管理。"
         action="添加"
         count={skills.length}
         onOpen={() => setDialog("skills")}

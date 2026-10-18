@@ -616,7 +616,7 @@ def _platform_skill_snapshot(package: PlatformSkillPackage) -> SkillSnapshot:
 
 
 def skill_snapshots_for_references(
-    references: tuple[str, ...], runtime: AgentRuntimeType
+    references: tuple[str, ...], runtime: AgentRuntimeType, *, strict: bool = False
 ) -> tuple[SkillSnapshot, ...]:
     """Resolve pinned project Skill references for one runtime.
 
@@ -631,12 +631,20 @@ def skill_snapshots_for_references(
     for reference in references:
         package_id, separator, revision = reference.partition("@")
         if not separator or not revision.isdigit():
+            if strict:
+                raise ConflictError(f"Invalid project Skill reference: {reference}")
             continue
         try:
             package = platform_skill_package(package_id, int(revision))
         except (ConflictError, NotFoundError):
+            if strict:
+                raise ConflictError(
+                    f"Project Skill is unavailable; update the project selection: {reference}"
+                ) from None
             continue
         if runtime not in package.compatible_runtimes:
+            if strict:
+                raise ConflictError(f"Project Skill {reference} does not support {runtime}")
             continue
         if package.skill.name in seen:
             continue

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import secrets
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -33,16 +34,12 @@ def _normalize_skill_references(references: tuple[str, ...]) -> tuple[str, ...]:
     if len(set(references)) != len(references):
         raise ConflictError("duplicate project Skill reference")
     if len(references) > MAX_PROJECT_SKILLS:
-        raise ConflictError(
-            f"a project accepts at most {MAX_PROJECT_SKILLS} Skill references"
-        )
+        raise ConflictError(f"a project accepts at most {MAX_PROJECT_SKILLS} Skill references")
     normalized: list[str] = []
     for reference in references:
         package_id, separator, revision = reference.partition("@")
         if not separator or not revision.isdigit():
-            raise ConflictError(
-                f"project Skill reference must be packageId@revision: {reference}"
-            )
+            raise ConflictError(f"project Skill reference must be packageId@revision: {reference}")
         try:
             package = platform_skill_package(package_id, int(revision))
         except (ConflictError, NotFoundError) as error:
@@ -184,9 +181,7 @@ class ProjectService:
         pinned: bool | None = None,
         archived: bool | None = None,
     ) -> Project:
-        current = await self.get(
-            tenant_id=tenant_id, user_id=user_id, project_id=project_id
-        )
+        current = await self.get(tenant_id=tenant_id, user_id=user_id, project_id=project_id)
         updates: dict[str, object] = {"updated_at": self._clock()}
         if name is not None:
             trimmed = name.strip()
@@ -196,9 +191,7 @@ class ProjectService:
         if instructions is not None:
             updates["instructions"] = instructions.strip()
         if skill_references is not None:
-            updates["skill_references"] = _normalize_skill_references(
-                skill_references
-            )
+            updates["skill_references"] = _normalize_skill_references(skill_references)
         if knowledge_references is not None:
             updates["knowledge_references"] = await self._normalize_knowledge_references(
                 tenant_id=tenant_id,
@@ -213,18 +206,14 @@ class ProjectService:
         await self._repository.replace(updated)
         return updated
 
-    async def instructions_for(
-        self, *, tenant_id: str, user_id: str, project_id: str
-    ) -> str:
+    async def instructions_for(self, *, tenant_id: str, user_id: str, project_id: str) -> str:
         """Return the project's instructions after checking ownership.
 
         A Run resolves this once at creation time; callers treat the returned
         text as an immutable snapshot rather than re-reading it later.
         """
 
-        project = await self.get(
-            tenant_id=tenant_id, user_id=user_id, project_id=project_id
-        )
+        project = await self.get(tenant_id=tenant_id, user_id=user_id, project_id=project_id)
         return project.instructions
 
     async def delete(self, *, tenant_id: str, user_id: str, project_id: str) -> None:
@@ -237,22 +226,14 @@ class ProjectService:
             await self._resources.delete_for_project(tenant_id, project_id)
         await self._repository.delete(tenant_id, project_id)
 
-    async def resources(
-        self, *, tenant_id: str, user_id: str, project_id: str
-    ) -> ProjectResources:
-        project = await self.get(
-            tenant_id=tenant_id, user_id=user_id, project_id=project_id
-        )
+    async def resources(self, *, tenant_id: str, user_id: str, project_id: str) -> ProjectResources:
+        project = await self.get(tenant_id=tenant_id, user_id=user_id, project_id=project_id)
         if self._resources is None:
             return ProjectResources(project=project)
         return ProjectResources(
             project=project,
-            memories=tuple(
-                await self._resources.list_memories(tenant_id, project_id)
-            ),
-            documents=tuple(
-                await self._resources.list_documents(tenant_id, project_id)
-            ),
+            memories=tuple(await self._resources.list_memories(tenant_id, project_id)),
+            documents=tuple(await self._resources.list_documents(tenant_id, project_id)),
             links=tuple(await self._resources.list_links(tenant_id, project_id)),
         )
 
@@ -272,9 +253,7 @@ class ProjectService:
             raise ConflictError("Project memory cannot be empty")
         existing = await self._resources.list_memories(tenant_id, project_id)
         if len(existing) >= MAX_PROJECT_MEMORIES:
-            raise ConflictError(
-                f"a project accepts at most {MAX_PROJECT_MEMORIES} memories"
-            )
+            raise ConflictError(f"a project accepts at most {MAX_PROJECT_MEMORIES} memories")
         now = self._clock()
         memory = ProjectMemory(
             tenantId=tenant_id,
@@ -303,12 +282,8 @@ class ProjectService:
         trimmed = content.strip()
         if not trimmed:
             raise ConflictError("Project memory cannot be empty")
-        current = await self._resources.get_memory(
-            tenant_id, project_id, memory_id
-        )
-        updated = current.model_copy(
-            update={"content": trimmed, "updated_at": self._clock()}
-        )
+        current = await self._resources.get_memory(tenant_id, project_id, memory_id)
+        updated = current.model_copy(update={"content": trimmed, "updated_at": self._clock()})
         await self._resources.replace_memory(updated)
         return updated
 
@@ -340,12 +315,8 @@ class ProjectService:
             raise ConflictError("Project document verification is unavailable")
         existing = await self._resources.list_documents(tenant_id, project_id)
         if len(existing) >= MAX_PROJECT_DOCUMENTS:
-            raise ConflictError(
-                f"a project accepts at most {MAX_PROJECT_DOCUMENTS} documents"
-            )
-        artifact = await self._document_resolver(
-            tenant_id, user_id, input_artifact_id
-        )
+            raise ConflictError(f"a project accepts at most {MAX_PROJECT_DOCUMENTS} documents")
+        artifact = await self._document_resolver(tenant_id, user_id, input_artifact_id)
         document = ProjectDocument(
             tenantId=tenant_id,
             userId=user_id,
@@ -354,6 +325,7 @@ class ProjectService:
             name=artifact.name,
             mediaType=artifact.media_type,
             sizeBytes=artifact.size_bytes or 0,
+            sha256=getattr(artifact, "sha256", None),
             createdAt=self._clock(),
         )
         await self._resources.add_document(document)
@@ -370,9 +342,7 @@ class ProjectService:
         await self.get(tenant_id=tenant_id, user_id=user_id, project_id=project_id)
         if self._resources is None:
             raise ConflictError("Project resource store is unavailable")
-        await self._resources.delete_document(
-            tenant_id, project_id, input_artifact_id
-        )
+        await self._resources.delete_document(tenant_id, project_id, input_artifact_id)
 
     async def add_link(
         self,
@@ -388,9 +358,7 @@ class ProjectService:
             raise ConflictError("Project resource store is unavailable")
         existing = await self._resources.list_links(tenant_id, project_id)
         if len(existing) >= MAX_PROJECT_LINKS:
-            raise ConflictError(
-                f"a project accepts at most {MAX_PROJECT_LINKS} links"
-            )
+            raise ConflictError(f"a project accepts at most {MAX_PROJECT_LINKS} links")
         normalized = _normalize_link_url(url)
         if any(item.url == normalized for item in existing):
             raise ConflictError("project link already exists")
@@ -429,36 +397,25 @@ class ProjectService:
         """
 
         try:
-            project = await self.get(
-                tenant_id=tenant_id, user_id=user_id, project_id=project_id
-            )
+            project = await self.get(tenant_id=tenant_id, user_id=user_id, project_id=project_id)
         except NotFoundError:
             return None
         memories: tuple[ProjectMemory, ...] = ()
         documents: tuple[ProjectDocument, ...] = ()
         links: tuple[ProjectLink, ...] = ()
         if self._resources is not None:
-            memories = tuple(
-                await self._resources.list_memories(tenant_id, project_id)
-            )
-            documents = tuple(
-                await self._resources.list_documents(tenant_id, project_id)
-            )
+            memories = tuple(await self._resources.list_memories(tenant_id, project_id))
+            documents = tuple(await self._resources.list_documents(tenant_id, project_id))
             links = tuple(await self._resources.list_links(tenant_id, project_id))
         sections: list[str] = []
         if project.instructions.strip():
             sections.append(f"## 项目说明\n{project.instructions.strip()}")
         if memories:
-            sections.append(
-                "## 项目记忆\n"
-                + "\n".join(f"- {item.content}" for item in memories)
-            )
+            sections.append("## 项目记忆\n" + "\n".join(f"- {item.content}" for item in memories))
         if links:
             sections.append(
                 "## 项目网页\n"
-                + "\n".join(
-                    f"- {item.title or item.url}：{item.url}" for item in links
-                )
+                + "\n".join(f"- {item.title or item.url}：{item.url}" for item in links)
             )
         if project.skill_references:
             labels: list[str] = []
@@ -479,6 +436,27 @@ class ProjectService:
         )
         return ProjectRunContext(
             projectId=project_id,
+            resourceManifest={
+                "projectId": project_id,
+                "name": project.name,
+                "updatedAt": project.updated_at.isoformat(),
+                "instructionsHash": hashlib.sha256(project.instructions.encode()).hexdigest(),
+                "memories": [
+                    {
+                        "id": item.memory_id,
+                        "updatedAt": item.updated_at.isoformat(),
+                        "contentHash": hashlib.sha256(item.content.encode()).hexdigest(),
+                    }
+                    for item in memories
+                ],
+                "documents": [
+                    {"id": item.input_artifact_id, "name": item.name, "sha256": item.sha256}
+                    for item in documents
+                ],
+                "links": [
+                    {"id": item.link_id, "url": item.url, "title": item.title} for item in links
+                ],
+            },
             text=text,
             documentIds=tuple(item.input_artifact_id for item in documents),
             skillReferences=project.skill_references,
@@ -502,11 +480,7 @@ class ProjectService:
 
         if project_id is not None:
             # Validates ownership and existence before the task is touched.
-            await self.get(
-                tenant_id=tenant_id, user_id=user_id, project_id=project_id
-            )
+            await self.get(tenant_id=tenant_id, user_id=user_id, project_id=project_id)
         if self._task_project_writer is None:
             raise ConflictError("Task project binding is unavailable")
-        return await self._task_project_writer(
-            tenant_id, user_id, thread_id, project_id
-        )
+        return await self._task_project_writer(tenant_id, user_id, thread_id, project_id)
