@@ -2831,10 +2831,28 @@ export interface ApiProject {
   instructions?: string;
   skillReferences?: string[];
   knowledgeReferences?: string[];
+  mcpReferences?: string[];
   pinnedAt?: string | null;
   archivedAt?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ApiProjectResult {
+  resultId: string;
+  projectId: string;
+  artifactId: string;
+  inputArtifactId: string;
+  threadId: string;
+  threadTitle: string;
+  runId: string;
+  name: string;
+  mediaType: string;
+  sizeBytes: number;
+  sha256: string | null;
+  version: number;
+  finalizedAt: string | null;
+  createdAt: string;
 }
 
 export interface ApiProjectMemory {
@@ -2896,6 +2914,7 @@ export const projectClient = {
       instructions?: string;
       skillReferences?: string[];
       knowledgeReferences?: string[];
+      mcpReferences?: string[];
       pinned?: boolean;
       archived?: boolean;
     },
@@ -2909,6 +2928,19 @@ export const projectClient = {
     return request<ApiProjectResources>(
       `projects/${encodeURIComponent(projectId)}/resources`,
     );
+  },
+  results(projectId: string): Promise<ApiProjectResult[]> {
+    return request(`projects/${encodeURIComponent(projectId)}/results`);
+  },
+  saveResult(projectId: string, artifactId: string): Promise<ApiProjectResult> {
+    return request(`projects/${encodeURIComponent(projectId)}/results`, {
+      method: "POST", body: JSON.stringify({ artifactId }),
+    });
+  },
+  finalizeResult(projectId: string, resultId: string, finalized: boolean): Promise<ApiProjectResult> {
+    return request(`projects/${encodeURIComponent(projectId)}/results/${encodeURIComponent(resultId)}`, {
+      method: "PATCH", body: JSON.stringify({ finalized }),
+    });
   },
   addMemory(projectId: string, content: string): Promise<ApiProjectMemory> {
     return request<ApiProjectMemory>(

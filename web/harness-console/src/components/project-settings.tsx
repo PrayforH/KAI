@@ -33,7 +33,7 @@ export function ProjectSettings({ space }: { space: ProjectSpaceState }) {
         />
       </label>
       <label className={styles.field}>
-        项目目标与约定
+        项目指令
         <textarea
           className={styles.textarea}
           value={instructions}
@@ -42,7 +42,7 @@ export function ProjectSettings({ space }: { space: ProjectSpaceState }) {
         />
       </label>
       <p className={styles.muted}>
-        约定用于当前项目的业务背景与交付要求。智能体的通用指令、工具和版本在
+        指令用于当前项目的业务背景与交付要求。智能体的通用指令、工具和版本在
         <Link href="/studio/agents">智能体工作台</Link>维护。
       </p>
       <div className={styles.actions}>

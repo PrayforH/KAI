@@ -1034,6 +1034,7 @@ def build_memory_container(
         clock=clock,
         id_generator=id_generator,
         knowledge_resolver=project_knowledge_resolver(knowledge.resolve_bindings),
+        connector_catalog=capability_catalogs,
     )
     project_service.configure_task_project_clearer(thread_bindings.clear_project)
     project_service.configure_task_project_writer(

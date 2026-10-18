@@ -2,18 +2,27 @@
 
 from __future__ import annotations
 
-from sqlalchemy import and_, select
+from datetime import datetime
+
+from sqlalchemy import and_, func, select
 from sqlalchemy import delete as sql_delete
 from sqlalchemy.exc import IntegrityError
 
 from harness.core.errors import ConflictError, NotFoundError
-from harness.projects.models import Project, ProjectDocument, ProjectLink, ProjectMemory
+from harness.projects.models import (
+    Project,
+    ProjectDocument,
+    ProjectLink,
+    ProjectMemory,
+    ProjectResult,
+)
 from harness.storage.database import SessionFactory
 from harness.storage.models import (
     InputArtifactRow,
     ProjectDocumentRow,
     ProjectLinkRow,
     ProjectMemoryRow,
+    ProjectResultRow,
     ProjectRow,
 )
 
@@ -292,8 +301,88 @@ class PostgresProjectResourceRepository:
                 )
             await session.commit()
 
+    async def list_results(self, tenant_id: str, project_id: str) -> list[ProjectResult]:
+        async with self._sessions() as session:
+            rows = (
+                await session.scalars(
+                    select(ProjectResultRow)
+                    .where(
+                        ProjectResultRow.tenant_id == tenant_id,
+                        ProjectResultRow.project_id == project_id,
+                    )
+                    .order_by(ProjectResultRow.created_at.desc(), ProjectResultRow.version.desc())
+                )
+            ).all()
+        return [ProjectResult.model_validate(row.payload) for row in rows]
+
+    async def save_result(self, result: ProjectResult) -> ProjectResult:
+        async with self._sessions() as session:
+            # Serialize version allocation and duplicate saves across workers.
+            project = await session.scalar(
+                select(ProjectRow)
+                .where(
+                    ProjectRow.project_id == result.project_id,
+                    ProjectRow.tenant_id == result.tenant_id,
+                )
+                .with_for_update()
+            )
+            if project is None:
+                raise NotFoundError("Project not found")
+            existing = await session.scalar(select(ProjectResultRow).where(
+                ProjectResultRow.tenant_id == result.tenant_id,
+                ProjectResultRow.project_id == result.project_id,
+                ProjectResultRow.artifact_id == result.artifact_id,
+            ))
+            if existing is not None:
+                return ProjectResult.model_validate(existing.payload)
+            latest_version = await session.scalar(select(func.max(ProjectResultRow.version)).where(
+                ProjectResultRow.tenant_id == result.tenant_id,
+                ProjectResultRow.project_id == result.project_id,
+                ProjectResultRow.name == result.name,
+            ))
+            version = (latest_version or 0) + 1
+            saved = result.model_copy(update={"version": version})
+            session.add(
+                ProjectResultRow(
+                    result_id=saved.result_id,
+                    tenant_id=saved.tenant_id,
+                    project_id=saved.project_id,
+                    artifact_id=saved.artifact_id,
+                    name=saved.name,
+                    version=version,
+                    created_at=saved.created_at,
+                    payload=saved.model_dump(mode="json", by_alias=True),
+                )
+            )
+            await session.commit()
+            return saved
+
+    async def finalize_result(
+        self, tenant_id: str, project_id: str, result_id: str, finalized_at: datetime | None
+    ) -> ProjectResult:
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(ProjectResultRow)
+                .where(
+                    ProjectResultRow.result_id == result_id,
+                    ProjectResultRow.tenant_id == tenant_id,
+                    ProjectResultRow.project_id == project_id,
+                )
+                .with_for_update()
+            )
+            if row is None:
+                raise NotFoundError("Project result not found")
+            saved = ProjectResult.model_validate(row.payload).model_copy(
+                update={"finalized_at": finalized_at}
+            )
+            row.payload = saved.model_dump(mode="json", by_alias=True)
+            await session.commit()
+            return saved
+
     async def delete_for_project(self, tenant_id: str, project_id: str) -> None:
         async with self._sessions() as session:
+            await session.execute(sql_delete(ProjectResultRow).where(
+                ProjectResultRow.tenant_id == tenant_id, ProjectResultRow.project_id == project_id))
             await session.execute(
                 sql_delete(ProjectMemoryRow).where(
                     ProjectMemoryRow.tenant_id == tenant_id,

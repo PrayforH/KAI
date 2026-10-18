@@ -1,5 +1,4 @@
 import { requireAuthenticatedResponse } from "./client-auth";
-import { projectClient } from "./studio-client";
 import type { TaskSummary } from "./task-history";
 
 export type ProjectTab = "overview" | "tasks" | "resources" | "results";
@@ -67,35 +66,4 @@ export function loadProjectArtifacts(projectId: string) {
   return read<ProjectArtifact[]>(
     `/api/harness/artifacts?${new URLSearchParams({ project_id: projectId, limit: "500" })}`,
   );
-}
-
-/** An explicit user action copies an authorized output into project inputs. */
-export async function addResultToProject(
-  projectId: string,
-  artifact: ProjectArtifact,
-) {
-  const content = requireAuthenticatedResponse(
-    await fetch(
-      `/api/harness/artifacts/${encodeURIComponent(artifact.artifact_id)}`,
-    ),
-  );
-  if (!content.ok) throw new Error("无法读取这份成果，请重试。");
-  const form = new FormData();
-  form.append(
-    "file",
-    new File([await content.blob()], artifact.name, {
-      type: artifact.media_type,
-    }),
-  );
-  const uploaded = requireAuthenticatedResponse(
-    await fetch("/api/input-artifacts", { method: "POST", body: form }),
-  );
-  const body = await uploaded.json();
-  if (!uploaded.ok || !body.input_artifact_id)
-    throw new Error(
-      body?.error?.message ??
-        body?.detail?.message ??
-        "加入项目资料失败，请检查文件大小与资料数量。",
-    );
-  await projectClient.attachDocument(projectId, body.input_artifact_id);
 }

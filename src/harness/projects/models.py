@@ -13,6 +13,7 @@ MAX_PROJECT_INSTRUCTIONS = 20_000
 MAX_PROJECT_MEMORY_CONTENT = 4_000
 MAX_PROJECT_MEMORIES = 200
 MAX_PROJECT_DOCUMENTS = 10
+MAX_PROJECT_CONNECTORS = 20
 MAX_PROJECT_SKILLS = 20
 MAX_PROJECT_KNOWLEDGE_BASES = 10
 MAX_PROJECT_LINKS = 20
@@ -37,6 +38,7 @@ class Project(StudioModel):
     # per-task selection in the composer is added on top rather than replacing
     # the project's own binding.
     knowledge_references: tuple[str, ...] = Field(default=(), alias="knowledgeReferences")
+    mcp_references: tuple[str, ...] = Field(default=(), alias="mcpReferences")
     pinned_at: datetime | None = Field(default=None, alias="pinnedAt")
     archived_at: datetime | None = Field(default=None, alias="archivedAt")
     created_at: datetime = Field(alias="createdAt")
@@ -102,6 +104,9 @@ class UpdateProjectRequest(StudioModel):
     knowledge_references: tuple[str, ...] | None = Field(
         default=None, alias="knowledgeReferences", max_length=MAX_PROJECT_KNOWLEDGE_BASES
     )
+    mcp_references: tuple[str, ...] | None = Field(
+        default=None, alias="mcpReferences", max_length=MAX_PROJECT_CONNECTORS
+    )
     pinned: bool | None = None
     archived: bool | None = None
 
@@ -132,8 +137,38 @@ class ProjectRunContext(StudioModel):
     document_ids: tuple[str, ...] = Field(default=(), alias="documentIds")
     skill_references: tuple[str, ...] = Field(default=(), alias="skillReferences")
     knowledge_references: tuple[str, ...] = Field(default=(), alias="knowledgeReferences")
+    mcp_references: tuple[str, ...] = Field(default=(), alias="mcpReferences")
     memory_count: int = Field(default=0, alias="memoryCount")
     document_count: int = Field(default=0, alias="documentCount")
     skill_count: int = Field(default=0, alias="skillCount")
     knowledge_count: int = Field(default=0, alias="knowledgeCount")
     link_count: int = Field(default=0, alias="linkCount")
+
+
+class ProjectResult(StudioModel):
+    """A saved immutable file snapshot, independent of task membership."""
+
+    result_id: str = Field(alias="resultId")
+    tenant_id: str = Field(alias="tenantId")
+    user_id: str = Field(alias="userId")
+    project_id: str = Field(alias="projectId")
+    artifact_id: str = Field(alias="artifactId")
+    input_artifact_id: str = Field(alias="inputArtifactId")
+    thread_id: str = Field(alias="threadId")
+    thread_title: str = Field(alias="threadTitle")
+    run_id: str = Field(alias="runId")
+    name: str
+    media_type: str = Field(alias="mediaType")
+    size_bytes: int = Field(alias="sizeBytes")
+    sha256: str | None = None
+    version: int = Field(default=1, ge=1)
+    finalized_at: datetime | None = Field(default=None, alias="finalizedAt")
+    created_at: datetime = Field(alias="createdAt")
+
+
+class SaveProjectResultRequest(StudioModel):
+    artifact_id: str = Field(alias="artifactId", min_length=1, max_length=128)
+
+
+class FinalizeProjectResultRequest(StudioModel):
+    finalized: bool

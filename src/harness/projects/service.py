@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 
 from harness.core.errors import ConflictError, NotFoundError
 from harness.projects.models import (
+    MAX_PROJECT_CONNECTORS,
     MAX_PROJECT_DOCUMENTS,
     MAX_PROJECT_KNOWLEDGE_BASES,
     MAX_PROJECT_LINK_TITLE,
@@ -21,7 +22,13 @@ from harness.projects.models import (
     ProjectLink,
     ProjectMemory,
     ProjectResources,
+    ProjectResult,
     ProjectRunContext,
+)
+from harness.projects.repositories import (
+    ProjectConnectorCatalog,
+    ProjectRepository,
+    ProjectResourceRepository,
 )
 from harness.studio.platform_skills import platform_skill_package
 
@@ -68,15 +75,16 @@ def project_knowledge_resolver(resolve_bindings):
 class ProjectService:
     def __init__(
         self,
-        repository,
+        repository: ProjectRepository,
         *,
         clock: Callable[[], datetime] | None = None,
         id_generator: Callable[[str], str] | None = None,
         task_project_writer=None,
         task_project_clearer=None,
-        resources=None,
+        resources: ProjectResourceRepository | None = None,
         document_resolver=None,
         knowledge_resolver=None,
+        connector_catalog: ProjectConnectorCatalog | None = None,
     ) -> None:
         self._repository = repository
         self._resources = resources
@@ -88,6 +96,52 @@ class ProjectService:
         self._task_project_clearer = task_project_clearer
         self._document_resolver = document_resolver
         self._knowledge_resolver = knowledge_resolver
+        self._connector_catalog = connector_catalog
+
+    async def validate_connectors(
+        self, tenant_id: str, user_id: str, references: tuple[str, ...]
+    ) -> tuple[str, ...]:
+        if len(set(references)) != len(references) or len(references) > MAX_PROJECT_CONNECTORS:
+            raise ConflictError("项目连接器重复或超过数量限制")
+        if not references:
+            return ()
+        if self._connector_catalog is None:
+            raise ConflictError("连接器服务未配置")
+        record = await self._connector_catalog.get_for_user(tenant_id, user_id)
+        available = {
+            item.reference
+            for item in record.catalog.mcp_servers
+            if item.enabled and item.endpoint_url and item.visibility == "all"
+        }
+        if set(references) - available:
+            raise ConflictError("连接器不可用或仅授权给指定智能体，请重新选择")
+        return references
+
+    async def list_results(
+        self, *, tenant_id: str, user_id: str, project_id: str
+    ) -> list[ProjectResult]:
+        await self.get(tenant_id=tenant_id, user_id=user_id, project_id=project_id)
+        if self._resources is None:
+            return []
+        return await self._resources.list_results(tenant_id, project_id)
+
+    async def save_result(self, result: ProjectResult) -> ProjectResult:
+        await self.get(
+            tenant_id=result.tenant_id, user_id=result.user_id, project_id=result.project_id
+        )
+        if self._resources is None:
+            raise ConflictError("Project resource store is unavailable")
+        return await self._resources.save_result(result)
+
+    async def finalize_result(
+        self, *, tenant_id: str, user_id: str, project_id: str, result_id: str, finalized: bool
+    ) -> ProjectResult:
+        await self.get(tenant_id=tenant_id, user_id=user_id, project_id=project_id)
+        if self._resources is None:
+            raise ConflictError("Project resource store is unavailable")
+        return await self._resources.finalize_result(
+            tenant_id, project_id, result_id, self._clock() if finalized else None
+        )
 
     def configure_document_resolver(self, resolver) -> None:
         self._document_resolver = resolver
@@ -178,6 +232,7 @@ class ProjectService:
         instructions: str | None = None,
         skill_references: tuple[str, ...] | None = None,
         knowledge_references: tuple[str, ...] | None = None,
+        mcp_references: tuple[str, ...] | None = None,
         pinned: bool | None = None,
         archived: bool | None = None,
     ) -> Project:
@@ -197,6 +252,10 @@ class ProjectService:
                 tenant_id=tenant_id,
                 user_id=user_id,
                 references=knowledge_references,
+            )
+        if mcp_references is not None:
+            updates["mcp_references"] = await self.validate_connectors(
+                tenant_id, user_id, mcp_references
             )
         if pinned is not None:
             updates["pinned_at"] = self._clock() if pinned else None
@@ -434,12 +493,15 @@ class ProjectService:
             if sections
             else ""
         )
+        connectors = await self.validate_connectors(tenant_id, user_id, project.mcp_references)
         return ProjectRunContext(
             projectId=project_id,
+            mcpReferences=connectors,
             resourceManifest={
                 "projectId": project_id,
                 "name": project.name,
                 "updatedAt": project.updated_at.isoformat(),
+                "mcpReferences": list(connectors),
                 "instructionsHash": hashlib.sha256(project.instructions.encode()).hexdigest(),
                 "memories": [
                     {

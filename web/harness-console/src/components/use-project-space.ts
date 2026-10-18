@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useAuth } from "./auth-provider";
 import { useConfirmationDialog } from "./confirmation-dialog";
+import { armProjectTaskLaunch } from "../lib/project-task-launch";
 import { createProjectTask } from "../lib/project-task";
 import {
   loadTaskAgentCatalog,
@@ -19,7 +20,6 @@ import {
 } from "../lib/task-agent-catalog";
 import { notifyTaskListChanged, type TaskSummary } from "../lib/task-history";
 import {
-  addResultToProject,
   loadProjectArtifacts,
   loadProjectTasks,
   projectHref,
@@ -31,6 +31,7 @@ import {
   projectClient,
   studioClient,
   type ApiProjectResources,
+  type ApiProjectResult,
   type StudioKnowledgeBase,
   type StudioPlatformSkillPackage,
 } from "../lib/studio-client";
@@ -47,6 +48,9 @@ export function useProjectSpace(
   useEffect(() => setTab(projectTab(urlTab)), [urlTab]);
   const [resources, setResources] = useState<ApiProjectResources | null>(null);
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
+  const [savedResults, setSavedResults] = useState<ApiProjectResult[]>([]);
+  const [savedResultError, setSavedResultError] = useState("");
+  const [draft, setDraft] = useState("");
   const [artifacts, setArtifacts] = useState<ProjectArtifact[]>([]);
   const [agents, setAgents] = useState<TaskAgent[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<TaskAgent | null>(null);
@@ -64,9 +68,9 @@ export function useProjectSpace(
   const [includeArchived, setIncludeArchived] = useState(false);
   const [more, setMore] = useState({ active: false, archived: false });
   const [loadingMore, setLoadingMore] = useState(false);
-  const [dialog, setDialog] = useState<"files" | "knowledge" | "skills" | null>(
-    null,
-  );
+  const [dialog, setDialog] = useState<
+    "files" | "knowledge" | "skills" | "connectors" | "instructions" | null
+  >(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [name, setName] = useState("");
   const [instructions, setInstructions] = useState("");
@@ -74,8 +78,6 @@ export function useProjectSpace(
   const [memory, setMemory] = useState("");
   const [editingMemory, setEditingMemory] = useState<string | null>(null);
   const [memoryPending, setMemoryPending] = useState(false);
-  const [importing, setImporting] = useState<string | null>(null);
-  const [imported, setImported] = useState<Set<string>>(new Set());
   const epoch = useRef(0);
   const createLock = useRef(false);
   const { requestConfirmation, confirmationDialog } = useConfirmationDialog();
@@ -92,6 +94,7 @@ export function useProjectSpace(
       loadTaskAgentCatalog(user.user_id, false),
       studioClient.listPlatformSkills(),
       studioClient.listKnowledgeBases(),
+      projectClient.results(projectId),
     ] as const);
     if (epoch.current !== revision) return;
     const [
@@ -102,6 +105,7 @@ export function useProjectSpace(
       catalogResult,
       skillResult,
       baseResult,
+      savedResult,
     ] = results;
     if (resourceResult.status === "fulfilled") {
       setResources(resourceResult.value);
@@ -155,6 +159,10 @@ export function useProjectSpace(
     if (skillResult.status === "fulfilled")
       setPackages(skillResult.value.packages);
     if (baseResult.status === "fulfilled") setBases(baseResult.value);
+    if (savedResult.status === "fulfilled") {
+      setSavedResults(savedResult.value);
+      setSavedResultError("");
+    } else setSavedResultError(errorText(savedResult.reason));
     setLoading(false);
   }, [projectId, user.user_id, preferenceKey]);
 
@@ -175,13 +183,18 @@ export function useProjectSpace(
   function chooseTab(next: ProjectTab) {
     setTab(next);
     setQuery("");
-    window.history.replaceState(
-      window.history.state,
-      "",
-      projectHref(projectId, next),
-    );
+    if (
+      next === "overview" &&
+      new URLSearchParams(window.location.search).has("tab")
+    ) {
+      window.history.replaceState(
+        window.history.state,
+        "",
+        projectHref(projectId),
+      );
+    }
   }
-  async function startTask() {
+  async function startTask(prompt = "") {
     if (createLock.current || !selectedAgent) return;
     createLock.current = true;
     setCreating(true);
@@ -193,6 +206,8 @@ export function useProjectSpace(
       } catch {
         /* optional preference */
       }
+      if (prompt.trim())
+        armProjectTaskLaunch(user.user_id, task.thread_id, prompt.trim());
       router.push(`/?thread=${encodeURIComponent(task.thread_id)}`);
     } catch (cause) {
       setError(errorText(cause));
@@ -229,14 +244,14 @@ export function useProjectSpace(
       setLoadingMore(false);
     }
   }
-  async function saveSettings(event: FormEvent) {
+  async function saveSettings(event: FormEvent, instructionsOnly = false) {
     event.preventDefault();
     if (saving) return;
     setSaving(true);
     setError("");
     try {
       const updated = await projectClient.update(projectId, {
-        name: name.trim(),
+        ...(instructionsOnly ? {} : { name: name.trim() }),
         instructions,
       });
       setResources((current) =>
@@ -245,7 +260,8 @@ export function useProjectSpace(
       window.dispatchEvent(new CustomEvent("harness:projects-changed"));
       notifyTaskListChanged();
       setSettingsOpen(false);
-      setNotice("项目设置已保存，后续任务将使用新的项目约定。");
+      setDialog((current) => (current === "instructions" ? null : current));
+      setNotice("项目设置已保存，后续任务将使用新的项目指令。");
     } catch (cause) {
       setError(errorText(cause));
     } finally {
@@ -330,29 +346,9 @@ export function useProjectSpace(
       setSaving(false);
     }
   }
-  async function collect(artifact: ProjectArtifact) {
-    if (importing) return;
-    setImporting(artifact.artifact_id);
-    setError("");
-    try {
-      await addResultToProject(projectId, artifact);
-      await refreshResources();
-      setImported((current) => new Set(current).add(artifact.artifact_id));
-      setNotice(
-        `已将「${artifact.name}」加入项目资料，后续任务可使用这份文件。`,
-      );
-    } catch (cause) {
-      setError(errorText(cause));
-    } finally {
-      setImporting(null);
-    }
-  }
 
   const project = resources?.project;
   const activeTasks = tasks.filter((task) => !task.archived_at);
-  const pending = activeTasks.filter(
-    (task) => ACTIVE.has(task.status) || task.pending_input,
-  );
   const visibleTasks = tasks.filter(
     (task) =>
       (includeArchived || !task.archived_at) &&
@@ -407,6 +403,11 @@ export function useProjectSpace(
   );
 
   return {
+    savedResults,
+    setSavedResults,
+    savedResultError,
+    draft,
+    setDraft,
     tab,
     resources,
     tasks,
@@ -448,8 +449,6 @@ export function useProjectSpace(
     editingMemory,
     setEditingMemory,
     memoryPending,
-    importing,
-    imported,
     confirmationDialog,
     reload,
     refreshResources,
@@ -461,10 +460,8 @@ export function useProjectSpace(
     removeMemory,
     archiveProject,
     restoreProject,
-    collect,
     project,
     activeTasks,
-    pending,
     visibleTasks,
     recent,
     visibleArtifacts,

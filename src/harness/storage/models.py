@@ -1284,6 +1284,26 @@ class ProjectLinkRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class ProjectResultRow(Base):
+    __tablename__ = "project_results"
+    __table_args__ = (
+        ForeignKeyConstraint(["project_id"], ["projects.project_id"], ondelete="CASCADE"),
+        UniqueConstraint("tenant_id", "project_id", "artifact_id", name="uq_project_result_source"),
+        UniqueConstraint(
+            "tenant_id", "project_id", "name", "version", name="uq_project_result_version"
+        ),
+        Index("ix_project_results_project", "tenant_id", "project_id", "created_at"),
+    )
+    result_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(128))
+    project_id: Mapped[str] = mapped_column(String(128))
+    artifact_id: Mapped[str] = mapped_column(String(128))
+    name: Mapped[str] = mapped_column(String(500))
+    version: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
 class SandboxLeaseRow(Base):
     """Durable ownership record for one provisioned remote sandbox."""
 

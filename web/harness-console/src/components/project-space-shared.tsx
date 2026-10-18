@@ -1,15 +1,8 @@
 "use client";
 import Link from "next/link";
 import type { TaskSummary } from "../lib/task-history";
-import type { ProjectTab } from "../lib/project-space";
 import { formatTaskAge } from "../lib/task-list-age";
 import styles from "./project-home.module.css";
-export const TABS: Array<[ProjectTab, string]> = [
-  ["overview", "概览"],
-  ["tasks", "任务"],
-  ["resources", "资料"],
-  ["results", "成果"],
-];
 export const ACTIVE = new Set([
   "queued",
   "provisioning",

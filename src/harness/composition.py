@@ -1033,6 +1033,7 @@ def build_production_container(
         clock=clock,
         id_generator=ids,
         knowledge_resolver=project_knowledge_resolver(knowledge.resolve_bindings),
+        connector_catalog=capability_catalogs,
     )
     automation_service = AutomationService(
         automation_task_repository,

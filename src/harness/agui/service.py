@@ -448,6 +448,11 @@ class AguiRunService:
                 "prompt": prompt,
                 "conversation_prompts": conversation_prompts,
                 "input_artifact_ids": user_input_ids,
+                **(
+                    {"project_mcp_references": list(project_context.mcp_references)}
+                    if project_context is not None and project_context.mcp_references
+                    else {}
+                ),
                 **({"project_skill_snapshots": captured_skills} if captured_skills else {}),
                 **({"project_document_ids": project_document_ids} if project_document_ids else {}),
                 **(

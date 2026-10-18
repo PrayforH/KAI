@@ -8,6 +8,7 @@ import { PanelResizeHandle } from "./panel-resize-handle";
 import { RailResizeHandle, canSplitRail } from "./rail-resize-handle";
 import { SidebarPanelIcon } from "./panel-icons";
 import { RailFilePreview, previewKindFor, type PreviewKind, type PreviewTarget } from "./rail-file-preview";
+import { SaveProjectResultButton } from "./save-project-result-button";
 import { ProjectResourcesPanel } from "./project-resources-panel";
 
 
@@ -473,7 +474,14 @@ export function WorkbenchRail({
               // narrow one keeps the preview full width and hides the browser.
               <>
                 <div className="rail-file-column">{fileList}</div>
-                <div className="rail-preview-column">{workspace && selectedFile ? workspace.renderPreview(selectedFile) : <RailFilePreview target={selected} />}</div>
+                <div className="rail-preview-column">
+                  {projectId && !workspace && selected.artifact_id && (
+                    <div className="rail-project-save">
+                      <SaveProjectResultButton key={`${projectId}:${selected.artifact_id}`} projectId={projectId} artifactId={selected.artifact_id} />
+                    </div>
+                  )}
+                  {workspace && selectedFile ? workspace.renderPreview(selectedFile) : <RailFilePreview target={selected} />}
+                </div>
               </>
             ) : fileList}
           </section>

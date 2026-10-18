@@ -11,7 +11,10 @@ const mock = vi.hoisted(() => ({
   removeMemory: vi.fn(),
   archive: vi.fn(),
   createTask: vi.fn(),
-  collect: vi.fn(),
+  results: vi.fn(),
+  saveResult: vi.fn(),
+  finalizeResult: vi.fn(),
+  attachDocument: vi.fn(),
   catalog: vi.fn(),
   agents: [
     {
@@ -49,6 +52,10 @@ vi.mock("../src/lib/studio-client", () => ({
     updateMemory: mock.updateMemory,
     removeMemory: mock.removeMemory,
     archive: mock.archive,
+    results: mock.results,
+    saveResult: mock.saveResult,
+    finalizeResult: mock.finalizeResult,
+    attachDocument: mock.attachDocument,
   },
   studioClient: {
     listPlatformSkills: async () => ({ packages: [] }),
@@ -67,7 +74,6 @@ vi.mock("../src/lib/project-task", () => ({
 vi.mock("../src/lib/task-history", () => ({ notifyTaskListChanged: vi.fn() }));
 vi.mock("../src/lib/project-space", async (original) => ({
   ...(await original<object>()),
-  addResultToProject: mock.collect,
 }));
 vi.mock("../src/components/confirmation-dialog", () => ({
   useConfirmationDialog: () => ({
@@ -83,6 +89,13 @@ vi.mock("../src/components/task-agent-switcher", () => ({
   ),
 }));
 vi.mock("../src/components/project-resource-dialogs", () => ({
+  ProjectModal: ({ title, children, onClose }: any) => (
+    <div role="dialog" aria-label={title}>
+      <h2>{title}</h2>
+      <button onClick={onClose}>关闭面板</button>
+      {children}
+    </div>
+  ),
   ProjectFilesDialog: () => <div>资料管理</div>,
   ProjectKnowledgeDialog: () => <div>知识管理</div>,
   ProjectSkillsDialog: () => <div>技能引用</div>,
@@ -123,6 +136,7 @@ beforeEach(() => {
   vi.stubGlobal("localStorage", {
     getItem: (key: string) => storage.get(key) ?? null,
     setItem: (key: string, value: string) => storage.set(key, value),
+    removeItem: (key: string) => storage.delete(key),
   });
   window.history.replaceState(null, "", "/studio/projects/project-1");
   host = document.createElement("div");
@@ -139,7 +153,21 @@ beforeEach(() => {
     defaultAgent: mock.agents[0],
   });
   mock.createTask.mockResolvedValue({ thread_id: "new-project-task" });
-  mock.collect.mockResolvedValue(undefined);
+  mock.results.mockResolvedValue([]);
+  mock.saveResult.mockResolvedValue({
+    resultId: "saved-1",
+    projectId: "project-1",
+    artifactId: "output-1",
+    name: "分析报告.pdf",
+    inputArtifactId: "snapshot-1",
+    threadId: "old-archived-task",
+    threadTitle: "历史分析任务",
+    version: 1,
+    sizeBytes: 2048,
+    createdAt: "2026-10-17",
+    finalizedAt: null,
+  });
+  mock.attachDocument.mockResolvedValue({});
   mock.addMemory.mockResolvedValue({});
   vi.stubGlobal(
     "fetch",
@@ -157,20 +185,33 @@ afterEach(() => {
 it("opens an independent organizing home without creating a task or mounting a conversation", async () => {
   await act(async () => root.render(<ProjectHome projectId="project-1" />));
   expect(host.querySelector("h1")?.textContent).toBe("季度分析");
-  expect(
-    [...host.querySelectorAll('[role="tab"]')].map((node) => node.textContent),
-  ).toEqual(["概览", "任务", "资料", "成果"]);
+  expect(host.querySelector('[role="tablist"]')).toBeNull();
+  expect(host.textContent).toContain("文件和资源");
+  expect(host.textContent).toContain("连接器");
+  expect(host.textContent).toContain("项目成果");
   expect(host.querySelector(".assistant-runtime-shell")).toBeNull();
   expect(mock.createTask).not.toHaveBeenCalled();
-  await click("资料");
-  expect(window.location.search).toBe("?tab=resources");
-  expect(host.textContent).toContain("当前项目");
+  await click("上传文件或添加链接");
+  expect(host.textContent).toContain("资料管理");
+  expect(mock.createTask).not.toHaveBeenCalled();
 });
 
 it("passes the chosen published Agent coordinate and project into the shared task entry", async () => {
   await act(async () => root.render(<ProjectHome projectId="project-1" />));
   await click("选择分析助手");
-  await click("新建任务 →");
+  const textarea = host.querySelector('textarea[aria-label="项目任务需求"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      "value",
+    )!.set!.call(textarea, "分析本季度经营数据");
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () =>
+    textarea
+      .closest("form")!
+      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+  );
   expect(mock.createTask).toHaveBeenCalledWith("project-1", mock.agents[1]);
   expect(mock.push).toHaveBeenCalledWith("/?thread=new-project-task");
 });
@@ -184,14 +225,18 @@ it("keeps archived task outputs separate from inputs until the user collects one
   await act(async () =>
     root.render(<ProjectHome projectId="project-1" initialTab="results" />),
   );
+  await click("从任务产物中保存");
   expect(host.textContent).toContain("历史分析任务 · 任务已归档");
   expect(
     host.querySelector('a[href="/?thread=old-archived-task"]'),
   ).not.toBeNull();
-  expect(mock.collect).not.toHaveBeenCalled();
+  expect(mock.attachDocument).not.toHaveBeenCalled();
+  await click("保存到项目成果");
+  expect(mock.saveResult).toHaveBeenCalledWith("project-1", "output-1");
+  expect(mock.attachDocument).not.toHaveBeenCalled();
   await click("加入项目资料");
-  expect(mock.collect).toHaveBeenCalledWith("project-1", artifact);
-  expect(host.textContent).toContain("已加入资料");
+  expect(mock.attachDocument).toHaveBeenCalledWith("project-1", "snapshot-1");
+  expect(host.textContent).toContain("加入项目资料");
 });
 
 it("writes project facts through the project service, preserving Agent ownership", async () => {
@@ -203,7 +248,7 @@ it("writes project facts through the project service, preserving Agent ownership
   await act(async () =>
     root.render(<ProjectHome projectId="project-1" initialTab="resources" />),
   );
-  const textarea = host.querySelector("textarea")!;
+  const textarea = host.querySelector('[role="dialog"] textarea')!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(
       HTMLTextAreaElement.prototype,
@@ -244,13 +289,11 @@ it("follows tab navigation within the same project route", async () => {
     root.render(<ProjectHome projectId="project-1" initialTab="results" />),
   );
   expect(
-    host.querySelector('[role="tab"][aria-selected="true"]')?.textContent,
-  ).toBe("成果");
+    host.querySelector('[role="dialog"][aria-label="项目成果"]'),
+  ).not.toBeNull();
   window.history.replaceState(null, "", "/studio/projects/project-1");
   await act(async () => root.render(<ProjectHome projectId="project-1" />));
-  expect(
-    host.querySelector('[role="tab"][aria-selected="true"]')?.textContent,
-  ).toBe("概览");
+  expect(host.querySelector('[role="dialog"]')).toBeNull();
 });
 
 it("restores an archived project without changing the published Agent", async () => {
@@ -267,8 +310,37 @@ it("restores an archived project without changing the published Agent", async ()
   expect(mock.update).toHaveBeenCalledWith("project-1", { archived: false });
   expect(host.textContent).toContain("项目已恢复");
   expect(
-    [...host.querySelectorAll("button")].find(
-      (button) => button.textContent === "新建任务 →",
-    )?.disabled,
+    (
+      host.querySelector(
+        'textarea[aria-label="项目任务需求"]',
+      ) as HTMLTextAreaElement
+    ).disabled,
   ).toBe(false);
+});
+
+it("saves project instructions without renaming the project or changing Agent configuration", async () => {
+  mock.update.mockResolvedValue({
+    ...project,
+    instructions: "先给结论，再标注数据来源",
+  });
+  await act(async () => root.render(<ProjectHome projectId="project-1" />));
+  await click("编辑指令");
+  const textarea = host.querySelector('textarea[aria-label="项目指令"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      "value",
+    )!.set!.call(textarea, "先给结论，再标注数据来源");
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () =>
+    textarea
+      .closest("form")!
+      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+  );
+  expect(mock.update).toHaveBeenCalledWith("project-1", {
+    instructions: "先给结论，再标注数据来源",
+  });
+  expect(host.querySelector('[role="dialog"]')).toBeNull();
+  expect(host.querySelector("h1")?.textContent).toBe("季度分析");
 });

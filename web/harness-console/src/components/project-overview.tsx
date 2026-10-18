@@ -1,129 +1,90 @@
 "use client";
-import Link from "next/link";
 import type { ProjectSpaceState } from "./use-project-space";
-import { ProjectTaskRows, projectEmpty, size } from "./project-space-shared";
-import styles from "./project-home.module.css";
+import { ProjectTaskRows, projectEmpty } from "./project-space-shared";
 import { TaskAgentSwitcher } from "./task-agent-switcher";
+import styles from "./project-home.module.css";
 
+/** Project landing surface; file actions and execution stay in the conversation. */
 export function ProjectOverview({ space }: { space: ProjectSpaceState }) {
   const {
-    resources,
-    artifacts,
-    agents,
-    selectedAgent,
-    setSelectedAgent,
-    taskError,
-    resultError,
-    creating,
-    more,
-    setDialog,
-    chooseTab,
-    startTask,
     project,
-    activeTasks,
-    pending,
     recent,
+    taskError,
     agentLabels,
+    chooseTab,
+    draft,
+    setDraft,
+    creating,
+    selectedAgent,
+    agents,
+    setSelectedAgent,
+    startTask,
   } = space;
   if (!project) return null;
-  if (!resources) return null;
   return (
-    <div className={styles.grid}>
-      <div>
-        <div className={styles.stats}>
-          <div className={styles.stat}>
-            <strong>
-              {activeTasks.length}
-              {more.active ? "+" : ""}
-            </strong>
-            <span>项目任务</span>
-          </div>
-          <div className={styles.stat}>
-            <strong>
-              {pending.length}
-              {more.active ? "+" : ""}
-            </strong>
-            <span>执行中与待处理</span>
-          </div>
-          <div className={styles.stat}>
-            <strong>
-              {artifacts.length}
-              {artifacts.length === 500 ? "+" : ""}
-            </strong>
-            <span>已归集成果</span>
-          </div>
+    <>
+      <section
+        className={styles.recentTasks}
+        aria-labelledby="recent-project-tasks"
+      >
+        <div className={styles.sectionHead}>
+          <h2 id="recent-project-tasks">最近</h2>
+          <button
+            className={styles.textLink}
+            onClick={() => chooseTab("tasks")}
+          >
+            查看全部任务 ›
+          </button>
         </div>
-        <section className={styles.section}>
-          <div className={styles.sectionHead}>
-            <h2>继续推进</h2>
-            <button
-              className={styles.textLink}
-              onClick={() => chooseTab("tasks")}
-            >
-              查看项目任务 →
-            </button>
-          </div>
-          {taskError && <p className={styles.error}>{taskError}</p>}
-          {recent.length ? (
-            <ProjectTaskRows tasks={recent} agentLabels={agentLabels} />
-          ) : (
-            projectEmpty(
-              "开始这个项目的第一项任务",
-              "先添加资料与知识，再选择执行智能体。任务会在主对话中继续。",
-            )
-          )}
-        </section>
-        <section className={styles.section}>
-          <div className={styles.sectionHead}>
-            <h2>最近成果</h2>
-            <button
-              className={styles.textLink}
-              onClick={() => chooseTab("results")}
-            >
-              查看成果 →
-            </button>
-          </div>
-          {resultError && <p className={styles.error}>{resultError}</p>}
-          {artifacts.length ? (
-            <ul className={styles.list}>
-              {artifacts.slice(0, 3).map((artifact) => (
-                <li className={styles.row} key={artifact.artifact_id}>
-                  <Link
-                    className={styles.rowLink}
-                    href={`/?thread=${encodeURIComponent(artifact.thread_id)}`}
-                  >
-                    <strong>{artifact.name}</strong>
-                    <small>
-                      {artifact.thread_title} · {size(artifact.size_bytes)}
-                    </small>
-                  </Link>
-                  <button
-                    className={styles.textLink}
-                    onClick={() => chooseTab("results")}
-                  >
-                    查看
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            projectEmpty(
-              "成果会在这里汇总",
-              "项目任务产生的文件按来源归集，归档任务的成果也会保留。",
-            )
-          )}
-        </section>
-      </div>
-      <aside>
-        <section className={`${styles.section} ${styles.side}`}>
-          <h2>新建项目任务</h2>
-          <p className={styles.muted}>
-            选择已发布的智能体，带上本项目资料，在主对话中执行。
+        {taskError && (
+          <p role="alert" className={styles.error}>
+            {taskError}
           </p>
+        )}
+        {recent.length ? (
+          <ProjectTaskRows tasks={recent} agentLabels={agentLabels} />
+        ) : (
+          projectEmpty(
+            "新建一个任务以开始",
+            "在下方输入需求，任务将带上本项目的资料与指令。",
+          )
+        )}
+      </section>
+      <form
+        className={styles.composer}
+        aria-label="在项目中开始任务"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (draft.trim()) void startTask(draft);
+        }}
+      >
+        <textarea
+          aria-label="项目任务需求"
+          placeholder={
+            project.archivedAt
+              ? "项目已归档，恢复后可继续任务"
+              : "在此项目中启动任务…"
+          }
+          value={draft}
+          maxLength={100000}
+          disabled={creating || Boolean(project.archivedAt)}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (
+              event.key === "Enter" &&
+              !event.shiftKey &&
+              !event.nativeEvent.isComposing
+            ) {
+              event.preventDefault();
+              event.currentTarget.form?.requestSubmit();
+            }
+          }}
+        />
+        <div className={styles.composerToolbar}>
           <TaskAgentSwitcher
             label="执行智能体"
-            description="为项目新任务选择已发布的智能体"
-            menuPlacement="below"
+            description="选择本次任务使用的智能体"
+            menuPlacement="above"
             agents={agents}
             selected={selectedAgent}
             loading={creating}
@@ -131,48 +92,23 @@ export function ProjectOverview({ space }: { space: ProjectSpaceState }) {
             onChange={setSelectedAgent}
           />
           <button
-            className={styles.primary}
-            disabled={creating || !selectedAgent || Boolean(project.archivedAt)}
-            onClick={() => void startTask()}
+            className={styles.send}
+            type="submit"
+            aria-label="发送并开始项目任务"
+            disabled={
+              creating ||
+              !selectedAgent ||
+              !draft.trim() ||
+              Boolean(project.archivedAt)
+            }
           >
-            {creating
-              ? "正在创建…"
-              : project.archivedAt
-                ? "项目已归档"
-                : "新建任务 →"}
+            {creating ? "…" : "↑"}
           </button>
-          <p className={styles.muted}>
-            能力配置与发布版本由
-            <Link href="/studio/agents">智能体工作台</Link>管理。
-          </p>
-        </section>
-        <section className={`${styles.section} ${styles.resources}`}>
-          <h2>项目资源</h2>
-          <button
-            className={styles.resource}
-            onClick={() => chooseTab("resources")}
-          >
-            <span>知识库</span>
-            <span>{project.knowledgeReferences?.length ?? 0} 个 →</span>
-          </button>
-          <button
-            className={styles.resource}
-            onClick={() => chooseTab("resources")}
-          >
-            <span>文件与网页</span>
-            <span>
-              {resources.documents.length + resources.links.length} 项 →
-            </span>
-          </button>
-          <button
-            className={styles.resource}
-            onClick={() => setDialog("skills")}
-          >
-            <span>附加技能</span>
-            <span>{project.skillReferences?.length ?? 0} 项 →</span>
-          </button>
-        </section>
-      </aside>
-    </div>
+        </div>
+        <p className={styles.composerHint}>
+          使用本项目的资料与指令 · Enter 发送，Shift + Enter 换行
+        </p>
+      </form>
+    </>
   );
 }

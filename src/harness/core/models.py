@@ -93,6 +93,7 @@ class ExecutionIdentity(FrozenModel):
     # Legacy capability namespace; credentials and old workload tokens use it.
     project_id: str
     business_project_id: str | None = None
+    project_mcp_references: tuple[str, ...] = ()
     session_id: str
     run_id: str
     agent_name: str

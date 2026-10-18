@@ -1334,6 +1334,7 @@ class RunOrchestrator:
                 team_ids=session.team_ids,
                 project_id=session.agent_name,
                 business_project_id=run.business_project_id,
+                project_mcp_references=tuple(run.input.get("project_mcp_references", ())),
                 session_id=session.session_id,
                 run_id=run.run_id,
                 agent_name=session.agent_name,

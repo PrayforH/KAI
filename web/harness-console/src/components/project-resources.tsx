@@ -5,20 +5,7 @@ import { projectEmpty, size } from "./project-space-shared";
 import styles from "./project-home.module.css";
 
 export function ProjectResources({ space }: { space: ProjectSpaceState }) {
-  const {
-    resources,
-    setDialog,
-    memory,
-    setMemory,
-    editingMemory,
-    setEditingMemory,
-    memoryPending,
-    saveMemory,
-    removeMemory,
-    project,
-    knowledgeNames,
-    skillNames,
-  } = space;
+  const { resources, setDialog, project, knowledgeNames, skillNames } = space;
   if (!project) return null;
   if (!resources) return null;
   return (
@@ -140,72 +127,89 @@ export function ProjectResources({ space }: { space: ProjectSpaceState }) {
           )
         )}
       </section>
-      <section className={`${styles.section} ${styles.facts}`}>
-        <div className={styles.sectionHead}>
-          <h2>项目事实与决定</h2>
-        </div>
-        <p className={styles.muted}>
-          这些内容只属于当前项目，不会修改智能体定义。修改后的内容在后续任务执行时生效。
-        </p>
-        <ul className={styles.list}>
-          {resources.memories.map((item) => (
-            <li className={styles.row} key={item.memoryId}>
-              <span className={styles.copy}>
-                <span className={styles.factText}>{item.content}</span>
-              </span>
-              <button
-                className={styles.textLink}
-                disabled={memoryPending}
-                onClick={() => {
-                  setEditingMemory(item.memoryId);
-                  setMemory(item.content);
-                }}
-              >
-                编辑
-              </button>
-              <button
-                className={styles.textLink}
-                disabled={memoryPending}
-                onClick={() => void removeMemory(item.memoryId)}
-              >
-                移除
-              </button>
-            </li>
-          ))}
-        </ul>
-        <form onSubmit={(event) => void saveMemory(event)}>
-          <label className={styles.field}>
-            {editingMemory ? "编辑项目事实" : "添加项目事实"}
-            <textarea
-              className={styles.textarea}
-              value={memory}
-              maxLength={4000}
-              placeholder="记录这个项目已确认的业务事实或决定…"
-              onChange={(event) => setMemory(event.target.value)}
-            />
-          </label>
-          <div className={styles.actions}>
-            {editingMemory && (
-              <button
-                type="button"
-                className={styles.button}
-                onClick={() => {
-                  setEditingMemory(null);
-                  setMemory("");
-                }}
-              >
-                取消编辑
-              </button>
-            )}
-            <button
-              className={styles.button}
-              disabled={memoryPending || !memory.trim()}
-            >
-              {memoryPending ? "保存中…" : "保存项目事实"}
-            </button>
-          </div>
-        </form>
-      </section>
+      <ProjectFacts space={space} />
     </>
+  );
+}
+
+export function ProjectFacts({ space }: { space: ProjectSpaceState }) {
+  const {
+    resources,
+    memory,
+    setMemory,
+    editingMemory,
+    setEditingMemory,
+    memoryPending,
+    saveMemory,
+    removeMemory,
+  } = space;
+  if (!resources) return null;
+  return (
+    <section className={`${styles.section} ${styles.facts}`}>
+      <div className={styles.sectionHead}>
+        <h2>项目事实与决定</h2>
+      </div>
+      <p className={styles.muted}>
+        这些内容只属于当前项目，不会修改智能体定义。修改后的内容在后续任务执行时生效。
+      </p>
+      <ul className={styles.list}>
+        {resources.memories.map((item) => (
+          <li className={styles.row} key={item.memoryId}>
+            <span className={styles.copy}>
+              <span className={styles.factText}>{item.content}</span>
+            </span>
+            <button
+              className={styles.textLink}
+              disabled={memoryPending}
+              onClick={() => {
+                setEditingMemory(item.memoryId);
+                setMemory(item.content);
+              }}
+            >
+              编辑
+            </button>
+            <button
+              className={styles.textLink}
+              disabled={memoryPending}
+              onClick={() => void removeMemory(item.memoryId)}
+            >
+              移除
+            </button>
+          </li>
+        ))}
+      </ul>
+      <form onSubmit={(event) => void saveMemory(event)}>
+        <label className={styles.field}>
+          {editingMemory ? "编辑项目事实" : "添加项目事实"}
+          <textarea
+            className={styles.textarea}
+            value={memory}
+            maxLength={4000}
+            placeholder="记录这个项目已确认的业务事实或决定…"
+            onChange={(event) => setMemory(event.target.value)}
+          />
+        </label>
+        <div className={styles.actions}>
+          {editingMemory && (
+            <button
+              type="button"
+              className={styles.button}
+              onClick={() => {
+                setEditingMemory(null);
+                setMemory("");
+              }}
+            >
+              取消编辑
+            </button>
+          )}
+          <button
+            className={styles.button}
+            disabled={memoryPending || !memory.trim()}
+          >
+            {memoryPending ? "保存中…" : "保存项目事实"}
+          </button>
+        </div>
+      </form>
+    </section>
   );
 }

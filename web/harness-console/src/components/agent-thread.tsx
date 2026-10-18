@@ -134,6 +134,7 @@ import {
 import { submitUiAction } from "./intelligent-ui/client";
 import { modelBlockSources, presentationsForMessage } from "./intelligent-ui/schema";
 import { PublishedBlocksProvider } from "./intelligent-ui/turn-context";
+import { consumeProjectTaskLaunch } from "../lib/project-task-launch";
 import { useTaskComposerSnapshot } from "./task-composer-draft";
 import { VoiceInput } from "./voice-input";
 import { useDictationComposer } from "./use-dictation-composer";
@@ -322,7 +323,9 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   const seededSkillLaunchRef = useRef<string | null>(null);
   const reuseNotice = useRunReuseNotice();
   const runLocked = selectComposerDisabled(runView);
-  useTaskComposerSnapshot(useContext(ComposerDraftContext));
+  const projectLaunchScope = useContext(ComposerDraftContext);
+  const projectLaunchReady = useThreadHistoryReady();
+  useTaskComposerSnapshot(projectLaunchScope);
   useEffect(() => {
     if (!activeSkillLaunch) {
       seededSkillLaunchRef.current = null;
@@ -618,6 +621,11 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
       setInputError(error instanceof Error ? error.message : "发送失败，请重试。");
     } finally { composerSendLock.current = false; }
   }
+
+  useEffect(() => {
+    if (!projectLaunchScope || !projectLaunchReady || runLocked || threadRunning || agentSelection.loading || !composerText.trim()) return;
+    if (consumeProjectTaskLaunch(projectLaunchScope.userId, projectLaunchScope.threadId)) void submitComposer();
+  }, [composerText, projectLaunchScope, projectLaunchReady, runLocked, threadRunning, agentSelection.loading]);
 
   async function generateVideo() {
     const prompt = composerText.trim();

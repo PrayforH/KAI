@@ -3,10 +3,22 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 from typing import Protocol
 
 from harness.core.errors import ConflictError, NotFoundError
-from harness.projects.models import Project, ProjectDocument, ProjectLink, ProjectMemory
+from harness.projects.models import (
+    Project,
+    ProjectDocument,
+    ProjectLink,
+    ProjectMemory,
+    ProjectResult,
+)
+from harness.studio.models import CapabilityCatalogRecord
+
+
+class ProjectConnectorCatalog(Protocol):
+    async def get_for_user(self, tenant_id: str, user_id: str) -> CapabilityCatalogRecord: ...
 
 
 class ProjectRepository(Protocol):
@@ -20,31 +32,26 @@ class ProjectRepository(Protocol):
 
 
 class ProjectResourceRepository(Protocol):
-    async def list_memories(
-        self, tenant_id: str, project_id: str
-    ) -> list[ProjectMemory]: ...
+    async def list_memories(self, tenant_id: str, project_id: str) -> list[ProjectMemory]: ...
     async def add_memory(self, memory: ProjectMemory) -> None: ...
     async def get_memory(
         self, tenant_id: str, project_id: str, memory_id: str
     ) -> ProjectMemory: ...
     async def replace_memory(self, memory: ProjectMemory) -> None: ...
-    async def delete_memory(
-        self, tenant_id: str, project_id: str, memory_id: str
-    ) -> None: ...
-    async def list_documents(
-        self, tenant_id: str, project_id: str
-    ) -> list[ProjectDocument]: ...
+    async def delete_memory(self, tenant_id: str, project_id: str, memory_id: str) -> None: ...
+    async def list_documents(self, tenant_id: str, project_id: str) -> list[ProjectDocument]: ...
     async def add_document(self, document: ProjectDocument) -> None: ...
     async def delete_document(
         self, tenant_id: str, project_id: str, input_artifact_id: str
     ) -> None: ...
-    async def list_links(
-        self, tenant_id: str, project_id: str
-    ) -> list[ProjectLink]: ...
+    async def list_links(self, tenant_id: str, project_id: str) -> list[ProjectLink]: ...
     async def add_link(self, link: ProjectLink) -> None: ...
-    async def delete_link(
-        self, tenant_id: str, project_id: str, link_id: str
-    ) -> None: ...
+    async def delete_link(self, tenant_id: str, project_id: str, link_id: str) -> None: ...
+    async def list_results(self, tenant_id: str, project_id: str) -> list[ProjectResult]: ...
+    async def save_result(self, result: ProjectResult) -> ProjectResult: ...
+    async def finalize_result(
+        self, tenant_id: str, project_id: str, result_id: str, finalized_at: datetime | None
+    ) -> ProjectResult: ...
     async def delete_for_project(self, tenant_id: str, project_id: str) -> None: ...
 
 
@@ -123,11 +130,10 @@ class InMemoryProjectResourceRepository:
         self._memories: dict[tuple[str, str], ProjectMemory] = {}
         self._documents: dict[tuple[str, str, str], ProjectDocument] = {}
         self._links: dict[tuple[str, str], ProjectLink] = {}
+        self._results: dict[str, ProjectResult] = {}
         self._lock = asyncio.Lock()
 
-    async def list_memories(
-        self, tenant_id: str, project_id: str
-    ) -> list[ProjectMemory]:
+    async def list_memories(self, tenant_id: str, project_id: str) -> list[ProjectMemory]:
         return sorted(
             (
                 item
@@ -144,9 +150,7 @@ class InMemoryProjectResourceRepository:
                 raise ConflictError(f"project memory already exists: {memory.memory_id}")
             self._memories[key] = memory
 
-    async def get_memory(
-        self, tenant_id: str, project_id: str, memory_id: str
-    ) -> ProjectMemory:
+    async def get_memory(self, tenant_id: str, project_id: str, memory_id: str) -> ProjectMemory:
         memory = self._memories.get((tenant_id, memory_id))
         if memory is None or memory.project_id != project_id:
             raise NotFoundError(f"project memory not found: {memory_id}")
@@ -160,9 +164,7 @@ class InMemoryProjectResourceRepository:
                 raise NotFoundError(f"project memory not found: {memory.memory_id}")
             self._memories[key] = memory
 
-    async def delete_memory(
-        self, tenant_id: str, project_id: str, memory_id: str
-    ) -> None:
+    async def delete_memory(self, tenant_id: str, project_id: str, memory_id: str) -> None:
         async with self._lock:
             key = (tenant_id, memory_id)
             current = self._memories.get(key)
@@ -170,9 +172,7 @@ class InMemoryProjectResourceRepository:
                 raise NotFoundError(f"project memory not found: {memory_id}")
             del self._memories[key]
 
-    async def list_documents(
-        self, tenant_id: str, project_id: str
-    ) -> list[ProjectDocument]:
+    async def list_documents(self, tenant_id: str, project_id: str) -> list[ProjectDocument]:
         return sorted(
             (
                 item
@@ -190,9 +190,7 @@ class InMemoryProjectResourceRepository:
                 document.input_artifact_id,
             )
             if key in self._documents:
-                raise ConflictError(
-                    f"document already attached: {document.input_artifact_id}"
-                )
+                raise ConflictError(f"document already attached: {document.input_artifact_id}")
             self._documents[key] = document
 
     async def delete_document(
@@ -204,9 +202,7 @@ class InMemoryProjectResourceRepository:
                 raise NotFoundError(f"project document not found: {input_artifact_id}")
             del self._documents[key]
 
-    async def list_links(
-        self, tenant_id: str, project_id: str
-    ) -> list[ProjectLink]:
+    async def list_links(self, tenant_id: str, project_id: str) -> list[ProjectLink]:
         return sorted(
             (
                 item
@@ -223,9 +219,7 @@ class InMemoryProjectResourceRepository:
                 raise ConflictError(f"project link already exists: {link.link_id}")
             self._links[key] = link
 
-    async def delete_link(
-        self, tenant_id: str, project_id: str, link_id: str
-    ) -> None:
+    async def delete_link(self, tenant_id: str, project_id: str, link_id: str) -> None:
         async with self._lock:
             key = (tenant_id, link_id)
             current = self._links.get(key)
@@ -233,8 +227,51 @@ class InMemoryProjectResourceRepository:
                 raise NotFoundError(f"project link not found: {link_id}")
             del self._links[key]
 
+    async def list_results(self, tenant_id: str, project_id: str) -> list[ProjectResult]:
+        return sorted(
+            (
+                r
+                for r in self._results.values()
+                if r.tenant_id == tenant_id and r.project_id == project_id
+            ),
+            key=lambda r: (r.created_at, r.version),
+            reverse=True,
+        )
+
+    async def save_result(self, result: ProjectResult) -> ProjectResult:
+        async with self._lock:
+            existing = await self.list_results(result.tenant_id, result.project_id)
+            for item in existing:
+                if item.artifact_id == result.artifact_id:
+                    return item
+            version = 1 + max((r.version for r in existing if r.name == result.name), default=0)
+            saved = result.model_copy(update={"version": version})
+            self._results[saved.result_id] = saved
+            return saved
+
+    async def finalize_result(
+        self, tenant_id: str, project_id: str, result_id: str, finalized_at: datetime | None
+    ) -> ProjectResult:
+        async with self._lock:
+            current = self._results.get(result_id)
+            if (
+                current is None
+                or current.tenant_id != tenant_id
+                or current.project_id != project_id
+            ):
+                raise NotFoundError("Project result not found")
+            saved = current.model_copy(update={"finalized_at": finalized_at})
+            self._results[result_id] = saved
+            return saved
+
     async def delete_for_project(self, tenant_id: str, project_id: str) -> None:
         async with self._lock:
+            for result_id in [
+                r.result_id
+                for r in self._results.values()
+                if r.tenant_id == tenant_id and r.project_id == project_id
+            ]:
+                del self._results[result_id]
             for key in [
                 key
                 for key, item in self._memories.items()

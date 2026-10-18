@@ -147,7 +147,9 @@ export function ProjectModal({
   footer,
   onClose,
   children,
+  className,
 }: {
+  className?: string;
   title: string;
   subtitle?: string;
   toolbar?: ReactNode;
@@ -168,7 +170,7 @@ export function ProjectModal({
   return createPortal(
     <dialog
       ref={ref}
-      className={styles.dialog}
+      className={[styles.dialog, className].filter(Boolean).join(" ")}
       aria-labelledby={titleId}
       onCancel={(event) => {
         event.preventDefault();
