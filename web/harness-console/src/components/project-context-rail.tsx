@@ -26,6 +26,14 @@ export function ProjectContextRail({ space }: { space: ProjectSpaceState }) {
   } = space;
   const [skillMenuOpen, setSkillMenuOpen] = useState(false);
   const skillTrigger = useRef<HTMLButtonElement>(null);
+  const [connectorNames, setConnectorNames] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let active = true;
+    studioClient.capabilities().then((catalog) => {
+      if (active) setConnectorNames(Object.fromEntries(catalog.mcpServers.map((item) => [item.reference, item.label])));
+    }).catch(() => { /* saved references remain visible if the catalog is unavailable */ });
+    return () => { active = false; };
+  }, []);
   if (!project || !resources) return null;
   return (
     <aside className={styles.contextRail} aria-label="项目配置与成果">
@@ -60,12 +68,15 @@ export function ProjectContextRail({ space }: { space: ProjectSpaceState }) {
         </div>
 
         {!!project.mcpReferences?.length && (
-          <button
-            className={styles.textLink}
-            onClick={() => setDialog("connectors")}
-          >
-            查看与管理 ›
-          </button>
+          <>
+            <p className={styles.muted}>已关联 {project.mcpReferences.length} 个连接器</p>
+            <ul className={styles.compactList}>
+              {project.mcpReferences.map((reference) => <li key={reference}>{connectorNames[reference] ?? reference}</li>)}
+            </ul>
+            <button className={styles.textLink} onClick={() => setDialog("connectors")}>
+              查看与管理 ›
+            </button>
+          </>
         )}
       </section>
       <section className={styles.contextCard}>
@@ -212,7 +223,7 @@ export function ProjectConnectorsDialog({
 }: {
   space: ProjectSpaceState;
 }) {
-  const { project, setDialog, refreshResources } = space;
+  const { project, setDialog, refreshResources, setNotice } = space;
   const [items, setItems] = useState<StudioCapabilities["mcpServers"]>([]);
   const [selected, setSelected] = useState(project?.mcpReferences ?? []);
   const [loading, setLoading] = useState(true);
@@ -264,7 +275,12 @@ export function ProjectConnectorsDialog({
             await projectClient.update(project.projectId, {
               mcpReferences: selected,
             });
-            await refreshResources();
+            const refreshed = await refreshResources();
+            if (!refreshed) throw new Error("关联已提交，但未能确认保存结果，请重试。");
+            const saved = refreshed.project.mcpReferences ?? [];
+            if (saved.length !== selected.length || selected.some((ref) => !saved.includes(ref)))
+              throw new Error("连接器关联未完整保存，请重试。");
+            setNotice(saved.length ? `已保存 ${saved.length} 个项目连接器。` : "已移除项目连接器关联。");
             setDialog(null);
           } catch (cause) {
             setError(errorText(cause));
@@ -300,13 +316,12 @@ export function ProjectConnectorsDialog({
                   type="checkbox"
                   checked={selected.includes(item.reference)}
                   disabled={saving}
-                  onChange={(event) =>
-                    setSelected((current) =>
-                      event.target.checked
-                        ? [...current, item.reference]
-                        : current.filter((ref) => ref !== item.reference),
-                    )
-                  }
+                  onChange={(event) => {
+                    const checked = event.currentTarget.checked;
+                    setSelected((current) => checked
+                      ? [...new Set([...current, item.reference])]
+                      : current.filter((ref) => ref !== item.reference));
+                  }}
                 />
                 {item.label}
               </label>

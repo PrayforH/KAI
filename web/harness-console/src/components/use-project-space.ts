@@ -175,7 +175,9 @@ export function useProjectSpace(
 
   async function refreshResources() {
     try {
-      setResources(await projectClient.resources(projectId));
+      const next = await projectClient.resources(projectId);
+      setResources(next);
+      return next;
     } catch (cause) {
       setError(errorText(cause));
     }

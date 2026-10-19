@@ -135,6 +135,7 @@ import { submitUiAction } from "./intelligent-ui/client";
 import { modelBlockSources, presentationsForMessage } from "./intelligent-ui/schema";
 import { PublishedBlocksProvider } from "./intelligent-ui/turn-context";
 import { consumeProjectTaskLaunch } from "../lib/project-task-launch";
+import { useProjectTaskLaunch } from "./use-project-task-launch";
 import { useTaskComposerSnapshot } from "./task-composer-draft";
 import { VoiceInput } from "./voice-input";
 import { useDictationComposer } from "./use-dictation-composer";
@@ -309,6 +310,8 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   const aui = useAui();
   const { routes, overrideRouteId } = useTaskModel();
   const threadRunning = useAuiState((state) => state.thread.isRunning);
+  const threadLoading = useAuiState((state) => state.thread.isLoading);
+  const composerCanSend = useAuiState((state) => state.composer.canSend);
   const messages = useAuiState((state) => state.thread.messages);
   const requestedInput = useMemo(() => latestConversationInput(messages), [messages]);
   const composerText = useAuiState((state) => state.composer.text);
@@ -604,6 +607,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   const composerSendLock = useRef(false);
   async function submitComposer(alternate = false) {
     if (voiceActive || followupVoiceActive) return;
+    if (projectLaunchScope) consumeProjectTaskLaunch(projectLaunchScope.userId, projectLaunchScope.threadId);
     if (command(composerText.trim())) return;
     if (videoRoute) { void generateVideo(); return; }
     if (busy || queue.length) {
@@ -622,10 +626,31 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
     } finally { composerSendLock.current = false; }
   }
 
-  useEffect(() => {
-    if (!projectLaunchScope || !projectLaunchReady || runLocked || threadRunning || agentSelection.loading || !composerText.trim()) return;
-    if (consumeProjectTaskLaunch(projectLaunchScope.userId, projectLaunchScope.threadId)) void submitComposer();
-  }, [composerText, projectLaunchScope, projectLaunchReady, runLocked, threadRunning, agentSelection.loading]);
+  useProjectTaskLaunch(
+    projectLaunchScope,
+    projectLaunchReady && !threadLoading && !agentSelection.loading &&
+      queueLoaded && !busy && !queue.length && !voiceActive && !followupVoiceActive &&
+      composerCanSend && Boolean(composerText.trim()),
+    async () => {
+      if (composerSendLock.current || !threadRuntime.composer.getState().canSend) return false;
+      composerSendLock.current = true;
+      try {
+        const error = await sendComposerWithRecovery(threadRuntime.composer);
+        if (error) {
+          setInputError(error);
+          // A real send failure stays visible for an explicit retry, never a loop.
+          if (projectLaunchScope) consumeProjectTaskLaunch(projectLaunchScope.userId, projectLaunchScope.threadId);
+          return false;
+        }
+        onSubmitted?.();
+        return true;
+      } catch (error) {
+        setInputError(error instanceof Error ? error.message : "项目任务未能发送，输入已保留，请重试。");
+        if (projectLaunchScope) consumeProjectTaskLaunch(projectLaunchScope.userId, projectLaunchScope.threadId);
+        return false;
+      } finally { composerSendLock.current = false; }
+    },
+  );
 
   async function generateVideo() {
     const prompt = composerText.trim();

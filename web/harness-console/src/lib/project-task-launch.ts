@@ -27,3 +27,19 @@ export function consumeProjectTaskLaunch(userId: string, threadId: string) {
   }
   return armed;
 }
+
+const launching = new Set<string>();
+
+/** Do not discard the hand-off when a composer is still loading or send is rejected. */
+export async function tryProjectTaskLaunch(
+  userId: string, threadId: string, send: () => Promise<boolean>,
+): Promise<void> {
+  const id = key(userId, threadId);
+  let armed = pending.has(id);
+  try { armed = sessionStorage.getItem(id) === "1" || armed; } catch { /* memory fallback */ }
+  if (!armed || launching.has(id)) return;
+  launching.add(id);
+  try {
+    if (await send()) consumeProjectTaskLaunch(userId, threadId);
+  } finally { launching.delete(id); }
+}

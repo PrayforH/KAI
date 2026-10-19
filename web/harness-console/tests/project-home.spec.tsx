@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from "react";
+import { act, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const mock = vi.hoisted(() => ({
@@ -16,6 +16,7 @@ const mock = vi.hoisted(() => ({
   finalizeResult: vi.fn(),
   attachDocument: vi.fn(),
   catalog: vi.fn(),
+  capabilities: vi.fn(),
   agents: [
     {
       name: "lead",
@@ -58,6 +59,7 @@ vi.mock("../src/lib/studio-client", () => ({
     attachDocument: mock.attachDocument,
   },
   studioClient: {
+    capabilities: mock.capabilities,
     listPlatformSkills: async () => ({ packages: [] }),
     listKnowledgeBases: async () => [],
   },
@@ -153,6 +155,10 @@ beforeEach(() => {
     defaultAgent: mock.agents[0],
   });
   mock.createTask.mockResolvedValue({ thread_id: "new-project-task" });
+  mock.capabilities.mockResolvedValue({ mcpServers: [
+    {reference: "one", label: "连接器一", enabled: true, endpointUrl: "https://example.test/one", visibility: "all"},
+    {reference: "two", label: "连接器二", enabled: true, endpointUrl: "https://example.test/two", visibility: "all"},
+  ] });
   mock.results.mockResolvedValue([]);
   mock.saveResult.mockResolvedValue({
     resultId: "saved-1",
@@ -358,4 +364,31 @@ it("opens platform skills from the add dropdown without navigating or creating a
   expect(document.querySelector('[role="menu"][aria-label="添加项目技能"]')).toBeNull();
   expect(mock.createTask).not.toHaveBeenCalled();
   expect(mock.push).not.toHaveBeenCalled();
+});
+
+it("saves all checked MCP bindings across consecutive checkbox changes", async () => {
+  await act(async () => root.render(<StrictMode><ProjectHome projectId="project-1" /></StrictMode>));
+  await click("＋ 添加");
+  const boxes = [...host.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')];
+  expect(boxes).toHaveLength(2);
+  await act(async () => boxes[0].click());
+  expect(boxes[0].checked).toBe(true);
+  await act(async () => boxes[1].click());
+  expect(boxes[1].checked).toBe(true);
+  mock.resources.mockResolvedValue({project: {...project, mcpReferences: ["one", "two"]}, documents: [], links: [], memories: []});
+  await click("保存关联");
+  expect(mock.update).toHaveBeenCalledWith("project-1", {mcpReferences: ["one", "two"]});
+  expect(host.querySelector('[role="dialog"]')).toBeNull();
+  expect(host.textContent).toContain("已关联 2 个连接器");
+  expect(host.textContent).toContain("已保存 2 个项目连接器");
+});
+
+it("keeps connector selection open if the read-back does not confirm the binding", async () => {
+  await act(async () => root.render(<ProjectHome projectId="project-1" />));
+  await click("＋ 添加");
+  await act(async () => host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+  await click("保存关联");
+  expect(host.querySelector('[role="dialog"]')).not.toBeNull();
+  expect(host.textContent).toContain("连接器关联未完整保存");
+  expect(host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(true);
 });
