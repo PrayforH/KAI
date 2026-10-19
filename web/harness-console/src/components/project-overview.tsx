@@ -42,7 +42,7 @@ export function ProjectOverview({ space }: { space: ProjectSpaceState }) {
           </p>
         )}
         {recent.length ? (
-          <ProjectTaskRows tasks={recent} agentLabels={agentLabels} compact />
+          <ProjectTaskRows tasks={recent} agentLabels={agentLabels} onChanged={() => void space.reload()} compact />
         ) : (
           projectEmpty(
             "新建一个任务以开始",

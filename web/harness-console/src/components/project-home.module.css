@@ -812,3 +812,12 @@
 .recentRow .rowLink { flex: 1; min-width: 0; }
 .recentRow .rowLink strong { font-size: 14px; font-weight: 500; }
 .taskTime { flex-shrink: 0; font-size: 12px; color: var(--codex-muted); }
+
+.recentRow, .row { border-radius: 10px; }
+.recentRow:hover, .recentRow:focus-within, .row:focus-within { background: var(--codex-surface-hover); }
+.recentRow :global(.project-task-actions) { opacity: 0; }
+.recentRow:has([aria-expanded="true"]) :global(.project-task-actions), .recentRow:hover :global(.project-task-actions), .recentRow:focus-within :global(.project-task-actions) { opacity: 1; }
+.pinnedLabel { margin-left: 8px; font-size: 11px; font-weight: 400; color: var(--codex-muted); white-space: nowrap; }
+@media (hover: none), (max-width: 760px) {
+  .recentRow :global(.project-task-actions) { opacity: 1; }
+}

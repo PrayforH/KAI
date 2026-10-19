@@ -1,5 +1,8 @@
 "use client";
 import Link from "next/link";
+import { TaskHeaderActions } from "./task-header-actions";
+import { useAuth } from "./auth-provider";
+import { useSidebarProjects } from "../lib/sidebar-state";
 import type { TaskSummary } from "../lib/task-history";
 import { formatTaskAge } from "../lib/task-list-age";
 import styles from "./project-home.module.css";
@@ -41,11 +44,15 @@ export function ProjectTaskRows({
   tasks: items,
   agentLabels,
   compact = false,
+  onChanged,
 }: {
   tasks: TaskSummary[];
   agentLabels: ReadonlyMap<string, string>;
   compact?: boolean;
+  onChanged?: () => void;
 }) {
+  const { user } = useAuth();
+  const [projects] = useSidebarProjects(user.user_id);
   return (
     <ul className={styles.list}>
       {items.map((task) => (
@@ -67,7 +74,7 @@ export function ProjectTaskRows({
             className={styles.rowLink}
             href={`/?thread=${encodeURIComponent(task.thread_id)}`}
           >
-            <strong>{task.title}</strong>
+            <strong>{task.title}{task.pinned_at && <span className={styles.pinnedLabel}>已固定</span>}</strong>
             {!compact && <small>
               {task.archived_at ? "已归档 · " : ""}
               {task.pending_input
@@ -86,6 +93,7 @@ export function ProjectTaskRows({
           >
             打开任务 →
           </Link>}
+          {compact && <TaskHeaderActions task={task} projects={projects.filter(project => !project.archivedAt)} variant="row" onChanged={onChanged} />}
         </li>
       ))}
     </ul>

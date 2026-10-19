@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { ActionMenuPopover } from "./action-menu-popover";
 import {
   projectClient,
   studioClient,
@@ -23,6 +24,8 @@ export function ProjectContextRail({ space }: { space: ProjectSpaceState }) {
     knowledgeNames,
     skillNames,
   } = space;
+  const [skillMenuOpen, setSkillMenuOpen] = useState(false);
+  const skillTrigger = useRef<HTMLButtonElement>(null);
   if (!project || !resources) return null;
   return (
     <aside className={styles.contextRail} aria-label="项目配置与成果">
@@ -115,9 +118,17 @@ export function ProjectContextRail({ space }: { space: ProjectSpaceState }) {
             ))}
           </ul>
         )}
-        <button className={styles.button} onClick={() => setDialog("skills")}>
-          {project.skillReferences?.length ? "管理技能" : "＋ 添加技能"}
+        <button ref={skillTrigger} className={styles.button} aria-label="添加项目技能" aria-haspopup="menu" aria-expanded={skillMenuOpen}
+          onClick={() => setSkillMenuOpen(value => !value)}
+          onKeyDown={event => { if (event.key === "ArrowDown") { event.preventDefault(); setSkillMenuOpen(true); } }}>
+          ＋ 添加 <span aria-hidden="true">{skillMenuOpen ? "⌃" : "⌄"}</span>
         </button>
+        {skillMenuOpen && <ActionMenuPopover anchor={skillTrigger} align="start" label="添加项目技能" onClose={() => setSkillMenuOpen(false)}>
+          <button type="button" role="menuitem" onClick={() => { setSkillMenuOpen(false); setDialog("skills"); }}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v6c0 4 4 7 8 9 4-2 8-5 8-9V6Z"/><path d="m8 12 3 3 5-6"/></svg>
+            <span><strong>从平台技能添加</strong><small>选择平台维护的技能，供项目任务使用</small></span>
+          </button>
+        </ActionMenuPopover>}
       </section>
       <section className={styles.contextCard}>
         <div className={styles.sectionHead}>

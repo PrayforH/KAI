@@ -207,4 +207,46 @@ describe("task header actions", () => {
     expect(onArchived).toHaveBeenCalled();
     expect(notifyTaskListChanged).toHaveBeenCalled();
   });
+  it("provides the project-row actions, copies an authorized task URL and restores keyboard focus", async () => {
+    const onChanged = vi.fn();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    render(<TaskHeaderActions task={task({ project_id: "current" })} variant="row" onChanged={onChanged} />);
+    const trigger = container.querySelector<HTMLButtonElement>(".task-header-more")!;
+    act(() => trigger.click());
+    const menu = document.querySelector('[role="menu"][aria-label="任务操作 分析任务"]')!;
+    expect(Array.from(menu.querySelectorAll('[role="menuitem"]'), item => item.textContent)).toEqual([
+      "复制任务链接", "在新标签中打开", "重命名", "固定", "项目", "归档",
+    ]);
+    const external = menu.querySelector('a')!;
+    expect(external.getAttribute("target")).toBe("_blank");
+    expect(external.getAttribute("href")).toBe("/?thread=thread-1");
+    await act(async () => (menu.querySelector("button") as HTMLButtonElement).click());
+    expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/?thread=thread-1`);
+    expect(document.querySelector('[role="status"]')?.textContent).toContain("任务链接已复制");
+    act(() => trigger.click());
+    const second = document.querySelector('[role="menu"][aria-label="任务操作 分析任务"]')!;
+    act(() => second.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(document.querySelector('[role="menu"][aria-label="任务操作 分析任务"]')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    act(() => trigger.click());
+    const pin = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === "固定")!;
+    await act(async () => pin.click());
+    expect(setTaskPinned).toHaveBeenCalledWith("thread-1", true);
+    expect(onChanged).toHaveBeenCalledTimes(1);
+    delete (navigator as any).clipboard;
+  });
+
+  it("refreshes the project after moving a row and keeps preparing tasks unarchivable", async () => {
+    const onChanged = vi.fn();
+    render(<TaskHeaderActions task={task({ project_id: "current", status: "provisioning" })} variant="row" onChanged={onChanged} />);
+    act(() => container.querySelector<HTMLButtonElement>(".task-header-more")!.click());
+    const archive = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(item => item.textContent === "归档")!;
+    expect(archive.disabled).toBe(true);
+    act(() => document.querySelector<HTMLButtonElement>(".nested-menu-trigger")!.click());
+    await act(async () => document.querySelector<HTMLButtonElement>(".nested-menu-panel button")!.click());
+    expect(setTaskProject).toHaveBeenCalledWith("thread-1", null);
+    expect(onChanged).toHaveBeenCalledTimes(1);
+  });
+
 });

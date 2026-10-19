@@ -1,4 +1,6 @@
 "use client";
+import { ActionMenuPopover } from "./action-menu-popover";
+import { writeTextToClipboard } from "../lib/clipboard";
 import { RunContextManifest } from "./run-context-manifest";
 import { FeedbackToast } from "./feedback-toast";
 
@@ -16,7 +18,7 @@ import {
 import { useConfirmationDialog } from "./confirmation-dialog";
 import { setTaskProject, type ApiProject } from "../lib/studio-client";
 
-const activeStatuses = new Set(["queued", "running", "waiting_approval", "cancelling"]);
+const activeStatuses = new Set(["queued", "provisioning", "running", "waiting_approval", "cancelling"]);
 
 function ProjectFolderIcon() {
   return (
@@ -286,8 +288,12 @@ export function TaskHeaderActions({
   onRenamed,
   onArchived,
   onProjectChanged,
+  variant = "header",
+  onChanged,
 }: {
   task: TaskSummary;
+  variant?: "header" | "row";
+  onChanged?: () => void;
   /** Projects the task can be moved into; empty hides the project actions. */
   projects?: readonly ApiProject[];
   /** Trace for the run currently shown in this task. */
@@ -302,8 +308,10 @@ export function TaskHeaderActions({
   const [renameOpen, setRenameOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const close = useCallback(() => setOpen(false), []);
-  const containerRef = useDismissable(open, close);
+  const containerRef = useDismissable(open && variant === "header", close);
   const { requestConfirmation, confirmationDialog } = useConfirmationDialog();
 
   const pinned = Boolean(task.pinned_at);
@@ -315,6 +323,7 @@ export function TaskHeaderActions({
     setError("");
     try {
       await action();
+      onChanged?.();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -367,9 +376,11 @@ export function TaskHeaderActions({
     setBusy(true);
     try {
       await setTaskProject(task.thread_id, projectId);
+      notifyTaskListChanged();
       setError("");
       close();
       onProjectChanged?.(projectId);
+      onChanged?.();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -377,32 +388,39 @@ export function TaskHeaderActions({
     }
   }
 
-  return (
-    <div className="task-header-actions" ref={containerRef}>
-      <button
-        type="button"
-        className="header-icon-button task-header-more"
-        aria-expanded={open}
-        aria-haspopup="menu"
-        aria-label="更多任务操作"
-        title="更多任务操作"
-        onClick={() => setOpen((value) => !value)}
-      >
-        <DotsIcon />
+  const menu = <>
+    {variant === "row" && <>
+      <button type="button" role="menuitem" disabled={busy} onClick={() => {
+        close();
+        void writeTextToClipboard(new URL(`/?thread=${encodeURIComponent(task.thread_id)}`, window.location.origin).href).then(copied => {
+          if (copied) setNotice("任务链接已复制"); else setError("复制失败，请重试。");
+        });
+      }}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg>
+        <span>复制任务链接</span>
       </button>
-      <FeedbackToast message={error} tone="error" onDismiss={() => setError("")} />
-      {open && (
-        <div className="task-header-menu" role="menu" aria-label="更多任务操作">
-          <button type="button" role="menuitem" disabled={busy} onClick={togglePinned}>
+      <a role="menuitem" href={`/?thread=${encodeURIComponent(task.thread_id)}`} target="_blank" rel="noopener noreferrer" onClick={close}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3h7v7m0-7L10 14M10 5H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/></svg>
+        <span>在新标签中打开</span>
+      </a>
+      <div role="separator" />
+    </>}
+
+          {variant === "header" && (<button type="button" role="menuitem" disabled={busy} onClick={togglePinned}>
             <PinIcon />
             <span>{pinned ? "取消置顶任务" : "置顶任务"}</span>
-          </button>
+          </button>)}
           <button type="button" role="menuitem" disabled={busy} onClick={openRename}>
             <RenameIcon />
-            <span>重命名任务</span>
+            <span>{variant === "row" ? "重命名" : "重命名任务"}</span>
           </button>
+          {variant === "row" && (<button type="button" role="menuitem" disabled={busy} onClick={togglePinned}>
+            <PinIcon />
+            <span>{pinned ? "取消固定" : "固定"}</span>
+          </button>)}
+          {variant === "row" && <div role="separator" />}
           {(projects.length > 0 || task.project_id) && (
-            <NestedMenu label="移入项目" icon={<ProjectIcon />} disabled={busy}>
+            <NestedMenu label={variant === "row" ? "项目" : "移入项目"} icon={<ProjectIcon />} disabled={busy}>
               {projects
                 .filter((project) => project.projectId !== task.project_id)
                 .map((project) => (
@@ -430,17 +448,18 @@ export function TaskHeaderActions({
               )}
             </NestedMenu>
           )}
+          {variant === "row" && <div role="separator" />}
           <button
             type="button"
             role="menuitem"
-            disabled={busy || isActive}
-            title={isActive ? "任务结束后可归档" : undefined}
+            disabled={busy || isActive || Boolean(task.archived_at)}
+            title={task.archived_at ? "任务已归档" : isActive ? "任务结束后可归档" : undefined}
             onClick={archive}
           >
             <ArchiveIcon />
-            <span>归档任务</span>
+            <span>{variant === "row" ? "归档" : "归档任务"}</span>
           </button>
-          {onOpenTrace ? (
+          {variant === "row" ? null : onOpenTrace ? (
             <button
               type="button"
               role="menuitem"
@@ -469,7 +488,27 @@ export function TaskHeaderActions({
               <span>调用轨迹</span>
             </span>
           )}
-        </div>
+
+  </>;
+  return (
+    <div className={`task-header-actions${variant === "row" ? " project-task-actions" : ""}`} ref={containerRef}>
+      <button
+        type="button"
+        ref={triggerRef}
+        className="header-icon-button task-header-more"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        aria-label={variant === "row" ? `任务操作 ${task.title}` : "更多任务操作"}
+        title="更多任务操作"
+        onClick={() => setOpen((value) => !value)}
+        onKeyDown={(event) => { if (variant === "row" && event.key === "ArrowDown") { event.preventDefault(); setOpen(true); } }}
+      >
+        <DotsIcon />
+      </button>
+      <FeedbackToast message={notice} onDismiss={() => setNotice("")} />
+      <FeedbackToast message={error} tone="error" onDismiss={() => setError("")} />
+      {open && (
+        variant === "row" ? <ActionMenuPopover anchor={triggerRef} label={`任务操作 ${task.title}`} onClose={close}>{menu}</ActionMenuPopover> : <div className="task-header-menu" role="menu" aria-label="更多任务操作">{menu}</div>
       )}
       <RenameTaskDialog
         open={renameOpen}

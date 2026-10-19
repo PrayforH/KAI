@@ -344,3 +344,18 @@ it("saves project instructions without renaming the project or changing Agent co
   expect(host.querySelector('[role="dialog"]')).toBeNull();
   expect(host.querySelector("h1")?.textContent).toBe("季度分析");
 });
+
+
+it("opens platform skills from the add dropdown without navigating or creating a task", async () => {
+  await act(async () => root.render(<ProjectHome projectId="project-1" />));
+  const trigger = host.querySelector<HTMLButtonElement>('[aria-label="添加项目技能"]')!;
+  await act(async () => trigger.click());
+  const menu = document.querySelector('[role="menu"][aria-label="添加项目技能"]')!;
+  expect(menu.textContent).toContain("从平台技能添加");
+  expect(menu.textContent).not.toContain("GitHub");
+  await act(async () => menu.querySelector<HTMLButtonElement>("button")!.click());
+  expect(host.textContent).toContain("技能引用");
+  expect(document.querySelector('[role="menu"][aria-label="添加项目技能"]')).toBeNull();
+  expect(mock.createTask).not.toHaveBeenCalled();
+  expect(mock.push).not.toHaveBeenCalled();
+});

@@ -370,7 +370,7 @@ export function useProjectSpace(
       ),
   );
   const recent = [...activeTasks]
-    .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+    .sort((a, b) => Number(Boolean(b.pinned_at)) - Number(Boolean(a.pinned_at)) || b.updated_at.localeCompare(a.updated_at))
     .slice(0, 5);
   const visibleArtifacts = artifacts.filter((artifact) =>
     [artifact.name, artifact.thread_title].some((value) =>
