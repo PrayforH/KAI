@@ -4,7 +4,15 @@ from typing import cast
 from uuid import uuid4
 
 import pytest
-from claude_agent_sdk import ClaudeSDKClient, ResultMessage, UserMessage
+from claude_agent_sdk import (
+    ClaudeSDKClient,
+    ResultMessage,
+    SystemMessage,
+    TaskNotificationMessage,
+    TaskStartedMessage,
+    TaskUpdatedMessage,
+    UserMessage,
+)
 
 from harness.adapters.memory import (
     InMemoryEventBus,
@@ -271,3 +279,68 @@ async def test_restarted_or_stale_worker_never_replays_uncertain_guidance():
         RunStatus.RUNNING, run.model_copy(update={"fencing_token": 1})
     )
     assert await inbox.read() == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("with_steering", [False, True])
+@pytest.mark.parametrize("finish_before_result", [False, True])
+async def test_background_agents_finish_and_summarize_before_run_closes(
+    with_steering: bool, finish_before_result: bool,
+):
+    _, _, _, inbox = await setup_inbox()
+    final = result()
+    final.num_turns = 3
+
+    def state(value):
+        return SystemMessage(subtype="session_state_changed", data={"state": value})
+
+    def started(name):
+        return TaskStartedMessage(
+            subtype="task_started", data={}, task_id=name, description=name,
+            uuid=name, session_id="sdk", task_type="local_agent",
+        )
+
+    class Client:
+        async def receive_messages(self):
+            yield state("running")
+            yield started("alpha")
+            yield started("beta")
+            if not finish_before_result:
+                yield result()
+            yield TaskUpdatedMessage(
+                subtype="task_updated", data={}, task_id="alpha",
+                patch={"status": "completed"},
+            )
+            yield TaskNotificationMessage(
+                subtype="task_notification", data={}, task_id="beta", status="completed",
+                output_file="", summary="done", uuid="terminal-beta", session_id="sdk",
+            )
+            # Even when both children finish first, a queued lead turn is owed.
+            yield result()
+            yield "both agent receipts summarized"
+            yield final
+            yield state("idle")
+            await asyncio.Event().wait()
+
+    async with asyncio.timeout(1):
+        observed = [item async for item in _steerable_response(
+            cast(ClaudeSDKClient, Client()), inbox if with_steering else None,
+        )]
+    assert [item for item in observed if isinstance(item, ResultMessage)] == [final]
+    assert "both agent receipts summarized" in observed
+    if with_steering:
+        assert inbox.closed
+
+
+@pytest.mark.asyncio
+async def test_background_stream_closure_cannot_report_intermediate_success():
+    class Client:
+        async def receive_messages(self):
+            yield SystemMessage(subtype="session_state_changed", data={"state": "running"})
+            yield result()
+
+    observed = []
+    with pytest.raises(RuntimeError, match="before background work reached idle"):
+        async for message in _steerable_response(cast(ClaudeSDKClient, Client()), None):
+            observed.append(message)
+    assert not any(isinstance(item, ResultMessage) for item in observed)
