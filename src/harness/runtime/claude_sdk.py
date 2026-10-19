@@ -326,7 +326,7 @@ async def _client_query(
 ) -> AsyncIterator[object]:
     # A result ends a model turn, not necessarily a Run. Explicit state frames
     # keep MCP/hooks alive while background agents finish and wake the lead.
-    attempt_options = replace(
+    attempt_options: ClaudeAgentOptions = replace(
         options,
         env={**options.env, "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS": "1"},
         extra_args=(
