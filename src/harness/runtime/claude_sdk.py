@@ -818,7 +818,15 @@ class ClaudeSdkRuntime:
             child_resolutions[name] = child_resolved
             for server_name, config in child_resolved.mcp_servers.items():
                 owner = server_owner.get(server_name)
-                if owner is not None and owner != snapshot.content_hash:
+                # A project and its published children can select the same remote
+                # connector. Share only identical resolved transports, including
+                # credential headers; same-name endpoints with different authority
+                # must still fail closed. In-process SDK servers remain owner-bound.
+                shared_remote = (
+                    config.get("type") in {"http", "sse"}
+                    and mcp_servers.get(server_name) == config
+                )
+                if owner is not None and owner != snapshot.content_hash and not shared_remote:
                     raise ToolResolutionError(
                         f"MCP server name conflicts across Lead/Sub Agents: {server_name}"
                     )
