@@ -11,6 +11,8 @@ import {
 import { useAuth } from "./auth-provider";
 import { useConfirmationDialog } from "./confirmation-dialog";
 import { armProjectTaskLaunch } from "../lib/project-task-launch";
+import { createUserScopedStorage } from "../lib/thread-store";
+import { saveTaskModelOverride } from "../lib/task-model-catalog";
 import { createProjectTask } from "../lib/project-task";
 import {
   loadTaskAgentCatalog,
@@ -196,7 +198,7 @@ export function useProjectSpace(
       );
     }
   }
-  async function startTask(prompt = "") {
+  async function startTask(prompt = "", modelRoute: string | null = null) {
     if (createLock.current || !selectedAgent) return;
     createLock.current = true;
     setCreating(true);
@@ -205,6 +207,7 @@ export function useProjectSpace(
       const task = await createProjectTask(projectId, selectedAgent);
       try {
         localStorage.setItem(preferenceKey, agentItemKey(selectedAgent));
+        saveTaskModelOverride(createUserScopedStorage(localStorage, user.user_id), task.thread_id, modelRoute);
       } catch {
         /* optional preference */
       }

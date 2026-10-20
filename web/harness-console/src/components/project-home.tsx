@@ -13,6 +13,7 @@ import {
   ProjectContextRail,
   ProjectConnectorsDialog,
 } from "./project-context-rail";
+import { ProjectComposer } from "./project-composer";
 import { ProjectOverview } from "./project-overview";
 import { ProjectTasks } from "./project-tasks";
 import { ProjectResources, ProjectFacts } from "./project-resources";
@@ -100,6 +101,7 @@ export function ProjectHome({
       </div>
       <div className={styles.workspace}>
         <main className={styles.projectMain}>
+          <div className={styles.projectScroll} aria-label="项目任务列表">
           <header className={styles.header}>
             <span className={styles.projectMark} aria-hidden="true">
               <svg viewBox="0 0 24 24">
@@ -129,6 +131,8 @@ export function ProjectHome({
             </p>
           )}
           <ProjectOverview space={space} />
+          </div>
+          <ProjectComposer space={space} />
         </main>
         <ProjectContextRail space={space} />
       </div>

@@ -16,6 +16,7 @@ const mock = vi.hoisted(() => ({
   finalizeResult: vi.fn(),
   attachDocument: vi.fn(),
   catalog: vi.fn(),
+  modelRoutes: vi.fn(),
   capabilities: vi.fn(),
   agents: [
     {
@@ -69,6 +70,9 @@ vi.mock("../src/lib/task-agent-catalog", () => ({
   chatUsableAgents: (agents: any[]) => agents.filter((agent) => agent.canChat),
   agentItemKey: (agent: any) =>
     `${agent.ownerUserId}:${agent.spaceId ?? ""}:${agent.name}@${agent.version}`,
+}));
+vi.mock("../src/lib/task-model-catalog", async original => ({
+  ...(await original<object>()), loadTaskModelRoutes: mock.modelRoutes,
 }));
 vi.mock("../src/lib/project-task", () => ({
   createProjectTask: mock.createTask,
@@ -154,6 +158,7 @@ beforeEach(() => {
     agents: mock.agents,
     defaultAgent: mock.agents[0],
   });
+  mock.modelRoutes.mockResolvedValue([]);
   mock.createTask.mockResolvedValue({ thread_id: "new-project-task" });
   mock.capabilities.mockResolvedValue({ mcpServers: [
     {reference: "one", label: "连接器一", enabled: true, endpointUrl: "https://example.test/one", visibility: "all"},
@@ -391,4 +396,57 @@ it("keeps connector selection open if the read-back does not confirm the binding
   expect(host.querySelector('[role="dialog"]')).not.toBeNull();
   expect(host.textContent).toContain("连接器关联未完整保存");
   expect(host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(true);
+});
+
+it("hides each card's onboarding text only when that card has content", async () => {
+  mock.resources.mockResolvedValue({
+    project: { ...project, skillReferences: ["research"], knowledgeReferences: ["kb-1"] },
+    documents: [{ inputArtifactId: "file-1", name: "说明.pdf" }], links: [], memories: [],
+  });
+  await act(async () => root.render(<ProjectHome projectId="project-1" />));
+  expect(host.textContent).toContain("说明.pdf");
+  expect(host.textContent).toContain(project.instructions);
+  expect(host.textContent).not.toContain("指导助手如何在此项目的所有任务中响应。");
+  expect(host.textContent).not.toContain("添加文件和网页，供本项目的所有任务使用。");
+  expect(host.textContent).not.toContain("为项目任务补充可复用的工作流程。");
+  expect(host.textContent).not.toContain("关联已有知识库，供任务检索。");
+  expect(host.textContent).toContain("从任务中保存交付物，在这里集中查看。");
+});
+
+it("keeps project launch out of IME confirmation and hands the draft to the main conversation", async () => {
+  await act(async () => root.render(<ProjectHome projectId="project-1" />));
+  const textarea = host.querySelector<HTMLTextAreaElement>('[aria-label="项目任务需求"]')!;
+  expect(textarea.closest(".harness-composer-shell")).not.toBeNull();
+  expect(host.querySelector('[data-conversation-action="send"]')).not.toBeNull();
+  await act(async () => {
+    textarea.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(textarea, "项目需求");
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    textarea.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+    textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  });
+  expect(mock.createTask).not.toHaveBeenCalled();
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="发送并开始项目任务"]')!.click());
+  expect(mock.createTask).toHaveBeenCalledTimes(1);
+  expect(mock.push).toHaveBeenCalledWith("/?thread=new-project-task");
+});
+
+
+it("carries the chosen model into the user-scoped main-conversation task settings", async () => {
+  mock.modelRoutes.mockResolvedValue([{ id: "claude-test", label: "Claude", modelType: "chat", capabilities: ["chat"] }]);
+  await act(async () => root.render(<ProjectHome projectId="project-1" />));
+  const select = host.querySelector<HTMLSelectElement>('[aria-label="选择本次任务使用的模型"]')!;
+  const textarea = host.querySelector<HTMLTextAreaElement>('[aria-label="项目任务需求"]')!;
+  await act(async () => {
+    select.value = "claude-test";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(textarea, "分析项目");
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="发送并开始项目任务"]')!.click());
+  const { createUserScopedStorage } = await import("../src/lib/thread-store");
+  const { loadTaskModelOverride } = await import("../src/lib/task-model-catalog");
+  expect(loadTaskModelOverride(createUserScopedStorage(localStorage, "owner"), "new-project-task")).toBe("claude-test");
+  expect(loadTaskModelOverride(createUserScopedStorage(localStorage, "another-user"), "new-project-task")).toBeNull();
 });

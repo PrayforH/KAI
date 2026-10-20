@@ -625,10 +625,9 @@ export function TaskSidebar({
                   data-project-id={project.projectId}
                 >
                   <div className="task-project-head">
-                    <div className="task-project-heading">
                     <button
                       type="button"
-                      className="task-project-toggle"
+                      className="task-project-heading"
                       aria-expanded={!collapsed}
                       aria-label={`${collapsed ? "展开" : "收起"}项目 ${project.name}`}
                       title={`${collapsed ? "展开" : "收起"}项目 ${project.name}`}
@@ -648,8 +647,6 @@ export function TaskSidebar({
                       }}
                     >
                       <ProjectFolderIcon />
-                    </button>
-                    <Link href={projectHref(project.projectId)} aria-label={`打开项目 ${project.name}`} className="task-project-name">
                       <strong className="project-name-viewport">
                         <span
                           onMouseEnter={(event) => {
@@ -663,8 +660,7 @@ export function TaskSidebar({
                           {project.name}
                         </span>
                       </strong>
-                    </Link>
-                    </div>
+                    </button>
                     <div className="task-project-menu-anchor" data-project-menu={project.projectId}>
                       <button
                         type="button"
@@ -688,7 +684,7 @@ export function TaskSidebar({
                           data-project-menu={project.projectId}
                         >
                           <Link role="menuitem" href={projectHref(project.projectId)} onClick={() => setProjectMenuId(null)}>
-                            <ProjectFolderIcon /><span>打开项目</span>
+                            <ProjectFolderIcon /><span>查看项目</span>
                           </Link>
                           <button
                             type="button"

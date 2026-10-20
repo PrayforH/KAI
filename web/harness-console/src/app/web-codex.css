@@ -3158,3 +3158,6 @@ body.codex-theme-v1:has(.console-shell) .task-list-item:has(.task-input-badge) {
 }
 
 .rail-project-save { padding: 10px 16px; border-bottom: 1px solid var(--codex-line); }
+
+/* Project columns scroll internally rather than moving the whole workspace. */
+.studio-unified[data-project-home] > .studio-unified-content { overflow: hidden; }

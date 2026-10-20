@@ -2,7 +2,14 @@
   margin: 0 auto;
   color: var(--codex-ink, #ececec);
   max-width: 1600px;
-  padding: 24px clamp(20px, 3vw, 48px) 42px;
+  padding: 24px clamp(20px, 3vw, 48px) 24px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 .eyebrow {
   margin: 0 0 14px;
@@ -341,12 +348,16 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
   gap: clamp(28px, 4vw, 64px);
-  align-items: start;
+  align-items: stretch;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 .projectMain {
   display: flex;
   min-width: 0;
-  min-height: calc(100dvh - 144px);
+  min-height: 0;
+  overflow: hidden;
   flex-direction: column;
 }
 .homeToolbar {
@@ -396,72 +407,15 @@
 .recentTasks .row {
   padding: 17px 4px;
 }
-.composer {
-  margin-top: auto;
-  position: relative;
-  border: 1px solid var(--codex-line);
-  border-radius: 22px;
-  padding: 18px;
-  background: var(--codex-surface-subtle);
-}
-.composer:focus-within {
-  border-color: var(--codex-muted);
-}
-.composer textarea {
-  display: block;
-  width: 100%;
-  min-height: 82px;
-  max-height: 260px;
-  box-sizing: border-box;
-  resize: vertical;
-  border: 0;
-  outline: none;
-  background: transparent;
-  color: var(--codex-ink);
-  font-size: 15px;
-  line-height: 1.7;
-}
-.composer textarea::placeholder {
-  color: var(--codex-muted);
-}
-.composer textarea:focus-visible {
-  outline: 0;
-}
-.composerToolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-.composerHint {
-  position: absolute;
-  top: 100%;
-  left: 14px;
-  right: 14px;
-  margin: 9px 0 0;
-  font-size: 10px;
-  color: var(--codex-muted);
-  line-height: 1.5;
-}
-.send {
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  width: 36px;
-  height: 36px;
-  border: 0;
-  border-radius: 50%;
-  background: var(--codex-ink);
-  color: var(--codex-surface);
-  font-size: 25px !important;
-  cursor: pointer;
-}
 .contextRail {
   display: grid;
   gap: 16px;
   min-width: 0;
   padding-top: 4px;
-  max-height: calc(100dvh - 126px);
+  min-height: 0;
+  align-content: start;
+  overscroll-behavior-y: contain;
+  padding-bottom: 8px;
   overflow-y: auto;
   scrollbar-width: thin;
 }
@@ -663,16 +617,20 @@
     gap: 24px;
   }
   .projectMain {
-    min-height: calc(100dvh - 180px);
+    min-height: 0;
   }
 }
 @media (max-width: 760px) {
+  .page { overflow-y: auto; }
   .workspace {
+    flex: none;
+    overflow: visible;
     grid-template-columns: minmax(0, 1fr);
     gap: 42px;
   }
   .projectMain {
-    min-height: 560px;
+    min-height: min(640px, calc(100dvh - 150px));
+    overflow: visible;
   }
   .homeToolbar {
     margin-bottom: 30px;
@@ -686,13 +644,6 @@
     align-items: start;
     max-height: none;
     overflow: visible;
-  }
-  .composer {
-    position: static;
-  }
-  .composerHint {
-    position: static;
-    margin: 12px 0 0;
   }
 }
 @media (max-width: 520px) {
@@ -715,7 +666,7 @@
     font-size: 24px;
   }
   .projectMain {
-    min-height: 530px;
+    min-height: 0;
   }
   .dialogContent {
     padding: 8px 16px 20px;
@@ -728,69 +679,6 @@
     flex-basis: 100%;
   }
 }
-.page .composer :global(.task-agent-switcher) {
-  width: auto;
-  max-width: calc(100% - 54px);
-  min-width: 0;
-  margin: 0;
-}
-.page .composer :global(.task-agent-switcher-trigger) {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: auto;
-  min-width: 0;
-  min-height: 34px;
-  padding: 7px 10px;
-  border-radius: 18px;
-}
-.page .composer :global(.task-agent-switcher-mark) {
-  display: grid;
-  place-items: center;
-  width: 16px;
-  height: 16px;
-}
-.page .composer :global(.task-agent-switcher-mark) svg {
-  width: 16px;
-  height: 16px;
-}
-.page .composer :global(.task-agent-switcher-copy) {
-  display: block;
-  min-width: 0;
-}
-.page .composer :global(.task-agent-switcher-copy) small {
-  display: none;
-}
-.page .composer :global(.task-agent-switcher-copy) strong {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  font-weight: 500;
-}
-.page .composer :global(.task-agent-switcher-chevron) {
-  position: static;
-  display: block;
-  width: 12px;
-  height: 12px;
-  border: 0;
-  transform: none;
-}
-.page .composer :global(.task-agent-switcher-chevron) svg {
-  width: 12px;
-  height: 12px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.5;
-}
-.page .composer :global(.task-agent-menu) {
-  left: 0;
-  right: auto;
-  bottom: calc(100% + 8px);
-  width: min(340px, calc(100vw - 80px));
-}
-
 /* Project landing follows the resource-card layout; execution uses Home. */
 .connectorStrip {
   display: flex;
@@ -820,4 +708,33 @@
 .pinnedLabel { margin-left: 8px; font-size: 11px; font-weight: 400; color: var(--codex-muted); white-space: nowrap; }
 @media (hover: none), (max-width: 760px) {
   .recentRow :global(.project-task-actions) { opacity: 1; }
+}
+
+/* Each desktop column owns its scroll; the launch composer stays visible. */
+.projectScroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-width: thin;
+  padding-right: 8px;
+}
+.projectComposer:global(.harness-composer-shell) {
+  flex: none;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 16px 0 0;
+}
+.projectComposer :global(.aui-composer-root) {
+  display: flex;
+  flex-wrap: wrap;
+  width: 100%;
+  box-sizing: border-box;
+}
+.projectComposer :global(.composer-input-wrap) { width: 100%; min-width: 0; }
+.projectComposer :global(.aui-composer-input) { width: 100%; box-sizing: border-box; }
+@media (max-width: 760px) {
+  .projectScroll { flex: none; overflow: visible; padding-right: 0; }
+  .projectComposer:global(.harness-composer-shell) { margin-top: auto; }
 }

@@ -44,7 +44,7 @@ export function ProjectContextRail({ space }: { space: ProjectSpaceState }) {
         >
           指令 <span aria-hidden="true">›</span>
         </button>
-        <p className={styles.muted}>指导助手如何在此项目的所有任务中响应。</p>
+        {!project.instructions?.trim() && <p className={styles.muted}>指导助手如何在此项目的所有任务中响应。</p>}
         {project.instructions?.trim() ? (
           <p className={styles.instructionPreview}>{project.instructions}</p>
         ) : null}
@@ -86,7 +86,7 @@ export function ProjectContextRail({ space }: { space: ProjectSpaceState }) {
         >
           文件和资源 <span aria-hidden="true">›</span>
         </button>
-        <p className={styles.muted}>添加文件和网页，供本项目的所有任务使用。</p>
+        {!resources.documents.length && !resources.links.length && <p className={styles.muted}>添加文件和网页，供本项目的所有任务使用。</p>}
         {!!(resources.documents.length + resources.links.length) && (
           <ul className={styles.compactList}>
             {resources.documents.slice(0, 2).map((item) => (
@@ -121,7 +121,7 @@ export function ProjectContextRail({ space }: { space: ProjectSpaceState }) {
         >
           技能 <span aria-hidden="true">›</span>
         </button>
-        <p className={styles.muted}>为项目任务补充可复用的工作流程。</p>
+        {!project.skillReferences?.length && <p className={styles.muted}>为项目任务补充可复用的工作流程。</p>}
         {!!project.skillReferences?.length && (
           <ul className={styles.compactList}>
             {project.skillReferences.slice(0, 2).map((ref) => (
@@ -209,9 +209,6 @@ export function ProjectContextRail({ space }: { space: ProjectSpaceState }) {
           </ul>
         ) : (
           <p className={styles.muted}>从任务中保存交付物，在这里集中查看。</p>
-        )}
-        {!!savedResults.length && (
-          <p className={styles.muted}>保留文件快照、来源与版本。</p>
         )}
       </section>
     </aside>

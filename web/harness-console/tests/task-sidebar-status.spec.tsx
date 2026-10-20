@@ -222,3 +222,26 @@ it("keeps a needs-input chip for read and background tasks, then clears it on re
     expect(container.querySelectorAll(".task-input-badge")).toHaveLength(0);
   } finally { await act(async () => root.unmount()); container.remove(); }
 });
+
+it("toggles the whole project heading and reserves navigation for View project", async () => {
+  loadTasks.mockResolvedValue([{ ...task("succeeded", "project-task"), project_id: "project-fold" }]);
+  const props = { currentThreadId: "", collapsed: false, onToggle() {}, onSelect: vi.fn(), onNewTask() {}, projects: [{ projectId: "project-fold", name: "折叠项目", userId: "test", tenantId: "local", createdAt: "", updatedAt: "" }] };
+  const container = document.createElement("div"); document.body.appendChild(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(<TaskSidebar {...props} />));
+    const heading = container.querySelector<HTMLButtonElement>('[aria-label="展开项目 折叠项目"]')!;
+    expect(heading.tagName).toBe("BUTTON");
+    expect(heading.textContent).toContain("折叠项目");
+    expect(heading.querySelector("a")).toBeNull();
+    await act(async () => heading.querySelector("strong")!.click());
+    expect(container.querySelector('[aria-label="收起项目 折叠项目"]')).not.toBeNull();
+    expect(container.querySelectorAll(".task-list-row")).toHaveLength(1);
+    await act(async () => heading.click());
+    expect(container.querySelectorAll(".task-list-row")).toHaveLength(0);
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="项目操作 折叠项目"]')!.click());
+    const view = container.querySelector<HTMLAnchorElement>('[role="menuitem"][href="/studio/projects/project-fold"]');
+    expect(view?.textContent).toContain("查看项目");
+    expect(props.onSelect).not.toHaveBeenCalled();
+  } finally { await act(async () => root.unmount()); container.remove(); }
+});
