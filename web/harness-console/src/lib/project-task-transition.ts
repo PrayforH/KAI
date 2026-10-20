@@ -1,3 +1,5 @@
+import { flushSync } from "react-dom";
+
 /** Navigation owns the visual hand-off; the runtime can start work during it. */
 type Transition = { ready?: Promise<void>; finished: Promise<void>; skipTransition(): void };
 type TransitionDocument = Document & { startViewTransition?: (update: () => Promise<void>) => Transition };
@@ -74,6 +76,7 @@ export function revealProjectTaskTransition(threadId: string) {
   // Yield a task so React can commit send/reset without waiting on that paused clock.
   current.revealTimer = window.setTimeout(() => {
     if (handoff !== current) return;
+    flushSync(() => {});
     nameElement(current, '.task-content-shell .harness-composer-shell .aui-composer-root', 'project-composer');
     nameElement(current, '.task-sidebar', 'project-sidebar');
     current.ready();
