@@ -46,6 +46,7 @@ export function useProjectSpace(
 ) {
   const { user } = useAuth();
   const router = useRouter();
+  useEffect(() => { router.prefetch("/"); }, [router]);
   const searchParams = useSearchParams();
   const urlTab = searchParams.get("tab");
   const urlSettings = searchParams.get("settings");

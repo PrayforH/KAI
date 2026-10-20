@@ -171,16 +171,18 @@ html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) .harne
   border-color: var(--codex-muted);
 }
 
-/* Same-document snapshots bridge Studio and the actual task runtime. */
-::view-transition-group(project-composer) { animation-duration: 360ms; animation-timing-function: cubic-bezier(.22, 1, .36, 1); }
-::view-transition-old(project-composer) { animation: project-composer-out 160ms ease both; mix-blend-mode: normal; }
-::view-transition-new(project-composer) { animation: project-composer-in 240ms ease both; mix-blend-mode: normal; }
-::view-transition-group(project-sidebar) { animation-duration: 360ms; }
-::view-transition-old(project-sidebar), ::view-transition-new(project-sidebar) { animation: none; mix-blend-mode: normal; }
-::view-transition-old(project-resources) { animation: project-resources-out 280ms cubic-bezier(.22, 1, .36, 1) both; }
-@keyframes project-composer-out { to { opacity: 0; } }
-@keyframes project-composer-in { from { opacity: 0; } }
-@keyframes project-resources-out { to { opacity: 0; transform: translateX(48px); } }
+/* Keep navigation steady: only the composer moves and the resources slide out. */
+html[data-project-task-transition]::view-transition-old(root) { animation: project-page-out 120ms ease both; }
+html[data-project-task-transition]::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+::view-transition-group(project-composer) { animation-duration: 260ms; animation-timing-function: cubic-bezier(.22, 1, .36, 1); }
+::view-transition-old(project-composer) { animation: project-page-out 100ms ease both; mix-blend-mode: normal; }
+::view-transition-new(project-composer) { animation: none; mix-blend-mode: normal; }
+::view-transition-group(project-sidebar) { animation-duration: 0s; }
+::view-transition-old(project-sidebar) { animation: none; opacity: 0; }
+::view-transition-new(project-sidebar) { animation: none; mix-blend-mode: normal; }
+::view-transition-old(project-resources) { animation: project-resources-out 180ms cubic-bezier(.22, 1, .36, 1) both; }
+@keyframes project-page-out { to { opacity: 0; } }
+@keyframes project-resources-out { to { opacity: 0; transform: translateX(28px); } }
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation-duration: 0s; }
 }

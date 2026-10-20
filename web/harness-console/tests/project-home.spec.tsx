@@ -40,7 +40,7 @@ const mock = vi.hoisted(() => ({
   ],
 }));
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: mock.push }),
+  useRouter: () => ({ push: mock.push, prefetch: vi.fn() }),
   useSearchParams: () => new URLSearchParams(window.location.search),
 }));
 vi.mock("../src/components/auth-provider", () => ({
