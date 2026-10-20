@@ -51,6 +51,7 @@ export function startProjectTaskTransition(threadId: string, navigate: () => voi
   current.cancel = () => { transition?.skipTransition(); clean(); };
   // Slow navigation falls back to the live loading UI rather than freezing it.
   const timeout = window.setTimeout(current.cancel, 1200);
+  current.ready = () => { window.clearTimeout(timeout); ready(); };
   try {
     transition = doc.startViewTransition(async () => {
       navigated = true;

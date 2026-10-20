@@ -91,3 +91,15 @@ it("cancels an older handoff without leaving named snapshots or global styles be
   expect(document.querySelector<HTMLElement>("form")!.style.viewTransitionName).toBe("");
   expect(document.documentElement.hasAttribute("data-project-task-transition")).toBe(false);
 });
+
+it("does not cut off animation when the destination becomes ready near the loading deadline", async () => {
+  const transition = mockTransition();
+  startProjectTaskTransition("near-deadline", () => {});
+  await vi.advanceTimersByTimeAsync(1100);
+  revealProjectTaskTransition("near-deadline");
+  await transition.paint();
+  await vi.advanceTimersByTimeAsync(500);
+  expect(transition.skip).not.toHaveBeenCalled();
+  transition.finish();
+  await Promise.resolve();
+});
