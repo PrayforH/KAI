@@ -117,8 +117,18 @@ async def test_provisions_an_isolated_default_for_each_user() -> None:
     assert repeated == first
     assert second_user is not None
     assert second_user.owner_user_id == "user-2"
-    assert await registry.list_for_user("tenant-a", "user-1") == [first]
-    assert await registry.list_for_user("tenant-a", "user-2") == [second_user]
+    for user in ("user-1", "user-2"):
+        versions = await registry.list_for_user("tenant-a", user)
+        assert len(versions) == 4
+        assert {item.name for item in versions} == {
+            "lead-agent", "general-researcher", "general-analyst", "general-reviewer",
+        }
+        for child in (item for item in versions if item.name != "lead-agent"):
+            assert child.agent_id is None
+            assert child.snapshot["manifest"]["metadata"]["labels"]["visibility"] == "internal"
+            assert child.snapshot["manifest"]["spec"]["subagents"] == []
+    with pytest.raises(NotFoundError):
+        await registry.get("tenant-b", "user-1", "general-analyst", "1.0.0")
 
 
 @pytest.mark.asyncio
@@ -379,3 +389,34 @@ async def test_default_agent_skips_catalog_only_skill_assets() -> None:
         if item.get("size_bytes") == 0
     ]
     assert ("skill-creator", "scripts/__init__.py") in zero_byte
+
+
+@pytest.mark.asyncio
+async def test_platform_helpers_publish_before_lead_without_studio_identities() -> None:
+    from unittest.mock import AsyncMock
+
+    identities = AsyncMock()
+    identities.get_or_create_personal_agent_id.return_value = "lead-id"
+    registry = InMemoryAgentRegistry()
+    service = AgentService(
+        registry, clock=lambda: NOW, environment="production",
+        default_manifest_path="agents/lead-agent/agent.yaml", agent_ids=identities,
+    )
+    order = []
+
+    async def guard(tenant, owner, snapshot, package_hash):
+        order.append(snapshot.manifest.metadata.name)
+        for binding in snapshot.manifest.spec.subagents:
+            name, _, version = binding.ref.rpartition("@")
+            child = await registry.get(tenant, owner, name, version)
+            assert child.agent_id is None
+
+    service.publication_guard = guard
+    lead = await service.ensure_user_default("tenant-a", "owner")
+    assert lead is not None and lead.agent_id == "lead-id"
+    assert order == ["general-researcher", "general-analyst", "general-reviewer", "lead-agent"]
+    identities.get_or_create_personal_agent_id.assert_awaited_once_with(
+        "tenant-a", "owner", "lead-agent"
+    )
+    await service.ensure_user_default("tenant-a", "owner")
+    assert len(order) == 4

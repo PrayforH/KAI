@@ -13,7 +13,6 @@ export { activeElapsedMs } from "../lib/run-elapsed";
 import {
   reduceRunViewModel,
   type RunPhase,
-  type RunTaskNode,
   type RunCitation,
   type RunToolNode,
   type RunViewModel,
@@ -26,6 +25,7 @@ import { useRunDetails } from "./run-details-context";
 import { isResponseBoundary, isStableReasoningBlockId } from "../lib/process-boundary";
 import { SteeringUserMessage } from "./steering-user-message";
 import { ProcessDisclosure } from "./process-disclosure";
+import { SubagentProgress } from "./subagent-progress";
 import { CompactionProgressIndicator } from "./compaction-progress";
 import { useDetailedProcess } from "../lib/process-display-preference";
 import { attachConversationScroll } from "../lib/conversation-scroll";
@@ -105,7 +105,6 @@ interface ProcessNode {
 type RawTimelineNode =
   | { kind: "commentary"; sequence: number; commentary: CommentaryNode }
   | { kind: "process"; sequence: number; process: ProcessNode }
-  | { kind: "task"; sequence: number; task: RunTaskNode }
   | { kind: "tool"; sequence: number; tool: RunToolNode };
 
 type ActionIconKind = "system" | "model" | "terminal" | "edit" | "search" | "agent" | "result";
@@ -346,9 +345,6 @@ function rawTimeline(view: RunViewModel, includePending: boolean): RawTimelineNo
         commentary,
       }),
     ),
-    ...view.tasks.map(
-      (task): RawTimelineNode => ({ kind: "task", sequence: task.sequence, task }),
-    ),
     ...view.tools.map(
       (tool): RawTimelineNode => ({ kind: "tool", sequence: tool.sequence, tool }),
     ),
@@ -528,23 +524,6 @@ function toolAction(tools: readonly RunToolNode[]): ActionNode {
   };
 }
 
-function taskAction(tasks: readonly RunTaskNode[]): ActionNode {
-  const aliases = tasks
-    .map((task) => task.alias ?? task.title)
-    .filter((value, index, values) => values.indexOf(value) === index);
-  return {
-    id: `tasks:${tasks[0]?.id}`,
-    label:
-      tasks.length === 1
-        ? `${tasks[0].status === "running" ? "正在运行" : "运行了"}子任务 ${aliases[0]}`
-        : `运行了 ${tasks.length} 个子任务`,
-    detail: tasks.length > 1 ? aliases.join(" · ") : undefined,
-    icon: "agent",
-    status: combinedStatus(tasks.map((task) => task.status)),
-    sequence: tasks[0]?.sequence ?? 0,
-  };
-}
-
 function activityHeading(view: RunViewModel) {
   return phaseLabels[view.phase];
 }
@@ -580,9 +559,6 @@ function displayTimeline(view: RunViewModel, detailed = false, includePending = 
       if (entry.kind === "tool") return {
         kind: "action", sequence: entry.sequence,
         action: { ...toolAction([entry.tool]), label: completeToolSentence(entry.tool) },
-      };
-      if (entry.kind === "task") return {
-        kind: "action", sequence: entry.sequence, action: taskAction([entry.task]),
       };
       return { kind: "action", sequence: entry.sequence, action: processAction([entry.process]) };
     });
@@ -627,17 +603,7 @@ function displayTimeline(view: RunViewModel, detailed = false, includePending = 
       index = cursor;
       continue;
     }
-    const group = [current.task];
-    let cursor = index + 1;
-    while (cursor < raw.length) {
-      const candidate = raw[cursor];
-      if (candidate.kind !== "task") break;
-      group.push(candidate.task);
-      cursor += 1;
-    }
-    const action = taskAction(group);
-    display.push({ kind: "action", sequence: action.sequence, action });
-    index = cursor;
+
   }
   return display;
 }
@@ -844,6 +810,7 @@ export function ActivitySummary({
         {hasContent && <span className="execution-chevron"><CodexResponseIcon name="chevronDown" /></span>}
       </Disclosure>
       <CompactionProgressIndicator view={view} />
+      <SubagentProgress tasks={view.tasks} active={active} />
       {publicationNotice?.summary && <p className="execution-publication-notice" role="status">{publicationNotice.summary}</p>}
       {active && progressText && <p className="execution-publication-notice" role="status">{progressText}</p>}
       {runDetails && detailsAvailable ? (

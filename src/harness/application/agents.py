@@ -7,7 +7,7 @@ import shutil
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Literal
+from typing import Literal, cast
 
 import yaml
 
@@ -50,6 +50,7 @@ class AgentService:
             Path(default_manifest_path) if default_manifest_path is not None else None
         )
         self._default_report: AgentPackageReport | None = None
+        self._default_children: tuple[AgentPackageReport, ...] = ()
         self._default_platform_digest: str | None = None
         self._agent_ids = agent_ids
         self.publication_guard: Callable[[str, str, AgentManifestSnapshot, str | None],
@@ -158,6 +159,25 @@ class AgentService:
             self._default_report = self._build_default_report()
             self._default_platform_digest = self._platform_catalog_digest()
         report = self._default_report
+        # Provision immutable, owner-scoped dependencies before exposing the lead.
+        # Internal helpers have no Studio identity/draft and cannot become a
+        # second user-managed agent catalog merely by using the default assistant.
+        for child in self._default_children:
+            metadata = child.snapshot.manifest.metadata
+            existing = next(
+                (item for item in existing_versions
+                 if item.name == metadata.name and item.version == metadata.version),
+                None,
+            )
+            if existing is not None:
+                if (existing.status is not AgentVersionStatus.PUBLISHED
+                        or existing.manifest_hash != child.snapshot.content_hash):
+                    raise ConflictError("platform helper version conflicts with existing content")
+                continue
+            await self._publish_snapshot(
+                tenant_id, owner_user_id, child.snapshot,
+                package_hash=child.package_hash, create_identity=False,
+            )
         snapshot = report.snapshot
         name = snapshot.manifest.metadata.name
         version = snapshot.manifest.metadata.version
@@ -196,6 +216,7 @@ class AgentService:
         revision provisions as a new immutable version without manual bumps.
         """
 
+        assert self._default_manifest_path is not None
         catalog = default_platform_skill_catalog()
         digest = self._platform_catalog_digest()
         with TemporaryDirectory(prefix="default-agent-platform-") as temp:
@@ -203,6 +224,23 @@ class AgentService:
             shutil.copytree(self._default_manifest_path.parent, root)
             manifest_path = root / self._default_manifest_path.name
             manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+            children: list[AgentPackageReport] = []
+            for binding in cast(list[dict[str, str]], manifest["spec"].get("subagents") or []):
+                name, separator, version = binding["ref"].rpartition("@")
+                if not separator or Path(name).name != name:
+                    raise AgentBundleValidationError("invalid platform helper reference")
+                child = check_agent_package(
+                    self._default_manifest_path.parent.parent / name / "agent.yaml",
+                    environment="production",
+                )
+                metadata = child.snapshot.manifest.metadata
+                if (metadata.name != name or metadata.version != version
+                        or metadata.labels.get("visibility") != "internal"
+                        or metadata.labels.get("managed-by") != "platform-default"
+                        or child.snapshot.manifest.spec.subagents):
+                    raise AgentBundleValidationError("invalid platform helper boundary")
+                children.append(child)
+            self._default_children = tuple(children)
             entries = list(manifest["spec"].get("skills") or [])
             for package in catalog.packages:
                 if package.package_id in CATALOG_ONLY_SKILLS:
@@ -341,12 +379,13 @@ class AgentService:
         *,
         package_hash: str | None = None,
         agent_id: str | None = None,
+        create_identity: bool = True,
     ) -> AgentVersion:
         if self.publication_guard is not None:
             await self.publication_guard(tenant_id, owner_user_id, snapshot, package_hash)
         manifest = snapshot.manifest
         resolved_agent_id = agent_id
-        if resolved_agent_id is None and self._agent_ids is not None:
+        if create_identity and resolved_agent_id is None and self._agent_ids is not None:
             resolved_agent_id = await self._agent_ids.get_or_create_personal_agent_id(
                 tenant_id, owner_user_id, manifest.metadata.name
             )
