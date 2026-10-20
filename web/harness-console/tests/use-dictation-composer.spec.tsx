@@ -121,5 +121,10 @@ test("batch result waits for IME composition without losing either input", async
   const input = await mount("前旧文字后"); input.setSelectionRange(1, 4); act(() => callbacks.onActive(true));
   composing.current = true; act(() => { callbacks.onRecorded("整段语音"); callbacks.onActive(false); });
   expect(input.value).toBe("前旧文字后"); act(() => setText("前中文输入后")); composing.current = false;
-  act(() => callbacks.onCompositionEnd()); expect(input.value).toBe("前中文输入整段语音后");
+  await act(async () => {
+    callbacks.onCompositionEnd();
+    // The final browser input can follow compositionend in the same turn.
+    setText("前最终中文后");
+  });
+  expect(input.value).toBe("前最终中文整段语音后");
 });
