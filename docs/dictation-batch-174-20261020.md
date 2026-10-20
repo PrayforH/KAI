@@ -21,4 +21,21 @@
 - 174 容器到现有 Qwen3-ASR-1.7B 网关，两段 macOS Tingting 合成中文音频各调用两次：10.588 秒样本耗时 0.278 / 0.227 秒；38.336 秒样本耗时 0.592 / 0.387 秒。长样本覆盖完整开头和结尾，保留一千二百元、不要、API、MCP 等内容，存在“第四。”这类标点误差。
 - 上述时间是单请求环境的网关往返实测，可能受服务缓存影响，不是浏览器端总延迟、并发指标或真人识别准确率。未使用用户麦克风。
 
-部署与正式浏览器验收结果在完成后补充。
+## 174 部署与正式页面验证
+
+- 入口：https://172.20.109.174/；3301、3501 同步发布，HTTPS 返回 200。
+- Web：`agent-studio-web:dictation-20261020-r39`，实现提交 `a54aaf5b`，镜像 ID `sha256:cb33fb2f6076d99ebe445c7ec62256282172fe1983bdcf4ff981f17959b397a6`。
+- API：`kai/projects-api:dictation-20261020-r38`，文件实现为 `452f0d95`，之后只压平镜像；当前和回滚镜像均为 1 层。API、两个 Web 与三个原 r35 Worker 均 healthy，restart=0。
+- 生产配置显式使用 `HARNESS_DICTATION_ENGINE=gateway`、`HARNESS_DICTATION_GATEWAY_MODEL=Qwen3-ASR-1.7B`。120 秒录音限制保持不变。压平后正式 API 再次成功处理 38.336 秒音频，往返 0.492 秒。
+
+使用独立 Chrome 测试上下文、专用 QA 登录和合成音频虚拟麦克风，在正式 HTTPS 页面验证：录音期间零转写请求、草稿不变；确认后只有一次 `/transcribe` 请求，麦克风轨道全部结束，识别结果一次回填；没有 `/refine` 或自动任务请求。正式页 10.588 秒样本录制约 11.5 秒后停止，点击确认至回填约 626 ms（单次观测，不代表延迟承诺）。
+
+另验证取消保留草稿；人为模拟一次 503 后，重试复用等长完整音频，不再打开麦克风；390 px 窄屏取消、确认均可见；录音期间隐藏发送按钮，回填后恢复。无浏览器页面运行错误。验证结果与截图见 [browser.json](results/dictation-batch-174-20261020/browser.json)、[录音](results/dictation-batch-174-20261020/recording.png)、[回填](results/dictation-batch-174-20261020/transcribed.png)、[窄屏](results/dictation-batch-174-20261020/mobile.png)。
+
+构建说明：本机原共享 node_modules 与锁文件版本不一致，未将其本地构建用于发布。最终在独立临时目录执行锁文件 `npm ci`，用 Next.js 16.3.8 生产构建，语音相关 50 项测试再次通过。服务端 npm 下载失败后，采用该构建的 JavaScript/静态产物与 r35 已验证的 Linux 运行时组合；复制前校验完整 package.json SHA256 一致，包与锁文件相对 r35 无变更，保留 Linux 依赖，没有把 macOS 原生依赖放进生产镜像。
+
+测试使用的登录会话、预览容器和中间 r37 Web 镜像在验收后清理；回滚保留 r35 Web 和压平后的 r35 API。
+
+## develop 集成验证
+
+基于 `b37525b8`，仅移植 `452f0d95`、`cfa29044`、`a54aaf5b` 的听写实现及本页验收记录；不包含项目空间、通用子智能体和 Docker 清理改动。合并后重新执行前端 50 项、后端 22 项语音测试，全部通过。本次集成不修改部署环境的模型配置。
