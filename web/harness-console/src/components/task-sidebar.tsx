@@ -436,7 +436,7 @@ export function TaskSidebar({
             onClick={() => void toggleTaskPin(task)} disabled={Boolean(updatingThreadId)}
             aria-label={`${task.pinned_at ? "取消置顶" : "置顶"} ${task.title}`}
             aria-pressed={Boolean(task.pinned_at)} title={task.pinned_at ? "取消置顶" : "置顶"}>
-            <CodexTaskIcon name={task.pinned_at ? "pinFilled" : "pin"} />
+            <CodexTaskIcon name="pin" />
           </button>
           <TaskHeaderActions task={task} variant="row" projects={projects}
             onForked={onSelect} onArchived={() => { if (task.thread_id === currentThreadId) onNewTask(); }} />
