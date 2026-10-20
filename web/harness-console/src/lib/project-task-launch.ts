@@ -16,6 +16,12 @@ export function armProjectTaskLaunch(
     /* in-memory launch still works */
   }
 }
+export function hasPendingProjectTaskLaunch(userId: string, threadId: string) {
+  const id = key(userId, threadId);
+  try { return pending.has(id) || sessionStorage.getItem(id) === "1"; }
+  catch { return pending.has(id); }
+}
+
 export function consumeProjectTaskLaunch(userId: string, threadId: string) {
   const id = key(userId, threadId);
   let armed = pending.delete(id);

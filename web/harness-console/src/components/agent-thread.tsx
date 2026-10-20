@@ -134,7 +134,7 @@ import {
 import { submitUiAction } from "./intelligent-ui/client";
 import { modelBlockSources, presentationsForMessage } from "./intelligent-ui/schema";
 import { PublishedBlocksProvider } from "./intelligent-ui/turn-context";
-import { consumeProjectTaskLaunch } from "../lib/project-task-launch";
+import { hasPendingProjectTaskLaunch, consumeProjectTaskLaunch } from "../lib/project-task-launch";
 import { useProjectTaskLaunch } from "./use-project-task-launch";
 import { useTaskComposerSnapshot } from "./task-composer-draft";
 import { VoiceInput } from "./voice-input";
@@ -979,7 +979,9 @@ export function UserTaskWelcome() {
   const { selected } = useContext(AgentSelectionContext);
   // While the stored conversation is loading the thread is empty by definition,
   // so the welcome would flash and be replaced a moment later.
-  if (!useThreadHistoryReady()) return null;
+  const historyReady = useThreadHistoryReady();
+  const launchScope = useContext(ComposerDraftContext);
+  if (!historyReady || (launchScope && hasPendingProjectTaskLaunch(launchScope.userId, launchScope.threadId))) return null;
   return (
     <ThreadWelcome.Root className="user-task-welcome">
       <ThreadWelcome.Center className="user-task-hero">

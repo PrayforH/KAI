@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useAuth } from "./auth-provider";
 import { useConfirmationDialog } from "./confirmation-dialog";
+import { startProjectTaskTransition } from "../lib/project-task-transition";
 import { armProjectTaskLaunch } from "../lib/project-task-launch";
 import { createUserScopedStorage } from "../lib/thread-store";
 import { saveTaskModelOverride } from "../lib/task-model-catalog";
@@ -45,7 +46,9 @@ export function useProjectSpace(
 ) {
   const { user } = useAuth();
   const router = useRouter();
-  const urlTab = useSearchParams().get("tab");
+  const searchParams = useSearchParams();
+  const urlTab = searchParams.get("tab");
+  const urlSettings = searchParams.get("settings");
   const [tab, setTab] = useState(initialTab);
   useEffect(() => setTab(projectTab(urlTab)), [urlTab]);
   const [resources, setResources] = useState<ApiProjectResources | null>(null);
@@ -73,7 +76,16 @@ export function useProjectSpace(
   const [dialog, setDialog] = useState<
     "files" | "knowledge" | "skills" | "connectors" | "instructions" | null
   >(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpenState] = useState(urlSettings === "1");
+  useEffect(() => { setSettingsOpenState(urlSettings === "1"); }, [urlSettings]);
+  function setSettingsOpen(open: boolean) {
+    setSettingsOpenState(open);
+    if (!open && new URLSearchParams(window.location.search).has("settings")) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("settings");
+      window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+    }
+  }
   const [name, setName] = useState("");
   const [instructions, setInstructions] = useState("");
   const [saving, setSaving] = useState(false);
@@ -203,6 +215,7 @@ export function useProjectSpace(
     createLock.current = true;
     setCreating(true);
     setError("");
+    let navigating = false;
     try {
       const task = await createProjectTask(projectId, selectedAgent);
       try {
@@ -213,12 +226,12 @@ export function useProjectSpace(
       }
       if (prompt.trim())
         armProjectTaskLaunch(user.user_id, task.thread_id, prompt.trim());
-      router.push(`/?thread=${encodeURIComponent(task.thread_id)}`);
+      navigating = true;
+      startProjectTaskTransition(task.thread_id, () => router.push(`/?thread=${encodeURIComponent(task.thread_id)}`));
     } catch (cause) {
       setError(errorText(cause));
     } finally {
-      createLock.current = false;
-      setCreating(false);
+      if (!navigating) { createLock.current = false; setCreating(false); }
     }
   }
   async function loadMore() {

@@ -196,6 +196,8 @@ afterEach(() => {
 it("opens an independent organizing home without creating a task or mounting a conversation", async () => {
   await act(async () => root.render(<ProjectHome projectId="project-1" />));
   expect(host.querySelector("h1")?.textContent).toBe("季度分析");
+  expect(host.querySelector('[aria-label="刷新项目"]')).toBeNull();
+  expect([...host.querySelectorAll("button")].some(button => button.textContent === "项目设置")).toBe(false);
   expect(host.querySelector('[role="tablist"]')).toBeNull();
   expect(host.textContent).toContain("文件和资源");
   expect(host.textContent).toContain("连接器");
@@ -316,7 +318,8 @@ it("restores an archived project without changing the published Agent", async ()
   });
   mock.update.mockResolvedValue(project);
   await act(async () => root.render(<ProjectHome projectId="project-1" />));
-  await click("项目设置");
+  window.history.replaceState(null, "", "/studio/projects/project-1?settings=1");
+  await act(async () => root.render(<ProjectHome projectId="project-1" />));
   await click("恢复项目");
   expect(mock.update).toHaveBeenCalledWith("project-1", { archived: false });
   expect(host.textContent).toContain("项目已恢复");
@@ -354,6 +357,8 @@ it("saves project instructions without renaming the project or changing Agent co
   });
   expect(host.querySelector('[role="dialog"]')).toBeNull();
   expect(host.querySelector("h1")?.textContent).toBe("季度分析");
+  expect(host.querySelector('[aria-label="刷新项目"]')).toBeNull();
+  expect([...host.querySelectorAll("button")].some(button => button.textContent === "项目设置")).toBe(false);
 });
 
 

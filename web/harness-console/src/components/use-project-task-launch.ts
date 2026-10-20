@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { waitForProjectTaskTransition } from "../lib/project-task-transition";
 import { tryProjectTaskLaunch } from "../lib/project-task-launch";
 
 /** A launch must survive loading/remounts until the shared composer accepts it. */
@@ -13,6 +14,10 @@ export function useProjectTaskLaunch(
   sendRef.current = send;
   useEffect(() => {
     if (!scope || !ready) return;
-    void tryProjectTaskLaunch(scope.userId, scope.threadId, () => sendRef.current());
+    let active = true;
+    void waitForProjectTaskTransition(scope.threadId).then(() => {
+      if (active) void tryProjectTaskLaunch(scope.userId, scope.threadId, () => sendRef.current());
+    });
+    return () => { active = false; };
   }, [scope, ready]);
 }

@@ -78,27 +78,6 @@ export function ProjectHome({
   const closePanel = () => chooseTab("overview");
   return (
     <div className={styles.page}>
-      <div className={styles.homeToolbar}>
-        <span className={styles.eyebrow}>
-          项目{project.archivedAt ? " · 已归档" : ""}
-        </span>
-        <div className={styles.actions}>
-          <button
-            className={styles.textLink}
-            onClick={() => void reload()}
-            aria-label="刷新项目"
-          >
-            刷新
-          </button>
-          <button
-            className={styles.button}
-            aria-expanded={settingsOpen}
-            onClick={() => setSettingsOpen(true)}
-          >
-            项目设置
-          </button>
-        </div>
-      </div>
       <div className={styles.workspace}>
         <main className={styles.projectMain}>
           <div className={styles.projectScroll} aria-label="项目任务列表">

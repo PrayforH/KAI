@@ -686,6 +686,9 @@ export function TaskSidebar({
                           <Link role="menuitem" href={projectHref(project.projectId)} onClick={() => setProjectMenuId(null)}>
                             <ProjectFolderIcon /><span>查看项目</span>
                           </Link>
+                          <Link role="menuitem" href={`${projectHref(project.projectId)}?settings=1`} onClick={() => setProjectMenuId(null)}>
+                            <span>项目设置</span>
+                          </Link>
                           <button
                             type="button"
                             role="menuitem"

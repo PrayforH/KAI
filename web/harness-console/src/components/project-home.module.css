@@ -360,18 +360,6 @@
   overflow: hidden;
   flex-direction: column;
 }
-.homeToolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  min-height: 36px;
-  margin-bottom: 42px;
-}
-.homeToolbar .eyebrow {
-  margin: 0;
-}
-
 .projectMark {
   display: grid;
   place-items: center;
@@ -631,9 +619,6 @@
   .projectMain {
     min-height: min(640px, calc(100dvh - 150px));
     overflow: visible;
-  }
-  .homeToolbar {
-    margin-bottom: 30px;
   }
   .header {
     flex-direction: row;

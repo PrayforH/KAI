@@ -30,7 +30,7 @@ export function ProjectComposer({ space }: { space: ProjectSpaceState }) {
   if (!project) return null;
   const locked = creating || Boolean(project.archivedAt);
   const canSend = !locked && !voiceActive && Boolean(selectedAgent) && Boolean(draft.trim());
-  return <div className={`${styles.projectComposer} harness-composer-shell`}>
+  return <div className={`${styles.projectComposer} harness-composer-shell`} data-project-launch-composer>
     <TaskModelProvider routes={routes} agentDefaultRouteId={selectedAgent?.modelRoute ?? null}
       overrideRouteId={model} onOverrideChange={setModel}>
       <form className="aui-composer-root" aria-label="在项目中开始任务"

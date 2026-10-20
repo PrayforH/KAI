@@ -36,7 +36,7 @@ export function ProjectContextRail({ space }: { space: ProjectSpaceState }) {
   }, []);
   if (!project || !resources) return null;
   return (
-    <aside className={styles.contextRail} aria-label="项目配置与成果">
+    <aside data-project-resources className={styles.contextRail} aria-label="项目配置与成果">
       <section className={styles.contextCard}>
         <button
           className={styles.cardHeading}
