@@ -58,8 +58,10 @@ async def list_agents(
     container: Annotated[ApiContainer, Depends(get_container)],
 ) -> list[AgentCatalogItem]:
     ensure_permission(identity, "tasks:read")
-    versions, personal_agents, shared_agents = await asyncio.gather(
-        container.agents.list_published_catalog(identity.tenant_id, identity.user_id),
+    # Provisioning can advance the default's current-version pointer. Read
+    # identities afterwards so the first page load sees the new release too.
+    versions = await container.agents.list_published_catalog(identity.tenant_id, identity.user_id)
+    personal_agents, shared_agents = await asyncio.gather(
         container.workspace_agents.list_personal_agents(identity.tenant_id, identity.user_id),
         container.team_spaces.list_accessible_agents(identity.tenant_id, identity.user_id),
     )

@@ -274,8 +274,8 @@ export async function loadTaskAgentCatalog(
   // A platform sync can publish a new immutable coordinate while the web
   // container still has an older default. Prefer the caller's current release
   // over manufacturing a coordinate which is absent from the registry.
-  const runtimeMatch = runtimeCandidates.find(agent => agent.version === runtime.version)
-    ?? runtimeCandidates.find(agent => agent.currentVersion === agent.version)
+  const runtimeMatch = runtimeCandidates.find(agent => agent.currentVersion === agent.version)
+    ?? runtimeCandidates.find(agent => agent.version === runtime.version)
     ?? (runtimeCandidates.length === 1 ? runtimeCandidates[0] : undefined);
   const defaultAgent = runtimeMatch ?? {
     name: runtime.name,
