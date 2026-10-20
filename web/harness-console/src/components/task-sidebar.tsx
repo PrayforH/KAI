@@ -74,23 +74,6 @@ function PinIcon() {
   );
 }
 
-function FilesIcon() {
-  return (
-    <svg viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M3 3.5h4l1.4 1.8H13v7.2H3z" />
-      <path d="M5.2 8.2h5.6M5.2 10.4h3.8" />
-    </svg>
-  );
-}
-
-function TriggerIcon() {
-  return (
-    <svg viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M5 3.4 12 8l-7 4.6z" />
-    </svg>
-  );
-}
-
 function TrashIcon() {
   return (
     <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -686,21 +669,6 @@ export function TaskSidebar({
                           <Link role="menuitem" href={projectHref(project.projectId)} onClick={() => setProjectMenuId(null)}>
                             <ProjectFolderIcon /><span>查看项目</span>
                           </Link>
-                          <Link role="menuitem" href={`${projectHref(project.projectId)}?settings=1`} onClick={() => setProjectMenuId(null)}>
-                            <span>项目设置</span>
-                          </Link>
-                          <button
-                            type="button"
-                            role="menuitem"
-                            disabled={!onNewTaskWithProject || creatingProjectId !== null}
-                            onClick={() => {
-                              setProjectMenuId(null);
-                              void startProjectTask(project);
-                            }}
-                          >
-                            <TriggerIcon />
-                            <span>新建任务</span>
-                          </button>
                           <button
                             type="button"
                             role="menuitem"
@@ -721,10 +689,6 @@ export function TaskSidebar({
                         </div>
                       )}
                     </div>
-                    <Link className="task-project-files" href={projectHref(project.projectId, "results")}
-                      aria-label={`查看 ${project.name} 的文件`} title="查看项目成果">
-                      <FilesIcon />
-                    </Link>
                     <button
                         type="button"
                         className="task-project-add"

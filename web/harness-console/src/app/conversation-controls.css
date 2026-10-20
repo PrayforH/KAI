@@ -187,3 +187,12 @@ html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) .harne
 
 /* Reserve the message area while a project prompt is handed to the runtime. */
 .project-launch-space { flex: 1 0 0; min-height: 0; }
+
+/* Project actions use bare glyphs; retain the existing keyboard focus outline. */
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) .task-project-add,
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) .task-project-add:hover,
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) [data-project-launch-composer] .aui-composer-attach,
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) [data-project-launch-composer] .aui-composer-attach:hover {
+  background: transparent;
+  box-shadow: none;
+}

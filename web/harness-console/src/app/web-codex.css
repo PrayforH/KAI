@@ -561,7 +561,7 @@ body.codex-theme-v1:has(.console-shell) .task-list-scroll .task-list {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 30px;
-  padding: 4px 90px 4px 8px;
+  padding: 4px 62px 4px 8px;
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr);
   align-items: center;
