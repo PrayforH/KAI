@@ -4,18 +4,17 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { ConversationInputCard } from "../src/components/conversation-input-card";
 
-const mocks = vi.hoisted(() => ({ refine: vi.fn(), draft: undefined as ((text: string) => void) | undefined }));
-vi.mock("../src/lib/dictation-audio", () => ({ PcmRecorder: class {
-  async start() {} async stop() {} release() {}
-} }));
-vi.mock("../src/lib/dictation-client", () => ({
-  dictationRequest: async (path: string, init?: RequestInit) => {
-    if (path === "/capabilities") return { enabled: true, mode: "realtime", maxSessionSeconds: 120 };
-    mocks.refine(JSON.parse(init!.body as string)); return { text: "语音回答", status: "refined" };
+const mocks = vi.hoisted(() => ({ transcribe: vi.fn() }));
+vi.mock("../src/lib/dictation-audio", async original => ({
+  ...await original<typeof import("../src/lib/dictation-audio")>(), PcmRecorder: class {
+    async start(onData: (s: Float32Array) => void) { onData(new Float32Array(16000)); }
+    async stop() {} release() {}
   },
-  DictationStream: class {
-    constructor(onText: (text: string) => void) { mocks.draft = onText; }
-    async start() {} send() {} cancel() {} async finish() { return { text: "语音草稿" }; }
+}));
+vi.mock("../src/lib/dictation-client", () => ({
+  dictationRequest: async (path: string) => {
+    if (path === "/capabilities") return { enabled: true, maxSessionSeconds: 120 };
+    mocks.transcribe(path); return { text: "语音回答" };
   },
 }));
 let root: Root; let host: HTMLDivElement;
@@ -40,19 +39,18 @@ function type(text: string) {
 it("inserts at the current selection, keeps controls in the card and waits for explicit submission", async () => {
   const {submit, active} = await mount(); const input = type("前旧内容后"); input.setSelectionRange(1, 4);
   await act(async () => button("语音输入").click());
-  act(() => mocks.draft?.("语音草稿"));
-  expect(input.value).toBe("前语音草稿后"); expect(active).toHaveBeenLastCalledWith(true);
+  expect(input.value).toBe("前旧内容后"); expect(active).toHaveBeenLastCalledWith(true);
   expect(host.querySelector(".composer-footer")?.children).toHaveLength(0);
   expect(button("下一题").disabled).toBe(true); expect(button("跳过").disabled).toBe(true);
-  await act(async () => button("停止录音并整理文字").click());
+  await act(async () => button("完成录音并转写").click());
   expect(input.value).toBe("前语音回答后"); expect(active).toHaveBeenLastCalledWith(false);
-  expect(submit).not.toHaveBeenCalled(); expect(mocks.refine).toHaveBeenCalledWith({draft: "语音草稿", model_route: "selected-model"});
+  expect(submit).not.toHaveBeenCalled(); expect(mocks.transcribe).toHaveBeenCalledExactlyOnceWith("/transcribe");
   await act(async () => button("跳过").click());
   expect(submit).toHaveBeenCalledWith(expect.stringContaining("前语音回答后"));
 });
-it("cancels only the live draft and keeps the answer on the correct question", async () => {
+it("cancels recording without changing the draft and keeps the answer on the correct question", async () => {
   const {submit} = await mount(); const input = type("原回答"); input.setSelectionRange(3, 3);
-  await act(async () => button("语音输入").click()); act(() => mocks.draft?.("临时文字"));
+  await act(async () => button("语音输入").click());
   await act(async () => button("取消语音输入").click());
   expect(input.value).toBe("原回答"); expect(submit).not.toHaveBeenCalled();
   act(() => button("下一题").click()); expect(input.value).toBe("");

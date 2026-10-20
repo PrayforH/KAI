@@ -6,6 +6,7 @@ import { DictationEdit, dictationCaret, type DictationPatch } from "../lib/dicta
 export function useDictationComposer(input: RefObject<HTMLTextAreaElement | HTMLInputElement | null>, read: () => string,
   write: (text: string) => void, composing: RefObject<boolean>) {
   const edit = useRef<DictationEdit | undefined>(undefined);
+  const recorded = useRef<{ edit: DictationEdit; text: string } | undefined>(undefined);
   const pending = useRef<{
     element: HTMLTextAreaElement | HTMLInputElement; text: string; start: number; end: number;
     direction: "forward" | "backward" | "none"; top: number; follow: boolean; focus: boolean;
@@ -43,7 +44,22 @@ export function useDictationComposer(input: RefObject<HTMLTextAreaElement | HTML
     write(patch.text);
   }
 
+  function flushRecording() {
+    if (composing.current || !recorded.current) return;
+    const queued = recorded.current;
+    recorded.current = undefined;
+    // compositionend can precede React's final controlled-input update.
+    apply(queued.edit.commitRecording(input.current?.value ?? read(), queued.text), true);
+  }
+
   return {
+    onCompositionEnd: flushRecording,
+    onRecorded(text: string) {
+      if (!edit.current) return;
+      recorded.current = { edit: edit.current, text };
+      edit.current = undefined;
+      flushRecording();
+    },
     onChange(text: string) { pending.current = undefined; edit.current?.observe(text); },
     onActive(active: boolean) {
       if (active) {

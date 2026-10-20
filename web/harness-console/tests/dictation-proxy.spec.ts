@@ -22,7 +22,7 @@ it.each(["vad", "transcribe"])("forwards a valid multi-second WAV upload to %s",
   expect(fetcher).toHaveBeenCalledOnce();
 });
 
-it.each([["sessions/id/audio", 32_001], ["transcribe", 2_000_001], ["refine", 64_001]] as const)(
+it.each([["sessions/id/audio", 32_001], ["transcribe", 300 * 32000 + 65537], ["refine", 64_001]] as const)(
   "rejects oversized %s before contacting the API", async (path, size) => {
     const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
     const response = await proxyDictationRequest(new Request("http://web.test/dictation", {
@@ -32,3 +32,15 @@ it.each([["sessions/id/audio", 32_001], ["transcribe", 2_000_001], ["refine", 64
     expect(fetcher).not.toHaveBeenCalled();
   },
 );
+
+it("forwards a two-minute recording beyond the old fragment limit", async () => {
+  const fetcher = vi.fn(async (_url, init: RequestInit) => {
+    expect((init.body as ArrayBuffer).byteLength).toBe(120 * 32000 + 1024);
+    return Response.json({ text: "完整录音" });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const response = await proxyDictationRequest(new Request("http://web.test/dictation", {
+    method: "POST", body: new Uint8Array(120 * 32000 + 1024),
+  }), config, "transcribe");
+  expect(response.status).toBe(200); expect(fetcher).toHaveBeenCalledOnce();
+});
