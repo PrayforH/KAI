@@ -93,7 +93,7 @@ export function ProjectTaskRows({
           >
             打开任务 →
           </Link>}
-          {compact && <TaskHeaderActions task={task} projects={projects.filter(project => !project.archivedAt)} variant="row" onChanged={onChanged} />}
+          {compact && <TaskHeaderActions task={task} projects={projects.filter(project => !project.archivedAt)} variant="row" showPinControl onChanged={onChanged} />}
         </li>
       ))}
     </ul>

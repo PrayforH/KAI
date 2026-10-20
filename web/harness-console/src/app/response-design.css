@@ -78,3 +78,40 @@ html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer[data-str
 @media (prefers-reduced-motion: reduce) {
   html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer *, body.codex-theme-v1 .assistant-message-controls { transition: none !important; animation: none !important; }
 }
+
+/* The latest reply keeps its time until the pointer reaches the footer control. */
+body.codex-theme-v1 .turn-completion-slot {
+  display: inline-grid;
+  align-items: center;
+  justify-items: center;
+  min-width: 40px;
+  min-height: 26px;
+  margin-left: 8px;
+}
+body.codex-theme-v1 .turn-completion-slot > .turn-completion,
+body.codex-theme-v1 .turn-branch-button { grid-area: 1 / 1; transition: opacity 120ms ease; }
+body.codex-theme-v1 .turn-completion-slot > .turn-completion { margin: 0; }
+body.codex-theme-v1 .turn-branch-button {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--codex-muted);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+}
+body.codex-theme-v1 .turn-completion-slot:is(:hover, :focus-within, [data-branch-pending]) > .turn-completion { opacity: 0; }
+body.codex-theme-v1 .turn-completion-slot:is(:hover, :focus-within, [data-branch-pending]) > .turn-branch-button { opacity: 1; pointer-events: auto; }
+body.codex-theme-v1 .turn-branch-button:hover { background: var(--codex-surface-hover); color: var(--codex-ink); }
+body.codex-theme-v1 .turn-branch-button:focus-visible { outline: 2px solid var(--codex-muted); outline-offset: 2px; }
+body.codex-theme-v1 .turn-branch-button:disabled { cursor: progress; }
+@media (hover: none) {
+  body.codex-theme-v1 .turn-completion-slot { display: inline-flex; gap: 4px; }
+  body.codex-theme-v1 .turn-completion-slot > .turn-branch-button { opacity: 1; pointer-events: auto; }
+  body.codex-theme-v1 .turn-completion-slot > .turn-completion { opacity: 1; }
+}

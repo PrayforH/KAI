@@ -254,11 +254,13 @@ export function TaskHeaderActions({
   onArchived,
   onProjectChanged,
   variant = "header",
+  showPinControl = false,
   onChanged,
   onForked,
 }: {
   task: TaskSummary;
   variant?: "header" | "row";
+  showPinControl?: boolean;
   onChanged?: () => void;
   onForked?: (task: TaskSummary) => void;
   /** Projects the task can be moved into; empty hides the project actions. */
@@ -471,6 +473,11 @@ export function TaskHeaderActions({
   </>;
   return (
     <div className={`task-header-actions${variant === "row" ? " project-task-actions" : ""}`} ref={containerRef}>
+      {showPinControl && <button type="button" className="header-icon-button task-quick-pin"
+        aria-label={`${pinned ? "取消置顶" : "置顶"} ${task.title}`} aria-pressed={pinned}
+        title={pinned ? "取消置顶" : "置顶"} disabled={busy} onClick={togglePinned}>
+        <PinIcon />
+      </button>}
       <button
         type="button"
         ref={triggerRef}

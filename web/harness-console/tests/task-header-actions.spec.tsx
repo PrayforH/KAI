@@ -268,4 +268,15 @@ describe("task header actions", () => {
     expect(onForked).toHaveBeenCalledWith(expect.objectContaining({ thread_id: "branch-1" }));
   });
 
+  it("pins from the project row shortcut without opening the task menu", async () => {
+    const onChanged = vi.fn();
+    render(<TaskHeaderActions task={task()} variant="row" showPinControl onChanged={onChanged} />);
+    const pin = container.querySelector<HTMLButtonElement>('[aria-label="置顶 分析任务"]')!;
+    expect(pin.querySelector('[data-codex-task-icon="pin"]')).not.toBeNull();
+    await act(async () => pin.click());
+    expect(setTaskPinned).toHaveBeenCalledWith("thread-1", true);
+    expect(onChanged).toHaveBeenCalledTimes(1);
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+  });
+
 });

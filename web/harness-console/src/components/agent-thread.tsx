@@ -2,6 +2,7 @@
 import { responseTextForDisplay } from "../lib/process-response";
 import { sendComposerWithRecovery } from "../lib/composer-send";
 import { TerminalResponseNotice } from "./terminal-response-notice";
+import { TurnCompletionControl } from "./turn-completion";
 import { FollowupInputPlacement } from "./followup-input-placement";
 import { latestConversationInput } from "../lib/conversation-input";
 import { useConversationScope } from "../lib/conversation-scope";
@@ -1583,6 +1584,9 @@ export function HarnessAssistantMessage() {
 }
 
 function TurnCompletion() {
+  const draftScope = useContext(ComposerDraftContext);
+  const conversationScope = useConversationScope();
+  const threadRunning = useAuiState((state) => state.thread.isRunning);
   const content = useAuiState((state) => state.message.content);
   const isLast = useAuiState((state) => state.message.isLast);
   const observed = useRunViewModel();
@@ -1592,11 +1596,8 @@ function TurnCompletion() {
   const activity = parsed?.success ? parsed.data : null;
   const view = activity ? reduceRunViewModel(undefined, activity) : isLast && observed && messageOwnsRun(messageId, observed.runId) ? observed : null;
   if (!view || view.phase !== "completed") return null;
-  const date = new Date(view.updatedAt);
-  if (!Number.isFinite(date.getTime())) return null;
-  return <time className="turn-completion" dateTime={view.updatedAt} title={date.toLocaleString("zh-CN")}>
-    {date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false })}
-  </time>;
+  return <TurnCompletionControl completedAt={view.updatedAt}
+    branchScope={isLast && !conversationScope && !threadRunning && !selectComposerDisabled(observed) ? draftScope : null} />;
 }
 
 function HarnessBranchPicker() {
