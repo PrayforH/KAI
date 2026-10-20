@@ -105,7 +105,7 @@ body.codex-theme-v1 .turn-branch-button {
   opacity: 0;
   pointer-events: none;
 }
-body.codex-theme-v1 .turn-completion-slot:is(:hover, :focus-within, [data-branch-pending]) > .turn-completion { opacity: 0; }
+body.codex-theme-v1 .turn-completion-slot:is(:hover, :focus-within, [data-branch-pending]) > .turn-completion { opacity: 0; pointer-events: none; }
 body.codex-theme-v1 .turn-completion-slot:is(:hover, :focus-within, [data-branch-pending]) > .turn-branch-button { opacity: 1; pointer-events: auto; }
 body.codex-theme-v1 .turn-branch-button:hover { background: var(--codex-surface-hover); color: var(--codex-ink); }
 body.codex-theme-v1 .turn-branch-button:focus-visible { outline: 2px solid var(--codex-muted); outline-offset: 2px; }
