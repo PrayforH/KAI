@@ -68,17 +68,24 @@ async def list_agents(
     drafts = await container.agent_drafts.list_summaries(identity.tenant_id, identity.user_id)
     internal_names = {draft.name for draft in drafts if draft.parent_draft_id is not None}
     personal_by_name = {agent.name: agent for agent in personal_agents}
+    personal_by_id = {agent.agent_id: agent for agent in personal_agents}
+    default_coordinate = container.agents.platform_default_coordinate
     personal: list[AgentCatalogItem] = []
     for version in versions:
         if version.name in internal_names or _is_internal(version):
             continue
-        workspace_agent = personal_by_name.get(version.name)
+        workspace_agent = (
+            personal_by_id.get(version.agent_id)
+            if version.agent_id is not None
+            else personal_by_name.get(version.name)
+        )
         if workspace_agent is not None and workspace_agent.status is WorkspaceAgentStatus.ARCHIVED:
             continue
         personal.append(
             AgentCatalogItem.from_version(
                 version,
                 can_edit=True,
+                platform_default=(version.name, version.version) == default_coordinate,
                 agent_id=(
                     workspace_agent.agent_id if workspace_agent is not None else version.agent_id
                 ),

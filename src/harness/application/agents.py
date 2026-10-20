@@ -114,6 +114,14 @@ class AgentService:
             if version.status is AgentVersionStatus.PUBLISHED
         ]
 
+    @property
+    def platform_default_coordinate(self) -> tuple[str, str] | None:
+        """Installed default, available after catalog provisioning."""
+        if self._default_report is None:
+            return None
+        metadata = self._default_report.snapshot.manifest.metadata
+        return metadata.name, metadata.version
+
     async def ensure_user_default(
         self, tenant_id: str, owner_user_id: str
     ) -> AgentVersion | None:

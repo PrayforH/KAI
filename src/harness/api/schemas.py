@@ -37,6 +37,7 @@ class AgentCatalogItem(BaseModel):
     # fall back to the full coordinate scope:spaceId:ownerUserId:name@version.
     agent_id: str | None = None
     current_version: str | None = None
+    platform_default: bool = False
     connection_mode: Literal["caller_owned", "service_owned"] = "caller_owned"
     # Permission projection for the requesting user. can_view gates the space
     # page listing; can_chat gates the task selector; can_edit gates shared
@@ -56,6 +57,7 @@ class AgentCatalogItem(BaseModel):
         runnable_by_viewer: bool = True,
         agent_id: str | None = None,
         current_version: str | None = None,
+        platform_default: bool = False,
         connection_mode: Literal["caller_owned", "service_owned"] = "caller_owned",
         can_view: bool = True,
         can_chat: bool = True,
@@ -110,6 +112,7 @@ class AgentCatalogItem(BaseModel):
             runnable_by_viewer=runnable_by_viewer,
             agent_id=agent_id,
             current_version=current_version,
+            platform_default=platform_default,
             connection_mode=connection_mode,
             can_view=can_view,
             can_chat=can_chat,
