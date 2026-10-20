@@ -55,3 +55,13 @@ it("does not navigate back after the user leaves while a fork is pending", async
   await act(async () => resolve({ thread_id: "late-branch" }));
   expect(mock.push).not.toHaveBeenCalled();
 });
+
+it("hands the saved task to the mounted conversation's task switcher", async () => {
+  const onForked = vi.fn();
+  const branch = { thread_id: "selected-branch" };
+  mock.fork.mockResolvedValueOnce(branch);
+  await act(async () => root.render(<TurnCompletionControl completedAt={time} branchScope={scope} onForked={onForked} />));
+  await act(async () => host.querySelector("button")!.click());
+  expect(onForked).toHaveBeenCalledExactlyOnceWith(branch);
+  expect(mock.push).not.toHaveBeenCalled();
+});

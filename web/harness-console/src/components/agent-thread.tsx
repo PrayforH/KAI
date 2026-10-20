@@ -6,7 +6,7 @@ import { TurnCompletionControl } from "./turn-completion";
 import { FollowupInputPlacement } from "./followup-input-placement";
 import { latestConversationInput } from "../lib/conversation-input";
 import { useConversationScope } from "../lib/conversation-scope";
-import { createThreadHistoryAdapter, useAutoLoadEarlierMessages, useThreadHistoryPagination } from "../lib/task-history";
+import { type TaskSummary, createThreadHistoryAdapter, useAutoLoadEarlierMessages, useThreadHistoryPagination } from "../lib/task-history";
 import { startSteeringPolling } from "../lib/steering-poller";
 import { ConversationControl } from "./conversation-control";
 import { MessageAttachmentView } from "./message-attachment-view";
@@ -931,6 +931,7 @@ type ComposerDraftScope = {
 };
 
 const ComposerDraftContext = createContext<ComposerDraftScope | null>(null);
+const TaskForkContext = createContext<((task: TaskSummary) => void) | undefined>(undefined);
 type SkillLaunchContextValue = {
   launch: SkillCreatorLaunch | null;
   onDismiss: () => void;
@@ -1584,6 +1585,7 @@ export function HarnessAssistantMessage() {
 }
 
 function TurnCompletion() {
+  const onForked = useContext(TaskForkContext);
   const draftScope = useContext(ComposerDraftContext);
   const conversationScope = useConversationScope();
   const threadRunning = useAuiState((state) => state.thread.isRunning);
@@ -1596,7 +1598,7 @@ function TurnCompletion() {
   const activity = parsed?.success ? parsed.data : null;
   const view = activity ? reduceRunViewModel(undefined, activity) : isLast && observed && messageOwnsRun(messageId, observed.runId) ? observed : null;
   if (!view || view.phase !== "completed") return null;
-  return <TurnCompletionControl completedAt={view.updatedAt}
+  return <TurnCompletionControl completedAt={view.updatedAt} onForked={onForked}
     branchScope={isLast && !conversationScope && !threadRunning && !selectComposerDisabled(observed) ? draftScope : null} />;
 }
 
@@ -1803,6 +1805,7 @@ export function AgentThread({
   onAgentChange = () => undefined,
   onRefreshAgents,
   onComposerSubmitted,
+  onForked,
 }: {
   userId: string;
   threadId: string;
@@ -1816,6 +1819,7 @@ export function AgentThread({
   onRefreshAgents?: () => void;
   /** Called after the composer successfully starts a run. */
   onComposerSubmitted?: () => void;
+  onForked?: (task: TaskSummary) => void;
 }) {
   const frame = useRef<HTMLDivElement>(null);
   const [editor, setEditor] = useState<MessageEditorState>(null);
@@ -1855,6 +1859,7 @@ export function AgentThread({
     [onComposerSubmitted],
   );
   return (
+    <TaskForkContext.Provider value={onForked}>
     <AgentSelectionContext.Provider value={agentSelection}>
       <SkillLaunchContext.Provider value={skillLaunch}>
         <ComposerDraftContext.Provider value={composerDraftScope}>
@@ -1915,5 +1920,6 @@ export function AgentThread({
         </ComposerDraftContext.Provider>
       </SkillLaunchContext.Provider>
     </AgentSelectionContext.Provider>
+    </TaskForkContext.Provider>
   );
 }

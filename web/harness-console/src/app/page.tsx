@@ -206,6 +206,7 @@ function TaskContextBar({
   onOpenTrace,
   onRenamed,
   onArchived,
+  onForked,
   projects = [],
   onProjectChanged,
 }: {
@@ -218,6 +219,7 @@ function TaskContextBar({
   onOpenTrace?: () => void;
   onRenamed: (title: string) => void;
   onArchived: () => void;
+  onForked: (task: TaskSummary) => void;
   projects?: readonly ApiProject[];
   onProjectChanged?: () => void;
 }) {
@@ -242,6 +244,7 @@ function TaskContextBar({
           onOpenTrace={onOpenTrace}
           onRenamed={onRenamed}
           onArchived={onArchived}
+          onForked={onForked}
           onProjectChanged={() => onProjectChanged?.()}
         />
       )}
@@ -803,6 +806,7 @@ function AuthenticatedHome() {
               </Link>}
               <TaskContextBar
                 taskTitle={currentTaskTitle}
+                onForked={switchTask}
                 task={currentTask}
                 needsInput={Boolean(currentTask?.pending_input && !currentTaskBusy)}
                 observabilityHref={observabilityHref}
@@ -875,6 +879,7 @@ function AuthenticatedHome() {
                   <AgentThread
                     userId={user.user_id}
                     threadId={threadId}
+                    onForked={switchTask}
                     agents={availableTaskAgents}
                     selectedAgent={selectedAgent}
                     agentsLoading={agentsLoading || versionSwitchPending}
