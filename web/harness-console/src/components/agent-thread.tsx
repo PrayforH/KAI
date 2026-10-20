@@ -328,7 +328,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   const runLocked = selectComposerDisabled(runView);
   const projectLaunchScope = useContext(ComposerDraftContext);
   const projectLaunchReady = useThreadHistoryReady();
-  useTaskComposerSnapshot(projectLaunchScope);
+  useTaskComposerSnapshot(projectLaunchReady && !threadLoading && !agentSelection.loading ? projectLaunchScope : null);
   useEffect(() => {
     if (!activeSkillLaunch) {
       seededSkillLaunchRef.current = null;
@@ -981,7 +981,8 @@ export function UserTaskWelcome() {
   // so the welcome would flash and be replaced a moment later.
   const historyReady = useThreadHistoryReady();
   const launchScope = useContext(ComposerDraftContext);
-  if (!historyReady || (launchScope && hasPendingProjectTaskLaunch(launchScope.userId, launchScope.threadId))) return null;
+  if (launchScope && hasPendingProjectTaskLaunch(launchScope.userId, launchScope.threadId)) return <div className="project-launch-space" aria-hidden="true" />;
+  if (!historyReady) return null;
   return (
     <ThreadWelcome.Root className="user-task-welcome">
       <ThreadWelcome.Center className="user-task-hero">

@@ -184,3 +184,6 @@ html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) .harne
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation-duration: 0s; }
 }
+
+/* Reserve the message area while a project prompt is handed to the runtime. */
+.project-launch-space { flex: 1 0 0; min-height: 0; }
