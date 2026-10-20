@@ -850,7 +850,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
           onComposingChange={(value) => { composingRef.current = value; }}
           className="aui-composer-input"
           aria-label="消息输入"
-          placeholder={conversationScope?.composerPlaceholder ?? (busy ? "继续补充…" : knowledge.selected.length ? "输入问题，将基于上方选中的知识库回答" : "随心输入，/ 命令 · @ 知识库 · $ 技能")}
+          placeholder={conversationScope?.composerPlaceholder ?? (busy ? "继续补充…" : "输入消息…")}
           rows={Math.min(8, Math.max(2, composerText.split("\n").length))}
           aria-controls={options.length ? "composer-suggestions" : undefined}
           aria-activedescendant={options.length ? `composer-option-${suggestionIndex}` : undefined}
