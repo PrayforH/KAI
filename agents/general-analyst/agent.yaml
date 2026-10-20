@@ -2,7 +2,7 @@ apiVersion: harness/v1alpha1
 kind: Agent
 metadata:
   name: general-analyst
-  version: 1.0.0
+  version: 1.0.1
   labels:
     domain: general-assistant
     display-name: 分析执行

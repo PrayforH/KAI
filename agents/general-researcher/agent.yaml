@@ -2,7 +2,7 @@ apiVersion: harness/v1alpha1
 kind: Agent
 metadata:
   name: general-researcher
-  version: 1.0.0
+  version: 1.0.1
   labels:
     domain: general-assistant
     display-name: 资料研究

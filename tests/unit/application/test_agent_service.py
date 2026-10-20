@@ -396,7 +396,9 @@ async def test_platform_helpers_publish_before_lead_with_stable_identities() -> 
     from unittest.mock import AsyncMock
 
     identities = AsyncMock()
-    identities.get_or_create_personal_agent_id.side_effect = lambda tenant, owner, name: name + "-id"
+    identities.get_or_create_personal_agent_id.side_effect = (
+        lambda tenant, owner, name: name + "-id"
+    )
     registry = InMemoryAgentRegistry()
     service = AgentService(
         registry, clock=lambda: NOW, environment="production",
