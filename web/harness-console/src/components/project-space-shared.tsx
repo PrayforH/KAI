@@ -74,7 +74,7 @@ export function ProjectTaskRows({
             className={styles.rowLink}
             href={`/?thread=${encodeURIComponent(task.thread_id)}`}
           >
-            <strong>{task.title}{task.pinned_at && <span className={styles.pinnedLabel}>已固定</span>}</strong>
+            <strong>{task.title}{task.pinned_at && <span className={styles.pinnedLabel}>已置顶</span>}</strong>
             {!compact && <small>
               {task.archived_at ? "已归档 · " : ""}
               {task.pending_input

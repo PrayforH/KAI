@@ -13,6 +13,11 @@ import { ProjectModal } from "./project-resource-dialogs";
 import { errorText } from "./project-space-shared";
 import styles from "./project-home.module.css";
 
+function ProjectControlIcon({ name }: { name: "plus" | "right" | "down" | "file" }) {
+  const path = { plus: "M8 3v10M3 8h10", right: "m6 4 4 4-4 4", down: "m4 6 4 4 4-4", file: "M4 2.5h5l3 3v8H4zM9 2.5v3h3" }[name];
+  return <svg className={styles.controlIcon} viewBox="0 0 16 16" aria-hidden="true"><path d={path} /></svg>;
+}
+
 export function ProjectContextRail({ space }: { space: ProjectSpaceState }) {
   const {
     project,
@@ -42,7 +47,7 @@ export function ProjectContextRail({ space }: { space: ProjectSpaceState }) {
           className={styles.cardHeading}
           onClick={() => setDialog("instructions")}
         >
-          指令 <span aria-hidden="true">›</span>
+          指令 <ProjectControlIcon name="right" />
         </button>
         {!project.instructions?.trim() && <p className={styles.muted}>指导助手如何在此项目的所有任务中响应。</p>}
         {project.instructions?.trim() ? (
@@ -52,29 +57,29 @@ export function ProjectContextRail({ space }: { space: ProjectSpaceState }) {
           className={styles.button}
           onClick={() => setDialog("instructions")}
         >
-          {project.instructions?.trim() ? "编辑指令" : "＋ 添加指令"}
+          {!project.instructions?.trim() && <ProjectControlIcon name="plus" />}{project.instructions?.trim() ? "编辑指令" : "添加指令"}
         </button>
         <div className={styles.cardDivider} />
         <div className={styles.connectorStrip}>
           <h2>
-            连接器 <small className={styles.count}>MCP</small>
+            连接器 <small className={styles.count} aria-label={project.mcpReferences?.length ? `已关联 ${project.mcpReferences.length} 个连接器` : undefined}>MCP{project.mcpReferences?.length ? ` · ${project.mcpReferences.length}` : ""}</small>
           </h2>
           <button
             className={styles.textLink}
+            aria-label="添加项目连接器"
             onClick={() => setDialog("connectors")}
           >
-            ＋ 添加
+            <ProjectControlIcon name="plus" />添加
           </button>
         </div>
 
         {!!project.mcpReferences?.length && (
           <>
-            <p className={styles.muted}>已关联 {project.mcpReferences.length} 个连接器</p>
             <ul className={styles.compactList}>
               {project.mcpReferences.map((reference) => <li key={reference}>{connectorNames[reference] ?? reference}</li>)}
             </ul>
             <button className={styles.textLink} onClick={() => setDialog("connectors")}>
-              查看与管理 ›
+              查看与管理 <ProjectControlIcon name="right" />
             </button>
           </>
         )}
@@ -84,13 +89,13 @@ export function ProjectContextRail({ space }: { space: ProjectSpaceState }) {
           className={styles.cardHeading}
           onClick={() => setDialog("files")}
         >
-          文件和资源 <span aria-hidden="true">›</span>
+          文件和资源 <ProjectControlIcon name="right" />
         </button>
         {!resources.documents.length && !resources.links.length && <p className={styles.muted}>添加文件和网页，供本项目的所有任务使用。</p>}
         {!!(resources.documents.length + resources.links.length) && (
           <ul className={styles.compactList}>
             {resources.documents.slice(0, 2).map((item) => (
-              <li key={item.inputArtifactId}>
+              <li key={item.inputArtifactId}><ProjectControlIcon name="file" />
                 <a
                   href={`/api/input-artifacts/${encodeURIComponent(item.inputArtifactId)}/content?inline=1`}
                   target="_blank"
@@ -101,7 +106,7 @@ export function ProjectContextRail({ space }: { space: ProjectSpaceState }) {
               </li>
             ))}
             {resources.links.slice(0, 1).map((item) => (
-              <li key={item.linkId}>
+              <li key={item.linkId}><ProjectControlIcon name="right" />
                 <a href={item.url} target="_blank" rel="noreferrer">
                   {item.title || item.url}
                 </a>
@@ -110,16 +115,14 @@ export function ProjectContextRail({ space }: { space: ProjectSpaceState }) {
           </ul>
         )}
         <button className={styles.button} onClick={() => setDialog("files")}>
-          {resources.documents.length + resources.links.length
-            ? "管理文件与链接"
-            : "＋ 上传文件或添加链接"}
+          {!(resources.documents.length + resources.links.length) && <ProjectControlIcon name="plus" />}{resources.documents.length + resources.links.length ? "管理文件与链接" : "上传文件或添加链接"}
         </button>
         <div className={styles.cardDivider} />
         <button
           className={styles.cardHeading}
           onClick={() => setDialog("skills")}
         >
-          技能 <span aria-hidden="true">›</span>
+          技能 <ProjectControlIcon name="right" />
         </button>
         {!project.skillReferences?.length && <p className={styles.muted}>为项目任务补充可复用的工作流程。</p>}
         {!!project.skillReferences?.length && (
@@ -132,7 +135,7 @@ export function ProjectContextRail({ space }: { space: ProjectSpaceState }) {
         <button ref={skillTrigger} className={styles.button} aria-label="添加项目技能" aria-haspopup="menu" aria-expanded={skillMenuOpen}
           onClick={() => setSkillMenuOpen(value => !value)}
           onKeyDown={event => { if (event.key === "ArrowDown") { event.preventDefault(); setSkillMenuOpen(true); } }}>
-          ＋ 添加 <span aria-hidden="true">{skillMenuOpen ? "⌃" : "⌄"}</span>
+          <ProjectControlIcon name="plus" />添加 <span className={skillMenuOpen ? styles.expandedChevron : undefined}><ProjectControlIcon name="down" /></span>
         </button>
         {skillMenuOpen && <ActionMenuPopover anchor={skillTrigger} align="start" label="添加项目技能" onClose={() => setSkillMenuOpen(false)}>
           <button type="button" role="menuitem" onClick={() => { setSkillMenuOpen(false); setDialog("skills"); }}>
@@ -148,7 +151,7 @@ export function ProjectContextRail({ space }: { space: ProjectSpaceState }) {
             className={styles.textLink}
             onClick={() => setDialog("knowledge")}
           >
-            ＋ 关联
+            <ProjectControlIcon name="plus" />关联
           </button>
         </div>
         {project.knowledgeReferences?.length ? (
@@ -183,7 +186,7 @@ export function ProjectContextRail({ space }: { space: ProjectSpaceState }) {
             className={styles.textLink}
             onClick={() => chooseTab("results")}
           >
-            查看全部 ›
+            查看全部 <ProjectControlIcon name="right" />
           </button>
         </div>
         {savedResultError ? (

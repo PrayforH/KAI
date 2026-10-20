@@ -2,7 +2,7 @@
   margin: 0 auto;
   color: var(--codex-ink, #ececec);
   max-width: 1600px;
-  padding: 24px clamp(20px, 3vw, 48px) 24px;
+  padding: 32px clamp(24px, 3vw, 48px) 24px;
   width: 100%;
   height: 100%;
   min-height: 0;
@@ -20,22 +20,22 @@
   display: flex;
   justify-content: flex-start;
   align-items: center;
-  gap: 18px;
-  margin-bottom: 42px;
+  gap: 14px;
+  margin-bottom: 36px;
 }
 .header h1 {
   margin: 0;
-  font-size: clamp(25px, 2.5vw, 34px);
-  font-weight: 650;
-  letter-spacing: -0.035em;
+  font-size: clamp(24px, 2vw, 28px);
+  font-weight: 600;
+  letter-spacing: -0.025em;
   overflow-wrap: anywhere;
 }
 .subtitle {
   max-width: 65ch;
-  margin: 7px 0 0;
+  margin: 6px 0 0;
   color: var(--codex-muted);
-  line-height: 1.75;
-  font-size: 13px;
+  line-height: 1.5;
+  font-size: 12px;
   white-space: pre-wrap;
 }
 .actions {
@@ -56,11 +56,11 @@
   align-items: center;
   justify-content: center;
   gap: 7px;
-  min-height: 35px;
-  padding: 8px 13px;
+  min-height: 30px;
+  padding: 5px 10px;
   border: 1px solid var(--codex-line);
-  border-radius: 8px;
-  background: var(--codex-surface);
+  border-radius: 7px;
+  background: transparent;
   color: var(--codex-ink);
   font-size: 12px !important;
   cursor: pointer;
@@ -68,6 +68,8 @@
   transition:
     background 0.16s,
     transform 0.16s;
+  box-shadow: none;
+  line-height: 1.5;
 }
 .primary {
   background: var(--codex-ink, #ececec);
@@ -114,17 +116,22 @@
   line-height: 1.7;
 }
 .textLink {
-  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 0;
   border: 0;
   background: none;
   color: var(--codex-muted);
   font-size: 12px !important;
   cursor: pointer;
   text-decoration: none;
+  white-space: nowrap;
+  line-height: 1.5;
 }
 .textLink:hover {
   color: var(--codex-ink);
-  text-decoration: underline;
+  text-decoration: none;
 }
 .list {
   margin: 0;
@@ -160,8 +167,7 @@
   line-height: 1.5;
 }
 .rowLink:hover strong {
-  text-decoration: underline;
-  text-underline-offset: 4px;
+  color: var(--codex-ink);
 }
 .copy {
   flex: 1;
@@ -248,6 +254,8 @@
 .count {
   color: var(--codex-muted);
   font-size: 11px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
 }
 .error {
   padding: 12px 14px;
@@ -346,8 +354,8 @@
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
-  gap: clamp(28px, 4vw, 64px);
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 320px);
+  gap: clamp(28px, 3vw, 44px);
   align-items: stretch;
   flex: 1;
   min-height: 0;
@@ -363,15 +371,15 @@
 .projectMark {
   display: grid;
   place-items: center;
-  flex: 0 0 56px;
-  height: 56px;
-  border-radius: 15px;
+  flex: 0 0 48px;
+  height: 48px;
+  border-radius: 12px;
   background: var(--codex-surface-subtle);
   color: var(--codex-muted);
 }
 .projectMark svg {
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.4;
@@ -397,81 +405,96 @@
 }
 .contextRail {
   display: grid;
-  gap: 16px;
+  gap: 12px;
   min-width: 0;
-  padding-top: 4px;
+  padding-top: 0;
   min-height: 0;
   align-content: start;
   overscroll-behavior-y: contain;
-  padding-bottom: 8px;
+  padding-bottom: 4px;
+  padding-right: 4px;
+  scrollbar-gutter: stable;
   overflow-y: auto;
   scrollbar-width: thin;
 }
 .contextCard {
-  padding: 20px;
+  padding: 16px;
   border: 1px solid var(--codex-line);
-  border-radius: 16px;
+  border-radius: 12px;
+  background: var(--codex-surface);
+  box-shadow: none;
 }
 .contextCard h2 {
   margin: 0;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 1.5;
 }
 .contextCard .sectionHead {
-  margin-bottom: 10px;
+  margin-bottom: 8px;
+  gap: 8px;
 }
 .contextCard .muted {
-  margin: 10px 0;
+  margin: 8px 0 12px;
   line-height: 1.6;
 }
 .cardHeading {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
   padding: 0;
   border: 0;
   background: transparent;
   color: var(--codex-ink);
-  font-size: 14px !important;
-  font-weight: 600 !important;
+  font-size: 13px !important;
+  font-weight: 550 !important;
+  line-height: 1.5;
   cursor: pointer;
 }
 .cardHeading span {
   color: var(--codex-muted);
-  font-size: 20px;
-  font-weight: 400;
+  display: inline-flex;
 }
 .cardDivider {
   height: 1px;
   background: var(--codex-line);
-  margin: 18px -20px;
+  margin: 16px -16px;
 }
 .instructionPreview {
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-size: 12px;
   line-height: 1.7;
-  margin: 10px 0 14px;
+  margin: 8px 0 12px;
+  color: var(--codex-ink-soft);
 }
 .compactList,
 .resultPreviews {
-  margin: 10px 0 14px;
+  margin: 8px 0 10px;
   padding: 0;
   list-style: none;
 }
 .compactList li {
-  padding: 5px 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 0;
+  line-height: 1.5;
+  color: var(--codex-ink-soft);
   font-size: 12px;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 .compactList a {
-  color: var(--codex-ink);
+  color: inherit;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   text-decoration: none;
 }
 .compactList a:hover {
@@ -479,10 +502,10 @@
 }
 .resultPreview {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   width: 100%;
   min-width: 0;
-  padding: 9px 0;
+  padding: 8px 0;
   border: 0;
   background: none;
   color: var(--codex-ink);
@@ -500,7 +523,8 @@
   text-decoration: underline;
 }
 .resultPreview small {
-  font-size: 10px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
   color: var(--codex-muted);
 }
 .dialogContent {
@@ -670,23 +694,22 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px;
-  border-radius: 10px;
-  background: var(--codex-surface-subtle);
+  padding: 0;
+
 }
 .recentRow {
   display: flex;
   align-items: center;
-  gap: 14px;
-  min-height: 64px;
-  padding: 12px 4px;
-  border-bottom: 1px solid var(--codex-line);
+  gap: 12px;
+  min-height: 54px;
+  padding: 8px 10px;
+  border-bottom: 0;
 }
 .recentRow .rowLink { flex: 1; min-width: 0; }
-.recentRow .rowLink strong { font-size: 14px; font-weight: 500; }
+.recentRow .rowLink strong { font-size: 13px; font-weight: 500; }
 .taskTime { flex-shrink: 0; font-size: 12px; color: var(--codex-muted); }
 
-.recentRow, .row { border-radius: 10px; }
+.recentRow, .row { border-radius: 8px; }
 .recentRow:hover, .recentRow:focus-within, .row:focus-within { background: var(--codex-surface-hover); }
 .recentRow :global(.project-task-actions) { opacity: 0; }
 .recentRow:has([aria-expanded="true"]) :global(.project-task-actions), .recentRow:hover :global(.project-task-actions), .recentRow:focus-within :global(.project-task-actions) { opacity: 1; }
@@ -723,3 +746,25 @@
   .projectScroll { flex: none; overflow: visible; padding-right: 0; }
   .projectComposer:global(.harness-composer-shell) { margin-top: auto; }
 }
+
+/* Shared, quiet controls for the resource cards. */
+.controlIcon {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.35;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: var(--codex-muted);
+}
+.expandedChevron { display: inline-flex; transform: rotate(180deg); }
+.contextCard > :last-child { margin-bottom: 0; }
+.contextCard .cardHeading > .controlIcon { width: 14px; height: 14px; flex-basis: 14px; }
+.contextCard .textLink { font-size: 11px !important; }
+.compactList + .textLink { margin-top: 2px; }
+.projectComposer :global(.aui-composer-root) { background: var(--codex-surface); }
+.projectMain .recentTasks .sectionHead { padding-inline: 10px; margin-bottom: 8px; }
+.projectMain .recentTasks .status { width: 5px; height: 5px; }

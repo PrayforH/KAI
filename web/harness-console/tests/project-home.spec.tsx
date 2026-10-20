@@ -131,7 +131,7 @@ const artifact = {
 };
 const click = async (label: string) => {
   const button = [...host.querySelectorAll("button")].find((item) =>
-    item.textContent?.includes(label),
+    item.textContent?.includes(label) || item.getAttribute("aria-label") === label,
   );
   expect(button, label).toBeTruthy();
   await act(async () => button!.click());
@@ -378,7 +378,7 @@ it("opens platform skills from the add dropdown without navigating or creating a
 
 it("saves all checked MCP bindings across consecutive checkbox changes", async () => {
   await act(async () => root.render(<StrictMode><ProjectHome projectId="project-1" /></StrictMode>));
-  await click("＋ 添加");
+  await click("添加项目连接器");
   const boxes = [...host.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')];
   expect(boxes).toHaveLength(2);
   await act(async () => boxes[0].click());
@@ -389,13 +389,13 @@ it("saves all checked MCP bindings across consecutive checkbox changes", async (
   await click("保存关联");
   expect(mock.update).toHaveBeenCalledWith("project-1", {mcpReferences: ["one", "two"]});
   expect(host.querySelector('[role="dialog"]')).toBeNull();
-  expect(host.textContent).toContain("已关联 2 个连接器");
+  expect(host.querySelector('[aria-label="已关联 2 个连接器"]')).not.toBeNull();
   expect(host.textContent).toContain("已保存 2 个项目连接器");
 });
 
 it("keeps connector selection open if the read-back does not confirm the binding", async () => {
   await act(async () => root.render(<ProjectHome projectId="project-1" />));
-  await click("＋ 添加");
+  await click("添加项目连接器");
   await act(async () => host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
   await click("保存关联");
   expect(host.querySelector('[role="dialog"]')).not.toBeNull();

@@ -487,7 +487,7 @@ export function TaskHeaderActions({
       <FeedbackToast message={notice} onDismiss={() => setNotice("")} />
       <FeedbackToast message={error} tone="error" onDismiss={() => setError("")} />
       {open && (
-        variant === "row" ? <ActionMenuPopover anchor={triggerRef} label={`任务操作 ${task.title}`} onClose={close}>{menu}</ActionMenuPopover> : <div className="task-header-menu" role="menu" aria-label="更多任务操作">{menu}</div>
+        variant === "row" ? <ActionMenuPopover className="task-row-menu" anchor={triggerRef} label={`任务操作 ${task.title}`} onClose={close}>{menu}</ActionMenuPopover> : <div className="task-header-menu" role="menu" aria-label="更多任务操作">{menu}</div>
       )}
       <RenameTaskDialog
         open={renameOpen}

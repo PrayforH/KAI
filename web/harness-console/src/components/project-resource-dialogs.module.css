@@ -6,15 +6,15 @@
   flex-direction: column;
   padding: 0;
   border: 1px solid var(--codex-line, #3a3a3a);
-  border-radius: 18px;
+  border-radius: 14px;
   background: var(--codex-surface-raised, #222);
   color: var(--codex-ink, #ececec);
-  box-shadow: 0 28px 80px rgb(0 0 0 / 55%);
+  box-shadow: 0 20px 64px rgb(0 0 0 / 18%);
   overflow: hidden;
 }
 .dialog::backdrop {
-  background: rgb(0 0 0 / 55%);
-  backdrop-filter: blur(3px);
+  background: rgb(0 0 0 / 28%);
+  backdrop-filter: blur(2px);
 }
 .head {
   display: flex;
@@ -75,7 +75,7 @@
   padding: 0 12px;
   border: 1px solid var(--codex-line, #3a3a3a);
   border-radius: 10px;
-  background: color-mix(in srgb, var(--codex-surface-raised, #222) 72%, #000);
+  background: var(--codex-surface-subtle);
 }
 .search svg {
   width: 15px;
@@ -110,7 +110,7 @@
   gap: 16px;
   padding: 14px 24px;
   border-top: 1px solid var(--codex-line, #3a3a3a);
-  background: color-mix(in srgb, var(--codex-surface-raised, #222) 88%, #000);
+  background: var(--codex-surface-subtle);
 }
 .footerNote { color: var(--codex-muted, #9a9a9a); font-size: 12px; }
 .footerActions { display: flex; gap: 8px; }
@@ -129,9 +129,9 @@
   cursor: pointer;
 }
 .primary {
-  border-color: #f0f0f0;
-  background: #f0f0f0;
-  color: #141414;
+  border-color: var(--codex-ink);
+  background: var(--codex-ink);
+  color: var(--codex-surface);
   font-weight: 600;
 }
 .primary:disabled { opacity: .5; cursor: default; }

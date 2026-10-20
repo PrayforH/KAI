@@ -1258,18 +1258,31 @@ body.codex-theme-v1:has(.console-shell) .console-header {
   stroke: none;
 }
 
+.task-header-menu, .task-row-menu {
+  --action-menu-width: 208px;
+  --action-menu-padding: 5px;
+  --action-menu-radius: 10px;
+  --action-menu-background: var(--codex-surface-raised);
+  --action-menu-item-height: 32px;
+  --action-menu-item-padding: 0 9px;
+  --action-menu-item-gap: 8px;
+  --action-menu-font-size: 12.5px;
+  --action-menu-icon-size: 15px;
+}
+
 .task-header-menu {
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
   z-index: 130;
-  min-width: 168px;
-  padding: 5px;
+  width: min(var(--action-menu-width), calc(100vw - 16px));
+  box-sizing: border-box;
+  padding: var(--action-menu-padding);
   display: grid;
   gap: 1px;
-  border: 1px solid #3a3a3a;
-  border-radius: 10px;
-  background: #252525;
+  border: 1px solid var(--codex-line);
+  border-radius: var(--action-menu-radius);
+  background: var(--action-menu-background);
   box-shadow: 0 24px 80px rgb(0 0 0 / 46%);
 }
 
@@ -1277,16 +1290,16 @@ body.codex-theme-v1:has(.console-shell) .console-header {
 .task-header-menu a,
 .task-header-menu .task-header-menu-unavailable {
   width: 100%;
-  min-height: 32px;
-  padding: 0 9px;
+  min-height: var(--action-menu-item-height);
+  padding: var(--action-menu-item-padding);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--action-menu-item-gap);
   border: 0;
   border-radius: 7px;
   color: var(--codex-ink-soft);
   background: transparent;
-  font-size: 12.5px;
+  font-size: var(--action-menu-font-size);
   text-align: left;
   text-decoration: none;
 }
@@ -1309,9 +1322,9 @@ body.codex-theme-v1:has(.console-shell) .console-header {
 .task-header-menu button svg,
 .task-header-menu a svg,
 .task-header-menu .task-header-menu-unavailable svg {
-  width: 15px;
-  height: 15px;
-  flex: 0 0 15px;
+  width: var(--action-menu-icon-size);
+  height: var(--action-menu-icon-size);
+  flex: 0 0 var(--action-menu-icon-size);
   fill: none;
   stroke: currentColor;
   stroke-width: 1.5;
