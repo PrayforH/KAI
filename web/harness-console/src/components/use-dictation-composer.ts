@@ -1,18 +1,20 @@
 "use client";
 
-import { useLayoutEffect, useRef, type RefObject } from "react";
+import { useLayoutEffect, useReducer, useRef, type RefObject } from "react";
 import { DictationEdit, dictationCaret, type DictationPatch } from "../lib/dictation-edit";
 
 export function useDictationComposer(input: RefObject<HTMLTextAreaElement | HTMLInputElement | null>, read: () => string,
   write: (text: string) => void, composing: RefObject<boolean>) {
   const edit = useRef<DictationEdit | undefined>(undefined);
   const recorded = useRef<{ edit: DictationEdit; text: string } | undefined>(undefined);
+  const [, refresh] = useReducer((value: number) => value + 1, 0);
   const pending = useRef<{
     element: HTMLTextAreaElement | HTMLInputElement; text: string; start: number; end: number;
     direction: "forward" | "backward" | "none"; top: number; follow: boolean; focus: boolean;
   } | undefined>(undefined);
 
   useLayoutEffect(() => {
+    if (recorded.current && !composing.current) flushRecording();
     const view = pending.current;
     if (composing.current) { pending.current = undefined; return; }
     if (!view || view.element !== input.current || view.element.value !== view.text) return;
@@ -53,7 +55,8 @@ export function useDictationComposer(input: RefObject<HTMLTextAreaElement | HTML
   }
 
   return {
-    onCompositionEnd: flushRecording,
+    // The browser can deliver the final input/change after compositionend.
+    onCompositionEnd() { if (recorded.current) refresh(); },
     onRecorded(text: string) {
       if (!edit.current) return;
       recorded.current = { edit: edit.current, text };
