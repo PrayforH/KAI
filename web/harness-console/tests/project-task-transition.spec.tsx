@@ -7,6 +7,7 @@ import { armProjectTaskLaunch } from "../src/lib/project-task-launch";
 import { useProjectTaskLaunch } from "../src/components/use-project-task-launch";
 
 beforeEach(() => {
+  vi.useFakeTimers();
   const values = new Map<string, string>();
   const storage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key) };
   vi.stubGlobal("localStorage", storage); vi.stubGlobal("sessionStorage", storage);
@@ -19,11 +20,7 @@ function mockTransition() {
   const start = vi.fn((update: () => Promise<void>) => { void update(); return { finished, skipTransition: skip }; });
   vi.stubGlobal("document", Object.assign(document, { startViewTransition: start }));
   vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false })));
-  const frames = new Map<number, FrameRequestCallback>();
-  let next = 0;
-  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { frames.set(++next, callback); return next; });
-  vi.stubGlobal("cancelAnimationFrame", (id: number) => frames.delete(id));
-  const paint = () => { while (frames.size) { const pending = [...frames]; frames.clear(); pending.forEach(([, callback]) => callback(0)); } };
+  const paint = () => vi.advanceTimersByTimeAsync(0);
   return { start, finish, skip, paint };
 }
 it("starts once when the destination is ready, without waiting for animation to finish", async () => {
@@ -85,7 +82,7 @@ it("cancels an older handoff without leaving named snapshots or global styles be
   vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true })));
   const navigate = vi.fn();
   startProjectTaskTransition("next", navigate);
-  transition.paint();
+  await transition.paint();
   expect(transition.skip).toHaveBeenCalledOnce();
   expect(navigate).toHaveBeenCalledOnce();
   expect(document.querySelector<HTMLElement>("form")!.style.viewTransitionName).toBe("");

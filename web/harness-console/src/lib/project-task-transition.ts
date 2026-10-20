@@ -5,7 +5,7 @@ type Handoff = {
   threadId: string;
   ready: () => void;
   cancel: () => void;
-  frame?: number;
+  revealTimer?: number;
   revealing?: boolean;
   names: Array<{ element: HTMLElement; previous: string }>;
 };
@@ -40,7 +40,7 @@ export function startProjectTaskTransition(threadId: string, navigate: () => voi
     if (cleaned) return;
     cleaned = true;
     window.clearTimeout(timeout);
-    if (current.frame !== undefined) window.cancelAnimationFrame(current.frame);
+    if (current.revealTimer !== undefined) window.clearTimeout(current.revealTimer);
     for (const { element, previous } of current.names) element.style.viewTransitionName = previous;
     if (handoff === current) {
       handoff = undefined;
@@ -70,13 +70,12 @@ export function revealProjectTaskTransition(threadId: string) {
   const current = handoff;
   if (!current || current.threadId !== threadId || current.revealing) return;
   current.revealing = true;
-  // Allow React to commit the send/reset before taking the destination snapshot.
-  current.frame = window.requestAnimationFrame(() => {
-    current.frame = window.requestAnimationFrame(() => {
-      if (handoff !== current) return;
-      nameElement(current, '.task-content-shell .harness-composer-shell .aui-composer-root', 'project-composer');
-      nameElement(current, '.task-sidebar', 'project-sidebar');
-      current.ready();
-    });
-  });
+  // Native View Transitions pause animation frames while updateCallback is pending.
+  // Yield a task so React can commit send/reset without waiting on that paused clock.
+  current.revealTimer = window.setTimeout(() => {
+    if (handoff !== current) return;
+    nameElement(current, '.task-content-shell .harness-composer-shell .aui-composer-root', 'project-composer');
+    nameElement(current, '.task-sidebar', 'project-sidebar');
+    current.ready();
+  }, 0);
 }
