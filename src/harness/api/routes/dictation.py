@@ -34,8 +34,13 @@ def service(request: Request) -> DictationService:
     return adapter
 
 
-async def audio_bytes(file: UploadFile, adapter: DictationService) -> bytes:
-    maximum = adapter.settings.max_audio_seconds * 32_000 + 4096
+async def audio_bytes(
+    file: UploadFile, adapter: DictationService, *, recording: bool = False,
+) -> bytes:
+    seconds = (
+        adapter.settings.max_session_seconds if recording else adapter.settings.max_audio_seconds
+    )
+    maximum = seconds * 32_000 + 4096
     content = await file.read(maximum + 1)
     if len(content) > maximum:
         raise HTTPException(413, "录音片段过长")
@@ -50,10 +55,9 @@ async def capabilities(
     adapter: DictationService = request.app.state.dictation
     return {
         "enabled": adapter.settings.enabled,
-        "mode": (
-            "realtime" if adapter.settings.engine == "funasr_realtime" else "utterance_incremental"
-        ),
+        "mode": "batch",
         "sampleRate": 16_000,
+        "interaction": "record_then_transcribe",
         "maxAudioSeconds": adapter.settings.max_audio_seconds,
         "maxSegmentSeconds": min(12, adapter.settings.max_audio_seconds),
         "silenceMs": adapter.settings.silence_ms,
@@ -82,7 +86,7 @@ async def transcribe(
 ) -> dict[str, str]:
     ensure_permission(identity, "tasks:write")
     try:
-        return {"text": await adapter.transcribe(await audio_bytes(file, adapter))}
+        return {"text": await adapter.transcribe(await audio_bytes(file, adapter, recording=True))}
     except DictationError as error:
         raise HTTPException(502, str(error)) from error
 

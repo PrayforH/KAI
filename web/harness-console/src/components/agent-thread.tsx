@@ -820,7 +820,7 @@ function HarnessComposer() {
           aria-controls={options.length ? "composer-suggestions" : undefined}
           aria-activedescendant={options.length ? `composer-option-${suggestionIndex}` : undefined}
           onChange={(event) => { voiceComposer.onChange(event.target.value); if (!composingRef.current) setCaret(event.target.selectionStart); }}
-          onCompositionEnd={(event) => setCaret(event.currentTarget.selectionStart)}
+          onCompositionEnd={(event) => { voiceComposer.onCompositionEnd(); setCaret(event.currentTarget.selectionStart); }}
           onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
           onPaste={(event) => {
             const files = Array.from(event.clipboardData.files);
@@ -870,7 +870,7 @@ function HarnessComposer() {
           <VoiceInput key={scope?.threadId || "new"} disabled={busy || followupVoiceActive}
             modelRoute={overrideRouteId || ""}
             onActive={(active) => { voiceComposer.onActive(active); setVoiceActive(active); }}
-            onDraft={voiceComposer.onDraft} onInsert={voiceComposer.onInsert} />
+            onInsert={voiceComposer.onRecorded} />
           </div>
         </div>
         {showStop && !composerText.trim() && !composerAttachments.length ? (

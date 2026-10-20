@@ -78,18 +78,17 @@ Sandbox 支持不同部署提供方，包括 Daytona、E2B、Kubernetes/gVisor �
 ```mermaid
 flowchart LR
     Mic[浏览器麦克风] --> Audio[音频采集 / 16 kHz PCM]
-    Audio --> BFF[同源 BFF]
+    Audio --> Stop[本地缓存 / 确认结束录音]
+    Stop --> BFF[同源 BFF / 整段 WAV]
     BFF --> Voice[鉴权语音 API]
     Voice --> ASR[后端 ASR 服务]
-    ASR --> Draft[增量转写草稿]
-    Draft --> Composer[输入框]
-    Draft --> Refine[停止后可选文本整理]
-    Refine --> Composer
+    ASR --> Composer[一次性回填输入框]
+    Composer --> Send[用户手动发送]
 ```
 
-实时模式为每个会话创建独立的上游连接与事件队列，并按租户和用户验证归属。当前单 API 进程最多可配置 32 个活动会话，这属于接入层上限，模型服务吞吐仍需单独规划。会话状态保存在进程内，多实例部署需要保证同一语音会话的请求落到同一实例。
+输入框使用录音后统一转写。录音时不上传音频、不改动草稿；停止并释放麦克风后才上传整段 WAV。失败时录音仅保存在组件内存供用户重试，取消、成功或卸载即释放。原选区与后续手动编辑受到保护，中文输入法组合期间延后插入。
 
-ASR 适配器支持 FunASR 实时服务、模型网关，以及按片段调用的 Qwen3-ASR / SenseVoice。流式草稿直接写入输入框；停止后可通过文本模型整理标点、重复和口头语，整理阶段不重新识别音频。语音默认关闭，启用时必须显式配置服务地址、凭据和模型路由；浏览器麦克风在生产域名下需要 HTTPS。
+174 的整段转写通过模型网关选择 Qwen3-ASR-1.7B，不再默认追加聊天模型润色。完整录音上限使用 `max_session_seconds`（默认 120 秒），独立于旧 VAD 片段上限。BFF 支持设置允许的最长 300 秒 PCM WAV；API 按实际配置再次验证长度。原实时会话、VAD 和精修接口保留兼容；旧实时会话的 32 路接入上限不代表整段识别的实测吞吐。语音默认关闭，浏览器麦克风需要 HTTPS 或 localhost。
 
 实现入口：`src/harness/dictation`、`src/harness/api/routes/dictation.py`、`web/harness-console/src/components/use-dictation-composer.ts`。
 

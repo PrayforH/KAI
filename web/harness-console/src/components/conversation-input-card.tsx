@@ -164,13 +164,13 @@ export function ConversationInputCard({ input, disabled, onSubmit, modelRoute = 
           <input ref={textInput} className={styles.text} type={sensitive ? "password" : "text"}
             autoComplete="off" spellCheck={!sensitive} autoCapitalize="none" autoCorrect="off" aria-label={`${redact(question.label)} · 填写回答`}
             placeholder={sensitive ? (submitted ? "已提交，内容已隐藏" : "填写敏感信息") : question.type === "text" ? "填写回答" : "或填写其他答案 / 补充说明"}
-            onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }}
+            onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; dictation.onCompositionEnd(); }}
             maxLength={4000} value={value.text} onChange={event => {
               const text = event.target.value;
               dictation.onChange(text); writeText(text);
             }} />
           {!sensitive && <VoiceInput key={question.id} placement="inline" disabled={locked} modelRoute={modelRoute}
-            onDraft={dictation.onDraft} onInsert={dictation.onInsert}
+            onInsert={dictation.onRecorded}
             onActive={active => { dictation.onActive(active); setVoiceActive(active); onVoiceActive?.(active); }} />}
         </div>
       </fieldset>

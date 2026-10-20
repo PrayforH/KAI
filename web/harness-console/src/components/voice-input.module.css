@@ -5,7 +5,7 @@
 .mic:hover { background: var(--codex-surface-hover, #7772); }
 .mic:disabled { opacity: .4; cursor: default; }
 .mic svg, .circle svg { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-.recordingBar { display: flex; align-items: flex-end; gap: 14px; height: 32px; min-width: 0; grid-column: 1; grid-row: 1; }
+.recordingBar { display: flex; align-items: center; gap: 14px; min-height: 32px; min-width: 0; grid-column: 1; grid-row: 1; }
 .circle { display: grid; place-items: center; flex: 0 0 32px; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: var(--codex-surface-active, #7772); color: inherit; cursor: pointer; }
 .circle svg { width: 18px; height: 18px; }
 .circle:hover { background: var(--codex-surface-hover, #7772); }
@@ -18,11 +18,18 @@
 .root button:focus-visible, .recordingBar button:focus-visible { outline: 2px solid var(--codex-ink-soft, currentColor); outline-offset: 3px; }
 .stop svg rect { fill: currentColor; stroke: none; }
 :global(.composer-footer):has(.recordingBar) > :global(.composer-toolbar) { display: none !important; }
-:global(.composer-footer):has(.recordingBar) > :global(button) { grid-column: 2; grid-row: 1; }
-:global(.composer-footer):has(.recordingBar) > .recordingBar { width: 100%; }
+:global(.composer-footer):has(.recordingBar) > :global(button) { display: none !important; }
+:global(.composer-footer):has(.recordingBar) > .recordingBar { width: 100%; grid-column: 1 / -1; }
 @media (prefers-reduced-motion: reduce) { .signal rect { transition: none; } .waiting { animation: none; } }
 @media (max-width: 480px) { .recordingBar { gap: 10px; } }
 
 .root[data-placement="inline"] { flex-shrink: 0; }
 .root[data-placement="inline"][data-active="true"] > .mic { display: none; }
 .root[data-placement="inline"] .recordingBar { width: 144px; gap: 8px; }
+.status { flex: 1; min-width: 0; align-self: center; text-align: center; font-size: 13px; line-height: 1.5; color: var(--codex-ink-soft, #666); overflow-wrap: anywhere; }
+.status[role="alert"] { text-align: left; }
+.retry { flex-shrink: 0; align-self: center; padding: 5px 9px; border: 0; border-radius: 16px; background: var(--codex-surface-active, #7772); color: inherit; font: inherit; font-size: 12px; cursor: pointer; }
+.spinner { width: 15px; height: 15px; border: 1.5px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: voice-spin .8s linear infinite; }
+@keyframes voice-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+.root[data-placement="inline"] .recordingBar:has(.status) { width: min(280px, 100%); }
