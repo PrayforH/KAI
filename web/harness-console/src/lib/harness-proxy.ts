@@ -557,7 +557,8 @@ export async function proxyRunRequest(request: Request, config: HarnessServerCon
 export async function proxyDictationRequest(request: Request, config: HarnessServerConfig, path: string) {
   if (request.body) {
     const maximum = path.endsWith("/audio") ? 32000
-      : ["vad", "transcribe"].includes(path) ? 2_000_000 : 64000;
+      : path === "transcribe" ? 300 * 32000 + 65536
+      : path === "vad" ? 2_000_000 : 64000;
     const reader = request.body.getReader();
     const chunks: Uint8Array[] = []; let total = 0;
     while (true) {

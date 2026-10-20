@@ -1,8 +1,7 @@
-"""Stateless adapters for the existing 229 audio services.
+"""Whole-recording transcription and legacy VAD/text-refinement adapters.
 
-Only the draft stage receives audio. Refinement calls the tenant text-model
-gateway, never a second ASR. These upstreams accept files, so the first adapter
-delivers incremental utterances rather than pretending to be native streaming ASR.
+The web composer submits audio only after recording stops. Legacy refinement
+remains available to existing callers but is not part of the batch input flow.
 """
 
 from __future__ import annotations
@@ -159,7 +158,9 @@ class DictationService:
         )
 
     async def transcribe(self, content: bytes) -> str:
-        validate_wav(content, self.settings.max_audio_seconds)
+        # Dictation submits one complete recording after microphone capture stops.
+        # Keep the shorter VAD limit independent from this recording limit.
+        validate_wav(content, self.settings.max_session_seconds)
         if self.settings.engine == "sensevoice":
             url = self.settings.sensevoice_url
             data = {"language": "auto", "use_itn": "true"}
