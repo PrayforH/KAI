@@ -392,11 +392,11 @@ async def test_default_agent_skips_catalog_only_skill_assets() -> None:
 
 
 @pytest.mark.asyncio
-async def test_platform_helpers_publish_before_lead_without_studio_identities() -> None:
+async def test_platform_helpers_publish_before_lead_with_stable_identities() -> None:
     from unittest.mock import AsyncMock
 
     identities = AsyncMock()
-    identities.get_or_create_personal_agent_id.return_value = "lead-id"
+    identities.get_or_create_personal_agent_id.side_effect = lambda tenant, owner, name: name + "-id"
     registry = InMemoryAgentRegistry()
     service = AgentService(
         registry, clock=lambda: NOW, environment="production",
@@ -409,13 +409,14 @@ async def test_platform_helpers_publish_before_lead_without_studio_identities() 
         for binding in snapshot.manifest.spec.subagents:
             name, _, version = binding.ref.rpartition("@")
             child = await registry.get(tenant, owner, name, version)
-            assert child.agent_id is None
+            assert child.agent_id == name + "-id"
 
     service.publication_guard = guard
     lead = await service.ensure_user_default("tenant-a", "owner")
-    assert lead is not None and lead.agent_id == "lead-id"
+    assert lead is not None and lead.agent_id == "lead-agent-id"
     assert order == ["general-researcher", "general-analyst", "general-reviewer", "lead-agent"]
-    identities.get_or_create_personal_agent_id.assert_awaited_once_with(
+    assert identities.get_or_create_personal_agent_id.await_count == 4
+    assert identities.get_or_create_personal_agent_id.call_args.args == (
         "tenant-a", "owner", "lead-agent"
     )
     await service.ensure_user_default("tenant-a", "owner")

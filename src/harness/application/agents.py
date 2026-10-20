@@ -160,8 +160,9 @@ class AgentService:
             self._default_platform_digest = self._platform_catalog_digest()
         report = self._default_report
         # Provision immutable, owner-scoped dependencies before exposing the lead.
-        # Internal helpers have no Studio identity/draft and cannot become a
-        # second user-managed agent catalog merely by using the default assistant.
+        # Helpers use the normal stable identity required by the registry, but
+        # internal visibility keeps them out of the task catalog. No editable
+        # Studio draft is created for these platform-maintained dependencies.
         for child in self._default_children:
             metadata = child.snapshot.manifest.metadata
             existing = next(
@@ -176,7 +177,7 @@ class AgentService:
                 continue
             await self._publish_snapshot(
                 tenant_id, owner_user_id, child.snapshot,
-                package_hash=child.package_hash, create_identity=False,
+                package_hash=child.package_hash,
             )
         snapshot = report.snapshot
         name = snapshot.manifest.metadata.name
@@ -379,13 +380,12 @@ class AgentService:
         *,
         package_hash: str | None = None,
         agent_id: str | None = None,
-        create_identity: bool = True,
     ) -> AgentVersion:
         if self.publication_guard is not None:
             await self.publication_guard(tenant_id, owner_user_id, snapshot, package_hash)
         manifest = snapshot.manifest
         resolved_agent_id = agent_id
-        if create_identity and resolved_agent_id is None and self._agent_ids is not None:
+        if resolved_agent_id is None and self._agent_ids is not None:
             resolved_agent_id = await self._agent_ids.get_or_create_personal_agent_id(
                 tenant_id, owner_user_id, manifest.metadata.name
             )
