@@ -18,8 +18,8 @@
 .root button:focus-visible, .recordingBar button:focus-visible { outline: 2px solid var(--codex-ink-soft, currentColor); outline-offset: 3px; }
 .stop svg rect { fill: currentColor; stroke: none; }
 :global(.composer-footer):has(.recordingBar) > :global(.composer-toolbar) { display: none !important; }
-:global(.composer-footer):has(.recordingBar) > :global(button) { grid-column: 2; grid-row: 1; }
-:global(.composer-footer):has(.recordingBar) > .recordingBar { width: 100%; }
+:global(.composer-footer):has(.recordingBar) > :global(button) { display: none !important; }
+:global(.composer-footer):has(.recordingBar) > .recordingBar { width: 100%; grid-column: 1 / -1; }
 @media (prefers-reduced-motion: reduce) { .signal rect { transition: none; } .waiting { animation: none; } }
 @media (max-width: 480px) { .recordingBar { gap: 10px; } }
 
