@@ -33,12 +33,15 @@ it("starts once when the destination is ready, without waiting for animation to 
     document.body.innerHTML = '<aside class="task-sidebar"></aside><div class="task-content-shell"><div class="harness-composer-shell"><form class="aui-composer-root"></form></div></div>';
   });
   const send = vi.fn(async () => true);
-  function Target({ ready }: { ready: boolean }) { useProjectTaskLaunch(scope, ready, send); return null; }
+  function Target({ ready, snapshotReady = false }: { ready: boolean; snapshotReady?: boolean }) { useProjectTaskLaunch(scope, ready, send, snapshotReady); return null; }
   const root = createRoot(document.createElement("div"));
   await act(async () => root.render(<Target ready={false} />));
   expect(send).not.toHaveBeenCalled();
   await act(async () => root.render(<Target ready />));
   expect(send).toHaveBeenCalledTimes(1);
+  await act(async () => transition.paint());
+  expect(document.querySelector<HTMLElement>("form")!.style.viewTransitionName).toBe("");
+  await act(async () => root.render(<Target ready={false} snapshotReady />));
   await act(async () => transition.paint());
   expect(document.querySelector<HTMLElement>("form")!.style.viewTransitionName).toBe("project-composer");
   // Repeated readiness must not leave names behind or trigger another send.

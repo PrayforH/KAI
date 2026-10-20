@@ -650,6 +650,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
         return false;
       } finally { composerSendLock.current = false; }
     },
+    composerText.length === 0,
   );
 
   async function generateVideo() {
