@@ -2,6 +2,7 @@
 import { FeedbackToast } from "../feedback-toast";
 import { AgentAvatar } from "./agent-avatar";
 import { ConfigurationIcon } from "./configuration-icon";
+import { EditableAgentName } from "./editable-agent-name";
 import { AgentVersionHistory } from "./agent-version-history";
 import { PanelResizeHandle } from "../panel-resize-handle";
 import { isAgentVisible } from "../../lib/agent-visibility";
@@ -2234,7 +2235,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
               </span>
             </div>
             <div className={styles.titleLine}>
-              <h1>{draft.displayName}</h1>
+              <EditableAgentName key={draft.id || draft.name} name={draft.displayName} disabled={!canEdit || saving || publishing || inspecting} onChange={displayName => updateDraft({ displayName })} />
               <code>{draft.name}@{draft.version}</code>
             </div>
             <p>{draft.description}</p>
