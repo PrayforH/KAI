@@ -1575,6 +1575,7 @@ def build_production_container(
         context_service=context_service,
     )
     agui = AguiRunService(
+        workspaces=workspace_service,
         project_skill_snapshots=project_skill_snapshots,
         sessions=session_service,
         runs=run_service,

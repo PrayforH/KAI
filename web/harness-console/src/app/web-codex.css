@@ -322,7 +322,7 @@ body.codex-theme-v1:has(.console-shell) .console-shell.is-rail-open .workbench-r
 
 body.codex-theme-v1:has(.console-shell) .task-sidebar,
 body.codex-theme-v1:has(.console-shell) .task-sidebar.is-collapsed {
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   border-right: 1px solid #303030;
   background: var(--codex-surface-sidebar);
   box-shadow: none;

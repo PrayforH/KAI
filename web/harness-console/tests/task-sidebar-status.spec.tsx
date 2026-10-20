@@ -7,8 +7,9 @@ import { activityStore } from "../src/lib/activity-store";
 import { runActivitySchema } from "../src/lib/activity-schema";
 import type { TaskSummary } from "../src/lib/task-history";
 
-const { loadTasks, markTaskRead } = vi.hoisted(() => ({ loadTasks: vi.fn(), markTaskRead: vi.fn() }));
-vi.mock("../src/lib/task-history", () => ({ loadTasks, markTaskRead, isTaskRead: (task: TaskSummary) => Boolean(task.last_read_at && Date.parse(task.last_read_at) >= Date.parse(task.updated_at)), prefetchThreadHistory: vi.fn().mockResolvedValue(undefined), setTaskArchived: vi.fn(), peekCachedTasks: vi.fn(() => null), notifyTaskListChanged: vi.fn() }));
+const { loadTasks, markTaskRead, setTaskPinned } = vi.hoisted(() => ({ loadTasks: vi.fn(), markTaskRead: vi.fn(), setTaskPinned: vi.fn() }));
+vi.mock("../src/lib/task-history", () => ({ loadTasks, markTaskRead, isTaskRead: (task: TaskSummary) => Boolean(task.last_read_at && Date.parse(task.last_read_at) >= Date.parse(task.updated_at)), prefetchThreadHistory: vi.fn().mockResolvedValue(undefined), setTaskArchived: vi.fn(), setTaskPinned, setTaskTitle: vi.fn(), forkTask: vi.fn(), peekCachedTasks: vi.fn(() => null), notifyTaskListChanged: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("../src/components/auth-provider", () => ({ useAuth: () => ({ user: { user_id: "test" } }) }));
 vi.mock("../src/components/account-menu", () => ({ AccountMenu: () => null }));
 vi.mock("../src/components/workspace-navigation", () => ({ WorkspaceNavigation: () => null }));
@@ -243,5 +244,27 @@ it("toggles the whole project heading and reserves navigation for View project",
     const view = container.querySelector<HTMLAnchorElement>('[role="menuitem"][href="/studio/projects/project-fold"]');
     expect(view?.textContent).toContain("查看项目");
     expect(props.onSelect).not.toHaveBeenCalled();
+  } finally { await act(async () => root.unmount()); container.remove(); }
+});
+
+
+it("pins and unpins from the trailing control and shares the menu with project tasks", async () => {
+  loadTasks.mockResolvedValue([task("succeeded", "first"), task("succeeded", "second")]);
+  setTaskPinned.mockResolvedValue(undefined);
+  const container = document.createElement("div"); document.body.appendChild(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(<TaskSidebar currentThreadId="first" collapsed={false}
+      onToggle={() => {}} onSelect={() => {}} onNewTask={() => {}} />));
+    const button = () => container.querySelector<HTMLButtonElement>('[aria-label="置顶 任务 second"], [aria-label="取消置顶 任务 second"]')!;
+    await act(async () => button().click());
+    expect(setTaskPinned).toHaveBeenCalledWith("second", true);
+    expect(container.querySelectorAll(".task-list-row")[0].textContent).toContain("second");
+    expect(button().getAttribute("aria-pressed")).toBe("true");
+    await act(async () => button().click());
+    expect(setTaskPinned).toHaveBeenLastCalledWith("second", false);
+    expect(button().getAttribute("aria-pressed")).toBe("false");
+    expect(container.querySelector(".task-sidebar-mode")?.closest(".task-list-scroll")).not.toBeNull();
+    expect(container.querySelector(".task-sidebar-primary")?.closest(".task-list-scroll")).toBeNull();
   } finally { await act(async () => root.unmount()); container.remove(); }
 });

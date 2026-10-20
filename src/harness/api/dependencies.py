@@ -1020,6 +1020,7 @@ def build_memory_container(
         thread_bindings, observed_events, artifact_repository
     )
     agui = AguiRunService(
+        workspaces=workspace_service,
         project_skill_snapshots=project_skill_snapshots,
         sessions=session_service,
         runs=run_service,

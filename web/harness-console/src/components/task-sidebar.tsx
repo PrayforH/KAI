@@ -1,6 +1,8 @@
 "use client";
 
 import { isFailedRunStatus } from "../lib/run-status";
+import { CodexTaskIcon } from "./codex-task-icon";
+import { TaskHeaderActions } from "./task-header-actions";
 import { SidebarIcon } from "./sidebar-icon";
 import Link from "next/link";
 import { projectHref } from "../lib/project-space";
@@ -22,7 +24,7 @@ import {
   peekCachedTasks,
   notifyTaskListChanged,
   prefetchThreadHistory,
-  setTaskArchived,
+  setTaskPinned,
   type TaskSummary,
 } from "../lib/task-history";
 import { formatTaskAge } from "../lib/task-list-age";
@@ -52,27 +54,11 @@ const statusLabels: Record<string, string> = {
 function NewTaskIcon() { return <SidebarIcon name="compose" className="task-new-icon" />; }
 function AddToProjectIcon() { return <SidebarIcon name="plus" />; }
 function SidebarCollapseIcon() { return <SidebarIcon name="panel" />; }
-function ArchiveIcon() { return <SidebarIcon name="archive" />; }
 function ProjectFolderIcon() { return <SidebarIcon name="folder" className="task-project-folder" />; }
 
-function MoreIcon() {
-  return (
-    <svg viewBox="0 0 16 16" aria-hidden="true">
-      <circle cx="3.5" cy="8" r="1" />
-      <circle cx="8" cy="8" r="1" />
-      <circle cx="12.5" cy="8" r="1" />
-    </svg>
-  );
-}
+function MoreIcon() { return <CodexTaskIcon name="more" />; }
 
-function PinIcon() {
-  return (
-    <svg viewBox="0 0 16 16" aria-hidden="true">
-      <path d="m5 2.5 6 0-1 4 2 2v1H4v-1l2-2z" />
-      <path d="M8 9.5V14" />
-    </svg>
-  );
-}
+function PinIcon() { return <CodexTaskIcon name="pin" />; }
 
 function TrashIcon() {
   return (
@@ -319,23 +305,19 @@ export function TaskSidebar({
     setRefreshKey((current) => current + 1);
   }
 
-  async function archiveTask(task: TaskSummary) {
-    if (activeStatuses.has(task.status)) return;
+  async function toggleTaskPin(task: TaskSummary) {
+    if (updatingThreadId) return;
     setUpdatingThreadId(task.thread_id);
     try {
-      await setTaskArchived(task.thread_id, true);
-      setTasks((current) => {
-        const next = current.filter((item) => item.thread_id !== task.thread_id);
-        return next;
-      });
+      const pinned = !task.pinned_at;
+      await setTaskPinned(task.thread_id, pinned);
+      setTasks(current => current.map(item => item.thread_id === task.thread_id
+        ? { ...item, pinned_at: pinned ? new Date().toISOString() : null } : item));
       setError("");
       notifyTaskListChanged();
-      if (task.thread_id === currentThreadId) onNewTask();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setUpdatingThreadId("");
-    }
+    } finally { setUpdatingThreadId(""); }
   }
 
   const selected = useMemo(
@@ -449,23 +431,16 @@ export function TaskSidebar({
             <time dateTime={task.updated_at}>{formatTaskAge(task.updated_at)}</time>
           </span>
         </button>
-        <button
-          type="button"
-          className="task-list-archive"
-          onClick={() => void archiveTask(task)}
-          disabled={
-            updatingThreadId === task.thread_id
-            || activeStatuses.has(task.status)
-          }
-          aria-label={`归档 ${task.title}`}
-          title={
-            activeStatuses.has(task.status)
-              ? "任务结束后可归档"
-              : "归档任务"
-          }
-        >
-          <ArchiveIcon />
-        </button>
+        <div className="task-row-actions">
+          <button type="button" className={`task-list-pin${task.pinned_at ? " is-pinned" : ""}`}
+            onClick={() => void toggleTaskPin(task)} disabled={Boolean(updatingThreadId)}
+            aria-label={`${task.pinned_at ? "取消置顶" : "置顶"} ${task.title}`}
+            aria-pressed={Boolean(task.pinned_at)} title={task.pinned_at ? "取消置顶" : "置顶"}>
+            <CodexTaskIcon name={task.pinned_at ? "pinFilled" : "pin"} />
+          </button>
+          <TaskHeaderActions task={task} variant="row" projects={projects}
+            onForked={onSelect} onArchived={() => { if (task.thread_id === currentThreadId) onNewTask(); }} />
+        </div>
       </div>
     );
   }
@@ -568,13 +543,13 @@ export function TaskSidebar({
               <span>新建任务</span>
             </button>
           </div>
+          <div className="task-list-scroll">
           <div className="task-sidebar-mode">
             <WorkspaceNavigation
               active={activeNav}
               visible={["knowledge", "agents", "automation", "skills"]}
             />
           </div>
-          <div className="task-list-scroll">
           <div className="task-list-toolbar task-project-toolbar">
             <div className="task-list-heading">
               <button type="button" className="task-section-toggle"

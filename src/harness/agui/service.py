@@ -21,6 +21,7 @@ from ag_ui.core import (
 )
 
 from harness.adapters.memory import InMemoryAguiThreadBindingRepository
+from harness.agui.branching import load_branch_snapshot
 from harness.agui.task_title import (
     TaskTitleGenerator,
     summarize_task_title_from_prompts,
@@ -28,6 +29,7 @@ from harness.agui.task_title import (
 from harness.application.input_artifacts import InputArtifactService
 from harness.application.runs import RunService
 from harness.application.sessions import SessionService
+from harness.application.workspaces import WorkspaceService
 from harness.context.models import SessionContextDigest
 from harness.context.service import ContextService
 from harness.core.errors import ConflictError, NotFoundError
@@ -47,6 +49,7 @@ class AguiThreadBinding:
     space_id: str | None = None
     project_id: str | None = None
     previous_session_ids: tuple[str, ...] = ()
+    branch_snapshot_id: str | None = None
 
     @property
     def session_ids(self) -> tuple[str, ...]:
@@ -129,8 +132,10 @@ class AguiRunService:
         knowledge_bindings: KnowledgeBindingResolver | None = None,
         project_context: ProjectContextResolver | None = None,
         project_skill_snapshots: ProjectSkillSnapshots | None = None,
+        workspaces: WorkspaceService | None = None,
     ) -> None:
         self._sessions = sessions
+        self._workspaces = workspaces
         self._run_service = runs
         self._input_artifacts = input_artifacts
         self._bindings = bindings or InMemoryAguiThreadBindingRepository()
@@ -166,6 +171,7 @@ class AguiRunService:
             space_id=session.team_ids[0] if session.team_ids else None,
             project_id=stored.project_id,
             previous_session_ids=stored.previous_session_ids,
+            branch_snapshot_id=stored.branch_snapshot_id,
         )
 
     async def client_coordinates_for_run(
@@ -400,6 +406,17 @@ class AguiRunService:
                 else None
             )
             session = await self._sessions.get(tenant_id, binding.session_id)
+            branch_snapshot = (
+                await load_branch_snapshot(
+                    self._input_artifacts, tenant_id, user_id, binding.branch_snapshot_id
+                )
+                if binding.branch_snapshot_id
+                else None
+            )
+            if branch_snapshot:
+                prefix = branch_snapshot.user_prompts()
+                if prefix and conversation_prompts[: len(prefix)] == prefix:
+                    conversation_prompts = conversation_prompts[len(prefix) :]
             captured_skills = []
             if project_context is not None and project_context.skill_references:
                 if self._project_skill_snapshots is None:
@@ -515,6 +532,10 @@ class AguiRunService:
                     else {}
                 ),
             }
+            if branch_snapshot and session.resolved_runtime_thread_id is None:
+                run_input["conversation_branch_context"] = branch_snapshot.context_projection()
+                if model_route_override is None and branch_snapshot.model_route_override:
+                    run_input["model_route_override"] = branch_snapshot.model_route_override
             creation = await self._run_service.create_with_result(
                 tenant_id,
                 binding.session_id,
@@ -713,6 +734,55 @@ class AguiRunService:
             self._title_retry_at[retry_key] = time.monotonic() + _TITLE_RETRY_COOLDOWN_SECONDS
             return
         self._title_retry_at.pop(retry_key, None)
+
+    async def fork_thread(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        thread_id: str,
+        target_thread_id: str,
+        snapshot: Callable[[StoredAguiThreadBinding], Awaitable[str]],
+    ) -> StoredAguiThreadBinding:
+        """Freeze history and workspace before creating a fresh runtime identity."""
+        async with self._lock:
+            source = await self._bindings.get_by_thread(tenant_id, user_id, thread_id)
+            session = await self._sessions.get(tenant_id, source.session_id)
+            if session.user_id != user_id:
+                raise NotFoundError(f"thread not found: {thread_id}")
+            await self._require_no_active_runs(
+                tenant_id, list(source.session_ids), operation="branch conversation"
+            )
+            snapshot_id = await snapshot(source)
+            target = await self._sessions.clone_for_context_rebase(
+                tenant_id,
+                user_id,
+                source.session_id,
+                session_id=f"session_branch_{target_thread_id}",
+            )
+            if self._workspaces is not None:
+                await self._workspaces.fork_latest(
+                    tenant_id=tenant_id,
+                    source_session_id=source.session_id,
+                    target_session_id=target.session_id,
+                )
+            now = datetime.now(UTC)
+            binding = StoredAguiThreadBinding(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                thread_id=target_thread_id,
+                session_id=target.session_id,
+                project_id=source.project_id,
+                title=f"{(source.title or '新聊天')[:194]} · 分支",
+                title_source="user",
+                title_updated_at=now,
+                branch_snapshot_id=snapshot_id,
+                branched_from_thread_id=thread_id,
+                created_at=now,
+                updated_at=now,
+            )
+            await self._bindings.add(binding)
+            return binding
 
     async def rebase_context(
         self,
@@ -957,6 +1027,7 @@ class AguiRunService:
                     agent_owner_user_id=session.resolved_agent_owner_user_id,
                     space_id=session.team_ids[0] if session.team_ids else None,
                     project_id=stored.project_id,
+                    branch_snapshot_id=stored.branch_snapshot_id,
                 )
                 resolved_owner = agent_owner_user_id or user_id
                 same_agent = (
@@ -1003,6 +1074,7 @@ class AguiRunService:
                         agent_owner_user_id=next_session.resolved_agent_owner_user_id,
                         space_id=space_id,
                         project_id=stored.project_id,
+                        branch_snapshot_id=stored.branch_snapshot_id,
                     )
                 if stored.archived_at is not None:
                     await self._bindings.set_archived(

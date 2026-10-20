@@ -24,6 +24,11 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from harness.agui.activity import build_run_activity
+from harness.agui.branching import (
+    MAX_BRANCH_SNAPSHOT_BYTES,
+    ConversationBranchSnapshot,
+    load_branch_snapshot,
+)
 from harness.agui.conversation_input import has_conversation_input
 from harness.agui.mapper import (
     PRESENTATION_TOOL_NAME,
@@ -697,6 +702,75 @@ async def create_project_thread(
     )
 
 
+@router.post("/threads/{thread_id}/fork", response_model=AguiThreadSummary, status_code=201)
+async def fork_agui_thread(
+    thread_id: str,
+    identity: Annotated[Identity, Depends(require_identity)],
+    container: Annotated[ApiContainer, Depends(get_container)],
+) -> AguiThreadSummary:
+    ensure_permission(identity, "tasks:read")
+    ensure_permission(identity, "tasks:write")
+
+    async def capture(source: AguiThreadBinding) -> str:
+        runs = _visible_thread_runs(
+            await container.runs.list_for_sessions(
+                identity.tenant_id,
+                list(source.session_ids),
+                limit=200,
+            )
+        )
+        messages: list[AguiHistoryMessage] = []
+        if source.branch_snapshot_id:
+            previous = await load_branch_snapshot(
+                container.input_artifacts,
+                identity.tenant_id,
+                identity.user_id,
+                source.branch_snapshot_id,
+            )
+            messages.extend(AguiHistoryMessage.model_validate(item) for item in previous.messages)
+        for run in runs:
+            messages.extend(await _history_messages_for_run(container, identity, run))
+        latest = runs[-1] if runs else None
+        snapshot = ConversationBranchSnapshot(
+            source_thread_id=thread_id,
+            messages=[item.model_dump(mode="json", exclude_none=True) for item in messages],
+            model_route_override=latest.input.get("model_route_override") if latest else None,
+        )
+        content = snapshot.model_dump_json().encode()
+        if len(content) > MAX_BRANCH_SNAPSHOT_BYTES:
+            raise ConflictError("对话过长，暂时无法创建分支")
+        artifact = await container.input_artifacts.upload(
+            tenant_id=identity.tenant_id,
+            user_id=identity.user_id,
+            name="conversation-branch.json",
+            media_type="application/json",
+            content=content,
+        )
+        return artifact.input_artifact_id
+
+    binding = await container.agui.fork_thread(
+        tenant_id=identity.tenant_id,
+        user_id=identity.user_id,
+        thread_id=thread_id,
+        target_thread_id=str(uuid4()),
+        snapshot=capture,
+    )
+    session = await container.sessions.get(identity.tenant_id, binding.session_id)
+    return AguiThreadSummary(
+        thread_id=binding.thread_id,
+        session_id=binding.session_id,
+        title=binding.title or "新聊天",
+        agent_name=session.agent_name,
+        agent_version=session.agent_version,
+        agent_owner_user_id=session.resolved_agent_owner_user_id,
+        space_id=session.team_ids[0] if session.team_ids else None,
+        status="idle",
+        project_id=binding.project_id,
+        created_at=binding.created_at,
+        updated_at=binding.updated_at,
+    )
+
+
 @router.get("/threads", response_model=list[AguiThreadSummary])
 async def list_agui_threads(
     identity: Annotated[Identity, Depends(require_identity)],
@@ -1042,6 +1116,17 @@ async def get_agui_thread_history(
         background_tasks.add_task(_materialize_history_snapshot, container, identity.tenant_id, run)
 
     messages: list[AguiHistoryMessage] = [message for chunk in reconstructed for message in chunk]
+    # Add the immutable branch prefix only on the oldest page, preserving pagination.
+    if binding.branch_snapshot_id and not has_more:
+        snapshot = await load_branch_snapshot(
+            container.input_artifacts,
+            identity.tenant_id,
+            identity.user_id,
+            binding.branch_snapshot_id,
+        )
+        messages = [
+            AguiHistoryMessage.model_validate(item) for item in snapshot.messages
+        ] + messages
     body = AguiThreadHistory(
         thread_id=thread_id,
         status=latest.status.value if latest is not None else "idle",

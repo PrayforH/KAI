@@ -1529,8 +1529,14 @@ class RunOrchestrator:
             project_projection = (
                 raw_project_projection if isinstance(raw_project_projection, str) else ""
             )
+            raw_branch_projection = run.input.get("conversation_branch_context")
+            branch_projection = (
+                raw_branch_projection if isinstance(raw_branch_projection, str) else ""
+            )
             context_projection = "\n\n".join(
-                section for section in (project_projection, recovery_projection) if section.strip()
+                section
+                for section in (project_projection, recovery_projection, branch_projection)
+                if section.strip()
             )
             if recovery_projection:
                 await self._events.append(

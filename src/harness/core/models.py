@@ -282,6 +282,8 @@ class AguiThreadBinding(FrozenModel):
     thread_id: str
     session_id: str
     previous_session_ids: tuple[str, ...] = ()
+    branch_snapshot_id: str | None = None
+    branched_from_thread_id: str | None = None
     title: str | None = None
     title_source: Literal["fallback", "model", "user"] | None = None
     title_updated_at: datetime | None = None

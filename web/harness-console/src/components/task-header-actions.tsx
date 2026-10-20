@@ -1,4 +1,8 @@
 "use client";
+import { useAuth } from "./auth-provider";
+import { useRouter } from "next/navigation";
+import { CodexTaskIcon } from "./codex-task-icon";
+import { CodexResponseIcon } from "./codex-response-icon";
 import { ActionMenuPopover } from "./action-menu-popover";
 import { writeTextToClipboard } from "../lib/clipboard";
 import { RunContextManifest } from "./run-context-manifest";
@@ -12,6 +16,7 @@ import {
   notifyTaskListChanged,
   setTaskArchived,
   setTaskPinned,
+  forkTask,
   setTaskTitle,
   type TaskSummary,
 } from "../lib/task-history";
@@ -37,16 +42,7 @@ function RecentActivityIcon() {
   );
 }
 
-function BranchIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <circle cx="6" cy="5" r="1.9" />
-      <circle cx="6" cy="15" r="1.9" />
-      <circle cx="14" cy="7.5" r="1.9" />
-      <path d="M6 6.9v6.2M14 9.4c0 2.5-1.8 3.4-4.2 3.7-1.2.15-2.4.4-3.1 1" />
-    </svg>
-  );
-}
+function BranchIcon() { return <CodexTaskIcon name="branch" />; }
 
 function ProjectIcon() {
   return (
@@ -56,15 +52,7 @@ function ProjectIcon() {
   );
 }
 
-function DotsIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <circle cx="4.4" cy="10" r="1.3" />
-      <circle cx="10" cy="10" r="1.3" />
-      <circle cx="15.6" cy="10" r="1.3" />
-    </svg>
-  );
-}
+function DotsIcon() { return <CodexTaskIcon name="more" />; }
 
 function TraceIcon() {
   return (
@@ -74,32 +62,9 @@ function TraceIcon() {
   );
 }
 
-function PinIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path d="m11.5 3 5.5 5.5-2.4.7-2.9 2.9-.3 3-5.9-5.9 3-.3 2.9-2.9ZM6.4 13.6 3 17" />
-    </svg>
-  );
-}
-
-function RenameIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path d="M8 13.2 8.5 11l6.8-6.8a1.4 1.4 0 0 1 2 2L10.5 13Z" />
-      <path d="M3.5 16.5h13" />
-    </svg>
-  );
-}
-
-function ArchiveIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path d="M3.5 6.5h13v9a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5Z" />
-      <path d="M2.5 3.5h15v3h-15Z" />
-      <path d="M7.5 10h5" />
-    </svg>
-  );
-}
+function PinIcon() { return <CodexTaskIcon name="pin" />; }
+function RenameIcon() { return <CodexResponseIcon name="pencil" className="task-action-glyph" />; }
+function ArchiveIcon() { return <CodexTaskIcon name="archive" />; }
 
 function useDismissable(open: boolean, close: () => void) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -290,10 +255,12 @@ export function TaskHeaderActions({
   onProjectChanged,
   variant = "header",
   onChanged,
+  onForked,
 }: {
   task: TaskSummary;
   variant?: "header" | "row";
   onChanged?: () => void;
+  onForked?: (task: TaskSummary) => void;
   /** Projects the task can be moved into; empty hides the project actions. */
   projects?: readonly ApiProject[];
   /** Trace for the run currently shown in this task. */
@@ -304,6 +271,8 @@ export function TaskHeaderActions({
   onArchived?: () => void;
   onProjectChanged?: (projectId: string | null) => void;
 }) {
+  const router = useRouter();
+  const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -396,11 +365,11 @@ export function TaskHeaderActions({
           if (copied) setNotice("任务链接已复制"); else setError("复制失败，请重试。");
         });
       }}>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg>
+        <CodexResponseIcon name="copy" className="task-action-glyph" />
         <span>复制任务链接</span>
       </button>
       <a role="menuitem" href={`/?thread=${encodeURIComponent(task.thread_id)}`} target="_blank" rel="noopener noreferrer" onClick={close}>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3h7v7m0-7L10 14M10 5H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/></svg>
+        <CodexResponseIcon name="external" className="task-action-glyph" />
         <span>在新标签中打开</span>
       </a>
       <div role="separator" />
@@ -410,13 +379,23 @@ export function TaskHeaderActions({
             <PinIcon />
             <span>{pinned ? "取消置顶任务" : "置顶任务"}</span>
           </button>)}
+          <button type="button" role="menuitem" disabled={busy || isActive}
+            title={isActive ? "当前任务结束后可创建分支" : undefined}
+            onClick={() => void run(async () => {
+              const branch = await forkTask(task.thread_id, user.user_id);
+              close();
+              if (onForked) onForked(branch);
+              else router.push(`/?thread=${encodeURIComponent(branch.thread_id)}`);
+            })}>
+            <CodexTaskIcon name="branch" /><span>分支到新聊天</span>
+          </button>
           <button type="button" role="menuitem" disabled={busy} onClick={openRename}>
             <RenameIcon />
             <span>{variant === "row" ? "重命名" : "重命名任务"}</span>
           </button>
           {variant === "row" && (<button type="button" role="menuitem" disabled={busy} onClick={togglePinned}>
             <PinIcon />
-            <span>{pinned ? "取消固定" : "固定"}</span>
+            <span>{pinned ? "取消置顶" : "置顶"}</span>
           </button>)}
           {variant === "row" && <div role="separator" />}
           {(projects.length > 0 || task.project_id) && (

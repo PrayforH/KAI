@@ -198,3 +198,28 @@ html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) [data-
   background: transparent;
   box-shadow: none;
 }
+
+/* One scroll owner below New Task; row actions share the existing task menu. */
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) .task-row-actions {
+  position: absolute; right: 5px; top: 50%; transform: translateY(-50%);
+  display: flex; align-items: center; gap: 1px;
+}
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) .task-row-actions :is(.task-list-pin, .task-header-more) {
+  display: grid; place-items: center; width: 24px; height: 24px; min-width: 24px;
+  padding: 0; border: 0; border-radius: 5px; background: transparent;
+  color: var(--web-ink-muted); cursor: pointer; opacity: 0;
+  transition: opacity 120ms ease, color 120ms ease;
+}
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) .task-list-row:is(:hover, :focus-within) .task-row-actions :is(.task-list-pin, .task-header-more),
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) .task-row-actions .task-list-pin.is-pinned,
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) .task-row-actions .task-header-more[aria-expanded="true"] { opacity: 1; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) .task-list-row:focus-within .task-list-meta { opacity: 0; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) .task-list-row:has(.task-list-pin.is-pinned) .task-list-meta { margin-right: 48px; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) .task-row-actions :is(.task-list-pin, .task-header-more):hover { color: var(--web-ink); background: var(--codex-surface-hover); }
+.task-row-actions [data-codex-task-icon] { fill: currentColor; stroke: none; }
+@media (hover: none) {
+  html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) .task-row-actions :is(.task-list-pin, .task-header-more) { opacity: 1; }
+  html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) .task-list-row .task-list-meta { opacity: 0; }
+}
+
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .task-action-glyph { fill: currentColor; stroke: none; }
