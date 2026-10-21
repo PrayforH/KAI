@@ -389,7 +389,7 @@ export function TaskHeaderActions({
               if (onForked) onForked(branch);
               else router.push(`/?thread=${encodeURIComponent(branch.thread_id)}`);
             })}>
-            <CodexTaskIcon name="branch" /><span>分支到新聊天</span>
+            <CodexTaskIcon name="branchAlt" /><span>分支到新聊天</span>
           </button>
           <button type="button" role="menuitem" disabled={busy} onClick={openRename}>
             <RenameIcon />

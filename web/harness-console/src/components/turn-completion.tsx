@@ -48,11 +48,11 @@ function BranchCompletion({ scope, children, onForked }: { scope: BranchScope; c
     }
   }
   return <span className="turn-completion-slot" data-branch-pending={busy || undefined}>
-    {children}
     <button className="turn-branch-button" type="button" aria-label="分支到新任务" title="分支到新任务"
       aria-busy={busy} disabled={busy} onClick={() => void branch()}>
-      <CodexTaskIcon name="branch" />
+      <CodexTaskIcon name="branchAlt" />
     </button>
+    {children}
     <FeedbackToast message={error} tone="error" onDismiss={() => setError("")} />
   </span>;
 }
