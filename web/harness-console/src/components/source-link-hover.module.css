@@ -2,8 +2,10 @@
   position: fixed;
   z-index: 650;
   display: flex;
+  flex-direction: column;
   width: max-content;
   max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - 16px);
   overflow: hidden;
   border: 1px solid var(--codex-line);
   border-radius: 8px;
@@ -27,7 +29,26 @@
   white-space: nowrap;
   cursor: pointer;
 }
-.toolbar > :not(:last-child) { border-right: 1px solid var(--codex-line); }
+.actions > :is(a, button):not(:last-child) { border-right: 1px solid var(--codex-line); }
 .toolbar :is(a, button):hover { background: var(--codex-surface-hover); color: var(--codex-ink); }
 .toolbar :is(a, button):focus-visible { outline: 2px solid var(--codex-muted); outline-offset: -3px; }
 .toolbar svg { width: 14px; height: 14px; flex: 0 0 14px; fill: currentColor; stroke: none; }
+
+.actions { display: flex; align-items: center; }
+.preview { width: 360px; border-radius: 12px; font-family: var(--codex-font-ui, system-ui); }
+.preview .actions { min-height: 46px; padding: 0 10px 0 14px; gap: 2px; }
+.preview .actions > :is(a, button) { border: 0; padding: 6px; border-radius: 5px; }
+.preview .actions > button { opacity: 0; width: 26px; }
+.preview:is(:hover, :focus-within) .actions > button { opacity: 1; }
+.site { display: flex; min-width: 0; flex: 1; align-items: center; gap: 10px; font-size: 12px; }
+.site > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.site svg { width: 16px; height: 16px; flex-basis: 16px; }
+.site .globe { fill: none; stroke: currentColor; stroke-width: 1.5; }
+.content { min-height: 0; overflow-y: auto; border-top: 1px solid var(--codex-line); padding: 16px 14px; animation: reveal 160ms ease-out; }
+.content :is(h3, p) { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; margin: 0; font-size: 14px; line-height: 1.4; }
+.content h3 { font-weight: 600; color: var(--codex-ink); }
+.content p { margin-top: 5px; font-weight: 400; color: var(--codex-muted); }
+.srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+@keyframes reveal { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .content { animation: none; } }
+@media (hover: none) { .preview .actions > button { opacity: 1; } }
