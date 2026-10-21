@@ -4,8 +4,8 @@ const network = vi.hoisted(() => ({ lookup: vi.fn(), request: vi.fn() }));
 vi.mock("node:dns/promises", () => ({ lookup: network.lookup }));
 vi.mock("node:http", () => ({ request: network.request }));
 vi.mock("node:https", () => ({ request: network.request }));
-import { fetchLinkPreview, isPublicPreviewAddress, parsePreview, previewURL } from "../src/lib/link-preview-server";
-afterEach(() => vi.clearAllMocks());
+import { previewProxySocket, fetchLinkPreview, isPublicPreviewAddress, parsePreview, previewURL } from "../src/lib/link-preview-server";
+afterEach(() => { vi.clearAllMocks(); vi.unstubAllEnvs(); });
 describe("public URL policy", () => {
   it.each(["http://localhost/a", "https://x.local/a", "http://127.1", "http://2130706433", "http://[::1]", "http://[::ffff:8.8.8.8]", "http://[64:ff9b::808:808]", "http://10.0.0.1", "http://user:pass@example.com", "https://example.com:3501", "file:///tmp/x", "https://example.com/\n"])('rejects %s', url => expect(() => previewURL(url)).toThrow());
   it.each(["0.0.0.0", "100.64.0.1", "169.254.169.254", "172.20.109.174", "192.168.1.1", "198.18.0.1", "224.0.0.1", "2001:db8::1", "2002:808:808::1", "fe80::1", "::ffff:127.0.0.1"])('blocks %s', ip => expect(isPublicPreviewAddress(ip)).toBe(false));
@@ -64,4 +64,16 @@ it("limits redirect loops and page bytes", async () => {
   expect(await fetchLinkPreview("https://loop.example/start")).toBeNull(); expect(network.request).toHaveBeenCalledTimes(4);
   reply(200, { "content-type": "text/html" }, ' '.repeat(512 * 1024) + '<title>Beyond budget</title>');
   expect(await fetchLinkPreview("https://large.example/start")).toBeNull();
+});
+
+it("tunnels only to the checked IP through the configured egress proxy", async () => {
+  const socket = Object.assign(new EventEmitter(), { destroy: vi.fn(), unshift: vi.fn() });
+  network.request.mockImplementationOnce(options => {
+    expect(options).toMatchObject({ hostname: "egress.internal", port: "3128", method: "CONNECT", path: "8.8.8.8:80", headers: { Host: "8.8.8.8:80" } });
+    const req = Object.assign(new EventEmitter(), { end() { req.emit("connect", { statusCode: 200 }, socket, Buffer.alloc(0)); } });
+    return req;
+  });
+  const controller = new AbortController();
+  expect(await previewProxySocket("http://egress.internal:3128", "8.8.8.8", new URL("http://public.example/"), controller.signal)).toBe(socket);
+  controller.abort(); expect(socket.destroy).toHaveBeenCalledOnce();
 });

@@ -2,7 +2,8 @@ import { lookup } from "node:dns/promises";
 import type { LookupAddress } from "node:dns";
 import { request as httpRequest, type RequestOptions } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { BlockList, isIP } from "node:net";
+import { BlockList, isIP, type Socket } from "node:net";
+import { connect as tlsConnect } from "node:tls";
 import type { LinkPreview } from "./link-preview";
 
 const denied = new BlockList();
@@ -48,6 +49,26 @@ export function parsePreview(html: string): LinkPreview {
 const MAX_BYTES = 512 * 1024;
 const cache = new Map<string, { expires: number; value: Promise<LinkPreview | null> }>();
 let active = 0;
+/** CONNECT to the validated IP, never let the proxy resolve the target again. */
+export async function previewProxySocket(proxyValue: string, address: string, url: URL, signal: AbortSignal): Promise<Socket> {
+  const proxy = new URL(proxyValue);
+  if (proxy.protocol !== "http:" || proxy.username || proxy.password) throw new Error("Unsupported preview proxy");
+  const authority = `${isIP(address) === 6 ? `[${address}]` : address}:${url.port || (url.protocol === "https:" ? 443 : 80)}`;
+  return new Promise((resolve, reject) => {
+    const req = httpRequest({ hostname: proxy.hostname, port: proxy.port || 80, method: "CONNECT", path: authority, headers: { Host: authority }, signal, agent: false });
+    req.on("connect", (response, socket, head) => {
+      if (response.statusCode !== 200) { socket.destroy(); reject(new Error("Proxy refused tunnel")); return; }
+      if (head.length) socket.unshift(head);
+      const abort = () => socket.destroy();
+      signal.addEventListener("abort", abort, { once: true });
+      socket.once("close", () => signal.removeEventListener("abort", abort));
+      socket.on("error", reject);
+      if (signal.aborted) { socket.destroy(); reject(signal.reason); return; }
+      resolve(url.protocol === "https:" ? tlsConnect({ socket, servername: url.hostname.replace(/^\[|\]$/g, ""), ALPNProtocols: ["http/1.1"] }) : socket);
+    });
+    req.on("error", reject); req.end();
+  });
+}
 async function page(url: URL, signal: AbortSignal): Promise<{ html?: string; redirect?: string }> {
   const host = url.hostname.replace(/^\[|\]$/g, "");
   signal.throwIfAborted();
@@ -60,8 +81,11 @@ async function page(url: URL, signal: AbortSignal): Promise<{ html?: string; red
   if (!answers.length || answers.some(answer => !isPublicPreviewAddress(answer.address))) throw new Error("Non-public address");
   // Pin the socket to a checked address; keep the URL's Host and TLS SNI intact.
   const address = answers[0];
+  const proxy = process.env.HARNESS_WEB_TOOLS_PROXY?.trim();
+  const socket = proxy ? await previewProxySocket(proxy, address.address, url, signal) : null;
+  signal.throwIfAborted();
   return new Promise((resolve, reject) => {
-    const options: RequestOptions & { servername: string } = { signal, agent: false, hostname: address.address, servername: host, headers: { Host: url.host, Accept: "text/html,application/xhtml+xml", "Accept-Encoding": "identity", "User-Agent": "AgentStudio-LinkPreview/1.0" } };
+    const options: RequestOptions & { servername: string } = { signal, ...(socket ? { createConnection: () => socket } : { agent: false }), hostname: address.address, servername: host, headers: { Host: url.host, Accept: "text/html,application/xhtml+xml", "Accept-Encoding": "identity", "User-Agent": "AgentStudio-LinkPreview/1.0" } };
     const req = (url.protocol === "https:" ? httpsRequest : httpRequest)(url, options, response => {
       if ([301, 302, 303, 307, 308].includes(response.statusCode ?? 0) && response.headers.location) {
         resolve({ redirect: response.headers.location }); response.destroy(); return;
