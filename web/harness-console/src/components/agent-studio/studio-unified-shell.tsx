@@ -75,6 +75,8 @@ export function StudioUnifiedShell({
     ? "tasks"
     : pathname.startsWith("/studio/files")
     ? "files"
+    : pathname.startsWith("/studio/assistant")
+      ? "assistant"
     : pathname.startsWith("/studio/automation")
       ? "automation"
       : pathname.startsWith("/studio/skills")

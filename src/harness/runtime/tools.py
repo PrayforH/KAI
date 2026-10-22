@@ -139,7 +139,7 @@ class ToolResolver:
         | None = None,
         credential_provider: DynamicMcpCredentialProvider | None = None,
         web_search_api_key: str = "",
-        web_search_provider: Literal["tavily", "minimax"] = "minimax",
+        web_search_provider: Literal["tavily", "minimax", "doubao"] = "minimax",
         web_enabled: bool = True,
         web_configurations: WebConfigurationService | None = None,
     ) -> None:
@@ -148,7 +148,7 @@ class ToolResolver:
         self._project_mcp_validator = project_mcp_validator
         self._credential_provider = credential_provider or EmptyMcpCredentialProvider()
         self._web_search_api_key = web_search_api_key
-        self._web_search_provider: Literal["tavily", "minimax"] = web_search_provider
+        self._web_search_provider: Literal["tavily", "minimax", "doubao"] = web_search_provider
         self._web_enabled = web_enabled
         self._web_configurations = web_configurations
 

@@ -26,6 +26,7 @@ from harness.api.routes import (
     sessions,
     ui,
 )
+from harness.assistant import api as assistant_routes
 from harness.automations import api as automations_routes
 from harness.config import Settings
 from harness.core.errors import (
@@ -362,6 +363,7 @@ def create_app(container: ApiContainer) -> FastAPI:
     app.include_router(governance_routes.router)
     app.include_router(trigger_routes.studio_router)
     app.include_router(automations_routes.router)
+    app.include_router(assistant_routes.router)
     app.include_router(projects_routes.router)
     app.include_router(trigger_routes.public_router)
     app.include_router(trigger_routes.chatops_router)

@@ -41,6 +41,7 @@ from harness.application.memory import UserMemoryService
 from harness.application.runs import RunQuotaPlan, RunService
 from harness.application.sessions import SessionService
 from harness.application.workspaces import WorkspacePolicy, WorkspaceService
+from harness.assistant.service import AssistantService
 from harness.auth.api_access import ApiAccessService, InMemoryApiAccessKeyRepository
 from harness.auth.audit import AuditService
 from harness.auth.repositories import InMemoryAuditRepository, InMemoryAuthRepository
@@ -287,6 +288,7 @@ class ApiContainer:
     agui: AguiRunService
     auto_execute: bool
     presentations: PresentationService
+    assistant: AssistantService | None = None
     event_wakeup: EventWakeup | None = None
     skill_conversation: SkillConversationService | None = None
     sandbox_maintenance: Callable[[], Awaitable[object]] | None = None

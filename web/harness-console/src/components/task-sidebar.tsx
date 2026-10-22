@@ -547,7 +547,7 @@ export function TaskSidebar({
           <div className="task-sidebar-mode">
             <WorkspaceNavigation
               active={activeNav}
-              visible={["knowledge", "agents", "automation", "skills"]}
+              visible={["assistant", "knowledge", "agents", "automation", "skills"]}
             />
           </div>
           <div className="task-list-toolbar task-project-toolbar">

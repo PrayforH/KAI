@@ -19,10 +19,10 @@ describe("workspace navigation ordering", () => {
     expect(navigation).not.toContain("visible.includes(workspace.id)");
   });
 
-  it("puts the knowledge base directly under 新建任务 in the task sidebar", () => {
+  it("puts 我的助理 first while preserving the remaining workspace order", () => {
     // 自动化 sits directly above the 技能 zone in the sidebar.
     expect(taskSidebar).toContain(
-      'visible={["knowledge", "agents", "automation", "skills"]}',
+      'visible={["assistant", "knowledge", "agents", "automation", "skills"]}',
     );
     // 新建任务 stays its own primary action above the workspace navigation.
     expect(taskSidebar).toContain("task-sidebar-create");

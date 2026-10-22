@@ -346,7 +346,15 @@ async def serve(settings: Settings) -> None:
         async def automation_maintenance() -> None:
             await container.automations.dispatch_due()
 
+        async def assistant_maintenance() -> None:
+            if container.assistant is not None:
+                await container.assistant.process_once()
+
         control_tasks = [
+            asyncio.create_task(
+                maintenance_loop(assistant_maintenance, stop=stop,
+                    poll_interval=2.0, label="assistant")
+            ),
             asyncio.create_task(
                 maintenance_loop(
                     preview_maintenance,

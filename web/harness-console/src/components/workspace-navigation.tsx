@@ -3,6 +3,7 @@ import Link from "next/link";
 import styles from "./workspace-navigation.module.css";
 
 export type WorkspaceId =
+  | "assistant"
   | "tasks"
   | "agents"
   | "files"
@@ -18,6 +19,7 @@ export const workspaceItems: ReadonlyArray<{
   href: string;
   label: string;
 }> = [
+  { id: "assistant", href: "/studio/assistant", label: "我的助理" },
   { id: "tasks", href: "/", label: "任务" },
   { id: "agents", href: "/studio/agents", label: "智能体" },
   { id: "files", href: "/studio/files", label: "我的文件" },

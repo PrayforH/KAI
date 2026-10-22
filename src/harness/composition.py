@@ -28,6 +28,8 @@ from harness.application.memory import UserMemoryService
 from harness.application.runs import RunQuotaPlan, RunService
 from harness.application.sessions import SessionService
 from harness.application.workspaces import WorkspacePolicy, WorkspaceService
+from harness.assistant.repository import PostgresAssistantRepository
+from harness.assistant.service import AssistantService
 from harness.auth.api_access import ApiAccessService
 from harness.auth.audit import AuditService
 from harness.auth.repositories import PostgresAuditRepository, PostgresAuthRepository
@@ -887,6 +889,7 @@ def build_production_container(
         enabled=settings.web_tools_enabled,
         provider=settings.web_search_provider,
         api_key=settings.web_search_api_key.get_secret_value(),
+        doubao_api_key=settings.web_doubao_api_key.get_secret_value(),
     )
     model_configurations = ModelConfigurationService(
         capability_catalogs,
@@ -1794,6 +1797,10 @@ def build_production_container(
         runs=run_service,
         triggers=trigger_service,
         automations=automation_service,
+        assistant=AssistantService(
+            PostgresAssistantRepository(sessions), agents=agent_service, auth=auth,
+            projects=project_service, agui=agui, runs=run_service, events=raw_event_repository,
+        ),
         projects=project_service,
         approvals=approval_service,
         artifacts=artifact_service,

@@ -12,7 +12,7 @@ from harness.studio.mcp_credential_store import McpCredentialService, StoredMcpC
 from harness.studio.models import StudioModel
 
 REFERENCE = "platform-web-settings"
-Provider = Literal["platform", "minimax", "tavily"]
+Provider = Literal["platform", "minimax", "tavily", "doubao"]
 
 
 class SavedWebConfiguration(TypedDict):
@@ -33,7 +33,7 @@ class WebConfiguration(StudioModel):
     effective_enabled: bool = Field(alias="effectiveEnabled")
     platform_enabled: bool = Field(alias="platformEnabled")
     provider: Provider
-    platform_provider: Literal["minimax", "tavily"] = Field(alias="platformProvider")
+    platform_provider: Literal["minimax", "tavily", "doubao"] = Field(alias="platformProvider")
     credential_configured: bool = Field(alias="credentialConfigured")
     personal_key_configured: bool = Field(alias="personalKeyConfigured")
 
@@ -44,13 +44,17 @@ class WebConfigurationService:
         credentials: McpCredentialService,
         *,
         enabled: bool = True,
-        provider: Literal["minimax", "tavily"] = "minimax",
+        provider: Literal["minimax", "tavily", "doubao"] = "minimax",
         api_key: str = "",
+        doubao_api_key: str = "",
     ) -> None:
         self.credentials = credentials
         self.enabled = enabled
-        self.provider: Literal["minimax", "tavily"] = provider
+        self.provider: Literal["minimax", "tavily", "doubao"] = provider
         self._api_key = api_key
+        self._platform_keys = {provider: api_key}
+        if doubao_api_key:
+            self._platform_keys["doubao"] = doubao_api_key
 
     async def _read(self, tenant_id: str, user_id: str) -> SavedWebConfiguration:
         stored = await self.credentials.repository.get(tenant_id, user_id, REFERENCE)
@@ -71,7 +75,7 @@ class WebConfigurationService:
             platformEnabled=self.enabled,
             provider=data["provider"],
             platformProvider=self.provider,
-            credentialConfigured=personal or (provider == self.provider and bool(self._api_key)),
+            credentialConfigured=personal or bool(self._platform_keys.get(provider)),
             personalKeyConfigured=personal,
         )
 
@@ -117,8 +121,8 @@ class WebConfigurationService:
             raise WebAccessError("已在个人设置中关闭联网。可开启后重试；无需重新发布智能体。")
         provider = self.provider if data["provider"] == "platform" else data["provider"]
         key = data.get("keys", {}).get(provider, "")
-        if not key and provider == self.provider:
-            key = self._api_key
+        if not key:
+            key = self._platform_keys.get(provider, "")
 
         async def get_key() -> str:
             return key

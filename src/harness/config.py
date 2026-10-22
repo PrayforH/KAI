@@ -71,7 +71,8 @@ class Settings(BaseSettings):
     codex_network_access: bool = False
     web_tools_enabled: bool = True
     web_search_api_key: SecretStr = SecretStr("")
-    web_search_provider: Literal["tavily", "minimax"] = "minimax"
+    web_search_provider: Literal["tavily", "minimax", "doubao"] = "minimax"
+    web_doubao_api_key: SecretStr = SecretStr("")
     codex_tool_output_token_limit: int = Field(default=32_000, ge=1_000, le=200_000)
     otel_enabled: bool = False
     otel_content_capture: Literal["off", "redacted"] = "off"
