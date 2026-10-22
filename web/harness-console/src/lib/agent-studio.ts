@@ -266,6 +266,7 @@ export function applyStudioDraftUpdate(
   if (update.runtime && update.runtime !== current.runtime && !update.context) {
     next.context = {};
   }
+  if (JSON.stringify(next) === JSON.stringify(current)) return current;
   if (
     !("version" in update) &&
     current.publishedVersion &&
@@ -274,6 +275,20 @@ export function applyStudioDraftUpdate(
     next.version = nextPatchVersion(current.publishedVersion) ?? current.version;
   }
   return next;
+}
+
+export function isStudioDraftPublished(
+  draft: StudioDraft,
+  hasUnsavedChanges: boolean,
+): boolean {
+  // The server advances the version whenever a published spec changes. Its
+  // persisted release metadata survives reloads; page-local validation does not.
+  return Boolean(
+    !hasUnsavedChanges
+    && draft.version === draft.publishedVersion
+    && draft.publishedHash
+    && draft.publishedPackageHash
+  );
 }
 
 export interface StudioContract {

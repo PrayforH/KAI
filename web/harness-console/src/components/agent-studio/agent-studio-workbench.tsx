@@ -20,6 +20,7 @@ import {
   promptOutline,
   STUDIO_STAGES,
   applyStudioDraftUpdate,
+  isStudioDraftPublished,
   builtinToolAvailable,
   evaluateStudioDraft,
   mcpOptionsForDraft,
@@ -640,6 +641,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
 
   function updateDraft(update: Partial<StudioDraft>) {
     const next = applyStudioDraftUpdate(draft, update);
+    if (next === draft) return;
     const versionAutoBumped = next.version !== draft.version && !("version" in update);
     setDraft(next);
     setInspected(false);
@@ -1783,13 +1785,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
   const activeEvalRun = agentEvalRuns.find((item) =>
     ["queued", "running", "cancelling"].includes(item.run.status),
   ) ?? agentEvalRuns[0];
-  const publishedCurrent = Boolean(
-    draft.publishedVersion === draft.version
-    && draft.publishedHash
-    && serverValidation?.contentHash === draft.publishedHash
-    && draft.publishedPackageHash
-    && serverValidation?.packageHash === draft.publishedPackageHash
-  );
+  const publishedCurrent = isStudioDraftPublished(draft, dirty);
   const currentPersonalVersion = draft.agentId
     ? personalVersions.find((version) => version.agent_id === draft.agentId)?.current_version
       ?? null

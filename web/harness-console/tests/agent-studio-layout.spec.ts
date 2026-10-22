@@ -378,7 +378,8 @@ describe("Agent Studio management page", () => {
     expect(titleBlock).not.toContain("已同步 r${draft.revision}");
     expect(styles).toContain(".syncState");
     // The name stands alone: no identity icon block, and no leftover styling.
-    expect(titleBlock).toContain("<h1>{draft.displayName}</h1>");
+    expect(titleBlock).toContain("<EditableAgentName");
+    expect(titleBlock).toContain("name={draft.displayName}");
     expect(titleBlock).not.toContain("agentIdentityIcon");
     expect(styles).not.toContain("agentIdentityIcon");
   });
