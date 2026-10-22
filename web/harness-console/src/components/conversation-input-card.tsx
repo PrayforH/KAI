@@ -181,7 +181,6 @@ export function ConversationInputCard({ input, disabled, onSubmit, modelRoute = 
       </fieldset>
       {error && <p role="alert" className={styles.error}>{error}</p>}
       {!submitted && <footer className={styles.footer}>
-        <span className={styles.hint}>{question.type === "multi" ? "可选择多项" : "选择一项或填写回答"}</span>
         <div className={styles.actions}><button className={styles.skip} type="button" disabled={locked || voiceActive} onClick={() => void submit(true)}>跳过</button>
         <button className={styles.submit} type="button" disabled={locked || voiceActive || (lastQuestion ? !answer : !hasCurrentAnswer)} onClick={advance}>
           {sending ? "发送中…" : lastQuestion ? "提交回答" : "下一步"}<span aria-hidden="true">⏎</span>

@@ -679,7 +679,7 @@ export function TaskSidebar({
                   {!collapsed && (
                     <div className="task-project-items">
                       {projectTasks.length === 0 && (
-                        <p className="task-project-empty">还没有任务，点击右侧 ＋ 新建</p>
+                        <p className="task-project-empty">暂无任务</p>
                       )}
                       {(expanded ? projectTasks : projectTasks.slice(0, 5)).map(renderTaskRow)}
                       {projectTasks.length > 5 && (

@@ -45,14 +45,13 @@
 .freeform > svg { width: 20px; height: 20px; flex-shrink: 0; fill: var(--codex-muted); stroke: none; }
 .card .text { width: 100%; min-width: 0; height: 24px; min-height: 24px; border: 0; border-radius: 0; padding: 0; background: transparent; color: inherit; font: inherit; box-shadow: none; outline: none; }
 .text::placeholder { color: var(--codex-muted); }
-.footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 8px 0; }
-.hint { color: var(--codex-muted); font-size: 12px; }
+.footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 6px 8px 0; }
 .submit { display: flex; align-items: center; gap: 10px; flex-shrink: 0; border: 0; border-radius: 16px; min-height: 32px; padding: 6px 12px; background: var(--codex-ink); color: var(--codex-surface); font: inherit; font-weight: 500; cursor: pointer; }
 .submit span { font-size: 12px; opacity: .6; }
 .card button:focus-visible { outline: 2px solid var(--codex-muted); outline-offset: 2px; }
 .card button:disabled { opacity: .45; cursor: default; }
 .error { margin: 8px; color: var(--codex-danger, var(--codex-ink)); font-size: 13px; }
-@media (max-width: 480px) { .header { gap: 8px; } .hint { display: none; } .footer { justify-content: flex-end; } }
+@media (max-width: 480px) { .header { gap: 8px; } .footer { justify-content: flex-end; } }
 @media (prefers-reduced-motion: reduce) { .option, .heading svg { transition: none; } }
 
 .actions { display: flex; align-items: center; gap: 8px; }

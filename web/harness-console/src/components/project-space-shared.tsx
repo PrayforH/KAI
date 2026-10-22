@@ -74,7 +74,7 @@ export function ProjectTaskRows({
             className={styles.rowLink}
             href={`/?thread=${encodeURIComponent(task.thread_id)}`}
           >
-            <strong>{task.title}{task.pinned_at && <span className={styles.pinnedLabel}>已置顶</span>}</strong>
+            <strong>{task.title}</strong>
             {!compact && <small>
               {task.archived_at ? "已归档 · " : ""}
               {task.pending_input
@@ -87,23 +87,24 @@ export function ProjectTaskRows({
               · {formatTaskAge(task.updated_at)}
             </small>}
           </Link>
-          {compact ? <time className={styles.taskTime} dateTime={task.updated_at}>{formatTaskAge(task.updated_at)}</time> : <Link
+          {!compact && <Link
             className={styles.textLink}
             href={`/?thread=${encodeURIComponent(task.thread_id)}`}
           >
             打开任务 →
           </Link>}
           {compact && <TaskHeaderActions task={task} projects={projects.filter(project => !project.archivedAt)} variant="row" showPinControl onChanged={onChanged} />}
+          {compact && <time className={styles.taskTime} dateTime={task.updated_at}>{formatTaskAge(task.updated_at)}</time>}
         </li>
       ))}
     </ul>
   );
 }
-export function projectEmpty(title: string, description: string) {
+export function projectEmpty(title: string, description?: string) {
   return (
     <div className={styles.empty}>
       <strong>{title}</strong>
-      <p>{description}</p>
+      {description && <p>{description}</p>}
     </div>
   );
 }

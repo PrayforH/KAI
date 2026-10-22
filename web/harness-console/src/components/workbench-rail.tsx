@@ -322,7 +322,7 @@ export function WorkbenchRail({
       {fileError ? <p role="alert">{fileError} <button type="button" onClick={refreshFiles}>重试</button></p> : filesLoading ? (
         <span className="workbench-rail-files-empty">正在读取文件…</span>
       ) : files.length === 0 ? (
-        <span className="workbench-rail-files-empty">生成的文档、图片与其他成果会保存在这里。</span>
+        <span className="workbench-rail-files-empty">暂无文件</span>
       ) : (
         <div className="workbench-rail-files">
           {!matchingFiles.length && <p>没有匹配的文件</p>}

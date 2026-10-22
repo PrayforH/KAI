@@ -404,6 +404,11 @@
   padding: 17px 4px;
 }
 .contextRail {
+  --project-card: #191919;
+  --project-card-raised: #1d1d1d;
+  --project-card-resource: #171717;
+  --project-card-button: #242424;
+  --project-card-border: #2c2c2c;
   display: grid;
   gap: 12px;
   min-width: 0;
@@ -419,10 +424,25 @@
 }
 .contextCard {
   padding: 16px;
-  border: 1px solid var(--codex-line);
+  border: 1px solid var(--project-card-border);
   border-radius: 12px;
-  background: var(--codex-surface);
+  background: var(--project-card);
   box-shadow: none;
+}
+.contextCard[data-card="instructions"],
+.contextCard[data-card="results"] { background: var(--project-card-raised); }
+.contextCard[data-card="resources"] { background: var(--project-card-resource); }
+.contextCard .button {
+  background: var(--project-card-button);
+  border-color: var(--project-card-border);
+}
+.contextCard .button:hover { background: var(--codex-surface-hover); }
+:global(html[data-color-mode="light"]) .contextRail {
+  --project-card: #f7f7f7;
+  --project-card-raised: #f3f3f3;
+  --project-card-resource: #fafafa;
+  --project-card-button: #ffffff;
+  --project-card-border: #e6e6e6;
 }
 .contextCard h2 {
   margin: 0;
@@ -707,15 +727,18 @@
 }
 .recentRow .rowLink { flex: 1; min-width: 0; }
 .recentRow .rowLink strong { font-size: 13px; font-weight: 500; }
-.taskTime { flex-shrink: 0; font-size: 12px; color: var(--codex-muted); }
+.taskTime { flex: 0 0 auto; min-width: 42px; text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--codex-muted); }
 
 .recentRow, .row { border-radius: 8px; }
 .recentRow:hover, .recentRow:focus-within, .row:focus-within { background: var(--codex-surface-hover); }
-.recentRow :global(.project-task-actions) { opacity: 0; }
-.recentRow:has([aria-expanded="true"]) :global(.project-task-actions), .recentRow:hover :global(.project-task-actions), .recentRow:focus-within :global(.project-task-actions) { opacity: 1; }
-.pinnedLabel { margin-left: 8px; font-size: 11px; font-weight: 400; color: var(--codex-muted); white-space: nowrap; }
+.recentRow :global(.project-task-actions) { opacity: 0; pointer-events: none; transition: opacity 120ms ease; }
+.recentRow :global(.header-icon-button) { width: 28px; min-width: 28px; height: 28px; min-height: 28px; padding: 4px; }
+.recentRow:has([aria-expanded="true"]) :global(.project-task-actions), .recentRow:hover :global(.project-task-actions), .recentRow:focus-within :global(.project-task-actions) { opacity: 1; pointer-events: auto; }
 @media (hover: none), (max-width: 760px) {
-  .recentRow :global(.project-task-actions) { opacity: 1; }
+  .recentRow :global(.project-task-actions) { opacity: 1; pointer-events: auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .recentRow :global(.project-task-actions) { transition: none; }
 }
 
 /* Each desktop column owns its scroll; the launch composer stays visible. */

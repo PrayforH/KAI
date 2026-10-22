@@ -1,4 +1,5 @@
 "use client";
+import { CodexTaskIcon } from "../codex-task-icon";
 import { FeedbackToast } from "../feedback-toast";
 
 import {
@@ -1555,7 +1556,7 @@ export function McpCatalogControlPlane({
                 </button>
               )}
               <details className={styles.actionMenu} data-dismiss-on-outside>
-                <summary aria-label={`${selectedDetail.label} 更多操作`}>更多</summary>
+                <summary aria-label={`${selectedDetail.label} 更多操作`} title="更多操作"><CodexTaskIcon name="more" /></summary>
                 <div>
                   <button
                     className={styles.deleteAction}

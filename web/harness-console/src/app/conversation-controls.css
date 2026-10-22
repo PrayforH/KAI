@@ -215,6 +215,45 @@ html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) .task-
 html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) .task-list-row:focus-within .task-list-meta { opacity: 0; }
 html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) .task-row-actions :is(.task-list-pin, .task-header-more):hover { color: var(--codex-ink); background: var(--codex-surface-hover); }
 .task-row-actions [data-codex-task-icon] { fill: currentColor; stroke: none; }
+
+/* One quiet More control across task rows, headers, cards and builders. */
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) :is(button, summary):has(> svg[data-codex-task-icon][data-codex-more-icon]) {
+  box-sizing: border-box;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 28px;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--codex-muted);
+  cursor: pointer;
+  list-style: none;
+}
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) :is(button, summary):has(> svg[data-codex-task-icon][data-codex-more-icon]):is(:hover, [aria-expanded="true"]),
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) details[open] > summary:has(> svg[data-codex-task-icon][data-codex-more-icon]) {
+  color: var(--codex-ink);
+  background: var(--codex-surface-hover);
+}
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) :is(button, summary):has(> svg[data-codex-task-icon][data-codex-more-icon]):focus-visible {
+  outline: 2px solid var(--codex-muted);
+  outline-offset: 2px;
+}
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) summary:has(> svg[data-codex-task-icon][data-codex-more-icon])::-webkit-details-marker { display: none; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) svg[data-codex-more-icon] {
+  display: block;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+  stroke: none;
+  stroke-width: 0;
+}
 @media (hover: none) {
   html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) .task-row-actions :is(.task-list-pin, .task-header-more) { opacity: 1; }
   html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) .task-list-row .task-list-meta { opacity: 0; }

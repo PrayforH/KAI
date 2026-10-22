@@ -163,7 +163,6 @@ export function ProjectResults({ space }: { space: ProjectSpaceState }) {
         !savedResultError &&
         projectEmpty(
           query ? "没有匹配的成果" : "还没有保存的项目成果",
-          "在任务文件旁点击「保存到项目成果」，或从任务产物中选择。",
         )
       )}
       {showOutputs && (

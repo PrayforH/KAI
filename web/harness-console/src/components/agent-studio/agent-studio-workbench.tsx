@@ -1,4 +1,5 @@
 "use client";
+import { CodexTaskIcon } from "../codex-task-icon";
 import { FeedbackToast } from "../feedback-toast";
 import { AgentAvatar } from "./agent-avatar";
 import { ConfigurationIcon } from "./configuration-icon";
@@ -2181,7 +2182,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                 </button>
                 <details className={`${styles.actionMenu} ${styles.agentCatalogMenu}`} data-dismiss-on-outside>
                   <summary aria-label={`${agent.displayName}的更多操作`} title="更多操作">
-                    <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" fill="currentColor"><circle cx="5" cy="10" r="1.2"/><circle cx="10" cy="10" r="1.2"/><circle cx="15" cy="10" r="1.2"/></svg>
+                    <CodexTaskIcon name="more" />
                   </summary>
                   <div className={styles.actionMenuPopover}>
                     <button
@@ -2272,7 +2273,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                 aria-label="更多智能体操作"
                 title="更多操作"
               >
-                <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" fill="currentColor"><circle cx="5" cy="10" r="1.2"/><circle cx="10" cy="10" r="1.2"/><circle cx="15" cy="10" r="1.2"/></svg>
+                <CodexTaskIcon name="more" />
               </summary>
               <div className={styles.actionMenuPopover}>
                 <header className={styles.actionMenuHeader}>
@@ -2402,7 +2403,6 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                       ? `${productionValidationErrors.length} 项生产部署限制`
                       : `${validationWarnings.length} 项上线前提醒`}
                 </strong>
-                <small>检查结果不会占用编辑区；关闭后可从发布按钮再次打开。</small>
               </div>
               <button
                 type="button"
@@ -2660,7 +2660,6 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                   id="identity-title"
                   kicker="基本信息"
                   title="名称、模型和使用范围"
-                  description="其余标识与运行默认值由构建助手生成，通常不需要手动填写。"
                 />
                 <div className={styles.formGrid}>
                   <Field label="显示名称">
@@ -2916,7 +2915,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                           {child && <button type="button" disabled={saving || subagentBusy}
                             onClick={() => void editSubagentDraft(child.ref)}>编辑配置</button>}
                           <details className={styles.actionMenu} data-dismiss-on-outside>
-                            <summary aria-label={`${subagent.alias}的更多操作`}>•••</summary>
+                            <summary aria-label={`${subagent.alias}的更多操作`}><CodexTaskIcon name="more" /></summary>
                             <div className={styles.actionMenuPopover}>
                               {child && <button type="button" className={styles.actionMenuItem}
                                 disabled={!canEdit || subagentBusy || Boolean(draft.spaceId)}
@@ -3204,7 +3203,6 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                   id="knowledge-title"
                   kicker="上下文"
                   title="文件与知识"
-                  description="勾选要绑定的知识库，保存后应用于这个智能体。"
                 />
                 {/* Ticking a base edits the draft, exactly like the MCP cards: the change is
                     local until 保存, and the panel count follows it. */}
@@ -3476,7 +3474,6 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
                   id="runtime-title"
                   kicker="运行设置"
                   title="执行与权限"
-                  description="配置智能体运行时、执行方式和工具权限。"
                 />
                 <div className={styles.runtimeEffectiveSummary} aria-label="当前执行与权限摘要">
                   <strong>当前绑定 · 不自动更改既有配置</strong>
@@ -4127,7 +4124,7 @@ export function AgentStudioWorkbench({ agentName, initialView = "playground", in
             recommendation: flow.recommendation,
           });
           setBuilderAssistantOpen(true);
-          setNotice(`已创建 ${created.displayName}；可继续修改配置，或在右侧输入测试问题`);
+          setNotice(`已创建 ${created.displayName}`);
         }}
       />}
       {confirmationDialog}
@@ -4144,13 +4141,13 @@ function PanelHeading({
   id: string;
   kicker: string;
   title: string;
-  description: string;
+  description?: string;
 }) {
   return (
     <header className={styles.panelHeading}>
       <span>{kicker}</span>
       <h2 id={id}>{title}</h2>
-      <p>{description}</p>
+      {description && <p>{description}</p>}
     </header>
   );
 }

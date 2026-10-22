@@ -64,7 +64,6 @@ export function MessageAttachmentView({ attachment }: { attachment: Pick<Complet
         <strong>{attachment.name}</strong>
         <small>
           {extension} {isImage ? "图片" : "文件"}
-          {href ? (isImage ? " · 点击查看" : " · 点击下载") : ""}
         </small>
       </span>
     </>
