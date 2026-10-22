@@ -40,3 +40,5 @@ Web 发布目录 `/data/agent-studio/releases/builder-model-20261022-r55`，配�
 前端原有 50 项相关测试与生产构建通过。正式 Web、3501 使用临时草稿验证推荐标记唯一、切换后仍标记原推荐项、刷新保留模型选择、未发送输入保留、智能体默认模型和 revision 不变。此补充只涉及展示，未重复发起模型推理。验证记录见 `results/builder-model-174-20261022/recommended-web.jsonl` 与 `recommended-3501.jsonl`。
 
 Web 发布 `builder-model-recommended-20261022-r56`，镜像 ID `sha256:8091fc6a6da19d77e3572768d65dc137581c10ac4a4937bc63da0641e7401046`，12 层，revision=`e79867b1`。API、Worker 保持原版本。发布目录 `/data/agent-studio/releases/builder-model-recommended-20261022-r56`，配置备份 `web-r56-runtime.before.private.json`、`web-r56-compose.before.private.yaml`，3501 回滚容器 `axis-web-builder-model-20261022-r55-rollback-builder-model-recommended-20261022-r56`。
+
+用户随后澄清“选项卡”指需要用户补充信息时的选择卡片。r57（源码 `f440d89d`）撤回 r56 的模型“推荐”后缀，将推荐标记与紧凑间距应用到补充信息卡片；构建模型独立选择功能继续保留。详见 [补充信息卡片验证](clarification-compact-174-20261022.md)。
