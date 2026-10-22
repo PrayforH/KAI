@@ -32,3 +32,11 @@ Web 发布目录 `/data/agent-studio/releases/builder-model-20261022-r55`，配�
 
 预览容器、转发和临时凭据在验收后清理，测试登录撤销。没有改动共享出网代理、SDK、模型网关或智能体默认模型配置。
 
+
+## 推荐标记补充 · r56
+
+源码 `e79867b1` 为构建助手默认推荐模型追加“（推荐）”，标记按可用模型与运行协议计算，优先 Flash；切换当前选择不会改变推荐项。内嵌构建页和独立构建弹层均接入，不修改智能体配置或主对话的选择行为。
+
+前端原有 50 项相关测试与生产构建通过。正式 Web、3501 使用临时草稿验证推荐标记唯一、切换后仍标记原推荐项、刷新保留模型选择、未发送输入保留、智能体默认模型和 revision 不变。此补充只涉及展示，未重复发起模型推理。验证记录见 `results/builder-model-174-20261022/recommended-web.jsonl` 与 `recommended-3501.jsonl`。
+
+Web 发布 `builder-model-recommended-20261022-r56`，镜像 ID `sha256:8091fc6a6da19d77e3572768d65dc137581c10ac4a4937bc63da0641e7401046`，12 层，revision=`e79867b1`。API、Worker 保持原版本。发布目录 `/data/agent-studio/releases/builder-model-recommended-20261022-r56`，配置备份 `web-r56-runtime.before.private.json`、`web-r56-compose.before.private.yaml`，3501 回滚容器 `axis-web-builder-model-20261022-r55-rollback-builder-model-recommended-20261022-r56`。
