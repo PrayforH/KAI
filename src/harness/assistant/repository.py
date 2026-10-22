@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from uuid import uuid4
 
@@ -66,6 +68,21 @@ def _event(
 class PostgresAssistantRepository:
     def __init__(self, sessions: SessionFactory) -> None:
         self._sessions = sessions
+        self._bound_session: AsyncSession | None = None
+
+    def with_session(self, session: AsyncSession) -> PostgresAssistantRepository:
+        """Join a channel transaction so intent, receipt and reply commit together."""
+        repository = PostgresAssistantRepository(self._sessions)
+        repository._bound_session = session
+        return repository
+
+    @asynccontextmanager
+    async def _context(self, *, write: bool = False) -> AsyncGenerator[AsyncSession]:
+        if self._bound_session is not None:
+            yield self._bound_session
+        else:
+            async with self._sessions.begin() if write else self._sessions() as session:
+                yield session
 
     async def _owned(
         self,
@@ -87,7 +104,7 @@ class PostgresAssistantRepository:
         return row
 
     async def create(self, objective: Objective) -> Objective:
-        async with self._sessions.begin() as session:
+        async with self._context(write=True) as session:
             row = ObjectiveRow(
                 objective_id=objective.objective_id,
                 tenant_id=objective.tenant_id,
@@ -101,11 +118,11 @@ class PostgresAssistantRepository:
         return objective
 
     async def get(self, tenant_id: str, user_id: str, objective_id: str) -> Objective:
-        async with self._sessions() as session:
+        async with self._context() as session:
             return _objective(await self._owned(session, tenant_id, user_id, objective_id))
 
     async def list(self, tenant_id: str, user_id: str, *, limit: int = 100) -> list[Objective]:
-        async with self._sessions() as session:
+        async with self._context() as session:
             rows = await session.scalars(
                 select(ObjectiveRow)
                 .where(ObjectiveRow.tenant_id == tenant_id, ObjectiveRow.user_id == user_id)
@@ -128,7 +145,7 @@ class PostgresAssistantRepository:
     ) -> Objective:
         if sum(value is not None for value in (brief, action, note)) != 1:
             raise ValueError("exactly one objective change is required")
-        async with self._sessions.begin() as session:
+        async with self._context(write=True) as session:
             row = await self._owned(session, tenant_id, user_id, objective_id, lock=True)
             current = _objective(row)
             if current.revision != expected_revision:
@@ -175,7 +192,7 @@ class PostgresAssistantRepository:
     async def events(
         self, tenant_id: str, user_id: str, objective_id: str, *, limit: int = 100
     ) -> list[ObjectiveEvent]:
-        async with self._sessions() as session:
+        async with self._context() as session:
             await self._owned(session, tenant_id, user_id, objective_id)
             rows = await session.scalars(
                 select(ObjectiveEventRow)
@@ -209,7 +226,7 @@ class PostgresAssistantRepository:
     ) -> ObjectiveExecution:
         if not trigger_key or len(trigger_key) > 256:
             raise ValueError("invalid objective trigger key")
-        async with self._sessions.begin() as session:
+        async with self._context(write=True) as session:
             row = await self._owned(session, tenant_id, user_id, objective_id, lock=True)
             return await self._enqueue(session, row, trigger_key=trigger_key, now=now)
 
@@ -288,7 +305,7 @@ class PostgresAssistantRepository:
     async def executions(
         self, tenant_id: str, user_id: str, objective_id: str
     ) -> list[ObjectiveExecution]:
-        async with self._sessions() as session:
+        async with self._context() as session:
             await self._owned(session, tenant_id, user_id, objective_id)
             rows = await session.scalars(
                 select(ObjectiveExecutionRow)
@@ -303,7 +320,7 @@ class PostgresAssistantRepository:
             return [ObjectiveExecution.model_validate(row.payload) for row in rows]
 
     async def schedule_due(self, now: datetime, *, limit: int = 20) -> None:
-        async with self._sessions.begin() as session:
+        async with self._context(write=True) as session:
             rows = await session.scalars(
                 select(ObjectiveRow)
                 .where(
@@ -336,7 +353,7 @@ class PostgresAssistantRepository:
                 _store(row, updated)
 
     async def claim(self, now: datetime) -> tuple[ObjectiveExecution, str] | None:
-        async with self._sessions.begin() as session:
+        async with self._context(write=True) as session:
             row = await session.scalar(
                 select(ObjectiveExecutionRow)
                 .where(
@@ -362,7 +379,7 @@ class PostgresAssistantRepository:
     async def save_execution(
         self, execution: ObjectiveExecution, token: str, now: datetime
     ) -> bool:
-        async with self._sessions.begin() as session:
+        async with self._context(write=True) as session:
             row = await session.scalar(
                 select(ObjectiveExecutionRow)
                 .where(
@@ -409,7 +426,7 @@ class PostgresAssistantRepository:
             return True
 
     async def inbox(self, tenant_id: str, user_id: str) -> list[AssistantInboxItem]:
-        async with self._sessions() as session:
+        async with self._context() as session:
             rows = await session.scalars(
                 select(AssistantInboxRow)
                 .where(
@@ -427,7 +444,7 @@ class PostgresAssistantRepository:
             ]
 
     async def read_notice(self, tenant_id: str, user_id: str, item_id: str, now: datetime) -> None:
-        async with self._sessions.begin() as session:
+        async with self._context(write=True) as session:
             row = await session.scalar(
                 select(AssistantInboxRow)
                 .where(

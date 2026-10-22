@@ -51,10 +51,13 @@ async def main(exercise: bool, execute: bool) -> None:
                 "/v1/studio/automations",
                 "/v1/studio/assistant/objectives",
                 "/v1/studio/assistant/inbox",
+                "/v1/studio/assistant/feishu/status",
             ):
                 response = await client.get(path)
                 assert response.status_code == 200, (path, response.status_code)
                 report["checks"].append(path)
+            connection = (await client.get("/v1/studio/assistant/feishu/status")).json()
+            report["feishu"] = {key: connection[key] for key in ("configured", "enabled", "receiverOnline", "bound")}
             if exercise:
                 response = await client.get("/v1/agents")
                 response.raise_for_status()

@@ -47,6 +47,17 @@ class AssistantService:
         self._agents, self._auth, self._projects = agents, auth, projects
         self._agui, self._runs, self._events = agui, runs, events
 
+    def with_repository(self, repository: PostgresAssistantRepository) -> AssistantService:
+        return AssistantService(
+            repository,
+            agents=self._agents,
+            auth=self._auth,
+            projects=self._projects,
+            agui=self._agui,
+            runs=self._runs,
+            events=self._events,
+        )
+
     async def validate(self, tenant_id: str, user_id: str, brief: ObjectiveBrief) -> None:
         user, membership = await self._auth.profile(tenant_id, user_id)
         if user.disabled or membership.role not in {"owner", "admin", "member"}:

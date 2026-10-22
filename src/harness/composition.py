@@ -60,6 +60,9 @@ from harness.execution.credentials import (
     CredentialSourceKey,
     InMemoryCredentialBroker,
 )
+from harness.feishu.models import FeishuSettings
+from harness.feishu.repository import FeishuRepository
+from harness.feishu.service import FeishuService
 from harness.governance.service import GovernanceService
 from harness.inputs.processors import DefaultInputProcessor
 from harness.knowledge.directory import PlatformUserDirectory
@@ -1754,6 +1757,11 @@ def build_production_container(
         intent_selector=UIIntentSelector.from_settings(settings),
         memory=memory_bank,
     )
+    assistant = AssistantService(
+        PostgresAssistantRepository(sessions), agents=agent_service, auth=auth,
+        projects=project_service, agui=agui, runs=run_service, events=raw_event_repository,
+    )
+    feishu_settings = FeishuSettings()
     container = ApiContainer(
         presentations=presentations,
         evolution=evolution,
@@ -1797,9 +1805,10 @@ def build_production_container(
         runs=run_service,
         triggers=trigger_service,
         automations=automation_service,
-        assistant=AssistantService(
-            PostgresAssistantRepository(sessions), agents=agent_service, auth=auth,
-            projects=project_service, agui=agui, runs=run_service, events=raw_event_repository,
+        assistant=assistant,
+        feishu=FeishuService(
+            FeishuRepository(sessions, feishu_settings.app_id), feishu_settings,
+            assistant=assistant, auth=auth, agents=agent_service,
         ),
         projects=project_service,
         approvals=approval_service,

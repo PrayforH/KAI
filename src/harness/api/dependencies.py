@@ -82,6 +82,7 @@ from harness.evals.repositories import (
 from harness.evals.service import EvalControlPlaneService
 from harness.evolution.repositories import InMemoryEvolutionRepository
 from harness.evolution.service import EvolutionService
+from harness.feishu.service import FeishuService
 from harness.governance.repositories import InMemoryGovernanceRepository
 from harness.governance.service import GovernanceService
 from harness.inputs.processors import DefaultInputProcessor
@@ -289,6 +290,7 @@ class ApiContainer:
     auto_execute: bool
     presentations: PresentationService
     assistant: AssistantService | None = None
+    feishu: FeishuService | None = None
     event_wakeup: EventWakeup | None = None
     skill_conversation: SkillConversationService | None = None
     sandbox_maintenance: Callable[[], Awaitable[object]] | None = None

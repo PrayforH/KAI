@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { assistantRequest, type Objective, type Execution, type Notice } from "../../lib/assistant-client";
+import { FeishuConnection } from "./feishu-connection";
 import styles from "./assistant-manager.module.css";
 
 type Agent = { name: string; version: string; display_name: string; owner_user_id?: string; space_id?: string };
@@ -26,6 +27,10 @@ export function AssistantManager() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  useEffect(() => {
+    const target = new URLSearchParams(window.location.search).get("objective");
+    if (target) setSelected(target);
+  }, []);
   const selectedItem = items.find(item => item.objectiveId === selected);
   const load = useCallback(async () => {
     const [next, notices] = await Promise.all([
@@ -98,12 +103,7 @@ export function AssistantManager() {
     </nav>
     {error && <p role="alert" className={styles.error}>{error} <button onClick={() => void perform(async () => {})}>刷新</button></p>}
     {message && <p role="status" className={styles.message}>{message}</p>}
-    {tab === "feishu" && <div className={styles.setup}><span className={styles.badge}>待配置</span><h2>连接 KAI 专用飞书机器人</h2>
-      <p>通过机器人接收事项进展，并从飞书继续跟进同一个事项。首版先支持单聊，连接完成后再开放使用。</p>
-      <ol><li>在飞书开放平台创建企业自建应用，命名为 KAI，启用机器人。</li><li>配置接收机器人单聊消息和发送消息所需权限，并发布应用。</li><li>管理员在服务器私有配置中设置 App ID 和 App Secret，启动长连接。</li><li>连接验证通过后，在 KAI 生成绑定码，发给机器人完成账号绑定。</li></ol>
-      <p>应用尚未创建，当前不会向飞书发送消息。App Secret 无需填写在聊天或普通表单中。</p>
-      <a href="https://open.feishu.cn/app" target="_blank" rel="noreferrer">打开飞书开放平台 ↗</a>
-    </div>}
+    {tab === "feishu" && <FeishuConnection />}
     {tab === "inbox" && <div className={styles.notices}>{!inbox.length && <p className={styles.empty}>执行结束后，结果会出现在这里。</p>}
       {inbox.map(item => <article key={item.itemId}><div className={styles.row}><h2>{item.title}</h2><time>{date(item.createdAt)}</time></div><p>{item.content}</p><div className={styles.actions}>
         <button onClick={() => { setSelected(item.objectiveId); setTab("objectives"); }}>查看事项</button>

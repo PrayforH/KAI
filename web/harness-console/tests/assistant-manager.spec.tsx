@@ -28,8 +28,8 @@ it("uses the selected objective revision when pausing", async () => {
 it("keeps an unconfigured Feishu connection explicit and never sends messages", async () => {
   await act(async () => root.render(<AssistantManager />));
   await click("飞书连接");
-  expect(host.textContent).toContain("待配置");
-  expect(host.textContent).toContain("当前不会向飞书发送消息");
+  expect(host.textContent).toContain("待管理员配置");
+  expect(host.textContent).toContain("服务器私有配置");
   expect(fetcher.mock.calls.every(([, init]) => init.method === "GET")).toBe(true);
 });
 it("retains a visible error instead of claiming a stale action succeeded", async () => {
