@@ -802,7 +802,8 @@ function AuthenticatedHome() {
                 </>
               )}
               {activeProjectId && <Link className="task-project-breadcrumb" href={projectHref(activeProjectId)}>
-                {projects.find((project) => project.projectId === activeProjectId)?.name ?? "返回项目"}<span aria-hidden="true"> / </span>
+                <span className="task-project-label">{projects.find((project) => project.projectId === activeProjectId)?.name ?? "返回项目"}</span>
+                <span className="task-project-separator" aria-hidden="true">/</span>
               </Link>}
               <TaskContextBar
                 taskTitle={currentTaskTitle}
