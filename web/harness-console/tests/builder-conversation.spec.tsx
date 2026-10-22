@@ -2,6 +2,7 @@
 import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import * as taskModelCatalog from "../src/lib/task-model-catalog";
 import { AgentBuilderAssistant } from "../src/components/agent-studio/agent-builder-overlays";
 import { DEFAULT_STUDIO_DRAFT, type StudioDraft } from "../src/lib/agent-studio";
 import { studioClient, studioDraftToSpec, type ApiAgentDraft, type StudioTryRun } from "../src/lib/studio-client";
@@ -750,4 +751,19 @@ it("passes the chosen model to creation and preview runs, retaining it for follo
   await chooseBuilderModel("builder-first"); await send("第二轮继续");
   expect(vi.mocked(studioClient.createTryRun).mock.lastCall?.[4]).toMatchObject({modelRouteOverride:"builder-first",continueFromRunId:"run-1"});
   expect(updated).not.toHaveBeenCalled();
+});
+
+it("does not create a running message while the empty builder loads its model catalog", async () => {
+  let resolve!: (routes: taskModelCatalog.TaskModelRoute[]) => void;
+  vi.spyOn(taskModelCatalog, "loadTaskModelRoutes").mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+  const target = document.createElement("div"); document.body.append(target);
+  await act(async () => root.render(<AgentBuilderAssistant open mode="run" draft={initial}
+    initialPrompt="" recommendation={null} knowledgeMcpReferences={[]} hasUnsavedChanges={false}
+    workspaceTarget={target} onClose={() => {}} onCreated={() => {}}
+    prepareDraft={async () => initial} onUpdated={() => {}} />));
+  expect(target.querySelector('[aria-label="停止运行"]')).toBeNull();
+  await act(async () => resolve([{id:"ready-model",label:"Ready",model:"ready",provider:"test",modelType:"chat",apiFormat:"openai_compatible",capabilities:["tool_use"]}]));
+  expect(target.querySelector('[aria-label="停止运行"]')).toBeNull();
+  expect(target.querySelector<HTMLSelectElement>('[aria-label="选择本次任务使用的模型"]')?.disabled).toBe(false);
+  await act(async () => root.render(<></>)); target.remove();
 });
