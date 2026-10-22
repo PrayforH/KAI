@@ -796,6 +796,9 @@ body.codex-theme-v1:has(.console-shell) .task-list-scroll .task-list {
 }
 
 body.codex-theme-v1:has(.console-shell) .task-list-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
   min-width: 0;
   margin-top: 0;
 }
@@ -806,7 +809,9 @@ body.codex-theme-v1:has(.console-shell) .task-list-item.is-active {
   position: relative;
   min-height: 30px;
   padding: 4px 6px 4px 34px;
-  display: flex;
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-area: 1 / 1 / 2 / -1;
   align-items: center;
   gap: 8px;
   border: 0;
@@ -814,6 +819,13 @@ body.codex-theme-v1:has(.console-shell) .task-list-item.is-active {
   background: transparent;
   box-shadow: none;
   transition: color 140ms ease, background-color 140ms ease, transform 140ms ease;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-list-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 body.codex-theme-v1:has(.console-shell) .task-list-item:hover {
@@ -860,12 +872,8 @@ body.codex-theme-v1:has(.console-shell) .task-list-meta {
   transition: opacity 120ms ease;
 }
 
-/* On hover the archive control takes over the row's right edge, so the time
-   (and status dot) step aside instead of overlapping the archive button. */
-body.codex-theme-v1:has(.console-shell) .task-list-row:hover .task-list-meta {
-  opacity: 0;
-}
-
+/* The trailing grid column fits both actions and the timestamp. Swapping
+   their visibility keeps the title's clipping boundary stable. */
 /* Active tasks show a small status dot to the left of the title; finished
    tasks carry no dot except a blue unread marker. Text label stays hidden. */
 body.codex-theme-v1:has(.console-shell) .task-status {
@@ -3151,7 +3159,6 @@ body.codex-theme-v1 .task-input-badge {
 body.codex-theme-v1:has(.console-shell) .task-list-item:has(.task-input-badge) .task-list-meta { display: none; }
 
 body.codex-theme-v1 :is(button, a).card-icon-action { min-height: 28px; text-decoration: none; }
-body.codex-theme-v1:has(.console-shell) .task-list-item:has(.task-input-badge) { padding-right: 34px; }
 
 /* Project organization has a stable home; the folder button only folds tasks. */
 .task-project-heading { text-decoration: none; }

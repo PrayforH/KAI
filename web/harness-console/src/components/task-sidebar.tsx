@@ -424,9 +424,11 @@ export function TaskSidebar({
               {statusLabel}
             </span>
           )}
-          <ScrollingTaskTitle title={task.title} />
-          {needsInput && <span className="task-input-badge">需要输入</span>}
-          {hasError && <span className="task-error-label">{statusLabel}</span>}
+          <span className="task-list-content">
+            <ScrollingTaskTitle title={task.title} />
+            {needsInput && <span className="task-input-badge">需要输入</span>}
+            {hasError && <span className="task-error-label">{statusLabel}</span>}
+          </span>
           <span className="task-list-meta">
             <time dateTime={task.updated_at}>{formatTaskAge(task.updated_at)}</time>
           </span>
