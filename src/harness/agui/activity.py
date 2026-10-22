@@ -11,6 +11,7 @@ from harness.core.events import RunEvent
 from harness.runtime.audit_redaction import redact_text, redact_tool_arguments
 from harness.runtime.input_redaction import redact_internal_agent_asset_events
 from harness.runtime.message_mapper import safe_model_text
+from harness.runtime.web_tools import PublicWebClient
 
 ACTIVITY_TYPE = "harness.run.v1"
 
@@ -95,6 +96,51 @@ def _tool_result_preview(payload: dict[str, Any]) -> str | None:
     if not stripped:
         return None
     return redact_text(stripped, limit=_RESULT_PREVIEW_LIMIT)
+
+
+def _tool_web_images(payload: dict[str, Any]) -> list[dict[str, str]] | None:
+    """Bounded image references, separate from a possibly truncated tool preview."""
+    if payload.get("is_error") is True or payload.get("redacted") is True:
+        return None
+    content = payload.get("content")
+    candidates: list[Any] = [content]
+    if isinstance(content, list):
+        candidates = [block.get("text") for block in content[:16] if isinstance(block, dict)]
+    images: list[dict[str, str]] = []
+    for candidate in candidates:
+        if isinstance(candidate, str):
+            if len(candidate) > 200_000:
+                continue
+            try:
+                candidate = json.loads(candidate)
+            except (ValueError, TypeError):
+                continue
+        if (
+            not isinstance(candidate, dict)
+            or candidate.get("is_error")
+            or candidate.get("redacted")
+        ):
+            continue
+        for image in PublicWebClient.normalize_images(candidate.get("images")):
+            # Source attribution is explicit: never infer a source page from its image.
+            original = next(
+                (
+                    item
+                    for item in candidate.get("images", [])
+                    if isinstance(item, dict) and item.get("url") == image["url"]
+                ),
+                None,
+            )
+            if original and isinstance(original.get("source_url"), str):
+                source = PublicWebClient._result_url(original["source_url"])
+                if source and source.startswith("https://"):
+                    image["source_url"] = source
+            image["description"] = redact_text(image["description"], limit=500)
+            if image["url"] not in {item["url"] for item in images}:
+                images.append(image)
+            if len(images) == 8:
+                return images
+    return images or None
 
 
 _MAX_CITATIONS = 12
@@ -528,6 +574,7 @@ def _activity_item(event: RunEvent) -> dict[str, Any] | None:
                 result_summary=_tool_result_summary(payload),
                 result_preview=_tool_result_preview(payload),
                 citations=_tool_citations(payload),
+                web_images=_tool_web_images(payload),
             ),
         )
     if event.type == "approval.requested":

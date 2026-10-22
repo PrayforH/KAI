@@ -253,15 +253,15 @@ it("renders uploaded images in an in-app original-size preview", () => {
   expect(
     inputArtifactDownloadHref("input_artifact_123", "history-index"),
   ).toBe("/api/input-artifacts/input_artifact_123/content");
-  expect(agentThreadSource).toContain("HarnessMessageAttachment");
+  expect(agentThreadSource).toContain("MessageAttachmentGroup");
   const attachmentSource = readFileSync(new URL("../src/components/message-attachment-view.tsx", import.meta.url), "utf8");
-  expect(attachmentSource).toContain("点击下载");
   expect(attachmentSource).toContain('data-kind={isImage ? "image" : "file"}');
   expect(attachmentSource).toContain("message-attachment-preview");
   expect(attachmentSource).toContain("message-attachment-open");
-  expect(attachmentSource).toContain("image-lightbox");
-  expect(attachmentSource).toContain("上传原图");
-  expect(attachmentSource).toContain("下载原图");
+  expect(attachmentSource).toContain("ConversationImageViewer");
+  const viewer = readFileSync(new URL("../src/components/conversation-image-viewer.tsx", import.meta.url), "utf8");
+  expect(viewer).toContain("image-lightbox");
+  expect(viewer).toContain("下载原图");
   expect(agentThreadSource).not.toContain('target: "_blank"');
 });
 

@@ -9,7 +9,7 @@ import { useConversationScope } from "../lib/conversation-scope";
 import { type TaskSummary, createThreadHistoryAdapter, useAutoLoadEarlierMessages, useThreadHistoryPagination } from "../lib/task-history";
 import { startSteeringPolling } from "../lib/steering-poller";
 import { ConversationControl } from "./conversation-control";
-import { MessageAttachmentView } from "./message-attachment-view";
+import { MessageAttachmentGroup } from "./message-attachment-view";
 import { useThreadHistoryReady } from "./thread-history-ready";
 import { ProductBrandMark } from "./product-brand";
 
@@ -20,7 +20,6 @@ import {
   BranchPickerPrimitive,
   MessagePrimitive,
   TextMessagePartProvider,
-  useAttachment,
   useAui,
   useAuiState,
   useThreadRuntime,
@@ -61,6 +60,8 @@ import { ActivitySummary } from "./activity-summary";
 import { TaskAgentSwitcher } from "./task-agent-switcher";
 import { ApprovalCard, type ApprovalDetails } from "./approval-card";
 import { ArtifactCard, isImageArtifact, type ArtifactDetails } from "./artifact-list";
+import { replyWebImages } from "../lib/reply-web-images";
+import { ReplyWebImages } from "./reply-web-images";
 import { ReplyArtifactImages } from "./reply-artifact-images";
 import { ReplyArtifactVideos } from "./reply-artifact-videos";
 import { AnswerCitationProvider } from "./knowledge/answer-citation-context";
@@ -1472,6 +1473,16 @@ export function HarnessAssistantMessage() {
   const answerCitations = !hasVideoGeneration && capturedCitations.current.messageId === messageId ? capturedCitations.current.citations : [];
   const ownsActiveRun = Boolean(runView && turnOwnsRun(messageId, runView.runId, isLast, runView.runId));
   const turnSettled = turnDeliverablesReady(messageStatus?.type, ownsActiveRun ? runView?.phase : undefined);
+  const userPrompt = useAuiState(state => {
+    const messages = state.thread.messages;
+    let index = messages.findIndex(message => message.id === messageId);
+    if (index < 0) index = messages.length;
+    for (let i = index - 1; i >= 0; i--) {
+      if (messages[i].role === "user") return messages[i].content.flatMap(part => part.type === "text" ? [part.text] : []).join("\n");
+    }
+    return "";
+  });
+  const webImages = useMemo(() => turnSettled ? replyWebImages(content, terminalActivity, copyText, userPrompt) : [], [content, terminalActivity, copyText, turnSettled, userPrompt]);
   const turnArtifacts = useMemo(
     () => turnSettled ? artifactsForTurn(content, runView?.runId, isLast) : [],
     [content, runView?.runId, isLast, turnSettled],
@@ -1537,6 +1548,7 @@ export function HarnessAssistantMessage() {
           ))}
         </div>
       ) : null}
+      <ReplyWebImages images={webImages} />
       <ReplyArtifactImages artifacts={turnArtifacts} answer={copyText}
         onPreview={conversationScope ? () => conversationScope.onOpenFiles() : undefined} />
       {!hasVideoGeneration ? <ReplyArtifactVideos artifacts={turnArtifacts} /> : null}
@@ -1642,11 +1654,6 @@ function EditMessageIcon() {
 
 export { inputArtifactDownloadHref } from "./message-attachment-view";
 
-function HarnessMessageAttachment() {
-  const attachment = useAttachment((state) => state);
-  return <MessageAttachmentView attachment={attachment} />;
-}
-
 type MessageEditorState = {
   messageId: string;
   draft: string;
@@ -1724,9 +1731,7 @@ function HarnessUserMessage() {
   return (
     <>
       <UserMessage.Root className="harness-user-message" data-turn-id={message.id} data-turn-label={(displayText || message.attachments?.map(item => item.name).join("、") || "附件消息").replace(/\s+/g, " ").slice(0, 180)} tabIndex={-1}>
-        <UserMessage.Attachments
-          components={{ Attachment: HarnessMessageAttachment }}
-        />
+        <MessageAttachmentGroup attachments={message.attachments ?? []} />
         <MessagePrimitive.If hasContent>
           {editing ? (
             <div className="user-message-edit-shell">

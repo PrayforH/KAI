@@ -5,7 +5,7 @@ import { useAttachment } from "@assistant-ui/react";
 import { useUploadFeedback, uploadKey, type UploadFeedback } from "../lib/upload-feedback-store";
 
 export function FileUploadStatus({ item }: { item: UploadFeedback }) {
-  // A thumbnail card is 72px wide, so the overlay shows the state at a glance and
+  // A thumbnail card is 80px wide, so the overlay shows the state at a glance and
   // the full sentence stays available to assistive tech and the tooltip.
   const label = item.status === "error" ? `上传失败：${item.message ?? "请重新添加"}`
     : item.status === "ready" ? "已就绪"
@@ -29,7 +29,7 @@ export function FileUploadStatus({ item }: { item: UploadFeedback }) {
 }
 
 /**
- * One square thumbnail per attachment. The transfer state rides on the card, so
+ * Square image previews and named document cards. Transfer state rides on each card, so
  * the composer keeps no separate upload row above the input, and a finished
  * upload is silent apart from the ready mark.
  */
@@ -39,9 +39,9 @@ export function HarnessComposerAttachment() {
   const key = "file" in attachment && attachment.file ? uploadKey(attachment.file) : null;
   const item = feedback.find((entry) => entry.key === key);
   const state = item?.status ?? "ready";
-  return <div className="composer-file-card" data-upload-state={state}>
+  return <div className="composer-file-card" data-kind={attachment.type === "image" ? "image" : "file"} data-upload-state={state}>
     <AttachmentUI />
     {item && item.status !== "ready" ? <FileUploadStatus item={item} /> : null}
-    {item?.status === "ready" ? <span className="composer-file-ready" aria-hidden="true">✓</span> : null}
+    {attachment.type !== "image" && <span className="composer-file-format" aria-hidden="true">{attachment.name.split(".").at(-1)?.toUpperCase() || "文件"}</span>}
   </div>;
 }

@@ -748,3 +748,40 @@ def test_pending_and_failed_steering_are_activity_facts_without_changing_run_sta
         assert activity["items"][-1]["metadata"]["request_id"] == "input-1"
         patch = activity_projection(guidance)[0].model_dump(by_alias=True)["patch"]
         assert all(item["path"] != "/status" for item in patch)
+
+
+def test_web_images_survive_truncated_previews_without_private_or_duplicate_urls() -> None:
+    content = {
+        "results": [{"content": "正文" * 8000}],
+        "images": [
+            {
+                "url": "https://cdn.example.com/photo.jpg",
+                "description": "现场",
+                "source_url": "https://news.example.com/story",
+                "secret": "not projected",
+            },
+            {"url": "https://cdn.example.com/photo.jpg"},
+            {"url": "https://127.0.0.1/private.jpg"},
+            {"url": "javascript:alert(1)"},
+        ],
+    }
+    for encoded in [content, json.dumps(content), [{"type": "text", "text": json.dumps(content)}]]:
+        activity = build_run_activity([event("tool.result", {"content": encoded})])
+        images = activity["items"][0]["metadata"]["web_images"]
+        assert images == [
+            {
+                "url": "https://cdn.example.com/photo.jpg",
+                "description": "现场",
+                "source_url": "https://news.example.com/story",
+            }
+        ]
+        assert len(activity["items"][0]["metadata"]["result_preview"]) < 9000
+
+
+def test_web_images_are_bounded_and_suppressed_for_failed_or_redacted_tools() -> None:
+    content = {"images": [{"url": f"https://cdn.example.com/{i}.jpg"} for i in range(20)]}
+    projected = build_run_activity([event("tool.result", {"content": content})])
+    assert len(projected["items"][0]["metadata"]["web_images"]) == 8
+    for flag in ["redacted", "is_error"]:
+        activity = build_run_activity([event("tool.result", {"content": content, flag: True})])
+        assert "web_images" not in activity["items"][0]["metadata"]
