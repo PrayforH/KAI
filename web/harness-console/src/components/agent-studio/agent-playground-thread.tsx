@@ -357,7 +357,6 @@ export function AgentPlaygroundThread({
         >
           <TaskModelProvider
             independent={Boolean(modelSelection)}
-            recommendedRouteId={modelSelection?.recommendedRouteId}
             routes={modelSelection?.routes ?? [
               {
                 id: draft?.modelRoute ?? "draft",

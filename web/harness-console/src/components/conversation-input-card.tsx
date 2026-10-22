@@ -14,6 +14,7 @@ type Answer = { selected: string[]; text: string };
 export const FOLLOWUP_IDLE_MS = 5 * 60 * 1000;
 const emptyAnswer: Answer = { selected: [], text: "" };
 const OPTIONS_PER_PAGE = 8;
+const RECOMMENDED_SUFFIX = /\s*[（(]\s*(?:推荐|Recommended)\s*[）)]\s*$/i;
 
 export function ConversationInputCard({ input, disabled, onSubmit, modelRoute = "", onVoiceActive, onDormant }: {
   input: ConversationInput;
@@ -42,6 +43,7 @@ export function ConversationInputCard({ input, disabled, onSubmit, modelRoute = 
   const optionPage = Math.min(optionPages[question.id] ?? 0, Math.max(0, pageCount - 1));
   const optionOffset = optionPage * OPTIONS_PER_PAGE;
   const visibleOptions = question.options.slice(optionOffset, optionOffset + OPTIONS_PER_PAGE);
+  const recommendedOption = question.options.find(option => RECOMMENDED_SUFFIX.test(option)) ?? question.options[0];
   const sensitive = isSensitiveQuestion(question);
   function writeText(text: string) {
     setAnswers(previous => ({ ...previous, [question.id]: { ...(previous[question.id] ?? emptyAnswer), text: text.slice(0, 4000) } }));
@@ -148,7 +150,10 @@ export function ConversationInputCard({ input, disabled, onSubmit, modelRoute = 
             <input type={question.type === "multi" ? "checkbox" : "radio"} name={question.id}
               disabled={voiceActive} checked={value.selected.includes(option)} onChange={() => select(option)} />
             <span className={styles.marker} aria-hidden="true">{value.selected.includes(option) ? <CodexResponseIcon name="check" /> : index + 1}</span>
-            <span className={styles.optionText}>{redact(option)}</span>
+            <span className={styles.optionText}>
+              <span>{redact(option.replace(RECOMMENDED_SUFFIX, ""))}</span>
+              {option === recommendedOption && <span className={styles.recommended}>推荐</span>}
+            </span>
           </label>)}
         </div>}
         {pageCount > 1 && <nav className={styles.optionPagination} aria-label="选项分页">
