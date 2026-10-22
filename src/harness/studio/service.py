@@ -1119,7 +1119,8 @@ class AgentStudioService:
             else BUILDER_AUTO_SYSTEM_PROMPT if request.intent == "auto" else BUILDER_SYSTEM_PROMPT
         )
         completion = await models.complete_text(
-            tenant_id, current.spec.model.route_id, system_prompt=system_prompt,
+            tenant_id, request.model_route_override or current.spec.model.route_id,
+            system_prompt=system_prompt,
             user_prompt=prompt, max_tokens=12_000,
             on_delta=on_delta if on_progress else None,
         )
@@ -1140,7 +1141,7 @@ class AgentStudioService:
                 "responseSchema": BuilderModelReply.model_json_schema(by_alias=True),
             }, ensure_ascii=False)
             corrected = await models.complete_text(
-                tenant_id, current.spec.model.route_id,
+                tenant_id, request.model_route_override or current.spec.model.route_id,
                 system_prompt=system_prompt
                 + "\n上一份模型响应未通过协议校验。根据原始请求和当前配置，"
                 "重新输出完整且有效的 JSON。validationIssues 仅描述格式错误，不能替代用户意图。"
@@ -1164,6 +1165,7 @@ class AgentStudioService:
         return await self.preview_builder_reply(
             tenant_id, user_id, draft_id, request.expected_revision, reply,
             catalog_revision=catalog_revision, creator=creator, on_progress=on_progress,
+            model_route_override=request.model_route_override,
         )
 
     async def builder_context(self, tenant_id: str, user_id: str, draft_id: str,
@@ -1234,6 +1236,7 @@ class AgentStudioService:
     async def preview_builder_reply(
         self, tenant_id: str, user_id: str, draft_id: str, expected_revision: int,
         reply: BuilderModelReply, *, catalog_revision: int,
+        model_route_override: str | None = None,
         creator: WorkerSkillCreator | None = None, on_progress: Progress | None = None,
     ) -> BuilderConversationReply:
         current = await self.get(tenant_id, user_id, draft_id)
@@ -1272,7 +1275,7 @@ class AgentStudioService:
                 if (item.operation == "create") == (skill is not None):
                     raise ConflictError("Skill 创建名称已存在，或更新目标不存在")
                 creator_request = SkillConversationRequest(
-                    modelRoute=current.spec.model.route_id,
+                    modelRoute=model_route_override or current.spec.model.route_id,
                     context=SkillConversationContext(
                         agentName=current.spec.name, displayName=current.spec.display_name,
                         domain=current.spec.domain, description=current.spec.description,

@@ -52,7 +52,7 @@ async def generate_initial_agent(
     available_tools = {item.name for item in tools}
     raw = await models.complete_text(
         draft.tenant_id,
-        draft.spec.model.route_id,
+        request.model_route_override or draft.spec.model.route_id,
         max_tokens=8_000,
         system_prompt=(
             "你是智能体构建助手。根据用户真实业务需求生成可执行的初始 Agent 配置。"

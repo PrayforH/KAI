@@ -2040,6 +2040,7 @@ export const studioClient = {
     audience?: string;
     sampleInput?: string;
     runtimePreference: "auto" | StudioDraft["runtime"];
+    modelRouteOverride?: string;
   }, onProgress?: (event: StudioStreamProgress) => void, signal?: AbortSignal): Promise<StudioTaskDrivenDraftResult> => {
     try {
       const init = {
@@ -2082,6 +2083,7 @@ export const studioClient = {
   readBuilderMaterials: (inputArtifactIds: string[], modelRoute?: string): Promise<{context: string}> => request("builder-materials", {method: "POST", body: JSON.stringify({inputArtifactIds, modelRoute})}),
   converseBuilder: (draftId: string, body: {
     expectedRevision: number;
+    modelRouteOverride?: string;
     messages: { role: "user" | "assistant"; content: string }[];
     runContext: string;
     intent?: "auto" | "edit";
@@ -2251,7 +2253,7 @@ export const studioClient = {
     expectedRevision: number,
     prompt: string,
     idempotencyKey: string,
-    options: { continueFromRunId?: string; inputArtifactIds?: string[]; builderTools?: boolean; pendingProposal?: StudioBuilderChanges } = {},
+    options: { continueFromRunId?: string; inputArtifactIds?: string[]; builderTools?: boolean; pendingProposal?: StudioBuilderChanges; modelRouteOverride?: string | null } = {},
   ) => request<StudioTryRun>(`drafts/${encodeURIComponent(draftId)}/try-runs`, {
     method: "POST",
     body: JSON.stringify({ expectedRevision, prompt, idempotencyKey, ...options }),

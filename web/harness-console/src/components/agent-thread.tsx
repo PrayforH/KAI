@@ -902,7 +902,7 @@ function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
           />
           </>}
           <div className="composer-model-voice">
-          {!conversationScope?.compactComposer && <TaskModelControl disabled={Boolean(conversationScope) || runLocked || showStop || videoGenerating} />}
+          {(!conversationScope?.compactComposer || conversationScope.allowModelSelection) && <TaskModelControl disabled={Boolean(conversationScope && !conversationScope.allowModelSelection) || runLocked || showStop || videoGenerating} />}
           <VoiceInput key={scope?.threadId || "new"} disabled={busy || followupVoiceActive}
             modelRoute={overrideRouteId || ""}
             onActive={(active) => { voiceComposer.onActive(active); setVoiceActive(active); }}

@@ -3354,7 +3354,11 @@ async def test_preview_images_route_to_vision_and_followups_keep_that_route() ->
 
     application, container = app_and_container(auto_execute=False)
     models = AsyncMock()
-    models.resolve_runtime.return_value = object()
+    from types import SimpleNamespace
+
+    models.resolve_runtime.return_value = SimpleNamespace(
+        capabilities=frozenset({"streaming", "tool_use", "vision", "reasoning"})
+    )
     application.dependency_overrides[get_model_configuration_service] = lambda: models
     headers = {
         "Authorization": f"Bearer {SERVICE_TOKEN}",

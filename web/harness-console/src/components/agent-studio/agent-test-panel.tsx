@@ -10,6 +10,7 @@ import type { ThreadMessageLike } from "@assistant-ui/react";
 import type { StudioDraft } from "../../lib/agent-studio";
 import type { StudioTryRunSummary } from "../../lib/studio-client";
 import type { PreviewTurn } from "./agent-preview";
+import type { PlaygroundModelSelection } from "../task-model-context";
 import { AgentPlaygroundThread } from "./agent-playground-thread";
 import { BuilderFilesIcon, BuilderConversationsIcon } from "./builder-panel-icons";
 import styles from "./build-workspace.module.css";
@@ -38,6 +39,7 @@ export function AgentTestPanel({
   revision,
   agentName,
   model,
+  modelSelection,
   busy,
   ready,
   dirty,
@@ -79,6 +81,7 @@ export function AgentTestPanel({
   revision: number;
   agentName: string;
   model: string;
+  modelSelection?: PlaygroundModelSelection;
   busy: boolean;
   ready: boolean;
   dirty: boolean;
@@ -289,6 +292,7 @@ export function AgentTestPanel({
           draft={draft}
           agentName={agentName}
           model={model}
+          modelSelection={modelSelection}
           draftId={draftId}
           scopeId={`preview:${draftId}:${sessionId || "new"}:${conversationEpoch}`}
           userId={userId}
