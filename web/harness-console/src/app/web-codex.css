@@ -795,6 +795,7 @@ body.codex-theme-v1:has(.console-shell) .task-list-scroll .task-list {
   gap: 1px;
 }
 
+/* Titles and the trailing controls share stable column boundaries. */
 body.codex-theme-v1:has(.console-shell) .task-list-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) max-content;
@@ -809,9 +810,7 @@ body.codex-theme-v1:has(.console-shell) .task-list-item.is-active {
   position: relative;
   min-height: 30px;
   padding: 4px 6px 4px 34px;
-  display: grid;
-  grid-template-columns: subgrid;
-  grid-area: 1 / 1 / 2 / -1;
+  display: flex;
   align-items: center;
   gap: 8px;
   border: 0;
@@ -819,6 +818,12 @@ body.codex-theme-v1:has(.console-shell) .task-list-item.is-active {
   background: transparent;
   box-shadow: none;
   transition: color 140ms ease, background-color 140ms ease, transform 140ms ease;
+}
+
+body.codex-theme-v1:has(.console-shell) .task-list-row > .task-list-item {
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-area: 1 / 1 / 2 / -1;
 }
 
 body.codex-theme-v1:has(.console-shell) .task-list-content {
@@ -872,8 +877,6 @@ body.codex-theme-v1:has(.console-shell) .task-list-meta {
   transition: opacity 120ms ease;
 }
 
-/* The trailing grid column fits both actions and the timestamp. Swapping
-   their visibility keeps the title's clipping boundary stable. */
 /* Active tasks show a small status dot to the left of the title; finished
    tasks carry no dot except a blue unread marker. Text label stays hidden. */
 body.codex-theme-v1:has(.console-shell) .task-status {
