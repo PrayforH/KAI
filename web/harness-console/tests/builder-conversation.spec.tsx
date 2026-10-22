@@ -381,7 +381,7 @@ it("exports only on explicit preview and reuses that comparison when applying", 
   expect(host.querySelector('[aria-label="测试代码差异"]')?.textContent).toContain("已应用");
 });
 
-it("creates from the actual brief and reviews recommended Skills before installation", async () => {
+async function createRecommendedSkills() {
   vi.spyOn(studioClient, "createDraftFromTask").mockResolvedValue({draft: api(initial), recommendation: {
     generatedByModel: true, capabilityCatalogRevision: 7,
     recommendedSkills: [{packageId: "evidence-reporting", revision: 1, label: "证据报告", reason: "当前任务需要来源核验", risk: "low"}],
@@ -391,6 +391,10 @@ it("creates from the actual brief and reviews recommended Skills before installa
   }});
   act(() => newDraft());
   await send("联网核验公开资料并生成报告");
+}
+
+it("creates from the actual brief and reviews recommended Skills before installation", async () => {
+  await createRecommendedSkills();
   expect(studioClient.createDraftFromTask).toHaveBeenCalledWith({task: "联网核验公开资料并生成报告", runtimePreference: "auto", modelRouteOverride: "builder-first"}, expect.any(Function), expect.any(AbortSignal));
   expect(host.textContent).toContain("当前任务需要来源核验");
   expect(studioClient.applyBuilderEdit).not.toHaveBeenCalled();
@@ -766,4 +770,56 @@ it("does not create a running message while the empty builder loads its model ca
   expect(target.querySelector('[aria-label="停止运行"]')).toBeNull();
   expect(target.querySelector<HTMLSelectElement>('[aria-label="选择本次任务使用的模型"]')?.disabled).toBe(false);
   await act(async () => root.render(<></>)); target.remove();
+});
+
+
+it("allows closing Skill recommendations without discarding selected choices or installing anything", async () => {
+  await createRecommendedSkills();
+  await act(async () => host.querySelector<HTMLInputElement>('[aria-label="推荐 Skill"] input')!.click());
+  await click("关闭 Skill 推荐");
+  expect(host.querySelector('[aria-label="推荐 Skill"]')).toBeNull();
+  expect(host.querySelector('[aria-label="展开 Skill 推荐"]')?.textContent).toContain("已选 1 项");
+  await click("展开 Skill 推荐");
+  expect(host.querySelector<HTMLInputElement>('[aria-label="推荐 Skill"] input')!.checked).toBe(true);
+  expect(studioClient.applyBuilderEdit).not.toHaveBeenCalled();
+});
+
+it("automatically collapses unselected recommendations after an accepted verification run", async () => {
+  await createRecommendedSkills();
+  await act(async () => enableWorkspace());
+  await act(async () => switchMode("chat"));
+  expect(host.querySelector('[aria-label="推荐 Skill"]')).toBeNull();
+  await click("展开 Skill 推荐");
+  expect(host.querySelector('[aria-label="推荐 Skill"]')).not.toBeNull();
+  await send("/run 核验公开资料");
+  expect(studioClient.createTryRun).toHaveBeenCalled();
+  expect(host.querySelector('[aria-label="推荐 Skill"]')).toBeNull();
+  expect(host.querySelector('[aria-label="展开 Skill 推荐"]')).not.toBeNull();
+  await click("展开 Skill 推荐");
+  expect(host.querySelector('[aria-label="推荐 Skill"]')).not.toBeNull();
+  expect(studioClient.applyBuilderEdit).not.toHaveBeenCalled();
+});
+
+it("keeps selected recommendations visible when entering validation and remembers manual expansion", async () => {
+  await createRecommendedSkills();
+  await act(async () => enableWorkspace());
+  await act(async () => host.querySelector<HTMLInputElement>('[aria-label="推荐 Skill"] input')!.click());
+  await act(async () => switchMode("chat"));
+  expect(host.querySelector<HTMLInputElement>('[aria-label="推荐 Skill"] input')!.checked).toBe(true);
+  await send("/run 核验公开资料");
+  expect(host.querySelector<HTMLInputElement>('[aria-label="推荐 Skill"] input')!.checked).toBe(true);
+  expect(studioClient.applyBuilderEdit).not.toHaveBeenCalled();
+});
+
+it("does not hide recommendations after a failed run and opens fresh suggestions for a new draft", async () => {
+  await createRecommendedSkills();
+  await act(async () => enableWorkspace());
+  vi.mocked(studioClient.createTryRun).mockRejectedValueOnce(new Error("暂时无法运行"));
+  await send("/run 核验公开资料");
+  expect(host.querySelector('[aria-label="推荐 Skill"]')).not.toBeNull();
+  await click("关闭 Skill 推荐");
+  await act(async () => newDraft());
+  await send("创建一个新助手");
+  expect(host.querySelector('[aria-label="推荐 Skill"]')).not.toBeNull();
+  expect(host.querySelector<HTMLInputElement>('[aria-label="推荐 Skill"] input')!.checked).toBe(false);
 });

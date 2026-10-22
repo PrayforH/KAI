@@ -175,6 +175,7 @@ export function AgentBuilderAssistant({
   const [workingDraft, setWorkingDraft] = useState<StudioDraft | null>(null);
   const [recommendation, setRecommendation] = useState(initialRecommendation);
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
+  const [skillRecommendationsCollapsed, setSkillRecommendationsCollapsed] = useState(false);
   const [result, setResult] = useState<StudioTryRun | null>(null);
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -213,6 +214,10 @@ export function AgentBuilderAssistant({
 
   const activeDraft = workingDraft && workingDraft.id !== draft.id ? workingDraft : draft;
   const draftReady = mode === "run" ? Boolean(activeDraft.id) : Boolean(workingDraft?.id);
+  const availableRecommendedSkills = recommendation?.recommendedSkills?.filter(skill => !activeDraft.skills.some(installed => installed.name === skill.packageId)) ?? [];
+  const selectedRecommendedSkills = availableRecommendedSkills.filter(skill => selectedSkills.includes(skill.packageId));
+  const hasSelectedSkills = useRef(false);
+  hasSelectedSkills.current = selectedRecommendedSkills.length > 0;
   const modelChoices = useMemo(() => builderModelRoutes(modelRoutes, draftReady ? activeDraft.runtime : undefined), [modelRoutes, draftReady, activeDraft.runtime]);
   useEffect(() => {
     if (!open) return;
@@ -267,7 +272,7 @@ export function AgentBuilderAssistant({
     setWorkingDraft(mode === "run" ? draft : null);
     setCreating(false);
     setBusy(false);
-    setRecommendation(initialRecommendation); setSelectedSkills([]);
+    setRecommendation(initialRecommendation); setSelectedSkills([]); setSkillRecommendationsCollapsed(playgroundMode === "chat");
     setResult(null);
     setError("");
     setAttachments([]); setUploading(false); setReadingMaterials(false); uploadLock.current = false; submitLock.current = false; followOutput.current = true;
@@ -275,6 +280,13 @@ export function AgentBuilderAssistant({
   // Closing/reopening and new revisions retain this draft's conversation.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, mode, draft.id, creationSession]);
+
+  // Mode changes are events: manually reopening suggestions stays open until
+  // the next validation request. Keep the latest selection without refocusing
+  // the conversation whenever a checkbox changes.
+  useEffect(() => {
+    if ((playgroundMode === "chat" || testRequest > 0 || intent === "run") && !hasSelectedSkills.current) setSkillRecommendationsCollapsed(true);
+  }, [playgroundMode, testRequest, intent]);
 
   useEffect(() => { if (testRequest) { setConversationTab("chat");setCodeView(false);setMobilePanel("test"); window.setTimeout(() => workspaceTarget?.querySelector<HTMLTextAreaElement>('[aria-label="智能体效果测试"] [aria-label="消息输入"]')?.focus(), 0); } }, [testRequest, workspaceTarget]);
 
@@ -316,6 +328,7 @@ export function AgentBuilderAssistant({
       finally {if (epoch === epochRef.current) setHistoryLoading(false);}
     }
     if (epoch !== epochRef.current || selection !== historySelection.current) return;
+    if (!hasSelectedSkills.current) setSkillRecommendationsCollapsed(true);
     setVisibleTurnLimit(limit);
     if (!older) {
       setMessages([]);setInputSeed(undefined);setProposal(null);
@@ -447,6 +460,7 @@ export function AgentBuilderAssistant({
       setLastTestPrompt(value.trim());
       setCurrentFiles(names); setLastArtifactIds(artifactIds);
       setResult(started);
+      if (!hasSelectedSkills.current) setSkillRecommendationsCollapsed(true);
       setSavedRuns(current => [{draftRevision: started.draftRevision, run: {...started.run, input: {prompt: value.trim(), input_artifact_ids: artifactIds}, created_at: new Date().toISOString()}}, ...current.filter(item => item.run.run_id !== started.run.run_id)].slice(0, 200));
       setTestSessionId(started.run.session_id);
       setCodeView(false);setMobilePanel("test");setConversationTab("chat");
@@ -482,7 +496,7 @@ export function AgentBuilderAssistant({
       const nextDraft = apiDraftToStudioDraft(created.draft);
       setWorkingDraft(nextDraft);
       sessionKeyRef.current = `run:${nextDraft.id}`;
-      setRecommendation(created.recommendation); setSelectedSkills([]);
+      setRecommendation(created.recommendation); setSelectedSkills([]); setSkillRecommendationsCollapsed(playgroundMode === "chat");
       setMessages((current) => [...current, {
         id: replyId,
         role: "assistant",
@@ -705,18 +719,28 @@ export function AgentBuilderAssistant({
     }
   }
   const reviewContent = writable ? <>
-      {recommendation?.recommendedSkills?.some(skill => !activeDraft.skills.some(installed => installed.name === skill.packageId)) && <section className={styles.editProposal} aria-label="推荐 Skill">
-        <strong>为此智能体推荐的 Skill</strong>
-        <p>模型根据需求推荐，选择后可查看完整代码差异。</p>
-        {recommendation.recommendedSkills.filter(skill => !activeDraft.skills.some(installed => installed.name === skill.packageId)).map(skill => <label key={skill.packageId} className={styles.skillSuggestion}>
-          <input type="checkbox" checked={selectedSkills.includes(skill.packageId)} disabled={inputBusy || Boolean(proposal)} onChange={event => setSelectedSkills(current => event.target.checked ? [...current, skill.packageId] : current.filter(id => id !== skill.packageId))}/>
-          <span><strong>{skill.label}</strong><small>{skill.reason}</small>{skill.risk === "review" && <small>包含脚本，应用前请审阅</small>}</span>
-        </label>)}
-        <div className={styles.editActions}><button type="button" disabled={!selectedSkills.length || inputBusy || Boolean(proposal) || hasUnsavedChanges} onClick={() => {
-          const installSkills = recommendation.recommendedSkills!.filter(skill => selectedSkills.includes(skill.packageId)).map(({packageId, revision}) => ({packageId, revision}));
-          setProposal({baseRevision: activeDraft.revision, before: activeDraft, action: "edit", reply: "安装所选推荐 Skill", changedFields: ["skills"], changes: {installSkills, capabilityCatalogRevision: recommendation.capabilityCatalogRevision}});
-        }}>审阅所选 Skill</button></div>
-      </section>}
+      {availableRecommendedSkills.length > 0 && (skillRecommendationsCollapsed
+        ? <button type="button" className={styles.skillRecommendationsReopen} aria-label="展开 Skill 推荐" aria-expanded={false} onClick={() => setSkillRecommendationsCollapsed(false)}>
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 4 4 4-4 4" /></svg>
+          查看 Skill 推荐 · {availableRecommendedSkills.length}{selectedRecommendedSkills.length > 0 && ` · 已选 ${selectedRecommendedSkills.length} 项`}
+        </button>
+        : <section className={styles.editProposal} aria-label="推荐 Skill">
+          <div className={styles.skillRecommendationsHeader}>
+            <strong>为此智能体推荐的 Skill</strong>
+            <button type="button" aria-label="关闭 Skill 推荐" title="收起推荐" onClick={() => setSkillRecommendationsCollapsed(true)}>
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 4.5 7 7m0-7-7 7" /></svg>
+            </button>
+          </div>
+          <p>模型根据需求推荐，选择后可查看完整代码差异。</p>
+          {availableRecommendedSkills.map(skill => <label key={skill.packageId} className={styles.skillSuggestion}>
+            <input type="checkbox" checked={selectedSkills.includes(skill.packageId)} disabled={inputBusy || Boolean(proposal)} onChange={event => setSelectedSkills(current => event.target.checked ? [...current, skill.packageId] : current.filter(id => id !== skill.packageId))}/>
+            <span><strong>{skill.label}</strong><small>{skill.reason}</small>{skill.risk === "review" && <small>包含脚本，应用前请审阅</small>}</span>
+          </label>)}
+          <div className={styles.editActions}><button type="button" disabled={!selectedRecommendedSkills.length || inputBusy || Boolean(proposal) || hasUnsavedChanges} onClick={() => {
+            const installSkills = selectedRecommendedSkills.map(({packageId, revision}) => ({packageId, revision}));
+            setProposal({baseRevision: activeDraft.revision, before: activeDraft, action: "edit", reply: "安装所选推荐 Skill", changedFields: ["skills"], changes: {installSkills, capabilityCatalogRevision: recommendation?.capabilityCatalogRevision}});
+          }}>审阅所选 Skill</button></div>
+        </section>)}
   </> : null;
   const proposalCard = writable && proposal ? <BuilderProposalCard
     changes={review.changes} selected={review.selected} labels={editLabels} before={key => beforeEdit(proposal.before, key)} revision={proposal.baseRevision}
