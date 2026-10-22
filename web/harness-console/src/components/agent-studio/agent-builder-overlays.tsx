@@ -236,7 +236,8 @@ export function AgentBuilderAssistant({
       else localStorage.removeItem(modelPreferenceKey);
     } catch { /* Selection still works without browser storage. */ }
   }
-  const modelSelection = { routes: modelChoices, routeId: builderModelRoute, onChange: chooseBuilderModel };
+  const recommendedModelRoute = preferredBuilderModel(modelChoices, null);
+  const modelSelection = { routes: modelChoices, routeId: builderModelRoute, recommendedRouteId: recommendedModelRoute, onChange: chooseBuilderModel };
   const terminal = useMemo(
     () => isTerminalRunStatus(result?.run.status),
     [result],
@@ -805,7 +806,7 @@ export function AgentBuilderAssistant({
       </label>
       <div className="composer-toolbar">
         <div className={styles.composerTools}><label className={`${styles.attachButton} aui-composer-attach`} title="添加构建参考材料"><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M8 3v10M3 8h10" /></svg><input aria-label="添加构建附件" type="file" multiple disabled={inputBusy || active} onChange={event => { void upload(Array.from(event.target.files ?? [])); event.target.value = ""; }} /></label>{uploading && <span className={styles.visuallyHidden} role="status">上传中…</span>}</div>
-        <div className="composer-model-voice"><TaskModelProvider independent routes={modelChoices} agentDefaultRouteId={null} overrideRouteId={builderModelRoute} onOverrideChange={chooseBuilderModel}>
+        <div className="composer-model-voice"><TaskModelProvider independent routes={modelChoices} recommendedRouteId={recommendedModelRoute} agentDefaultRouteId={null} overrideRouteId={builderModelRoute} onOverrideChange={chooseBuilderModel}>
           <TaskModelControl disabled={inputBusy || active} />
         </TaskModelProvider></div>
         {active && result && !terminal ? <ConversationControl action="stop" aria-label="停止运行" onClick={() => void cancelRun()} /> : <ConversationControl action="send" aria-label="发送消息" disabled={!input.trim() || inputBusy} onClick={() => void send()} />}

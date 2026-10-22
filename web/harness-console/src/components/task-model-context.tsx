@@ -6,11 +6,13 @@ import type { TaskModelRoute } from "../lib/task-model-catalog";
 export interface PlaygroundModelSelection {
   routes: TaskModelRoute[];
   routeId: string | null;
+  recommendedRouteId?: string | null;
   onChange: (routeId: string | null) => void;
 }
 
 interface TaskModelContextValue {
   independent?: boolean;
+  recommendedRouteId?: string | null;
   routes: TaskModelRoute[];
   agentDefaultRouteId: string | null;
   overrideRouteId: string | null;
@@ -30,6 +32,7 @@ export function TaskModelProvider({
   overrideRouteId,
   onOverrideChange,
   independent = false,
+  recommendedRouteId,
   children,
 }: {
   routes: TaskModelRoute[];
@@ -37,6 +40,7 @@ export function TaskModelProvider({
   overrideRouteId: string | null;
   onOverrideChange: (routeId: string | null) => void;
   independent?: boolean;
+  recommendedRouteId?: string | null;
   children: ReactNode;
 }) {
   return (
@@ -44,6 +48,7 @@ export function TaskModelProvider({
       value={{
         routes,
         independent,
+        recommendedRouteId,
         agentDefaultRouteId,
         overrideRouteId,
         setOverrideRouteId: onOverrideChange,
@@ -69,6 +74,7 @@ export function TaskModelControl({
     overrideRouteId,
     setOverrideRouteId,
     independent,
+    recommendedRouteId,
   } = useTaskModel();
   if (routes.length === 0) return null;
   const effectiveOverrideRouteId =
@@ -99,7 +105,7 @@ export function TaskModelControl({
           </option>}
           {overrideRoutes.map((route) => (
             <option key={route.id} value={route.id}>
-              {route.label}
+              {route.label}{route.id === recommendedRouteId ? "（推荐）" : ""}
             </option>
           ))}
         </select>
