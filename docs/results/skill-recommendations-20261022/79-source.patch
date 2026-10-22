@@ -1,0 +1,203 @@
+--- a/web/harness-console/src/components/agent-studio/agent-builder-overlays.tsx
++++ b/web/harness-console/src/components/agent-studio/agent-builder-overlays.tsx
+@@ -169,6 +169,7 @@
+   const [workingDraft, setWorkingDraft] = useState<StudioDraft | null>(null);
+   const [recommendation, setRecommendation] = useState(initialRecommendation);
+   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
++  const [skillRecommendationsCollapsed, setSkillRecommendationsCollapsed] = useState(false);
+   const [result, setResult] = useState<StudioTryRun | null>(null);
+   const [creating, setCreating] = useState(false);
+   const [busy, setBusy] = useState(false);
+@@ -207,6 +208,11 @@
+ 
+   const activeDraft = workingDraft && workingDraft.id !== draft.id ? workingDraft : draft;
+   const draftReady = mode === "run" ? Boolean(activeDraft.id) : Boolean(workingDraft?.id);
++  const availableRecommendedSkills = recommendation?.recommendedSkills?.filter(skill => !activeDraft.skills.some(installed => installed.name === skill.packageId)) ?? [];
++  const selectedRecommendedSkills = availableRecommendedSkills.filter(skill => selectedSkills.includes(skill.packageId));
++  const hasSelectedSkills = useRef(false);
++  hasSelectedSkills.current = selectedRecommendedSkills.length > 0;
++
+   const terminal = useMemo(
+     () => isTerminalRunStatus(result?.run.status),
+     [result],
+@@ -237,7 +243,7 @@
+     setWorkingDraft(mode === "run" ? draft : null);
+     setCreating(false);
+     setBusy(false);
+-    setRecommendation(initialRecommendation); setSelectedSkills([]);
++    setRecommendation(initialRecommendation); setSelectedSkills([]); setSkillRecommendationsCollapsed(playgroundMode === "chat");
+     setResult(null);
+     setError("");
+     setAttachments([]); setUploading(false); setReadingMaterials(false); uploadLock.current = false; submitLock.current = false; followOutput.current = true;
+@@ -245,6 +251,13 @@
+   // Closing/reopening and new revisions retain this draft's conversation.
+   // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [open, mode, draft.id, creationSession]);
++
++  // Mode changes are events: manually reopening suggestions stays open until
++  // the next validation request. Keep the latest selection without refocusing
++  // the conversation whenever a checkbox changes.
++  useEffect(() => {
++    if ((playgroundMode === "chat" || testRequest > 0 || intent === "run") && !hasSelectedSkills.current) setSkillRecommendationsCollapsed(true);
++  }, [playgroundMode, testRequest, intent]);
+ 
+   useEffect(() => { if (testRequest) { setConversationTab("chat");setCodeView(false);setMobilePanel("test"); window.setTimeout(() => workspaceTarget?.querySelector<HTMLTextAreaElement>('[aria-label="智能体效果测试"] [aria-label="消息输入"]')?.focus(), 0); } }, [testRequest, workspaceTarget]);
+ 
+@@ -286,6 +299,7 @@
+       finally {if (epoch === epochRef.current) setHistoryLoading(false);}
+     }
+     if (epoch !== epochRef.current || selection !== historySelection.current) return;
++    if (!hasSelectedSkills.current) setSkillRecommendationsCollapsed(true);
+     setVisibleTurnLimit(limit);
+     if (!older) {
+       setMessages([]);setInputSeed(undefined);setProposal(null);
+@@ -417,6 +431,7 @@
+       setLastTestPrompt(value.trim());
+       setCurrentFiles(names); setLastArtifactIds(artifactIds);
+       setResult(started);
++      if (!hasSelectedSkills.current) setSkillRecommendationsCollapsed(true);
+       setSavedRuns(current => [{draftRevision: started.draftRevision, run: {...started.run, input: {prompt: value.trim(), input_artifact_ids: artifactIds}, created_at: new Date().toISOString()}}, ...current.filter(item => item.run.run_id !== started.run.run_id)].slice(0, 200));
+       setTestSessionId(started.run.session_id);
+       setCodeView(false);setMobilePanel("test");setConversationTab("chat");
+@@ -452,7 +467,7 @@
+       const nextDraft = apiDraftToStudioDraft(created.draft);
+       setWorkingDraft(nextDraft);
+       sessionKeyRef.current = `run:${nextDraft.id}`;
+-      setRecommendation(created.recommendation); setSelectedSkills([]);
++      setRecommendation(created.recommendation); setSelectedSkills([]); setSkillRecommendationsCollapsed(playgroundMode === "chat");
+       setMessages((current) => [...current, {
+         id: replyId,
+         role: "assistant",
+@@ -674,18 +689,28 @@
+     }
+   }
+   const reviewContent = writable ? <>
+-      {recommendation?.recommendedSkills?.some(skill => !activeDraft.skills.some(installed => installed.name === skill.packageId)) && <section className={styles.editProposal} aria-label="推荐 Skill">
+-        <strong>为此智能体推荐的 Skill</strong>
+-        <p>模型根据需求推荐，选择后可查看完整代码差异。</p>
+-        {recommendation.recommendedSkills.filter(skill => !activeDraft.skills.some(installed => installed.name === skill.packageId)).map(skill => <label key={skill.packageId} className={styles.skillSuggestion}>
+-          <input type="checkbox" checked={selectedSkills.includes(skill.packageId)} disabled={inputBusy || Boolean(proposal)} onChange={event => setSelectedSkills(current => event.target.checked ? [...current, skill.packageId] : current.filter(id => id !== skill.packageId))}/>
+-          <span><strong>{skill.label}</strong><small>{skill.reason}</small>{skill.risk === "review" && <small>包含脚本，应用前请审阅</small>}</span>
+-        </label>)}
+-        <div className={styles.editActions}><button type="button" disabled={!selectedSkills.length || inputBusy || Boolean(proposal) || hasUnsavedChanges} onClick={() => {
+-          const installSkills = recommendation.recommendedSkills!.filter(skill => selectedSkills.includes(skill.packageId)).map(({packageId, revision}) => ({packageId, revision}));
+-          setProposal({baseRevision: activeDraft.revision, before: activeDraft, action: "edit", reply: "安装所选推荐 Skill", changedFields: ["skills"], changes: {installSkills, capabilityCatalogRevision: recommendation.capabilityCatalogRevision}});
+-        }}>审阅所选 Skill</button></div>
+-      </section>}
++      {availableRecommendedSkills.length > 0 && (skillRecommendationsCollapsed
++        ? <button type="button" className={styles.skillRecommendationsReopen} aria-label="展开 Skill 推荐" aria-expanded={false} onClick={() => setSkillRecommendationsCollapsed(false)}>
++          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 4 4 4-4 4" /></svg>
++          查看 Skill 推荐 · {availableRecommendedSkills.length}{selectedRecommendedSkills.length > 0 && ` · 已选 ${selectedRecommendedSkills.length} 项`}
++        </button>
++        : <section className={styles.editProposal} aria-label="推荐 Skill">
++          <div className={styles.skillRecommendationsHeader}>
++            <strong>为此智能体推荐的 Skill</strong>
++            <button type="button" aria-label="关闭 Skill 推荐" title="收起推荐" onClick={() => setSkillRecommendationsCollapsed(true)}>
++              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 4.5 7 7m0-7-7 7" /></svg>
++            </button>
++          </div>
++          <p>模型根据需求推荐，选择后可查看完整代码差异。</p>
++          {availableRecommendedSkills.map(skill => <label key={skill.packageId} className={styles.skillSuggestion}>
++            <input type="checkbox" checked={selectedSkills.includes(skill.packageId)} disabled={inputBusy || Boolean(proposal)} onChange={event => setSelectedSkills(current => event.target.checked ? [...current, skill.packageId] : current.filter(id => id !== skill.packageId))}/>
++            <span><strong>{skill.label}</strong><small>{skill.reason}</small>{skill.risk === "review" && <small>包含脚本，应用前请审阅</small>}</span>
++          </label>)}
++          <div className={styles.editActions}><button type="button" disabled={!selectedRecommendedSkills.length || inputBusy || Boolean(proposal) || hasUnsavedChanges} onClick={() => {
++            const installSkills = selectedRecommendedSkills.map(({packageId, revision}) => ({packageId, revision}));
++            setProposal({baseRevision: activeDraft.revision, before: activeDraft, action: "edit", reply: "安装所选推荐 Skill", changedFields: ["skills"], changes: {installSkills, capabilityCatalogRevision: recommendation?.capabilityCatalogRevision}});
++          }}>审阅所选 Skill</button></div>
++        </section>)}
+   </> : null;
+   const proposalCard = writable && proposal ? <BuilderProposalCard
+     changes={review.changes} selected={review.selected} labels={editLabels} before={key => beforeEdit(proposal.before, key)} revision={proposal.baseRevision}
+--- a/web/harness-console/src/components/agent-studio/agent-builder-overlays.module.css
++++ b/web/harness-console/src/components/agent-studio/agent-builder-overlays.module.css
+@@ -275,3 +275,11 @@
+ .skillSuggestion input { margin-top: 4px; accent-color: var(--foreground); }
+ .skillSuggestion span { display: grid; gap: 4px; }
+ .skillSuggestion small { color: var(--muted-foreground); line-height: 1.5; }
++
++.skillRecommendationsHeader { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
++.skillRecommendationsHeader button { display: grid; place-items: center; flex: 0 0 24px; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
++.skillRecommendationsHeader button:hover { background: var(--field); color: var(--foreground); }
++.skillRecommendationsReopen { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; margin: 6px 0; padding: 4px 6px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
++.skillRecommendationsReopen:hover { background: var(--panel-subtle); color: var(--foreground); }
++.skillRecommendationsHeader svg, .skillRecommendationsReopen svg { width: 16px; height: 16px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
++.skillRecommendationsHeader button:focus-visible, .skillRecommendationsReopen:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+--- a/web/harness-console/tests/builder-conversation.spec.tsx
++++ b/web/harness-console/tests/builder-conversation.spec.tsx
+@@ -375,7 +375,7 @@
+   expect(host.querySelector('[aria-label="测试代码差异"]')?.textContent).toContain("已应用");
+ });
+ 
+-it("creates from the actual brief and reviews recommended Skills before installation", async () => {
++async function createRecommendedSkills() {
+   vi.spyOn(studioClient, "createDraftFromTask").mockResolvedValue({draft: api(initial), recommendation: {
+     generatedByModel: true, capabilityCatalogRevision: 7,
+     recommendedSkills: [{packageId: "evidence-reporting", revision: 1, label: "证据报告", reason: "当前任务需要来源核验", risk: "low"}],
+@@ -385,6 +385,10 @@
+   }});
+   act(() => newDraft());
+   await send("联网核验公开资料并生成报告");
++}
++
++it("creates from the actual brief and reviews recommended Skills before installation", async () => {
++  await createRecommendedSkills();
+   expect(studioClient.createDraftFromTask).toHaveBeenCalledWith({task: "联网核验公开资料并生成报告", runtimePreference: "auto"}, expect.any(Function), expect.any(AbortSignal));
+   expect(host.textContent).toContain("当前任务需要来源核验");
+   expect(studioClient.applyBuilderEdit).not.toHaveBeenCalled();
+@@ -712,3 +716,55 @@
+   expect(host.querySelector('[aria-label="待确认的配置修改"]')).toBeNull();
+   expect(studioClient.applyBuilderEdit).not.toHaveBeenCalled();
+ });
++
++
++it("allows closing Skill recommendations without discarding selected choices or installing anything", async () => {
++  await createRecommendedSkills();
++  await act(async () => host.querySelector<HTMLInputElement>('[aria-label="推荐 Skill"] input')!.click());
++  await click("关闭 Skill 推荐");
++  expect(host.querySelector('[aria-label="推荐 Skill"]')).toBeNull();
++  expect(host.querySelector('[aria-label="展开 Skill 推荐"]')?.textContent).toContain("已选 1 项");
++  await click("展开 Skill 推荐");
++  expect(host.querySelector<HTMLInputElement>('[aria-label="推荐 Skill"] input')!.checked).toBe(true);
++  expect(studioClient.applyBuilderEdit).not.toHaveBeenCalled();
++});
++
++it("automatically collapses unselected recommendations after an accepted verification run", async () => {
++  await createRecommendedSkills();
++  await act(async () => enableWorkspace());
++  await act(async () => switchMode("chat"));
++  expect(host.querySelector('[aria-label="推荐 Skill"]')).toBeNull();
++  await click("展开 Skill 推荐");
++  expect(host.querySelector('[aria-label="推荐 Skill"]')).not.toBeNull();
++  await send("/run 核验公开资料");
++  expect(studioClient.createTryRun).toHaveBeenCalled();
++  expect(host.querySelector('[aria-label="推荐 Skill"]')).toBeNull();
++  expect(host.querySelector('[aria-label="展开 Skill 推荐"]')).not.toBeNull();
++  await click("展开 Skill 推荐");
++  expect(host.querySelector('[aria-label="推荐 Skill"]')).not.toBeNull();
++  expect(studioClient.applyBuilderEdit).not.toHaveBeenCalled();
++});
++
++it("keeps selected recommendations visible when entering validation and remembers manual expansion", async () => {
++  await createRecommendedSkills();
++  await act(async () => enableWorkspace());
++  await act(async () => host.querySelector<HTMLInputElement>('[aria-label="推荐 Skill"] input')!.click());
++  await act(async () => switchMode("chat"));
++  expect(host.querySelector<HTMLInputElement>('[aria-label="推荐 Skill"] input')!.checked).toBe(true);
++  await send("/run 核验公开资料");
++  expect(host.querySelector<HTMLInputElement>('[aria-label="推荐 Skill"] input')!.checked).toBe(true);
++  expect(studioClient.applyBuilderEdit).not.toHaveBeenCalled();
++});
++
++it("does not hide recommendations after a failed run and opens fresh suggestions for a new draft", async () => {
++  await createRecommendedSkills();
++  await act(async () => enableWorkspace());
++  vi.mocked(studioClient.createTryRun).mockRejectedValueOnce(new Error("暂时无法运行"));
++  await send("/run 核验公开资料");
++  expect(host.querySelector('[aria-label="推荐 Skill"]')).not.toBeNull();
++  await click("关闭 Skill 推荐");
++  await act(async () => newDraft());
++  await send("创建一个新助手");
++  expect(host.querySelector('[aria-label="推荐 Skill"]')).not.toBeNull();
++  expect(host.querySelector<HTMLInputElement>('[aria-label="推荐 Skill"] input')!.checked).toBe(false);
++});
