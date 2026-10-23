@@ -25,3 +25,15 @@
 独立私有 Compose 已在目标 `private/compose.json` 生成（0600），卷和网络名称属于 `kai-assistant-desktop`；API 仅监听回环 18800，Web 计划监听 3501。未挂载主机源码或 Docker socket，容器内运行本地沙箱，Codex 内核尚未开放，飞书关闭。PostgreSQL/Redis 开始拉取；MinIO 同版本镜像被 Docker 镜像站拒绝，正在尝试直连官方注册表，不将旧版本覆盖为新版本。
 
 继续步骤：先检查 `api-build.log`、`web-image.log`、`data-retry.log`、`minio-direct.log` 和原进程。镜像完成后启动独立数据服务，迁移至 0045，再启动 API/Worker/Web。还须配置真实模型路由、验证登录与个人会话、事项和飞书待配置状态；未做这些验收前不得称部署已完成。台式机原工作区与已有服务保留。
+
+## 实际网页与对话验收
+
+独立 PostgreSQL/Redis/MinIO 已启动，数据库迁移至 0045，产物桶已初始化。MinIO 使用台式机已存在并核对版本的 `RELEASE.2025-09-07T16-13-09Z` 镜像，未使用此前尝试下载失败的标签。API/Worker 暂用同源码的 builder 阶段镜像运行，完整 runtime 镜像仍在构建，当前等待经过版本校验的 kubectl 源码构建阶段；不能把临时运行状态表述为完整 runtime 已切换。
+
+Web `kai/assistant-desktop-web:20261023-r2` 已健康运行，地址 `http://172.20.10.7:3501/assistant`。r2 修正管理链接样式，并从普通任务列表排除固定个人助理会话，避免与助理入口重复。68 项相关侧栏、分组和布局测试通过；Linux 生产构建与镜像打包通过。
+
+模型使用目标机原有私有配置中的 DeepSeek Anthropic 兼容入口，已修正模型目录中的协议及路由；不在此记录密钥。真实浏览器登录、真实模型回复、刷新恢复历史、追问返回之前的随机代号，以及第二次刷新保留回答均通过。证据：`docs/results/assistant-desktop-20261023/browser.json`、`chat-refresh.png`。首轮测试曾因未初始化产物桶及协议路由不正确失败，已修复；失败记录保留，后续两次真实 Run 成功。网页账号凭据仅保存在目标私有目录和本机私有凭据文件，不进 Git。
+
+飞书后台的真实 KAI 应用已发布 1.0.0，具体配置和剩余接入条件见 `docs/plans/2026-10-22-feishu-app-setup.md`。当前接收器尚未连接，不把网页验收等同于飞书链路验收。
+
+以上为实施过程记录。后续已完成正式本地运行镜像切换、真实飞书绑定/收发/卡片执行和重连后复测；最终状态以 `docs/assistant-desktop-feishu-20261023.md` 为准。台式机仅用 Docker Compose，不部署 Kubernetes；本地镜像不含 kubectl。HTTPS 网页跳转按用户决定留到换网后统一配置，长连接与卡片操作已在无公网入口模式验收。

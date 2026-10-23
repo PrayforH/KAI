@@ -1,0 +1,11 @@
+{
+  "base": "http://172.20.10.7:3501",
+  "assistant": "/assistant",
+  "login": true,
+  "realModelReply": true,
+  "reloadHistory": true,
+  "followupContext": true,
+  "secondReload": true,
+  "verificationCode": "KAI_a2f2ef09e20e",
+  "timestamp": "2026-10-23T08:01:12.719Z"
+}

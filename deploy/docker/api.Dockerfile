@@ -67,7 +67,9 @@ RUN .venv/bin/pip install --no-cache-dir \
     --prefix /app/project \
     .
 
-FROM ${PYTHON_IMAGE} AS runtime
+# Local deployments can target this stage without shipping cluster tooling.
+# The default runtime below still includes the verified, patched kubectl.
+FROM ${PYTHON_IMAGE} AS local-runtime
 
 ENV PATH="/app/project/bin:/app/.venv/bin:$PATH" \
     PYTHONPATH="/app/project/lib/python3.12/site-packages" \
@@ -75,7 +77,9 @@ ENV PATH="/app/project/bin:/app/.venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1
 
 # libarchive provides bounded in-memory RAR4/RAR5 reading for Studio imports.
-RUN apt-get update \
+ARG DEBIAN_MIRROR=https://deb.debian.org/debian
+RUN sed -i "s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g" /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
     && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends libarchive13 xz-utils \
     && rm -rf /var/lib/apt/lists/*
@@ -110,7 +114,6 @@ COPY --from=builder --chown=harness:harness /app/alembic.ini /app/alembic.ini
 COPY --from=builder --chown=harness:harness /app/agents /app/agents
 COPY --from=builder --chown=harness:harness /app/platform-skills /app/platform-skills
 COPY --from=builder --chown=harness:harness /app/scripts /app/scripts
-COPY --from=kubectl-builder /out/kubectl /usr/local/bin/kubectl
 COPY --from=builder /opt/codex /opt/codex
 COPY --chown=harness:harness deploy/docker/entrypoint-api.sh /usr/local/bin/entrypoint-api
 COPY --chown=harness:harness deploy/docker/entrypoint-worker.sh /usr/local/bin/entrypoint-worker
@@ -129,3 +132,6 @@ HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=6 \
   CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2)"]
 
 ENTRYPOINT ["entrypoint-api"]
+
+FROM local-runtime AS runtime
+COPY --from=kubectl-builder /out/kubectl /usr/local/bin/kubectl

@@ -33,7 +33,7 @@
 
 已实现持久绑定、收件去重、中文命令、一次性卡片操作、结果发件箱及 Web 连接状态。真实 App 尚未接入，配置前保持停用。
 
-私有配置变量：`HARNESS_FEISHU_ENABLED=true`、`HARNESS_FEISHU_APP_ID`、`HARNESS_FEISHU_APP_SECRET`、`HARNESS_FEISHU_PUBLIC_BASE_URL`。最后一个变量须为使用者终端可访问并信任证书的 HTTPS 地址，不含路径。凭据注入 API 和专用接收进程；不注入前端构建。接收器镜像为 `kai/feishu-receiver:20261022-v1`，入口 `python -m harness.feishu.main`，与 API 共享数据库和应用配置，不开放入站端口。创建好应用后再生成含这些字段的私有 Compose；当前不使用占位凭据启动进程。
+私有配置变量：`HARNESS_FEISHU_ENABLED=true`、`HARNESS_FEISHU_APP_ID`、`HARNESS_FEISHU_APP_SECRET`，以及可选的 `HARNESS_FEISHU_PUBLIC_BASE_URL`。最后一个变量若配置，须为使用者终端可访问并信任证书的 HTTPS 地址，不含路径；未配置时卡片省略网页跳转按钮，长连接和卡片回调仍可使用。凭据注入 API 和专用接收进程；不注入前端构建。79 接收器镜像为 `kai/feishu-receiver:20261022-v1`，入口 `python -m harness.feishu.main`，与 API 共享数据库和应用配置，不开放入站端口。
 
 用户命令：`事项`、`新建 标题`（换行填写要求）、`状态/执行/暂停/恢复/完成/停止 标题`、`补充 标题`（换行填写内容）。新建默认手动执行；检查频率、项目、Agent 在网页设置。状态变更和执行由卡片操作确认；操作令牌绑定本人、事项 revision 和 10 分钟期限。权限敏感工具审批继续在原任务页处理。
 
@@ -42,3 +42,13 @@
 接收状态如实区分“进程在线，等待消息验证”和“已收到事件”。投递不确定时使用相同 UUID 在有限窗口内重试；首次尝试时间在网络调用前提交，超过 50 分钟或达到重试上限标记未确认，避免跨过平台去重窗口自动重发。
 
 补充官方依据：[卡片按钮 JSON 2.0](https://open.feishu.cn/document/feishu-cards/card-json-v2-components/interactive-components/button.md)、[卡片回传交互](https://open.feishu.cn/document/feishu-cards/card-callback-communication.md)。
+
+## 2026-10-23 实际应用配置
+
+用户打开的专用 KAI 应用 App ID 为 `cli_aa51ac4376b9dc0e`，属于飞书个人版自建应用。通过开发者后台完成并逐项核对：机器人能力启用；事件和回调均采用长连接；订阅 `im.message.receive_v1` 和新版 `card.action.trigger`；仅开通 `im:message.p2p_msg:readonly` 与 `im:message:send_as_bot`。平台推荐的群聊读取权限未开通。两项最小消息权限和消息事件订阅已获用户明确确认。
+
+已保存机器人入门说明，并发布版本 `1.0.0`（版本记录 `7699772971884694545`）。页面明确显示「已启用」「已发布」「当前修改均已发布」。可用范围仅所有者肖凯；外部群与外部用户访问均关闭。
+
+当前服务器目标已改为热点下的台式机 `172.20.10.7`。应用发布不等于接收器连通：App Secret 尚未注入台式机；现有 KAI 网页为 HTTP `http://172.20.10.7:3501`，还需可信 HTTPS 入口供通知卡片跳转。正在向用户确认凭据保存及现有 HTTPS 配置。未启动此应用的长连接接收器，尚未验收真实绑定、收发与卡片操作。
+
+后续用户确认先走通、换办公网后统一调整配置，并明确授权凭据私有转存和本人账号绑定。已将现有 Secret 写入台式机私有配置（0600）；本机临时文件已删除。按无公网入口模式接通长连接：保留 HTTPS 地址校验，空地址时仅隐藏网页跳转，不提供无效链接。真实绑定、飞书创建事项、卡片触发模型执行、飞书收到结果均已成功；正式本地运行镜像切换后再次执行和通知成功。最终报告见 `docs/assistant-desktop-feishu-20261023.md`。

@@ -14,6 +14,7 @@ import { AccountMenu } from "./account-menu";
 import { useAuth } from "./auth-provider";
 import { ProductBrandMark, ProductWordmark, PRODUCT_NAME } from "./product-brand";
 import { WorkspaceNavigation, type WorkspaceId } from "./workspace-navigation";
+import { PERSONAL_ASSISTANT_THREAD } from "./personal-assistant-context";
 import { useRunViewModel } from "../lib/activity-store";
 import { approvalStore } from "../lib/approval-store";
 import { useDialogFocus } from "../lib/use-dialog-focus";
@@ -135,7 +136,8 @@ export function TaskSidebar({
   // Seed from the shared snapshot so navigating to a Studio page and back
   // (a fresh mount) renders the previous list immediately instead of
   // clearing it behind the loading state.
-  const [tasks, setTasks] = useState<TaskSummary[]>(() => peekCachedTasks() ?? []);
+  const [storedTasks, setTasks] = useState<TaskSummary[]>(() => peekCachedTasks() ?? []);
+  const tasks = useMemo(() => storedTasks.filter(task => task.thread_id !== PERSONAL_ASSISTANT_THREAD), [storedTasks]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(() => peekCachedTasks() === null);
   const [refreshKey, setRefreshKey] = useState(0);

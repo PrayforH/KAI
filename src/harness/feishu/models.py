@@ -19,7 +19,9 @@ class FeishuSettings(BaseSettings):
 
     @property
     def configured(self) -> bool:
-        return bool(self.app_id and self.app_secret.get_secret_value() and self.public_base_url)
+        # Long connections and card callbacks do not need a public web origin.
+        # Without one, cards omit their optional link back to the web console.
+        return bool(self.app_id and self.app_secret.get_secret_value())
 
     @model_validator(mode="after")
     def valid_deployment(self) -> FeishuSettings:
@@ -40,7 +42,7 @@ class FeishuSettings(BaseSettings):
                     "Feishu public base URL must be an HTTPS origin without credentials"
                 )
         if self.enabled and not self.configured:
-            raise ValueError("Enabled Feishu requires App ID, App Secret and public base URL")
+            raise ValueError("Enabled Feishu requires App ID and App Secret")
         return self
 
 

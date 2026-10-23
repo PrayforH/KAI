@@ -27,19 +27,22 @@ def card(
     objective_id: str = "",
     buttons: list[dict[str, Any]] | None = None,
 ) -> MessageContent:
-    url = base_url.rstrip("/") + "/studio/assistant"
-    if objective_id:
-        url += "?" + urlencode({"objective": objective_id})
     elements: list[dict[str, Any]] = [
         {"tag": "div", "text": {"tag": "plain_text", "content": content[:6000]}},
         *(buttons or []),
-        {
-            "tag": "button",
-            "text": {"tag": "plain_text", "content": "在 KAI 查看"},
-            "type": "default",
-            "behaviors": [{"type": "open_url", "default_url": url}],
-        },
     ]
+    if base_url:
+        url = base_url.rstrip("/") + "/studio/assistant"
+        if objective_id:
+            url += "?" + urlencode({"objective": objective_id})
+        elements.append(
+            {
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": "在 KAI 查看"},
+                "type": "default",
+                "behaviors": [{"type": "open_url", "default_url": url}],
+            }
+        )
     return MessageContent(
         msg_type="interactive",
         content={
