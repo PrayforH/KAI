@@ -242,9 +242,9 @@ async def test_platform_default_and_legacy_same_name_identities_stay_distinct() 
     container.agents._default_manifest_path = Path("agents/lead-agent/agent.yaml")
     now = datetime.now(UTC)
     old = WorkspaceAgent(
-        tenant_id="tenant-a", agent_id="legacy-b", scope=AgentScope.PERSONAL,
-        owner_user_id="publisher", name="lead-agent", current_version="0.0.1",
-        created_by="publisher", created_at=now, updated_at=now,
+        tenantId="tenant-a", agentId="legacy-b", scope=AgentScope.PERSONAL,
+        ownerUserId="publisher", name="lead-agent", currentVersion="0.0.1",
+        createdBy="publisher", createdAt=now, updatedAt=now,
     )
     # Install the current release first, then simulate a second legacy identity
     # sorting last. Name-only projection used to overwrite its id and pointer.

@@ -1,7 +1,7 @@
 """Immutable, owner-scoped conversation snapshots used by independent branches."""
 
 import json
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -16,7 +16,7 @@ class ConversationBranchSnapshot(BaseModel):
 
     version: Literal[1] = 1
     source_thread_id: str
-    messages: list[dict[str, Any]] = Field(default_factory=list)
+    messages: list[dict[str, Any]] = Field(default_factory=lambda: list[dict[str, Any]]())
     model_route_override: str | None = None
 
     def user_prompts(self) -> list[str]:
@@ -34,14 +34,16 @@ class ConversationBranchSnapshot(BaseModel):
 
     def context_projection(self) -> str:
         # Provider/tool calls are UI history, never replayed as live capabilities.
-        transcript = []
+        transcript: list[dict[str, Any]] = []
         for message in self.messages:
             if message.get("role") not in {"user", "assistant"}:
                 continue
             content = message.get("content", "")
             if isinstance(content, list):
                 content = "\n".join(
-                    part.get("text", "") for part in content if part.get("type") == "text"
+                    part.get("text", "")
+                    for part in cast(list[dict[str, Any]], content)
+                    if part.get("type") == "text"
                 )
             if content:
                 transcript.append({"role": message["role"], "content": content})

@@ -5,10 +5,13 @@ import pytest
 from harness.projects.models import ProjectDocument
 from harness.projects.pg_repositories import PostgresProjectResourceRepository
 from harness.storage.models import InputArtifactRow
+from tests.integration.storage.conftest import DatabaseFixture
 
 
 @pytest.mark.asyncio
-async def test_project_document_hash_uses_owned_input_and_preserves_missing_metadata(database):
+async def test_project_document_hash_uses_owned_input_and_preserves_missing_metadata(
+    database: DatabaseFixture,
+):
     _, sessions = database
     repository = PostgresProjectResourceRepository(sessions)
     now = datetime.now(UTC)

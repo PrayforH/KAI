@@ -1,13 +1,14 @@
 import os
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 import pytest_asyncio
 
 from harness.core.errors import NotFoundError
 from harness.core.models import ExecutionIdentity
-from harness.memory_bank.models import MemoryStatus
+from harness.memory_bank.models import MemoryEntry, MemoryStatus
 from harness.memory_bank.service import MemoryBankService
 from harness.storage.database import SessionFactory, create_database, create_schema, drop_schema
 from harness.storage.memory_bank_repository import PostgresMemoryBankRepository
@@ -48,7 +49,7 @@ async def test_business_project_scope_is_durable_and_filters_vector_ranking(
 ):
     repository = PostgresMemoryBankRepository(memory_database)
     bank = MemoryBankService(repository, clock=lambda: NOW)
-    saved = []
+    saved: list[MemoryEntry] = []
     vector = [1.0] + [0.0] * 1023
     for project in (None, "project-a", "project-b"):
         scoped = identity().model_copy(update={"business_project_id": project})
@@ -247,7 +248,7 @@ async def test_extraction_job_reconciliation_evidence_and_idempotency(
             )
         )
         await db.commit()
-    calls = []
+    calls: list[dict[str, Any]] = []
 
     async def handler(request):
         calls.append(json.loads(request.content))
@@ -321,7 +322,7 @@ async def test_extraction_correction_enrichment_obeys_lease(
             )
         )
         await db.commit()
-    args = dict(
+    args: dict[str, Any] = dict(
         tenant_id="tenant-a",
         user_id="user-a",
         agent_name="agent-a",

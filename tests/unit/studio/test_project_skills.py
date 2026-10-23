@@ -59,7 +59,7 @@ def test_codex_stage_mirrors_only_project_skills(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_captured_run_skills_survive_catalog_revision_and_verify_tenant(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     from harness.projects import skill_snapshots as module
 
@@ -68,7 +68,10 @@ async def test_captured_run_skills_survive_catalog_revision_and_verify_tenant(
     pinned = await snapshots.capture("tenant-a", ("pptx-generator@1",), "claude-agent-sdk")
     original = await snapshots.restore("tenant-a", pinned)
     assert "files" not in pinned[0] and pinned[0]["_skillBlob"]
-    monkeypatch.setattr(module, "skill_snapshots_for_references", lambda *_args, **_kwargs: ())
+    def unavailable(*_args: object, **_kwargs: object) -> tuple[object, ...]:
+        return ()
+
+    monkeypatch.setattr(module, "skill_snapshots_for_references", unavailable)
     restarted = ProjectSkillSnapshots(SkillBlobStore(storage))
     restored = await restarted.restore("tenant-a", pinned)
     assert restored == original

@@ -105,7 +105,11 @@ def _tool_web_images(payload: dict[str, Any]) -> list[dict[str, str]] | None:
     content = payload.get("content")
     candidates: list[Any] = [content]
     if isinstance(content, list):
-        candidates = [block.get("text") for block in content[:16] if isinstance(block, dict)]
+        candidates = [
+            cast(dict[str, Any], block).get("text")
+            for block in cast(list[Any], content)[:16]
+            if isinstance(block, dict)
+        ]
     images: list[dict[str, str]] = []
     for candidate in candidates:
         if isinstance(candidate, str):
@@ -115,24 +119,24 @@ def _tool_web_images(payload: dict[str, Any]) -> list[dict[str, str]] | None:
                 candidate = json.loads(candidate)
             except (ValueError, TypeError):
                 continue
-        if (
-            not isinstance(candidate, dict)
-            or candidate.get("is_error")
-            or candidate.get("redacted")
-        ):
+        if not isinstance(candidate, dict):
             continue
-        for image in PublicWebClient.normalize_images(candidate.get("images")):
+        data = cast(dict[str, Any], candidate)
+        if data.get("is_error") or data.get("redacted"):
+            continue
+        for image in PublicWebClient.normalize_images(data.get("images")):
             # Source attribution is explicit: never infer a source page from its image.
             original = next(
                 (
-                    item
-                    for item in candidate.get("images", [])
-                    if isinstance(item, dict) and item.get("url") == image["url"]
+                    cast(dict[str, Any], item)
+                    for item in cast(list[Any], data.get("images", []))
+                    if isinstance(item, dict)
+                    and cast(dict[str, Any], item).get("url") == image["url"]
                 ),
                 None,
             )
             if original and isinstance(original.get("source_url"), str):
-                source = PublicWebClient._result_url(original["source_url"])
+                source = PublicWebClient.normalize_source_url(original["source_url"])
                 if source and source.startswith("https://"):
                     image["source_url"] = source
             image["description"] = redact_text(image["description"], limit=500)

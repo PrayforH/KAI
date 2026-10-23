@@ -9,10 +9,13 @@ from harness.projects.pg_repositories import (
     PostgresProjectRepository,
     PostgresProjectResourceRepository,
 )
+from tests.integration.storage.conftest import DatabaseFixture
 
 
 @pytest.mark.asyncio
-async def test_project_result_versions_survive_reopen_and_serialize_concurrent_saves(database):
+async def test_project_result_versions_survive_reopen_and_serialize_concurrent_saves(
+    database: DatabaseFixture,
+):
     _, sessions = database
     projects = PostgresProjectRepository(sessions)
     resources = PostgresProjectResourceRepository(sessions)
@@ -23,7 +26,7 @@ async def test_project_result_versions_survive_reopen_and_serialize_concurrent_s
         )
     )
 
-    def result(index):
+    def result(index: int) -> ProjectResult:
         return ProjectResult(
             resultId=f"result-{index}",
             tenantId="t",

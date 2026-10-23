@@ -31,7 +31,7 @@ async def test_branch_freezes_history_and_preserves_project_and_execution_contex
             )
         ).json()
 
-        async def send(thread_id, run_id, prompt):
+        async def send(thread_id: str, run_id: str, prompt: str) -> str:
             response = await client.post(
                 "/v1/agui?agent_name=echo-agent&agent_version=0.1.0",
                 json={

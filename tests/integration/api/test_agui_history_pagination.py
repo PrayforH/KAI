@@ -6,12 +6,14 @@ from httpx import ASGITransport, AsyncClient
 
 from harness.agui.routes import _HISTORY_SNAPSHOT_VERSION as HISTORY_SNAPSHOT_VERSION
 from harness.api.app import create_memory_app
+from harness.api.dependencies import ApiContainer
+from harness.core.models import Run
 
 FIXTURE_MANIFEST = Path("tests/fixtures/agents/echo-agent/agent.yaml")
 HEADERS = {"X-Tenant-ID": "tenant-a", "X-User-ID": "user-1"}
 
 
-async def _drive_turn(container, thread_id: str, prompts: list[str]) -> str:
+async def _drive_turn(container: ApiContainer, thread_id: str, prompts: list[str]) -> str:
     request = RunAgentInput(
         thread_id=thread_id,
         run_id=f"client-run-{len(prompts)}",
@@ -35,7 +37,7 @@ async def _drive_turn(container, thread_id: str, prompts: list[str]) -> str:
     return run_id
 
 
-async def _thread_runs(container, thread_id: str):
+async def _thread_runs(container: ApiContainer, thread_id: str) -> list[Run]:
     binding = await container.agui.get_binding(
         tenant_id="tenant-a", user_id="user-1", thread_id=thread_id
     )

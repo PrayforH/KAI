@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from typing import Any, cast
 
 import jwt
 import pytest
@@ -6,6 +7,7 @@ from pydantic import SecretStr
 
 from harness.core.errors import ConflictError, NotFoundError
 from harness.core.models import ExecutionIdentity, Run, RunStatus
+from harness.memory_bank.models import MemoryEntry
 from harness.memory_bank.repositories import InMemoryMemoryBankRepository, dedup_key
 from harness.memory_bank.service import MemoryBankService
 from harness.memory_bank.workload import MemoryWorkloadTokenService
@@ -29,7 +31,7 @@ def identity(project: str | None) -> ExecutionIdentity:
 @pytest.mark.asyncio
 async def test_project_recall_read_dedup_and_corrections_do_not_cross_scope():
     bank = MemoryBankService(InMemoryMemoryBankRepository(), clock=lambda: NOW)
-    entries = []
+    entries: list[MemoryEntry] = []
     for project in (None, "project-a", "project-b"):
         entry = await bank.propose_agent(identity(project), "季度经营分析采用含税收入")
         entries.append(await bank.confirm("tenant", "user", entry.entry_id, entry.version))
@@ -50,7 +52,8 @@ async def test_project_recall_read_dedup_and_corrections_do_not_cross_scope():
                     supersedes_version=foreign.version,
                 )
     assert len(await bank.list_entries("tenant", "user")) == 3
-    assert len((await bank.export_user("tenant", "user"))["entries"]) == 3
+    exported = (await bank.export_user("tenant", "user"))["entries"]
+    assert isinstance(exported, list) and len(cast(list[object], exported)) == 3
 
 
 @pytest.mark.asyncio
@@ -87,7 +90,9 @@ def test_workload_tokens_keep_legacy_capability_scope_and_add_business_scope():
 @pytest.mark.parametrize(
     "input_data", [{"business_project_id": "a"}, {"project_context_meta": {"projectId": "a"}}, {}]
 )
-def test_run_scope_comes_from_its_snapshot_not_current_thread_assignment(input_data):
+def test_run_scope_comes_from_its_snapshot_not_current_thread_assignment(
+    input_data: dict[str, Any],
+):
     run = Run(
         run_id="run",
         session_id="session",

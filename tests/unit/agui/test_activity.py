@@ -767,6 +767,7 @@ def test_web_images_survive_truncated_previews_without_private_or_duplicate_urls
     }
     for encoded in [content, json.dumps(content), [{"type": "text", "text": json.dumps(content)}]]:
         activity = build_run_activity([event("tool.result", {"content": encoded})])
+        assert activity is not None
         images = activity["items"][0]["metadata"]["web_images"]
         assert images == [
             {
@@ -775,13 +776,15 @@ def test_web_images_survive_truncated_previews_without_private_or_duplicate_urls
                 "source_url": "https://news.example.com/story",
             }
         ]
-        assert len(activity["items"][0]["metadata"]["result_preview"]) < 9000
+        assert len(str(activity["items"][0]["metadata"]["result_preview"])) < 9000
 
 
 def test_web_images_are_bounded_and_suppressed_for_failed_or_redacted_tools() -> None:
     content = {"images": [{"url": f"https://cdn.example.com/{i}.jpg"} for i in range(20)]}
     projected = build_run_activity([event("tool.result", {"content": content})])
+    assert projected is not None
     assert len(projected["items"][0]["metadata"]["web_images"]) == 8
     for flag in ["redacted", "is_error"]:
         activity = build_run_activity([event("tool.result", {"content": content, flag: True})])
+        assert activity is not None
         assert "web_images" not in activity["items"][0]["metadata"]

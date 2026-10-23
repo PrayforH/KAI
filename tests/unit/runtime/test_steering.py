@@ -1,6 +1,6 @@
 import asyncio
 from datetime import UTC, datetime
-from typing import cast
+from typing import Any, cast
 from uuid import uuid4
 
 import pytest
@@ -126,7 +126,7 @@ async def test_sdk_merged_guidance_completes_on_one_result_without_hanging():
     delivered = asyncio.Event()
 
     class Client:
-        prompts = []
+        prompts: list[str] = []
 
         async def query(self, text):
             self.prompts.append(text)
@@ -291,10 +291,10 @@ async def test_background_agents_finish_and_summarize_before_run_closes(
     final = result()
     final.num_turns = 3
 
-    def state(value):
+    def state(value: str) -> SystemMessage:
         return SystemMessage(subtype="session_state_changed", data={"state": value})
 
-    def started(name):
+    def started(name: str) -> TaskStartedMessage:
         return TaskStartedMessage(
             subtype="task_started", data={}, task_id=name, description=name,
             uuid=name, session_id="sdk", task_type="local_agent",
@@ -339,7 +339,7 @@ async def test_background_stream_closure_cannot_report_intermediate_success():
             yield SystemMessage(subtype="session_state_changed", data={"state": "running"})
             yield result()
 
-    observed = []
+    observed: list[Any] = []
     with pytest.raises(RuntimeError, match="before background work reached idle"):
         async for message in _steerable_response(cast(ClaudeSDKClient, Client()), None):
             observed.append(message)

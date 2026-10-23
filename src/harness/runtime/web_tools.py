@@ -514,6 +514,11 @@ class PublicWebClient:
             return None
 
     @classmethod
+    def normalize_source_url(cls, value: Any) -> str | None:
+        """Validate explicit attribution with the same public URL rules as results."""
+        return cls._result_url(value)
+
+    @classmethod
     def normalize_images(cls, items: Any, *, source_url: str | None = None) -> list[dict[str, str]]:
         if not isinstance(items, list):
             return []
