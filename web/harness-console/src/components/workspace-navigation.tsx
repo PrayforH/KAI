@@ -19,7 +19,7 @@ export const workspaceItems: ReadonlyArray<{
   href: string;
   label: string;
 }> = [
-  { id: "assistant", href: "/studio/assistant", label: "我的助理" },
+  { id: "assistant", href: "/assistant", label: "我的助理" },
   { id: "tasks", href: "/", label: "任务" },
   { id: "agents", href: "/studio/agents", label: "智能体" },
   { id: "files", href: "/studio/files", label: "我的文件" },

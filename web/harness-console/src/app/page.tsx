@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { PERSONAL_ASSISTANT_THREAD, usePersonalAssistantEntry } from "../components/personal-assistant-context";
 import { loadTaskSummary, projectHref } from "../lib/project-space";
 import { agentDisplayName } from "../lib/agent-display-name";
 import { useInternalAgentsPreference } from "../lib/interface-preferences";
@@ -261,6 +262,7 @@ export default function Home() {
 }
 
 function AuthenticatedHome() {
+  const assistantEntry = usePersonalAssistantEntry();
   const { user } = useAuth();
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
@@ -272,6 +274,7 @@ function AuthenticatedHome() {
   }, []);
   const [showInternalAgents] = useInternalAgentsPreference();
   const [threadId, setThreadId] = useState("");
+  const personalAssistant = assistantEntry && threadId === PERSONAL_ASSISTANT_THREAD;
   const [taskAgents, setTaskAgents] = useState<TaskAgent[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<TaskAgent | null>(null);
   const [systemAssistant, setSystemAssistant] = useState<TaskAgent | null>(null);
@@ -355,7 +358,7 @@ function AuthenticatedHome() {
     const selectionRevision = taskSelectionRevision.current;
     const initialSearch = new URLSearchParams(window.location.search);
     const requestedSkillLaunch = parseSkillCreatorLaunch(initialSearch);
-    const requestedThreadId = initialSearch.get("thread");
+    const requestedThreadId = assistantEntry ? PERSONAL_ASSISTANT_THREAD : initialSearch.get("thread");
     const initialThreadId = requestedThreadId
       ? selectThread(storage, requestedThreadId)
       : storedThreadId;
@@ -445,6 +448,7 @@ function AuthenticatedHome() {
         );
         if (taskHistory.available) setCurrentTask(currentTask ?? null);
         if (currentTask) { markThreadPersisted(storage, currentThreadId); setLocalThreadId(null); }
+        else if (assistantEntry && taskHistory.available) setLocalThreadId(currentThreadId);
         setCurrentTaskTitle(currentTask?.title ?? "新任务");
         setCurrentThreadState(
           currentTask ? "durable" : taskHistory.available ? "empty" : "unknown",
@@ -507,7 +511,7 @@ function AuthenticatedHome() {
     return () => {
       active = false;
     };
-  }, [catalogRefreshKey, user.user_id, showInternalAgents]);
+  }, [catalogRefreshKey, user.user_id, showInternalAgents, assistantEntry]);
 
   const refreshingCatalog = useRef(false);
   const refreshAgentCatalog = useCallback(async () => {
@@ -768,6 +772,7 @@ function AuthenticatedHome() {
           />
         )}
         <TaskSidebar
+          activeNav={personalAssistant ? "assistant" : "tasks"}
           currentThreadId={threadId}
           collapsed={!taskSidebarOpen}
           overlayOpen={compactTaskSidebar && taskSidebarOpen}
@@ -805,7 +810,10 @@ function AuthenticatedHome() {
                 <span className="task-project-label">{projects.find((project) => project.projectId === activeProjectId)?.name ?? "返回项目"}</span>
                 <span className="task-project-separator" aria-hidden="true">/</span>
               </Link>}
-              <TaskContextBar
+              {personalAssistant ? <div className="task-context-bar">
+                <strong className="task-context-title">我的助理</strong>
+                <Link href="/studio/assistant">持续事项与飞书连接</Link>
+              </div> : <TaskContextBar
                 taskTitle={currentTaskTitle}
                 onForked={switchTask}
                 task={currentTask}
@@ -836,7 +844,7 @@ function AuthenticatedHome() {
                   setCurrentTaskTitle("新任务");
                   startNewTask();
                 }}
-              />
+              />}
             </div>
             <HeaderUtilities
               taskRailOpen={taskRailOpen}
@@ -846,7 +854,7 @@ function AuthenticatedHome() {
               }}
             />
           </header>
-          <section className="chat-stage" aria-label="Agent 任务对话">
+          <section className="chat-stage" aria-label={personalAssistant ? "我的助理对话" : "Agent 任务对话"}>
             {stageView === "trace" ? (
               <RunTraceConsole
                 threadId={threadId}
