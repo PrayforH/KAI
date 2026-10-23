@@ -1,0 +1,129 @@
+{
+  "image_tag": "intelligent-ui-20261011e",
+  "scope": "A/B supplementary renderer acceptance; not WeChat article reproduction",
+  "cases": [
+    {
+      "expected_kind": "comparison",
+      "prompt": "请在聊天里用横向对比组件比较两个虚构部署方案。维度是每月成本、部署方式、适用场景：方案甲成本120元，单机，开发测试；方案乙成本300元，双机，内部试运行。只能使用这些给定信息，不联网、不生成文件。",
+      "session_id": "session_4a84bc64ce3248a19bb4495d87977471",
+      "run_id": "run_aa4da711f32d4bd2bfc225a9f8e23b24",
+      "status": "succeeded",
+      "published": [
+        {
+          "presentation_id": "ui_9ac59ec868a9749d468579e5",
+          "kind": "comparison",
+          "snapshot_hash": "0c9e66fa914bd8fc152ed13835b5c399283a978010633977f5f3c7ff100c5a80",
+          "replay_matches_snapshot": true,
+          "repeat_read_unchanged": true,
+          "data": {
+            "dimensions": [
+              {
+                "key": "每月成本",
+                "label": "每月成本",
+                "align": null
+              },
+              {
+                "key": "部署方式",
+                "label": "部署方式",
+                "align": null
+              },
+              {
+                "key": "适用场景",
+                "label": "适用场景",
+                "align": null
+              }
+            ],
+            "items": [
+              {
+                "label": "方案甲",
+                "values": {
+                  "每月成本": "120元",
+                  "部署方式": "单机",
+                  "适用场景": "开发测试"
+                }
+              },
+              {
+                "label": "方案乙",
+                "values": {
+                  "每月成本": "300元",
+                  "部署方式": "双机",
+                  "适用场景": "内部试运行"
+                }
+              }
+            ]
+          },
+          "config": {
+            "highlight": ""
+          }
+        }
+      ],
+      "answer_text": "两个方案的核心差异如下:方案甲的月成本更低(120元)且结构简单(单机),适合开发测试;方案乙月成本更高(300元),采用双机部署,针对内部试运行场景。\n\n以上仅依据你给出的三项信息,未做任何外部推断或补充。\n\n```harness-ui\n{\"version\":1,\"kind\":\"comparison\",\"title\":\"两套虚构部署方案横向对比\",\"fallback_text\":\"方案甲:每月120元、单机、开发测试;方案乙:每月300元、双机、内部试运行。\",\"data\":{\"dimensions\":[\"每月成本\",\"部署方式\",\"适用场景\"],\"items\":[{\"label\":\"方案甲\",\"values\":[\"120元\",\"单机\",\"开发测试\"]},{\"label\":\"方案乙\",\"values\":[\"300元\",\"双机\",\"内部试运行\"]}]}}\n```",
+      "passed": true
+    },
+    {
+      "expected_kind": "timeline",
+      "prompt": "请在聊天里展示项目时间线：2026-10-01 需求确认，2026-10-05 协议冻结，2026-10-10 内部试运行。每个节点带一句说明，只使用给定日期，不联网、不生成文件。",
+      "session_id": "session_7c15ef7e612e4061a907d60a1c9d47ea",
+      "run_id": "run_8654e9a39dde4b02bd509e5ea7ae8b74",
+      "status": "succeeded",
+      "published": [],
+      "answer_text": "项目时间线如下（仅使用你给定的三个日期）：\n\n- **2026-10-01 — 需求确认**：与相关方完成需求沟通，明确项目目标、范围与验收标准。\n- **2026-10-05 — 协议冻结**：接口与协作协议定稿并冻结，后续变更需走变更流程。\n- **2026-10-10 — 内部试运行**：在内部环境开展试运行，收集反馈并验证流程可用性。\n\n需要的话，我可以把它整理成表格、甘特式进度条或加入后续节点（请提供日期与说明）。",
+      "passed": false
+    },
+    {
+      "expected_kind": "diagram",
+      "prompt": "请在聊天里用流程图说明这个简单流程：提交任务→排队→执行→返回结果；执行失败则重试，然后再次执行。只绘制这个流程，不联网、不生成文件。",
+      "session_id": "session_378451072e294319a744cfb2653508ff",
+      "run_id": "run_03edcd470e0f4db98e60af77286ddced",
+      "status": "succeeded",
+      "published": [],
+      "answer_text": "流程图（Mermaid，支持渲染的客户端会直接显示图形；纯文本环境可按下方结构阅读）：\n\n```mermaid\nflowchart TD\n    A[提交任务] --> B[排队]\n    B --> C[执行]\n    C --> D{执行成功?}\n    D -- 是 --> E[返回结果]\n    D -- 否 --> F[重试]\n    F --> C\n```\n\n文字版结构：\n\n```\n提交任务 → 排队 → 执行 →（成功）→ 返回结果\n                    ↑          │\n                    └── 重试 ←─┘（失败）\n```\n\n说明：\n\n- 主路径：提交任务 → 排队 → 执行 → 返回结果。\n- 分支点：在“执行”后判断是否成功。\n  - 成功 → 直接返回结果。\n  - 失败 → 进入“重试”，然后回到“执行”再次执行。\n\n一个需要你确认的细节：重试是“失败后无限重试一次/多次”还是“达到次数上限后改为失败返回”？上面的图按你描述的“失败→重试→再次执行”画成循环回执行节点；如需加上“重试次数上限，超限则返回失败”，可以再补一个判断节点。",
+      "passed": false
+    },
+    {
+      "expected_kind": "metric",
+      "prompt": "请在聊天里展示两个指标卡：本周任务数120件，成功率98%。仅展示给定数值，不联网、不生成文件。",
+      "session_id": "session_2ba1cff5cbc54b2c980d701121bb4cb2",
+      "run_id": "run_a822fb76629c4a5596d684c40229ebb7",
+      "status": "succeeded",
+      "published": [
+        {
+          "presentation_id": "ui_096278c031f506f2bc1d8a3d",
+          "kind": "metric",
+          "snapshot_hash": "19cf17916133cb1b762837831c09891d62d32cd7cb4c90fdf9bdf69110b6f224",
+          "replay_matches_snapshot": true,
+          "repeat_read_unchanged": true,
+          "data": {
+            "items": [
+              {
+                "label": "本周任务数",
+                "value": 120,
+                "unit": "件",
+                "hint": ""
+              },
+              {
+                "label": "成功率",
+                "value": "98%",
+                "unit": "",
+                "hint": ""
+              }
+            ]
+          },
+          "config": {}
+        }
+      ],
+      "answer_text": "本周两项指标如下：\n\n- **本周任务数**：120 件\n- **成功率**：98%\n\n```harness-ui\n{\"version\":1,\"kind\":\"metric\",\"title\":\"本周关键指标\",\"fallback_text\":\"本周任务数 120 件，成功率 98%。\",\"data\":{\"items\":[{\"label\":\"本周任务数\",\"value\":120,\"unit\":\"件\"},{\"label\":\"成功率\",\"value\":\"98%\"}]}}\n```",
+      "passed": true
+    },
+    {
+      "expected_kind": "text",
+      "prompt": "1+1等于几？这次仅用一句纯文字回答，不要图表、表单或其他界面，不联网。",
+      "session_id": "session_00c1a37b344348f9b5976962830eb014",
+      "run_id": "run_c364329456e54365a4c389a44177deff",
+      "status": "succeeded",
+      "published": [],
+      "answer_text": "2。",
+      "passed": true
+    }
+  ]
+}

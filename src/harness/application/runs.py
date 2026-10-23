@@ -76,9 +76,16 @@ def _same_user_request(left: dict[str, object], right: dict[str, object]) -> boo
     right_prompt = right.get("prompt")
     if not isinstance(left_prompt, str) or not isinstance(right_prompt, str):
         return False
-    return left_prompt == right_prompt and _request_attachment_ids(
-        left.get("input_artifact_ids", [])
-    ) == _request_attachment_ids(right.get("input_artifact_ids", []))
+    return (
+        left_prompt == right_prompt
+        and _request_attachment_ids(left.get("input_artifact_ids", []))
+        == _request_attachment_ids(right.get("input_artifact_ids", []))
+        # Project resources are part of the request the user is repeating: a
+        # project document or memory change must not deduplicate into a Run that
+        # was created under the previous context.
+        and left.get("project_document_ids", []) == right.get("project_document_ids", [])
+        and left.get("project_context") == right.get("project_context")
+    )
 
 
 def _blocking_predecessor(active_runs: list[Run]) -> Run | None:
@@ -205,12 +212,25 @@ class RunService:
                 existing.input.get("prompt"),
             )
             return RunCreation(run=existing, created=False, deduplicated=False)
-        run_input = input or {}
-        active_runs = [
-            item
-            for item in await self._runs.list_for_sessions(tenant_id, [session_id], limit=200)
-            if not item.status.is_terminal
-        ]
+        run_input = dict(input or {})
+        session_runs = await self._runs.list_for_sessions(tenant_id, [session_id], limit=200)
+        # Immutable uploads are excluded from workspace snapshots. Re-stage the
+        # latest attachment batch on follow-up turns, without presenting it as
+        # a new user upload or merging older batches into the current one.
+        run_input.pop("inherited_input_artifact_ids", None)
+        if not run_input.get("input_artifact_ids"):
+            for previous in sorted(
+                session_runs, key=lambda item: (item.created_at, item.run_id), reverse=True
+            ):
+                attachments = previous.input.get("input_artifact_ids") or previous.input.get(
+                    "inherited_input_artifact_ids"
+                )
+                attachment_ids = _request_attachment_ids(attachments)
+                if attachment_ids:
+                    run_input["input_artifact_ids"] = list(attachment_ids)
+                    run_input["inherited_input_artifact_ids"] = list(attachment_ids)
+                    break
+        active_runs = [item for item in session_runs if not item.status.is_terminal]
         if deduplicate_active_input:
             duplicate = next(
                 (item for item in active_runs if _same_user_request(item.input, run_input)),
@@ -265,6 +285,24 @@ class RunService:
             admitted = True
         try:
             await self._runs.add(run)
+        except ConflictError:
+            if admitted and self._admission is not None:
+                await self._admission.release_subject(tenant_id, run_id)
+            # UI dispatch may recover concurrently on different API/Worker
+            # processes. Its durable request reserves the input before this
+            # insert; the database's idempotency constraint picks one Run.
+            existing = await self._runs.find_by_idempotency_key(
+                tenant_id,
+                session_id,
+                idempotency_key,
+            )
+            if (
+                existing is None
+                or not run_input.get("ui_action_request_id")
+                or existing.input != run_input
+            ):
+                raise
+            return RunCreation(run=existing, created=False, deduplicated=False)
         except Exception:
             if admitted and self._admission is not None:
                 await self._admission.release_subject(tenant_id, run_id)
@@ -336,7 +374,19 @@ class RunService:
 
     async def steering_state(self, tenant_id: str, run_id: str) -> dict[str, object]:
         run = await self._runs.get(tenant_id, run_id)
-        events = await self._events.list_after(tenant_id, run_id, 0)
+        events = await self._events.list_after(
+            tenant_id,
+            run_id,
+            0,
+            types=(
+                "runtime.steering.ready",
+                "runtime.steering.closed",
+                "run.steer.requested",
+                "run.steer.sending",
+                "run.steer.accepted",
+                "run.steer.failed",
+            ),
+        )
         ready = False
         requests: dict[str, dict[str, object]] = {}
         for event in events:

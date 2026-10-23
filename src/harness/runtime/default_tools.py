@@ -6,6 +6,7 @@ from typing import Literal, cast
 from claude_agent_sdk import McpServerConfig
 from pydantic import SecretStr
 
+from harness.core.models import ExecutionIdentity
 from harness.policy.models import ContextTrust
 from harness.runtime.mcp_credentials import (
     DynamicMcpCredentialProvider,
@@ -33,8 +34,7 @@ def server_secret_credential_provider(
         if not isinstance(raw_values, dict):
             continue
         references[str(server)] = {
-            str(key): str(value)
-            for key, value in cast(dict[object, object], raw_values).items()
+            str(key): str(value) for key, value in cast(dict[object, object], raw_values).items()
         }
     secrets = {
         str(key): SecretStr(str(value))
@@ -67,7 +67,22 @@ def default_tool_resolver(
             if (registration := _catalog_registration(capability)) is not None
         }
 
+    async def validate_project_mcp(
+        identity: ExecutionIdentity, references: tuple[str, ...]
+    ) -> None:
+        if catalogs is None:
+            raise ValueError("Project connector catalog is unavailable")
+        record = await catalogs.get_for_user(identity.tenant_id, identity.user_id)
+        allowed = {
+            cap.reference
+            for cap in record.catalog.mcp_servers
+            if cap.enabled and cap.endpoint_url and cap.visibility == "all"
+        }
+        if set(references) - allowed:
+            raise ValueError("Project connector is unavailable or restricted to selected Agents")
+
     return ToolResolver(
+        project_mcp_validator=validate_project_mcp,
         mcp_registry={},
         mcp_registry_provider=tenant_registry if catalogs is not None else None,
         credential_provider=credential_provider,

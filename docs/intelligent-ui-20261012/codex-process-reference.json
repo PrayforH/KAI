@@ -1,0 +1,71 @@
+{
+  "version": "26.1007.30912",
+  "build": "20156",
+  "assets": [
+    {
+      "path": "webview/assets/app-shared-8bd9d0399038.js",
+      "sha256": "607ad0866dd25ed3764711b4467a9b60708353a599485b5249ff4cbe0e870245"
+    },
+    {
+      "path": "webview/assets/app-initial-6350d04672d0.js",
+      "sha256": "604b5d2de4fbb41f3d0dc5b3662129c558e1c7b8aac8cc87225286f58dcfaf8f"
+    },
+    {
+      "path": "webview/assets/app-initial-99e8b4b455fa.css",
+      "sha256": "1a75f9180b89d2457dc09e4efea288436c9cf6d44e5ba59b2c03d3d571b7bf61"
+    },
+    {
+      "path": "webview/assets/app-primary-6f60e9ac4103.js",
+      "sha256": "7fe9c00b03cb1de3ebc3a4bf298fc44b13a7fe67ca9cc335a9e2ecda969a1321"
+    },
+    {
+      "path": "webview/assets/timeline-activity-body-bcd70afb459e.js",
+      "sha256": "84d04b448b7847501a27b76776ce6df9ec1c7c86eccaa550cf5ffab7d0d763ad"
+    },
+    {
+      "path": "webview/assets/local-conversation-turn-632904a8790c.js",
+      "sha256": "f16c75de8c65e6849f3976cc8e0efec198e7b063ec81ce514ff85b348967b376"
+    }
+  ],
+  "icons": [
+    {
+      "name": "brain-light-16",
+      "body_sha256": "f3618648898341264d6ce95b2f21fd38c6f3d630a7db15d3cbdd1024f2886b0a"
+    },
+    {
+      "name": "terminal-light-16",
+      "body_sha256": "476e44f87d55e2b41c3578c68828683e0f96a37ca58c5a2d6d3540520ce0a033"
+    },
+    {
+      "name": "magnifying-glass-md-light-16",
+      "body_sha256": "9eca91fd1cdd4494dd04e462bb5b7b0f9bcb8007632f24a5bd3787736963d234"
+    },
+    {
+      "name": "person-light-16",
+      "body_sha256": "4d2dbe6668a3d27ef480f4f1b367e1b7caba833d1a23e50c539dd0ea8ba55266"
+    },
+    {
+      "name": "document-light-16",
+      "body_sha256": "e1bfb4922821e34d459a37abf17a54d71e2203fcaa7c7c4e443a43b79453557f"
+    },
+    {
+      "name": "gear-light-16",
+      "body_sha256": "90bb00124d2bc741f45efd8a17df96b9409c51a6ffb9ef4151d0bcc5852bd623"
+    },
+    {
+      "name": "ellipsis-horizontal-light-16",
+      "body_sha256": "c45d5b286bc069ce94411ecd8f3d5c6db75f08b2505539793d2ee48079c4abda"
+    },
+    {
+      "name": "circle-info-light-16",
+      "body_sha256": "fc31b867da0b659e0d93656ffa4e2fe6d6ef974cd53056faf7b503361fc0c33b"
+    }
+  ],
+  "observed": {
+    "thinking_cadence": "600ms first delay; 1s sweep every4s, reduced motion skips scheduling",
+    "disclosure": "height+opacity, initial:false; 250ms cubic-bezier(.16,1,.3,1) in generic expanded body",
+    "timeline": "grouped4px gap; normal8px gap;24px indentation",
+    "elapsed": "Working for / Worked for labels with tabular numerals and tertiary text"
+  },
+  "adaptation": "reuse generic SVG paths; CSS4s cycle with1s sweep and600ms initialdelay, stable live labels; native details for individual rows, WAAPI200ms for overall disclosure; preserve existing observable event order and reader scroll"
+}

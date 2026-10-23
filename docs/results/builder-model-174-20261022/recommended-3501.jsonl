@@ -1,0 +1,3 @@
+{"stage":"recommended-3501","recommended":"deepseek-v4-flash","recommendationLabel":"DeepSeek-V4.1-Flash（推荐）"}
+{"base":"http://127.0.0.1:13501","stage":"recommended-3501","draftId":"draft_0732e22461ba4e76a746ad0c4f63d0c1","runtime":"claude-agent-sdk","agentDefault":"deepseek-v4-pro","independentChoice":"deepseek-v4-flash","selectorEnabled":true,"choicePersistsOnReload":true,"agentModelUnchanged":true,"agentRevisionUnchanged":true,"inputRetained":true,"actualExecution":false,"modelSwitchVerified":false,"continuationVerified":false,"errors":[]}
+{"stage":"recommended-3501","qaDraftDeleted":true}

@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>意大利一周穿搭规划器</title>
+<style>
+  :root{
+    --bg:#f6f3ee; --card:#ffffff; --ink:#241f1a; --muted:#6b6259;
+    --line:#e3ddd3; --accent:#8a3b2e; --accent2:#3f5c46; --gold:#b08442;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    line-height:1.6;-webkit-text-size-adjust:100%}
+  .wrap{max-width:1000px;margin:0 auto;padding:18px 14px 40px}
+  h1{font-size:22px;margin:6px 0 4px;letter-spacing:.5px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:16px}
+  h2{font-size:16px;margin:26px 0 10px;padding-left:9px;border-left:3px solid var(--accent)}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
+  .ctrl{margin-bottom:12px}
+  .ctrl .lab{font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600;letter-spacing:.4px}
+  .seg{display:flex;flex-wrap:wrap;gap:7px}
+  .seg button{font:inherit;font-size:13px;padding:7px 12px;border-radius:20px;border:1px solid var(--line);
+    background:#fbf9f6;color:var(--ink);cursor:pointer;transition:.15s}
+  .seg button:hover{border-color:#c9bfae}
+  .seg button.active{background:var(--accent);border-color:var(--accent);color:#fff}
+  .seg button[data-key="church"].active{background:var(--accent2);border-color:var(--accent2)}
+  .weather{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:8px}
+  .temp{font-size:26px;font-weight:700;color:var(--accent)}
+  .chip{display:inline-block;font-size:12px;padding:3px 10px;border-radius:12px;background:#efe9df;color:var(--muted)}
+  .wx{font-size:13px;color:var(--muted);flex:1 1 260px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+  .day{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px}
+  .day.wed{border:1.5px solid var(--gold);box-shadow:0 4px 18px rgba(176,132,66,.16);
+    background:linear-gradient(180deg,#fffdf8,#fff)}
+  .day h3{font-size:14px;margin:0 0 2px;display:flex;align-items:center;gap:7px}
+  .day .n{display:inline-flex;width:20px;height:20px;border-radius:50%;background:var(--accent);color:#fff;
+    font-size:11px;align-items:center;justify-content:center;flex:0 0 auto}
+  .day.wed .n{background:var(--gold)}
+  .scene{font-size:12px;color:var(--muted);margin-bottom:9px}
+  .line{display:flex;gap:8px;font-size:13px;padding:3px 0;border-top:1px dashed #eee7db}
+  .line:first-of-type{border-top:0}
+  .line .k{flex:0 0 40px;color:var(--gold);font-size:12px;font-weight:600}
+  .line .v{flex:1}
+  .swatches{display:flex;flex-wrap:wrap;gap:9px;margin-top:4px}
+  .sw{display:flex;align-items:center;gap:7px;font-size:13px;background:var(--card);border:1px solid var(--line);
+    border-radius:20px;padding:5px 12px 5px 6px}
+  .dot{width:20px;height:20px;border-radius:50%;border:1px solid rgba(0,0,0,.12)}
+  .pkg{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+  .pgroup{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px}
+  .pgroup h4{margin:0 0 8px;font-size:13px;color:var(--accent)}
+  .pitem{display:flex;align-items:flex-start;gap:8px;font-size:13px;padding:4px 0;cursor:pointer}
+  .pitem input{margin-top:4px;accent-color:var(--accent);flex:0 0 auto}
+  .pitem.done span{text-decoration:line-through;color:#a89f92}
+  .avoid{list-style:none;padding:0;margin:0;font-size:13px}
+  .avoid li{padding:6px 0 6px 22px;position:relative;border-top:1px dashed #eee7db}
+  .avoid li:first-child{border-top:0}
+  .avoid li::before{content:"✕";position:absolute;left:2px;color:var(--accent);font-weight:700}
+  .gal{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
+  figure{margin:0;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  figure img{width:100%;height:190px;object-fit:cover;display:block;background:#eee9e0}
+  figure .cap{padding:8px 10px;font-size:12px;color:var(--ink)}
+  figure .src{display:block;font-size:11px;color:var(--muted);margin-top:3px;text-decoration:none;word-break:break-all}
+  figure .src:hover{color:var(--accent)}
+  .imgfail img{display:none}
+  .imgfail::before{content:"图片加载失败，请点击下方来源链接查看";display:block;height:190px;padding:16px;
+    font-size:12px;color:var(--muted);background:#f1ece4}
+  .foot{margin-top:26px;font-size:12px;color:var(--muted);border-top:1px solid var(--line);padding-top:12px}
+  .reset{font:inherit;font-size:13px;padding:7px 14px;border-radius:20px;border:1px solid var(--line);
+    background:#fff;cursor:pointer;color:var(--muted)}
+  .reset:hover{border-color:var(--accent);color:var(--accent)}
+  @media(max-width:520px){ .temp{font-size:22px} h1{font-size:19px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>意大利一周穿搭规划器</h1>
+  <div class="sub">婚礼 + 一周旅行 · 7 天逐日搭配与打包清单。调整下面的选项即可实时重算。</div>
+
+  <div class="panel">
+    <div class="ctrl">
+      <div class="lab">同行者 / 着装对象</div>
+      <div class="seg" id="seg-gender"></div>
+    </div>
+    <div class="ctrl">
+      <div class="lab">行程地区（影响气温与雨量）</div>
+      <div class="seg" id="seg-region"></div>
+    </div>
+    <div class="ctrl">
+      <div class="lab">出行季节</div>
+      <div class="seg" id="seg-season"></div>
+    </div>
+    <div class="ctrl">
+      <div class="lab">婚礼正式度（按请柬上的 dress code 选）</div>
+      <div class="seg" id="seg-formality"></div>
+    </div>
+    <div class="ctrl">
+      <div class="lab">是否含教堂仪式</div>
+      <div class="seg" id="seg-church"></div>
+    </div>
+    <div class="weather">
+      <div class="temp" id="temp">—</div>
+      <div class="wx" id="wx"></div>
+    </div>
+    <div style="margin-top:12px"><button class="reset" id="reset">恢复默认设置</button></div>
+  </div>
+
+  <h2>7 天逐日穿搭</h2>
+  <div class="grid" id="plan"></div>
+
+  <h2>配色建议</h2>
+  <div class="swatches" id="palette"></div>
+
+  <h2>打包清单（可勾选）</h2>
+  <div class="pkg" id="packing"></div>
+
+  <h2>尽量避免</h2>
+  <div class="panel"><ul class="avoid" id="avoid"></ul></div>
+
+  <h2>参考图（含来源）</h2>
+  <div class="gal" id="gallery"></div>
+
+  <div class="foot">
+    气温为按地区与季节给出的规划参考值，非实时预报；出发前请再核对目的地天气与请柬上的 dress code。
+    本页所有数值、单位与清单由同一套规则生成，勾选与选项可保存。
+  </div>
+</div>
+
+<script>
+/* ===== 意大利一周穿搭规划器 · 纯逻辑层（可独立测试） ===== */
+
+const REGIONS = {
+  north:   { name:'北部 · 米兰 / 威尼斯 / 科莫湖', t:{ spring:[9,18], summer:[18,29], autumn:[8,16], winter:[1,8] }, note:'秋季多雨，湖畔风大，早晚温差明显' },
+  central: { name:'中部 · 罗马 / 佛罗伦萨 / 托斯卡纳', t:{ spring:[10,19], summer:[19,31], autumn:[12,21], winter:[4,13] }, note:'午后偏暖，清晨与夜间转凉' },
+  south:   { name:'南部 · 阿马尔菲 / 西西里 / 普利亚', t:{ spring:[13,21], summer:[22,33], autumn:[15,24], winter:[8,16] }, note:'日照强、海风大，午后仍偏暖' }
+};
+
+const SEASONS = {
+  spring:{ name:'春季 3–5 月' },
+  summer:{ name:'夏季 6–8 月' },
+  autumn:{ name:'秋季 9–11 月' },
+  winter:{ name:'冬季 12–2 月' }
+};
+
+const FORMALITY = {
+  blacktie:  { name:'黑领结 / 正式' },
+  semiformal:{ name:'半正式 / 鸡尾酒' },
+  casual:    { name:'休闲优雅' }
+};
+
+const GENDERS = { female:{ name:'女性' }, male:{ name:'男性' } };
+
+function bandOf(t){ if (t >= 27) return 'hot'; if (t >= 20) return 'warm'; if (t >= 13) return 'cool'; return 'cold'; }
+const BANDNAME = { hot:'炎热', warm:'温暖', cool:'微凉', cold:'寒冷' };
+
+const POOL = {
+  female: {
+    top: {
+      hot:  ['真丝或棉质短袖上衣','亚麻衬衫（袖口可卷）','薄棉针织短袖'],
+      warm: ['细针织短袖上衣','长袖棉质衬衫','轻薄真丝衬衫'],
+      cool: ['细针织薄毛衣','长袖衬衫 + 薄开衫','半高领打底衫'],
+      cold: ['羊绒高领毛衣','厚针织毛衣 + 打底','法兰绒衬衫 + 羊毛背心']
+    },
+    bottom: {
+      hot:  ['亚麻阔腿裤','透气 midi 半裙','棉质直筒裙'],
+      warm: ['直筒牛仔裤','斜纹棉长裤','midi 伞裙'],
+      cool: ['深色牛仔裤 / 羊毛西裤','针织 midi 裙 + 打底袜','灯芯绒长裤'],
+      cold: ['厚呢长裤 + 打底裤','羊毛西裤','针织长裙 + 厚打底袜']
+    },
+    outer: {
+      hot:  ['轻薄披肩或丝巾（晚间备用）'],
+      warm: ['薄款西装外套','短风衣'],
+      cool: ['中长风衣','薄款大衣 / 夹克'],
+      cold: ['羊毛大衣','轻薄羽绒 / 呢子外套']
+    },
+    shoes: {
+      hot:  ['皮质凉鞋','白色运动鞋'],
+      warm: ['白色运动鞋','乐福鞋'],
+      cool: ['踝靴','浅色运动鞋'],
+      cold: ['防水短靴 / 踝靴','厚底运动鞋']
+    },
+    bag: ['斜挎小包','防泼水托特包']
+  },
+  male: {
+    top: {
+      hot:  ['亚麻衬衫（不打领带）','棉质短袖衬衫','polo 衫'],
+      warm: ['牛津纺衬衫','轻薄长袖衬衫','细针织短袖'],
+      cool: ['牛津纺衬衫 + 薄针织衫','法兰绒衬衫','半高领打底 + 衬衫'],
+      cold: ['羊毛高领毛衣','厚针织毛衣 + 内搭衬衫','法兰绒衬衫 + 羊毛背心']
+    },
+    bottom: {
+      hot:  ['亚麻长裤','浅色斜纹裤','休闲卡其裤'],
+      warm: ['斜纹棉长裤','深色牛仔裤','卡其裤'],
+      cool: ['深色牛仔裤 / 羊毛西裤','灯芯绒长裤','斜纹长裤'],
+      cold: ['厚呢长裤','羊毛西裤','加绒长裤']
+    },
+    outer: {
+      hot:  ['轻薄亚麻外套（晚间备用）'],
+      warm: ['无结构西装外套','短风衣'],
+      cool: ['风衣 / 轻夹克','薄款大衣'],
+      cold: ['羊毛大衣','轻薄羽绒 / 呢子外套']
+    },
+    shoes: {
+      hot:  ['乐福鞋','白色皮质运动鞋'],
+      warm: ['白色运动鞋','乐福鞋'],
+      cool: ['皮质踝靴','白色运动鞋'],
+      cold: ['防水短靴','厚底运动鞋']
+    },
+    bag: ['斜挎小包','皮质托特包']
+  }
+};
+
+const WEDDING = {
+  female: {
+    blacktie:  { outfit:'及地长礼服（深宝石色或黑色，简洁廓形）', shoes:'缎面中跟 / 细跟（另备块跟鞋走石板路）', acc:'手拿包、精致耳饰、薄披肩' },
+    semiformal:{ outfit:'midi 连衣裙（长袖，或配真丝披肩）', shoes:'中跟块跟鞋', acc:'手拿包、低调首饰、披肩' },
+    casual:    { outfit:'优雅 midi 连衣裙或连体裤', shoes:'低跟或精致平底', acc:'小挎包、简约首饰' }
+  },
+  male: {
+    blacktie:  { outfit:'深色晚礼服 + 白衬衫 + 领结', shoes:'黑色漆皮 / 牛津鞋', acc:'领结、袖扣、口袋巾' },
+    semiformal:{ outfit:'藏青或炭灰西装 + 白衬衫', shoes:'棕色或黑色皮鞋', acc:'领带、皮带与鞋色呼应' },
+    casual:    { outfit:'亚麻或棉质西装外套 + 衬衫（不打领带）', shoes:'乐福鞋', acc:'口袋巾、简约手表' }
+  }
+};
+
+const PALETTE = {
+  spring: ['鼠尾草绿','奶油白','浅驼','雾霾蓝','淡玫瑰'],
+  summer: ['象牙白','浅蓝','沙色','橄榄绿','暖黄'],
+  autumn: ['酒红','铁锈橙','森林绿','驼色','藏青'],
+  winter: ['祖母绿','宝石红','深藏青','炭灰','酒红']
+};
+
+const DAYS = [
+  { title:'抵达日 · 欢迎晚宴', scene:'抵达、入住、迎宾晚餐（smart casual）', kind:'travel' },
+  { title:'老城观光', scene:'教堂 / 博物馆 / 石板路步行', kind:'sight' },
+  { title:'婚礼日', scene:'仪式 + 晚宴（整周最正式）', kind:'wedding' },
+  { title:'婚礼后早午餐', scene:'轻松早午餐，午后休息', kind:'brunch' },
+  { title:'小镇 / 酒庄一日游', scene:'乡间、葡萄园、土路', kind:'daytrip' },
+  { title:'湖畔 / 海边 + 购物', scene:'休闲、拍照、购物', kind:'leisure' },
+  { title:'返程日', scene:'机场与长途飞行', kind:'travel' }
+];
+
+function pick(arr, k){ return arr[((k % arr.length) + arr.length) % arr.length]; }
+
+function buildDay(cfg, day, idx, band, bandLow){
+  const P = POOL[cfg.gender];
+  const lines = [];
+  if (day.kind === 'wedding'){
+    const w = WEDDING[cfg.gender][cfg.formality];
+    lines.push({ label:'着装', text:w.outfit });
+    lines.push({ label:'鞋履', text:w.shoes });
+    lines.push({ label:'配饰', text:w.acc });
+    lines.push({ label:'随身', text:'披肩 / 开衫（教堂与夜晚）+ 备用平底鞋' });
+  } else {
+    lines.push({ label:'上装', text:pick(P.top[band], idx) });
+    lines.push({ label:'下装', text:pick(P.bottom[band], idx) });
+    lines.push({ label:'外套', text:pick(P.outer[bandLow], idx) });
+    lines.push({ label:'鞋履', text:pick(P.shoes[band], idx) });
+    lines.push({ label:'包袋', text:pick(P.bag, idx) });
+    if (day.kind === 'sight' && cfg.church) lines.push({ label:'教堂', text:'遮肩、裙摆过膝，随身带披肩' });
+    if (day.kind === 'travel') lines.push({ label:'提示', text:'层次易穿脱，鞋子以舒适为先' });
+    if (day.kind === 'daytrip') lines.push({ label:'提示', text:'防滑鞋底应对土路，备薄外套' });
+    if (day.kind === 'leisure') lines.push({ label:'提示', text:'挑上镜配色，注意海风与日晒' });
+  }
+  return { n: idx + 1, title: day.title, scene: day.scene, kind: day.kind, highlight: day.kind === 'wedding', lines };
+}
+
+function generatePlan(cfg){
+  const region = REGIONS[cfg.region];
+  const t = region.t[cfg.season];
+  const band = bandOf(t[1]);
+  const bandLow = bandOf(t[0]);
+  const days = DAYS.map((d, i) => buildDay(cfg, d, i, band, bandLow));
+  return {
+    regionName: region.name,
+    seasonName: SEASONS[cfg.season].name,
+    temp: { low:t[0], high:t[1] },
+    band, bandLow,
+    bandName: BANDNAME[band],
+    weatherNote: `${region.name} · ${SEASONS[cfg.season].name}：白天约 ${t[0]}–${t[1]}°C，${region.note}。（规划参考值，出行前请核对实时预报）`,
+    days
+  };
+}
+
+function uniq(a){ return Array.from(new Set(a)); }
+
+function buildPacking(cfg, plan){
+  const wedding = [], tops = [], bottoms = [], outers = [], shoes = [], bags = [];
+  plan.days.forEach(d => d.lines.forEach(l => {
+    if (d.kind === 'wedding'){
+      if (l.label === '着装') wedding.push(l.text);
+      if (l.label === '鞋履') shoes.push(l.text);
+      if (l.label === '配饰') bags.push(l.text);
+    } else {
+      if (l.label === '上装') tops.push(l.text);
+      if (l.label === '下装') bottoms.push(l.text);
+      if (l.label === '外套') outers.push(l.text);
+      if (l.label === '鞋履') shoes.push(l.text);
+      if (l.label === '包袋') bags.push(l.text);
+    }
+  }));
+
+  const groups = [];
+  groups.push({ group:'婚礼正式着装', items: uniq(wedding).concat(['备用丝袜 / 备用领带','备用平底鞋或块跟鞋']) });
+  groups.push({ group:'日常上装', items: uniq(tops) });
+  groups.push({ group:'下装', items: uniq(bottoms) });
+  groups.push({ group:'外套与层次', items: uniq(outers).concat(['轻薄披肩 / 丝巾']) });
+  groups.push({ group:'鞋履', items: uniq(shoes) });
+
+  const acc = ['太阳镜'];
+  if (cfg.season === 'summer' || cfg.region === 'south') acc.push('宽檐帽 / 遮阳帽');
+  if (cfg.church) acc.push('遮肩披肩（教堂礼仪）');
+  groups.push({ group:'包袋与配饰', items: uniq(bags).concat(acc) });
+
+  const extras = ['内衣与袜子（按 7 天 + 1 套备用）','睡衣（长袖，夜间偏凉）','洗漱包与常用药','充电宝与转换插头（意大利 C/F/L 型，230V）','便携雨伞'];
+  if (cfg.season === 'autumn' && cfg.region === 'north') extras.push('防水外套或雨衣（北部秋季多雨）');
+  if (cfg.season === 'summer' || cfg.region === 'south') extras.push('高倍防晒');
+  if (cfg.season === 'winter') extras.push('围巾、手套、保暖内层');
+  groups.push({ group:'其他', items: extras });
+
+  return groups;
+}
+
+function buildAvoid(cfg){
+  const a = [
+    '纯白或象牙白（新娘专属色，接近白的米色也尽量避免）',
+    '荧光色与当季流行色堆叠',
+    '细高跟（石板路会卡、船上更糟，改块跟或粗跟）',
+    '运动套装、旧牛仔裤等过于休闲的日常装'
+  ];
+  if (cfg.church) a.push('露肩、吊带或裙摆过短的造型——进教堂需遮肩、裙摆过膝，或备披肩');
+  if (cfg.region === 'south') a.push('白天全黑造型（在明亮海岸光线下容易被读作哀悼）');
+  if (cfg.season === 'summer') a.push('纯亚麻正装（一小时就皱）与硬挺塔夫绸等不透气面料');
+  return a;
+}
+
+if (typeof module !== 'undefined' && module.exports){
+  module.exports = { REGIONS, SEASONS, FORMALITY, GENDERS, PALETTE, POOL, WEDDING, DAYS, bandOf, generatePlan, buildPacking, buildAvoid, pick };
+}
+
+
+/* ===== 图片参考（来源见各图链接） ===== */
+var IMAGES = [
+  { url:'https://www.oliviasodi.com/wp-content/uploads/2025/11/Italian-wedding-look-683x1024.webp',
+    caption:'意大利秋季婚礼宾客（户外别墅场合）', credit:'Olivia Sodi',
+    source:'https://www.oliviasodi.com/what-to-wear-to-a-destination-wedding-in-italy-style-guide' },
+  { url:'https://www.oliviasodi.com/wp-content/uploads/2025/11/Italian-wedding-hat-outfit-675x1024.webp',
+    caption:'秋日宾客造型：花卉连衣裙 + 宽檐帽', credit:'Olivia Sodi',
+    source:'https://www.oliviasodi.com/what-to-wear-to-a-destination-wedding-in-italy-style-guide' },
+  { url:'https://images.squarespace-cdn.com/content/v1/5f90a0d90565905e22971c80/7519f444-d99b-49ae-bbb2-361b2e6d0b85/IMG_6934.jpeg',
+    caption:'托斯卡纳秋色中的婚礼场地', credit:'Castello di Ristonchi',
+    source:'https://www.ristonchi.com/blog/what-to-wear-to-an-italian-destination-wedding-in-tuscany-as-a-guest' },
+  { url:'https://www.lulus.com/blog/wp-content/uploads/2025/08/2877071.jpg',
+    caption:'秋季宾客酒红连衣裙（配色参考）', credit:'Lulus',
+    source:'https://www.lulus.com/blog/fashion/what-to-wear-to-a-fall-wedding-no-matter-the-dress-code' },
+  { url:'https://lunafashionhouse.com/cdn/shop/articles/164_01278d4f-cd92-436d-a68a-0bf697cab44c.jpg?crop=center&height=562&v=1781754747&width=1000',
+    caption:'意大利海岸婚礼宾客造型', credit:'Luna Fashion House',
+    source:'https://lunafashionhouse.com/blogs/stories/the-italian-coastal-wedding-guest-outfit-guide' },
+  { url:'https://i0.wp.com/waysofstyle.com/wp-content/uploads/2026/05/What-to-Wear-in-Italy-in-October-Central-Italy-3.jpg?ssl=1',
+    caption:'10 月意大利中部街头层次穿搭示范', credit:'Ways of Style',
+    source:'https://waysofstyle.com/what-to-wear-italy-october' }
+];
+
+var SWATCH_HEX = {
+  '鼠尾草绿':'#9caf88','奶油白':'#f3ece0','浅驼':'#d3b48c','雾霾蓝':'#9bb0c2','淡玫瑰':'#e0b3b0',
+  '象牙白':'#f4efe4','浅蓝':'#a9c7dd','沙色':'#dcc9a6','橄榄绿':'#7d8a5a','暖黄':'#e8c46a',
+  '酒红':'#7b2233','铁锈橙':'#b5622f','森林绿':'#2f4a36','驼色':'#b78f5f','藏青':'#27364f',
+  '祖母绿':'#0f6b4f','宝石红':'#a3243b','深藏青':'#1d2a3f','炭灰':'#4a4a4f'
+};
+
+(function(){
+  var DEFAULT = { gender:'female', region:'central', season:'autumn', formality:'semiformal', church:true };
+  var state = { gender:DEFAULT.gender, region:DEFAULT.region, season:DEFAULT.season,
+                formality:DEFAULT.formality, church:DEFAULT.church, checked:{} };
+  var token = null;
+
+  function $(id){ return document.getElementById(id); }
+  function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); }
+
+  /* ---------- 控件 ---------- */
+  function seg(id, key, opts){
+    var html = opts.map(function(o){
+      return '<button type="button" data-key="'+key+'" data-val="'+o[0]+'">'+esc(o[1])+'</button>';
+    }).join('');
+    $(id).innerHTML = html;
+  }
+  seg('seg-gender','gender',[['female','女性'],['male','男性']]);
+  seg('seg-region','region',[['north','北部湖区'],['central','中部托斯卡纳·罗马'],['south','南部海岸']]);
+  seg('seg-season','season',[['spring','春季 3–5 月'],['summer','夏季 6–8 月'],['autumn','秋季 9–11 月'],['winter','冬季 12–2 月']]);
+  seg('seg-formality','formality',[['blacktie','黑领结 / 正式'],['semiformal','半正式 / 鸡尾酒'],['casual','休闲优雅']]);
+  $('seg-church').innerHTML = '<button type="button" data-key="church" data-val="on">含教堂仪式</button>';
+
+  /* ---------- 渲染 ---------- */
+  function cfg(){ return { gender:state.gender, region:state.region, season:state.season,
+                           formality:state.formality, church:state.church }; }
+
+  function render(){
+    // 同步按钮状态
+    Array.prototype.forEach.call(document.querySelectorAll('[data-key]'), function(b){
+      var k = b.getAttribute('data-key'), v = b.getAttribute('data-val');
+      var on = (k === 'church') ? (state.church && v === 'on') : (state[k] === v);
+      b.classList.toggle('active', !!on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+
+    var plan = generatePlan(cfg());
+
+    $('temp').textContent = plan.temp.low + '–' + plan.temp.high + '°C';
+    $('wx').innerHTML = '<span class="chip">体感：' + esc(plan.bandName) + '</span> ' + esc(plan.weatherNote);
+
+    // 逐日
+    $('plan').innerHTML = plan.days.map(function(d){
+      var lines = d.lines.map(function(l){
+        return '<div class="line"><div class="k">'+esc(l.label)+'</div><div class="v">'+esc(l.text)+'</div></div>';
+      }).join('');
+      return '<div class="day'+(d.highlight?' wed':'')+'">'+
+        '<h3><span class="n">'+d.n+'</span>'+esc(d.title)+'</h3>'+
+        '<div class="scene">'+esc(d.scene)+'</div>'+lines+'</div>';
+    }).join('');
+
+    // 配色
+    $('palette').innerHTML = PALETTE[state.season].map(function(name){
+      var hex = SWATCH_HEX[name] || '#ccc';
+      return '<div class="sw"><span class="dot" style="background:'+hex+'"></span>'+esc(name)+'</div>';
+    }).join('');
+
+    // 打包清单
+    var pk = buildPacking(cfg(), plan);
+    $('packing').innerHTML = pk.map(function(gr, gi){
+      var items = gr.items.map(function(it, ii){
+        var id = gi + '::' + it;
+        var done = !!state.checked[id];
+        return '<label class="pitem'+(done?' done':'')+'">'+
+          '<input type="checkbox" data-pid="'+esc(id)+'"'+(done?' checked':'')+'> '+
+          '<span>'+esc(it)+'</span></label>';
+      }).join('');
+      return '<div class="pgroup"><h4>'+esc(gr.group)+'</h4>'+items+'</div>';
+    }).join('');
+
+    // 禁忌
+    $('avoid').innerHTML = buildAvoid(cfg()).map(function(x){ return '<li>'+esc(x)+'</li>'; }).join('');
+
+    // 图片
+    $('gallery').innerHTML = IMAGES.map(function(im){
+      return '<figure><img src="'+im.url+'" alt="'+esc(im.caption)+'" loading="lazy" '+
+        'onerror="this.parentNode.classList.add(\'imgfail\');this.parentNode.insertAdjacentHTML(\'afterbegin\',\'\')">'+
+        '<figcaption class="cap">'+esc(im.caption)+
+        '<a class="src" href="'+im.source+'" target="_blank" rel="noopener noreferrer">来源：'+esc(im.credit)+'</a>'+
+        '</figcaption></figure>';
+    }).join('');
+
+    save();
+  }
+
+  /* ---------- 状态保存 ---------- */
+  function serialized(){
+    return { gender:state.gender, region:state.region, season:state.season,
+             formality:state.formality, church:state.church, checked:state.checked };
+  }
+  function save(){
+    try{
+      if (window.parent && window.parent !== window){
+        window.parent.postMessage({ type:'harness.ui.state', token:token, state:serialized() }, '*');
+      }
+    }catch(e){}
+  }
+
+  /* ---------- 事件 ---------- */
+  document.addEventListener('click', function(e){
+    var t = e.target.closest ? e.target.closest('[data-key]') : null;
+    if (t){
+      var k = t.getAttribute('data-key');
+      if (k === 'church') state.church = !state.church;
+      else state[k] = t.getAttribute('data-val');
+      render();
+      return;
+    }
+    if (e.target && e.target.id === 'reset'){
+      state.gender = DEFAULT.gender; state.region = DEFAULT.region; state.season = DEFAULT.season;
+      state.formality = DEFAULT.formality; state.church = DEFAULT.church; state.checked = {};
+      render();
+    }
+  });
+  document.addEventListener('change', function(e){
+    var cb = e.target;
+    if (cb && cb.getAttribute && cb.getAttribute('data-pid')){
+      var id = cb.getAttribute('data-pid');
+      if (cb.checked) state.checked[id] = true; else delete state.checked[id];
+      var lab = cb.closest('.pitem'); if (lab) lab.classList.toggle('done', cb.checked);
+      save();
+    }
+  });
+
+  /* ---------- 初始化 + 协议 ---------- */
+  try{
+    var params = new URLSearchParams(location.hash.slice(1));
+    token = params.get('harness_ui_token');
+  }catch(e){ token = null; }
+
+  window.addEventListener('message', function(ev){
+    if (ev.source !== window.parent) return;
+    var d = ev.data;
+    if (!d || d.type !== 'harness.ui.init') return;
+    if (token && d.token !== token) return;
+    var s = d.state;
+    if (s && typeof s === 'object'){
+      if (s.gender && GENDERS[s.gender]) state.gender = s.gender;
+      if (s.region && REGIONS[s.region]) state.region = s.region;
+      if (s.season && SEASONS[s.season]) state.season = s.season;
+      if (s.formality && FORMALITY[s.formality]) state.formality = s.formality;
+      if (typeof s.church === 'boolean') state.church = s.church;
+      state.checked = (s.checked && typeof s.checked === 'object') ? s.checked : {};
+    }
+    render();
+  });
+
+  render();
+  try{ if (window.parent) window.parent.postMessage({ type:'harness.ui.ready', token:token }, '*'); }catch(e){}
+})();
+</script>
+</body>
+</html>

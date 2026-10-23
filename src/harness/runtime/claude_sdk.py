@@ -25,11 +25,15 @@ from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
     ClaudeSDKClient,
+    CLIJSONDecodeError,
     ContextUsageResponse,
     ProcessError,
     ResultMessage,
     SessionStore,
     StreamEvent,
+    SystemMessage,
+    TaskNotificationMessage,
+    TaskStartedMessage,
     TaskUpdatedMessage,
     TextBlock,
     Transport,
@@ -105,7 +109,9 @@ from harness.runtime.tools import (
 from harness.runtime.warm_sdk import WarmEntry, WarmSdkPool, WarmSdkRequest
 from harness.runtime.web_tools import WEB_BUILTINS, WEB_CONTRACT, WEB_SERVER, WEB_TOOL_NAMES
 
-SDK_JSON_MAX_BUFFER_SIZE = 32 * 1024 * 1024
+# Compaction can mirror an entire image-heavy transcript in one JSON frame.
+# Keep a finite limit, with room for the aggregate frame rather than one image.
+SDK_JSON_MAX_BUFFER_SIZE = 256 * 1024 * 1024
 CONTEXT_USAGE_CONTROL_TIMEOUT_SECONDS = 1.0
 # Daytona/E2B/Kubernetes transports cross at least one control-plane hop after
 # the Claude CLI has produced its terminal result.  The local one-second budget
@@ -318,10 +324,15 @@ async def _client_query(
     run_id: str | None = None,
     warm: WarmSdkRequest | None = None,
 ) -> AsyncIterator[object]:
-    attempt_options: ClaudeAgentOptions = (
-        replace(options, extra_args={**options.extra_args, "replay-user-messages": None})
-        if steering is not None
-        else options
+    # A result ends a model turn, not necessarily a Run. Explicit state frames
+    # keep MCP/hooks alive while background agents finish and wake the lead.
+    attempt_options: ClaudeAgentOptions = replace(
+        options,
+        env={**options.env, "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS": "1"},
+        extra_args=(
+            {**options.extra_args, "replay-user-messages": None}
+            if steering is not None else options.extra_args
+        ),
     )
     recovery_session_id: str | None = None
     for attempt in range(len(SDK_STARTUP_RETRY_DELAYS_SECONDS) + 1):
@@ -403,6 +414,18 @@ async def _client_query(
                         await client.finish(terminal_result)
                     yield terminal_result
             return
+        except CLIJSONDecodeError as error:
+            oversized = "exceeded maximum buffer size" in str(error)
+            raise RuntimeResultError(
+                "sdk_message_too_large" if oversized else "sdk_invalid_json",
+                error_code="runtime_message_too_large" if oversized else "runtime_invalid_json",
+                user_message=(
+                    "批量图片处理产生的运行消息超过容量限制，本轮已中断。"
+                    "请继续当前任务并缩小每批处理范围。"
+                    if oversized
+                    else "运行时消息解析失败，本轮已中断，请重试当前任务。"
+                ),
+            ) from error
         except ProcessError as error:
             can_retry = (
                 transport is None
@@ -434,13 +457,55 @@ async def _client_query(
 SDK_STEERING_RECEIPT_TIMEOUT_SECONDS = 10.0
 
 
+async def _completed_run_messages(client: ClaudeSDKClient | WarmEntry) -> AsyncIterator[object]:
+    """Hide intermediate results until the CLI has finished its background work.
+
+    The caller owns the Run timeout/cancellation and the one response reader.
+    Older transports without state events fall back to task lifecycle tracking.
+    """
+    state: str | None = None
+    active: set[str] = set()
+    result: ResultMessage | None = None
+    receive = getattr(client, "receive_messages", None) or client.receive_response
+    async for message in receive():
+        if isinstance(message, SystemMessage) and message.subtype == "session_state_changed":
+            state = str(message.data.get("state", ""))
+            yield message
+            if state == "idle" and result is not None and not active:
+                yield result
+                result = None
+            continue
+        if isinstance(message, TaskStartedMessage):
+            active.add(message.task_id)
+        elif isinstance(message, (TaskNotificationMessage, TaskUpdatedMessage)):
+            status = message.status
+            if isinstance(message, TaskUpdatedMessage):
+                status = status or message.patch.get("status")
+            if status in {"completed", "failed", "stopped", "killed"}:
+                active.discard(message.task_id)
+            elif status in {"running", "pending"}:
+                active.add(message.task_id)
+        if isinstance(message, ResultMessage):
+            if message.is_error or (state in {None, "idle"} and not active):
+                result = None
+                yield message
+            else:
+                result = message
+            continue
+        yield message
+    if active or result is not None:
+        raise RuntimeError("SDK stream closed before background work reached idle")
+
+
 async def _steerable_response(
     client: ClaudeSDKClient | WarmEntry,
     steering: SteeringInbox | None,
 ) -> AsyncIterator[object]:
     if steering is None:
-        async for message in client.receive_response():
+        async for message in _completed_run_messages(client):
             yield message
+            if isinstance(message, ResultMessage):
+                return
         return
     lock = asyncio.Lock()
     closed = False
@@ -475,7 +540,7 @@ async def _steerable_response(
 
     await steering.open()
     polling = asyncio.create_task(poll())
-    messages = client.receive_messages().__aiter__()
+    messages = _completed_run_messages(client).__aiter__()
     next_message: asyncio.Task[object] | None = None
 
     async def receive_next() -> object:
@@ -803,7 +868,15 @@ class ClaudeSdkRuntime:
             child_resolutions[name] = child_resolved
             for server_name, config in child_resolved.mcp_servers.items():
                 owner = server_owner.get(server_name)
-                if owner is not None and owner != snapshot.content_hash:
+                # A project and its published children can select the same remote
+                # connector. Share only identical resolved transports, including
+                # credential headers; same-name endpoints with different authority
+                # must still fail closed. In-process SDK servers remain owner-bound.
+                shared_remote = (
+                    config.get("type") in {"http", "sse"}
+                    and mcp_servers.get(server_name) == config
+                )
+                if owner is not None and owner != snapshot.content_hash and not shared_remote:
                     raise ToolResolutionError(
                         f"MCP server name conflicts across Lead/Sub Agents: {server_name}"
                     )
@@ -976,7 +1049,7 @@ class ClaudeSdkRuntime:
                 ),
                 tools=subagent_tools,
                 model="inherit",
-                maxTurns=subagent_manifest.spec.limits.max_turns,
+                maxTurns=None,
                 skills=[skill.name for skill in snapshot.skill_snapshots] or None,
                 background=binding.background if binding is not None else False,
             )
@@ -1027,11 +1100,14 @@ class ClaudeSdkRuntime:
                 f"{delegation_contract}{_knowledge_mode_contract(context)}"
                 f"{_sandbox_tool_contract(allowed_tools)}"
                 f"\n{context.platform_tools.instructions}"
+                f"\n{context.interaction_projection}"
             ),
             model=route.model,
             fallback_model=None,
             cwd=context.workspace,
-            max_turns=manifest.spec.limits.max_turns,
+            # Historical manifests may carry a turn budget. Platform tasks
+            # continue until completion or explicit cancellation.
+            max_turns=None,
             # Usage is telemetry, never an execution quota (including legacy manifests).
             max_budget_usd=None,
             permission_mode=permission_mode,
@@ -1063,9 +1139,8 @@ class ClaudeSdkRuntime:
             session_store_flush="eager",
             resume=context.session.resolved_runtime_thread_id,
             stderr=SdkDiagnosticTail(),
-            # Native Read returns image blocks as base64 inside one SDK JSON
-            # message. The upstream 1 MiB default rejects ordinary phone
-            # photos before a vision-capable model can inspect them.
+            # Read images and compaction transcript-mirror batches both travel
+            # in SDK JSON frames; the latter can contain many base64 images.
             max_buffer_size=SDK_JSON_MAX_BUFFER_SIZE,
         )
         return options, resolved_tools

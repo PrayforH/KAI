@@ -1,4 +1,5 @@
 "use client";
+import { SidebarIcon } from "../sidebar-icon";
 import { useInternalAgentsPreference } from "../../lib/interface-preferences";
 
 import { usePathname, useRouter } from "next/navigation";
@@ -29,12 +30,23 @@ export function StudioUnifiedShell({
   const router = useRouter();
   const navigationRevision = useRef(0);
   const pathname = usePathname();
+  const projectPage = pathname.startsWith("/studio/projects/");
   const { user } = useAuth();
   const [showInternalAgents] = useInternalAgentsPreference();
   const [collapsed, setCollapsed] = useState(false);
+  const [compactProject, setCompactProject] = useState(false);
   const [agents, setAgents] = useState<TaskAgent[]>([]);
   const [defaultAgent, setDefaultAgent] = useState<TaskAgent | null>(null);
   const [projects, refreshProjects] = useSidebarProjects(user.user_id);
+
+  useEffect(() => {
+    if (!projectPage) { setCompactProject(false); return; }
+    const media = window.matchMedia("(max-width: 1099px)");
+    const sync = () => { setCompactProject(media.matches); setCollapsed(media.matches); };
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, [projectPage]);
 
   useEffect(() => {
     let active = true;
@@ -59,7 +71,9 @@ export function StudioUnifiedShell({
     const id = createNewThread(createUserScopedStorage(window.localStorage, user.user_id));
     router.push(`/?thread=${encodeURIComponent(id)}`);
   };
-  const routeWorkspace: WorkspaceId = pathname.startsWith("/studio/files")
+  const routeWorkspace: WorkspaceId = pathname.startsWith("/studio/projects")
+    ? "tasks"
+    : pathname.startsWith("/studio/files")
     ? "files"
     : pathname.startsWith("/studio/automation")
       ? "automation"
@@ -74,10 +88,15 @@ export function StudioUnifiedShell({
               : "agents";
 
   return (
-    <main className="console-shell studio-unified" id="main-content">
+    <main className="console-shell studio-unified" id="main-content" data-project-home={projectPage || undefined}
+      onClick={(event) => {
+        if (compactProject && event.target instanceof Element && event.target.closest("a[href]")) setCollapsed(true);
+      }}>
+      {compactProject && !collapsed && <button type="button" className="task-sidebar-scrim" aria-label="关闭任务列表" onClick={() => setCollapsed(true)} />}
       <TaskSidebar
         currentThreadId=""
         collapsed={collapsed}
+        overlayOpen={compactProject && !collapsed}
         onToggle={() => setCollapsed((current) => !current)}
         onSelect={selectTask}
         onNewTask={goHome}
@@ -102,6 +121,7 @@ export function StudioUnifiedShell({
       <div
         className="studio-unified-content"
         data-sidebar-collapsed={collapsed ? "true" : "false"}
+        aria-hidden={compactProject && !collapsed ? true : undefined}
       >
         {collapsed && (
           <button
@@ -112,10 +132,7 @@ export function StudioUnifiedShell({
             title="展开任务列表"
             onClick={() => setCollapsed(false)}
           >
-            <svg viewBox="0 0 20 20" aria-hidden="true">
-              <rect x="2.75" y="4.25" width="14.5" height="11.5" rx="2.5" />
-              <path d="M6.75 4.25v11.5" />
-            </svg>
+            <SidebarIcon name="panel" />
           </button>
         )}
         {children}

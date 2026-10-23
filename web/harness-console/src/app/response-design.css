@@ -1,0 +1,115 @@
+/* Installed Codex Markdown geometry, adapted to this project's 14px base.
+   Scope the response so process logs and file previews retain their density. */
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer {
+  --response-font-size: 14px;
+  --response-code-font-size: 13px;
+  --response-space: calc(var(--response-font-size) / 4);
+  --response-line-height: 1.625;
+  color: var(--codex-ink);
+}
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-md {
+  color: inherit;
+  font-family: var(--codex-font-ui, inherit);
+  font-size: var(--response-font-size);
+  line-height: var(--response-line-height);
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-md > :first-child { margin-top: 0; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-md > :last-child { margin-bottom: 0; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-md p { margin-block: 0 var(--response-space); }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-md > p + p { margin-block: calc(var(--response-space) * 4); }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-md :is(h1,h2,h3,h4) {
+  color: inherit;
+  font-weight: 600;
+  letter-spacing: normal;
+  margin-block: calc(var(--response-space) * 4) var(--response-space);
+}
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-md h1 { font-size: 1.5em; line-height: 1.34; margin-bottom: calc(var(--response-space) * 2); }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-md h2 { font-size: 1.25em; line-height: 1.4; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-md h3 { font-size: 1.125em; line-height: 1.56; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-md h4 { font-size: 1em; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-md :is(ul,ol) { margin-block: 0 calc(var(--response-space) * 2); padding-inline-start: 1.625em; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-md li { padding-inline-start: .375em; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-md li::marker { color: var(--codex-ink); font-weight: 600; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-md li > p { margin-block: 0; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-md li > p + p { margin-top: 1em; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-md li > :is(ul,ol) { margin-block: 0; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-md blockquote {
+  position: relative;
+  margin: 0 0 .5em;
+  padding: .5em 0 .5em 1.5em;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-style: normal;
+}
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-md blockquote::before { content: ""; position: absolute; inset-block: .5em; inset-inline-start: 0; width: .25em; border-radius: .125em; background: var(--codex-line-strong); }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-md blockquote > :first-child { margin-top: 0; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-md blockquote > :last-child { margin-bottom: 0; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-md hr { margin-block: 1.75em; border: 0; border-top: 1px solid var(--codex-line-strong); }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-md :not(pre) > code { border: 0; border-radius: 6px; padding: 1px 6px; background: var(--codex-surface-hover); color: inherit; font-size: .92em; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-table-scroll { margin-block: 1em; border: 0; background: transparent; scrollbar-width: thin; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-md table { width: 100%; min-width: 100%; margin: 0; border: 0; border-collapse: separate; border-spacing: 0; background: transparent; color: inherit; font-size: max(var(--response-code-font-size), .875em); font-variant-numeric: tabular-nums; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-md :is(th,td) { vertical-align: top; padding: .65em 1.5em .65em 0; border: 0; border-bottom: 1px solid var(--codex-line); background: transparent; color: inherit; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-md th { padding-block: .5em; border-color: var(--codex-line-strong); font-weight: 600; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-md td:last-child { padding-inline-end: 0; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-md tbody tr:last-child td { border-bottom: 0; padding-bottom: 1.5em; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-code-header { min-height: 36px; margin-top: 1.25em; padding: 0 12px; border: 1px solid var(--codex-line); border-bottom: 0; border-radius: 12px 12px 0 0; background: var(--codex-surface-subtle); color: var(--codex-muted); font: 12px/1.5 var(--codex-font-mono, monospace); text-transform: none; letter-spacing: normal; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-md pre { margin: 1.25em 0; border: 1px solid var(--codex-line); border-radius: 12px; padding: 14px; background: var(--codex-surface-subtle); color: var(--codex-ink-soft); font-size: var(--response-code-font-size); line-height: 1.625; scrollbar-width: thin; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-code-header + pre { margin-top: 0; border-top: 0; border-radius: 0 0 12px 12px; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer :is(.aui-code-header,.aui-md-clamp) button { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--codex-muted); font: 12px/1.5 var(--codex-font-ui, system-ui); cursor: pointer; transition: background var(--codex-motion-fast), color var(--codex-motion-fast); }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer :is(.aui-code-header,.aui-md-clamp) button:hover { background: var(--codex-surface-hover); color: var(--codex-ink); }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer button:focus-visible { outline: 2px solid var(--codex-muted); outline-offset: 2px; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer :is(.aui-code-header,.aui-md-clamp) button svg { flex-shrink: 0; width: 16px; height: 16px; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-md-clamp button svg { transition: transform var(--codex-motion-control) var(--codex-motion-ease); }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .aui-md-clamp button[aria-expanded="true"] svg { transform: rotate(180deg); }
+body.codex-theme-v1 .user-message-action .codex-response-icon,
+body.codex-theme-v1 .assistant-message-controls .codex-response-icon { width: 16px; height: 16px; fill: currentColor; stroke: none; }
+body.codex-theme-v1 .assistant-message-controls { transition: opacity var(--codex-motion-fast); }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .source-link { gap: .3em; padding: 0; border: 0; border-radius: 0; background: transparent; color: inherit; text-decoration: underline dotted var(--codex-muted); text-underline-offset: 2px; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .source-link:hover { background: transparent; color: var(--codex-ink); text-decoration-color: currentColor; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .source-open { display: inline-flex; align-self: center; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer .source-open svg { width: 14px; height: 14px; fill: currentColor; stroke: none; }
+body.codex-theme-v1 .harness-assistant-message:focus-within .assistant-message-controls { opacity: 1; }
+/* New blocks reveal through the real DOM stream; no synthetic typing cursor. */
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer[data-streaming="true"] .aui-md[data-status="running"] > :last-child::after { display: none; }
+@media (hover: none) { body.codex-theme-v1 .assistant-message-controls { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme="codex-theme-v1"] body.codex-theme-v1 .assistant-answer *, body.codex-theme-v1 .assistant-message-controls { transition: none !important; animation: none !important; }
+}
+
+/* Fork is a persistent footer action; its time trails it without layout shifts. */
+body.codex-theme-v1 .turn-completion-slot {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 26px;
+  margin-left: 8px;
+}
+body.codex-theme-v1 .turn-completion-slot > .turn-completion {
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+body.codex-theme-v1 .turn-branch-button {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--codex-muted);
+  cursor: pointer;
+}
+body.codex-theme-v1 .harness-assistant-message:is(:hover, :focus-within) .turn-completion-slot > .turn-completion,
+body.codex-theme-v1 .turn-completion-slot:is(:hover, :focus-within, [data-branch-pending]) > .turn-completion { opacity: 1; pointer-events: auto; }
+body.codex-theme-v1 .turn-branch-button:hover { background: var(--codex-surface-hover); color: var(--codex-ink); }
+body.codex-theme-v1 .turn-branch-button:focus-visible { outline: 2px solid var(--codex-muted); outline-offset: 2px; }
+body.codex-theme-v1 .turn-branch-button:disabled { cursor: progress; }
+@media (hover: none) {
+  body.codex-theme-v1 .turn-completion-slot > .turn-completion { opacity: 1; pointer-events: auto; }
+}

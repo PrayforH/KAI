@@ -1,0 +1,1 @@
+<p><b>Response部署核验（2026-10-12）：</b>173:3302的Web已更新为intelligent-ui-20261012c，API与Worker保持已核验的20261012b；三个容器均健康，页面入口HTTP200。此次仅更新Web，迁移保持0039。已按用户要求改用Chrome，完成深浅主题、展开收起、真实复制、追问和两个HTML工具的交互与刷新恢复；测试站已启用独立Cookie名称，普通Chrome登录验证成功。过程区新样式仍在后续迭代中，见Chrome验收补充。源文件哈希、镜像SHA和回退配置记录于 response-deployment-evidence.json。</p>

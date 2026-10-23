@@ -1221,11 +1221,86 @@ class ProjectRow(Base):
     tenant_id: Mapped[str] = mapped_column(String(128), index=True)
     user_id: Mapped[str] = mapped_column(String(128))
     name: Mapped[str] = mapped_column(String(120))
+    pinned_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     archived_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
+class ProjectMemoryRow(Base):
+    """One user-authored fact that every Run in a project receives."""
+
+    __tablename__ = "project_memories"
+    __table_args__ = (
+        Index("ix_project_memories_project", "tenant_id", "project_id", "created_at"),
+    )
+
+    memory_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(128), index=True)
+    user_id: Mapped[str] = mapped_column(String(128))
+    project_id: Mapped[str] = mapped_column(String(128))
+    content: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ProjectDocumentRow(Base):
+    """An uploaded input artifact attached to every Run in a project."""
+
+    __tablename__ = "project_documents"
+    __table_args__ = (
+        Index("ix_project_documents_project", "tenant_id", "project_id", "created_at"),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    project_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    input_artifact_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(128))
+    name: Mapped[str] = mapped_column(String(500))
+    media_type: Mapped[str] = mapped_column(String(255))
+    size_bytes: Mapped[int] = mapped_column(BigInteger)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ProjectLinkRow(Base):
+    """A web page attached to every Run in a project."""
+
+    __tablename__ = "project_links"
+    __table_args__ = (
+        Index("ix_project_links_project", "tenant_id", "project_id", "created_at"),
+    )
+
+    link_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(128), index=True)
+    user_id: Mapped[str] = mapped_column(String(128))
+    project_id: Mapped[str] = mapped_column(String(128))
+    url: Mapped[str] = mapped_column(Text)
+    title: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ProjectResultRow(Base):
+    __tablename__ = "project_results"
+    __table_args__ = (
+        ForeignKeyConstraint(["project_id"], ["projects.project_id"], ondelete="CASCADE"),
+        UniqueConstraint("tenant_id", "project_id", "artifact_id", name="uq_project_result_source"),
+        UniqueConstraint(
+            "tenant_id", "project_id", "name", "version", name="uq_project_result_version"
+        ),
+        Index("ix_project_results_project", "tenant_id", "project_id", "created_at"),
+    )
+    result_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(128))
+    project_id: Mapped[str] = mapped_column(String(128))
+    artifact_id: Mapped[str] = mapped_column(String(128))
+    name: Mapped[str] = mapped_column(String(500))
+    version: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     payload: Mapped[dict[str, Any]] = mapped_column(JSON)
 
 

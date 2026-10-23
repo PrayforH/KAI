@@ -31,12 +31,17 @@ class CcSwitchClaudeConfig(BaseModel):
     provider: Literal["new-api", "anthropic"]
     credential: SecretStr
     auth_scheme: Literal["bearer", "x-api-key"] | None = None
-    api_format: Literal[
-        "anthropic_compatible",
-        "openai_compatible",
-        "openai_images",
-        "openai_videos",
-    ] | None = None
+    api_format: (
+        Literal[
+            "anthropic_compatible",
+            "openai_compatible",
+            "openai_images",
+            "openai_videos",
+            "minimax_videos",
+            "minimax_videos_v2",
+        ]
+        | None
+    ) = None
     compatibility: ModelCompatibility = ModelCompatibility.FULL
     capabilities: frozenset[str] = frozenset({"streaming", "tool_use"})
 

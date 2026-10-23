@@ -1,0 +1,2 @@
+{"base":"http://127.0.0.1:13598","stage":"174-canary","realPublish":true,"publishedImmediately":true,"publishedAfterReload":true,"repeatPublishIdempotent":true,"sameModelKeepsPublished":true,"unsavedEditIsDraft":true,"savedEditIsNewDraft":true,"savedDraftAfterReload":true,"republishedAfterReload":true,"pageErrors":[]}
+{"stage":"174-canary","qaDraftDeleted":true}

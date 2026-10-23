@@ -1,6 +1,8 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { Subject } from "rxjs";
 import { EventType, type BaseEvent, type ActivitySnapshotEvent } from "@ag-ui/client";
+import { runActivitySchema } from "../src/lib/activity-schema";
+import { activityStore } from "../src/lib/activity-store";
 import { compactActivityStream } from "../src/lib/activity-stream";
 const snapshot = (): ActivitySnapshotEvent => ({ type: EventType.ACTIVITY_SNAPSHOT, replace: true, messageId: "a", activityType: "harness.run.v1", content: { run_id: "r", status: "running", started_at: "2026-09-20T00:00:00Z", items: [], metrics: {} } });
 const delta = (sequence: number, text = "片段", event_type = "reasoning.delta", item_id = "thought") => ({
@@ -49,4 +51,29 @@ it("flushes the last thought on transport failure", () => {
   source.next(snapshot()); source.next(delta(1, "最后片段")); source.error(new Error("offline"));
   expect((received.at(-1) as ActivitySnapshotEvent).content.items[0].summary).toBe("最后片段");
   expect(failed).toHaveBeenCalledOnce(); expect(vi.getTimerCount()).toBe(0);
+});
+it("does not append replayed token events after compaction or a reconnect snapshot", () => {
+  vi.useFakeTimers(); const { source, events } = stream();
+  source.next(delta(1,"准备")); source.next(delta(2,"完成")); vi.advanceTimersByTime(50);
+  source.next(delta(2,"完成")); vi.advanceTimersByTime(50);
+  expect((events.at(-1) as ActivitySnapshotEvent).content.items[0].summary).toBe("准备完成");
+  const restored = {...snapshot(), replace:false, content:{...snapshot().content,items:[{...delta(1,"准备完成").patch[0].value, sequence:1}]}};
+  source.next(restored);
+  expect((events.at(-1) as ActivitySnapshotEvent).replace).toBe(true);
+  source.next(delta(1,"准备完成")); source.next(delta(3,"，继续")); source.complete();
+  expect((events.at(-1) as ActivitySnapshotEvent).content.items[0].summary).toBe("准备完成，继续");
+});
+it("retains intentionally repeated words delivered by distinct events", () => {
+ const {source,events}=stream();source.next(delta(1,"检查"));source.next(delta(2,"检查"));source.complete();
+ expect((events.at(-1) as ActivitySnapshotEvent).content.items[0].summary).toBe("检查检查");
+});
+
+it("replaces token fragments with a restored compact row instead of rendering progress twice", () => {
+ activityStore.clear(); const source=new Subject<BaseEvent>();
+ compactActivityStream(source).subscribe(event=>{if(event.type===EventType.ACTIVITY_SNAPSHOT){const e=event as ActivitySnapshotEvent;activityStore.publish(runActivitySchema.parse(e.content),undefined,{replaceRun:e.replace===true});}});
+ source.next(snapshot());source.next(delta(1,"工作区与 Node 均可用。", "message.delta"));source.next(delta(2,"继续构建。", "message.delta"));
+ source.next({...snapshot(),replace:false,content:{...snapshot().content,items:[{...delta(1,"工作区与 Node 均可用。继续构建。", "message.delta").patch[0].value,id:"restored-progress"}]}});
+ expect(activityStore.getViewSnapshot()?.items).toHaveLength(1);
+ expect(activityStore.getViewSnapshot()?.items[0].summary).toBe("工作区与 Node 均可用。继续构建。");
+ source.complete();activityStore.clear();
 });

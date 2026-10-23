@@ -1,0 +1,307 @@
+{
+  "sdk": "0.2.168",
+  "cli": "2.1.301",
+  "model": "deepseek-v4-pro",
+  "project_id": "project_f9587c667ecc4558a6e59c5e4978fda7",
+  "thread_id": "3750fef7-d541-4e3b-bc45-6304d2fe2636",
+  "session_id": "session_7084342ef9b346a09d825f3a70d1674a",
+  "checks": {
+    "project_mcp": true,
+    "artifact_download_hash": true,
+    "cross_turn_file_restore": true,
+    "conversation_continuity": true,
+    "parallel_children": true,
+    "child_tool_attribution": true,
+    "parallel_overlap_seconds": 9.511,
+    "after_parallel_continuity": true,
+    "post_restart_mcp_and_file_continuity": true,
+    "server_log_receipts_match": true
+  },
+  "artifact": {
+    "artifact_id": "artifact_76e9b23846a74e498df6facee6288303",
+    "name": "sdk-proof.txt",
+    "sha256": "c7faaf0d8914af5bf6ffc3b52fc2b1a0bada53e8ecd20f870faf78670772b130",
+    "size_bytes": 49,
+    "content": "label=first\ntotal=42\nreceipt=SDK174-f4430c873ff3\n"
+  },
+  "mcp_receipts": {
+    "alpha": {
+      "label": "alpha",
+      "total": 42,
+      "receipt": "SDK174-403e63cd4ad9",
+      "started_at": 1792427527.0714538,
+      "finished_at": 1792427537.0721524
+    },
+    "beta": {
+      "label": "beta",
+      "total": 42,
+      "receipt": "SDK174-795d4b1f45fc",
+      "started_at": 1792427527.5613556,
+      "finished_at": 1792427537.5618494
+    }
+  },
+  "runs": [
+    {
+      "label": "project-mcp-artifact",
+      "run_id": "run_174b5647600f47238d57c5734889fcde",
+      "status": "succeeded",
+      "final": "验收完成。\n\n**工具结果**\n- label: `first`\n- total: **42**\n- receipt: **SDK174-f4430c873ff3**\n\n**文件验证**\n- 写入路径：`outputs/sdk-proof.txt`（49 字节），读取回显内容与工具返回值一致：\n  ```\n  label=first\n  total=42\n  receipt=SDK174-f4430c873ff3\n  ```\n\n**文件链接**\n- 已发布：`sdk-proof.txt`（artifact_id: `artifact_76e9b23846a74e498df6facee6288303`）\n\n口令 MAPLE-7429 已记住，后续对话可用。\n\nPROJECT_R27_ACTIVE",
+      "runtime_results": [
+        {
+          "subtype": "success",
+          "is_error": false,
+          "num_turns": 5,
+          "session_id": "78cb4f51-6e61-4f85-a0c9-d1dfcbb8a15b",
+          "total_cost_usd": 0.0637296,
+          "stop_reason": "end_turn",
+          "duration_ms": 18788,
+          "duration_api_ms": 27528,
+          "usage": {
+            "input_tokens": 6738,
+            "output_tokens": 709,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 25728
+          }
+        }
+      ],
+      "subagents_started": [],
+      "subagents_completed": [],
+      "subagents_failed": [],
+      "tools": [
+        {
+          "name": "mcp__sdk174-probe__probe_sum",
+          "agent_id": null
+        },
+        {
+          "name": "Write",
+          "agent_id": null
+        },
+        {
+          "name": "Read",
+          "agent_id": null
+        },
+        {
+          "name": "mcp__harness-artifacts__publish_artifact",
+          "agent_id": null
+        }
+      ]
+    },
+    {
+      "label": "continuity",
+      "run_id": "run_69989f43ccc94134b56ed7ed1183c4a7",
+      "status": "succeeded",
+      "final": "已从上一轮对话取出（未重新调用 MCP）：\n- 口令：`MAPLE-7429`\n- receipt：`SDK174-f4430c873ff3`\n\n实际读取 `outputs/sdk-proof.txt`，文件内容为：\n```\nlabel=first\ntotal=42\nreceipt=SDK174-f4430c873ff3\n```\n\n核对结果：文件中的 receipt `SDK174-f4430c873ff3` 与上轮 MCP 返回的 receipt 一致 ✅。\n\nPROJECT_R27_ACTIVE",
+      "runtime_results": [
+        {
+          "subtype": "success",
+          "is_error": false,
+          "num_turns": 2,
+          "session_id": "78cb4f51-6e61-4f85-a0c9-d1dfcbb8a15b",
+          "total_cost_usd": 0.0736664,
+          "stop_reason": "end_turn",
+          "duration_ms": 6869,
+          "duration_api_ms": 33075,
+          "usage": {
+            "input_tokens": 281,
+            "output_tokens": 296,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 14464
+          }
+        }
+      ],
+      "subagents_started": [],
+      "subagents_completed": [],
+      "subagents_failed": [],
+      "tools": [
+        {
+          "name": "Read",
+          "agent_id": null
+        }
+      ]
+    },
+    {
+      "label": "parallel-subagents",
+      "run_id": "run_c16cf656e8cc4e54a765e48f3e46baf9",
+      "status": "succeeded",
+      "final": "两个子智能体已并发完成，各自只调用一次 probe_sum。\n\n**alpha 子智能体**\n- total: 42\n- receipt: `SDK174-403e63cd4ad9`\n- started_at: 1792427527.0714538\n- finished_at: 1792427537.0721524\n\n**beta 子智能体**\n- total: 42\n- receipt: `SDK174-795d4b1f45fc`\n- started_at: 1792427527.5613556\n- finished_at: 1792427537.5618494\n\n两个任务的 started_at 仅相差约 0.49 秒，确认是并发执行而非串行。\n\nPROJECT_R27_ACTIVE",
+      "runtime_results": [
+        {
+          "subtype": "success",
+          "is_error": false,
+          "num_turns": 3,
+          "session_id": "78cb4f51-6e61-4f85-a0c9-d1dfcbb8a15b",
+          "total_cost_usd": 0.16645680000000004,
+          "stop_reason": "end_turn",
+          "duration_ms": 28710,
+          "duration_api_ms": 57167,
+          "usage": {
+            "input_tokens": 2441,
+            "output_tokens": 1845,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 15232
+          }
+        }
+      ],
+      "subagents_started": [
+        {
+          "task_id": "a180744234a4ff42c",
+          "description": "alpha 算术校验",
+          "status": "running",
+          "parent_tool_use_id": "call_00_SHSsUCysf0d3WjRyptYt3524",
+          "task_type": "local_agent",
+          "event_schema": "harness.subagent.v1",
+          "alias": "alpha",
+          "agent_name": "sdk174-r27-child",
+          "agent_version": "0.1.1",
+          "policy_profile": "production-orchestrator",
+          "depth": 1,
+          "duration_ms": 0,
+          "usage": {}
+        },
+        {
+          "task_id": "a6dc95aa44105e56a",
+          "description": "beta 算术校验",
+          "status": "running",
+          "parent_tool_use_id": "call_01_wu67LToqeLKHe92qATCK6070",
+          "task_type": "local_agent",
+          "event_schema": "harness.subagent.v1",
+          "alias": "beta",
+          "agent_name": "sdk174-r27-child",
+          "agent_version": "0.1.1",
+          "policy_profile": "production-orchestrator",
+          "depth": 1,
+          "duration_ms": 0,
+          "usage": {}
+        }
+      ],
+      "subagents_completed": [
+        {
+          "task_id": "a180744234a4ff42c",
+          "status": "completed",
+          "summary": "工具调用结果完整原文：\n\n```json\n{\n  \"label\": \"alpha\",\n  \"total\": 42,\n  \"receipt\": \"SDK174-403e63cd4ad9\",\n  \"started_at\": 1792427527.0714538,\n  \"finished_at\": 1792427537.0721524\n}\n```",
+          "parent_tool_use_id": "call_00_SHSsUCysf0d3WjRyptYt3524",
+          "usage": {
+            "total_tokens": 4185,
+            "tool_uses": 1,
+            "duration_ms": 13438
+          },
+          "event_schema": "harness.subagent.v1",
+          "alias": "alpha",
+          "agent_name": "sdk174-r27-child",
+          "agent_version": "0.1.1",
+          "policy_profile": "production-orchestrator",
+          "depth": 1,
+          "duration_ms": 13438
+        },
+        {
+          "task_id": "a6dc95aa44105e56a",
+          "status": "completed",
+          "summary": "工具调用结果完整原文：\n\n```json\n{\n  \"label\": \"beta\",\n  \"total\": 42,\n  \"receipt\": \"SDK174-795d4b1f45fc\",\n  \"started_at\": 1792427527.5613556,\n  \"finished_at\": 1792427537.5618494\n}\n```",
+          "parent_tool_use_id": "call_01_wu67LToqeLKHe92qATCK6070",
+          "usage": {
+            "total_tokens": 4180,
+            "tool_uses": 1,
+            "duration_ms": 13402
+          },
+          "event_schema": "harness.subagent.v1",
+          "alias": "beta",
+          "agent_name": "sdk174-r27-child",
+          "agent_version": "0.1.1",
+          "policy_profile": "production-orchestrator",
+          "depth": 1,
+          "duration_ms": 13402
+        }
+      ],
+      "subagents_failed": [],
+      "tools": [
+        {
+          "name": "Agent",
+          "agent_id": null
+        },
+        {
+          "name": "Agent",
+          "agent_id": null
+        },
+        {
+          "name": "mcp__sdk174-probe__probe_sum",
+          "agent_id": "a180744234a4ff42c"
+        },
+        {
+          "name": "mcp__sdk174-probe__probe_sum",
+          "agent_id": "a6dc95aa44105e56a"
+        }
+      ]
+    },
+    {
+      "label": "after-parallel",
+      "run_id": "run_38c683193b58416f8e5c3862bac2b806",
+      "status": "succeeded",
+      "final": "回顾本会话（未调用任何工具）：\n\n- 最开始要求记住的口令：`MAPLE-7429`\n- 上轮 alpha 的 total：**42**\n- 上轮 beta 的 total：**42**\n- 上轮两个 receipt：\n  - alpha：`SDK174-403e63cd4ad9`\n  - beta：`SDK174-795d4b1f45fc`\n\nPROJECT_R27_ACTIVE",
+      "runtime_results": [
+        {
+          "subtype": "success",
+          "is_error": false,
+          "num_turns": 1,
+          "session_id": "78cb4f51-6e61-4f85-a0c9-d1dfcbb8a15b",
+          "total_cost_usd": 0.044248,
+          "stop_reason": "end_turn",
+          "duration_ms": 2239,
+          "duration_api_ms": 2139,
+          "usage": {
+            "input_tokens": 10312,
+            "output_tokens": 150,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0
+          }
+        }
+      ],
+      "subagents_started": [],
+      "subagents_completed": [],
+      "subagents_failed": [],
+      "tools": []
+    }
+  ],
+  "post_restart": {
+    "run_id": "run_f07f8b76892b4257a8a10f5ac56e0bb9",
+    "session_id": "session_7084342ef9b346a09d825f3a70d1674a",
+    "status": "succeeded",
+    "final": "重启后验收完成（未写文件、未调用子智能体或记忆工具）。\n\n**从本会话取出**\n- 最早口令：`MAPLE-7429`\n- 上轮 alpha receipt：`SDK174-403e63cd4ad9`\n- 上轮 beta receipt：`SDK174-795d4b1f45fc`\n\n**本次 probe_sum 调用（label=\"restart\"）**\n- total：**42**\n- receipt：`SDK174-8288abd4fb96`\n\n**实际读取 outputs/sdk-proof.txt**\n- 文件内容：\n  ```\n  label=first\n  total=42\n  receipt=SDK174-f4430c873ff3\n  ```\n- 文件中的 receipt：`SDK174-f4430c873ff3`，total：**42**\n\n说明：该文件为最早一轮所写，内容仍保留为 `first` 那次的结果，未随本次 restart 调用改写（按要求本次未写文件）。\n\nPROJECT_R27_ACTIVE",
+    "runtime_results": [
+      {
+        "subtype": "success",
+        "is_error": false,
+        "num_turns": 3,
+        "session_id": "78cb4f51-6e61-4f85-a0c9-d1dfcbb8a15b",
+        "total_cost_usd": 0.060623199999999995,
+        "stop_reason": "end_turn",
+        "duration_ms": 10741,
+        "duration_api_ms": 7816,
+        "usage": {
+          "input_tokens": 10869,
+          "output_tokens": 746,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 11136
+        }
+      }
+    ]
+  },
+  "deployment": {
+    "release": "sdk-20261020-r30",
+    "source_commit": "c4cce7a9",
+    "api_image": "kai/projects-api:sdk-20261020-r30",
+    "worker_image": "kai/projects-worker:sdk-20261020-r30",
+    "database_revision": "0043",
+    "web_release": "projects-20261019-r26"
+  },
+  "cleanup": [
+    "archived_thread:cca7caa6-4adb-4651-b8b9-cc0ba193e1d3",
+    "archived_thread:b8245b88-a111-47e8-8ec9-99de4d966b34",
+    "archived_thread:3750fef7-d541-4e3b-bc45-6304d2fe2636",
+    "archived_project:project_24e4713f26b345579f8a5b17c716702f",
+    "archived_project:project_f9587c667ecc4558a6e59c5e4978fda7",
+    "deleted_test_draft:draft_fd506c883a294c5682435463e270807a",
+    "deleted_test_draft:draft_1a474d2babed47819f7f5e1a6a1746c9",
+    "disabled_test_mcp",
+    "deleted_test_memory"
+  ]
+}

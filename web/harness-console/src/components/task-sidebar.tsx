@@ -1,13 +1,18 @@
 "use client";
 
 import { isFailedRunStatus } from "../lib/run-status";
+import { CodexTaskIcon } from "./codex-task-icon";
+import { TaskHeaderActions } from "./task-header-actions";
+import { SidebarIcon } from "./sidebar-icon";
 import Link from "next/link";
+import { projectHref } from "../lib/project-space";
 import { ProjectCreateDialog } from "./project-create-dialog";
+import { useConfirmationDialog } from "./confirmation-dialog";
 import { PanelResizeHandle } from "./panel-resize-handle";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { AccountMenu } from "./account-menu";
 import { useAuth } from "./auth-provider";
-import { ProductBrandMark, PRODUCT_NAME } from "./product-brand";
+import { ProductBrandMark, ProductWordmark, PRODUCT_NAME } from "./product-brand";
 import { WorkspaceNavigation, type WorkspaceId } from "./workspace-navigation";
 import { useRunViewModel } from "../lib/activity-store";
 import { approvalStore } from "../lib/approval-store";
@@ -19,13 +24,14 @@ import {
   peekCachedTasks,
   notifyTaskListChanged,
   prefetchThreadHistory,
-  setTaskArchived,
+  setTaskPinned,
   type TaskSummary,
 } from "../lib/task-history";
 import { formatTaskAge } from "../lib/task-list-age";
 import { agentDisplayName } from "../lib/agent-display-name";
 import {
   ApiProject,
+  projectClient,
 } from "../lib/studio-client";
 import { useSidebarGroups } from "../lib/sidebar-state";
 import { taskListRefreshDelay } from "../lib/task-list-refresh";
@@ -36,6 +42,7 @@ const statusLabels: Record<string, string> = {
   queued: "排队中",
   running: "运行中",
   waiting_approval: "待审批",
+  waiting_input: "需要输入",
   cancelling: "取消中",
   cancelled: "已取消",
   succeeded: "已完成",
@@ -44,47 +51,19 @@ const statusLabels: Record<string, string> = {
   timed_out: "已超时",
 };
 
-function NewTaskIcon() {
-  return (
-    <svg className="task-new-icon" viewBox="0 0 20 20" aria-hidden="true">
-      <rect x="3.5" y="5.5" width="11" height="11" rx="2" />
-      <path d="M8 13.2 8.5 11l6.8-6.8a1.4 1.4 0 0 1 2 2L10.5 13Z" />
-    </svg>
-  );
-}
+function NewTaskIcon() { return <SidebarIcon name="compose" className="task-new-icon" />; }
+function AddToProjectIcon() { return <SidebarIcon name="plus" />; }
+function SidebarCollapseIcon() { return <SidebarIcon name="panel" />; }
+function ProjectFolderIcon() { return <SidebarIcon name="folder" className="task-project-folder" />; }
 
-function AddToProjectIcon() {
+function MoreIcon() { return <CodexTaskIcon name="more" />; }
+
+function PinIcon() { return <CodexTaskIcon name="pin" />; }
+
+function TrashIcon() {
   return (
     <svg viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M8 3.5v9M3.5 8h9" />
-    </svg>
-  );
-}
-
-function SidebarCollapseIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <rect x="2.75" y="4.25" width="14.5" height="11.5" rx="2.5" />
-      <path d="M6.75 4.25v11.5" />
-    </svg>
-  );
-}
-
-function ArchiveIcon() {
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <path d="M3.5 6.5h13v9a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5Z" />
-      <path d="M2.5 3.5h15v3h-15Z" />
-      <path d="M7.5 10h5" />
-    </svg>
-  );
-}
-
-function ProjectFolderIcon() {
-  return (
-    <svg className="task-project-folder" viewBox="0 0 20 20" aria-hidden="true">
-      <path d="M2.75 5.75a2 2 0 0 1 2-2h3.1l1.7 1.9h5.7a2 2 0 0 1 2 2v6.5a2 2 0 0 1-2 2H4.75a2 2 0 0 1-2-2Z" />
-      <path d="M2.75 8h14.5" />
+      <path d="M3.5 4.5h9M6 4.5V3h4v1.5M4.5 4.5l.6 8.2h5.8l.6-8.2" />
     </svg>
   );
 }
@@ -164,7 +143,10 @@ export function TaskSidebar({
   const [creatingProjectId, setCreatingProjectId] = useState<string | null>(null);
   const [projectCreateError, setProjectCreateError] = useState("");
   const [projectDialogOpen, setProjectDialogOpen] = useState(false);
+  const [projectMenuId, setProjectMenuId] = useState<string | null>(null);
+  const [pinningProjectId, setPinningProjectId] = useState("");
   const projectCreationPending = useRef(false);
+  const { requestConfirmation, confirmationDialog } = useConfirmationDialog();
   const sidebarRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const expandButtonRef = useRef<HTMLButtonElement>(null);
@@ -172,6 +154,40 @@ export function TaskSidebar({
   const runView = useRunViewModel();
   const { user } = useAuth();
   const [expandedTaskGroups, setExpandedTaskGroups] = useSidebarGroups(user.user_id);
+  const sectionId = useId();
+  const projectsCollapsed = expandedTaskGroups.has("section:projects:collapsed");
+  const tasksCollapsed = expandedTaskGroups.has("section:tasks:collapsed");
+  function toggleSection(section: "projects" | "tasks") {
+    setExpandedTaskGroups((current) => {
+      const next = new Set(current);
+      const key = `section:${section}:collapsed`;
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  useEffect(() => {
+    if (!projectMenuId) return;
+    const dismiss = (event: PointerEvent) => {
+      const target = event.target;
+      if (
+        target instanceof Element
+        && target.closest(`[data-project-menu="${projectMenuId}"]`)
+      ) return;
+      setProjectMenuId(null);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setProjectMenuId(null);
+    };
+    document.addEventListener("pointerdown", dismiss);
+    window.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", dismiss);
+      window.removeEventListener("keydown", escape);
+    };
+  }, [projectMenuId]);
+
 
   // Acknowledge only the version displayed on a visible task page. Server
   // watermarks are shared across devices; failed writes retry on list refresh.
@@ -289,23 +305,19 @@ export function TaskSidebar({
     setRefreshKey((current) => current + 1);
   }
 
-  async function archiveTask(task: TaskSummary) {
-    if (activeStatuses.has(task.status)) return;
+  async function toggleTaskPin(task: TaskSummary) {
+    if (updatingThreadId) return;
     setUpdatingThreadId(task.thread_id);
     try {
-      await setTaskArchived(task.thread_id, true);
-      setTasks((current) => {
-        const next = current.filter((item) => item.thread_id !== task.thread_id);
-        return next;
-      });
+      const pinned = !task.pinned_at;
+      await setTaskPinned(task.thread_id, pinned);
+      setTasks(current => current.map(item => item.thread_id === task.thread_id
+        ? { ...item, pinned_at: pinned ? new Date().toISOString() : null } : item));
       setError("");
       notifyTaskListChanged();
-      if (task.thread_id === currentThreadId) onNewTask();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setUpdatingThreadId("");
-    }
+    } finally { setUpdatingThreadId(""); }
   }
 
   const selected = useMemo(
@@ -376,13 +388,15 @@ export function TaskSidebar({
       else if (runView.phase === "failed") status = task.status === "timed_out" ? "timed_out" : "failed";
       else if (task.status !== "cancelling" || !activeStatuses.has(runView.phase)) status = runView.phase;
     }
+    if (task.pending_input && ["succeeded", "completed"].includes(status)) status = "waiting_input";
+    const needsInput = status === "waiting_input";
     const hasError = isFailedRunStatus(status);
     const statusLabel = statusLabels[status] ?? status;
     const unreadResult =
       status === "succeeded" &&
       task.thread_id !== currentThreadId &&
       !isTaskRead(task);
-    const showStatusDot = activeStatuses.has(status) || hasError || unreadResult;
+    const showStatusDot = !needsInput && (activeStatuses.has(status) || hasError || unreadResult);
     return (
       <div
         role="listitem"
@@ -393,7 +407,7 @@ export function TaskSidebar({
           type="button"
           className={`task-list-item ${task.thread_id === currentThreadId ? "is-active" : ""} ${task.pending_approval ? "needs-approval" : ""}`}
           aria-label={`${task.title}，${statusLabel}`}
-          title={hasError ? `${statusLabel}，点击查看详情` : undefined}
+          title={needsInput ? "需要你补充信息，点击任务继续回答" : hasError ? `${statusLabel}，点击查看详情` : undefined}
           onPointerEnter={() => {
             void prefetchThreadHistory(task.thread_id).catch(() => {});
           }}
@@ -410,31 +424,67 @@ export function TaskSidebar({
               {statusLabel}
             </span>
           )}
-          <ScrollingTaskTitle title={task.title} />
-          {hasError && <span className="task-error-label">{statusLabel}</span>}
+          <span className="task-list-content">
+            <ScrollingTaskTitle title={task.title} />
+            {needsInput && <span className="task-input-badge">需要输入</span>}
+            {hasError && <span className="task-error-label">{statusLabel}</span>}
+          </span>
           <span className="task-list-meta">
             <time dateTime={task.updated_at}>{formatTaskAge(task.updated_at)}</time>
           </span>
         </button>
-        <button
-          type="button"
-          className="task-list-archive"
-          onClick={() => void archiveTask(task)}
-          disabled={
-            updatingThreadId === task.thread_id
-            || activeStatuses.has(task.status)
-          }
-          aria-label={`归档 ${task.title}`}
-          title={
-            activeStatuses.has(task.status)
-              ? "任务结束后可归档"
-              : "归档任务"
-          }
-        >
-          <ArchiveIcon />
-        </button>
+        <div className="task-row-actions">
+          <button type="button" className={`task-list-pin${task.pinned_at ? " is-pinned" : ""}`}
+            onClick={() => void toggleTaskPin(task)} disabled={Boolean(updatingThreadId)}
+            aria-label={`${task.pinned_at ? "取消置顶" : "置顶"} ${task.title}`}
+            aria-pressed={Boolean(task.pinned_at)} title={task.pinned_at ? "取消置顶" : "置顶"}>
+            <CodexTaskIcon name="pin" />
+          </button>
+          <TaskHeaderActions task={task} variant="row" projects={projects}
+            onForked={onSelect} onArchived={() => { if (task.thread_id === currentThreadId) onNewTask(); }} />
+        </div>
       </div>
     );
+  }
+
+  async function toggleProjectPin(project: ApiProject) {
+    if (pinningProjectId) return;
+    setProjectMenuId(null);
+    setPinningProjectId(project.projectId);
+    setProjectCreateError("");
+    try {
+      await projectClient.update(project.projectId, {
+        pinned: !project.pinnedAt,
+      });
+      onProjectsChanged?.();
+    } catch (cause) {
+      setProjectCreateError(
+        cause instanceof Error ? cause.message : "更新项目失败，请重试",
+      );
+    } finally {
+      setPinningProjectId("");
+    }
+  }
+
+  async function removeProject(project: ApiProject) {
+    setProjectMenuId(null);
+    const confirmed = await requestConfirmation({
+      title: `移除项目「${project.name}」？`,
+      description:
+        "项目会从侧边栏移除，项目里的任务会回到「任务」区，历史记录不会删除。",
+      confirmLabel: "移除项目",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    try {
+      await projectClient.remove(project.projectId);
+      onProjectsChanged?.();
+      notifyTaskListChanged();
+    } catch (cause) {
+      setProjectCreateError(
+        cause instanceof Error ? cause.message : "移除项目失败，请重试",
+      );
+    }
   }
 
   async function startProjectTask(project: ApiProject) {
@@ -471,7 +521,7 @@ export function TaskSidebar({
             <Link className="task-sidebar-brand-link" href="/" aria-label={`${PRODUCT_NAME}任务首页`}>
               <ProductBrandMark />
               <span className="task-sidebar-brand-copy task-workbench-name">
-                <strong>{PRODUCT_NAME}</strong>
+                <ProductWordmark />
               </span>
             </Link>
             {searchControl ? (
@@ -495,19 +545,22 @@ export function TaskSidebar({
               <span>新建任务</span>
             </button>
           </div>
+          <div className="task-list-scroll">
           <div className="task-sidebar-mode">
             <WorkspaceNavigation
               active={activeNav}
               visible={["knowledge", "agents", "automation", "skills"]}
             />
           </div>
-          <div className="task-list-scroll">
           <div className="task-list-toolbar task-project-toolbar">
             <div className="task-list-heading">
-              <span className="task-list-heading-copy">
-                <ProjectFolderIcon />
-                项目
-              </span>
+              <button type="button" className="task-section-toggle"
+                aria-label={`${projectsCollapsed ? "展开" : "收起"}项目分组`}
+                aria-expanded={!projectsCollapsed} aria-controls={`${sectionId}-projects`}
+                onClick={() => toggleSection("projects")}>
+                <span>项目</span>
+                <SidebarIcon name="chevronDown" size={12} className="task-group-chevron" />
+              </button>
             </div>
             <button
               type="button"
@@ -519,7 +572,7 @@ export function TaskSidebar({
               <AddToProjectIcon />
             </button>
           </div>
-          <div className="task-list" role="list">
+          {!projectsCollapsed && <div className="task-list" role="list" id={`${sectionId}-projects`}>
             {projectCreateError && <p className="task-project-create-error" role="alert">{projectCreateError}</p>}
             {projectGroups.map(({ project, tasks: projectTasks }) => {
               const collapsed = !expandedTaskGroups.has(`project:${project.projectId}`);
@@ -568,11 +621,56 @@ export function TaskSidebar({
                         </span>
                       </strong>
                     </button>
+                    <div className="task-project-menu-anchor" data-project-menu={project.projectId}>
+                      <button
+                        type="button"
+                        className="task-project-settings"
+                        aria-label={`项目操作 ${project.name}`}
+                        title={`项目操作 ${project.name}`}
+                        aria-haspopup="menu"
+                        aria-expanded={projectMenuId === project.projectId}
+                        disabled={pinningProjectId === project.projectId}
+                        onClick={() => setProjectMenuId((current) =>
+                          current === project.projectId ? null : project.projectId
+                        )}
+                      >
+                        <MoreIcon />
+                      </button>
+                      {projectMenuId === project.projectId && (
+                        <div
+                          className="task-project-menu"
+                          role="menu"
+                          aria-label={`项目操作 ${project.name}`}
+                          data-project-menu={project.projectId}
+                        >
+                          <Link role="menuitem" href={projectHref(project.projectId)} onClick={() => setProjectMenuId(null)}>
+                            <ProjectFolderIcon /><span>查看项目</span>
+                          </Link>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => void toggleProjectPin(project)}
+                          >
+                            <PinIcon />
+                            <span>{project.pinnedAt ? "取消置顶" : "置顶"}</span>
+                          </button>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            className="is-danger"
+                            onClick={() => void removeProject(project)}
+                          >
+                            <TrashIcon />
+                            <span>移除项目</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
                     <button
                         type="button"
                         className="task-project-add"
                         aria-label={`在 ${project.name} 下新建任务`}
-                        title={`在 ${project.name} 下新建任务`}
+                        title="新建项目任务"
                         disabled={!onNewTaskWithProject || creatingProjectId !== null}
                         aria-busy={creatingProjectId === project.projectId}
                         onClick={() => void startProjectTask(project)}
@@ -583,7 +681,7 @@ export function TaskSidebar({
                   {!collapsed && (
                     <div className="task-project-items">
                       {projectTasks.length === 0 && (
-                        <p className="task-project-empty">还没有任务，点击右侧 ＋ 新建</p>
+                        <p className="task-project-empty">暂无任务</p>
                       )}
                       {(expanded ? projectTasks : projectTasks.slice(0, 5)).map(renderTaskRow)}
                       {projectTasks.length > 5 && (
@@ -611,13 +709,19 @@ export function TaskSidebar({
                 </section>
               );
             })}
-          </div>
+          </div>}
           <div className="task-list-toolbar task-agent-section-heading">
             <div className="task-list-heading">
-              <span className="task-list-heading-copy">任务</span>
+              <button type="button" className="task-section-toggle"
+                aria-label={`${tasksCollapsed ? "展开" : "收起"}任务分组`}
+                aria-expanded={!tasksCollapsed} aria-controls={`${sectionId}-tasks`}
+                onClick={() => toggleSection("tasks")}>
+                <span>任务</span>
+                <SidebarIcon name="chevronDown" size={12} className="task-group-chevron" />
+              </button>
             </div>
           </div>
-          <div className="task-list" role="list">
+          {!tasksCollapsed && <div className="task-list" role="list" id={`${sectionId}-tasks`}>
             {looseTasks.length === 0 && tasks.length > 0 && (
               <p className="task-project-empty">所有任务都在项目中</p>
             )}
@@ -667,7 +771,7 @@ export function TaskSidebar({
                 <button type="button" onClick={retryTasks}>重新加载</button>
               </div>
             )}
-          </div>
+          </div>}
           </div>
           <div className="task-sidebar-account">
             <AccountMenu />
@@ -681,6 +785,7 @@ export function TaskSidebar({
           onProjectsChanged?.();
         }}
       />}
+      {confirmationDialog}
     </aside>
   );
 }

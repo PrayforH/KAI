@@ -32,7 +32,7 @@ from collections.abc import (
 from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from typing import Any, cast
+from typing import Any, Literal, cast
 from urllib.parse import urlsplit
 from uuid import uuid4
 
@@ -500,13 +500,14 @@ class OpenSandboxClient:
         *,
         api_url: str,
         api_key: str,
+        auth_mode: Literal["api_key", "none"] = "api_key",
         request_timeout_seconds: int = 30,
         ready_timeout_seconds: int = 90,
         transfer_timeout_seconds: int = 600,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         token = api_key.strip()
-        if not token or "\n" in token or "\r" in token:
+        if (auth_mode == "api_key" and not token) or "\n" in token or "\r" in token:
             raise ValueError("HARNESS_OPENSANDBOX_API_KEY is required")
         if request_timeout_seconds <= 0 or ready_timeout_seconds <= 0:
             raise ValueError("OpenSandbox timeouts must be positive")
@@ -515,7 +516,7 @@ class OpenSandboxClient:
         self._api_url = _validated_base_url(api_url, name="API URL")
         self._ready_timeout_seconds = ready_timeout_seconds
         self._transfer_timeout_seconds = transfer_timeout_seconds
-        self._token = token
+        self._token = token if auth_mode == "api_key" else ""
         self._request_timeout_seconds = float(request_timeout_seconds)
         self._transport = transport
         # Built on first use: assembling a provider is not a reason to open
@@ -527,7 +528,7 @@ class OpenSandboxClient:
         if self._client is None:
             self._client = httpx.AsyncClient(
                 base_url=self._api_url,
-                headers={"OPEN-SANDBOX-API-KEY": self._token},
+                headers={"OPEN-SANDBOX-API-KEY": self._token} if self._token else {},
                 timeout=httpx.Timeout(self._request_timeout_seconds),
                 transport=self._transport,
             )
@@ -929,7 +930,7 @@ def build_opensandbox_provider(settings: Settings) -> OpenSandboxSandboxProvider
     if not settings.opensandbox_api_url.strip():
         raise ValueError("HARNESS_OPENSANDBOX_API_URL is required")
     api_key = settings.opensandbox_api_key.get_secret_value()
-    if not api_key.strip():
+    if settings.opensandbox_auth_mode == "api_key" and not api_key.strip():
         raise ValueError("HARNESS_OPENSANDBOX_API_KEY is required")
     resource_limits = {
         "cpu": settings.opensandbox_cpu,
@@ -944,6 +945,7 @@ def build_opensandbox_provider(settings: Settings) -> OpenSandboxSandboxProvider
         client=OpenSandboxClient(
             api_url=settings.opensandbox_api_url,
             api_key=api_key,
+            auth_mode=settings.opensandbox_auth_mode,
             request_timeout_seconds=settings.opensandbox_request_timeout_seconds,
             ready_timeout_seconds=settings.opensandbox_ready_timeout_seconds,
             transfer_timeout_seconds=settings.opensandbox_transfer_timeout_seconds,

@@ -20,10 +20,12 @@ from collections.abc import (
     Sequence,
 )
 from contextlib import AbstractContextManager, nullcontext, suppress
+from dataclasses import replace
 from pathlib import Path, PurePosixPath
 from typing import Any, TypeVar, cast
 from uuid import uuid4
 
+from harness.application.agent_assets import stage_project_skill_snapshots
 from harness.application.approvals import ApprovalService
 from harness.application.artifacts import ArtifactService
 from harness.application.events import EventService
@@ -43,6 +45,7 @@ from harness.application.workspaces import (
 from harness.context.checkpoint import ContextCheckpointService
 from harness.context.service import ContextService
 from harness.core.errors import ConflictError, SandboxGovernanceError
+from harness.core.manifest import SkillSnapshot
 from harness.core.models import AgentRuntimeType, ExecutionIdentity, Run, RunStatus, Session
 from harness.core.ports import CancellationWakeup, RunRepository, SessionRepository
 from harness.core.state_machine import transition
@@ -53,6 +56,9 @@ from harness.observability.redaction import correlation_hash
 from harness.policy.models import PolicyContext, PolicyDecision
 from harness.policy.rules import PolicyEngine
 from harness.policy.runtime import ResolvedPolicy
+from harness.presentation.planner import InteractionPlanner
+from harness.presentation.policy import action_policy
+from harness.projects.skill_snapshots import ProjectSkillSnapshots
 from harness.quota.repositories import QuotaExceededError
 from harness.quota.service import QuotaService
 from harness.reliability.metrics import ReliabilityMetrics
@@ -94,6 +100,7 @@ from harness.sandbox.base import (
 from harness.sandbox.lease import SandboxLease, SandboxLeaseService
 
 RuntimeAssetStager = Callable[[str, str, str, str, Path, bool], Awaitable[tuple[str, ...]]]
+ProjectSkillResolver = Callable[[tuple[str, ...], AgentRuntimeType], tuple[SkillSnapshot, ...]]
 PolicyResolver = Callable[
     [str, str, str, str],
     Awaitable[PolicyEngine | ResolvedPolicy],
@@ -257,8 +264,11 @@ class RunOrchestrator:
         artifacts: ArtifactService | None = None,
         input_artifacts: InputArtifactService | None = None,
         memory: UserMemoryService | None = None,
+        interaction_planner: InteractionPlanner | None = None,
         workspace_policy_resolver: WorkspacePolicyResolver | None = None,
         runtime_asset_stager: RuntimeAssetStager | None = None,
+        project_skills: ProjectSkillResolver | None = None,
+        project_skill_snapshots: ProjectSkillSnapshots | None = None,
         policy_resolver: PolicyResolver | None = None,
         output_artifact_max_bytes: int = 50 * 1024 * 1024,
         cancellation_poll_interval_seconds: float = 0.25,
@@ -295,8 +305,11 @@ class RunOrchestrator:
         self._artifacts = artifacts
         self._input_artifacts = input_artifacts
         self._memory = memory
+        self._interaction_planner = interaction_planner
         self._workspace_policy_resolver = workspace_policy_resolver
         self._runtime_asset_stager = runtime_asset_stager
+        self._project_skills = project_skills
+        self._project_skill_snapshots = project_skill_snapshots
         self._policy_resolver = policy_resolver
         self._output_artifact_max_bytes = output_artifact_max_bytes
         self._cancellation_poll_interval_seconds = cancellation_poll_interval_seconds
@@ -341,6 +354,26 @@ class RunOrchestrator:
             },
         ):
             self._observability.annotate_current_io(output_value=text)
+
+    async def _interaction_guidance(self, run: Run) -> str:
+        if self._interaction_planner is None or run.input.get("studio_builder"):
+            return ""
+        with self._stage("harness.presentation.plan", {"run.id": run.run_id}):
+            decision = await self._interaction_planner.plan(str(run.input.get("prompt", "")))
+        await self._events.append(
+            tenant_id=run.tenant_id,
+            run_id=run.run_id,
+            session_id=run.session_id,
+            event_type="presentation.intent",
+            payload={
+                "version": 1,
+                "origin": "intent_model",
+                "selector_model": self._interaction_planner.model,
+                "status": "selected" if decision is not None else "fallback",
+                **(decision.model_dump() if decision is not None else {}),
+            },
+        )
+        return decision.guidance() if decision is not None else ""
 
     async def _runtime_events(self, context: RuntimeContext) -> AsyncIterator[Any]:
         with self._stage(
@@ -984,9 +1017,8 @@ class RunOrchestrator:
                 if not isinstance(raw_message, dict):
                     raise ValueError("invalid conversation checkpoint message")
                 message = cast(dict[str, Any], raw_message)
-                if (
-                    message.get("role") not in {"user", "assistant"}
-                    or not isinstance(message.get("content"), str)
+                if message.get("role") not in {"user", "assistant"} or not isinstance(
+                    message.get("content"), str
                 ):
                     raise ValueError("invalid conversation checkpoint message")
                 history.append({"role": message["role"], "content": message["content"]})
@@ -1004,7 +1036,9 @@ class RunOrchestrator:
             if isinstance(prompt, str) and prompt:
                 history.append({"role": "user", "content": prompt})
             events = await self._events.list_after(
-                run.tenant_id, previous.run_id, 0,
+                run.tenant_id,
+                previous.run_id,
+                0,
                 types=("message.start", "message.delta", "message.completed"),
             )
             active = ""
@@ -1234,8 +1268,7 @@ class RunOrchestrator:
                         "trust_watermark": trust_state.trust_high_watermark.value,
                         "trust_floor": floor.value,
                         "trust_floor_met": (
-                            sandbox_enforcement_rank(enforcement)
-                            >= sandbox_enforcement_rank(floor)
+                            sandbox_enforcement_rank(enforcement) >= sandbox_enforcement_rank(floor)
                         ),
                     }
                 )
@@ -1266,6 +1299,9 @@ class RunOrchestrator:
                 if isinstance(policy_resolution, ResolvedPolicy)
                 else policy_resolution
             )
+            active_policy = action_policy(active_policy, run.input.get("ui_action_kind"))
+            if resolved_policy is not None:
+                resolved_policy = replace(resolved_policy, call_policy=active_policy)
             workspace_policy = (
                 await self._workspace_policy_resolver(
                     tenant_id,
@@ -1297,6 +1333,8 @@ class RunOrchestrator:
                 agent_owner_user_id=session.resolved_agent_owner_user_id,
                 team_ids=session.team_ids,
                 project_id=session.agent_name,
+                business_project_id=run.business_project_id,
+                project_mcp_references=tuple(run.input.get("project_mcp_references", ())),
                 session_id=session.session_id,
                 run_id=run.run_id,
                 agent_name=session.agent_name,
@@ -1306,7 +1344,8 @@ class RunOrchestrator:
             with self._stage("harness.memory.load", {"run.id": run_id}):
                 memory_projection = (
                     await self._memory.projection(identity, str(run.input.get("prompt", "")))
-                    if self._memory is not None else ""
+                    if self._memory is not None
+                    else ""
                 )
             raw_input_artifact_ids: object = run.input.get("input_artifact_ids", [])
             if not isinstance(raw_input_artifact_ids, list):
@@ -1316,6 +1355,14 @@ class RunOrchestrator:
                 if not isinstance(item, str):
                     raise ValueError("run input_artifact_ids must be a list of strings")
                 input_artifact_ids.append(item)
+            raw_project_document_ids: object = run.input.get("project_document_ids", [])
+            if not isinstance(raw_project_document_ids, list):
+                raise ValueError("run project_document_ids must be a list of strings")
+            for item in cast(list[object], raw_project_document_ids):
+                if not isinstance(item, str):
+                    raise ValueError("run project_document_ids must be a list of strings")
+                if item not in input_artifact_ids:
+                    input_artifact_ids.append(item)
             if input_artifact_ids and self._input_artifacts is None:
                 raise RuntimeError("input artifact service is not configured")
             with self._stage(
@@ -1362,6 +1409,62 @@ class RunOrchestrator:
                     event_type="agent.assets.staged",
                     payload={"skills": list(staged_skills)},
                 )
+            raw_project_skill_references = run.input.get("project_skill_references")
+            if (
+                isinstance(raw_project_skill_references, list)
+                and raw_project_skill_references
+                and self._project_skills is not None
+            ):
+                requested_project_skills = tuple(
+                    reference
+                    for reference in raw_project_skill_references
+                    if isinstance(reference, str)
+                )
+                with self._stage("harness.project.skills.stage", {"run.id": run_id}):
+                    captured_skills = run.input.get("project_skill_snapshots")
+                    if captured_skills is not None:
+                        if (
+                            not isinstance(captured_skills, list)
+                            or self._project_skill_snapshots is None
+                        ):
+                            raise ValueError("Project Skill snapshot storage is unavailable")
+                        project_skill_snapshots = await self._project_skill_snapshots.restore(
+                            tenant_id, captured_skills
+                        )
+                    else:
+                        project_skill_snapshots = self._project_skills(
+                            requested_project_skills, session.runtime_type
+                        )
+                    staged_project_skills, skipped_project_skills = stage_project_skill_snapshots(
+                        project_skill_snapshots,
+                        workspace=handle.path,
+                        runtime=session.runtime_type,
+                    )
+                await self._events.append(
+                    tenant_id=tenant_id,
+                    run_id=run_id,
+                    session_id=run.session_id,
+                    event_type="project.skills.staged",
+                    payload={
+                        "requested": len(requested_project_skills),
+                        "skills": list(staged_project_skills),
+                        "skipped": list(skipped_project_skills),
+                        "snapshotMode": "pinned"
+                        if captured_skills is not None
+                        else "legacy_catalog",
+                        "resources": [
+                            {
+                                "name": skill.name,
+                                "source": skill.source,
+                                "contentHash": skill.content_hash,
+                                "resolution": "agent_precedence"
+                                if skill.name in skipped_project_skills
+                                else "project",
+                            }
+                            for skill in project_skill_snapshots
+                        ],
+                    },
+                )
             with self._stage("harness.sandbox.prepare", {"run.id": run_id}):
                 await self._await_cancellable(
                     tenant_id,
@@ -1389,6 +1492,7 @@ class RunOrchestrator:
             async def sync_workspace() -> None:
                 await active_sandbox.collect(handle)
 
+            interaction_guidance = await self._interaction_guidance(run)
             artifact_publisher = (
                 ArtifactPublisher(
                     workspace=handle.path,
@@ -1400,12 +1504,13 @@ class RunOrchestrator:
                     sync_workspace=sync_workspace,
                     max_file_bytes=self._output_artifact_max_bytes,
                     observability=self._observability,
+                    validate_generated_html=bool(interaction_guidance),
                 )
                 if self._artifacts is not None
                 else None
             )
 
-            context_projection = (
+            recovery_projection = (
                 await self._context_service.recovery_projection(
                     tenant_id,
                     session.user_id,
@@ -1420,7 +1525,20 @@ class RunOrchestrator:
                 )
                 else ""
             )
-            if context_projection:
+            raw_project_projection = run.input.get("project_context")
+            project_projection = (
+                raw_project_projection if isinstance(raw_project_projection, str) else ""
+            )
+            raw_branch_projection = run.input.get("conversation_branch_context")
+            branch_projection = (
+                raw_branch_projection if isinstance(raw_branch_projection, str) else ""
+            )
+            context_projection = "\n\n".join(
+                section
+                for section in (project_projection, recovery_projection, branch_projection)
+                if section.strip()
+            )
+            if recovery_projection:
                 await self._events.append(
                     tenant_id=tenant_id,
                     run_id=run_id,
@@ -1428,18 +1546,35 @@ class RunOrchestrator:
                     event_type="context.recovery.loaded",
                     payload={"mode": "durable_digest"},
                 )
+            if project_projection.strip() or (
+                isinstance(raw_project_document_ids, list) and raw_project_document_ids
+            ):
+                raw_project_meta = run.input.get("project_context_meta")
+                project_meta = raw_project_meta if isinstance(raw_project_meta, dict) else {}
+                await self._events.append(
+                    tenant_id=tenant_id,
+                    run_id=run_id,
+                    session_id=run.session_id,
+                    event_type="context.project.loaded",
+                    payload={
+                        "project_id": project_meta.get("projectId"),
+                        "memories": project_meta.get("memories", 0),
+                        "documents": project_meta.get("documents", 0),
+                    },
+                )
             context = RuntimeContext(
-                platform_tools=(await self._platform_tools_factory(run, session)
-                                if self._platform_tools_factory else PlatformToolOverlay()),
+                platform_tools=(
+                    await self._platform_tools_factory(run, session)
+                    if self._platform_tools_factory
+                    else PlatformToolOverlay()
+                ),
                 run=run,
                 session=session,
                 workspace=handle.path,
                 agent_assets_staged=self._runtime_asset_stager is not None,
                 sandbox_provider=handle.provider,
                 sandbox_isolation=handle.isolation_level,
-                sandbox_enforcement=sandbox_enforcement(
-                    handle.provider, handle.isolation_level
-                ),
+                sandbox_enforcement=sandbox_enforcement(handle.provider, handle.isolation_level),
                 remote_workspace=handle.remote_workspace,
                 assistant_message_id=f"assistant-{run_id}-{uuid4().hex}",
                 steering=SteeringInbox(run, self._runs, self._events),
@@ -1449,6 +1584,7 @@ class RunOrchestrator:
                 identity=identity,
                 memory_projection=memory_projection,
                 context_projection=context_projection,
+                interaction_projection=interaction_guidance,
                 conversation_history=await self._conversation_history(session, run),
                 processed_input_paths=tuple(
                     path for item in staged_inputs for path in item.processed_paths

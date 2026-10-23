@@ -1,0 +1,2 @@
+{"base":"http://127.0.0.1:13597","stage":"79-preview","manualClose":true,"reopenKeepsSelection":true,"autoCollapseAfterAcceptedRun":true,"unselectedSkillsNeverInstalled":true,"draftUnchanged":true,"pageErrors":[],"fixture":"browser-only generation and run responses; no model inference"}
+{"stage":"79-preview","qaDraftDeleted":true}

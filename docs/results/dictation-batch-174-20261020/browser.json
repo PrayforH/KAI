@@ -1,0 +1,31 @@
+{
+  "base": "https://172.20.109.174",
+  "elapsed_ms": 626,
+  "text": "原有草稿：请把项目预算设为一千二百元，不要修改客户名称。明天下午三点开会讨论API接口。",
+  "requests": [
+    {
+      "path": "/api/harness/dictation/transcribe",
+      "bytes": 0
+    },
+    {
+      "path": "/api/harness/dictation/transcribe",
+      "bytes": 137104
+    },
+    {
+      "path": "/api/harness/dictation/transcribe",
+      "bytes": 137104
+    }
+  ],
+  "no_auto_task": true,
+  "errors": [],
+  "checks": [
+    "no_upload_while_recording",
+    "single_upload_after_stop",
+    "microphone_released",
+    "draft_preserved",
+    "manual_send",
+    "cancel",
+    "retry_same_audio",
+    "mobile_controls"
+  ]
+}

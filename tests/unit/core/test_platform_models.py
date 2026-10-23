@@ -38,6 +38,8 @@ def test_execution_identity_is_immutable_and_contains_run_scope() -> None:
         "agent_owner_user_id": None,
         "team_ids": (),
         "project_id": "project-a",
+        "business_project_id": None,
+        "project_mcp_references": (),
         "session_id": "session-a",
         "run_id": "run-a",
         "agent_name": "research-agent",

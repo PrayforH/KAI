@@ -130,4 +130,4 @@ def test_v1_manifest_remains_loadable_for_rollback_but_cannot_be_promoted(
 def test_every_reference_agent_bundle_is_byte_deterministic() -> None:
     hashes = verify(Path("agents"))
 
-    assert len(hashes) == 9
+    assert len(hashes) == 13

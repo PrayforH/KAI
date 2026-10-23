@@ -1,0 +1,2 @@
+{"base":"http://172.20.109.174:3501","stage":"3501","draftId":"draft_42da8ee467cd48169ad61d3ec9b3dcfc","runtime":"claude-agent-sdk","agentDefault":"deepseek-v4-pro","independentChoice":"deepseek-v4-flash","selectorEnabled":true,"choicePersistsOnReload":true,"agentModelUnchanged":true,"agentRevisionUnchanged":true,"inputRetained":true,"actualExecution":false,"modelSwitchVerified":false,"continuationVerified":false,"errors":[]}
+{"stage":"3501","qaDraftDeleted":true}

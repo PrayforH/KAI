@@ -18,9 +18,12 @@ it("folds only a tall submitted message and keeps its full text on expand and co
     const content = host.querySelector(".sent-user-content")!;
     const button = host.querySelector("button")!;
     expect(content.getAttribute("data-collapsed")).toBe("true");
-    expect(button.textContent).toBe("展开全文");
+    expect(button.textContent).toBe("");
+    expect(button.getAttribute("aria-label")).toBe("展开全文");
+    expect(button.querySelector("svg")).not.toBeNull();
+    expect(button.getAttribute("aria-controls")).toBe(content.id);
     act(() => button.click()); expect(content.getAttribute("data-collapsed")).toBe("false");
-    expect(button.textContent).toBe("收起全文");
+    expect(button.getAttribute("aria-label")).toBe("收起全文");
     act(() => button.click()); expect(content.getAttribute("data-collapsed")).toBe("true");
     expect(content.textContent).toBe("完整原文保留在消息中");
   } finally { act(() => root.unmount()); host.remove(); height.mockRestore(); vi.unstubAllGlobals(); }

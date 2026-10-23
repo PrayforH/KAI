@@ -133,7 +133,7 @@ async def test_model_route_uses_run_scoped_broker_lease_without_secret_events(
     events = [event async for event in runtime.execute(context)]
 
     assert captured[0].model == "gateway-model"
-    assert captured[0].max_buffer_size == 32 * 1024 * 1024
+    assert captured[0].max_buffer_size == 256 * 1024 * 1024
     assert "Delegated investigation helper" in str(captured[0].system_prompt)
     assert captured[0].env["ANTHROPIC_AUTH_TOKEN"] == broker_secret
     selected_event = next(event for event in events if event.type == "model.route.selected")
@@ -1391,7 +1391,7 @@ async def test_sandbox_session_maps_legacy_skill_tools_without_enabling_native_f
     events = [event async for event in runtime.execute(context)]
 
     assert captured[0].model == "gateway-model"
-    assert captured[0].max_buffer_size == 32 * 1024 * 1024
+    assert captured[0].max_buffer_size == 256 * 1024 * 1024
     prompt = str(captured[0].system_prompt)
     # The manifest prompt reaches the runtime and the runtime adds the
     # user-visible execution contract on top of it.

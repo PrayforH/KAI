@@ -1,3 +1,4 @@
+import { SidebarIcon } from "./sidebar-icon";
 import Link from "next/link";
 import styles from "./workspace-navigation.module.css";
 
@@ -26,96 +27,11 @@ export const workspaceItems: ReadonlyArray<{
 ];
 
 export function WorkspaceIcon({ workspace }: { workspace: WorkspaceId }) {
-  if (workspace === "tasks") {
-    return (
-      <svg viewBox="0 0 20 20" aria-hidden="true">
-        <path d="M4.5 5.5h11M4.5 10h11M4.5 14.5h7" />
-      </svg>
-    );
-  }
-  if (workspace === "agents") {
-    return (
-      <svg viewBox="0 0 20 20" aria-hidden="true">
-        <circle cx="6" cy="6" r="2" />
-        <circle cx="14" cy="6" r="2" />
-        <circle cx="10" cy="14" r="2" />
-        <path d="m7.7 7.1 1.4 4.8m3.2-4.8-1.4 4.8M8 6h4" />
-      </svg>
-    );
-  }
-  if (workspace === "files") {
-    return (
-      <svg viewBox="0 0 20 20" aria-hidden="true">
-        <path d="M4.5 3.5h7l4 4v9h-11z" />
-        <path d="M11.5 3.5v4h4M7.5 11h5m-5 2.8h5" />
-      </svg>
-    );
-  }
-  if (workspace === "usage") {
-    return (
-      <svg viewBox="0 0 20 20" aria-hidden="true">
-        <path d="M4.5 15.5V11h3v4.5m2-8v8h3v-8m2-3v11h3v-11" />
-      </svg>
-    );
-  }
-  if (workspace === "automation") {
-    return (
-      <svg viewBox="0 0 20 20" aria-hidden="true">
-        <path d="M15.5 10a5.5 5.5 0 1 1-1.6-3.9" />
-        <path d="M15.8 3.2v3.2h-3.2" />
-        <path d="m10 7.6 1.6 2.3-1.6 2.3-1.6-2.3z" />
-      </svg>
-    );
-  }
-  if (workspace === "knowledge") {
-    return (
-      <svg viewBox="0 0 20 20" aria-hidden="true">
-        <path d="M4.5 4.5h7a3 3 0 0 1 3 3v8h-7a3 3 0 0 1-3-3z" />
-        <path d="M7.5 7.5h4m-4 3h4" />
-      </svg>
-    );
-  }
-  if (workspace === "skills") {
-    return (
-      <svg viewBox="0 0 20 20" aria-hidden="true">
-        <path d="M4.5 4h7.5a3.5 3.5 0 0 1 3.5 3.5v8.5H6.5A2 2 0 0 1 4.5 14z" />
-        <path d="M8 8.5h4M8 11h4" />
-      </svg>
-    );
-  }
-  if (workspace === "spaces") {
-    return (
-      <svg viewBox="0 0 20 20" aria-hidden="true">
-        <circle cx="7" cy="7" r="2.5" />
-        <circle cx="14" cy="8" r="2" />
-        <path d="M2.8 16c.5-3 2-4.5 4.3-4.5s3.8 1.5 4.3 4.5m.1-3.5c.7-.8 1.5-1.2 2.5-1.2 1.8 0 3 1.2 3.4 3.5" />
-      </svg>
-    );
-  }
-  return (
-    <svg viewBox="0 0 20 20" aria-hidden="true">
-      <ellipse cx="10" cy="5.5" rx="5.5" ry="2.5" />
-      <path d="M4.5 5.5v4c0 1.4 2.5 2.5 5.5 2.5s5.5-1.1 5.5-2.5v-4m-11 4v4c0 1.4 2.5 2.5 5.5 2.5s5.5-1.1 5.5-2.5v-4" />
-    </svg>
-  );
+  return <SidebarIcon name={workspace} />;
 }
 
-export function WorkspaceCollapseIcon({
-  collapsed,
-}: {
-  collapsed: boolean;
-}) {
-  return (
-    <svg className={styles.collapseIcon} viewBox="0 0 20 20" aria-hidden="true">
-      <path
-        d={
-          collapsed
-            ? "m8.5 4 6 6-6 6m-5-12 6 6-6 6"
-            : "m11.5 4-6 6 6 6m5-12-6 6 6 6"
-        }
-      />
-    </svg>
-  );
+export function WorkspaceCollapseIcon(_props: { collapsed: boolean }) {
+  return <SidebarIcon name="panel" className={styles.collapseIcon} />;
 }
 
 export function WorkspaceNavigation({

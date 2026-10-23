@@ -758,7 +758,14 @@ class InMemoryAguiThreadBindingRepository:
             self._by_session[(binding.tenant_id, binding.user_id, session_id)] = binding
 
     async def list_for_user(
-        self, tenant_id: str, user_id: str, *, limit: int, archived: bool = False
+        self,
+        tenant_id: str,
+        user_id: str,
+        *,
+        limit: int,
+        archived: bool = False,
+        project_id: str | None = None,
+        offset: int = 0,
     ) -> list[AguiThreadBinding]:
         matches = [
             binding
@@ -766,6 +773,7 @@ class InMemoryAguiThreadBindingRepository:
             if item_tenant == tenant_id
             and item_user == user_id
             and (binding.archived_at is not None) is archived
+            and (project_id is None or binding.project_id == project_id)
         ]
         return sorted(
             matches,
@@ -775,7 +783,7 @@ class InMemoryAguiThreadBindingRepository:
                 binding.thread_id,
             ),
             reverse=True,
-        )[:limit]
+        )[offset : offset + limit]
 
     async def update_title(
         self,

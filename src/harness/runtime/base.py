@@ -80,6 +80,7 @@ class RuntimeContext(BaseModel):
     identity: ExecutionIdentity | None = None
     memory_projection: str = Field(default="", exclude=True, repr=False)
     context_projection: str = Field(default="", exclude=True, repr=False)
+    interaction_projection: str = Field(default="", exclude=True, repr=False)
     conversation_history: tuple[dict[str, str], ...] = Field(default=(), exclude=True, repr=False)
     processed_input_paths: tuple[str, ...] = ()
     runtime_transport_factory: RuntimeTransportFactory | None = Field(
@@ -111,6 +112,7 @@ class RuntimeContext(BaseModel):
                     agent_owner_user_id=self.session.resolved_agent_owner_user_id,
                     team_ids=self.session.team_ids,
                     project_id=self.session.agent_name,
+                    business_project_id=self.run.business_project_id,
                     session_id=self.session.session_id,
                     run_id=self.run.run_id,
                     agent_name=self.session.agent_name,

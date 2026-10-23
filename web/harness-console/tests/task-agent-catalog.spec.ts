@@ -421,3 +421,30 @@ it("uses the caller's current system release when the configured version is miss
     expect(catalog.agents.some(agent=>agent.version==="1.0.0")).toBe(false);
   } finally {invalidateClientReads();vi.unstubAllGlobals();}
 });
+
+it("prefers the current assistant even when the old web default still exists", async () => {
+  invalidateClientReads();
+  vi.stubGlobal("fetch",vi.fn(async (url: string) => Response.json(url.endsWith("runtime-config") ? {name:"lead-agent",version:"1.0.0"} : url.endsWith("/drafts") ? [] : [
+    {name:"lead-agent",version:"1.0.0",current_version:"1.1.1+platform.fix",display_name:"通用助手",domain:"general",owner_user_id:"me",scope:"personal"},
+    {name:"lead-agent",version:"1.1.1+platform.fix",current_version:"1.1.1+platform.fix",display_name:"通用助手",domain:"general",owner_user_id:"me",scope:"personal"},
+  ])));
+  try {
+    const catalog=await loadTaskAgentCatalog("me");
+    expect(catalog.defaultAgent.version).toBe("1.1.1+platform.fix");
+    expect(catalog.agents.some(agent=>agent.version==="1.0.0")).toBe(true);
+  } finally {invalidateClientReads();vi.unstubAllGlobals();}
+});
+
+it("uses the server's installed platform default across legacy same-name identities", async () => {
+  invalidateClientReads();
+  vi.stubGlobal("fetch",vi.fn(async (url: string) => Response.json(url.endsWith("runtime-config") ? {name:"lead-agent",version:"1.0.0"} : url.endsWith("/drafts") ? [] : [
+    {agent_id:"old",name:"lead-agent",version:"1.1.0",current_version:"1.1.0",display_name:"通用助手",domain:"general",owner_user_id:"me",scope:"personal"},
+    {agent_id:"new",name:"lead-agent",version:"1.1.1+platform.fix",current_version:"1.1.1+platform.fix",platform_default:true,display_name:"通用助手",domain:"general",owner_user_id:"me",scope:"personal"},
+    {agent_id:"other",name:"lead-agent",version:"9.0.0",current_version:"9.0.0",platform_default:true,display_name:"Other",domain:"general",owner_user_id:"other",scope:"personal"},
+  ])));
+  try {
+    const catalog=await loadTaskAgentCatalog("me");
+    expect(catalog.defaultAgent).toMatchObject({agentId:"new",version:"1.1.1+platform.fix"});
+    expect(catalog.agents.some(agent=>agent.version==="1.1.0")).toBe(true);
+  } finally {invalidateClientReads();vi.unstubAllGlobals();}
+});

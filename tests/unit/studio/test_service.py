@@ -183,6 +183,36 @@ async def test_publish_reuses_production_bundle_gate_and_marks_draft() -> None:
 
 
 @pytest.mark.asyncio
+async def test_published_spec_edits_advance_version_but_noop_saves_keep_release() -> None:
+    registry = InMemoryAgentRegistry()
+    publisher = AgentService(registry, clock=lambda: NOW, environment="production")
+    service = studio(publisher=publisher, registry=registry)
+    created = await service.create(
+        tenant_id="tenant-a", user_id="builder", request=create_request()
+    )
+    await service.publish(tenant_id="tenant-a", user_id="builder", draft_id=created.draft_id)
+    published = await service.get("tenant-a", "builder", created.draft_id)
+    unchanged = await service.replace(
+        tenant_id="tenant-a", user_id="builder", draft_id=created.draft_id,
+        request=ReplaceAgentDraftRequest(expectedRevision=published.revision, spec=published.spec),
+    )
+    assert unchanged.spec.version == unchanged.published_version == "0.1.0"
+    assert unchanged.published_hash == published.published_hash
+    assert unchanged.published_package_hash == published.published_package_hash
+
+    edited = await service.replace(
+        tenant_id="tenant-a", user_id="builder", draft_id=created.draft_id,
+        request=ReplaceAgentDraftRequest(
+            expectedRevision=unchanged.revision,
+            spec=unchanged.spec.model_copy(update={"description": "更新说明"}),
+        ),
+    )
+    assert edited.spec.version == "0.1.1"
+    assert edited.published_version == "0.1.0"
+    assert (await service.get("tenant-a", "builder", created.draft_id)).spec.version == "0.1.1"
+
+
+@pytest.mark.asyncio
 async def test_exact_studio_publish_retry_is_idempotent_and_audited() -> None:
     registry = InMemoryAgentRegistry()
     publisher = AgentService(

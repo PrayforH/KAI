@@ -1,3 +1,5 @@
+import { createUserScopedStorage } from "./thread-store";
+import { loadTaskModelOverride, saveTaskModelOverride } from "./task-model-catalog";
 import {
   ExportedMessageRepository,
   type ChatModelRunOptions,
@@ -28,6 +30,7 @@ export interface TaskSummary {
   last_read_at?: string | null;
   project_id?: string | null;
   pending_approval?: (ApprovalDetails & { status: string }) | null;
+  pending_input?: boolean;
 }
 
 const taskListRequests = new Map<boolean, Promise<TaskSummary[]>>();
@@ -424,6 +427,7 @@ export function peekCachedTasks(archived = false): TaskSummary[] | null {
 /** Ask every mounted task sidebar to refresh immediately. */
 export function notifyTaskListChanged(): void {
   taskListSnapshots.clear();
+  taskListSnapshots.clear();
   taskListRequests.clear();
   window.dispatchEvent(new CustomEvent("harness:task-list-changed"));
 }
@@ -538,7 +542,7 @@ export function createThreadHistoryAdapter(
       const repository = ExportedMessageRepository.fromArray(
         fromAgUiMessages(history.messages, { showThinking: true }),
       );
-      if (!history.run_id || !activeStatuses.has(history.status)) {
+      if (!history.run_id || history.run_id.startsWith("video_job_") || !activeStatuses.has(history.status)) {
         return repository;
       }
 
@@ -686,4 +690,26 @@ export function useAutoLoadEarlierMessages(
     fillViewport();
     return () => viewport.removeEventListener("scroll", onScroll);
   }, [frame, pagination.hasMore, pagination.loading]);
+}
+
+/** Create a durable independent snapshot; never re-use the source SDK session. */
+export async function forkTask(threadId: string, userId?: string): Promise<TaskSummary> {
+  const response = requireAuthenticatedResponse(await fetch(
+    `/api/agui/threads/${encodeURIComponent(threadId)}/fork`, { method: "POST" },
+  ));
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(body?.detail ?? body?.error?.message ?? "创建聊天分支失败，请重试。");
+  }
+  const task = await response.json() as TaskSummary;
+  try {
+    if (userId) {
+      const scoped = createUserScopedStorage(localStorage, userId);
+      saveTaskModelOverride(scoped, task.thread_id, loadTaskModelOverride(scoped, threadId));
+    }
+    const knowledge = localStorage.getItem(`harness:thread-knowledge:${threadId}`);
+    if (knowledge) localStorage.setItem(`harness:thread-knowledge:${task.thread_id}`, knowledge);
+  } catch { /* Browser preferences cannot invalidate a durable branch. */ }
+  notifyTaskListChanged();
+  return task;
 }

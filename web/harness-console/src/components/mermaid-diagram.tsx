@@ -1,10 +1,9 @@
 "use client";
+import { CardActionButton } from "./card-action-button";
 
-import type {
-  CodeHeaderProps,
-  SyntaxHighlighterProps,
-} from "@assistant-ui/react-markdown";
+import type { CodeHeaderProps } from "@assistant-ui/react-markdown";
 import { useEffect, useId, useRef, useState } from "react";
+import { writeTextToClipboard } from "../lib/clipboard";
 
 type ColorMode = "dark" | "light";
 
@@ -14,7 +13,9 @@ interface RenderedDiagram {
 }
 
 function currentColorMode(): ColorMode {
-  return document.documentElement.dataset.colorMode === "light" ? "light" : "dark";
+  return document.documentElement.dataset.colorMode === "light"
+    ? "light"
+    : "dark";
 }
 
 function useColorMode() {
@@ -64,7 +65,10 @@ export function MermaidCodeHeader(_props: CodeHeaderProps) {
   return null;
 }
 
-export function MermaidDiagram({ code }: SyntaxHighlighterProps) {
+/** Renders one Mermaid source. Used both as the markdown fence highlighter and
+ * directly by the Intelligent UI diagram block, so it declares only the input it
+ * actually reads. */
+export function MermaidDiagram({ code }: { code: string }) {
   const colorMode = useColorMode();
   const reactId = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const renderSequence = useRef(0);
@@ -74,6 +78,7 @@ export function MermaidDiagram({ code }: SyntaxHighlighterProps) {
   const [error, setError] = useState<string | null>(null);
   const [showSource, setShowSource] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
   const source = code.trim();
 
   useEffect(() => {
@@ -123,7 +128,9 @@ export function MermaidDiagram({ code }: SyntaxHighlighterProps) {
       } catch (caught) {
         if (!active || sequence !== renderSequence.current) return;
         setPending(false);
-        setError(caught instanceof Error ? caught.message : "无法解析 Mermaid 图表");
+        setError(
+          caught instanceof Error ? caught.message : "无法解析 Mermaid 图表",
+        );
       }
     }, 420);
 
@@ -134,14 +141,17 @@ export function MermaidDiagram({ code }: SyntaxHighlighterProps) {
   }, [colorMode, reactId, source]);
 
   async function copySource() {
-    await navigator.clipboard?.writeText(source);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1400);
+    const success = await writeTextToClipboard(source);
+    setCopied(success);
+    setCopyFailed(!success);
+    if (success) window.setTimeout(() => setCopied(false), 1400);
   }
 
   function downloadSvg() {
     if (!rendered?.svg) return;
-    const blob = new Blob([rendered.svg], { type: "image/svg+xml;charset=utf-8" });
+    const blob = new Blob([rendered.svg], {
+      type: "image/svg+xml;charset=utf-8",
+    });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
@@ -173,14 +183,16 @@ export function MermaidDiagram({ code }: SyntaxHighlighterProps) {
           >
             {showSource ? "图表" : "源码"}
           </button>
-          <button type="button" onClick={copySource}>
-            {copied ? "已复制" : "复制"}
-          </button>
-          <button type="button" onClick={downloadSvg} disabled={!rendered}>
-            下载 SVG
-          </button>
+          <CardActionButton action="copy" label="复制图表源码" copied={copied} onClick={copySource} />
+          <CardActionButton action="download" label="下载 SVG" onClick={downloadSvg} disabled={!rendered} />
         </span>
       </header>
+
+      {copyFailed ? (
+        <p className="mermaid-error" role="alert">
+          复制失败，请查看源码后手动复制。
+        </p>
+      ) : null}
 
       {showSource || (error && !rendered) ? (
         <pre className="mermaid-source">

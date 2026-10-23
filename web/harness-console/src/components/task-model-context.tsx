@@ -3,7 +3,14 @@
 import { createContext, useContext, type ReactNode } from "react";
 import type { TaskModelRoute } from "../lib/task-model-catalog";
 
+export interface PlaygroundModelSelection {
+  routes: TaskModelRoute[];
+  routeId: string | null;
+  onChange: (routeId: string | null) => void;
+}
+
 interface TaskModelContextValue {
+  independent?: boolean;
   routes: TaskModelRoute[];
   agentDefaultRouteId: string | null;
   overrideRouteId: string | null;
@@ -22,18 +29,21 @@ export function TaskModelProvider({
   agentDefaultRouteId,
   overrideRouteId,
   onOverrideChange,
+  independent = false,
   children,
 }: {
   routes: TaskModelRoute[];
   agentDefaultRouteId: string | null;
   overrideRouteId: string | null;
   onOverrideChange: (routeId: string | null) => void;
+  independent?: boolean;
   children: ReactNode;
 }) {
   return (
     <TaskModelContext.Provider
       value={{
         routes,
+        independent,
         agentDefaultRouteId,
         overrideRouteId,
         setOverrideRouteId: onOverrideChange,
@@ -58,14 +68,15 @@ export function TaskModelControl({
     agentDefaultRouteId,
     overrideRouteId,
     setOverrideRouteId,
+    independent,
   } = useTaskModel();
   if (routes.length === 0) return null;
   const effectiveOverrideRouteId =
-    overrideRouteId === agentDefaultRouteId ? null : overrideRouteId;
+    !independent && overrideRouteId === agentDefaultRouteId ? null : overrideRouteId;
   const selected = routes.find((route) => route.id === effectiveOverrideRouteId);
   const agentDefault = routes.find((route) => route.id === agentDefaultRouteId);
   const overrideRoutes = routes.filter(
-    (route) => route.id !== agentDefaultRouteId,
+    (route) => independent || route.id !== agentDefaultRouteId,
   );
   return (
     <div
@@ -83,9 +94,9 @@ export function TaskModelControl({
           aria-label="选择本次任务使用的模型"
           onChange={(event) => setOverrideRouteId(event.target.value || null)}
         >
-          <option value="">
-            {agentDefault?.label ?? "Agent 默认模型"}
-          </option>
+          {(!independent || !selected) && <option value="" disabled={independent}>
+            {independent ? "选择模型" : agentDefault?.label ?? "Agent 默认模型"}
+          </option>}
           {overrideRoutes.map((route) => (
             <option key={route.id} value={route.id}>
               {route.label}
@@ -99,7 +110,7 @@ export function TaskModelControl({
         </span>
       </label>
       <span className="task-model-control-status">
-        {selected?.modelType === "video_generation" ? "视频生成" : selected ? "仅本次任务" : "跟随 Agent"}
+        {independent ? "当前对话" : selected?.modelType === "video_generation" ? "视频生成" : selected ? "仅本次任务" : "跟随 Agent"}
       </span>
     </div>
   );

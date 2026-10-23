@@ -1,0 +1,20 @@
+{
+  "verified_at": "2026-10-11T15:50:45.914967+00:00",
+  "code_commit": "bd571f302db096a929d57f1710d8f2957dfe2099",
+  "deployed_image_tag": "intelligent-ui-20261011g",
+  "article_url": "https://mp.weixin.qq.com/s/huFcHuwg6mntXaRQAcZpdg",
+  "article_content_present": true,
+  "article_response": "resolved: user-provided local HTML and all 11 GIFs read",
+  "browser_inventory_retry": "IAB tab 2 detected and screenshot read successfully; DOM snapshot and textbox count timed out after 30 seconds; native Codex app access explicitly prohibited",
+  "incomplete_deliverables": [
+    "User-selected article examples reproduced one by one",
+    "New timeline/diagram browser visual review"
+  ],
+  "required_external_changes": [
+    "Restore browser page observation connection"
+  ],
+  "goal_completion_proven": false,
+  "article_case_matrix": "article-case-matrix.json",
+  "browser_screenshot_available": true,
+  "browser_control_available": false
+}

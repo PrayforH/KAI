@@ -1,0 +1,37 @@
+apiVersion: harness/v1alpha1
+kind: Agent
+metadata:
+  name: general-reviewer
+  version: 1.0.1
+  labels:
+    domain: general-assistant
+    display-name: 结果核验
+    description: 独立核验材料、计算结论、方案漏洞和交付要求。已有结果时进行复核；不依赖其他结果的检查可并行。
+    visibility: internal
+    managed-by: platform-default
+spec:
+  runtime: claude-agent-sdk
+  model:
+    route: deepseek-v4-pro
+    model: deepseek-v4-pro
+    requiredCapabilities:
+    - streaming
+    - tool_use
+  prompt:
+    system: prompts/system.md
+  skills: []
+  tools:
+  - builtin: Read
+  - builtin: Glob
+  - builtin: Grep
+  subagents: []
+  permissions:
+    policy: production-read-only
+  workspace:
+    mode: isolated
+    restoreSession: true
+    archiveOnComplete: true
+  limits:
+    maxTurns: 24
+    timeoutSeconds: 600
+    maxBudgetUsd: 5

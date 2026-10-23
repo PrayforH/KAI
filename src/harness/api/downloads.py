@@ -3,6 +3,6 @@
 from urllib.parse import quote
 
 
-def attachment_content_disposition(filename: str) -> str:
+def attachment_content_disposition(filename: str, *, inline: bool = False) -> str:
     normalized = filename.replace("\x00", "").strip() or "download"
-    return f"attachment; filename*=UTF-8''{quote(normalized, safe='')}"
+    return f"{'inline' if inline else 'attachment'}; filename*=UTF-8''{quote(normalized, safe='')}"

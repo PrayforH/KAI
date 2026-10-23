@@ -118,6 +118,7 @@ from harness.studio.model_configuration import (
     ModelConfigurationService,
     ModelConnectionTestResult,
     VideoGenerationJob,
+    VideoGenerationQuota,
 )
 from harness.studio.models import (
     AgentDraft,
@@ -982,6 +983,16 @@ async def generate_image(
     return await service.generate_image(identity.tenant_id, route_id, body)
 
 
+@router.get("/models/{route_id}/video-quota", response_model=VideoGenerationQuota)
+async def get_video_generation_quota(
+    route_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9-]*$")],
+    identity: Annotated[Identity, Depends(require_identity)],
+    service: Annotated[ModelConfigurationService, Depends(get_model_configuration_service)],
+) -> VideoGenerationQuota:
+    ensure_permission(identity, "tasks:write")
+    return await service.video_quota(identity.tenant_id, route_id)
+
+
 @router.post("/models/{route_id}/videos", response_model=VideoGenerationJob)
 async def generate_video(
     route_id: Annotated[str, Path(pattern=r"^[a-z][a-z0-9-]*$")],
@@ -1013,12 +1024,22 @@ async def generate_video(
                     content=content,
                 )
             )
+    task_session_id = None
+    if body.task is not None:
+        binding = await container.agui.resolve_media_thread(
+            tenant_id=identity.tenant_id, user_id=identity.user_id,
+            thread_id=body.task.thread_id, agent_name=body.task.agent_name,
+            agent_version=body.task.agent_version,
+            agent_owner_user_id=body.task.agent_owner_user_id, space_id=body.task.space_id,
+        )
+        task_session_id = binding.session_id
     return await service.create_video_job(
         identity.tenant_id,
         identity.user_id,
         route_id,
         body,
         references=tuple(references),
+        task_session_id=task_session_id,
     )
 
 
@@ -2123,21 +2144,35 @@ async def create_studio_try_run(
             user_id=actor.user_id,
             input_artifact_ids=body.input_artifact_ids,
         )
-        model_override = previous.input.get("model_route_override") if previous else None
+        model_override = (
+            body.model_route_override
+            if "model_route_override" in body.model_fields_set
+            else previous.input.get("model_route_override") if previous else None
+        )
+        api_format = (
+            "openai_compatible" if draft.spec.runtime == "codex-app-server"
+            else "anthropic_compatible"
+        )
+        if draft.spec.runtime == "deepagents":
+            api_format = None
+        if model_override:
+            runtime_model = await models.resolve_runtime(
+                actor.tenant_id, draft.spec.name, model_override,
+                apply_agent_binding=False, required_api_format=api_format,
+            )
+            if runtime_model is None or not set(
+                draft.spec.model.required_capabilities
+            ) <= runtime_model.capabilities:
+                raise ConflictError("所选模型不可用或不兼容当前运行环境，请重新选择模型")
         has_images = any(item.media_type.startswith("image/") for item in resolved)
         if has_images:
             catalog = await service.capabilities(actor.tenant_id, actor.user_id)
-            api_format = (
-                "openai_compatible"
-                if draft.spec.runtime == "codex-app-server"
-                else "anthropic_compatible"
-            )
             candidates = [
                 route
                 for route in catalog.model_routes
                 if route.enabled
                 and {"vision", *draft.spec.model.required_capabilities} <= set(route.capabilities)
-                and route.api_format == api_format
+                and (api_format is None or route.api_format == api_format)
             ]
             preferred = model_override or draft.spec.model.route_id
             candidates.sort(key=lambda route: route.route_id != preferred)

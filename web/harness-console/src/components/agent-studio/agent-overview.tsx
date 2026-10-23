@@ -122,9 +122,6 @@ export function AgentOverview({
           ) : (
             <div className={styles.activityEmpty}>
               <strong>等待第一段会话</strong>
-              <p>
-                完成一次试运行后，可以在这里返回上下文，继续提问或检查结果。
-              </p>
               <Link href={href("playground")}>打开 Playground →</Link>
             </div>
           )}

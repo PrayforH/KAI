@@ -1,0 +1,190 @@
+{
+  "source": "用户提供的本地保存文章及资源，2026-10-11更完整版本",
+  "article": {
+    "sha256": "fdfee725599f3a8c861bda40378f7b9db9b93ae524172c1c557d53e5607a26bf",
+    "bytes": 4573313
+  },
+  "source_scope": "11张GIF均已读取首/中/尾帧；2个嵌入视频未保存为本地文件。接收资料不代表样例验收通过。",
+  "cases": [
+    {
+      "id": "bike",
+      "title": "7 速自行车",
+      "source_asset": "640",
+      "asset_sha256": "9cdd8a0f18dfaab5ebda63235a4dab9862a926492ecfd1b0f8c1a2b31cbf529b",
+      "frames": 113,
+      "dimensions": [
+        800,
+        450
+      ],
+      "expected_interaction": "选择车架、车轮、传动、刹车、操控系统；对应零件高亮且说明切换；滑块改变拆解程度",
+      "prompt": "拆解一下7速自行车的设计，给可点选部件和可拖动拆解的小工具。",
+      "environment": "173，不依赖联网",
+      "acceptance": "pending",
+      "current_status": "173 已生成HTML，脚本语法通过；页面操作待验收"
+    },
+    {
+      "id": "lamb",
+      "title": "烤羊腿",
+      "source_asset": "640(1)",
+      "asset_sha256": "8c15bc4d0d4edf827cb4d9d9a9330b81da2580a43b99384c8c0839f81a11e00a",
+      "frames": 48,
+      "dimensions": [
+        640,
+        360
+      ],
+      "expected_interaction": "人数5→8：羊腿2.0→3.2kg、土豆1500→2400g；购物清单复制内容一致",
+      "prompt": "周日想做烤羊腿招待朋友，人数还没定。",
+      "environment": "173；按演示配比，不检验烹饪安全",
+      "acceptance": "pending",
+      "generation_status": "HTML generated on 173; actual browser interaction pending",
+      "current_status": "173 已生成HTML，脚本语法通过；页面操作待验收"
+    },
+    {
+      "id": "wardrobe",
+      "title": "意大利婚礼穿搭",
+      "source_asset": "640(2)",
+      "asset_sha256": "655ef5d0bf6d6ab1a8990c3eb2bf6b51675183890c101ca5cd1d4b17fbb555b2",
+      "frames": 100,
+      "dimensions": [
+        720,
+        374
+      ],
+      "expected_interaction": "图片、7天卡片、可勾选行李；月份/地点/着装要求选择后个性化下一轮",
+      "prompt": "要去意大利参加婚礼，帮我规划一周穿什么。",
+      "environment": "本地 Tavily 图片；173 只测交互，联网图片未支持",
+      "acceptance": "pending",
+      "current_status": "本地Tavily返回5来源及5图片链接；模型生成/页面待验收"
+    },
+    {
+      "id": "road-trip",
+      "title": "太平洋西北部自驾",
+      "source_asset": "640(3)",
+      "asset_sha256": "21953d85e09a4eb532b8986f457adecdb56633d6a056806186c0a19efeafab63",
+      "frames": 77,
+      "dimensions": [
+        720,
+        374
+      ],
+      "expected_interaction": "10天卡片、预算表、季节/风格/同行人选择与个性化下一轮",
+      "prompt": "规划一趟10天的太平洋西北部自驾。",
+      "environment": "本地 Tavily 图片；预算仅测试假设",
+      "acceptance": "pending",
+      "current_status": "本地Tavily返回5来源及5图片链接；模型生成/页面待验收"
+    },
+    {
+      "id": "clt",
+      "title": "中心极限定理",
+      "source_asset": "640(4)",
+      "asset_sha256": "3fbdc13acb1e2fd62dc8bffe1c58894a8d4a6b2bbecbfdfca489374916274eca",
+      "frames": 60,
+      "dimensions": [
+        600,
+        451
+      ],
+      "expected_interaction": "样本量1–100，5→16时均值分布改变且变窄；标明2200次模拟；选择题反馈",
+      "prompt": "用咖啡店消费例子解释中心极限定理，给样本量滑块、直方图和选择题。",
+      "environment": "173，不依赖联网；统计性质不能只靠截图",
+      "acceptance": "pending",
+      "current_status": "已生成HTML，模拟方差缩小；消费分布中位20与原样例不同"
+    },
+    {
+      "id": "gdp",
+      "title": "GDP",
+      "source_asset": "640(5)",
+      "asset_sha256": "b1e8bd2f1e1303149fa7ffcaed4fb03be9a229e5e2a371919546cc8d8dbdaf8a",
+      "frames": 70,
+      "dimensions": [
+        640,
+        507
+      ],
+      "expected_interaction": "四个滑块：600+200+170+30=1000，消费710→1110；增长11%；重置恢复",
+      "prompt": "GDP是怎么算的？给可拖动四个分量的虚构经济体。",
+      "environment": "173，虚构数据，单位十亿美元",
+      "acceptance": "pending",
+      "generation_status": "HTML generated on 173; actual browser interaction pending",
+      "current_status": "173 已生成HTML，脚本语法通过；页面操作待验收"
+    },
+    {
+      "id": "monty-hall",
+      "title": "三门问题",
+      "source_asset": "640(6)",
+      "asset_sha256": "2cecd63bceb4ca0d8979dde5a8da03b6586b599705f7d030519710a7811b4ecc",
+      "frames": 65,
+      "dimensions": [
+        640,
+        507
+      ],
+      "expected_interaction": "固定初选门1；车在门1/2/3时演示开羊门、坚持/换门结果；统计1/3对2/3",
+      "prompt": "解释三门问题，让我切换车的位置看坚持和换门各自结果。",
+      "environment": "173，不依赖联网",
+      "acceptance": "pending",
+      "current_status": "首轮退为静态表格；明确要求HTML后生成，自动选型有缺口"
+    },
+    {
+      "id": "drone-market",
+      "title": "美国无人机航拍市场",
+      "source_asset": "640(7)",
+      "asset_sha256": "10a07894a198973edec41d6da1c55b9df207944470a58dfd84cd4ceb5b55ab3b",
+      "frames": 82,
+      "dimensions": [
+        640,
+        507
+      ],
+      "expected_interaction": "三类业务配图、市场口径/年份/来源、预测图；区分预测及推算中间值",
+      "prompt": "联网研究美国无人机航拍市场，配业务图片和有出处的规模、预测图。",
+      "environment": "本地 Tavily；文章数字仅原演示，不能直接当实时结果",
+      "acceptance": "pending",
+      "current_status": "本地Tavily返回5来源及5图片链接；模型生成/页面待验收"
+    },
+    {
+      "id": "bill-split",
+      "title": "分账器",
+      "source_asset": "640(8)",
+      "asset_sha256": "ec2c8084c132fc7c0ac1adf7074a5ad6d5db4f586baabe66769ccbda5d1db759",
+      "frames": 64,
+      "dimensions": [
+        800,
+        450
+      ],
+      "expected_interaction": "5人、菜品金额编辑、每道菜参与者勾选、税额、18%小费、个人份额及复制；份额之和等于总额",
+      "prompt": "五个人吃饭，按我们点的菜做个分账器，做成写字板的样子。",
+      "environment": "173；原小票仅缩略图，另用标明虚构的小票检验导入",
+      "acceptance": "pending",
+      "current_status": "已生成HTML，18%小费基准正确；1元3人时份额合计0.99，精度失败"
+    },
+    {
+      "id": "retirement",
+      "title": "退休储蓄",
+      "source_asset": "640(9)",
+      "asset_sha256": "654bfa85e79f1c4a596b9de2dbd17936d61049c1698e3441b66e50fe956e517e",
+      "frames": 39,
+      "dimensions": [
+        640,
+        360
+      ],
+      "expected_interaction": "月存款、年限、年化三个滑块；本金/收益条和余额实时更新；零收益边界",
+      "prompt": "给一个退休储蓄计算器，拖动月存款、年限、年化收益看余额。",
+      "environment": "173；算术演示，不以当前税法和投资收益作为测试前提",
+      "acceptance": "pending",
+      "current_status": "173 已生成HTML，脚本语法通过；页面操作待验收"
+    },
+    {
+      "id": "retro-game",
+      "title": "复古游戏机",
+      "source_asset": "640(10)",
+      "asset_sha256": "ab60d51f472dc42250df78ed5296fbb417f07595b192f73ca3576e66db20834d",
+      "frames": 193,
+      "dimensions": [
+        420,
+        780
+      ],
+      "expected_interaction": "贪吃蛇、打砖块、乒乓切换；方向键/A/B/开始；真实进展、结束及重玩",
+      "prompt": "做一个我能玩的复古游戏机。",
+      "environment": "173；仅有按钮或Canvas不算游戏通过",
+      "acceptance": "pending",
+      "generation_status": "HTML generated on 173; actual browser interaction pending",
+      "current_status": "173 已生成HTML，脚本语法通过；页面操作待验收"
+    }
+  ],
+  "verified_at": "2026-10-11T15:56:02.740137+00:00"
+}

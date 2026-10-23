@@ -273,8 +273,7 @@ class AuthService:
             claims.sub, claims.tenant_id, claims.sid, datetime.now(UTC)
         ):
             raise AuthenticationError(
-                "This account was signed in on another device. Sign in again to continue.",
-                code="session_replaced",
+                "登录会话已结束或过期，请重新登录。",
             )
         user = await self._repository.get_user(claims.sub)
         if user.disabled:
@@ -368,7 +367,7 @@ class AuthService:
 
     async def _issue_session(self, user: AuthUser, membership: Membership) -> AuthSession:
         raw_refresh, stored_refresh = self._new_refresh_token(user, membership)
-        await self._repository.replace_user_refresh_token(stored_refresh, datetime.now(UTC))
+        await self._repository.add_refresh_token(stored_refresh)
         return self._session_response(
             user=user,
             membership=membership,

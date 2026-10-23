@@ -1,0 +1,2 @@
+{"stage":"preview","base":"http://127.0.0.1:13598","fixture":"browser-only saved run, no model execution","metrics":[{"height":32,"gap":"4px","padding":"6px 8px"},{"height":32,"gap":"4px","padding":"6px 8px"},{"height":32,"gap":"4px","padding":"6px 8px"}],"recommendedBadge":true,"noAutomaticSelection":true,"keyboardAndPaging":true,"modelRecommendationRemoved":true,"errors":[]}
+{"stage":"preview","qaDraftDeleted":true}

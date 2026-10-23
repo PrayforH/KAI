@@ -4,7 +4,7 @@
 ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
 USER root
-ARG SDK_VERSION=0.2.152
+ARG SDK_VERSION=0.2.168
 ARG PYPI_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
 # Vendored office Skills generate .docx/.pptx through the Node libraries, so
 # Node plus the two document packages ship in the image. Installing them at

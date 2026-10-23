@@ -16,6 +16,9 @@ from harness.studio.models import AgentDraft, PublishedAgentVersion, StudioModel
 
 
 class CreateStudioTryRunRequest(StudioModel):
+    model_route_override: str | None = Field(
+        default=None, alias="modelRouteOverride", pattern=r"^[a-z][a-z0-9-]{0,63}$"
+    )
     builder_tools: bool = Field(default=False, alias="builderTools")
     pending_proposal: BuilderChanges | None = Field(default=None, alias="pendingProposal")
     expected_revision: int = Field(alias="expectedRevision", ge=1)

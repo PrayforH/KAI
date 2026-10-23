@@ -8,10 +8,12 @@ from harness.core.errors import ConflictError
 from harness.core.manifest import (
     AgentManifestSnapshot,
     ManifestValidationError,
+    SkillSnapshot,
     materialize_python_tool_snapshot_set,
     materialize_skill_snapshot_set,
+    merge_skill_snapshot_set,
 )
-from harness.core.models import AgentVersion, AgentVersionStatus
+from harness.core.models import AgentRuntimeType, AgentVersion, AgentVersionStatus
 from harness.core.ports import AgentRegistry
 from harness.runtime.execution_contract import VISIBLE_EXECUTION_CONTRACT
 
@@ -156,3 +158,32 @@ async def stage_published_agent_assets(
         _materialize_codex_subagents(snapshot, children, workspace)
         _materialize_codex_skills(workspace, staged_skills)
     return staged_skills
+
+
+def stage_project_skill_snapshots(
+    skills: tuple[SkillSnapshot, ...],
+    *,
+    workspace: Path,
+    runtime: AgentRuntimeType,
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Add project Skills on top of the Agent's already-staged Skill tree.
+
+    The Agent's own Skills were materialized first, so an Agent Skill with the
+    same name wins and the project copy is reported as skipped. Codex reads its
+    repository Skills from ``.agents/skills``, so only the newly staged names are
+    mirrored there; existing mirrors are left untouched.
+    """
+
+    staged, skipped = merge_skill_snapshot_set(skills, workspace)
+    if runtime == "codex-app-server" and staged:
+        source_root = workspace / ".claude" / "skills"
+        codex_root = workspace / ".agents" / "skills"
+        codex_root.mkdir(parents=True, exist_ok=True)
+        for name in staged:
+            target = codex_root / f"harness-{name}"
+            if target.is_symlink() or target.is_file():
+                target.unlink()
+            elif target.exists():
+                shutil.rmtree(target)
+            shutil.copytree(source_root / name, target)
+    return staged, skipped

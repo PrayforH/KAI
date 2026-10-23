@@ -1,17 +1,59 @@
-.card { margin: 0 0 10px; border: 1px solid var(--codex-line); border-radius: 12px; background: var(--codex-surface); color: var(--codex-ink); font-size: 13px; overflow: hidden; }
-.card header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; }
-.card header button { display: inline-flex; align-items: center; gap: 7px; min-width: 0; text-align: left; background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; }
-.card header svg { width: 16px; height: 16px; flex: 0 0 16px; stroke: currentColor; fill: none; stroke-width: 1.5; }
-.card header span { flex-shrink: 0; color: var(--codex-muted); font-size: 11px; }
-.body { display: grid; gap: 14px; padding: 2px 12px 12px; max-height: 280px; overflow: auto; }
+.card {
+  margin: 0 0 10px;
+  border: 1px solid var(--codex-line);
+  border-radius: 20px;
+  background: var(--codex-surface-subtle);
+  color: var(--codex-ink);
+  font-size: 14px;
+  line-height: 20px;
+  overflow: hidden;
+}
+.card:focus { outline: none; }
+.card:focus-visible { outline: 2px solid var(--codex-muted); outline-offset: 2px; }
+.header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px 4px; }
+.heading { display: inline-flex; align-items: center; gap: 8px; min-width: 0; text-align: left; background: none; border: 0; padding: 0; color: var(--codex-muted); font: inherit; cursor: pointer; }
+.heading span { overflow-wrap: anywhere; }
+.heading svg { width: 16px; height: 16px; flex: 0 0 16px; stroke: none; fill: currentColor; transition: transform var(--codex-motion-control); }
+.chevronCollapsed { transform: rotate(-90deg); }
+.previous { transform: rotate(90deg); }
+.next { transform: rotate(-90deg); }
+.navigation svg { fill: currentColor; stroke: none; }
+.navigation { display: flex; align-items: center; gap: 4px; flex-shrink: 0; color: var(--codex-muted); font-size: 12px; }
+.navigation button { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: inherit; font-size: 22px; cursor: pointer; }
+.navigation button:hover:not(:disabled) { background: var(--codex-surface-hover); }
+.body { padding: 0 8px 8px; }
 .body fieldset { min-width: 0; border: 0; padding: 0; margin: 0; }
-.body legend { padding: 0; margin-bottom: 8px; line-height: 1.5; }
-.options { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
-.options label { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--codex-line); border-radius: 6px; padding: 6px 8px; cursor: pointer; }
-.options label:has(input:checked) { border-color: var(--codex-ink); background: var(--codex-surface-raised); }
-.options input { width: 14px; height: 14px; min-height: 0; margin: 0; accent-color: var(--codex-ink); }
-.card .text { width: 100%; min-width: 0; height: 32px; min-height: 32px; border: 1px solid var(--codex-line); border-radius: 6px; padding: 6px 8px; background: transparent; color: inherit; font: inherit; }
-.card footer { display: flex; justify-content: flex-end; padding: 8px 12px; border-top: 1px solid var(--codex-line); }
-.card footer button { border: 0; border-radius: 6px; padding: 6px 12px; background: var(--codex-ink); color: var(--codex-surface); font: inherit; cursor: pointer; }
+.body legend { width: 100%; padding: 0 8px; margin-bottom: 4px; font-weight: 500; overflow-wrap: anywhere; white-space: pre-wrap; }
+.options { display: flex; flex-direction: column; gap: 4px; max-height: 280px; overflow-y: auto; overscroll-behavior: contain; }
+.optionPagination { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 10px 8px 8px; color: var(--codex-muted); font-size: 12px; }
+.optionPagination > div { display: flex; gap: 6px; }
+.optionPagination button { border: 1px solid var(--codex-line); border-radius: 8px; padding: 5px 9px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.optionPagination button:hover:not(:disabled) { background: var(--codex-surface-hover); color: var(--codex-ink); }
+.option { position: relative; display: flex; align-items: center; gap: 8px; box-sizing: border-box; min-height: 32px; border-radius: 12px; padding: 6px 8px; cursor: pointer; transition: background 120ms ease; }
+.option:hover, .option:has(input:checked), .option:focus-within { background: var(--codex-surface-hover); }
+.option input { position: absolute; width: 1px; height: 1px; min-height: 0; opacity: 0; }
+.option:has(input:focus-visible) { outline: 2px solid var(--codex-muted); outline-offset: -2px; }
+.marker { display: grid; place-items: center; flex: 0 0 20px; width: 20px; height: 20px; border: 1px solid var(--codex-line-strong); border-radius: 3px; background: var(--codex-surface-raised); color: var(--codex-muted); font-size: 12px; line-height: 1; }
+.marker svg { width: 16px; height: 16px; fill: currentColor; stroke: none; }
+.option:has(input:checked) .marker { border-color: var(--codex-ink); background: var(--codex-ink); color: var(--codex-surface); }
+.optionText { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 6px; min-width: 0; }
+.optionText > span:first-child { min-width: 0; font-weight: 500; overflow-wrap: anywhere; white-space: pre-wrap; }
+.recommended { flex-shrink: 0; padding: 0 6px; border-radius: 4px; background: var(--codex-surface-hover); color: var(--codex-muted); font-size: 12px; line-height: 20px; white-space: nowrap; }
+.option:has(input:disabled) { cursor: default; opacity: .6; }
+.freeform { display: flex; align-items: center; gap: 8px; min-height: 32px; margin-top: 4px; padding: 1px 8px; box-sizing: border-box; border-radius: 12px; }
+.freeform:focus-within { box-shadow: inset 0 0 0 1px var(--codex-line-strong); background: var(--codex-surface); }
+.freeform > svg { width: 20px; height: 20px; flex-shrink: 0; fill: var(--codex-muted); stroke: none; }
+.card .text { width: 100%; min-width: 0; height: 24px; min-height: 24px; border: 0; border-radius: 0; padding: 0; background: transparent; color: inherit; font: inherit; box-shadow: none; outline: none; }
+.text::placeholder { color: var(--codex-muted); }
+.footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 6px 8px 0; }
+.submit { display: flex; align-items: center; gap: 10px; flex-shrink: 0; border: 0; border-radius: 16px; min-height: 32px; padding: 6px 12px; background: var(--codex-ink); color: var(--codex-surface); font: inherit; font-weight: 500; cursor: pointer; }
+.submit span { font-size: 12px; opacity: .6; }
+.card button:focus-visible { outline: 2px solid var(--codex-muted); outline-offset: 2px; }
 .card button:disabled { opacity: .45; cursor: default; }
-.card p { padding: 0 12px; }
+.error { margin: 8px; color: var(--codex-danger, var(--codex-ink)); font-size: 13px; }
+@media (max-width: 480px) { .header { gap: 8px; } .footer { justify-content: flex-end; } }
+@media (prefers-reduced-motion: reduce) { .option, .heading svg { transition: none; } }
+
+.actions { display: flex; align-items: center; gap: 8px; }
+.skip { border: 0; border-radius: 16px; padding: 6px 12px; min-height: 32px; background: transparent; color: var(--codex-muted); font: inherit; cursor: pointer; }
+.skip:hover:not(:disabled) { background: var(--codex-surface-hover); }

@@ -159,12 +159,9 @@ it("switches the composer action to stop for an active run", () => {
   expect(shouldShowComposerStop(false, "error")).toBe(false);
   expect(shouldShowComposerStop(true, "running", "failed")).toBe(false);
   expect(shouldShowComposerStop(true, "running", "cancelled")).toBe(false);
-  expect(agentThreadSource).toContain(
-    '<ConversationControl action="stop" aria-label="停止运行"',
-  );
-  expect(agentThreadSource).toContain('aria-label="停止运行"');
-  expect(agentThreadSource.match(/action="stop" aria-label="停止运行"/g)).toHaveLength(1);
-  expect(agentThreadSource).toContain("aui.thread().cancelRun()");
+  expect(agentThreadSource.match(/action="stop"/g)).toHaveLength(1);
+  expect(agentThreadSource).toContain('disabled={stopPending}');
+  expect(agentThreadSource).toContain('await cancelActiveRun()');
   expect(agentThreadSource).toContain('<ConversationControl action="send"');
   expect(agentThreadSource).not.toContain("<Composer.Action");
 });
@@ -201,13 +198,12 @@ it("places copy before edit below the user message content", () => {
   expect(agentThreadSource).toContain('label="复制消息"');
 });
 
-it("normalizes copied message text and provides an HTTP-safe clipboard fallback", () => {
+it("normalizes copied message text and keeps copy feedback accessible", () => {
   expect(normalizeMessageText(" 第一行\r\n\r\n\r\n第二行  \n")).toBe("第一行\n\n第二行");
   expect(normalizeMessageText("标题\n　\n​\n\n正文\u2029\u2029结尾")).toBe(
     "标题\n\n正文\n\n结尾",
   );
   expect(normalizeMessageText("上海贤创广告有限公司 下钻")).toBe("上海贤创广告有限公司 下钻");
-  expect(agentThreadSource).toContain('document.execCommand("copy")');
   expect(agentThreadSource).toContain('data-copy-state={copyState}');
   expect(agentThreadSource).toContain('className="message-copy-status"');
   expect(agentThreadSource).not.toContain('className="sr-only"');
@@ -223,8 +219,8 @@ it("only edits the latest user turn and allows unchanged text to start a new run
   expect(agentThreadSource).toContain('className="user-message-editor"');
   expect(agentThreadSource).toContain("MessageEditorContext.Provider");
   expect(agentThreadSource).toContain("isLatestUserMessage");
-  expect(agentThreadSource).toContain("{isLatestUserMessage && !threadRunning ? (");
-  expect(agentThreadSource).toContain("setEditor({ messageId: message.id, draft: originalText })");
+  expect(agentThreadSource).toContain("{isLatestUserMessage && !threadRunning && !sensitive ? (");
+  expect(agentThreadSource).toContain("setEditor({ messageId: message.id, draft: displayText })");
   expect(agentThreadSource).toContain("sourceId: message.id");
   expect(agentThreadSource).toContain("startRun: true");
   expect(agentThreadSource).not.toContain("text === originalText.trim()");
@@ -257,15 +253,15 @@ it("renders uploaded images in an in-app original-size preview", () => {
   expect(
     inputArtifactDownloadHref("input_artifact_123", "history-index"),
   ).toBe("/api/input-artifacts/input_artifact_123/content");
-  expect(agentThreadSource).toContain("HarnessMessageAttachment");
+  expect(agentThreadSource).toContain("MessageAttachmentGroup");
   const attachmentSource = readFileSync(new URL("../src/components/message-attachment-view.tsx", import.meta.url), "utf8");
-  expect(attachmentSource).toContain("点击下载");
   expect(attachmentSource).toContain('data-kind={isImage ? "image" : "file"}');
   expect(attachmentSource).toContain("message-attachment-preview");
   expect(attachmentSource).toContain("message-attachment-open");
-  expect(attachmentSource).toContain("image-lightbox");
-  expect(attachmentSource).toContain("上传原图");
-  expect(attachmentSource).toContain("下载原图");
+  expect(attachmentSource).toContain("ConversationImageViewer");
+  const viewer = readFileSync(new URL("../src/components/conversation-image-viewer.tsx", import.meta.url), "utf8");
+  expect(viewer).toContain("image-lightbox");
+  expect(viewer).toContain("下载原图");
   expect(agentThreadSource).not.toContain('target: "_blank"');
 });
 

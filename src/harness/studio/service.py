@@ -65,6 +65,12 @@ from harness.studio.deepagents_export import (
 )
 from harness.studio.factory import create_draft_spec
 from harness.studio.initial_agent import generate_initial_agent
+from harness.studio.intent_router import (
+    BuilderIntentRouter,
+    direct_builder_reply,
+    routed_builder_system_prompt,
+    validate_routed_action,
+)
 from harness.studio.model_configuration import ModelConfigurationService
 from harness.studio.models import (
     AgentDraft,
@@ -301,6 +307,8 @@ class AgentStudioService:
         audit: AuditService | None = None,
         agent_ids: AgentIdentityProvider | None = None,
         draft_permissions: SharedDraftPermissionChecker | None = None,
+        intent_router: BuilderIntentRouter | None = None,
+        default_execution_profile: str | None = None,
         clock: Callable[[], datetime] | None = None,
         id_generator: Callable[[], str] | None = None,
     ) -> None:
@@ -314,6 +322,8 @@ class AgentStudioService:
         self._audit = audit
         self._agent_ids = agent_ids
         self._draft_permissions = draft_permissions
+        self._intent_router = intent_router
+        self._default_execution_profile = default_execution_profile
         self._clock = clock or (lambda: datetime.now(UTC))
         self._id_generator = id_generator or (lambda: f"draft_{uuid4().hex}")
 
@@ -331,6 +341,12 @@ class AgentStudioService:
             return draft
         catalog = await self.capabilities(tenant_id, user_id)
         enabled = [profile for profile in catalog.execution_profiles if profile.enabled]
+        if (draft.spec.execution_profile == "isolated-default"
+            and self._default_execution_profile is not None
+            and any(profile.profile_id == self._default_execution_profile for profile in enabled)):
+            return draft.model_copy(update={"spec": draft.spec.model_copy(
+                update={"execution_profile": self._default_execution_profile}
+            )})
         if any(profile.profile_id == draft.spec.execution_profile for profile in enabled):
             return draft
         if not enabled:
@@ -1058,6 +1074,22 @@ class AgentStudioService:
         await self._require_shared_permission(tenant_id, user_id, current, AgentPermission.EDIT)
         if current.revision != request.expected_revision:
             raise ConflictError("草稿已更新，请基于最新配置重新生成建议")
+        decision = None
+        if request.intent == "auto" and self._intent_router is not None:
+            if on_progress:
+                await on_progress({"type": "progress", "text": "正在判断消息用途…"})
+            decision = await self._intent_router.classify(current.spec, request)
+            routed_reply = direct_builder_reply(decision, request.run_context) if decision else None
+            if routed_reply is not None:
+                latest = await self.get(tenant_id, user_id, draft_id)
+                if latest.revision != current.revision:
+                    raise ConflictError("判断期间草稿已更新，请基于最新配置重试")
+                if on_progress:
+                    await on_progress({"type": "builder.reply", "text": routed_reply.reply})
+                return BuilderConversationReply(
+                    action=routed_reply.action, reply=routed_reply.reply, task=routed_reply.task,
+                    changes=BuilderChanges(), baseRevision=current.revision, changedFields=(),
+                )
         builder_context = await self.builder_context(
             tenant_id, user_id, draft_id, request.expected_revision
         )
@@ -1083,10 +1115,12 @@ class AgentStudioService:
         if on_progress:
             await on_progress({"type": "progress", "text": "正在理解要求并生成修改建议…"})
         system_prompt = (
-            BUILDER_AUTO_SYSTEM_PROMPT if request.intent == "auto" else BUILDER_SYSTEM_PROMPT
+            routed_builder_system_prompt(decision) if decision is not None
+            else BUILDER_AUTO_SYSTEM_PROMPT if request.intent == "auto" else BUILDER_SYSTEM_PROMPT
         )
         completion = await models.complete_text(
-            tenant_id, current.spec.model.route_id, system_prompt=system_prompt,
+            tenant_id, request.model_route_override or current.spec.model.route_id,
+            system_prompt=system_prompt,
             user_prompt=prompt, max_tokens=12_000,
             on_delta=on_delta if on_progress else None,
         )
@@ -1107,7 +1141,7 @@ class AgentStudioService:
                 "responseSchema": BuilderModelReply.model_json_schema(by_alias=True),
             }, ensure_ascii=False)
             corrected = await models.complete_text(
-                tenant_id, current.spec.model.route_id,
+                tenant_id, request.model_route_override or current.spec.model.route_id,
                 system_prompt=system_prompt
                 + "\n上一份模型响应未通过协议校验。根据原始请求和当前配置，"
                 "重新输出完整且有效的 JSON。validationIssues 仅描述格式错误，不能替代用户意图。"
@@ -1126,9 +1160,12 @@ class AgentStudioService:
             await on_progress({"type": "progress", "text": "正在检查修改范围和配置一致性…"})
         if request.intent == "edit" and reply.action not in {"edit", "ask", "reply"}:
             raise ConflictError("修改模式不能发起试跑，请重新描述修改要求")
+        if decision is not None and not validate_routed_action(decision, reply.action):
+            raise ConflictError("构建模型返回了不同的消息用途，请重试；未执行任何操作")
         return await self.preview_builder_reply(
             tenant_id, user_id, draft_id, request.expected_revision, reply,
             catalog_revision=catalog_revision, creator=creator, on_progress=on_progress,
+            model_route_override=request.model_route_override,
         )
 
     async def builder_context(self, tenant_id: str, user_id: str, draft_id: str,
@@ -1199,6 +1236,7 @@ class AgentStudioService:
     async def preview_builder_reply(
         self, tenant_id: str, user_id: str, draft_id: str, expected_revision: int,
         reply: BuilderModelReply, *, catalog_revision: int,
+        model_route_override: str | None = None,
         creator: WorkerSkillCreator | None = None, on_progress: Progress | None = None,
     ) -> BuilderConversationReply:
         current = await self.get(tenant_id, user_id, draft_id)
@@ -1237,7 +1275,7 @@ class AgentStudioService:
                 if (item.operation == "create") == (skill is not None):
                     raise ConflictError("Skill 创建名称已存在，或更新目标不存在")
                 creator_request = SkillConversationRequest(
-                    modelRoute=current.spec.model.route_id,
+                    modelRoute=model_route_override or current.spec.model.route_id,
                     context=SkillConversationContext(
                         agentName=current.spec.name, displayName=current.spec.display_name,
                         domain=current.spec.domain, description=current.spec.description,

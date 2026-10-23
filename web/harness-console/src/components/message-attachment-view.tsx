@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
+import { useState } from "react";
+import { ConversationImageViewer, type ConversationImage } from "./conversation-image-viewer";
 import type { CompleteAttachment } from "@assistant-ui/react";
 function AttachmentFileIcon() {
   return (
@@ -26,8 +26,9 @@ export function inputArtifactDownloadHref(
     : undefined;
 }
 
-export function MessageAttachmentView({ attachment }: { attachment: Pick<CompleteAttachment, "id" | "name" | "type" | "contentType"> & Partial<Pick<CompleteAttachment, "content">> }) {
-  const [previewOpen, setPreviewOpen] = useState(false);
+export type MessageAttachment = Pick<CompleteAttachment, "id" | "name" | "type" | "contentType"> & Partial<Pick<CompleteAttachment, "content">>;
+
+export function attachmentDetails(attachment: MessageAttachment) {
   const filePart = attachment.content?.find((part) => part.type === "file");
   const imagePart = attachment.content?.find((part) => part.type === "image");
   const data = filePart?.type === "file"
@@ -48,6 +49,12 @@ export function MessageAttachmentView({ attachment }: { attachment: Pick<Complet
   const imageSrc = isImage
     ? href ?? (data?.startsWith("data:") || data?.startsWith("http") ? data : undefined)
     : undefined;
+  return { href, extension, isImage, imageSrc };
+}
+
+export function MessageAttachmentView({ attachment, onPreview }: { attachment: MessageAttachment; onPreview?: () => void }) {
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const { href, extension, isImage, imageSrc } = attachmentDetails(attachment);
   const content = (
     <>
       {imageSrc ? (
@@ -63,65 +70,10 @@ export function MessageAttachmentView({ attachment }: { attachment: Pick<Complet
         <strong>{attachment.name}</strong>
         <small>
           {extension} {isImage ? "图片" : "文件"}
-          {href ? (isImage ? " · 点击查看" : " · 点击下载") : ""}
         </small>
       </span>
     </>
   );
-  useEffect(() => {
-    if (!previewOpen) return;
-    const previousOverflow = document.body.style.overflow;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setPreviewOpen(false);
-    };
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [previewOpen]);
-
-  const preview = previewOpen && imageSrc
-    ? createPortal(
-        <div
-          className="image-lightbox"
-          role="dialog"
-          aria-modal="true"
-          aria-label={`${attachment.name} 原图预览`}
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setPreviewOpen(false);
-          }}
-        >
-          <header className="image-lightbox-toolbar">
-            <span className="image-lightbox-title">
-              <small>上传原图</small>
-              <strong>{attachment.name}</strong>
-            </span>
-            <span className="image-lightbox-actions">
-              {href ? (
-                <a href={href} download={attachment.name}>
-                  下载原图
-                </a>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => setPreviewOpen(false)}
-                aria-label="关闭原图预览"
-                autoFocus
-              >
-                ×
-              </button>
-            </span>
-          </header>
-          <div className="image-lightbox-stage">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={imageSrc} alt={attachment.name} />
-          </div>
-        </div>,
-        document.body,
-      )
-    : null;
   return (
     <>
       <div
@@ -132,7 +84,7 @@ export function MessageAttachmentView({ attachment }: { attachment: Pick<Complet
           <button
             className="message-attachment-open"
             type="button"
-            onClick={() => setPreviewOpen(true)}
+            onClick={() => onPreview ? onPreview() : setPreviewOpen(true)}
             title={`放大查看 ${attachment.name}`}
           >
             {content}
@@ -149,7 +101,28 @@ export function MessageAttachmentView({ attachment }: { attachment: Pick<Complet
           <span className="message-attachment-static">{content}</span>
         )}
       </div>
-      {preview}
+      {previewOpen && imageSrc && <ConversationImageViewer images={[{src: imageSrc, title: attachment.name, downloadHref: href}]} index={0} onSelect={() => {}} onClose={() => setPreviewOpen(false)} />}
     </>
   );
+}
+
+
+/** Compact sent attachments, with a bounded first view and shared image navigation. */
+export function MessageAttachmentGroup({ attachments }: { attachments: readonly MessageAttachment[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const [index, setIndex] = useState<number | null>(null);
+  const images: ConversationImage[] = attachments.flatMap(attachment => {
+    const { imageSrc, href } = attachmentDetails(attachment);
+    return imageSrc ? [{ src: imageSrc, title: attachment.name, downloadHref: href }] : [];
+  });
+  if (!attachments.length) return null;
+  const visible = expanded ? attachments : attachments.slice(0, 6);
+  return <div className="aui-user-message-attachments message-attachment-group" aria-label={`附件 · ${attachments.length} 个`}>
+    {visible.map(attachment => {
+      const imageIndex = images.findIndex(image => image.src === attachmentDetails(attachment).imageSrc);
+      return <MessageAttachmentView key={attachment.id} attachment={attachment} onPreview={imageIndex >= 0 ? () => setIndex(imageIndex) : undefined} />;
+    })}
+    {attachments.length > 6 && <button type="button" className="message-attachment-expand" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? "收起附件" : `+${attachments.length - 6} 个附件`}</button>}
+    {index !== null && <ConversationImageViewer images={images} index={index} onSelect={setIndex} onClose={() => setIndex(null)} />}
+  </div>;
 }

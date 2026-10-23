@@ -1,0 +1,2 @@
+{"base":"http://127.0.0.1:13301","stage":"174-web","manualClose":true,"reopenKeepsSelection":true,"autoCollapseAfterAcceptedRun":true,"unselectedSkillsNeverInstalled":true,"draftUnchanged":true,"pageErrors":[],"fixture":"browser-only generation and run responses; no model inference"}
+{"stage":"174-web","qaDraftDeleted":true}

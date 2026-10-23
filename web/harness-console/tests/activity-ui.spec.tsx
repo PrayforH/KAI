@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { ActivitySummary } from "../src/components/activity-summary";
 import { ApprovalCard } from "../src/components/approval-card";
 import { ArtifactCard } from "../src/components/artifact-list";
+import { ReplyArtifactVideos } from "../src/components/reply-artifact-videos";
 import { FileUploadStatus } from "../src/components/composer-attachment";
 import { SubagentCard } from "../src/components/subagent-card";
 import { ToolCard } from "../src/components/tool-card";
@@ -145,7 +146,9 @@ describe("Codex-style activity UI", () => {
     expect(html).toContain("执行进度");
     expect(html).toContain("正在读取 docs/agent-production-platform-design.md");
     expect(html).toContain('aria-label="运行过程，仅展示可观察事件"');
-    expect(html).toContain("正在运行子任务 分析仓库");
+    expect(html).toContain("子智能体协作");
+    expect(html).toContain("分析仓库");
+    expect(html).toContain("1 个执行中 · 0/1 已完成");
     expect(html).not.toContain("运行模型");
     expect(html).not.toContain("claude-sonnet");
     expect(html.match(/<section class="execution-ribbon/g)).toHaveLength(1);
@@ -333,10 +336,11 @@ describe("Codex-style activity UI", () => {
     );
 
     expect(html).toContain("允许执行这个操作？");
-    expect(html).toContain("允许并继续");
-    expect(html).toContain("高风险");
+    expect(html).toContain("允许一次");
+    expect(html).toContain("较高风险");
     expect(html).toContain("拒绝");
-    expect(html).toContain("write-review");
+    expect(html).toContain("平台策略要求确认本次操作。");
+    expect(html).not.toContain("write-review");
   });
 });
 
@@ -365,5 +369,14 @@ describe("artifact summary row", () => {
   it("leaves out files from another run and turns without any", () => {
     expect(artifactsForTurn([artifact("run_0")], "run_1", true)).toEqual([]);
     expect(artifactsForTurn([artifact("run_0")], "run_0", true)).toHaveLength(1);
+  });
+
+  it("replays historical published videos in their own answer without leaking them into a new run", () => {
+    const history = [artifact("run_0", "ocean_sunrise_20s.mp4", "video/mp4")];
+    const html = renderToStaticMarkup(<ReplyArtifactVideos artifacts={artifactsForTurn(history, "run_1", false)} />);
+    expect(html).toContain("<video");
+    expect(html).toContain("播放 ocean_sunrise_20s.mp4");
+    expect(html).toContain('download="ocean_sunrise_20s.mp4"');
+    expect(renderToStaticMarkup(<ReplyArtifactVideos artifacts={artifactsForTurn(history, "run_1", true)} />)).toBe("");
   });
 });

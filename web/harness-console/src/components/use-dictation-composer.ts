@@ -1,17 +1,20 @@
 "use client";
 
-import { useLayoutEffect, useRef, type RefObject } from "react";
+import { useLayoutEffect, useReducer, useRef, type RefObject } from "react";
 import { DictationEdit, dictationCaret, type DictationPatch } from "../lib/dictation-edit";
 
-export function useDictationComposer(input: RefObject<HTMLTextAreaElement | null>, read: () => string,
+export function useDictationComposer(input: RefObject<HTMLTextAreaElement | HTMLInputElement | null>, read: () => string,
   write: (text: string) => void, composing: RefObject<boolean>) {
   const edit = useRef<DictationEdit | undefined>(undefined);
+  const recorded = useRef<{ edit: DictationEdit; text: string } | undefined>(undefined);
+  const [, refresh] = useReducer((value: number) => value + 1, 0);
   const pending = useRef<{
-    element: HTMLTextAreaElement; text: string; start: number; end: number;
+    element: HTMLTextAreaElement | HTMLInputElement; text: string; start: number; end: number;
     direction: "forward" | "backward" | "none"; top: number; follow: boolean; focus: boolean;
   } | undefined>(undefined);
 
   useLayoutEffect(() => {
+    if (recorded.current && !composing.current) flushRecording();
     const view = pending.current;
     if (composing.current) { pending.current = undefined; return; }
     if (!view || view.element !== input.current || view.element.value !== view.text) return;
@@ -28,12 +31,12 @@ export function useDictationComposer(input: RefObject<HTMLTextAreaElement | null
     if (element) {
       const queued = pending.current;
       const before = queued?.element === element ? queued : undefined;
-      const start = before?.start ?? element.selectionStart;
-      const end = before?.end ?? element.selectionEnd;
+      const start = before?.start ?? element.selectionStart ?? read().length;
+      const end = before?.end ?? element.selectionEnd ?? read().length;
       pending.current = {
         element, text: patch.text,
         start: dictationCaret(start, patch), end: dictationCaret(end, patch),
-        direction: before?.direction ?? element.selectionDirection,
+        direction: before?.direction ?? element.selectionDirection ?? "none",
         top: before?.top ?? element.scrollTop,
         follow: before?.follow ?? (start === end && end >= patch.start
           && element.scrollHeight - element.clientHeight - element.scrollTop <= 24),
@@ -43,7 +46,23 @@ export function useDictationComposer(input: RefObject<HTMLTextAreaElement | null
     write(patch.text);
   }
 
+  function flushRecording() {
+    if (composing.current || !recorded.current) return;
+    const queued = recorded.current;
+    recorded.current = undefined;
+    // compositionend can precede React's final controlled-input update.
+    apply(queued.edit.commitRecording(input.current?.value ?? read(), queued.text), true);
+  }
+
   return {
+    // The browser can deliver the final input/change after compositionend.
+    onCompositionEnd() { if (recorded.current) refresh(); },
+    onRecorded(text: string) {
+      if (!edit.current) return;
+      recorded.current = { edit: edit.current, text };
+      edit.current = undefined;
+      flushRecording();
+    },
     onChange(text: string) { pending.current = undefined; edit.current?.observe(text); },
     onActive(active: boolean) {
       if (active) {

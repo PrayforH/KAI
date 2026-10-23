@@ -114,3 +114,23 @@ async def test_upstream_errors_do_not_expose_service_details() -> None:
     )
     with pytest.raises(DictationError, match="语音服务暂时不可用"):
         await service.transcribe(wav_audio())
+
+
+@pytest.mark.asyncio
+async def test_full_recording_limit_is_independent_of_vad_fragment_limit() -> None:
+    calls: list[str] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        return httpx.Response(200, json={"text": "整段录音"})
+
+    service = DictationService(
+        DictationSettings(max_session_seconds=120, max_audio_seconds=20),
+        transport=httpx.MockTransport(respond),
+    )
+    assert await service.transcribe(wav_audio(120)) == "整段录音"
+    with pytest.raises(DictationError):
+        await service.transcribe(wav_audio(121))
+    with pytest.raises(DictationError):
+        await service.detect(wav_audio(21))
+    assert calls == ["/v1/audio/transcriptions"]

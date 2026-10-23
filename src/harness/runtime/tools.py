@@ -17,7 +17,7 @@ from claude_agent_sdk import (
     create_sdk_mcp_server,
 )
 
-from harness.core.manifest import AgentManifest, AgentManifestSnapshot
+from harness.core.manifest import AgentManifest, AgentManifestSnapshot, ToolSpec
 from harness.core.models import ExecutionIdentity
 from harness.policy.models import ContextTrust
 from harness.runtime.mcp_credentials import (
@@ -122,6 +122,7 @@ class ResolvedTools:
         default_factory=lambda: MappingProxyType({})
     )
     disabled_builtin_tools: frozenset[str] = frozenset()
+    project_tools: frozenset[str] = frozenset()
 
 
 class ToolResolver:
@@ -134,6 +135,8 @@ class ToolResolver:
         mcp_registry_provider: (
             Callable[[str, str], Awaitable[Mapping[str, McpServerRegistration]]] | None
         ) = None,
+        project_mcp_validator: Callable[[ExecutionIdentity, tuple[str, ...]], Awaitable[None]]
+        | None = None,
         credential_provider: DynamicMcpCredentialProvider | None = None,
         web_search_api_key: str = "",
         web_search_provider: Literal["tavily", "minimax"] = "minimax",
@@ -142,6 +145,7 @@ class ToolResolver:
     ) -> None:
         self._mcp_registry = MappingProxyType(dict(mcp_registry or {}))
         self._mcp_registry_provider = mcp_registry_provider
+        self._project_mcp_validator = project_mcp_validator
         self._credential_provider = credential_provider or EmptyMcpCredentialProvider()
         self._web_search_api_key = web_search_api_key
         self._web_search_provider: Literal["tavily", "minimax"] = web_search_provider
@@ -178,6 +182,17 @@ class ToolResolver:
         python_tool_overrides: Mapping[str, SdkMcpTool[Any]] | None = None,
         tolerate_unavailable_mcp: bool = False,
     ) -> ResolvedTools:
+        agent_mcp = {tool.mcp for tool in manifest.spec.tools if tool.mcp}
+        project_mcp = tuple(
+            ref
+            for ref in (identity.project_mcp_references if identity else ())
+            if ref not in agent_mcp
+        )
+        project_mcp = tuple(dict.fromkeys(project_mcp))
+        if project_mcp and identity is not None and self._project_mcp_validator is not None:
+            await self._project_mcp_validator(identity, project_mcp)
+        project_tools: set[str] = set()
+        tools = (*manifest.spec.tools, *(ToolSpec(mcp=ref) for ref in project_mcp))
         builtins: list[str] = []
         disabled_builtins: set[str] = set()
         python_tools: list[SdkMcpTool[Any]] = []
@@ -192,12 +207,12 @@ class ToolResolver:
         mcp_registry = dict(self._mcp_registry)
         requested_mcp = {
             tool.mcp
-            for tool in manifest.spec.tools
+            for tool in tools
             if tool.mcp is not None and tool.mcp not in RETIRED_PLATFORM_MCP_REFERENCES
         }
         needs_tenant_registry = bool(requested_mcp.difference(mcp_registry))
         if self._mcp_registry_provider is not None and needs_tenant_registry:
-            if identity is None and any(tool.mcp is not None for tool in manifest.spec.tools):
+            if identity is None and any(tool.mcp is not None for tool in tools):
                 raise McpCredentialError(
                     "execution identity is required for tenant MCP registrations"
                 )
@@ -211,7 +226,7 @@ class ToolResolver:
 
         web_allowed = await self.web_allowed(identity)
         python_tool_overrides = python_tool_overrides or {}
-        for tool_spec in manifest.spec.tools:
+        for tool_spec in tools:
             if tool_spec.builtin is not None:
                 if tool_spec.builtin in {"WebSearch", "WebFetch"} and not web_allowed:
                     disabled_builtins.add(tool_spec.builtin)
@@ -241,6 +256,8 @@ class ToolResolver:
             if registration is None:
                 raise ToolResolutionError(f"MCP tool registration is not configured: {reference}")
             if registration.server_name in mcp_servers:
+                if reference in project_mcp:
+                    continue  # A project addition never replaces an Agent-owned server.
                 raise ToolResolutionError(f"duplicate MCP server name: {registration.server_name}")
             bindings = (
                 registration.credential_headers
@@ -256,7 +273,11 @@ class ToolResolver:
                 credentials: CredentialValues = (
                     await self._credential_provider.resolve(
                         reference,
-                        identity
+                        (
+                            identity.model_copy(update={"connection_mode": "caller_owned"})
+                            if reference in project_mcp
+                            else identity
+                        )
                         if identity is not None
                         else ExecutionIdentity(
                             tenant_id="none",
@@ -329,6 +350,8 @@ class ToolResolver:
             if registration.preflight_smoke is not None:
                 mcp_smokes[registration.server_name] = registration.preflight_smoke
             for allowed_tool in registration.allowed_tools:
+                if reference in project_mcp:
+                    project_tools.add(allowed_tool)
                 if allowed_tool not in allowed_tools:
                     allowed_tools.append(allowed_tool)
                 result_trust[allowed_tool] = registration.result_trust
@@ -361,6 +384,7 @@ class ToolResolver:
             sensitive_values=frozenset(sensitive_values),
             unavailable_mcp=MappingProxyType(unavailable_mcp),
             disabled_builtin_tools=frozenset(disabled_builtins),
+            project_tools=frozenset(project_tools),
         )
 
     @staticmethod
@@ -441,8 +465,16 @@ def enforce_published_tool_directory(
         raise ToolResolutionError("on-demand loading does not support in-process Python tools")
     return replace(
         resolved,
-        allowed_tools=tuple(tool for tool in resolved.allowed_tools if tool in expected_mcp),
+        allowed_tools=tuple(
+            tool
+            for tool in resolved.allowed_tools
+            if tool in expected_mcp or tool in resolved.project_tools
+        ),
         result_trust=MappingProxyType(
-            {tool: trust for tool, trust in resolved.result_trust.items() if tool in expected_mcp}
+            {
+                tool: trust
+                for tool, trust in resolved.result_trust.items()
+                if tool in expected_mcp or tool in resolved.project_tools
+            }
         ),
     )

@@ -40,3 +40,12 @@ it("prevents mutation of a message while its guidance acknowledgement is pending
   act(() => host.querySelector("li")!.dispatchEvent(new KeyboardEvent("keydown", {key: "ArrowDown", altKey: true, bubbles: true})));
   expect(change).not.toHaveBeenCalled();
 });
+
+
+it("shows pending guidance without queue pause or action controls", () => {
+  host = document.createElement("div"); document.body.append(host); root = createRoot(host);
+  act(() => root.render(<PromptQueue items={[{id: "guidance", text: "继续转换", attachments: [], steerRunId: "run-1"}]} paused busy canSteer sendingIds={["guidance"]} onChange={vi.fn()} onPause={vi.fn()} onGuide={vi.fn()} onSend={vi.fn()} />));
+  expect(host.textContent).toContain("等待接收");
+  expect(host.querySelector("button")).toBeNull();
+  expect(host.textContent).not.toContain("已暂停");
+});

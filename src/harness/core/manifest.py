@@ -606,6 +606,42 @@ def materialize_skill_snapshot_set(
     return tuple(names)
 
 
+def merge_skill_snapshot_set(
+    skills: Sequence[SkillSnapshot], workspace: str | Path
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Add Run-scoped Skills without replacing the Agent's own Skill tree.
+
+    Agent Skills are staged first and win on a name collision. The return value
+    is ``(staged, skipped)`` so the caller can report what actually reached the
+    workspace instead of silently claiming every project Skill was available.
+    """
+
+    skills_root = Path(workspace).resolve() / ".claude" / "skills"
+    skills_root.mkdir(parents=True, exist_ok=True)
+    staged: list[str] = []
+    skipped: list[str] = []
+    for skill in sorted(skills, key=lambda item: item.name):
+        target_root = (skills_root / skill.name).resolve()
+        if not target_root.is_relative_to(skills_root):
+            raise ManifestValidationError(f"unsafe Skill name: {skill.name}")
+        if target_root.exists():
+            skipped.append(skill.name)
+            continue
+        for file in skill.files:
+            target = (target_root / file.path).resolve()
+            if not target.is_relative_to(target_root):
+                raise ManifestValidationError(f"unsafe Skill snapshot path: {file.path}")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                materialize_file(file.content_base64, file.sha256, file.size_bytes, target)
+            except ValueError as error:
+                raise ManifestValidationError(
+                    f"corrupt Skill snapshot: {skill.name}/{file.path}"
+                ) from error
+        staged.append(skill.name)
+    return tuple(staged), tuple(skipped)
+
+
 def materialize_python_tool_snapshot_set(
     snapshots: Sequence[AgentManifestSnapshot], workspace: str | Path
 ) -> dict[str, dict[str, Path]]:

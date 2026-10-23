@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 from functools import lru_cache
 
+import yaml
+
 from harness.core.errors import ConflictError, NotFoundError
+from harness.core.manifest import SkillFileSnapshot, SkillSnapshot
 from harness.core.models import AgentRuntimeType
 from harness.evals.suite import EvalCase, EvalExpectation
 from harness.studio.models import (
@@ -559,3 +563,91 @@ def imported_platform_skill(package: PlatformSkillPackage) -> ImportedSkill:
             f"已从平台 Skill 包 {package.package_id}@{package.revision} 导入草稿快照",
         ),
     )
+
+
+def _platform_skill_snapshot(package: PlatformSkillPackage) -> SkillSnapshot:
+    """Build the same immutable SkillSnapshot the compiler would materialize.
+
+    Project Skills are staged directly into the Run workspace, so they must use
+    the compiler's SKILL.md format and file hashing. Otherwise the runtime sees
+    a different fingerprint than an Agent that installed the same platform
+    Skill through the draft.
+    """
+
+    skill = package.skill
+    frontmatter = yaml.safe_dump(
+        {"name": skill.name, "description": skill.description},
+        sort_keys=False,
+        allow_unicode=True,
+    ).strip()
+    contents: dict[str, bytes] = {
+        "SKILL.md": (
+            f"---\n{frontmatter}\n---\n\n{skill.instructions.strip()}\n"
+        ).encode(),
+    }
+    for file in skill.files:
+        if file.content is not None:
+            contents[file.path] = file.content.encode("utf-8")
+        elif file.content_base64 is not None:
+            contents[file.path] = base64.b64decode(
+                file.content_base64, validate=True
+            )
+    digest = hashlib.sha256()
+    snapshots: list[SkillFileSnapshot] = []
+    for path in sorted(contents):
+        content = contents[path]
+        digest.update(path.encode())
+        digest.update(content)
+        snapshots.append(
+            SkillFileSnapshot(
+                path=path,
+                content_base64=base64.b64encode(content).decode("ascii"),
+                sha256=hashlib.sha256(content).hexdigest(),
+                size_bytes=len(content),
+            )
+        )
+    return SkillSnapshot(
+        name=skill.name,
+        description=skill.description,
+        source=f"project:{package.package_id}@{package.revision}",
+        files=tuple(snapshots),
+        content_hash=digest.hexdigest(),
+    )
+
+
+def skill_snapshots_for_references(
+    references: tuple[str, ...], runtime: AgentRuntimeType, *, strict: bool = False
+) -> tuple[SkillSnapshot, ...]:
+    """Resolve pinned project Skill references for one runtime.
+
+    Unknown, stale, or runtime-incompatible references are skipped here; the
+    caller reports what was staged. Project settings validate references at
+    write time, so this is a last-resort guard for catalog revisions that move
+    between saving a project and starting a task.
+    """
+
+    snapshots: list[SkillSnapshot] = []
+    seen: set[str] = set()
+    for reference in references:
+        package_id, separator, revision = reference.partition("@")
+        if not separator or not revision.isdigit():
+            if strict:
+                raise ConflictError(f"Invalid project Skill reference: {reference}")
+            continue
+        try:
+            package = platform_skill_package(package_id, int(revision))
+        except (ConflictError, NotFoundError):
+            if strict:
+                raise ConflictError(
+                    f"Project Skill is unavailable; update the project selection: {reference}"
+                ) from None
+            continue
+        if runtime not in package.compatible_runtimes:
+            if strict:
+                raise ConflictError(f"Project Skill {reference} does not support {runtime}")
+            continue
+        if package.skill.name in seen:
+            continue
+        seen.add(package.skill.name)
+        snapshots.append(_platform_skill_snapshot(package))
+    return tuple(snapshots)

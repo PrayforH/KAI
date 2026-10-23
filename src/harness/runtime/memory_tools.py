@@ -88,6 +88,7 @@ async def _search_memory(arguments: dict[str, Any]) -> dict[str, Any]:
             identity.agent_name,
             query,
             owner_id=identity.resolved_agent_owner_user_id,
+            project_id=identity.business_project_id,
             limit=limit,
         )
         return {

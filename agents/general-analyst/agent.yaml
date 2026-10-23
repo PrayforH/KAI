@@ -1,0 +1,40 @@
+apiVersion: harness/v1alpha1
+kind: Agent
+metadata:
+  name: general-analyst
+  version: 1.0.1
+  labels:
+    domain: general-assistant
+    display-name: 分析执行
+    description: 执行独立的数据计算、文件分析或小范围产物制作，返回计算依据、验证结果和文件路径。
+    visibility: internal
+    managed-by: platform-default
+spec:
+  runtime: claude-agent-sdk
+  model:
+    route: deepseek-v4-pro
+    model: deepseek-v4-pro
+    requiredCapabilities:
+    - streaming
+    - tool_use
+  prompt:
+    system: prompts/system.md
+  skills: []
+  tools:
+  - builtin: Read
+  - builtin: Glob
+  - builtin: Grep
+  - builtin: Write
+  - builtin: Edit
+  - builtin: Bash
+  subagents: []
+  permissions:
+    policy: production-standard
+  workspace:
+    mode: isolated
+    restoreSession: true
+    archiveOnComplete: true
+  limits:
+    maxTurns: 24
+    timeoutSeconds: 600
+    maxBudgetUsd: 5

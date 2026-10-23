@@ -1,0 +1,18 @@
+/* A small identity layer: the workspace keeps its existing interaction tokens. */
+:root { --sapling-leaf: #4d7964; --sapling-wash: #edf4ef; --sapling-border: #d3e2d8; }
+html[data-color-mode="dark"] { --sapling-leaf: #9ec4ab; --sapling-wash: #23332b; --sapling-border: #3b5143; }
+html body.codex-theme-v1 .product-brand-mark { color: var(--sapling-leaf); }
+html body.codex-theme-v1 .product-brand-mark svg { display: block; width: 100%; height: 100%; }
+html body.codex-theme-v1 .product-brand-copy .product-wordmark,
+html body.codex-theme-v1 .product-wordmark { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; font-family: var(--codex-font-sans, ui-sans-serif, system-ui, sans-serif); font-size: 18px; font-weight: 600; line-height: 1.2; letter-spacing: -0.6px; text-transform: none; color: var(--codex-ink); }
+html body.codex-theme-v1 .product-wordmark .product-preview-badge { display: inline-block; border: 1px solid var(--sapling-border); border-radius: 5px; padding: 3px 5px; background: var(--sapling-wash); color: var(--sapling-leaf); font-family: var(--codex-font-mono, ui-monospace, monospace); font-size: 9px; font-weight: 500; line-height: 1; letter-spacing: 0; }
+html body.codex-theme-v1 .product-brand-copy > small { font-family: inherit; font-size: 10px; font-weight: 400; letter-spacing: 0.08em; }
+html body.codex-theme-v1 .task-workbench-name .product-wordmark { font-size: 17px; }
+html body.codex-theme-v1 .login-preview-brand > .product-brand-mark { background: transparent; }
+html body.codex-theme-v1 .login-card .product-wordmark,
+html body.codex-theme-v1 .login-preview-brand .product-wordmark { color: #f1f1f1; }
+html body.codex-theme-v1 .login-shell .product-preview-badge { color: #9ec4ab; background: #23332b; border-color: #3b5143; }
+html body.codex-theme-v1 .login-shell .product-brand-mark { color: #9ec4ab; }
+html body.codex-theme-v1:has(.console-shell) .task-sidebar-brand-link { gap: 8px; }
+html body.codex-theme-v1:has(.console-shell) .task-workbench-name .product-wordmark { font-size: 17px; letter-spacing: -0.6px; }
+html[data-color-mode="light"] body.codex-theme-v1:has(.console-shell) .product-brand-mark { color: var(--sapling-leaf); }

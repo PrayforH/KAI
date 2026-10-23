@@ -66,6 +66,11 @@ class PostgresMemoryBankRepository:
                     MemoryEntryRow.tenant_id == entry.tenant_id,
                     MemoryEntryRow.user_id == entry.user_id,
                     MemoryEntryRow.agent_name == entry.agent_name,
+                    (
+                        MemoryEntryRow.payload["projectId"].as_string() == entry.project_id
+                        if entry.project_id is not None
+                        else MemoryEntryRow.payload["projectId"].as_string().is_(None)
+                    ),
                     func.coalesce(MemoryEntryRow.agent_owner_user_id, MemoryEntryRow.user_id)
                     == entry.owner_id,
                     MemoryEntryRow.status.in_(["deleted", "rejected"]),
@@ -107,11 +112,18 @@ class PostgresMemoryBankRepository:
         limit: int | None,
         owner_id: str | None = None,
         active_at: datetime | None = None,
+        project_id: str | None = None,
+        include_project_scopes: bool = False,
     ) -> Sequence[MemoryEntry]:
         statement = select(MemoryEntryRow).where(
             MemoryEntryRow.tenant_id == tenant_id,
             MemoryEntryRow.user_id == user_id,
         )
+        if not include_project_scopes:
+            scope = MemoryEntryRow.payload["projectId"].as_string()
+            statement = statement.where(
+                scope == project_id if project_id is not None else scope.is_(None)
+            )
         if agent_name is not None:
             statement = statement.where(MemoryEntryRow.agent_name == agent_name)
         if statuses is not None:
@@ -377,6 +389,7 @@ class PostgresMemoryBankRepository:
         now: datetime,
         *,
         limit: int,
+        project_id: str | None = None,
     ) -> Sequence[MemorySearchHit]:
         # Exact pgvector cosine ranking inside the authorized SQL scope. Avoid ANN
         # post-filter underfill; HNSW is optional after tenant-scale benchmarking.
@@ -388,6 +401,11 @@ class PostgresMemoryBankRepository:
                 MemoryEntryRow.tenant_id == tenant_id,
                 MemoryEntryRow.user_id == user_id,
                 MemoryEntryRow.agent_name == agent_name,
+                (
+                    MemoryEntryRow.payload["projectId"].as_string() == project_id
+                    if project_id is not None
+                    else MemoryEntryRow.payload["projectId"].as_string().is_(None)
+                ),
                 func.coalesce(MemoryEntryRow.agent_owner_user_id, MemoryEntryRow.user_id)
                 == owner_id,
                 MemoryEntryRow.status == "active",

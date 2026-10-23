@@ -1,0 +1,2 @@
+{"stage":"handoff","base":"https://172.20.109.174","before":{"shadow":"none","border":"rgb(222, 222, 225)","y":776},"motion":[{"event":"start","time":2698.0999999046326},{"event":"target-ready","time":2908.800000190735,"composerY":790},{"event":"animation-ready","time":2910.0999999046326},{"event":"finished","time":3292.4000000953674},{"event":"send","time":3298.5}],"thread":"201d3069-3fb1-46b0-96ee-09c01f5ed350","errors":[]}
+{"stage":"execution","passed":true,"base":"https://172.20.109.174","thread":"201d3069-3fb1-46b0-96ee-09c01f5ed350"}

@@ -1,0 +1,1 @@
+{"synthetic":true,"currency":"CNY","definition":"订单金额按订单唯一键求和；净额=订单金额合计-退款金额合计。订单与退款为一对多。订单明细不能用于重复加总订单金额。","orders":[{"order_id":1,"amount":100},{"order_id":2,"amount":200}],"items":[{"item_id":1,"order_id":1},{"item_id":2,"order_id":1},{"item_id":3,"order_id":2}],"refunds":[{"refund_id":1,"order_id":1,"amount":10},{"refund_id":2,"order_id":1,"amount":20}]}

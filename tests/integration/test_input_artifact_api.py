@@ -5,10 +5,43 @@ from httpx import ASGITransport, AsyncClient
 
 from harness.api.app import create_app, create_memory_app
 from harness.api.dependencies import build_memory_container
-from harness.core.errors import StorageCapacityError
+from harness.core.errors import ConflictError, StorageCapacityError
 from harness.core.models import ExecutionIdentity
 
 HEADERS = {"X-Tenant-ID": "tenant-a", "X-User-ID": "user-1"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "name", ["资料.ZIP", "files.rar", "bundle.7z", "bundle.tar.gz", "installer.DMG"]
+)
+async def test_archive_allowance_checks_actual_bytes_and_run_total(name: str) -> None:
+    container = build_memory_container()
+    container.input_artifacts.max_file_bytes = 4
+    container.input_artifacts.max_total_bytes = 8
+    container.input_artifacts.max_archive_file_bytes = 12
+    app = create_app(container)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        async def upload(filename: str, content: bytes):
+            return await client.post(
+                "/v1/input-artifacts", headers=HEADERS,
+                files={"file": (filename, content, "application/octet-stream")},
+            )
+
+        accepted = await upload(name, b"123456789012")
+        assert accepted.status_code == 201
+        assert (await upload(name, b"1234567890123")).status_code == 413
+        assert (await upload("office.docx", b"12345")).status_code == 413
+        archive_id = accepted.json()["input_artifact_id"]
+        assert len(await container.input_artifacts.resolve_for_run(
+            tenant_id="tenant-a", user_id="user-1", input_artifact_ids=[archive_id]
+        )) == 1
+        companion = await upload("note.txt", b"1")
+        with pytest.raises(ConflictError, match="total size"):
+            await container.input_artifacts.resolve_for_run(
+                tenant_id="tenant-a", user_id="user-1",
+                input_artifact_ids=[archive_id, companion.json()["input_artifact_id"]],
+            )
 
 
 class _FullArtifactStore:
@@ -135,7 +168,11 @@ async def test_upload_limits_match_enforced_limit_and_require_permission() -> No
         response = await client.get("/v1/input-artifacts/limits", headers=HEADERS)
         assert response.status_code == 200
         assert response.json() == {
-            "max_file_bytes": 1234, "max_files": 10, "max_total_bytes": 100 * 1024 * 1024
+            "max_file_bytes": 1234, "max_files": 10, "max_total_bytes": 100 * 1024 * 1024,
+            "max_archive_file_bytes": 500 * 1024 * 1024,
+            "archive_extensions": [
+                ".zip", ".rar", ".7z", ".tar", ".gz", ".tgz", ".bz2", ".xz", ".dmg"
+            ],
         }
         response = await client.get("/v1/input-artifacts/limits")
         assert response.status_code == 401

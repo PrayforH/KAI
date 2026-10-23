@@ -21,6 +21,7 @@ from ag_ui.core import (
 )
 
 from harness.adapters.memory import InMemoryAguiThreadBindingRepository
+from harness.agui.branching import load_branch_snapshot
 from harness.agui.task_title import (
     TaskTitleGenerator,
     summarize_task_title_from_prompts,
@@ -28,12 +29,15 @@ from harness.agui.task_title import (
 from harness.application.input_artifacts import InputArtifactService
 from harness.application.runs import RunService
 from harness.application.sessions import SessionService
+from harness.application.workspaces import WorkspaceService
 from harness.context.models import SessionContextDigest
 from harness.context.service import ContextService
 from harness.core.errors import ConflictError, NotFoundError
 from harness.core.models import AguiThreadBinding as StoredAguiThreadBinding
 from harness.core.models import Run
 from harness.core.ports import AguiThreadBindingRepository
+from harness.projects.models import ProjectRunContext
+from harness.projects.skill_snapshots import ProjectSkillSnapshots
 
 
 @dataclass(frozen=True)
@@ -43,7 +47,9 @@ class AguiThreadBinding:
     agent_version: str
     agent_owner_user_id: str
     space_id: str | None = None
+    project_id: str | None = None
     previous_session_ids: tuple[str, ...] = ()
+    branch_snapshot_id: str | None = None
 
     @property
     def session_ids(self) -> tuple[str, ...]:
@@ -70,6 +76,7 @@ KnowledgeBindingResolver = Callable[
     [str, str, Sequence[str], tuple[str, ...]],
     Awaitable[Sequence[object]],
 ]
+ProjectContextResolver = Callable[[str, str, str], Awaitable[ProjectRunContext | None]]
 
 
 def _knowledge_references_override(request: RunAgentInput) -> list[str] | None:
@@ -95,6 +102,16 @@ def _knowledge_references_override(request: RunAgentInput) -> list[str] | None:
     return references or None
 
 
+def _merge_knowledge_references(
+    requested: list[str] | None,
+    project_context: ProjectRunContext | None,
+) -> list[str]:
+    """Project knowledge applies to every Run; a task selection adds to it."""
+
+    project_references = project_context.knowledge_references if project_context is not None else ()
+    return list(dict.fromkeys((*(requested or ()), *project_references)))
+
+
 # How long a failed title generation suppresses the next attempt for the same
 # thread. Long enough that browsing the task list cannot amplify one broken model
 # route into a call per refresh, short enough that a transient failure recovers
@@ -113,14 +130,20 @@ class AguiRunService:
         title_generator: TaskTitleGenerator | None = None,
         contexts: ContextService | None = None,
         knowledge_bindings: KnowledgeBindingResolver | None = None,
+        project_context: ProjectContextResolver | None = None,
+        project_skill_snapshots: ProjectSkillSnapshots | None = None,
+        workspaces: WorkspaceService | None = None,
     ) -> None:
         self._sessions = sessions
+        self._workspaces = workspaces
         self._run_service = runs
         self._input_artifacts = input_artifacts
         self._bindings = bindings or InMemoryAguiThreadBindingRepository()
         self._title_generator = title_generator
         self._contexts = contexts
         self._knowledge_bindings = knowledge_bindings
+        self._project_context = project_context
+        self._project_skill_snapshots = project_skill_snapshots
         self._title_tasks: set[asyncio.Task[None]] = set()
         self._title_task_keys: set[tuple[str, str, str, datetime]] = set()
         # A generator failure leaves the deterministic title in place, so nothing
@@ -129,6 +152,11 @@ class AguiRunService:
         self._title_retry_at: dict[tuple[str, str, str], float] = {}
         self._run_bindings: dict[tuple[str, str, str, str], str] = {}
         self._lock = asyncio.Lock()
+
+    def configure_project_context(self, resolver: ProjectContextResolver) -> None:
+        if self._project_context is not None:
+            raise RuntimeError("project context resolver is already configured")
+        self._project_context = resolver
 
     async def get_binding(
         self, *, tenant_id: str, user_id: str, thread_id: str
@@ -141,7 +169,9 @@ class AguiRunService:
             agent_version=session.agent_version,
             agent_owner_user_id=session.resolved_agent_owner_user_id,
             space_id=session.team_ids[0] if session.team_ids else None,
+            project_id=stored.project_id,
             previous_session_ids=stored.previous_session_ids,
+            branch_snapshot_id=stored.branch_snapshot_id,
         )
 
     async def client_coordinates_for_run(
@@ -183,9 +213,16 @@ class AguiRunService:
         user_id: str,
         limit: int = 50,
         archived: bool = False,
+        project_id: str | None = None,
+        offset: int = 0,
     ) -> list[StoredAguiThreadBinding]:
         return await self._bindings.list_for_user(
-            tenant_id, user_id, limit=limit, archived=archived
+            tenant_id,
+            user_id,
+            limit=limit,
+            archived=archived,
+            project_id=project_id,
+            offset=offset,
         )
 
     async def mark_read(
@@ -259,6 +296,54 @@ class AguiRunService:
             generated_at=datetime.now(UTC),
         )
 
+    async def change_thread_version(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        thread_id: str,
+        agent_version: str,
+        connection_mode: Literal["caller_owned", "service_owned"] = "caller_owned",
+    ) -> AguiThreadBinding:
+        """Select a version without creating a run or losing the existing history."""
+        binding = await self.get_binding(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            thread_id=thread_id,
+        )
+        return await self._resolve_binding(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            thread_id=thread_id,
+            agent_name=binding.agent_name,
+            agent_version=agent_version,
+            agent_owner_user_id=binding.agent_owner_user_id,
+            space_id=binding.space_id,
+            connection_mode=connection_mode,
+        )
+
+    async def resolve_media_thread(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        thread_id: str,
+        agent_name: str,
+        agent_version: str,
+        agent_owner_user_id: str | None = None,
+        space_id: str | None = None,
+    ) -> AguiThreadBinding:
+        """Authorize and bind a media task without queuing a language-model run."""
+        return await self._resolve_binding(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            thread_id=thread_id,
+            agent_name=agent_name,
+            agent_version=agent_version,
+            agent_owner_user_id=agent_owner_user_id,
+            space_id=space_id,
+        )
+
     async def create_run(
         self,
         *,
@@ -293,16 +378,15 @@ class AguiRunService:
         agent_owner_user_id: str | None = None,
         space_id: str | None = None,
         connection_mode: Literal["caller_owned", "service_owned"] = "caller_owned",
+        project_id: str | None = None,
     ) -> AguiRunCreation:
         prompt, input_artifact_ids = _latest_user_input(request)
         conversation_prompts = _user_prompts(request)
-        resolved = await self._input_artifacts.resolve_for_run(
-            tenant_id=tenant_id,
-            user_id=user_id,
-            input_artifact_ids=input_artifact_ids,
-        )
         model_route_override = _model_route_override(request)
         requested_knowledge = _knowledge_references_override(request)
+        if project_id is not None and self._project_context is not None:
+            if await self._project_context(tenant_id, user_id, project_id) is None:
+                raise NotFoundError(f"Project not found: {project_id}")
         creation = None
         for attempt in range(2):
             binding = await self._resolve_binding(
@@ -314,21 +398,80 @@ class AguiRunService:
                 agent_owner_user_id=agent_owner_user_id,
                 space_id=space_id,
                 connection_mode=connection_mode,
+                project_id=project_id,
             )
+            project_context = (
+                await self._project_context(tenant_id, user_id, binding.project_id)
+                if self._project_context is not None and binding.project_id
+                else None
+            )
+            session = await self._sessions.get(tenant_id, binding.session_id)
+            branch_snapshot = (
+                await load_branch_snapshot(
+                    self._input_artifacts, tenant_id, user_id, binding.branch_snapshot_id
+                )
+                if binding.branch_snapshot_id
+                else None
+            )
+            if branch_snapshot:
+                prefix = branch_snapshot.user_prompts()
+                if prefix and conversation_prompts[: len(prefix)] == prefix:
+                    conversation_prompts = conversation_prompts[len(prefix) :]
+            captured_skills = []
+            if project_context is not None and project_context.skill_references:
+                if self._project_skill_snapshots is None:
+                    raise ConflictError("Project Skill snapshot storage is unavailable")
+                captured_skills = await self._project_skill_snapshots.capture(
+                    tenant_id, project_context.skill_references, session.runtime_type
+                )
+            effective_input_ids = list(
+                dict.fromkeys(
+                    (
+                        *input_artifact_ids,
+                        *(project_context.document_ids if project_context is not None else ()),
+                    )
+                )
+            )
+            resolved = await self._input_artifacts.resolve_for_run(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                input_artifact_ids=effective_input_ids,
+            )
+            user_input_ids = list(dict.fromkeys(input_artifact_ids))
+            project_document_ids = [
+                item
+                for item in dict.fromkeys(
+                    project_context.document_ids if project_context is not None else ()
+                )
+                if item not in user_input_ids
+            ]
+            effective_knowledge = _merge_knowledge_references(requested_knowledge, project_context)
             knowledge_override = await self._resolve_knowledge_override(
                 tenant_id=tenant_id,
                 user_id=user_id,
                 session_id=binding.session_id,
-                references=requested_knowledge,
+                references=effective_knowledge or None,
             )
-            if requested_knowledge:
-                session = await self._sessions.get(tenant_id, binding.session_id)
-                if session.runtime_type != "claude-agent-sdk":
+            if project_context is not None and knowledge_override:
+                merged = {
+                    (item.get("knowledgeBaseReference"), item.get("sourceReference")): item
+                    for item in (*session.knowledge_snapshot_bindings, *knowledge_override)
+                }
+                knowledge_override = list(merged.values())
+            if effective_knowledge:
+                if session.runtime_type not in {"claude-agent-sdk", "deepagents"}:
                     raise ConflictError("当前运行时不支持知识问答，请切换支持知识检索的智能体")
             run_input: dict[str, object] = {
                 "prompt": prompt,
                 "conversation_prompts": conversation_prompts,
-                "input_artifact_ids": [item.input_artifact_id for item in resolved],
+                "input_artifact_ids": user_input_ids,
+                **(
+                    {"project_mcp_references": list(project_context.mcp_references)}
+                    if project_context is not None and project_context.mcp_references
+                    else {}
+                ),
+                **({"project_skill_snapshots": captured_skills} if captured_skills else {}),
+                **({"project_document_ids": project_document_ids} if project_document_ids else {}),
                 **(
                     {"required_model_capabilities": ["vision"]}
                     if any(item.media_type.startswith("image/") for item in resolved)
@@ -342,7 +485,57 @@ class AguiRunService:
                 **(
                     {"knowledge_binding_override": knowledge_override} if knowledge_override else {}
                 ),
+                **(
+                    {"project_context": project_context.text}
+                    if project_context is not None and project_context.text
+                    else {}
+                ),
+                **(
+                    {"project_skill_references": list(project_context.skill_references)}
+                    if project_context is not None and project_context.skill_references
+                    else {}
+                ),
+                **(
+                    {"project_knowledge_references": list(project_context.knowledge_references)}
+                    if project_context is not None and project_context.knowledge_references
+                    else {}
+                ),
+                **(
+                    {
+                        "business_project_id": project_context.project_id,
+                        "context_manifest": {
+                            "schemaVersion": 1,
+                            "agent": {
+                                "name": session.agent_name,
+                                "version": session.agent_version,
+                                "ownerUserId": session.resolved_agent_owner_user_id,
+                                "runtime": session.runtime_type,
+                            },
+                            "project": project_context.resource_manifest,
+                            "skills": [
+                                {key: skill[key] for key in ("name", "source", "content_hash")}
+                                for skill in captured_skills
+                            ],
+                            "knowledge": knowledge_override
+                            or list(session.knowledge_snapshot_bindings),
+                        },
+                        "project_context_meta": {
+                            "projectId": project_context.project_id,
+                            "memories": project_context.memory_count,
+                            "documents": project_context.document_count,
+                            "skills": project_context.skill_count,
+                            "knowledge": project_context.knowledge_count,
+                            "links": project_context.link_count,
+                        },
+                    }
+                    if project_context is not None
+                    else {}
+                ),
             }
+            if branch_snapshot and session.resolved_runtime_thread_id is None:
+                run_input["conversation_branch_context"] = branch_snapshot.context_projection()
+                if model_route_override is None and branch_snapshot.model_route_override:
+                    run_input["model_route_override"] = branch_snapshot.model_route_override
             creation = await self._run_service.create_with_result(
                 tenant_id,
                 binding.session_id,
@@ -542,6 +735,55 @@ class AguiRunService:
             return
         self._title_retry_at.pop(retry_key, None)
 
+    async def fork_thread(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        thread_id: str,
+        target_thread_id: str,
+        snapshot: Callable[[StoredAguiThreadBinding], Awaitable[str]],
+    ) -> StoredAguiThreadBinding:
+        """Freeze history and workspace before creating a fresh runtime identity."""
+        async with self._lock:
+            source = await self._bindings.get_by_thread(tenant_id, user_id, thread_id)
+            session = await self._sessions.get(tenant_id, source.session_id)
+            if session.user_id != user_id:
+                raise NotFoundError(f"thread not found: {thread_id}")
+            await self._require_no_active_runs(
+                tenant_id, list(source.session_ids), operation="branch conversation"
+            )
+            snapshot_id = await snapshot(source)
+            target = await self._sessions.clone_for_context_rebase(
+                tenant_id,
+                user_id,
+                source.session_id,
+                session_id=f"session_branch_{target_thread_id}",
+            )
+            if self._workspaces is not None:
+                await self._workspaces.fork_latest(
+                    tenant_id=tenant_id,
+                    source_session_id=source.session_id,
+                    target_session_id=target.session_id,
+                )
+            now = datetime.now(UTC)
+            binding = StoredAguiThreadBinding(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                thread_id=target_thread_id,
+                session_id=target.session_id,
+                project_id=source.project_id,
+                title=f"{(source.title or '新聊天')[:194]} · 分支",
+                title_source="user",
+                title_updated_at=now,
+                branch_snapshot_id=snapshot_id,
+                branched_from_thread_id=thread_id,
+                created_at=now,
+                updated_at=now,
+            )
+            await self._bindings.add(binding)
+            return binding
+
     async def rebase_context(
         self,
         *,
@@ -739,10 +981,15 @@ class AguiRunService:
     ) -> StoredAguiThreadBinding:
         """Persist an empty task and its project without starting a model run."""
         await self._resolve_binding(
-            tenant_id=tenant_id, user_id=user_id, thread_id=thread_id,
-            agent_name=agent_name, agent_version=agent_version,
-            agent_owner_user_id=agent_owner_user_id, space_id=space_id,
-            connection_mode=connection_mode, project_id=project_id,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            thread_id=thread_id,
+            agent_name=agent_name,
+            agent_version=agent_version,
+            agent_owner_user_id=agent_owner_user_id,
+            space_id=space_id,
+            connection_mode=connection_mode,
+            project_id=project_id,
         )
         return await self._bindings.get_by_thread(tenant_id, user_id, thread_id)
 
@@ -766,7 +1013,12 @@ class AguiRunService:
                 stored = None
             if stored is not None:
                 if project_id is not None:
-                    raise ConflictError("Task already exists")
+                    if stored.project_id not in (None, project_id):
+                        raise ConflictError("Task already belongs to a different project")
+                    if stored.project_id is None:
+                        raise ConflictError(
+                            "Move an existing task through the project assignment endpoint"
+                        )
                 session = await self._sessions.get(tenant_id, stored.session_id)
                 existing = AguiThreadBinding(
                     session_id=session.session_id,
@@ -774,6 +1026,8 @@ class AguiRunService:
                     agent_version=session.agent_version,
                     agent_owner_user_id=session.resolved_agent_owner_user_id,
                     space_id=session.team_ids[0] if session.team_ids else None,
+                    project_id=stored.project_id,
+                    branch_snapshot_id=stored.branch_snapshot_id,
                 )
                 resolved_owner = agent_owner_user_id or user_id
                 same_agent = (
@@ -819,6 +1073,8 @@ class AguiRunService:
                         agent_version=agent_version,
                         agent_owner_user_id=next_session.resolved_agent_owner_user_id,
                         space_id=space_id,
+                        project_id=stored.project_id,
+                        branch_snapshot_id=stored.branch_snapshot_id,
                     )
                 if stored.archived_at is not None:
                     await self._bindings.set_archived(
@@ -843,6 +1099,7 @@ class AguiRunService:
                 agent_version=agent_version,
                 agent_owner_user_id=session.resolved_agent_owner_user_id,
                 space_id=space_id,
+                project_id=project_id,
             )
             timestamp = datetime.now(UTC)
             await self._bindings.add(

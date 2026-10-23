@@ -445,3 +445,34 @@ describe("run view model knowledge citations", () => {
     expect(tool?.citations?.[0].chunkId).toBe("ok");
   });
 });
+
+describe("background subagent lifecycle", () => {
+  it("keeps a launched background task running and preserves its role and assignment", async () => {
+    const { reduceRunViewModel } = await moduleUnderTest();
+    const events = [
+      { id: "call", event_type: "tool.request", kind: "subagent" as const, sequence: 1,
+        metadata: { name: "Agent", tool_call_id: "call", arguments: { subagent_type: "researcher", description: "比较两份材料" } } },
+      { id: "start", event_type: "subagent.started", kind: "subagent" as const, sequence: 2,
+        metadata: { task_id: "task", parent_tool_use_id: "call", alias: "researcher" } },
+      { id: "receipt", event_type: "tool.result", kind: "tool" as const, status: "succeeded", sequence: 3,
+        metadata: { tool_call_id: "call", result_preview: "Agent launched successfully" } },
+    ];
+    const running = reduceRunViewModel(undefined, activity("running", events));
+    expect(running.tasks).toHaveLength(1);
+    expect(running.tasks[0]).toMatchObject({ status: "running", alias: "researcher", description: "比较两份材料" });
+    const done = reduceRunViewModel(running, activity("running", [
+      { id: "done", event_type: "subagent.completed", kind: "subagent", status: "succeeded", sequence: 4,
+        summary: "两份材料存在三处差异", metadata: { task_id: "task", parent_tool_use_id: "call", duration_ms: 4200 } },
+    ]));
+    expect(done.tasks[0]).toMatchObject({ status: "completed", alias: "researcher", description: "比较两份材料", result: "两份材料存在三处差异", durationMs: 4200 });
+  });
+
+  it("does not invent child success when the overall run stops", async () => {
+    const { reduceRunViewModel } = await moduleUnderTest();
+    const view = reduceRunViewModel(undefined, activity("cancelled", [
+      { id: "start", event_type: "subagent.started", kind: "subagent", sequence: 1, metadata: { task_id: "t", alias: "analyst" } },
+      { id: "stop", event_type: "run.cancelled", status: "cancelled", sequence: 2 },
+    ]));
+    expect(view.tasks[0]).toMatchObject({ status: "failed", errorCode: "cancelled" });
+  });
+});

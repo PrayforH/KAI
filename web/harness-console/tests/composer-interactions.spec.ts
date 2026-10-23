@@ -39,6 +39,6 @@ describe("composer semantics and queue boundaries", () => {
     expect(restorePromptQueue('[{"id":"1","text":"a","attachments":[{}]}]')).toEqual([]);
   });
   it("does not show a sixty-second remainder", () => {
-    expect(durationLabel(119900)).toBe("1m 59s");
+    expect(durationLabel(119900)).toBe("1分59秒");
   });
 });
