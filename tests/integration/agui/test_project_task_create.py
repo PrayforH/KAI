@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -109,14 +110,14 @@ async def test_project_tasks_filter_before_limit_and_keep_owner_scope():
     app = create_memory_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         await client.post("/v1/agents", json={"path": str(MANIFEST)}, headers=HEADERS)
-        projects = []
+        projects: list[dict[str, Any]] = []
         for name in ("Quarterly review", "Unrelated work"):
             projects.append(
                 (
                     await client.post("/v1/studio/projects", json={"name": name}, headers=HEADERS)
                 ).json()
             )
-        expected = []
+        expected: list[str] = []
         for index in range(58):
             project = projects[0 if index < 3 else 1]
             task = await client.post(
@@ -155,7 +156,7 @@ async def test_project_results_include_archived_sources_without_crossing_project
             (await client.post("/v1/studio/projects", json={"name": name}, headers=HEADERS)).json()
             for name in ("Current project", "Other project")
         ]
-        expected = []
+        expected: list[str] = []
         for index, project in enumerate((projects[0], projects[0], projects[1])):
             task = (
                 await client.post(

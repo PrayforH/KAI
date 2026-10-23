@@ -1,0 +1,20 @@
+[
+  {
+    "status": 200,
+    "title": "sapling preview",
+    "stylesheets": 5,
+    "cover": true,
+    "shadow": true,
+    "host": "174",
+    "container": "kai/sapling-preview-web:composer-cover-20261016-r1 healthy"
+  },
+  {
+    "status": 200,
+    "title": "sapling preview",
+    "stylesheets": 5,
+    "cover": true,
+    "shadow": true,
+    "host": "79",
+    "container": "kai/sapling-preview-web:composer-cover-20261016-r1 healthy"
+  }
+]

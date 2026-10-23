@@ -10,7 +10,6 @@ export function ProjectOverview({ space }: { space: ProjectSpaceState }) {
     recent,
     taskError,
     agentLabels,
-    chooseTab,
   } = space;
   if (!project) return null;
   return (
@@ -21,12 +20,6 @@ export function ProjectOverview({ space }: { space: ProjectSpaceState }) {
       >
         <div className={styles.sectionHead}>
           <h2 id="recent-project-tasks">最近</h2>
-          <button
-            className={styles.textLink}
-            onClick={() => chooseTab("tasks")}
-          >
-            查看全部任务 ›
-          </button>
         </div>
         {taskError && (
           <p role="alert" className={styles.error}>
@@ -38,7 +31,6 @@ export function ProjectOverview({ space }: { space: ProjectSpaceState }) {
         ) : (
           projectEmpty(
             "新建一个任务以开始",
-            "在下方输入需求，任务将带上本项目的资料与指令。",
           )
         )}
       </section>

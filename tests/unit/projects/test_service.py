@@ -162,8 +162,7 @@ async def test_delete_detaches_the_projects_tasks_first() -> None:
 
 
 def build_resource_service():
-    from types import SimpleNamespace
-
+    from harness.core.models import ArtifactStatus, InputArtifact
     from harness.projects.repositories import InMemoryProjectResourceRepository
 
     resources = InMemoryProjectResourceRepository()
@@ -177,8 +176,11 @@ def build_resource_service():
 
     async def resolver(tenant_id: str, user_id: str, artifact_id: str):
         seen.append((tenant_id, user_id, artifact_id))
-        return SimpleNamespace(
-            name="brief.md", media_type="text/markdown", size_bytes=12
+        return InputArtifact(
+            input_artifact_id=artifact_id, tenant_id=tenant_id, user_id=user_id,
+            name="brief.md", media_type="text/markdown", size_bytes=12,
+            status=ArtifactStatus.READY, object_key="test-brief",
+            created_at=datetime(2026, 10, 17, tzinfo=UTC),
         )
 
     service.configure_document_resolver(resolver)

@@ -1,0 +1,23 @@
+const {chromium}=require('/Users/xiaokai/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const assert=require('node:assert/strict');const [base,stage]=process.argv.slice(2);
+(async()=>{const browser=await chromium.launch({headless:true,executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',args:['--no-proxy-server']});const page=await browser.newPage({ignoreHTTPSErrors:true,viewport:{width:1440,height:1100}});const errors=[],states=[];page.on('pageerror',e=>errors.push(e.message));const now=new Date().toISOString();const project={projectId:'qa-project',name:'金融办',tenantId:'local',userId:'qa',createdAt:now,updatedAt:now};const tasks=Array.from({length:23},(_,i)=>({thread_id:`qa-task-${i}`,session_id:`qa-task-${i}`,title:`${i<15?'项目':'独立'}任务 ${i+1} 行政战略规划及企业舆情报告`,status:'succeeded',agent_name:'lead',agent_version:'1',agent_owner_user_id:'qa',created_at:now,updated_at:new Date(Date.now()-i*3600000).toISOString(),...(i<15?{project_id:project.projectId}:{})}));
+await page.route('**/api/**',async route=>{const p=new URL(route.request().url()).pathname;let data=[];
+if(p==='/api/auth/session')data={user:{user_id:'qa',display_name:'展开按钮验收'},membership:{role:'admin',tenant_id:'local'},password_enabled:false};
+else if(p==='/api/studio/projects')data=[project];
+else if(p==='/api/agui/threads')data=new URL(route.request().url()).searchParams.get('archived')==='true'?[]:tasks;
+else if(p==='/api/harness/runtime-config')data={name:'lead',version:'1'};
+else if(p==='/api/harness/agents')data=[{name:'lead',version:'1',display_name:'通用助手',owner_user_id:'qa',scope:'personal',can_chat:true,platform_default:true,model_route:'chat'}];
+else if(p==='/api/studio/capabilities')data={mcpServers:[],modelRoutes:[{routeId:'chat',label:'模型',provider:'anthropic',models:['model'],enabled:true,capabilities:['chat']}],skills:[],tools:[]};
+else if(p.includes('/skills'))data={packages:[]};
+else if(p.endsWith('/history'))data={status:'succeeded',has_more:false,total:0,messages:[]};
+else if(p.includes('dictation')&&p.endsWith('capabilities'))data={enabled:true,maxSessionSeconds:120};
+await route.fulfill({json:data});});
+try{await page.goto(base,{waitUntil:'domcontentloaded'});await page.locator('.task-list-row').first().waitFor({timeout:30000});const open=page.getByRole('button',{name:'展开项目 金融办',exact:true});if(await open.count())await open.click();
+for(const mode of ['light','dark']){await page.evaluate(m=>{document.documentElement.dataset.colorMode=m;document.documentElement.style.colorScheme=m},mode);
+for(const [selector,total,label]of [['.task-user-project .task-project-items',15,'project'],['.task-default-group .task-project-items',8,'loose']]){const list=page.locator(selector),toggle=list.locator('.tasks-show-more');
+async function verify(count,expanded){assert.equal(await list.locator('.task-list-row').count(),count);assert.equal(await toggle.getAttribute('aria-expanded'),String(expanded));assert.equal(await toggle.innerText(),expanded?'收起显示':`展开显示（${total-5}）`);await toggle.scrollIntoViewIfNeeded();const m=await list.evaluate(el=>{const rows=[...el.querySelectorAll(':scope > .task-list-row')],button=el.querySelector(':scope > .tasks-show-more');return{rows:rows.map(r=>{const b=r.getBoundingClientRect();return{top:b.top,bottom:b.bottom}}),toggleTop:button.getBoundingClientRect().top,lastChild:el.lastElementChild===button,gridArea:getComputedStyle(button).gridArea};});assert(m.lastChild);assert(m.rows.every(r=>r.bottom<=m.toggleTop+.1),JSON.stringify(m));assert.equal(m.gridArea,'auto');states.push({mode,label,expanded,count,buttonBelowEveryRow:true,gridArea:m.gridArea});}
+await verify(5,false);await toggle.click();await verify(total,true);await toggle.click();await verify(5,false);
+const first=list.locator('.task-list-row').first();await first.hover();await page.waitForTimeout(150);const gap=await first.evaluate(e=>e.querySelector('.task-row-actions').getBoundingClientRect().left-e.querySelector('.task-list-content').getBoundingClientRect().right);assert(gap>=4);}
+await page.locator('.task-user-project').scrollIntoViewIfNeeded();await page.screenshot({path:`/tmp/sidebar-more-${stage}-${mode}.png`});}
+assert.deepEqual(errors,[]);console.log(JSON.stringify({base,stage,states,actionSpacingPreserved:true,pageErrors:errors,fixture:'All API responses mocked; no server records changed'}));
+}catch(e){await page.screenshot({path:`/tmp/sidebar-more-${stage}-error.png`}).catch(()=>{});console.error(String(e).split('Call log:')[0]);process.exitCode=1;}finally{await browser.close();}})().catch(e=>{console.error(String(e).split('Call log:')[0]);process.exitCode=1});

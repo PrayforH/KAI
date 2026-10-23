@@ -447,11 +447,13 @@ async def test_published_web_tools_respect_runtime_web_revocation(
 
 @pytest.mark.asyncio
 async def test_project_mcp_additions_keep_agent_precedence_and_caller_credentials():
-    calls = []
+    calls: list[tuple[str, str, str]] = []
 
     class Credentials:
-        async def resolve(self, reference, identity, required_keys):
-            calls.append((reference, identity.connection_mode, identity.user_id))
+        async def resolve(
+            self, server_reference: str, identity: ExecutionIdentity, required_keys: frozenset[str],
+        ) -> CredentialValues:
+            calls.append((server_reference, identity.connection_mode, identity.user_id))
             return {"token": SecretStr("project-secret")}
 
     resolver = ToolResolver(

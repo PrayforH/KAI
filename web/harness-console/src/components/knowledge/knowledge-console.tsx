@@ -1,4 +1,5 @@
 "use client";
+import { CodexTaskIcon } from "../codex-task-icon";
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -283,7 +284,7 @@ export function KnowledgeConsole() {
           <p className={styles.empty}>加载中…</p>
         ) : visible.length === 0 ? (
           <p className={styles.empty}>
-            还没有知识库。点击「新建知识库」创建第一个 RAG / Wiki / 混合知识库。
+            暂无知识库
           </p>
         ) : (
           <div className={styles.grid}>
@@ -316,11 +317,7 @@ export function KnowledgeConsole() {
                     setMenuFor((current) => (current === base.reference ? null : base.reference))
                   }
                 >
-                  <svg viewBox="0 0 20 20" aria-hidden="true">
-                    <circle cx="4" cy="10" r="1.4" />
-                    <circle cx="10" cy="10" r="1.4" />
-                    <circle cx="16" cy="10" r="1.4" />
-                  </svg>
+                  <CodexTaskIcon name="more" />
                 </button>
                 {menuFor === base.reference ? (
                   <div className={styles.cardMenu} data-kb-menu role="menu">

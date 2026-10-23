@@ -273,8 +273,8 @@ describe("full-page agent workbench", () => {
     expect(taskSidebar).not.toContain("已归档");
     expect(taskSidebar).not.toContain('aria-label="搜索最近任务"');
     expect(taskSidebar).toContain("(expanded ? projectTasks : projectTasks.slice(0, 5))");
-    expect(taskSidebar).toContain('className="task-list-archive"');
-    expect(taskSidebar).toContain("setTaskArchived");
+    expect(taskSidebar).toContain('className="task-row-actions"');
+    expect(taskSidebar).toContain("<TaskHeaderActions");
     expect(taskSidebar).toContain("loadTasks(false)");
     expect(taskSidebar).not.toContain("恢复并打开任务");
     expect(taskSidebar).toContain('className="task-sidebar-brand"');

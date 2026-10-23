@@ -9,6 +9,7 @@ import {
 import { TextMessagePartProvider, useMessagePartText } from "@assistant-ui/react";
 import remend from "remend";
 import remarkGfm from "remark-gfm";
+import { remarkImageGroups } from "../lib/remark-image-groups";
 import { Children, memo, useEffect, useMemo, useRef, useState, type ComponentPropsWithoutRef, type ReactElement, type ReactNode } from "react";
 import { writeTextToClipboard } from "../lib/clipboard";
 import { CodexResponseIcon } from "./codex-response-icon";
@@ -244,7 +245,7 @@ function MarkdownTextImpl({ stabilizeFormatting = false }: { stabilizeFormatting
     <TextMessagePartProvider text={renderedText} isRunning={running}>
       <MarkdownTextPrimitive
         className="aui-md"
-        remarkPlugins={[remarkGfm, remarkWikiLinks]}
+        remarkPlugins={[remarkGfm, remarkWikiLinks, remarkImageGroups]}
         smooth={false}
         defer
         // react-markdown blanks unknown protocols; wiki: must survive so the

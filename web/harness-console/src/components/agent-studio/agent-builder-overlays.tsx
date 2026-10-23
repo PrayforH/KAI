@@ -731,7 +731,6 @@ export function AgentBuilderAssistant({
               <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 4.5 7 7m0-7-7 7" /></svg>
             </button>
           </div>
-          <p>模型根据需求推荐，选择后可查看完整代码差异。</p>
           {availableRecommendedSkills.map(skill => <label key={skill.packageId} className={styles.skillSuggestion}>
             <input type="checkbox" checked={selectedSkills.includes(skill.packageId)} disabled={inputBusy || Boolean(proposal)} onChange={event => setSelectedSkills(current => event.target.checked ? [...current, skill.packageId] : current.filter(id => id !== skill.packageId))}/>
             <span><strong>{skill.label}</strong><small>{skill.reason}</small>{skill.risk === "review" && <small>包含脚本，应用前请审阅</small>}</span>

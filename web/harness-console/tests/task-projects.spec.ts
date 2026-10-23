@@ -42,14 +42,14 @@ describe("project-grouped task list", () => {
   it("opens the organizing home while retaining project task creation", () => {
     expect(sidebar).toContain('aria-label={`项目操作 ${project.name}`}');
     expect(sidebar).toContain("新建任务");
-    expect(sidebar).toContain("打开项目");
+    expect(sidebar).toContain("查看项目");
     expect(sidebar).toContain("置顶");
     expect(sidebar).toContain("移除项目");
-    expect(sidebar).not.toContain("<span>查看项目</span>");
+    expect(sidebar).toContain("<span>查看项目</span>");
     expect(sidebar).not.toContain("编辑项目");
     expect(sidebar).toContain("useConfirmationDialog");
-    expect(sidebar).toContain("查看 ${project.name} 的文件");
-    expect(sidebar).toContain('projectHref(project.projectId, "results")');
+    expect(sidebar).not.toContain("查看 ${project.name} 的文件");
+    expect(sidebar).not.toContain('projectHref(project.projectId, "results")');
     expect(sidebar).not.toContain("<ProjectFilesDialog");
     expect(projectRoute).toContain("<ProjectHome");
     expect(projectRoute).not.toContain('redirect("/")');
@@ -129,7 +129,7 @@ describe("project and task sections share one column", () => {
   });
 
   it("uses compact project padding and a small indent for child tasks", () => {
-    expect(css).toMatch(/\.task-project-heading\s*\{[^}]*padding:\s*4px 90px 4px 8px;/);
+    expect(css).toMatch(/\.task-project-heading\s*\{[^}]*padding:\s*4px 62px 4px 8px;/);
     expect(css).toMatch(/\.task-list-item,\s*[\s\S]*?\.task-list-item\.is-active\s*\{[^}]*padding:\s*4px 6px 4px 34px;/);
   });
 });

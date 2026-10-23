@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime
 from urllib.parse import urlsplit
 
 from harness.core.errors import ConflictError, NotFoundError
+from harness.core.models import InputArtifact
 from harness.projects.models import (
     MAX_PROJECT_CONNECTORS,
     MAX_PROJECT_DOCUMENTS,
@@ -63,7 +64,16 @@ def _normalize_link_url(url: str) -> str:
     return value
 
 
-def project_knowledge_resolver(resolve_bindings):
+DocumentResolver = Callable[[str, str, str], Awaitable[InputArtifact]]
+KnowledgeResolver = Callable[[str, str, tuple[str, ...]], Awaitable[None]]
+KnowledgeBindingResolver = Callable[
+    [str, str, Sequence[str], tuple[str, ...]], Awaitable[Sequence[object]]
+]
+
+
+def project_knowledge_resolver(
+    resolve_bindings: KnowledgeBindingResolver,
+) -> KnowledgeResolver:
     """Adapt the knowledge ACL resolver to the project binding signature."""
 
     async def validate(tenant_id: str, user_id: str, references: tuple[str, ...]) -> None:
@@ -82,8 +92,8 @@ class ProjectService:
         task_project_writer=None,
         task_project_clearer=None,
         resources: ProjectResourceRepository | None = None,
-        document_resolver=None,
-        knowledge_resolver=None,
+        document_resolver: DocumentResolver | None = None,
+        knowledge_resolver: KnowledgeResolver | None = None,
         connector_catalog: ProjectConnectorCatalog | None = None,
     ) -> None:
         self._repository = repository
@@ -143,10 +153,10 @@ class ProjectService:
             tenant_id, project_id, result_id, self._clock() if finalized else None
         )
 
-    def configure_document_resolver(self, resolver) -> None:
+    def configure_document_resolver(self, resolver: DocumentResolver) -> None:
         self._document_resolver = resolver
 
-    def configure_knowledge_resolver(self, resolver) -> None:
+    def configure_knowledge_resolver(self, resolver: KnowledgeResolver) -> None:
         self._knowledge_resolver = resolver
 
     async def _normalize_knowledge_references(

@@ -246,7 +246,7 @@ if __name__ == "__main__":
 class PaginatedInputTests(unittest.TestCase):
     def test_large_option_lists_still_request_input(self):
         for count in (9, 32, 128):
-            form = {
+            form: dict[str, Any] = {
                 "version": 1,
                 "title": "候选确认",
                 "questions": [

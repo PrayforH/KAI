@@ -424,9 +424,11 @@ export function TaskSidebar({
               {statusLabel}
             </span>
           )}
-          <ScrollingTaskTitle title={task.title} />
-          {needsInput && <span className="task-input-badge">需要输入</span>}
-          {hasError && <span className="task-error-label">{statusLabel}</span>}
+          <span className="task-list-content">
+            <ScrollingTaskTitle title={task.title} />
+            {needsInput && <span className="task-input-badge">需要输入</span>}
+            {hasError && <span className="task-error-label">{statusLabel}</span>}
+          </span>
           <span className="task-list-meta">
             <time dateTime={task.updated_at}>{formatTaskAge(task.updated_at)}</time>
           </span>
@@ -679,7 +681,7 @@ export function TaskSidebar({
                   {!collapsed && (
                     <div className="task-project-items">
                       {projectTasks.length === 0 && (
-                        <p className="task-project-empty">还没有任务，点击右侧 ＋ 新建</p>
+                        <p className="task-project-empty">暂无任务</p>
                       )}
                       {(expanded ? projectTasks : projectTasks.slice(0, 5)).map(renderTaskRow)}
                       {projectTasks.length > 5 && (

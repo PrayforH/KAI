@@ -653,7 +653,7 @@ describe("Agent Studio management page", () => {
 
   it("keeps sandbox mandatory and exposes platform web tools with MCP retained", () => {
     expect(workbench).toContain("执行与权限");
-    expect(workbench).toContain("配置智能体运行时、执行方式和工具权限");
+    expect(workbench).not.toContain("配置智能体运行时、执行方式和工具权限");
     expect(workbench).toContain('<details className={styles.advancedRuntimeSettings}>');
     expect(workbench).toContain("高级运行设置");
     expect(workbench).toContain("执行档位、权限、资源上限、会话恢复与治理");
@@ -736,7 +736,7 @@ describe("Agent Studio management page", () => {
     expect(workbench).toContain("等待管理员发布");
     expect(workbench).not.toContain('aria-label="发布准备"');
     expect(workbench).toContain('aria-label="发布检查结果"');
-    expect(workbench).toContain("检查结果不会占用编辑区");
+    expect(workbench).not.toContain("检查结果不会占用编辑区");
     expect(workbench).toContain('aria-label="关闭发布检查结果"');
     expect(workbench).toContain("setReleaseFeedbackOpen(false)");
     expect(workbench).toContain("validationIssueSection");

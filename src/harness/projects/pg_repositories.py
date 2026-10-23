@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any, cast
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import CursorResult, and_, func, select
 from sqlalchemy import delete as sql_delete
 from sqlalchemy.exc import IntegrityError
 
@@ -111,7 +112,7 @@ class PostgresProjectRepository:
             ProjectRow.tenant_id == tenant_id,
         )
         async with self._sessions() as session:
-            result = await session.execute(statement)
+            result = cast(CursorResult[Any], await session.execute(statement))
             if not result.rowcount:
                 await session.rollback()
                 raise NotFoundError(f"Project not found: {project_id}")
@@ -231,7 +232,7 @@ class PostgresProjectResourceRepository:
             ProjectMemoryRow.memory_id == memory_id,
         )
         async with self._sessions() as session:
-            result = await session.execute(statement)
+            result = cast(CursorResult[Any], await session.execute(statement))
             if not result.rowcount:
                 await session.rollback()
                 raise NotFoundError(f"project memory not found: {memory_id}")
@@ -293,7 +294,7 @@ class PostgresProjectResourceRepository:
             ProjectDocumentRow.input_artifact_id == input_artifact_id,
         )
         async with self._sessions() as session:
-            result = await session.execute(statement)
+            result = cast(CursorResult[Any], await session.execute(statement))
             if not result.rowcount:
                 await session.rollback()
                 raise NotFoundError(
@@ -448,7 +449,7 @@ class PostgresProjectResourceRepository:
             ProjectLinkRow.link_id == link_id,
         )
         async with self._sessions() as session:
-            result = await session.execute(statement)
+            result = cast(CursorResult[Any], await session.execute(statement))
             if not result.rowcount:
                 await session.rollback()
                 raise NotFoundError(f"project link not found: {link_id}")

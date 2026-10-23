@@ -76,7 +76,9 @@ async def test_builder_generation_edit_and_repair_use_selected_model_without_cha
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("runtime", ["claude-agent-sdk", "deepagents"])
-async def test_preview_model_switches_on_followups_and_reset_does_not_inherit_previous(runtime):
+async def test_preview_model_switches_on_followups_and_reset_does_not_inherit_previous(
+    runtime: str,
+):
     application, container = app_and_container(auto_execute=False)
     models = AsyncMock()
     models.resolve_runtime.return_value = SimpleNamespace(

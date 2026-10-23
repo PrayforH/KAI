@@ -403,7 +403,7 @@ it("keeps connector selection open if the read-back does not confirm the binding
   expect(host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(true);
 });
 
-it("hides each card's onboarding text only when that card has content", async () => {
+it("keeps resource previews without repeated onboarding text", async () => {
   mock.resources.mockResolvedValue({
     project: { ...project, skillReferences: ["research"], knowledgeReferences: ["kb-1"] },
     documents: [{ inputArtifactId: "file-1", name: "说明.pdf" }], links: [], memories: [],
@@ -415,7 +415,7 @@ it("hides each card's onboarding text only when that card has content", async ()
   expect(host.textContent).not.toContain("添加文件和网页，供本项目的所有任务使用。");
   expect(host.textContent).not.toContain("为项目任务补充可复用的工作流程。");
   expect(host.textContent).not.toContain("关联已有知识库，供任务检索。");
-  expect(host.textContent).toContain("从任务中保存交付物，在这里集中查看。");
+  expect(host.textContent).toContain("暂无成果");
 });
 
 it("keeps project launch out of IME confirmation and hands the draft to the main conversation", async () => {

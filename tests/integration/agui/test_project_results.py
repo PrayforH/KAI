@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -49,7 +50,7 @@ async def test_saved_results_are_explicit_versioned_owned_snapshots():
         run_id = response.headers["x-harness-run-id"]
         url = f"/v1/studio/projects/{project_id}/results"
         assert (await client.get(url, headers=HEADERS)).json() == []
-        saved = []
+        saved: list[dict[str, Any]] = []
         for content in (b"first version", b"second version"):
             output = (
                 await client.post(

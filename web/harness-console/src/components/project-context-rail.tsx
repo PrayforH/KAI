@@ -42,14 +42,13 @@ export function ProjectContextRail({ space }: { space: ProjectSpaceState }) {
   if (!project || !resources) return null;
   return (
     <aside data-project-resources className={styles.contextRail} aria-label="项目配置与成果">
-      <section className={styles.contextCard}>
+      <section className={styles.contextCard} data-card="instructions">
         <button
           className={styles.cardHeading}
           onClick={() => setDialog("instructions")}
         >
           指令 <ProjectControlIcon name="right" />
         </button>
-        {!project.instructions?.trim() && <p className={styles.muted}>指导助手如何在此项目的所有任务中响应。</p>}
         {project.instructions?.trim() ? (
           <p className={styles.instructionPreview}>{project.instructions}</p>
         ) : null}
@@ -84,14 +83,13 @@ export function ProjectContextRail({ space }: { space: ProjectSpaceState }) {
           </>
         )}
       </section>
-      <section className={styles.contextCard}>
+      <section className={styles.contextCard} data-card="resources">
         <button
           className={styles.cardHeading}
           onClick={() => setDialog("files")}
         >
           文件和资源 <ProjectControlIcon name="right" />
         </button>
-        {!resources.documents.length && !resources.links.length && <p className={styles.muted}>添加文件和网页，供本项目的所有任务使用。</p>}
         {!!(resources.documents.length + resources.links.length) && (
           <ul className={styles.compactList}>
             {resources.documents.slice(0, 2).map((item) => (
@@ -124,7 +122,6 @@ export function ProjectContextRail({ space }: { space: ProjectSpaceState }) {
         >
           技能 <ProjectControlIcon name="right" />
         </button>
-        {!project.skillReferences?.length && <p className={styles.muted}>为项目任务补充可复用的工作流程。</p>}
         {!!project.skillReferences?.length && (
           <ul className={styles.compactList}>
             {project.skillReferences.slice(0, 2).map((ref) => (
@@ -144,7 +141,7 @@ export function ProjectContextRail({ space }: { space: ProjectSpaceState }) {
           </button>
         </ActionMenuPopover>}
       </section>
-      <section className={styles.contextCard}>
+      <section className={styles.contextCard} data-card="knowledge">
         <div className={styles.sectionHead}>
           <h2>知识库</h2>
           <button
@@ -165,7 +162,7 @@ export function ProjectContextRail({ space }: { space: ProjectSpaceState }) {
             ))}
           </ul>
         ) : (
-          <p className={styles.muted}>关联已有知识库，供任务检索。</p>
+          <p className={styles.muted}>暂无知识库</p>
         )}
         {(project.knowledgeReferences?.length ?? 0) > 3 && (
           <button
@@ -176,7 +173,7 @@ export function ProjectContextRail({ space }: { space: ProjectSpaceState }) {
           </button>
         )}
       </section>
-      <section className={styles.contextCard}>
+      <section className={styles.contextCard} data-card="results">
         <div className={styles.sectionHead}>
           <h2>
             项目成果{" "}
@@ -211,7 +208,7 @@ export function ProjectContextRail({ space }: { space: ProjectSpaceState }) {
             ))}
           </ul>
         ) : (
-          <p className={styles.muted}>从任务中保存交付物，在这里集中查看。</p>
+          <p className={styles.muted}>暂无成果</p>
         )}
       </section>
     </aside>

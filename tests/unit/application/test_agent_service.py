@@ -9,7 +9,7 @@ from harness.agent_package import AgentPackageCheckError, pack_agent_package
 from harness.application.agents import AgentService
 from harness.application.sessions import SessionService
 from harness.core.errors import ConflictError, NotFoundError
-from harness.core.manifest import load_manifest
+from harness.core.manifest import AgentManifestSnapshot, load_manifest
 from harness.core.models import AgentVersion, AgentVersionStatus
 
 FIXTURE = Path("tests/fixtures/agents/echo-agent/agent.yaml")
@@ -396,17 +396,20 @@ async def test_platform_helpers_publish_before_lead_with_stable_identities() -> 
     from unittest.mock import AsyncMock
 
     identities = AsyncMock()
-    identities.get_or_create_personal_agent_id.side_effect = (
-        lambda tenant, owner, name: name + "-id"
-    )
+    def agent_id(tenant: str, owner: str, name: str) -> str:
+        return name + "-id"
+
+    identities.get_or_create_personal_agent_id.side_effect = agent_id
     registry = InMemoryAgentRegistry()
     service = AgentService(
         registry, clock=lambda: NOW, environment="production",
         default_manifest_path="agents/lead-agent/agent.yaml", agent_ids=identities,
     )
-    order = []
+    order: list[str] = []
 
-    async def guard(tenant, owner, snapshot, package_hash):
+    async def guard(
+        tenant: str, owner: str, snapshot: AgentManifestSnapshot, package_hash: str | None,
+    ) -> None:
         order.append(snapshot.manifest.metadata.name)
         for binding in snapshot.manifest.spec.subagents:
             name, _, version = binding.ref.rpartition("@")

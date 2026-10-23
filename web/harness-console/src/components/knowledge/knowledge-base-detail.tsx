@@ -1,4 +1,5 @@
 "use client";
+import { CodexTaskIcon } from "../codex-task-icon";
 
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -658,7 +659,7 @@ const SPREADSHEET_TYPES = ["xls", "xlsx", "xlsm", "csv"];
                               );
                             }}
                           >
-                            ⋯
+                            <CodexTaskIcon name="more" />
                           </button>
                           {menuFor === doc.documentId ? (
                             <div
@@ -716,7 +717,7 @@ const SPREADSHEET_TYPES = ["xls", "xlsx", "xlsm", "csv"];
                       <p className={styles.docCardDesc}>
                         {doc.summaryStatus === "completed"
                           ? "已生成摘要，可查看切片与引用"
-                          : "点击查看解析切片"}
+                          : "查看解析切片"}
                       </p>
                       <footer className={styles.docCardFoot}>
                         <span className={styles.docCardDate}>
@@ -983,7 +984,7 @@ const SPREADSHEET_TYPES = ["xls", "xlsx", "xlsm", "csv"];
                 ) : chunksLoading ? (
                   <p className={styles.empty}>切片加载中…</p>
                 ) : chunks.length === 0 ? (
-                  <p className={styles.empty}>解析完成后这里会显示文档内容</p>
+                  <p className={styles.empty}>暂无解析内容</p>
                 ) : contentView === "full" ? (
                   <div className={styles.drawerFullText}>
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>

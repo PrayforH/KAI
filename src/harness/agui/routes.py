@@ -79,7 +79,7 @@ _HISTORY_SNAPSHOT_EVENT_TYPE = "history.snapshot"
 # items, ~1MB per run) and are ignored so they rebuild compactly on next read.
 # Version 3 adds the run's validated interactive answer blocks, so a reload shows
 # the same widgets the live stream published.
-_HISTORY_SNAPSHOT_VERSION = 4
+_HISTORY_SNAPSHOT_VERSION = 5  # Include bounded web-image references in restored turns.
 _HISTORY_MARKER_EVENT_TYPES = (_HISTORY_SNAPSHOT_EVENT_TYPE, "run.steer.accepted")
 _HISTORY_RUN_PAGE_DEFAULT = 10
 _HISTORY_RUN_PAGE_MAX = 100

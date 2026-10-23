@@ -15,7 +15,7 @@ it("previews a source image and closes with Escape", async () => {
   expect(image.getAttribute("referrerpolicy")).toBe("no-referrer");
   await act(async () => host.querySelector("button")!.click());
   const dialog = document.body.querySelector('[role="dialog"]')!;
-  expect(dialog.getAttribute("aria-label")).toBe("新闻现场");
+  expect(dialog.getAttribute("aria-label")).toBe("新闻现场 原图预览");
   expect(dialog.querySelector("a")!.href).toBe("https://cdn.example.com/news.jpg");
   await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
   expect(document.body.querySelector('[role="dialog"]')).toBeNull();

@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -176,7 +176,7 @@ class Run(FrozenModel):
         value = self.input.get("business_project_id")
         if value is None:
             meta = self.input.get("project_context_meta")
-            value = meta.get("projectId") if isinstance(meta, dict) else None
+            value = cast(dict[str, Any], meta).get("projectId") if isinstance(meta, dict) else None
         return value if isinstance(value, str) and value else None
 
 

@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
 from ag_ui.core import RunAgentInput, UserMessage
 
-from harness.agui.service import _merge_knowledge_references
-from harness.api.dependencies import build_memory_container
+from harness.agui.service import _merge_knowledge_references  # pyright: ignore[reportPrivateUsage]
+from harness.api.dependencies import ApiContainer, build_memory_container
 from harness.core.errors import ConflictError, NotFoundError
-from harness.knowledge.models import KnowledgeSnapshotBinding
+from harness.knowledge.models import KnowledgeResultTrust, KnowledgeSnapshotBinding
 from harness.knowledge.runtime import knowledge_bindings_for_run
 from harness.projects.models import ProjectRunContext
 
@@ -32,7 +33,7 @@ def test_project_knowledge_is_added_to_a_task_selection() -> None:
     assert _merge_knowledge_references(["kb-task"], None) == ["kb-task"]
 
 
-async def _publish_agent(container, tenant_id: str, user_id: str, root: Path) -> None:
+async def _publish_agent(container: ApiContainer, tenant_id: str, user_id: str, root: Path) -> None:
     agent_dir = root / "echo-agent"
     (agent_dir / "prompts").mkdir(parents=True)
     (agent_dir / "prompts" / "system.md").write_text("You are a test agent.", encoding="utf-8")
@@ -244,22 +245,26 @@ async def test_project_knowledge_supplements_agent_pins_and_records_empty_projec
     container = build_memory_container()
     await container.agents.publish("tenant-a", "user-1", manifest)
 
-    async def resolve(_tenant, _user, references, _teams):
+    async def resolve(
+        _tenant: str, _user: str, references: Sequence[str], _teams: tuple[str, ...],
+    ) -> tuple[KnowledgeSnapshotBinding, ...]:
         return tuple(
             KnowledgeSnapshotBinding(
                 knowledgeBaseReference=ref,
                 sourceReference=ref,
                 snapshotId=f"snapshot-{ref}",
-                trust="sensitive",
+                trust=KnowledgeResultTrust.SENSITIVE,
             )
             for ref in references
         )
 
-    async def validate(_tenant, _user, _references):
+    async def validate(
+        _tenant: str, _user: str, _references: tuple[str, ...],
+    ) -> None:
         return None
 
-    container.sessions._knowledge_binding_resolver = resolve
-    container.agui._knowledge_bindings = resolve
+    container.sessions._knowledge_binding_resolver = resolve  # pyright: ignore[reportPrivateUsage]
+    container.agui._knowledge_bindings = resolve  # pyright: ignore[reportPrivateUsage]
     container.projects.configure_knowledge_resolver(validate)
     project = await container.projects.create(
         tenant_id="tenant-a",

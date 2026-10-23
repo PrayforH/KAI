@@ -1,0 +1,13 @@
+
+> harness-console@0.3.1 test
+> vitest run tests/task-sidebar-status.spec.tsx tests/sidebar-state.spec.tsx tests/task-header-actions.spec.tsx
+
+
+ RUN  v4.1.10 /Users/xiaokai/Documents/agent-studio-zcode-projects/web/harness-console
+
+
+ Test Files  3 passed (3)
+      Tests  25 passed (25)
+   Start at  20:01:22
+   Duration  5.87s (transform 4.02s, setup 0ms, import 7.12s, tests 3.50s, environment 843ms)
+

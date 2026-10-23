@@ -60,8 +60,8 @@
 .testUser { min-width: 0; box-sizing: border-box; }
 .fileChips { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; min-width: 0; justify-content: flex-start; align-self: stretch; padding: 6px 0; }
 .fileChip { position: relative; max-width: 100%; min-width: 0; }
-.fileChip:has(.removeFile) { padding-right: 22px; }
-.removeFile { position: absolute; right: 0; top: 0; width: 22px; height: 22px; border: 0; border-radius: 50%; color: var(--studio-muted); background: var(--studio-panel-subtle); cursor: pointer; }
+.fileChip:has(.removeFile) { padding-right: 0; }
+.removeFile { position: absolute; right: 4px; top: 4px; width: 22px; height: 22px; border: 0; border-radius: 50%; color: var(--studio-muted); background: var(--studio-panel-subtle); cursor: pointer; }
 
 .workspace[data-code="true"] { grid-template-columns: var(--build-width) minmax(0, 1fr); }
 .workspace[data-code="true"] > .testPanel { display: none; }
