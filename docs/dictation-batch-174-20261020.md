@@ -25,7 +25,7 @@
 
 - 入口：https://172.20.109.174/；3301、3501 同步发布，HTTPS 返回 200。
 - Web：`agent-studio-web:dictation-20261020-r39`，实现提交 `a54aaf5b`，镜像 ID `sha256:cb33fb2f6076d99ebe445c7ec62256282172fe1983bdcf4ff981f17959b397a6`。
-- API：`kai/projects-api:dictation-20261020-r38`，文件实现为 `452f0d95`，之后只压平镜像；当前和回滚镜像均为 1 层。API、两个 Web 与三个原 r35 Worker 均 healthy，restart=0。
+- API：`kai/projects-api:dictation-20261020-r38`，文件实现为 `452f0d95`，之后只压平镜像；当前和回滚镜像均为 1 层，详见 [API 镜像清理](api-image-cleanup-174-20261020.md)。API、两个 Web 与三个原 r35 Worker 均 healthy，restart=0。
 - 生产配置显式使用 `HARNESS_DICTATION_ENGINE=gateway`、`HARNESS_DICTATION_GATEWAY_MODEL=Qwen3-ASR-1.7B`。120 秒录音限制保持不变。压平后正式 API 再次成功处理 38.336 秒音频，往返 0.492 秒。
 
 使用独立 Chrome 测试上下文、专用 QA 登录和合成音频虚拟麦克风，在正式 HTTPS 页面验证：录音期间零转写请求、草稿不变；确认后只有一次 `/transcribe` 请求，麦克风轨道全部结束，识别结果一次回填；没有 `/refine` 或自动任务请求。正式页 10.588 秒样本录制约 11.5 秒后停止，点击确认至回填约 626 ms（单次观测，不代表延迟承诺）。

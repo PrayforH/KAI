@@ -21,6 +21,7 @@ export interface TaskAgent {
   spaceName?: string;
   runnableByViewer?: boolean;
   currentVersion?: string;
+  platformDefault?: boolean;
   connectionMode?: "caller_owned" | "service_owned";
   canView?: boolean;
   canChat?: boolean;
@@ -48,6 +49,7 @@ interface PublishedAgent {
   space_name?: string | null;
   runnable_by_viewer?: boolean;
   current_version?: string | null;
+  platform_default?: boolean;
   connection_mode?: "caller_owned" | "service_owned";
   can_view?: boolean;
   can_chat?: boolean;
@@ -213,6 +215,7 @@ export async function loadTaskAgentCatalog(
       spaceName: agent.space_name ?? undefined,
       runnableByViewer: agent.runnable_by_viewer ?? true,
       currentVersion: agent.current_version ?? undefined,
+      platformDefault: agent.platform_default ?? false,
       connectionMode: agent.connection_mode ?? "caller_owned",
       canView: agent.can_view ?? true,
       canChat: agent.can_chat ?? true,
@@ -274,8 +277,9 @@ export async function loadTaskAgentCatalog(
   // A platform sync can publish a new immutable coordinate while the web
   // container still has an older default. Prefer the caller's current release
   // over manufacturing a coordinate which is absent from the registry.
-  const runtimeMatch = runtimeCandidates.find(agent => agent.version === runtime.version)
+  const runtimeMatch = runtimeCandidates.find(agent => agent.platformDefault)
     ?? runtimeCandidates.find(agent => agent.currentVersion === agent.version)
+    ?? runtimeCandidates.find(agent => agent.version === runtime.version)
     ?? (runtimeCandidates.length === 1 ? runtimeCandidates[0] : undefined);
   const defaultAgent = runtimeMatch ?? {
     name: runtime.name,

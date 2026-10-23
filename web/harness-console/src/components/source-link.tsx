@@ -1,4 +1,5 @@
 import type { ComponentPropsWithoutRef } from "react";
+import { SourceLinkHover } from "./source-link-hover";
 import { CodexResponseIcon } from "./codex-response-icon";
 
 type SourceLinkProps = ComponentPropsWithoutRef<"a">;
@@ -27,9 +28,9 @@ export function SourceLink({ children, className, href, ...props }: SourceLinkPr
   }
 
   return (
-    <a
+    <SourceLinkHover
       className={["source-link", className].filter(Boolean).join(" ")}
-      href={href}
+      href={href!}
       {...props}
       target="_blank"
       rel="noopener noreferrer"
@@ -39,6 +40,6 @@ export function SourceLink({ children, className, href, ...props }: SourceLinkPr
       <span className="source-open" aria-hidden="true">
         <CodexResponseIcon name="external" />
       </span>
-    </a>
+    </SourceLinkHover>
   );
 }

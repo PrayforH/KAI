@@ -152,11 +152,111 @@ html[data-theme="codex-theme-v1"] body.codex-theme-v1 .task-section-toggle {
   font: inherit;
   cursor: pointer;
 }
-html[data-theme="codex-theme-v1"] body.codex-theme-v1 .task-section-toggle:hover { color: var(--web-ink); }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .task-section-toggle:hover { color: var(--codex-ink); }
 html[data-theme="codex-theme-v1"] body.codex-theme-v1 .task-section-toggle:focus-visible {
-  outline: 2px solid var(--web-ink-muted);
+  outline: 2px solid var(--codex-muted);
   outline-offset: 3px;
   border-radius: 3px;
 }
 html[data-theme="codex-theme-v1"] body.codex-theme-v1 .task-group-chevron { transition: transform 120ms ease; }
 html[data-theme="codex-theme-v1"] body.codex-theme-v1 button[aria-expanded="false"] > .task-group-chevron { transform: rotate(-90deg); }
+
+/* A single neutral border, including focus, keeps both launchers free of halos. */
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-root,
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-root:focus-within {
+  box-shadow: none;
+  outline: none;
+}
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) .harness-composer-shell .aui-composer-root:focus-within {
+  border-color: var(--codex-muted);
+}
+
+/* Keep navigation steady: only the composer moves and the resources slide out. */
+html[data-project-task-transition]::view-transition-old(root) { animation: project-page-out 120ms ease both; }
+html[data-project-task-transition]::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+::view-transition-group(project-composer) { animation-duration: 260ms; animation-timing-function: cubic-bezier(.22, 1, .36, 1); }
+::view-transition-old(project-composer) { animation: project-page-out 100ms ease both; mix-blend-mode: normal; }
+::view-transition-new(project-composer) { animation: none; mix-blend-mode: normal; }
+::view-transition-group(project-sidebar) { animation-duration: 0s; }
+::view-transition-old(project-sidebar) { animation: none; opacity: 0; }
+::view-transition-new(project-sidebar) { animation: none; mix-blend-mode: normal; }
+::view-transition-old(project-resources) { animation: project-resources-out 180ms cubic-bezier(.22, 1, .36, 1) both; }
+@keyframes project-page-out { to { opacity: 0; } }
+@keyframes project-resources-out { to { opacity: 0; transform: translateX(28px); } }
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation-duration: 0s; }
+}
+
+/* Reserve the message area while a project prompt is handed to the runtime. */
+.project-launch-space { flex: 1 0 0; min-height: 0; }
+
+/* Project actions use bare glyphs; retain the existing keyboard focus outline. */
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) .task-project-add,
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) .task-project-add:hover,
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) [data-project-launch-composer] .aui-composer-attach,
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) [data-project-launch-composer] .aui-composer-attach:hover {
+  background: transparent;
+  box-shadow: none;
+}
+
+/* One scroll owner below New Task; row actions share the existing task menu. */
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) .task-row-actions {
+  position: relative; grid-area: 1 / 2; margin-inline-end: 5px;
+  display: flex; align-items: center; gap: 1px;
+  opacity: 0; pointer-events: none; transition: opacity 120ms ease;
+}
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) .task-row-actions :is(.task-list-pin, .task-header-more) {
+  display: grid; place-items: center; width: 24px; height: 24px; min-width: 24px;
+  padding: 0; border: 0; border-radius: 5px; background: transparent;
+  color: var(--codex-muted); cursor: pointer;
+  transition: color 120ms ease;
+}
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) .task-list-row:is(:hover, :focus-within, :has(.task-header-more[aria-expanded="true"])) .task-row-actions { opacity: 1; pointer-events: auto; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) .task-list-row:is(:hover, :focus-within, :has(.task-header-more[aria-expanded="true"])) .task-list-meta { opacity: 0; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) .task-row-actions :is(.task-list-pin, .task-header-more):hover { color: var(--codex-ink); background: var(--codex-surface-hover); }
+.task-row-actions [data-codex-task-icon] { fill: currentColor; stroke: none; }
+
+/* One quiet More control across task rows, headers, cards and builders. */
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) :is(button, summary):has(> svg[data-codex-task-icon][data-codex-more-icon]) {
+  box-sizing: border-box;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 28px;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--codex-muted);
+  cursor: pointer;
+  list-style: none;
+}
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) :is(button, summary):has(> svg[data-codex-task-icon][data-codex-more-icon]):is(:hover, [aria-expanded="true"]),
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) details[open] > summary:has(> svg[data-codex-task-icon][data-codex-more-icon]) {
+  color: var(--codex-ink);
+  background: var(--codex-surface-hover);
+}
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) :is(button, summary):has(> svg[data-codex-task-icon][data-codex-more-icon]):focus-visible {
+  outline: 2px solid var(--codex-muted);
+  outline-offset: 2px;
+}
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) summary:has(> svg[data-codex-task-icon][data-codex-more-icon])::-webkit-details-marker { display: none; }
+html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) svg[data-codex-more-icon] {
+  display: block;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+  stroke: none;
+  stroke-width: 0;
+}
+@media (hover: none) {
+  html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) .task-row-actions { opacity: 1; pointer-events: auto; }
+  html[data-theme="codex-theme-v1"] body.codex-theme-v1:has(.console-shell) .task-list-row .task-list-meta { opacity: 0; }
+}
+
+html[data-theme="codex-theme-v1"] body.codex-theme-v1 .task-action-glyph { fill: currentColor; stroke: none; }

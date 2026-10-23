@@ -5,6 +5,9 @@ import type { ThreadMessageLike, CompleteAttachment } from "@assistant-ui/react"
 import { previewThreadMessages } from "./agent-playground-thread";
 import { BuilderProposalCard } from "./builder-proposal-card";
 import { ConversationControl } from "../conversation-control";
+import { TaskModelProvider, TaskModelControl } from "../task-model-context";
+import { loadTaskModelRoutes, type TaskModelRoute } from "../../lib/task-model-catalog";
+import { builderModelRoutes, preferredBuilderModel } from "../../lib/builder-model-selection";
 
 import { uploadKey } from "../../lib/upload-feedback-store";
 import { createPortal } from "react-dom";
@@ -134,6 +137,9 @@ export function AgentBuilderAssistant({
   buildChatRequest?: number;
   testRequest?: number;
 }) {
+  const [modelRoutes, setModelRoutes] = useState<TaskModelRoute[]>([]);
+  const [builderModelRoute, setBuilderModelRoute] = useState<string | null>(null);
+  const [modelsLoading, setModelsLoading] = useState(false);
   const fileBaseline = useRef(draft);
   if (fileBaseline.current.id !== draft.id) fileBaseline.current = draft;
   const [conversationTab, setConversationTab] = useState<"chat" | "builder">(mode === "create" ? "builder" : "chat");
@@ -169,6 +175,7 @@ export function AgentBuilderAssistant({
   const [workingDraft, setWorkingDraft] = useState<StudioDraft | null>(null);
   const [recommendation, setRecommendation] = useState(initialRecommendation);
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
+  const [skillRecommendationsCollapsed, setSkillRecommendationsCollapsed] = useState(false);
   const [result, setResult] = useState<StudioTryRun | null>(null);
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -207,12 +214,40 @@ export function AgentBuilderAssistant({
 
   const activeDraft = workingDraft && workingDraft.id !== draft.id ? workingDraft : draft;
   const draftReady = mode === "run" ? Boolean(activeDraft.id) : Boolean(workingDraft?.id);
+  const availableRecommendedSkills = recommendation?.recommendedSkills?.filter(skill => !activeDraft.skills.some(installed => installed.name === skill.packageId)) ?? [];
+  const selectedRecommendedSkills = availableRecommendedSkills.filter(skill => selectedSkills.includes(skill.packageId));
+  const hasSelectedSkills = useRef(false);
+  hasSelectedSkills.current = selectedRecommendedSkills.length > 0;
+  const modelChoices = useMemo(() => builderModelRoutes(modelRoutes, draftReady ? activeDraft.runtime : undefined), [modelRoutes, draftReady, activeDraft.runtime]);
+  useEffect(() => {
+    if (!open) return;
+    let current = true;
+    setModelsLoading(true);
+    void loadTaskModelRoutes().then(routes => { if (current) setModelRoutes(routes); })
+      .catch(() => { if (current) setError("模型列表读取失败，请重新打开构建助手后重试。"); })
+      .finally(() => { if (current) setModelsLoading(false); });
+    return () => { current = false; };
+  }, [open]);
+  const modelPreferenceKey = `agent-studio.builder-model:${userId ?? "playground"}:${draft.id || "new"}`;
+  useEffect(() => {
+    let saved: string | null = null;
+    try { saved = localStorage.getItem(modelPreferenceKey); } catch { /* Storage may be unavailable. */ }
+    setBuilderModelRoute(current => preferredBuilderModel(modelChoices, saved ?? current));
+  }, [modelChoices, modelPreferenceKey]);
+  function chooseBuilderModel(routeId: string | null) {
+    setBuilderModelRoute(routeId);
+    try {
+      if (routeId) localStorage.setItem(modelPreferenceKey, routeId);
+      else localStorage.removeItem(modelPreferenceKey);
+    } catch { /* Selection still works without browser storage. */ }
+  }
+  const modelSelection = { routes: modelChoices, routeId: builderModelRoute, onChange: chooseBuilderModel };
   const terminal = useMemo(
     () => isTerminalRunStatus(result?.run.status),
     [result],
   );
   const active = creating || busy || Boolean(result && !terminal);
-  const inputBusy = readingMaterials || uploading || creating || busy || editing || applying || (intent === "run" && active);
+  const inputBusy = modelsLoading || !builderModelRoute || readingMaterials || uploading || creating || busy || editing || applying || (intent === "run" && active);
 
   useEffect(() => {
     if (open) window.setTimeout(() => inputRef.current?.focus(), 0);
@@ -237,7 +272,7 @@ export function AgentBuilderAssistant({
     setWorkingDraft(mode === "run" ? draft : null);
     setCreating(false);
     setBusy(false);
-    setRecommendation(initialRecommendation); setSelectedSkills([]);
+    setRecommendation(initialRecommendation); setSelectedSkills([]); setSkillRecommendationsCollapsed(playgroundMode === "chat");
     setResult(null);
     setError("");
     setAttachments([]); setUploading(false); setReadingMaterials(false); uploadLock.current = false; submitLock.current = false; followOutput.current = true;
@@ -245,6 +280,13 @@ export function AgentBuilderAssistant({
   // Closing/reopening and new revisions retain this draft's conversation.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, mode, draft.id, creationSession]);
+
+  // Mode changes are events: manually reopening suggestions stays open until
+  // the next validation request. Keep the latest selection without refocusing
+  // the conversation whenever a checkbox changes.
+  useEffect(() => {
+    if ((playgroundMode === "chat" || testRequest > 0 || intent === "run") && !hasSelectedSkills.current) setSkillRecommendationsCollapsed(true);
+  }, [playgroundMode, testRequest, intent]);
 
   useEffect(() => { if (testRequest) { setConversationTab("chat");setCodeView(false);setMobilePanel("test"); window.setTimeout(() => workspaceTarget?.querySelector<HTMLTextAreaElement>('[aria-label="智能体效果测试"] [aria-label="消息输入"]')?.focus(), 0); } }, [testRequest, workspaceTarget]);
 
@@ -286,6 +328,7 @@ export function AgentBuilderAssistant({
       finally {if (epoch === epochRef.current) setHistoryLoading(false);}
     }
     if (epoch !== epochRef.current || selection !== historySelection.current) return;
+    if (!hasSelectedSkills.current) setSkillRecommendationsCollapsed(true);
     setVisibleTurnLimit(limit);
     if (!older) {
       setMessages([]);setInputSeed(undefined);setProposal(null);
@@ -392,7 +435,7 @@ export function AgentBuilderAssistant({
   }
 
   async function startRun(value: string, targetDraft?: StudioDraft, continueConversation = false, artifactIds: string[] = [], names: string[] = [], builderTools = false): Promise<boolean> {
-    if (historyLoading || startingRef.current || (result && !terminal)) return false;
+    if (!builderModelRoute || historyLoading || startingRef.current || (result && !terminal)) return false;
     startingRef.current = true;
     const epoch = epochRef.current;
     setBusy(true);
@@ -409,7 +452,7 @@ export function AgentBuilderAssistant({
         runnableDraft.revision,
         value.trim(),
         `studio-try-${createRandomId()}`,
-        { ...(builderTools ? {builderTools: true, ...(proposal ? {pendingProposal: reviewedChanges} : {})} : {}), ...(previous ? { continueFromRunId: previous.run.run_id } : {}), ...(artifactIds.length ? { inputArtifactIds: artifactIds } : {}) },
+        { modelRouteOverride: builderModelRoute, ...(builderTools ? {builderTools: true, ...(proposal ? {pendingProposal: reviewedChanges} : {})} : {}), ...(previous ? { continueFromRunId: previous.run.run_id } : {}), ...(artifactIds.length ? { inputArtifactIds: artifactIds } : {}) },
       );
       if (epoch !== epochRef.current) return false;
       runStreamAbortRef.current?.abort();
@@ -417,6 +460,7 @@ export function AgentBuilderAssistant({
       setLastTestPrompt(value.trim());
       setCurrentFiles(names); setLastArtifactIds(artifactIds);
       setResult(started);
+      if (!hasSelectedSkills.current) setSkillRecommendationsCollapsed(true);
       setSavedRuns(current => [{draftRevision: started.draftRevision, run: {...started.run, input: {prompt: value.trim(), input_artifact_ids: artifactIds}, created_at: new Date().toISOString()}}, ...current.filter(item => item.run.run_id !== started.run.run_id)].slice(0, 200));
       setTestSessionId(started.run.session_id);
       setCodeView(false);setMobilePanel("test");setConversationTab("chat");
@@ -445,14 +489,14 @@ export function AgentBuilderAssistant({
     setCreating(true);
     setError("");
     try {
-      const created = await studioClient.createDraftFromTask({task: value.trim(), ...(materialContext ? {sampleInput: materialContext} : {}), runtimePreference: "auto"}, event => {
+      const created = await studioClient.createDraftFromTask({task: value.trim(), ...(materialContext ? {sampleInput: materialContext} : {}), runtimePreference: "auto", ...(builderModelRoute ? {modelRouteOverride: builderModelRoute} : {})}, event => {
         if (epoch === epochRef.current && event.text) setBuildProgress(event.text);
       }, controller.signal);
       if (epoch !== epochRef.current) return false;
       const nextDraft = apiDraftToStudioDraft(created.draft);
       setWorkingDraft(nextDraft);
       sessionKeyRef.current = `run:${nextDraft.id}`;
-      setRecommendation(created.recommendation); setSelectedSkills([]);
+      setRecommendation(created.recommendation); setSelectedSkills([]); setSkillRecommendationsCollapsed(playgroundMode === "chat");
       setMessages((current) => [...current, {
         id: replyId,
         role: "assistant",
@@ -488,7 +532,7 @@ export function AgentBuilderAssistant({
     try {
       setReadingMaterials(Boolean(attachments.length && !sendAsTest)); setError("");
       const materialContext = attachments.length && !sendAsTest
-        ? (await studioClient.readBuilderMaterials(attachments.map(file=>file.id), activeDraft.modelRoute)).context : "";
+        ? (await studioClient.readBuilderMaterials(attachments.map(file=>file.id), builderModelRoute ?? undefined)).context : "";
       if (epoch !== epochRef.current) return;
       setReadingMaterials(false);
       followOutput.current = true;
@@ -525,6 +569,7 @@ export function AgentBuilderAssistant({
       if (!saved || epoch !== epochRef.current) return;
       const reply = await studioClient.converseBuilder(saved.id, {
         expectedRevision: saved.revision,
+        ...(builderModelRoute ? { modelRouteOverride: builderModelRoute } : {}),
         messages: history,
         intent: workspaceTarget || intent === "auto" ? "auto" : "edit",
         runContext: JSON.stringify({
@@ -640,7 +685,7 @@ export function AgentBuilderAssistant({
 
   const turns = [...archivedTurns, ...(result ? [{ prompt: lastTestPrompt, result, files: currentFiles, artifactIds: lastArtifactIds }] : [])];
   async function sendUnified(value: string, ids: string[], names: string[]): Promise<boolean> {
-    if (submitLock.current || active || editing || applying || historyLoading) return false;
+    if (!builderModelRoute || modelsLoading || submitLock.current || active || editing || applying || historyLoading) return false;
     const explicitRun = /^(?:\/run(?:\s|$)|试跑(?:智能体)?\s*[:：])/i.test(value.trim());
     const useBuilderTools = writable && !explicitRun && ["claude-agent-sdk", "deepagents"].includes(activeDraft.runtime);
     const authoring = !explicitRun && writable && !useBuilderTools;
@@ -657,7 +702,7 @@ export function AgentBuilderAssistant({
         setBuildReply(""); setBuildProgress("");
       }
       setReadingMaterials(Boolean(ids.length && (!draftReady || authoring)));
-      const materialContext = ids.length && (!draftReady || authoring) ? (await studioClient.readBuilderMaterials(ids, activeDraft.modelRoute)).context : "";
+      const materialContext = ids.length && (!draftReady || authoring) ? (await studioClient.readBuilderMaterials(ids, builderModelRoute ?? undefined)).context : "";
       if (epoch !== epochRef.current) return false;
       setReadingMaterials(false);
       setMessages(current => [...current, {id:messageId, role:"user",text:value, artifactIds:ids,files:names,materialContext}]);
@@ -674,18 +719,27 @@ export function AgentBuilderAssistant({
     }
   }
   const reviewContent = writable ? <>
-      {recommendation?.recommendedSkills?.some(skill => !activeDraft.skills.some(installed => installed.name === skill.packageId)) && <section className={styles.editProposal} aria-label="推荐 Skill">
-        <strong>为此智能体推荐的 Skill</strong>
-        <p>模型根据需求推荐，选择后可查看完整代码差异。</p>
-        {recommendation.recommendedSkills.filter(skill => !activeDraft.skills.some(installed => installed.name === skill.packageId)).map(skill => <label key={skill.packageId} className={styles.skillSuggestion}>
-          <input type="checkbox" checked={selectedSkills.includes(skill.packageId)} disabled={inputBusy || Boolean(proposal)} onChange={event => setSelectedSkills(current => event.target.checked ? [...current, skill.packageId] : current.filter(id => id !== skill.packageId))}/>
-          <span><strong>{skill.label}</strong><small>{skill.reason}</small>{skill.risk === "review" && <small>包含脚本，应用前请审阅</small>}</span>
-        </label>)}
-        <div className={styles.editActions}><button type="button" disabled={!selectedSkills.length || inputBusy || Boolean(proposal) || hasUnsavedChanges} onClick={() => {
-          const installSkills = recommendation.recommendedSkills!.filter(skill => selectedSkills.includes(skill.packageId)).map(({packageId, revision}) => ({packageId, revision}));
-          setProposal({baseRevision: activeDraft.revision, before: activeDraft, action: "edit", reply: "安装所选推荐 Skill", changedFields: ["skills"], changes: {installSkills, capabilityCatalogRevision: recommendation.capabilityCatalogRevision}});
-        }}>审阅所选 Skill</button></div>
-      </section>}
+      {availableRecommendedSkills.length > 0 && (skillRecommendationsCollapsed
+        ? <button type="button" className={styles.skillRecommendationsReopen} aria-label="展开 Skill 推荐" aria-expanded={false} onClick={() => setSkillRecommendationsCollapsed(false)}>
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 4 4 4-4 4" /></svg>
+          查看 Skill 推荐 · {availableRecommendedSkills.length}{selectedRecommendedSkills.length > 0 && ` · 已选 ${selectedRecommendedSkills.length} 项`}
+        </button>
+        : <section className={styles.editProposal} aria-label="推荐 Skill">
+          <div className={styles.skillRecommendationsHeader}>
+            <strong>为此智能体推荐的 Skill</strong>
+            <button type="button" aria-label="关闭 Skill 推荐" title="收起推荐" onClick={() => setSkillRecommendationsCollapsed(true)}>
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 4.5 7 7m0-7-7 7" /></svg>
+            </button>
+          </div>
+          {availableRecommendedSkills.map(skill => <label key={skill.packageId} className={styles.skillSuggestion}>
+            <input type="checkbox" checked={selectedSkills.includes(skill.packageId)} disabled={inputBusy || Boolean(proposal)} onChange={event => setSelectedSkills(current => event.target.checked ? [...current, skill.packageId] : current.filter(id => id !== skill.packageId))}/>
+            <span><strong>{skill.label}</strong><small>{skill.reason}</small>{skill.risk === "review" && <small>包含脚本，应用前请审阅</small>}</span>
+          </label>)}
+          <div className={styles.editActions}><button type="button" disabled={!selectedRecommendedSkills.length || inputBusy || Boolean(proposal) || hasUnsavedChanges} onClick={() => {
+            const installSkills = selectedRecommendedSkills.map(({packageId, revision}) => ({packageId, revision}));
+            setProposal({baseRevision: activeDraft.revision, before: activeDraft, action: "edit", reply: "安装所选推荐 Skill", changedFields: ["skills"], changes: {installSkills, capabilityCatalogRevision: recommendation?.capabilityCatalogRevision}});
+          }}>审阅所选 Skill</button></div>
+        </section>)}
   </> : null;
   const proposalCard = writable && proposal ? <BuilderProposalCard
     changes={review.changes} selected={review.selected} labels={editLabels} before={key => beforeEdit(proposal.before, key)} revision={proposal.baseRevision}
@@ -774,6 +828,9 @@ export function AgentBuilderAssistant({
       </label>
       <div className="composer-toolbar">
         <div className={styles.composerTools}><label className={`${styles.attachButton} aui-composer-attach`} title="添加构建参考材料"><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M8 3v10M3 8h10" /></svg><input aria-label="添加构建附件" type="file" multiple disabled={inputBusy || active} onChange={event => { void upload(Array.from(event.target.files ?? [])); event.target.value = ""; }} /></label>{uploading && <span className={styles.visuallyHidden} role="status">上传中…</span>}</div>
+        <div className="composer-model-voice"><TaskModelProvider independent routes={modelChoices} agentDefaultRouteId={null} overrideRouteId={builderModelRoute} onOverrideChange={chooseBuilderModel}>
+          <TaskModelControl disabled={inputBusy || active} />
+        </TaskModelProvider></div>
         {active && result && !terminal ? <ConversationControl action="stop" aria-label="停止运行" onClick={() => void cancelRun()} /> : <ConversationControl action="send" aria-label="发送消息" disabled={!input.trim() || inputBusy} onClick={() => void send()} />}
       </div>
       </div>
@@ -813,7 +870,7 @@ export function AgentBuilderAssistant({
         {assetsOpen && <AgentWorkspaceFiles key={activeDraft.id} draft={activeDraft} baseline={fileBaseline.current} turns={visibleTurns} onClose={() => setAssetsOpen(false)} />}
         {codeView && <AgentProjectCode key={activeDraft.id} draftId={draftReady ? activeDraft.id : ""} revision={activeDraft.revision} name={activeDraft.name || activeDraft.displayName} dirty={hasUnsavedChanges} comparison={codeComparison} comparisonPending={comparisonPending} directoryTarget={playgroundMode === "build" ? codeDirectoryTarget : undefined} expanded={codeExpanded} onExpandedChange={setCodeExpanded} onClose={() => { setCodeView(false); setCodeExpanded(false); }} />}
         <div className={workspaceStyles.preservedPanel} hidden={(codeView && (playgroundMode === "chat" || codeExpanded))}>
-          <AgentTestPanel navigation={<>{playgroundMode === "chat" && onExpandConfiguration && <button type="button" aria-label="展开配置栏" title="展开配置栏" aria-expanded="false" onClick={() => {setAssetsOpen(false); onExpandConfiguration?.();}}><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="2" /><path d="M8 4v12m3-9 3 3-3 3" /></svg></button>}<strong>对话</strong></>} draft={activeDraft} userId={userId} onConfigureKnowledge={onConfigureKnowledge} sessionRail={false} savedRuns={savedRuns} earlierTurns={hasEarlierTurns} onEarlierTurns={() => void selectSession(testSessionId, true)} historyLoading={historyLoading} historyError={historyError} examples={[]} draftId={activeDraft.id} revision={activeDraft.revision} agentName={activeDraft.displayName} model={activeDraft.model} turns={visibleTurns} history={turns} sessionId={testSessionId} conversationEpoch={testConversationEpoch}
+          <AgentTestPanel navigation={<>{playgroundMode === "chat" && onExpandConfiguration && <button type="button" aria-label="展开配置栏" title="展开配置栏" aria-expanded="false" onClick={() => {setAssetsOpen(false); onExpandConfiguration?.();}}><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="2" /><path d="M8 4v12m3-9 3 3-3 3" /></svg></button>}<strong>对话</strong></>} draft={activeDraft} userId={userId} onConfigureKnowledge={onConfigureKnowledge} sessionRail={false} savedRuns={savedRuns} earlierTurns={hasEarlierTurns} onEarlierTurns={() => void selectSession(testSessionId, true)} historyLoading={historyLoading} historyError={historyError} examples={[]} draftId={activeDraft.id} revision={activeDraft.revision} agentName={activeDraft.displayName} model={activeDraft.model} modelSelection={modelSelection} turns={visibleTurns} history={turns} sessionId={testSessionId} conversationEpoch={testConversationEpoch}
             messageOverride={transcript} inputSeed={inputSeed} composerAccessory={proposalCard} afterLastMessage={reviewContent}
             onSelectSession={id => void selectSession(id)} busy={active || editing || applying || readingMaterials} ready={true} dirty={hasUnsavedChanges} error={error} selectedRunId={selectedRunId}
             onSend={sendUnified}

@@ -9,7 +9,7 @@ from harness.agent_package import AgentPackageCheckError, pack_agent_package
 from harness.application.agents import AgentService
 from harness.application.sessions import SessionService
 from harness.core.errors import ConflictError, NotFoundError
-from harness.core.manifest import load_manifest
+from harness.core.manifest import AgentManifestSnapshot, load_manifest
 from harness.core.models import AgentVersion, AgentVersionStatus
 
 FIXTURE = Path("tests/fixtures/agents/echo-agent/agent.yaml")
@@ -117,8 +117,18 @@ async def test_provisions_an_isolated_default_for_each_user() -> None:
     assert repeated == first
     assert second_user is not None
     assert second_user.owner_user_id == "user-2"
-    assert await registry.list_for_user("tenant-a", "user-1") == [first]
-    assert await registry.list_for_user("tenant-a", "user-2") == [second_user]
+    for user in ("user-1", "user-2"):
+        versions = await registry.list_for_user("tenant-a", user)
+        assert len(versions) == 4
+        assert {item.name for item in versions} == {
+            "lead-agent", "general-researcher", "general-analyst", "general-reviewer",
+        }
+        for child in (item for item in versions if item.name != "lead-agent"):
+            assert child.agent_id is None
+            assert child.snapshot["manifest"]["metadata"]["labels"]["visibility"] == "internal"
+            assert child.snapshot["manifest"]["spec"]["subagents"] == []
+    with pytest.raises(NotFoundError):
+        await registry.get("tenant-b", "user-1", "general-analyst", "1.0.0")
 
 
 @pytest.mark.asyncio
@@ -379,3 +389,40 @@ async def test_default_agent_skips_catalog_only_skill_assets() -> None:
         if item.get("size_bytes") == 0
     ]
     assert ("skill-creator", "scripts/__init__.py") in zero_byte
+
+
+@pytest.mark.asyncio
+async def test_platform_helpers_publish_before_lead_with_stable_identities() -> None:
+    from unittest.mock import AsyncMock
+
+    identities = AsyncMock()
+    def agent_id(tenant: str, owner: str, name: str) -> str:
+        return name + "-id"
+
+    identities.get_or_create_personal_agent_id.side_effect = agent_id
+    registry = InMemoryAgentRegistry()
+    service = AgentService(
+        registry, clock=lambda: NOW, environment="production",
+        default_manifest_path="agents/lead-agent/agent.yaml", agent_ids=identities,
+    )
+    order: list[str] = []
+
+    async def guard(
+        tenant: str, owner: str, snapshot: AgentManifestSnapshot, package_hash: str | None,
+    ) -> None:
+        order.append(snapshot.manifest.metadata.name)
+        for binding in snapshot.manifest.spec.subagents:
+            name, _, version = binding.ref.rpartition("@")
+            child = await registry.get(tenant, owner, name, version)
+            assert child.agent_id == name + "-id"
+
+    service.publication_guard = guard
+    lead = await service.ensure_user_default("tenant-a", "owner")
+    assert lead is not None and lead.agent_id == "lead-agent-id"
+    assert order == ["general-researcher", "general-analyst", "general-reviewer", "lead-agent"]
+    assert identities.get_or_create_personal_agent_id.await_count == 4
+    assert identities.get_or_create_personal_agent_id.call_args.args == (
+        "tenant-a", "owner", "lead-agent"
+    )
+    await service.ensure_user_default("tenant-a", "owner")
+    assert len(order) == 4

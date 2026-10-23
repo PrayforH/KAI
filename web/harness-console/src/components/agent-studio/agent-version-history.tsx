@@ -80,18 +80,15 @@ export function AgentVersionHistory({draft, changes, versions, loading, error, o
   function selectVersion(value: string) { setSelected(value); setBaseChoice(null); setFileChoice(""); onConfirm(""); }
 
   return <div className={styles.historyLayout}>
-    <nav className={styles.historyVersions} aria-label="选择智能体版本">
+    <nav className={styles.historyVersions} aria-label="选择智能体版本" aria-busy={revisionLoading || loading}>
       <button type="button" aria-current={selected === "draft" ? "true" : undefined} onClick={() => selectVersion("draft")}><strong>草稿 r{draft.revision}</strong><small>{previousRevision ? "与上一修订比较" : "当前配置"}</small></button>
       {revisions.filter(item => item.revision !== draft.revision).map(item => <button type="button" key={`r:${item.revision}`} aria-current={selected === `r:${item.revision}` ? "true" : undefined} onClick={() => selectVersion(`r:${item.revision}`)}><strong>草稿 r{item.revision}</strong><small>{new Date(item.updatedAt).toLocaleString("zh-CN")}</small></button>)}
       {revisionLoading && <p role="status">正在读取草稿历史…</p>}
       {revisionError && <p role="alert">{revisionError}<button type="button" onClick={() => setRevisionRefresh(value => value + 1)}>重试草稿历史</button></p>}
       {hasMoreRevisions && <button type="button" disabled={revisionLoading} onClick={() => void loadMoreRevisions()}>更早的草稿</button>}
-      {!!revisions.length && !hasMoreRevisions && <p>草稿记录从 r{revisions.at(-1)?.revision} 开始</p>}
       {!!ordered.length && <p>发布版本</p>}
       {ordered.map(item => <button type="button" key={item.version} aria-current={selected === item.version ? "true" : undefined} onClick={() => selectVersion(item.version)}><strong>{item.version}{item.version === item.current_version && <em>当前</em>}</strong><small>{new Date(item.created_at).toLocaleString("zh-CN")}</small></button>)}
-      {loading && <p role="status">正在读取版本…</p>}
       {error && <p role="alert">{error}<button type="button" onClick={onRetry}>重试</button></p>}
-      {!loading && !error && !versions.length && <p>尚无发布版本</p>}
     </nav>
     <section className={styles.historyDetail} aria-label="版本修改详情">
       <h3>{label(selected)}</h3>

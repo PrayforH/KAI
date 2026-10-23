@@ -340,6 +340,7 @@ export async function proxyAguiRequest(
     const agentVersion = requested.get("agent_version");
     const agentOwnerUserId = requested.get("agent_owner_user_id");
     const spaceId = requested.get("space_id");
+    const projectId = requested.get("project_id");
     if (
       agentName &&
       agentVersion &&
@@ -353,6 +354,9 @@ export async function proxyAguiRequest(
       }
       if (spaceId && spaceId.length <= 128) {
         url.searchParams.set("space_id", spaceId);
+      }
+      if (projectId && projectId.length <= 128) {
+        url.searchParams.set("project_id", projectId);
       }
     }
   }

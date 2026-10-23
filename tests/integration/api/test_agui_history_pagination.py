@@ -6,18 +6,19 @@ from httpx import ASGITransport, AsyncClient
 
 from harness.agui.routes import _HISTORY_SNAPSHOT_VERSION as HISTORY_SNAPSHOT_VERSION
 from harness.api.app import create_memory_app
+from harness.api.dependencies import ApiContainer
+from harness.core.models import Run
 
 FIXTURE_MANIFEST = Path("tests/fixtures/agents/echo-agent/agent.yaml")
 HEADERS = {"X-Tenant-ID": "tenant-a", "X-User-ID": "user-1"}
 
 
-async def _drive_turn(container, thread_id: str, prompts: list[str]) -> str:
+async def _drive_turn(container: ApiContainer, thread_id: str, prompts: list[str]) -> str:
     request = RunAgentInput(
         thread_id=thread_id,
         run_id=f"client-run-{len(prompts)}",
         messages=[
-            UserMessage(id=f"msg-{index}", content=prompt)
-            for index, prompt in enumerate(prompts)
+            UserMessage(id=f"msg-{index}", content=prompt) for index, prompt in enumerate(prompts)
         ],
         tools=[],
         state=[],
@@ -36,13 +37,11 @@ async def _drive_turn(container, thread_id: str, prompts: list[str]) -> str:
     return run_id
 
 
-async def _thread_runs(container, thread_id: str):
+async def _thread_runs(container: ApiContainer, thread_id: str) -> list[Run]:
     binding = await container.agui.get_binding(
         tenant_id="tenant-a", user_id="user-1", thread_id=thread_id
     )
-    return await container.runs.list_for_sessions(
-        "tenant-a", list(binding.session_ids), limit=50
-    )
+    return await container.runs.list_for_sessions("tenant-a", list(binding.session_ids), limit=50)
 
 
 def _texts(body: dict, role: str) -> list[str]:
@@ -53,9 +52,7 @@ def _texts(body: dict, role: str) -> list[str]:
 async def test_history_paginates_runs_and_materializes_snapshots() -> None:
     app = create_memory_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        await client.post(
-            "/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS
-        )
+        await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS)
         container = app.state.container
         prompts: list[str] = []
         run_ids: list[str] = []
@@ -127,9 +124,7 @@ async def test_history_paginates_runs_and_materializes_snapshots() -> None:
 async def test_history_rejects_invalid_cursor() -> None:
     app = create_memory_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        await client.post(
-            "/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS
-        )
+        await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS)
         container = app.state.container
         await _drive_turn(container, "thread-history-2", ["seed"])
         response = await client.get(
@@ -144,7 +139,85 @@ async def test_history_rejects_invalid_cursor() -> None:
 async def test_history_keeps_unread_thread_empty() -> None:
     app = create_memory_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get(
-            "/v1/agui/threads/thread-history-3/history", headers=HEADERS
-        )
+        response = await client.get("/v1/agui/threads/thread-history-3/history", headers=HEADERS)
         assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_legacy_history_rebuilds_web_images_and_reuses_the_new_snapshot() -> None:
+    import json
+
+    app = create_memory_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS)
+        container = app.state.container
+        run_id = await _drive_turn(container, "thread-photo-history", ["查找广州街景图片"])
+        runs = await _thread_runs(container, "thread-photo-history")
+        run = next(item for item in runs if item.run_id == run_id)
+        for event_type, payload in [
+            (
+                "tool.request",
+                {
+                    "tool_call_id": "search",
+                    "name": "WebSearch",
+                    "arguments": {"query": "广州街景图片"},
+                },
+            ),
+            (
+                "tool.result",
+                {
+                    "tool_call_id": "search",
+                    "content": {
+                        "images": [
+                            {
+                                "url": "https://cdn.example.com/photo.jpg",
+                                "description": "广州街景",
+                                "source_url": "https://news.example.com/story",
+                            }
+                        ]
+                    },
+                },
+            ),
+            (
+                "history.snapshot",
+                {
+                    "version": HISTORY_SNAPSHOT_VERSION - 1,
+                    "response_text": "旧快照",
+                    "activity": None,
+                },
+            ),
+        ]:
+            await container.event_service.append(
+                tenant_id="tenant-a",
+                run_id=run_id,
+                session_id=run.session_id,
+                event_type=event_type,
+                payload=payload,
+            )
+        for _ in range(2):
+            response = await client.get(
+                "/v1/agui/threads/thread-photo-history/history", headers=HEADERS
+            )
+            assert response.status_code == 200
+            calls = [
+                call
+                for message in response.json()["messages"]
+                for call in message.get("toolCalls", [])
+            ]
+            activity_call = next(
+                call for call in calls if call["function"]["name"] == "harness_run_activity"
+            )
+            activity = json.loads(activity_call["function"]["arguments"])["activity"]
+            images = [
+                image
+                for item in activity["items"]
+                for image in item["metadata"].get("web_images", [])
+            ]
+            assert images[0]["url"] == "https://cdn.example.com/photo.jpg"
+        snapshots = await container.observed_events.list_after(
+            "tenant-a", run_id, 0, types=("history.snapshot",)
+        )
+        assert [snapshot.payload["version"] for snapshot in snapshots] == [
+            HISTORY_SNAPSHOT_VERSION - 1,
+            HISTORY_SNAPSHOT_VERSION,
+        ]

@@ -1,0 +1,50 @@
+.panel {
+  margin-top: 12px;
+  color: var(--codex-muted);
+  font-size: 12px;
+}
+.panel summary {
+  cursor: pointer;
+  color: var(--codex-ink);
+}
+.body {
+  max-height: min(360px, 55dvh);
+  overflow-y: auto;
+  padding-top: 8px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.body p {
+  margin: 8px 0;
+}
+.body ul {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+}
+.body li {
+  display: grid;
+  gap: 3px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--codex-line);
+}
+.body strong {
+  color: var(--codex-ink);
+  font-weight: 500;
+}
+.body code {
+  font-size: 10px;
+}
+.body button {
+  padding: 5px 8px;
+  color: var(--codex-ink);
+  border: 1px solid var(--codex-line);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+.body button:focus-visible,
+.panel summary:focus-visible {
+  outline: 2px solid var(--codex-ink);
+  outline-offset: 3px;
+}

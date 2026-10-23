@@ -160,12 +160,13 @@ describe("execution ribbon", () => {
     expect(html).toContain("正在处理");
     expect(html).not.toMatch(/class="execution-phase execution-state-sweep"/);
     expect(html).toContain('class="execution-state-sweep" data-running="true"');
-    expect((html.match(/class="execution-state-sweep" data-running="true"/g) ?? []).length).toBe(2);
+    expect((html.match(/class="execution-state-sweep" data-running="true"/g) ?? []).length).toBe(1);
     expect(html).toContain("已用时 6秒");
     expect(html).toContain('aria-expanded="true"');
     expect(html).not.toContain('class="execution-state-mark"');
     expect(html).not.toContain('class="execution-summary-icon"');
-    expect(html).toContain("运行了 2 个子任务");
+    expect(html).toContain('aria-label="子智能体协作"');
+    expect(html).toContain("1 个执行中 · 1/2 已完成");
     expect(html).toContain("搜索了 1 次内容 · 读取了 1 个文件");
     expect(html).toContain("6秒");
   });
@@ -537,7 +538,7 @@ describe("execution ribbon", () => {
     expect(html).not.toContain(">正在准备运行环境<");
   });
 
-  it("renders tasks and tools as flat Codex actions without nested disclosures", () => {
+  it("groups helper progress separately while keeping tools as flat Codex actions", () => {
     const html = renderToStaticMarkup(<ActivitySummary activity={activity} />);
 
     expect(html.match(/<section class="execution-ribbon/g)).toHaveLength(1);
@@ -545,7 +546,8 @@ describe("execution ribbon", () => {
     expect(html).not.toContain("execution-tool");
     expect(html).toContain("fact-checker");
     expect(html).toContain("risk-reviewer");
-    expect(html).toContain("运行了 2 个子任务");
+    expect(html).toContain('aria-label="子智能体协作"');
+    expect(html).toContain("1 个执行中 · 1/2 已完成");
     expect(html).toContain("搜索了 1 次内容 · 读取了 1 个文件");
   });
 

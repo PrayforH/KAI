@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -90,7 +90,10 @@ class ExecutionIdentity(FrozenModel):
     user_id: str
     agent_owner_user_id: str | None = None
     team_ids: tuple[str, ...] = ()
+    # Legacy capability namespace; credentials and old workload tokens use it.
     project_id: str
+    business_project_id: str | None = None
+    project_mcp_references: tuple[str, ...] = ()
     session_id: str
     run_id: str
     agent_name: str
@@ -166,6 +169,15 @@ class Run(FrozenModel):
     error_code: str | None = None
     input: dict[str, Any] = Field(default_factory=dict)
     trace_context: dict[str, str] = Field(default_factory=dict)
+
+    @property
+    def business_project_id(self) -> str | None:
+        """Use the Run's captured scope, including pre-split project Runs."""
+        value = self.input.get("business_project_id")
+        if value is None:
+            meta = self.input.get("project_context_meta")
+            value = cast(dict[str, Any], meta).get("projectId") if isinstance(meta, dict) else None
+        return value if isinstance(value, str) and value else None
 
 
 class Message(FrozenModel):
@@ -270,6 +282,8 @@ class AguiThreadBinding(FrozenModel):
     thread_id: str
     session_id: str
     previous_session_ids: tuple[str, ...] = ()
+    branch_snapshot_id: str | None = None
+    branched_from_thread_id: str | None = None
     title: str | None = None
     title_source: Literal["fallback", "model", "user"] | None = None
     title_updated_at: datetime | None = None

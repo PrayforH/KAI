@@ -1,0 +1,6 @@
+{
+  "host": "79",
+  "image": "kai/geo-mcp:0.3.0",
+  "files": 18,
+  "allBackendModuleAndTemplateHashesMatch": true
+}

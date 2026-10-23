@@ -8477,3 +8477,20 @@
 @container (min-width: 980px) {
   .agentCatalogList { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+
+.editableName button, .editableName input {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+}
+.editableName button { cursor: text; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.editableName button:hover { background: var(--codex-surface-hover); }
+.editableName button:focus-visible, .editableName input { outline: none; border-color: var(--codex-muted); }
+.editableName input { width: 22ch; background: var(--codex-surface); }

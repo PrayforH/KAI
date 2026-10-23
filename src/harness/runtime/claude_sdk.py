@@ -31,6 +31,9 @@ from claude_agent_sdk import (
     ResultMessage,
     SessionStore,
     StreamEvent,
+    SystemMessage,
+    TaskNotificationMessage,
+    TaskStartedMessage,
     TaskUpdatedMessage,
     TextBlock,
     Transport,
@@ -321,10 +324,15 @@ async def _client_query(
     run_id: str | None = None,
     warm: WarmSdkRequest | None = None,
 ) -> AsyncIterator[object]:
-    attempt_options: ClaudeAgentOptions = (
-        replace(options, extra_args={**options.extra_args, "replay-user-messages": None})
-        if steering is not None
-        else options
+    # A result ends a model turn, not necessarily a Run. Explicit state frames
+    # keep MCP/hooks alive while background agents finish and wake the lead.
+    attempt_options: ClaudeAgentOptions = replace(
+        options,
+        env={**options.env, "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS": "1"},
+        extra_args=(
+            {**options.extra_args, "replay-user-messages": None}
+            if steering is not None else options.extra_args
+        ),
     )
     recovery_session_id: str | None = None
     for attempt in range(len(SDK_STARTUP_RETRY_DELAYS_SECONDS) + 1):
@@ -449,13 +457,55 @@ async def _client_query(
 SDK_STEERING_RECEIPT_TIMEOUT_SECONDS = 10.0
 
 
+async def _completed_run_messages(client: ClaudeSDKClient | WarmEntry) -> AsyncIterator[object]:
+    """Hide intermediate results until the CLI has finished its background work.
+
+    The caller owns the Run timeout/cancellation and the one response reader.
+    Older transports without state events fall back to task lifecycle tracking.
+    """
+    state: str | None = None
+    active: set[str] = set()
+    result: ResultMessage | None = None
+    receive = getattr(client, "receive_messages", None) or client.receive_response
+    async for message in receive():
+        if isinstance(message, SystemMessage) and message.subtype == "session_state_changed":
+            state = str(message.data.get("state", ""))
+            yield message
+            if state == "idle" and result is not None and not active:
+                yield result
+                result = None
+            continue
+        if isinstance(message, TaskStartedMessage):
+            active.add(message.task_id)
+        elif isinstance(message, (TaskNotificationMessage, TaskUpdatedMessage)):
+            status = message.status
+            if isinstance(message, TaskUpdatedMessage):
+                status = status or message.patch.get("status")
+            if status in {"completed", "failed", "stopped", "killed"}:
+                active.discard(message.task_id)
+            elif status in {"running", "pending"}:
+                active.add(message.task_id)
+        if isinstance(message, ResultMessage):
+            if message.is_error or (state in {None, "idle"} and not active):
+                result = None
+                yield message
+            else:
+                result = message
+            continue
+        yield message
+    if active or result is not None:
+        raise RuntimeError("SDK stream closed before background work reached idle")
+
+
 async def _steerable_response(
     client: ClaudeSDKClient | WarmEntry,
     steering: SteeringInbox | None,
 ) -> AsyncIterator[object]:
     if steering is None:
-        async for message in client.receive_response():
+        async for message in _completed_run_messages(client):
             yield message
+            if isinstance(message, ResultMessage):
+                return
         return
     lock = asyncio.Lock()
     closed = False
@@ -490,7 +540,7 @@ async def _steerable_response(
 
     await steering.open()
     polling = asyncio.create_task(poll())
-    messages = client.receive_messages().__aiter__()
+    messages = _completed_run_messages(client).__aiter__()
     next_message: asyncio.Task[object] | None = None
 
     async def receive_next() -> object:
@@ -818,7 +868,15 @@ class ClaudeSdkRuntime:
             child_resolutions[name] = child_resolved
             for server_name, config in child_resolved.mcp_servers.items():
                 owner = server_owner.get(server_name)
-                if owner is not None and owner != snapshot.content_hash:
+                # A project and its published children can select the same remote
+                # connector. Share only identical resolved transports, including
+                # credential headers; same-name endpoints with different authority
+                # must still fail closed. In-process SDK servers remain owner-bound.
+                shared_remote = (
+                    config.get("type") in {"http", "sse"}
+                    and mcp_servers.get(server_name) == config
+                )
+                if owner is not None and owner != snapshot.content_hash and not shared_remote:
                     raise ToolResolutionError(
                         f"MCP server name conflicts across Lead/Sub Agents: {server_name}"
                     )

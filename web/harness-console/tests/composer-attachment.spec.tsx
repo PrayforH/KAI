@@ -24,13 +24,15 @@ describe("composer attachment card", () => {
     expect(experience).toContain(".composer-file-card .attachment-upload-status");
   });
 
-  it("draws one square thumbnail per attachment", () => {
-    expect(experience).toContain("flex: 0 0 72px");
+  it("uses square photos and filename cards for documents", () => {
+    expect(experience).toContain("flex: 0 0 80px");
     expect(experience).toContain("object-fit: cover");
     // The name moves to the tooltip and the accessibility tree, not the card.
     expect(experience).toMatch(/\.aui-attachment-text \{[^}]*clip-path: inset\(50%\)/);
     // A finished upload stays quiet apart from the ready mark.
-    expect(experience).toContain(".composer-file-ready");
+    expect(experience).toContain('.composer-file-card[data-kind="file"]');
+    expect(experience).toContain("flex: 0 0 208px");
+    expect(experience).not.toContain(".composer-file-ready");
   });
 
   it("renders the transfer state the store reports", () => {

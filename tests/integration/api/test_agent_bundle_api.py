@@ -103,6 +103,7 @@ async def test_published_bundle_is_available_in_the_task_agent_catalog(
             "runnable_by_viewer": True,
             "agent_id": published.json()["agent_id"],
             "current_version": published.json()["version"],
+            "platform_default": False,
             "connection_mode": "caller_owned",
             "can_view": True,
             "can_chat": True,
@@ -228,3 +229,31 @@ async def test_bundle_api_requires_zip_media_type() -> None:
 
     assert response.status_code == 415
     assert response.json()["error"]["code"] == "agent_bundle_media_type_invalid"
+
+
+@pytest.mark.asyncio
+async def test_platform_default_and_legacy_same_name_identities_stay_distinct() -> None:
+    from datetime import UTC, datetime
+
+    from harness.sharing.models import AgentScope, WorkspaceAgent
+
+    app = create_memory_app(settings=production_settings())
+    container = app.state.container
+    container.agents._default_manifest_path = Path("agents/lead-agent/agent.yaml")
+    now = datetime.now(UTC)
+    old = WorkspaceAgent(
+        tenantId="tenant-a", agentId="legacy-b", scope=AgentScope.PERSONAL,
+        ownerUserId="publisher", name="lead-agent", currentVersion="0.0.1",
+        createdBy="publisher", createdAt=now, updatedAt=now,
+    )
+    # Install the current release first, then simulate a second legacy identity
+    # sorting last. Name-only projection used to overwrite its id and pointer.
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        first = (await client.get("/v1/agents", headers=HEADERS)).json()
+        lead = next(item for item in first if item["name"] == "lead-agent")
+        assert lead["platform_default"] is True
+        assert lead["current_version"] == lead["version"]
+        await container.workspace_agents.add_agent(old)
+        second = (await client.get("/v1/agents", headers=HEADERS)).json()
+        assert next(item for item in second if item["name"] == "lead-agent") == lead
+        assert not any(item["name"].startswith("general-") for item in second)

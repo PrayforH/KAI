@@ -2,7 +2,7 @@
 # its release metadata binds the source used for the dependency-only rebuild.
 ARG KUBECTL_IMAGE=cgr.dev/chainguard/kubectl@sha256:0fee370907fa4cd5aa8be82b35772649fbca19abc07add837de6f87a9a97b5d2
 ARG PYTHON_IMAGE=python:3.12-slim-bookworm@sha256:4766d8b510c428e595d74b9cc5bbb2fae8e26316fffb4adc89908d79aacd58a2
-ARG GO_IMAGE=golang:1.27.2-bookworm@sha256:5cf287a799e6b94384bad13d16b14904c531f51ba65792237e122ce42b392f61
+ARG GO_IMAGE=golang:1.27.3-bookworm@sha256:972b4110ba0f47539a975c31e52c64765e1ff19f2d74469ae4a595c6676e80a5
 FROM ${KUBECTL_IMAGE} AS kubectl
 
 FROM ${GO_IMAGE} AS kubectl-builder

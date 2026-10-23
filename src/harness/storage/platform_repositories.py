@@ -830,7 +830,14 @@ class PostgresAguiThreadBindingRepository:
             raise NotFoundError(f"AG-UI session binding not found: {session_id}")
 
     async def list_for_user(
-        self, tenant_id: str, user_id: str, *, limit: int, archived: bool = False
+        self,
+        tenant_id: str,
+        user_id: str,
+        *,
+        limit: int,
+        archived: bool = False,
+        project_id: str | None = None,
+        offset: int = 0,
     ) -> list[AguiThreadBinding]:
         archived_at = AguiThreadBindingRow.payload["archived_at"].as_string()
         updated_at = AguiThreadBindingRow.payload["updated_at"].as_string()
@@ -850,8 +857,11 @@ class PostgresAguiThreadBindingRepository:
                 updated_at.desc(),
                 AguiThreadBindingRow.thread_id.desc(),
             )
+            .offset(offset)
             .limit(limit)
         )
+        if project_id is not None:
+            statement = statement.where(AguiThreadBindingRow.project_id == project_id)
         async with self._sessions() as session:
             payloads = (await session.execute(statement)).scalars().all()
             return [AguiThreadBinding.model_validate(payload) for payload in payloads]

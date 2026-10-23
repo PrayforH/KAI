@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { Attachment, CreateAttachment } from "@assistant-ui/react";
 import { useTaskComposerSnapshot } from "../src/components/task-composer-draft";
-import { pendingNewTaskDraft, rememberNewTaskDraft, loadTaskComposerSnapshot } from "../src/lib/task-composer-draft";
+import { pendingNewTaskDraft, rememberNewTaskDraft, loadTaskComposerSnapshot, persistTaskComposerSnapshot } from "../src/lib/task-composer-draft";
 
 const runtime = vi.hoisted(() => ({ current: null as unknown }));
 vi.mock("@assistant-ui/react", () => ({ useComposerRuntime: () => runtime.current }));
@@ -69,4 +69,20 @@ test("attachment-only drafts remain reachable and uploading files survive a thre
   expect(pendingNewTaskDraft(localStorage, "draft-user")).toBe("pending-file");
   expect(loadTaskComposerSnapshot(localStorage, "draft-user", "pending-file").attachments[0]).toBe(file);
   expect(loadTaskComposerSnapshot(localStorage, "other-user", "pending-file").attachments).toHaveLength(0);
+});
+
+
+test("a project prompt survives history initialization before the composer is ready", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const scope = { userId: "draft-user", threadId: "project-history-race" };
+  persistTaskComposerSnapshot(localStorage, scope.userId, scope.threadId, "执行项目需求", []);
+  const draft = composer(); runtime.current = draft;
+  function Target({ ready }: { ready: boolean }) { useTaskComposerSnapshot(ready ? scope : null); return null; }
+  const root = createRoot(document.createElement("div"));
+  await act(async () => root.render(<Target ready={false} />));
+  await act(async () => draft.reset());
+  expect(loadTaskComposerSnapshot(localStorage, scope.userId, scope.threadId).text).toBe("执行项目需求");
+  await act(async () => root.render(<Target ready />));
+  expect(draft.getState().text).toBe("执行项目需求");
+  await act(async () => root.unmount());
 });

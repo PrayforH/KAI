@@ -74,6 +74,24 @@ async def get_run(
     return await require_owned_run(container, identity, run_id)
 
 
+@router.get("/runs/{run_id}/context")
+async def get_run_context(
+    run_id: str,
+    identity: Annotated[Identity, Depends(require_identity)],
+    container: Annotated[ApiContainer, Depends(get_container)],
+) -> dict[str, object]:
+    """Expose captured provenance and actual Skill conflict decisions, without file bodies."""
+    ensure_permission(identity, "tasks:read")
+    run = await require_owned_run(container, identity, run_id)
+    staged = await container.observed_events.list_after(
+        identity.tenant_id, run_id, 0, types=("project.skills.staged",)
+    )
+    return {
+        "manifest": run.input.get("context_manifest"),
+        "skillResolutions": staged[-1].payload.get("resources", []) if staged else [],
+    }
+
+
 class SteerRunRequest(BaseModel):
     request_id: str = Field(min_length=1, max_length=80, pattern=r"^[a-zA-Z0-9_-]+$")
     text: str = Field(min_length=1, max_length=20000)

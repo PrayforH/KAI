@@ -146,7 +146,9 @@ describe("Codex-style activity UI", () => {
     expect(html).toContain("执行进度");
     expect(html).toContain("正在读取 docs/agent-production-platform-design.md");
     expect(html).toContain('aria-label="运行过程，仅展示可观察事件"');
-    expect(html).toContain("正在运行子任务 分析仓库");
+    expect(html).toContain("子智能体协作");
+    expect(html).toContain("分析仓库");
+    expect(html).toContain("1 个执行中 · 0/1 已完成");
     expect(html).not.toContain("运行模型");
     expect(html).not.toContain("claude-sonnet");
     expect(html.match(/<section class="execution-ribbon/g)).toHaveLength(1);

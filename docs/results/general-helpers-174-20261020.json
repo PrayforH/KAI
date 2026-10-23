@@ -1,0 +1,217 @@
+{
+  "release": "helpers-20261020-r35",
+  "web_release": "helpers-20261020-r35",
+  "agent_version": "1.1.1+platform.99dfe677",
+  "thread_id": "a2593503-f734-404c-8920-af8dbaa85ce4",
+  "session_id": "session_25ffd9c9d01f4a8aabbd9652d4d489a7",
+  "checks": {
+    "automatic_three_tasks": true,
+    "all_children_completed": true,
+    "three_way_overlap_seconds": 9.754,
+    "child_tool_attribution": true,
+    "mcp_main_only": true,
+    "artifact_download_hash": true,
+    "continuity_after_parallel": true,
+    "cross_turn_file_read": true,
+    "project_instruction": true,
+    "internal_helpers_hidden": true,
+    "no_helper_studio_drafts": true,
+    "new_task_uses_installed_default": true,
+    "history_playback": true,
+    "desktop_mobile": true
+  },
+  "intervals": {
+    "acf7aa6825af84d4c": {
+      "alias": "reviewer",
+      "task_id": "acf7aa6825af84d4c",
+      "start": "2026-10-20T02:40:46.503116Z",
+      "end": "2026-10-20T02:41:01.400902Z",
+      "duration_ms": 14916
+    },
+    "a65e5c18ba26f9eff": {
+      "alias": "analyst",
+      "task_id": "a65e5c18ba26f9eff",
+      "start": "2026-10-20T02:40:48.813483Z",
+      "end": "2026-10-20T02:45:17.432747Z",
+      "duration_ms": 268617
+    },
+    "a9ee57b30af0e2e61": {
+      "alias": "reviewer",
+      "task_id": "a9ee57b30af0e2e61",
+      "start": "2026-10-20T02:40:51.646973Z",
+      "end": "2026-10-20T02:45:06.608398Z",
+      "duration_ms": 254961
+    }
+  },
+  "files": [
+    {
+      "name": "sales-summary.csv",
+      "sha256": "12377881d4a9e3efc6ebe69f55d7880bcffa6861be522780907a07223ebb4e10",
+      "bytes": 290,
+      "content": "month,revenue,cost,profit,margin_pct,growth_pct\r\nJan,120000,84000,36000,30.0,\r\nFeb,150000,105000,45000,30.0,25.0\r\nMar,180000,117000,63000,35.0,40.0\r\nApr,160000,112000,48000,30.0,-23.8\r\nMay,200000,130000,70000,35.0,45.8\r\nJun,240000,156000,84000,35.0,20.0\r\nTOTAL,1050000,704000,346000,33.0,\r\n"
+    },
+    {
+      "name": "receipt.txt",
+      "sha256": "17c71df9a566d84573374261c1836eca3e0226ddfbb24b05499dfb7a8c1dac6c",
+      "bytes": 130,
+      "content": "label: helpers33\na: 19\nb: 23\ntotal: 42\nreceipt: SDK174-f76428c90962\nstarted_at: 1792464030.134694\nfinished_at: 1792464031.1357484\n"
+    }
+  ],
+  "runs": [
+    {
+      "label": "complete-default-assistant",
+      "run_id": "run_59a1d83e9a714618b6d50f61e9f2f8db",
+      "status": "succeeded",
+      "final": "三部分已完成并综合为决策报告，交付文件均已发布。\n\n## 结论速览\n\n**① 选型 — 推荐产品 A**（满足 2/3 项需求）。15 人是硬性容量，B 仅支持 10 人直接不达标；A 支持本地部署。**唯一硬缺口**：A 日志仅 30 天 < 要求的 60 天，需先确认可延长方案。\n\n**② 经营 — 半年稳健**。总营收 105.0 万、总成本 70.4 万、总利润 34.6 万，整体利润率 33.0%。**4 月是唯一利润下滑月**（环比 −23.8%），因收入降 11.1% 而成本只降 4.3%。\n\n**③ 合同 — 高风险**。四类矛盾并存：年费差额 **1,200 元/年**、用户缺口 **10 个**（年支出或升至 16,800 元）、日志 **30/60 天**冲突、终止后导出冲突。\n\n```harness-ui\n{\"version\":1,\"kind\":\"chart\",\"title\":\"1–6月利润与利润率\",\"fallback_text\":\"1-6月利润从3.6万升至8.4万，总体上升，4月为唯一回落月（4.8万，环比-23.8%），利润率在30%-35%间波动。\",\"data\":{\"categories\":[\"Jan\",\"Feb\",\"Mar\",\"Apr\",\"May\",\"Jun\"],\"series\":[{\"name\":\"利润(元)\",\"values\":[36000,45000,63000,48000,70000,84000]},{\"name\":\"利润率(%)\",\"values\":[30.0,30.0,35.0,30.0,35.0,35.0]}]},\"config\":{\"y_axis_label\":\"利润(元) / 利润率(%)\"}}\n```\n\n```harness-ui\n{\"version\":1,\"kind\":\"table\",\"title\":\"合同矛盾与供应商澄清清单\",\"fallback_text\":\"合同存在四类矛盾：年费9600与10800差1200元；用户上限20与报价含10存在10用户缺口；日志60天与附录30天冲突；可随时导出与终止后不提供导出冲突。\",\"data\":{\"columns\":[\"条款\",\"矛盾\",\"影响\",\"澄清问题\"],\"rows\":[[\"一 vs 二\",\"9600元/年 vs 900×12=10800元/年，差1200元/年\",\"应付金额无唯一口径，对账开票受影响\",\"以9600还是10800为准？差额1200元性质？\"],[\"第四条\",\"最多20用户 vs 报价含10用户+增购50元/人/月，缺10用户；含10用户隐含80元/人/月≠50元\",\"另购10用户加6000元/年，年支出或达16800元\",\"年费覆盖10还是20用户？20是含在内还是上限？\"],[\"三 vs 附录\",\"正文日志60天 vs 附录默认30天且不可延长\",\"合规留存不确定，取证时日志可能过期\",\"实际30还是60天？60天是否需另购？以谁为准？\"],[\"五 vs 附件\",\"所有数据可随时导出 vs 终止后不提供导出\",\"退出时数据或锁定，形成供应商锁定\",\"终止后有无导出窗口？随时是否含终止后？\"]]}}\n```\n\n## 交付物\n\n| 文件 | 内容 |\n|---|---|\n| `outputs/decision-report.md` | 完整决策报告（选型+经营+合同） |\n| `outputs/analysis/sales-summary.csv` | 逐月利润/利润率/环比+合计（已读回验证） |\n| `outputs/receipt.txt` | MCP receipt |\n| `materials/products.md` / `sales.csv` / `contract.md` | 已保存的可读原始材料 |\n\n**MCP receipt**：label=helpers33, a=19, b=23, **total=42**, receipt=SDK174-f76428c90962（已落盘并核验）。口令 CEDAR-5831 已在本轮记录。\n\nPROJECT_HELPERS31",
+      "tools": [
+        {
+          "name": "mcp__sdk174-probe__probe_sum",
+          "agent_id": null
+        },
+        {
+          "name": "Write",
+          "agent_id": null
+        },
+        {
+          "name": "Write",
+          "agent_id": null
+        },
+        {
+          "name": "Write",
+          "agent_id": null
+        },
+        {
+          "name": "Write",
+          "agent_id": null
+        },
+        {
+          "name": "Read",
+          "agent_id": null
+        },
+        {
+          "name": "Read",
+          "agent_id": null
+        },
+        {
+          "name": "Read",
+          "agent_id": null
+        },
+        {
+          "name": "Read",
+          "agent_id": null
+        },
+        {
+          "name": "Agent",
+          "agent_id": null
+        },
+        {
+          "name": "Read",
+          "agent_id": "acf7aa6825af84d4c"
+        },
+        {
+          "name": "Agent",
+          "agent_id": null
+        },
+        {
+          "name": "Read",
+          "agent_id": "a65e5c18ba26f9eff"
+        },
+        {
+          "name": "Agent",
+          "agent_id": null
+        },
+        {
+          "name": "Read",
+          "agent_id": "a9ee57b30af0e2e61"
+        },
+        {
+          "name": "Bash",
+          "agent_id": "a65e5c18ba26f9eff"
+        },
+        {
+          "name": "Read",
+          "agent_id": "a65e5c18ba26f9eff"
+        },
+        {
+          "name": "Read",
+          "agent_id": null
+        },
+        {
+          "name": "Glob",
+          "agent_id": null
+        },
+        {
+          "name": "Write",
+          "agent_id": null
+        },
+        {
+          "name": "Read",
+          "agent_id": null
+        },
+        {
+          "name": "mcp__harness-artifacts__publish_artifact",
+          "agent_id": null
+        },
+        {
+          "name": "mcp__harness-artifacts__publish_artifact",
+          "agent_id": null
+        },
+        {
+          "name": "mcp__harness-artifacts__publish_artifact",
+          "agent_id": null
+        }
+      ],
+      "runtime_sessions": [
+        "e93d6f8b-b719-4fb4-9c2a-c060d97650f5"
+      ],
+      "model_routes": [
+        "shdata-model"
+      ],
+      "release": "helpers-20261020-r33"
+    },
+    {
+      "label": "after-automatic-delegation",
+      "run_id": "run_927cb4cc2e9e4572b26b5ead3a1ac56b",
+      "status": "succeeded",
+      "final": "已实际读取，文件仍可访问，内容与记录一致。\n\n**1. 本项目口令**：CEDAR-5831\n\n**2. 最初的 probe_sum receipt**（记录自本会话早期，本轮未再调用该连接器）：label=`helpers33`，a=19，b=23，**total=42**，receipt=`SDK174-f76428c90962`，started_at=1792464030.134694，finished_at=1792464031.1357484。\n\n**3. 半年收入与利润**：收入合计 **1,050,000 元**，利润合计 **346,000 元**（成本 704,000 元，整体利润率 33.0%）。\n\n**4. 文件读取确认**：已用工作区读取工具打开 `outputs/analysis/sales-summary.csv`，读取成功、文件可访问，内容如下：\n\n| month | revenue | cost | profit | margin_pct | growth_pct |\n|---|---|---|---|---|---|\n| Jan | 120000 | 84000 | 36000 | 30.0 | — |\n| Feb | 150000 | 105000 | 45000 | 30.0 | 25.0 |\n| Mar | 180000 | 117000 | 63000 | 35.0 | 40.0 |\n| Apr | 160000 | 112000 | 48000 | 30.0 | -23.8 |\n| May | 200000 | 130000 | 70000 | 35.0 | 45.8 |\n| Jun | 240000 | 156000 | 84000 | 35.0 | 20.0 |\n| **TOTAL** | **1050000** | **704000** | **346000** | **33.0** | — |\n\n逐行数值与前次读回结果完全一致，无缺列、无错值。未调用 probe_sum，未写长期记忆。\n\nPROJECT_HELPERS31",
+      "tools": [
+        {
+          "name": "Read",
+          "agent_id": null
+        }
+      ],
+      "runtime_sessions": [
+        "e93d6f8b-b719-4fb4-9c2a-c060d97650f5"
+      ],
+      "model_routes": [
+        "shdata-model"
+      ],
+      "release": "helpers-20261020-r35"
+    }
+  ],
+  "source_commit": "2eab59ae",
+  "browser_checks": [
+    {
+      "group": "⑂\n子智能体协作\n3/3 已完成\n⌃\n结果核验\n产品选型对比\n已完成\n15秒\n⌄\n分析执行\n销售数据计算与验证\n已完成\n4分29秒\n⌄\n结果核验\n合同矛盾核对\n已完成\n4分15秒\n⌄",
+      "errors": []
+    },
+    {
+      "collapse": "passed",
+      "details": "passed",
+      "mobileOverflow": false,
+      "errors": []
+    },
+    {
+      "newTaskDefault": {
+        "name": "lead-agent",
+        "version": "1.1.1+platform.99dfe677"
+      }
+    }
+  ],
+  "cleanup": {
+    "qa_project_and_threads_archived": true,
+    "probe_disabled": true,
+    "temporary_services_removed": true,
+    "qa_browser_session_revoked": true
+  }
+}

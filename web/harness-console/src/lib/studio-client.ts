@@ -1142,6 +1142,8 @@ export type StudioCapabilities = {
     reference: string;
     ownerUserId: string | null;
     allowedExecutionProfileIds: string[];
+    visibility?: "all" | "selected";
+    visibleAgentIds?: string[];
     category: "tool" | "knowledge";
     serverName: string | null;
     label: string;
@@ -2038,6 +2040,7 @@ export const studioClient = {
     audience?: string;
     sampleInput?: string;
     runtimePreference: "auto" | StudioDraft["runtime"];
+    modelRouteOverride?: string;
   }, onProgress?: (event: StudioStreamProgress) => void, signal?: AbortSignal): Promise<StudioTaskDrivenDraftResult> => {
     try {
       const init = {
@@ -2080,6 +2083,7 @@ export const studioClient = {
   readBuilderMaterials: (inputArtifactIds: string[], modelRoute?: string): Promise<{context: string}> => request("builder-materials", {method: "POST", body: JSON.stringify({inputArtifactIds, modelRoute})}),
   converseBuilder: (draftId: string, body: {
     expectedRevision: number;
+    modelRouteOverride?: string;
     messages: { role: "user" | "assistant"; content: string }[];
     runContext: string;
     intent?: "auto" | "edit";
@@ -2249,7 +2253,7 @@ export const studioClient = {
     expectedRevision: number,
     prompt: string,
     idempotencyKey: string,
-    options: { continueFromRunId?: string; inputArtifactIds?: string[]; builderTools?: boolean; pendingProposal?: StudioBuilderChanges } = {},
+    options: { continueFromRunId?: string; inputArtifactIds?: string[]; builderTools?: boolean; pendingProposal?: StudioBuilderChanges; modelRouteOverride?: string | null } = {},
   ) => request<StudioTryRun>(`drafts/${encodeURIComponent(draftId)}/try-runs`, {
     method: "POST",
     body: JSON.stringify({ expectedRevision, prompt, idempotencyKey, ...options }),
@@ -2685,6 +2689,8 @@ export function capabilityOptions(catalog: StudioCapabilities): {
       tools: item.tools,
       network: item.networkAccess,
       sendsUserData: item.sendsUserData,
+      visibility: item.visibility,
+      visibleAgentIds: item.visibleAgentIds,
     })),
     profiles: catalog.executionProfiles.filter((item) => item.enabled),
     templates: catalog.templates ?? [],
@@ -2824,9 +2830,69 @@ export interface ApiProject {
   projectId: string;
   userId: string;
   name: string;
+  instructions?: string;
+  skillReferences?: string[];
+  knowledgeReferences?: string[];
+  mcpReferences?: string[];
+  pinnedAt?: string | null;
   archivedAt?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ApiProjectResult {
+  resultId: string;
+  projectId: string;
+  artifactId: string;
+  inputArtifactId: string;
+  threadId: string;
+  threadTitle: string;
+  runId: string;
+  name: string;
+  mediaType: string;
+  sizeBytes: number;
+  sha256: string | null;
+  version: number;
+  finalizedAt: string | null;
+  createdAt: string;
+}
+
+export interface ApiProjectMemory {
+  tenantId: string;
+  userId: string;
+  projectId: string;
+  memoryId: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ApiProjectDocument {
+  tenantId: string;
+  userId: string;
+  projectId: string;
+  inputArtifactId: string;
+  name: string;
+  mediaType: string;
+  sizeBytes: number;
+  createdAt: string;
+}
+
+export interface ApiProjectResources {
+  project: ApiProject;
+  memories: ApiProjectMemory[];
+  documents: ApiProjectDocument[];
+  links: ApiProjectLink[];
+}
+
+export interface ApiProjectLink {
+  tenantId: string;
+  userId: string;
+  projectId: string;
+  linkId: string;
+  url: string;
+  title: string;
+  createdAt: string;
 }
 
 export const projectClient = {
@@ -2837,11 +2903,95 @@ export const projectClient = {
         return response.json() as Promise<ApiProject[]>;
       });
   },
-  create(name: string): Promise<ApiProject> {
+  create(name: string, instructions?: string): Promise<ApiProject> {
     return request<ApiProject>("projects", {
       method: "POST",
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, ...(instructions ? { instructions } : {}) }),
     });
+  },
+  update(
+    projectId: string,
+    update: {
+      name?: string;
+      instructions?: string;
+      skillReferences?: string[];
+      knowledgeReferences?: string[];
+      mcpReferences?: string[];
+      pinned?: boolean;
+      archived?: boolean;
+    },
+  ): Promise<ApiProject> {
+    return request<ApiProject>(`projects/${encodeURIComponent(projectId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(update),
+    });
+  },
+  resources(projectId: string): Promise<ApiProjectResources> {
+    return request<ApiProjectResources>(
+      `projects/${encodeURIComponent(projectId)}/resources`,
+    );
+  },
+  results(projectId: string): Promise<ApiProjectResult[]> {
+    return request(`projects/${encodeURIComponent(projectId)}/results`);
+  },
+  saveResult(projectId: string, artifactId: string): Promise<ApiProjectResult> {
+    return request(`projects/${encodeURIComponent(projectId)}/results`, {
+      method: "POST", body: JSON.stringify({ artifactId }),
+    });
+  },
+  finalizeResult(projectId: string, resultId: string, finalized: boolean): Promise<ApiProjectResult> {
+    return request(`projects/${encodeURIComponent(projectId)}/results/${encodeURIComponent(resultId)}`, {
+      method: "PATCH", body: JSON.stringify({ finalized }),
+    });
+  },
+  addMemory(projectId: string, content: string): Promise<ApiProjectMemory> {
+    return request<ApiProjectMemory>(
+      `projects/${encodeURIComponent(projectId)}/memories`,
+      { method: "POST", body: JSON.stringify({ content }) },
+    );
+  },
+  updateMemory(
+    projectId: string,
+    memoryId: string,
+    content: string,
+  ): Promise<ApiProjectMemory> {
+    return request<ApiProjectMemory>(
+      `projects/${encodeURIComponent(projectId)}/memories/${encodeURIComponent(memoryId)}`,
+      { method: "PUT", body: JSON.stringify({ content }) },
+    );
+  },
+  removeMemory(projectId: string, memoryId: string): Promise<void> {
+    return request<void>(
+      `projects/${encodeURIComponent(projectId)}/memories/${encodeURIComponent(memoryId)}`,
+      { method: "DELETE" },
+    );
+  },
+  attachDocument(
+    projectId: string,
+    inputArtifactId: string,
+  ): Promise<ApiProjectDocument> {
+    return request<ApiProjectDocument>(
+      `projects/${encodeURIComponent(projectId)}/documents`,
+      { method: "POST", body: JSON.stringify({ inputArtifactId }) },
+    );
+  },
+  detachDocument(projectId: string, inputArtifactId: string): Promise<void> {
+    return request<void>(
+      `projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(inputArtifactId)}`,
+      { method: "DELETE" },
+    );
+  },
+  addLink(projectId: string, url: string, title: string): Promise<ApiProjectLink> {
+    return request<ApiProjectLink>(
+      `projects/${encodeURIComponent(projectId)}/links`,
+      { method: "POST", body: JSON.stringify({ url, ...(title ? { title } : {}) }) },
+    );
+  },
+  deleteLink(projectId: string, linkId: string): Promise<void> {
+    return request<void>(
+      `projects/${encodeURIComponent(projectId)}/links/${encodeURIComponent(linkId)}`,
+      { method: "DELETE" },
+    );
   },
   rename(projectId: string, name: string): Promise<ApiProject> {
     return request<ApiProject>(`projects/${encodeURIComponent(projectId)}`, {

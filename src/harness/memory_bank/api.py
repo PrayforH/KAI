@@ -33,11 +33,22 @@ async def list_entries(
     identity: Annotated[Identity, Depends(require_identity)],
     container: Annotated[ApiContainer, Depends(get_container)],
     agent_name: Annotated[str | None, Query(alias="agentName")] = None,
+    project_id: Annotated[
+        str | None, Query(alias="projectId", min_length=1, max_length=128)
+    ] = None,
 ) -> list[MemoryEntry]:
     ensure_permission(identity, "tasks:read")
+    if project_id is not None:
+        await container.projects.get(
+            tenant_id=identity.tenant_id, user_id=identity.user_id, project_id=project_id
+        )
     return list(
         await container.memory_bank.list_entries(
-            identity.tenant_id, identity.user_id, agent_name=agent_name
+            identity.tenant_id,
+            identity.user_id,
+            agent_name=agent_name,
+            project_id=project_id,
+            include_project_scopes=project_id is None,
         )
     )
 
@@ -49,10 +60,15 @@ async def propose(
     container: Annotated[ApiContainer, Depends(get_container)],
 ) -> MemoryEntry:
     ensure_permission(identity, "tasks:write")
+    if body.project_id is not None:
+        await container.projects.get(
+            tenant_id=identity.tenant_id, user_id=identity.user_id, project_id=body.project_id
+        )
     return await container.memory_bank.propose(
         tenant_id=identity.tenant_id,
         user_id=identity.user_id,
         agent_name=body.agent_name,
+        project_id=body.project_id,
         owner_id=body.agent_owner_user_id or identity.user_id,
         content=body.content,
         memory_type=body.memory_type,
@@ -131,6 +147,10 @@ async def search(
     container: Annotated[ApiContainer, Depends(get_container)],
 ) -> list[MemorySearchHit]:
     ensure_permission(identity, "tasks:read")
+    if body.project_id is not None:
+        await container.projects.get(
+            tenant_id=identity.tenant_id, user_id=identity.user_id, project_id=body.project_id
+        )
     return list(
         await container.memory_bank.search(
             identity.tenant_id,
@@ -139,6 +159,7 @@ async def search(
             body.query,
             limit=body.limit,
             owner_id=body.agent_owner_user_id or identity.user_id,
+            project_id=body.project_id,
         )
     )
 

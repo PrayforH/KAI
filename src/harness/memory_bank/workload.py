@@ -48,6 +48,8 @@ class MemoryWorkloadTokenService:
                 "tenant": identity.tenant_id,
                 "user": identity.user_id,
                 "project": identity.project_id,
+                "scope_version": 2,
+                "business_project": identity.business_project_id,
                 "session": identity.session_id,
                 "run": identity.run_id,
                 "agent": identity.agent_name,
@@ -87,6 +89,7 @@ class MemoryWorkloadTokenService:
             tenant_id=str(payload["tenant"]),
             user_id=str(payload["user"]),
             project_id=str(payload["project"]),
+            business_project_id=payload.get("business_project"),
             session_id=str(payload["session"]),
             run_id=str(payload["run"]),
             agent_name=str(payload["agent"]),
@@ -187,6 +190,7 @@ def build_memory_mcp_app(
             identity.agent_name,
             query,
             owner_id=identity.resolved_agent_owner_user_id,
+            project_id=identity.business_project_id,
             limit=min(limit, 20),
         )
         return {

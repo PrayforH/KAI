@@ -50,6 +50,7 @@ async def list_user_artifacts(
     container: Annotated[ApiContainer, Depends(get_container)],
     limit: Annotated[int, Query(ge=1, le=500)] = 200,
     thread_id: Annotated[str | None, Query(min_length=1, max_length=256)] = None,
+    project_id: Annotated[str | None, Query(min_length=1, max_length=128)] = None,
 ) -> list[UserArtifactIndexEntry]:
     """Return generated files from every task owned by the current user."""
 
@@ -60,21 +61,29 @@ async def list_user_artifacts(
         )
         bindings = [binding]
     else:
+        if project_id is not None:
+            await container.projects.get(
+                tenant_id=identity.tenant_id, user_id=identity.user_id, project_id=project_id
+            )
         active_bindings, archived_bindings = await asyncio.gather(
             container.agui.list_bindings(
                 tenant_id=identity.tenant_id,
                 user_id=identity.user_id,
                 limit=1_000,
                 archived=False,
+                project_id=project_id,
             ),
             container.agui.list_bindings(
                 tenant_id=identity.tenant_id,
                 user_id=identity.user_id,
                 limit=1_000,
                 archived=True,
+                project_id=project_id,
             ),
         )
         bindings = [*active_bindings, *archived_bindings]
+    if project_id is not None:
+        bindings = [item for item in bindings if item.project_id == project_id]
     if not bindings:
         return []
 

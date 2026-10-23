@@ -84,6 +84,7 @@ async def download_input_artifact(
     input_artifact_id: str,
     identity: Annotated[Identity, Depends(require_identity)],
     container: Annotated[ApiContainer, Depends(get_container)],
+    inline: bool = False,
 ) -> Response:
     ensure_permission(identity, "tasks:read")
     artifact, content = await container.input_artifacts.download(
@@ -91,10 +92,19 @@ async def download_input_artifact(
         user_id=identity.user_id,
         input_artifact_id=input_artifact_id,
     )
+    # Only formats a browser can render safely may be displayed inline. User
+    # uploads such as HTML/SVG stay downloads so they cannot run same-origin.
+    media_type = artifact.media_type.split(";", 1)[0].strip().lower()
+    inline_safe = media_type.startswith(("text/", "image/")) or media_type in {
+        "application/pdf",
+    }
     return Response(
         content=content,
         media_type=artifact.media_type,
         headers={
-            "Content-Disposition": attachment_content_disposition(artifact.name)
+            "Content-Disposition": attachment_content_disposition(
+                artifact.name, inline=inline and inline_safe
+            ),
+            "X-Content-Type-Options": "nosniff",
         },
     )

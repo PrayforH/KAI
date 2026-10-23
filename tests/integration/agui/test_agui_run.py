@@ -695,6 +695,13 @@ async def test_agui_run_does_not_trust_inline_data_urls_or_cross_user_ids() -> N
     app = create_memory_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS)
+        # Let the second user reach input authorization with their own Agent.
+        # A missing Agent would reject earlier and never exercise this check.
+        await client.post(
+            "/v1/agents",
+            json={"path": str(FIXTURE_MANIFEST)},
+            headers={**HEADERS, "X-User-ID": "user-2"},
+        )
         uploaded = await client.post(
             "/v1/input-artifacts",
             files={"file": ("private.txt", b"private", "text/plain")},

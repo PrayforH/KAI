@@ -91,8 +91,12 @@ from harness.presentation.intent import UIIntentSelector
 from harness.presentation.models import ActionRequest, Publication
 from harness.presentation.planner import InteractionPlanner
 from harness.presentation.service import PresentationService
-from harness.projects.pg_repositories import PostgresProjectRepository
-from harness.projects.service import ProjectService
+from harness.projects.pg_repositories import (
+    PostgresProjectRepository,
+    PostgresProjectResourceRepository,
+)
+from harness.projects.service import ProjectService, project_knowledge_resolver
+from harness.projects.skill_snapshots import ProjectSkillSnapshots
 from harness.quality.controller import QualitySyncController
 from harness.quality.langfuse import DisabledQualityExporter, LangfuseQualityExporter
 from harness.quality.queue import QualityTaskQueue
@@ -214,6 +218,7 @@ from harness.studio.mcp_discovery import (
     McpDiscoveryService,
 )
 from harness.studio.model_configuration import ModelConfigurationService
+from harness.studio.platform_skills import skill_snapshots_for_references
 from harness.studio.preflight import LivePreflightProvisioner, LivePreflightRunner
 from harness.studio.preflight_probes import (
     ControlPlaneModelPreflightProbe,
@@ -660,6 +665,7 @@ def build_production_container(
         secure=settings.minio_secure,
     )
     skill_blobs = SkillBlobStore(store)
+    project_skill_snapshots = ProjectSkillSnapshots(skill_blobs)
     registry = PostgresAgentRegistry(sessions, skill_blobs)
     team_space_repository = PostgresTeamSpaceRepository(sessions)
     session_repository = PostgresSessionRepository(sessions)
@@ -863,8 +869,9 @@ def build_production_container(
         published_route_references=registry.route_references,
         clock=clock,
         sandbox_network_access={str(k): v for k, v in settings.sandbox_network_access.items()},
-        sandbox_providers=frozenset(profile_provider_name(name)
-                                    for name in _enabled_providers(settings)),
+        sandbox_providers=frozenset(
+            profile_provider_name(name) for name in _enabled_providers(settings)
+        ),
     )
     environment_mcp_credentials = server_secret_credential_provider(
         references_json=settings.mcp_secret_references_json,
@@ -909,8 +916,9 @@ def build_production_container(
         agent_ids=agent_ids,
         draft_permissions=team_spaces,
         intent_router=BuilderIntentRouter.from_settings(settings),
-        default_execution_profile=("opensandbox-gvisor"
-                                   if settings.sandbox_provider == "opensandbox" else None),
+        default_execution_profile=(
+            "opensandbox-gvisor" if settings.sandbox_provider == "opensandbox" else None
+        ),
         clock=clock,
         id_generator=lambda: ids("draft"),
     )
@@ -1021,8 +1029,11 @@ def build_production_container(
     )
     project_service = ProjectService(
         PostgresProjectRepository(sessions),
+        resources=PostgresProjectResourceRepository(sessions),
         clock=clock,
         id_generator=ids,
+        knowledge_resolver=project_knowledge_resolver(knowledge.resolve_bindings),
+        connector_catalog=capability_catalogs,
     )
     automation_service = AutomationService(
         automation_task_repository,
@@ -1070,6 +1081,16 @@ def build_production_container(
         processor=DefaultInputProcessor(),
         file_catalog=file_service,
     )
+
+    async def resolve_project_document(tenant_id: str, user_id: str, input_artifact_id: str):
+        resolved = await input_service.resolve_for_run(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            input_artifact_ids=[input_artifact_id],
+        )
+        return resolved[0]
+
+    project_service.configure_document_resolver(resolve_project_document)
     eval_service = EvalControlPlaneService(
         datasets=eval_dataset_repository,
         runs=eval_run_repository,
@@ -1131,9 +1152,11 @@ def build_production_container(
         id_generator=ids,
         quality_gate=quality_service.require_promotion_allowed,
         capability_catalog_resolver=capability_catalogs.get_for_deployment,
-        default_execution_profile=("opensandbox-gvisor"
-                                   if settings.sandbox_provider == "opensandbox"
-                                   else "isolated-default"),
+        default_execution_profile=(
+            "opensandbox-gvisor"
+            if settings.sandbox_provider == "opensandbox"
+            else "isolated-default"
+        ),
         knowledge_reference_validator=knowledge.require_bases,
         quotas=enforced_quotas,
     )
@@ -1534,6 +1557,8 @@ def build_production_container(
         interaction_planner=InteractionPlanner.from_settings(settings),
         workspace_policy_resolver=workspace_policy,
         runtime_asset_stager=stage_runtime_assets if execution_enabled else None,
+        project_skills=skill_snapshots_for_references,
+        project_skill_snapshots=project_skill_snapshots,
         policy_resolver=resolve_policy,
         output_artifact_max_bytes=settings.output_artifact_max_bytes,
         quality_hook=quality_service.record_terminal_run,
@@ -1550,6 +1575,8 @@ def build_production_container(
         context_service=context_service,
     )
     agui = AguiRunService(
+        workspaces=workspace_service,
+        project_skill_snapshots=project_skill_snapshots,
         sessions=session_service,
         runs=run_service,
         input_artifacts=input_service,
@@ -1557,6 +1584,7 @@ def build_production_container(
         contexts=context_service,
         title_generator=ControlPlaneTaskTitleGenerator(model_configurations),
         knowledge_bindings=knowledge.resolve_bindings,
+        project_context=project_service.context_for_run,
     )
     project_service.configure_task_project_clearer(binding_repository.clear_project)
     project_service.configure_task_project_writer(

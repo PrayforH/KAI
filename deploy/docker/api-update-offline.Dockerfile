@@ -4,7 +4,7 @@
 ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
 USER root
-ARG SDK_VERSION=0.2.152
+ARG SDK_VERSION=0.2.168
 ARG NODE_ARCHIVE_SHA256=db88285eb4c8c5351a9948bd1b0075ef525387dcdb708f8f3dc1d203d7ec9a52
 ARG OFFICE_ARCHIVE_SHA256=0ad0b0c29e0a895156e226eb275411513b090dbfc4b683f296e38c910723e541
 RUN /app/.venv/bin/python -c "import importlib.metadata as m; assert m.version('claude-agent-sdk') == '${SDK_VERSION}'"

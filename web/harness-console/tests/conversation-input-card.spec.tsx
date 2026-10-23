@@ -157,3 +157,26 @@ it("keeps page position and a single choice when navigating between questions", 
  expect(host.querySelector<HTMLInputElement>('input[type="radio"]')!.checked).toBe(true);
  expect(send).not.toHaveBeenCalled();
 });
+
+it("marks the first suggestion as recommended without selecting or submitting it", async () => {
+  const send = mount();
+  const labels = host.querySelectorAll("fieldset label");
+  expect(labels[0].textContent).toContain("UI推荐");
+  expect(labels[1].textContent).not.toContain("推荐");
+  expect(host.querySelectorAll("input:checked")).toHaveLength(0);
+  expect(submit().disabled).toBe(true);
+  act(() => host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+  await act(async () => submit().click());
+  expect(send).toHaveBeenCalledWith("选择范围\n\n修改哪些内容\nUI");
+});
+
+it.each(["（推荐）", " (Recommended)"])("keeps an explicit %s recommendation on its original option", async suffix => {
+  const option = `接口${suffix}`;
+  const send = mount(vi.fn(), false, {...input, questions: [{...input.questions[0], type: "single", options: ["UI", option]}]});
+  const labels = host.querySelectorAll("fieldset label");
+  expect(labels[0].textContent).not.toContain("推荐");
+  expect(labels[1].textContent).toBe("2接口推荐");
+  act(() => host.querySelectorAll<HTMLInputElement>('input[type="radio"]')[1].click());
+  await act(async () => submit().click());
+  expect(send).toHaveBeenCalledWith(`选择范围\n\n修改哪些内容\n${option}`);
+});

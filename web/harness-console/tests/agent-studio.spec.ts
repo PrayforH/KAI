@@ -5,6 +5,7 @@ import {
   MODEL_ROUTES,
   POLICY_OPTIONS,
   applyStudioDraftUpdate,
+  isStudioDraftPublished,
   createPersonalStudioDraft,
   evaluateStudioDraft,
   mcpOptionsForDraft,
@@ -90,6 +91,46 @@ describe("Agent Studio effective contract", () => {
     expect(edited.version).toBe("1.4.8");
     expect(editedAgain.version).toBe("1.4.8");
     expect(manual.version).toBe("2.0.0");
+  });
+
+  const publishedDraft = {
+    ...DEFAULT_STUDIO_DRAFT,
+    version: "1.4.7",
+    publishedVersion: "1.4.7",
+    publishedHash: "a".repeat(64),
+    publishedPackageHash: "b".repeat(64),
+    context: {},
+  };
+
+  it("keeps a published release published after reloading its persisted draft", () => {
+    expect(isStudioDraftPublished(publishedDraft, false)).toBe(true);
+    const reloaded = JSON.parse(JSON.stringify(publishedDraft));
+    expect(isStudioDraftPublished(reloaded, false)).toBe(true);
+  });
+
+  it("requires a complete publication and no unsaved changes", () => {
+    expect(isStudioDraftPublished(DEFAULT_STUDIO_DRAFT, false)).toBe(false);
+    expect(isStudioDraftPublished({ ...publishedDraft, publishedHash: null }, false)).toBe(false);
+    expect(isStudioDraftPublished({ ...publishedDraft, publishedPackageHash: null }, false)).toBe(false);
+    expect(isStudioDraftPublished(publishedDraft, true)).toBe(false);
+  });
+
+  it("keeps real edits in draft until that version is published", () => {
+    const edited = applyStudioDraftUpdate(publishedDraft, { description: "新说明" });
+    expect(isStudioDraftPublished(edited, true)).toBe(false);
+    expect(isStudioDraftPublished(edited, false)).toBe(false);
+    const released = { ...edited, publishedVersion: edited.version };
+    expect(isStudioDraftPublished(released, false)).toBe(true);
+    expect(isStudioDraftPublished(JSON.parse(JSON.stringify(released)), false)).toBe(true);
+  });
+
+  it("does not turn unchanged configuration into a new draft version", () => {
+    expect(applyStudioDraftUpdate(publishedDraft, {})).toBe(publishedDraft);
+    expect(applyStudioDraftUpdate(publishedDraft, {
+      model: publishedDraft.model,
+      builtinTools: [...publishedDraft.builtinTools],
+      context: { ...publishedDraft.context },
+    })).toBe(publishedDraft);
   });
 
   it("does not invent the models a route serves", () => {

@@ -1,0 +1,223 @@
+{
+  "configuration_equal": true,
+  "active_layers": 1,
+  "rollback_layers": 1,
+  "images": [
+    {
+      "tag": "kai/projects-api:dictation-20261020-r36a",
+      "status": 200,
+      "result": [
+        {
+          "Untagged": "kai/projects-api:dictation-20261020-r36a"
+        },
+        {
+          "Deleted": "sha256:76af84e2fa902184f7aa1f872c1dd4c8d2e66b5d584b08addc0108e772e1e5fd"
+        }
+      ]
+    },
+    {
+      "tag": "kai/projects-api:dictation-20261020-r36",
+      "status": 200,
+      "result": [
+        {
+          "Untagged": "kai/projects-api:dictation-20261020-r36"
+        },
+        {
+          "Deleted": "sha256:634d44196ba01ed0d48003a22faccac8812e0f38d4c8634a8fb2bab2c18285eb"
+        }
+      ]
+    },
+    {
+      "tag": "kai/projects-api:helpers-20261020-r35",
+      "status": 200,
+      "result": [
+        {
+          "Untagged": "kai/projects-api:helpers-20261020-r35"
+        },
+        {
+          "Deleted": "sha256:fdca7a938468985fc7903c5753846c28af804929044337854a1152ca5ac7fa5a"
+        }
+      ]
+    },
+    {
+      "tag": "kai/projects-api:helpers-20261020-r34",
+      "status": 200,
+      "result": [
+        {
+          "Untagged": "kai/projects-api:helpers-20261020-r34"
+        },
+        {
+          "Deleted": "sha256:a491ecd988ffc1cdc8ba6bbab6934631c5bd7bf5fbd4a44e60dc8f553da765f0"
+        }
+      ]
+    },
+    {
+      "tag": "kai/projects-api:helpers-20261020-r33",
+      "status": 200,
+      "result": [
+        {
+          "Untagged": "kai/projects-api:helpers-20261020-r33"
+        },
+        {
+          "Deleted": "sha256:6676d27d50f0688bcf8879bbe0939a29a82cc4934bd50440ac388a56f6f8f6fa"
+        }
+      ]
+    },
+    {
+      "tag": "kai/projects-api:helpers-20261020-r32",
+      "status": 200,
+      "result": [
+        {
+          "Untagged": "kai/projects-api:helpers-20261020-r32"
+        },
+        {
+          "Deleted": "sha256:56fdf142f9b96025b4875df55ef9d1c95ce6b19e7fd60664eb9b9cd62ada332b"
+        }
+      ]
+    },
+    {
+      "tag": "kai/projects-api:helpers-20261020-r31",
+      "status": 200,
+      "result": [
+        {
+          "Untagged": "kai/projects-api:helpers-20261020-r31"
+        },
+        {
+          "Deleted": "sha256:e592b4761798403e827cba8603685011e073e489392cd5586f1154476dbffcc8"
+        }
+      ]
+    },
+    {
+      "tag": "kai/projects-api:sdk-20261020-r30",
+      "status": 200,
+      "result": [
+        {
+          "Untagged": "kai/projects-api:sdk-20261020-r30"
+        },
+        {
+          "Deleted": "sha256:902636f42dd5b24f170585affb436e395708be7a6d0d94b888b36f2e3c5dcc75"
+        }
+      ]
+    },
+    {
+      "tag": "kai/projects-api:sdk-20261020-r29",
+      "status": 200,
+      "result": [
+        {
+          "Untagged": "kai/projects-api:sdk-20261020-r29"
+        },
+        {
+          "Deleted": "sha256:0a280c52578f9ac80a5099b649009cbb6a569881eb2ac05ba7aa74a1dc5a2f8c"
+        }
+      ]
+    },
+    {
+      "tag": "kai/projects-api:sdk-20261020-r28",
+      "status": 200,
+      "result": [
+        {
+          "Untagged": "kai/projects-api:sdk-20261020-r28"
+        },
+        {
+          "Deleted": "sha256:0d479daf3780e9e073ce094f6ab528224d4c60dfa354d476a18b18e3bb452c8f"
+        }
+      ]
+    },
+    {
+      "tag": "kai/projects-api:sdk-20261020-r27",
+      "status": 200,
+      "result": [
+        {
+          "Untagged": "kai/projects-api:sdk-20261020-r27"
+        },
+        {
+          "Deleted": "sha256:0c5ed19e4499e50f9f1451613fd4d8d46d4fa45d8d9885715eb543421ec627b6"
+        }
+      ]
+    },
+    {
+      "tag": "kai/projects-api:projects-20261018-r22",
+      "status": 200,
+      "result": [
+        {
+          "Untagged": "kai/projects-api:projects-20261018-r22"
+        }
+      ]
+    },
+    {
+      "tag": "kai/projects-api:projects-20261018-r21",
+      "status": 200,
+      "result": [
+        {
+          "Untagged": "kai/projects-api:projects-20261018-r21"
+        }
+      ]
+    },
+    {
+      "tag": "kai/projects-api:projects-20261018-r20",
+      "status": 200,
+      "result": [
+        {
+          "Untagged": "kai/projects-api:projects-20261018-r20"
+        }
+      ]
+    },
+    {
+      "tag": "kai/projects-api:projects-20261018-r9",
+      "status": 200,
+      "result": [
+        {
+          "Untagged": "kai/projects-api:projects-20261018-r9"
+        }
+      ]
+    },
+    {
+      "tag": "kai/projects-api:projects-20261018-r6",
+      "status": 200,
+      "result": [
+        {
+          "Untagged": "kai/projects-api:projects-20261018-r6"
+        },
+        {
+          "Deleted": "sha256:691344f32aa534fbd4583e505b38e36c4666f04fc4ac52d04504c6c8807d22e2"
+        }
+      ]
+    },
+    {
+      "tag": "kai/projects-api:projects-20261018-r5",
+      "status": 200,
+      "result": [
+        {
+          "Untagged": "kai/projects-api:projects-20261018-r5"
+        },
+        {
+          "Deleted": "sha256:c07801f5a5bbbdda6bbebe062b805f517eff4c9111c9cd239d425ec62cfb80fc"
+        }
+      ]
+    },
+    {
+      "tag": "kai/projects-api:projects-20261018-r3",
+      "status": 200,
+      "result": [
+        {
+          "Untagged": "kai/projects-api:projects-20261018-r3"
+        },
+        {
+          "Deleted": "sha256:2833e7293eea6bd411734c1f330e14cebf7a549955f6d25aaff5802957b52b30"
+        }
+      ]
+    },
+    {
+      "tag": "kai/projects-api:projects-20261018-4466b2a",
+      "status": 200,
+      "result": [
+        {
+          "Untagged": "kai/projects-api:projects-20261018-4466b2a"
+        },
+        {
+          "Deleted": "sha256:38454a7848e59fed37dbe24b68583f41fae51d99f039dfc3eeb6f7c52ba3ed48"
+        }
+      ]
+    }
+  ]
+}

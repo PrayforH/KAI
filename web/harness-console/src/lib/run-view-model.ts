@@ -19,6 +19,10 @@ export interface RunTaskNode {
   sequence: number;
   alias?: string;
   agentVersion?: string;
+  description?: string;
+  result?: string;
+  lastToolName?: string;
+  startedAt?: string;
   durationMs?: number;
   tokens?: number;
   costUsd?: number;
@@ -168,6 +172,7 @@ function taskNodes(items: readonly ActivityItem[]): RunTaskNode[] {
           ...attempted,
           status: workStatus(item),
           title: typeof detail === "string" && detail ? detail : attempted.title,
+          result: typeof detail === "string" ? detail : undefined,
         });
       }
       continue;
@@ -186,21 +191,33 @@ function taskNodes(items: readonly ActivityItem[]): RunTaskNode[] {
     if (typeof taskId !== "string") continue;
     const parent = item.metadata.parent_tool_use_id;
     const existing = tasks.get(taskId);
+    const request = items.find(candidate => candidate.event_type === "tool.request" &&
+      candidate.metadata.tool_call_id === (parent ?? toolCallId));
+    const args = request?.metadata.arguments as Record<string, unknown> | undefined;
+    const description = args?.description ?? args?.prompt;
     tasks.set(taskId, {
+      ...existing,
+      description: existing?.description ?? (typeof description === "string" ? description : item.summary ?? undefined),
+      result: item.event_type === "subagent.completed" || item.event_type === "subagent.failed"
+        ? item.summary ?? undefined : existing?.result,
+      lastToolName: typeof item.metadata.last_tool_name === "string"
+        ? item.metadata.last_tool_name : existing?.lastToolName,
+      startedAt: existing?.startedAt ?? item.timestamp,
       id: taskId,
       parentId: typeof parent === "string" ? parent : undefined,
       title: item.summary || item.title,
       status: workStatus(item),
       sequence: existing?.sequence ?? item.sequence,
-      alias: typeof item.metadata.alias === "string" ? item.metadata.alias : undefined,
+      alias: typeof item.metadata.alias === "string" ? item.metadata.alias
+        : existing?.alias ?? (typeof args?.subagent_type === "string" ? args.subagent_type : undefined),
       agentVersion:
         typeof item.metadata.agent_version === "string"
           ? item.metadata.agent_version
-          : undefined,
+          : existing?.agentVersion,
       durationMs:
         typeof item.metadata.duration_ms === "number"
           ? item.metadata.duration_ms
-          : undefined,
+          : existing?.durationMs,
       tokens:
         typeof item.metadata.usage === "object" &&
         item.metadata.usage !== null &&
@@ -223,7 +240,10 @@ function taskNodes(items: readonly ActivityItem[]): RunTaskNode[] {
           : undefined,
     });
   }
-  return [...tasks.values()].sort((left, right) => left.sequence - right.sequence);
+  const terminal = terminalPhase(items);
+  return [...tasks.values()].map(task => terminal && ["running", "waiting"].includes(task.status)
+    ? { ...task, status: "failed" as const, errorCode: terminal === "cancelled" ? "cancelled" : "completion_unconfirmed" }
+    : task).sort((left, right) => left.sequence - right.sequence);
 }
 
 function runCitations(value: unknown): RunCitation[] | undefined {

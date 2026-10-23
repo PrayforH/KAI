@@ -299,3 +299,38 @@ async def test_later_run_restores_latest_snapshot_before_runtime(
         "workspace.restored",
         "run.running",
     ]
+
+
+@pytest.mark.asyncio
+async def test_workspace_branch_is_independent_of_future_source_archives(tmp_path: Path) -> None:
+    store = InMemoryArtifactStore()
+    snapshots = InMemoryWorkspaceSnapshotRepository()
+    service = WorkspaceService(store, snapshots=snapshots)
+    source = tmp_path / "original"
+    source.mkdir()
+    (source / "report.md").write_text("at branch point")
+    original = await service.archive(tenant_id="tenant-a", session_id="source", workspace=source)
+    branch = await service.fork_latest(
+        tenant_id="tenant-a", source_session_id="source", target_session_id="branch"
+    )
+    assert branch is not None
+    assert branch.snapshot_id != original.snapshot_id
+    assert branch.sha256 == original.sha256
+    (source / "report.md").write_text("changed later")
+    await service.archive(tenant_id="tenant-a", session_id="source", workspace=source)
+    target = tmp_path / "branch"
+    await service.restore_latest(tenant_id="tenant-a", session_id="branch", workspace=target)
+    assert (target / "report.md").read_text() == "at branch point"
+    (target / "report.md").write_text("branch edit")
+    await service.archive(tenant_id="tenant-a", session_id="branch", workspace=target)
+    original_restored = tmp_path / "original-restored"
+    await service.restore_latest(
+        tenant_id="tenant-a", session_id="source", workspace=original_restored
+    )
+    assert (original_restored / "report.md").read_text() == "changed later"
+    assert (
+        await service.fork_latest(
+            tenant_id="tenant-b", source_session_id="source", target_session_id="other"
+        )
+        is None
+    )

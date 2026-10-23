@@ -134,6 +134,27 @@ class WorkspaceService:
             return content
 
         content = await asyncio.to_thread(pack)
+        return await self._persist_archive(tenant_id, session_id, snapshot_id, content)
+
+    async def fork_latest(
+        self, *, tenant_id: str, source_session_id: str, target_session_id: str
+    ) -> WorkspaceSnapshot | None:
+        """Copy the frozen archive, so retention or later source writes cannot alter a branch."""
+        if self._snapshots is None:
+            return None
+        source = await self._snapshots.latest(tenant_id, source_session_id)
+        if source is None:
+            return None
+        content = await self._store.get(tenant_id, source.snapshot_id)
+        if hashlib.sha256(content).hexdigest() != source.sha256:
+            raise ValueError("workspace snapshot hash mismatch")
+        return await self._persist_archive(
+            tenant_id, target_session_id, f"snapshot_{uuid4().hex}", content
+        )
+
+    async def _persist_archive(
+        self, tenant_id: str, session_id: str, snapshot_id: str, content: bytes
+    ) -> WorkspaceSnapshot:
         reservation: ResourceReservation | None = None
         if self._quotas is not None:
             session = (

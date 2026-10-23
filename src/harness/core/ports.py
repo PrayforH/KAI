@@ -322,7 +322,14 @@ class AguiThreadBindingRepository(Protocol):
     ) -> AguiThreadBinding: ...
 
     async def list_for_user(
-        self, tenant_id: str, user_id: str, *, limit: int, archived: bool = False
+        self,
+        tenant_id: str,
+        user_id: str,
+        *,
+        limit: int,
+        archived: bool = False,
+        project_id: str | None = None,
+        offset: int = 0,
     ) -> list[AguiThreadBinding]: ...
 
     async def update_title(

@@ -66,5 +66,14 @@ it("reads persisted revisions, compares saved drafts and selects older revisions
   await chooseVersion("草稿 r8");
   expect(host.querySelector("del")?.textContent).toBe("draft revision 7");
   expect(host.querySelector("ins")?.textContent).toBe("draft revision 8");
-  expect(host.textContent).toContain("草稿记录从 r7 开始");
+  expect(host.textContent).not.toContain("草稿记录从");
+});
+
+it("keeps published-version loading accessible without footer guidance", async () => {
+  await act(async () => root.render(<AgentVersionHistory {...props} versions={[]} loading />));
+  expect(host.querySelector("nav")?.getAttribute("aria-busy")).toBe("true");
+  expect(host.textContent).not.toContain("正在读取版本…");
+  await act(async () => root.render(<AgentVersionHistory {...props} versions={[]} loading={false} />));
+  expect(host.querySelector("nav")?.getAttribute("aria-busy")).toBe("false");
+  expect(host.textContent).not.toContain("尚无发布版本");
 });

@@ -12,7 +12,7 @@ import {
   type CompleteAttachment,
 } from "@assistant-ui/react";
 import { AgentThread } from "../agent-thread";
-import { TaskModelProvider } from "../task-model-context";
+import { TaskModelProvider, type PlaygroundModelSelection } from "../task-model-context";
 import { TaskKnowledgeProvider } from "../task-knowledge-context";
 import {
   ConversationScopeProvider,
@@ -131,6 +131,7 @@ export function AgentPlaygroundThread({
   draft,
   agentName,
   model,
+  modelSelection,
   draftId,
   scopeId,
   userId,
@@ -156,6 +157,7 @@ export function AgentPlaygroundThread({
   draft?: StudioDraft;
   agentName: string;
   model: string;
+  modelSelection?: PlaygroundModelSelection;
   draftId: string;
   scopeId: string;
   userId: string;
@@ -204,6 +206,7 @@ export function AgentPlaygroundThread({
     try {
       if (submitLock.current || busy || !ready || loading)
         throw new Error("请等待当前操作完成后再发送。");
+      if (modelSelection && !modelSelection.routeId) throw new Error("请先选择可用模型。");
       if (ids.some((id) => !id)) throw new Error("附件尚未就绪，请重新添加。");
       submitLock.current = true;
       setSubmitting(true);
@@ -289,6 +292,7 @@ export function AgentPlaygroundThread({
     currentRun?.approvals.filter((item) => item.status === "pending") ?? [];
   const scope: ConversationScope = useMemo(() => ({
     compactComposer: true,
+    allowModelSelection: Boolean(modelSelection),
     composerAccessory,
     composerPlaceholder: "输入任务，或告诉我如何调整智能体…",
     activity,
@@ -333,7 +337,7 @@ export function AgentPlaygroundThread({
         </div>
       );
     },
-  }), [activity, busy, currentRun, messages, pending, afterLastMessage, composerAccessory, onAssets, onReset, onConfigureKnowledge]);
+  }), [activity, busy, currentRun, messages, pending, afterLastMessage, composerAccessory, onAssets, onReset, onConfigureKnowledge, modelSelection]);
 
   const selectedAgent = {
     name: draft?.name ?? draftId,
@@ -352,7 +356,8 @@ export function AgentPlaygroundThread({
           onChange={() => {}}
         >
           <TaskModelProvider
-            routes={[
+            independent={Boolean(modelSelection)}
+            routes={modelSelection?.routes ?? [
               {
                 id: draft?.modelRoute ?? "draft",
                 label: model || "智能体默认模型",
@@ -363,8 +368,8 @@ export function AgentPlaygroundThread({
               },
             ]}
             agentDefaultRouteId={draft?.modelRoute ?? "draft"}
-            overrideRouteId={null}
-            onOverrideChange={() => {}}
+            overrideRouteId={modelSelection?.routeId ?? null}
+            onOverrideChange={modelSelection?.onChange ?? (() => {})}
           >
               <AssistantRuntimeProvider runtime={runtime}>
                 <AgentThread

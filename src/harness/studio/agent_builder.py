@@ -152,6 +152,9 @@ class CreateTaskDrivenDraftRequest(StudioModel):
         alias="sampleInput",
         max_length=10_000,
     )
+    model_route_override: str | None = Field(
+        default=None, alias="modelRouteOverride", pattern=r"^[a-z][a-z0-9-]{0,63}$"
+    )
     runtime_preference: TaskRuntimePreference = Field(
         default="auto",
         alias="runtimePreference",

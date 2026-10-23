@@ -30,6 +30,7 @@ export interface MemoryEntry {
   expiresAt: string | null;
   deletedAt: string | null;
   agentOwnerUserId?: string | null;
+  projectId?: string | null;
   memoryType?: "preference" | "fact" | "entity" | "decision";
   topic?: string;
   conditions?: string;

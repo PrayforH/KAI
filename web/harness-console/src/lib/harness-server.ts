@@ -72,9 +72,10 @@ export function downloadInputArtifact(
   environment: ServerEnvironment = process.env,
 ): Promise<Response> {
   const config = getHarnessServerConfig(environment);
+  const query = new URL(request.url).search;
   return authenticatedFetch(
     request,
-    `${config.apiUrl}/v1/input-artifacts/${encodeURIComponent(inputArtifactId)}/content`,
+    `${config.apiUrl}/v1/input-artifacts/${encodeURIComponent(inputArtifactId)}/content${query}`,
     {},
     config,
     fetcher,

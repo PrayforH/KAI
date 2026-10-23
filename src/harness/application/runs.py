@@ -76,9 +76,16 @@ def _same_user_request(left: dict[str, object], right: dict[str, object]) -> boo
     right_prompt = right.get("prompt")
     if not isinstance(left_prompt, str) or not isinstance(right_prompt, str):
         return False
-    return left_prompt == right_prompt and _request_attachment_ids(
-        left.get("input_artifact_ids", [])
-    ) == _request_attachment_ids(right.get("input_artifact_ids", []))
+    return (
+        left_prompt == right_prompt
+        and _request_attachment_ids(left.get("input_artifact_ids", []))
+        == _request_attachment_ids(right.get("input_artifact_ids", []))
+        # Project resources are part of the request the user is repeating: a
+        # project document or memory change must not deduplicate into a Run that
+        # was created under the previous context.
+        and left.get("project_document_ids", []) == right.get("project_document_ids", [])
+        and left.get("project_context") == right.get("project_context")
+    )
 
 
 def _blocking_predecessor(active_runs: list[Run]) -> Run | None:

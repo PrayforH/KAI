@@ -2,13 +2,14 @@
 import { responseTextForDisplay } from "../lib/process-response";
 import { sendComposerWithRecovery } from "../lib/composer-send";
 import { TerminalResponseNotice } from "./terminal-response-notice";
+import { TurnCompletionControl } from "./turn-completion";
 import { FollowupInputPlacement } from "./followup-input-placement";
 import { latestConversationInput } from "../lib/conversation-input";
 import { useConversationScope } from "../lib/conversation-scope";
-import { createThreadHistoryAdapter, useAutoLoadEarlierMessages, useThreadHistoryPagination } from "../lib/task-history";
+import { type TaskSummary, createThreadHistoryAdapter, useAutoLoadEarlierMessages, useThreadHistoryPagination } from "../lib/task-history";
 import { startSteeringPolling } from "../lib/steering-poller";
 import { ConversationControl } from "./conversation-control";
-import { MessageAttachmentView } from "./message-attachment-view";
+import { MessageAttachmentGroup } from "./message-attachment-view";
 import { useThreadHistoryReady } from "./thread-history-ready";
 import { ProductBrandMark } from "./product-brand";
 
@@ -19,7 +20,6 @@ import {
   BranchPickerPrimitive,
   MessagePrimitive,
   TextMessagePartProvider,
-  useAttachment,
   useAui,
   useAuiState,
   useThreadRuntime,
@@ -60,6 +60,8 @@ import { ActivitySummary } from "./activity-summary";
 import { TaskAgentSwitcher } from "./task-agent-switcher";
 import { ApprovalCard, type ApprovalDetails } from "./approval-card";
 import { ArtifactCard, isImageArtifact, type ArtifactDetails } from "./artifact-list";
+import { replyWebImages } from "../lib/reply-web-images";
+import { ReplyWebImages } from "./reply-web-images";
 import { ReplyArtifactImages } from "./reply-artifact-images";
 import { ReplyArtifactVideos } from "./reply-artifact-videos";
 import { AnswerCitationProvider } from "./knowledge/answer-citation-context";
@@ -134,6 +136,8 @@ import {
 import { submitUiAction } from "./intelligent-ui/client";
 import { modelBlockSources, presentationsForMessage } from "./intelligent-ui/schema";
 import { PublishedBlocksProvider } from "./intelligent-ui/turn-context";
+import { hasPendingProjectTaskLaunch, consumeProjectTaskLaunch } from "../lib/project-task-launch";
+import { useProjectTaskLaunch } from "./use-project-task-launch";
 import { useTaskComposerSnapshot } from "./task-composer-draft";
 import { VoiceInput } from "./voice-input";
 import { useDictationComposer } from "./use-dictation-composer";
@@ -303,11 +307,13 @@ function MessageFeedbackButtons({ runId }: { runId?: string }) {
   );
 }
 
-function HarnessComposer() {
+function HarnessComposer({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   const conversationScope = useConversationScope();
   const aui = useAui();
   const { routes, overrideRouteId } = useTaskModel();
   const threadRunning = useAuiState((state) => state.thread.isRunning);
+  const threadLoading = useAuiState((state) => state.thread.isLoading);
+  const composerCanSend = useAuiState((state) => state.composer.canSend);
   const messages = useAuiState((state) => state.thread.messages);
   const requestedInput = useMemo(() => latestConversationInput(messages), [messages]);
   const composerText = useAuiState((state) => state.composer.text);
@@ -322,7 +328,9 @@ function HarnessComposer() {
   const seededSkillLaunchRef = useRef<string | null>(null);
   const reuseNotice = useRunReuseNotice();
   const runLocked = selectComposerDisabled(runView);
-  useTaskComposerSnapshot(useContext(ComposerDraftContext));
+  const projectLaunchScope = useContext(ComposerDraftContext);
+  const projectLaunchReady = useThreadHistoryReady();
+  useTaskComposerSnapshot(projectLaunchReady && !threadLoading && !agentSelection.loading ? projectLaunchScope : null);
   useEffect(() => {
     if (!activeSkillLaunch) {
       seededSkillLaunchRef.current = null;
@@ -601,6 +609,7 @@ function HarnessComposer() {
   const composerSendLock = useRef(false);
   async function submitComposer(alternate = false) {
     if (voiceActive || followupVoiceActive) return;
+    if (projectLaunchScope) consumeProjectTaskLaunch(projectLaunchScope.userId, projectLaunchScope.threadId);
     if (command(composerText.trim())) return;
     if (videoRoute) { void generateVideo(); return; }
     if (busy || queue.length) {
@@ -613,10 +622,38 @@ function HarnessComposer() {
     try {
       const error = await sendComposerWithRecovery(threadRuntime.composer);
       if (error) setInputError(error);
+      else onSubmitted?.();
     } catch (error) {
       setInputError(error instanceof Error ? error.message : "发送失败，请重试。");
     } finally { composerSendLock.current = false; }
   }
+
+  useProjectTaskLaunch(
+    projectLaunchScope,
+    projectLaunchReady && !threadLoading && !agentSelection.loading &&
+      queueLoaded && !busy && !queue.length && !voiceActive && !followupVoiceActive &&
+      composerCanSend && Boolean(composerText.trim()),
+    async () => {
+      if (composerSendLock.current || !threadRuntime.composer.getState().canSend) return false;
+      composerSendLock.current = true;
+      try {
+        const error = await sendComposerWithRecovery(threadRuntime.composer);
+        if (error) {
+          setInputError(error);
+          // A real send failure stays visible for an explicit retry, never a loop.
+          if (projectLaunchScope) consumeProjectTaskLaunch(projectLaunchScope.userId, projectLaunchScope.threadId);
+          return false;
+        }
+        onSubmitted?.();
+        return true;
+      } catch (error) {
+        setInputError(error instanceof Error ? error.message : "项目任务未能发送，输入已保留，请重试。");
+        if (projectLaunchScope) consumeProjectTaskLaunch(projectLaunchScope.userId, projectLaunchScope.threadId);
+        return false;
+      } finally { composerSendLock.current = false; }
+    },
+    composerText.length === 0,
+  );
 
   async function generateVideo() {
     const prompt = composerText.trim();
@@ -815,7 +852,7 @@ function HarnessComposer() {
           onComposingChange={(value) => { composingRef.current = value; }}
           className="aui-composer-input"
           aria-label="消息输入"
-          placeholder={conversationScope?.composerPlaceholder ?? (busy ? "继续补充…" : knowledge.selected.length ? "输入问题，将基于上方选中的知识库回答" : "随心输入，/ 命令 · @ 知识库 · $ 技能")}
+          placeholder={conversationScope?.composerPlaceholder ?? (busy ? "继续补充…" : "输入消息…")}
           rows={Math.min(8, Math.max(2, composerText.split("\n").length))}
           aria-controls={options.length ? "composer-suggestions" : undefined}
           aria-activedescendant={options.length ? `composer-option-${suggestionIndex}` : undefined}
@@ -866,7 +903,7 @@ function HarnessComposer() {
           />
           </>}
           <div className="composer-model-voice">
-          {!conversationScope?.compactComposer && <TaskModelControl disabled={Boolean(conversationScope) || runLocked || showStop || videoGenerating} />}
+          {(!conversationScope?.compactComposer || conversationScope.allowModelSelection) && <TaskModelControl disabled={Boolean(conversationScope && !conversationScope.allowModelSelection) || runLocked || showStop || videoGenerating} />}
           <VoiceInput key={scope?.threadId || "new"} disabled={busy || followupVoiceActive}
             modelRoute={overrideRouteId || ""}
             onActive={(active) => { voiceComposer.onActive(active); setVoiceActive(active); }}
@@ -895,6 +932,7 @@ type ComposerDraftScope = {
 };
 
 const ComposerDraftContext = createContext<ComposerDraftScope | null>(null);
+const TaskForkContext = createContext<((task: TaskSummary) => void) | undefined>(undefined);
 type SkillLaunchContextValue = {
   launch: SkillCreatorLaunch | null;
   onDismiss: () => void;
@@ -945,7 +983,10 @@ export function UserTaskWelcome() {
   const { selected } = useContext(AgentSelectionContext);
   // While the stored conversation is loading the thread is empty by definition,
   // so the welcome would flash and be replaced a moment later.
-  if (!useThreadHistoryReady()) return null;
+  const historyReady = useThreadHistoryReady();
+  const launchScope = useContext(ComposerDraftContext);
+  if (launchScope && hasPendingProjectTaskLaunch(launchScope.userId, launchScope.threadId)) return <div className="project-launch-space" aria-hidden="true" />;
+  if (!historyReady) return null;
   return (
     <ThreadWelcome.Root className="user-task-welcome">
       <ThreadWelcome.Center className="user-task-hero">
@@ -1432,6 +1473,16 @@ export function HarnessAssistantMessage() {
   const answerCitations = !hasVideoGeneration && capturedCitations.current.messageId === messageId ? capturedCitations.current.citations : [];
   const ownsActiveRun = Boolean(runView && turnOwnsRun(messageId, runView.runId, isLast, runView.runId));
   const turnSettled = turnDeliverablesReady(messageStatus?.type, ownsActiveRun ? runView?.phase : undefined);
+  const userPrompt = useAuiState(state => {
+    const messages = state.thread.messages;
+    let index = messages.findIndex(message => message.id === messageId);
+    if (index < 0) index = messages.length;
+    for (let i = index - 1; i >= 0; i--) {
+      if (messages[i].role === "user") return messages[i].content.flatMap(part => part.type === "text" ? [part.text] : []).join("\n");
+    }
+    return "";
+  });
+  const webImages = useMemo(() => turnSettled ? replyWebImages(content, terminalActivity, copyText, userPrompt) : [], [content, terminalActivity, copyText, turnSettled, userPrompt]);
   const turnArtifacts = useMemo(
     () => turnSettled ? artifactsForTurn(content, runView?.runId, isLast) : [],
     [content, runView?.runId, isLast, turnSettled],
@@ -1497,6 +1548,7 @@ export function HarnessAssistantMessage() {
           ))}
         </div>
       ) : null}
+      <ReplyWebImages images={webImages} />
       <ReplyArtifactImages artifacts={turnArtifacts} answer={copyText}
         onPreview={conversationScope ? () => conversationScope.onOpenFiles() : undefined} />
       {!hasVideoGeneration ? <ReplyArtifactVideos artifacts={turnArtifacts} /> : null}
@@ -1545,6 +1597,10 @@ export function HarnessAssistantMessage() {
 }
 
 function TurnCompletion() {
+  const onForked = useContext(TaskForkContext);
+  const draftScope = useContext(ComposerDraftContext);
+  const conversationScope = useConversationScope();
+  const threadRunning = useAuiState((state) => state.thread.isRunning);
   const content = useAuiState((state) => state.message.content);
   const isLast = useAuiState((state) => state.message.isLast);
   const observed = useRunViewModel();
@@ -1554,11 +1610,8 @@ function TurnCompletion() {
   const activity = parsed?.success ? parsed.data : null;
   const view = activity ? reduceRunViewModel(undefined, activity) : isLast && observed && messageOwnsRun(messageId, observed.runId) ? observed : null;
   if (!view || view.phase !== "completed") return null;
-  const date = new Date(view.updatedAt);
-  if (!Number.isFinite(date.getTime())) return null;
-  return <time className="turn-completion" dateTime={view.updatedAt} title={date.toLocaleString("zh-CN")}>
-    {date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false })}
-  </time>;
+  return <TurnCompletionControl completedAt={view.updatedAt} onForked={onForked}
+    branchScope={isLast && !conversationScope && !threadRunning && !selectComposerDisabled(observed) ? draftScope : null} />;
 }
 
 function HarnessBranchPicker() {
@@ -1600,11 +1653,6 @@ function EditMessageIcon() {
 }
 
 export { inputArtifactDownloadHref } from "./message-attachment-view";
-
-function HarnessMessageAttachment() {
-  const attachment = useAttachment((state) => state);
-  return <MessageAttachmentView attachment={attachment} />;
-}
 
 type MessageEditorState = {
   messageId: string;
@@ -1683,9 +1731,7 @@ function HarnessUserMessage() {
   return (
     <>
       <UserMessage.Root className="harness-user-message" data-turn-id={message.id} data-turn-label={(displayText || message.attachments?.map(item => item.name).join("、") || "附件消息").replace(/\s+/g, " ").slice(0, 180)} tabIndex={-1}>
-        <UserMessage.Attachments
-          components={{ Attachment: HarnessMessageAttachment }}
-        />
+        <MessageAttachmentGroup attachments={message.attachments ?? []} />
         <MessagePrimitive.If hasContent>
           {editing ? (
             <div className="user-message-edit-shell">
@@ -1763,6 +1809,8 @@ export function AgentThread({
   onDismissSkillLaunch = () => undefined,
   onAgentChange = () => undefined,
   onRefreshAgents,
+  onComposerSubmitted,
+  onForked,
 }: {
   userId: string;
   threadId: string;
@@ -1774,6 +1822,9 @@ export function AgentThread({
   onDismissSkillLaunch?: () => void;
   onAgentChange?: (agent: TaskAgent) => void;
   onRefreshAgents?: () => void;
+  /** Called after the composer successfully starts a run. */
+  onComposerSubmitted?: () => void;
+  onForked?: (task: TaskSummary) => void;
 }) {
   const frame = useRef<HTMLDivElement>(null);
   const [editor, setEditor] = useState<MessageEditorState>(null);
@@ -1803,7 +1854,17 @@ export function AgentThread({
     () => ({ launch: activeSkillLaunch, onDismiss: onDismissSkillLaunch }),
     [activeSkillLaunch, onDismissSkillLaunch],
   );
+  const ComposerComponent = useMemo(
+    () =>
+      onComposerSubmitted
+        ? function SubmittedComposer() {
+            return <HarnessComposer onSubmitted={onComposerSubmitted} />;
+          }
+        : HarnessComposer,
+    [onComposerSubmitted],
+  );
   return (
+    <TaskForkContext.Provider value={onForked}>
     <AgentSelectionContext.Provider value={agentSelection}>
       <SkillLaunchContext.Provider value={skillLaunch}>
         <ComposerDraftContext.Provider value={composerDraftScope}>
@@ -1834,7 +1895,7 @@ export function AgentThread({
             components={{
               AssistantMessage: HarnessAssistantMessage,
               UserMessage: HarnessUserMessage,
-              Composer: HarnessComposer,
+              Composer: ComposerComponent,
               ThreadWelcome: UserTaskWelcome,
             }}
             strings={{
@@ -1864,5 +1925,6 @@ export function AgentThread({
         </ComposerDraftContext.Provider>
       </SkillLaunchContext.Provider>
     </AgentSelectionContext.Provider>
+    </TaskForkContext.Provider>
   );
 }
