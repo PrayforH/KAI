@@ -39,6 +39,7 @@ from harness.core.manifest import ManifestValidationError
 from harness.dictation.realtime import RealtimeDictation
 from harness.dictation.service import DictationService, DictationSettings
 from harness.feishu import api as feishu_routes
+from harness.weixin import api as weixin_routes
 from harness.governance import api as governance_routes
 from harness.knowledge import api as knowledge_routes
 from harness.lifecycle import api as lifecycle_routes
@@ -366,6 +367,7 @@ def create_app(container: ApiContainer) -> FastAPI:
     app.include_router(automations_routes.router)
     app.include_router(assistant_routes.router)
     app.include_router(feishu_routes.router)
+    app.include_router(weixin_routes.router)
     app.include_router(projects_routes.router)
     app.include_router(trigger_routes.public_router)
     app.include_router(trigger_routes.chatops_router)

@@ -67,6 +67,7 @@ from harness.feishu.media import FeishuMedia, FeishuResourceClient, MediaRejecte
 from harness.feishu.models import FeishuSettings
 from harness.feishu.repository import FeishuRepository
 from harness.feishu.service import FeishuService
+from harness.weixin.service import WeixinService
 from harness.governance.service import GovernanceService
 from harness.inputs.processors import DefaultInputProcessor
 from harness.knowledge.directory import PlatformUserDirectory
@@ -1834,6 +1835,8 @@ def build_production_container(
         triggers=trigger_service,
         automations=automation_service,
         assistant=assistant,
+        weixin=WeixinService(sessions, mcp_credential_service.cipher,
+            PersonalConversation(agui=agui, runs=run_service, agents=agent_service, events=events), auth),
         feishu=feishu_factory(feishu_settings),
         feishu_factory=feishu_factory,
         feishu_connections=FeishuConnectionControl(

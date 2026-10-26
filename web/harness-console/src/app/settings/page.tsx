@@ -15,6 +15,7 @@ import {
   type ProductIconName,
 } from "../../components/product-icon";
 import { SecretInput } from "../../components/secret-input";
+import { WeixinConnection } from "../../components/agent-studio/weixin-connection";
 import { FeishuConnection } from "../../components/agent-studio/feishu-connection";
 import { ThemeSelector } from "../../components/theme-toggle";
 import { ProcessDisplaySettings } from "../../components/process-display-settings";
@@ -77,7 +78,7 @@ const SETTINGS_NAV: ReadonlyArray<{
     icon: "api",
   },
   { id: "assistant", href: "#assistant", label: "助理", icon: "agent",
-    description: "连接飞书，让消息与网页共享同一段助理对话。" },
+    description: "连接微信或飞书，与网页共享同一段助理对话。" },
   {
     id: "configuration",
     href: "#configuration",
@@ -425,7 +426,7 @@ function SettingsContent() {
             )}
 
             <section className="settings-section" id="assistant" hidden={activeSection !== "assistant"}>
-              {activeSection === "assistant" && <FeishuConnection />}
+              {activeSection === "assistant" && <><FeishuConnection /><WeixinConnection /></>}
             </section>
             <section className="settings-section" id="configuration" hidden={activeSection !== "configuration"}>
               <div className="settings-form settings-configuration">

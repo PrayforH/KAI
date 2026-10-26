@@ -20,9 +20,9 @@ export async function assistantRequest<T>(path: string, method = "GET", body?: u
     if (response.status === 401) throw new Error("登录已过期，请重新登录。");
     if (response.status === 403 && path.startsWith("feishu/")) throw new Error("此操作需要工作区管理员权限。");
     if (response.status === 409) {
-      if (path.startsWith("feishu/")) {
+      if (path.startsWith("feishu/") || path.startsWith("weixin/")) {
         const value = await response.json().catch(() => null);
-        const message = value?.detail?.message ?? value?.error?.message ?? value?.message;
+        const message = value?.detail?.message ?? value?.error?.message ?? value?.message ?? (typeof value?.detail === "string" ? value.detail : undefined);
         throw new Error(typeof message === "string" ? message : "飞书配置已变化，请刷新后重试。");
       }
       throw new Error("事项已更新或已有执行，请刷新后重试。");

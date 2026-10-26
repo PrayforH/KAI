@@ -85,6 +85,7 @@ from harness.evolution.service import EvolutionService
 from harness.feishu.configuration import FeishuConnectionControl
 from harness.feishu.models import FeishuSettings
 from harness.feishu.service import FeishuService
+from harness.weixin.service import WeixinService
 from harness.governance.repositories import InMemoryGovernanceRepository
 from harness.governance.service import GovernanceService
 from harness.inputs.processors import DefaultInputProcessor
@@ -292,6 +293,7 @@ class ApiContainer:
     auto_execute: bool
     presentations: PresentationService
     assistant: AssistantService | None = None
+    weixin: WeixinService | None = None
     feishu: FeishuService | None = None
     feishu_connections: FeishuConnectionControl | None = None
     feishu_factory: Callable[[FeishuSettings], FeishuService] | None = None
