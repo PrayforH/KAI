@@ -17,7 +17,8 @@ from harness.agui.response import final_response_text
 from harness.agui.service import AguiRunService
 from harness.application.agents import AgentService
 from harness.application.runs import RunService
-from harness.core.errors import ConflictError, NotFoundError
+from harness.assistant.controls import CONTROL_HELP, RUN_LABELS, ControlIntent
+from harness.core.errors import ConflictError, NotFoundError, PermissionDeniedError
 from harness.core.models import InputArtifact, Run
 from harness.core.ports import EventRepository
 
@@ -149,3 +150,68 @@ class PersonalConversation:
     async def answer(self, run: Run) -> str:
         events = await self.events.list_after(run.tenant_id, run.run_id, 0)
         return final_response_text(events) or f"本次处理状态：{run.status.value}。"
+
+    async def plan_control(
+        self, tenant_id: str, user_id: str, intent: ControlIntent
+    ) -> ControlIntent:
+        """Persist this target before applying a mutation; retries cannot hit a newer Run."""
+        if intent.action == "help":
+            return intent
+        try:
+            record = await self.agui.get_thread_record(
+                tenant_id=tenant_id, user_id=user_id, thread_id=PERSONAL_ASSISTANT_THREAD
+            )
+        except NotFoundError:
+            return intent
+        runs = await self.runs.list_for_sessions(tenant_id, list(record.session_ids), limit=200)
+        active = [run for run in runs if not run.status.is_terminal]
+        candidates = active or (runs if intent.action == "status" else [])
+        target = max(candidates, key=lambda run: (run.created_at, run.run_id), default=None)
+        return intent.model_copy(update={"target_run_id": target.run_id if target else None})
+
+    async def execute_control(
+        self, tenant_id: str, user_id: str, intent: ControlIntent, request_id: str
+    ) -> str:
+        if intent.action == "help":
+            return CONTROL_HELP
+        if intent.action == "steer" and len(intent.text) > 8000:
+            return "补充内容过长，请缩短至 8000 字以内后重发。"
+        if not intent.target_run_id:
+            return (
+                "当前没有正在执行的任务。"
+                if intent.action != "steer"
+                else ("当前没有正在执行的任务，请直接发送新要求。")
+            )
+        record = await self.agui.get_thread_record(
+            tenant_id=tenant_id, user_id=user_id, thread_id=PERSONAL_ASSISTANT_THREAD
+        )
+        run = await self.runs.get(tenant_id, intent.target_run_id)
+        if run.tenant_id != tenant_id or run.session_id not in record.session_ids:
+            raise PermissionDeniedError("Control target is outside the owned assistant thread")
+        label = RUN_LABELS[run.status.value]
+        if intent.action == "status":
+            return f"本轮状态：{label}。"
+        if run.status.is_terminal:
+            return f"本轮已结束（{label}），请直接发送下一条要求。"
+        if intent.action == "stop":
+            stopped = await self.runs.cancel(tenant_id, run.run_id)
+            return (
+                "已停止当前执行。"
+                if stopped.status.value == "cancelled"
+                else (
+                    "已请求停止，正在等待执行器退出。"
+                    if not stopped.status.is_terminal
+                    else f"本轮已结束（{RUN_LABELS[stopped.status.value]}）。"
+                )
+            )
+        try:
+            receipt = await self.runs.steer(tenant_id, run.run_id, request_id, intent.text)
+        except ConflictError:
+            return "当前执行暂不支持中途补充，请等本轮结束后直接发送新要求。"
+        return (
+            "补充已被执行器接收。"
+            if receipt.get("status") == "accepted"
+            else "补充未能送达，请等本轮结束后重新发送。"
+            if receipt.get("status") == "failed"
+            else "补充已提交，等待执行器接收。"
+        )

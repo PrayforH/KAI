@@ -30,7 +30,9 @@ async def owner_loop(service: WeixinService, tenant: str, user: str) -> None:
     async with asyncio.TaskGroup() as tasks:
         tasks.create_task(loop(service.login_once, 1))
         tasks.create_task(loop(service.receive, 2))
-        tasks.create_task(loop(service.process_once, 1))
+        tasks.create_task(loop(service.process_chat_once, 1))
+        # Media download/ASR can be slow; stop/status must remain reachable.
+        tasks.create_task(loop(service.process_control_once, 1))
 
 
 async def run() -> None:

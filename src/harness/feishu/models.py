@@ -7,6 +7,7 @@ from typing import Any, Literal
 from pydantic import AwareDatetime, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from harness.assistant.controls import ControlIntent
 from harness.core.models import InputArtifact
 from harness.studio.models import StudioModel
 
@@ -81,6 +82,7 @@ class Incoming(StudioModel):
     message_id: str = Field(default="", max_length=128)
     resources: list[MessageResource] = Field(default_factory=list[MessageResource], max_length=10)
     prepared: PreparedMessage | None = None
+    control: ControlIntent | None = None
 
 
 class Binding(StudioModel):

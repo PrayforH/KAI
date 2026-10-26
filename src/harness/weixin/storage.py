@@ -45,6 +45,7 @@ class WeixinMessageRow(Base):
     text: Mapped[str] = mapped_column(String)
     media_ciphertext: Mapped[str] = mapped_column(String, default="")
     prepared: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    control: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True))
     context_ciphertext: Mapped[str] = mapped_column(String)
     status: Mapped[str] = mapped_column(String(32), default="pending")
     run_id: Mapped[str | None] = mapped_column(String(128))

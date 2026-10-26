@@ -10,9 +10,11 @@ from uuid import uuid4
 import qrcode  # type: ignore[import-untyped]
 import qrcode.image.svg
 from pydantic import SecretStr
-from sqlalchemy import func, select, text
+from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.sql.elements import ColumnElement
 
+from harness.assistant.controls import CONTROL_ALIASES, STEER_PREFIXES, ControlIntent, parse_control
 from harness.assistant.conversation import PersonalConversation
 from harness.auth.service import AuthService
 from harness.core.errors import ConflictError, NotFoundError, PermissionDeniedError
@@ -36,6 +38,18 @@ def objects(value: object) -> list[dict[str, Any]]:
 
 def now() -> datetime:
     return datetime.now(UTC)
+
+
+def control_filter() -> ColumnElement[bool]:
+    value = func.btrim(Message.text, " \t\r\n")
+    return and_(
+        Message.media_ciphertext == "",
+        or_(
+            Message.control.is_not(None),
+            value.in_(tuple(CONTROL_ALIASES)),
+            *(value.startswith(prefix) for prefix in STEER_PREFIXES),
+        ),
+    )
 
 
 def qr_svg(value: str) -> str:
@@ -411,6 +425,7 @@ class WeixinService:
                     Message.user_id == user,
                     Message.generation == connection.generation,
                     Message.status.in_(["pending", "running", "ready", "sending"]),
+                    ~control_filter(),
                 )
                 .order_by(Message.created_at, Message.message_id)
                 .limit(1)
@@ -466,8 +481,44 @@ class WeixinService:
                 row.reply, row.status, row.error_code = rejection, "ready", "MediaRejected"
         return True
 
+    async def process_control_once(self, tenant: str, user: str) -> bool:
+        return await self._process_once(tenant, user, controls_only=True)
+
+    async def process_chat_once(self, tenant: str, user: str) -> bool:
+        return await self._process_once(tenant, user, controls_only=False)
+
     async def process_once(self, tenant: str, user: str) -> bool:
-        if not await self.prepare_first(tenant, user):
+        # Convenient serial pump for callers/tests. The receiver runs these
+        # disjoint lanes separately, so a live send is never treated as a crash
+        # by a second worker selecting the same 'sending' row.
+        return await self.process_control_once(tenant, user) or await self.process_chat_once(
+            tenant, user
+        )
+
+    async def _process_once(self, tenant: str, user: str, *, controls_only: bool) -> bool:
+        async with self.sessions() as lookup:
+            connection = await lookup.get(Connection, (tenant, user))
+            if not connection or not connection.enabled:
+                return False
+            priority_id = (
+                await lookup.scalar(
+                    select(Message.message_id)
+                    .where(
+                        Message.tenant_id == tenant,
+                        Message.user_id == user,
+                        Message.generation == connection.generation,
+                        Message.status.in_(["pending", "ready", "sending"]),
+                        control_filter(),
+                    )
+                    .order_by(Message.created_at, Message.message_id)
+                    .limit(1)
+                )
+                if controls_only
+                else None
+            )
+        if controls_only and not priority_id:
+            return False
+        if not priority_id and not await self.prepare_first(tenant, user):
             return False
         async with self.sessions.begin() as s:
             connection = await s.get(Connection, (tenant, user), with_for_update=True)
@@ -480,6 +531,7 @@ class WeixinService:
                     Message.user_id == user,
                     Message.generation == connection.generation,
                     Message.status.in_(["pending", "running", "ready", "sending"]),
+                    *([Message.message_id == priority_id] if priority_id else [~control_filter()]),
                 )
                 .order_by(Message.created_at, Message.message_id)
                 .limit(1)
@@ -492,7 +544,21 @@ class WeixinService:
                 return True
             try:
                 await self.authorize(tenant, user)
-                if row.status in {"pending", "running"}:
+                control = parse_control(row.text) if not row.media_ciphertext else None
+                if control and row.status == "pending":
+                    if row.control is None:
+                        planned = await self.conversation.plan_control(tenant, user, control)
+                        row.control = planned.model_dump(mode="json")
+                        row.run_id = planned.target_run_id
+                        return True
+                    row.reply = await self.conversation.execute_control(
+                        tenant,
+                        user,
+                        ControlIntent.model_validate(row.control),
+                        "weixin-control-" + row.message_id,
+                    )
+                    row.status = "ready"
+                elif row.status in {"pending", "running"}:
                     prepared = (
                         PreparedMessage.model_validate(row.prepared) if row.prepared else None
                     )
@@ -575,11 +641,26 @@ class WeixinService:
                 if connection
                 else None
             )
-        run = (
-            await self.conversation.runs.get(tenant, latest.run_id)
-            if latest and latest.run_id
-            else None
-        )
+        # A help/status receipt is not a model turn. It must not make an
+        # already verified shared conversation disappear from diagnostics.
+        async with self.sessions() as s:
+            chat_run_id = (
+                await s.scalar(
+                    select(Message.run_id)
+                    .where(
+                        Message.tenant_id == tenant,
+                        Message.user_id == user,
+                        Message.generation == connection.generation,
+                        Message.run_id.is_not(None),
+                        ~control_filter(),
+                    )
+                    .order_by(Message.created_at.desc())
+                    .limit(1)
+                )
+                if connection
+                else None
+            )
+        run = await self.conversation.runs.get(tenant, chat_run_id) if chat_run_id else None
         async with self.sessions() as s:
             media_message = (
                 await s.scalar(

@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from harness.application.agents import AgentService
+from harness.assistant.controls import parse_control
 from harness.assistant.conversation import PersonalConversation
 from harness.assistant.models import Objective, ObjectiveAction, ObjectiveBrief, ObjectiveStatus
 from harness.assistant.service import AssistantService
@@ -158,6 +159,40 @@ class FeishuService:
                             )
                         else:
                             await self.authorize(binding.tenant_id, binding.user_id)
+                            control = (
+                                parse_control(incoming.text) if not incoming.resources else None
+                            )
+                            if incoming.kind == "message" and control:
+                                row.binding_id = binding.binding_id
+                                if incoming.control is None:
+                                    planned = await self.conversation.plan_control(
+                                        binding.tenant_id, binding.user_id, control
+                                    )
+                                    row.payload = incoming.model_copy(
+                                        update={"control": planned}
+                                    ).model_dump(mode="json")
+                                    row.run_id = planned.target_run_id
+                                    # Commit the target before cancellation/steering. Recovery
+                                    # must never select the next unrelated turn instead.
+                                    return True
+                                content = text_message(
+                                    await self.conversation.execute_control(
+                                        binding.tenant_id,
+                                        binding.user_id,
+                                        incoming.control,
+                                        "feishu-control-" + row.incoming_id,
+                                    )
+                                )
+                                await self.repository.reply(
+                                    session,
+                                    key=f"reply:{row.incoming_id}",
+                                    actor=incoming.actor,
+                                    binding=binding,
+                                    content=content,
+                                    now=now,
+                                )
+                                row.status, row.finished_at = "done", now
+                                return True
                             if incoming.kind == "message" and (
                                 incoming.resources or not is_command(incoming.text)
                             ):
@@ -181,6 +216,7 @@ class FeishuService:
                         now=now,
                     )
             except (ConflictError, NotFoundError, PermissionDeniedError, ValidationError) as error:
+                await session.refresh(row)
                 # Do not echo database errors, entity identifiers or a rolled-back binding.
                 binding = await self.repository.actor_binding(session, incoming.actor)
                 content = text_message(
@@ -199,6 +235,7 @@ class FeishuService:
             except Exception:
                 # An infrastructure failure rolls back the savepoint. Bound retries
                 # keep one poison event from blocking every subsequent message.
+                await session.refresh(row)
                 row.attempts += 1
                 row.error_code = "ProcessingUnavailable"
                 row.next_attempt_at = now + timedelta(seconds=min(300, 2**row.attempts))
@@ -248,9 +285,9 @@ class FeishuService:
                         prepared = await self.media.prepare(
                             binding.tenant_id, binding.user_id, incoming
                         )
-                        row.payload = incoming.model_copy(
-                            update={"prepared": prepared}
-                        ).model_dump(mode="json")
+                        row.payload = incoming.model_copy(update={"prepared": prepared}).model_dump(
+                            mode="json"
+                        )
                         # Commit attachment IDs and transcription before creating
                         # the model Run. Recovery need not download or transcribe again.
                         return True
@@ -297,9 +334,12 @@ class FeishuService:
                 await session.refresh(row)
                 row.status, row.finished_at, row.error_code = "failed", now, "MediaRejected"
                 await self.repository.reply(
-                    session, key="chat-result:" + row.incoming_id,
-                    actor=incoming.actor, binding=binding,
-                    content=text_message(str(error)), now=now,
+                    session,
+                    key="chat-result:" + row.incoming_id,
+                    actor=incoming.actor,
+                    binding=binding,
+                    content=text_message(str(error)),
+                    now=now,
                 )
             except (NotFoundError, PermissionDeniedError, ConflictError):
                 await session.refresh(row)

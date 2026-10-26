@@ -178,7 +178,11 @@ async def test_diagnostics_distinguish_live_socket_from_process_and_isolate_user
     service.settings = await c.resolve("tenant")
     await bind(database)
     await bind(database, "bob")
-    await service.repository.heartbeat("receiver", "connecting", NOW, configuration_revision=1)
+    # Receiver liveness must use the actual clock: this module can run after
+    # more than the 45-second TTL in the complete channel regression suite.
+    await service.repository.heartbeat(
+        "receiver", "connecting", datetime.now(UTC), configuration_revision=1
+    )
     async with database[1].begin() as session:
         session.add(
             IncomingRow(
@@ -198,7 +202,9 @@ async def test_diagnostics_distinguish_live_socket_from_process_and_isolate_user
     assert checks["credentials"].status == "pass"
     assert checks["receiver"].status == "pending" and checks["events"].status == "pending"
     assert checks["attachments"].status == "pending"
-    await service.repository.heartbeat("receiver", "awaiting_event", NOW, configuration_revision=1)
+    await service.repository.heartbeat(
+        "receiver", "awaiting_event", datetime.now(UTC), configuration_revision=1
+    )
     checks = {v.key: v for v in (await c.diagnose("tenant", "alice", service)).checks}
     assert checks["receiver"].status == "pass"
     key = await c.send_test("tenant", "alice", service)
