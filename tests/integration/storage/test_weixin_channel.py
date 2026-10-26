@@ -241,6 +241,15 @@ async def test_api_keeps_qr_and_status_private_to_signed_in_owner(database):
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
         assert (await client.post("/v1/studio/assistant/weixin/login")).status_code == 200
+        identity = Identity(
+            "tenant",
+            "alice",
+            frozenset({"member"}),
+            permissions=frozenset({"tasks:read", "tasks:write"}),
+        )
+        api_key_view = await client.get("/v1/studio/assistant/weixin/status")
+        assert "qrSvg" not in api_key_view.json() and "loginId" not in api_key_view.json()
+        assert (await client.post("/v1/studio/assistant/weixin/login")).status_code == 403
         await c.login_once("tenant", "alice")
         identity = Identity("tenant", "bob", frozenset({"member"}))
         status = (await client.get("/v1/studio/assistant/weixin/status")).json()

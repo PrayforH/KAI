@@ -31,7 +31,10 @@ class Verification(BaseModel):
 
 @router.get("/status")
 async def status(identity: Reader, weixin: Service):
-    return await weixin.status(identity.tenant_id, identity.user_id)
+    result = await weixin.status(identity.tenant_id, identity.user_id)
+    if identity.permissions is not None:
+        result = {key: value for key, value in result.items() if key not in {"qrSvg", "loginId"}}
+    return result
 
 
 @router.post("/login")
