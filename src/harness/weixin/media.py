@@ -160,12 +160,24 @@ class WeixinResourceClient:
         if not plain or len(plain) > self.settings.max_resource_bytes:
             raise MediaRejectedError("微信附件为空或超过大小上限，请重新发送。")
         name = safe_name(resource.name, "微信文件")
-        media_type = mimetypes.guess_type(name)[0] or "application/octet-stream"
+        document_types = {
+            ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        }
+        media_type = (
+            document_types.get(Path(name).suffix.lower())
+            or mimetypes.guess_type(name)[0]
+            or "application/octet-stream"
+        )
         if resource.kind == "audio":
             plain = await decode_silk(plain, self.maximum_seconds)
             name = "微信语音.wav" if plain.startswith(b"RIFF") else "微信语音.opus"
             media_type = "audio/wav" if plain.startswith(b"RIFF") else "audio/opus"
-        return DownloadedResource(plain, name, media_type)
+        transcript = item.get("text", "") if resource.kind == "audio" else ""
+        return DownloadedResource(
+            plain, name, media_type, transcript if isinstance(transcript, str) else ""
+        )
 
 
 class WeixinMedia:

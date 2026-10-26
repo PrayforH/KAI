@@ -198,3 +198,39 @@ async def test_silk_decoder_real_round_trip_when_installed():
     assert wav.startswith(b"RIFF") and len(wav) > 44
     with pytest.raises(MediaRejectedError):
         await decode_silk(b"\x02#!SILK_V3bad", 120)
+
+
+@pytest.mark.asyncio
+async def test_platform_voice_transcript_is_preserved_without_second_asr(monkeypatch):
+    import wave
+
+    from harness.feishu import media as shared
+
+    wav = BytesIO()
+    with wave.open(wav, "wb") as writer:
+        writer.setnchannels(1)
+        writer.setsampwidth(2)
+        writer.setframerate(16000)
+        writer.writeframes(b"\0" * 3200)
+    value = wav.getvalue()
+    dictation = DictationService(DictationSettings(enabled=True))
+    monkeypatch.setattr(
+        dictation, "transcribe", AsyncMock(return_value="wrong secondary transcript")
+    )
+    monkeypatch.setattr(shared, "decode_voice", AsyncMock(return_value=value))
+    prepared = WeixinMedia(
+        build_service(max_file_bytes=8192),
+        dictation,
+        vision_route=AsyncMock(),
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, content=encrypt(value))),
+    )
+    result = await prepared.prepare(
+        "tenant",
+        "alice",
+        "voice",
+        "",
+        json.dumps([{"type": 3, "voice_item": {"media": media(), "text": "请记住海豚68"}}]),
+    )
+    assert result.text == "微信语音转写：\n请记住海豚68"
+    assert not dictation.transcribe.called
+    assert result.artifacts[0].media_type == "audio/wav"

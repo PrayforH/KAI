@@ -31,6 +31,7 @@ class DownloadedResource:
     content: bytes
     name: str
     media_type: str
+    transcript: str = ""
 
 
 class ResourceDownloader(Protocol):
@@ -250,15 +251,21 @@ class FeishuMedia:
                 elif not media_type.startswith("audio/"):
                     media_type = "audio/opus"
                 wav = await decode_voice(content, self.dictation.settings.max_session_seconds)
-                try:
-                    transcript = await self.dictation.transcribe(wav)
-                except DictationError as error:
-                    # Validation failures are definitive; upstream ASR outages retry.
+                transcript = downloaded.transcript.strip()
+                if transcript:
+                    if len(transcript) > 12000:
+                        raise MediaRejectedError("语音转写内容过长，请分段发送。")
+                    validate_wav(wav, self.dictation.settings.max_session_seconds)
+                else:
                     try:
-                        validate_wav(wav, self.dictation.settings.max_session_seconds)
-                    except DictationError as invalid:
-                        raise MediaRejectedError(str(invalid)) from invalid
-                    raise ConnectionError("Feishu voice transcription unavailable") from error
+                        transcript = await self.dictation.transcribe(wav)
+                    except DictationError as error:
+                        # Validation failures are definitive; upstream ASR outages retry.
+                        try:
+                            validate_wav(wav, self.dictation.settings.max_session_seconds)
+                        except DictationError as invalid:
+                            raise MediaRejectedError(str(invalid)) from invalid
+                        raise ConnectionError("Feishu voice transcription unavailable") from error
                 if not transcript:
                     raise MediaRejectedError("这条语音未识别出文字，请重新录制或改发文字。")
                 texts.append(self.channel_label + "语音转写：\n" + transcript)
