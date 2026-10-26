@@ -812,7 +812,6 @@ function AuthenticatedHome() {
               </Link>}
               {personalAssistant ? <div className="task-context-bar">
                 <strong className="task-context-title">我的助理</strong>
-                <Link className="task-project-breadcrumb" href="/studio/assistant">持续事项与飞书连接</Link>
               </div> : <TaskContextBar
                 taskTitle={currentTaskTitle}
                 onForked={switchTask}

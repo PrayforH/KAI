@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { assistantRequest, type Objective, type Execution, type Notice } from "../../lib/assistant-client";
-import { FeishuConnection } from "./feishu-connection";
 import styles from "./assistant-manager.module.css";
 
 type Agent = { name: string; version: string; display_name: string; owner_user_id?: string; space_id?: string };
@@ -19,7 +18,7 @@ export function AssistantManager() {
   const [executions, setExecutions] = useState<Execution[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [tab, setTab] = useState<"objectives" | "inbox" | "feishu">("objectives");
+  const [tab, setTab] = useState<"objectives" | "inbox">("objectives");
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<Objective | null>(null);
   const [busy, setBusy] = useState(false);
@@ -95,15 +94,14 @@ export function AssistantManager() {
     });
   }
   return <section className={styles.manager}>
-    <header className={styles.header}><div><h1>我的助理</h1><p>把需要持续跟进的工作交给 KAI，随时查看进展、补充要求。</p></div>
+    <header className={styles.header}><div><h1>持续事项</h1><p>把需要持续跟进的工作交给 KAI，随时查看进展、补充要求。</p></div>
       <button className={styles.primary} onClick={() => { setEditing(null); setCreating(true); setTab("objectives"); }}>新建持续事项</button></header>
     <nav className={styles.tabs} aria-label="助理视图">
-      {([['objectives', '持续事项'], ['inbox', `待看结果${inbox.some(n => !n.readAt) ? ` · ${inbox.filter(n => !n.readAt).length}` : ''}`], ['feishu', '飞书连接']] as const).map(([id, label]) =>
+      {([['objectives', '持续事项'], ['inbox', `待看结果${inbox.some(n => !n.readAt) ? ` · ${inbox.filter(n => !n.readAt).length}` : ''}`]] as const).map(([id, label]) =>
         <button key={id} aria-pressed={tab === id} onClick={() => setTab(id)}>{label}</button>)}
     </nav>
     {error && <p role="alert" className={styles.error}>{error} <button onClick={() => void perform(async () => {})}>刷新</button></p>}
     {message && <p role="status" className={styles.message}>{message}</p>}
-    {tab === "feishu" && <FeishuConnection />}
     {tab === "inbox" && <div className={styles.notices}>{!inbox.length && <p className={styles.empty}>执行结束后，结果会出现在这里。</p>}
       {inbox.map(item => <article key={item.itemId}><div className={styles.row}><h2>{item.title}</h2><time>{date(item.createdAt)}</time></div><p>{item.content}</p><div className={styles.actions}>
         <button onClick={() => { setSelected(item.objectiveId); setTab("objectives"); }}>查看事项</button>

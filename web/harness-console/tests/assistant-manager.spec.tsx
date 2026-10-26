@@ -25,11 +25,11 @@ it("uses the selected objective revision when pausing", async () => {
   const request = fetcher.mock.calls.find(([url]) => url.endsWith("/actions"));
   expect(JSON.parse(request![1].body)).toEqual({ action: "pause", expectedRevision: 7 });
 });
-it("keeps an unconfigured Feishu connection explicit and never sends messages", async () => {
+it("keeps existing objectives accessible without a duplicate channel configuration", async () => {
   await act(async () => root.render(<AssistantManager />));
-  await click("飞书连接");
-  expect(host.textContent).toContain("待管理员配置");
-  expect(host.textContent).toContain("服务器私有配置");
+  expect(host.textContent).toContain("采购整改跟进");
+  expect(host.textContent).not.toContain("飞书连接");
+  expect(fetcher.mock.calls.some(([url]) => url.includes("/feishu/"))).toBe(false);
   expect(fetcher.mock.calls.every(([, init]) => init.method === "GET")).toBe(true);
 });
 it("retains a visible error instead of claiming a stale action succeeded", async () => {
