@@ -418,6 +418,9 @@ class AguiRunService:
                 prefix = branch_snapshot.user_prompts()
                 if prefix and conversation_prompts[: len(prefix)] == prefix:
                     conversation_prompts = conversation_prompts[len(prefix) :]
+            conversation_prompts = await self._restore_history_prefix(
+                tenant_id, binding, request, conversation_prompts
+            )
             captured_skills = []
             if project_context is not None and project_context.skill_references:
                 if self._project_skill_snapshots is None:
@@ -568,6 +571,43 @@ class AguiRunService:
             reused=not creation.created,
             deduplicated=creation.deduplicated,
         )
+
+    async def _restore_history_prefix(
+        self,
+        tenant_id: str,
+        binding: AguiThreadBinding,
+        request: RunAgentInput,
+        prompts: list[str],
+    ) -> list[str]:
+        # A restored browser may only have the last history page. Its preceding
+        # user message identifies the durable Run whose prefix was not loaded.
+        # Match both that owner-scoped anchor and its text suffix: edits retain
+        # the prefix before the edited turn without resurrecting later turns.
+        users = [message for message in request.messages if message.role == "user"]
+        if len(users) < 2 or len(prompts) < 2:
+            return prompts
+        anchor_id = users[-2].id
+        if not anchor_id.startswith("user-"):
+            return prompts
+        try:
+            anchor = await self._run_service.get(tenant_id, anchor_id.removeprefix("user-"))
+        except NotFoundError:
+            return prompts
+        if anchor.session_id not in binding.session_ids:
+            return prompts
+        stored = anchor.input.get("conversation_prompts")
+        stored_items = cast(list[object], stored) if isinstance(stored, list) else []
+        if not (
+            stored_items
+            and all(isinstance(item, str) for item in stored_items)
+            and stored_items[-1] == anchor.input.get("prompt")
+        ):
+            return prompts
+        complete = cast(list[str], stored_items)
+        previous = prompts[:-1]
+        if len(previous) < len(complete) and previous == complete[-len(previous) :]:
+            return [*complete, prompts[-1]]
+        return prompts
 
     async def resolve_title(self, binding: StoredAguiThreadBinding, prompts: list[str]) -> str:
         if binding.title and (

@@ -144,6 +144,61 @@ async def test_history_keeps_unread_thread_empty() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("edit_last", [False, True])
+async def test_submit_from_partial_history_preserves_unloaded_prefix(edit_last: bool) -> None:
+    app = create_memory_app()
+    thread = "thread-paged-followup"
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS)
+        container = app.state.container
+        for length in range(1, 5):
+            await _drive_turn(container, thread, [f"turn {i}" for i in range(length)])
+        page = (await client.get(
+            f"/v1/agui/threads/{thread}/history?limit=2", headers=HEADERS
+        )).json()
+        assert page["total"] == 4 and page["has_more"]
+        messages = [message for message in page["messages"] if message["role"] == "user"]
+        if edit_last:
+            messages.pop()
+        messages.append({"id": "new-client-message", "role": "user", "content": "new turn"})
+        creation = await container.agui.create_run_with_result(
+            tenant_id="tenant-a", user_id="user-1", agent_name="echo-agent",
+            agent_version="0.1.0", request=RunAgentInput(
+                thread_id=thread, run_id="new-client-run", messages=messages,
+                tools=[], state={}, context=[], forwarded_props={},
+            ),
+        )
+        expected = [f"turn {i}" for i in range(3 if edit_last else 4)] + ["new turn"]
+        assert creation.run.input["conversation_prompts"] == expected
+        await container.worker.execute("tenant-a", creation.run.run_id)
+        full = (await client.get(
+            f"/v1/agui/threads/{thread}/history?limit=100", headers=HEADERS
+        )).json()
+        assert _texts(full, "user") == expected
+        assert full["total"] == len(expected)
+
+
+@pytest.mark.asyncio
+async def test_partial_history_anchor_cannot_import_another_threads_prefix() -> None:
+    app = create_memory_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        await client.post("/v1/agents", json={"path": str(FIXTURE_MANIFEST)}, headers=HEADERS)
+        container = app.state.container
+        await _drive_turn(container, "other-thread", ["hidden", "shared"])
+        foreign = (await _thread_runs(container, "other-thread"))[0]
+        creation = await container.agui.create_run_with_result(
+            tenant_id="tenant-a", user_id="user-1", agent_name="echo-agent",
+            agent_version="0.1.0", request=RunAgentInput(
+                thread_id="own-thread", run_id="new-client-run",
+                messages=[UserMessage(id=f"user-{foreign.run_id}", content="shared"),
+                          UserMessage(id="new", content="followup")],
+                tools=[], state={}, context=[], forwarded_props={},
+            ),
+        )
+        assert creation.run.input["conversation_prompts"] == ["shared", "followup"]
+
+
+@pytest.mark.asyncio
 async def test_legacy_history_rebuilds_web_images_and_reuses_the_new_snapshot() -> None:
     import json
 
