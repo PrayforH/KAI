@@ -13,7 +13,7 @@
     },
     "runs": {
       "original": 778,
-      "current": 778,
+      "current": 783,
       "allOriginalIdsPreserved": true
     },
     "feishuBindingsUnchanged": true,
@@ -35,8 +35,8 @@
       "restarts": 0
     },
     "web": {
-      "image": "kai/assistant-web:20261026-r8",
-      "imageId": "sha256:3d8a2385754bfceb48ce1ff70ee72bffbdd04766badf1d4d6fa56b002bb359d6",
+      "image": "kai/assistant-web:20261026-r13",
+      "imageId": "sha256:199c5302570a1652114a4a0751c3bfb5372bf69f6638b17521a3172e6bd8402c",
       "state": "running",
       "health": "healthy",
       "restarts": 0

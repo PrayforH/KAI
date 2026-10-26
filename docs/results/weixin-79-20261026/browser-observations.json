@@ -1,0 +1,38 @@
+{
+  "weixinNativeClient": {
+    "observed": true,
+    "userText": "请记住微信代号 WX79-C8N5",
+    "botReply": "已记住微信代号 WX79-C8N5。",
+    "screenshotOmitted": "Native client sidebar includes unrelated private chats."
+  },
+  "web": {
+    "wechatAutoSyncWithoutReload": true,
+    "fullReloadHistoryRestored": true,
+    "continuedRun": "run_9e13d440ccfe41489139091f1c63bff9",
+    "continuedAnswer": "微信代号 WX79-C8N5；飞书跨端代号 WXBRIDGE79-F3S6；Word 组合文件项目代号 COMBOFILE79-N4V7、预算 81970 元；网页代号 WEBWX79-J2R8 已记住。",
+    "subsequentFeishuAutoSync": true,
+    "finalAnswer": "WX79-C8N5、WEBWX79-J2R8"
+  },
+  "receiverRestart": {
+    "manualRestartedAt": "2026-10-26T05:32:23.722848005Z",
+    "authorizationPreserved": true,
+    "freshLongPollAfterRestart": true
+  },
+  "compactSettings": {
+    "twoCardsOnly": true,
+    "bothConnected": true,
+    "weixinManagementDoesNotStartNewLogin": true,
+    "weixinDiagnosticsAllPass": true,
+    "feishuDiagnosticsAllPass": true,
+    "escapeClosesManagement": true
+  },
+  "assistantHeader": {
+    "personalChannels": "已连接：微信、飞书",
+    "oldManagementLinkRemoved": true,
+    "configurationLinkOpensAssistantSettings": true,
+    "historyRestoredAfterFullReload": true,
+    "finalWebImage": "kai/assistant-web:20261026-r13",
+    "settingsIconVisibleInDarkTheme": true,
+    "httpsPageStatus": 200
+  }
+}
