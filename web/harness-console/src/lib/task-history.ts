@@ -361,7 +361,7 @@ export function useThreadHistoryPagination(
 
 function publishHistoryActivity(history: ThreadHistoryResponse, threadId: string) {
   const restoredActivity = latestHistoryRunActivity(history.messages);
-  if (restoredActivity) {
+  if (restoredActivity && JSON.stringify(restoredActivity) !== JSON.stringify(activityStore.getSnapshot())) {
     activityStore.publish(restoredActivity, threadId, { replaceRun: true });
   }
 }
@@ -516,7 +516,10 @@ export function createThreadHistoryAdapter(
         onLoaded?.(repository);
         return repository;
       }
-      invalidateThreadHistory(threadId);
+      // Revalidate the latest page, but keep an initial load already in flight.
+      // Dropping that request made runtime startup and external sync fetch the
+      // same history twice. Earlier-page state belongs to the reader as well.
+      threadHistorySnapshots.delete(threadId);
       const history = await loadThreadHistory(threadId).catch((error) => {
         if (disposal.signal.aborted) return null;
         throw error;

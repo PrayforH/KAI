@@ -5,7 +5,7 @@ import { flushSync } from "react-dom";
 import { useThreadRuntime, useAuiState } from "@assistant-ui/react";
 import { useRunViewModel } from "../lib/activity-store";
 import { liveResponseStore } from "../lib/live-response-store";
-import { canHandoffResponse, retainEarlierTurns } from "../lib/response-history-handoff";
+import { canHandoffResponse, historyContentSignature, retainEarlierTurns } from "../lib/response-history-handoff";
 import type { createThreadHistoryAdapter } from "../lib/task-history";
 import { PERSONAL_ASSISTANT_THREAD } from "./personal-assistant-context";
 
@@ -44,7 +44,7 @@ export function DurableHistorySync({ threadId, revision, history, onSettled }: {
           if (disposed || thread.getState().isRunning || live.runId !== expectedRun ||
               !canHandoffResponse(repository, live)) return false;
           const merged = retainEarlierTurns(repository, thread.getState().messages);
-          const signature = JSON.stringify(merged);
+          const signature = historyContentSignature(merged);
           if (signature !== lastImported || live.runId) {
             flushSync(() => {
               if (watchExternal) {

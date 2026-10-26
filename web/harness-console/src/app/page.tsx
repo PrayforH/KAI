@@ -390,12 +390,34 @@ function AuthenticatedHome() {
       setAgentsLoading(true);
       setAgentsError("");
       try {
+        const summary = loadTaskSummary(initialThreadId)
+          .then((task) => {
+            // A durable thread's own authorized binding is enough to replay
+            // it. Do not put history behind the complete registry/draft list.
+            if (task && !restoredBinding && !hasRequestedAgent && !requestedSkillLaunch &&
+                active && taskSelectionRevision.current === selectionRevision) {
+              setSelectedAgent({
+                name: task.agent_name,
+                version: task.agent_version,
+                ownerUserId: task.agent_owner_user_id,
+                spaceId: task.space_id ?? undefined,
+                scope: task.space_id ? "team" : "personal",
+                displayName: agentDisplayName(task.agent_name),
+                domain: "historical",
+              });
+              setCurrentTask(task);
+              setCurrentTaskTitle(task.title);
+              setCurrentThreadState("durable");
+              markThreadPersisted(storage, initialThreadId);
+              setLocalThreadId(null);
+            }
+            return { available: true as const, tasks: task ? [task] : [] };
+          })
+          .catch(() => ({ available: false as const, tasks: [] as TaskSummary[] }));
         const [catalog, routes, taskHistory] = await Promise.all([
           loadTaskAgentCatalog(user.user_id, showInternalAgents),
           loadTaskModelRoutes().catch(() => []),
-          loadTaskSummary(initialThreadId)
-            .then((task) => ({ available: true as const, tasks: task ? [task] : [] }))
-            .catch(() => ({ available: false as const, tasks: [] as TaskSummary[] })),
+          summary,
         ]);
         if (!active) return;
         // Catalog data can still refresh, but an older load cannot select a task

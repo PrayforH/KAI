@@ -119,6 +119,20 @@ describe("thread history activity restoration", () => {
     ]);
   });
 
+  it("shares the startup history request with simultaneous external reconciliation", async () => {
+    let resolveFetch!: (response: Response) => void;
+    const fetchMock = vi.fn(() => new Promise<Response>(resolve => { resolveFetch = resolve; }));
+    vi.stubGlobal("fetch", fetchMock);
+    const adapter = createThreadHistoryAdapter("thread-startup-shared");
+    const startup = adapter.load();
+    const reconcile = adapter.loadSnapshot();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    resolveFetch(historyResponse("succeeded", "同步后的历史"));
+    const [first, second] = await Promise.all([startup, reconcile]);
+    expect(first.messages.at(-1)?.message.content).toEqual(second.messages.at(-1)?.message.content);
+    adapter.dispose();
+  });
+
   it("invalidates a prefetched conversation after a new run finishes", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(historyResponse("succeeded", "旧回答"))

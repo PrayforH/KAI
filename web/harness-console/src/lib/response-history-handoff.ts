@@ -3,6 +3,14 @@ import type { LiveResponseSnapshot } from "./live-response-store";
 
 type Repository = ReturnType<typeof ExportedMessageRepository.fromArray>;
 
+/** AG-UI supplies a fresh createdAt when importing messages without dates. */
+export function historyContentSignature(repository: Repository): string {
+  return JSON.stringify(repository.messages.map(({ parentId, message }) => {
+    const { createdAt: _createdAt, ...content } = message;
+    return { parentId, message: content };
+  }));
+}
+
 /** A lagging history page must never remove or shorten the answer on screen. */
 export function canHandoffResponse(repository: Repository, live: LiveResponseSnapshot): boolean {
   if (!live.runId) return true;
