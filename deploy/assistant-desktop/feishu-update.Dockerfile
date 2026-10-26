@@ -6,3 +6,4 @@ ARG RECEIVER_IMAGE
 FROM ${API_IMAGE} AS application
 FROM ${RECEIVER_IMAGE}
 COPY --from=application --chown=10001:10001 /app/project /app/project
+ENTRYPOINT ["/app/.venv/bin/python", "-m", "harness.feishu.manager"]

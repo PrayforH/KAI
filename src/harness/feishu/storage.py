@@ -137,3 +137,17 @@ class ReceiverRow(Base):
     state: Mapped[str] = mapped_column(String(32))
     heartbeat_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_event_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    configuration_revision: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
+
+class ConnectionRow(Base):
+    __tablename__ = "feishu_connections"
+    connection_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(128))
+    app_id: Mapped[str] = mapped_column(String(128))
+    enabled: Mapped[bool] = mapped_column(Boolean)
+    revision: Mapped[int] = mapped_column(Integer)
+    ciphertext: Mapped[str] = mapped_column(String)
+    options: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    updated_by: Mapped[str] = mapped_column(String(128))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

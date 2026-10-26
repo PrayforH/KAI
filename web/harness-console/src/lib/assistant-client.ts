@@ -18,7 +18,15 @@ export async function assistantRequest<T>(path: string, method = "GET", body?: u
   });
   if (!response.ok) {
     if (response.status === 401) throw new Error("登录已过期，请重新登录。");
-    if (response.status === 409) throw new Error("事项已更新或已有执行，请刷新后重试。");
+    if (response.status === 403 && path.startsWith("feishu/")) throw new Error("此操作需要工作区管理员权限。");
+    if (response.status === 409) {
+      if (path.startsWith("feishu/")) {
+        const value = await response.json().catch(() => null);
+        const message = value?.detail?.message ?? value?.error?.message ?? value?.message;
+        throw new Error(typeof message === "string" ? message : "飞书配置已变化，请刷新后重试。");
+      }
+      throw new Error("事项已更新或已有执行，请刷新后重试。");
+    }
     if (response.status === 503) throw new Error("助理服务尚未启用，请联系管理员。");
     throw new Error(`操作未完成（${response.status}），请检查输入或稍后重试。`);
   }

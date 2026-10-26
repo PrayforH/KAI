@@ -13,5 +13,5 @@ ENV PATH="/app/project/bin:/app/.venv/bin:$PATH" \
     PYTHONPATH="/app/project/lib/python3.12/site-packages" \
     PYTHONUNBUFFERED=1
 USER 10001:10001
+ENTRYPOINT ["/app/.venv/bin/python", "-m", "harness.feishu.manager"]
 HEALTHCHECK NONE
-ENTRYPOINT ["/app/.venv/bin/python", "-m", "harness.feishu.main"]

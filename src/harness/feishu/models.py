@@ -19,6 +19,8 @@ class FeishuSettings(BaseSettings):
     public_base_url: str = ""
     max_resource_bytes: int = Field(default=50 * 1024 * 1024, ge=1024, le=100 * 1024 * 1024)
     vision_model_route: str = ""
+    receiver_label: str = Field(default="当前服务器", max_length=80)
+    configuration_revision: int = 0
 
     @property
     def configured(self) -> bool:

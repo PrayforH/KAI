@@ -252,10 +252,12 @@ class FeishuRepository:
         )
 
     async def heartbeat(
-        self, instance_id: str, state: str, now: datetime, *, received: bool = False
+        self, instance_id: str, state: str, now: datetime, *, received: bool = False,
+        configuration_revision: int = 0,
     ) -> None:
         async with self.sessions.begin() as session:
-            values = {"instance_id": instance_id, "state": state, "heartbeat_at": now}
+            values = {"instance_id": instance_id, "state": state, "heartbeat_at": now,
+                      "configuration_revision": configuration_revision}
             if received:
                 values["last_event_at"] = now
             await session.execute(
@@ -266,6 +268,7 @@ class FeishuRepository:
                     instance_id=instance_id,
                     state=state,
                     heartbeat_at=now,
+                    configuration_revision=configuration_revision,
                 )
                 .on_conflict_do_update(index_elements=["app_id"], set_=values)
             )

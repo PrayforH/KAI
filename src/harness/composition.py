@@ -62,6 +62,7 @@ from harness.execution.credentials import (
     CredentialSourceKey,
     InMemoryCredentialBroker,
 )
+from harness.feishu.configuration import FeishuConnectionControl
 from harness.feishu.media import FeishuMedia, FeishuResourceClient, MediaRejectedError
 from harness.feishu.models import FeishuSettings
 from harness.feishu.repository import FeishuRepository
@@ -1766,25 +1767,29 @@ def build_production_container(
     )
     feishu_settings = FeishuSettings()
 
-    async def feishu_vision_route(tenant_id: str) -> str:
-        catalog = await model_configurations.list(tenant_id)
-        routes = [model for model in catalog.models
-                  if model.enabled and model.credential_configured
-                  and {"vision", "streaming", "tool_use"}.issubset(model.capabilities)
-                  and model.model_type in {"chat", "vision"}]
-        if feishu_settings.vision_model_route:
-            routes = [model for model in routes
-                      if model.route_id == feishu_settings.vision_model_route]
-        if not routes:
-            raise MediaRejectedError("尚未配置可用的图片理解模型，请管理员在 KAI 配置后重试。")
-        return sorted(routes, key=lambda model: (model.model_type != "vision", model.route_id))[
-            0
-        ].route_id
+    def feishu_factory(active: FeishuSettings) -> FeishuService:
+        async def vision_route(tenant_id: str) -> str:
+            catalog = await model_configurations.list(tenant_id)
+            routes = [model for model in catalog.models
+                      if model.enabled and model.credential_configured
+                      and {"vision", "streaming", "tool_use"}.issubset(model.capabilities)
+                      and model.model_type in {"chat", "vision"}]
+            if active.vision_model_route:
+                routes = [model for model in routes if model.route_id == active.vision_model_route]
+            if not routes:
+                raise MediaRejectedError("尚未配置可用的图片理解模型，请管理员在 KAI 配置后重试。")
+            return sorted(routes, key=lambda model: (model.model_type != "vision", model.route_id))[
+                0
+            ].route_id
 
-    feishu_media = FeishuMedia(
-        FeishuResourceClient(feishu_settings), input_service, DictationService(DictationSettings()),
-        vision_route=feishu_vision_route,
-    )
+        return FeishuService(
+            FeishuRepository(sessions, active.app_id), active,
+            assistant=assistant, auth=auth, agents=agent_service,
+            conversation=PersonalConversation(agui=agui, runs=run_service,
+                                              agents=agent_service, events=events),
+            media=FeishuMedia(FeishuResourceClient(active), input_service,
+                              DictationService(DictationSettings()), vision_route=vision_route),
+        )
     container = ApiContainer(
         presentations=presentations,
         evolution=evolution,
@@ -1829,12 +1834,10 @@ def build_production_container(
         triggers=trigger_service,
         automations=automation_service,
         assistant=assistant,
-        feishu=FeishuService(
-            FeishuRepository(sessions, feishu_settings.app_id), feishu_settings,
-            assistant=assistant, auth=auth, agents=agent_service,
-            conversation=PersonalConversation(agui=agui, runs=run_service,
-                                              agents=agent_service, events=events),
-            media=feishu_media,
+        feishu=feishu_factory(feishu_settings),
+        feishu_factory=feishu_factory,
+        feishu_connections=FeishuConnectionControl(
+            sessions, mcp_credential_service.cipher, feishu_settings,
         ),
         projects=project_service,
         approvals=approval_service,

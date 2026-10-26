@@ -82,6 +82,8 @@ from harness.evals.repositories import (
 from harness.evals.service import EvalControlPlaneService
 from harness.evolution.repositories import InMemoryEvolutionRepository
 from harness.evolution.service import EvolutionService
+from harness.feishu.configuration import FeishuConnectionControl
+from harness.feishu.models import FeishuSettings
 from harness.feishu.service import FeishuService
 from harness.governance.repositories import InMemoryGovernanceRepository
 from harness.governance.service import GovernanceService
@@ -291,6 +293,8 @@ class ApiContainer:
     presentations: PresentationService
     assistant: AssistantService | None = None
     feishu: FeishuService | None = None
+    feishu_connections: FeishuConnectionControl | None = None
+    feishu_factory: Callable[[FeishuSettings], FeishuService] | None = None
     event_wakeup: EventWakeup | None = None
     skill_conversation: SkillConversationService | None = None
     sandbox_maintenance: Callable[[], Awaitable[object]] | None = None

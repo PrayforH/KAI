@@ -12,7 +12,9 @@ import asyncio
 import concurrent.futures
 import json
 import logging
+import os
 import signal
+import sys
 import threading
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -43,7 +45,7 @@ class Receiver:
         self.ready: concurrent.futures.Future[FeishuService] = concurrent.futures.Future()
         self.stop: asyncio.Event | None = None
         self.instance = uuid4().hex
-        self.state = "awaiting_event"
+        self.state = "connecting"
         self.received = False
 
     def mark(self, state: str, received: bool = False) -> None:
@@ -91,7 +93,8 @@ class Receiver:
         while not self.stop.is_set():
             received, self.received = self.received, False
             await service.repository.heartbeat(
-                self.instance, self.state, datetime.now(UTC), received=received
+                self.instance, self.state, datetime.now(UTC), received=received,
+                configuration_revision=self.settings.configuration_revision,
             )
             try:
                 await asyncio.wait_for(self.stop.wait(), timeout=5)
@@ -101,7 +104,11 @@ class Receiver:
     async def work(self) -> None:
         self.stop = asyncio.Event()
         container = build_production_container(Settings(), execution_enabled=False)
-        service = container.feishu
+        service = (
+            container.feishu_factory(self.settings)
+            if container.feishu_factory
+            else container.feishu
+        )
         assert service is not None
         try:
             async with service.repository.sessions.begin() as leader:
@@ -148,8 +155,6 @@ class Receiver:
             else:
                 # Fail the whole process so the supervisor reconnects, rather than
                 # keeping a live SDK socket whose callbacks cannot be persisted.
-                import os
-
                 logger.error("Feishu worker stopped; restart required")
                 os.kill(os.getpid(), signal.SIGTERM)
         finally:
@@ -162,7 +167,8 @@ class Receiver:
 
 def entrypoint() -> None:
     logging.basicConfig(level=logging.WARNING)
-    settings = FeishuSettings()
+    settings = (FeishuSettings.model_validate_json(sys.stdin.buffer.read())
+                if os.getenv("HARNESS_FEISHU_MANAGED_CHILD") == "1" else FeishuSettings())
     if not settings.enabled:
         raise SystemExit("Feishu is disabled; configure the dedicated app before starting receiver")
     receiver = Receiver(settings)
@@ -175,7 +181,13 @@ def entrypoint() -> None:
         .register_p2_card_action_trigger(receiver.action)
         .build()
     )
-    client = lark.ws.Client(
+    class ObservedClient(lark.ws.Client):
+        async def _connect(self) -> None:
+            receiver.mark("connecting")
+            await super()._connect()
+            receiver.mark("awaiting_event")
+
+    client = ObservedClient(
         settings.app_id,
         settings.app_secret.get_secret_value(),
         event_handler=handler,

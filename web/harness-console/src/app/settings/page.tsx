@@ -15,6 +15,7 @@ import {
   type ProductIconName,
 } from "../../components/product-icon";
 import { SecretInput } from "../../components/secret-input";
+import { FeishuConnection } from "../../components/agent-studio/feishu-connection";
 import { ThemeSelector } from "../../components/theme-toggle";
 import { ProcessDisplaySettings } from "../../components/process-display-settings";
 import { useFollowUpPreference, useInternalAgentsPreference } from "../../lib/interface-preferences";
@@ -39,6 +40,7 @@ type SettingsSectionId =
   | "models"
   | "api"
   | "configuration"
+  | "assistant"
   | "appearance"
   | "security"
   | "data"
@@ -74,6 +76,8 @@ const SETTINGS_NAV: ReadonlyArray<{
     description: "创建按能力授权的 API 密钥，将对话、任务和 Agent 安全接入外部系统。",
     icon: "api",
   },
+  { id: "assistant", href: "#assistant", label: "助理", icon: "agent",
+    description: "连接飞书，让消息与网页共享同一段助理对话。" },
   {
     id: "configuration",
     href: "#configuration",
@@ -420,6 +424,9 @@ function SettingsContent() {
               </section>
             )}
 
+            <section className="settings-section" id="assistant" hidden={activeSection !== "assistant"}>
+              {activeSection === "assistant" && <FeishuConnection />}
+            </section>
             <section className="settings-section" id="configuration" hidden={activeSection !== "configuration"}>
               <div className="settings-form settings-configuration">
                 <label className="settings-preference-row">
