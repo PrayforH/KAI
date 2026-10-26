@@ -244,6 +244,8 @@ class FeishuConnectionControl:
         status = await service.status(tenant_id, user_id)
         credentials = await self.validate_credentials(settings)
         async with self.sessions() as session:
+            saved = await session.get(ConnectionRow, "primary")
+            since = saved.updated_at if saved else datetime.min.replace(tzinfo=UTC)
             binding = await service.repository.binding(session, tenant_id, user_id)
             delivered = None
             incoming = None
@@ -251,7 +253,10 @@ class FeishuConnectionControl:
             if binding:
                 delivered = await session.scalar(
                     select(DeliveryRow)
-                    .where(DeliveryRow.binding_id == binding.binding_id)
+                    .where(
+                        DeliveryRow.binding_id == binding.binding_id,
+                        DeliveryRow.created_at >= since,
+                    )
                     .order_by(DeliveryRow.created_at.desc())
                     .limit(1)
                 )
@@ -260,6 +265,7 @@ class FeishuConnectionControl:
                     .where(
                         IncomingRow.binding_id == binding.binding_id,
                         IncomingRow.run_id.is_not(None),
+                        IncomingRow.created_at >= since,
                     )
                     .order_by(IncomingRow.created_at.desc())
                     .limit(1)
@@ -271,13 +277,19 @@ class FeishuConnectionControl:
                     .where(
                         IncomingRow.binding_id == binding.binding_id,
                         IncomingRow.payload["prepared"]["artifacts"].is_not(None),
+                        IncomingRow.created_at >= since,
                     )
                     .order_by(IncomingRow.created_at.desc())
                     .limit(1)
                 )
             else:
                 media = None
-        applied = configuration.applied_revision == configuration.revision
+        applied = (
+            configuration.applied_revision
+            == configuration.revision
+            == settings.configuration_revision
+        )
+        received = bool(status.last_event_at and status.last_event_at >= since)
         online = (
             settings.enabled
             and status.receiver_online
@@ -309,9 +321,9 @@ class FeishuConnectionControl:
             DiagnosticCheck(
                 key="events",
                 label="消息接收",
-                status="pass" if status.last_event_at else "pending",
-                detail="已实际收到飞书事件。"
-                if status.last_event_at
+                status="pass" if received else "pending",
+                detail=f"本次配置已收到事件：{status.last_event_at.isoformat()}"
+                if received and status.last_event_at
                 else "在飞书给 KAI 发一句话；如未收到，请检查事件订阅、可用范围和发布状态。",
             ),
             DiagnosticCheck(
@@ -330,7 +342,7 @@ class FeishuConnectionControl:
                 else "fail"
                 if delivered and delivered.status in {"failed", "uncertain"}
                 else "pending",
-                detail="已实际投递回复到你的飞书。"
+                detail=f"本次配置已投递回复：{delivered.created_at.isoformat()}"
                 if delivered and delivered.status == "sent"
                 else "可发送测试消息；失败时检查机器人发信权限。",
             ),
@@ -346,8 +358,8 @@ class FeishuConnectionControl:
                 key="attachments",
                 label="图片与文件",
                 status="pass" if attachment else "pending",
-                detail="已实际下载并保存你的附件。"
-                if attachment
+                detail=f"本次配置已读取附件：{media.created_at.isoformat()}"
+                if attachment and media
                 else "发送图片或文件验证；如失败，请检查消息读取权限。",
             ),
         ]
