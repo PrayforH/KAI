@@ -3,7 +3,7 @@
 .connected i { width: 6px; height: 6px; border-radius: 50%; background: #28a77b; }
 .attention { font-size: 11px; white-space: nowrap; }
 .configure { display: inline-flex; align-items: center; justify-content: center; color: inherit; text-decoration: none; min-width: 22px; min-height: 24px; border-radius: 5px; }
-.configure svg { width: 15px; height: 15px; }
+.configure svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .configure:hover { color: var(--codex-ink, #202124); background: var(--codex-surface-subtle, #f6f7f8); }
 .configure:focus-visible { outline: 2px solid #3370ff; outline-offset: 2px; }
 @media (max-width: 600px) { .status { font-size: 11px; gap: 6px; } }
