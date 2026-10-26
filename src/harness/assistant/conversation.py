@@ -1,5 +1,7 @@
 """The personal assistant conversation, shared by Web and private channels."""
 
+from typing import cast
+
 from ag_ui.core import RunAgentInput, UserMessage
 
 from harness.agui.response import final_response_text
@@ -11,6 +13,22 @@ from harness.core.models import Run
 from harness.core.ports import EventRepository
 
 PERSONAL_ASSISTANT_THREAD = "kai-personal-assistant-v1"
+
+
+def _previous_prompts(runs: list[Run]) -> list[str]:
+    ordered = sorted(runs, key=lambda run: (run.created_at, run.run_id))
+    if not ordered:
+        return []
+    latest = ordered[-1]
+    raw = latest.input.get("conversation_prompts")
+    prompts = cast(list[object], raw) if isinstance(raw, list) else []
+    if (
+        prompts
+        and all(isinstance(prompt, str) for prompt in prompts)
+        and prompts[-1] == latest.input.get("prompt")
+    ):
+        return list(cast(list[str], prompts))
+    return [str(run.input["prompt"]) for run in ordered if run.input.get("prompt")]
 
 
 class PersonalConversation:
@@ -32,6 +50,7 @@ class PersonalConversation:
             record = await self.agui.get_thread_record(**coordinates)
         except NotFoundError:
             record = None
+        previous: list[str] = []
         if record:
             # Recover a submission even if a process stopped before linking it,
             # or the user switched Agent versions and retained earlier sessions.
@@ -42,6 +61,9 @@ class PersonalConversation:
             binding = await self.agui.get_binding(**coordinates)
             name, version = binding.agent_name, binding.agent_version
             owner, space = binding.agent_owner_user_id, binding.space_id
+            previous = _previous_prompts(
+                await self.runs.list_for_sessions(tenant_id, list(record.session_ids), limit=200)
+            )
         else:
             agent = await self.agents.ensure_user_default(tenant_id, user_id)
             if agent is None:
@@ -63,7 +85,16 @@ class PersonalConversation:
                 thread_id=PERSONAL_ASSISTANT_THREAD,
                 run_id=key,
                 state={},
-                messages=[UserMessage(id=key, content=text)],
+                # AG-UI uses the user-message path to distinguish an append
+                # from editing an earlier turn. A one-message request would
+                # hide every preceding Web turn as a replaced branch.
+                messages=[
+                    *[
+                        UserMessage(id=f"{key}-previous-{index}", content=prompt)
+                        for index, prompt in enumerate(previous)
+                    ],
+                    UserMessage(id=key, content=text),
+                ],
                 tools=[],
                 context=[],
                 forwarded_props={},

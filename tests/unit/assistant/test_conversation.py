@@ -1,8 +1,10 @@
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
+from harness.agui.routes import _visible_thread_runs
 from harness.assistant.conversation import PERSONAL_ASSISTANT_THREAD, PersonalConversation
 from harness.core.errors import ConflictError, NotFoundError
 from harness.feishu.service import is_command
@@ -16,6 +18,7 @@ def setup():
     agui.create_run_with_result.return_value = SimpleNamespace(
         run=SimpleNamespace(run_id="created")
     )
+    runs.list_for_sessions.return_value = []
     return service
 
 
@@ -51,6 +54,59 @@ async def test_recovery_finds_key_in_retained_session_without_submitting_again()
         ("tenant", "old", "same-key"),
     ]
     s.agui.create_run_with_result.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_external_append_preserves_the_current_web_branch_and_all_previous_turns():
+    s = setup()
+    s.agui.get_thread_record.side_effect = None
+    s.agui.get_thread_record.return_value = SimpleNamespace(session_ids=("current",))
+    s.runs.find_by_idempotency_key.return_value = None
+    s.agui.get_binding.return_value = SimpleNamespace(
+        agent_name="chosen", agent_version="2", agent_owner_user_id="user", space_id=None
+    )
+    now = datetime.now(UTC)
+    s.runs.list_for_sessions.return_value = [
+        SimpleNamespace(
+            run_id="first",
+            created_at=now - timedelta(seconds=1),
+            input={"prompt": "记住代号 ABC"},
+        ),
+        SimpleNamespace(run_id="edited", created_at=now, input={"prompt": "废弃的分支"}),
+        SimpleNamespace(
+            run_id="latest",
+            created_at=now + timedelta(seconds=1),
+            input={
+                "prompt": "刷新后追问",
+                "conversation_prompts": ["记住代号 ABC", "刷新后追问"],
+            },
+        ),
+    ]
+    await s.submit("tenant", "user", "external", "从飞书继续聊")
+    request = s.agui.create_run_with_result.call_args.kwargs["request"]
+    assert [message.content for message in request.messages] == [
+        "记住代号 ABC",
+        "刷新后追问",
+        "从飞书继续聊",
+    ]
+    assert request.messages[-1].id == "external"
+    appended = SimpleNamespace(
+        run_id="external",
+        created_at=now + timedelta(seconds=2),
+        input={
+            "prompt": "从飞书继续聊",
+            "conversation_prompts": [message.content for message in request.messages],
+        },
+    )
+    assert [
+        run.run_id
+        for run in _visible_thread_runs(
+            [
+                *s.runs.list_for_sessions.return_value,
+                appended,
+            ]
+        )
+    ] == ["first", "latest", "external"]
 
 
 @pytest.mark.asyncio
