@@ -1,0 +1,24 @@
+{
+  "url": "https://172.20.105.79:3543/assistant",
+  "status": "succeeded",
+  "visibleTurns": 6,
+  "messageCount": 18,
+  "sameSession": "session_d3795a0525ab4c43b5406af5d6bf7bc0",
+  "allSixRunsSucceeded": true,
+  "completeConversationPath": true,
+  "crossEntryAnswer": "KAI79_2e0cb6a1bbc5、SYNC79_995b93b22c",
+  "greetingCode": "KAI79_2e0cb6a1bbc5",
+  "latestExternalCode": "SYNC79_995b93b22c",
+  "countsAfterAcceptance": {
+    "users": 12,
+    "sessions": 279,
+    "runs": 753,
+    "artifacts": 210,
+    "projects": 1,
+    "assistant_objectives": 1,
+    "assistant_executions": 1,
+    "assistant_inbox": 1
+  },
+  "feishuTransportTested": false,
+  "verificationScope": "real Web + external-channel application service; Feishu credentials absent"
+}

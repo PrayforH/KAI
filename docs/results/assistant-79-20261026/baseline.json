@@ -1,0 +1,15 @@
+{
+  "configSha256": "b022a9153a1792cccb8b6e32b3281b5fbc07a206c7520be071d756bca0bdbe59",
+  "database": "harness_174_20260908",
+  "schema": "0045",
+  "counts": {
+    "users": 12,
+    "sessions": 278,
+    "runs": 747,
+    "artifacts": 210,
+    "projects": 1,
+    "assistant_objectives": 1,
+    "assistant_executions": 1,
+    "assistant_inbox": 1
+  }
+}

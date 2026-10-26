@@ -1,0 +1,18 @@
+{
+  "url": "https://172.20.105.79:3543/assistant",
+  "method": "native Chrome through cua_repl",
+  "directChat": true,
+  "realModelReply": true,
+  "reloadHistory": true,
+  "followupContext": true,
+  "externalServiceAutoSync": true,
+  "externalServiceFollowup": true,
+  "finalReload": true,
+  "visibleTurns": 6,
+  "verificationCodes": [
+    "KAI79_2e0cb6a1bbc5",
+    "SYNC79_995b93b22c"
+  ],
+  "feishuTransportTested": false,
+  "timestamp": "2026-10-26T02:45:09.738Z"
+}
