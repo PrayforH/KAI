@@ -1,0 +1,14 @@
+{
+  "runId": "run_fee6e96b651c4571aac2ef5f2c7b4e07",
+  "sessionId": "session_d3795a0525ab4c43b5406af5d6bf7bc0",
+  "receipts": [
+    {
+      "request_id": "feishu-control-incoming_ab2750e6be4849e5a31044a4a5c7db35",
+      "text": "最终请只回复 STEER79-E9S6。",
+      "status": "accepted"
+    }
+  ],
+  "status": "succeeded",
+  "answer": "STEER79-E9S6",
+  "accepted": true
+}

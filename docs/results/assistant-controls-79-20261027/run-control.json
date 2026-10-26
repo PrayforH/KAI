@@ -1,0 +1,10 @@
+{
+  "runId": "run_9c5415a853aa43af96dfb8a18d2b512c",
+  "sessionId": "session_d3795a0525ab4c43b5406af5d6bf7bc0",
+  "initialStatus": "queued",
+  "statusBeforeControl": "running",
+  "statusReply": "本轮状态：正在执行。",
+  "steerReply": "当前执行暂不支持中途补充，请等本轮结束后直接发送新要求。",
+  "stopReply": "已请求停止，正在等待执行器退出。",
+  "terminalStatus": "cancelled"
+}
