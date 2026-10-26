@@ -1,0 +1,96 @@
+{
+  "schema": "0048",
+  "preserved": {
+    "users": {
+      "original": 12,
+      "current": 12,
+      "allOriginalIdsPreserved": true
+    },
+    "sessions": {
+      "original": 279,
+      "current": 279,
+      "allOriginalIdsPreserved": true
+    },
+    "runs": {
+      "original": 778,
+      "current": 778,
+      "allOriginalIdsPreserved": true
+    },
+    "feishuBindingsUnchanged": true,
+    "feishuConfigurationUnchanged": true
+  },
+  "containers": {
+    "api": {
+      "image": "kai/assistant-api:20261026-r8a",
+      "imageId": "sha256:dd86213d67992584b04210709a061fdef764700a0b90edfafb5b1ee904ee20d3",
+      "state": "running",
+      "health": "healthy",
+      "restarts": 0
+    },
+    "worker": {
+      "image": "kai/assistant-api:20261026-r8a",
+      "imageId": "sha256:dd86213d67992584b04210709a061fdef764700a0b90edfafb5b1ee904ee20d3",
+      "state": "running",
+      "health": "healthy",
+      "restarts": 0
+    },
+    "web": {
+      "image": "kai/assistant-web:20261026-r8",
+      "imageId": "sha256:3d8a2385754bfceb48ce1ff70ee72bffbdd04766badf1d4d6fa56b002bb359d6",
+      "state": "running",
+      "health": "healthy",
+      "restarts": 0
+    },
+    "feishu": {
+      "image": "kai/feishu-receiver:20261026-r8b",
+      "imageId": "sha256:e45245ff7d47351ab54725287cc36896b4225ec254e9b9462df0117b349416d0",
+      "state": "running",
+      "health": null,
+      "restarts": 0
+    },
+    "weixin": {
+      "image": "kai/weixin-receiver:20261026-r8",
+      "imageId": "sha256:fadc129e687afefb6f9a274e1ca8508e5516628d247c6e4f09cb8d5d6d148ba4",
+      "state": "running",
+      "health": null,
+      "restarts": 0
+    }
+  },
+  "sourceHashes": {
+    "weixin/client.py": {
+      "api": "c9f404239b115ae1c142c309e4d3cafb42af50ad8834858e48a10dcffc5046f1",
+      "weixin": "c9f404239b115ae1c142c309e4d3cafb42af50ad8834858e48a10dcffc5046f1",
+      "feishu": "c9f404239b115ae1c142c309e4d3cafb42af50ad8834858e48a10dcffc5046f1"
+    },
+    "weixin/service.py": {
+      "api": "7f329ccdf700d170bc5c18594b8cbbc97ba89b62b787fe9a861800588d4e3dcf",
+      "weixin": "7f329ccdf700d170bc5c18594b8cbbc97ba89b62b787fe9a861800588d4e3dcf",
+      "feishu": "7f329ccdf700d170bc5c18594b8cbbc97ba89b62b787fe9a861800588d4e3dcf"
+    },
+    "weixin/storage.py": {
+      "api": "906cd9d9dc6c32591ece594b9ca6c86839a2bb88f6522758bbf98bf42b75fc77",
+      "weixin": "906cd9d9dc6c32591ece594b9ca6c86839a2bb88f6522758bbf98bf42b75fc77",
+      "feishu": "906cd9d9dc6c32591ece594b9ca6c86839a2bb88f6522758bbf98bf42b75fc77"
+    },
+    "weixin/main.py": {
+      "api": "e3858b947ffdb715d5904e63a95bd78ef26beb4421401a4c2e59aaac1b60114e",
+      "weixin": "e3858b947ffdb715d5904e63a95bd78ef26beb4421401a4c2e59aaac1b60114e",
+      "feishu": "e3858b947ffdb715d5904e63a95bd78ef26beb4421401a4c2e59aaac1b60114e"
+    },
+    "composition.py": {
+      "api": "1f166c3d8ae48a2d2b4addce37156921b4db5cbfef34e7631f7e537006995429",
+      "weixin": "1f166c3d8ae48a2d2b4addce37156921b4db5cbfef34e7631f7e537006995429",
+      "feishu": "1f166c3d8ae48a2d2b4addce37156921b4db5cbfef34e7631f7e537006995429"
+    },
+    "assistant/conversation.py": {
+      "api": "fa4b02a8c9129e438136e09d9be39659bda41948b8fc0a69ac0f2aeacfb0951e",
+      "weixin": "fa4b02a8c9129e438136e09d9be39659bda41948b8fc0a69ac0f2aeacfb0951e",
+      "feishu": "fa4b02a8c9129e438136e09d9be39659bda41948b8fc0a69ac0f2aeacfb0951e"
+    },
+    "feishu/service.py": {
+      "api": "230b0d6e8bd0392475f54a6c5864c103f0f14a1454c4f98d74c74184ea27b06e",
+      "weixin": "230b0d6e8bd0392475f54a6c5864c103f0f14a1454c4f98d74c74184ea27b06e",
+      "feishu": "230b0d6e8bd0392475f54a6c5864c103f0f14a1454c4f98d74c74184ea27b06e"
+    }
+  }
+}

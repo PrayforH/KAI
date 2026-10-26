@@ -1,0 +1,8 @@
+{
+  "weixin/service.py": "7f329ccdf700d170bc5c18594b8cbbc97ba89b62b787fe9a861800588d4e3dcf",
+  "weixin/client.py": "c9f404239b115ae1c142c309e4d3cafb42af50ad8834858e48a10dcffc5046f1",
+  "weixin/__init__.py": "433299246d4ac396cb21b727aa6da1384657289191c04897a2d5ff59243c3f08",
+  "weixin/api.py": "de0b65f5c326ccd22bb936cba70475ef5fc0c8688540635b2b7ab7869b5805ea",
+  "weixin/storage.py": "906cd9d9dc6c32591ece594b9ca6c86839a2bb88f6522758bbf98bf42b75fc77",
+  "weixin/main.py": "e3858b947ffdb715d5904e63a95bd78ef26beb4421401a4c2e59aaac1b60114e"
+}
