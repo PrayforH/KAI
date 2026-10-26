@@ -19,33 +19,43 @@ async function click(label: string) { const button = [...host.querySelectorAll("
 it("opens an authenticated QR flow without developer credentials", async () => {
   let status: typeof empty = empty;
   fetcher.mockImplementation(async (url: string) => { if (url.endsWith("/login")) status = waiting; return Response.json(status); });
-  await act(async () => root.render(<WeixinConnection />)); await click("连接微信");
+  await act(async () => root.render(<WeixinConnection compact={false} />)); await click("连接微信");
   expect(host.querySelector('dialog[open] img')?.getAttribute("src")).toContain("data:image/svg+xml");
-  expect(host.textContent).toContain("关联当前登录的 KAI 账号");
+  expect(host.textContent).toContain("当前 KAI 账号的助理");
   expect(host.querySelector('input[type="password"]')).toBeNull();
   expect(fetcher.mock.calls.find(([url]) => url.endsWith("/login"))?.[1].method).toBe("POST");
 });
 it("shows QR expiration without a stale code", async () => {
   fetcher.mockImplementation(async () => Response.json({ ...waiting, loginStatus: "expired", qrSvg: null }));
-  await act(async () => root.render(<WeixinConnection />)); await click("连接微信");
+  await act(async () => root.render(<WeixinConnection compact={false} />)); await click("连接微信");
   expect(host.querySelector('dialog[open] img')).toBeNull(); expect(host.textContent).toContain("重新生成微信二维码");
 });
 it("replaces the QR with success only after pairing is confirmed", async () => {
   vi.useFakeTimers(); let status: typeof empty = waiting;
   fetcher.mockImplementation(async () => Response.json(status));
-  await act(async () => root.render(<WeixinConnection />)); await click("连接微信");
+  await act(async () => root.render(<WeixinConnection compact={false} />)); await click("连接微信");
   status = { ...waiting, enabled: true, bound: true, online: true, loginStatus: "confirmed", qrSvg: null };
   await act(async () => vi.advanceTimersByTimeAsync(2500));
   expect(host.querySelector('dialog[open]')?.textContent).toContain("微信已绑定"); expect(host.querySelector('dialog[open] img')).toBeNull();
 });
 it("requires explicit disconnect and retains connection on failure", async () => {
   fetcher.mockImplementation(async (url: string) => url.endsWith("/disconnect") ? new Response(null, { status: 503 }) : Response.json({ ...empty, enabled: true, bound: true, online: true }));
-  await act(async () => root.render(<WeixinConnection />)); await click("断开微信");
+  await act(async () => root.render(<WeixinConnection compact={false} />)); await click("断开微信");
   expect(fetcher.mock.calls.some(([url]) => url.endsWith("/disconnect"))).toBe(false);
   await click("确认断开微信"); expect(host.textContent).toContain("已关联本人 KAI 账号"); expect(host.querySelector('[role="alert"]')).toBeTruthy();
 });
 it("keeps unverified chat pending in diagnostics", async () => {
   fetcher.mockImplementation(async (url: string) => Response.json(url.endsWith("/diagnose") ? { checkedAt: new Date().toISOString(), checks: [{ key: "chat", label: "助理会话", status: "pending", detail: "请发消息验证" }] } : { ...empty, bound: true }));
-  await act(async () => root.render(<WeixinConnection />)); await click("微信连接诊断");
+  await act(async () => root.render(<WeixinConnection compact={false} />)); await click("微信连接诊断");
   expect(host.querySelector('[data-state="pending"]')?.textContent).toContain("助理会话");
+});
+
+it("opens management for a connected account without starting another QR login", async () => {
+  fetcher.mockImplementation(async () => Response.json({ ...empty, bound: true, enabled: true, online: true, loginStatus: "confirmed" }));
+  await act(async () => root.render(<WeixinConnection />));
+  expect(host.querySelector('dialog[open]')).toBeNull(); await click("管理");
+  expect(host.querySelector('dialog[open]')?.textContent).toContain("微信连接诊断");
+  expect(fetcher.mock.calls.some(([url]) => url.endsWith("/login"))).toBe(false);
+  const card = [...host.querySelectorAll("article")].find(node => !node.closest("dialog"))!;
+  expect(card.textContent).not.toContain("待处理"); expect(card.textContent).not.toContain("接收器");
 });

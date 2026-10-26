@@ -22,13 +22,13 @@ async function click(label: string) {
 }
 it("does not describe a running receiver as a verified connection", async () => {
   fetcher.mockImplementation(async (url: string) => Response.json(url.endsWith("/connection") ? configuration : { ...connected, receiverState: "connecting" }));
-  await act(async () => root.render(<FeishuConnection />));
+  await act(async () => root.render(<FeishuConnection compact={false} />));
   expect(host.textContent).toContain("连接中");
   expect(host.querySelector('[data-online="true"]')).toBeNull();
 });
 it("shows a one-time code only after authenticated creation succeeds", async () => {
   fetcher.mockImplementation(async (url: string) => Response.json(url.endsWith("/connection") ? configuration : url.endsWith("binding-code") ? { code: "ABCD1234", expiresAt: new Date(Date.now() + 600000).toISOString() } : connected));
-  await act(async () => root.render(<FeishuConnection />));
+  await act(async () => root.render(<FeishuConnection compact={false} />));
   await click("生成绑定码");
   expect(host.querySelector<HTMLInputElement>("input")?.value).toBe("绑定 ABCD1234");
   expect(fetcher.mock.calls.find(([url]) => url.endsWith("binding-code"))?.[1].method).toBe("POST");
@@ -36,9 +36,9 @@ it("shows a one-time code only after authenticated creation succeeds", async () 
 });
 it("keeps the binding visible when an unbind request fails", async () => {
   fetcher.mockImplementation(async (url: string) => url.endsWith("/connection") ? Response.json(configuration) : url.endsWith("/binding") ? new Response(null, { status: 503 }) : Response.json({ ...connected, bound: true, notifications: true }));
-  await act(async () => root.render(<FeishuConnection />));
+  await act(async () => root.render(<FeishuConnection compact={false} />));
   await click("解除绑定"); await click("确认解除绑定");
-  expect(host.textContent).toContain("你的飞书与 KAI 已关联");
+  expect(host.textContent).toContain("已关联当前 KAI 账号");
   expect(host.querySelector('[role="alert"]')).not.toBeNull();
   expect(host.textContent).not.toContain("已解除绑定，后续通知");
 });
@@ -49,13 +49,13 @@ it("uses server notification state and leaves the binding in place", async () =>
     if (init.method === "PUT") { enabled = false; return new Response(null, { status: 204 }); }
     return Response.json({ ...connected, bound: true, notifications: enabled });
   });
-  await act(async () => root.render(<FeishuConnection />)); await click("关闭飞书通知");
+  await act(async () => root.render(<FeishuConnection compact={false} />)); await click("关闭飞书通知");
   expect(host.textContent).toContain("通知：已关闭");
-  expect(host.textContent).toContain("你的飞书与 KAI 已关联");
+  expect(host.textContent).toContain("已关联当前 KAI 账号");
 });
 
 it("saves a reconnect with a blank secret without resending the stored secret", async () => {
-  await act(async () => root.render(<FeishuConnection />)); await click("配置连接");
+  await act(async () => root.render(<FeishuConnection compact={false} />)); await click("配置连接");
   expect(host.querySelector('dialog[open]')).not.toBeNull();
   expect(host.querySelector<HTMLInputElement>('input[type="password"]')?.value).toBe("");
   await act(async () => { host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); });
@@ -67,7 +67,7 @@ it("saves a reconnect with a blank secret without resending the stored secret", 
 
 it("shows member binding controls without app credential fields", async () => {
   fetcher.mockImplementation(async (url: string) => Response.json(url.endsWith("/connection") ? { ...configuration, canManage: false } : connected));
-  await act(async () => root.render(<FeishuConnection />));
+  await act(async () => root.render(<FeishuConnection compact={false} />));
   expect(host.textContent).toContain("生成绑定码");
   expect(host.querySelector('input[type="password"]')).toBeNull();
   expect([...host.querySelectorAll("button")].some(b => b.textContent === "配置连接")).toBe(false);
@@ -84,8 +84,19 @@ it("shows evidence-based diagnostics and waits for an actual test delivery", asy
     ] });
     return Response.json({ ...connected, bound: true });
   });
-  await act(async () => root.render(<FeishuConnection />)); await click("发送测试消息");
+  await act(async () => root.render(<FeishuConnection compact={false} />)); await click("发送测试消息");
   expect(host.textContent).toContain("测试消息已送达你的飞书");
   expect(host.querySelector('[data-state="pending"]')?.textContent).toContain("消息接收");
   expect(fetcher.mock.calls.some(([url]) => url.includes("/tests/"))).toBe(true);
+});
+
+it("keeps the connected overview quiet and opens detailed controls only in management", async () => {
+  fetcher.mockImplementation(async (url: string) => Response.json(url.endsWith("/connection") ? configuration : { ...connected, bound: true }));
+  await act(async () => root.render(<FeishuConnection />));
+  const card = [...host.querySelectorAll("article")].find(node => !node.closest("dialog"))!;
+  expect(card.textContent).toContain("飞书集成"); expect(card.textContent).not.toContain("cli_test");
+  expect(card.textContent).not.toContain("诊断"); expect(host.querySelector('dialog[open]')).toBeNull();
+  await click("管理");
+  expect(host.querySelector('dialog[open]')?.textContent).toContain("发送测试消息");
+  expect(host.querySelector('dialog[open]')?.textContent).toContain("首次配置指南");
 });

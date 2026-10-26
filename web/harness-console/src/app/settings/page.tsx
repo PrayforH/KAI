@@ -15,8 +15,7 @@ import {
   type ProductIconName,
 } from "../../components/product-icon";
 import { SecretInput } from "../../components/secret-input";
-import { WeixinConnection } from "../../components/agent-studio/weixin-connection";
-import { FeishuConnection } from "../../components/agent-studio/feishu-connection";
+import { RemoteChannels } from "../../components/agent-studio/remote-channels";
 import { ThemeSelector } from "../../components/theme-toggle";
 import { ProcessDisplaySettings } from "../../components/process-display-settings";
 import { useFollowUpPreference, useInternalAgentsPreference } from "../../lib/interface-preferences";
@@ -78,7 +77,7 @@ const SETTINGS_NAV: ReadonlyArray<{
     icon: "api",
   },
   { id: "assistant", href: "#assistant", label: "助理", icon: "agent",
-    description: "连接微信或飞书，与网页共享同一段助理对话。" },
+    description: "" },
   {
     id: "configuration",
     href: "#configuration",
@@ -353,7 +352,7 @@ function SettingsContent() {
             <header className="settings-title">
               <p>设置中心</p>
               <h1 id="settings-page-title">{activeNavigation.label}</h1>
-              <span>{activeNavigation.description}</span>
+              {activeNavigation.description && <span>{activeNavigation.description}</span>}
             </header>
 
             <section
@@ -426,7 +425,7 @@ function SettingsContent() {
             )}
 
             <section className="settings-section" id="assistant" hidden={activeSection !== "assistant"}>
-              {activeSection === "assistant" && <><FeishuConnection /><WeixinConnection /></>}
+              {activeSection === "assistant" && <RemoteChannels />}
             </section>
             <section className="settings-section" id="configuration" hidden={activeSection !== "configuration"}>
               <div className="settings-form settings-configuration">

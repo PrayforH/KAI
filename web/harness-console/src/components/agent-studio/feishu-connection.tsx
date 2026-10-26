@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { assistantRequest } from "../../lib/assistant-client";
+import { ChannelCard } from "./channel-card";
+import channels from "./remote-channels.module.css";
 import { SecretInput } from "../secret-input";
 import styles from "./feishu-connection.module.css";
 
@@ -17,7 +19,9 @@ const date = (value: string) => new Date(value).toLocaleString("zh-CN");
 const permissions = JSON.stringify({ scopes: { tenant: ["im:message.p2p_msg:readonly",
   "im:message:send_as_bot", "im:message:readonly"], user: [] } }, null, 2);
 
-export function FeishuConnection() {
+export function FeishuConnection({ compact = true }: { compact?: boolean }) {
+  const [managed, setManaged] = useState(false); const management = useRef<HTMLDialogElement>(null);
+  useEffect(() => { if (managed) management.current?.showModal(); else management.current?.close(); }, [managed]);
   const [status, setStatus] = useState<Status | null>(null);
   const [config, setConfig] = useState<Configuration | null>(null);
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
@@ -78,16 +82,14 @@ export function FeishuConnection() {
     && ["awaiting_event", "receiving"].includes(status.receiverState);
   const label = !config ? "正在读取" : !config.configured ? "未连接" : !config.enabled ? "已断开"
     : online ? "已连接" : status?.receiverState === "reconnecting" ? "正在重连" : "连接中";
-  return <section className={styles.panel} aria-label="助理远程通道">
-    <header className={styles.header}><div><h2>远程通道</h2><p>连接飞书，在聊天里使用你的 KAI 助理。与网页保持同一段对话。</p></div>
-      <a href="https://open.feishu.cn/app" target="_blank" rel="noreferrer">飞书开放平台 ↗</a></header>
+  const details = <>
     {!open && error && <p role="alert" className={styles.error}>{error}</p>}
     {notice && <p role="status" className={styles.notice}>{notice}</p>}
-    <article className={styles.card}>
-      <div className={styles.cardTop}><div className={styles.channel}>
+    <article className={compact ? channels.detailCard : styles.card}>
+      {!compact && <><div className={styles.cardTop}><div className={styles.channel}>
         <svg className={styles.logo} viewBox="0 0 48 48" aria-hidden="true"><path fill="#00c9b8" d="M5 8c13 1 22 9 28 22L19 35C15 23 10 14 5 8Z" /><path fill="#3370ff" d="M4 26c10 9 22 7 39-9-2 16-13 27-25 24C10 39 6 34 4 26Z" /></svg>
-        <h3>飞书集成</h3></div><span className={styles.state} data-online={Boolean(online)}><i />{label}</span></div>
-      <p>直接发送文字、图片、文件和语音，助理的答复同步回飞书。</p>
+        <h3>飞书集成</h3></div><span className={styles.state} data-online={Boolean(online)}><i />{label}</span></div></>}
+      {!compact && <p>直接发送文字、图片、文件和语音，助理的答复同步回飞书。</p>}
       {config?.configured && <div className={styles.connectionLine}><span>{config.receiverLabel}</span><code>{config.appId}</code></div>}
       <div className={styles.actions}>
         {config?.canManage && <button className={styles.primary} disabled={busy} onClick={() => { setAppId(config.appId); setSecret(""); setError(""); setOpen(true); }}>{config.enabled ? "配置连接" : "连接飞书"}</button>}
@@ -110,7 +112,7 @@ export function FeishuConnection() {
     </section>}
     {config?.configured && <section className={styles.account} aria-label="本人飞书账号">
       <div className={styles.sectionTitle}><h3>本人账号</h3><span className={styles.state}>{status?.bound ? "已绑定" : "待绑定"}</span></div>
-      {status?.bound ? <><p>你的飞书与 KAI 已关联，直接发消息即可继续聊天。</p>
+      {status?.bound ? <><p>已关联当前 KAI 账号。</p>
         <div className={styles.accountMeta}>通知：{status.notifications ? "已开启" : "已关闭"} · 待投递 {status.pendingDeliveries} 条{status.failedDeliveries > 0 && ` · 未确认或失败 ${status.failedDeliveries} 条`}</div>
         <div className={styles.actions}><button className={styles.button} disabled={busy} onClick={() => void perform(async () => {
           await assistantRequest("feishu/notifications", "PUT", { enabled: !status.notifications });
@@ -118,7 +120,7 @@ export function FeishuConnection() {
         {confirm === "unbind" && <div className={styles.confirm}><p>解除后，这个飞书账号将无法访问你的 KAI 助理；聊天记录保留。</p><button className={styles.button} disabled={busy} onClick={() => void perform(async () => {
           await assistantRequest("feishu/binding", "DELETE"); setCode(null); setConfirm(null); setNotice("已解除本人账号绑定。");
         })}>确认解除绑定</button><button className={styles.textButton} onClick={() => setConfirm(null)}>保留绑定</button></div>}
-      </> : <><p>生成一次性绑定码，在飞书私聊发给 KAI 机器人。只需绑定一次。</p>
+      </> : <><p>在飞书私聊发送绑定码，关联本人账号。</p>
         <button className={styles.button} disabled={busy || !config.enabled || Boolean(code && now < Date.parse(code.expiresAt) - 570000)} onClick={() => void perform(async () => { setCode(await assistantRequest<Code>("feishu/binding-code", "POST")); setNow(Date.now()); })}>{code ? "重新生成绑定码" : "生成绑定码"}</button>
         {code && Date.parse(code.expiresAt) > now && <div className={styles.bindingCode}><input aria-label="发送给 KAI 机器人的绑定消息" readOnly value={`绑定 ${code.code}`} onFocus={event => event.target.select()} /><button className={styles.button} onClick={() => void perform(async () => { await navigator.clipboard.writeText(`绑定 ${code.code}`); setNotice("绑定消息已复制。"); })}>复制绑定消息</button><small>有效至 {date(code.expiresAt)}，请只发送给专用 KAI 机器人。</small></div>}
         {code && Date.parse(code.expiresAt) <= now && <p>绑定码已过期，请重新生成。</p>}
@@ -130,6 +132,16 @@ export function FeishuConnection() {
       <li>设置应用可用范围并按企业要求发布，然后绑定本人账号、发送消息测试。</li></ol>
       <button className={styles.button} onClick={() => void perform(async () => { await navigator.clipboard.writeText(permissions); setNotice("消息权限清单已复制，可在飞书权限管理中批量导入。"); })}>复制最小消息权限清单</button><p>同一个应用应连接到当前使用的 KAI 环境。切换服务器时，请先停用旧环境的接收器。</p>
     </details>
+  </>;
+  return <section className={compact ? `${styles.panel} ${channels.channel}` : styles.panel} aria-label="飞书远程通道">
+    {compact ? <><ChannelCard name="飞书集成" description="通过飞书与助理对话，结果同步回聊天。" logo={<svg className={styles.logo} viewBox="0 0 48 48" aria-hidden="true"><path fill="#00c9b8" d="M5 8c13 1 22 9 28 22L19 35C15 23 10 14 5 8Z" /><path fill="#3370ff" d="M4 26c10 9 22 7 39-9-2 16-13 27-25 24C10 39 6 34 4 26Z" /></svg>} state={online && !status?.bound ? "待绑定" : label} online={Boolean(online && status?.bound)} connected={Boolean(config?.enabled && status?.bound)} disabled={busy || !config}
+      onClick={() => { if (config?.canManage && !config.enabled) { setAppId(config.appId); setSecret(""); setError(""); setOpen(true); } else setManaged(true); }} />
+      {!managed && !open && error && <p role="alert" className={styles.error}>{error}</p>}
+      <dialog ref={management} className={`${styles.panel} ${styles.dialog} ${channels.management}`} aria-labelledby="feishu-management-title" onCancel={() => setManaged(false)}>
+        <div className={styles.dialogTitle}><h2 id="feishu-management-title">飞书集成</h2><button className={styles.close} aria-label="关闭飞书管理" onClick={() => setManaged(false)}>×</button></div>{details}
+      </dialog></> : <>    <header className={styles.header}><div><h2>远程通道</h2><p>连接飞书，在聊天里使用你的 KAI 助理。与网页保持同一段对话。</p></div>
+      <a href="https://open.feishu.cn/app" target="_blank" rel="noreferrer">飞书开放平台 ↗</a></header>
+{details}</>}
     {config?.canManage && <dialog ref={dialog} className={styles.dialog} aria-labelledby="feishu-dialog-title" onCancel={close}>
       <form onSubmit={save}><div className={styles.dialogTitle}><h2 id="feishu-dialog-title">连接飞书</h2><button className={styles.close} type="button" aria-label="关闭连接配置" onClick={close}>×</button></div>
         <div className={styles.mode}><span>WebSocket 长连接</span><small>无需公网回调地址</small></div>
