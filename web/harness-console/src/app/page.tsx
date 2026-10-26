@@ -15,6 +15,7 @@ import {
 } from "react";
 import { AgentThread } from "../components/agent-thread";
 import { AuthProvider, useAuth } from "../components/auth-provider";
+import { AssistantChannelStatus } from "../components/assistant-channel-status";
 import { AssistantRuntimeShell } from "../components/assistant-runtime-shell";
 import { ProductivityCommandCenter } from "../components/productivity-command-center";
 import { RunTraceConsole } from "../components/run-trace-console";
@@ -812,6 +813,7 @@ function AuthenticatedHome() {
               </Link>}
               {personalAssistant ? <div className="task-context-bar">
                 <strong className="task-context-title">我的助理</strong>
+                <AssistantChannelStatus />
               </div> : <TaskContextBar
                 taskTitle={currentTaskTitle}
                 onForked={switchTask}
