@@ -181,9 +181,12 @@ class FeishuMedia:
         dictation: DictationService,
         *,
         vision_route: Callable[[str], Awaitable[str]] | None = None,
+        channel_label: str = "飞书",
+        channel_key: str = "feishu",
     ) -> None:
         self.downloader, self.inputs, self.dictation = downloader, inputs, dictation
         self.vision_route = vision_route
+        self.channel_label, self.channel_key = channel_label, channel_key
 
     async def prepare(self, tenant_id: str, user_id: str, incoming: Incoming) -> PreparedMessage:
         artifacts: list[InputArtifact] = []
@@ -201,7 +204,7 @@ class FeishuMedia:
             downloaded = await self.downloader.download(incoming.message_id, resource)
             content = downloaded.content
             media_type = downloaded.media_type or "application/octet-stream"
-            name = safe_name(downloaded.name, "飞书文件")
+            name = safe_name(downloaded.name, self.channel_label + "文件")
             if media_type in {"application/octet-stream", "binary/octet-stream"}:
                 media_type = mimetypes.guess_type(name)[0] or "application/octet-stream"
             kind = resource.kind
@@ -223,17 +226,23 @@ class FeishuMedia:
                     media_type = "image/" + format_name
                     if resource.kind == "image":
                         suffix = f"-{index}" if len(incoming.resources) > 1 else ""
-                        name = "飞书图片" + suffix + "." + (
-                            "jpg" if format_name == "jpeg" else format_name
+                        name = (
+                            self.channel_label
+                            + "图片"
+                            + suffix
+                            + "."
+                            + ("jpg" if format_name == "jpeg" else format_name)
                         )
                 except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as error:
                     raise MediaRejectedError("无法读取这张图片，请重新发送。") from error
                 if not incoming.text and not texts:
-                    texts.append("请查看飞书图片，说明主要内容，并准确提取其中的文字。")
+                    texts.append(
+                        f"请查看{self.channel_label}图片，说明主要内容，并准确提取其中的文字。"
+                    )
             elif kind == "audio":
                 if not self.dictation.settings.enabled:
                     raise MediaRejectedError("语音识别尚未启用，请管理员配置后重试，或改发文字。")
-                name = safe_name(downloaded.name, "飞书语音.opus")
+                name = safe_name(downloaded.name, self.channel_label + "语音.opus")
                 if content.startswith(b"OggS"):
                     media_type = "audio/ogg"
                 elif content.startswith(b"RIFF"):
@@ -252,17 +261,17 @@ class FeishuMedia:
                     raise ConnectionError("Feishu voice transcription unavailable") from error
                 if not transcript:
                     raise MediaRejectedError("这条语音未识别出文字，请重新录制或改发文字。")
-                texts.append("飞书语音转写：\n" + transcript)
+                texts.append(self.channel_label + "语音转写：\n" + transcript)
             else:
                 if not incoming.text and not texts:
-                    texts.append("请阅读飞书文件，概括内容和关键信息。")
+                    texts.append(f"请阅读{self.channel_label}文件，概括内容和关键信息。")
             artifact = await self.inputs.upload(
                 tenant_id=tenant_id,
                 user_id=user_id,
                 name=name,
                 media_type=media_type,
                 content=content,
-                idempotency_key=f"feishu:{incoming.actor.app_id}:{incoming.message_id}:{resource.key}",
+                idempotency_key=f"{self.channel_key}:{incoming.actor.app_id}:{incoming.message_id}:{resource.key}",
             )
             artifacts.append(artifact)
         return PreparedMessage(

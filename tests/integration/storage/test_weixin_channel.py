@@ -227,7 +227,7 @@ async def test_non_text_is_explicit_without_inventing_an_attachment_analysis(dat
     )
     assert await c.process_once("tenant", "alice")
     assert not c.conversation.submit.called
-    assert "只支持文字" in client.send.call_args.args[-1]
+    assert "附件处理尚未启用" in client.send.call_args.args[-1]
 
 
 @pytest.mark.asyncio
@@ -294,3 +294,96 @@ async def test_protocol_auth_redirection_and_upstream_failure_are_sanitized():
     with pytest.raises(WeixinError, match="AuthorizationExpired") as error:
         await client.updates({"base": "https://ilinkai.weixin.qq.com", "token": "x"}, "")
     assert "private-upstream" not in str(error.value)
+
+
+@pytest.mark.asyncio
+async def test_media_metadata_is_encrypted_prepared_once_and_submitted_to_the_same_conversation(
+    database,
+):
+    from harness.feishu.models import PreparedMessage
+
+    c, client = setup(database)
+    c.media = SimpleNamespace(
+        prepare=AsyncMock(
+            return_value=PreparedMessage(
+                text="微信语音转写：测试内容", model_route="deepseek-v4-flash"
+            )
+        )
+    )
+    generation, credentials = await bind(c)
+    payload = event(
+        item_list=[
+            {"type": 1, "text_item": {"text": "caption"}},
+            {
+                "type": 2,
+                "image_item": {
+                    "media": {
+                        "aes_key": "private-aes-key",
+                        "encrypt_query_param": "private-download",
+                    }
+                },
+            },
+        ]
+    )
+    await c.ingest("tenant", "alice", generation, credentials, {"msgs": [payload, payload]})
+    async with c.sessions() as s:
+        row = await s.scalar(select(Message))
+        assert "private" not in row.media_ciphertext
+        assert (
+            "private-aes-key"
+            in c.open(await s.get(Connection, ("tenant", "alice")), "media", row.media_ciphertext)[
+                "items"
+            ]
+        )
+    c.conversation.submit.side_effect = ConflictError("busy")
+    assert not await c.process_once("tenant", "alice")
+    c.conversation.submit.side_effect = None
+    assert await c.process_once("tenant", "alice")
+    assert c.media.prepare.await_count == 1
+    assert c.conversation.submit.call_args.args[3] == "微信语音转写：测试内容"
+    assert c.conversation.submit.call_args.kwargs["model_route"] == "deepseek-v4-flash"
+    assert client.send.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_failed_media_has_bounded_retries_and_does_not_block_later_text(database):
+    c, client = setup(database)
+    c.media = SimpleNamespace(prepare=AsyncMock(side_effect=ConnectionError("private URL")))
+    generation, credentials = await bind(c)
+    await c.ingest(
+        "tenant",
+        "alice",
+        generation,
+        credentials,
+        {"msgs": [event(item_list=[{"type": 4, "file_item": {}}]), event(2)]},
+    )
+    assert not await c.process_once("tenant", "alice")
+    assert not await c.process_once("tenant", "alice")
+    assert await c.process_once("tenant", "alice")
+    assert "暂时无法下载或识别" in client.send.call_args.args[-1]
+    assert not c.conversation.submit.called
+    assert await c.process_once("tenant", "alice")
+    assert c.conversation.submit.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_disconnect_during_media_preparation_never_creates_a_run_or_sends(database):
+    from harness.feishu.models import PreparedMessage
+
+    c, client = setup(database)
+
+    async def prepare(*args):
+        await c.disconnect("tenant", "alice")
+        return PreparedMessage(text="private attachment analysis")
+
+    c.media = SimpleNamespace(prepare=AsyncMock(side_effect=prepare))
+    generation, credentials = await bind(c)
+    await c.ingest(
+        "tenant",
+        "alice",
+        generation,
+        credentials,
+        {"msgs": [event(item_list=[{"type": 2, "image_item": {}}])]},
+    )
+    assert not await c.process_once("tenant", "alice")
+    assert not c.conversation.submit.called and not client.send.called

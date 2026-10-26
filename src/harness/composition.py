@@ -68,6 +68,7 @@ from harness.feishu.models import FeishuSettings
 from harness.feishu.repository import FeishuRepository
 from harness.feishu.service import FeishuService
 from harness.weixin.service import WeixinService
+from harness.weixin.media import WeixinMedia, WeixinMediaSettings
 from harness.governance.service import GovernanceService
 from harness.inputs.processors import DefaultInputProcessor
 from harness.knowledge.directory import PlatformUserDirectory
@@ -1768,28 +1769,28 @@ def build_production_container(
     )
     feishu_settings = FeishuSettings()
 
-    def feishu_factory(active: FeishuSettings) -> FeishuService:
-        async def vision_route(tenant_id: str) -> str:
-            catalog = await model_configurations.list(tenant_id)
-            routes = [model for model in catalog.models
-                      if model.enabled and model.credential_configured
-                      and {"vision", "streaming", "tool_use"}.issubset(model.capabilities)
-                      and model.model_type in {"chat", "vision"}]
-            if active.vision_model_route:
-                routes = [model for model in routes if model.route_id == active.vision_model_route]
-            if not routes:
-                raise MediaRejectedError("尚未配置可用的图片理解模型，请管理员在 KAI 配置后重试。")
-            return sorted(routes, key=lambda model: (model.model_type != "vision", model.route_id))[
-                0
-            ].route_id
+    async def channel_vision_route(tenant_id: str, configured_route: str = "") -> str:
+        catalog = await model_configurations.list(tenant_id)
+        routes = [model for model in catalog.models
+                  if model.enabled and model.credential_configured
+                  and {"vision", "streaming", "tool_use"}.issubset(model.capabilities)
+                  and model.model_type in {"chat", "vision"}]
+        if configured_route:
+            routes = [model for model in routes if model.route_id == configured_route]
+        if not routes:
+            raise MediaRejectedError("尚未配置可用的图片理解模型，请管理员在 KAI 配置后重试。")
+        return sorted(routes, key=lambda model: (model.model_type != "vision", model.route_id))[
+            0
+        ].route_id
 
+    def feishu_factory(active: FeishuSettings) -> FeishuService:
         return FeishuService(
             FeishuRepository(sessions, active.app_id), active,
             assistant=assistant, auth=auth, agents=agent_service,
             conversation=PersonalConversation(agui=agui, runs=run_service,
                                               agents=agent_service, events=events),
             media=FeishuMedia(FeishuResourceClient(active), input_service,
-                              DictationService(DictationSettings()), vision_route=vision_route),
+                              DictationService(DictationSettings()), vision_route=lambda tenant: channel_vision_route(tenant, active.vision_model_route)),
         )
     container = ApiContainer(
         presentations=presentations,
@@ -1836,7 +1837,9 @@ def build_production_container(
         automations=automation_service,
         assistant=assistant,
         weixin=WeixinService(sessions, mcp_credential_service.cipher,
-            PersonalConversation(agui=agui, runs=run_service, agents=agent_service, events=events), auth),
+            PersonalConversation(agui=agui, runs=run_service, agents=agent_service, events=events), auth,
+            media=WeixinMedia(input_service, DictationService(DictationSettings()),
+                vision_route=lambda tenant: channel_vision_route(tenant, WeixinMediaSettings().vision_model_route))),
         feishu=feishu_factory(feishu_settings),
         feishu_factory=feishu_factory,
         feishu_connections=FeishuConnectionControl(

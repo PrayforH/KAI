@@ -1,6 +1,7 @@
 """Personal QR pairing, encrypted credentials, durable ingestion and shared chat."""
 
 import hashlib
+import json
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from typing import Any, cast
@@ -15,9 +16,12 @@ from sqlalchemy.dialects.postgresql import insert
 from harness.assistant.conversation import PersonalConversation
 from harness.auth.service import AuthService
 from harness.core.errors import ConflictError, NotFoundError, PermissionDeniedError
+from harness.feishu.media import MediaRejectedError
+from harness.feishu.models import PreparedMessage
 from harness.storage.database import SessionFactory
 from harness.studio.mcp_credential_store import McpCredentialCipher, StoredMcpCredential
 from harness.weixin.client import BASE_URL, WeixinClient, WeixinError, trusted_base
+from harness.weixin.media import WeixinMedia
 from harness.weixin.storage import WeixinConnectionRow as Connection
 from harness.weixin.storage import WeixinMessageRow as Message
 
@@ -50,6 +54,8 @@ class WeixinService:
         conversation: PersonalConversation,
         auth: AuthService,
         client: WeixinClient | None = None,
+        *,
+        media: WeixinMedia | None = None,
     ) -> None:
         self.sessions, self.cipher, self.conversation, self.auth = (
             sessions,
@@ -58,6 +64,7 @@ class WeixinService:
             auth,
         )
         self.client = client or WeixinClient()
+        self.media = media
 
     def seal(self, row: Connection, purpose: str, value: dict[str, str]) -> str:
         return self.cipher.encrypt(
@@ -352,15 +359,16 @@ class WeixinService:
                     and isinstance(item.get("text_item"), dict)
                     and isinstance(item["text_item"].get("text"), str)
                 )
-                unsupported = any(item.get("type") != 1 for item in parts)
+                attachments = [item for item in parts if item.get("type") != 1]
+                payload = json.dumps(attachments, ensure_ascii=False)
                 reply = (
-                    "微信首版暂时只支持文字，请把需要处理的内容发成文字。"
-                    if unsupported
-                    else "文字过长，请分成几条发送。"
-                    if len(content) > 30000
+                    "微信消息内容过长或附件过多，请拆分后发送。"
+                    if len(content) > (8000 if attachments else 30000)
+                    or len(attachments) > 10
+                    or len(payload) > 64000
                     else None
                 )
-                if not content.strip() and not reply:
+                if not content.strip() and not attachments and not reply:
                     continue
                 key = hashlib.sha256(
                     (credentials["bot"] + ":" + str(identifier)).encode()
@@ -374,6 +382,9 @@ class WeixinService:
                         user_id=user,
                         generation=generation,
                         text=content,
+                        media_ciphertext=self.seal(row, "media", {"items": payload})
+                        if attachments and not reply
+                        else "",
                         context_ciphertext=self.seal(row, "context", {"context": context}),
                         status="ready" if reply else "pending",
                         reply=reply,
@@ -387,7 +398,77 @@ class WeixinService:
             if isinstance(cursor, str) and cursor:
                 row.cursor_ciphertext = self.seal(row, "cursor", {"cursor": cursor})
 
+    async def prepare_first(self, tenant: str, user: str) -> bool:
+        # Download/ASR outside the connection lock so long polling can keep committing.
+        async with self.sessions() as s:
+            connection = await s.get(Connection, (tenant, user))
+            if not connection or not connection.enabled:
+                return False
+            message = await s.scalar(
+                select(Message)
+                .where(
+                    Message.tenant_id == tenant,
+                    Message.user_id == user,
+                    Message.generation == connection.generation,
+                    Message.status.in_(["pending", "running", "ready", "sending"]),
+                )
+                .order_by(Message.created_at, Message.message_id)
+                .limit(1)
+            )
+            if (
+                not message
+                or message.status != "pending"
+                or not message.media_ciphertext
+                or message.prepared
+            ):
+                return True
+            payload = self.open(connection, "media", message.media_ciphertext)["items"]
+        prepared = None
+        rejection = None
+        retry = False
+        try:
+            await self.authorize(tenant, user)
+            if self.media is None:
+                raise MediaRejectedError("微信附件处理尚未启用，请管理员检查配置。")
+            prepared = await self.media.prepare(
+                tenant, user, message.message_id, message.text, payload
+            )
+        except MediaRejectedError as error:
+            rejection = str(error)
+        except (ConnectionError, TimeoutError, OSError):
+            retry = True
+        except (NotFoundError, PermissionDeniedError):
+            return False
+        async with self.sessions.begin() as s:
+            active = await s.get(Connection, (tenant, user), with_for_update=True)
+            row = await s.get(Message, message.message_id, with_for_update=True)
+            if (
+                not active
+                or not active.enabled
+                or active.generation != message.generation
+                or not row
+                or row.status != "pending"
+                or row.run_id
+            ):
+                return False
+            if prepared:
+                row.prepared, row.error_code = prepared.model_dump(mode="json"), None
+            elif retry:
+                row.attempts += 1
+                if row.attempts < 3:
+                    return False
+                row.reply, row.status, row.error_code = (
+                    "微信附件暂时无法下载或识别，请稍后重新发送。",
+                    "ready",
+                    "MediaUnavailable",
+                )
+            else:
+                row.reply, row.status, row.error_code = rejection, "ready", "MediaRejected"
+        return True
+
     async def process_once(self, tenant: str, user: str) -> bool:
+        if not await self.prepare_first(tenant, user):
+            return False
         async with self.sessions.begin() as s:
             connection = await s.get(Connection, (tenant, user), with_for_update=True)
             if not connection or not connection.enabled:
@@ -412,13 +493,27 @@ class WeixinService:
             try:
                 await self.authorize(tenant, user)
                 if row.status in {"pending", "running"}:
-                    run = (
-                        await self.conversation.runs.get(tenant, row.run_id)
-                        if row.run_id
-                        else await self.conversation.submit(
-                            tenant, user, "weixin-chat-" + row.message_key, row.text
-                        )
+                    prepared = (
+                        PreparedMessage.model_validate(row.prepared) if row.prepared else None
                     )
+                    if row.run_id:
+                        run = await self.conversation.runs.get(tenant, row.run_id)
+                    elif prepared:
+                        run = await self.conversation.submit(
+                            tenant,
+                            user,
+                            "weixin-chat-" + row.message_key,
+                            prepared.text,
+                            artifacts=prepared.artifacts,
+                            model_route=prepared.model_route,
+                        )
+                    else:
+                        run = await self.conversation.submit(
+                            tenant,
+                            user,
+                            "weixin-chat-" + row.message_key,
+                            row.text,
+                        )
                     row.run_id = run.run_id
                     if not run.status.is_terminal:
                         row.status = "running"
@@ -455,7 +550,7 @@ class WeixinService:
         async with self.sessions.begin() as s:
             row = await s.get(Message, identifier, with_for_update=True)
             assert row is not None
-            row.status, row.error_code, row.finished_at = state, error_code, now()
+            row.status, row.error_code, row.finished_at = state, error_code or row.error_code, now()
             if state == "done":
                 connection = await s.get(Connection, (tenant, user), with_for_update=True)
                 if connection and connection.generation == row.generation:
@@ -485,6 +580,22 @@ class WeixinService:
             if latest and latest.run_id
             else None
         )
+        async with self.sessions() as s:
+            media_message = (
+                await s.scalar(
+                    select(Message)
+                    .where(
+                        Message.tenant_id == tenant,
+                        Message.user_id == user,
+                        Message.generation == connection.generation,
+                        Message.media_ciphertext != "",
+                    )
+                    .order_by(Message.created_at.desc())
+                    .limit(1)
+                )
+                if connection
+                else None
+            )
         checks = [
             (
                 "binding",
@@ -493,20 +604,29 @@ class WeixinService:
                 "扫码授权与当前 KAI 账号关联。",
             ),
             ("receiver", "消息连接", status["online"], "接收器已完成微信长轮询。"),
-            ("incoming", "文字接收", bool(status.get("lastEventAt")), "本次连接已收到本人消息。"),
+            ("incoming", "消息接收", bool(status.get("lastEventAt")), "本次连接已收到本人消息。"),
             (
                 "chat",
                 "助理会话",
                 bool(run and run.status.value == "succeeded"),
-                "文字已进入与飞书、网页共用的助理会话。",
+                "消息已进入与飞书、网页共用的助理会话。",
             ),
             (
                 "reply",
-                "文字回复",
+                "消息回复",
                 bool(latest and latest.status == "done" and status.get("lastReplyAt")),
                 "微信接口已确认接收回复。",
             ),
         ]
+        if media_message:
+            checks.append(
+                (
+                    "media",
+                    "图片、文件与语音",
+                    bool(media_message.prepared),
+                    "附件已读取并保存到当前账号的助理会话。",
+                )
+            )
         return {
             "checkedAt": now(),
             "checks": [
@@ -516,7 +636,9 @@ class WeixinService:
                     "status": "pass" if passed else "pending",
                     "detail": detail
                     if passed
-                    else "请扫码连接，然后在微信助理里发一句文字完成验证。",
+                    else "附件处理未完成，请查看消息回复或重新发送附件。"
+                    if key == "media"
+                    else "请扫码连接，然后向微信助理发送消息验证。",
                 }
                 for key, label, passed, detail in checks
             ],

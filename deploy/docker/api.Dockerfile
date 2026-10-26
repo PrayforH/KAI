@@ -81,7 +81,7 @@ ARG DEBIAN_MIRROR=https://deb.debian.org/debian
 RUN sed -i "s|http://deb.debian.org/debian|${DEBIAN_MIRROR}|g" /etc/apt/sources.list.d/debian.sources \
     && apt-get update \
     && apt-get upgrade -y \
-    && apt-get install -y --no-install-recommends libarchive13 xz-utils \
+    && apt-get install -y --no-install-recommends libarchive13 xz-utils ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 # Vendored office Skills generate .docx/.pptx through the Node libraries, so
 # Node plus the two document packages ship in the image. Installing them at
@@ -100,6 +100,8 @@ RUN python -c 'import os, urllib.request; v=os.environ["NODE_VERSION"]; r=os.env
     && rm -rf /usr/local/lib/node_modules/npm \
     && rm -f /usr/local/bin/npm /usr/local/bin/npx \
     && NODE_PATH=/node_modules node /opt/office/smoke.cjs
+COPY deploy/docker/weixin-codec/install.py /tmp/install-weixin-codec.py
+RUN python /tmp/install-weixin-codec.py && rm /tmp/install-weixin-codec.py
 ENV NODE_PATH=/node_modules
 RUN groupadd --system --gid 10001 harness \
     && useradd --system --uid 10001 --gid harness --home-dir /app harness \

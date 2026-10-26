@@ -1,8 +1,10 @@
 """Encrypted channel credentials and durable text inbox/outbox."""
 
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import Boolean, DateTime, Index, Integer, String, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from harness.storage.models import Base
@@ -41,6 +43,8 @@ class WeixinMessageRow(Base):
     user_id: Mapped[str] = mapped_column(String(128))
     generation: Mapped[str] = mapped_column(String(64))
     text: Mapped[str] = mapped_column(String)
+    media_ciphertext: Mapped[str] = mapped_column(String, default="")
+    prepared: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     context_ciphertext: Mapped[str] = mapped_column(String)
     status: Mapped[str] = mapped_column(String(32), default="pending")
     run_id: Mapped[str | None] = mapped_column(String(128))
