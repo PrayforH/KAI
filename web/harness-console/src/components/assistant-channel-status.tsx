@@ -6,7 +6,7 @@ import { ProductIcon } from "./product-icon";
 import styles from "./assistant-channel-status.module.css";
 
 type Channel = { name: string; state: "online" | "offline" | "unbound" | "unknown" | "disconnected" };
-type Status = { enabled?: boolean; bound?: boolean; online?: boolean; receiverOnline?: boolean };
+type Status = { enabled?: boolean; bound?: boolean; online?: boolean; receiverOnline?: boolean; receiverState?: string };
 const channels = [{ key: "weixin", name: "微信" }, { key: "feishu", name: "飞书" }];
 const labels = { online: "已连接", offline: "离线", unbound: "待绑定", unknown: "状态待确认", disconnected: "未连接" };
 
@@ -29,7 +29,7 @@ export function AssistantChannelStatus() {
           if (result.status === "fulfilled") {
             const value = result.value;
             state = !value.enabled ? "disconnected" : !value.bound ? "unbound"
-              : (i === 0 ? value.online : value.receiverOnline) ? "online" : "offline";
+              : (i === 0 ? value.online : value.receiverOnline && ["awaiting_event", "receiving"].includes(value.receiverState ?? "")) ? "online" : "offline";
           }
           return { name: channels[i].name, state };
         }));
