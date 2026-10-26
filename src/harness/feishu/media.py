@@ -189,7 +189,7 @@ class FeishuMedia:
         artifacts: list[InputArtifact] = []
         model_route = None
         texts = [incoming.text] if incoming.text else []
-        for resource in incoming.resources:
+        for index, resource in enumerate(incoming.resources, 1):
             if resource.kind == "audio":
                 if not self.dictation.settings.enabled:
                     raise MediaRejectedError("语音识别尚未启用，请管理员配置后重试，或改发文字。")
@@ -222,10 +222,14 @@ class FeishuMedia:
                             raise MediaRejectedError("图片格式暂不支持，请改发 PNG、JPEG 或 WebP。")
                     media_type = "image/" + format_name
                     if resource.kind == "image":
-                        name = "飞书图片." + ("jpg" if format_name == "jpeg" else format_name)
+                        suffix = f"-{index}" if len(incoming.resources) > 1 else ""
+                        name = "飞书图片" + suffix + "." + (
+                            "jpg" if format_name == "jpeg" else format_name
+                        )
                 except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as error:
                     raise MediaRejectedError("无法读取这张图片，请重新发送。") from error
-                texts.append("请查看这张飞书图片，说明主要内容，并准确提取其中的文字。")
+                if not incoming.text and not texts:
+                    texts.append("请查看飞书图片，说明主要内容，并准确提取其中的文字。")
             elif kind == "audio":
                 if not self.dictation.settings.enabled:
                     raise MediaRejectedError("语音识别尚未启用，请管理员配置后重试，或改发文字。")
@@ -250,7 +254,8 @@ class FeishuMedia:
                     raise MediaRejectedError("这条语音未识别出文字，请重新录制或改发文字。")
                 texts.append("飞书语音转写：\n" + transcript)
             else:
-                texts.append("请阅读这份飞书文件，概括内容和关键信息。")
+                if not incoming.text and not texts:
+                    texts.append("请阅读飞书文件，概括内容和关键信息。")
             artifact = await self.inputs.upload(
                 tenant_id=tenant_id,
                 user_id=user_id,

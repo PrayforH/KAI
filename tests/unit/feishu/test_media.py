@@ -146,6 +146,40 @@ async def test_voice_transcription_is_submitted_with_original_audio_and_owned_st
 
 
 @pytest.mark.asyncio
+async def test_combined_caption_images_file_and_voice_reach_one_prepared_turn(monkeypatch):
+    from harness.feishu import media as module
+    from harness.feishu.models import MessageResource
+
+    image = BytesIO()
+    Image.new("RGB", (8, 8), "blue").save(image, format="PNG")
+    downloader = SimpleNamespace(download=AsyncMock(side_effect=[
+        DownloadedResource(image.getvalue(), "", "image/png"),
+        DownloadedResource(image.getvalue(), "", "image/png"),
+        DownloadedResource(b"file contents", "facts.txt", "text/plain"),
+        DownloadedResource(b"OggS-test", "voice.opus", "audio/ogg"),
+    ]))
+    monkeypatch.setattr(module, "decode_voice", AsyncMock(return_value=b"wav"))
+    dictation = DictationService(DictationSettings(enabled=True))
+    monkeypatch.setattr(dictation, "transcribe", AsyncMock(return_value="语音补充内容"))
+    media = FeishuMedia(downloader, build_service(max_file_bytes=4096), dictation,
+                        vision_route=AsyncMock(return_value="deepseek-v4-flash"))
+    incoming = event("image").model_copy(update={
+        "text": "[图片 1][图片 2]\n比较两张图片，结合附件和语音回答。",
+        "resources": [MessageResource(kind="image", key="img_one"),
+                      MessageResource(kind="image", key="img_two"),
+                      MessageResource(kind="file", key="file_one", name="facts.txt"),
+                      MessageResource(kind="audio", key="file_voice")],
+    })
+    result = await media.prepare("tenant", "user", incoming)
+    assert result.text == incoming.text + "\n\n飞书语音转写：\n语音补充内容"
+    assert result.model_route == "deepseek-v4-flash"
+    assert [a.name for a in result.artifacts] == [
+        "飞书图片-1.png", "飞书图片-2.png", "facts.txt", "voice.opus",
+    ]
+    assert len({a.input_artifact_id for a in result.artifacts}) == 4
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "settings,duration",
     [

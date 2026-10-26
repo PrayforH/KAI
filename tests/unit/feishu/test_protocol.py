@@ -72,6 +72,75 @@ def test_reject_malformed_resource_references(body):
     assert normalize(payload, "app") is None
 
 
+@pytest.mark.parametrize("locale", [None, "zh_cn", "en_us"])
+def test_combined_post_keeps_caption_multiple_images_and_text_structure(locale):
+    body = {"title": "看这两张", "content": [
+        [{"tag": "img", "image_key": "img_one"}, {"tag": "img", "image_key": "img_two"}],
+        [{"tag": "text", "text": "查下这个。"},
+         {"tag": "a", "text": "资料", "href": "https://example.com/page"}],
+        [{"tag": "code_block", "text": "print('hello')"}],
+        [{"tag": "img", "image_key": "img_one"}],
+    ]}
+    payload = message()
+    payload["event"]["message"].update(
+        message_type="post", content=json.dumps({locale: body} if locale else body)
+    )
+    incoming = normalize(json.loads(lark.JSON.marshal(P2ImMessageReceiveV1(payload))), "app")
+    assert incoming and incoming.key == "message:om1"
+    assert "看这两张" in incoming.text
+    assert "查下这个。资料 (https://example.com/page)" in incoming.text
+    assert "print('hello')" in incoming.text
+    assert [r.key for r in incoming.resources] == ["img_one", "img_two"]
+    assert "[图片 1][图片 2]" in incoming.text
+    payload["event"]["message"]["chat_type"] = "group"
+    assert normalize(payload, "app") is None
+
+
+def test_post_only_image_uses_media_default_prompt_and_markdown_text_is_accepted():
+    payload = message()
+    payload["event"]["message"].update(message_type="post", content=json.dumps({
+        "title": "", "content": [[{"tag": "img", "image_key": "img_one"}]],
+    }))
+    incoming = normalize(payload, "app")
+    assert incoming and incoming.resources and not incoming.text
+    payload["event"]["message"]["content"] = json.dumps({
+        "content_v2": [[{"tag": "md", "text": "**请概括**"}]],
+    })
+    incoming = normalize(payload, "app")
+    assert incoming and incoming.text == "**请概括**"
+
+
+def test_post_binding_never_persists_binding_secret():
+    payload = message()
+    payload["event"]["message"].update(message_type="post", content=json.dumps({
+        "content": [[{"tag": "text", "text": "绑定 ABCDEF123456"}]],
+    }))
+    incoming = normalize(payload, "app")
+    assert incoming and incoming.kind == "bind" and incoming.code_digest == digest("ABCDEF123456")
+    assert "ABCDEF123456" not in incoming.model_dump_json()
+
+
+def test_post_unknown_embedded_content_gets_explicit_limitation_not_silent_loss():
+    payload = message()
+    payload["event"]["message"].update(message_type="post", content=json.dumps({
+        "content": [[{"tag": "text", "text": "看看这个"}, {"tag": "media", "file_key": "vid"}]],
+    }))
+    incoming = normalize(payload, "app")
+    assert incoming and "看看这个" in incoming.text and "暂不支持解析" in incoming.text
+    assert not incoming.resources
+
+
+@pytest.mark.parametrize("body", [
+    {}, {"content": "bad"}, {"content": [[None]]},
+    {"content": [[{"tag": "img", "image_key": "../../private"}]]},
+    {"content": [[{"tag": "img", "image_key": f"img_{i}"} for i in range(11)]]},
+])
+def test_reject_invalid_and_oversized_posts(body):
+    payload = message()
+    payload["event"]["message"].update(message_type="post", content=json.dumps(body))
+    assert normalize(payload, "app") is None
+
+
 @pytest.mark.parametrize("field,value", [("chat_type", "group"), ("message_type", "image")])
 def test_ignore_non_private_text(field, value):
     payload = message()
