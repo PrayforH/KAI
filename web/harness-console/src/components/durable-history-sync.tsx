@@ -47,7 +47,14 @@ export function DurableHistorySync({ threadId, revision, history, onSettled }: {
           const signature = JSON.stringify(merged);
           if (signature !== lastImported || live.runId) {
             flushSync(() => {
-              thread.import(merged);
+              if (watchExternal) {
+                // AG-UI owns the source messages. Updating that source first
+                // keeps the message clients and rendered list in one commit;
+                // import() notifies the legacy repository before the source.
+                thread.reset(merged.messages.map(entry => entry.message));
+              } else {
+                thread.import(merged);
+              }
               liveResponseStore.clear(threadId);
               expectedRun = undefined;
             });

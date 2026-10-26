@@ -5,8 +5,8 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { DurableHistorySync } from "../src/components/durable-history-sync";
 import { liveResponseStore } from "../src/lib/live-response-store";
 
-const state = vi.hoisted(() => ({ running: false, import: vi.fn() }));
-const thread = { getState: () => ({ isRunning: state.running, messages: [] }), import: state.import };
+const state = vi.hoisted(() => ({ running: false, import: vi.fn(), reset: vi.fn() }));
+const thread = { getState: () => ({ isRunning: state.running, messages: [] }), import: state.import, reset: state.reset };
 vi.mock("@assistant-ui/react", () => ({
   useThreadRuntime: () => thread,
   useAuiState: () => state.running,
@@ -26,7 +26,7 @@ async function render(revision: number, threadId = "sync-thread") {
   await act(async () => { await vi.advanceTimersByTimeAsync(20); });
 }
 beforeEach(() => {
-  vi.useFakeTimers(); state.running = false; state.import.mockClear(); loadSnapshot.mockClear();
+  vi.useFakeTimers(); state.running = false; state.import.mockClear(); state.reset.mockClear(); loadSnapshot.mockClear();
   host = document.createElement("div"); document.body.appendChild(host); root = createRoot(host);
   liveResponseStore.clear();
 });
@@ -34,16 +34,17 @@ afterEach(async () => { await act(async () => root.unmount()); host.remove(); li
 
 it("refreshes external personal messages while idle without repainting unchanged history", async () => {
   await render(0, "kai-personal-assistant-v1");
-  expect(state.import).toHaveBeenCalledTimes(1);
+  expect(state.reset).toHaveBeenCalledTimes(1);
   await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
   expect(loadSnapshot).toHaveBeenCalledTimes(2);
-  expect(state.import).toHaveBeenCalledTimes(1);
+  expect(state.reset).toHaveBeenCalledTimes(1);
   const updated = { ...repository, messages: [...repository.messages, {
     message: { id: "external-answer", role: "assistant", content: [{ type: "text", text: "飞书新回复" }] }, parentId: "assistant-run",
   }], headId: "external-answer" };
   loadSnapshot.mockImplementationOnce(async callback => { callback?.(updated); return updated; });
   await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
-  expect(state.import).toHaveBeenLastCalledWith(updated);
+  expect(state.reset).toHaveBeenLastCalledWith(updated.messages.map(entry => entry.message));
+  expect(state.import).not.toHaveBeenCalled();
 });
 
 it("retries completion history when the runtime settles after the completion callback", async () => {
