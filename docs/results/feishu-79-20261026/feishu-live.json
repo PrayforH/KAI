@@ -1,0 +1,110 @@
+{
+  "url": "https://172.20.105.79:3543/assistant",
+  "appId": "cli_aa51ac4376b9dc0e",
+  "account": "xiaokai@shdata.com",
+  "realFeishuDelivery": true,
+  "connection": {
+    "configured": true,
+    "enabled": true,
+    "receiverOnline": true,
+    "receiverState": "receiving",
+    "lastEventAt": "2026-10-26T03:07:46.970979Z",
+    "bound": true,
+    "notifications": true,
+    "boundAt": "2026-10-26T03:06:22.964163Z",
+    "pendingDeliveries": 0,
+    "failedDeliveries": 0
+  },
+  "sessionId": "session_d3795a0525ab4c43b5406af5d6bf7bc0",
+  "visibleTurns": 10,
+  "realModelChecks": [
+    {
+      "channel": "feishu",
+      "runId": "run_ce4b81585895442f82021e182011fe30",
+      "status": "succeeded",
+      "answer": "飞书已记住",
+      "conversationPromptCount": 7
+    },
+    {
+      "channel": "web_cross_entry",
+      "runId": "run_4184babeb50741b9956e01c019e2aa93",
+      "status": "succeeded",
+      "answer": "飞书代号：FS79_A7C9_1107；网页已记住",
+      "conversationPromptCount": 8
+    },
+    {
+      "channel": "feishu_followup",
+      "runId": "run_e2202111c2014358a9c5895477dffc60",
+      "status": "succeeded",
+      "answer": "WEB79_B4D2_1108",
+      "conversationPromptCount": 9
+    },
+    {
+      "channel": "web_after_full_reload",
+      "runId": "run_17b3125bac134005bfd25003ff166ee0",
+      "status": "succeeded",
+      "answer": "FS79_A7C9_1107、WEB79_B4D2_1108",
+      "conversationPromptCount": 10
+    }
+  ],
+  "incoming": [
+    {
+      "incoming_id": "incoming_a5fe02e920b048cc9ad08bf913e34260",
+      "status": "done",
+      "run_id": null,
+      "attempts": 1,
+      "error_code": null
+    },
+    {
+      "incoming_id": "incoming_ef355b6dba0a4aac8129f6c7d2d67fd0",
+      "status": "done",
+      "run_id": null,
+      "attempts": 1,
+      "error_code": null
+    },
+    {
+      "incoming_id": "incoming_25a3f658c8fc4d64a06a5ffb643702ae",
+      "status": "done",
+      "run_id": "run_ce4b81585895442f82021e182011fe30",
+      "attempts": 0,
+      "error_code": null
+    },
+    {
+      "incoming_id": "incoming_7ecf0c76a1e44bf5b8d797a4aaac8d77",
+      "status": "done",
+      "run_id": "run_e2202111c2014358a9c5895477dffc60",
+      "attempts": 0,
+      "error_code": null
+    }
+  ],
+  "deliveries": [
+    {
+      "delivery_id": "b048f79a4cf651c024d68ad70a76035f4699ff6e",
+      "status": "sent",
+      "attempts": 1,
+      "error_code": null,
+      "message_id": "om_x100b62d87b6b00a0cff5c8e33668a34"
+    },
+    {
+      "delivery_id": "faeb0c55bd5c854a0fd55bc7cb2cf622eb8722b8",
+      "status": "sent",
+      "attempts": 1,
+      "error_code": null,
+      "message_id": "om_x100b62d87437e8a0b08d2451d5f69fc"
+    },
+    {
+      "delivery_id": "9e4eee8d334a585b228cbcb76b305414643166da",
+      "status": "sent",
+      "attempts": 1,
+      "error_code": null,
+      "message_id": "om_x100b62d873a428acb0eb402369745ba"
+    },
+    {
+      "delivery_id": "d3d66806bb32ced381a82217301cfcf61be6f7fd",
+      "status": "sent",
+      "attempts": 1,
+      "error_code": null,
+      "message_id": "om_x100b62d80e48c4b0b4a5a6ca8d03703"
+    }
+  ]
+}

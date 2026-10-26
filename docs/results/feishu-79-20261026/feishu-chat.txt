@@ -1,0 +1,36 @@
+文本 你好，请记住这次飞书直聊验收代号 FS79_A7C9_1107，只回复“飞书已记住”，不要调用工具。
+														224 container
+															225 container
+																226 文本 飞书已记住
+														227 container
+															228 container
+																229 文本 刚才我在网页里让你记住的网页续聊代号是什么？只回复该代号，不要调用工具。
+														230 container
+															231 container
+																232 文本 WEB79_B4D2_1108
+												233 container
+													234 文本输入区 (settable) 发送给 KAI
+​
+​
+​
+														235 container (settable)
+															236 text 发送给 KAI
+													237 按钮
+														238 图像
+													239 按钮
+														240 图像
+													241 按钮
+														242 图像
+													243 按钮
+														244 图像
+														245 图像
+													246 按钮
+														247 图像
+													248 按钮
+														249 图像
+													250 按钮
+														251 图像
+													252 按钮
+														253 图像
+												254 文本 Shift + Enter 换行
+						255 container (settable) 
