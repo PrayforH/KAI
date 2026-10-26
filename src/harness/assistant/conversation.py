@@ -1,15 +1,24 @@
 """The personal assistant conversation, shared by Web and private channels."""
 
+from collections.abc import Sequence
 from typing import cast
 
-from ag_ui.core import RunAgentInput, UserMessage
+from ag_ui.core import (
+    AudioInputContent,
+    DocumentInputContent,
+    ImageInputContent,
+    InputContentDataSource,
+    RunAgentInput,
+    TextInputContent,
+    UserMessage,
+)
 
 from harness.agui.response import final_response_text
 from harness.agui.service import AguiRunService
 from harness.application.agents import AgentService
 from harness.application.runs import RunService
 from harness.core.errors import ConflictError, NotFoundError
-from harness.core.models import Run
+from harness.core.models import InputArtifact, Run
 from harness.core.ports import EventRepository
 
 PERSONAL_ASSISTANT_THREAD = "kai-personal-assistant-v1"
@@ -42,7 +51,16 @@ class PersonalConversation:
     ) -> None:
         self.agui, self.runs, self.agents, self.events = agui, runs, agents, events
 
-    async def submit(self, tenant_id: str, user_id: str, key: str, text: str) -> Run:
+    async def submit(
+        self,
+        tenant_id: str,
+        user_id: str,
+        key: str,
+        text: str,
+        *,
+        artifacts: Sequence[InputArtifact] = (),
+        model_route: str | None = None,
+    ) -> Run:
         coordinates = dict(
             tenant_id=tenant_id, user_id=user_id, thread_id=PERSONAL_ASSISTANT_THREAD
         )
@@ -93,11 +111,37 @@ class PersonalConversation:
                         UserMessage(id=f"{key}-previous-{index}", content=prompt)
                         for index, prompt in enumerate(previous)
                     ],
-                    UserMessage(id=key, content=text),
+                    UserMessage(
+                        id=key,
+                        content=[
+                            TextInputContent(text=text),
+                            *[
+                                (
+                                    ImageInputContent
+                                    if artifact.media_type.startswith("image/")
+                                    else AudioInputContent
+                                    if artifact.media_type.startswith("audio/")
+                                    else DocumentInputContent
+                                )(
+                                    source=InputContentDataSource(
+                                        value=artifact.input_artifact_id,
+                                        mime_type=artifact.media_type,
+                                    ),
+                                    metadata={
+                                        "inputArtifactId": artifact.input_artifact_id,
+                                        "filename": artifact.name,
+                                    },
+                                )
+                                for artifact in artifacts
+                            ],
+                        ]
+                        if artifacts
+                        else text,
+                    ),
                 ],
                 tools=[],
                 context=[],
-                forwarded_props={},
+                forwarded_props={"modelRoute": model_route} if model_route else {},
             ),
         )
         return created.run

@@ -46,6 +46,32 @@ def test_raw_binding_secret_never_enters_durable_payload():
     assert "ABCDEF123456" not in incoming.model_dump_json()
 
 
+@pytest.mark.parametrize("kind,body,key", [
+    ("image", {"image_key": "img_safe"}, "img_safe"),
+    ("file", {"file_key": "file_safe", "file_name": "报告.pdf"}, "file_safe"),
+    ("audio", {"file_key": "file_voice", "duration": 2500}, "file_voice"),
+])
+def test_media_sdk_events_preserve_message_identity_and_bounded_resource(kind, body, key):
+    payload = message()
+    payload["event"]["message"].update(message_type=kind, content=json.dumps(body))
+    incoming = normalize(json.loads(lark.JSON.marshal(P2ImMessageReceiveV1(payload))), "app")
+    assert incoming and incoming.kind == "message" and incoming.text == ""
+    assert incoming.key == "message:om1" and incoming.message_id == "om1"
+    assert incoming.resources[0].key == key and incoming.resources[0].kind == kind
+    payload["event"]["message"]["chat_type"] = "group"
+    assert normalize(payload, "app") is None
+
+
+@pytest.mark.parametrize("body", [
+    {"file_key": "../../private"}, {"file_key": "https://evil.test/key"},
+    {"file_key": "file_ok", "duration": -1}, {"file_key": ""},
+])
+def test_reject_malformed_resource_references(body):
+    payload = message()
+    payload["event"]["message"].update(message_type="audio", content=json.dumps(body))
+    assert normalize(payload, "app") is None
+
+
 @pytest.mark.parametrize("field,value", [("chat_type", "group"), ("message_type", "image")])
 def test_ignore_non_private_text(field, value):
     payload = message()

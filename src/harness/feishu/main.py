@@ -86,6 +86,18 @@ class Receiver:
             }
         )
 
+    async def heartbeats(self, service: FeishuService) -> None:
+        assert self.stop is not None
+        while not self.stop.is_set():
+            received, self.received = self.received, False
+            await service.repository.heartbeat(
+                self.instance, self.state, datetime.now(UTC), received=received
+            )
+            try:
+                await asyncio.wait_for(self.stop.wait(), timeout=5)
+            except TimeoutError:
+                pass
+
     async def work(self) -> None:
         self.stop = asyncio.Event()
         container = build_production_container(Settings(), execution_enabled=False)
@@ -103,25 +115,25 @@ class Receiver:
                     service.repository, self.settings, SdkSender(self.settings), service.authorize
                 )
                 self.ready.set_result(service)
-                while not self.stop.is_set():
-                    await service.repository.heartbeat(
-                        self.instance, self.state, datetime.now(UTC), received=self.received
-                    )
-                    self.received = False
-                    for _ in range(10):
-                        if not await service.process_once():
-                            break
-                    for _ in range(10):
-                        if not await service.process_conversation_once():
-                            break
-                    await delivery.collect()
-                    for _ in range(2):
-                        if not await delivery.deliver_once():
-                            break
-                    try:
-                        await asyncio.wait_for(self.stop.wait(), timeout=1)
-                    except TimeoutError:
-                        pass
+                async with asyncio.TaskGroup() as tasks:
+                    # Downloads/ASR may take longer than the online TTL. Keep
+                    # liveness independent while the durable work remains serial.
+                    tasks.create_task(self.heartbeats(service))
+                    while not self.stop.is_set():
+                        for _ in range(10):
+                            if not await service.process_once():
+                                break
+                        for _ in range(10):
+                            if not await service.process_conversation_once():
+                                break
+                        await delivery.collect()
+                        for _ in range(2):
+                            if not await delivery.deliver_once():
+                                break
+                        try:
+                            await asyncio.wait_for(self.stop.wait(), timeout=1)
+                        except TimeoutError:
+                            pass
         finally:
             if container.close:
                 await container.close()

@@ -7,7 +7,26 @@ import pytest
 from harness.agui.routes import _visible_thread_runs
 from harness.assistant.conversation import PERSONAL_ASSISTANT_THREAD, PersonalConversation
 from harness.core.errors import ConflictError, NotFoundError
+from harness.core.models import ArtifactStatus, InputArtifact
 from harness.feishu.service import is_command
+
+
+@pytest.mark.asyncio
+async def test_media_submission_uses_owned_artifact_ids_and_the_existing_user_path():
+    from harness.agui.service import _latest_user_input, _user_prompts
+
+    s = setup()
+    artifact = InputArtifact(input_artifact_id="input_artifact_image", tenant_id="tenant",
+        user_id="user", name="image.png", media_type="image/png", status=ArtifactStatus.READY,
+        object_key="private", created_at=datetime.now(UTC))
+    await s.submit("tenant", "user", "media-key", "看看这张图片", artifacts=[artifact],
+                   model_route="configured-vision")
+    request = s.agui.create_run_with_result.call_args.kwargs["request"]
+    assert _latest_user_input(request) == ("看看这张图片", ["input_artifact_image"])
+    assert _user_prompts(request) == ["看看这张图片"]
+    assert request.thread_id == PERSONAL_ASSISTANT_THREAD
+    assert request.forwarded_props == {"modelRoute": "configured-vision"}
+    assert "private" not in request.model_dump_json()
 
 
 def setup():

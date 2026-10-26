@@ -7,6 +7,7 @@ from typing import Any, Literal
 from pydantic import AwareDatetime, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from harness.core.models import InputArtifact
 from harness.studio.models import StudioModel
 
 
@@ -16,6 +17,8 @@ class FeishuSettings(BaseSettings):
     app_id: str = ""
     app_secret: SecretStr = SecretStr("")
     public_base_url: str = ""
+    max_resource_bytes: int = Field(default=50 * 1024 * 1024, ge=1024, le=100 * 1024 * 1024)
+    vision_model_route: str = ""
 
     @property
     def configured(self) -> bool:
@@ -52,6 +55,19 @@ class Actor(StudioModel):
     open_id: str = Field(min_length=1, max_length=128)
 
 
+class MessageResource(StudioModel):
+    kind: Literal["image", "file", "audio"]
+    key: str = Field(min_length=1, max_length=256, pattern=r"^[A-Za-z0-9_-]+$")
+    name: str = Field(default="", max_length=255)
+    duration_ms: int = Field(default=0, ge=0, le=86_400_000)
+
+
+class PreparedMessage(StudioModel):
+    text: str = Field(max_length=16_000)
+    artifacts: list[InputArtifact] = Field(default_factory=list[InputArtifact], max_length=10)
+    model_route: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9-]{0,63}$")
+
+
 class Incoming(StudioModel):
     actor: Actor
     key: str = Field(min_length=1, max_length=256)
@@ -61,6 +77,8 @@ class Incoming(StudioModel):
     code_digest: str = ""
     action_digest: str = ""
     message_id: str = Field(default="", max_length=128)
+    resources: list[MessageResource] = Field(default_factory=list[MessageResource], max_length=10)
+    prepared: PreparedMessage | None = None
 
 
 class Binding(StudioModel):

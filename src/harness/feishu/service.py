@@ -19,6 +19,7 @@ from harness.auth.service import AuthService
 from harness.core.errors import ConflictError, NotFoundError, PermissionDeniedError
 from harness.core.models import RunStatus
 from harness.feishu.cards import callback_button, card, text_message
+from harness.feishu.media import FeishuMedia, MediaRejectedError
 from harness.feishu.models import (
     BindingCode,
     ConnectionStatus,
@@ -71,10 +72,12 @@ class FeishuService:
         auth: AuthService,
         agents: AgentService,
         conversation: PersonalConversation,
+        media: FeishuMedia | None = None,
     ) -> None:
         self.repository, self.settings = repository, settings
         self.assistant, self.auth, self.agents = assistant, auth, agents
         self.conversation = conversation
+        self.media = media
 
     async def authorize(self, tenant_id: str, user_id: str) -> None:
         user, membership = await self.auth.profile(tenant_id, user_id)
@@ -155,7 +158,9 @@ class FeishuService:
                             )
                         else:
                             await self.authorize(binding.tenant_id, binding.user_id)
-                            if incoming.kind == "message" and not is_command(incoming.text):
+                            if incoming.kind == "message" and (
+                                incoming.resources or not is_command(incoming.text)
+                            ):
                                 # Commit receipt before model work; the row is
                                 # also the durable per-message execution intent.
                                 row.binding_id = binding.binding_id
@@ -237,6 +242,19 @@ class FeishuService:
             try:
                 async with session.begin_nested():
                     await self.authorize(binding.tenant_id, binding.user_id)
+                    if not row.run_id and incoming.resources and incoming.prepared is None:
+                        if self.media is None:
+                            raise MediaRejectedError("飞书附件处理尚未配置，请管理员检查接收器。")
+                        prepared = await self.media.prepare(
+                            binding.tenant_id, binding.user_id, incoming
+                        )
+                        row.payload = incoming.model_copy(
+                            update={"prepared": prepared}
+                        ).model_dump(mode="json")
+                        # Commit attachment IDs and transcription before creating
+                        # the model Run. Recovery need not download or transcribe again.
+                        return True
+                    prepared = incoming.prepared
                     run = (
                         await self.conversation.runs.get(binding.tenant_id, row.run_id)
                         if row.run_id
@@ -244,7 +262,9 @@ class FeishuService:
                             binding.tenant_id,
                             binding.user_id,
                             "feishu-chat-" + row.incoming_id,
-                            incoming.text,
+                            prepared.text if prepared else incoming.text,
+                            artifacts=prepared.artifacts if prepared else (),
+                            model_route=prepared.model_route if prepared else None,
                         )
                     )
                     row.run_id = run.run_id
@@ -273,6 +293,14 @@ class FeishuService:
                                 ),
                                 now=now,
                             )
+            except MediaRejectedError as error:
+                await session.refresh(row)
+                row.status, row.finished_at, row.error_code = "failed", now, "MediaRejected"
+                await self.repository.reply(
+                    session, key="chat-result:" + row.incoming_id,
+                    actor=incoming.actor, binding=binding,
+                    content=text_message(str(error)), now=now,
+                )
             except (NotFoundError, PermissionDeniedError, ConflictError):
                 await session.refresh(row)
                 row.status, row.finished_at, row.error_code = "failed", now, "ChatUnavailable"

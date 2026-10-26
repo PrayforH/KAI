@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from harness.feishu.models import Actor, Incoming
+from harness.feishu.models import Actor, Incoming, MessageResource
 from harness.feishu.repository import actor_key, digest
 
 
@@ -17,11 +17,10 @@ def normalize(payload: dict[str, Any], app_id: str) -> Incoming | None:
             return None
         if header["event_type"] == "im.message.receive_v1":
             sender, message = event["sender"], event["message"]
-            if (sender["sender_type"], message["chat_type"], message["message_type"]) != (
-                "user",
-                "p2p",
-                "text",
-            ):
+            message_type = message["message_type"]
+            if sender["sender_type"] != "user" or message["chat_type"] != "p2p":
+                return None
+            if message_type not in {"text", "image", "file", "audio"}:
                 return None
             actor = Actor(
                 app_id=app_id,
@@ -30,14 +29,27 @@ def normalize(payload: dict[str, Any], app_id: str) -> Incoming | None:
             )
             if header["tenant_key"] != actor.tenant_key:
                 return None
-            content = json.loads(message["content"])["text"].strip()
-            if not isinstance(content, str) or not content or len(content) > 8000:
-                return None
+            body = json.loads(message["content"])
+            resources: list[MessageResource] = []
+            if message_type == "text":
+                content = body["text"].strip()
+                if not isinstance(content, str) or not content or len(content) > 8000:
+                    return None
+            else:
+                resources = [
+                    MessageResource(
+                        kind=message_type,
+                        key=body["image_key" if message_type == "image" else "file_key"],
+                        name=body.get("file_name", ""),
+                        duration_ms=body.get("duration", 0),
+                    )
+                ]
+                content = ""
             message_id = message["message_id"]
             if not isinstance(message_id, str) or not message_id:
                 return None
             # Even malformed bind attempts must not store their credential as chat text.
-            binding = content.startswith("绑定")
+            binding = message_type == "text" and content.startswith("绑定")
             return Incoming(
                 actor=actor,
                 key=f"message:{message_id}",
@@ -45,6 +57,7 @@ def normalize(payload: dict[str, Any], app_id: str) -> Incoming | None:
                 kind="bind" if binding else "message",
                 text="" if binding else content,
                 code_digest=digest(content[2:].strip().upper()) if binding else "",
+                resources=resources,
             )
         if header["event_type"] == "card.action.trigger":
             operator = event["operator"]

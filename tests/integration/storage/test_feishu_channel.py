@@ -16,7 +16,8 @@ from harness.core.errors import ConflictError, NotFoundError
 from harness.core.models import RunStatus
 from harness.feishu.cards import text_message
 from harness.feishu.delivery import FeishuDelivery
-from harness.feishu.models import Actor, FeishuSettings, Incoming
+from harness.feishu.media import MediaRejectedError
+from harness.feishu.models import Actor, FeishuSettings, Incoming, MessageResource, PreparedMessage
 from harness.feishu.repository import FeishuRepository, digest
 from harness.feishu.service import FeishuService
 from harness.feishu.storage import (
@@ -27,6 +28,7 @@ from harness.feishu.storage import (
     IncomingRow,
 )
 from tests.integration.storage.test_assistant_objectives import objective
+from tests.unit.test_input_artifacts import build_service
 
 NOW = datetime.now(UTC)
 ACTOR = Actor(app_id="app", tenant_key="ft", open_id="ou")
@@ -77,6 +79,78 @@ async def receive(service, content, key="m1", actor=ACTOR):
         Incoming(actor=actor, key=key, kind="message", text=content), NOW
     )
     assert await service.process_once(NOW)
+
+
+@pytest.mark.asyncio
+async def test_media_preparation_commits_before_run_and_is_reused_after_receiver_recovery(database):
+    service, delivery, sender = setup(database)
+    await bind(service.repository)
+    run = chat_runtime(service)
+    artifact = await build_service().upload(tenant_id='tenant-a', user_id='user-a',
+        name='test.txt', media_type='text/plain', content=b'hello')
+    service.media = AsyncMock()
+    service.media.prepare.return_value = PreparedMessage(
+        text='请阅读这份文件', artifacts=[artifact]
+    )
+    incoming = Incoming(actor=ACTOR, key='file-event', kind='message', message_id='om_file',
+                        resources=[MessageResource(kind='file', key='file_test')])
+    await service.repository.ingest(incoming, NOW)
+    assert await service.process_once(NOW)
+    assert await service.process_conversation_once(NOW)
+    service.conversation.agui.create_run_with_result.assert_not_awaited()
+    async with service.repository.sessions() as session:
+        row = await session.scalar(select(IncomingRow))
+        prepared = Incoming.model_validate(row.payload).prepared
+        assert prepared and prepared.artifacts[0] == artifact
+        assert row.run_id is None and row.status == 'chat_pending'
+    # The model service can fail/restart independently after preparation commits.
+    create = service.conversation.agui.create_run_with_result
+    create.side_effect = RuntimeError('transient run creation failure')
+    assert await service.process_conversation_once(NOW)
+    create.side_effect = None
+    run.status = RunStatus.SUCCEEDED
+    assert await service.process_conversation_once(NOW + timedelta(seconds=3))
+    service.media.prepare.assert_awaited_once()
+    request = create.call_args.kwargs['request']
+    assert request.thread_id == 'kai-personal-assistant-v1'
+    assert request.messages[-1].content[1].source.value == artifact.input_artifact_id
+    assert await delivery.deliver_once(NOW + timedelta(seconds=4))
+    assert sender.send.call_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('bound', [False, True])
+async def test_unbound_or_revoked_media_never_downloads_or_starts_model(database, bound):
+    service, _, _ = setup(database)
+    service.media = AsyncMock()
+    chat_runtime(service)
+    if bound:
+        await bind(service.repository)
+    await service.repository.ingest(Incoming(actor=ACTOR, key='private-image', kind='message',
+        message_id='om_image', resources=[MessageResource(kind='image', key='img_test')]), NOW)
+    assert await service.process_once(NOW)
+    if bound:
+        await service.repository.unbind('tenant-a', 'user-a', NOW)
+    await service.process_conversation_once(NOW)
+    service.media.prepare.assert_not_awaited()
+    service.conversation.agui.create_run_with_result.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_permanent_media_failure_sends_one_explanation_without_model_run(database):
+    service, delivery, sender = setup(database)
+    await bind(service.repository)
+    chat_runtime(service)
+    service.media = AsyncMock()
+    service.media.prepare.side_effect = MediaRejectedError('附件太大，请压缩后重试。')
+    await service.repository.ingest(Incoming(actor=ACTOR, key='oversize', kind='message',
+        message_id='om_large', resources=[MessageResource(kind='file', key='file_large')]), NOW)
+    assert await service.process_once(NOW)
+    assert await service.process_conversation_once(NOW)
+    assert not await service.process_conversation_once(NOW + timedelta(seconds=10))
+    service.conversation.agui.create_run_with_result.assert_not_awaited()
+    assert await delivery.deliver_once(NOW)
+    assert sender.send.call_args.args[1].content['text'] == '附件太大，请压缩后重试。'
 
 
 async def last_token(repo):

@@ -33,6 +33,25 @@ def build_service(
 
 
 @pytest.mark.asyncio
+async def test_channel_retries_reuse_same_owned_file_and_reject_changed_bytes():
+    service = build_service()
+    args = dict(tenant_id="tenant", user_id="alice", name="test.txt",
+                media_type="text/plain", content=b"hello", idempotency_key="event:file")
+    first = await service.upload(**args)
+    assert await service.upload(**args) == first
+    other_owner = await service.upload(**{**args, "user_id": "bob"})
+    assert other_owner.input_artifact_id != first.input_artifact_id
+    with pytest.raises(ConflictError, match="content has changed"):
+        await service.upload(**{**args, "content": b"other"})
+    # Recover an interrupted upload after the object was stored but its READY
+    # update was rolled back; the channel never accumulates duplicate objects.
+    await service._repository.update(first.model_copy(update={"status": ArtifactStatus.PENDING}))
+    recovered = await service.upload(**args)
+    assert recovered.input_artifact_id == first.input_artifact_id
+    assert recovered.status is ArtifactStatus.READY
+
+
+@pytest.mark.asyncio
 async def test_upload_records_ready_metadata_and_downloads_for_owner() -> None:
     service = build_service()
 
