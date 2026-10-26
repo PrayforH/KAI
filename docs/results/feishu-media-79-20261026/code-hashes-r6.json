@@ -1,0 +1,16 @@
+{
+  "sourceCommit": "abfa6fe8",
+  "apiAndReceiverMatchSource": true,
+  "modules": {
+    "feishu/models.py": "904139e6195dd70913aaa559ffd2dfad837f49660b92d57dc1abc6e0065433c3",
+    "feishu/protocol.py": "41d2d9d660be0baab7c3d3e94f0dc248e6336dc88d55152f9c08467070ac5369",
+    "feishu/media.py": "e384ae053a67427e484fc9d20114ab53ce481a9a6981d2c42dce7e0926c0db3c",
+    "feishu/service.py": "230b0d6e8bd0392475f54a6c5864c103f0f14a1454c4f98d74c74184ea27b06e",
+    "feishu/main.py": "95fceaad92ceb7c0c8815a1f03f5fe2e070e6c985db225536fda1160c92cc522",
+    "application/input_artifacts.py": "090603f2645b660660f4936aa97bcf22101ba02e00f24a1798794242b1b86eaf",
+    "assistant/conversation.py": "fa4b02a8c9129e438136e09d9be39659bda41948b8fc0a69ac0f2aeacfb0951e",
+    "composition.py": "3f63e80a49035a093f0e280dbbe6610c702983203da5c41db0a30cbf88c63288",
+    "agui/service.py": "e92c28c79f2bcf860c8e0892317c979e7dcb547ff3a3bca954e6edc8b878767c",
+    "runtime/web_tools.py": "6fd3ed9ca13575439d2ddb4e0317843d56250e3e31a134c67de3eefc951ab0d1"
+  }
+}

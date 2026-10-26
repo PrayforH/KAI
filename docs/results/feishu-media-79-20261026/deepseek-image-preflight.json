@@ -1,0 +1,6 @@
+{
+  "routeId": "deepseek-v4-flash",
+  "model": "deepseek-flash",
+  "httpStatus": 200,
+  "answer": "The image contains a red square on the left and a blue circle on the right. Below these shapes is the printed text: IMG79-M7Q4."
+}
