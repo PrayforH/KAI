@@ -1,0 +1,23 @@
+{
+  "sourceCommit": "d651afe9",
+  "typescriptErrors": 0,
+  "productionBuild": "passed",
+  "testFiles": 10,
+  "testsPassed": 52,
+  "regressions": {
+    "unchangedPolls": 3,
+    "importsIncludingInitialAfterUnchangedPolls": 1,
+    "importsAfterChangedReply": 2,
+    "concurrentStartupHistoryRequests": 1
+  },
+  "browser": {
+    "switchBackShowsHistoryAndComposer": true,
+    "observedSwitchSecondsIncludingAccessibilityCapture": 1.348,
+    "draftSurvivesIdleSync": true,
+    "testDraftClearedWithoutSending": true,
+    "feishuMessageAutoSynced": true,
+    "fullReloadRestoresHistory": true,
+    "fullReloadFollowupAnswer": "PERF79-R6J2、海豚68",
+    "feishuIndependentReadback": "WXMEDIA79-L3P7"
+  }
+}
