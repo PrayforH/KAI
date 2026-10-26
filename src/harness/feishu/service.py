@@ -6,15 +6,18 @@ import secrets
 from datetime import UTC, datetime, timedelta
 
 from pydantic import ValidationError
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from harness.application.agents import AgentService
+from harness.assistant.conversation import PersonalConversation
 from harness.assistant.models import Objective, ObjectiveAction, ObjectiveBrief, ObjectiveStatus
 from harness.assistant.service import AssistantService
 from harness.assistant.storage import ObjectiveRow
 from harness.auth.service import AuthService
 from harness.core.errors import ConflictError, NotFoundError, PermissionDeniedError
+from harness.core.models import RunStatus
 from harness.feishu.cards import callback_button, card, text_message
 from harness.feishu.models import (
     BindingCode,
@@ -27,6 +30,7 @@ from harness.feishu.repository import FeishuRepository, digest
 from harness.feishu.storage import BindingRow, CardActionRow, DeliveryRow, IncomingRow, ReceiverRow
 
 HELP = (
+    "直接发消息即可与我的助理聊天，与 KAI 网页保持同一段对话。\n"
     "发送「事项」查看；「新建 标题」后换行填写要求；"
     "「状态 / 执行 / 暂停 / 恢复 / 完成 / 停止 标题」；"
     "「补充 标题」后换行填写内容。新建事项默认手动执行，检查频率可在 KAI 设置。"
@@ -52,6 +56,11 @@ LABELS = {
 STATUS = {"active": "进行中", "paused": "已暂停", "completed": "已完成", "cancelled": "已停止"}
 
 
+def is_command(content: str) -> bool:
+    first = content.split(maxsplit=1)[0] if content.strip() else ""
+    return first in {*ACTIONS, "事项", "新建", "帮助", "help", "/help"}
+
+
 class FeishuService:
     def __init__(
         self,
@@ -61,9 +70,11 @@ class FeishuService:
         assistant: AssistantService,
         auth: AuthService,
         agents: AgentService,
+        conversation: PersonalConversation,
     ) -> None:
         self.repository, self.settings = repository, settings
         self.assistant, self.auth, self.agents = assistant, auth, agents
+        self.conversation = conversation
 
     async def authorize(self, tenant_id: str, user_id: str) -> None:
         user, membership = await self.auth.profile(tenant_id, user_id)
@@ -144,6 +155,13 @@ class FeishuService:
                             )
                         else:
                             await self.authorize(binding.tenant_id, binding.user_id)
+                            if incoming.kind == "message" and not is_command(incoming.text):
+                                # Commit receipt before model work; the row is
+                                # also the durable per-message execution intent.
+                                row.binding_id = binding.binding_id
+                                row.status = "chat_pending"
+                                row.next_attempt_at = now
+                                return True
                             content = await (
                                 self._action(session, assistant, binding, incoming, now)
                                 if incoming.kind == "action"
@@ -184,6 +202,105 @@ class FeishuService:
                 return True
             row.status, row.finished_at = "done", now
             row.attempts += 1
+        return True
+
+    async def process_conversation_once(self, now: datetime | None = None) -> bool:
+        now = now or datetime.now(UTC)
+        earlier = aliased(IncomingRow)
+        async with self.repository.sessions.begin() as session:
+            row = await session.scalar(
+                select(IncomingRow)
+                .where(
+                    IncomingRow.app_id == self.repository.app_id,
+                    IncomingRow.status.in_(["chat_pending", "chat_running"]),
+                    IncomingRow.next_attempt_at <= now,
+                    ~exists(
+                        select(earlier.incoming_id).where(
+                            earlier.binding_id == IncomingRow.binding_id,
+                            earlier.status.in_(["chat_pending", "chat_running"]),
+                            tuple_(earlier.created_at, earlier.incoming_id)
+                            < tuple_(IncomingRow.created_at, IncomingRow.incoming_id),
+                        )
+                    ),
+                )
+                .order_by(IncomingRow.created_at, IncomingRow.incoming_id)
+                .limit(1)
+                .with_for_update(skip_locked=True)
+            )
+            if row is None:
+                return False
+            binding = await session.get(BindingRow, row.binding_id, with_for_update=True)
+            if binding is None or binding.revoked_at or binding.app_id != self.repository.app_id:
+                row.status, row.finished_at = "skipped", now
+                return True
+            incoming = Incoming.model_validate(row.payload)
+            try:
+                async with session.begin_nested():
+                    await self.authorize(binding.tenant_id, binding.user_id)
+                    run = (
+                        await self.conversation.runs.get(binding.tenant_id, row.run_id)
+                        if row.run_id
+                        else await self.conversation.submit(
+                            binding.tenant_id,
+                            binding.user_id,
+                            "feishu-chat-" + row.incoming_id,
+                            incoming.text,
+                        )
+                    )
+                    row.run_id = run.run_id
+                    row.error_code = None
+                    if run.status.is_terminal:
+                        await self.repository.reply(
+                            session,
+                            key="chat-result:" + row.incoming_id,
+                            actor=incoming.actor,
+                            binding=binding,
+                            content=text_message(await self.conversation.answer(run)),
+                            now=now,
+                        )
+                        row.status, row.finished_at = "done", now
+                    else:
+                        row.status = "chat_running"
+                        row.next_attempt_at = now + timedelta(seconds=1)
+                        if run.status is RunStatus.WAITING_APPROVAL:
+                            await self.repository.reply(
+                                session,
+                                key="chat-approval:" + row.incoming_id,
+                                actor=incoming.actor,
+                                binding=binding,
+                                content=text_message(
+                                    "助理正在等待你的审批，请在 KAI 的我的助理对话中确认。"
+                                ),
+                                now=now,
+                            )
+            except (NotFoundError, PermissionDeniedError, ConflictError):
+                await session.refresh(row)
+                row.status, row.finished_at, row.error_code = "failed", now, "ChatUnavailable"
+                await self.repository.reply(
+                    session,
+                    key="chat-result:" + row.incoming_id,
+                    actor=incoming.actor,
+                    binding=binding,
+                    content=text_message(
+                        "这条消息暂时无法处理，请检查 KAI 中的助理配置及账号权限后重试。"
+                    ),
+                    now=now,
+                )
+            except Exception:
+                await session.refresh(row)
+                row.attempts += 1
+                row.error_code = "ChatProcessingUnavailable"
+                row.next_attempt_at = now + timedelta(seconds=min(300, 2**row.attempts))
+                if row.attempts >= 5:
+                    row.status, row.finished_at = "failed", now
+                    await self.repository.reply(
+                        session,
+                        key="chat-result:" + row.incoming_id,
+                        actor=incoming.actor,
+                        binding=binding,
+                        content=text_message("这条消息处理失败，已保留记录，请稍后重试。"),
+                        now=now,
+                    )
         return True
 
     async def _token(

@@ -7,11 +7,13 @@ import pytest
 from pydantic import SecretStr
 from sqlalchemy import func, select
 
+from harness.assistant.conversation import PersonalConversation
 from harness.assistant.models import AssistantInboxItem
 from harness.assistant.repository import PostgresAssistantRepository
 from harness.assistant.service import AssistantService
 from harness.assistant.storage import AssistantInboxRow, ObjectiveRow
-from harness.core.errors import ConflictError
+from harness.core.errors import ConflictError, NotFoundError
+from harness.core.models import RunStatus
 from harness.feishu.cards import text_message
 from harness.feishu.delivery import FeishuDelivery
 from harness.feishu.models import Actor, FeishuSettings, Incoming
@@ -50,7 +52,14 @@ def setup(database):
         runs=runs,
         events=events,
     )
-    service = FeishuService(repo, SETTINGS, assistant=assistant, auth=auth, agents=agents)
+    service = FeishuService(
+        repo,
+        SETTINGS,
+        assistant=assistant,
+        auth=auth,
+        agents=agents,
+        conversation=PersonalConversation(agui=agui, runs=runs, agents=agents, events=events),
+    )
     sender = AsyncMock()
     sender.send.return_value = "om-sent"
     return service, FeishuDelivery(repo, SETTINGS, sender, service.authorize), sender
@@ -82,6 +91,105 @@ async def click(service, action_digest, actor=ACTOR, key="click1", now=NOW):
         Incoming(actor=actor, key=key, kind="action", action_digest=action_digest), now
     )
     assert await service.process_once(now)
+
+
+def chat_runtime(service):
+    conversation = service.conversation
+    conversation.agui.get_thread_record.side_effect = NotFoundError("new thread")
+    run = SimpleNamespace(run_id="chat-run", tenant_id="tenant-a", status=RunStatus.QUEUED)
+    conversation.agui.create_run_with_result.return_value = SimpleNamespace(run=run)
+    conversation.runs.get.return_value = run
+    conversation.events.list_after.return_value = [
+        SimpleNamespace(type="message.delta", payload={"text": "你好，今天需要我帮你做什么？"})
+    ]
+    return run
+
+
+@pytest.mark.asyncio
+async def test_ordinary_chat_uses_shared_thread_and_returns_model_answer(database):
+    service, delivery, sender = setup(database)
+    await bind(service.repository)
+    run = chat_runtime(service)
+    await receive(service, "你好")
+    async with service.repository.sessions() as session:
+        row = await session.scalar(select(IncomingRow))
+        assert row.status == "chat_pending" and row.binding_id and row.run_id is None
+        assert await session.scalar(select(func.count()).select_from(ObjectiveRow)) == 0
+        assert await session.scalar(select(func.count()).select_from(DeliveryRow)) == 0
+    assert await service.process_conversation_once(NOW)
+    kwargs = service.conversation.agui.create_run_with_result.call_args.kwargs
+    assert kwargs["tenant_id"] == "tenant-a" and kwargs["user_id"] == "user-a"
+    assert kwargs["request"].thread_id == "kai-personal-assistant-v1"
+    assert kwargs["request"].messages[0].content == "你好"
+    assert kwargs["deduplicate_active_input"] is False
+    run.status = RunStatus.SUCCEEDED
+    assert await service.process_conversation_once(NOW + timedelta(seconds=2))
+    assert await delivery.deliver_once(NOW + timedelta(seconds=3))
+    assert sender.send.call_args.args[1].content["text"] == "你好，今天需要我帮你做什么？"
+    assert await service.repository.ingest(
+        Incoming(actor=ACTOR, key="m1", kind="message", text="你好"), NOW
+    )
+    assert not await service.process_conversation_once(NOW + timedelta(seconds=4))
+    service.conversation.agui.create_run_with_result.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_unbind_before_chat_submission_cannot_start_a_run(database):
+    service, _, _ = setup(database)
+    await bind(service.repository)
+    chat_runtime(service)
+    await receive(service, "帮我分析一下")
+    await service.repository.unbind("tenant-a", "user-a", NOW + timedelta(seconds=1))
+    assert await service.process_conversation_once(NOW + timedelta(seconds=2))
+    service.conversation.agui.create_run_with_result.assert_not_awaited()
+    async with service.repository.sessions() as session:
+        assert (await session.scalar(select(IncomingRow))).status == "skipped"
+
+
+@pytest.mark.asyncio
+async def test_chat_recovers_committed_run_after_result_transaction_failure(database, monkeypatch):
+    service, _, _ = setup(database)
+    await bind(service.repository)
+    run = chat_runtime(service)
+    run.status = RunStatus.SUCCEEDED
+    await receive(service, "你好")
+    original = service.repository.reply
+    failing = AsyncMock(side_effect=RuntimeError("storage unavailable"))
+    monkeypatch.setattr(service.repository, "reply", failing)
+    assert await service.process_conversation_once(NOW)
+    async with service.repository.sessions() as session:
+        row = await session.scalar(select(IncomingRow))
+        assert row.run_id is None and row.attempts == 1
+        assert row.status == "chat_pending"
+    service.conversation.agui.get_thread_record.side_effect = None
+    service.conversation.agui.get_thread_record.return_value = SimpleNamespace(
+        session_ids=("original-session",)
+    )
+    service.conversation.runs.find_by_idempotency_key.return_value = run
+    monkeypatch.setattr(service.repository, "reply", original)
+    assert await service.process_conversation_once(NOW + timedelta(seconds=3))
+    service.conversation.agui.create_run_with_result.assert_awaited_once()
+    assert service.conversation.runs.find_by_idempotency_key.call_args.args[:2] == (
+        "tenant-a",
+        "original-session",
+    )
+    async with service.repository.sessions() as session:
+        assert (await session.scalar(select(IncomingRow))).status == "done"
+        assert await session.scalar(select(func.count()).select_from(DeliveryRow)) == 1
+
+
+@pytest.mark.asyncio
+async def test_waiting_approval_notifies_once_without_granting_permission(database):
+    service, _, _ = setup(database)
+    await bind(service.repository)
+    run = chat_runtime(service)
+    run.status = RunStatus.WAITING_APPROVAL
+    await receive(service, "请处理这份文件")
+    await service.process_conversation_once(NOW)
+    await service.process_conversation_once(NOW + timedelta(seconds=2))
+    async with service.repository.sessions() as session:
+        assert await session.scalar(select(func.count()).select_from(DeliveryRow)) == 1
+        assert (await session.scalar(select(IncomingRow))).status == "chat_running"
 
 
 @pytest.mark.asyncio

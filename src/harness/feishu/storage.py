@@ -70,6 +70,7 @@ class IncomingRow(Base):
         UniqueConstraint("app_id", "event_key", name="uq_feishu_incoming_key"),
         Index("ix_feishu_incoming_work", "app_id", "status", "next_attempt_at"),
         Index("ix_feishu_incoming_actor", "app_id", "actor_key", "created_at"),
+        Index("ix_feishu_incoming_chat", "binding_id", "status", "created_at", "incoming_id"),
     )
     incoming_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     app_id: Mapped[str] = mapped_column(String(128))
@@ -82,6 +83,8 @@ class IncomingRow(Base):
     next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error_code: Mapped[str | None] = mapped_column(String(64))
+    binding_id: Mapped[str | None] = mapped_column(ForeignKey("feishu_bindings.binding_id"))
+    run_id: Mapped[str | None] = mapped_column(String(128))
 
 
 class DeliveryRow(Base):

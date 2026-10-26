@@ -28,6 +28,7 @@ from harness.application.memory import UserMemoryService
 from harness.application.runs import RunQuotaPlan, RunService
 from harness.application.sessions import SessionService
 from harness.application.workspaces import WorkspacePolicy, WorkspaceService
+from harness.assistant.conversation import PersonalConversation
 from harness.assistant.repository import PostgresAssistantRepository
 from harness.assistant.service import AssistantService
 from harness.auth.api_access import ApiAccessService
@@ -1809,6 +1810,8 @@ def build_production_container(
         feishu=FeishuService(
             FeishuRepository(sessions, feishu_settings.app_id), feishu_settings,
             assistant=assistant, auth=auth, agents=agent_service,
+            conversation=PersonalConversation(agui=agui, runs=run_service,
+                                              agents=agent_service, events=events),
         ),
         projects=project_service,
         approvals=approval_service,

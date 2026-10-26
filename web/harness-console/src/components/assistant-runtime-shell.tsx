@@ -31,6 +31,7 @@ import { DurableHistorySync } from "./durable-history-sync";
 import { ThreadHistoryReadyProvider } from "./thread-history-ready";
 import { RunCancelProvider } from "./run-cancel-context";
 import { TaskModelProvider } from "./task-model-context";
+import { PERSONAL_ASSISTANT_THREAD } from "./personal-assistant-context";
 
 
 export function AssistantRuntimeShell({
@@ -124,7 +125,8 @@ export function AssistantRuntimeShell({
   const history = useMemo(
     () =>
       createThreadHistoryAdapter(threadId, {
-        isLocalOnly: () => localOnlyRef.current,
+        // Feishu can create the personal conversation while this page is open.
+        isLocalOnly: () => localOnlyRef.current && threadId !== PERSONAL_ASSISTANT_THREAD,
         onActiveRun: (serverRunId) =>
           agentRef.current.adoptActiveRun(threadId, serverRunId),
       }),

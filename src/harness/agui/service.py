@@ -379,6 +379,7 @@ class AguiRunService:
         space_id: str | None = None,
         connection_mode: Literal["caller_owned", "service_owned"] = "caller_owned",
         project_id: str | None = None,
+        deduplicate_active_input: bool = True,
     ) -> AguiRunCreation:
         prompt, input_artifact_ids = _latest_user_input(request)
         conversation_prompts = _user_prompts(request)
@@ -541,7 +542,7 @@ class AguiRunService:
                 binding.session_id,
                 request.run_id,
                 input=run_input,
-                deduplicate_active_input=True,
+                deduplicate_active_input=deduplicate_active_input,
             )
             current = await self._bindings.get_by_thread(tenant_id, user_id, request.thread_id)
             if current.session_id == binding.session_id:

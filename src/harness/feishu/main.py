@@ -111,6 +111,9 @@ class Receiver:
                     for _ in range(10):
                         if not await service.process_once():
                             break
+                    for _ in range(10):
+                        if not await service.process_conversation_once():
+                            break
                     await delivery.collect()
                     for _ in range(2):
                         if not await delivery.deliver_once():
