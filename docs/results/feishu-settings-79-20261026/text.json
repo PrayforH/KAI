@@ -1,0 +1,13 @@
+{
+  "messageId": "om_x100b62d9fcf5a4a8b4c0eb768b4a492",
+  "incomingId": "incoming_93d3b93c24b4486c8b7c52fe5f702ab7",
+  "status": "done",
+  "errorCode": null,
+  "attempts": 0,
+  "runId": "run_abcc08ac64f54e4aa1a06ce8a0edf29c",
+  "prepared": null,
+  "runStatus": "succeeded",
+  "sessionId": "session_d3795a0525ab4c43b5406af5d6bf7bc0",
+  "modelRoute": null,
+  "answer": "飞书设置已验证"
+}

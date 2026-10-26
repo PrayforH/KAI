@@ -1,0 +1,38 @@
+{
+  "date": "2026-10-26",
+  "origin": "https://172.20.105.79:3543",
+  "observations": [
+    {
+      "action": "Open settings#assistant",
+      "result": "WorkBuddy-style Feishu card connected; own account bound; no secret displayed"
+    },
+    {
+      "action": "Save existing App ID with Secret left blank",
+      "result": "Saved revision 2; binding and history preserved"
+    },
+    {
+      "action": "Confirm disconnect",
+      "result": "Revision 3 disabled; docker top showed manager only and no receiver child"
+    },
+    {
+      "action": "Connect using saved Secret",
+      "result": "Revision 4 connected; exactly one receiver child running"
+    },
+    {
+      "action": "Send test message",
+      "result": "UI showed 测试消息已送达你的飞书; real bot message read back independently"
+    },
+    {
+      "action": "Keep /assistant open and send real Feishu text + image post",
+      "result": "Both appeared automatically with successful replies; image used DeepSeek Flash"
+    },
+    {
+      "action": "Full browser reload, then ask about new codes and earlier Word result",
+      "result": "Correct new text/image codes and old image/file/budget/combined code; same session, 31 prompts"
+    },
+    {
+      "action": "Run connection diagnostics",
+      "result": "All seven checks passed with evidence from revision 4"
+    }
+  ]
+}

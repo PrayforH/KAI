@@ -1,0 +1,12 @@
+{
+  "schema": "0046",
+  "counts": {
+    "users": 12,
+    "sessions": 279,
+    "runs": 775,
+    "input_artifacts": 84,
+    "feishu_bindings": 1,
+    "feishu_incoming": 17,
+    "feishu_deliveries": 17
+  }
+}
