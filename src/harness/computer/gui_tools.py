@@ -7,11 +7,10 @@ a clear message instead of a silent failure.
 """
 
 import json
-from typing import Any
+from typing import Any, Protocol
 
 from harness.computer.desktop import DesktopControlService, DesktopOccupiedError
 from harness.computer.models import ComputerLeaseLostError
-from harness.computer.sandbox import ComputerSandboxProvider
 from harness.runtime.platform_tools import PlatformTool, PlatformToolOverlay
 from harness.sandbox.base import SandboxHandle
 
@@ -29,9 +28,26 @@ def _text(message: str) -> dict[str, Any]:
 Handler = Any
 
 
+class DesktopActionSource(Protocol):
+    """What the GUI tools need from the run's sandbox, nothing more."""
+
+    session: Any
+
+    def owns(self, handle: SandboxHandle) -> bool: ...
+
+    async def desktop_action(
+        self,
+        handle: SandboxHandle,
+        operation: str,
+        payload: dict[str, Any],
+        *,
+        expected_epoch: int,
+    ) -> dict[str, Any]: ...
+
+
 def computer_gui_overlay(
     desktop: DesktopControlService,
-    sandbox: ComputerSandboxProvider,
+    sandbox: DesktopActionSource,
     handle: SandboxHandle,
 ) -> PlatformToolOverlay:
     tenant_id, user_id, owner = (
