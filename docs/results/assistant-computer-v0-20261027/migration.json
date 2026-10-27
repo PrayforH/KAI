@@ -1,0 +1,7 @@
+{
+  "scope": "Isolated local PostgreSQL database harness_computer_migrations; not production 79",
+  "freshDatabaseUpgradedFrom0001To0051": true,
+  "downgrade0051To0050ThenUpgrade0051": true,
+  "legacyUserSentinelPreserved": true,
+  "computerTablesMatchSqlalchemyMetadata": true
+}

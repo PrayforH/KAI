@@ -38,6 +38,7 @@ from uuid import uuid4
 
 import httpx
 from claude_agent_sdk import ClaudeAgentOptions
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from harness.config import Settings
 from harness.core.models import Run
@@ -177,6 +178,7 @@ def _stream_exit_code(events: Sequence[dict[str, Any]]) -> int:
         error = event.get("error")
         if not isinstance(error, Mapping):
             continue
+        error = cast(Mapping[str, Any], error)
         value = str(error.get("evalue", ""))
         try:
             return int(value)
@@ -223,9 +225,7 @@ class OpenSandboxRemoteSandbox:
     async def ensure_codex_cli(self, *, version: str, path: str) -> None:
         source = shutil.which("codex")
         if source is None:
-            raise RuntimeError(
-                "OpenSandbox Codex requires the pinned CLI in the Linux Worker"
-            )
+            raise RuntimeError("OpenSandbox Codex requires the pinned CLI in the Linux Worker")
         await self._ensure_binary(
             Path(source).resolve(), path, version_pin(version), allow_installer=False
         )
@@ -303,13 +303,9 @@ class OpenSandboxRemoteSandbox:
         return response.status_code == 200
 
     async def create_folder(self, path: str) -> None:
-        response = await self._client.post(
-            self._execd("/directories"), json={path: None}
-        )
+        response = await self._client.post(self._execd("/directories"), json={path: None})
         if response.status_code >= 400:
-            raise RuntimeError(
-                f"OpenSandbox failed to create {path}: HTTP {response.status_code}"
-            )
+            raise RuntimeError(f"OpenSandbox failed to create {path}: HTTP {response.status_code}")
 
     async def upload(self, remote_path: str, content: bytes) -> None:
         await self.upload_many(((remote_path, content),))
@@ -338,7 +334,7 @@ class OpenSandboxRemoteSandbox:
             metadata: dict[str, Any] = {"path": batch[0][0]}
             if mode is not None:
                 metadata["mode"] = mode
-            files = []
+            files: list[tuple[str, tuple[str, str | bytes, str]]] = []
             for path, _ in batch:
                 entry_metadata = dict(metadata, path=path)
                 files.append(
@@ -352,8 +348,7 @@ class OpenSandboxRemoteSandbox:
                     )
                 )
             files += [
-                ("file", (path, content, "application/octet-stream"))
-                for path, content in batch
+                ("file", (path, content, "application/octet-stream")) for path, content in batch
             ]
             response = await self._client.post(
                 self._execd("/files/upload"), files=files, timeout=self._transfer_timeout
@@ -361,14 +356,14 @@ class OpenSandboxRemoteSandbox:
             batch = []
             batch_bytes = 0
             if response.status_code >= 400:
-                raise RuntimeError(
-                    f"OpenSandbox upload failed: HTTP {response.status_code}"
-                )
+                raise RuntimeError(f"OpenSandbox upload failed: HTTP {response.status_code}")
 
         for remote_path, content in entries:
-            if len(content) > _UPLOAD_BATCH_BYTES or (
-                batch and batch_bytes + len(content) > _UPLOAD_BATCH_BYTES
-            ) or len(batch) >= _UPLOAD_BATCH_FILES:
+            if (
+                len(content) > _UPLOAD_BATCH_BYTES
+                or (batch and batch_bytes + len(content) > _UPLOAD_BATCH_BYTES)
+                or len(batch) >= _UPLOAD_BATCH_FILES
+            ):
                 await flush()
             batch.append((remote_path, content))
             batch_bytes += len(content)
@@ -385,14 +380,18 @@ class OpenSandboxRemoteSandbox:
         entries = response.json()
         if not isinstance(entries, list):
             raise RuntimeError("OpenSandbox returned an unexpected directory listing")
+        objects = [
+            cast(Mapping[str, Any], entry)
+            for entry in cast(list[object], entries)
+            if isinstance(entry, Mapping)
+        ]
         return [
             (
                 str(entry.get("path", "")),
                 str(entry.get("type", "")) == "directory",
                 int(entry["size"]) if isinstance(entry.get("size"), int) else None,
             )
-            for entry in entries
-            if isinstance(entry, Mapping)
+            for entry in objects
         ]
 
     async def download(self, remote_path: str) -> bytes:
@@ -492,6 +491,52 @@ class OpenSandboxRemoteSandbox:
         await self._client.delete(f"/v1/sandboxes/{self.id}")
 
 
+def _lifecycle_identifier(value: str) -> None:
+    if re.fullmatch(r"[A-Za-z0-9_-]{1,128}", value) is None:
+        raise ValueError("invalid OpenSandbox instance identifier")
+
+
+class OpenSandboxWorkVolume(BaseModel):
+    """A platform-managed work disk; never an arbitrary host-path mount.
+
+    Deleting an execution instance must not delete the user's disk. Lifecycle
+    deletion of a computer and its data is a separate control-plane operation.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: str = Field(pattern=r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", max_length=63)
+    claim_name: str = Field(pattern=r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", max_length=128)
+    mount_path: str
+    create_if_missing: bool = True
+
+    @field_validator("mount_path")
+    @classmethod
+    def safe_mount(cls, path: str) -> str:
+        root = PurePosixPath(path)
+        if (
+            not path.startswith("/")
+            or path == "/"
+            or ".." in root.parts
+            or str(root) != path
+            or any(ord(char) < 32 for char in path)
+        ):
+            raise ValueError("work disk requires a normalized absolute mount path")
+        return path
+
+    def lifecycle_payload(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "pvc": {
+                "claimName": self.claim_name,
+                "createIfNotExists": self.create_if_missing,
+                "deleteOnSandboxTermination": False,
+            },
+            "mountPath": self.mount_path,
+            "readOnly": False,
+        }
+
+
 class OpenSandboxClient:
     """Lifecycle API client that also vends per-sandbox execd handles."""
 
@@ -546,7 +591,11 @@ class OpenSandboxClient:
                 f"OpenSandbox failed to read {sandbox_id}: HTTP {response.status_code}"
             )
         status = response.json().get("status")
-        return str(status.get("state", "")) if isinstance(status, Mapping) else ""
+        return (
+            str(cast(Mapping[str, object], status).get("state", ""))
+            if isinstance(status, Mapping)
+            else ""
+        )
 
     async def create(
         self,
@@ -557,6 +606,8 @@ class OpenSandboxClient:
         resource_limits: Mapping[str, str],
         metadata: Mapping[str, str],
         network_policy: Mapping[str, Any] | None = None,
+        work_volumes: Sequence[OpenSandboxWorkVolume] = (),
+        environment: Mapping[str, str] | None = None,
     ) -> OpenSandboxRemoteSandbox:
         if not image.strip():
             raise ValueError("OpenSandbox image is required")
@@ -572,11 +623,18 @@ class OpenSandboxClient:
             body["resourceLimits"] = dict(resource_limits)
         if network_policy is not None:
             body["networkPolicy"] = dict(network_policy)
+        if work_volumes:
+            if len({v.name for v in work_volumes}) != len(work_volumes) or len(
+                {v.mount_path for v in work_volumes}
+            ) != len(work_volumes):
+                raise ValueError("work disk names and mount paths must be unique")
+            body["volumes"] = [volume.lifecycle_payload() for volume in work_volumes]
+        if environment is not None:
+            body["env"] = dict(environment)
         response = await self.http.post("/v1/sandboxes", json=body)
         if response.status_code >= 400:
             raise RuntimeError(
-                f"OpenSandbox failed to create a sandbox: HTTP {response.status_code}: "
-                f"{response.text[:200]}"
+                f"OpenSandbox failed to create a sandbox: HTTP {response.status_code}"
             )
         created = response.json()
         sandbox_id = str(created.get("id", ""))
@@ -597,6 +655,55 @@ class OpenSandboxClient:
             await self._discard(sandbox_id)
             raise
         return remote
+
+    async def connect(
+        self, sandbox_id: str, *, expected_metadata: Mapping[str, str]
+    ) -> OpenSandboxRemoteSandbox:
+        """Reconnect only after matching saved ownership; never delete on failure.
+
+        The caller must hold a current Computer lease. A timeout during attach
+        is not proof that a persistent environment can be discarded.
+        """
+
+        _lifecycle_identifier(sandbox_id)
+        if not expected_metadata:
+            raise ValueError("reconnecting requires expected ownership metadata")
+        response = await self.http.get(f"/v1/sandboxes/{sandbox_id}")
+        if response.status_code >= 400:
+            raise RuntimeError(f"OpenSandbox reconnect failed: HTTP {response.status_code}")
+        metadata = response.json().get("metadata")
+        if not isinstance(metadata, dict):
+            raise ValueError("OpenSandbox instance ownership does not match")
+        saved = cast(dict[str, object], metadata)
+        if any(saved.get(key) != value for key, value in expected_metadata.items()):
+            raise ValueError("OpenSandbox instance ownership does not match")
+        remote = OpenSandboxRemoteSandbox(
+            sandbox_id=sandbox_id,
+            client=self.http,
+            execd_base=f"/v1/sandboxes/{sandbox_id}/proxy/{EXECD_PORT}",
+            transfer_timeout_seconds=self._transfer_timeout_seconds,
+        )
+        await self._wait_until_ready(remote)
+        return remote
+
+    async def renew_expiration(self, sandbox_id: str, expires_at: datetime) -> datetime:
+        """Keep the physical instance alive independently of a Run's write lease."""
+
+        _lifecycle_identifier(sandbox_id)
+        if expires_at.tzinfo is None or expires_at <= datetime.now(UTC):
+            raise ValueError("OpenSandbox expiration must be a future timezone-aware timestamp")
+        response = await self.http.post(
+            f"/v1/sandboxes/{sandbox_id}/renew-expiration",
+            json={"expiresAt": expires_at.astimezone(UTC).isoformat()},
+        )
+        if response.status_code >= 400:
+            raise RuntimeError(
+                f"OpenSandbox expiration renewal failed: HTTP {response.status_code}"
+            )
+        confirmed = _parse_timestamp(response.json().get("expiresAt"))
+        if confirmed is None or confirmed < expires_at:
+            raise RuntimeError("OpenSandbox did not confirm the requested expiration")
+        return confirmed
 
     async def _discard(self, sandbox_id: str) -> None:
         """Best-effort teardown of a sandbox this client created."""
@@ -875,17 +982,20 @@ class OpenSandboxSandboxProvider:
 
         response = await self._client.http.get("/v1/sandboxes", params={"page_size": 100})
         if response.status_code >= 400:
-            raise RuntimeError(
-                f"OpenSandbox failed to list sandboxes: HTTP {response.status_code}"
-            )
+            raise RuntimeError(f"OpenSandbox failed to list sandboxes: HTTP {response.status_code}")
         payload = response.json()
-        items = payload.get("items") if isinstance(payload, Mapping) else None
+        items = (
+            cast(Mapping[str, object], payload).get("items")
+            if isinstance(payload, Mapping)
+            else None
+        )
         if not isinstance(items, list):
             raise RuntimeError("OpenSandbox returned an unexpected sandbox listing")
         instances: list[SandboxInstance] = []
-        for item in items:
-            if not isinstance(item, Mapping):
+        for raw in cast(list[object], items):
+            if not isinstance(raw, Mapping):
                 continue
+            item = cast(Mapping[str, Any], raw)
             sandbox_id = str(item.get("id", ""))
             if not sandbox_id:
                 continue
@@ -896,7 +1006,9 @@ class OpenSandboxSandboxProvider:
                     metadata={
                         str(key): str(value)
                         for key, value in (
-                            metadata.items() if isinstance(metadata, Mapping) else ()
+                            cast(Mapping[object, object], metadata).items()
+                            if isinstance(metadata, Mapping)
+                            else ()
                         )
                     },
                     created_at=_parse_timestamp(item.get("createdAt")),
@@ -936,7 +1048,7 @@ def build_opensandbox_provider(settings: Settings) -> OpenSandboxSandboxProvider
         "cpu": settings.opensandbox_cpu,
         "memory": settings.opensandbox_memory,
     }
-    network_policy = (
+    network_policy: dict[str, Any] | None = (
         None
         if settings.opensandbox_allow_internet_access
         else {"defaultAction": "deny", "egress": []}

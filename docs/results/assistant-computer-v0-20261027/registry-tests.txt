@@ -1,0 +1,8 @@
+HARNESS_TEST_DATABASE_URL=postgresql+asyncpg://harness:harness@127.0.0.1:55491/harness_computer_test .venv/bin/pytest -q tests/integration/storage/test_computer_registry_postgres.py tests/integration/storage/test_sandbox_lease_postgres.py tests/unit/sandbox/test_lease.py tests/unit/sandbox/test_governance.py
+
+................................                                         [100%]
+32 passed in 43.11s
+
+The first expanded run exposed a test observation race: pg_stat_activity is cached
+within the blocker's transaction. The waiter probe now uses live pg_locks and
+pg_blocking_pids. The final run above passed; no production data was used.

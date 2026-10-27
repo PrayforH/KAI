@@ -1,0 +1,35 @@
+{
+  "schema": "0050",
+  "containers": {
+    "api": {
+      "image": "kai/assistant-api:20261027-r18",
+      "state": "running",
+      "health": "healthy",
+      "restarts": 0
+    },
+    "worker": {
+      "image": "kai/assistant-api:20261027-r18",
+      "state": "running",
+      "health": "healthy",
+      "restarts": 0
+    },
+    "feishu": {
+      "image": "kai/feishu-receiver:20261027-r19",
+      "state": "running",
+      "health": null,
+      "restarts": 0
+    },
+    "weixin": {
+      "image": "kai/weixin-receiver:20261027-r18",
+      "state": "running",
+      "health": null,
+      "restarts": 0
+    },
+    "web": {
+      "image": "kai/assistant-web:20261026-r16",
+      "state": "running",
+      "health": "healthy",
+      "restarts": 0
+    }
+  }
+}
