@@ -20,10 +20,10 @@ OWNER = "computer-run-" + "a" * 32
 class StubProvider:
     """Stands in for ComputerSandboxProvider with a scripted desktop action."""
 
-    def __init__(self, results: list[dict[str, Any]]) -> None:
+    def __init__(self, results: list[dict[str, Any]], *, root: Path) -> None:
         self.handle = SandboxHandle(
             sandbox_id=OWNER,
-            path=Path("/tmp/fixture-run"),
+            path=root,
             provider="vm-computer",
             remote_workspace="/home/kai/workspace",
             deferred_tool_execution=True,
@@ -85,13 +85,42 @@ def text_of(result: dict[str, Any]) -> str:
 
 
 @pytest.mark.asyncio
+async def test_run_teardown_releases_desktop_ownership(
+    database: DatabaseFixture, tmp_path: Any
+) -> None:
+    """Run teardown returns the desktop to observation even without a release."""
+
+    desktop = await prepared(database)
+    provider = StubProvider([], root=tmp_path)
+    handle = provider.handle
+    from harness.computer.sandbox import ComputerSandboxProvider
+
+    # Minimal provider surface: only the release path is under test.
+    stub = StubProvider([], root=tmp_path)
+    handle = stub.handle
+    release_provider = ComputerSandboxProvider.__new__(ComputerSandboxProvider)
+    release_provider.session = provider.session
+    release_provider.desktop = desktop
+    release_provider._leases = {}
+
+    from harness.computer.sandbox import _Lease, _Scope
+
+    scope = _Scope(tasks=None)  # type: ignore[arg-type]
+    release_provider._leases[handle.sandbox_id] = _Lease(run(), handle, scope)
+    await desktop.acquire_agent("tenant-a", "user-a", owner=handle.sandbox_id)
+    state = await desktop.view("tenant-a", "user-a")
+    assert state.state.value == "agent"
+    await release_provider.destroy(handle)
+    state = await desktop.view("tenant-a", "user-a")
+    assert state.state.value == "observe"
+
+
+@pytest.mark.asyncio
 async def test_screenshot_acquires_ownership_and_returns_image(
-    database: DatabaseFixture,
+    database: DatabaseFixture, tmp_path: Any
 ) -> None:
     desktop = await prepared(database)
-    provider = StubProvider(
-        [{"width": 1280, "height": 800, "png_base64": "aGVsbG8="}]
-    )
+    provider = StubProvider([{"width": 1280, "height": 800, "png_base64": "aGVsbG8="}], root=tmp_path)
     overlay = computer_gui_overlay(desktop, provider, provider.handle)
     tools = {tool.name: tool.handler for tool in overlay.tools}
     result = await tools["computer_screenshot"]({})
@@ -104,10 +133,10 @@ async def test_screenshot_acquires_ownership_and_returns_image(
 
 @pytest.mark.asyncio
 async def test_occupied_desktop_refuses_with_a_clear_message(
-    database: DatabaseFixture,
+    database: DatabaseFixture, tmp_path: Any
 ) -> None:
     desktop = await prepared(database)
-    provider = StubProvider([])
+    provider = StubProvider([], root=tmp_path)
     overlay = computer_gui_overlay(desktop, provider, provider.handle)
     tools = {tool.name: tool.handler for tool in overlay.tools}
     # The user took over: no in-flight ownership by this run any more.
@@ -119,10 +148,10 @@ async def test_occupied_desktop_refuses_with_a_clear_message(
 
 @pytest.mark.asyncio
 async def test_actions_renew_ttl_and_bind_the_acquired_epoch(
-    database: DatabaseFixture,
+    database: DatabaseFixture, tmp_path: Any
 ) -> None:
     desktop = await prepared(database)
-    provider = StubProvider([{"clicked": True}, {"typed": 2}])
+    provider = StubProvider([{"clicked": True}, {"typed": 2}], root=tmp_path)
     overlay = computer_gui_overlay(desktop, provider, provider.handle)
     tools = {tool.name: tool.handler for tool in overlay.tools}
     first = await tools["computer_click"]({"x": 3, "y": 4})
