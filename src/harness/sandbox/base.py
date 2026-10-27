@@ -49,6 +49,9 @@ _SANDBOX_ENFORCEMENT_BY_PROVIDER: dict[str, SandboxEnforcement] = {
     # Docker enforces the container boundary; this is not the full gVisor /
     # network-policy tier, nor an assertion of VM isolation.
     "docker-computer": SandboxEnforcement.DELEGATED,
+    # The VM provider reuses the same in-guest supervisor fence as Docker
+    # computers; the hypervisor boundary is not claimed as platform isolation.
+    "vm-computer": SandboxEnforcement.DELEGATED,
 }
 
 

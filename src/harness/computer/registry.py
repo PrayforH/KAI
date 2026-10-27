@@ -17,6 +17,7 @@ from uuid import uuid4
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from harness.computer.models import (
@@ -88,6 +89,66 @@ class ComputerRegistry:
     async def get(self, tenant: str, user: str) -> AssistantComputer:
         async with self._sessions() as session:
             return AssistantComputer.model_validate(await self._get(session, tenant, user))
+
+    async def adopt(
+        self,
+        tenant: str,
+        user: str,
+        *,
+        provider: str,
+        image: str,
+        computer_id: str,
+        volume_ref: str,
+    ) -> AssistantComputer:
+        """Maintenance entry for an administrator-provisioned external computer.
+
+        No API exposes this. It records facts the operator verified (identity,
+        provider, base image, work disk) so the canonical registry owns routing
+        from now on; the provider instance itself is attached by its first
+        authorized start. Re-running with the same declared identity is
+        idempotent; anything else refuses to overwrite existing history.
+        """
+
+        _identity(tenant, 128)
+        _identity(user, 128)
+        _identity(provider, 64)
+        _identity(image, 512)
+        _identity(computer_id, 64)
+        _identity(volume_ref, 128)
+        try:
+            async with self._sessions.begin() as session:
+                existing = await self._get(session, tenant, user)
+        except NotFoundError:
+            pass
+        else:
+            declared = (provider, image, computer_id, volume_ref)
+            saved = (existing.provider, existing.image, existing.computer_id, existing.volume_ref)
+            if saved != declared:
+                raise ConflictError("owner computer already exists with a different identity")
+            return AssistantComputer.model_validate(existing)
+        try:
+            async with self._sessions.begin() as session:
+                moment = await _now(session)
+                session.add(
+                    Computer(
+                        tenant_id=tenant,
+                        user_id=user,
+                        computer_id=computer_id,
+                        provider=provider,
+                        image=image,
+                        volume_ref=volume_ref,
+                        volume_ready=True,
+                        state=ComputerState.REGISTERED.value,
+                        epoch=0,
+                        revision=1,
+                        created_at=moment,
+                        updated_at=moment,
+                    )
+                )
+                row = await self._get(session, tenant, user)
+                return AssistantComputer.model_validate(row)
+        except IntegrityError as error:
+            raise ConflictError("owner computer identity already exists") from error
 
     async def claim_start(self, tenant: str, user: str, *, owner: str) -> ComputerLease:
         return await self._claim(tenant, user, owner=owner, purpose=LeasePurpose.START)

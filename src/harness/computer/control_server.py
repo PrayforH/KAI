@@ -14,7 +14,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
 from harness.computer.access import CanonicalComputerAccess
-from harness.computer.control import MAX_BYTES, ControlAction, DockerComputerControl
+from harness.computer.control import (
+    MAX_BYTES,
+    ComputerControlRouter,
+    ComputerLifecycleRouter,
+    ControlAction,
+    DockerComputerControl,
+)
 from harness.computer.host import ComputerLimits, DockerComputerLifecycle
 from harness.computer.models import (
     ComputerLease,
@@ -22,6 +28,8 @@ from harness.computer.models import (
     ComputerStartRejectedError,
 )
 from harness.computer.registry import ComputerRegistry
+from harness.computer.vm import PROVIDER as VM_PROVIDER
+from harness.computer.vm_host import VmComputerControl, VmComputerLifecycle, VmComputerSpec
 from harness.core.errors import NotFoundError
 from harness.storage.database import create_database
 
@@ -36,6 +44,8 @@ class ControllerSettings(BaseSettings):
     memory_bytes: int = 4 * 1024**3
     nano_cpus: int = 2_000_000_000
     docker_socket: str = "/var/run/docker.sock"
+    # Node-private declarations for adopted QEMU computers, keyed by work disk.
+    vm_computers: list[VmComputerSpec] = Field(default_factory=list)
     port: int = 8840
 
 
@@ -53,6 +63,7 @@ class LifecycleRequest(BaseModel):
 
 class ImageCheckRequest(BaseModel):
     image: str
+    provider: str | None = None
 
 
 def create_app(settings: ControllerSettings) -> FastAPI:
@@ -64,6 +75,8 @@ def create_app(settings: ControllerSettings) -> FastAPI:
         and make_url(settings.database_url).database != "harness_computer_probe"
     ):
         raise ValueError("probe authorization requires the isolated Computer probe database")
+    if len({spec.volume_ref for spec in settings.vm_computers}) != len(settings.vm_computers):
+        raise ValueError("computer VM declarations must use distinct work disks")
     engine, sessions = create_database(settings.database_url)
     access = (
         CanonicalComputerAccess(sessions, settings.owners)
@@ -76,14 +89,36 @@ def create_app(settings: ControllerSettings) -> FastAPI:
         trust_env=False,
         timeout=30,
     )
-    controller = DockerComputerControl(ComputerRegistry(sessions), docker, authorizer=access)
-    host = DockerComputerLifecycle(
-        controller.registry,
-        docker,
-        ComputerLimits(
-            settings.image, memory_bytes=settings.memory_bytes, nano_cpus=settings.nano_cpus
-        ),
-        authorizer=access,
+    registry = ComputerRegistry(sessions)
+    vm_specs = {spec.volume_ref: spec for spec in settings.vm_computers}
+    controller = ComputerControlRouter(
+        registry,
+        {
+            "docker-computer": DockerComputerControl(registry, docker, authorizer=access),
+            **(
+                {VM_PROVIDER: VmComputerControl(registry, vm_specs, authorizer=access)}
+                if vm_specs
+                else {}
+            ),
+        },
+    )
+    host = ComputerLifecycleRouter(
+        registry,
+        {
+            "docker-computer": DockerComputerLifecycle(
+                controller.registry,
+                docker,
+                ComputerLimits(
+                    settings.image, memory_bytes=settings.memory_bytes, nano_cpus=settings.nano_cpus
+                ),
+                authorizer=access,
+            ),
+            **(
+                {VM_PROVIDER: VmComputerLifecycle(registry, docker, vm_specs, authorizer=access)}
+                if vm_specs
+                else {}
+            ),
+        },
     )
 
     @asynccontextmanager
@@ -133,7 +168,7 @@ def create_app(settings: ControllerSettings) -> FastAPI:
         except ValidationError:
             raise HTTPException(400, "Computer image request is invalid") from None
         try:
-            await host.check_image(command.image)
+            await host.check_image(command.image, provider=command.provider)
             return {"available": True}
         except ComputerStartRejectedError:
             raise HTTPException(422, "Computer image is unavailable") from None

@@ -64,9 +64,11 @@ class HttpComputerControl:
             raise RuntimeError(f"computer control unavailable: HTTP {response.status_code}")
         return SandboxCommandResult.model_validate(response.json())
 
-    async def check_image(self, image: str) -> None:
+    async def check_image(self, image: str, *, provider: str | None = None) -> None:
         response = await self.client.post(
-            "/v1/computer/image/check", json={"image": image}, timeout=30
+            "/v1/computer/image/check",
+            json={"image": image, "provider": provider},
+            timeout=30,
         )
         if response.status_code == 422:
             raise ComputerStartRejectedError("computer image is not available on this host")
@@ -108,6 +110,64 @@ class HttpComputerControl:
         if reference is not None and not isinstance(reference, str):
             raise RuntimeError("computer lifecycle returned an invalid instance identity")
         return reference
+
+
+class ComputerLifecycleHost(Protocol):
+    """The node-side lifecycle surface one provider serves."""
+
+    async def check_image(self, image: str) -> None: ...
+
+    async def lifecycle(
+        self, token: ComputerLease, operation: str, *, image: str | None = None
+    ) -> str | None: ...
+
+
+class ComputerControlRouter:
+    """Dispatch by the canonical computer's provider, never by caller input.
+
+    Every control request re-resolves the current database holder first, so a
+    stale cached allocation cannot pick the transport of a different machine.
+    """
+
+    def __init__(
+        self,
+        registry: ComputerRegistry,
+        controls: Mapping[str, ComputerControl],
+    ) -> None:
+        self.registry, self.controls = registry, dict(controls)
+
+    async def call(
+        self, token: ComputerLease, action: ControlAction, payload: Mapping[str, object]
+    ) -> SandboxCommandResult:
+        computer, _ = await self.registry.holder(token)
+        control = self.controls.get(computer.provider)
+        if control is None:
+            raise ComputerLeaseLostError("computer provider is not served by this node")
+        return await control.call(token, action, payload)
+
+
+class ComputerLifecycleRouter:
+    def __init__(
+        self,
+        registry: ComputerRegistry,
+        hosts: Mapping[str, ComputerLifecycleHost],
+    ) -> None:
+        self.registry, self.hosts = registry, dict(hosts)
+
+    async def check_image(self, image: str, *, provider: str | None = None) -> None:
+        host = self.hosts.get(provider or "docker-computer")
+        if host is None:
+            raise ComputerStartRejectedError("computer provider is not served by this node")
+        await host.check_image(image)
+
+    async def lifecycle(
+        self, token: ComputerLease, operation: str, *, image: str | None = None
+    ) -> str | None:
+        computer, _ = await self.registry.holder(token)
+        host = self.hosts.get(computer.provider)
+        if host is None:
+            raise ComputerLeaseLostError("computer provider is not served by this node")
+        return await host.lifecycle(token, operation, image=image)
 
 
 class DockerComputerControl:

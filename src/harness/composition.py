@@ -1410,7 +1410,7 @@ def build_production_container(
                     raise SandboxGovernanceError(
                         "Personal Computer cannot override a pinned execution profile"
                     )
-                provider_id = "docker-computer"
+                provider_id = await computer_runtime.provider_id(session)
 
             # A Session's trust high-watermark sets the weakest backend it still
             # accepts, independent of any published execution profile: once
@@ -1442,7 +1442,7 @@ def build_production_container(
                 )
 
             if use_computer:
-                run_sandbox = run_backend = computer_runtime.provider(session, runs.get)
+                run_sandbox = run_backend = await computer_runtime.provider(session, runs.get)
             else:
                 run_sandbox, run_backend = backends_for(provider_id)
 

@@ -55,13 +55,13 @@ async def test_disabled_worker_and_api_only_routing_need_no_node_secret():
             sessions,
             execution_enabled=True,
         )
-        assert not disabled.enabled and disabled.driver is None
+        assert not disabled.enabled and disabled.drivers == {}
         api = ComputerRuntime(
             configuration(assistant_computer_control_secret=SecretStr("")),
             sessions,
             execution_enabled=False,
         )
-        assert api.enabled and api.driver is None
+        assert api.enabled and api.drivers == {}
         await disabled.close()
         await api.close()
     finally:
@@ -73,8 +73,8 @@ async def test_enabled_worker_constructs_only_private_http_transport_without_con
     engine, sessions = create_database("postgresql+asyncpg://harness:harness@127.0.0.1:1/unused")
     runtime = ComputerRuntime(configuration(), sessions, execution_enabled=True)
     try:
-        assert runtime.enabled and runtime.driver is not None
-        assert runtime.driver.image == "sha256:" + "a" * 64
+        assert runtime.enabled and runtime.drivers
+        assert runtime.drivers["docker-computer"].image == "sha256:" + "a" * 64
     finally:
         await runtime.close()
         await engine.dispose()

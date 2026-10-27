@@ -178,7 +178,7 @@ class CanonicalComputerAccess:
                         ComputerLeaseRow.expires_at > func.clock_timestamp(),
                         SandboxLeaseRow.tenant_id == computer.tenant_id,
                         SandboxLeaseRow.sandbox_id == lease.owner,
-                        SandboxLeaseRow.provider == "docker-computer",
+                        SandboxLeaseRow.provider == computer.provider,
                         SandboxLeaseRow.state == "active",
                         SandboxLeaseRow.expires_at > func.clock_timestamp(),
                         SessionRow.user_id == computer.user_id,

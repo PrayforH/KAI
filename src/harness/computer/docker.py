@@ -29,7 +29,7 @@ class ComputerHost(ComputerControl, Protocol):
         self, token: ComputerLease, operation: str, *, image: str | None = None
     ) -> str | None: ...
 
-    async def check_image(self, image: str) -> None: ...
+    async def check_image(self, image: str, *, provider: str | None = None) -> None: ...
 
 
 class DockerComputerDriver:
@@ -97,7 +97,7 @@ class DockerComputerDriver:
         return None
 
     async def validate_image(self) -> None:
-        await self.host.check_image(self.image)
+        await self.host.check_image(self.image, provider=self.provider)
 
     async def upgrade(self, computer: AssistantComputer, token: ComputerLease) -> None:
         self._validate(computer, token, LeasePurpose.RECOVER)
