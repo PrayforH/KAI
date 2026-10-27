@@ -108,10 +108,10 @@ class HttpComputerControl:
             raise ComputerLeaseLostError("computer desktop refused this holder")
         if response.status_code >= 400:
             raise RuntimeError(f"computer desktop unavailable: HTTP {response.status_code}")
-        value = response.json()
+        value: object = response.json()
         if not isinstance(value, dict):
             raise RuntimeError("computer desktop acknowledgement is invalid")
-        return value
+        return cast(dict[str, object], value)
 
     async def lifecycle(
         self, token: ComputerLease, operation: str, *, image: str | None = None

@@ -18,6 +18,8 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from harness.computer.storage import ComputerDesktopLeaseRow as Row
 from harness.core.errors import ConflictError, NotFoundError
@@ -149,9 +151,10 @@ class DesktopControlService:
         async with self._sessions.begin() as session:
             row = await self._row(session, tenant_id, user_id)
             if row.state == DesktopState.HUMAN.value:
-                row.expires_at = datetime.now(UTC) + timedelta(seconds=HUMAN_TTL_SECONDS)
+                moment = datetime.now(UTC)
+                row.expires_at = moment + timedelta(seconds=HUMAN_TTL_SECONDS)
                 row.revision += 1
-                row.updated_at = row.expires_at
+                row.updated_at = moment
             return DesktopControl.model_validate(row)
 
     @staticmethod
@@ -183,19 +186,18 @@ class DesktopControlService:
             return "用户正在控制电脑；请等待交还后再试。"
         return "桌面控制权状态异常，请稍后重试。"
 
-    async def _row(self, session, tenant_id: str, user_id: str) -> Row:
-        from sqlalchemy import select
-
+    async def _row(self, session: AsyncSession, tenant_id: str, user_id: str) -> Row:
         from harness.computer.storage import AssistantComputerRow as Computer
 
-        row = await session.scalar(
+        found = await session.scalar(
             select(Row)
             .where(Row.tenant_id == tenant_id, Row.user_id == user_id)
             .with_for_update()
         )
+        row: Row | None = found
         if row is not None:
             return row
-        computer = await session.scalar(
+        computer: str | None = await session.scalar(
             select(Computer.computer_id).where(
                 Computer.tenant_id == tenant_id, Computer.user_id == user_id
             )

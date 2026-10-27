@@ -153,6 +153,7 @@ from harness.runtime.fake import FakeRuntime
 from harness.runtime.registry_codex_runtime import RegistryCodexRuntime, RegistryRuntimeRouter
 from harness.runtime.registry_runtime import RegistryClaudeRuntime
 from harness.runtime.sdk_tool_gate import SdkToolGate
+from harness.sandbox.base import SandboxHandle, SandboxProvider
 from harness.sandbox.cubesandbox import build_cubesandbox_provider
 from harness.sandbox.daytona import (
     DaytonaSandboxProvider,
@@ -991,7 +992,12 @@ def build_memory_container(
         quotas=enforced_quotas,
     )
 
-    async def runtime_builder_tools(run, session):
+    async def runtime_builder_tools(
+        run: Run,
+        session: Session,
+        handle: SandboxHandle | None = None,
+        sandbox: SandboxProvider | None = None,
+    ):
         from harness.studio.runtime_builder import builder_overlay
 
         return await builder_overlay(container, event_service, run, session)

@@ -112,6 +112,10 @@ class ComputerSandboxProvider:
             raise UnsupportedEgressError("Computer cannot enforce this Run's network policy")
         return await self.provision(run)
 
+    def owns(self, handle: SandboxHandle) -> bool:
+        lease = self._leases.get(handle.sandbox_id)
+        return lease is not None and lease.handle == handle
+
     def _lease(self, handle: SandboxHandle) -> _Lease:
         lease = self._leases.get(handle.sandbox_id)
         if lease is None or lease.handle != handle:

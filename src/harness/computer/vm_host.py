@@ -12,6 +12,7 @@ import json
 import re
 from collections.abc import Mapping
 from pathlib import Path
+from typing import Any, cast
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -40,7 +41,7 @@ from harness.computer.models import (
     LeasePurpose,
 )
 from harness.computer.registry import ComputerRegistry
-from harness.computer.vm_keys import VmSeedStore
+from harness.computer.vm_keys import ComputerVmSeed, VmSeedStore
 from harness.sandbox.base import SandboxCommandResult
 
 GATE_VERSION = 1
@@ -74,7 +75,7 @@ class VmComputerSpec(BaseModel):
             raise ValueError("VM computer image must be an immutable sha256 digest")
         return value
 
-    def seed(self) -> VmSeedStore:
+    def seed(self) -> ComputerVmSeed:
         directory = Path(self.identity_dir)
         match = IDENTITY_PATTERN.fullmatch(directory.name)
         if match is None:
@@ -185,7 +186,7 @@ async def wait_for_ssh(spec: VmComputerSpec, deadline_seconds: float) -> None:
         delay = min(delay * 1.5, 5)
 
 
-def _mount_matches(mounts: list[dict[str, object]], spec: VmComputerSpec) -> bool:
+def _mount_matches(mounts: list[dict[str, Any]], spec: VmComputerSpec) -> bool:
     disk = any(
         entry.get("Type") == "bind"
         and entry.get("Source") == spec.root_disk_source
@@ -203,16 +204,16 @@ def _mount_matches(mounts: list[dict[str, object]], spec: VmComputerSpec) -> boo
     return disk and volume
 
 
-def verify_vm_instance(info: dict[str, object], spec: VmComputerSpec) -> str:
+def verify_vm_instance(info: dict[str, Any], spec: VmComputerSpec) -> str:
     """Confirm the adopted container really carries this computer's disks.
 
     An unlabeled, compose-managed container is accepted only when the node
     config explicitly declares it adopted; any owner label present must match.
     """
 
-    config = info.get("Config") or {}
+    config: dict[str, Any] = info.get("Config") or {}
     identifier = info.get("Id")
-    labels = config.get("Labels") or {}
+    labels: dict[str, Any] = config.get("Labels") or {}
     if not isinstance(identifier, str) or re.fullmatch(r"[a-f0-9]{64}", identifier) is None:
         raise RuntimeError("computer VM did not return a usable instance identity")
     if config.get("Image") != spec.runner_image:
@@ -222,9 +223,11 @@ def verify_vm_instance(info: dict[str, object], spec: VmComputerSpec) -> str:
         raise RuntimeError("computer VM container belongs to another computer")
     if owned is None and not spec.adopt:
         raise RuntimeError("computer VM container is not labelled for this computer")
-    if not _mount_matches(info.get("Mounts") or [], spec):
+    mounts: list[dict[str, Any]] = info.get("Mounts") or []
+    if not _mount_matches(mounts, spec):
         raise RuntimeError("computer VM disks do not match the node declaration")
-    devices = (info.get("HostConfig") or {}).get("Devices") or []
+    host_config: dict[str, Any] = info.get("HostConfig") or {}
+    devices: list[dict[str, Any]] = host_config.get("Devices") or []
     if not any(
         entry.get("PathOnHost") == spec.kvm_device and entry.get("PathInContainer") == "/dev/kvm"
         for entry in devices
@@ -496,7 +499,7 @@ class VmDesktopService:
         self._sessions.clear()
 
     async def _dispatch(
-        self, client: RfbClient, operation: str, payload: Mapping[str, object]
+        self, client: RfbClient, operation: str, payload: Mapping[str, Any]
     ) -> dict[str, object]:
         if client.width == 0:
             await client.connect()
@@ -531,10 +534,15 @@ class VmDesktopService:
             await desktop_type(client, text)
             return {"typed": len(text)}
         names = payload.get("keys")
-        if not isinstance(names, list) or not all(isinstance(item, str) for item in names):
+        if not isinstance(names, list):
             raise ValueError("key requires a list of key names")
-        await desktop_press(client, [str(item) for item in names])
-        return {"pressed": len(names)}
+        # The JSON body is validated shape-wise below; the cast keeps the loop
+        # elements typed instead of leaking pyright's list[Unknown] narrowing.
+        keys: list[str] = [item for item in cast(list[Any], names) if isinstance(item, str)]
+        if len(keys) != len(cast(list[object], names)):
+            raise ValueError("key requires a list of key names")
+        await desktop_press(client, keys)
+        return {"pressed": len(keys)}
 
     @staticmethod
     def _point(payload: Mapping[str, object]) -> tuple[int, int]:

@@ -339,9 +339,9 @@ async def type_text(client: RfbClient, text: str, *, limit: int = 2000) -> None:
 async def press_keys(client: RfbClient, names: list[str]) -> None:
     if not 1 <= len(names) <= 4:
         raise ValueError("key combination length is outside the allowed range")
-    keysyms = []
+    keysyms: list[int] = []
     for name in names:
-        keysym = keysym_for(name)
+        keysym: int | None = keysym_for(name)
         if keysym is None:
             raise ValueError("unknown key name")
         keysyms.append(keysym)

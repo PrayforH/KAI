@@ -118,9 +118,9 @@ class ComputerRuntime:
     ) -> PlatformToolOverlay:
         """Desktop tools only for a live Computer run with its real handle."""
 
-        if self.desktop is None or not isinstance(sandbox, ComputerSandboxProvider):
+        if not isinstance(sandbox, ComputerSandboxProvider):
             return PlatformToolOverlay()
-        if not isinstance(handle, SandboxHandle) or handle.sandbox_id not in sandbox._leases:
+        if not isinstance(handle, SandboxHandle) or not sandbox.owns(handle):
             return PlatformToolOverlay()
         return computer_gui_overlay(self.desktop, sandbox, handle)
 

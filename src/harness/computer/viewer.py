@@ -175,11 +175,12 @@ def create_viewer_app(
 
     app.add_api_route("/computer/status", status, methods=["GET"])
 
-    async def desktop_state(token: str | None) -> dict[str, object]:
+    async def desktop_state(token: str | None) -> dict[str, str | int]:
         """The shared desktop lease decides who may type or click."""
 
+        observe: dict[str, str | int] = {"state": "observe", "epoch": 0}
         if not token:
-            return {"state": "observe", "epoch": 0}
+            return observe
         try:
             response = await auth.get(
                 "/v1/studio/assistant/computer/desktop",
@@ -187,16 +188,11 @@ def create_viewer_app(
                 timeout=3,
             )
             if response.status_code != 200:
-                return {"state": "observe", "epoch": 0}
-            value = response.json()
-            if not isinstance(value, dict):
-                return {"state": "observe", "epoch": 0}
-            return {
-                "state": str(value.get("state", "observe")),
-                "epoch": int(value.get("epoch") or 0),
-            }
+                return observe
+            value: dict[str, Any] = response.json()
+            return {"state": str(value.get("state", "observe")), "epoch": int(value.get("epoch") or 0)}
         except (httpx.HTTPError, ValueError, TypeError):
-            return {"state": "observe", "epoch": 0}
+            return observe
 
     async def stream(websocket: WebSocket) -> None:
         token = websocket.cookies.get(settings.cookie_name)
@@ -208,7 +204,7 @@ def create_viewer_app(
             await websocket.close(code=1013)
             return
         async with busy:
-            control = {"state": "observe", "epoch": 0}
+            control: dict[str, str | int] = {"state": "observe", "epoch": 0}
             process: asyncio.subprocess.Process | None = None
             tasks: list[asyncio.Task[None]] = []
             try:

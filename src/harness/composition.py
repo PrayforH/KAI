@@ -47,7 +47,7 @@ from harness.context.checkpoint import ContextCheckpointService
 from harness.context.service import ContextService
 from harness.core.errors import NotFoundError, PermissionDeniedError, SandboxGovernanceError
 from harness.core.manifest import AgentManifest, AgentManifestSnapshot
-from harness.core.models import ModelCompatibility, RunStatus, Session
+from harness.core.models import ModelCompatibility, Run, RunStatus, Session
 from harness.core.ports import ArtifactStore, TaskQueue
 from harness.deployments.controller import DeploymentController
 from harness.deployments.queue import DeploymentTaskQueue
@@ -134,6 +134,7 @@ from harness.runtime.sdk_tool_gate import SdkToolGate
 from harness.runtime.session_store import PostgresSessionStore
 from harness.sandbox.base import (
     SandboxEgress,
+    SandboxHandle,
     SandboxIsolation,
     SandboxProvider,
     provider_meets_enforcement_floor,
@@ -1574,7 +1575,12 @@ def build_production_container(
         quotas=enforced_quotas,
     )
 
-    async def runtime_builder_tools(run, session, handle=None, sandbox=None):
+    async def runtime_builder_tools(
+        run: Run,
+        session: Session,
+        handle: SandboxHandle | None = None,
+        sandbox: SandboxProvider | None = None,
+    ):
         from harness.runtime.platform_tools import PlatformToolOverlay
         from harness.studio.runtime_builder import builder_overlay
 
