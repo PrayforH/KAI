@@ -1,0 +1,31 @@
+{
+  "completedAt": "2026-10-27T04:42:17.064620+00:00",
+  "commit": "5f30bbaf",
+  "schema": "0051",
+  "images": {
+    "api": {
+      "image": "kai/assistant-api:20261027-r21-computer-transfer",
+      "id": "sha256:d310cd7929c2d2b4b4b6cf91bd759eacb66d9f49fce2a584e280770575458934"
+    },
+    "feishu": {
+      "image": "kai/feishu-receiver:20261027-r21-computer-transfer",
+      "id": "sha256:8a3cf5192f8344aea1907ecfa4a910409fc7e7bfd326df983c885fc57ccd6c20"
+    },
+    "weixin": {
+      "image": "kai/weixin-receiver:20261027-r21-computer-transfer",
+      "id": "sha256:312c56977ab6e57b8d7bdeded066141e66278b0f028ec10233d8449387d2a02c"
+    }
+  },
+  "configurationChangedImagesOnly": true,
+  "computerBefore": {
+    "id": "computer_76649d1de93843289142040974d587f9",
+    "provider": "262941df38841f8bbfed06baedde379516c2021781badc642f570a3aa3d198ae",
+    "volume": "kai-computer-76649d1de93843289142040974d587f9",
+    "state": "idle",
+    "epoch": 6
+  },
+  "sameComputerInstanceStillRunning": true,
+  "knownFilesAndExecutableUnchanged": true,
+  "apiWorkerNodeHealthy": true,
+  "nginxReloaded": true
+}

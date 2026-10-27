@@ -1,0 +1,138 @@
+{
+  "checkedAt": "2026-10-27T04:44:42.812114+00:00",
+  "realModelChecks": {
+    "direct": {
+      "runId": "run_0473c066d93e44b88fef9bc09f56f533",
+      "status": "succeeded",
+      "sessionId": "session_d3795a0525ab4c43b5406af5d6bf7bc0",
+      "answer": "一次命令完成读取、运行与核对，未委派子任务，原文件与脚本未改动（时间戳仍为 12:11）。\n\n| 项 | 实际值 |\n|---|---|\n| 代号 | `KAI79-PC-20261027-R20-C4N8`（identity.txt 与脚本输出**一致**） |\n| 工作目录 | `/home/kai/workspace` |\n| HOME | `/home/kai` |\n| UID | `28000` |\n\n**报告路径**：`/home/kai/workspace/outputs/computer-transfer-20261027-first.txt`（141 字节，12:42 生成）\n\n以上路径均为电脑侧真实路径，未引用任何 SDK 本地控制目录。"
+    },
+    "feishu": {
+      "runId": "run_06ad4c9752ec4e3ba7f5248093d708d4",
+      "status": "succeeded",
+      "sessionId": "session_d3795a0525ab4c43b5406af5d6bf7bc0",
+      "answer": "代号 KAI79-PC-20261027-R20-C4N8（报告、identity.txt、脚本输出三处一致），pwd `/home/kai/workspace`，UID 28000。"
+    }
+  },
+  "feishuIncoming": {
+    "incoming_id": "incoming_3677f86c099845838d1893a821204465",
+    "status": "done",
+    "run_id": "run_06ad4c9752ec4e3ba7f5248093d708d4",
+    "error_code": null
+  },
+  "feishuDelivery": {
+    "delivery_id": "f3dad5c071dfd4c3e359f9cb4ac6b58a7c6be5f1",
+    "status": "sent",
+    "message_id": "om_x100b6136f36ce8a0cfe4fb930d2a82f",
+    "attempts": 1,
+    "error_code": null
+  },
+  "feishuDiagnostics": {
+    "checked_at": "2026-10-27T04:44:40.077429Z",
+    "checks": [
+      {
+        "key": "credentials",
+        "label": "应用凭据",
+        "status": "pass",
+        "detail": "App ID 和 Secret 验证成功。"
+      },
+      {
+        "key": "receiver",
+        "label": "长连接",
+        "status": "pass",
+        "detail": "79 · 172.20.105.79 已连接。"
+      },
+      {
+        "key": "events",
+        "label": "消息接收",
+        "status": "pass",
+        "detail": "本次配置已收到事件：2026-10-27T04:42:48.847887+00:00"
+      },
+      {
+        "key": "binding",
+        "label": "本人账号",
+        "status": "pass",
+        "detail": "飞书已绑定到你的 KAI 账号。"
+      },
+      {
+        "key": "reply",
+        "label": "机器人回复",
+        "status": "pass",
+        "detail": "本次配置已投递回复：2026-10-27T04:43:05.112025+00:00"
+      },
+      {
+        "key": "chat",
+        "label": "助理聊天",
+        "status": "pass",
+        "detail": "最近一轮助理已成功处理消息。"
+      },
+      {
+        "key": "attachments",
+        "label": "图片与文件",
+        "status": "pass",
+        "detail": "本次配置已读取附件：2026-10-26T05:54:45.712933+00:00"
+      }
+    ]
+  },
+  "weixinDiagnostics": {
+    "checkedAt": "2026-10-27 04:44:40.110157+00:00",
+    "checks": [
+      {
+        "key": "binding",
+        "label": "微信绑定",
+        "status": "pass",
+        "detail": "扫码授权与当前 KAI 账号关联。"
+      },
+      {
+        "key": "receiver",
+        "label": "消息连接",
+        "status": "pass",
+        "detail": "接收器已完成微信长轮询。"
+      },
+      {
+        "key": "incoming",
+        "label": "消息接收",
+        "status": "pass",
+        "detail": "本次连接已收到本人消息。"
+      },
+      {
+        "key": "chat",
+        "label": "助理会话",
+        "status": "pass",
+        "detail": "消息已进入与飞书、网页共用的助理会话。"
+      },
+      {
+        "key": "reply",
+        "label": "消息回复",
+        "status": "pass",
+        "detail": "微信接口已确认接收回复。"
+      },
+      {
+        "key": "media",
+        "label": "图片、文件与语音",
+        "status": "pass",
+        "detail": "附件已读取并保存到当前账号的助理会话。"
+      }
+    ]
+  },
+  "webHistory": {
+    "freshAuthenticatedHTTPClients": true,
+    "reads": [
+      {
+        "status": 200,
+        "latestRunId": "run_06ad4c9752ec4e3ba7f5248093d708d4",
+        "turns": 66,
+        "directAndFeishuResultsPresent": true
+      },
+      {
+        "status": 200,
+        "latestRunId": "run_06ad4c9752ec4e3ba7f5248093d708d4",
+        "turns": 66,
+        "directAndFeishuResultsPresent": true
+      }
+    ],
+    "browserRenderingRepeated": false
+  },
+  "weixinNewMessageRepeated": false,
+  "weixinNewMessageNote": "Channel code and credentials unchanged; fresh Weixin-to-Computer message acceptance belongs to r20 pilot record, not repeated for transfer-only rollout."
+}

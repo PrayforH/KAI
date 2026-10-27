@@ -1,0 +1,20 @@
+{
+  "checkedAt": "2026-10-27T04:40:29.708401+00:00",
+  "backupBytes": 130347799,
+  "backupSha256": "d328668849b251e88695cef7f570b7b75cbfc733a01e5d645010aab90ce75503",
+  "backupPrivate": true,
+  "baseImages": {
+    "api": {
+      "image": "kai/assistant-api:20261027-r20-computer-v0",
+      "id": "sha256:18929cd6c944d063b652d2ca97854ecb111e4a4d26cdde9d2f86326c84f394aa"
+    },
+    "feishu": {
+      "image": "kai/feishu-receiver:20261027-r20-computer-v0",
+      "id": "sha256:d48abbeea5ae88efc3139f8e99fb32d15b9d083eb2e322c0d9e2c4bf8c7a0d7e"
+    },
+    "weixin": {
+      "image": "kai/weixin-receiver:20261027-r20-computer-v0",
+      "id": "sha256:df68fac4317e86beadafd58df5e96e7b404784eb7bc86163a76184c9c8d012db"
+    }
+  }
+}
