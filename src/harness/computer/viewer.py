@@ -190,7 +190,10 @@ def create_viewer_app(
             if response.status_code != 200:
                 return observe
             value: dict[str, Any] = response.json()
-            return {"state": str(value.get("state", "observe")), "epoch": int(value.get("epoch") or 0)}
+            return {
+                "state": str(value.get("state", "observe")),
+                "epoch": int(value.get("epoch") or 0),
+            }
         except (httpx.HTTPError, ValueError, TypeError):
             return observe
 
