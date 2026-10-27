@@ -1,0 +1,21 @@
+#!/bin/bash
+set -euo pipefail
+export DISPLAY=:99 XAUTHORITY=/run/kai-desktop/Xauthority SHELL=/bin/bash
+Xvfb :99 -screen 0 1280x800x24 -nolisten tcp -auth "$XAUTHORITY" &
+display_pid=$!
+for i in $(seq 1 100); do
+  if xdotool getdisplaygeometry >/dev/null 2>&1; then break; fi
+  sleep 0.1
+done
+xdotool getdisplaygeometry
+openbox &
+x11vnc -display :99 -auth "$XAUTHORITY" -unixsock /run/kai-desktop/vnc.sock -rfbport 0 -rfbportv6 0 -no6 \
+  -nopw -forever -shared &
+vnc_pid=$!
+browser_args=(--user-data-dir=/var/lib/kai-desktop/chromium --start-maximized
+  --no-first-run --no-default-browser-check --restore-last-session)
+if [ ! -f '/var/lib/kai-desktop/chromium/Local State' ]; then browser_args+=(about:blank); fi
+chromium "${browser_args[@]}" &
+printf '%s\n' "$!" > /run/kai-desktop/browser.pid
+# Closing the browser does not tear down the computer's display service.
+wait -n "$display_pid" "$vnc_pid"

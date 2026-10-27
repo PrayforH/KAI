@@ -1,0 +1,31 @@
+[Unit]
+Description=KAI private persistent desktop
+After=network-online.target cloud-config.service
+ConditionPathExists=/etc/kai-computer/identity.json
+Wants=network-online.target cloud-config.service
+[Service]
+User=kai-desktop
+Group=kai-desktop
+RuntimeDirectory=kai-desktop
+RuntimeDirectoryMode=0700
+UMask=0077
+Environment=HOME=/var/lib/kai-desktop
+ExecStartPre=/usr/bin/python3 /usr/local/lib/kai-desktop/prepare.py
+ExecStart=/usr/bin/dbus-run-session -- /usr/local/lib/kai-desktop/start
+ExecStop=/usr/bin/python3 /usr/local/lib/kai-desktop/stop-browser.py
+StandardOutput=journal+console
+StandardError=journal+console
+Restart=on-failure
+RestartSec=3
+KillMode=control-group
+TimeoutStopSec=25
+# Work files are accessed through the execution gate; the browser owns only its profile.
+InaccessiblePaths=/home/kai
+ProtectHome=true
+NoNewPrivileges=true
+CapabilityBoundingSet=
+ProtectSystem=strict
+ReadWritePaths=/var/lib/kai-desktop /run/kai-desktop
+PrivateTmp=true
+[Install]
+WantedBy=multi-user.target

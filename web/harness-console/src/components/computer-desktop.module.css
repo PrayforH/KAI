@@ -1,0 +1,20 @@
+.entry { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; color: var(--codex-muted, var(--muted-ink)); font-size: 12px; text-decoration: none; border-radius: 5px; white-space: nowrap; }
+.entry svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.4; }
+.entry:hover, .toolbar button:hover, .back:hover { background: var(--codex-surface-subtle, var(--paper)); color: var(--codex-ink, var(--ink)); }
+.shell { position: relative; display: flex; flex-direction: column; height: 100dvh; overflow: hidden; background: #171b1c; }
+.toolbar { display: flex; flex: 0 0 46px; align-items: center; gap: 10px; padding: 0 14px; background: var(--codex-surface, var(--surface)); color: var(--codex-ink, var(--ink)); border-bottom: 1px solid var(--codex-border, var(--line)); font-size: 13px; }
+.toolbar strong { font-weight: 600; }
+.back { color: inherit; text-decoration: none; padding: 4px 7px; border-radius: 5px; font-size: 19px; }
+.preview { font-size: 10px; color: var(--codex-muted, var(--muted-ink)); border: 1px solid var(--codex-border, var(--line)); border-radius: 4px; padding: 1px 5px; }
+.connection { display: flex; align-items: center; gap: 6px; color: var(--codex-muted, var(--muted-ink)); font-size: 11px; }
+.connection i { width: 6px; height: 6px; background: currentColor; border-radius: 50%; }
+.connection[data-connected="true"] i { background: #28a77b; }
+.actions { margin-left: auto; display: flex; gap: 6px; }
+.toolbar button, .overlay button { border: 1px solid var(--codex-border, var(--line)); background: transparent; color: inherit; border-radius: 5px; padding: 5px 10px; cursor: pointer; font: inherit; }
+.screen { flex: 1; min-height: 0; overflow: hidden; }
+.screen > div { height: 100%; }
+.overlay { position: absolute; inset: 46px 0 0; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 8px; background: #171b1c; color: #e3e8e5; font-size: 13px; }
+.overlay p { margin: 0 0 8px; }
+.overlay a { color: #a8d2bf; }
+.entry:focus-visible, .toolbar button:focus-visible, .back:focus-visible, .overlay button:focus-visible { outline: 2px solid var(--rail); outline-offset: 3px; }
+@media (max-width: 540px) { .toolbar { padding: 0 8px; gap: 7px; } .connection { font-size: 10px; } .preview { display: none; } }

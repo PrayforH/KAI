@@ -16,6 +16,7 @@ import {
 import { AgentThread } from "../components/agent-thread";
 import { AuthProvider, useAuth } from "../components/auth-provider";
 import { AssistantChannelStatus } from "../components/assistant-channel-status";
+import { AssistantComputerLink } from "../components/assistant-computer-link";
 import { AssistantRuntimeShell } from "../components/assistant-runtime-shell";
 import { ProductivityCommandCenter } from "../components/productivity-command-center";
 import { RunTraceConsole } from "../components/run-trace-console";
@@ -836,6 +837,7 @@ function AuthenticatedHome() {
               {personalAssistant ? <div className="task-context-bar">
                 <strong className="task-context-title">我的助理</strong>
                 <AssistantChannelStatus />
+                <AssistantComputerLink />
               </div> : <TaskContextBar
                 taskTitle={currentTaskTitle}
                 onForked={switchTask}

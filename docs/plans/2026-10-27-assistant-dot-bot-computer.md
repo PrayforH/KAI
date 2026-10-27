@@ -122,3 +122,23 @@ Computer V1 的镜像升级前置已实现，见[升级底座与 79 隔离验收
 | 扩展治理 | 细分工具授权、限流配额、审计、按需休眠与多租户隔离 | 未绑定用户不能读取电脑；低权限 Agent 不能借其他 Agent 的桌面登录越权；资源与失败状态可观测 |
 
 Computer 上同用户 Agent 的文件共享是显式产品边界，第三方 Apps 仍按独立授权控制。未来群聊不继承本人完整聊天镜像。把私聊连通与第三方文档、邮箱、电脑权限分别管理，保持现有审批服务作为最终执行入口。
+
+
+## 官方 OpenSandbox SDK 的收敛方向（2026-10-27）
+
+本人可视化桌面人工预览现已部署到 79，鼠标、键盘、终端执行、刷新及手动重连通过；见[桌面预览验收](../assistant-computer-viewer-79-20261027.md)。预览 VM 已保留为本人电脑，不再作为可清理 fixture。生产模型仍使用原持久执行 Computer，VM Worker 与人工/Agent 交还尚未完成，因此不将人工预览视为 Computer V1 全部验收。
+
+建议将 OpenSandbox 的标准能力交给官方 Python SDK，在 KAI 的 Computer Provider 内保留一层薄适配器。现有 `sandbox/opensandbox.py` 自行维护生命周期和 execd HTTP 协议，尚未依赖官方 `opensandbox` 包；本次人工桌面预览也尚未由 OpenSandbox 管理，不能通过换一个客户端包直接接管当前 QEMU 实例。
+
+| 层 | 负责的能力 |
+| --- | --- |
+| 官方 SDK / Server / execd | 支持范围内的创建、连接、续期、终止、命令、文件、端点与诊断；暂停恢复和模板按运行时能力启用 |
+| Computer Provider 薄适配器 | 绑定外部实例与持久盘，转换能力与错误，接入 KAI 的租约和恢复状态机 |
+| KAI | 本人账号与通道绑定、共享会话、任务编排、执行 fencing、桌面访问鉴权、人工/Agent 控制互斥、审计与产物投递 |
+| 电脑镜像 | 内核与桌面组件、浏览器、执行身份、启动顺序、用户工作盘与浏览器配置 |
+
+实施顺序：先锁定并验证 Server、SDK、execd 兼容组合，用隔离试点验证 `create → connect → renew → close → connect`、文件/目录归属和重启持久性；再替换已有 HTTP 生命周期调用。持续电脑的命令和文件接口只有在执行身份、路径隔离和过期后的物理 fencing 均有等价保障后才能替换监督器，不能把共享 root execd 直接暴露给助理。最后按实际后端能力接入快照、暂停恢复和空闲策略；先验证本人电脑，再扩展多用户。
+
+SDK 的 `close()` 只释放客户端资源；持久电脑的 Run 结束不调用 `kill()` / `destroy()`。KAI 仍需保存稳定 computer_id、外部实例引用、工作盘引用和 epoch。迁移不得创建同一工作盘的双写实例，不变更现有通道绑定或清空会话。
+
+官方资料：[Python SDK](https://open-sandbox.ai/sdks/python)、[能力矩阵与版本说明](https://open-sandbox.ai/sdks/)。该文档跟随默认分支，公开 SDK 入口存在不等于 79 的既有 Server / execd 已支持；自动休眠等能力尤其依赖具体后端。
