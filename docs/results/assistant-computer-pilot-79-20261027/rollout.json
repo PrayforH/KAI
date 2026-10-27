@@ -1,0 +1,29 @@
+{
+  "schema": "0051",
+  "owners": {
+    "local": [
+      "user_1c16a8994ff548c298c356fd8385eb76"
+    ]
+  },
+  "completedAt": "2026-10-27T04:06:49.811606+00:00",
+  "images": {
+    "api": {
+      "image": "kai/assistant-api:20261027-r20-computer-v0",
+      "imageId": "sha256:18929cd6c944d063b652d2ca97854ecb111e4a4d26cdde9d2f86326c84f394aa"
+    },
+    "feishu": {
+      "image": "kai/feishu-receiver:20261027-r20-computer-v0",
+      "imageId": "sha256:d48abbeea5ae88efc3139f8e99fb32d15b9d083eb2e322c0d9e2c4bf8c7a0d7e"
+    },
+    "weixin": {
+      "image": "kai/weixin-receiver:20261027-r20-computer-v0",
+      "imageId": "sha256:df68fac4317e86beadafd58df5e96e7b404784eb7bc86163a76184c9c8d012db"
+    }
+  },
+  "controllerHealthy": true,
+  "apiHealthy": true,
+  "workerHealthy": true,
+  "reverseProxyReloaded": true,
+  "privateConfigurationMode": "0600",
+  "workerOnlyNodeSecret": true
+}

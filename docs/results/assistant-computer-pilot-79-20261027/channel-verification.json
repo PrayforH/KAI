@@ -1,0 +1,171 @@
+{
+  "checkedAt": "2026-10-27T04:31:11.646882+00:00",
+  "realModelChecks": {
+    "first": {
+      "runId": "run_24ddec42b9704f749d20513067baa441",
+      "sessionId": "session_d3795a0525ab4c43b5406af5d6bf7bc0",
+      "status": "succeeded",
+      "answer": "已实际执行并核验完成，没有委派子任务。\n\n**执行结果**\n\n| 项 | 实际结果 |\n|---|---|\n| 代号 | `KAI79-PC-20261027-R20-C4N8` |\n| HOME | `/home/kai` |\n| 当前工作目录 | `/home/kai/workspace` |\n| `id -u` | `28000` |\n| 脚本运行输出 | `KAI79-PC-20261027-R20-C4N8`（与写入值一致） |\n\n**产物路径**\n\n- `computer-pilot/identity.txt` → 即 `/home/kai/workspace/computer-pilot/identity.txt`，内容为该代号\n- `/home/kai/bin/kai79-pilot` → 可执行脚本（权限 `755`），运行输出同一代号\n- `outputs/computer-pilot-first.txt` → 即 `/home/kai/workspace/outputs/computer-pilot-first.txt`，记录代号、脚本运行输出、HOME、cwd、uid\n\n**一点说明**：环境标注的工作目录是 `/tmp/kai-computer-run-5kqgq37_`，但实际 shell 的 cwd 解析为 `/home/kai/workspace`（`pwd -P` 与 `readlink -f` 均为该路径，`/workspace` 在容器内不存在）。我按实际路径落盘，并在记录文件里如实写了实际 cwd。\n\n文件已保留，下一轮可直接读取。"
+    },
+    "second": {
+      "runId": "run_7f88a3abfd4d417ebdcf6e50c019816c",
+      "sessionId": "session_d3795a0525ab4c43b5406af5d6bf7bc0",
+      "status": "succeeded",
+      "answer": "第 2 轮已用命令实际读取并核对，未委派子任务、未重建文件、未从聊天记录取数。\n\n**实际读取结果**\n\n| 检查项 | 结果 |\n|---|---|\n| `computer-pilot/identity.txt` 内容 | `KAI79-PC-20261027-R20-C4N8` |\n| `HOME/bin/kai79-pilot` 运行输出 | `KAI79-PC-20261027-R20-C4N8` |\n| 两处一致性 | **一致** |\n| 上轮 `outputs/computer-pilot-first.txt` | **仍存在**（119 字节，时间戳 12:11 未变） |\n| 文件时间戳 | 两个产物均为 12:11，确认是上轮遗留而非本轮新建（`identity.txt` 与脚本同轮创建，本轮只读了它们） |\n\n**本轮产物**\n\n`/home/kai/workspace/outputs/computer-pilot-second.txt`，记录了：轮次、实际 cwd、identity 路径与内容、脚本路径与输出、一致性判定、上轮文件存在性、HOME、uid。\n\n**说明**：环境标注工作目录为 `/tmp/kai-computer-run-ft48k3tp`，但 shell 实际 cwd 仍是 `/home/kai/workspace`（`pwd -P` 实测），文件也在该路径下，与第 1 轮位置相同，因此上轮文件可直接读到。\n\n文件保留，可供下一轮继续使用。"
+    },
+    "webAfterReload": {
+      "runId": "run_52e3453e319049ef8311f8023532322d",
+      "sessionId": "session_d3795a0525ab4c43b5406af5d6bf7bc0",
+      "status": "succeeded",
+      "answer": "KAI79-PC-20261027-R20-C4N8，UID 28000"
+    },
+    "webAfterWorkerRestart": {
+      "runId": "run_100324515f1a45948c6fe72372affa1f",
+      "sessionId": "session_d3795a0525ab4c43b5406af5d6bf7bc0",
+      "status": "succeeded",
+      "answer": "代号 KAI79-PC-20261027-R20-C4N8（identity.txt 与脚本输出一致），UID 28000；前两轮 computer-pilot-first.txt（119 字节，12:11）与 computer-pilot-second.txt（359 字节，12:14）均存在且未被改动。"
+    },
+    "feishu": {
+      "runId": "run_6096615eb19349229c056f51c9199122",
+      "sessionId": "session_d3795a0525ab4c43b5406af5d6bf7bc0",
+      "status": "succeeded",
+      "answer": "代号 KAI79-PC-20261027-R20-C4N8（identity.txt 与脚本输出一致），UID 28000；本次仅实际读取和运行，未改动文件、未委派任务、未使用聊天记录。"
+    },
+    "weixin": {
+      "runId": "run_a5fbec8984604dcfa6b626acd9d7550c",
+      "sessionId": "session_d3795a0525ab4c43b5406af5d6bf7bc0",
+      "status": "succeeded",
+      "answer": "KAI79-PC-20261027-R20-C4N8"
+    }
+  },
+  "feishuIncoming": {
+    "incoming_id": "incoming_7678a23d6c744f72b9b977d2460cd9d1",
+    "status": "done",
+    "run_id": "run_6096615eb19349229c056f51c9199122",
+    "attempts": 0,
+    "error_code": null,
+    "created_at": "2026-10-27 04:24:54.433947+00:00",
+    "finished_at": "2026-10-27 04:26:30.629894+00:00"
+  },
+  "feishuDeliveries": [
+    {
+      "delivery_id": "99211aec328b09ec55043e803a26bf0ddf1f1829",
+      "dedup_key": "chat-result:incoming_7678a23d6c744f72b9b977d2460cd9d1",
+      "status": "sent",
+      "message_id": "om_x100b613631b8f8a0ce422ace1deea93",
+      "attempts": 1,
+      "error_code": null,
+      "created_at": "2026-10-27 04:26:30.629894+00:00"
+    }
+  ],
+  "feishuDiagnostics": {
+    "checked_at": "2026-10-27T04:31:11.602763Z",
+    "checks": [
+      {
+        "key": "credentials",
+        "label": "应用凭据",
+        "status": "pass",
+        "detail": "App ID 和 Secret 验证成功。"
+      },
+      {
+        "key": "receiver",
+        "label": "长连接",
+        "status": "pass",
+        "detail": "79 · 172.20.105.79 已连接。"
+      },
+      {
+        "key": "events",
+        "label": "消息接收",
+        "status": "pass",
+        "detail": "本次配置已收到事件：2026-10-27T04:24:56.155785+00:00"
+      },
+      {
+        "key": "binding",
+        "label": "本人账号",
+        "status": "pass",
+        "detail": "飞书已绑定到你的 KAI 账号。"
+      },
+      {
+        "key": "reply",
+        "label": "机器人回复",
+        "status": "pass",
+        "detail": "本次配置已投递回复：2026-10-27T04:26:30.629894+00:00"
+      },
+      {
+        "key": "chat",
+        "label": "助理聊天",
+        "status": "pass",
+        "detail": "最近一轮助理已成功处理消息。"
+      },
+      {
+        "key": "attachments",
+        "label": "图片与文件",
+        "status": "pass",
+        "detail": "本次配置已读取附件：2026-10-26T05:54:45.712933+00:00"
+      }
+    ]
+  },
+  "weixinDiagnostics": {
+    "checkedAt": "2026-10-27 04:31:11.636872+00:00",
+    "checks": [
+      {
+        "key": "binding",
+        "label": "微信绑定",
+        "status": "pass",
+        "detail": "扫码授权与当前 KAI 账号关联。"
+      },
+      {
+        "key": "receiver",
+        "label": "消息连接",
+        "status": "pass",
+        "detail": "接收器已完成微信长轮询。"
+      },
+      {
+        "key": "incoming",
+        "label": "消息接收",
+        "status": "pass",
+        "detail": "本次连接已收到本人消息。"
+      },
+      {
+        "key": "chat",
+        "label": "助理会话",
+        "status": "pass",
+        "detail": "消息已进入与飞书、网页共用的助理会话。"
+      },
+      {
+        "key": "reply",
+        "label": "消息回复",
+        "status": "pass",
+        "detail": "微信接口已确认接收回复。"
+      },
+      {
+        "key": "media",
+        "label": "图片、文件与语音",
+        "status": "pass",
+        "detail": "附件已读取并保存到当前账号的助理会话。"
+      }
+    ]
+  },
+  "weixinStatus": {
+    "bound": true,
+    "enabled": true,
+    "online": true,
+    "state": "connected",
+    "errorCode": null,
+    "lastEventAt": "2026-10-27 04:28:11.845613+00:00",
+    "lastReplyAt": "2026-10-27 04:29:35.147219+00:00"
+  },
+  "weixinPilotMessages": [
+    {
+      "message_id": "bcf9867f957742689abdb6eefcc63868",
+      "status": "done",
+      "run_id": "run_a5fbec8984604dcfa6b626acd9d7550c",
+      "text": "请实际读取 computer-pilot/identity.txt，并运行 HOME/bin/kai79-pilot，只回复实际代号，不要重建文件。",
+      "reply": "KAI79-PC-20261027-R20-C4N8",
+      "error_code": null,
+      "created_at": "2026-10-27 04:28:11.836428+00:00",
+      "finished_at": "2026-10-27 04:29:35.141506+00:00"
+    }
+  ],
+  "weixinPilotStatus": "passed"
+}

@@ -1,0 +1,21 @@
+{
+  "checkedAt": "2026-10-27T03:47:05.165361+00:00",
+  "baselineImages": {
+    "api": {
+      "image": "kai/assistant-api:20261027-r18",
+      "imageId": "sha256:b621c031285b589292d5ce94daa34ed915485207422171785c42c1622cdbf628"
+    },
+    "feishu": {
+      "image": "kai/feishu-receiver:20261027-r19",
+      "imageId": "sha256:8fa980127c8f75522573461017b831b0bbe669e627a7cee4a687f1b004112743"
+    },
+    "weixin": {
+      "image": "kai/weixin-receiver:20261027-r18",
+      "imageId": "sha256:2dfa9a8bc53b8d8d0fa99f0e8ea61af3f60dbbc857930e7a22f835c627cfc5b5"
+    }
+  },
+  "backupBytes": 130236262,
+  "backupSha256": "eac0a2e51fae1334142314906404c053d8dce9e3fc47abc9ca528b60e24da320",
+  "backupPrivate": true,
+  "productionChanged": false
+}

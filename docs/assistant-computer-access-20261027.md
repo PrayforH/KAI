@@ -39,3 +39,5 @@ Worker 需要固定镜像 digest、内部节点地址及私钥，并采用 `work
 证据：[79 授权试验](results/assistant-computer-access-20261027/canonical-probe-79.json)、[真实 SQL 记录](results/assistant-computer-access-20261027/canonical-records.json)、[回归](results/assistant-computer-access-20261027/tests.txt)、[迁移](results/assistant-computer-access-20261027/migration.json)。这些试验未使用本人生产聊天、真实模型或新建真实账号关系。
 
 试点发布准备已保存 79 私有数据库备份及原 Compose，并构建保留既有依赖的应用镜像。实际切换、本人真实任务、通道与刷新续聊、回滚配置及清理结果在发布验收记录中补充。浏览器桌面、登录接管、资源准入扩展和跨 Session / 子 Run 调度仍按原方案后续推进。
+
+后续实际切换已完成，见[79 本人生产试点与真实模型验收](assistant-computer-pilot-79-20261027.md)。本页的 fixture 与准备记录保持原阶段含义。
