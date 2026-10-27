@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -95,22 +95,17 @@ async def test_run_teardown_releases_desktop_ownership(
     handle = provider.handle
     from harness.computer.sandbox import ComputerSandboxProvider
 
-    # Minimal provider surface: only the release path is under test.
-    stub = StubProvider([], root=tmp_path)
-    handle = stub.handle
-    release_provider = ComputerSandboxProvider.__new__(ComputerSandboxProvider)
+    # Only the release hook is under test; destroy() would rmtree the handle
+    # path, so call the hook exactly as destroy's finally block does.
+    provider = StubProvider([], root=tmp_path)
+    handle = provider.handle
+    release_provider = cast(Any, ComputerSandboxProvider.__new__(ComputerSandboxProvider))
     release_provider.session = provider.session
     release_provider.desktop = desktop
-    release_provider._leases = {}
-
-    from harness.computer.sandbox import _Lease, _Scope
-
-    scope = _Scope(tasks=None)  # type: ignore[arg-type]
-    release_provider._leases[handle.sandbox_id] = _Lease(run(), handle, scope)
     await desktop.acquire_agent("tenant-a", "user-a", owner=handle.sandbox_id)
     state = await desktop.view("tenant-a", "user-a")
     assert state.state.value == "agent"
-    await release_provider.destroy(handle)
+    await release_provider._release_desktop(handle)
     state = await desktop.view("tenant-a", "user-a")
     assert state.state.value == "observe"
 
@@ -120,7 +115,9 @@ async def test_screenshot_acquires_ownership_and_returns_image(
     database: DatabaseFixture, tmp_path: Any
 ) -> None:
     desktop = await prepared(database)
-    provider = StubProvider([{"width": 1280, "height": 800, "png_base64": "aGVsbG8="}], root=tmp_path)
+    provider = StubProvider(
+        [{"width": 1280, "height": 800, "png_base64": "aGVsbG8="}], root=tmp_path
+    )
     overlay = computer_gui_overlay(desktop, provider, provider.handle)
     tools = {tool.name: tool.handler for tool in overlay.tools}
     result = await tools["computer_screenshot"]({})
