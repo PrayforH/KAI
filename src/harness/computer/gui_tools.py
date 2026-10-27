@@ -92,10 +92,8 @@ def computer_gui_overlay(
             "required": ["x", "y"],
         }
         if extra:
-            definition = json.loads(extra)
-            schema["properties"].update(definition["properties"])
-            if definition.get("required"):
-                schema["required"] += definition["required"]
+            # The extra JSON is itself a properties object (no required keys).
+            schema["properties"].update(json.loads(extra))
         return PlatformTool(
             name=f"computer_{operation}",
             description={

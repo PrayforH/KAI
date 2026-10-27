@@ -1,0 +1,135 @@
+"""Model-facing GUI tool flow: acquire, act, and friendly refusals."""
+
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from harness.computer.desktop import DesktopControlService
+from harness.computer.gui_tools import computer_gui_overlay
+from harness.computer.registry import ComputerRegistry
+from harness.core.models import Run, RunStatus, Session
+from harness.sandbox.base import SandboxHandle
+from tests.integration.storage.conftest import DatabaseFixture
+
+NOW = datetime(2026, 10, 28, 5, 0, tzinfo=UTC)
+OWNER = "computer-run-" + "a" * 32
+
+
+class StubProvider:
+    """Stands in for ComputerSandboxProvider with a scripted desktop action."""
+
+    def __init__(self, results: list[dict[str, Any]]) -> None:
+        self.handle = SandboxHandle(
+            sandbox_id=OWNER,
+            path=Path("/tmp/fixture-run"),
+            provider="vm-computer",
+            remote_workspace="/home/kai/workspace",
+            deferred_tool_execution=True,
+            persistent_workspace=True,
+        )
+        self.session = Session(
+            session_id="session-1",
+            tenant_id="tenant-a",
+            user_id="user-a",
+            agent_name="assistant",
+            agent_version="1",
+            created_at=NOW,
+            environment="production",
+            runtime_type="claude-agent-sdk",
+        )
+        self.results = results
+        self.calls: list[tuple[str, dict[str, Any], int]] = []
+
+    def owns(self, handle: SandboxHandle) -> bool:
+        return handle.sandbox_id == OWNER
+
+    async def desktop_action(
+        self,
+        handle: SandboxHandle,
+        operation: str,
+        payload: dict[str, Any],
+        *,
+        expected_epoch: int,
+    ) -> dict[str, Any]:
+        self.calls.append((operation, payload, expected_epoch))
+        return self.results.pop(0)
+
+
+
+
+
+async def prepared(database: DatabaseFixture) -> DesktopControlService:
+    _, sessions = database
+    await ComputerRegistry(sessions).ensure(
+        "tenant-a", "user-a", provider="vm-computer", image="sha256:" + "a" * 64
+    )
+    return DesktopControlService(sessions)
+
+
+def run() -> Run:
+    return Run(
+        run_id="run-1",
+        session_id="session-1",
+        tenant_id="tenant-a",
+        status=RunStatus.RUNNING,
+        idempotency_key="k",
+        created_at=NOW,
+        updated_at=NOW,
+    )
+
+
+def text_of(result: dict[str, Any]) -> str:
+    return str(result["content"][0]["text"])
+
+
+@pytest.mark.asyncio
+async def test_screenshot_acquires_ownership_and_returns_image(
+    database: DatabaseFixture,
+) -> None:
+    desktop = await prepared(database)
+    provider = StubProvider(
+        [{"width": 1280, "height": 800, "png_base64": "aGVsbG8="}]
+    )
+    overlay = computer_gui_overlay(desktop, provider, provider.handle)
+    tools = {tool.name: tool.handler for tool in overlay.tools}
+    result = await tools["computer_screenshot"]({})
+    assert provider.calls == [("screenshot", {}, 1)]
+    image = result["content"][0]
+    assert image == {"type": "image", "data": "aGVsbG8=", "mimeType": "image/png"}
+    state = await desktop.view("tenant-a", "user-a")
+    assert state.state.value == "agent" and state.owner == OWNER
+
+
+@pytest.mark.asyncio
+async def test_occupied_desktop_refuses_with_a_clear_message(
+    database: DatabaseFixture,
+) -> None:
+    desktop = await prepared(database)
+    provider = StubProvider([])
+    overlay = computer_gui_overlay(desktop, provider, provider.handle)
+    tools = {tool.name: tool.handler for tool in overlay.tools}
+    # The user took over: no in-flight ownership by this run any more.
+    await desktop.request_human("tenant-a", "user-a")
+    result = await tools["computer_click"]({"x": 3, "y": 4})
+    assert "控制" in text_of(result) or "等待" in text_of(result)
+    assert provider.calls == []
+
+
+@pytest.mark.asyncio
+async def test_actions_renew_ttl_and_bind_the_acquired_epoch(
+    database: DatabaseFixture,
+) -> None:
+    desktop = await prepared(database)
+    provider = StubProvider([{"clicked": True}, {"typed": 2}])
+    overlay = computer_gui_overlay(desktop, provider, provider.handle)
+    tools = {tool.name: tool.handler for tool in overlay.tools}
+    first = await tools["computer_click"]({"x": 3, "y": 4})
+    assert first == {"clicked": True}
+    second = await tools["computer_type"]({"text": "你好"})
+    assert second == {"typed": 2}
+    # Both actions carried the same acquired epoch; ownership was renewed.
+    assert [call[2] for call in provider.calls] == [1, 1]
+    state = await desktop.view("tenant-a", "user-a")
+    assert state.revision >= 3
