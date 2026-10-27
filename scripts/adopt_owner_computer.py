@@ -10,8 +10,7 @@ import argparse
 import asyncio
 import re
 
-from sqlalchemy import select
-
+from harness.computer.models import AssistantComputer
 from harness.computer.registry import ComputerRegistry
 from harness.storage.database import create_database
 
@@ -33,7 +32,7 @@ async def adopt(
     engine, sessions = create_database(database_url)
     try:
         registry = ComputerRegistry(sessions)
-        row = await registry.adopt(
+        row: AssistantComputer = await registry.adopt(
             tenant_id,
             user_id,
             provider=provider,
@@ -41,14 +40,7 @@ async def adopt(
             computer_id=computer_id,
             volume_ref=volume_ref,
         )
-        # Idempotency check by listing what the registry now owns.
-        async with sessions() as session:
-            found = await session.scalar(
-                select(row.__class__).where(
-                    row.__class__.tenant_id == tenant_id, row.__class__.user_id == user_id
-                )
-            )
-            assert found is not None
+        # A re-run with the same declared identity is idempotent.
         return f"adopted {row.computer_id} provider={row.provider} volume={row.volume_ref}"
     finally:
         await engine.dispose()

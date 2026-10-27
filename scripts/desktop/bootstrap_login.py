@@ -1,9 +1,9 @@
 """Run on the target host after API health is verified. Never print credentials."""
 import json
 import os
-from pathlib import Path
 import secrets
 import urllib.request
+from pathlib import Path
 
 root = Path('/home/xiaokai/deployments/kai-assistant-20261023')
 config = json.loads((root / 'private/compose.json').read_text())
