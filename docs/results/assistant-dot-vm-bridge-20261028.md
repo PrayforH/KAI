@@ -14,6 +14,7 @@
 | `a0a21e56` | 桌面 gate 改为 renew-only + 端到端 gate 测试（真实 canonical 授权链） |
 | `e318b647` | viewer 测试对齐 gate 语义 |
 | `1da0365e` | VM 生命周期测试（adopt/拒绝/guest fencing 存活/物理停机回退，Docker 与 guest 全 mock） |
+| `03011e9c` | 迁移修复：0001 排除名单补 computer_desktop_leases（全新安装整链 0001→0053 + 0053→0051→0053 往返，隔离库实测） |
 
 设计决策记录：[ADR](plans/2026-10-28-kai-dot-vm-bridge.md)；部署手册：[runbook](plans/2026-10-28-kai-dot-deploy-runbook.md)。
 
@@ -36,6 +37,8 @@ HARNESS_TEST_DATABASE_URL=postgresql+asyncpg://harness:harness@127.0.0.1:35432/h
 - **VM Provider**（25 项）：registry 路由按 canonical 行、未配置 provider fail-closed、adopt 幂等/冲突拒绝、容器验证（镜像/挂载/KVM 设备/label）。
 - **VM 生命周期**（4 项）：ensure 认领并启动既有 runner、缺容器拒绝、reset 优先 guest fencing（VM 存活返回引用）、guest 不可达时物理停机回退（容器删除、盘不动）。
 - **委派工具**（6 项）：创建即入队一次执行、trigger_key 带委托 run（重试不重复派发）、周期调度、参数校验、状态查询、修订冲突。
+
+迁移链实测：空隔离库上 `alembic upgrade head`（0001→0053）全链通过，`downgrade 0051` + 重新 upgrade 往返通过（runbook §2 的真实演练）。
 
 类型与静态检查：`ruff check src/ tests/` 全过；pyright 走仓库基线机制（`scripts/check_type_baseline.py`），本分支对基线的净新增诊断集中在既有模式（pydantic-settings `list[Unknown]` 等）；**分支基线本身相对上游已有 929 条陈账**（交接工作树同条件实测），非本轮引入。
 
