@@ -18,11 +18,12 @@
     "tests/integration/computer/test_supervisor_linux.py": "f9fb368aa5eccab06cac4fddb0c658a80e825c42805db8908914d4c9dd3b2e73"
   },
   "taskUid": 28000,
-  "memoryBytes": 4294967296,
-  "nanoCpus": 2000000000,
+  "memoryBytes": 536870912,
+  "nanoCpus": 500000000,
   "productionComputerEnabled": false,
   "testDatabase": "harness_computer_probe",
   "testedSourceMatchesCheckout": true,
   "imageSupervisorSha256": "7a2d2c6c56669865ddd6b00f4aff84a23dfa84809730e8b5a4f93d519fea3a99",
-  "imageSupervisorMatchesTestedSource": true
+  "imageSupervisorMatchesTestedSource": true,
+  "resourceScope": "Actual isolated probe limits from controller.env; defaults in source are 4 GiB / 2 vCPU"
 }

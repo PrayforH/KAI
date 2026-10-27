@@ -19,8 +19,9 @@ from collections.abc import (
     Mapping,
     Sequence,
 )
-from contextlib import AbstractContextManager, nullcontext, suppress
+from contextlib import AbstractAsyncContextManager, AbstractContextManager, nullcontext, suppress
 from dataclasses import replace
+from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import Any, TypeVar, cast
 from uuid import uuid4
@@ -552,6 +553,20 @@ class RunOrchestrator:
             fingerprints[relative] = hashlib.sha256(content).hexdigest()
         return fingerprints
 
+    @staticmethod
+    async def _publication_baseline(
+        sandbox: SandboxProvider,
+        handle: SandboxHandle,
+        local: Mapping[str, str],
+    ) -> Mapping[str, str]:
+        reader = getattr(sandbox, "workspace_baseline", None)
+        if reader is None:
+            return local
+        baseline = await cast(Callable[[SandboxHandle], Awaitable[Mapping[str, str]]], reader)(
+            handle
+        )
+        return {**local, **baseline}
+
     async def _publish_workspace_outputs(
         self,
         *,
@@ -664,7 +679,7 @@ class RunOrchestrator:
                     tenant_id=tenant_id,
                     run=run,
                     workspace=handle.path,
-                    baseline=baseline,
+                    baseline=await self._publication_baseline(sandbox, handle, baseline),
                     final_response=final_response,
                     message_id=message_id,
                 )
@@ -1183,9 +1198,7 @@ class RunOrchestrator:
                         pass
                 return result
 
-    async def _execute(  # pyright: ignore[reportGeneralTypeIssues]
-        self, tenant_id: str, run_id: str
-    ) -> Run:
+    async def _execute(self, tenant_id: str, run_id: str) -> Run:
         run = await self._runs.get(tenant_id, run_id)
         if run.status.is_terminal:
             return run
@@ -1201,18 +1214,8 @@ class RunOrchestrator:
         if run.status is not RunStatus.QUEUED and not is_resume and not is_provision_recovery:
             raise ConflictError(f"run is already owned or paused: {run_id} ({run.status.value})")
 
-        handle: SandboxHandle | None = None
-        terminal_status: RunStatus | None = None
-        lease: SandboxLease | None = None
         active_sandbox = self._sandbox
-        output_baseline: Mapping[str, str] | None = None
-        final_response_text = ""
-        final_response_message_id: str | None = None
-        workspace_policy = WorkspacePolicy()
-        workspace_durable = True
-        latest_runtime_result_payload: Mapping[str, Any] | None = None
         provisioning_started_at = None
-
         try:
             if not is_resume:
                 if is_provision_recovery:
@@ -1229,6 +1232,49 @@ class RunOrchestrator:
             session = await self._sessions.get(tenant_id, run.session_id)
             if self._sandbox_resolver is not None:
                 active_sandbox = await self._sandbox_resolver(tenant_id, session)
+            factory = getattr(active_sandbox, "run_scope", None)
+            scope = (
+                cast(Callable[[Run], AbstractAsyncContextManager[None]], factory)(run)
+                if factory is not None
+                else nullcontext()
+            )
+            async with scope:
+                return await self._execute_in_sandbox(
+                    run,
+                    session,
+                    active_sandbox,
+                    is_resume=is_resume,
+                    provisioning_started_at=provisioning_started_at,
+                )
+        except Exception as error:
+            while isinstance(error, ExceptionGroup):
+                group = cast(ExceptionGroup[Exception], error)
+                if len(group.exceptions) != 1:
+                    return await self._handle_unexpected_error(tenant_id, run_id, group)
+                error = group.exceptions[0]
+            return await self._handle_unexpected_error(tenant_id, run_id, error)
+
+    async def _execute_in_sandbox(  # pyright: ignore[reportGeneralTypeIssues]
+        self,
+        run: Run,
+        session: Session,
+        active_sandbox: SandboxProvider,
+        *,
+        is_resume: bool,
+        provisioning_started_at: datetime | None,
+    ) -> Run:
+        tenant_id, run_id = run.tenant_id, run.run_id
+        handle: SandboxHandle | None = None
+        terminal_status: RunStatus | None = None
+        lease: SandboxLease | None = None
+        output_baseline: Mapping[str, str] | None = None
+        final_response_text = ""
+        final_response_message_id: str | None = None
+        workspace_policy = WorkspacePolicy()
+        workspace_durable = True
+        latest_runtime_result_payload: Mapping[str, Any] | None = None
+
+        try:
             await self._ensure_quota_admission(tenant_id, run_id, session)
             with self._stage("harness.sandbox.provision", {"run.id": run_id}):
                 handle = await self._await_cancellable(
@@ -1249,7 +1295,7 @@ class RunOrchestrator:
                     provider=handle.provider,
                     sandbox_id=handle.sandbox_id,
                 )
-            payload: dict[str, object] = {
+            provision_payload: dict[str, object] = {
                 "provider": handle.provider,
                 "isolation": handle.isolation_level.value,
                 "enforcement": enforcement.value,
@@ -1263,7 +1309,7 @@ class RunOrchestrator:
                     run.session_id,
                 )
                 floor = trust_enforcement_floor(trust_state.trust_high_watermark)
-                payload.update(
+                provision_payload.update(
                     {
                         "trust_watermark": trust_state.trust_high_watermark.value,
                         "trust_floor": floor.value,
@@ -1273,13 +1319,13 @@ class RunOrchestrator:
                     }
                 )
             if lease is not None:
-                payload.update({"lease_id": lease.lease_id, "lease_epoch": lease.epoch})
+                provision_payload.update({"lease_id": lease.lease_id, "lease_epoch": lease.epoch})
             await self._events.append(
                 tenant_id=tenant_id,
                 run_id=run_id,
                 session_id=run.session_id,
                 event_type="sandbox.provisioned",
-                payload=payload,
+                payload=provision_payload,
             )
             policy_resolution = (
                 await self._policy_resolver(
@@ -1312,6 +1358,10 @@ class RunOrchestrator:
                 if self._workspace_policy_resolver is not None
                 else WorkspacePolicy()
             )
+            if handle.persistent_workspace:
+                # The owner disk is authoritative. A stale Session archive must
+                # never be uploaded over it, nor replace it with a partial mirror.
+                workspace_policy = WorkspacePolicy(restore_session=False, archive_on_complete=False)
             if self._workspaces is not None and workspace_policy.restore_session:
                 with self._stage("harness.workspace.restore", {"run.id": run_id}):
                     restored = await self._workspaces.restore_latest(
@@ -1982,7 +2032,9 @@ class RunOrchestrator:
                     tenant_id=tenant_id,
                     run=run,
                     workspace=handle.path,
-                    baseline=output_baseline,
+                    baseline=await self._publication_baseline(
+                        active_sandbox, handle, output_baseline
+                    ),
                     final_response=final_response_text,
                     message_id=final_response_message_id,
                 )
@@ -2048,8 +2100,8 @@ class RunOrchestrator:
             # persist child terminals and the parent terminal immediately while
             # credential revocation and sandbox destruction still run in
             # ``finally``. This keeps provider cleanup and MinIO/archive latency
-            # out of the cancellation SLO and deliberately discards partial
-            # workspace mutations from the cancelled Run.
+            # out of the cancellation SLO and skips publishing partial outputs.
+            # A persistent Computer retains its owner's on-disk mutations.
             workspace_durable = True
             latest = await self._runs.get(tenant_id, run_id)
             if latest.status is RunStatus.CANCELLING:
