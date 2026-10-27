@@ -38,3 +38,13 @@ docker compose -p kai-computer-vm-probe-20261027 -f compose.probe.yaml up -d --p
 5. 验收完成后从 guest 关机，确认容器退出，移除本项目容器；保留私有磁盘及运行器镜像以供后续验证。不得删除正式本人 Computer 的卷。
 
 本轮 VNC 只用于私有能力验证，没有 KAI 账号代理、观察/接管互斥、受控 Agent GUI 工具或浏览器账号登录验收；这些接通前不得开放为正式桌面。
+
+## 共享工作盘与受限控制入口
+
+后续隔离验证增加了 `guest-kernel.sh` 与 `guest-control.sh`，见[工作盘与 SSH 验收](../../../docs/assistant-computer-vm-workdisk-20261027.md)。前者选择 Debian generic kernel，后者为专用控制账号设置 root 持有的 forced-command 公钥及仅允许固定 `ssh_gate.py` 的 sudo 规则。只传公钥到 guest；客户端私钥仍在 79 私有目录。
+
+共享盘阶段改用 UID/GID 28000 的非 root QEMU，映射独立、已核对标签的 Docker 测试卷，`security_model=passthrough`。不将模型命令当成 guest root 执行，也不向 SSH key 开放端口转发。实际 override 在报告中保存；原基础 compose 仍是 UID 28010 的第一阶段配置。切换前先正常关闭旧 VM，再核对并调整私有 VM 文件、私有设备 inode 的属主；不能直接在运行中改挂盘或切换 writer。
+
+Guest `/home/kai` 挂载选项为 `trans=virtio,version=9p2000.L,msize=262144,cache=none,nodev,nosuid`。`ssh_gate.py` 通过实际打开的目录 FD 的 mount ID 校验工作盘，不允许挂载失败时写入 OS 上的旧 HOME。`deactivate` 不依赖工作盘可用性，保证仍能停止持有旧挂载的任务进程。
+
+这个入口仅供未来已完成 canonical 授权的内部节点调用。它不自行查询平台账号、Run 或 SandboxLease；不得把原始 SSH key、地址或该协议直接交给模型/浏览器。当前带管理员和测试数据的 VM 盘也不得直接作为正式用户镜像，需要先构建清理过的 guest base，再接 VM 生命周期和真实 Worker。

@@ -1,0 +1,16 @@
+test_closed_epoch_cannot_be_reactivated_by_delayed_control_request (test_supervisor_linux.SupervisorTests) ... ok
+test_deactivation_stops_a_daemon_that_escaped_its_process_group (test_supervisor_linux.SupervisorTests) ... ok
+test_deactivation_stops_threads_even_after_their_group_leader_exited (test_supervisor_linux.SupervisorTests) ... ok
+test_expiry_watchdog_stops_daemons_after_command_has_already_exited (test_supervisor_linux.SupervisorTests) ... ok
+test_live_legacy_metadata_is_fenced_without_stopping_an_unverified_namespace (test_supervisor_linux.SupervisorTests) ... ok
+test_lost_namespace_cannot_silently_resume_an_execution (test_supervisor_linux.SupervisorTests) ... ok
+test_model_command_runs_unprivileged_and_cannot_read_control_state (test_supervisor_linux.SupervisorTests) ... ok
+test_namespace_identity_records_the_actual_kernel_boot (test_supervisor_linux.SupervisorTests) ... ok
+test_new_epoch_drains_old_processes_before_accepting_a_new_writer (test_supervisor_linux.SupervisorTests) ... ok
+test_one_use_credentials_are_removed_from_private_spool (test_supervisor_linux.SupervisorTests) ... ok
+test_timeout_drains_old_writers_and_allows_a_valid_lease_to_continue (test_supervisor_linux.SupervisorTests) ... ok
+
+----------------------------------------------------------------------
+Ran 11 tests in 3.523s
+
+OK

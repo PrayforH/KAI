@@ -1,0 +1,6 @@
+{
+  "activeDetachedWriterObserved": true,
+  "deactivateAllowedWithoutGlobalHomeMount": true,
+  "writerStoppedOnPhysicalSharedVolume": true,
+  "checkedViaReadonlyDockerReader": true
+}

@@ -15,9 +15,16 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 from harness.computer.supervisor import Guard, Token
+
+
+class FixtureGuard(Guard):
+    def replace_state(self, state: dict[str, Any]) -> None:
+        with self._locked():
+            self._save(state)
 
 
 @unittest.skipUnless(
@@ -34,7 +41,7 @@ class SupervisorTests(unittest.TestCase):
         self.home = self.base / "home"
         self.home.mkdir(mode=0o700)
         os.chown(self.home, 28000, 28000)
-        self.guard = Guard(self.base / "guard", home=str(self.home))
+        self.guard = FixtureGuard(self.base / "guard", home=str(self.home))
         self.token = Token(1, "computer_lease_" + uuid4().hex)
         self.guard.activate(self.token, time.time() + 30)
 
@@ -185,6 +192,23 @@ class SupervisorTests(unittest.TestCase):
         self.guard.deactivate(self.token)
         with self.assertRaises(RuntimeError):
             self.guard.activate(self.token, time.time() + 30)
+
+    def test_namespace_identity_records_the_actual_kernel_boot(self) -> None:
+        state = json.loads((self.guard.root / "state.json").read_text())
+        actual = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+        self.assertEqual(state["namespace"]["boot_id"], actual)
+
+    def test_live_legacy_metadata_is_fenced_without_stopping_an_unverified_namespace(self) -> None:
+        state = json.loads((self.guard.root / "state.json").read_text())
+        original = state["namespace"].pop("boot_id")
+        self.guard.replace_state(state)
+        try:
+            with self.assertRaisesRegex(RuntimeError, "physical recovery"):
+                self.execute("raise SystemExit(0)")
+            self.assertFalse(self.wait_exited(state["namespace"]["pid"], 0.05))
+        finally:
+            state["namespace"]["boot_id"] = original
+            self.guard.replace_state(state)
 
     def test_one_use_credentials_are_removed_from_private_spool(self) -> None:
         path = self.guard.root / "spool" / (uuid4().hex + ".json")

@@ -1,0 +1,52 @@
+{
+  "phase": "read",
+  "canonicalAuthorizationTested": false,
+  "bootId": "f1106478-f923-440b-8c31-e928cd4c3517",
+  "forcedCommandIgnoredArbitraryShell": true,
+  "privateInputNotEchoed": true,
+  "oldTokenRejected": true,
+  "browserPidUnchanged": true,
+  "mountLossDeniedWithoutStateChange": null,
+  "forwardingDenied": null,
+  "result": {
+    "uid": 28000,
+    "gid": 28000,
+    "noNewPrivs": true,
+    "capabilitiesEmpty": true,
+    "oldFilesRead": 200,
+    "identitySha256": "da706d04fec8c584fc65854e25c91cf4b8c95f43dcb30e55455b39bf2b3d5aae",
+    "identityMtimeNs": 1793082558186716512,
+    "newFileMode": 416,
+    "oldSymlink": "identity.txt",
+    "newSymlink": "from-vm.txt",
+    "xattr": "guest-posix",
+    "browserProfileDenied": true
+  },
+  "calls": [
+    {
+      "action": "init",
+      "exit": 0,
+      "seconds": 0.621
+    },
+    {
+      "action": "activate",
+      "exit": 0,
+      "seconds": 0.405
+    },
+    {
+      "action": "exec",
+      "exit": 0,
+      "seconds": 1.379
+    },
+    {
+      "action": "deactivate",
+      "exit": 0,
+      "seconds": 0.411
+    },
+    {
+      "action": "exec",
+      "exit": 125,
+      "seconds": 0.327
+    }
+  ]
+}

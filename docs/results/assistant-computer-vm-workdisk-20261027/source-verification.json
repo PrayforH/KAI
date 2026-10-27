@@ -1,0 +1,26 @@
+{
+  "src/harness/computer/supervisor.py": {
+    "sha256": "41b0880eca6d15c5a9de8587868c66d7b9bef3dc647fe65e2ce8b15f0783cf64",
+    "matches79": true
+  },
+  "src/harness/computer/ssh_gate.py": {
+    "sha256": "6fdc915fc5190f966cb4d73f7357112048661535bef4836d97f7c4d3625eb216",
+    "matches79": true
+  },
+  "deploy/assistant-79/computer-vm/guest-control.sh": {
+    "sha256": "19d640cdb1c5306ac54f3242ef8e5a1a2937b57f488a4be379ba0adf15c3ff8e",
+    "matches79": true
+  },
+  "deploy/assistant-79/computer-vm/guest-kernel.sh": {
+    "sha256": "d4107b36b94ef491cc8aa8f9b5707ea0129e69f36419272eacd614a8f7efea79",
+    "matches79": true
+  },
+  "tests/integration/computer/test_supervisor_linux.py": {
+    "sha256": "730ba37b7461bc5b745f59aa711c4714ddf740df1af85c8f23b7752d70160de0",
+    "matches79": true
+  },
+  "scripts/probe_computer_vm_execution.py": {
+    "sha256": "eb28c50c692b210be477da3de727563dbabf9d13e75ee34efae5c8c0af5dbdd1",
+    "matches79": true
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "canonicalAuthorizationTested": false,
+  "supervisorSha256": "41b0880eca6d15c5a9de8587868c66d7b9bef3dc647fe65e2ce8b15f0783cf64",
+  "runs": [
+    {
+      "uid": 28000,
+      "gid": 28000,
+      "noNewPrivs": true,
+      "capabilitiesEmpty": true,
+      "browserProfileDenied": true,
+      "desktopOutsideRunNamespace": true,
+      "sshLoginDenied": true,
+      "marker": "KAI79-VM-TERMINAL-20261027-Q9K4",
+      "identitySha256": "84f59be05117630aa2b4b17e54dc1a2338ecc9a502c5cda8376dd88cb6ca1064"
+    },
+    {
+      "uid": 28000,
+      "gid": 28000,
+      "noNewPrivs": true,
+      "capabilitiesEmpty": true,
+      "browserProfileDenied": true,
+      "desktopOutsideRunNamespace": true,
+      "sshLoginDenied": true,
+      "marker": "KAI79-VM-TERMINAL-20261027-Q9K4",
+      "identitySha256": "84f59be05117630aa2b4b17e54dc1a2338ecc9a502c5cda8376dd88cb6ca1064"
+    }
+  ],
+  "detachedProcessStopped": true,
+  "oldTokenRejected": true,
+  "browserPidUnchanged": true,
+  "identityMtimeUnchanged": true,
+  "marker": "KAI79-VM-TERMINAL-20261027-Q9K4"
+}

@@ -11,7 +11,7 @@ from pathlib import Path
 from uuid import uuid4
 
 SUPERVISOR = Path("/opt/kai-computer/supervisor.py")
-SOURCE_SHA256 = "7a2d2c6c56669865ddd6b00f4aff84a23dfa84809730e8b5a4f93d519fea3a99"
+SOURCE_SHA256 = "41b0880eca6d15c5a9de8587868c66d7b9bef3dc647fe65e2ce8b15f0783cf64"
 ROOT = Path("/var/lib/kai-computer")
 WORK = Path("/home/kai/workspace/vm-pilot")
 MARKER = "KAI79-VM-TERMINAL-20261027-Q9K4"

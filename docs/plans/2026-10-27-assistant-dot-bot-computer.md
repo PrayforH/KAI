@@ -111,6 +111,8 @@ Computer V1 的镜像升级前置已实现，见[升级底座与 79 隔离验收
 
 79 的独立 KVM guest 也已实际启动，见[浏览器与终端 VM 验收](../assistant-computer-desktop-vm-20261027.md)：新内核中 Chromium 保持自身沙箱；桌面与终端使用不同身份，终端任务回收不结束浏览器；更换 runner 容器及再次开机后，浏览器本地数据和 HOME 文件/工具保留。它仍是独立 fixture，不是本人工作卷迁移，也没有验证新 backend 的 canonical 授权或 KAI 观察/接管。下一步需验证可共享工作卷的 kernel/镜像、明确 guest OS 升级与 boot 身份，再接 VM provider、账号代理及 GUI 租约；正式环境暂未切换。
 
+共享工作卷与 guest 执行入口已进一步通过[实际验证](../assistant-computer-vm-workdisk-20261027.md)：generic kernel 加载 9P，同一测试 Docker 卷可在旧环境与 VM 间双向读写，权限、真实 symlink、xattr、文件哈希与 mtime 保留；重启自动挂载。监督器增加 kernel boot 身份；固定 SSH 入口拒绝任意 root 程序、转发和缺盘写入，仍可在缺盘时回收旧任务。33 项单元测试、3.10 / 6.1 各 11 项监督器回归及实际 SSH 并行续租通过。正式 Worker 尚未接 VM；接下来构建无测试凭据的 guest base、实现 VM 生命周期与私有凭据管理，再接 canonical 授权和真实任务，继续完成 GUI 与整体方案。
+
 | 里程碑 | 具体变化 | 验收标准 |
 | --- | --- | --- |
 | Computer V0 | 用户电脑注册、专属工作盘、重连、心跳、租约和清理归属 | 两轮任务使用同一 computer_id 和实际环境；前一轮文件、软件与浏览器 profile 可继续使用；Worker 重启不误删电脑；跨用户不可访问 |

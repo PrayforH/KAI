@@ -1,0 +1,10 @@
+{
+  "uid": 28000,
+  "identitySha256": "da706d04fec8c584fc65854e25c91cf4b8c95f43dcb30e55455b39bf2b3d5aae",
+  "identityMtimeNs": 1793082558186716512,
+  "toolSha256": "1b3d026a363df5c7da1137c5c987f6ffe6d465be098177f09c15c3da2bbba34a",
+  "newFileMode": 416,
+  "realSymlinkReadByDocker": true,
+  "xattrReadByDocker": true,
+  "writeBackSha256": "aa076ef4ede2ee55a1a25a08f47434c4052e9bfc6bc94db2d2b0901141fac22f"
+}

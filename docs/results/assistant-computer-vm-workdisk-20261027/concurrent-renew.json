@@ -1,0 +1,6 @@
+{
+  "commandSucceededAfterInitialExpiry": true,
+  "renewFinishedWhileCommandWasRunning": true,
+  "renewSeconds": 0.332,
+  "canonicalAuthorizationTested": false
+}

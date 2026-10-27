@@ -127,6 +127,14 @@ class Guard:
         if not isinstance(value, dict):
             return None
         detail = cast(dict[str, Any], value)
+        boot_id = detail.get("boot_id")
+        if boot_id is not None:
+            if not isinstance(boot_id, str) or not _valid_boot_id(boot_id):
+                raise RuntimeError("execution kernel identity is invalid")
+            if boot_id != _kernel_boot_id():
+                # PID/start time and namespace inode numbers can repeat after
+                # a kernel restart. No process from that old kernel survives.
+                return None
         pid = detail.get("pid")
         if type(pid) is not int or pid <= 1 or _process_start(pid) != detail.get("start"):
             return None
@@ -142,6 +150,11 @@ class Guard:
         if os.fstat(fd).st_ino != detail.get(kind + "_inode"):
             os.close(fd)
             return None
+        if boot_id is None:
+            # Legacy metadata may prove absence, but cannot grant entry into a
+            # matching live namespace without knowing which kernel created it.
+            os.close(fd)
+            raise RuntimeError("legacy execution identity requires physical recovery")
         return fd
 
     def _namespace_live(self, state: Mapping[str, Any]) -> None:
@@ -268,6 +281,7 @@ class Guard:
         # init's start time before allowing a process to join it.
         pid = int(os.readlink("/proc/self"))
         detail = {
+            "boot_id": _kernel_boot_id(),
             "pid": pid,
             "start": _process_start(pid),
             "pid_inode": os.stat("/proc/self/ns/pid").st_ino,
@@ -439,6 +453,17 @@ class Guard:
         finally:
             os.close(fd)
             path.unlink(missing_ok=True)
+
+
+def _valid_boot_id(value: str) -> bool:
+    return re.fullmatch(r"[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}", value) is not None
+
+
+def _kernel_boot_id() -> str:
+    value = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+    if not _valid_boot_id(value):
+        raise RuntimeError("current kernel identity could not be confirmed")
+    return value
 
 
 def _process_start(pid: object) -> str | None:
