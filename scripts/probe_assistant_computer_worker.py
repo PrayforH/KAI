@@ -11,6 +11,7 @@ import asyncio
 import json
 import time
 from collections.abc import AsyncIterator, Mapping, Sequence
+from contextlib import AsyncExitStack
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
@@ -33,7 +34,7 @@ from harness.application.events import EventService
 from harness.assistant.constants import PERSONAL_ASSISTANT_THREAD
 from harness.computer.control import HttpComputerControl
 from harness.computer.docker import DockerComputerDriver
-from harness.computer.manager import ComputerAllocation
+from harness.computer.manager import ComputerAllocation, ComputerManager
 from harness.computer.registry import ComputerRegistry
 from harness.computer.sandbox import ComputerSandboxProvider
 from harness.computer.storage import AssistantComputerRow, ComputerLeaseRow
@@ -131,6 +132,11 @@ class ToolsRuntime(FakeRuntime):
                 "assert subprocess.check_output([str(tool)]).decode()=='retained-tool'; "
                 "Path('outputs/second.txt').write_text('second')"
             )
+            if context.run.input.get("image_marker"):
+                source += (
+                    "; assert Path('/opt/kai-computer/image-upgrade-fixture').read_text().strip()=="
+                    + repr(context.run.input["image_marker"])
+                )
             result = await command(["python3", "-c", source], None, 30)
             assert result.exit_code == 0
             self.report["previousFilesAndExecutableRetained"] = True
@@ -138,13 +144,20 @@ class ToolsRuntime(FakeRuntime):
             yield event
 
 
-async def probe(config_path: Path, output: Path, staging_files: int = 0) -> None:
+async def probe(
+    config_path: Path,
+    output: Path,
+    staging_files: int = 0,
+    upgrade_signal: Path | None = None,
+) -> None:
     if not 0 <= staging_files <= 1000:
         raise ValueError("staging fixture file count exceeds probe bounds")
     config = json.loads(config_path.read_text())
     if make_url(config["database_url"]).database != "harness_computer_probe":
         raise ValueError("Worker probe requires the isolated harness_computer_probe database")
     canonical = config.get("authorization", "probe") == "canonical"
+    if upgrade_signal is not None and not canonical:
+        raise ValueError("image upgrade acceptance requires canonical fixture authorization")
     engine, sessions = create_database(config["database_url"])
     if canonical:
         tenant, user = config["tenant_id"], config["user_id"]
@@ -184,12 +197,17 @@ async def probe(config_path: Path, output: Path, staging_files: int = 0) -> None
             "in-memory Run/events; no real model or production chats"
         ),
     }
-    async with httpx.AsyncClient(
-        base_url=config["control_url"],
-        trust_env=False,
-        headers={"Authorization": "Bearer " + config["secret"]},
-    ) as client:
-        driver = TimedComputerDriver(HttpComputerControl(client), image=config["image"])
+    async with AsyncExitStack() as clients:
+
+        def client() -> httpx.AsyncClient:
+            return httpx.AsyncClient(
+                base_url=config["control_url"],
+                trust_env=False,
+                headers={"Authorization": "Bearer " + config["secret"]},
+            )
+
+        connection = await clients.enter_async_context(client())
+        driver = TimedComputerDriver(HttpComputerControl(connection), image=config["image"])
         run_repository: RunRepository
         session_repository: SessionRepository
         events_repository: EventRepository
@@ -272,7 +290,12 @@ async def probe(config_path: Path, output: Path, staging_files: int = 0) -> None
                 idempotency_key=str(index),
                 created_at=clock(),
                 updated_at=clock(),
-                input={"prompt": "fixture", "round": index, "staging_files": staging_files},
+                input={
+                    "prompt": "fixture",
+                    "round": index,
+                    "staging_files": staging_files,
+                    "image_marker": config.get("image_marker") if index == 2 else None,
+                },
             )
             await run_repository.add(run)
             sandbox = ComputerSandboxProvider(
@@ -315,13 +338,53 @@ async def probe(config_path: Path, output: Path, staging_files: int = 0) -> None
                     "providerRef": first.provider_ref,
                 }
             )
+            if upgrade_signal is not None:
+                output.with_suffix(".ready.json").write_text(
+                    json.dumps(
+                        {
+                            "oldInstanceIdle": True,
+                            "computerId": first.computer_id,
+                            "sourceImage": first.image,
+                        }
+                    )
+                    + "\n"
+                )
+                async with asyncio.timeout(180):
+                    while not upgrade_signal.exists():
+                        await asyncio.sleep(0.25)
+                report["sourceImageFilePlaneOperations"] = driver.operations
+                connection = await clients.enter_async_context(client())
+                driver = TimedComputerDriver(
+                    HttpComputerControl(connection), image=config["target_image"]
+                )
+                changed = await ComputerManager(
+                    registry, driver, owner="fixture-image-upgrade"
+                ).migrate_image(tenant, user, expected_image=first.image)
+                assert changed.state.value == "registered" and changed.provider_ref is None
+                assert (
+                    changed.image == config["target_image"]
+                    and first.image in changed.retired_images
+                )
+                report["imageMigration"] = {
+                    "sourceImage": first.image,
+                    "targetImage": changed.image,
+                    "afterMaintenanceState": changed.state.value,
+                    "computerIdPreserved": changed.computer_id == first.computer_id,
+                    "workDiskPreserved": changed.volume_ref == first.volume_ref,
+                    "newInstanceDeferredToAuthorizedRun": True,
+                }
             await execute(2, ToolsRuntime(report))
             second = await registry.get(tenant, user)
-            assert (first.computer_id, first.provider_ref, first.volume_ref) == (
+            assert (first.computer_id, first.volume_ref) == (
                 second.computer_id,
-                second.provider_ref,
                 second.volume_ref,
             )
+            if upgrade_signal is None:
+                assert first.provider_ref == second.provider_ref
+            else:
+                assert first.provider_ref != second.provider_ref
+                report["replacementInstanceVerified"] = bool(config["image_marker"])
+                report["providerRefAfter"] = second.provider_ref
             report["sameComputerAndDiskAcrossFreshProviders"] = True
             published = {}
             for index in (1, 2):
@@ -361,5 +424,6 @@ if __name__ == "__main__":
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--staging-files", type=int, default=0)
+    parser.add_argument("--upgrade-signal", type=Path)
     args = parser.parse_args()
-    asyncio.run(probe(args.config, args.output, args.staging_files))
+    asyncio.run(probe(args.config, args.output, args.staging_files, args.upgrade_signal))

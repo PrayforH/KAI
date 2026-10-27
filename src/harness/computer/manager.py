@@ -6,11 +6,12 @@ on. Database ownership is released only after physical cleanup is confirmed.
 """
 
 import asyncio
+import re
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from functools import partial
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from harness.computer.models import (
     AssistantComputer,
@@ -19,6 +20,7 @@ from harness.computer.models import (
     ComputerState,
 )
 from harness.computer.registry import ComputerRegistry
+from harness.core.errors import ConflictError
 
 
 class ComputerDriver(Protocol):
@@ -43,6 +45,13 @@ class ComputerDriver(Protocol):
         computer: AssistantComputer,
         token: ComputerLease,
     ) -> str | None: ...
+
+
+@runtime_checkable
+class ComputerImageDriver(Protocol):
+    async def validate_image(self) -> None: ...
+
+    async def upgrade(self, computer: AssistantComputer, token: ComputerLease) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -95,6 +104,43 @@ class ComputerManager:
                     reference = await self.driver.recover(computer, token)
                 computer = await self.registry.complete_recovery(token, provider_ref=reference)
         raise RuntimeError("computer recovery did not reach a ready state")
+
+    async def migrate_image(
+        self, tenant: str, user: str, *, expected_image: str
+    ) -> AssistantComputer:
+        """Explicit maintenance, never an automatic consequence of Run config."""
+        if not isinstance(self.driver, ComputerImageDriver):
+            raise ValueError("computer driver does not support image migration")
+        if re.fullmatch(r"sha256:[a-f0-9]{64}", self.driver.image) is None:
+            raise ValueError("computer migration requires an immutable image ID")
+        await self.driver.validate_image()
+        computer = await self.registry.get(tenant, user)
+        if computer.provider != self.driver.provider:
+            raise ConflictError("computer provider cannot change during image migration")
+        if computer.image == self.driver.image:
+            if computer.state not in {ComputerState.RECOVERING, ComputerState.STARTING}:
+                return computer
+            # A lost change acknowledgement may already have committed the
+            # target. Only expired ownership can be recovered; do not start a
+            # new instance under an operator's nonexistent model Run.
+            token = await self.registry.claim_recovery(
+                tenant, user, owner=self.owner, expected_image=self.driver.image
+            )
+            async with self._heartbeat(computer, token, physical=False):
+                reference = await self.driver.recover(computer, token)
+            return await self.registry.complete_recovery(token, provider_ref=reference)
+        token = await self.registry.claim_recovery(
+            tenant, user, owner=self.owner, expected_image=expected_image
+        )
+        computer = await self.registry.get(tenant, user)
+        async with self._heartbeat(computer, token, physical=False):
+            await self.driver.upgrade(computer, token)
+        changed = await self.registry.get(tenant, user)
+        if changed.image != self.driver.image or changed.provider_ref is not None:
+            raise RuntimeError("computer host did not confirm the requested image change")
+        # The next authorized Run starts the new image. Maintenance does not
+        # borrow a model Run's sandbox lease to obtain execution permission.
+        return await self.registry.complete_recovery(token, provider_ref=None)
 
     @asynccontextmanager
     async def execution(

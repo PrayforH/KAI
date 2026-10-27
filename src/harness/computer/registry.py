@@ -9,6 +9,7 @@ must resolve an authenticated owner first; no method accepts a user-controlled
 provider endpoint, volume path or computer id as an access grant.
 """
 
+import re
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
@@ -117,14 +118,18 @@ class ComputerRegistry:
             session_id=session_id,
         )
 
-    async def claim_recovery(self, tenant: str, user: str, *, owner: str) -> ComputerLease:
+    async def claim_recovery(
+        self, tenant: str, user: str, *, owner: str, expected_image: str | None = None
+    ) -> ComputerLease:
         """Fence the old database holder, but do not authorize new execution.
 
         The provider must quiesce old processes (or prove the old instance gone)
         before complete_recovery. Expiry alone never makes a computer reusable.
         """
 
-        return await self._claim(tenant, user, owner=owner, purpose=LeasePurpose.RECOVER)
+        return await self._claim(
+            tenant, user, owner=owner, purpose=LeasePurpose.RECOVER, expected_image=expected_image
+        )
 
     async def _claim(
         self,
@@ -136,10 +141,13 @@ class ComputerRegistry:
         run_id: str | None = None,
         session_id: str | None = None,
         run_fencing_token: int | None = None,
+        expected_image: str | None = None,
     ) -> ComputerLease:
         _identity(owner, 160)
         async with self._sessions.begin() as session:
             computer = await self._get(session, tenant, user, lock=True)
+            if expected_image is not None and computer.image != expected_image:
+                raise ConflictError("computer image changed before migration acquired ownership")
             moment = await _now(session)
             previous = await session.scalar(
                 select(Lease).where(
@@ -340,6 +348,29 @@ class ComputerRegistry:
                 moment,
                 ComputerState.IDLE if provider_ref is not None else ComputerState.REGISTERED,
             )
+            return AssistantComputer.model_validate(computer)
+
+    async def record_image_change(
+        self, token: ComputerLease, *, expected_image: str, image: str
+    ) -> AssistantComputer:
+        """Host-only commit after it confirmed the old instance absent.
+
+        Keep recovery ownership until the caller acknowledges the change. A
+        lost reply cannot grant new execution; history permits recovery of a
+        delayed earlier create without accepting its image for normal tools.
+        """
+        if re.fullmatch(r"sha256:[a-f0-9]{64}", image) is None:
+            raise ValueError("computer migration requires an immutable image ID")
+        async with self._holder(token, LeasePurpose.RECOVER) as (_, computer, _, moment):
+            if computer.image != expected_image:
+                raise ConflictError("computer migration source image changed")
+            if computer.image != image:
+                computer.retired_images = list(
+                    dict.fromkeys([*computer.retired_images, computer.image])
+                )
+                computer.image = image
+            computer.provider_ref = None
+            _touch(computer, moment)
             return AssistantComputer.model_validate(computer)
 
     @asynccontextmanager

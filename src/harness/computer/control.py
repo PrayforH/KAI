@@ -11,7 +11,7 @@ import re
 import struct
 import tarfile
 from collections.abc import Mapping
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, cast
 from uuid import uuid4
 
 import httpx
@@ -64,10 +64,38 @@ class HttpComputerControl:
             raise RuntimeError(f"computer control unavailable: HTTP {response.status_code}")
         return SandboxCommandResult.model_validate(response.json())
 
-    async def lifecycle(self, token: ComputerLease, operation: str) -> str | None:
+    async def check_image(self, image: str) -> None:
+        response = await self.client.post(
+            "/v1/computer/image/check", json={"image": image}, timeout=30
+        )
+        if response.status_code == 422:
+            raise ComputerStartRejectedError("computer image is not available on this host")
+        if response.status_code >= 400:
+            raise RuntimeError(
+                f"computer image validation unavailable: HTTP {response.status_code}"
+            )
+        try:
+            confirmed = response.json()
+        except ValueError:
+            raise RuntimeError("computer image validation acknowledgement is invalid") from None
+        if (
+            not isinstance(confirmed, dict)
+            or cast(dict[str, object], confirmed).get("available") is not True
+        ):
+            raise RuntimeError("computer image validation acknowledgement is invalid")
+
+    async def lifecycle(
+        self, token: ComputerLease, operation: str, *, image: str | None = None
+    ) -> str | None:
+        payload: dict[str, object] = {
+            "token": token.model_dump(mode="json"),
+            "operation": operation,
+        }
+        if image is not None:
+            payload["image"] = image
         response = await self.client.post(
             "/v1/computer/lifecycle",
-            json={"token": token.model_dump(mode="json"), "operation": operation},
+            json=payload,
             timeout=120,
         )
         if response.status_code == 422:

@@ -57,6 +57,7 @@ class AssistantComputer(BaseModel):
     user_id: str
     provider: str
     image: str
+    retired_images: tuple[str, ...] = ()
     volume_ref: str
     volume_ready: bool
     provider_ref: str | None

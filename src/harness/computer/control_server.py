@@ -48,6 +48,11 @@ class ControlRequest(BaseModel):
 class LifecycleRequest(BaseModel):
     token: ComputerLease
     operation: str
+    image: str | None = None
+
+
+class ImageCheckRequest(BaseModel):
+    image: str
 
 
 def create_app(settings: ControllerSettings) -> FastAPI:
@@ -122,13 +127,32 @@ def create_app(settings: ControllerSettings) -> FastAPI:
 
     app.add_api_route("/v1/computer/control", control, methods=["POST"])
 
+    async def check_image(request: Request):
+        try:
+            command = ImageCheckRequest.model_validate_json(await private_body(request))
+        except ValidationError:
+            raise HTTPException(400, "Computer image request is invalid") from None
+        try:
+            await host.check_image(command.image)
+            return {"available": True}
+        except ComputerStartRejectedError:
+            raise HTTPException(422, "Computer image is unavailable") from None
+        except (httpx.HTTPError, RuntimeError, ValueError):
+            raise HTTPException(503, "Computer image validation could not be confirmed") from None
+
+    app.add_api_route("/v1/computer/image/check", check_image, methods=["POST"])
+
     async def lifecycle(request: Request):
         try:
             command = LifecycleRequest.model_validate_json(await private_body(request))
         except ValidationError:
             raise HTTPException(400, "Computer lifecycle request is invalid") from None
         try:
-            return {"provider_ref": await host.lifecycle(command.token, command.operation)}
+            return {
+                "provider_ref": await host.lifecycle(
+                    command.token, command.operation, image=command.image
+                )
+            }
         except ComputerStartRejectedError:
             raise HTTPException(422, "Computer image is unavailable") from None
         except (ComputerLeaseLostError, NotFoundError):

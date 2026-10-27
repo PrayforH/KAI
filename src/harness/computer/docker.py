@@ -25,7 +25,11 @@ WORKSPACE = "/home/kai/workspace"
 
 
 class ComputerHost(ComputerControl, Protocol):
-    async def lifecycle(self, token: ComputerLease, operation: str) -> str | None: ...
+    async def lifecycle(
+        self, token: ComputerLease, operation: str, *, image: str | None = None
+    ) -> str | None: ...
+
+    async def check_image(self, image: str) -> None: ...
 
 
 class DockerComputerDriver:
@@ -91,6 +95,15 @@ class DockerComputerDriver:
         self._validate(computer, token, LeasePurpose.RECOVER)
         await self.host.lifecycle(token, "reset")
         return None
+
+    async def validate_image(self) -> None:
+        await self.host.check_image(self.image)
+
+    async def upgrade(self, computer: AssistantComputer, token: ComputerLease) -> None:
+        self._validate(computer, token, LeasePurpose.RECOVER)
+        reference = await self.host.lifecycle(token, "upgrade", image=self.image)
+        if reference is not None:
+            raise RuntimeError("computer migration did not confirm the old instance absent")
 
     async def execute(
         self,

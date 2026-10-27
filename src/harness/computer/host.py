@@ -44,14 +44,17 @@ def owner_labels(computer: AssistantComputer) -> dict[str, str]:
     }
 
 
-def verify_instance(info: dict[str, Any], computer: AssistantComputer) -> str:
+def verify_instance(
+    info: dict[str, Any], computer: AssistantComputer, *, allow_retired: bool = False
+) -> str:
     config, labels = info.get("Config", {}), owner_labels(computer)
     actual: dict[str, Any] = config.get("Labels") or {}
     identifier = info.get("Id")
     if (
         not isinstance(identifier, str)
         or re.fullmatch(r"[a-f0-9]{64}", identifier) is None
-        or config.get("Image") != computer.image
+        or config.get("Image")
+        not in ({computer.image, *computer.retired_images} if allow_retired else {computer.image})
         or config.get("User") != "0:0"
         or config.get("Entrypoint") != ["/usr/bin/tail"]
         or config.get("Cmd") != ["-f", "/dev/null"]
@@ -98,46 +101,72 @@ class DockerComputerLifecycle:
         self.registry, self.docker, self.limits = registry, docker, limits
         self.authorizer = authorizer
 
-    async def lifecycle(self, token: ComputerLease, operation: str) -> str | None:
+    async def check_image(self, image: str) -> None:
+        if re.fullmatch(r"sha256:[a-f0-9]{64}", image) is None:
+            raise ComputerStartRejectedError("computer upgrade image is not immutable")
+        await self._validate_image(image)
+
+    async def lifecycle(
+        self, token: ComputerLease, operation: str, *, image: str | None = None
+    ) -> str | None:
         async with self.registry.host_operation(token) as (computer, current):
             if computer.provider != "docker-computer":
                 raise ComputerLeaseLostError("computer is not managed by this host")
             if self.authorizer is not None:
                 await self.authorizer.authorize(computer, current, operation)
+            if operation == "upgrade" and current.purpose is LeasePurpose.RECOVER:
+                if image is None:
+                    raise ComputerStartRejectedError("computer upgrade image is required")
+                await self.check_image(image)
+                if self.authorizer is not None:
+                    await self.authorizer.authorize(computer, current, operation)
+                await self._reset(computer)
+                if self.authorizer is not None:
+                    await self.authorizer.authorize(computer, current, operation)
+                await self.registry.record_image_change(
+                    current, expected_image=computer.image, image=image
+                )
+                return None
+            if image is not None:
+                raise ComputerLeaseLostError("image selection requires explicit recovery upgrade")
             if operation == "ensure" and current.purpose is LeasePurpose.START:
                 return await self._ensure(computer)
             if operation != "reset" or current.purpose is not LeasePurpose.RECOVER:
                 raise ComputerLeaseLostError("computer lifecycle purpose does not match")
-            # A stable name finds a creation with a lost reply. Every mutation
-            # then uses its immutable ID, never a name that could be recycled.
-            found = await self.docker.get(f"/containers/{computer.volume_ref}/json")
-            if found.status_code == 404:
-                return None
-            found.raise_for_status()
-            identifier = verify_instance(found.json(), computer)
-            removed = await self.docker.delete(
-                f"/containers/{identifier}", params={"force": "true"}
-            )
-            if removed.status_code != 404:
-                removed.raise_for_status()
-            async with asyncio.timeout(30):
-                while True:
-                    check = await self.docker.get(f"/containers/{identifier}/json")
-                    if check.status_code == 404:
-                        return None
-                    check.raise_for_status()
-                    await asyncio.sleep(0.1)
+            return await self._reset(computer)
 
-    async def _ensure(self, computer: AssistantComputer) -> str:
-        if computer.image != self.limits.image:
+    async def _reset(self, computer: AssistantComputer) -> None:
+        # A stable name finds a creation with a lost reply. Retired images are
+        # accepted only to stop an owned old instance, never to run user tools.
+        found = await self.docker.get(f"/containers/{computer.volume_ref}/json")
+        if found.status_code == 404:
+            return
+        found.raise_for_status()
+        identifier = verify_instance(found.json(), computer, allow_retired=True)
+        removed = await self.docker.delete(f"/containers/{identifier}", params={"force": "true"})
+        if removed.status_code != 404:
+            removed.raise_for_status()
+        async with asyncio.timeout(30):
+            while True:
+                check = await self.docker.get(f"/containers/{identifier}/json")
+                if check.status_code == 404:
+                    return
+                check.raise_for_status()
+                await asyncio.sleep(0.1)
+
+    async def _validate_image(self, image_id: str) -> None:
+        if image_id != self.limits.image:
             raise ComputerStartRejectedError("computer image is not enabled on this host")
-        image = await self.docker.get(f"/images/{computer.image}/json")
+        image = await self.docker.get(f"/images/{image_id}/json")
         if image.status_code == 404:
             raise ComputerStartRejectedError("computer image is not installed on this host")
         image.raise_for_status()
         labels: dict[str, Any] = image.json().get("Config", {}).get("Labels") or {}
         if labels.get("org.shdata.kai.computer.guard") != "1":
             raise ComputerStartRejectedError("computer image has no supported execution gate")
+
+    async def _ensure(self, computer: AssistantComputer) -> str:
+        await self._validate_image(computer.image)
         expected = owner_labels(computer)
         volume = await self.docker.get(f"/volumes/{computer.volume_ref}")
         if volume.status_code == 404:

@@ -91,6 +91,36 @@ class CanonicalComputerAccess:
             return
         if computer.user_id not in self.owners.get(computer.tenant_id, frozenset()):
             raise _denied()
+        if operation == "upgrade":
+            # Maintenance has no live model Run. It needs the same active
+            # account and personal conversation, plus the host's recovery gate.
+            if lease.purpose is not LeasePurpose.RECOVER:
+                raise _denied()
+            async with self.sessions() as db:
+                user = await db.get(UserRow, computer.user_id)
+                member = await db.get(TenantMembershipRow, (computer.tenant_id, computer.user_id))
+                binding = await db.get(
+                    AguiThreadBindingRow,
+                    (computer.tenant_id, computer.user_id, PERSONAL_ASSISTANT_THREAD),
+                )
+                stored = (
+                    await db.get(SessionRow, (computer.tenant_id, binding.session_id))
+                    if binding
+                    else None
+                )
+                if (
+                    user is None
+                    or user.disabled
+                    or member is None
+                    or binding is None
+                    or stored is None
+                    or stored.user_id != computer.user_id
+                ):
+                    raise _denied()
+                session = Session.model_validate(stored.payload)
+                if session.session_id != stored.session_id or not _bound(session, binding):
+                    raise _denied()
+            return
         allowed = (
             {"provisioning", "running", "waiting_approval"}
             if operation == "renew"

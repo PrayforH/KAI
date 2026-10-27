@@ -3,6 +3,7 @@
 from datetime import datetime
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -39,6 +40,7 @@ class AssistantComputerRow(Base):
     computer_id: Mapped[str] = mapped_column(String(64))
     provider: Mapped[str] = mapped_column(String(64))
     image: Mapped[str] = mapped_column(String(512))
+    retired_images: Mapped[list[str]] = mapped_column(JSON, server_default=text("'[]'"))
     volume_ref: Mapped[str] = mapped_column(String(128))
     volume_ready: Mapped[bool] = mapped_column(Boolean)
     provider_ref: Mapped[str | None] = mapped_column(String(128))
