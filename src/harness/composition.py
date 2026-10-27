@@ -29,6 +29,10 @@ from harness.application.runs import RunQuotaPlan, RunService
 from harness.application.sessions import SessionService
 from harness.application.workspaces import WorkspacePolicy, WorkspaceService
 from harness.assistant.conversation import PersonalConversation
+from harness.assistant.delegation import (
+    AssistantDelegationGateway,
+    assistant_delegation_overlay,
+)
 from harness.assistant.repository import PostgresAssistantRepository
 from harness.assistant.service import AssistantService
 from harness.auth.api_access import ApiAccessService
@@ -1590,16 +1594,22 @@ def build_production_container(
             if handle is not None and sandbox is not None
             else PlatformToolOverlay()
         )
-        if not computer_overlay.tools:
-            return overlay
-        return PlatformToolOverlay(
-            tools=overlay.tools + computer_overlay.tools,
-            instructions=(
-                computer_overlay.instructions
-                if not overlay.instructions
-                else f"{overlay.instructions}\n\n{computer_overlay.instructions}"
-            ),
+        delegation_overlay = (
+            assistant_delegation_overlay(
+                AssistantDelegationGateway(container.assistant), run, session
+            )
+            if container.assistant is not None and session.agent_name
+            else PlatformToolOverlay()
         )
+        merged = overlay.tools + computer_overlay.tools + delegation_overlay.tools
+        instructions = "\n\n".join(
+            layer.instructions
+            for layer in (overlay, computer_overlay, delegation_overlay)
+            if layer.instructions
+        )
+        if not merged:
+            return overlay
+        return PlatformToolOverlay(tools=merged, instructions=instructions)
 
     worker = RunOrchestrator(
         platform_tools_factory=runtime_builder_tools,
