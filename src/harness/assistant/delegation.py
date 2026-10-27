@@ -56,6 +56,10 @@ class DelegationGateway(Protocol):
         action: ObjectiveAction,
     ) -> Objective: ...
 
+    async def add_note(
+        self, tenant_id: str, user_id: str, objective_id: str, *, note: str
+    ) -> Objective: ...
+
 
 def _text(message: str) -> dict[str, Any]:
     return {"content": [{"type": "text", "text": message}]}
@@ -110,6 +114,21 @@ def assistant_delegation_overlay(
                 }
             ]
         }
+
+    async def add_context(arguments: dict[str, Any]) -> dict[str, Any]:
+        """用户对后台任务的补充以 note 进入下一次执行的上下文。"""
+
+        objective_id = str(arguments.get("objective_id", ""))
+        note = str(arguments.get("context", "")).strip()
+        if not 1 <= len(note) <= 8_000:
+            return _text("补充内容需在 1–8000 字之间。")
+        try:
+            updated = await gateway.add_note(tenant_id, user_id, objective_id, note=note)
+        except (ConflictError, NotFoundError, PermissionDeniedError) as error:
+            return _text(f"补充未入档：{error}")
+        return _text(
+            f"已补充到任务 {updated.objective_id}；将进入下一次执行的上下文，不打断进行中的执行。"
+        )
 
     async def task_status(_arguments: dict[str, Any]) -> dict[str, Any]:
         try:
@@ -199,6 +218,19 @@ def assistant_delegation_overlay(
                 handler=task_status,
             ),
             PlatformTool(
+                name="assistant_add_context",
+                description="给后台任务追加用户的补充说明；进入下一次执行的上下文。",
+                schema={
+                    "type": "object",
+                    "properties": {
+                        "objective_id": {"type": "string"},
+                        "context": {"type": "string", "maxLength": 8000},
+                    },
+                    "required": ["objective_id", "context"],
+                },
+                handler=add_context,
+            ),
+            PlatformTool(
                 name="assistant_update_task",
                 description="暂停/恢复/完成/停止一个后台任务。",
                 schema={
@@ -263,3 +295,19 @@ class AssistantDelegationGateway:
             now=datetime.now(UTC),
             action=action,
         )
+
+    async def add_note(
+        self, tenant_id: str, user_id: str, objective_id: str, *, note: str
+    ) -> Objective:
+        return await self._assistant.repository.update(
+            tenant_id,
+            user_id,
+            objective_id,
+            expected_revision=self._revision_of(tenant_id, user_id, objective_id),
+            now=datetime.now(UTC),
+            note=note,
+        )
+
+    async def _revision_of(self, tenant_id: str, user_id: str, objective_id: str) -> int:
+        objective = await self._assistant.repository.get(tenant_id, user_id, objective_id)
+        return objective.revision

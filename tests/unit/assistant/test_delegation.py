@@ -27,6 +27,7 @@ class FakeGateway:
         self.objectives: dict[str, Objective] = {}
         self.records: dict[str, list[ObjectiveExecution]] = {}
         self.created: list[ObjectiveBrief] = []
+        self.notes: list[tuple[str, str]] = []
         self.enqueue_error: Exception | None = None
 
     async def create(self, tenant_id: str, user_id: str, brief: ObjectiveBrief) -> Objective:
@@ -70,6 +71,15 @@ class FakeGateway:
         self, tenant_id: str, user_id: str, objective_id: str
     ) -> list[ObjectiveExecution]:
         return self.records.get(objective_id, [])
+
+    async def add_note(
+        self, tenant_id: str, user_id: str, objective_id: str, *, note: str
+    ) -> Objective:
+        objective = self.objectives[objective_id]
+        updated = objective.model_copy(update={"revision": objective.revision + 1})
+        self.objectives[objective_id] = updated
+        self.notes.append((objective_id, note))
+        return updated
 
     async def update(
         self,
@@ -181,6 +191,20 @@ async def test_update_task_requires_fresh_revision():
         {"objective_id": "objective_0001", "action": "pause", "expected_revision": 1}
     )
     assert "paused" in text_of(ok)
+
+
+@pytest.mark.asyncio
+async def test_add_context_records_a_note_for_the_next_execution():
+    gateway = FakeGateway()
+    tools = {tool.name: tool.handler for tool in overlay(gateway).tools}
+    await tools["assistant_create_task"]({"task": "任务"})
+    result = await tools["assistant_add_context"](
+        {"objective_id": "objective_0001", "context": "优先用 CSV 格式"}
+    )
+    assert "已补充" in text_of(result)
+    assert gateway.notes == [("objective_0001", "优先用 CSV 格式")]
+    empty = await tools["assistant_add_context"]({"objective_id": "objective_0001", "context": " "})
+    assert "1–8000" in text_of(empty)
 
 
 @pytest.mark.asyncio
