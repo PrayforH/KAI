@@ -38,7 +38,8 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get -o Acquire::Retries=2 -o Acquire::https::Timeout=15 update
 apt-get -o Acquire::Retries=2 -o Acquire::https::Timeout=15 install -y --no-install-recommends \
   linux-image-amd64 chromium xvfb openbox xterm x11vnc dbus-x11 xauth xdotool xclip wmctrl \
-  tigervnc-tools python3 python3-venv python3-pip fonts-noto-cjk sudo \
+  tigervnc-tools python3 python3-venv python3-pip python3-tk python3-pil python3-pil.imagetk \
+  thunar mousepad x11-utils fonts-noto-cjk sudo \
   git curl wget bash tar unzip zip ca-certificates ffmpeg pandoc poppler-utils
 python3 -I select-kernel.py
 
@@ -65,6 +66,7 @@ install -m 0644 supervisor.py ssh_gate.py display_gate.py /opt/kai-computer/
 install -d -m 0755 /usr/local/lib/kai-desktop
 install -m 0644 desktop-prepare.py /usr/local/lib/kai-desktop/prepare.py
 install -m 0644 desktop-stop.py /usr/local/lib/kai-desktop/stop-browser.py
+install -m 0644 appearance.py desktop-shell.py /usr/local/lib/kai-desktop/
 install -m 0755 desktop-start /usr/local/lib/kai-desktop/start
 install -m 0644 kai-desktop.service /etc/systemd/system/
 printf 'kai-control ALL=(root) NOPASSWD: /usr/bin/python3 -I /opt/kai-computer/ssh_gate.py\n' \

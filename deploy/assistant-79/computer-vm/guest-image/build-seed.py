@@ -14,6 +14,8 @@ ASSETS = (
     "desktop-prepare.py",
     "desktop-stop.py",
     "desktop-start",
+    "desktop-shell.py",
+    "appearance.py",
     "kai-desktop.service",
     "select-kernel.py",
 )

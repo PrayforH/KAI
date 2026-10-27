@@ -8,7 +8,7 @@ import styles from "./computer-desktop.module.css";
 type ConnectionState = "connecting" | "connected" | "disconnected" | "unauthorized";
 const labels = { connecting: "正在连接", connected: "已连接", disconnected: "连接已断开", unauthorized: "请重新登录" };
 
-export function ComputerDesktop() {
+export function ComputerDesktop({ embedded = false, onClose }: { embedded?: boolean; onClose?: () => void }) {
   const screen = useRef<HTMLDivElement>(null);
   const shell = useRef<HTMLElement>(null);
   const client = useRef<RFB | null>(null);
@@ -42,7 +42,7 @@ export function ComputerDesktop() {
         rfb.resizeSession = false;
         rfb.qualityLevel = 6;
         rfb.compressionLevel = 2;
-        rfb.addEventListener("connect", () => { if (!disposed) { setState("connected"); rfb?.focus(); } });
+        rfb.addEventListener("connect", () => { if (!disposed) { setState("connected"); if (!embedded) rfb?.focus(); } });
         rfb.addEventListener("disconnect", () => { if (!disposed) setState("disconnected"); });
         rfb.addEventListener("securityfailure", () => { if (!disposed) setState("disconnected"); });
       } catch (error) {
@@ -55,16 +55,17 @@ export function ComputerDesktop() {
       window.removeEventListener("pagehide", leavePage);
       window.removeEventListener("pageshow", restorePage);
     };
-  }, [revision]);
+  }, [revision, embedded]);
 
-  return <main id="main-content" className={styles.shell} ref={shell}>
+  return <section aria-label="我的电脑" className={`${styles.shell} ${embedded ? styles.embedded : ""}`} ref={shell}>
     <header className={styles.toolbar}>
-      <Link href="/assistant" className={styles.back} aria-label="返回我的助理">←</Link>
-      <strong>我的电脑</strong><span className={styles.preview}>预览</span>
+      {!embedded && <Link href="/assistant" className={styles.back} aria-label="返回我的助理">←</Link>}
+      <strong>我的电脑</strong>
       <span className={styles.connection} data-connected={state === "connected"} role="status"><i />{labels[state]}</span>
       <div className={styles.actions}>
         <button onClick={() => setRevision(value => value + 1)}>重连</button>
         <button onClick={() => { void shell.current?.requestFullscreen().catch(() => undefined); }}>全屏</button>
+        {onClose && <button onClick={onClose} aria-label="收起电脑">×</button>}
       </div>
     </header>
     <div className={styles.screen} ref={screen} tabIndex={0} onFocus={() => client.current?.focus()} aria-label="远程电脑桌面" onPaste={event => {
@@ -76,5 +77,5 @@ export function ComputerDesktop() {
       {state === "unauthorized" ? <Link href="/login">登录 KAI</Link>
         : state === "disconnected" ? <button onClick={() => setRevision(value => value + 1)}>重新连接</button> : null}
     </div>}
-  </main>;
+  </section>;
 }

@@ -128,6 +128,8 @@ Computer 上同用户 Agent 的文件共享是显式产品边界，第三方 App
 
 本人可视化桌面人工预览现已部署到 79，鼠标、键盘、终端执行、刷新及手动重连通过；见[桌面预览验收](../assistant-computer-viewer-79-20261027.md)。预览 VM 已保留为本人电脑，不再作为可清理 fixture。生产模型仍使用原持久执行 Computer，VM Worker 与人工/Agent 交还尚未完成，因此不将人工预览视为 Computer V1 全部验收。
 
+人工桌面进一步加入主题、壁纸、真实应用启动与助理右侧分屏；组件原地更新后本人文件和外观保留，见[外观与分屏验收](../assistant-computer-theme-split-79-20261027.md)。这一步不改变原模型执行电脑或通道绑定。
+
 建议将 OpenSandbox 的标准能力交给官方 Python SDK，在 KAI 的 Computer Provider 内保留一层薄适配器。现有 `sandbox/opensandbox.py` 自行维护生命周期和 execd HTTP 协议，尚未依赖官方 `opensandbox` 包；本次人工桌面预览也尚未由 OpenSandbox 管理，不能通过换一个客户端包直接接管当前 QEMU 实例。
 
 | 层 | 负责的能力 |

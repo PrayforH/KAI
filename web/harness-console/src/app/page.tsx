@@ -17,6 +17,7 @@ import { AgentThread } from "../components/agent-thread";
 import { AuthProvider, useAuth } from "../components/auth-provider";
 import { AssistantChannelStatus } from "../components/assistant-channel-status";
 import { AssistantComputerLink } from "../components/assistant-computer-link";
+import { AssistantComputerPane } from "../components/assistant-computer-pane";
 import { AssistantRuntimeShell } from "../components/assistant-runtime-shell";
 import { ProductivityCommandCenter } from "../components/productivity-command-center";
 import { RunTraceConsole } from "../components/run-trace-console";
@@ -277,6 +278,22 @@ function AuthenticatedHome() {
   const [showInternalAgents] = useInternalAgentsPreference();
   const [threadId, setThreadId] = useState("");
   const personalAssistant = assistantEntry && threadId === PERSONAL_ASSISTANT_THREAD;
+  const [computerOpen, setComputerOpen] = useState(false);
+  useEffect(() => {
+    try {
+      setComputerOpen(new URLSearchParams(window.location.search).get("computer") === "open"
+        || window.localStorage.getItem(`kai:computer-pane:${user.user_id}`) === "open");
+    } catch { /* A disabled browser storage still allows opening the pane. */ }
+  }, [user.user_id]);
+  const showComputer = (open: boolean) => {
+    setComputerOpen(open);
+    if (open) { setTaskRailOpen(false); setRailExpanded(false); }
+    try {
+      window.localStorage.setItem(`kai:computer-pane:${user.user_id}`, open ? "open" : "closed");
+      const url = new URL(window.location.href);
+      if (url.searchParams.has("computer")) { url.searchParams.delete("computer"); window.history.replaceState(null, "", url.href); }
+    } catch { /* optional view preference */ }
+  };
   const [taskAgents, setTaskAgents] = useState<TaskAgent[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<TaskAgent | null>(null);
   const [systemAssistant, setSystemAssistant] = useState<TaskAgent | null>(null);
@@ -300,6 +317,7 @@ function AuthenticatedHome() {
     const handler = (event: Event) => {
       const detail = (event as CustomEvent).detail as (PreviewTarget & { expanded?: boolean }) | undefined;
       if (!detail?.artifact_id) return;
+      setComputerOpen(false);
       previewNonce.current += 1;
       setRailPreview({ ...detail, nonce: previewNonce.current });
       setTaskRailOpen(true);
@@ -837,7 +855,7 @@ function AuthenticatedHome() {
               {personalAssistant ? <div className="task-context-bar">
                 <strong className="task-context-title">我的助理</strong>
                 <AssistantChannelStatus />
-                <AssistantComputerLink />
+                <AssistantComputerLink open={computerOpen} onToggle={() => showComputer(!computerOpen)} />
               </div> : <TaskContextBar
                 taskTitle={currentTaskTitle}
                 onForked={switchTask}
@@ -874,11 +892,13 @@ function AuthenticatedHome() {
             <HeaderUtilities
               taskRailOpen={taskRailOpen}
               onToggleTaskRail={() => {
+                showComputer(false);
                 setTaskRailOpen((current) => !current);
                 setRailExpanded(false);
               }}
             />
           </header>
+          <AssistantComputerPane open={personalAssistant && computerOpen} onClose={() => showComputer(false)}>
           <section className="chat-stage" aria-label={personalAssistant ? "我的助理对话" : "Agent 任务对话"}>
             {stageView === "trace" ? (
               <RunTraceConsole
@@ -949,6 +969,7 @@ function AuthenticatedHome() {
             </div>
             )}
           </section>
+          </AssistantComputerPane>
         </div>
         <WorkbenchRail
           key={threadId}

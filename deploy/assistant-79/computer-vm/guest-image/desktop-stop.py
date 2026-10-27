@@ -6,7 +6,10 @@ from pathlib import Path
 # Keep Xvfb alive while Chromium flushes its profile and marks a clean exit.
 # The start script records the browser PID in its private runtime directory;
 # Chromium's non-dumpable process title need not be readable by a sibling.
-pid = int(Path("/run/kai-desktop/browser.pid").read_text())
+try:
+    pid = int(Path("/run/kai-desktop/browser.pid").read_text())
+except FileNotFoundError:
+    raise SystemExit(0) from None
 try:
     fd = os.pidfd_open(pid)
 except ProcessLookupError:

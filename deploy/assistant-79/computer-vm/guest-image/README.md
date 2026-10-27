@@ -4,6 +4,12 @@ These sources build a Debian 12 desktop base with a generic kernel, Chromium,
 Openbox, xterm and a private UNIX-socket VNC transport. The image is separate
 from a user's root disk, work disk, browser profile and per-VM SSH identities.
 
+`desktop-shell.py` provides a native welcome surface and Dock with real app
+launchers. `appearance.py` saves private, atomic theme/wallpaper preferences and
+retains other Openbox settings. It does not expose an HTTP launch service.
+The Dock is managed by Openbox and reserves its own work area. Chromium keeps
+its existing profile and opens only when requested from a launcher.
+
 `build-seed.py` accepts only the listed public build sources and the fixed
 control modules. It writes a private NoCloud seed directory without login or
 host credentials. Boot it with a verified official Debian base in an isolated
@@ -44,3 +50,5 @@ they are no longer disposable build fixtures.
 
 The 79 release and GUI acceptance record is in
 [`assistant-computer-viewer-79-20261027.md`](../../../../docs/assistant-computer-viewer-79-20261027.md).
+The subsequent theme, wallpaper, application and inline split-pane acceptance
+is in [`assistant-computer-theme-split-79-20261027.md`](../../../../docs/assistant-computer-theme-split-79-20261027.md).
