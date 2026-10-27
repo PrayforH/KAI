@@ -16,6 +16,8 @@
 | `1da0365e` | VM 生命周期测试（adopt/拒绝/guest fencing 存活/物理停机回退，Docker 与 guest 全 mock） |
 | `03011e9c` | 迁移修复：0001 排除名单补 computer_desktop_leases（全新安装整链 0001→0053 + 0053→0051→0053 往返，隔离库实测） |
 | `e0bfd41a` | GUI 工具层测试 + pointer schema 合并修复（真实桌面租约：授权/拒绝/续租同 epoch） |
+| `f394c6e4` | M3：后台任务追加上下文工具（note 进入下次执行上下文） |
+| `992a280d` | M4：记忆搜索/更正/删除工具（版本守护，来源保持；走既有 memory_bank 权威） |
 
 设计决策记录：[ADR](plans/2026-10-28-kai-dot-vm-bridge.md)；部署手册：[runbook](plans/2026-10-28-kai-dot-deploy-runbook.md)。
 
@@ -27,7 +29,7 @@
 HARNESS_TEST_DATABASE_URL=postgresql+asyncpg://harness:harness@127.0.0.1:35432/harness_test \
   uv run pytest tests/unit/assistant tests/unit/sandbox/test_computer_{runtime,vm_provider,desktop_client,viewer,vm_keys,vm_seed,ssh_gate,workspace}.py \
   tests/integration/storage/test_computer_{desktop,desktop_gate,vm_provider,registry,manager,access}_postgres.py
-# 最终结果：195 passed（05:31）；storage 全量 190 过，其余 16 失败均为本地无 Redis/MinIO 的既有基础设施用例（pristine 分支同因失败）
+# 最终结果：197 passed（05:42，含 GUI 工具流 3 项 + 记忆工具回归）；storage 全量 190 过，其余 16 失败均为本地无 Redis/MinIO 的既有基础设施用例（pristine 分支同因失败）
 ```
 
 专项断言覆盖：
@@ -80,3 +82,4 @@ Web：`tsc --noEmit` 通过；`npm run build` 生产构建通过（含接管/交
 3. **VNC security 协商**：现网 VM 若仍带 `-rfbauth`，需要把 VNC 密码放节点私有配置（spec 未含该字段时 gate 会明确报"desktop requires credentials"）。
 4. **M4（记忆作用域/修正、Outbox 原生文件交付）、M5（OpenSandbox SDK 薄适配、IME/剪贴板）、M6（本地电脑/连接器/语音）**：本轮未实施，按方案保留后续。
 5. **分支 pyright 基线陈账 929 条**：属上游分支债，建议后续单独跑一轮基线重建。
+6. **M4 记忆工具的模型实测**：工具与网关有单元测试，真实模型调用（尤其 channel 用户'更正记忆'对话）未验证。
