@@ -1,0 +1,84 @@
+{
+  "tenant": "computer-access-probe-183937da3f1145389d58e2a53a92e038",
+  "checkedAt": "2026-10-27T05:03:39.236928+00:00",
+  "scope": "Real Worker, account/thread/Run/lease records in isolated PostgreSQL and canonical node authorization; deterministic runtime; no real model or production chats",
+  "authorization": "canonical",
+  "plainChatAllocatedNoComputer": true,
+  "chunkedAndEmptyTransferConfirmed": true,
+  "taskUids": [
+    28000,
+    28000,
+    28000
+  ],
+  "stagedFixtureFilesVerified": 0,
+  "computerId": "computer_124a44f10f1c4182ad44fb9e5874e378",
+  "volumeRef": "kai-computer-124a44f10f1c4182ad44fb9e5874e378",
+  "providerRef": "31100f4cb54ec6933962995582a69af7a3b549d366e5a192c28343c24b6d5870",
+  "sourceImageFilePlaneOperations": {
+    "manifest": {
+      "calls": 2,
+      "seconds": 1.2337332982569933
+    },
+    "upload_batch": {
+      "calls": 2,
+      "seconds": 1.0141272079199553
+    },
+    "upload": {
+      "calls": 2,
+      "seconds": 1.628330952487886
+    },
+    "stat": {
+      "calls": 2,
+      "seconds": 1.0343943191692233
+    },
+    "read": {
+      "calls": 4,
+      "seconds": 2.3465202087536454
+    },
+    "command": {
+      "calls": 1,
+      "seconds": 0.5173104675486684
+    }
+  },
+  "imageMigration": {
+    "sourceImage": "sha256:9b926012e692cec7a060124926a2b7638cf81faa13ccd3cb73d72704e11fb88c",
+    "targetImage": "sha256:0486fc96228881d7896c7979472e2d9e3ff0723703a2ce36278e4f797b515ae3",
+    "afterMaintenanceState": "registered",
+    "computerIdPreserved": true,
+    "workDiskPreserved": true,
+    "newInstanceDeferredToAuthorizedRun": true
+  },
+  "previousFilesAndExecutableRetained": true,
+  "replacementInstanceVerified": true,
+  "providerRefAfter": "76f580b152589323294cc3dd5fd71f86ec264bc7f3bfdb63764f22d9dd9c81ee",
+  "sameComputerAndDiskAcrossFreshProviders": true,
+  "publishedPerRound": {
+    "1": [
+      "outputs/first.txt"
+    ],
+    "2": [
+      "outputs/second.txt"
+    ]
+  },
+  "passed": true,
+  "controlVolumeRef": "kai-computer-124a44f10f1c4182ad44fb9e5874e378-control",
+  "fixtureInstanceRemoved": true,
+  "filePlaneOperations": {
+    "manifest": {
+      "calls": 2,
+      "seconds": 1.2978187799453735
+    },
+    "upload_batch": {
+      "calls": 1,
+      "seconds": 0.4773185634985566
+    },
+    "command": {
+      "calls": 1,
+      "seconds": 0.3732938077300787
+    },
+    "read": {
+      "calls": 1,
+      "seconds": 0.488413967192173
+    }
+  }
+}

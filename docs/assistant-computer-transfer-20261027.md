@@ -48,3 +48,5 @@ API / Worker / 内部控制服务：`kai/assistant-api:20261027-r21-computer-tra
 ## 后续 Computer V1
 
 本轮完成传输耗时与目录说明修正，没有实现桌面、浏览器 profile、登录接管或后台职责编排。下一步仍按[整体方案](plans/2026-10-27-assistant-dot-bot-computer.md)推进：先实现保留工作盘的镜像升级，再提供非 root 浏览器桌面、KAI 鉴权代理与互斥接管，随后进行飞书发起、网页登录、交还控制后继续执行的完整验收。当前本人终端试点不扩展为全用户桌面能力。
+
+后续进展：镜像升级前置已完成代码及 79 隔离验收，见[Computer V1 升级底座](assistant-computer-images-20261027.md)；正式助理尚未切入新迁移，桌面接管继续实施。
